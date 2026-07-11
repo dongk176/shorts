@@ -1,4 +1,7 @@
 .env
+.env.*
+!.env.example
+.secrets/
 .DS_Store
 *.log
 
@@ -8,7 +11,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .venv/
-api/.coverage
+worker/.coverage
 
 # Next.js
 web/node_modules/
@@ -16,6 +19,8 @@ web/.next/
 web/out/
 web/.eslintcache
 web/*.tsbuildinfo
+infra/aws/node_modules/
+infra/aws/cdk.out/
 
 # Runtime data: keep only the placeholder
 storage/*

@@ -2,11 +2,11 @@
 
 ## Layout
 
-- `web/`: Next.js App Router, TypeScript, Tailwind CSS. Keep the product as a
-  single-page flow and use React state only.
-- `api/`: FastAPI, SQLite, yt-dlp, Pillow, OpenAI SDK, and FFmpeg pipeline.
-- `storage/`: generated MP4 outputs and the local SQLite database. Do not commit
-  runtime contents.
+- `web/`: Next.js App Router, TypeScript, Tailwind CSS, server-only Supabase SQL,
+  AWS Batch submission, and CloudFront Signed URLs. Keep the product single-page.
+- `worker/`: AWS Batch CLI worker with yt-dlp, Pillow, OpenAI SDK, and FFmpeg.
+- `supabase/`: schema-qualified `shorts_mvp` migrations; never alter `public`.
+- `infra/aws/`: AWS CDK v2 stacks and maintenance Lambda code.
 
 ## Safety invariants
 
@@ -17,10 +17,11 @@
 - Resolve served paths beneath `storage/`; never use user input as a filename.
 - Never log secrets. Missing configured AI provider credentials must take the
   deterministic fallback path.
-- Preserve the 60-minute input limit and one-job-at-a-time default.
+- Preserve the 60-minute input limit, one-job-at-a-time default, and 30-day cap.
+- Never store full source videos in S3; use task ephemeral storage and `finally` cleanup.
 
 ## Verification
 
 - `make lint` runs backend and frontend static checks.
-- `make test` runs pytest, frontend type checking/linting, and a production build.
+- `make verify` runs worker tests, frontend checks/build, and CDK tests/synth.
 - Renderer changes must retain the synthetic FFmpeg/ffprobe integration test.
