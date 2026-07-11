@@ -55,7 +55,9 @@ try {
     from shorts_mvp.plans order by sort_order
   `;
   const expected = ["plus:6000:30", "standard:18000:30", "pro:36000:30"];
-  const actual = plans.map((plan) => `${plan.code}:${plan.monthlySourceSeconds}:${plan.retentionDays}`);
+  const actual = plans.map(
+    (plan) => `${plan.code}:${plan.monthly_source_seconds}:${plan.retention_days}`,
+  );
   if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("plan seed 검증에 실패했습니다.");
   process.stdout.write("Supabase shorts_mvp migration 및 public schema 무변경 검증 완료\n");
 } finally {

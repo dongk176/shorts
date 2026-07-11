@@ -40,13 +40,17 @@ if [[ -n "$vercel_oidc_arn" && "$vercel_oidc_arn" != "None" ]]; then
     --client-id sts.amazonaws.com >/dev/null
   context_args+=("-c" "vercelOidcProviderArn=$vercel_oidc_arn")
 fi
-AWS_REGION="$REGION" npm --prefix infra/aws run deploy -- \
-  -c "environment=$ENVIRONMENT" \
-  -c "vercelTeamSlug=$VERCEL_TEAM_SLUG" \
-  -c "vercelProjectName=$VERCEL_PROJECT_NAME" \
-  -c "githubOrg=${GITHUB_ORG:-dongk176}" \
-  -c "githubRepo=${GITHUB_REPO:-shorts}" \
-  "${context_args[@]}"
+deploy_args=(
+  -c "environment=$ENVIRONMENT"
+  -c "vercelTeamSlug=$VERCEL_TEAM_SLUG"
+  -c "vercelProjectName=$VERCEL_PROJECT_NAME"
+  -c "githubOrg=${GITHUB_ORG:-dongk176}"
+  -c "githubRepo=${GITHUB_REPO:-shorts}"
+)
+if [[ ${#context_args[@]} -gt 0 ]]; then
+  deploy_args+=("${context_args[@]}")
+fi
+AWS_REGION="$REGION" npm --prefix infra/aws run deploy -- "${deploy_args[@]}"
 
 bash scripts/sync-runtime-secret.sh
 bash scripts/sync-vercel-env.sh
