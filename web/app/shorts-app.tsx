@@ -29,11 +29,11 @@ const clipOptions: Array<{ code: ClipLengthOption; label: string; description: s
   { code: "sec_61_180", label: "1분 이상", description: "최대 3분" },
 ];
 
-const templates: Array<{ id: TemplateId; name: string }> = [
-  { id: "dark-red", name: "다크 레드" },
-  { id: "white-yellow", name: "화이트 옐로" },
-  { id: "dark-minimal", name: "다크 미니멀" },
-  { id: "paper", name: "페이퍼" },
+const templates: Array<{ id: TemplateId; name: string; label: string }> = [
+  { id: "dark-red", name: "다크 레드", label: "지금 꼭 알아야 할\n핵심 한 가지" },
+  { id: "white-yellow", name: "화이트 옐로", label: "생각보다 쉬운\n핵심 한 가지" },
+  { id: "dark-minimal", name: "다크 미니멀", label: "놓치기 쉬운\n결정적 순간" },
+  { id: "paper", name: "페이퍼", label: "오늘 바로 쓰는\n핵심 방법" },
 ];
 
 const terminalStatuses = new Set(["completed", "failed", "expired", "deleted"]);
@@ -64,6 +64,64 @@ function formatDuration(seconds: number) {
 function formatTimestamp(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+}
+
+function TemplatePreview({ template }: { template: (typeof templates)[number] }) {
+  const [firstLine, secondLine] = template.label.split("\n");
+  const isLight = template.id === "white-yellow" || template.id === "paper";
+  const background = template.id === "paper" ? "bg-[#F3F0E9]" : isLight ? "bg-white" : "bg-black";
+  const foreground = isLight ? "text-black" : "text-white";
+  return (
+    <div className={`relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg ${background} ${foreground}`}>
+      <div className="flex h-[22%] flex-col items-center justify-center px-2 text-center text-[10px] font-extrabold leading-[1.25] sm:text-[11px]">
+        <span>{firstLine}</span>
+        {template.id === "dark-red" && <span className="mt-1 bg-[#E32626] px-1.5 py-0.5 text-white">{secondLine}</span>}
+        {template.id === "white-yellow" && <span className="mt-1 bg-[#FFD84D] px-1.5 py-0.5">{secondLine}</span>}
+        {template.id === "dark-minimal" && <span className="mt-1 text-[#F04444]">{secondLine}</span>}
+        {template.id === "paper" && <span className="mt-1 text-[#D52B2B]">{secondLine}</span>}
+      </div>
+      <div className={`relative flex h-[56%] items-center justify-center overflow-hidden ${isLight ? "bg-neutral-300" : "bg-neutral-700"}`}>
+        <div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
+        <div className={`h-9 w-9 rounded-full border-2 ${isLight ? "border-neutral-500" : "border-neutral-400"}`} aria-hidden="true" />
+      </div>
+      <div className={`flex h-[22%] items-center justify-center gap-1.5 px-2 text-[8px] font-semibold sm:text-[9px] ${template.id === "paper" ? "text-neutral-700" : ""}`}>
+        <span className={`h-3 w-3 rounded-full ${isLight ? "bg-neutral-800" : "bg-white"}`} aria-hidden="true" />
+        예시 채널명
+      </div>
+    </div>
+  );
+}
+
+function TemplatePicker({ value, onChange }: { value: TemplateId; onChange: (value: TemplateId) => void }) {
+  const selectedName = templates.find((template) => template.id === value)?.name;
+  return (
+    <div>
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold">템플릿</h2>
+          <p className="mt-1 text-sm text-neutral-500">실제 영상의 제목·영상·채널 영역을 미리 확인하세요.</p>
+        </div>
+        <span className="text-xs font-semibold text-red-300">{selectedName}</span>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {templates.map((template) => {
+          const selected = value === template.id;
+          return (
+            <button
+              key={template.id}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onChange(template.id)}
+              className={`rounded-xl border-2 bg-[#141416] p-2.5 transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
+            >
+              <TemplatePreview template={template} />
+              <span className="mt-2.5 block text-center text-sm font-semibold">{template.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -291,7 +349,7 @@ export function ShortsApp() {
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}
       {state && selectedPlan && <><UsageCard planName={selectedPlan.displayName} usage={state.usage} /><section><div className="mb-4"><h2 className="text-xl font-bold">요금제 선택</h2><p className="mt-1 text-sm text-neutral-500">MVP에서는 결제 없이 플랜을 선택할 수 있습니다.</p></div><div className="grid gap-3 sm:grid-cols-3">{state.plans.map((plan) => <button key={plan.code} onClick={() => void selectPlan(plan.code)} className={`rounded-xl border p-5 text-left ${state.selectedPlanCode === plan.code ? "border-red-500 bg-red-500/10" : "border-white/10 bg-[#141416]"}`}><strong className="text-lg">{plan.displayName}</strong><span className="mt-2 block text-sm text-neutral-400">월 원본 영상 {Math.round(plan.monthlySourceSeconds / 60)}분</span><span className="mt-4 block text-xs font-bold text-red-300">{state.selectedPlanCode === plan.code ? "선택됨" : "선택"}</span></button>)}</div></section></>}
       <section><h2 className="text-xl font-bold">YouTube 영상</h2><form onSubmit={analyze} className="mt-4 flex flex-col gap-2 sm:flex-row"><input type="url" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=..." className="h-12 flex-1 rounded-xl border border-white/15 bg-[#18181B] px-4" /><button disabled={busy} className="h-12 rounded-xl bg-white px-6 font-bold text-black disabled:opacity-50">{busy ? "확인 중..." : "영상 확인"}</button></form></section>
-      {analysis && <section className="space-y-8"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 선택 구간 예상 쇼츠 {expectedShortCount(selectedDurationSeconds)}개</p><p className="mt-1 text-xs text-neutral-500">이번 작업은 선택한 구간 {formatDuration(selectedDurationSeconds)}만 사용량으로 계산됩니다.</p></div></div><div className="rounded-2xl border border-white/10 bg-[#141416] p-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-xl font-bold">사용할 영상 구간</h2><p className="mt-1 text-sm text-neutral-500">기본값은 영상 전체입니다. 양쪽 슬라이더로 시작과 끝을 정하세요.</p></div><strong className="text-red-300">{formatTimestamp(rangeStartSeconds)}–{formatTimestamp(rangeEndSeconds)}</strong></div><div className="relative mt-6 h-8"><div className="absolute inset-x-0 top-3 h-2 rounded-full bg-neutral-800" /><div className="absolute top-3 h-2 rounded-full bg-red-500" style={{ left: `${(rangeStartSeconds / analysis.durationSeconds) * 100}%`, right: `${100 - (rangeEndSeconds / analysis.durationSeconds) * 100}%` }} /><input aria-label="시작 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeStartSeconds} onChange={(event) => setRangeStartSeconds(Math.min(Number(event.target.value), rangeEndSeconds - 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /><input aria-label="끝 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeEndSeconds} onChange={(event) => setRangeEndSeconds(Math.max(Number(event.target.value), rangeStartSeconds + 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /></div><div className="mt-3 flex justify-between text-xs text-neutral-500"><span>0:00</span><span>선택 {formatDuration(selectedDurationSeconds)}</span><span>{formatTimestamp(analysis.durationSeconds)}</span></div>{!rangeIsValid && <p className="mt-3 text-sm text-red-400">선택한 쇼츠 길이 기준으로 최소 {minimumRangeSeconds}초 구간이 필요합니다.</p>}<button type="button" onClick={() => { setRangeStartSeconds(0); setRangeEndSeconds(analysis.durationSeconds); }} className="mt-4 rounded-lg border border-white/15 px-3 py-2 text-sm">전체 구간으로 초기화</button></div><div><h2 className="text-xl font-bold">쇼츠 길이</h2><div className="mt-3 grid gap-2 sm:grid-cols-3">{clipOptions.map((option) => <button key={option.code} onClick={() => setClipLengthOption(option.code)} className={`rounded-xl border p-4 text-left ${clipLengthOption === option.code ? "border-red-500 bg-red-500/10" : "border-white/10"}`}><strong>{option.label}</strong><span className="mt-1 block text-xs text-neutral-500">{option.description}</span></button>)}</div></div><div><h2 className="text-xl font-bold">템플릿</h2><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{templates.map((template) => <button key={template.id} onClick={() => setTemplateId(template.id)} className={`rounded-xl border p-4 ${templateId === template.id ? "border-red-500 bg-red-500/10" : "border-white/10"}`}>{template.name}</button>)}</div></div><label className="flex items-start gap-3 rounded-xl border border-white/10 p-4 text-sm"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-red-500" />내가 소유하거나 사용 허가를 받은 영상입니다.</label><button disabled={!rightsConfirmed || !rangeIsValid || busy || Boolean(activeJob && !terminalStatuses.has(activeJob.status))} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">쇼츠 생성하기</button></section>}
+      {analysis && <section className="space-y-8"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 선택 구간 예상 쇼츠 {expectedShortCount(selectedDurationSeconds)}개</p><p className="mt-1 text-xs text-neutral-500">이번 작업은 선택한 구간 {formatDuration(selectedDurationSeconds)}만 사용량으로 계산됩니다.</p></div></div><div className="rounded-2xl border border-white/10 bg-[#141416] p-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-xl font-bold">사용할 영상 구간</h2><p className="mt-1 text-sm text-neutral-500">기본값은 영상 전체입니다. 양쪽 슬라이더로 시작과 끝을 정하세요.</p></div><strong className="text-red-300">{formatTimestamp(rangeStartSeconds)}–{formatTimestamp(rangeEndSeconds)}</strong></div><div className="relative mt-6 h-8"><div className="absolute inset-x-0 top-3 h-2 rounded-full bg-neutral-800" /><div className="absolute top-3 h-2 rounded-full bg-red-500" style={{ left: `${(rangeStartSeconds / analysis.durationSeconds) * 100}%`, right: `${100 - (rangeEndSeconds / analysis.durationSeconds) * 100}%` }} /><input aria-label="시작 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeStartSeconds} onChange={(event) => setRangeStartSeconds(Math.min(Number(event.target.value), rangeEndSeconds - 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /><input aria-label="끝 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeEndSeconds} onChange={(event) => setRangeEndSeconds(Math.max(Number(event.target.value), rangeStartSeconds + 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /></div><div className="mt-3 flex justify-between text-xs text-neutral-500"><span>0:00</span><span>선택 {formatDuration(selectedDurationSeconds)}</span><span>{formatTimestamp(analysis.durationSeconds)}</span></div>{!rangeIsValid && <p className="mt-3 text-sm text-red-400">선택한 쇼츠 길이 기준으로 최소 {minimumRangeSeconds}초 구간이 필요합니다.</p>}<button type="button" onClick={() => { setRangeStartSeconds(0); setRangeEndSeconds(analysis.durationSeconds); }} className="mt-4 rounded-lg border border-white/15 px-3 py-2 text-sm">전체 구간으로 초기화</button></div><div><h2 className="text-xl font-bold">쇼츠 길이</h2><div className="mt-3 grid gap-2 sm:grid-cols-3">{clipOptions.map((option) => <button key={option.code} onClick={() => setClipLengthOption(option.code)} className={`rounded-xl border p-4 text-left ${clipLengthOption === option.code ? "border-red-500 bg-red-500/10" : "border-white/10"}`}><strong>{option.label}</strong><span className="mt-1 block text-xs text-neutral-500">{option.description}</span></button>)}</div></div><TemplatePicker value={templateId} onChange={setTemplateId} /><label className="flex items-start gap-3 rounded-xl border border-white/10 p-4 text-sm"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-red-500" />내가 소유하거나 사용 허가를 받은 영상입니다.</label><button disabled={!rightsConfirmed || !rangeIsValid || busy || Boolean(activeJob && !terminalStatuses.has(activeJob.status))} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">쇼츠 생성하기</button></section>}
       {activeJob && <section className="rounded-2xl border border-white/10 bg-[#141416] p-5"><div className="flex justify-between gap-4"><div><p className="font-bold">{stageLabels[activeJob.stage] || "실제 작업 상태를 확인하고 있습니다."}</p><p className="mt-1 text-sm text-neutral-400">{activeJob.errorMessage || (activeJob.stage === "rendering" ? `완성 ${activeJob.shorts.length}/${activeJob.expectedShortCount}` : terminalStatuses.has(activeJob.status) ? "작업이 종료되었습니다." : "완성된 쇼츠는 바로 아래에 표시됩니다.")}</p></div><strong>{activeJob.progress}%</strong></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-neutral-800"><div className="h-full bg-red-500 transition-all" style={{ width: `${activeJob.progress}%` }} /></div></section>}
       {(activeJob?.shorts.length || state?.recentJobs.some((job) => job.shorts.length)) && <section><h2 className="mb-5 text-2xl font-bold">완성된 쇼츠</h2><div className="space-y-5">{(activeJob?.shorts.length ? activeJob.shorts : state?.recentJobs.flatMap((job) => job.shorts) || []).map((item) => <ShortCard key={item.id} item={item} onChanged={loadState} />)}</div></section>}
     </main></div>
