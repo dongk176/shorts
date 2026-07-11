@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { normalizeYoutubeUrl } from "./youtube";
+import { describe, expect, it, vi } from "vitest";
+import { analyzeYoutubeUrl, normalizeYoutubeUrl } from "./youtube";
 
 describe("YouTube URL allowlist", () => {
   it.each([
@@ -21,5 +21,27 @@ describe("YouTube URL allowlist", () => {
     "https://youtube.com/watch?v=too-short",
   ])("rejects %s", (url) => {
     expect(() => normalizeYoutubeUrl(url)).toThrow();
+  });
+});
+
+describe("YouTube duration validation", () => {
+  it("rejects videos over sixty minutes after server-side metadata lookup", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{
+        id: "dQw4w9WgXcQ",
+        snippet: {
+          title: "긴 영상",
+          channelTitle: "채널",
+          thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
+        },
+        contentDetails: { duration: "PT1H1S" },
+      }],
+    }), { status: 200 })));
+    await expect(
+      analyzeYoutubeUrl("https://youtu.be/dQw4w9WgXcQ"),
+    ).rejects.toThrow("최대 60분");
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 });

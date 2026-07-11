@@ -5,6 +5,7 @@ import { submitInitialJob } from "@/lib/aws";
 import { clipLengthOptions, templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
+import { assertJobCreationAllowed } from "@/lib/job-policy";
 import { requireMvpSession } from "@/lib/session";
 import { getUsageSnapshot } from "@/lib/usage";
 import { analyzeYoutubeUrl } from "@/lib/youtube";
@@ -53,20 +54,15 @@ export async function POST(request: Request) {
           count(*) filter (where created_at >= ${dayStart})::int as daily
         from shorts_mvp.video_jobs where mvp_session_id=${session.id}
       `;
-      if (limits[0].active >= maxActive) {
-        throw new Error("현재 처리 중인 작업이 있습니다. 완료 후 다시 시도해 주세요.");
-      }
-      if (limits[0].daily >= dailyLimit) {
-        throw new Error("오늘 생성할 수 있는 작업 수를 모두 사용했습니다.");
-      }
       const beforeUsage = await getUsageSnapshot(tx, session.id);
-      if (
-        beforeUsage.enforcementEnabled
-        && beforeUsage.usedSeconds + beforeUsage.reservedSeconds + metadata.durationSeconds
-          > beforeUsage.limitSeconds
-      ) {
-        throw new Error("선택한 플랜의 이번 달 원본 영상 처리 시간을 초과합니다.");
-      }
+      assertJobCreationAllowed({
+        activeJobs: limits[0].active,
+        dailyJobs: limits[0].daily,
+        maxActiveJobs: maxActive,
+        dailyJobLimit: dailyLimit,
+        sourceDurationSeconds: metadata.durationSeconds,
+        usage: beforeUsage,
+      });
       await tx`
         insert into shorts_mvp.video_jobs (
           id, mvp_session_id, request_id, youtube_url, youtube_video_id, video_title,
