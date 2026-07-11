@@ -1,0 +1,22 @@
+.env
+.DS_Store
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+api/.coverage
+
+# Next.js
+web/node_modules/
+web/.next/
+web/out/
+web/.eslintcache
+web/*.tsbuildinfo
+
+# Runtime data: keep only the placeholder
+storage/*
+!storage/.gitkeep

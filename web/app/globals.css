@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #09090b;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #09090b;
+  color: #f5f5f5;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button,
+label,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+video {
+  display: block;
+  background: #111111;
+}
+
+:focus-visible {
+  outline: 3px solid rgba(225, 25, 25, 0.35);
+  outline-offset: 2px;
+}
+
+.range-handle {
+  appearance: none;
+  pointer-events: none;
+  background: transparent;
+}
+
+.range-handle::-webkit-slider-thumb {
+  width: 22px;
+  height: 22px;
+  appearance: none;
+  pointer-events: auto;
+  cursor: grab;
+  border: 3px solid #e11919;
+  border-radius: 9999px;
+  background: #18181b;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 20%);
+}
+
+.range-handle::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  pointer-events: auto;
+  cursor: grab;
+  border: 3px solid #e11919;
+  border-radius: 9999px;
+  background: #18181b;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 20%);
+}
