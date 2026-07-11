@@ -115,6 +115,8 @@ class BatchWorker:
                     duration_seconds=float(job["source_duration_seconds"]),
                     transcript=transcript,
                     required_count=int(job["expected_short_count"]),
+                    range_start_seconds=float(job["range_start_seconds"]),
+                    range_end_seconds=float(job["range_end_seconds"]),
                     clip_length_option=ClipLengthOption(job["clip_length_option"]),
                 )
                 if not clips:
@@ -155,7 +157,7 @@ class BatchWorker:
                         channel_name=job["channel_name"],
                         template_id=TemplateId(job["template_id"]),
                         transcript=relative_subtitles,
-                        subtitles_enabled=True,
+                        subtitles_enabled=False,
                         work_dir=work_dir,
                         prefix=f"short-{index}",
                     )

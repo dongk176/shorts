@@ -11,6 +11,7 @@ import type {
   UsageSnapshot,
   VideoJob,
 } from "@/lib/contracts";
+import { clipLengthRules, expectedShortCount } from "@/lib/contracts";
 
 type Analysis = {
   videoId: string;
@@ -205,6 +206,8 @@ export function ShortsApp() {
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [clipLengthOption, setClipLengthOption] = useState<ClipLengthOption>("sec_31_60");
+  const [rangeStartSeconds, setRangeStartSeconds] = useState(0);
+  const [rangeEndSeconds, setRangeEndSeconds] = useState(0);
   const [templateId, setTemplateId] = useState<TemplateId>("dark-red");
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [activeJob, setActiveJob] = useState<VideoJob | null>(null);
@@ -244,6 +247,14 @@ export function ShortsApp() {
   }, [activeJobId, activeJobStatus, loadState]);
 
   const selectedPlan = useMemo(() => state?.plans.find((plan) => plan.code === state.selectedPlanCode), [state]);
+  const selectedDurationSeconds = Math.max(0, rangeEndSeconds - rangeStartSeconds);
+  const minimumRangeSeconds = clipLengthRules[clipLengthOption].min;
+  const rangeIsValid = Boolean(
+    analysis
+    && rangeStartSeconds >= 0
+    && rangeEndSeconds <= analysis.durationSeconds
+    && selectedDurationSeconds >= minimumRangeSeconds
+  );
 
   const selectPlan = async (planCode: PlanCode) => {
     const value = await requestJson<{ selectedPlanCode: PlanCode; usage: UsageSnapshot }>("/api/mvp/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planCode }) });
@@ -252,7 +263,12 @@ export function ShortsApp() {
 
   const analyze = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError(null);
-    try { setAnalysis(await requestJson<Analysis>("/api/youtube/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ youtubeUrl }) })); }
+    try {
+      const value = await requestJson<Analysis>("/api/youtube/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ youtubeUrl }) });
+      setAnalysis(value);
+      setRangeStartSeconds(0);
+      setRangeEndSeconds(value.durationSeconds);
+    }
     catch (cause) { setError(cause instanceof Error ? cause.message : "영상 확인 실패"); }
     finally { setBusy(false); }
   };
@@ -261,7 +277,7 @@ export function ShortsApp() {
     if (!analysis || !rightsConfirmed) return;
     setBusy(true); setError(null);
     try {
-      const value = await requestJson<{ jobId: string; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ youtubeUrl: analysis.normalizedUrl, templateId, clipLengthOption, rightsConfirmed: true, requestId: crypto.randomUUID() }) });
+      const value = await requestJson<{ jobId: string; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ youtubeUrl: analysis.normalizedUrl, templateId, clipLengthOption, rangeStartSeconds, rangeEndSeconds, rightsConfirmed: true, requestId: crypto.randomUUID() }) });
       setState((current) => current ? { ...current, usage: value.usage } : current);
       setActiveJob({ id: value.jobId, videoTitle: analysis.title, channelName: analysis.channelName, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, clipLengthOption, expectedShortCount: analysis.expectedShortCount, status: "queued", stage: "queued", progress: 5, errorMessage: null, createdAt: new Date().toISOString(), shorts: [] });
       pollStarted.current = Date.now();
@@ -271,11 +287,11 @@ export function ShortsApp() {
 
   return (
     <div className="min-h-screen bg-[#09090B] text-neutral-100"><header className="border-b border-white/10 bg-[#0D0D0F]"><div className="mx-auto flex h-14 max-w-5xl items-center px-5 font-bold">Shorts Maker</div></header><main className="mx-auto max-w-5xl space-y-10 px-5 py-10 sm:px-6">
-      <section><p className="text-sm font-semibold text-red-400">AI 쇼츠 자동 생성</p><h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">유튜브 링크 하나로 쇼츠 만들기</h1><p className="mt-3 text-neutral-400">원본 전체 길이를 사용량으로 계산하고, 완성 영상은 최대 30일 보관합니다.</p></section>
+      <section><p className="text-sm font-semibold text-red-400">AI 쇼츠 자동 생성</p><h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">유튜브 링크 하나로 쇼츠 만들기</h1><p className="mt-3 text-neutral-400">선택한 영상 구간만 사용량으로 계산하고, 완성 영상은 최대 30일 보관합니다.</p></section>
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}
       {state && selectedPlan && <><UsageCard planName={selectedPlan.displayName} usage={state.usage} /><section><div className="mb-4"><h2 className="text-xl font-bold">요금제 선택</h2><p className="mt-1 text-sm text-neutral-500">MVP에서는 결제 없이 플랜을 선택할 수 있습니다.</p></div><div className="grid gap-3 sm:grid-cols-3">{state.plans.map((plan) => <button key={plan.code} onClick={() => void selectPlan(plan.code)} className={`rounded-xl border p-5 text-left ${state.selectedPlanCode === plan.code ? "border-red-500 bg-red-500/10" : "border-white/10 bg-[#141416]"}`}><strong className="text-lg">{plan.displayName}</strong><span className="mt-2 block text-sm text-neutral-400">월 원본 영상 {Math.round(plan.monthlySourceSeconds / 60)}분</span><span className="mt-4 block text-xs font-bold text-red-300">{state.selectedPlanCode === plan.code ? "선택됨" : "선택"}</span></button>)}</div></section></>}
       <section><h2 className="text-xl font-bold">YouTube 영상</h2><form onSubmit={analyze} className="mt-4 flex flex-col gap-2 sm:flex-row"><input type="url" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=..." className="h-12 flex-1 rounded-xl border border-white/15 bg-[#18181B] px-4" /><button disabled={busy} className="h-12 rounded-xl bg-white px-6 font-bold text-black disabled:opacity-50">{busy ? "확인 중..." : "영상 확인"}</button></form></section>
-      {analysis && <section className="space-y-8"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {analysis.expectedShortCount}개</p><p className="mt-1 text-xs text-neutral-500">이번 작업은 원본 사용량 {formatDuration(analysis.durationSeconds)}로 계산됩니다.</p></div></div><div><h2 className="text-xl font-bold">쇼츠 길이</h2><div className="mt-3 grid gap-2 sm:grid-cols-3">{clipOptions.map((option) => <button key={option.code} onClick={() => setClipLengthOption(option.code)} className={`rounded-xl border p-4 text-left ${clipLengthOption === option.code ? "border-red-500 bg-red-500/10" : "border-white/10"}`}><strong>{option.label}</strong><span className="mt-1 block text-xs text-neutral-500">{option.description}</span></button>)}</div></div><div><h2 className="text-xl font-bold">템플릿</h2><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{templates.map((template) => <button key={template.id} onClick={() => setTemplateId(template.id)} className={`rounded-xl border p-4 ${templateId === template.id ? "border-red-500 bg-red-500/10" : "border-white/10"}`}>{template.name}</button>)}</div></div><label className="flex items-start gap-3 rounded-xl border border-white/10 p-4 text-sm"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-red-500" />내가 소유하거나 사용 허가를 받은 영상입니다.</label><button disabled={!rightsConfirmed || busy || Boolean(activeJob && !terminalStatuses.has(activeJob.status))} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">쇼츠 생성하기</button></section>}
+      {analysis && <section className="space-y-8"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 선택 구간 예상 쇼츠 {expectedShortCount(selectedDurationSeconds)}개</p><p className="mt-1 text-xs text-neutral-500">이번 작업은 선택한 구간 {formatDuration(selectedDurationSeconds)}만 사용량으로 계산됩니다.</p></div></div><div className="rounded-2xl border border-white/10 bg-[#141416] p-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-xl font-bold">사용할 영상 구간</h2><p className="mt-1 text-sm text-neutral-500">기본값은 영상 전체입니다. 양쪽 슬라이더로 시작과 끝을 정하세요.</p></div><strong className="text-red-300">{formatTimestamp(rangeStartSeconds)}–{formatTimestamp(rangeEndSeconds)}</strong></div><div className="relative mt-6 h-8"><div className="absolute inset-x-0 top-3 h-2 rounded-full bg-neutral-800" /><div className="absolute top-3 h-2 rounded-full bg-red-500" style={{ left: `${(rangeStartSeconds / analysis.durationSeconds) * 100}%`, right: `${100 - (rangeEndSeconds / analysis.durationSeconds) * 100}%` }} /><input aria-label="시작 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeStartSeconds} onChange={(event) => setRangeStartSeconds(Math.min(Number(event.target.value), rangeEndSeconds - 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /><input aria-label="끝 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeEndSeconds} onChange={(event) => setRangeEndSeconds(Math.max(Number(event.target.value), rangeStartSeconds + 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /></div><div className="mt-3 flex justify-between text-xs text-neutral-500"><span>0:00</span><span>선택 {formatDuration(selectedDurationSeconds)}</span><span>{formatTimestamp(analysis.durationSeconds)}</span></div>{!rangeIsValid && <p className="mt-3 text-sm text-red-400">선택한 쇼츠 길이 기준으로 최소 {minimumRangeSeconds}초 구간이 필요합니다.</p>}<button type="button" onClick={() => { setRangeStartSeconds(0); setRangeEndSeconds(analysis.durationSeconds); }} className="mt-4 rounded-lg border border-white/15 px-3 py-2 text-sm">전체 구간으로 초기화</button></div><div><h2 className="text-xl font-bold">쇼츠 길이</h2><div className="mt-3 grid gap-2 sm:grid-cols-3">{clipOptions.map((option) => <button key={option.code} onClick={() => setClipLengthOption(option.code)} className={`rounded-xl border p-4 text-left ${clipLengthOption === option.code ? "border-red-500 bg-red-500/10" : "border-white/10"}`}><strong>{option.label}</strong><span className="mt-1 block text-xs text-neutral-500">{option.description}</span></button>)}</div></div><div><h2 className="text-xl font-bold">템플릿</h2><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{templates.map((template) => <button key={template.id} onClick={() => setTemplateId(template.id)} className={`rounded-xl border p-4 ${templateId === template.id ? "border-red-500 bg-red-500/10" : "border-white/10"}`}>{template.name}</button>)}</div></div><label className="flex items-start gap-3 rounded-xl border border-white/10 p-4 text-sm"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-red-500" />내가 소유하거나 사용 허가를 받은 영상입니다.</label><button disabled={!rightsConfirmed || !rangeIsValid || busy || Boolean(activeJob && !terminalStatuses.has(activeJob.status))} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">쇼츠 생성하기</button></section>}
       {activeJob && <section className="rounded-2xl border border-white/10 bg-[#141416] p-5"><div className="flex justify-between gap-4"><div><p className="font-bold">{stageLabels[activeJob.stage] || "실제 작업 상태를 확인하고 있습니다."}</p><p className="mt-1 text-sm text-neutral-400">{activeJob.errorMessage || (activeJob.stage === "rendering" ? `완성 ${activeJob.shorts.length}/${activeJob.expectedShortCount}` : terminalStatuses.has(activeJob.status) ? "작업이 종료되었습니다." : "완성된 쇼츠는 바로 아래에 표시됩니다.")}</p></div><strong>{activeJob.progress}%</strong></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-neutral-800"><div className="h-full bg-red-500 transition-all" style={{ width: `${activeJob.progress}%` }} /></div></section>}
       {(activeJob?.shorts.length || state?.recentJobs.some((job) => job.shorts.length)) && <section><h2 className="mb-5 text-2xl font-bold">완성된 쇼츠</h2><div className="space-y-5">{(activeJob?.shorts.length ? activeJob.shorts : state?.recentJobs.flatMap((job) => job.shorts) || []).map((item) => <ShortCard key={item.id} item={item} onChanged={loadState} />)}</div></section>}
     </main></div>

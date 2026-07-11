@@ -40,6 +40,36 @@ video {
   background: #111111;
 }
 
+.range-thumb {
+  pointer-events: none;
+  appearance: none;
+  height: 32px;
+  background: transparent;
+}
+
+.range-thumb::-webkit-slider-thumb {
+  pointer-events: auto;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border: 3px solid #09090b;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 2px #fca5a5;
+  cursor: grab;
+}
+
+.range-thumb::-moz-range-thumb {
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  border: 3px solid #09090b;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 2px #fca5a5;
+  cursor: grab;
+}
+
 :focus-visible {
   outline: 3px solid rgba(225, 25, 25, 0.35);
   outline-offset: 2px;

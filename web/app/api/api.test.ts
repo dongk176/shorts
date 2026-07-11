@@ -75,6 +75,8 @@ describe("job API security and idempotency", () => {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
       templateId: "dark-red",
       clipLengthOption: "sec_30",
+      rangeStartSeconds: 0,
+      rangeEndSeconds: 120,
       rightsConfirmed: false,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d0",
     }));
@@ -88,6 +90,8 @@ describe("job API security and idempotency", () => {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
       templateId: "dark-red",
       clipLengthOption: "sec_31_60",
+      rangeStartSeconds: 0,
+      rangeEndSeconds: 120,
       rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d0",
     }));
@@ -97,6 +101,30 @@ describe("job API security and idempotency", () => {
       status: "queued",
       usage,
     });
+    expect(mocks.submitInitial).not.toHaveBeenCalled();
+  });
+
+  it("rejects a selected range shorter than the chosen clip length", async () => {
+    mocks.getDb.mockReturnValue(dbWithRows([]));
+    mocks.analyze.mockResolvedValue({
+      videoId: "dQw4w9WgXcQ",
+      normalizedUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      title: "테스트 영상",
+      channelName: "채널",
+      thumbnailUrl: "https://example.com/thumb.jpg",
+      durationSeconds: 600,
+      expectedShortCount: 3,
+    });
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
+      templateId: "dark-red",
+      clipLengthOption: "sec_31_60",
+      rangeStartSeconds: 100,
+      rangeEndSeconds: 120,
+      rightsConfirmed: true,
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d1",
+    }));
+    expect(response.status).toBe(400);
     expect(mocks.submitInitial).not.toHaveBeenCalled();
   });
 

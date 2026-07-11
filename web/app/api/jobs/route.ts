@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { submitInitialJob } from "@/lib/aws";
-import { clipLengthOptions, templateIds } from "@/lib/contracts";
+import { clipLengthOptions, clipLengthRules, expectedShortCount, templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
 import { assertJobCreationAllowed } from "@/lib/job-policy";
@@ -16,6 +16,8 @@ const schema = z.object({
   clipLengthOption: z.enum(clipLengthOptions),
   rightsConfirmed: z.literal(true),
   requestId: z.string().uuid(),
+  rangeStartSeconds: z.number().nonnegative(),
+  rangeEndSeconds: z.number().positive(),
 });
 
 export async function POST(request: Request) {
@@ -27,6 +29,17 @@ export async function POST(request: Request) {
     if (existing[0]) return NextResponse.json({ jobId: existing[0].id, status: existing[0].status, usage: await getUsageSnapshot(db, session.id) });
 
     const metadata = await analyzeYoutubeUrl(input.youtubeUrl);
+    const rangeStartSeconds = Math.round(input.rangeStartSeconds * 1000) / 1000;
+    const rangeEndSeconds = Math.round(input.rangeEndSeconds * 1000) / 1000;
+    const selectedDurationSeconds = rangeEndSeconds - rangeStartSeconds;
+    const minimumClipSeconds = clipLengthRules[input.clipLengthOption].min;
+    if (
+      rangeEndSeconds > metadata.durationSeconds + 0.001
+      || selectedDurationSeconds < minimumClipSeconds
+    ) {
+      throw new Error(`선택 구간은 영상 안에 있어야 하며 최소 ${minimumClipSeconds}초여야 합니다.`);
+    }
+    const selectedShortCount = expectedShortCount(selectedDurationSeconds);
     const maxActive = Number(process.env.MVP_MAX_ACTIVE_JOBS_PER_SESSION || 1);
     const dailyLimit = Number(process.env.MVP_DAILY_JOB_LIMIT || 3);
     const now = new Date();
@@ -60,23 +73,25 @@ export async function POST(request: Request) {
         dailyJobs: limits[0].daily,
         maxActiveJobs: maxActive,
         dailyJobLimit: dailyLimit,
-        sourceDurationSeconds: metadata.durationSeconds,
+        sourceDurationSeconds: selectedDurationSeconds,
         usage: beforeUsage,
       });
       await tx`
         insert into shorts_mvp.video_jobs (
           id, mvp_session_id, request_id, youtube_url, youtube_video_id, video_title,
-          channel_name, thumbnail_url, source_duration_seconds, template_id,
+          channel_name, thumbnail_url, source_duration_seconds, range_start_seconds,
+          range_end_seconds, template_id,
           clip_length_option, expected_short_count, rights_confirmed, status, stage, progress
         ) values (
           ${jobId}, ${session.id}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
-          ${metadata.channelName}, ${metadata.thumbnailUrl}, ${metadata.durationSeconds}, ${input.templateId},
-          ${input.clipLengthOption}, ${metadata.expectedShortCount}, true, 'queued', 'queued', 5
+          ${metadata.channelName}, ${metadata.thumbnailUrl}, ${metadata.durationSeconds}, ${rangeStartSeconds},
+          ${rangeEndSeconds}, ${input.templateId}, ${input.clipLengthOption}, ${selectedShortCount},
+          true, 'queued', 'queued', 5
         )
       `;
       await tx`
         insert into shorts_mvp.usage_reservations (mvp_session_id, job_id, source_duration_seconds)
-        values (${session.id}, ${jobId}, ${metadata.durationSeconds})
+        values (${session.id}, ${jobId}, ${Math.ceil(selectedDurationSeconds)})
       `;
       return null;
     });
@@ -89,7 +104,7 @@ export async function POST(request: Request) {
     }
 
     try {
-      const batchJobId = await submitInitialJob(jobId, metadata.durationSeconds);
+      const batchJobId = await submitInitialJob(jobId, selectedDurationSeconds);
       await db`update shorts_mvp.video_jobs set aws_batch_job_id = ${batchJobId} where id = ${jobId}`;
     } catch (error) {
       await db.begin(async (tx) => {

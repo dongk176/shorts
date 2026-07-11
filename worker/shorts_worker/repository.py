@@ -118,7 +118,7 @@ class WorkerRepository:
                   subtitle_segments, subtitles_enabled, template_id, clean_clip_s3_key,
                   output_s3_key, thumbnail_s3_key, file_size_bytes, expires_at, status
                 ) values (
-                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,true,%s,%s,%s,%s,%s,%s,'ready'
+                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,%s,%s,%s,'ready'
                 )
                 on conflict (job_id, clip_index) do nothing
                 """,

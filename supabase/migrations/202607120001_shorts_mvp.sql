@@ -79,6 +79,8 @@ create table if not exists shorts_mvp.video_jobs (
   channel_name text not null,
   thumbnail_url text not null,
   source_duration_seconds integer not null check (source_duration_seconds between 1 and 3600),
+  range_start_seconds numeric(10,3) not null default 0 check (range_start_seconds >= 0),
+  range_end_seconds numeric(10,3) not null check (range_end_seconds > range_start_seconds),
   template_id text not null check (template_id in ('dark-red', 'white-yellow', 'dark-minimal', 'paper')),
   clip_length_option text not null check (clip_length_option in ('sec_30', 'sec_31_60', 'sec_61_180')),
   expected_short_count integer not null check (expected_short_count between 1 and 5),
@@ -102,6 +104,22 @@ create table if not exists shorts_mvp.video_jobs (
   expires_at timestamptz
 );
 
+-- Keep this migration idempotent for projects created before range selection shipped.
+alter table shorts_mvp.video_jobs
+  add column if not exists range_start_seconds numeric(10,3) not null default 0;
+alter table shorts_mvp.video_jobs
+  add column if not exists range_end_seconds numeric(10,3);
+update shorts_mvp.video_jobs
+set range_end_seconds = source_duration_seconds
+where range_end_seconds is null;
+alter table shorts_mvp.video_jobs alter column range_end_seconds set not null;
+alter table shorts_mvp.video_jobs drop constraint if exists video_jobs_range_bounds_check;
+alter table shorts_mvp.video_jobs add constraint video_jobs_range_bounds_check check (
+  range_start_seconds >= 0
+  and range_end_seconds > range_start_seconds
+  and range_end_seconds <= source_duration_seconds
+);
+
 create table if not exists shorts_mvp.generated_shorts (
   id uuid primary key default gen_random_uuid(),
   job_id uuid not null references shorts_mvp.video_jobs(id) on delete cascade,
@@ -114,7 +132,7 @@ create table if not exists shorts_mvp.generated_shorts (
   hook_title text not null check (char_length(hook_title) between 1 and 80),
   channel_display_name text not null check (char_length(channel_display_name) between 1 and 50),
   subtitle_segments jsonb not null default '[]'::jsonb,
-  subtitles_enabled boolean not null default true,
+  subtitles_enabled boolean not null default false,
   template_id text not null check (template_id in ('dark-red', 'white-yellow', 'dark-minimal', 'paper')),
   clean_clip_s3_key text not null,
   output_s3_key text not null,
@@ -131,6 +149,8 @@ create table if not exists shorts_mvp.generated_shorts (
   deleted_at timestamptz,
   unique (job_id, clip_index)
 );
+
+alter table shorts_mvp.generated_shorts alter column subtitles_enabled set default false;
 
 create table if not exists shorts_mvp.usage_reservations (
   id uuid primary key default gen_random_uuid(),
