@@ -8,6 +8,8 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from .errors import IngestionPausedError
+
 
 class WorkerRepository:
     def __init__(self, database_url: str) -> None:
@@ -30,6 +32,37 @@ class WorkerRepository:
                 """,
                 (job_id,),
             ).fetchone()
+
+    def claim_next_mac_job(self, worker_id: str) -> dict[str, Any] | None:
+        with self.connect() as connection, connection.transaction():
+            return connection.execute(
+                """
+                with candidate as (
+                  select id
+                  from shorts_mvp.video_jobs
+                  where execution_backend='mac_pull' and status='queued'
+                  order by created_at
+                  for update skip locked
+                  limit 1
+                )
+                update shorts_mvp.video_jobs j
+                set status='starting', stage='starting', progress=7,
+                    worker_id=%s, claimed_at=now(), heartbeat_at=now(),
+                    attempt_count=j.attempt_count + 1,
+                    error_code=null, error_message=null
+                from candidate
+                where j.id=candidate.id
+                returning j.id, j.attempt_count
+                """,
+                (worker_id[:120],),
+            ).fetchone()
+
+    @contextmanager
+    def ingestion_slot(self) -> Iterator[None]:
+        """Allow parallel YouTube acquisition."""
+        yield
+
+
 
     def get_short(self, short_id: str) -> dict[str, Any] | None:
         with self.connect() as connection:

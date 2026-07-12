@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from shorts_worker.config import Settings
+from shorts_worker.config import Settings, normalize_database_url
 from shorts_worker.errors import InvalidYouTubeUrl, ShortsMakerError
 from shorts_worker.schemas import (
     ClipLengthOption,
@@ -150,6 +150,15 @@ def test_gemini_defaults_match_ai_talk(monkeypatch) -> None:
         settings.gemini_openai_base_url
         == "https://generativelanguage.googleapis.com/v1beta/openai/"
     )
+
+
+def test_worker_database_url_removes_web_only_options() -> None:
+    value = normalize_database_url(
+        "postgresql://user:pass@example.com/db?pgbouncer=true&sslmode=require"
+        "&connection_limit=1&schema=shorts_mvp"
+    )
+
+    assert value == "postgresql://user:pass@example.com/db?sslmode=require"
 
 
 def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:

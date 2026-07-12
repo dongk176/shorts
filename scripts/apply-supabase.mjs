@@ -26,10 +26,15 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL이 필요합니다. 기존 Supabase direct connection URL을 .env.local에 넣어 주세요.");
 }
 
-const migrationPath = path.join(root, "supabase", "migrations", "202607120001_shorts_mvp.sql");
-const migration = fs.readFileSync(migrationPath, "utf8");
+const migrationDirectory = path.join(root, "supabase", "migrations");
+const migrationFiles = fs.readdirSync(migrationDirectory)
+  .filter((name) => name.endsWith(".sql"))
+  .sort();
 const forbidden = /\b(?:create|alter|drop|truncate)\s+(?:table|view|function|type|schema)\s+(?:if\s+(?:not\s+)?exists\s+)?public\./i;
-if (forbidden.test(migration)) throw new Error("migration에서 public schema 변경문을 발견했습니다.");
+for (const file of migrationFiles) {
+  const migration = fs.readFileSync(path.join(migrationDirectory, file), "utf8");
+  if (forbidden.test(migration)) throw new Error(`${file}에서 public schema 변경문을 발견했습니다.`);
+}
 
 const sql = postgres(process.env.DATABASE_URL, { max: 1, connect_timeout: 15, idle_timeout: 5 });
 const publicObjects = async () => sql`
@@ -47,7 +52,10 @@ const publicObjects = async () => sql`
 
 try {
   const before = JSON.stringify(await publicObjects());
-  await sql.unsafe(migration, [], { prepare: false });
+  for (const file of migrationFiles) {
+    const migration = fs.readFileSync(path.join(migrationDirectory, file), "utf8");
+    await sql.unsafe(migration, [], { prepare: false });
+  }
   const after = JSON.stringify(await publicObjects());
   if (before !== after) throw new Error("migration 적용 중 public schema 객체가 변경되었습니다.");
   const plans = await sql`
