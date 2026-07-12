@@ -12,7 +12,7 @@ if [ -n "${WARP_CONF_B64:-}" ]; then
   fi
 
   echo "Starting wireproxy..."
-  wireproxy -d -c "$WARP_CONFIG_PATH" &
+  wireproxy -c "$WARP_CONFIG_PATH" &
   wireproxy_pid=$!
 
   for _ in $(seq 1 40); do
