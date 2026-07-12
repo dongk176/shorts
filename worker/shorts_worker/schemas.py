@@ -70,7 +70,17 @@ class HighlightClip(BaseModel):
     reason: str = ""
 
 
+class HighlightCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    start_seconds: float
+    end_seconds: float
+    hook_title_line1: str = Field(min_length=1)
+    hook_title_line2: str = Field(min_length=1)
+    reason: str = ""
+
+
 class SelectionResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    clips: list[HighlightClip]
+    clips: list[HighlightCandidate]

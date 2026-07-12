@@ -8,6 +8,7 @@ from shorts_worker.config import Settings, normalize_database_url
 from shorts_worker.errors import InvalidYouTubeUrl, ShortsMakerError
 from shorts_worker.schemas import (
     ClipLengthOption,
+    HighlightCandidate,
     HighlightClip,
     OutputLanguage,
     SelectionResponse,
@@ -166,10 +167,11 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     captured: dict[str, object] = {}
     parsed = SelectionResponse(
         clips=[
-            HighlightClip(
+            HighlightCandidate(
                 start_seconds=12,
                 end_seconds=48,
-                hook_title="Gemini가 고른 핵심 장면",
+                hook_title_line1="Gemini가 고른",
+                hook_title_line2="핵심 장면의 반전",
                 reason="테스트 후보",
             )
         ]
@@ -220,7 +222,21 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     assert "시청 지속률이 높은 쇼츠" in request["messages"][0]["content"]
     assert "영상 분석 자료로 해석" in request["messages"][0]["content"]
     assert "자연스러운 일본어로 작성" in request["messages"][0]["content"]
-    assert clips == parsed.clips
+    assert "5자 이상 18자 이하" in request["messages"][0]["content"]
+    assert "hook_title_line1" in request["messages"][0]["content"]
+    assert "예시" not in request["messages"][0]["content"]
+    assert clips[0].hook_title == "Gemini가 고른\n핵심 장면의 반전"
+
+    selector._select_with_gemini(
+        video_title="English title test",
+        duration_seconds=120,
+        transcript=[SubtitleSegment(start=10, end=20, text="Important transcript")],
+        required_count=1,
+        output_language=OutputLanguage.EN,
+    )
+    english_request = captured["request"]
+    assert isinstance(english_request, dict)
+    assert "12자 이상 32자 이하" in english_request["messages"][0]["content"]
 
 
 def test_openai_key_alone_does_not_enable_gemini_selection(monkeypatch) -> None:
@@ -267,7 +283,8 @@ def test_generated_title_is_not_truncated_by_the_worker() -> None:
         transcript=[],
     )
 
-    assert clips[0].hook_title == title
+    assert clips[0].hook_title.replace("\n", " ") == title
+    assert len(clips[0].hook_title.splitlines()) == 2
 
 
 def test_title_over_eighty_characters_does_not_fail_generation() -> None:
@@ -280,7 +297,8 @@ def test_title_over_eighty_characters_does_not_fail_generation() -> None:
         transcript=[],
     )
 
-    assert clips[0].hook_title == title.strip()
+    assert clips[0].hook_title.replace("\n", " ") == title.strip()
+    assert len(clips[0].hook_title.splitlines()) == 2
 
 
 def test_long_transcript_fallback_title_does_not_fail_generation() -> None:
@@ -295,6 +313,7 @@ def test_long_transcript_fallback_title_does_not_fail_generation() -> None:
 
     assert len(clips) == 1
     assert clips[0].hook_title
+    assert len(clips[0].hook_title.splitlines()) == 2
 
 
 def test_selector_falls_back_when_gemini_fails(monkeypatch) -> None:
