@@ -293,61 +293,44 @@ class YtDlpIngestionProvider(IngestionProvider):
         info = self._extract_info(normalized)
         return self._download_best_subtitles(normalized, info, destination)
 
-    @classmethod
-    def _ordered_languages(
-        cls, languages: dict[str, Any], source_language: str
-    ) -> list[str]:
-        ordered: list[str] = []
-        for prefix in (source_language, "ko", "en"):
-            if not prefix:
-                continue
-            language = cls._pick_language(languages, prefix)
-            if language and language not in ordered:
-                ordered.append(language)
-        ordered.extend(
-            language
-            for language in sorted(languages)
-            if language != "live_chat" and language not in ordered
-        )
-        return ordered
-
     def _download_best_subtitles(
         self, normalized_url: str, info: dict[str, Any], destination: Path
     ) -> Path | None:
-        source_language = str(info.get("language") or "")
         destination.mkdir(parents=True, exist_ok=True)
         tracks = (
             (info.get("subtitles") or {}, "--write-subs"),
             (info.get("automatic_captions") or {}, "--write-auto-subs"),
         )
         for languages, mode in tracks:
-            for language in self._ordered_languages(languages, source_language):
-                for old_caption in destination.glob("captions*"):
-                    if old_caption.is_file():
-                        old_caption.unlink(missing_ok=True)
-                try:
-                    self._run(
-                        [
-                            *self._base_args(),
-                            "--skip-download",
-                            mode,
-                            "--sub-langs",
-                            language,
-                            "--sub-format",
-                            "vtt/srt/best",
-                            "--output",
-                            str(destination / "captions.%(ext)s"),
-                            normalized_url,
-                        ],
-                        timeout=min(self.timeout_seconds, 180),
-                    )
-                except IngestionError:
-                    continue
-                candidates = [
-                    path
-                    for path in destination.glob("captions*")
-                    if path.is_file() and path.suffix.lower() in {".vtt", ".srt"}
-                ]
-                if candidates:
-                    return max(candidates, key=lambda path: path.stat().st_size)
+            language = self._pick_language(languages, "ko")
+            if not language:
+                continue
+            for old_caption in destination.glob("captions*"):
+                if old_caption.is_file():
+                    old_caption.unlink(missing_ok=True)
+            try:
+                self._run(
+                    [
+                        *self._base_args(),
+                        "--skip-download",
+                        mode,
+                        "--sub-langs",
+                        language,
+                        "--sub-format",
+                        "vtt/srt/best",
+                        "--output",
+                        str(destination / "captions.%(ext)s"),
+                        normalized_url,
+                    ],
+                    timeout=min(self.timeout_seconds, 180),
+                )
+            except IngestionError:
+                continue
+            candidates = [
+                path
+                for path in destination.glob("captions*")
+                if path.is_file() and path.suffix.lower() in {".vtt", ".srt"}
+            ]
+            if candidates:
+                return max(candidates, key=lambda path: path.stat().st_size)
         return None
