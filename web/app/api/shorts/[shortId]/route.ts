@@ -13,6 +13,7 @@ const patchSchema = z.object({
   subtitlesEnabled: z.boolean(),
   subtitleSegments: z.array(subtitle).max(500),
   templateId: z.enum(templateIds),
+  titleFontScale: z.number().min(0.8).max(1.2).default(1),
 });
 
 export async function PATCH(request: Request, context: { params: Promise<{ shortId: string }> }) {
@@ -41,7 +42,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
       update shorts_mvp.generated_shorts set
         hook_title=${input.hookTitle}, channel_display_name=${input.channelDisplayName},
         subtitles_enabled=${input.subtitlesEnabled}, subtitle_segments=${db.json(input.subtitleSegments)},
-        template_id=${input.templateId}
+        template_id=${input.templateId}, title_font_scale=${input.titleFontScale}
       where id=${shortId} and mvp_session_id=${session.id} and deleted_at is null and expires_at > now()
       returning id, render_version
     `;

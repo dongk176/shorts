@@ -19,7 +19,7 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
   const rows = await db`
     select id, job_id, clip_index, start_seconds, end_seconds, duration_seconds,
       hook_title, channel_display_name, subtitle_segments, subtitles_enabled,
-      template_id, render_version, status, expires_at
+      template_id, title_font_scale, render_version, rerender_progress, status, expires_at
     from shorts_mvp.generated_shorts
     where job_id in ${db(jobIds)} and deleted_at is null
     order by job_id, clip_index
@@ -37,7 +37,9 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       subtitleSegments: row.subtitleSegments,
       subtitlesEnabled: row.subtitlesEnabled,
       templateId: row.templateId,
+      titleFontScale: Number(row.titleFontScale),
       renderVersion: row.renderVersion,
+      rerenderProgress: row.rerenderProgress,
       status: row.status,
       expiresAt: row.expiresAt.toISOString(),
     };
@@ -58,6 +60,7 @@ export async function getRecentJobs(db: Sql, sessionId: string, onlyJobId?: stri
     thumbnailUrl: row.thumbnailUrl,
     sourceDurationSeconds: row.sourceDurationSeconds,
     clipLengthOption: row.clipLengthOption,
+    outputLanguage: row.outputLanguage,
     expectedShortCount: row.expectedShortCount,
     status: row.status,
     stage: row.stage,

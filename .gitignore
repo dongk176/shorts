@@ -16,6 +16,7 @@ worker/.coverage
 # Next.js
 web/node_modules/
 web/.next/
+web/.next-dev/
 web/out/
 web/.eslintcache
 web/*.tsbuildinfo

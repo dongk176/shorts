@@ -10,6 +10,11 @@ from .schemas import SubtitleSegment, TemplateId
 
 PANEL_WIDTH = 1080
 PANEL_HEIGHT = 420
+TITLE_BOTTOM_MARGIN = 44
+TITLE_LINE_GAP = 18
+TITLE_ACCENT_PADDING_X = 24
+TITLE_ACCENT_PADDING_Y = 10
+CHANNEL_TOP_MARGIN = 48
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +66,7 @@ def load_font(size: int, kind: str = "bold") -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(find_font(kind), size=size)
 
 
-def wrap_korean_title(title: str, max_chars: int = 18, max_lines: int = 2) -> list[str]:
+def wrap_korean_title(title: str, max_chars: int = 20, max_lines: int = 2) -> list[str]:
     """Greedy Korean-safe wrapping that prefers spaces but can split long Korean words."""
     manual_lines = [" ".join(line.split()) for line in title.splitlines() if line.strip()]
     if len(manual_lines) > 1:
@@ -141,33 +146,53 @@ def create_title_panel(
     *,
     text_color: str | None = None,
     font_size: int | None = None,
+    font_scale: float = 1.0,
 ) -> Path:
     style = TEMPLATE_STYLES[template_id]
     image = Image.new("RGB", (PANEL_WIDTH, PANEL_HEIGHT), style.background)
     draw = ImageDraw.Draw(image)
     lines = wrap_korean_title(title)
-    font = load_font(font_size, "bold") if font_size else _title_font(draw, lines)
-    line_height = font.size + 22
-    total_height = len(lines) * line_height - 22
-    y = (PANEL_HEIGHT - total_height) // 2
+    if font_size:
+        font = load_font(font_size, "bold")
+    else:
+        fitted_font = _title_font(draw, lines)
+        scaled_size = max(18, min(100, round(fitted_font.size * font_scale)))
+        font = load_font(scaled_size, "bold")
+    line_metrics: list[tuple[str, tuple[int, int, int, int], int, int, int]] = []
     for index, line in enumerate(lines):
+        box = draw.textbbox((0, 0), line, font=font)
+        width = box[2] - box[0]
+        height = box[3] - box[1]
+        accent_padding_y = (
+            TITLE_ACCENT_PADDING_Y
+            if index == 1 and style.accent_background
+            else 0
+        )
+        line_metrics.append((line, box, width, height, accent_padding_y))
+
+    total_height = sum(height + padding_y * 2 for _, _, _, height, padding_y in line_metrics)
+    total_height += TITLE_LINE_GAP * max(0, len(line_metrics) - 1)
+    row_y = PANEL_HEIGHT - TITLE_BOTTOM_MARGIN - total_height
+
+    for index, (line, box, width, height, accent_padding_y) in enumerate(line_metrics):
         color = text_color or (style.primary if index == 0 else style.accent)
-        width = _text_width(draw, line, font)
-        x = (PANEL_WIDTH - width) // 2
+        visible_x = (PANEL_WIDTH - width) // 2
+        visible_y = row_y + accent_padding_y
+        draw_x = visible_x - box[0]
+        draw_y = visible_y - box[1]
         if index == 1 and style.accent_background:
-            padding_x, padding_y = 24, 10
             draw.rounded_rectangle(
                 (
-                    x - padding_x,
-                    y - padding_y,
-                    x + width + padding_x,
-                    y + font.size + padding_y,
+                    visible_x - TITLE_ACCENT_PADDING_X,
+                    row_y,
+                    visible_x + width + TITLE_ACCENT_PADDING_X,
+                    row_y + height + TITLE_ACCENT_PADDING_Y * 2,
                 ),
                 radius=8,
                 fill=style.accent_background,
             )
-        draw.text((x, y), line, font=font, fill=color, stroke_width=0)
-        y += line_height
+        draw.text((draw_x, draw_y), line, font=font, fill=color, stroke_width=0)
+        row_y += height + accent_padding_y * 2 + TITLE_LINE_GAP
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path, format="PNG", optimize=True)
     return output_path
@@ -186,13 +211,19 @@ def create_channel_panel(channel_name: str, template_id: TemplateId, output_path
     text_width = _text_width(draw, name, font)
     group_width = icon_size + gap + text_width
     x = (PANEL_WIDTH - group_width) // 2
-    y = (PANEL_HEIGHT - icon_size) // 2
+    text_box = draw.textbbox((0, 0), name, font=font)
+    text_height = text_box[3] - text_box[1]
+    group_height = max(icon_size, text_height)
+    y = CHANNEL_TOP_MARGIN + (group_height - icon_size) // 2
     draw.ellipse((x, y, x + icon_size, y + icon_size), fill=style.channel)
     inner = style.background
     draw.ellipse((x + 20, y + 13, x + 44, y + 37), fill=inner)
     draw.arc((x + 13, y + 31, x + 51, y + 65), 180, 360, fill=inner, width=8)
     draw.text(
-        (x + icon_size + gap, (PANEL_HEIGHT - font.size) // 2 - 6),
+        (
+            x + icon_size + gap - text_box[0],
+            CHANNEL_TOP_MARGIN + (group_height - text_height) // 2 - text_box[1],
+        ),
         name,
         font=font,
         fill=style.channel,
@@ -211,6 +242,7 @@ def create_panel_overlays(
     prefix: str,
     title_color: str | None = None,
     title_font_size: int | None = None,
+    title_font_scale: float = 1.0,
 ) -> tuple[Path, Path]:
     top = create_title_panel(
         title,
@@ -218,6 +250,7 @@ def create_panel_overlays(
         directory / f"{prefix}_top.png",
         text_color=title_color,
         font_size=title_font_size,
+        font_scale=title_font_scale,
     )
     bottom = create_channel_panel(channel_name, template_id, directory / f"{prefix}_bottom.png")
     return top, bottom

@@ -14,33 +14,27 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
     const session = await requireMvpSession();
     const db = getDb();
     const rows = await db`
-      select output_s3_key, expires_at, render_version
+      select clean_clip_s3_key, expires_at
       from shorts_mvp.generated_shorts
       where id=${shortId} and mvp_session_id=${session.id}
         and status in ('ready', 'rerendering') and deleted_at is null and expires_at > now()
     `;
-    if (!rows[0]) throw new Error("접근할 수 있는 쇼츠를 찾을 수 없습니다.");
+    if (!rows[0]) throw new Error("편집용 영상을 찾을 수 없습니다.");
     const domain = process.env.CLOUDFRONT_DOMAIN;
     const keyPairId = process.env.CLOUDFRONT_KEY_PAIR_ID;
     const privateKeyB64 = process.env.CLOUDFRONT_PRIVATE_KEY_B64;
     const privateKeyPath = process.env.CLOUDFRONT_PRIVATE_KEY_PATH;
-    let privateKey = privateKeyB64
-      ? Buffer.from(privateKeyB64, "base64").toString("utf8")
-      : "";
-    if (!privateKey && privateKeyPath) {
-      privateKey = await readFile(path.resolve(process.cwd(), privateKeyPath), "utf8");
-    }
-    if (!domain || !keyPairId || !privateKey) {
-      throw new Error("CloudFront Signed URL 설정이 완료되지 않았습니다.");
-    }
+    let privateKey = privateKeyB64 ? Buffer.from(privateKeyB64, "base64").toString("utf8") : "";
+    if (!privateKey && privateKeyPath) privateKey = await readFile(path.resolve(process.cwd(), privateKeyPath), "utf8");
+    if (!domain || !keyPairId || !privateKey) throw new Error("CloudFront Signed URL 설정이 완료되지 않았습니다.");
     const expiresAt = rows[0].expiresAt as Date;
     const signedUntil = new Date(Math.min(Date.now() + 15 * 60_000, expiresAt.getTime()));
     const url = getSignedUrl({
-      url: `https://${domain}/${rows[0].outputS3Key}`,
+      url: `https://${domain}/${rows[0].cleanClipS3Key}`,
       keyPairId,
       privateKey,
       dateLessThan: signedUntil.toISOString(),
     });
-    return NextResponse.json({ url, expiresAt: signedUntil.toISOString(), renderVersion: rows[0].renderVersion });
+    return NextResponse.json({ url, expiresAt: signedUntil.toISOString() });
   } catch (error) { return apiError(error); }
 }

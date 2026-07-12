@@ -73,6 +73,7 @@ class VideoRenderer:
         subtitles_enabled: bool,
         work_dir: Path,
         prefix: str,
+        title_font_scale: float = 1.0,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         probe = probe_media(clean_path, timeout=min(30, self.settings.ffmpeg_timeout_seconds))
@@ -87,6 +88,7 @@ class VideoRenderer:
             template_id=template_id,
             directory=work_dir / "overlays",
             prefix=prefix,
+            title_font_scale=title_font_scale,
         )
         ass_path = None
         if subtitles_enabled:

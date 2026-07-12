@@ -124,6 +124,17 @@ class WorkerRepository:
                 (job_id,),
             )
 
+    def update_rerender_progress(self, short_id: str, progress: int) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                update shorts_mvp.generated_shorts
+                set rerender_progress=%s
+                where id=%s and status='rerendering'
+                """,
+                (max(0, min(99, progress)), short_id),
+            )
+
     def add_short(
         self,
         *,
@@ -178,7 +189,7 @@ class WorkerRepository:
                 update shorts_mvp.generated_shorts
                 set rendered_config_hash=md5(concat_ws('|', hook_title,
                   channel_display_name, subtitles_enabled::text,
-                  subtitle_segments::text, template_id))
+                  subtitle_segments::text, template_id, title_font_scale::text))
                 where id=%s and rendered_config_hash is null
                 """,
                 (short_id,),
@@ -275,6 +286,7 @@ class WorkerRepository:
                 """
                 update shorts_mvp.generated_shorts
                 set output_s3_key=%s, file_size_bytes=%s, render_version=%s, status='ready',
+                  rerender_progress=100,
                   rendered_config_hash=pending_render_hash, pending_render_hash=null,
                   rerender_batch_job_id=null
                 where id=%s
@@ -288,7 +300,8 @@ class WorkerRepository:
             connection.execute(
                 """
                 update shorts_mvp.generated_shorts
-                set status='ready', pending_render_hash=null, rerender_batch_job_id=null
+                set status='ready', rerender_progress=0,
+                  pending_render_hash=null, rerender_batch_job_id=null
                 where id=%s and status='rerendering'
                 """,
                 (short_id,),

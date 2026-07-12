@@ -35,6 +35,7 @@ import { GET as getJob } from "./jobs/[jobId]/route";
 import { POST as createJob } from "./jobs/route";
 import { POST as selectPlan } from "./mvp/plan/route";
 import { GET as accessShort } from "./shorts/[shortId]/access/route";
+import { GET as accessEditSource } from "./shorts/[shortId]/edit-source/route";
 import { POST as rerenderShort } from "./shorts/[shortId]/rerender/route";
 import { PATCH as patchShort } from "./shorts/[shortId]/route";
 
@@ -194,6 +195,15 @@ describe("short ownership, expiry, and edit validation", () => {
     const response = await accessShort(
       new Request("http://localhost/api/shorts/short-expired/access"),
       { params: Promise.resolve({ shortId: "short-expired" }) },
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("does not expose another session's clean edit source", async () => {
+    mocks.getDb.mockReturnValue(dbWithRows([]));
+    const response = await accessEditSource(
+      new Request("http://localhost/api/shorts/short-b/edit-source"),
+      { params: Promise.resolve({ shortId: "short-b" }) },
     );
     expect(response.status).toBe(404);
   });

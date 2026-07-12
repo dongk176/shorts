@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { submitInitialJob } from "@/lib/aws";
-import { clipLengthOptions, clipLengthRules, expectedShortCount, templateIds } from "@/lib/contracts";
+import { clipLengthOptions, clipLengthRules, expectedShortCount, outputLanguages, templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
 import { getInitialJobBackend } from "@/lib/job-backend";
@@ -15,6 +15,7 @@ const schema = z.object({
   youtubeUrl: z.string().min(1).max(2048),
   templateId: z.enum(templateIds),
   clipLengthOption: z.enum(clipLengthOptions),
+  outputLanguage: z.enum(outputLanguages).default("ko"),
   rightsConfirmed: z.literal(true),
   requestId: z.string().uuid(),
   rangeStartSeconds: z.number().nonnegative(),
@@ -76,12 +77,12 @@ export async function POST(request: Request) {
           id, mvp_session_id, request_id, youtube_url, youtube_video_id, video_title,
           channel_name, thumbnail_url, source_duration_seconds, range_start_seconds,
           range_end_seconds, template_id,
-          clip_length_option, expected_short_count, rights_confirmed, execution_backend,
+          clip_length_option, output_language, expected_short_count, rights_confirmed, execution_backend,
           status, stage, progress
         ) values (
           ${jobId}, ${session.id}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${metadata.channelName}, ${metadata.thumbnailUrl}, ${metadata.durationSeconds}, ${rangeStartSeconds},
-          ${rangeEndSeconds}, ${input.templateId}, ${input.clipLengthOption}, ${selectedShortCount},
+          ${rangeEndSeconds}, ${input.templateId}, ${input.clipLengthOption}, ${input.outputLanguage}, ${selectedShortCount},
           true, ${executionBackend}, 'queued', 'queued', 5
         )
       `;

@@ -5,7 +5,12 @@ from pathlib import Path
 from PIL import Image
 
 from shorts_worker.config import Settings
-from shorts_worker.overlays import create_ass_subtitles, create_title_panel, wrap_korean_title
+from shorts_worker.overlays import (
+    create_ass_subtitles,
+    create_channel_panel,
+    create_title_panel,
+    wrap_korean_title,
+)
 from shorts_worker.schemas import SubtitleSegment, TemplateId
 from shorts_worker.subtitles import AudioTranscriber, parse_subtitle_text
 
@@ -14,7 +19,7 @@ def test_korean_title_wraps_to_at_most_two_lines() -> None:
     lines = wrap_korean_title("사람들이 가장 많이 놓치는 결정적인 핵심 장면입니다")
     assert 1 <= len(lines) <= 2
     assert all(line.strip() for line in lines)
-    assert sum(len(line.rstrip("…")) for line in lines) <= 30
+    assert sum(len(line.rstrip("…")) for line in lines) <= 40
 
 
 def test_title_wrapping_preserves_user_line_break() -> None:
@@ -37,6 +42,59 @@ def test_korean_title_overlay_is_created(tmp_path: Path) -> None:
         # Text introduces non-background pixels in the black template.
         assert image.getcolors(maxcolors=1_000_000) is not None
         assert len(image.getcolors(maxcolors=1_000_000) or []) > 1
+
+
+def test_two_line_title_sits_near_video_and_accent_contains_text(tmp_path: Path) -> None:
+    output = create_title_panel(
+        "4억 투자 올인, 다\n8400만원 남아……",
+        TemplateId.DARK_RED,
+        tmp_path / "title-position.png",
+        font_size=84,
+    )
+    with Image.open(output).convert("RGB") as image:
+        red_pixels = [
+            (x, y)
+            for y in range(image.height)
+            for x in range(image.width)
+            if image.getpixel((x, y)) == (227, 38, 38)
+        ]
+        assert red_pixels
+        red_left = min(x for x, _ in red_pixels)
+        red_top = min(y for _, y in red_pixels)
+        red_right = max(x for x, _ in red_pixels)
+        red_bottom = max(y for _, y in red_pixels)
+        assert red_top >= 220
+        assert 340 <= red_bottom <= 390
+
+        second_line_text = [
+            (x, y)
+            for y in range(red_top, red_bottom + 1)
+            for x in range(image.width)
+            if image.getpixel((x, y)) == (255, 255, 255)
+        ]
+        assert second_line_text
+        assert red_left < min(x for x, _ in second_line_text)
+        assert max(x for x, _ in second_line_text) < red_right
+        assert red_top < min(y for _, y in second_line_text)
+        assert max(y for _, y in second_line_text) < red_bottom
+
+
+def test_channel_panel_sits_near_video(tmp_path: Path) -> None:
+    output = create_channel_panel(
+        "디글 클래식 : Diggle Classic",
+        TemplateId.DARK_RED,
+        tmp_path / "channel-position.png",
+    )
+    with Image.open(output).convert("RGB") as image:
+        visible_pixels = [
+            (x, y)
+            for y in range(image.height)
+            for x in range(image.width)
+            if image.getpixel((x, y)) != (0, 0, 0)
+        ]
+        assert visible_pixels
+        assert min(y for _, y in visible_pixels) == 48
+        assert max(y for _, y in visible_pixels) <= 120
 
 
 def test_vtt_and_srt_cues_are_normalized() -> None:
