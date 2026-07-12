@@ -23,42 +23,40 @@ def main() -> None:
     pull.add_argument("--idle-timeout", type=float, default=0)
     args = parser.parse_args()
     worker = BatchWorker(Settings())
-    if True:
-        if args.command == "initial":
-            worker.initial(args.job_id)
-        elif args.command == "rerender":
-            worker.rerender(args.short_id)
-        elif args.command == "pull":
-            processed = 0
-            idle_started = time.monotonic()
-            while True:
-                claimed = worker.repository.claim_next_mac_job(args.worker_id)
-                if claimed:
-                    idle_started = time.monotonic()
-                    print(
-                        f"Mac worker {args.worker_id} claimed job {claimed['id']} "
-                        f"attempt {claimed['attempt_count']}",
-                        flush=True,
+    if args.command == "initial":
+        worker.initial(args.job_id)
+    elif args.command == "rerender":
+        worker.rerender(args.short_id)
+    elif args.command == "pull":
+        processed = 0
+        idle_started = time.monotonic()
+        while True:
+            claimed = worker.repository.claim_next_mac_job(args.worker_id)
+            if claimed:
+                idle_started = time.monotonic()
+                print(
+                    f"Mac worker {args.worker_id} claimed job {claimed['id']} "
+                    f"attempt {claimed['attempt_count']}",
+                    flush=True,
+                )
+                try:
+                    worker.initial(
+                        str(claimed["id"]),
+                        attempt_override=int(claimed["attempt_count"]),
                     )
-                    try:
-                        worker.initial(
-                            str(claimed["id"]),
-                            attempt_override=int(claimed["attempt_count"]),
-                        )
-                    except Exception as exc:
-                        print(f"Job {claimed['id']} failed: {type(exc).__name__}", flush=True)
-                    processed += 1
-                    if args.once or (args.max_jobs > 0 and processed >= args.max_jobs):
-                        return
-                elif args.once:
+                except Exception as exc:
+                    print(f"Job {claimed['id']} failed: {type(exc).__name__}", flush=True)
+                processed += 1
+                if args.once or (args.max_jobs > 0 and processed >= args.max_jobs):
                     return
-                elif args.idle_timeout > 0 and (
-                    time.monotonic() - idle_started >= args.idle_timeout
-                ):
-                    return
-                else:
-                    time.sleep(max(1.0, args.poll_seconds))
-
+            elif args.once:
+                return
+            elif args.idle_timeout > 0 and (
+                time.monotonic() - idle_started >= args.idle_timeout
+            ):
+                return
+            else:
+                time.sleep(max(1.0, args.poll_seconds))
 
 
 if __name__ == "__main__":

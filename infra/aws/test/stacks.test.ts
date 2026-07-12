@@ -44,6 +44,14 @@ describe("shorts MVP infrastructure", () => {
     compute.hasResourceProperties("AWS::Batch::ComputeEnvironment", {
       ComputeResources: Match.objectLike({ MaxvCpus: 12, Type: "FARGATE" }),
     });
+    compute.hasResourceProperties("AWS::Batch::JobDefinition", {
+      ContainerProperties: Match.objectLike({
+        RuntimePlatform: {
+          CpuArchitecture: "X86_64",
+          OperatingSystemFamily: "LINUX",
+        },
+      }),
+    });
     compute.hasResourceProperties("AWS::Logs::LogGroup", { RetentionInDays: 14 });
   });
 

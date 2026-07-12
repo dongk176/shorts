@@ -248,6 +248,10 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       timeout: { attemptDurationSeconds: 5400 },
       containerProperties: {
         ...baseContainer,
+        runtimePlatform: {
+          cpuArchitecture: "X86_64",
+          operatingSystemFamily: "LINUX",
+        },
         resourceRequirements: [
           { type: "VCPU", value: "2" },
           { type: "MEMORY", value: "4096" },
@@ -262,6 +266,10 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       timeout: { attemptDurationSeconds: 5400 },
       containerProperties: {
         ...baseContainer,
+        runtimePlatform: {
+          cpuArchitecture: "X86_64",
+          operatingSystemFamily: "LINUX",
+        },
         ephemeralStorage: { sizeInGiB: 30 },
         resourceRequirements: [
           { type: "VCPU", value: "4" },

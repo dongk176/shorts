@@ -11,6 +11,11 @@ concurrency:
   group: shorts-worker-production
   cancel-in-progress: false
 
+env:
+  AWS_REGION: ap-northeast-2
+  AWS_WORKER_BUILD_ROLE_ARN: ${{ vars.AWS_WORKER_BUILD_ROLE_ARN || 'arn:aws:iam::181651591905:role/ShortsMvpCompute-producti-GithubWorkerBuildRole76A3-XtOG3GOjswIm' }}
+  AWS_ECR_REPOSITORY_URI: ${{ vars.AWS_ECR_REPOSITORY_URI || '181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-worker-production' }}
+
 jobs:
   test-and-publish:
     runs-on: ubuntu-latest
@@ -25,10 +30,14 @@ jobs:
       - run: pip install -r worker/requirements-dev.txt
       - run: ruff check worker
       - run: pytest -q worker/tests
+      - name: Validate deployment configuration
+        run: |
+          test -n "$AWS_WORKER_BUILD_ROLE_ARN"
+          test -n "$AWS_ECR_REPOSITORY_URI"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_WORKER_BUILD_ROLE_ARN }}
-          aws-region: ap-northeast-2
+          role-to-assume: ${{ env.AWS_WORKER_BUILD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
       - id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
       - uses: docker/setup-buildx-action@v3
@@ -38,7 +47,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ vars.AWS_ECR_REPOSITORY_URI }}:latest
-            ${{ vars.AWS_ECR_REPOSITORY_URI }}:${{ github.sha }}
+            ${{ env.AWS_ECR_REPOSITORY_URI }}:latest
+            ${{ env.AWS_ECR_REPOSITORY_URI }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
