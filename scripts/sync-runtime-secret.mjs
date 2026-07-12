@@ -19,6 +19,7 @@ const names = [
   "GEMINI_API_KEY",
   "GEMINI_OPENAI_BASE_URL",
   "YOUTUBE_API_KEY",
+  "WARP_CONF_B64",
 ];
 const values = Object.fromEntries(names.map((name) => [name, process.env[name] || ""]));
 values.DATABASE_URL = normalizeWorkerDatabaseUrl(values.DATABASE_URL);
