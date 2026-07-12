@@ -72,6 +72,7 @@ export class ShortsMvpFoundationStack extends cdk.Stack {
           GEMINI_API_KEY: "",
           GEMINI_OPENAI_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/openai/",
           YOUTUBE_API_KEY: "",
+          WARP_CONF_B64: "",
         }),
         generateStringKey: "_bootstrap",
         excludePunctuation: true,
@@ -230,6 +231,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         secret("OPENAI_API_KEY"),
         secret("GEMINI_API_KEY"),
         secret("GEMINI_OPENAI_BASE_URL"),
+        secret("WARP_CONF_B64"),
       ],
     };
     const retryStrategy = {
