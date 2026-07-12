@@ -255,6 +255,19 @@ def test_fallback_title_removes_subtitle_speaker_markers() -> None:
     assert "원본 제목" not in clips[0].hook_title
 
 
+def test_generated_title_is_not_truncated_by_the_worker() -> None:
+    title = "AI 대장주 누가? 엔트로픽 5달 만에 오픈AI를 추월한 이유"
+    clips = normalize_clips(
+        [HighlightClip(start_seconds=10, end_seconds=50, hook_title=title)],
+        video_title="원본 영상",
+        duration_seconds=120,
+        required_count=1,
+        transcript=[],
+    )
+
+    assert clips[0].hook_title == title
+
+
 def test_selector_falls_back_when_gemini_fails(monkeypatch) -> None:
     selector = TranscriptSelector(
         Settings(openai_api_key=None, gemini_api_key="gemini-test-key")

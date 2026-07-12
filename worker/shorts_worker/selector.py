@@ -38,7 +38,7 @@ def overlap_seconds(left: HighlightClip, right: HighlightClip) -> float:
     )
 
 
-def _trim_title(value: str, maximum: int = 24) -> str:
+def _clean_title(value: str) -> str:
     clean = re.sub(r"(?:^|\s)>>\s*", " ", value)
     clean = re.sub(
         r"\[(?:음악|박수|웃음|music|applause|laughter)\]", " ", clean, flags=re.I
@@ -46,7 +46,7 @@ def _trim_title(value: str, maximum: int = 24) -> str:
     clean = " ".join(clean.replace("\n", " ").split()).strip(" -–—.,!?…\"'")
     if not clean:
         return "놓치면 안 되는 핵심 장면"
-    return clean if len(clean) <= maximum else clean[: maximum - 1].rstrip() + "…"
+    return clean
 
 
 def _fallback_title(
@@ -60,7 +60,7 @@ def _fallback_title(
     )
     passage = " ".join(passage.split()).strip(" -–—.,!?…\"'")
     if passage:
-        return _trim_title(passage)
+        return _clean_title(passage)
     return f"놓치면 안 되는 결정적 순간 {index}"
 
 
@@ -197,7 +197,7 @@ def normalize_clips(
             HighlightClip(
                 start_seconds=round(start, 3),
                 end_seconds=round(min(range_end_seconds, start + length), 3),
-                hook_title=_trim_title(candidate.hook_title),
+                hook_title=_clean_title(candidate.hook_title),
                 reason=str(candidate.reason or ""),
             )
         )
@@ -256,7 +256,7 @@ class TranscriptSelector:
             "후킹 제목은 원본 영상 제목을 복사하지 말고, 선택한 구간에서 가장 강한 발언, 반전, "
             "갈등, 결과를 뽑아 유튜브 썸네일용 카피로 작성하세요. 시청자가 내용을 보자마자 ‘왜?’, "
             "‘어떻게?’, ‘결국 무슨 일이 생겼지?’라는 궁금증을 느끼도록 구체적이고 직관적으로 "
-            "표현하세요. 한국어 24자 이내, 최대 2행으로 구성하세요."
+            "표현하세요. 한국어 40자 이내, 최대 2행으로 구성하세요."
         )
         user = (
             f"영상 제목: {video_title}\n영상 길이: {duration_seconds:.3f}초\n"
