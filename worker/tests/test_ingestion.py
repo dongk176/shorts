@@ -31,7 +31,7 @@ def test_youtube_bot_challenge_does_not_recommend_cookie_bypass(monkeypatch) -> 
     assert "cookies" not in message.lower()
 
 
-def test_download_bundle_uses_one_ytdlp_process(
+def test_download_bundle_skips_caption_fetch_when_no_tracks_exist(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls: list[list[str]] = []
@@ -51,8 +51,6 @@ def test_download_bundle_uses_one_ytdlp_process(
             encoding="utf-8",
         )
         (tmp_path / "source.mp4").write_bytes(b"video")
-        (tmp_path / "source.en.vtt").write_text("WEBVTT\n", encoding="utf-8")
-        (tmp_path / "source.ko.vtt").write_text("WEBVTT\n한국어\n", encoding="utf-8")
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
     provider = YtDlpIngestionProvider()
@@ -70,6 +68,66 @@ def test_download_bundle_uses_one_ytdlp_process(
     assert bundle.metadata.video_id == "dQw4w9WgXcQ"
     assert bundle.video_path == tmp_path / "source.mp4"
     assert bundle.subtitle_path is None
+
+
+def test_download_bundle_prefers_official_subtitles(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], *, timeout: float | None = None):
+        calls.append(args)
+        if "--write-info-json" in args:
+            (tmp_path / "source.info.json").write_text(
+                json.dumps({
+                    "id": "dQw4w9WgXcQ", "title": "테스트", "duration": 120,
+                    "language": "en", "subtitles": {"en": [{}]},
+                    "automatic_captions": {"ko": [{}]},
+                }), encoding="utf-8"
+            )
+            (tmp_path / "source.mp4").write_bytes(b"video")
+        else:
+            (tmp_path / "captions.en.vtt").write_text("WEBVTT\n", encoding="utf-8")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    provider = YtDlpIngestionProvider()
+    monkeypatch.setattr(provider, "_run", fake_run)
+    bundle = provider.download_bundle("https://youtu.be/dQw4w9WgXcQ", tmp_path)
+
+    assert len(calls) == 2
+    assert "--write-subs" in calls[1]
+    assert "--write-auto-subs" not in calls[1]
+    assert bundle.subtitle_path == tmp_path / "captions.en.vtt"
+
+
+def test_download_bundle_falls_back_to_automatic_subtitles(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], *, timeout: float | None = None):
+        calls.append(args)
+        if "--write-info-json" in args:
+            (tmp_path / "source.info.json").write_text(
+                json.dumps({
+                    "id": "dQw4w9WgXcQ", "title": "테스트", "duration": 120,
+                    "subtitles": {"en": [{}]}, "automatic_captions": {"ko": [{}]},
+                }), encoding="utf-8"
+            )
+            (tmp_path / "source.mp4").write_bytes(b"video")
+        elif "--write-subs" in args:
+            raise IngestionError("official unavailable")
+        else:
+            (tmp_path / "captions.ko.vtt").write_text("WEBVTT\n", encoding="utf-8")
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    provider = YtDlpIngestionProvider()
+    monkeypatch.setattr(provider, "_run", fake_run)
+    bundle = provider.download_bundle("https://youtu.be/dQw4w9WgXcQ", tmp_path)
+
+    assert "--write-subs" in calls[1]
+    assert "--write-auto-subs" in calls[2]
+    assert bundle.subtitle_path == tmp_path / "captions.ko.vtt"
 
 
 def test_rate_limit_uses_bot_check_circuit_error(monkeypatch) -> None:

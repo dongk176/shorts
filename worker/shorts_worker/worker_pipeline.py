@@ -66,7 +66,11 @@ class BatchWorker:
         for segment in transcript:
             start = max(segment.start, clip.start_seconds)
             end = min(segment.end, clip.end_seconds)
-            if end > start:
+            overlap = end - start
+            segment_duration = segment.end - segment.start
+            if overlap > 0 and (
+                segment_duration <= 0 or overlap / segment_duration >= 0.5
+            ):
                 result.append(
                     SubtitleSegment(
                         start=round(start - clip.start_seconds, 3),
