@@ -27,6 +27,12 @@ function credentials() {
 function batchClient() { return new BatchClient({ region, credentials: credentials() }); }
 function s3Client() { return new S3Client({ region, credentials: credentials() }); }
 
+export function latestJobDefinitionName(value: string) {
+  const arnName = /:job-definition\/([^:]+)(?::\d+)?$/.exec(value)?.[1];
+  if (arnName) return arnName;
+  return value.replace(/:\d+$/, "");
+}
+
 export async function submitInitialJob(jobId: string, durationSeconds: number) {
   if (process.env.AWS_BATCH_MOCK === "true") return `mock-${randomUUID()}`;
   const jobQueue = process.env.AWS_BATCH_JOB_QUEUE;
@@ -35,7 +41,7 @@ export async function submitInitialJob(jobId: string, durationSeconds: number) {
   const result = await batchClient().send(new SubmitJobCommand({
     jobName: `shorts-initial-${jobId}`,
     jobQueue,
-    jobDefinition: definition,
+    jobDefinition: latestJobDefinitionName(definition),
     containerOverrides: { command: ["python", "-m", "shorts_worker", "initial", "--job-id", jobId] },
     retryStrategy: workerRetryStrategy,
     timeout: { attemptDurationSeconds: 5400 },
@@ -52,7 +58,7 @@ export async function submitRerender(shortId: string) {
   const result = await batchClient().send(new SubmitJobCommand({
     jobName: `shorts-rerender-${shortId}`,
     jobQueue,
-    jobDefinition: definition,
+    jobDefinition: latestJobDefinitionName(definition),
     containerOverrides: { command: ["python", "-m", "shorts_worker", "rerender", "--short-id", shortId] },
     retryStrategy: workerRetryStrategy,
     timeout: { attemptDurationSeconds: 5400 },
