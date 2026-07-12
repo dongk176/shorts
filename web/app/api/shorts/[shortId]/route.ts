@@ -8,7 +8,7 @@ import { requireMvpSession } from "@/lib/session";
 
 const subtitle = z.object({ start: z.number().nonnegative(), end: z.number().positive(), text: z.string().max(200) }).refine((item) => item.end > item.start);
 const patchSchema = z.object({
-  hookTitle: z.string().trim().min(1).max(40).refine((value) => value.split("\n").length <= 2, "제목은 최대 2줄입니다."),
+  hookTitle: z.string().trim().min(1).max(80).refine((value) => value.split("\n").length <= 2, "제목은 최대 2줄입니다."),
   channelDisplayName: z.string().trim().min(1).max(50),
   subtitlesEnabled: z.boolean(),
   subtitleSegments: z.array(subtitle).max(500),

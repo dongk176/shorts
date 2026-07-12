@@ -40,19 +40,59 @@ def overlap_seconds(left: HighlightClip, right: HighlightClip) -> float:
     )
 
 
-def _clean_title(value: str) -> str:
+FALLBACK_TITLE_LINES = {
+    OutputLanguage.KO: ("놓치면 안 되는", "핵심 장면"),
+    OutputLanguage.EN: ("The Moment You", "Cannot Miss"),
+    OutputLanguage.JA: ("見逃せない", "重要な瞬間"),
+    OutputLanguage.ZH_CN: ("不容错过的", "关键时刻"),
+    OutputLanguage.ES: ("Un momento que", "debes conocer"),
+    OutputLanguage.FR: ("Le moment à", "ne pas manquer"),
+    OutputLanguage.DE: ("Diesen Moment", "nicht verpassen"),
+    OutputLanguage.PT_BR: ("Um momento que", "você deve ver"),
+}
+
+
+def _clean_title_line(value: str) -> str:
     clean = re.sub(r"(?:^|\s)>>\s*", " ", value)
     clean = re.sub(
         r"\[(?:음악|박수|웃음|music|applause|laughter)\]", " ", clean, flags=re.I
     )
-    clean = " ".join(clean.replace("\n", " ").split()).strip(" -–—.,!?…\"'")
-    if not clean:
-        return "놓치면 안 되는 핵심 장면"
-    return clean
+    return " ".join(clean.split()).strip(" -–—.,!?…\"'")
+
+
+def _two_line_title(value: str, output_language: OutputLanguage) -> str:
+    manual_lines = [_clean_title_line(line) for line in value.splitlines()]
+    manual_lines = [line for line in manual_lines if line]
+    if len(manual_lines) >= 2:
+        return f"{manual_lines[0]}\n{' '.join(manual_lines[1:])}"
+
+    clean = _clean_title_line(value)
+    minimum_total = (
+        10
+        if output_language in {OutputLanguage.KO, OutputLanguage.JA, OutputLanguage.ZH_CN}
+        else 24
+    )
+    if len(clean) < minimum_total:
+        return "\n".join(FALLBACK_TITLE_LINES[output_language])
+    spaces = [index for index, char in enumerate(clean) if char == " "]
+    split_at = (
+        min(spaces, key=lambda index: abs(index - len(clean) / 2))
+        if spaces
+        else len(clean) // 2
+    )
+    first = clean[:split_at].strip()
+    second = clean[split_at:].strip()
+    if not first or not second:
+        return "\n".join(FALLBACK_TITLE_LINES[output_language])
+    return f"{first}\n{second}"
 
 
 def _fallback_title(
-    transcript: list[SubtitleSegment], start: float, end: float, index: int
+    transcript: list[SubtitleSegment],
+    start: float,
+    end: float,
+    index: int,
+    output_language: OutputLanguage,
 ) -> str:
     """Use the selected passage itself instead of leaking the source video title."""
     passage = " ".join(
@@ -62,8 +102,9 @@ def _fallback_title(
     )
     passage = " ".join(passage.split()).strip(" -–—.,!?…\"'")
     if passage:
-        return _clean_title(passage)
-    return f"놓치면 안 되는 결정적 순간 {index}"
+        return _two_line_title(passage, output_language)
+    first, second = FALLBACK_TITLE_LINES[output_language]
+    return f"{first}\n{second} {index}"
 
 
 def deterministic_fallback(
@@ -74,6 +115,7 @@ def deterministic_fallback(
     range_start_seconds: float = 0,
     range_end_seconds: float | None = None,
     clip_length_option: ClipLengthOption = ClipLengthOption.SEC_31_60,
+    output_language: OutputLanguage = OutputLanguage.KO,
 ) -> list[HighlightClip]:
     if required_count < 1:
         return []
@@ -97,7 +139,11 @@ def deterministic_fallback(
             start_seconds=round(start, 3),
             end_seconds=round(min(range_end_seconds, start + clip_length), 3),
             hook_title=_fallback_title(
-                transcript, start, min(range_end_seconds, start + clip_length), index + 1
+                transcript,
+                start,
+                min(range_end_seconds, start + clip_length),
+                index + 1,
+                output_language,
             ),
             reason="자막 또는 AI를 사용할 수 없어 영상 전체에 고르게 배치한 구간입니다.",
         )
@@ -158,6 +204,7 @@ def normalize_clips(
     range_start_seconds: float = 0,
     range_end_seconds: float | None = None,
     clip_length_option: ClipLengthOption = ClipLengthOption.SEC_31_60,
+    output_language: OutputLanguage = OutputLanguage.KO,
 ) -> list[HighlightClip]:
     """Clamp invalid LLM times and enforce at most five seconds of pairwise overlap."""
     if duration_seconds <= 0 or required_count < 1:
@@ -177,6 +224,7 @@ def normalize_clips(
         range_start_seconds,
         range_end_seconds,
         clip_length_option,
+        output_language,
     )
     for candidate in pool:
         if len(accepted) >= required_count:
@@ -199,7 +247,7 @@ def normalize_clips(
             HighlightClip(
                 start_seconds=round(start, 3),
                 end_seconds=round(min(range_end_seconds, start + length), 3),
-                hook_title=_clean_title(candidate.hook_title),
+                hook_title=_two_line_title(candidate.hook_title, output_language),
                 reason=str(candidate.reason or ""),
             )
         )
@@ -245,6 +293,11 @@ class TranscriptSelector:
         )
         minimum, maximum, target = CLIP_LENGTH_RULES[clip_length_option]
         language_name = OUTPUT_LANGUAGE_NAMES[output_language]
+        line_length_guide = (
+            "각 행은 공백과 문장부호를 포함해 5자 이상 18자 이하로 작성하세요."
+            if output_language in {OutputLanguage.KO, OutputLanguage.JA, OutputLanguage.ZH_CN}
+            else "각 행은 공백과 문장부호를 포함해 12자 이상 32자 이하로 작성하세요."
+        )
         system = (
             "당신은 원본 영상의 의미와 맥락을 정확히 살리면서 시청 지속률이 높은 쇼츠를 "
             "기획하는 전문 영상 편집자입니다.\n\n"
@@ -259,13 +312,17 @@ class TranscriptSelector:
             "- 첫 3초 안에 강한 주장, 질문, 반전, 갈등, 감정 변화, 유용한 정보 또는 웃음 "
             "요소가 등장하는 구간을 우선하세요.\n\n"
             "[후킹 제목]\n"
-            "- 각 구간에서 가장 강한 발언, 반전, 갈등 또는 결과를 활용해 궁금증을 만드는 "
-            "제목을 작성하세요.\n"
+            "- 제목은 반드시 1행과 2행으로 나누어 작성하세요.\n"
+            "- 1행에는 인물, 대상, 상황 또는 배경의 핵심 맥락을 담으세요.\n"
+            "- 2행에는 가장 강한 갈등, 반전, 행동 또는 결과를 담으세요.\n"
+            "- 시청자의 시선이 집중되어야 하는 핵심 표현은 2행에 배치하세요.\n"
+            "- 두 행을 이어 읽었을 때 하나의 자연스럽고 완결된 제목이 되도록 작성하세요.\n"
             f"- 원본 언어와 관계없이 자연스러운 {language_name}로 작성하세요.\n"
-            "- 공백과 문장부호를 포함해 18~32자를 권장하며, 최대 40자의 줄바꿈 없는 "
-            "문자열로 완성하세요.\n\n"
-            f"응답 전에 클립 수가 정확히 {required_count}개인지, 모든 hook_title이 40자 "
-            "이하인지 확인하고 JSON만 반환하세요."
+            f"- {line_length_guide}\n"
+            "- 1행은 hook_title_line1, 2행은 hook_title_line2에 각각 줄바꿈 없는 문자열로 "
+            "반환하세요.\n\n"
+            f"응답 전에 클립 수가 정확히 {required_count}개이고 각 제목이 두 행으로 "
+            "구성되었는지 확인한 뒤 JSON만 반환하세요."
         )
         user = (
             f"영상 제목: {video_title}\n영상 길이: {duration_seconds:.3f}초\n"
@@ -288,7 +345,15 @@ class TranscriptSelector:
             raise ValueError("Gemini 구조화 응답을 해석할 수 없습니다.")
         if not isinstance(parsed, SelectionResponse):
             parsed = SelectionResponse.model_validate(parsed)
-        return parsed.clips
+        return [
+            HighlightClip(
+                start_seconds=candidate.start_seconds,
+                end_seconds=candidate.end_seconds,
+                hook_title=f"{candidate.hook_title_line1}\n{candidate.hook_title_line2}",
+                reason=candidate.reason,
+            )
+            for candidate in parsed.clips
+        ]
 
     def select(
         self,
@@ -327,4 +392,5 @@ class TranscriptSelector:
             range_start_seconds=range_start_seconds,
             range_end_seconds=range_end_seconds,
             clip_length_option=clip_length_option,
+            output_language=output_language,
         )
