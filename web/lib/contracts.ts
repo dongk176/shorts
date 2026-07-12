@@ -89,9 +89,14 @@ export const clipLengthRules: Record<ClipLengthOption, { min: number; max: numbe
 };
 
 export function expectedShortCount(durationSeconds: number) {
-  if (durationSeconds < 240) return 1;
-  if (durationSeconds < 600) return 2;
-  if (durationSeconds < 1200) return 3;
-  if (durationSeconds < 2100) return 4;
-  return 5;
+  if (durationSeconds < 240) return 3;
+  if (durationSeconds < 600) return 5;
+  if (durationSeconds < 1200) return 8;
+  if (durationSeconds < 1800) return 10;
+  if (durationSeconds < 2700) return 12;
+  return 15;
+}
+
+export function minimumShortCount(durationSeconds: number) {
+  return durationSeconds < 240 ? 1 : 2;
 }

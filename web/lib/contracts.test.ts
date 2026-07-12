@@ -11,8 +11,8 @@ describe("clip rules", () => {
   });
 
   it.each([
-    [239, 1], [240, 2], [599, 2], [600, 3], [1199, 3],
-    [1200, 4], [2099, 4], [2100, 5], [3600, 5],
+    [239, 3], [240, 5], [599, 5], [600, 8], [1199, 8],
+    [1200, 10], [1799, 10], [1800, 12], [2699, 12], [2700, 15], [3600, 15],
   ])("maps source duration %s to %s shorts", (seconds, count) => {
     expect(expectedShortCount(seconds)).toBe(count);
   });

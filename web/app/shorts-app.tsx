@@ -245,7 +245,7 @@ function ProjectCard({ job, onOpen }: { job: VideoJob; onOpen: () => void }) {
         <h3 className="line-clamp-1 text-sm font-bold text-white">{job.videoTitle}</h3>
         <div className="mt-3 flex items-center justify-between text-xs text-neutral-500">
           <span className={rerenderingShort ? "text-violet-300" : job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-neutral-400"}>{rerenderingShort ? "● 수정 반영 중" : job.status === "completed" ? "● 완료" : job.status === "failed" ? "● 생성 실패" : "● 생성 중"}</span>
-          <span>{isProcessing && !rerenderingShort ? `예상 쇼츠 ${job.expectedShortCount}개` : `쇼츠 ${readyCount || job.shorts.length}개`}</span>
+          <span>{isProcessing && !rerenderingShort ? `최대 쇼츠 ${job.expectedShortCount}개` : `쇼츠 ${readyCount || job.shorts.length}개`}</span>
           <span>{new Date(job.createdAt).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })}</span>
         </div>
       </div>
