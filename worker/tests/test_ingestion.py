@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from shorts_worker.errors import BotCheckError
+from shorts_worker.errors import BotCheckError, IngestionError
 from shorts_worker.ingestion import YtDlpIngestionProvider
 
 
@@ -88,3 +88,70 @@ def test_rate_limit_uses_bot_check_circuit_error(monkeypatch) -> None:
         YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
 
     assert "요청 빈도를 제한" in str(caught.value)
+
+
+def test_missing_warp_does_not_try_dead_local_proxy(monkeypatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.delenv("WARP_PROXY_URL", raising=False)
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+
+    def fake_run(args: list[str], **_kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout="",
+            stderr="ERROR: video unavailable",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(IngestionError):
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+    assert len(calls) == 1
+    assert "--proxy" not in calls[0]
+
+
+def test_proxy_failure_does_not_hide_direct_bot_check(monkeypatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setenv("WARP_PROXY_URL", "socks5://127.0.0.1:1080")
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+
+    def fake_run(args: list[str], **_kwargs):
+        calls.append(args)
+        error = (
+            "ERROR: proxy connection refused"
+            if "--proxy" in args
+            else "ERROR: Sign in to confirm you're not a bot"
+        )
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr=error)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(BotCheckError):
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+    assert len(calls) == 2
+    assert calls[0][-2:] == ["--proxy", "socks5://127.0.0.1:1080"]
+    assert "--proxy" not in calls[1]
+
+
+def test_ready_warp_proxy_is_used_first(monkeypatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setenv("WARP_PROXY_URL", "socks5://127.0.0.1:1080")
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+
+    def fake_run(args: list[str], **_kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = YtDlpIngestionProvider()._run(
+        ["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"]
+    )
+
+    assert result.returncode == 0
+    assert len(calls) == 1
+    assert calls[0][-2:] == ["--proxy", "socks5://127.0.0.1:1080"]

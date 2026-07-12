@@ -61,16 +61,23 @@ class YtDlpIngestionProvider(IngestionProvider):
         timeout: float | None = None,
     ) -> subprocess.CompletedProcess[str]:
         import os
-        proxies = [None, "socks5://127.0.0.1:1080"]
-        if home_proxy := os.environ.get("FALLBACK_PROXY_URL"):
-            proxies.append(home_proxy)
 
-        last_error = None
+        proxies: list[str | None] = []
+        if warp_proxy := os.environ.get("WARP_PROXY_URL"):
+            proxies.append(warp_proxy)
+        proxies.append(None)
+        if fallback_proxy := os.environ.get("FALLBACK_PROXY_URL"):
+            if fallback_proxy not in proxies:
+                proxies.append(fallback_proxy)
+
+        last_error: IngestionError | None = None
+        direct_error: IngestionError | None = None
+        bot_check_error: BotCheckError | None = None
         for proxy in proxies:
             current_args = list(args)
             if proxy:
                 current_args.extend(["--proxy", proxy])
-                
+
             try:
                 result = subprocess.run(
                     current_args,
@@ -84,6 +91,8 @@ class YtDlpIngestionProvider(IngestionProvider):
                 last_error = IngestionError(
                     "YouTube 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."
                 )
+                if proxy is None:
+                    direct_error = last_error
                 continue
             except OSError as exc:
                 raise IngestionError(
@@ -101,28 +110,32 @@ class YtDlpIngestionProvider(IngestionProvider):
             )
             
             if any(message in lowered_output for message in bot_challenges):
-                last_error = BotCheckError(
+                bot_check_error = BotCheckError(
                     "YouTube가 현재 서버의 자동 요청을 제한했습니다. 로그인 정보나 쿠키를 "
                     "이용한 우회는 지원하지 않습니다. 잠시 후 다시 시도하거나 다른 사용 "
                     "허가된 공개 영상을 이용해 주세요."
                 )
+                last_error = bot_check_error
                 continue
-                
+
             if "http error 429" in lowered_output or "too many requests" in lowered_output:
-                last_error = BotCheckError(
+                bot_check_error = BotCheckError(
                     "YouTube가 현재 서버의 요청 빈도를 제한했습니다. 같은 서버에서 즉시 "
                     "재시도하지 않고 잠시 대기합니다."
                 )
+                last_error = bot_check_error
                 continue
-                
+
             if (
                 "connection refused" in lowered_output
                 or "proxy" in lowered_output
                 or "socks" in lowered_output
             ):
                 last_error = IngestionError("프록시 연결 오류로 다운로드할 수 없습니다.")
+                if proxy is None:
+                    direct_error = last_error
                 continue
-                
+
             detail = output.strip().splitlines()
             last_line = detail[-1] if detail else "알 수 없는 오류"
             last_error = IngestionError(
@@ -130,11 +143,16 @@ class YtDlpIngestionProvider(IngestionProvider):
                 "확인해 주세요. "
                 f"({last_line[:300]})"
             )
-            break
-            
+            if proxy is None:
+                direct_error = last_error
+
+        if bot_check_error:
+            raise bot_check_error
+        if direct_error:
+            raise direct_error
         if last_error:
             raise last_error
-            
+
         raise IngestionError("알 수 없는 내부 오류가 발생했습니다.")
 
     def _extract_info(self, youtube_url: str) -> dict[str, Any]:

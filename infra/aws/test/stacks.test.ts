@@ -50,6 +50,9 @@ describe("shorts MVP infrastructure", () => {
           CpuArchitecture: "X86_64",
           OperatingSystemFamily: "LINUX",
         },
+        Secrets: Match.arrayWith([
+          Match.objectLike({ Name: "WARP_CONF_B64" }),
+        ]),
       }),
     });
     compute.hasResourceProperties("AWS::Logs::LogGroup", { RetentionInDays: 14 });
