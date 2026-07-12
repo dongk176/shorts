@@ -50,6 +50,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
             f"id=eq.{shorts[0]['id']}",
             {
                 "status": "ready",
+                "rerender_progress": 0,
                 "pending_render_hash": None,
                 "rerender_batch_job_id": None,
             },

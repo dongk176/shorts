@@ -7,6 +7,20 @@ export type TemplateId = (typeof templateIds)[number];
 export const clipLengthOptions = ["sec_30", "sec_31_60", "sec_61_180"] as const;
 export type ClipLengthOption = (typeof clipLengthOptions)[number];
 
+export const outputLanguages = ["ko", "en", "ja", "zh-CN", "es", "fr", "de", "pt-BR"] as const;
+export type OutputLanguage = (typeof outputLanguages)[number];
+
+export const outputLanguageOptions: Array<{ code: OutputLanguage; label: string }> = [
+  { code: "ko", label: "한국어" },
+  { code: "en", label: "영어" },
+  { code: "ja", label: "일본어" },
+  { code: "zh-CN", label: "중국어(간체)" },
+  { code: "es", label: "스페인어" },
+  { code: "fr", label: "프랑스어" },
+  { code: "de", label: "독일어" },
+  { code: "pt-BR", label: "포르투갈어(브라질)" },
+];
+
 export type UsageSnapshot = {
   usedSeconds: number;
   reservedSeconds: number;
@@ -35,7 +49,9 @@ export type GeneratedShort = {
   subtitleSegments: Array<{ start: number; end: number; text: string }>;
   subtitlesEnabled: boolean;
   templateId: TemplateId;
+  titleFontScale: number;
   renderVersion: number;
+  rerenderProgress: number;
   status: string;
   expiresAt: string;
 };
@@ -47,6 +63,7 @@ export type VideoJob = {
   thumbnailUrl: string;
   sourceDurationSeconds: number;
   clipLengthOption: ClipLengthOption;
+  outputLanguage: OutputLanguage;
   expectedShortCount: number;
   status: string;
   stage: string;

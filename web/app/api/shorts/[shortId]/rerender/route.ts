@@ -12,7 +12,7 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
     const rows = await db`
       select id, status, rendered_config_hash,
         md5(concat_ws('|', hook_title, channel_display_name, subtitles_enabled::text,
-          subtitle_segments::text, template_id)) as current_config_hash
+          subtitle_segments::text, template_id, title_font_scale::text)) as current_config_hash
       from shorts_mvp.generated_shorts
       where id=${shortId} and mvp_session_id=${session.id} and deleted_at is null and expires_at > now()
     `;
@@ -23,7 +23,8 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
     }
     await db`
       update shorts_mvp.generated_shorts
-      set status='rerendering', pending_render_hash=${rows[0].currentConfigHash}
+      set status='rerendering', rerender_progress=5,
+        pending_render_hash=${rows[0].currentConfigHash}
       where id=${shortId}
     `;
     try {
@@ -36,7 +37,8 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
     } catch (error) {
       await db`
         update shorts_mvp.generated_shorts
-        set status='ready', pending_render_hash=null, rerender_batch_job_id=null
+        set status='ready', rerender_progress=0,
+          pending_render_hash=null, rerender_batch_job_id=null
         where id=${shortId}
       `;
       throw error;

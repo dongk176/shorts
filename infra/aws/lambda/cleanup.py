@@ -137,6 +137,7 @@ def reset_stale_rerenders() -> int:
             f"id=eq.{item['id']}&status=eq.rerendering",
             {
                 "status": "ready",
+                "rerender_progress": 0,
                 "pending_render_hash": None,
                 "rerender_batch_job_id": None,
             },

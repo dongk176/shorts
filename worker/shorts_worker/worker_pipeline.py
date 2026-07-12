@@ -15,7 +15,13 @@ from .ingestion import YtDlpIngestionProvider
 from .media import run_command
 from .renderer import VideoRenderer
 from .repository import WorkerRepository
-from .schemas import ClipLengthOption, HighlightClip, SubtitleSegment, TemplateId
+from .schemas import (
+    ClipLengthOption,
+    HighlightClip,
+    OutputLanguage,
+    SubtitleSegment,
+    TemplateId,
+)
 from .selector import TranscriptSelector
 from .storage import ObjectStorage
 from .subtitles import AudioTranscriber, parse_subtitle_file
@@ -124,6 +130,7 @@ class BatchWorker:
                     range_start_seconds=float(job["range_start_seconds"]),
                     range_end_seconds=float(job["range_end_seconds"]),
                     clip_length_option=ClipLengthOption(job["clip_length_option"]),
+                    output_language=OutputLanguage(job["output_language"]),
                 )
                 if not clips:
                     raise RuntimeError("사용할 수 있는 하이라이트 구간이 없습니다.")
@@ -222,7 +229,9 @@ class BatchWorker:
         shutil.rmtree(work_dir, ignore_errors=True)
         work_dir.mkdir(parents=True)
         try:
+            self.repository.update_rerender_progress(short_id, 12)
             clean_path = self.storage.download(item["clean_clip_s3_key"], work_dir / "clean.mp4")
+            self.repository.update_rerender_progress(short_id, 28)
             output_path = work_dir / "output.mp4"
             subtitles = [
                 SubtitleSegment.model_validate(segment) for segment in item["subtitle_segments"]
@@ -237,10 +246,13 @@ class BatchWorker:
                 subtitles_enabled=bool(item["subtitles_enabled"]),
                 work_dir=work_dir,
                 prefix="rerender",
+                title_font_scale=float(item["title_font_scale"]),
             )
+            self.repository.update_rerender_progress(short_id, 82)
             version = int(item["render_version"]) + 1
             new_key = f"outputs/{item['mvp_session_id']}/{item['job_id']}/{short_id}/v{version}.mp4"
             size = self.storage.upload(output_path, new_key, "video/mp4")
+            self.repository.update_rerender_progress(short_id, 94)
             old_key = self.repository.complete_rerender(short_id, new_key, size, version)
             try:
                 self.storage.delete(old_key)

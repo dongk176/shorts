@@ -18,6 +18,29 @@ class ClipLengthOption(str, Enum):
     SEC_61_180 = "sec_61_180"
 
 
+class OutputLanguage(str, Enum):
+    KO = "ko"
+    EN = "en"
+    JA = "ja"
+    ZH_CN = "zh-CN"
+    ES = "es"
+    FR = "fr"
+    DE = "de"
+    PT_BR = "pt-BR"
+
+
+OUTPUT_LANGUAGE_NAMES = {
+    OutputLanguage.KO: "한국어",
+    OutputLanguage.EN: "영어",
+    OutputLanguage.JA: "일본어",
+    OutputLanguage.ZH_CN: "중국어(간체)",
+    OutputLanguage.ES: "스페인어",
+    OutputLanguage.FR: "프랑스어",
+    OutputLanguage.DE: "독일어",
+    OutputLanguage.PT_BR: "포르투갈어(브라질)",
+}
+
+
 CLIP_LENGTH_RULES = {
     ClipLengthOption.SEC_30: (20.0, 30.0, 29.0),
     ClipLengthOption.SEC_31_60: (31.0, 60.0, 50.0),
@@ -43,7 +66,7 @@ class HighlightClip(BaseModel):
 
     start_seconds: float
     end_seconds: float
-    hook_title: str = Field(min_length=1, max_length=80)
+    hook_title: str = Field(min_length=1)
     reason: str = ""
 
 
