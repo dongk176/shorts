@@ -56,6 +56,13 @@ describe("shorts MVP infrastructure", () => {
       }),
     });
     compute.hasResourceProperties("AWS::Logs::LogGroup", { RetentionInDays: 14 });
+    compute.hasResourceProperties("AWS::EC2::SecurityGroup", {
+      SecurityGroupEgress: Match.arrayWith([Match.objectLike({
+        IpProtocol: "udp",
+        FromPort: 2408,
+        ToPort: 2408,
+      })]),
+    });
   });
 
   it("serializes BOT_CHECK recovery without automatic Batch retries", () => {

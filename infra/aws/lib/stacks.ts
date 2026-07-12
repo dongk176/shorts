@@ -157,6 +157,9 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       allowAllOutbound: false,
     });
     securityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), "HTTPS only");
+    securityGroup.addEgressRule(
+      ec2.Peer.anyIpv4(), ec2.Port.udp(2408), "Cloudflare WARP WireGuard"
+    );
     securityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(5432), "Supabase Postgres");
     securityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(6543), "Supabase pooler");
     securityGroup.addEgressRule(
