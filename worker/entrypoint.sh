@@ -11,6 +11,10 @@ if [ -n "${WARP_CONF_B64:-}" ]; then
     exit 2
   fi
 
+  if ! grep -qi '^\[Socks5\][[:space:]]*$' "$WARP_CONFIG_PATH"; then
+    printf '\n[Socks5]\nBindAddress = 127.0.0.1:1080\n' >> "$WARP_CONFIG_PATH"
+  fi
+
   # wireproxy v1.0.8 requires /dev/log to exist when installing its Landlock rules.
   # Fargate containers do not provide a syslog socket, and wireproxy does not use it
   # for this foreground process, so a private placeholder is sufficient.
