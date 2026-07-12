@@ -23,14 +23,20 @@ def clip_count_for_duration(duration_seconds: float, *, maximum_seconds: int = 3
     if duration_seconds > maximum_seconds:
         raise ShortsMakerError("최대 60분 길이의 영상까지만 만들 수 있습니다.")
     if duration_seconds < 4 * 60:
-        return 1
-    if duration_seconds < 10 * 60:
-        return 2
-    if duration_seconds < 20 * 60:
         return 3
-    if duration_seconds < 35 * 60:
-        return 4
-    return 5
+    if duration_seconds < 10 * 60:
+        return 5
+    if duration_seconds < 20 * 60:
+        return 8
+    if duration_seconds < 30 * 60:
+        return 10
+    if duration_seconds < 45 * 60:
+        return 12
+    return 15
+
+
+def minimum_clip_count_for_duration(duration_seconds: float) -> int:
+    return 1 if duration_seconds < 4 * 60 else 2
 
 
 def overlap_seconds(left: HighlightClip, right: HighlightClip) -> float:
@@ -215,34 +221,25 @@ def normalize_clips(
     minimum_length = min(configured_minimum, available_duration)
     maximum_length = min(configured_maximum, available_duration)
     accepted: list[HighlightClip] = []
+    minimum_count = minimum_clip_count_for_duration(available_duration)
 
-    pool = list(candidates) + deterministic_fallback(
-        video_title,
-        duration_seconds,
-        required_count,
-        transcript,
-        range_start_seconds,
-        range_end_seconds,
-        clip_length_option,
-        output_language,
-    )
-    for candidate in pool:
+    def accept(candidate: HighlightClip) -> None:
         if len(accepted) >= required_count:
-            break
+            return
         try:
             raw_start = float(candidate.start_seconds)
             raw_end = float(candidate.end_seconds)
         except (TypeError, ValueError):
-            continue
+            return
         if not math.isfinite(raw_start) or not math.isfinite(raw_end) or raw_end <= raw_start:
-            continue
+            return
         raw_length = raw_end - raw_start
         length = max(minimum_length, min(maximum_length, raw_length))
         start = _find_start(
             raw_start, length, accepted, range_start_seconds, range_end_seconds
         )
         if start is None:
-            continue
+            return
         accepted.append(
             HighlightClip(
                 start_seconds=round(start, 3),
@@ -251,6 +248,14 @@ def normalize_clips(
                 reason=str(candidate.reason or ""),
             )
         )
+    for candidate in candidates:
+        accept(candidate)
+    if len(accepted) < minimum_count:
+        for candidate in deterministic_fallback(
+            video_title, duration_seconds, minimum_count, transcript,
+            range_start_seconds, range_end_seconds, clip_length_option, output_language,
+        ):
+            accept(candidate)
     return sorted(accepted, key=lambda clip: clip.start_seconds)
 
 
@@ -291,51 +296,45 @@ class TranscriptSelector:
             timeout=self.settings.ai_timeout_seconds,
             max_retries=1,
         )
-        minimum, maximum, target = CLIP_LENGTH_RULES[clip_length_option]
+        minimum, maximum, _ = CLIP_LENGTH_RULES[clip_length_option]
         language_name = OUTPUT_LANGUAGE_NAMES[output_language]
+        minimum_count = minimum_clip_count_for_duration(range_end_seconds - range_start_seconds)
         system = (
-            "너는 유튜브 트렌드를 깊이 이해하는 100만 유튜버의 전담 숏폼 기획자이자 "
-            "탑티어 카피라이터입니다.\n\n"
-            "제공되는 타임스탬프 영상 대본을 분석해 요청된 Pydantic JSON 구조로만 "
-            "반환하세요.\n\n"
+            "너는 대한민국 상위 0.1% 조회수를 만들어내는 탑티어 숏폼 기획자이자 편집자야.\n\n"
+            "아래 제공되는 유튜브 롱폼 대본을 분석해서, 대중의 시선을 사로잡을 쇼츠용 "
+            "킬러 구간을 발췌하고 각 구간에 최적화된 2줄 후킹 제목을 만들어줘.\n\n"
+            f"최종 쇼츠 개수는 {minimum_count}개부터 {required_count}개 사이에서 결정해.\n\n"
+            "각 구간의 매력과 완성도를 쇼츠 개수보다 우선하고, 흥미로운 구간의 수에 "
+            "따라 최종 개수를 결정할 것.\n\n"
             "[구간 선정]\n"
-            "제공되는 원본 영상 대본에서 시청자의 관심을 강하게 끌거나 유용한 통찰을 "
-            f"주는 쇼츠용 킬러 포인트를 정확히 {required_count}개 선정하세요.\n\n"
-            f"- 각 구간은 {minimum:.0f}~{maximum:.0f}초이며, 가능하면 {target:.0f}초에 "
-            "가깝게 선택하세요.\n"
-            "- 선택 가능한 영상 범위 안에서 자연스러운 문장 경계에 맞추세요.\n"
-            "- 앞내용 없이도 이해되고 구간 안에서 내용이 자연스럽게 마무리되어야 합니다.\n"
-            "- 아래 요소 중 하나 이상이 강하게 포함된 구간을 우선하세요.\n\n"
+            "- 아래 요소 중 하나 이상이 강하게 포함된 구간을 최우선으로 찾을 것.\n\n"
             "1. 인사이트 폭격: 대중의 고정관념을 깨거나 과감하고 단호한 발언이 나오는 "
             "구간\n"
-            "2. 텐션 극대화: 갈등, 반전 또는 감정이 최고조에 달해 몰입감이 높은 순간\n"
-            "3. 공감과 실용성: 저장하고 다시 보고 싶을 만큼 직관적이고 유용한 정보가 "
-            "압축된 구간\n\n"
-            "- 특히 첫 3초 안에 강한 발언, 질문, 갈등 또는 궁금증을 만드는 말이 등장하는 "
-            "구간을 우선하세요.\n"
-            "- 설명만 길거나 결론이 없는 구간은 제외하세요.\n"
-            "- 비슷한 내용은 가장 강한 구간 하나만 선택하세요.\n"
-            "- 구간 사이의 중복은 최대 5초로 유지하세요.\n\n"
+            "2. 텐션 극대화: 갈등, 반전 또는 감정이 최고조에 달해 몰입감이 압도적인 순간\n"
+            "3. 공감과 실용성: 저장하고 다시 보고 싶을 만큼 직관적이고 뼈 때리는 정보가 "
+            "요약된 구간\n\n"
+            "[구간 분할 규칙]\n"
+            f"1. 길이: 각 구간은 {minimum:.0f}~{maximum:.0f}초 사이로 구성할 것.\n"
+            "2. 흐름: 내용의 흐름에 맞춰 범위 안에서 자연스럽게 길이를 결정할 것.\n"
+            "3. 경계: 선택 가능한 영상 범위 안에서 자연스러운 문장의 시작과 끝 경계에 맞출 것.\n"
+            "4. 독립성: 앞부분 없이도 해당 구간만으로 이해되고, 구간 안에서 내용이 "
+            "자연스럽게 마무리되도록 구성할 것.\n"
+            "5. 중복 제한: 구간 사이의 시간 중복은 최대 5초로 유지할 것.\n"
+            "6. 다양성: 각 쇼츠가 서로 다른 핵심 내용과 매력을 갖도록 구성할 것.\n\n"
             "[후킹 제목]\n"
-            "1. 선정된 각 구간의 대본을 분석해 후킹 제목을 작성하세요.\n"
-            "2. 반드시 딱 2행으로 작성하세요.\n"
-            "3. 1행과 2행은 각각 공백 포함 5~18자로 작성하세요.\n"
-            "4. 군더더기 없이 직관적이고 강한 인상을 주는 말투를 사용하세요.\n"
-            "5. 다음 요소 중 해당 구간에 가장 적합한 요소를 제목에 반영하세요.\n"
-            "- 시청자의 깊은 공감\n"
-            "- 결말을 궁금하게 만드는 호기심\n"
-            "- 대본의 핵심적인 반전이나 갈등\n\n"
-            f"- 자연스러운 {language_name}로 작성하세요.\n"
+            "- 형식: 각 쇼츠당 반드시 2행으로 작성할 것.\n"
+            "- 글자 수: 1행과 2행을 각각 공백 포함 5~18자로 작성할 것.\n"
+            "- 톤앤매너: 군더더기 없이 직관적이고 타격감 있는 단어를 사용할 것.\n"
+            f"- 자연스러운 {language_name} 구어체로 작성할 것.\n"
             "- 1행은 hook_title_line1, 2행은 hook_title_line2에 줄바꿈 없는 문자열로 "
-            "반환하세요.\n\n"
-            f"응답 전에 클립 수가 정확히 {required_count}개인지, 각 구간의 길이와 중복 "
-            "조건이 맞는지, 모든 제목이 2행이며 각 행이 5~18자인지 확인하세요.\n\n"
-            "JSON 외의 설명이나 문장은 반환하지 마세요."
+            "반환할 것.\n\n"
+            "최종 응답은 요청된 Pydantic JSON 구조로만 반환할 것."
         )
         user = (
             f"영상 제목: {video_title}\n영상 길이: {duration_seconds:.3f}초\n"
             f"선택 가능 구간: {range_start_seconds:.3f}~{range_end_seconds:.3f}초\n"
-            f"필요한 클립 수: {required_count}\n\n타임스탬프 자막:\n"
+            f"최소 쇼츠 수: {minimum_count}\n최대 쇼츠 수: {required_count}"
+            "\n\n타임스탬프 자막:\n"
             f"{self._transcript_text(transcript)}"
         )
         response = client.beta.chat.completions.parse(

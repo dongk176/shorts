@@ -55,15 +55,17 @@ def test_non_allowlisted_or_malformed_urls_are_rejected(url: str) -> None:
 @pytest.mark.parametrize(
     ("duration", "expected"),
     [
-        (239.9, 1),
-        (240, 2),
-        (599.9, 2),
-        (600, 3),
-        (1_199.9, 3),
-        (1_200, 4),
-        (2_099.9, 4),
-        (2_100, 5),
-        (3_600, 5),
+        (239.9, 3),
+        (240, 5),
+        (599.9, 5),
+        (600, 8),
+        (1_199.9, 8),
+        (1_200, 10),
+        (1_799.9, 10),
+        (1_800, 12),
+        (2_699.9, 12),
+        (2_700, 15),
+        (3_600, 15),
     ],
 )
 def test_clip_count_boundaries(duration: float, expected: int) -> None:
@@ -118,8 +120,23 @@ def test_clips_stay_inside_user_selected_range() -> None:
         range_start_seconds=180,
         range_end_seconds=360,
     )
-    assert len(clips) == 2
+    assert len(clips) == 1
     assert all(180 <= clip.start_seconds < clip.end_seconds <= 360 for clip in clips)
+
+
+def test_valid_ai_clip_count_is_not_filled_to_maximum() -> None:
+    clips = normalize_clips(
+        [
+            HighlightClip(start_seconds=0, end_seconds=50, hook_title="첫 후보"),
+            HighlightClip(start_seconds=60, end_seconds=110, hook_title="둘째 후보"),
+            HighlightClip(start_seconds=120, end_seconds=170, hook_title="셋째 후보"),
+        ],
+        video_title="가변 개수 검증",
+        duration_seconds=600,
+        required_count=8,
+    )
+
+    assert len(clips) == 3
 
 
 @pytest.mark.parametrize(
