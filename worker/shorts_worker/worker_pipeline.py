@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .config import Settings
+from .errors import BotCheckError
 from .ingestion import YtDlpIngestionProvider
 from .media import run_command
 from .renderer import VideoRenderer
@@ -82,28 +83,33 @@ class BatchWorker:
             raise RuntimeError("썸네일 생성에 실패했습니다.")
         return output
 
-    def initial(self, job_id: str) -> None:
+    def initial(self, job_id: str, *, attempt_override: int | None = None) -> None:
         job = self.repository.get_job(job_id)
         if not job:
             raise KeyError(job_id)
         work_dir = self.settings.temp_dir / job_id
-        attempt = max(1, int(os.getenv("AWS_BATCH_JOB_ATTEMPT", "1")))
+        attempt = attempt_override or max(1, int(os.getenv("AWS_BATCH_JOB_ATTEMPT", "1")))
         shutil.rmtree(work_dir, ignore_errors=True)
         work_dir.mkdir(parents=True)
         try:
             self.repository.begin_attempt(job_id, attempt)
             with self.heartbeat(job_id):
                 self.repository.stage(job_id, "downloading", 10, "원본 영상을 준비하고 있습니다.")
-                metadata = self.ingestion.analyze_url(job["youtube_url"])
-                if metadata.video_id != job["youtube_video_id"] or metadata.duration_seconds > 3600:
+                with self.repository.ingestion_slot():
+                    bundle = self.ingestion.download_bundle(
+                        job["youtube_url"], work_dir / "source"
+                    )
+                metadata = bundle.metadata
+                if (
+                    metadata.video_id != job["youtube_video_id"]
+                    or metadata.duration_seconds > self.settings.max_video_duration_seconds
+                ):
                     raise ValueError("원본 영상 검증에 실패했습니다.")
-                source = self.ingestion.download_video(job["youtube_url"], work_dir / "source")
+                source = bundle.video_path
 
                 self.repository.stage(job_id, "transcribing", 28, "영상 내용을 분석하고 있습니다.")
                 transcript: list[SubtitleSegment] = []
-                subtitle_path = self.ingestion.download_subtitles(
-                    job["youtube_url"], work_dir / "captions"
-                )
+                subtitle_path = bundle.subtitle_path
                 if subtitle_path:
                     transcript = parse_subtitle_file(subtitle_path)
                 if not transcript:
@@ -197,7 +203,8 @@ class BatchWorker:
                 except Exception:
                     pass
             self.repository.remove_partial_shorts(job_id)
-            if attempt >= 2:
+            non_retryable = isinstance(exc, BotCheckError)
+            if non_retryable or attempt >= 2:
                 self.repository.fail_job(job_id, type(exc).__name__, str(exc))
             else:
                 self.repository.retry_job(job_id, type(exc).__name__, str(exc))

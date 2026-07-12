@@ -89,12 +89,12 @@ Vercel에는 `AWS_ROLE_ARN`, region, Batch queue/definitions, S3 bucket, CloudFr
 | `AWS_BATCH_JOB_QUEUE` | Vercel | 작업 queue |
 | `AWS_BATCH_JOB_DEFINITION_SHORT/LONG` | Vercel | 15분 이하/초과 job definition |
 | `AWS_S3_OUTPUT_BUCKET` | Vercel, worker | private media bucket |
+| `BOT_CHECK_COOLDOWN_SECONDS` | worker | BOT_CHECK 이후 공유 회로 차단 시간(기본 1800초) |
 | `CLOUDFRONT_DOMAIN` | Vercel | output CDN |
 | `CLOUDFRONT_KEY_PAIR_ID` | Vercel | Signed URL public-key id |
 | `CLOUDFRONT_PRIVATE_KEY_B64` | Vercel secret | Signed URL private key |
 | `MVP_PLAN_ENFORCEMENT` | Vercel | 기본 `false`; plan 한도 차단 여부 |
 | `MVP_MAX_ACTIVE_JOBS_PER_SESSION` | Vercel | 기본 1 |
-| `MVP_DAILY_JOB_LIMIT` | Vercel | 기본 3 |
 
 Supabase REST를 쓰는 cleanup Lambda에는 AWS Secrets Manager를 통해 `SUPABASE_URL`과 `SUPABASE_SERVICE_ROLE_KEY`가 필요합니다. 이 값은 브라우저에 노출되지 않습니다.
 
@@ -112,7 +112,7 @@ make verify
 
 - 원본 최대 60분, 다운로드 최대 1080p, 출력 최대 30fps, 최대 5개
 - Batch Fargate 총 12 vCPU, On-Demand, NAT Gateway 없음
-- 세션 동시 작업 1개, 하루 기본 3개, request idempotency
+- 세션 동시 작업 1개, YouTube 수집 전역 동시 실행 1개, request idempotency
 - S3 versioning 없음, incomplete multipart 1일, media 30일 lifecycle
 - ECR 최근 8개, CloudWatch 14일
 - Worker heartbeat 60초, Batch 실패 이벤트와 2시간 stale cleanup
@@ -127,3 +127,27 @@ make verify
 ## 저작권 및 한계
 
 소유하거나 명시적으로 사용 허가를 받은 공개 영상만 처리해야 합니다. 비공개·연령 제한·DRM·로그인 필요 영상 우회나 브라우저 쿠키 사용은 구현하지 않습니다. yt-dlp 기반 수집은 YouTube 정책과 변경에 영향을 받으므로 상용 공개 전 법무·약관 검토가 필요합니다. 얼굴/화자 추적 없이 중앙 crop하며 AI 품질은 원본 자막과 음질에 좌우됩니다.
+
+Worker는 영상·메타데이터를 한 번의 yt-dlp 프로세스로 수집하고, 자막을 별도로 요청하지
+않고 오디오 전사 경로를 사용합니다. 여러 Batch 작업이
+동시에 시작되어도 PostgreSQL advisory lock으로 YouTube 수집은 전역 1개만 실행합니다.
+BOT_CHECK가 확인되면 해당 작업을 재시도하지 않고 공유 회로를 기본 30분간 차단하여 같은
+AWS egress에서 연속 요청이 발생하지 않도록 합니다. 원본 전체는 S3에 저장하지 않으며 작업
+중 임시 디스크에만 존재하고 `finally`에서 삭제됩니다.
+
+### Mac pull worker
+
+초기 작업을 집 Mac의 공인 IP로 처리하려면 웹 런타임에
+`VIDEO_JOB_BACKEND=mac_pull`을 설정합니다. 이 모드에서 웹은 AWS Batch를 제출하지 않고
+Supabase queue에 작업만 저장합니다. 각 Mac은 아래 명령으로 queue를 polling합니다.
+
+```bash
+./scripts/run-mac-worker.sh
+```
+
+두 Mac이 같은 공유기를 사용해도 PostgreSQL advisory lock 때문에 YouTube 다운로드는 한 번에
+하나만 실행됩니다. 다운로드가 끝나 lock이 해제되면 각 Mac은 AI 분석과 FFmpeg 렌더링을
+병렬로 계속 수행할 수 있습니다. 원본은 컨테이너 임시 디스크에서 작업 종료 시 삭제되고,
+완성 결과와 편집용 짧은 클립만 기존 private S3에 업로드됩니다. runner는 작업마다 AWS CLI의
+단기 자격증명을 새로 받아 Docker에 전달하므로 장기 access key를 저장하지 않습니다. 각 Mac에는
+Docker Desktop, 유효한 `aws login`, 동일한 `.env.local`이 필요합니다.

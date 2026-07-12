@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 def _positive_int(name: str, default: int) -> int:
@@ -19,11 +20,27 @@ def _positive_float(name: str, default: float) -> float:
         return default
 
 
+def normalize_database_url(value: str | None) -> str | None:
+    if not value:
+        return value
+    parsed = urlsplit(value)
+    unsupported = {"pgbouncer", "connection_limit", "schema"}
+    query = urlencode(
+        [(key, item) for key, item in parse_qsl(parsed.query) if key not in unsupported]
+    )
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, parsed.fragment))
+
+
 @dataclass(slots=True)
 class Settings:
-    database_url: str | None = field(default_factory=lambda: os.getenv("DATABASE_URL"))
+    database_url: str | None = field(
+        default_factory=lambda: normalize_database_url(os.getenv("DATABASE_URL"))
+    )
     s3_bucket: str | None = field(default_factory=lambda: os.getenv("AWS_S3_OUTPUT_BUCKET"))
     aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "ap-northeast-2"))
+    bot_check_cooldown_seconds: int = field(
+        default_factory=lambda: _positive_int("BOT_CHECK_COOLDOWN_SECONDS", 1800)
+    )
     temp_dir: Path = field(
         default_factory=lambda: Path(
             os.getenv("TEMP_DIR") or os.getenv("TEMP_ROOT") or "/tmp/shorts-maker"

@@ -223,6 +223,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { name: "AWS_REGION", value: this.region },
         { name: "AWS_S3_OUTPUT_BUCKET", value: bucket.bucketName },
         { name: "TEMP_ROOT", value: "/tmp/shorts-jobs" },
+        { name: "BOT_CHECK_COOLDOWN_SECONDS", value: "1800" },
       ],
       secrets: [
         secret("DATABASE_URL"),
@@ -231,11 +232,19 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         secret("GEMINI_OPENAI_BASE_URL"),
       ],
     };
+    const retryStrategy = {
+      attempts: 2,
+      evaluateOnExit: [
+        { action: "EXIT", onExitCode: "42" },
+        { action: "EXIT", onExitCode: "43" },
+        { action: "RETRY", onExitCode: "*" },
+      ],
+    };
     const shortDefinition = new batch.CfnJobDefinition(this, "ShortJobDefinition", {
       type: "container",
       platformCapabilities: ["FARGATE"],
       jobDefinitionName: `shorts-mvp-short-${props.environment}`,
-      retryStrategy: { attempts: 2 },
+      retryStrategy,
       timeout: { attemptDurationSeconds: 5400 },
       containerProperties: {
         ...baseContainer,
@@ -249,7 +258,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       type: "container",
       platformCapabilities: ["FARGATE"],
       jobDefinitionName: `shorts-mvp-long-${props.environment}`,
-      retryStrategy: { attempts: 2 },
+      retryStrategy,
       timeout: { attemptDurationSeconds: 5400 },
       containerProperties: {
         ...baseContainer,

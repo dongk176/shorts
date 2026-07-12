@@ -4,6 +4,14 @@ import { DeleteObjectsCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/c
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 
 const region = process.env.AWS_REGION || "ap-northeast-2";
+const workerRetryStrategy = {
+  attempts: 2,
+  evaluateOnExit: [
+    { action: "EXIT" as const, onExitCode: "42" },
+    { action: "EXIT" as const, onExitCode: "43" },
+    { action: "RETRY" as const, onExitCode: "*" },
+  ],
+};
 
 function credentials() {
   const roleArn = process.env.AWS_ROLE_ARN;
@@ -29,7 +37,7 @@ export async function submitInitialJob(jobId: string, durationSeconds: number) {
     jobQueue,
     jobDefinition: definition,
     containerOverrides: { command: ["python", "-m", "shorts_worker", "initial", "--job-id", jobId] },
-    retryStrategy: { attempts: 2 },
+    retryStrategy: workerRetryStrategy,
     timeout: { attemptDurationSeconds: 5400 },
   }));
   if (!result.jobId) throw new Error("AWS Batch 작업 ID를 받지 못했습니다.");
@@ -46,7 +54,7 @@ export async function submitRerender(shortId: string) {
     jobQueue,
     jobDefinition: definition,
     containerOverrides: { command: ["python", "-m", "shorts_worker", "rerender", "--short-id", shortId] },
-    retryStrategy: { attempts: 2 },
+    retryStrategy: workerRetryStrategy,
     timeout: { attemptDurationSeconds: 5400 },
   }));
   if (!result.jobId) throw new Error("AWS Batch 재렌더링 작업 ID를 받지 못했습니다.");

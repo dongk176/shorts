@@ -47,6 +47,25 @@ describe("shorts MVP infrastructure", () => {
     compute.hasResourceProperties("AWS::Logs::LogGroup", { RetentionInDays: 14 });
   });
 
+  it("serializes BOT_CHECK recovery without automatic Batch retries", () => {
+    const { compute } = stacks();
+    compute.hasResourceProperties("AWS::Batch::JobDefinition", {
+      ContainerProperties: Match.objectLike({
+        Environment: Match.arrayWith([
+          { Name: "BOT_CHECK_COOLDOWN_SECONDS", Value: "1800" },
+        ]),
+      }),
+      RetryStrategy: {
+        Attempts: 2,
+        EvaluateOnExit: [
+          { Action: "EXIT", OnExitCode: "42" },
+          { Action: "EXIT", OnExitCode: "43" },
+          { Action: "RETRY", OnExitCode: "*" },
+        ],
+      },
+    });
+  });
+
   it("does not create wildcard IAM actions", () => {
     const { compute } = stacks();
     const policies = compute.findResources("AWS::IAM::Policy");

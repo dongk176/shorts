@@ -3,9 +3,7 @@ import { assertJobCreationAllowed } from "./job-policy";
 
 const base = {
   activeJobs: 0,
-  dailyJobs: 0,
   maxActiveJobs: 1,
-  dailyJobLimit: 3,
   sourceDurationSeconds: 900,
   usage: {
     usedSeconds: 0,
@@ -25,10 +23,6 @@ describe("job abuse and plan limits", () => {
 
   it("enforces the per-session active job limit", () => {
     expect(() => assertJobCreationAllowed({ ...base, activeJobs: 1 })).toThrow("처리 중");
-  });
-
-  it("enforces the daily abuse limit", () => {
-    expect(() => assertJobCreationAllowed({ ...base, dailyJobs: 3 })).toThrow("오늘");
   });
 
   it("allows MVP plan overage unless enforcement is enabled", () => {

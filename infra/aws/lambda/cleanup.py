@@ -73,12 +73,19 @@ def release_stale_jobs() -> int:
     jobs = rest(
         "video_jobs",
         query=(
-            "select=id,aws_batch_job_id,status,heartbeat_at,created_at"
+            "select=id,aws_batch_job_id,status,heartbeat_at,created_at,"
+            "execution_backend,claimed_at"
             f"&status=not.in.{terminal}&created_at=lt.{cutoff}&limit=100"
         ),
     ) or []
     released = 0
     for job in jobs:
+        if (
+            job.get("execution_backend") == "mac_pull"
+            and job.get("status") == "queued"
+            and not job.get("claimed_at")
+        ):
+            continue
         batch_id = job.get("aws_batch_job_id")
         if batch_id:
             described = batch.describe_jobs(jobs=[batch_id]).get("jobs", [])

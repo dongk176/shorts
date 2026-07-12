@@ -15,6 +15,9 @@ class IngestionError(ShortsMakerError):
     pass
 
 
+class BotCheckError(IngestionError):
+    """YouTube rejected the worker egress as automated traffic."""
+
+
 class RenderError(ShortsMakerError):
     pass
-
