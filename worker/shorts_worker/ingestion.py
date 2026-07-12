@@ -80,13 +80,15 @@ class YtDlpIngestionProvider(IngestionProvider):
                     check=False,
                     shell=False,
                 )
-            except subprocess.TimeoutExpired as exc:
+            except subprocess.TimeoutExpired:
                 last_error = IngestionError(
                     "YouTube 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."
                 )
                 continue
             except OSError as exc:
-                raise IngestionError("yt-dlp를 실행할 수 없습니다. 설치 상태를 확인해 주세요.") from exc
+                raise IngestionError(
+                    "yt-dlp를 실행할 수 없습니다. 설치 상태를 확인해 주세요."
+                ) from exc
             
             if result.returncode == 0:
                 return result
@@ -113,8 +115,12 @@ class YtDlpIngestionProvider(IngestionProvider):
                 )
                 continue
                 
-            if "connection refused" in lowered_output or "proxy" in lowered_output or "socks" in lowered_output:
-                last_error = IngestionError(f"프록시 연결 오류로 다운로드할 수 없습니다.")
+            if (
+                "connection refused" in lowered_output
+                or "proxy" in lowered_output
+                or "socks" in lowered_output
+            ):
+                last_error = IngestionError("프록시 연결 오류로 다운로드할 수 없습니다.")
                 continue
                 
             detail = output.strip().splitlines()

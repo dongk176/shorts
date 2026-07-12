@@ -8,8 +8,6 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from .errors import IngestionPausedError
-
 
 class WorkerRepository:
     def __init__(self, database_url: str) -> None:
