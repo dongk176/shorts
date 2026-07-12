@@ -222,6 +222,7 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     assert "시청 지속률이 높은 쇼츠" in request["messages"][0]["content"]
     assert "영상 분석 자료로 해석" in request["messages"][0]["content"]
     assert "자연스러운 일본어로 작성" in request["messages"][0]["content"]
+    assert "자연스러운 구어체" in request["messages"][0]["content"]
     assert "5자 이상 18자 이하" in request["messages"][0]["content"]
     assert "hook_title_line1" in request["messages"][0]["content"]
     assert "예시" not in request["messages"][0]["content"]

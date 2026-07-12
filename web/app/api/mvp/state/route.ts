@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { getPlans, getRecentJobs } from "@/lib/data";
+import { getGeneratedShortCount, getPlans, getRecentJobs } from "@/lib/data";
 import { apiError } from "@/lib/http";
 import { requireMvpSession } from "@/lib/session";
 import { getUsageSnapshot } from "@/lib/usage";
@@ -11,9 +11,10 @@ export async function GET() {
   try {
     const session = await requireMvpSession();
     const db = getDb();
-    const [plans, usage, recentJobs] = await Promise.all([
+    const [plans, usage, recentJobs, generatedShortCount] = await Promise.all([
       getPlans(db), getUsageSnapshot(db, session.id), getRecentJobs(db, session.id),
+      getGeneratedShortCount(db),
     ]);
-    return NextResponse.json({ sessionId: session.id, selectedPlanCode: session.selectedPlanCode, plans, usage, recentJobs });
+    return NextResponse.json({ sessionId: session.id, selectedPlanCode: session.selectedPlanCode, generatedShortCount, plans, usage, recentJobs });
   } catch (error) { return apiError(error); }
 }
