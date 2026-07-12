@@ -467,9 +467,9 @@ export function ShortsApp() {
           </div>
           <button disabled={busy} className="ai-button">{busy ? "확인 중..." : "지금 변환하기"}<span aria-hidden="true">✦</span></button>
         </form>
-        <div className="mt-10 flex flex-col items-center gap-3">
-          <div className="flex -space-x-3" aria-hidden="true"><span className="creator-dot creator-one">J</span><span className="creator-dot creator-two">M</span><span className="creator-dot creator-three">S</span><span className="creator-dot creator-more">+9k</span></div>
-          <p className="text-xs font-medium text-[#c99d97]">매달 10,000명 이상의 크리에이터가 사용 중</p>
+        <div className="mt-10 flex flex-col items-center gap-1">
+          <strong className="text-2xl font-extrabold tabular-nums text-white">{(state?.generatedShortCount ?? 4321).toLocaleString("ko-KR")}</strong>
+          <p className="text-xs font-medium text-[#c99d97]">지금까지 생성된 쇼츠</p>
         </div>
       </section>
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}

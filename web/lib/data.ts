@@ -14,6 +14,15 @@ export async function getPlans(db: Sql): Promise<Plan[]> {
   })) as Plan[];
 }
 
+export async function getGeneratedShortCount(db: Sql): Promise<number> {
+  const rows = await db`
+    select coalesce((
+      select value from shorts_mvp.site_metrics where key = 'generated_shorts'
+    ), 4321)::bigint as value
+  `;
+  return Number(rows[0].value);
+}
+
 export async function getShortsForJobs(db: Sql, jobIds: string[]) {
   if (!jobIds.length) return new Map<string, GeneratedShort[]>();
   const rows = await db`

@@ -318,6 +318,7 @@ class TranscriptSelector:
             "- 시청자의 시선이 집중되어야 하는 핵심 표현은 2행에 배치하세요.\n"
             "- 두 행을 이어 읽었을 때 하나의 자연스럽고 완결된 제목이 되도록 작성하세요.\n"
             f"- 원본 언어와 관계없이 자연스러운 {language_name}로 작성하세요.\n"
+            "- 실제 대화에서 말하듯 친근하고 자연스러운 구어체로 작성하세요.\n"
             f"- {line_length_guide}\n"
             "- 1행은 hook_title_line1, 2행은 hook_title_line2에 각각 줄바꿈 없는 문자열로 "
             "반환하세요.\n\n"

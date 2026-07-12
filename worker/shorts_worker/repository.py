@@ -152,7 +152,7 @@ class WorkerRepository:
         expires_at: Any,
     ) -> None:
         with self.connect() as connection:
-            connection.execute(
+            inserted = connection.execute(
                 """
                 insert into shorts_mvp.generated_shorts (
                   id, job_id, mvp_session_id, user_id, clip_index, start_seconds,
@@ -163,6 +163,7 @@ class WorkerRepository:
                   %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,%s,%s,%s,'ready'
                 )
                 on conflict (job_id, clip_index) do nothing
+                returning id
                 """,
                 (
                     short_id,
@@ -183,7 +184,15 @@ class WorkerRepository:
                     file_size,
                     expires_at,
                 ),
-            )
+            ).fetchone()
+            if inserted:
+                connection.execute(
+                    """
+                    update shorts_mvp.site_metrics
+                    set value=value + 1, updated_at=now()
+                    where key='generated_shorts'
+                    """
+                )
             connection.execute(
                 """
                 update shorts_mvp.generated_shorts

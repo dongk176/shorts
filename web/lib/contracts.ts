@@ -76,6 +76,7 @@ export type VideoJob = {
 export type MvpState = {
   sessionId: string;
   selectedPlanCode: PlanCode;
+  generatedShortCount: number;
   plans: Plan[];
   usage: UsageSnapshot;
   recentJobs: VideoJob[];
