@@ -180,14 +180,14 @@ function Editor({ item, onClose, onChanged }: { item: GeneratedShort; onClose: (
     return () => { cancelled = true; };
   }, [item.id]);
 
-  const save = async (rerender: boolean) => {
+  const save = async () => {
     setSaving(true); setError(null);
     try {
       await requestJson(`/api/shorts/${item.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ hookTitle: title, channelDisplayName: channel, subtitlesEnabled, subtitleSegments: segments, templateId, titleFontScale }),
       });
-      if (rerender) await requestJson(`/api/shorts/${item.id}/rerender`, { method: "POST" });
+      await requestJson(`/api/shorts/${item.id}/rerender`, { method: "POST" });
       await onChanged();
       onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "저장하지 못했습니다."); }
@@ -215,7 +215,7 @@ function Editor({ item, onClose, onChanged }: { item: GeneratedShort; onClose: (
           {subtitlesEnabled && <div className="mt-3 max-h-44 space-y-2 overflow-y-auto rounded-lg border border-white/10 p-3">{segments.map((segment, index) => <label key={`${segment.start}-${index}`} className="grid grid-cols-[70px_1fr] items-center gap-2 text-xs text-neutral-500"><span>{formatTimestamp(segment.start)}</span><input value={segment.text} onChange={(event) => setSegments((current) => current.map((value, position) => position === index ? { ...value, text: event.target.value } : value))} className="h-9 rounded border border-white/10 bg-black/30 px-2 text-sm text-white" /></label>)}</div>}
           <div className="mt-5"><div className="mb-3 flex items-end justify-between"><div><h3 className="text-sm font-semibold">템플릿</h3><p className="mt-1 text-xs text-neutral-500">최종 영상의 제목·영상·채널 배치를 미리 확인하세요.</p></div><span className="text-xs font-semibold text-red-300">{template.name}</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{templates.map((value) => <button key={value.id} type="button" aria-pressed={templateId === value.id} onClick={() => setTemplateId(value.id)} className={`rounded-xl border-2 p-2 transition ${templateId === value.id ? "border-red-500 bg-red-500/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}><TemplatePreview template={value} /><span className="mt-2 block text-center text-xs font-semibold">{value.name}</span></button>)}</div></div>
           {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
-          <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={!validTitle || !channel.trim() || saving} onClick={() => void save(false)} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold disabled:opacity-40">저장</button><button disabled={!validTitle || !channel.trim() || saving} onClick={() => void save(true)} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{saving ? "처리 중..." : "영상에 적용"}</button></div>
+          <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={!validTitle || !channel.trim() || saving} onClick={() => void save()} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{saving ? "처리 중..." : "영상에 적용"}</button></div>
         </div>
       </div>
     </div>
