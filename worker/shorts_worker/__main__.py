@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import argparse
 import socket
-import sys
 import time
 
 from .config import Settings
-from .errors import BotCheckError
 from .worker_pipeline import BatchWorker
 
 
@@ -25,7 +23,7 @@ def main() -> None:
     pull.add_argument("--idle-timeout", type=float, default=0)
     args = parser.parse_args()
     worker = BatchWorker(Settings())
-    try:
+    if True:
         if args.command == "initial":
             worker.initial(args.job_id)
         elif args.command == "rerender":
