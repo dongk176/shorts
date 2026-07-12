@@ -297,7 +297,9 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       MEDIA_BUCKET: bucket.bucketName,
       AWS_BATCH_JOB_QUEUE: queue.ref,
     };
-    const lambdaCode = lambda.Code.fromAsset(path.join(__dirname, "../lambda"));
+    const lambdaCode = lambda.Code.fromAsset(path.join(__dirname, "../lambda"), {
+      exclude: ["__pycache__", "*.pyc"],
+    });
     const cleanupLogGroup = new logs.LogGroup(this, "CleanupLogs", {
       logGroupName: `/shorts-mvp/${props.environment}/cleanup`,
       retention: logs.RetentionDays.TWO_WEEKS,
