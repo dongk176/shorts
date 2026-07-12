@@ -11,6 +11,14 @@ if [ -n "${WARP_CONF_B64:-}" ]; then
     exit 2
   fi
 
+  # wireproxy v1.0.8 requires /dev/log to exist when installing its Landlock rules.
+  # Fargate containers do not provide a syslog socket, and wireproxy does not use it
+  # for this foreground process, so a private placeholder is sufficient.
+  if [ ! -e /dev/log ]; then
+    touch /dev/log
+    chmod 600 /dev/log
+  fi
+
   echo "Starting wireproxy..."
   wireproxy -c "$WARP_CONFIG_PATH" &
   wireproxy_pid=$!
