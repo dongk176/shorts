@@ -238,7 +238,7 @@ def test_ready_warp_proxy_is_used_first(monkeypatch) -> None:
     assert calls[0][-2:] == ["--proxy", "socks5://127.0.0.1:1080"]
 
 
-def test_bot_check_stops_the_current_attempt_without_switching_networks(monkeypatch) -> None:
+def test_bot_check_tries_each_distinct_network_before_failing(monkeypatch) -> None:
     calls: list[list[str]] = []
     monkeypatch.setenv("WARP_PROXY_URL", "socks5://127.0.0.1:1080")
     monkeypatch.setenv("FALLBACK_PROXY_URL", "socks5://127.0.0.1:2080")
@@ -257,8 +257,36 @@ def test_bot_check_stops_the_current_attempt_without_switching_networks(monkeypa
     with pytest.raises(BotCheckError):
         YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
 
-    assert len(calls) == 1
+    assert len(calls) == 3
     assert calls[0][-2:] == ["--proxy", "socks5://127.0.0.1:1080"]
+    assert "--proxy" not in calls[1]
+    assert calls[2][-2:] == ["--proxy", "socks5://127.0.0.1:2080"]
+
+
+def test_warp_bot_check_falls_back_to_successful_direct_connection(monkeypatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setenv("WARP_PROXY_URL", "socks5://127.0.0.1:1080")
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+
+    def fake_run(args: list[str], **_kwargs):
+        calls.append(args)
+        if "--proxy" in args:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=1,
+                stdout="",
+                stderr="ERROR: Sign in to confirm you're not a bot",
+            )
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = YtDlpIngestionProvider()._run(
+        ["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"]
+    )
+
+    assert result.returncode == 0
+    assert len(calls) == 2
 
 
 def test_temporary_network_failure_is_retryable(monkeypatch) -> None:

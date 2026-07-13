@@ -55,7 +55,7 @@ export async function analyzeYoutubeUrl(input: string) {
     videoId,
     normalizedUrl,
     title: item.snippet.title,
-    channelName: item.snippet.channelTitle,
+    channelName: Array.from(item.snippet.channelTitle.trim()).slice(0, 50).join("") || "YouTube 채널",
     thumbnailUrl: thumbnails.at(-1)?.url || thumbnails[0]?.url || "",
     durationSeconds,
     expectedShortCount: expectedShortCount(durationSeconds),

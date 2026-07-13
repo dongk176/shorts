@@ -88,13 +88,17 @@ describe("shorts MVP infrastructure", () => {
     });
   });
 
-  it("uses a one-minute SQS retry and no native Prepare retry", () => {
+  it("uses bounded Prepare and Render attempts with a one-minute SQS retry", () => {
     const { compute } = stacks();
     compute.hasResourceProperties("AWS::Batch::JobDefinition", {
       RetryStrategy: {
         Attempts: 1,
       },
-      Timeout: { AttemptDurationSeconds: 840 },
+      Timeout: { AttemptDurationSeconds: 3600 },
+    });
+    compute.hasResourceProperties("AWS::Batch::JobDefinition", {
+      JobDefinitionName: "shorts-mvp-render-test",
+      Timeout: { AttemptDurationSeconds: 1200 },
     });
     compute.resourceCountIs("AWS::SQS::Queue", 3);
     compute.hasResourceProperties("AWS::SQS::Queue", {

@@ -8,13 +8,13 @@ alter table shorts_mvp.video_jobs
   add column if not exists dispatch_batch_id uuid;
 
 update shorts_mvp.video_jobs
-set deadline_at = coalesce(deadline_at, created_at + interval '15 minutes'),
+set deadline_at = coalesce(deadline_at, created_at + interval '90 minutes'),
     planned_short_count = coalesce(planned_short_count, expected_short_count)
 where deadline_at is null or planned_short_count is null;
 
 alter table shorts_mvp.video_jobs
   alter column deadline_at set not null,
-  alter column deadline_at set default (now() + interval '15 minutes'),
+  alter column deadline_at set default (now() + interval '90 minutes'),
   alter column planned_short_count set not null;
 
 alter table shorts_mvp.video_jobs

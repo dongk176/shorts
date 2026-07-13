@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import boto3
-from common import iso_now, patch, rest
+from common import iso_now, log_event, patch, rest
 
 s3 = boto3.client("s3")
 batch = boto3.client("batch")
@@ -62,6 +62,36 @@ def expire_shorts() -> tuple[int, int]:
                 "deleted_at": iso_now(),
                 "subtitle_segments": [],
             },
+        )
+    return len(items), deleted_objects
+
+
+def cleanup_failed_shorts() -> tuple[int, int]:
+    """Delete artifacts for terminal failures, retrying on the next minute if S3 fails."""
+    items = rest(
+        "generated_shorts",
+        query=(
+            "select=id,job_id,mvp_session_id,output_s3_key,clean_clip_s3_key,"
+            "thumbnail_s3_key&status=eq.failed&deleted_at=is.null&limit=200"
+        ),
+    ) or []
+    deleted_objects = 0
+    for item in items:
+        predictable_thumbnail = (
+            f"thumbnails/{item['mvp_session_id']}/{item['job_id']}/{item['id']}.jpg"
+        )
+        keys = [
+            item.get("output_s3_key"),
+            item.get("clean_clip_s3_key"),
+            item.get("thumbnail_s3_key"),
+            predictable_thumbnail,
+            *_version_keys(item),
+        ]
+        deleted_objects += _delete_keys(keys)
+        patch(
+            "generated_shorts",
+            f"id=eq.{item['id']}&status=eq.failed&deleted_at=is.null",
+            {"deleted_at": iso_now(), "subtitle_segments": []},
         )
     return len(items), deleted_objects
 
@@ -155,12 +185,12 @@ def enforce_deadlines() -> int:
         for active_batch_id in batch_ids:
             try:
                 batch.terminate_job(
-                    jobId=active_batch_id, reason="15 minute job deadline reached"
+                    jobId=active_batch_id, reason="job processing deadline reached"
                 )
             except Exception:
                 try:
                     batch.cancel_job(
-                        jobId=active_batch_id, reason="15 minute job deadline reached"
+                        jobId=active_batch_id, reason="job processing deadline reached"
                     )
                 except Exception:
                     pass
@@ -210,13 +240,17 @@ def reset_stale_rerenders() -> int:
 
 def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
     deadlines = enforce_deadlines()
+    failed, failed_objects = cleanup_failed_shorts()
     expired, objects = expire_shorts()
     stale = release_stale_jobs()
     rerenders = reset_stale_rerenders()
-    return {
+    result = {
         "expiredShorts": expired,
-        "deletedObjects": objects,
+        "cleanedFailedShorts": failed,
+        "deletedObjects": objects + failed_objects,
         "releasedStaleJobs": stale,
         "resetStaleRerenders": rerenders,
         "enforcedDeadlines": deadlines,
     }
+    log_event("cleanup_completed", **result)
+    return result

@@ -309,7 +309,7 @@ def test_fallback_title_removes_subtitle_speaker_markers() -> None:
     assert "원본 제목" not in clips[0].hook_title
 
 
-def test_generated_title_is_not_truncated_by_the_worker() -> None:
+def test_generated_title_inside_database_limit_is_preserved() -> None:
     title = "AI 대장주 누가? 엔트로픽 5달 만에 오픈AI를 추월한 이유"
     clips = normalize_clips(
         [HighlightClip(start_seconds=10, end_seconds=50, hook_title=title)],
@@ -324,7 +324,7 @@ def test_generated_title_is_not_truncated_by_the_worker() -> None:
 
 
 def test_title_over_eighty_characters_does_not_fail_generation() -> None:
-    title = "아주 긴 제목도 작업 자체를 실패시키지 않고 원문을 그대로 보존해야 합니다 " * 4
+    title = "아주 긴 제목도 작업 자체를 실패시키지 않고 안전하게 제한되어야 합니다 " * 4
     clips = normalize_clips(
         [HighlightClip(start_seconds=10, end_seconds=50, hook_title=title)],
         video_title="원본 영상",
@@ -333,7 +333,7 @@ def test_title_over_eighty_characters_does_not_fail_generation() -> None:
         transcript=[],
     )
 
-    assert clips[0].hook_title.replace("\n", " ") == title.strip()
+    assert len(clips[0].hook_title) <= 80
     assert len(clips[0].hook_title.splitlines()) == 2
 
 
@@ -349,6 +349,7 @@ def test_long_transcript_fallback_title_does_not_fail_generation() -> None:
 
     assert len(clips) == 1
     assert clips[0].hook_title
+    assert len(clips[0].hook_title) <= 80
     assert len(clips[0].hook_title.splitlines()) == 2
 
 

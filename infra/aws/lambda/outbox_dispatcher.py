@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import boto3
-from common import patch, rest
+from common import log_event, patch, rest
 
 sqs = boto3.client("sqs")
 queue_url = os.environ["WORK_DISPATCH_QUEUE_URL"]
@@ -52,6 +52,11 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
             )
             jobs += int(item["item_count"])
         except Exception as exc:
+            log_event(
+                "job_outbox_dispatch_failed",
+                dispatch_batch_id=batch_id,
+                error_type=type(exc).__name__,
+            )
             patch("dispatch_batches", f"id=eq.{batch_id}", {
                 "status": "failed", "error_message": str(exc)[:1000],
             })
@@ -76,6 +81,11 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
                 }, separators=(",", ":")),
             )
         except Exception as exc:
+            log_event(
+                "short_outbox_dispatch_failed",
+                short_id=item.get("short_id"),
+                error_type=type(exc).__name__,
+            )
             patch("short_outbox", f"id=eq.{item['outbox_id']}", {
                 "status": "pending", "dispatched_at": None,
                 "last_error": str(exc)[:1000],

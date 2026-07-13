@@ -73,3 +73,8 @@ def iso_now() -> str:
     from datetime import UTC, datetime
 
     return datetime.now(UTC).isoformat()
+
+
+def log_event(event: str, **fields: object) -> None:
+    """Emit searchable operational context without exception text or secrets."""
+    print(json.dumps({"event": event, **fields}, separators=(",", ":"), default=str))

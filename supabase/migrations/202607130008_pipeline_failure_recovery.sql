@@ -279,13 +279,14 @@ begin
   where job_id=p_job_id and status='reserved';
 
   update shorts_mvp.generated_shorts
-  set status='failed', deleted_at=coalesce(deleted_at, now()),
+  set status='failed', render_progress=0,
       render_error_code='job_deadline',
       render_error_message=(
         '영상을 가져오지 못했습니다. 영상이 공개 상태인지, 로그인·연령·지역 제한이 '
         || '없는지, 삭제되거나 비공개 처리되지 않았는지 확인한 뒤 다시 시도해 주세요.'
       )
-  where job_id=p_job_id and status not in ('expired','deleted');
+  where job_id=p_job_id and status in ('rendering','rerendering','ready')
+    and deleted_at is null;
 
   insert into shorts_mvp.job_events (job_id,stage,progress,message)
   values (p_job_id, 'failed', 100, '작업 제한 시간이 종료되었습니다.');
