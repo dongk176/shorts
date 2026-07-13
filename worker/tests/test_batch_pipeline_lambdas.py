@@ -17,6 +17,7 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
     fake_boto3 = SimpleNamespace(client=lambda service: fake_sqs)
     fake_common = ModuleType("common")
     fake_common.iso_now = lambda: "2026-07-13T12:00:00+00:00"
+    fake_common.log_event = MagicMock()
     fake_common.patch = MagicMock()
     fake_common.rest = MagicMock()
     missing = object()
@@ -184,6 +185,39 @@ def test_render_failure_at_deadline_uses_a_render_specific_message() -> None:
     assert job_patch["error_code"] == "render_failed"
     assert job_patch["error_message"] == module.RENDER_FINAL_MESSAGE
     assert "가져오지" not in str(job_patch["error_message"])
+    short_patch = next(body for table, _, body in patches if table == "generated_shorts")
+    assert short_patch["status"] == "failed"
+    assert short_patch["render_error_code"] == "render_failed"
+
+
+def test_failed_short_cleanup_deletes_versions_before_marking_deleted() -> None:
+    module, _ = _load_lambda("cleanup")
+    item = {
+        "id": "short-a",
+        "job_id": "job-a",
+        "mvp_session_id": "session-a",
+        "output_s3_key": None,
+        "clean_clip_s3_key": "edit-sources/session-a/job-a/short-a.mp4",
+        "thumbnail_s3_key": None,
+    }
+    module.rest = MagicMock(return_value=[item])
+    module._version_keys = MagicMock(
+        return_value=["outputs/session-a/job-a/short-a/v1.mp4"]
+    )
+    module._delete_keys = MagicMock(return_value=3)
+    module.patch = MagicMock()
+
+    cleaned, deleted = module.cleanup_failed_shorts()
+
+    assert (cleaned, deleted) == (1, 3)
+    deleted_keys = module._delete_keys.call_args.args[0]
+    assert "outputs/session-a/job-a/short-a/v1.mp4" in deleted_keys
+    assert "thumbnails/session-a/job-a/short-a.jpg" in deleted_keys
+    module.patch.assert_called_once_with(
+        "generated_shorts",
+        "id=eq.short-a&status=eq.failed&deleted_at=is.null",
+        {"deleted_at": "2026-07-13T12:00:00+00:00", "subtitle_segments": []},
+    )
 
 
 def test_prepare_retry_message_is_deduplicated_by_failed_batch_id() -> None:
@@ -301,7 +335,8 @@ def test_completion_migration_never_revives_terminal_or_late_jobs() -> None:
     assert "claim_batch_submission" in sql
     assert "claim_ingestion_gate" in sql
     assert "fail_video_job_at_deadline" in sql
-    assert "deleted_at=coalesce(deleted_at, now())" in sql
+    assert "set status='failed', render_progress=0" in sql
+    assert "deleted_at=coalesce(deleted_at, now())" not in sql
 
 
 def test_deadline_cleanup_claims_the_job_before_stopping_workers() -> None:

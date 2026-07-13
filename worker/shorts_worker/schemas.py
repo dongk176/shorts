@@ -38,6 +38,8 @@ OUTPUT_LANGUAGE_NAMES = {
 AI_CLIP_MIN_SECONDS = 30.0
 AI_CLIP_MAX_SECONDS = 60.0
 AI_CLIP_FALLBACK_SECONDS = 45.0
+MAX_HOOK_TITLE_CHARS = 80
+MAX_CHANNEL_NAME_CHARS = 50
 
 
 class SubtitleSegment(BaseModel):
@@ -58,8 +60,15 @@ class HighlightClip(BaseModel):
 
     start_seconds: float
     end_seconds: float
-    hook_title: str = Field(min_length=1)
+    hook_title: str = Field(min_length=1, max_length=MAX_HOOK_TITLE_CHARS)
     reason: str = ""
+
+    @field_validator("hook_title", mode="before")
+    @classmethod
+    def bound_hook_title(cls, value: object) -> str:
+        lines = [" ".join(line.split()) for line in str(value).splitlines() if line.strip()]
+        clean = "\n".join(lines[:2]) or "핵심 장면"
+        return clean[:MAX_HOOK_TITLE_CHARS].rstrip()
 
 
 class HighlightCandidate(BaseModel):
@@ -67,9 +76,14 @@ class HighlightCandidate(BaseModel):
 
     start_seconds: float
     end_seconds: float
-    hook_title_line1: str = Field(min_length=1)
-    hook_title_line2: str = Field(min_length=1)
+    hook_title_line1: str = Field(min_length=1, max_length=MAX_HOOK_TITLE_CHARS // 2)
+    hook_title_line2: str = Field(min_length=1, max_length=MAX_HOOK_TITLE_CHARS // 2)
     reason: str = ""
+
+    @field_validator("hook_title_line1", "hook_title_line2", mode="before")
+    @classmethod
+    def bound_title_line(cls, value: object) -> str:
+        return " ".join(str(value).split())[: MAX_HOOK_TITLE_CHARS // 2].rstrip()
 
 
 class SelectionResponse(BaseModel):

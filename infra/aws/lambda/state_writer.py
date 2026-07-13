@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from common import rest
+from common import log_event, rest
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, list[dict[str, str]]]:
     failures: list[dict[str, str]] = []
     for record in event.get("Records", []):
+        job_id = None
         try:
             payload = json.loads(record["body"])
             job_id = payload["jobId"]
@@ -23,6 +24,11 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, list[dict[str, st
                 }, prefer="return=representation")
             else:
                 raise ValueError("Unsupported state event")
-        except Exception:
+        except Exception as exc:
+            log_event(
+                "state_write_failed",
+                job_id=job_id,
+                error_type=type(exc).__name__,
+            )
             failures.append({"itemIdentifier": record["messageId"]})
     return {"batchItemFailures": failures}

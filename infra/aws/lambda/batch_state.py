@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import boto3
-from common import iso_now, patch, rest
+from common import iso_now, log_event, patch, rest
 
 sqs = boto3.client("sqs")
 queue_url = os.environ["WORK_DISPATCH_QUEUE_URL"]
@@ -148,6 +148,19 @@ def _fail_job(job_id: str, error_code: str, error_message: str) -> None:
         f"job_id=eq.{encoded_job_id}&status=eq.reserved",
         {"status": "released", "released_at": iso_now()},
     )
+    patch(
+        "generated_shorts",
+        (
+            f"job_id=eq.{encoded_job_id}&deleted_at=is.null"
+            "&status=in.(rendering,rerendering,ready)"
+        ),
+        {
+            "status": "failed",
+            "render_progress": 0,
+            "render_error_code": error_code,
+            "render_error_message": error_message,
+        },
+    )
 
 
 def _handle_render_failure(
@@ -233,9 +246,13 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     reason = str(detail.get("statusReason") or "AWS Batch 작업이 실패했습니다.")[:1000]
     prepare = _handle_prepare_failure(parent_job_id, array_index, reason)
     if prepare:
+        log_event("batch_failure_handled", batch_job_id=parent_job_id, **prepare)
         return prepare
     render = _handle_render_failure(parent_job_id, array_index, reason)
     if render:
+        log_event("batch_failure_handled", batch_job_id=parent_job_id, **render)
         return render
     rerender = _handle_rerender_failure(str(batch_job_id))
-    return rerender or {"ignored": True}
+    result = rerender or {"ignored": True}
+    log_event("batch_failure_handled", batch_job_id=parent_job_id, **result)
+    return result

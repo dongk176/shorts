@@ -340,7 +340,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       platformCapabilities: ["FARGATE"],
       jobDefinitionName: `shorts-mvp-prepare-${props.environment}`,
       retryStrategy: { attempts: 1 },
-      timeout: { attemptDurationSeconds: 840 },
+      timeout: { attemptDurationSeconds: 3600 },
       containerProperties: {
         ...baseContainer,
         runtimePlatform: { cpuArchitecture: "X86_64", operatingSystemFamily: "LINUX" },
@@ -356,7 +356,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       platformCapabilities: ["EC2"],
       jobDefinitionName: `shorts-mvp-render-${props.environment}`,
       retryStrategy: { attempts: 2 },
-      timeout: { attemptDurationSeconds: 600 },
+      timeout: { attemptDurationSeconds: 1200 },
       containerProperties: {
         ...baseContainer,
         networkConfiguration: undefined,

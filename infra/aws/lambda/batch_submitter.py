@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import boto3
-from common import iso_now, patch, rest
+from common import iso_now, log_event, patch, rest
 
 batch = boto3.client("batch")
 sqs = boto3.client("sqs")
@@ -94,7 +94,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
                 "--dispatch-batch-id", dispatch_id,
             ]},
             "retryStrategy": {"attempts": 1},
-            "timeout": {"attemptDurationSeconds": 840},
+            "timeout": {"attemptDurationSeconds": 3600},
         }
         existing_batches = rest(
             "dispatch_batches",
@@ -171,7 +171,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
                 "--attempt", str(next_attempt),
             ]},
             retryStrategy={"attempts": 1},
-            timeout={"attemptDurationSeconds": 840},
+            timeout={"attemptDurationSeconds": 3600},
         )
         retry_batch_id = _submit_once(
             request, f"prepare-retry:{job_id}:{next_attempt}"
@@ -221,7 +221,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
                 "python", "-m", "shorts_worker", "render-shard", "--job-id", job_id,
             ]},
             "retryStrategy": {"attempts": 2},
-            "timeout": {"attemptDurationSeconds": 600},
+            "timeout": {"attemptDurationSeconds": 1200},
         }
         if count > 1:
             request["arrayProperties"] = {"size": count}
@@ -265,7 +265,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
                 "--shard-index", str(shard_index),
             ]},
             retryStrategy={"attempts": 2},
-            timeout={"attemptDurationSeconds": 600},
+            timeout={"attemptDurationSeconds": 1200},
         )
         render_retry_id = _submit_once(
             request, f"render-retry:{job_id}:{shard_index}:{failed_batch_id}"
@@ -316,8 +316,22 @@ def _submit(payload: dict[str, Any]) -> str | None:
 def handler(event: dict[str, Any], _context: Any) -> dict[str, list[dict[str, str]]]:
     failures: list[dict[str, str]] = []
     for record in event.get("Records", []):
+        payload: dict[str, Any] = {}
         try:
-            _submit(json.loads(record["body"]))
-        except Exception:
+            payload = json.loads(record["body"])
+            result = _submit(payload)
+            log_event(
+                "batch_submit_succeeded",
+                kind=payload.get("kind"),
+                job_id=payload.get("jobId"),
+                batch_job_id=result,
+            )
+        except Exception as exc:
+            log_event(
+                "batch_submit_failed",
+                kind=payload.get("kind"),
+                job_id=payload.get("jobId"),
+                error_type=type(exc).__name__,
+            )
             failures.append({"itemIdentifier": record["messageId"]})
     return {"batchItemFailures": failures}

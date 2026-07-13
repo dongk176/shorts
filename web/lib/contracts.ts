@@ -94,3 +94,12 @@ export function expectedShortCount(durationSeconds: number) {
 export function minimumShortCount(durationSeconds: number) {
   return durationSeconds < 240 ? 1 : 2;
 }
+
+export function jobDeadlineMinutes(durationSeconds: number) {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 3600) {
+    throw new Error("작업 제한 시간을 계산할 수 없는 영상 길이입니다.");
+  }
+  // Allow a 30-minute fixed overhead for queueing/retries plus one minute of
+  // processing budget per selected source minute (31-90 minutes total).
+  return 30 + Math.ceil(durationSeconds / 60);
+}

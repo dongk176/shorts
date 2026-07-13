@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { AI_CLIP_MIN_SECONDS, expectedShortCount, outputLanguages, templateIds } from "@/lib/contracts";
+import {
+  AI_CLIP_MIN_SECONDS,
+  expectedShortCount,
+  jobDeadlineMinutes,
+  outputLanguages,
+  templateIds,
+} from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
 import { getInitialJobBackend } from "@/lib/job-backend";
@@ -56,6 +62,7 @@ export async function POST(request: Request) {
       throw new Error(`선택 구간은 영상 안에 있어야 하며 최소 ${AI_CLIP_MIN_SECONDS}초여야 합니다.`);
     }
     const selectedShortCount = expectedShortCount(selectedDurationSeconds);
+    const deadlineMinutes = jobDeadlineMinutes(selectedDurationSeconds);
     const maxActive = Number(process.env.MVP_MAX_ACTIVE_JOBS_PER_SESSION || 1);
     const jobId = randomUUID();
     const duplicate = await db.begin(async (tx) => {
@@ -95,7 +102,8 @@ export async function POST(request: Request) {
           ${jobId}, ${session.id}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${metadata.channelName}, ${metadata.thumbnailUrl}, ${metadata.durationSeconds}, ${rangeStartSeconds},
           ${rangeEndSeconds}, ${input.templateId}, 'sec_31_60', ${input.outputLanguage}, ${selectedShortCount},
-          true, ${executionBackend}, 'queued', 'queued', 5, now() + interval '15 minutes', ${selectedShortCount}
+          true, ${executionBackend}, 'queued', 'queued', 5,
+          now() + ${deadlineMinutes} * interval '1 minute', ${selectedShortCount}
         )
       `;
       await tx`

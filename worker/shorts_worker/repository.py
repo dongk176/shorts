@@ -366,7 +366,9 @@ class WorkerRepository:
                 (
                     short_id, job["id"], job["mvp_session_id"], job.get("user_id"),
                     clip_index, start_seconds, end_seconds, end_seconds - start_seconds,
-                    hook_title, job["channel_name"], Jsonb(subtitles), job["template_id"],
+                    hook_title,
+                    (" ".join(str(job["channel_name"]).split())[:50] or "YouTube 채널"),
+                    Jsonb(subtitles), job["template_id"],
                     clean_key, expires_at, shard_index,
                 ),
             )
@@ -460,6 +462,21 @@ class WorkerRepository:
                 )
             return bool(updated)
 
+    def initial_render_matches(
+        self, short_id: str, output_key: str, thumbnail_key: str
+    ) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                select 1 from shorts_mvp.generated_shorts
+                where id=%s and status='ready'
+                  and output_s3_key=%s and thumbnail_s3_key=%s
+                  and deleted_at is null
+                """,
+                (short_id, output_key, thumbnail_key),
+            ).fetchone()
+            return bool(row)
+
     def fail_initial_render(self, short_id: str, error_code: str, message: str) -> None:
         with self.connect() as connection:
             connection.execute(
@@ -545,6 +562,16 @@ class WorkerRepository:
                 where job_id=%s and status='reserved'
                 """,
                 (job_id,),
+            )
+            connection.execute(
+                """
+                update shorts_mvp.generated_shorts
+                set status='failed', render_progress=0,
+                    render_error_code=%s, render_error_message=%s
+                where job_id=%s and status in ('rendering','rerendering','ready')
+                  and deleted_at is null
+                """,
+                (error_code[:100], message[:1000], job_id),
             )
             connection.execute(
                 """

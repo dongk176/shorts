@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import threading
@@ -28,6 +29,10 @@ from .storage import ObjectStorage
 from .subtitles import AudioTranscriber, parse_subtitle_file
 
 
+def _log_event(event: str, **fields: object) -> None:
+    print(json.dumps({"event": event, **fields}, separators=(",", ":"), default=str), flush=True)
+
+
 class BatchWorker:
     def __init__(self, settings: Settings) -> None:
         settings.validate_runtime()
@@ -46,6 +51,12 @@ class BatchWorker:
     FINAL_INGESTION_MESSAGE = (
         "영상을 가져오지 못했습니다. 영상이 공개 상태인지, 로그인·연령·지역 제한이 "
         "없는지, 삭제되거나 비공개 처리되지 않았는지 확인한 뒤 다시 시도해 주세요."
+    )
+    FINAL_PROCESSING_MESSAGE = (
+        "쇼츠를 준비하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+    )
+    FINAL_RENDER_MESSAGE = (
+        "쇼츠 영상을 만드는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
     )
 
     @contextmanager
@@ -227,6 +238,10 @@ class BatchWorker:
                     for shard_index in range(shard_count):
                         self.render_shard(job_id, shard_index)
         except BotCheckError as exc:
+            _log_event(
+                "prepare_failed", job_id=job_id, attempt=attempt,
+                error_type=type(exc).__name__, retryable=True,
+            )
             self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
             self.repository.record_ingestion_result(job_id, "bot_check")
@@ -238,6 +253,10 @@ class BatchWorker:
                     job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
                 )
         except RetryableIngestionError as exc:
+            _log_event(
+                "prepare_failed", job_id=job_id, attempt=attempt,
+                error_type=type(exc).__name__, retryable=True,
+            )
             self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
             self.repository.record_ingestion_result(job_id, "other_error")
@@ -249,6 +268,10 @@ class BatchWorker:
                     job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
                 )
         except IngestionError as exc:
+            _log_event(
+                "prepare_failed", job_id=job_id, attempt=attempt,
+                error_type=type(exc).__name__, retryable=False,
+            )
             self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
             self.repository.record_ingestion_result(job_id, "other_error")
@@ -256,11 +279,15 @@ class BatchWorker:
                 job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
             )
         except Exception as exc:
+            _log_event(
+                "prepare_failed", job_id=job_id, attempt=attempt,
+                error_type=type(exc).__name__, retryable=False,
+            )
             self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
             self.repository.record_ingestion_result(job_id, "other_error")
             self.repository.fail_job(
-                job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
+                job_id, type(exc).__name__, self.FINAL_PROCESSING_MESSAGE
             )
             traceback.print_exc()
             raise
@@ -287,7 +314,7 @@ class BatchWorker:
             return
         if job.get("deadline_at") and job["deadline_at"] <= datetime.now(UTC):
             self.repository.fail_job(
-                job_id, "render_deadline", self.FINAL_INGESTION_MESSAGE
+                job_id, "render_deadline", self.FINAL_RENDER_MESSAGE
             )
             return
         items = self.repository.get_render_shard(job_id, shard_index)
@@ -305,6 +332,10 @@ class BatchWorker:
                 except Exception as exc:
                     failures.append(exc)
         if failures:
+            _log_event(
+                "render_shard_failed", job_id=job_id, shard_index=shard_index,
+                error_type=type(failures[0]).__name__,
+            )
             raise failures[0]
         self.repository.maybe_complete_job(job_id)
 
@@ -354,14 +385,23 @@ class BatchWorker:
             committed = self.repository.complete_initial_render(
                 short_id, output_key, thumbnail_key, size
             )
-            if not committed and not completion_started:
-                for key in uploaded_keys:
-                    try:
-                        self.storage.delete(key)
-                    except Exception:
-                        pass
-        except Exception as exc:
             if not committed:
+                # A duplicate worker may have committed the same deterministic
+                # keys first. Re-read before deleting anything referenced by DB.
+                committed = self.repository.initial_render_matches(
+                    short_id, output_key, thumbnail_key
+                )
+                if not committed:
+                    for key in uploaded_keys:
+                        try:
+                            self.storage.delete(key)
+                        except Exception:
+                            pass
+        except Exception as exc:
+            # Once the commit request has started its outcome can be ambiguous: the
+            # database may already point at these keys even if the response was lost.
+            # Preserve the objects and let the idempotent Batch retry reconcile it.
+            if not committed and not completion_started:
                 for key in uploaded_keys:
                     try:
                         self.storage.delete(key)

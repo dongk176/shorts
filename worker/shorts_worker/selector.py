@@ -10,6 +10,7 @@ from .schemas import (
     AI_CLIP_FALLBACK_SECONDS,
     AI_CLIP_MAX_SECONDS,
     AI_CLIP_MIN_SECONDS,
+    MAX_HOOK_TITLE_CHARS,
     OUTPUT_LANGUAGE_NAMES,
     HighlightClip,
     OutputLanguage,
@@ -71,9 +72,15 @@ def _two_line_title(value: str, output_language: OutputLanguage) -> str:
     manual_lines = [_clean_title_line(line) for line in value.splitlines()]
     manual_lines = [line for line in manual_lines if line]
     if len(manual_lines) >= 2:
-        return f"{manual_lines[0]}\n{' '.join(manual_lines[1:])}"
+        first = manual_lines[0][: MAX_HOOK_TITLE_CHARS // 2].rstrip()
+        remaining = MAX_HOOK_TITLE_CHARS - len(first) - 1
+        second = " ".join(manual_lines[1:])[:remaining].rstrip()
+        if first and second:
+            return f"{first}\n{second}"
 
-    clean = _clean_title_line(value)
+    # Reserve one character for the line break so generated values always fit
+    # the database's 80-character constraint.
+    clean = _clean_title_line(value)[: MAX_HOOK_TITLE_CHARS - 1].rstrip()
     minimum_total = (
         10
         if output_language in {OutputLanguage.KO, OutputLanguage.JA, OutputLanguage.ZH_CN}

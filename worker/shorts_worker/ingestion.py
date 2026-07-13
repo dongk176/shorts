@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import BotCheckError, IngestionError, RetryableIngestionError
+from .schemas import MAX_CHANNEL_NAME_CHARS
 from .url_validation import validate_youtube_url
 
 
@@ -109,17 +110,23 @@ class YtDlpIngestionProvider(IngestionProvider):
             )
             
             if any(message in lowered_output for message in bot_challenges):
-                raise BotCheckError(
+                last_error = BotCheckError(
                     "YouTube가 현재 서버의 자동 요청을 제한했습니다. 로그인 정보나 쿠키를 "
                     "이용한 우회는 지원하지 않습니다. 잠시 후 다시 시도하거나 다른 사용 "
                     "허가된 공개 영상을 이용해 주세요."
                 )
+                if proxy is None:
+                    direct_error = last_error
+                continue
 
             if "http error 429" in lowered_output or "too many requests" in lowered_output:
-                raise BotCheckError(
+                last_error = BotCheckError(
                     "YouTube가 현재 서버의 요청 빈도를 제한했습니다. 같은 서버에서 즉시 "
                     "재시도하지 않고 잠시 대기합니다."
                 )
+                if proxy is None:
+                    direct_error = last_error
+                continue
 
             if (
                 "connection refused" in lowered_output
@@ -202,7 +209,9 @@ class YtDlpIngestionProvider(IngestionProvider):
         return VideoMetadata(
             video_id=str(info.get("id", "")),
             title=str(info.get("title") or "제목 없는 영상")[:500],
-            channel_name=str(info.get("channel") or info.get("uploader") or "YouTube 채널")[:200],
+            channel_name=str(
+                info.get("channel") or info.get("uploader") or "YouTube 채널"
+            )[:MAX_CHANNEL_NAME_CHARS],
             thumbnail_url=thumbnail,
             duration_seconds=duration_seconds,
         )

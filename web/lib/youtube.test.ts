@@ -25,6 +25,28 @@ describe("YouTube URL allowlist", () => {
 });
 
 describe("YouTube duration validation", () => {
+  it("bounds channel names to the generated-shorts database limit", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{
+        id: "dQw4w9WgXcQ",
+        snippet: {
+          title: "영상",
+          channelTitle: "😀".repeat(80),
+          thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
+        },
+        contentDetails: { duration: "PT2M" },
+      }],
+    }), { status: 200 })));
+
+    const result = await analyzeYoutubeUrl("https://youtu.be/dQw4w9WgXcQ");
+
+    expect(Array.from(result.channelName)).toHaveLength(50);
+    expect(result.channelName.endsWith("😀")).toBe(true);
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
   it("rejects videos over sixty minutes after server-side metadata lookup", async () => {
     vi.stubEnv("YOUTUBE_API_KEY", "test-key");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({

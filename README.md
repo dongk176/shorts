@@ -19,7 +19,7 @@ AWS Batch Render EC2 Spot / On-Demand
   └─ worker당 FFmpeg 최대 2개 병렬 실행
 EventBridge + Lambda
   ├─ 60초 Prepare/Render 재시도와 상태 반영
-  └─ 15분 deadline·만료 파일·stale 작업 정리
+  └─ 입력 길이 기반 deadline·만료 파일·stale 작업 정리
 ```
 
 상세 설계는 [architecture](docs/architecture.md), [Supabase schema](docs/supabase-schema.md), [AWS runbook](docs/aws-runbook.md)을 참고하세요.
@@ -113,7 +113,7 @@ make verify
 
 - 원본 최대 60분, 다운로드 최대 1080p, 출력 최대 30fps, 최대 15개
 - Prepare는 Fargate On-Demand, Render는 EC2 Spot 우선·On-Demand fallback, 유휴 EC2 `minvCpus=0`
-- 세션 동시 작업 1개, Outbox/SQS idempotency, 작업별 15분 deadline
+- 세션 동시 작업 1개, Outbox/SQS idempotency, 입력 길이별 31~90분 deadline
 - BOT_CHECK/429는 사용자에게 숨기고 60초 후 최대 10회 재시도하며, 최근 50회 중 20% 이상이면 1분 회로 차단
 - S3 versioning 없음, incomplete multipart 1일, media 30일 lifecycle
 - ECR 최근 8개, CloudWatch 14일
