@@ -236,11 +236,11 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     assert request["model"] == "gemini-2.5-flash-lite"
     assert request["response_format"] is SelectionResponse
     assert "중요한 테스트 자막" in request["messages"][1]["content"]
-    assert "시청 지속률이 높은 쇼츠" in request["messages"][0]["content"]
-    assert "영상 분석 자료로 해석" in request["messages"][0]["content"]
-    assert "자연스러운 일본어로 작성" in request["messages"][0]["content"]
-    assert "자연스러운 구어체" in request["messages"][0]["content"]
-    assert "5자 이상 18자 이하" in request["messages"][0]["content"]
+    assert "타임스탬프 자막" in request["messages"][1]["content"]
+    assert "탑티어 숏폼 기획자" in request["messages"][0]["content"]
+    assert "쇼츠용 킬러 구간" in request["messages"][0]["content"]
+    assert "자연스러운 일본어 구어체" in request["messages"][0]["content"]
+    assert "공백 포함 5~18자" in request["messages"][0]["content"]
     assert "hook_title_line1" in request["messages"][0]["content"]
     assert "예시" not in request["messages"][0]["content"]
     assert clips[0].hook_title == "Gemini가 고른\n핵심 장면의 반전"
@@ -254,7 +254,8 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     )
     english_request = captured["request"]
     assert isinstance(english_request, dict)
-    assert "12자 이상 32자 이하" in english_request["messages"][0]["content"]
+    assert "자연스러운 영어 구어체" in english_request["messages"][0]["content"]
+    assert "공백 포함 5~18자" in english_request["messages"][0]["content"]
 
 
 def test_openai_key_alone_does_not_enable_gemini_selection(monkeypatch) -> None:

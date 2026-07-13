@@ -15,6 +15,8 @@ TIMING_RE = re.compile(
 )
 TAG_RE = re.compile(r"<[^>]+>|\{\\[^}]+\}")
 SENTENCE_RE = re.compile(r"(?<=[.!?。！？])\s+|\n+")
+ROLLING_CAPTION_GAP_SECONDS = 0.15
+ROLLING_CAPTION_HISTORY_WORDS = 80
 
 
 def parse_timestamp(value: str) -> float:
@@ -28,16 +30,72 @@ def parse_timestamp(value: str) -> float:
     raise ValueError(f"Unsupported subtitle timestamp: {value}")
 
 
+def _strip_rolling_overlap(history: str, current: str) -> str:
+    """Remove a cumulative auto-caption prefix already emitted in recent text."""
+    history_words = history.split()
+    current_words = current.split()
+    for size in range(min(len(history_words), len(current_words)), 0, -1):
+        if history_words[-size:] != current_words[:size]:
+            continue
+        overlap_characters = sum(len(word) for word in current_words[:size])
+        if size >= 2 or overlap_characters >= 4:
+            return " ".join(current_words[size:])
+    return current
+
+
+def _append_history(history: str, text: str) -> str:
+    words = [*history.split(), *text.split()]
+    return " ".join(words[-ROLLING_CAPTION_HISTORY_WORDS:])
+
+
 def _clean_caption(lines: list[str]) -> str:
-    cleaned = []
+    cleaned: list[str] = []
+    history = ""
     for line in lines:
         line = TAG_RE.sub("", line)
         line = html.unescape(line).replace("\ufeff", "")
         line = " ".join(line.split())
-        if line:
-            cleaned.append(line)
-    # Auto captions can repeat exactly the same line within one cue.
-    return " ".join(dict.fromkeys(cleaned)).strip()
+        if not line:
+            continue
+        new_text = _strip_rolling_overlap(history, line)
+        if new_text:
+            cleaned.append(new_text)
+            history = _append_history(history, new_text)
+    return " ".join(cleaned).strip()
+
+
+def _normalize_rolling_captions(
+    segments: list[SubtitleSegment],
+) -> list[SubtitleSegment]:
+    """Collapse the cumulative cues emitted by YouTube automatic captions."""
+    normalized: list[SubtitleSegment] = []
+    history = ""
+    previous_end: float | None = None
+    previous_raw_text: str | None = None
+    for segment in segments:
+        adjacent = (
+            previous_end is not None
+            and segment.start <= previous_end + ROLLING_CAPTION_GAP_SECONDS
+        )
+        if not adjacent:
+            history = ""
+
+        new_text = segment.text
+        if adjacent:
+            if segment.text == previous_raw_text:
+                new_text = ""
+            else:
+                new_text = _strip_rolling_overlap(history, segment.text)
+
+        if new_text:
+            normalized.append(
+                SubtitleSegment(start=segment.start, end=segment.end, text=new_text)
+            )
+            history = _append_history(history, new_text)
+
+        previous_end = max(previous_end or segment.end, segment.end)
+        previous_raw_text = segment.text
+    return normalized
 
 
 def parse_subtitle_text(content: str) -> list[SubtitleSegment]:
@@ -60,21 +118,10 @@ def parse_subtitle_text(content: str) -> list[SubtitleSegment]:
         text = _clean_caption(lines[timing_index + 1 :])
         if not text or end <= start:
             continue
-        segment = SubtitleSegment(start=round(start, 3), end=round(end, 3), text=text)
-        if (
-            segments
-            and segments[-1].text == segment.text
-            and segment.start <= segments[-1].end + 0.15
-        ):
-            previous = segments[-1]
-            segments[-1] = SubtitleSegment(
-                start=previous.start,
-                end=max(previous.end, segment.end),
-                text=previous.text,
-            )
-        else:
-            segments.append(segment)
-    return segments
+        segments.append(
+            SubtitleSegment(start=round(start, 3), end=round(end, 3), text=text)
+        )
+    return _normalize_rolling_captions(segments)
 
 
 def parse_subtitle_file(path: Path) -> list[SubtitleSegment]:

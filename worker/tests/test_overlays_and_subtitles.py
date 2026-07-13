@@ -114,6 +114,45 @@ def test_vtt_and_srt_cues_are_normalized() -> None:
     ]
 
 
+def test_youtube_rolling_captions_emit_each_phrase_once() -> None:
+    content = """WEBVTT
+
+00:00:00.000 --> 00:00:02.149
+빼 놓을 수 없잖아요. 그런데 요즘 맛집 찾기 저만 어려운가요? 조금만
+
+00:00:02.149 --> 00:00:02.159
+맛집 찾기 저만 어려운가요? 조금만
+
+00:00:02.159 --> 00:00:04.710
+맛집 찾기 저만 어려운가요? 조금만 검색해도 광고, 광고, 또 광고.
+"""
+    segments = parse_subtitle_text(content)
+    assert [(item.start, item.end, item.text) for item in segments] == [
+        (
+            0.0,
+            2.149,
+            "빼 놓을 수 없잖아요. 그런데 요즘 맛집 찾기 저만 어려운가요? 조금만",
+        ),
+        (2.159, 4.71, "검색해도 광고, 광고, 또 광고."),
+    ]
+
+
+def test_repeated_caption_after_a_real_gap_is_preserved() -> None:
+    content = """WEBVTT
+
+00:00:00.000 --> 00:00:01.000
+정말 중요한 이야기입니다
+
+00:00:02.000 --> 00:00:03.000
+정말 중요한 이야기입니다
+"""
+    segments = parse_subtitle_text(content)
+    assert [item.text for item in segments] == [
+        "정말 중요한 이야기입니다",
+        "정말 중요한 이야기입니다",
+    ]
+
+
 def test_ass_subtitle_keeps_two_line_marker(tmp_path: Path) -> None:
     output = create_ass_subtitles(
         [
