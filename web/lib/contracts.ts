@@ -4,11 +4,11 @@ export type PlanCode = (typeof planCodes)[number];
 export const templateIds = ["dark-red", "white-yellow", "dark-minimal", "paper"] as const;
 export type TemplateId = (typeof templateIds)[number];
 
-export const clipLengthOptions = ["sec_30", "sec_31_60", "sec_61_180"] as const;
-export type ClipLengthOption = (typeof clipLengthOptions)[number];
-
 export const outputLanguages = ["ko", "en", "ja", "zh-CN", "es", "fr", "de", "pt-BR"] as const;
 export type OutputLanguage = (typeof outputLanguages)[number];
+
+export const AI_CLIP_MIN_SECONDS = 30;
+export const AI_CLIP_MAX_SECONDS = 60;
 
 export const outputLanguageOptions: Array<{ code: OutputLanguage; label: string }> = [
   { code: "ko", label: "한국어" },
@@ -62,7 +62,6 @@ export type VideoJob = {
   channelName: string;
   thumbnailUrl: string;
   sourceDurationSeconds: number;
-  clipLengthOption: ClipLengthOption;
   outputLanguage: OutputLanguage;
   expectedShortCount: number;
   status: string;
@@ -80,12 +79,6 @@ export type MvpState = {
   plans: Plan[];
   usage: UsageSnapshot;
   recentJobs: VideoJob[];
-};
-
-export const clipLengthRules: Record<ClipLengthOption, { min: number; max: number; target: number }> = {
-  sec_30: { min: 20, max: 30, target: 29 },
-  sec_31_60: { min: 31, max: 60, target: 50 },
-  sec_61_180: { min: 61, max: 180, target: 90 },
 };
 
 export function expectedShortCount(durationSeconds: number) {
