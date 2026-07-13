@@ -27,3 +27,4 @@ infra/aws/cdk.context.json
 # Runtime data: keep only the placeholder
 storage/*
 !storage/.gitkeep
+.vercel
