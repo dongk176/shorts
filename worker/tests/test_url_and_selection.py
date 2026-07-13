@@ -7,7 +7,9 @@ import pytest
 from shorts_worker.config import Settings, normalize_database_url
 from shorts_worker.errors import InvalidYouTubeUrl, ShortsMakerError
 from shorts_worker.schemas import (
-    ClipLengthOption,
+    AI_CLIP_FALLBACK_SECONDS,
+    AI_CLIP_MAX_SECONDS,
+    AI_CLIP_MIN_SECONDS,
     HighlightCandidate,
     HighlightClip,
     OutputLanguage,
@@ -17,6 +19,7 @@ from shorts_worker.schemas import (
 from shorts_worker.selector import (
     TranscriptSelector,
     clip_count_for_duration,
+    deterministic_fallback,
     normalize_clips,
     overlap_seconds,
 )
@@ -92,7 +95,7 @@ def test_invalid_clip_times_are_clamped_to_supported_range() -> None:
     )
     assert len(clips) == 1
     assert clips[0].start_seconds == 0
-    assert 31 <= clips[0].end_seconds - clips[0].start_seconds <= 60
+    assert AI_CLIP_MIN_SECONDS <= clips[0].end_seconds - clips[0].start_seconds <= 60
     assert clips[0].end_seconds <= 100
 
 
@@ -139,23 +142,36 @@ def test_valid_ai_clip_count_is_not_filled_to_maximum() -> None:
     assert len(clips) == 3
 
 
-@pytest.mark.parametrize(
-    ("option", "minimum", "maximum"),
-    [
-        (ClipLengthOption.SEC_30, 20, 30),
-        (ClipLengthOption.SEC_31_60, 31, 60),
-        (ClipLengthOption.SEC_61_180, 61, 180),
-    ],
-)
-def test_clip_length_options_are_enforced(option, minimum, maximum) -> None:
+def test_ai_clip_lengths_are_clamped_to_thirty_through_sixty_seconds() -> None:
     clips = normalize_clips(
-        [HighlightClip(start_seconds=10, end_seconds=400, hook_title="후보")],
+        [
+            HighlightClip(start_seconds=10, end_seconds=20, hook_title="짧은 후보"),
+            HighlightClip(start_seconds=100, end_seconds=145, hook_title="정상 후보"),
+            HighlightClip(start_seconds=200, end_seconds=290, hook_title="긴 후보"),
+        ],
         video_title="길이 검증",
-        duration_seconds=600,
-        required_count=1,
-        clip_length_option=option,
+        duration_seconds=400,
+        required_count=3,
     )
-    assert minimum <= clips[0].end_seconds - clips[0].start_seconds <= maximum
+    assert [clip.end_seconds - clip.start_seconds for clip in clips] == [
+        AI_CLIP_MIN_SECONDS,
+        45,
+        AI_CLIP_MAX_SECONDS,
+    ]
+
+
+def test_deterministic_fallback_uses_forty_five_seconds() -> None:
+    clips = deterministic_fallback(
+        "fallback 영상",
+        180,
+        1,
+        range_start_seconds=30,
+        range_end_seconds=150,
+    )
+
+    assert len(clips) == 1
+    assert clips[0].end_seconds - clips[0].start_seconds == AI_CLIP_FALLBACK_SECONDS
+    assert 30 <= clips[0].start_seconds < clips[0].end_seconds <= 150
 
 
 def test_gemini_defaults_match_ai_talk(monkeypatch) -> None:
@@ -239,6 +255,7 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     assert "타임스탬프 자막" in request["messages"][1]["content"]
     assert "탑티어 숏폼 기획자" in request["messages"][0]["content"]
     assert "쇼츠용 킬러 구간" in request["messages"][0]["content"]
+    assert "1. 길이: 각 구간은 30~60초 사이로 구성할 것." in request["messages"][0]["content"]
     assert "자연스러운 일본어 구어체" in request["messages"][0]["content"]
     assert "공백 포함 5~18자" in request["messages"][0]["content"]
     assert "hook_title_line1" in request["messages"][0]["content"]
