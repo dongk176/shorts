@@ -16,7 +16,6 @@ from .media import run_command
 from .renderer import VideoRenderer
 from .repository import WorkerRepository
 from .schemas import (
-    ClipLengthOption,
     HighlightClip,
     OutputLanguage,
     SubtitleSegment,
@@ -133,7 +132,6 @@ class BatchWorker:
                     required_count=int(job["expected_short_count"]),
                     range_start_seconds=float(job["range_start_seconds"]),
                     range_end_seconds=float(job["range_end_seconds"]),
-                    clip_length_option=ClipLengthOption(job["clip_length_option"]),
                     output_language=OutputLanguage(job["output_language"]),
                 )
                 if not clips:

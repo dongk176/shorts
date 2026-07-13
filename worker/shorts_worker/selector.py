@@ -7,9 +7,10 @@ from collections.abc import Iterable
 from .config import Settings
 from .errors import ShortsMakerError
 from .schemas import (
-    CLIP_LENGTH_RULES,
+    AI_CLIP_FALLBACK_SECONDS,
+    AI_CLIP_MAX_SECONDS,
+    AI_CLIP_MIN_SECONDS,
     OUTPUT_LANGUAGE_NAMES,
-    ClipLengthOption,
     HighlightClip,
     OutputLanguage,
     SelectionResponse,
@@ -120,15 +121,13 @@ def deterministic_fallback(
     transcript: list[SubtitleSegment] | None = None,
     range_start_seconds: float = 0,
     range_end_seconds: float | None = None,
-    clip_length_option: ClipLengthOption = ClipLengthOption.SEC_31_60,
     output_language: OutputLanguage = OutputLanguage.KO,
 ) -> list[HighlightClip]:
     if required_count < 1:
         return []
     range_end_seconds = duration_seconds if range_end_seconds is None else range_end_seconds
     available_duration = range_end_seconds - range_start_seconds
-    _, _, target_length = CLIP_LENGTH_RULES[clip_length_option]
-    clip_length = min(target_length, available_duration)
+    clip_length = min(AI_CLIP_FALLBACK_SECONDS, available_duration)
     max_start = max(range_start_seconds, range_end_seconds - clip_length)
     if required_count == 1:
         starts = [range_start_seconds + (available_duration - clip_length) / 2]
@@ -209,7 +208,6 @@ def normalize_clips(
     transcript: list[SubtitleSegment] | None = None,
     range_start_seconds: float = 0,
     range_end_seconds: float | None = None,
-    clip_length_option: ClipLengthOption = ClipLengthOption.SEC_31_60,
     output_language: OutputLanguage = OutputLanguage.KO,
 ) -> list[HighlightClip]:
     """Clamp invalid LLM times and enforce at most five seconds of pairwise overlap."""
@@ -217,9 +215,8 @@ def normalize_clips(
         return []
     range_end_seconds = duration_seconds if range_end_seconds is None else range_end_seconds
     available_duration = range_end_seconds - range_start_seconds
-    configured_minimum, configured_maximum, _ = CLIP_LENGTH_RULES[clip_length_option]
-    minimum_length = min(configured_minimum, available_duration)
-    maximum_length = min(configured_maximum, available_duration)
+    minimum_length = min(AI_CLIP_MIN_SECONDS, available_duration)
+    maximum_length = min(AI_CLIP_MAX_SECONDS, available_duration)
     accepted: list[HighlightClip] = []
     minimum_count = minimum_clip_count_for_duration(available_duration)
 
@@ -253,7 +250,7 @@ def normalize_clips(
     if len(accepted) < minimum_count:
         for candidate in deterministic_fallback(
             video_title, duration_seconds, minimum_count, transcript,
-            range_start_seconds, range_end_seconds, clip_length_option, output_language,
+            range_start_seconds, range_end_seconds, output_language,
         ):
             accept(candidate)
     return sorted(accepted, key=lambda clip: clip.start_seconds)
@@ -284,7 +281,6 @@ class TranscriptSelector:
         required_count: int,
         range_start_seconds: float = 0,
         range_end_seconds: float | None = None,
-        clip_length_option: ClipLengthOption = ClipLengthOption.SEC_31_60,
         output_language: OutputLanguage = OutputLanguage.KO,
     ) -> list[HighlightClip]:
         from openai import OpenAI
@@ -296,7 +292,6 @@ class TranscriptSelector:
             timeout=self.settings.ai_timeout_seconds,
             max_retries=1,
         )
-        minimum, maximum, _ = CLIP_LENGTH_RULES[clip_length_option]
         language_name = OUTPUT_LANGUAGE_NAMES[output_language]
         minimum_count = minimum_clip_count_for_duration(range_end_seconds - range_start_seconds)
         system = (
@@ -314,7 +309,7 @@ class TranscriptSelector:
             "3. 공감과 실용성: 저장하고 다시 보고 싶을 만큼 직관적이고 뼈 때리는 정보가 "
             "요약된 구간\n\n"
             "[구간 분할 규칙]\n"
-            f"1. 길이: 각 구간은 {minimum:.0f}~{maximum:.0f}초 사이로 구성할 것.\n"
+            "1. 길이: 각 구간은 30~60초 사이로 구성할 것.\n"
             "2. 흐름: 내용의 흐름에 맞춰 범위 안에서 자연스럽게 길이를 결정할 것.\n"
             "3. 경계: 선택 가능한 영상 범위 안에서 자연스러운 문장의 시작과 끝 경계에 맞출 것.\n"
             "4. 독립성: 앞부분 없이도 해당 구간만으로 이해되고, 구간 안에서 내용이 "
@@ -371,7 +366,6 @@ class TranscriptSelector:
         required_count: int,
         range_start_seconds: float = 0,
         range_end_seconds: float | None = None,
-        clip_length_option: ClipLengthOption = ClipLengthOption.SEC_31_60,
         output_language: OutputLanguage = OutputLanguage.KO,
     ) -> list[HighlightClip]:
         range_end_seconds = duration_seconds if range_end_seconds is None else range_end_seconds
@@ -385,7 +379,6 @@ class TranscriptSelector:
                     required_count=required_count,
                     range_start_seconds=range_start_seconds,
                     range_end_seconds=range_end_seconds,
-                    clip_length_option=clip_length_option,
                     output_language=output_language,
                 )
             except Exception:
@@ -398,6 +391,5 @@ class TranscriptSelector:
             transcript=transcript,
             range_start_seconds=range_start_seconds,
             range_end_seconds=range_end_seconds,
-            clip_length_option=clip_length_option,
             output_language=output_language,
         )

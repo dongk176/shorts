@@ -12,12 +12,6 @@ class TemplateId(str, Enum):
     PAPER = "paper"
 
 
-class ClipLengthOption(str, Enum):
-    SEC_30 = "sec_30"
-    SEC_31_60 = "sec_31_60"
-    SEC_61_180 = "sec_61_180"
-
-
 class OutputLanguage(str, Enum):
     KO = "ko"
     EN = "en"
@@ -41,11 +35,9 @@ OUTPUT_LANGUAGE_NAMES = {
 }
 
 
-CLIP_LENGTH_RULES = {
-    ClipLengthOption.SEC_30: (20.0, 30.0, 29.0),
-    ClipLengthOption.SEC_31_60: (31.0, 60.0, 50.0),
-    ClipLengthOption.SEC_61_180: (61.0, 180.0, 90.0),
-}
+AI_CLIP_MIN_SECONDS = 30.0
+AI_CLIP_MAX_SECONDS = 60.0
+AI_CLIP_FALLBACK_SECONDS = 45.0
 
 
 class SubtitleSegment(BaseModel):
