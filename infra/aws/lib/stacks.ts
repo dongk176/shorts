@@ -144,6 +144,14 @@ export class ShortsMvpComputeStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ComputeProps) {
     super(scope, id, props);
     const { bucket, repository, runtimeSecret } = props.foundation;
+    const workerImageTag = String(
+      this.node.tryGetContext("workerImageTag") || process.env.WORKER_IMAGE_TAG || "",
+    );
+    if (!workerImageTag || workerImageTag === "latest") {
+      throw new Error(
+        "workerImageTag must be an immutable published image tag; latest is not allowed",
+      );
+    }
     const vpc = new ec2.Vpc(this, "WorkerVpc", {
       maxAzs: 2,
       natGateways: 0,
@@ -207,7 +215,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       encryption: sqs.QueueEncryption.SQS_MANAGED,
     });
     const workQueue = new sqs.Queue(this, "WorkDispatchQueue", {
-      visibilityTimeout: cdk.Duration.minutes(15),
+      visibilityTimeout: cdk.Duration.minutes(3),
       retentionPeriod: cdk.Duration.days(1),
       encryption: sqs.QueueEncryption.SQS_MANAGED,
       deadLetterQueue: { queue: workDlq, maxReceiveCount: 5 },
@@ -291,7 +299,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       valueFrom: `${runtimeSecret.secretArn}:${key}::`,
     });
     const baseContainer = {
-      image: `${repository.repositoryUri}:latest`,
+      image: `${repository.repositoryUri}:${workerImageTag}`,
       executionRoleArn: executionRole.roleArn,
       jobRoleArn: taskRole.roleArn,
       networkConfiguration: { assignPublicIp: "ENABLED" },
@@ -307,7 +315,6 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { name: "AWS_REGION", value: this.region },
         { name: "AWS_S3_OUTPUT_BUCKET", value: bucket.bucketName },
         { name: "TEMP_ROOT", value: "/tmp/shorts-jobs" },
-        { name: "BOT_CHECK_COOLDOWN_SECONDS", value: "60" },
         { name: "WORK_DISPATCH_QUEUE_URL", value: workQueue.queueUrl },
         { name: "STATE_EVENT_QUEUE_URL", value: stateQueue.queueUrl },
       ],
@@ -405,7 +412,10 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     runtimeSecret.grantRead(lambdaRole);
     bucket.grantReadWrite(lambdaRole);
     lambdaRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["batch:DescribeJobs", "batch:SubmitJob", "batch:TerminateJob", "batch:CancelJob"],
+      actions: [
+        "batch:DescribeJobs", "batch:ListJobs", "batch:SubmitJob",
+        "batch:TerminateJob", "batch:CancelJob",
+      ],
       resources: ["*"],
     }));
     workQueue.grantConsumeMessages(lambdaRole);
@@ -469,14 +479,13 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       handler: "batch_submitter.handler",
       code: lambdaCode,
       role: lambdaRole,
-      timeout: cdk.Duration.minutes(2),
+      timeout: cdk.Duration.seconds(30),
       memorySize: 256,
-      reservedConcurrentExecutions: 1,
+      reservedConcurrentExecutions: 10,
       environment: lambdaEnvironment,
     });
     batchSubmitter.addEventSource(new lambdaEventSources.SqsEventSource(workQueue, {
-      batchSize: 10,
-      maxBatchingWindow: cdk.Duration.seconds(1),
+      batchSize: 1,
       reportBatchItemFailures: true,
     }));
     const stateWriter = new lambda.Function(this, "StateWriterFunction", {

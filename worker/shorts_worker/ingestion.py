@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .errors import BotCheckError, IngestionError
+from .errors import BotCheckError, IngestionError, RetryableIngestionError
 from .url_validation import validate_youtube_url
 
 
@@ -72,7 +72,6 @@ class YtDlpIngestionProvider(IngestionProvider):
 
         last_error: IngestionError | None = None
         direct_error: IngestionError | None = None
-        bot_check_error: BotCheckError | None = None
         for proxy in proxies:
             current_args = list(args)
             if proxy:
@@ -88,7 +87,7 @@ class YtDlpIngestionProvider(IngestionProvider):
                     shell=False,
                 )
             except subprocess.TimeoutExpired:
-                last_error = IngestionError(
+                last_error = RetryableIngestionError(
                     "YouTube 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."
                 )
                 if proxy is None:
@@ -110,28 +109,43 @@ class YtDlpIngestionProvider(IngestionProvider):
             )
             
             if any(message in lowered_output for message in bot_challenges):
-                bot_check_error = BotCheckError(
+                raise BotCheckError(
                     "YouTube가 현재 서버의 자동 요청을 제한했습니다. 로그인 정보나 쿠키를 "
                     "이용한 우회는 지원하지 않습니다. 잠시 후 다시 시도하거나 다른 사용 "
                     "허가된 공개 영상을 이용해 주세요."
                 )
-                last_error = bot_check_error
-                continue
 
             if "http error 429" in lowered_output or "too many requests" in lowered_output:
-                bot_check_error = BotCheckError(
+                raise BotCheckError(
                     "YouTube가 현재 서버의 요청 빈도를 제한했습니다. 같은 서버에서 즉시 "
                     "재시도하지 않고 잠시 대기합니다."
                 )
-                last_error = bot_check_error
-                continue
 
             if (
                 "connection refused" in lowered_output
                 or "proxy" in lowered_output
                 or "socks" in lowered_output
             ):
-                last_error = IngestionError("프록시 연결 오류로 다운로드할 수 없습니다.")
+                last_error = RetryableIngestionError(
+                    "프록시 연결 오류로 다운로드할 수 없습니다."
+                )
+                if proxy is None:
+                    direct_error = last_error
+                continue
+
+            if any(message in lowered_output for message in (
+                "connection reset",
+                "connection timed out",
+                "network is unreachable",
+                "name or service not known",
+                "remote end closed connection",
+                "remote disconnected",
+                "temporary failure in name resolution",
+                "tlsv1 alert",
+            )):
+                last_error = RetryableIngestionError(
+                    "YouTube와의 임시 네트워크 연결 오류로 영상을 가져오지 못했습니다."
+                )
                 if proxy is None:
                     direct_error = last_error
                 continue
@@ -146,8 +160,6 @@ class YtDlpIngestionProvider(IngestionProvider):
             if proxy is None:
                 direct_error = last_error
 
-        if bot_check_error:
-            raise bot_check_error
         if direct_error:
             raise direct_error
         if last_error:

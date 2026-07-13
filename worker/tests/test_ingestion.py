@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from shorts_worker.errors import BotCheckError, IngestionError
+from shorts_worker.errors import BotCheckError, IngestionError, RetryableIngestionError
 from shorts_worker.ingestion import YtDlpIngestionProvider
 
 
@@ -236,3 +236,44 @@ def test_ready_warp_proxy_is_used_first(monkeypatch) -> None:
     assert result.returncode == 0
     assert len(calls) == 1
     assert calls[0][-2:] == ["--proxy", "socks5://127.0.0.1:1080"]
+
+
+def test_bot_check_stops_the_current_attempt_without_switching_networks(monkeypatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setenv("WARP_PROXY_URL", "socks5://127.0.0.1:1080")
+    monkeypatch.setenv("FALLBACK_PROXY_URL", "socks5://127.0.0.1:2080")
+
+    def fake_run(args: list[str], **_kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout="",
+            stderr="ERROR: Sign in to confirm you're not a bot",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(BotCheckError):
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+    assert len(calls) == 1
+    assert calls[0][-2:] == ["--proxy", "socks5://127.0.0.1:1080"]
+
+
+def test_temporary_network_failure_is_retryable(monkeypatch) -> None:
+    monkeypatch.delenv("WARP_PROXY_URL", raising=False)
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="ERROR: connection reset by peer",
+        ),
+    )
+
+    with pytest.raises(RetryableIngestionError):
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])

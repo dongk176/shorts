@@ -5,8 +5,13 @@
 - `plans`: Plus/Standard/Pro 한도와 1~30일 retention source of truth
 - `app_users`, `user_subscriptions`: 향후 인증/결제용; 현재 미사용
 - `mvp_sessions`: hashed browser token과 선택 plan
-- `video_jobs`: 원본 metadata, Batch/stage/heartbeat/expiry
-- `generated_shorts`: 구간, 편집 데이터, private object keys, render version/hash
+- `video_jobs`: 원본 metadata, deadline/retry/Batch/stage/heartbeat/expiry
+- `generated_shorts`: 구간, render shard/progress, private object keys, render version/hash
+- `youtube_analyses`: 짧게 유지되는 YouTube 사전 분석 결과
+- `job_outbox`, `dispatch_batches`, `dispatch_batch_items`: Prepare 제출과 Array child 매핑
+- `batch_submission_claims`: SQS 중복 전달과 Batch 제출 응답 유실 중복 방지
+- `short_outbox`: 재렌더 제출
+- `ingestion_attempts`, `ingestion_circuit`: 수집 성공률과 1분 회로 차단
 - `usage_reservations`: queued/running 원본 초
 - `usage_events`: 성공한 원본 초, `(job_id,event_type)` idempotency
 - `job_events`: stage 변경 이벤트

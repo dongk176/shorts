@@ -31,6 +31,7 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       template_id, title_font_scale, render_version, rerender_progress, status, expires_at
     from shorts_mvp.generated_shorts
     where job_id in ${db(jobIds)} and deleted_at is null
+      and status in ('ready', 'rerendering')
     order by job_id, clip_index
   `;
   const result = new Map<string, GeneratedShort[]>();

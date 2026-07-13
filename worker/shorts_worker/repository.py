@@ -120,7 +120,10 @@ class WorkerRepository:
                                      else greatest(attempt_count,%s) end,
                   next_attempt_at=null, error_code=null, error_message=null,
                   started_at=coalesce(started_at,now()), heartbeat_at=now()
-                where id=%s and status in ('queued','retry_waiting','starting')
+                where id=%s and (
+                    status in ('queued','retry_waiting')
+                    or (execution_backend='mac_pull' and status='starting')
+                  )
                   and deadline_at > now() + interval '5 minutes'
                   and attempt_count < 10
                 returning attempt_count, deadline_at
@@ -322,8 +325,22 @@ class WorkerRepository:
         clean_key: str,
         expires_at: Any,
         shard_index: int,
-    ) -> None:
-        with self.connect() as connection:
+    ) -> bool:
+        with self.connect() as connection, connection.transaction():
+            locked_job = connection.execute(
+                "select id from shorts_mvp.video_jobs where id=%s for share",
+                (job["id"],),
+            ).fetchone()
+            active_job = locked_job and connection.execute(
+                """
+                select id from shorts_mvp.video_jobs
+                where id=%s and status not in ('completed','failed','expired','deleted')
+                  and deadline_at > clock_timestamp()
+                """,
+                (job["id"],),
+            ).fetchone()
+            if not active_job:
+                return False
             connection.execute(
                 """
                 insert into shorts_mvp.generated_shorts (
@@ -351,18 +368,22 @@ class WorkerRepository:
                     clean_key, expires_at, shard_index,
                 ),
             )
+            return True
 
-    def mark_render_queued(self, job_id: str, planned_count: int) -> None:
+    def mark_render_queued(self, job_id: str, planned_count: int) -> bool:
         with self.connect() as connection:
-            connection.execute(
+            updated = connection.execute(
                 """
                 update shorts_mvp.video_jobs set status='rendering', stage='rendering',
                   progress=60, planned_short_count=%s, ready_short_count=0,
                   source_deleted_at=now(), heartbeat_at=now()
-                where id=%s
+                where id=%s and status not in ('completed','failed','expired','deleted')
+                  and deadline_at > clock_timestamp()
+                returning id
                 """,
                 (planned_count, job_id),
-            )
+            ).fetchone()
+            return bool(updated)
 
     def get_render_shard(self, job_id: str, shard_index: int) -> list[dict[str, Any]]:
         with self.connect() as connection:
@@ -402,18 +423,24 @@ class WorkerRepository:
 
     def complete_initial_render(
         self, short_id: str, output_key: str, thumbnail_key: str, size: int
-    ) -> None:
+    ) -> bool:
         with self.connect() as connection, connection.transaction():
             updated = connection.execute(
                 """
-                update shorts_mvp.generated_shorts
+                update shorts_mvp.generated_shorts s
                 set output_s3_key=%s, thumbnail_s3_key=%s, file_size_bytes=%s,
                     status='ready', render_progress=100,
                     rendered_config_hash=md5(concat_ws('|', hook_title,
                       channel_display_name, subtitles_enabled::text,
                       subtitle_segments::text, template_id, title_font_scale::text)),
                     render_error_code=null, render_error_message=null
-                where id=%s and status='rendering'
+                where s.id=%s and s.status='rendering'
+                  and exists (
+                    select 1 from shorts_mvp.video_jobs j
+                    where j.id=s.job_id
+                      and j.status not in ('completed','failed','expired','deleted')
+                      and j.deadline_at > clock_timestamp()
+                  )
                 returning job_id
                 """,
                 (output_key, thumbnail_key, size, short_id),
@@ -429,6 +456,7 @@ class WorkerRepository:
                     "select shorts_mvp.maybe_complete_video_job(%s)",
                     (updated["job_id"],),
                 )
+            return bool(updated)
 
     def fail_initial_render(self, short_id: str, error_code: str, message: str) -> None:
         with self.connect() as connection:
@@ -495,16 +523,19 @@ class WorkerRepository:
                 (job_id,),
             )
 
-    def fail_job(self, job_id: str, error_code: str, message: str) -> None:
+    def fail_job(self, job_id: str, error_code: str, message: str) -> bool:
         with self.connect() as connection, connection.transaction():
-            connection.execute(
+            failed = connection.execute(
                 """
                 update shorts_mvp.video_jobs set status='failed', stage='failed', progress=100,
                   error_code=%s, error_message=%s, source_deleted_at=now(), heartbeat_at=now()
-                where id=%s
+                where id=%s and status not in ('completed','failed','expired','deleted')
+                returning id
                 """,
                 (error_code[:100], message[:1000], job_id),
-            )
+            ).fetchone()
+            if not failed:
+                return False
             connection.execute(
                 """
                 update shorts_mvp.usage_reservations
@@ -520,6 +551,7 @@ class WorkerRepository:
                 """,
                 (job_id, message[:500]),
             )
+            return True
 
     def remove_partial_shorts(self, job_id: str) -> None:
         with self.connect() as connection:
@@ -528,25 +560,36 @@ class WorkerRepository:
                 (job_id,),
             )
 
-    def complete_rerender(self, short_id: str, new_key: str, size: int, version: int) -> str:
+    def complete_rerender(
+        self, short_id: str, new_key: str, size: int, version: int
+    ) -> str | None:
         with self.connect() as connection, connection.transaction():
             row = connection.execute(
-                "select output_s3_key from shorts_mvp.generated_shorts where id=%s for update",
+                """
+                select output_s3_key from shorts_mvp.generated_shorts
+                where id=%s and status='rerendering' and deleted_at is null
+                  and expires_at > clock_timestamp()
+                for update
+                """,
                 (short_id,),
             ).fetchone()
             if not row:
-                raise KeyError(short_id)
-            connection.execute(
+                return None
+            updated = connection.execute(
                 """
                 update shorts_mvp.generated_shorts
                 set output_s3_key=%s, file_size_bytes=%s, render_version=%s, status='ready',
                   rerender_progress=100,
                   rendered_config_hash=pending_render_hash, pending_render_hash=null,
                   rerender_batch_job_id=null
-                where id=%s
+                where id=%s and status='rerendering' and deleted_at is null
+                  and expires_at > clock_timestamp()
+                returning id
                 """,
                 (new_key, size, version, short_id),
-            )
+            ).fetchone()
+            if not updated:
+                return None
             return str(row["output_s3_key"])
 
     def reset_rerender(self, short_id: str) -> None:

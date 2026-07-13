@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "npm --prefix web run dev",
-    "lint": "npm --prefix web run lint && worker/.venv/bin/ruff check worker",
+    "lint": "npm --prefix web run lint && worker/.venv/bin/ruff check worker infra/aws/lambda",
     "typecheck": "npm --prefix web run typecheck",
     "test": "node --test scripts/*.test.mjs && npm --prefix web run test && npm --prefix web run typecheck && worker/.venv/bin/python -m pytest -q worker/tests",
     "build": "npm --prefix web run build",

@@ -38,9 +38,6 @@ class Settings:
     )
     s3_bucket: str | None = field(default_factory=lambda: os.getenv("AWS_S3_OUTPUT_BUCKET"))
     aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "ap-northeast-2"))
-    bot_check_cooldown_seconds: int = field(
-        default_factory=lambda: _positive_int("BOT_CHECK_COOLDOWN_SECONDS", 60)
-    )
     temp_dir: Path = field(
         default_factory=lambda: Path(
             os.getenv("TEMP_DIR") or os.getenv("TEMP_ROOT") or "/tmp/shorts-maker"

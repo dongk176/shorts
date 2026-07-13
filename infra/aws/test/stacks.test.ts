@@ -4,7 +4,11 @@ import { describe, expect, it } from "vitest";
 import { ShortsMvpComputeStack, ShortsMvpFoundationStack } from "../lib/stacks";
 
 function stacks() {
-  const app = new cdk.App({ context: { vercelTeamSlug: "team", vercelProjectName: "shorts" } });
+  const app = new cdk.App({ context: {
+    vercelTeamSlug: "team",
+    vercelProjectName: "shorts",
+    workerImageTag: "test-worker-image",
+  } });
   const env = { account: "123456789012", region: "ap-northeast-2" };
   const foundation = new ShortsMvpFoundationStack(app, "Foundation", {
     env,
@@ -64,6 +68,8 @@ describe("shorts MVP infrastructure", () => {
         ]),
       }),
     });
+    expect(JSON.stringify(compute.toJSON())).toContain("test-worker-image");
+    expect(JSON.stringify(compute.toJSON())).not.toContain(":latest");
     compute.hasResourceProperties("AWS::Logs::LogGroup", { RetentionInDays: 14 });
     compute.hasResourceProperties("AWS::EC2::SecurityGroup", {
       SecurityGroupEgress: Match.arrayWith([Match.objectLike({
@@ -77,17 +83,19 @@ describe("shorts MVP infrastructure", () => {
   it("uses a one-minute SQS retry and no native Prepare retry", () => {
     const { compute } = stacks();
     compute.hasResourceProperties("AWS::Batch::JobDefinition", {
-      ContainerProperties: Match.objectLike({
-        Environment: Match.arrayWith([
-          { Name: "BOT_CHECK_COOLDOWN_SECONDS", Value: "60" },
-        ]),
-      }),
       RetryStrategy: {
         Attempts: 1,
       },
       Timeout: { AttemptDurationSeconds: 840 },
     });
     compute.resourceCountIs("AWS::SQS::Queue", 3);
+    compute.hasResourceProperties("AWS::SQS::Queue", {
+      VisibilityTimeout: 180,
+    });
+    compute.hasResourceProperties("AWS::Lambda::Function", {
+      ReservedConcurrentExecutions: 10,
+      Timeout: 30,
+    });
     compute.hasResourceProperties("AWS::Events::Rule", {
       ScheduleExpression: "rate(1 minute)",
     });
