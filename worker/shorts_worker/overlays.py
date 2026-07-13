@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageColor, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 from .schemas import SubtitleSegment, TemplateId
 
@@ -181,19 +181,6 @@ def create_title_panel(
     bottom_margin = min(TITLE_BOTTOM_MARGIN, max(24, round(panel_height * 0.105)))
     row_y = max(12, panel_height - bottom_margin - total_height)
 
-    if overlay_mode:
-        background = (*ImageColor.getrgb(style.background), 217)
-        draw.rounded_rectangle(
-            (
-                54,
-                max(8, row_y - 26),
-                PANEL_WIDTH - 54,
-                min(panel_height - 8, row_y + total_height + 26),
-            ),
-            radius=28,
-            fill=background,
-        )
-
     for index, (line, box, width, height, accent_padding_y) in enumerate(line_metrics):
         color = text_color or (style.primary if index == 0 else style.accent)
         visible_x = (PANEL_WIDTH - width) // 2
@@ -251,18 +238,6 @@ def create_channel_panel(
         else min(CHANNEL_TOP_MARGIN, max(24, round(panel_height * 0.114)))
     )
     y = top_margin + (group_height - icon_size) // 2
-    if overlay_mode:
-        background = (*ImageColor.getrgb(style.background), 217)
-        draw.rounded_rectangle(
-            (
-                max(40, x - 32),
-                max(6, top_margin - 24),
-                min(PANEL_WIDTH - 40, x + group_width + 32),
-                min(panel_height - 6, top_margin + group_height + 24),
-            ),
-            radius=28,
-            fill=background,
-        )
     draw.ellipse((x, y, x + icon_size, y + icon_size), fill=style.channel)
     inner = style.background
     draw.ellipse((x + 20, y + 13, x + 44, y + 37), fill=inner)
