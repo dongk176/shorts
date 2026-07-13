@@ -101,21 +101,25 @@ function TemplatePreview({ template, videoAspectRatio }: { template: (typeof tem
   const foreground = isLight ? "text-black" : "text-white";
   const layout = aspectLayout(videoAspectRatio);
   return (
-    <div className={`relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg ${foreground}`} style={{ background: template.background }}>
-      <div className={`absolute inset-x-0 z-10 flex flex-col items-center justify-end px-2 text-center text-[10px] font-extrabold leading-[1.25] sm:text-[11px] ${videoAspectRatio === "4:5" ? "pb-0.5 sm:pb-0.5" : "pb-1.5 sm:pb-2"}`} style={layout.fullVertical ? { top: "5%", height: "18.75%" } : { top: 0, height: `${layout.videoTop}%` }}>
-        <span>{firstLine}</span>
-        {template.id === "dark-red" && <span className="mt-1 bg-[#E32626] px-1.5 py-0.5 text-white">{secondLine}</span>}
-        {template.id === "white-yellow" && <span className="mt-1 bg-[#FFD84D] px-1.5 py-0.5">{secondLine}</span>}
-        {template.id === "dark-minimal" && <span className="mt-1 text-[#F04444]">{secondLine}</span>}
-        {template.id === "paper" && <span className="mt-1 text-[#D52B2B]">{secondLine}</span>}
+    <div
+      data-template-preview
+      className={`relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg ${foreground}`}
+      style={{ aspectRatio: "9 / 16", background: template.background, containerType: "inline-size" }}
+    >
+      <div data-template-title className={`absolute inset-x-0 z-10 flex flex-col items-center justify-end px-[4.9cqw] text-center text-[6.7cqw] font-extrabold leading-[1.25] ${videoAspectRatio === "4:5" ? "pb-[1.2cqw]" : "pb-[4.9cqw]"}`} style={layout.fullVertical ? { top: "5%", height: "18.75%" } : { top: 0, height: `${layout.videoTop}%` }}>
+        <span className="whitespace-nowrap">{firstLine}</span>
+        {template.id === "dark-red" && <span className="mt-[2.4cqw] whitespace-nowrap bg-[#E32626] px-[3.65cqw] py-[1.2cqw] text-white">{secondLine}</span>}
+        {template.id === "white-yellow" && <span className="mt-[2.4cqw] whitespace-nowrap bg-[#FFD84D] px-[3.65cqw] py-[1.2cqw]">{secondLine}</span>}
+        {template.id === "dark-minimal" && <span className="mt-[2.4cqw] whitespace-nowrap text-[#F04444]">{secondLine}</span>}
+        {template.id === "paper" && <span className="mt-[2.4cqw] whitespace-nowrap text-[#D52B2B]">{secondLine}</span>}
       </div>
       <div className={`absolute inset-x-0 flex items-center justify-center overflow-hidden ${isLight ? "bg-neutral-300" : "bg-neutral-700"}`} style={{ top: `${layout.videoTop}%`, height: `${layout.videoHeight}%` }}>
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
-        <div className={`h-9 w-9 rounded-full border-2 ${isLight ? "border-neutral-500" : "border-neutral-400"}`} aria-hidden="true" />
+        <div className={`h-[22cqw] w-[22cqw] rounded-full border-2 ${isLight ? "border-neutral-500" : "border-neutral-400"}`} aria-hidden="true" />
       </div>
-      <div className={`absolute inset-x-0 z-10 flex items-start justify-center px-2 pt-1.5 text-[8px] font-semibold sm:pt-2 sm:text-[9px] ${template.id === "paper" ? "text-neutral-700" : ""}`} style={layout.fullVertical ? { bottom: "6.25%", height: "9.375%" } : { top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.videoTop}%` }}>
-        <div className="flex items-center justify-center gap-1">
-          <span className={`h-2.5 w-2.5 rounded-full ${isLight ? "bg-neutral-800" : "bg-white"}`} aria-hidden="true" />
+      <div className={`absolute inset-x-0 z-10 flex items-start justify-center px-[4.9cqw] pt-[4.9cqw] text-[5.5cqw] font-semibold ${template.id === "paper" ? "text-neutral-700" : ""}`} style={layout.fullVertical ? { bottom: "6.25%", height: "9.375%" } : { top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.videoTop}%` }}>
+        <div className="flex items-center justify-center gap-[2.4cqw] whitespace-nowrap">
+          <span className={`h-[6.1cqw] w-[6.1cqw] rounded-full ${isLight ? "bg-neutral-800" : "bg-white"}`} aria-hidden="true" />
           예시 채널명
         </div>
       </div>
