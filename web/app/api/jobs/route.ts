@@ -7,6 +7,7 @@ import {
   jobDeadlineMinutes,
   outputLanguages,
   templateIds,
+  videoAspectRatios,
 } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
@@ -19,6 +20,7 @@ const schema = z.object({
   analysisId: z.string().uuid(),
   youtubeUrl: z.string().max(2048).optional(),
   templateId: z.enum(templateIds),
+  videoAspectRatio: z.enum(videoAspectRatios).default("1:1"),
   outputLanguage: z.enum(outputLanguages).default("ko"),
   rightsConfirmed: z.literal(true),
   requestId: z.string().uuid(),
@@ -95,13 +97,14 @@ export async function POST(request: Request) {
         insert into shorts_mvp.video_jobs (
           id, mvp_session_id, request_id, youtube_url, youtube_video_id, video_title,
           channel_name, thumbnail_url, source_duration_seconds, range_start_seconds,
-          range_end_seconds, template_id,
+          range_end_seconds, template_id, video_aspect_ratio,
           clip_length_option, output_language, expected_short_count, rights_confirmed, execution_backend,
           status, stage, progress, deadline_at, planned_short_count
         ) values (
           ${jobId}, ${session.id}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${metadata.channelName}, ${metadata.thumbnailUrl}, ${metadata.durationSeconds}, ${rangeStartSeconds},
-          ${rangeEndSeconds}, ${input.templateId}, 'sec_31_60', ${input.outputLanguage}, ${selectedShortCount},
+          ${rangeEndSeconds}, ${input.templateId}, ${input.videoAspectRatio},
+          'sec_31_60', ${input.outputLanguage}, ${selectedShortCount},
           true, ${executionBackend}, 'queued', 'queued', 5,
           now() + ${deadlineMinutes} * interval '1 minute', ${selectedShortCount}
         )

@@ -267,10 +267,11 @@ class WorkerRepository:
                 insert into shorts_mvp.generated_shorts (
                   id, job_id, mvp_session_id, user_id, clip_index, start_seconds,
                   end_seconds, duration_seconds, hook_title, channel_display_name,
-                  subtitle_segments, subtitles_enabled, template_id, clean_clip_s3_key,
+                  subtitle_segments, subtitles_enabled, template_id, video_aspect_ratio,
+                  clean_clip_s3_key,
                   output_s3_key, thumbnail_s3_key, file_size_bytes, expires_at, status
                 ) values (
-                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,%s,%s,%s,'ready'
+                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,%s,%s,%s,%s,'ready'
                 )
                 on conflict (job_id, clip_index) do nothing
                 returning id
@@ -288,6 +289,7 @@ class WorkerRepository:
                     job["channel_name"],
                     Jsonb(subtitles),
                     job["template_id"],
+                    job.get("video_aspect_ratio") or "1:1",
                     clean_key,
                     output_key,
                     thumbnail_key,
@@ -308,7 +310,8 @@ class WorkerRepository:
                 update shorts_mvp.generated_shorts
                 set rendered_config_hash=md5(concat_ws('|', hook_title,
                   channel_display_name, subtitles_enabled::text,
-                  subtitle_segments::text, template_id, title_font_scale::text))
+                  subtitle_segments::text, template_id, video_aspect_ratio,
+                  title_font_scale::text))
                 where id=%s and rendered_config_hash is null
                 """,
                 (short_id,),
@@ -348,17 +351,19 @@ class WorkerRepository:
                 insert into shorts_mvp.generated_shorts (
                   id, job_id, mvp_session_id, user_id, clip_index, start_seconds,
                   end_seconds, duration_seconds, hook_title, channel_display_name,
-                  subtitle_segments, subtitles_enabled, template_id, clean_clip_s3_key,
+                  subtitle_segments, subtitles_enabled, template_id, video_aspect_ratio,
+                  clean_clip_s3_key,
                   output_s3_key, thumbnail_s3_key, file_size_bytes, expires_at, status,
                   render_shard_index, render_progress
                 ) values (
-                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,null,null,null,%s,
+                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,null,null,null,%s,
                   'rendering',%s,0
                 )
                 on conflict (job_id, clip_index) do update set
                   clean_clip_s3_key=excluded.clean_clip_s3_key,
                   subtitle_segments=excluded.subtitle_segments,
                   hook_title=excluded.hook_title,
+                  video_aspect_ratio=excluded.video_aspect_ratio,
                   render_shard_index=excluded.render_shard_index,
                   status='rendering', render_progress=0,
                   render_error_code=null, render_error_message=null
@@ -369,6 +374,7 @@ class WorkerRepository:
                     hook_title,
                     (" ".join(str(job["channel_name"]).split())[:50] or "YouTube 채널"),
                     Jsonb(subtitles), job["template_id"],
+                    job.get("video_aspect_ratio") or "1:1",
                     clean_key, expires_at, shard_index,
                 ),
             )
@@ -436,7 +442,8 @@ class WorkerRepository:
                     status='ready', render_progress=100,
                     rendered_config_hash=md5(concat_ws('|', hook_title,
                       channel_display_name, subtitles_enabled::text,
-                      subtitle_segments::text, template_id, title_font_scale::text)),
+                      subtitle_segments::text, template_id, video_aspect_ratio,
+                      title_font_scale::text)),
                     render_error_code=null, render_error_message=null
                 where s.id=%s and s.status='rendering'
                   and exists (

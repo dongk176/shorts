@@ -9,9 +9,10 @@ import type {
   OutputLanguage,
   TemplateId,
   UsageSnapshot,
+  VideoAspectRatio,
   VideoJob,
 } from "@/lib/contracts";
-import { AI_CLIP_MIN_SECONDS, expectedShortCount, outputLanguageOptions } from "@/lib/contracts";
+import { AI_CLIP_MIN_SECONDS, expectedShortCount, outputLanguageOptions, videoAspectRatioOptions } from "@/lib/contracts";
 
 type Analysis = {
   analysisId: string;
@@ -30,6 +31,17 @@ const templates: Array<{ id: TemplateId; name: string; label: string; background
   { id: "dark-minimal", name: "다크 미니멀", label: "놓치기 쉬운\n결정적 순간", background: "#000000", primary: "#FFFFFF", accent: "#F04444", accentBackground: null, channel: "#FFFFFF" },
   { id: "paper", name: "페이퍼", label: "오늘 바로 쓰는\n핵심 방법", background: "#F3F0E9", primary: "#111111", accent: "#D52B2B", accentBackground: null, channel: "#363636" },
 ];
+
+function aspectLayout(value: VideoAspectRatio) {
+  const option = videoAspectRatioOptions.find((item) => item.value === value) || videoAspectRatioOptions[1];
+  const videoHeight = option.height / 19.2;
+  const videoTop = (100 - videoHeight) / 2;
+  const fullVertical = value === "9:16";
+  const subtitleMargin = fullVertical
+    ? 445
+    : 1920 - (Math.round(videoTop * 19.2) + option.height - Math.max(64, Math.round(option.height * 0.08)));
+  return { option, videoHeight, videoTop, fullVertical, subtitleBottom: subtitleMargin / 19.2 };
+}
 
 function previewTitleLines(value: string) {
   const manual = value.split("\n").map((line) => line.trim()).filter(Boolean);
@@ -83,25 +95,25 @@ function ProgressRing({ progress }: { progress: number }) {
   );
 }
 
-function TemplatePreview({ template }: { template: (typeof templates)[number] }) {
+function TemplatePreview({ template, videoAspectRatio }: { template: (typeof templates)[number]; videoAspectRatio: VideoAspectRatio }) {
   const [firstLine, secondLine] = template.label.split("\n");
   const isLight = template.id === "white-yellow" || template.id === "paper";
-  const background = template.id === "paper" ? "bg-[#F3F0E9]" : isLight ? "bg-white" : "bg-black";
   const foreground = isLight ? "text-black" : "text-white";
+  const layout = aspectLayout(videoAspectRatio);
   return (
-    <div className={`relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg ${background} ${foreground}`}>
-      <div className="flex h-[22%] flex-col items-center justify-end px-2 pb-1.5 text-center text-[10px] font-extrabold leading-[1.25] sm:pb-2 sm:text-[11px]">
+    <div className={`relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg ${foreground}`} style={{ background: template.background }}>
+      <div className={`absolute inset-x-0 z-10 flex flex-col items-center justify-end px-2 pb-1.5 text-center text-[10px] font-extrabold leading-[1.25] sm:pb-2 sm:text-[11px] ${layout.fullVertical ? "mx-2 rounded-lg" : ""}`} style={layout.fullVertical ? { top: "5%", height: "18.75%", background: `${template.background}D9` } : { top: 0, height: `${layout.videoTop}%` }}>
         <span>{firstLine}</span>
         {template.id === "dark-red" && <span className="mt-1 bg-[#E32626] px-1.5 py-0.5 text-white">{secondLine}</span>}
         {template.id === "white-yellow" && <span className="mt-1 bg-[#FFD84D] px-1.5 py-0.5">{secondLine}</span>}
         {template.id === "dark-minimal" && <span className="mt-1 text-[#F04444]">{secondLine}</span>}
         {template.id === "paper" && <span className="mt-1 text-[#D52B2B]">{secondLine}</span>}
       </div>
-      <div className={`relative flex h-[56%] items-center justify-center overflow-hidden ${isLight ? "bg-neutral-300" : "bg-neutral-700"}`}>
+      <div className={`absolute inset-x-0 flex items-center justify-center overflow-hidden ${isLight ? "bg-neutral-300" : "bg-neutral-700"}`} style={{ top: `${layout.videoTop}%`, height: `${layout.videoHeight}%` }}>
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
         <div className={`h-9 w-9 rounded-full border-2 ${isLight ? "border-neutral-500" : "border-neutral-400"}`} aria-hidden="true" />
       </div>
-      <div className={`flex h-[22%] items-start justify-center px-2 pt-1.5 text-[8px] font-semibold sm:pt-2 sm:text-[9px] ${template.id === "paper" ? "text-neutral-700" : ""}`}>
+      <div className={`absolute inset-x-0 z-10 flex items-start justify-center px-2 pt-1.5 text-[8px] font-semibold sm:pt-2 sm:text-[9px] ${template.id === "paper" ? "text-neutral-700" : ""} ${layout.fullVertical ? "mx-3 rounded-lg" : ""}`} style={layout.fullVertical ? { bottom: "6.25%", height: "9.375%", background: `${template.background}D9` } : { top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.videoTop}%` }}>
         <div className="flex items-center justify-center gap-1">
           <span className={`h-2.5 w-2.5 rounded-full ${isLight ? "bg-neutral-800" : "bg-white"}`} aria-hidden="true" />
           예시 채널명
@@ -111,16 +123,24 @@ function TemplatePreview({ template }: { template: (typeof templates)[number] })
   );
 }
 
-function TemplatePicker({ value, onChange }: { value: TemplateId; onChange: (value: TemplateId) => void }) {
+function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioChange }: { value: TemplateId; onChange: (value: TemplateId) => void; videoAspectRatio: VideoAspectRatio; onVideoAspectRatioChange: (value: VideoAspectRatio) => void }) {
   const selectedName = templates.find((template) => template.id === value)?.name;
   return (
     <div id="templates">
-      <div className="flex items-end justify-between gap-3">
-        <div>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex items-center gap-3">
           <h2 className="text-xl font-bold">템플릿</h2>
-          <p className="mt-1 text-sm text-neutral-500">실제 영상의 제목·영상·채널 영역을 미리 확인하세요.</p>
+          <span className="text-xs font-semibold text-red-300">{selectedName}</span>
         </div>
-        <span className="text-xs font-semibold text-red-300">{selectedName}</span>
+        <fieldset className="min-w-0">
+          <legend className="mb-2 text-xs font-semibold text-neutral-400">영상 비율</legend>
+          <div className="flex flex-wrap gap-1.5">
+            {videoAspectRatioOptions.map((option) => {
+              const selected = videoAspectRatio === option.value;
+              return <button key={option.value} type="button" aria-pressed={selected} onClick={() => onVideoAspectRatioChange(option.value)} className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition ${selected ? "border-red-500 bg-red-500/15 text-white" : "border-white/10 bg-[#141416] text-neutral-400 hover:border-white/30"}`}><span>{option.label}</span><span className="ml-1 text-[10px] text-neutral-500">{option.value}</span></button>;
+            })}
+          </div>
+        </fieldset>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {templates.map((template) => {
@@ -133,7 +153,7 @@ function TemplatePicker({ value, onChange }: { value: TemplateId; onChange: (val
               onClick={() => onChange(template.id)}
               className={`rounded-xl border-2 bg-[#141416] p-2.5 transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
             >
-              <TemplatePreview template={template} />
+              <TemplatePreview template={template} videoAspectRatio={videoAspectRatio} />
               <span className="mt-2.5 block text-center text-sm font-semibold">{template.name}</span>
             </button>
           );
@@ -165,6 +185,7 @@ function Editor({ item, onClose, onChanged }: { item: GeneratedShort; onClose: (
   const [error, setError] = useState<string | null>(null);
   const validTitle = title.trim().length > 0 && title.length <= 80 && title.split("\n").length <= 2;
   const template = templates.find((value) => value.id === templateId) || templates[0];
+  const editorLayout = aspectLayout(item.videoAspectRatio || "1:1");
   const titleLines = previewTitleLines(title);
   const activeSubtitle = segments.find((segment) => segment.start <= previewTime && segment.end > previewTime)?.text;
 
@@ -194,12 +215,12 @@ function Editor({ item, onClose, onChanged }: { item: GeneratedShort; onClose: (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="editor-title">
       <div className="grid max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-white/10 bg-[#151517] sm:grid-cols-[320px_1fr] sm:rounded-2xl">
         <div className="sticky top-0 mx-auto aspect-[9/16] w-full max-w-[320px] overflow-hidden" style={{ background: template.background }}>
-          <div className="absolute inset-x-0 top-0 flex h-[21.875%] flex-col items-center justify-end gap-1.5 px-5 pb-[4.1%] text-center font-extrabold leading-[1.18]" style={{ background: template.background, fontSize: `${20 * titleFontScale}px` }}>
+          <div className={`absolute inset-x-0 z-10 flex flex-col items-center justify-end gap-1.5 px-5 text-center font-extrabold leading-[1.18] ${editorLayout.fullVertical ? "mx-4 rounded-xl pb-5" : "pb-[4.1%]"}`} style={{ top: editorLayout.fullVertical ? "5%" : 0, height: editorLayout.fullVertical ? "18.75%" : `${editorLayout.videoTop}%`, background: editorLayout.fullVertical ? `${template.background}D9` : template.background, fontSize: `${20 * titleFontScale}px` }}>
             {titleLines.map((line, index) => <span key={`${line}-${index}`} className="max-w-full px-1.5 py-0.5" style={{ color: index === 0 ? template.primary : template.accent, background: index === 1 && template.accentBackground ? template.accentBackground : "transparent", borderRadius: template.accentBackground ? 4 : 0 }}>{line}</span>)}
           </div>
-          {cleanVideoUrl ? <video className="absolute inset-x-0 top-[21.875%] h-[56.25%] w-full object-cover" src={cleanVideoUrl} controls playsInline onTimeUpdate={(event) => setPreviewTime(event.currentTarget.currentTime)} /> : <div className="absolute inset-x-0 top-[21.875%] flex h-[56.25%] items-center justify-center bg-black/50 text-sm text-neutral-400">클린 영상 준비 중</div>}
-          {subtitlesEnabled && activeSubtitle && <div className="pointer-events-none absolute inset-x-5 bottom-[23.2%] z-10 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white">{activeSubtitle}</div>}
-          <div className="absolute inset-x-0 bottom-0 flex h-[21.875%] items-start justify-center gap-2 pt-[4.4%] text-sm font-bold" style={{ background: template.background, color: template.channel }}><span className="relative mt-0.5 h-5 w-5 rounded-full" style={{ background: template.channel }}><span className="absolute left-1/2 top-[4px] h-1.5 w-1.5 -translate-x-1/2 rounded-full" style={{ background: template.background }} /><span className="absolute bottom-[3px] left-1/2 h-1.5 w-3 -translate-x-1/2 rounded-t-full" style={{ background: template.background }} /></span><span className="max-w-[72%] truncate">{channel}</span></div>
+          {cleanVideoUrl ? <video className="absolute inset-x-0 w-full object-cover" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }} src={cleanVideoUrl} controls playsInline onTimeUpdate={(event) => setPreviewTime(event.currentTarget.currentTime)} /> : <div className="absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}>클린 영상 준비 중</div>}
+          {subtitlesEnabled && activeSubtitle && <div className="pointer-events-none absolute inset-x-5 z-20 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white" style={{ bottom: `${editorLayout.subtitleBottom}%` }}>{activeSubtitle}</div>}
+          <div className={`absolute inset-x-0 z-10 flex items-start justify-center gap-2 text-sm font-bold ${editorLayout.fullVertical ? "mx-5 rounded-xl pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.videoTop}%`, background: editorLayout.fullVertical ? `${template.background}D9` : template.background, color: template.channel }}><span className="relative mt-0.5 h-5 w-5 rounded-full" style={{ background: template.channel }}><span className="absolute left-1/2 top-[4px] h-1.5 w-1.5 -translate-x-1/2 rounded-full" style={{ background: template.background }} /><span className="absolute bottom-[3px] left-1/2 h-1.5 w-3 -translate-x-1/2 rounded-t-full" style={{ background: template.background }} /></span><span className="max-w-[72%] truncate">{channel}</span></div>
         </div>
         <div className="p-5 sm:p-6">
           <div className="flex items-center justify-between"><div><h2 id="editor-title" className="text-xl font-bold">쇼츠 편집</h2><p className="mt-1 text-xs text-neutral-500">왼쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</p></div><button onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-white/10">닫기</button></div>
@@ -209,7 +230,7 @@ function Editor({ item, onClose, onChanged }: { item: GeneratedShort; onClose: (
           <label className="mt-4 block text-sm font-semibold">채널명<input value={channel} onChange={(event) => setChannel(event.target.value)} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>
           <label className="mt-4 flex items-center gap-3 text-sm font-semibold"><input type="checkbox" checked={subtitlesEnabled} onChange={(event) => setSubtitlesEnabled(event.target.checked)} className="h-4 w-4 accent-red-500" />자동 자막 표시</label>
           {subtitlesEnabled && <div className="mt-3 max-h-44 space-y-2 overflow-y-auto rounded-lg border border-white/10 p-3">{segments.map((segment, index) => <label key={`${segment.start}-${index}`} className="grid grid-cols-[70px_1fr] items-center gap-2 text-xs text-neutral-500"><span>{formatTimestamp(segment.start)}</span><input value={segment.text} onChange={(event) => setSegments((current) => current.map((value, position) => position === index ? { ...value, text: event.target.value } : value))} className="h-9 rounded border border-white/10 bg-black/30 px-2 text-sm text-white" /></label>)}</div>}
-          <div className="mt-5"><div className="mb-3 flex items-end justify-between"><div><h3 className="text-sm font-semibold">템플릿</h3><p className="mt-1 text-xs text-neutral-500">최종 영상의 제목·영상·채널 배치를 미리 확인하세요.</p></div><span className="text-xs font-semibold text-red-300">{template.name}</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{templates.map((value) => <button key={value.id} type="button" aria-pressed={templateId === value.id} onClick={() => setTemplateId(value.id)} className={`rounded-xl border-2 p-2 transition ${templateId === value.id ? "border-red-500 bg-red-500/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}><TemplatePreview template={value} /><span className="mt-2 block text-center text-xs font-semibold">{value.name}</span></button>)}</div></div>
+          <div className="mt-5"><div className="mb-3 flex items-end justify-between"><div><h3 className="text-sm font-semibold">템플릿</h3><p className="mt-1 text-xs text-neutral-500">최종 영상의 제목·영상·채널 배치를 미리 확인하세요.</p></div><span className="text-xs font-semibold text-red-300">{template.name}</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{templates.map((value) => <button key={value.id} type="button" aria-pressed={templateId === value.id} onClick={() => setTemplateId(value.id)} className={`rounded-xl border-2 p-2 transition ${templateId === value.id ? "border-red-500 bg-red-500/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}><TemplatePreview template={value} videoAspectRatio={item.videoAspectRatio || "1:1"} /><span className="mt-2 block text-center text-xs font-semibold">{value.name}</span></button>)}</div></div>
           {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
           <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={!validTitle || !channel.trim() || saving} onClick={() => void save()} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{saving ? "처리 중..." : "영상에 적용"}</button></div>
         </div>
@@ -319,6 +340,7 @@ export function ShortsApp() {
   const [rangeStartSeconds, setRangeStartSeconds] = useState(0);
   const [rangeEndSeconds, setRangeEndSeconds] = useState(0);
   const [templateId, setTemplateId] = useState<TemplateId>("dark-red");
+  const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>("1:1");
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [activeJob, setActiveJob] = useState<VideoJob | null>(null);
   const [openedProjectId, setOpenedProjectId] = useState<string | null>(null);
@@ -327,7 +349,6 @@ export function ShortsApp() {
   const [error, setError] = useState<string | null>(null);
   const pollStarted = useRef(0);
   const analysisSectionRef = useRef<HTMLElement>(null);
-  const languageSectionRef = useRef<HTMLElement>(null);
   const projectsSectionRef = useRef<HTMLElement>(null);
   const activeJobId = activeJob?.id;
   const activeJobStatus = activeJob?.status;
@@ -343,14 +364,6 @@ export function ShortsApp() {
   }, []);
 
   useEffect(() => { void loadState().catch((cause) => setError(cause instanceof Error ? cause.message : "초기화 실패")); }, [loadState]);
-
-  useEffect(() => {
-    if (!analysis) return;
-    const frame = window.requestAnimationFrame(() => {
-      languageSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [analysis]);
 
   useEffect(() => {
     if (!scrollToProjects || !state?.recentJobs.length) return;
@@ -426,7 +439,7 @@ export function ShortsApp() {
     if (!analysis || !rightsConfirmed) return;
     setBusy(true); setError(null);
     try {
-      const value = await requestJson<{ jobId: string; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, outputLanguage, rangeStartSeconds, rangeEndSeconds, rightsConfirmed: true, requestId: crypto.randomUUID() }) });
+      const value = await requestJson<{ jobId: string; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, videoAspectRatio, outputLanguage, rangeStartSeconds, rangeEndSeconds, rightsConfirmed: true, requestId: crypto.randomUUID() }) });
       const pendingJob: VideoJob = { id: value.jobId, videoTitle: analysis.title, channelName: analysis.channelName, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: analysis.expectedShortCount, status: "queued", stage: "queued", progress: 5, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
       setState((current) => current ? { ...current, usage: value.usage, recentJobs: [pendingJob, ...current.recentJobs.filter((job) => job.id !== pendingJob.id)] } : current);
       setActiveJob(pendingJob);
@@ -472,8 +485,8 @@ export function ShortsApp() {
         </div>
       </section>
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}
-      {analysis && <section ref={languageSectionRef} className="scroll-mt-24 rounded-2xl border border-white/10 bg-[#141416] p-5 sm:scroll-mt-28"><label htmlFor="output-language" className="text-xl font-bold">제목 언어</label><p className="mt-1 text-sm text-neutral-500">원본 영상 언어와 관계없이 선택한 언어로 후킹 제목을 만듭니다.</p><select id="output-language" value={outputLanguage} onChange={(event) => setOutputLanguage(event.target.value as OutputLanguage)} className="mt-3 h-12 w-full rounded-xl border border-white/10 bg-[#141416] px-4 text-sm text-neutral-100 outline-none focus:border-red-500 sm:max-w-xs">{outputLanguageOptions.map((option) => <option key={option.code} value={option.code}>{option.label}</option>)}</select></section>}
-      {analysis && <section ref={analysisSectionRef} className="scroll-mt-24 space-y-8 sm:scroll-mt-28"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 선택 구간 예상 쇼츠 {expectedShortCount(selectedDurationSeconds)}개</p><p className="mt-1 text-xs text-neutral-500">이번 작업은 선택한 구간 {formatDuration(selectedDurationSeconds)}만 사용량으로 계산됩니다.</p></div></div><div className="rounded-2xl border border-white/10 bg-[#141416] p-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-xl font-bold">사용할 영상 구간</h2><p className="mt-1 text-sm text-neutral-500">기본값은 영상 전체입니다. 양쪽 슬라이더로 시작과 끝을 정하세요.</p></div><strong className="text-red-300">{formatTimestamp(rangeStartSeconds)}–{formatTimestamp(rangeEndSeconds)}</strong></div><div className="relative mt-6 h-8"><div className="absolute inset-x-0 top-3 h-2 rounded-full bg-neutral-800" /><div className="absolute top-3 h-2 rounded-full bg-red-500" style={{ left: `${(rangeStartSeconds / analysis.durationSeconds) * 100}%`, right: `${100 - (rangeEndSeconds / analysis.durationSeconds) * 100}%` }} /><input aria-label="시작 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeStartSeconds} onChange={(event) => setRangeStartSeconds(Math.min(Number(event.target.value), rangeEndSeconds - 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /><input aria-label="끝 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeEndSeconds} onChange={(event) => setRangeEndSeconds(Math.max(Number(event.target.value), rangeStartSeconds + 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /></div><div className="mt-3 flex justify-between text-xs text-neutral-500"><span>0:00</span><span>선택 {formatDuration(selectedDurationSeconds)}</span><span>{formatTimestamp(analysis.durationSeconds)}</span></div>{!rangeIsValid && <p className="mt-3 text-sm text-red-400">AI 쇼츠 생성을 위해 최소 {AI_CLIP_MIN_SECONDS}초 구간이 필요합니다.</p>}<button type="button" onClick={() => { setRangeStartSeconds(0); setRangeEndSeconds(analysis.durationSeconds); }} className="mt-4 rounded-lg border border-white/15 px-3 py-2 text-sm">전체 구간으로 초기화</button></div><TemplatePicker value={templateId} onChange={setTemplateId} /><label className="flex items-start gap-3 rounded-xl border border-white/10 p-4 text-sm"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-red-500" />내가 소유하거나 사용 허가를 받은 영상입니다.</label><button disabled={!rightsConfirmed || !rangeIsValid || busy || (!allowConcurrentJobs && Boolean(activeJob && !terminalStatuses.has(activeJob.status)))} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">쇼츠 생성하기</button></section>}
+      {analysis && <section className="scroll-mt-24 rounded-2xl border border-white/10 bg-[#141416] p-5 sm:scroll-mt-28"><label htmlFor="output-language" className="text-xl font-bold">제목 언어</label><p className="mt-1 text-sm text-neutral-500">원본 영상 언어와 관계없이 선택한 언어로 후킹 제목을 만듭니다.</p><select id="output-language" value={outputLanguage} onChange={(event) => setOutputLanguage(event.target.value as OutputLanguage)} className="mt-3 h-12 w-full rounded-xl border border-white/10 bg-[#141416] px-4 text-sm text-neutral-100 outline-none focus:border-red-500 sm:max-w-xs">{outputLanguageOptions.map((option) => <option key={option.code} value={option.code}>{option.label}</option>)}</select></section>}
+      {analysis && <section ref={analysisSectionRef} className="scroll-mt-24 space-y-8 sm:scroll-mt-28"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 선택 구간 예상 쇼츠 {expectedShortCount(selectedDurationSeconds)}개</p><p className="mt-1 text-xs text-neutral-500">이번 작업은 선택한 구간 {formatDuration(selectedDurationSeconds)}만 사용량으로 계산됩니다.</p></div></div><div className="rounded-2xl border border-white/10 bg-[#141416] p-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-xl font-bold">사용할 영상 구간</h2><p className="mt-1 text-sm text-neutral-500">기본값은 영상 전체입니다. 양쪽 슬라이더로 시작과 끝을 정하세요.</p></div><strong className="text-red-300">{formatTimestamp(rangeStartSeconds)}–{formatTimestamp(rangeEndSeconds)}</strong></div><div className="relative mt-6 h-8"><div className="absolute inset-x-0 top-3 h-2 rounded-full bg-neutral-800" /><div className="absolute top-3 h-2 rounded-full bg-red-500" style={{ left: `${(rangeStartSeconds / analysis.durationSeconds) * 100}%`, right: `${100 - (rangeEndSeconds / analysis.durationSeconds) * 100}%` }} /><input aria-label="시작 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeStartSeconds} onChange={(event) => setRangeStartSeconds(Math.min(Number(event.target.value), rangeEndSeconds - 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /><input aria-label="끝 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeEndSeconds} onChange={(event) => setRangeEndSeconds(Math.max(Number(event.target.value), rangeStartSeconds + 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /></div><div className="mt-3 flex justify-between text-xs text-neutral-500"><span>0:00</span><span>선택 {formatDuration(selectedDurationSeconds)}</span><span>{formatTimestamp(analysis.durationSeconds)}</span></div>{!rangeIsValid && <p className="mt-3 text-sm text-red-400">AI 쇼츠 생성을 위해 최소 {AI_CLIP_MIN_SECONDS}초 구간이 필요합니다.</p>}<button type="button" onClick={() => { setRangeStartSeconds(0); setRangeEndSeconds(analysis.durationSeconds); }} className="mt-4 rounded-lg border border-white/15 px-3 py-2 text-sm">전체 구간으로 초기화</button></div><TemplatePicker value={templateId} onChange={setTemplateId} videoAspectRatio={videoAspectRatio} onVideoAspectRatioChange={setVideoAspectRatio} /><label className="flex items-start gap-3 rounded-xl border border-white/10 p-4 text-sm"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-red-500" />내가 소유하거나 사용 허가를 받은 영상입니다.</label><button disabled={!rightsConfirmed || !rangeIsValid || busy || (!allowConcurrentJobs && Boolean(activeJob && !terminalStatuses.has(activeJob.status)))} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">쇼츠 생성하기</button></section>}
       {state?.recentJobs.length ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28"><div className="mb-5 flex items-center gap-2"><h2 className="text-2xl font-bold">내 프로젝트</h2><span className="text-sm text-neutral-500">({state.recentJobs.length})</span></div><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{state.recentJobs.map((job) => <ProjectCard key={job.id} job={job} onOpen={() => setOpenedProjectId(job.id)} />)}</div></section> : null}
     </main>
     <footer className="site-footer"><div className="mx-auto flex max-w-6xl flex-col gap-6 px-5 py-10 sm:px-8 md:flex-row md:items-center md:justify-between"><div><span className="brand-type">Easy <em>Cut</em></span><p className="mt-2 text-xs text-neutral-500">© 2026 Easy Cut. 아카이브를 바이럴 콘텐츠로 변환하세요.</p></div><div className="flex flex-wrap gap-6 text-xs text-neutral-400"><a href="#">이용약관</a><a href="#">개인정보처리방침</a><a href="#">고객 지원</a><a href="#">제휴 프로그램</a></div></div></footer>

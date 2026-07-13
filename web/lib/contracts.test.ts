@@ -4,9 +4,21 @@ import {
   AI_CLIP_MIN_SECONDS,
   expectedShortCount,
   jobDeadlineMinutes,
+  videoAspectRatioOptions,
+  videoAspectRatios,
 } from "./contracts";
 
 describe("clip rules", () => {
+  it("defines the four supported video-region ratios and render sizes", () => {
+    expect(videoAspectRatios).toEqual(["16:9", "1:1", "4:5", "9:16"]);
+    expect(videoAspectRatioOptions.map(({ value, width, height }) => [value, width, height])).toEqual([
+      ["16:9", 1080, 608],
+      ["1:1", 1080, 1080],
+      ["4:5", 1080, 1350],
+      ["9:16", 1080, 1920],
+    ]);
+  });
+
   it("uses the fixed AI-selected duration range", () => {
     expect([AI_CLIP_MIN_SECONDS, AI_CLIP_MAX_SECONDS]).toEqual([30, 60]);
   });

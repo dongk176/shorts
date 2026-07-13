@@ -153,6 +153,20 @@ describe("job API security and idempotency", () => {
     expect(response.status).toBe(202);
   });
 
+  it("rejects an unsupported video aspect ratio before touching the database", async () => {
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      videoAspectRatio: "3:2",
+      rangeStartSeconds: 0,
+      rangeEndSeconds: 120,
+      rightsConfirmed: true,
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d3",
+    }));
+    expect(response.status).toBe(400);
+    expect(mocks.session).not.toHaveBeenCalled();
+  });
+
   it("does not expose another session's job", async () => {
     mocks.recentJobs.mockResolvedValue([]);
     const response = await getJob(

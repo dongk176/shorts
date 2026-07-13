@@ -12,6 +12,13 @@ class TemplateId(str, Enum):
     PAPER = "paper"
 
 
+class VideoAspectRatio(str, Enum):
+    LANDSCAPE = "16:9"
+    SQUARE = "1:1"
+    PORTRAIT = "4:5"
+    FULL_VERTICAL = "9:16"
+
+
 class OutputLanguage(str, Enum):
     KO = "ko"
     EN = "en"

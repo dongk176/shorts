@@ -97,6 +97,28 @@ def test_channel_panel_sits_near_video(tmp_path: Path) -> None:
         assert max(y for _, y in visible_pixels) <= 120
 
 
+def test_full_vertical_panels_have_transparent_rounded_surroundings(tmp_path: Path) -> None:
+    title = create_title_panel(
+        "세로 화면 제목",
+        TemplateId.DARK_RED,
+        tmp_path / "vertical-title.png",
+        panel_height=360,
+        overlay_mode=True,
+    )
+    channel = create_channel_panel(
+        "세로 채널",
+        TemplateId.DARK_RED,
+        tmp_path / "vertical-channel.png",
+        panel_height=180,
+        overlay_mode=True,
+    )
+    for output, expected_height in ((title, 360), (channel, 180)):
+        with Image.open(output).convert("RGBA") as image:
+            assert image.size == (1080, expected_height)
+            assert image.getpixel((0, 0))[3] == 0
+            assert image.getbbox() is not None
+
+
 def test_vtt_and_srt_cues_are_normalized() -> None:
     content = """WEBVTT
 

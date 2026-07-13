@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from shorts_worker.config import Settings
-from shorts_worker.renderer import VideoRenderer
-from shorts_worker.schemas import HighlightClip, TemplateId
+from shorts_worker.renderer import VideoRenderer, video_layout
+from shorts_worker.schemas import HighlightClip, TemplateId, VideoAspectRatio
 
 pytestmark = pytest.mark.render
 
@@ -29,7 +29,20 @@ def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
-def test_synthetic_video_renders_as_browser_playable_vertical_mp4(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("video_aspect_ratio", "expected_clean_size"),
+    [
+        (VideoAspectRatio.LANDSCAPE, (1080, 608)),
+        (VideoAspectRatio.SQUARE, (1080, 1080)),
+        (VideoAspectRatio.PORTRAIT, (1080, 1350)),
+        (VideoAspectRatio.FULL_VERTICAL, (1080, 1920)),
+    ],
+)
+def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
+    tmp_path: Path,
+    video_aspect_ratio: VideoAspectRatio,
+    expected_clean_size: tuple[int, int],
+) -> None:
     source = tmp_path / "source.mp4"
     _run(
         [
@@ -73,6 +86,7 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(tmp_path: Path
         output_path=clean,
         clip=clip,
         work_dir=tmp_path / "work",
+        video_aspect_ratio=video_aspect_ratio,
     )
     renderer.render_clean_clip(
         clean_path=clean,
@@ -84,6 +98,7 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(tmp_path: Path
         subtitles_enabled=False,
         work_dir=tmp_path / "work",
         prefix="fixture",
+        video_aspect_ratio=video_aspect_ratio,
     )
 
     probe = _run(
@@ -112,4 +127,15 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(tmp_path: Path
     clean_video = next(
         stream for stream in clean_probe["streams"] if stream["codec_type"] == "video"
     )
-    assert (clean_video["width"], clean_video["height"]) == (1080, 1080)
+    assert (clean_video["width"], clean_video["height"]) == expected_clean_size
+
+
+def test_video_layout_centers_non_full_ratios_and_reserves_safe_overlays() -> None:
+    assert video_layout(VideoAspectRatio.LANDSCAPE).video_y == 656
+    assert video_layout(VideoAspectRatio.SQUARE).video_y == 420
+    assert video_layout(VideoAspectRatio.PORTRAIT).video_y == 285
+    full = video_layout(VideoAspectRatio.FULL_VERTICAL)
+    assert full.video_y == 0
+    assert full.overlay_mode is True
+    assert full.top_y == 96
+    assert full.bottom_y == 1620

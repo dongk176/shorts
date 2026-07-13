@@ -23,6 +23,7 @@ from .schemas import (
     OutputLanguage,
     SubtitleSegment,
     TemplateId,
+    VideoAspectRatio,
 )
 from .selector import TranscriptSelector
 from .storage import ObjectStorage
@@ -202,6 +203,9 @@ class BatchWorker:
                         output_path=clean_path,
                         clip=clip,
                         work_dir=work_dir,
+                        video_aspect_ratio=VideoAspectRatio(
+                            str(job.get("video_aspect_ratio") or "1:1")
+                        ),
                     )
                     relative_subtitles = self._relative_subtitles(transcript, clip)
                     prefix = f"{job['mvp_session_id']}/{job_id}/{short_id}"
@@ -371,6 +375,9 @@ class BatchWorker:
                 work_dir=work_dir,
                 prefix="initial",
                 title_font_scale=float(item["title_font_scale"]),
+                video_aspect_ratio=VideoAspectRatio(
+                    str(item.get("video_aspect_ratio") or "1:1")
+                ),
             )
             self._thumbnail(output_path, thumbnail_path, work_dir)
             self.repository.update_initial_render_progress(short_id, 82)
@@ -442,6 +449,9 @@ class BatchWorker:
                 work_dir=work_dir,
                 prefix="rerender",
                 title_font_scale=float(item["title_font_scale"]),
+                video_aspect_ratio=VideoAspectRatio(
+                    str(item.get("video_aspect_ratio") or "1:1")
+                ),
             )
             self.repository.update_rerender_progress(short_id, 82)
             version = int(item["render_version"]) + 1
