@@ -15,6 +15,7 @@ def main() -> None:
     initial.add_argument("--job-id", required=True)
     prepare = subparsers.add_parser("prepare")
     prepare.add_argument("--job-id", required=True)
+    prepare.add_argument("--attempt", type=int)
     prepare_array = subparsers.add_parser("prepare-array")
     prepare_array.add_argument("--dispatch-batch-id", required=True)
     render = subparsers.add_parser("render-shard")
@@ -30,8 +31,10 @@ def main() -> None:
     pull.add_argument("--idle-timeout", type=float, default=0)
     args = parser.parse_args()
     worker = BatchWorker(Settings())
-    if args.command in {"initial", "prepare"}:
+    if args.command == "initial":
         worker.initial(args.job_id)
+    elif args.command == "prepare":
+        worker.initial(args.job_id, attempt_override=args.attempt)
     elif args.command == "prepare-array":
         import os
 

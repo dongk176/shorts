@@ -11,7 +11,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .config import Settings
-from .errors import BotCheckError, IngestionError
+from .errors import BotCheckError, IngestionError, RetryableIngestionError
 from .ingestion import YtDlpIngestionProvider
 from .media import run_command
 from .queueing import WorkQueue
@@ -103,6 +103,17 @@ class BatchWorker:
     def initial(self, job_id: str, *, attempt_override: int | None = None) -> None:
         self.prepare(job_id, attempt_override=attempt_override)
 
+    def _enqueue_prepare_retry(self, job_id: str) -> None:
+        if not self.queue.queue_url:
+            return
+        payload = {"kind": "prepare_retry", "jobId": job_id}
+        if failed_batch_id := os.getenv("AWS_BATCH_JOB_ID"):
+            parent_id, separator, child_index = failed_batch_id.rpartition(":")
+            if separator and child_index.isdigit():
+                failed_batch_id = parent_id
+            payload["failedBatchJobId"] = failed_batch_id
+        self.queue.send(payload, delay_seconds=60)
+
     def prepare(self, job_id: str, *, attempt_override: int | None = None) -> None:
         job = self.repository.get_job(job_id)
         if not job:
@@ -183,7 +194,7 @@ class BatchWorker:
                     prefix = f"{job['mvp_session_id']}/{job_id}/{short_id}"
                     clean_key = f"edit-sources/{prefix}.mp4"
                     self.storage.upload(clean_path, clean_key, "video/mp4")
-                    self.repository.add_pending_short(
+                    inserted = self.repository.add_pending_short(
                         short_id=short_id,
                         job=job,
                         clip_index=index,
@@ -195,7 +206,14 @@ class BatchWorker:
                         expires_at=expires_at,
                         shard_index=(index - 1) // 4,
                     )
-                self.repository.mark_render_queued(job_id, len(clips))
+                    if not inserted:
+                        try:
+                            self.storage.delete(clean_key)
+                        except Exception:
+                            pass
+                        raise RuntimeError("작업 제한 시간이 종료되었습니다.")
+                if not self.repository.mark_render_queued(job_id, len(clips)):
+                    raise RuntimeError("작업 제한 시간이 종료되었습니다.")
                 shard_count = (len(clips) + 3) // 4
                 if self.queue.queue_url:
                     self.queue.send({
@@ -212,8 +230,18 @@ class BatchWorker:
             self.repository.record_ingestion_result(job_id, "bot_check")
             if attempt < 10 and self.repository.can_retry_prepare(job_id):
                 self.repository.retry_job(job_id, type(exc).__name__, str(exc))
-                if self.queue.queue_url:
-                    self.queue.send({"kind": "prepare_retry", "jobId": job_id}, delay_seconds=60)
+                self._enqueue_prepare_retry(job_id)
+            else:
+                self.repository.fail_job(
+                    job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
+                )
+        except RetryableIngestionError as exc:
+            self._cleanup_initial_objects(job)
+            self.repository.remove_partial_shorts(job_id)
+            self.repository.record_ingestion_result(job_id, "other_error")
+            if attempt < 10 and self.repository.can_retry_prepare(job_id):
+                self.repository.retry_job(job_id, type(exc).__name__, str(exc))
+                self._enqueue_prepare_retry(job_id)
             else:
                 self.repository.fail_job(
                     job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
@@ -229,7 +257,9 @@ class BatchWorker:
             self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
             self.repository.record_ingestion_result(job_id, "other_error")
-            self.repository.fail_job(job_id, type(exc).__name__, str(exc))
+            self.repository.fail_job(
+                job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
+            )
             traceback.print_exc()
             raise
         finally:
@@ -255,7 +285,7 @@ class BatchWorker:
             return
         if job.get("deadline_at") and job["deadline_at"] <= datetime.now(UTC):
             self.repository.fail_job(
-                job_id, "render_deadline", "쇼츠 생성 제한 시간이 초과되었습니다."
+                job_id, "render_deadline", self.FINAL_INGESTION_MESSAGE
             )
             return
         items = self.repository.get_render_shard(job_id, shard_index)
@@ -281,6 +311,9 @@ class BatchWorker:
         if not self.repository.begin_initial_render(short_id):
             return
         work_dir = self.settings.temp_dir / f"render-{short_id}"
+        uploaded_keys: list[str] = []
+        committed = False
+        completion_started = False
         shutil.rmtree(work_dir, ignore_errors=True)
         work_dir.mkdir(parents=True)
         try:
@@ -312,11 +345,26 @@ class BatchWorker:
             output_key = f"outputs/{prefix}/v1.mp4"
             thumbnail_key = f"thumbnails/{prefix}.jpg"
             size = self.storage.upload(output_path, output_key, "video/mp4")
+            uploaded_keys.append(output_key)
             self.storage.upload(thumbnail_path, thumbnail_key, "image/jpeg")
-            self.repository.complete_initial_render(
+            uploaded_keys.append(thumbnail_key)
+            completion_started = True
+            committed = self.repository.complete_initial_render(
                 short_id, output_key, thumbnail_key, size
             )
+            if not committed and not completion_started:
+                for key in uploaded_keys:
+                    try:
+                        self.storage.delete(key)
+                    except Exception:
+                        pass
         except Exception as exc:
+            if not committed:
+                for key in uploaded_keys:
+                    try:
+                        self.storage.delete(key)
+                    except Exception:
+                        pass
             self.repository.fail_initial_render(short_id, type(exc).__name__, str(exc))
             raise
         finally:
@@ -328,6 +376,9 @@ class BatchWorker:
             raise KeyError(short_id)
         work_dir = self.settings.temp_dir / f"rerender-{short_id}"
         attempt = max(1, int(os.getenv("AWS_BATCH_JOB_ATTEMPT", "1")))
+        uploaded_key: str | None = None
+        committed = False
+        completion_started = False
         shutil.rmtree(work_dir, ignore_errors=True)
         work_dir.mkdir(parents=True)
         try:
@@ -354,13 +405,28 @@ class BatchWorker:
             version = int(item["render_version"]) + 1
             new_key = f"outputs/{item['mvp_session_id']}/{item['job_id']}/{short_id}/v{version}.mp4"
             size = self.storage.upload(output_path, new_key, "video/mp4")
+            uploaded_key = new_key
             self.repository.update_rerender_progress(short_id, 94)
+            completion_started = True
             old_key = self.repository.complete_rerender(short_id, new_key, size, version)
+            if old_key is None:
+                try:
+                    self.storage.delete(new_key)
+                except Exception:
+                    pass
+                uploaded_key = None
+                return
+            committed = True
             try:
                 self.storage.delete(old_key)
             except Exception:
                 pass
         except Exception:
+            if uploaded_key is not None and not committed and not completion_started:
+                try:
+                    self.storage.delete(uploaded_key)
+                except Exception:
+                    pass
             if attempt >= 2:
                 self.repository.reset_rerender(short_id)
             raise

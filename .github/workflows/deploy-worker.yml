@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - "worker/**"
+      - "infra/aws/lambda/**"
+      - "infra/aws/lib/stacks.ts"
       - ".github/workflows/deploy-worker.yml"
   workflow_dispatch:
 

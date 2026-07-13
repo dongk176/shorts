@@ -26,6 +26,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
       select id, subtitle_segments from shorts_mvp.generated_shorts
       where id=${shortId} and mvp_session_id=${session.id}
         and deleted_at is null and expires_at > now()
+        and status='ready' and output_s3_key is not null
     `;
     if (!existing[0]) throw new Error("편집할 쇼츠를 찾을 수 없습니다.");
     const timestamps = existing[0].subtitleSegments as Array<{ start: number; end: number }>;
@@ -44,6 +45,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
         subtitles_enabled=${input.subtitlesEnabled}, subtitle_segments=${db.json(input.subtitleSegments)},
         template_id=${input.templateId}, title_font_scale=${input.titleFontScale}
       where id=${shortId} and mvp_session_id=${session.id} and deleted_at is null and expires_at > now()
+        and status='ready' and output_s3_key is not null
       returning id, render_version
     `;
     if (!rows[0]) throw new Error("편집할 쇼츠를 찾을 수 없습니다.");
@@ -57,13 +59,14 @@ export async function DELETE(_: Request, context: { params: Promise<{ shortId: s
     const session = await requireMvpSession();
     const db = getDb();
     const rows = await db`
-      select id, output_s3_key, clean_clip_s3_key, thumbnail_s3_key
-      from shorts_mvp.generated_shorts
-      where id=${shortId} and mvp_session_id=${session.id} and deleted_at is null
+      update shorts_mvp.generated_shorts
+      set status='deleted', deleted_at=coalesce(deleted_at, now())
+      where id=${shortId} and mvp_session_id=${session.id}
+        and (status='deleted' or (deleted_at is null and status in ('ready','rerendering')))
+      returning id, output_s3_key, clean_clip_s3_key, thumbnail_s3_key
     `;
     if (!rows[0]) throw new Error("삭제할 쇼츠를 찾을 수 없습니다.");
     await deleteShortObjects([rows[0].outputS3Key, rows[0].cleanClipS3Key, rows[0].thumbnailS3Key].filter(Boolean));
-    await db`update shorts_mvp.generated_shorts set status='deleted', deleted_at=now() where id=${shortId}`;
     return NextResponse.json({ deleted: true });
   } catch (error) { return apiError(error); }
 }

@@ -248,6 +248,7 @@ function ProjectCard({ job, onOpen }: { job: VideoJob; onOpen: () => void }) {
           <span>{isProcessing && !rerenderingShort ? `최대 쇼츠 ${job.expectedShortCount}개` : `쇼츠 ${readyCount || job.shorts.length}개`}</span>
           <span>{new Date(job.createdAt).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })}</span>
         </div>
+        {job.status === "failed" && job.errorMessage && <p className="mt-3 line-clamp-3 text-xs leading-5 text-red-300">{job.errorMessage}</p>}
       </div>
     </button>
   );
@@ -281,7 +282,7 @@ function ProjectWorkspace({ job, onBack, onChanged }: { job: VideoJob; onBack: (
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000);
   };
 
-  if (!selected) return <div className="project-workspace"><button onClick={onBack}>← 프로젝트로 돌아가기</button><p className="m-auto text-neutral-500">아직 생성된 쇼츠가 없습니다.</p></div>;
+  if (!selected) return <div className="project-workspace"><button onClick={onBack}>← 프로젝트로 돌아가기</button><p className={`m-auto max-w-xl px-6 text-center leading-7 ${job.status === "failed" ? "text-red-300" : "text-neutral-500"}`}>{job.status === "failed" && job.errorMessage ? job.errorMessage : "아직 생성된 쇼츠가 없습니다."}</p></div>;
   const selectedUrl = accessUrls[selected.id] || null;
   const selectedIsRerendering = selected.status === "rerendering";
   const selectedRemainingMinutes = Math.max(1, Math.ceil(selected.durationSeconds / 30));

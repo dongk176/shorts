@@ -1,23 +1,25 @@
 # Shorts Maker MVP
 
-공개 YouTube 영상의 자막과 내용을 분석해 1~5개의 세로 쇼츠를 만드는 배포형 MVP입니다. 웹/control plane은 Vercel의 Next.js, 운영 데이터는 기존 `ai talk`와 같은 Supabase 프로젝트의 `shorts_mvp` schema, 영상 처리는 AWS Batch Fargate, 파일은 private S3와 CloudFront Signed URL을 사용합니다. SQLite와 로컬 `storage/`는 운영 경로에서 사용하지 않습니다.
+공개 YouTube 영상의 자막과 내용을 분석해 최대 15개의 세로 쇼츠를 만드는 배포형 MVP입니다. 웹/control plane은 Vercel의 Next.js, 운영 데이터는 기존 `ai talk`와 같은 Supabase 프로젝트의 `shorts_mvp` schema, 영상 처리는 AWS Batch, 파일은 private S3와 CloudFront Signed URL을 사용합니다. SQLite와 로컬 `storage/`는 운영 경로에서 사용하지 않습니다.
 
 ## 구조
 
 ```text
 Browser
   └─ Vercel / Next.js Route Handlers
-       ├─ Supabase PostgreSQL (shorts_mvp only)
-       ├─ AWS Batch SubmitJob (Vercel OIDC)
+       ├─ Supabase PostgreSQL + transactional Outbox
+       ├─ SQS Dispatcher → AWS Batch Array Job
        └─ CloudFront Signed URL
-AWS Batch Fargate worker
+AWS Batch Prepare Fargate
   ├─ YouTube 원본을 /tmp에만 다운로드
-  ├─ 자막 → AI/fallback 구간 선택 → clean clip → 최종 MP4
-  ├─ private S3에 clean clip, output, thumbnail 업로드
+  ├─ 자막 → AI/fallback 구간 선택 → clean clip 업로드
   └─ 전체 원본과 중간 파일 즉시 삭제
+AWS Batch Render EC2 Spot / On-Demand
+  ├─ clean clip을 최대 4개씩 처리
+  └─ worker당 FFmpeg 최대 2개 병렬 실행
 EventBridge + Lambda
-  ├─ Batch 최종 실패 및 reservation 복구
-  └─ 만료 파일·stale 작업 매시간 정리
+  ├─ 60초 Prepare/Render 재시도와 상태 반영
+  └─ 15분 deadline·만료 파일·stale 작업 정리
 ```
 
 상세 설계는 [architecture](docs/architecture.md), [Supabase schema](docs/supabase-schema.md), [AWS runbook](docs/aws-runbook.md)을 참고하세요.
@@ -27,7 +29,7 @@ EventBridge + Lambda
 - 플랜은 Plus 100분, Standard 300분, Pro 600분이며 MVP에서는 결제 없이 브라우저별로 선택합니다. `app_users`와 `user_subscriptions`는 향후용이고 현재 로직에는 연결하지 않습니다.
 - 사용량은 생성된 쇼츠 길이가 아니라 **처리한 원본 영상 전체 길이**입니다. 제출 즉시 reserved, 성공 시 consumed, 시스템 실패 시 released가 됩니다. 텍스트/템플릿 재렌더링은 0초입니다.
 - 쇼츠 길이는 AI가 내용 흐름에 맞춰 30~60초 사이에서 각각 결정합니다.
-- 4분 미만 1개, 4~10분 2개, 10~20분 3개, 20~35분 4개, 35~60분 5개를 목표로 합니다.
+- 4분 미만 3개, 4~10분 5개, 10~20분 8개, 20~30분 10개, 30~45분 12개, 45~60분 15개를 목표로 합니다.
 - 결과 카드에는 후킹 제목, 영상, 구간 텍스트, 공유·다운로드·편집·삭제가 표시됩니다. 편집기에서 제목, 채널명, 자막 문구/표시 여부, 템플릿을 바꾸고 clean clip만 재렌더링합니다.
 - 전체 원본은 Fargate 임시 디스크에만 존재합니다. clean clip·최종 MP4·thumbnail은 최초 생성 기준 최대 30일이며 재편집으로 연장되지 않습니다. 자세한 내용은 [data retention](docs/data-retention.md)에 있습니다.
 
@@ -65,7 +67,7 @@ export VERCEL_PROJECT_NAME=your-vercel-project
 npm run infra:setup
 ```
 
-이 명령은 CloudFront RSA key를 `.secrets/`에 생성하고, CDK bootstrap/deploy, runtime secret, Vercel production env 동기화를 수행합니다. `.secrets/`와 `.env.local`은 Git에서 제외됩니다. Worker는 GitHub Actions OIDC로 `linux/amd64` 이미지를 ECR에 게시하므로 로컬 Docker가 필요하지 않습니다. 최초 배포 후 GitHub Actions 변수 `AWS_WORKER_BUILD_ROLE_ARN`, `AWS_ECR_REPOSITORY_URI`를 CDK 출력값으로 설정하세요.
+이 명령은 CloudFront RSA key를 `.secrets/`에 생성하고, CDK bootstrap/deploy, runtime secret, Vercel production env 동기화를 수행합니다. `.secrets/`와 `.env.local`은 Git에서 제외됩니다. Worker는 GitHub Actions OIDC로 `linux/amd64` 이미지를 ECR에 게시하므로 로컬 Docker가 필요하지 않습니다. Job Definition은 `latest`가 아니라 커밋 SHA 이미지에 고정됩니다. 기존 환경을 갱신할 때는 변경을 커밋하고 GitHub Actions 이미지 게시가 끝난 뒤 실행해야 하며, 이미지가 없으면 배포 스크립트가 중단됩니다.
 
 ## Vercel OIDC
 
@@ -89,7 +91,6 @@ Vercel에는 `AWS_ROLE_ARN`, region, S3 bucket, CloudFront signing 설정만 저
 | `AWS_S3_OUTPUT_BUCKET` | Vercel, worker | private media bucket |
 | `WORK_DISPATCH_QUEUE_URL` | worker/Lambda | Prepare·Render 작업 전달 SQS |
 | `STATE_EVENT_QUEUE_URL` | worker/Lambda | 진행률·heartbeat 일괄 반영 SQS |
-| `BOT_CHECK_COOLDOWN_SECONDS` | worker | BOT_CHECK 이후 공유 회로 차단 시간(기본 60초) |
 | `CLOUDFRONT_DOMAIN` | Vercel | output CDN |
 | `CLOUDFRONT_KEY_PAIR_ID` | Vercel | Signed URL public-key id |
 | `CLOUDFRONT_PRIVATE_KEY_B64` | Vercel secret | Signed URL private key |
@@ -130,11 +131,9 @@ make verify
 소유하거나 명시적으로 사용 허가를 받은 공개 영상만 처리해야 합니다. 비공개·연령 제한·DRM·로그인 필요 영상 우회나 브라우저 쿠키 사용은 구현하지 않습니다. yt-dlp 기반 수집은 YouTube 정책과 변경에 영향을 받으므로 상용 공개 전 법무·약관 검토가 필요합니다. 얼굴/화자 추적 없이 중앙 crop하며 AI 품질은 원본 자막과 음질에 좌우됩니다.
 
 Worker는 영상·메타데이터를 한 번의 yt-dlp 프로세스로 수집하고, 자막을 별도로 요청하지
-않고 오디오 전사 경로를 사용합니다. 여러 Batch 작업이
-동시에 시작되어도 PostgreSQL advisory lock으로 YouTube 수집은 전역 1개만 실행합니다.
-BOT_CHECK가 확인되면 해당 작업을 재시도하지 않고 공유 회로를 기본 30분간 차단하여 같은
-AWS egress에서 연속 요청이 발생하지 않도록 합니다. 원본 전체는 S3에 저장하지 않으며 작업
-중 임시 디스크에만 존재하고 `finally`에서 삭제됩니다.
+않고 필요할 때만 오디오 전사 경로를 사용합니다. BOT_CHECK/429와 일시적인 네트워크 오류는
+사용자에게 중간 실패를 노출하지 않고 60초 뒤 재시도합니다. 원본 전체는 S3에 저장하지 않으며
+작업 중 임시 디스크에만 존재하고 `finally`에서 삭제됩니다.
 
 ### Mac pull worker
 

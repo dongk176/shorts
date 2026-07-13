@@ -22,7 +22,6 @@ if [[ -z "${AWS_S3_OUTPUT_BUCKET:-}" ]]; then
   export AWS_S3_OUTPUT_BUCKET="$(bash scripts/stack-outputs.sh MediaBucketName Foundation)"
 fi
 export TEMP_ROOT="/tmp/shorts-mac-worker"
-export BOT_CHECK_COOLDOWN_SECONDS="${BOT_CHECK_COOLDOWN_SECONDS:-1800}"
 
 worker_id="${MAC_WORKER_ID:-$(hostname -s)}"
 container_name="shorts-mac-worker-${worker_id//[^A-Za-z0-9_.-]/-}"
@@ -50,7 +49,6 @@ while true; do
     --env GEMINI_TEXT_MODEL \
     --env GEMINI_OPENAI_BASE_URL \
     --env TEMP_ROOT \
-    --env BOT_CHECK_COOLDOWN_SECONDS \
     "$image_name" \
     python -m shorts_worker pull \
       --worker-id "$worker_id" \

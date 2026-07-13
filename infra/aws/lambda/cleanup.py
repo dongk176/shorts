@@ -11,10 +11,6 @@ from common import iso_now, patch, rest
 s3 = boto3.client("s3")
 batch = boto3.client("batch")
 bucket = os.environ["MEDIA_BUCKET"]
-FINAL_MESSAGE = (
-    "영상을 가져오지 못했습니다. 영상이 공개 상태인지, 로그인·연령·지역 제한이 "
-    "없는지, 삭제되거나 비공개 처리되지 않았는지 확인한 뒤 다시 시도해 주세요."
-)
 
 
 def _delete_keys(keys: list[str]) -> int:
@@ -123,7 +119,17 @@ def enforce_deadlines() -> int:
         "select=id,aws_batch_job_id,status,dispatch_batch_id"
         f"&deadline_at=lte.{now}&status=not.in.(completed,failed,expired,deleted)&limit=500"
     )) or []
+    enforced = 0
     for job in jobs:
+        claimed = rest(
+            "rpc/fail_video_job_at_deadline",
+            method="POST",
+            body={"p_job_id": job["id"]},
+            prefer="return=representation",
+        ) or []
+        if not claimed or not claimed[0].get("failed"):
+            continue
+        enforced += 1
         batch_ids: set[str] = set()
         batch_id = job.get("aws_batch_job_id")
         if batch_id and job.get("dispatch_batch_id"):
@@ -142,7 +148,6 @@ def enforce_deadlines() -> int:
         shorts = rest("generated_shorts", query=(
             "select=id,render_batch_job_id,output_s3_key,clean_clip_s3_key,thumbnail_s3_key"
             f"&job_id=eq.{urllib.parse.quote(job['id'], safe='')}"
-            "&render_batch_job_id=not.is.null"
         )) or []
         batch_ids.update(
             item["render_batch_job_id"] for item in shorts if item.get("render_batch_job_id")
@@ -168,20 +173,7 @@ def enforce_deadlines() -> int:
             )
             if key
         ])
-        for item in shorts:
-            patch("generated_shorts", f"id=eq.{item['id']}&status=eq.rendering", {
-                "status": "failed", "render_error_code": "job_deadline",
-                "render_error_message": FINAL_MESSAGE,
-            })
-        patch("video_jobs", f"id=eq.{job['id']}", {
-            "status": "failed", "stage": "failed", "progress": 100,
-            "error_code": "job_deadline", "error_message": FINAL_MESSAGE,
-            "source_deleted_at": iso_now(),
-        })
-        patch("usage_reservations", f"job_id=eq.{job['id']}&status=eq.reserved", {
-            "status": "released", "released_at": iso_now(),
-        })
-    return len(jobs)
+    return enforced
 
 
 def reset_stale_rerenders() -> int:

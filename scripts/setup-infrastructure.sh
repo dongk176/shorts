@@ -5,16 +5,32 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REGION="${AWS_REGION:-ap-northeast-2}"
 ENVIRONMENT="${DEPLOY_ENV:-production}"
 cd "$ROOT"
+if [[ -z "${WORKER_IMAGE_TAG:-}" ]] \
+  && [[ -n "$(git status --porcelain -- worker infra/aws/lambda infra/aws/lib/stacks.ts supabase/migrations)" ]]; then
+  echo "Worker/Batch 변경을 먼저 커밋하고 이미지 빌드가 끝난 뒤 배포하세요." >&2
+  exit 2
+fi
+WORKER_IMAGE_TAG="${WORKER_IMAGE_TAG:-$(git rev-parse HEAD)}"
 
 echo "생성 예정: private S3, CloudFront, ECR, NAT 없는 VPC, Prepare Fargate, Render EC2 Spot/On-Demand, SQS, IAM/OIDC, EventBridge/Lambda"
 
-for command in aws openssl node npm; do
+for command in aws git openssl node npm; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "필수 명령을 찾을 수 없습니다: $command" >&2
     exit 2
   fi
 done
 aws sts get-caller-identity >/dev/null
+
+repository_name="shorts-mvp-worker-$ENVIRONMENT"
+if aws ecr describe-repositories --region "$REGION" \
+  --repository-names "$repository_name" >/dev/null 2>&1; then
+  if ! aws ecr describe-images --region "$REGION" --repository-name "$repository_name" \
+    --image-ids "imageTag=$WORKER_IMAGE_TAG" >/dev/null 2>&1; then
+    echo "ECR에 Worker 이미지 $WORKER_IMAGE_TAG 가 없습니다. GitHub Actions 완료 후 다시 배포하세요." >&2
+    exit 2
+  fi
+fi
 
 mkdir -p .secrets
 if [[ ! -s .secrets/cloudfront-private.pem || ! -s .secrets/cloudfront-public.pem ]]; then
@@ -42,6 +58,7 @@ if [[ -n "$vercel_oidc_arn" && "$vercel_oidc_arn" != "None" ]]; then
 fi
 deploy_args=(
   -c "environment=$ENVIRONMENT"
+  -c "workerImageTag=$WORKER_IMAGE_TAG"
   -c "vercelTeamSlug=$VERCEL_TEAM_SLUG"
   -c "vercelProjectName=$VERCEL_PROJECT_NAME"
   -c "githubOrg=${GITHUB_ORG:-dongk176}"

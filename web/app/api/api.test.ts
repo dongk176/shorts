@@ -221,7 +221,7 @@ describe("short ownership, expiry, and edit validation", () => {
       renderedConfigHash: "old-hash",
       currentConfigHash: "new-hash",
     }]);
-    const tx = dbWithRows([], []);
+    const tx = dbWithRows([{ id: "short-a" }], []);
     const begin = vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx));
     Object.assign(db, {
       begin,
