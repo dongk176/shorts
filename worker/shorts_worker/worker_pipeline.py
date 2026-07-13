@@ -33,7 +33,9 @@ class BatchWorker:
         settings.validate_runtime()
         settings.ensure_directories()
         self.settings = settings
-        self.repository = WorkerRepository(str(settings.database_url))
+        self.repository = WorkerRepository(
+            str(settings.database_url), settings.aws_region
+        )
         self.storage = ObjectStorage(str(settings.s3_bucket), settings.aws_region)
         self.ingestion = YtDlpIngestionProvider(timeout_seconds=settings.download_timeout_seconds)
         self.transcriber = AudioTranscriber(settings)

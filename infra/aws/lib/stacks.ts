@@ -313,6 +313,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       },
       environment: [
         { name: "AWS_REGION", value: this.region },
+        { name: "AWS_DEFAULT_REGION", value: this.region },
         { name: "AWS_S3_OUTPUT_BUCKET", value: bucket.bucketName },
         { name: "TEMP_ROOT", value: "/tmp/shorts-jobs" },
         { name: "WORK_DISPATCH_QUEUE_URL", value: workQueue.queueUrl },

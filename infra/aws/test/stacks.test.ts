@@ -70,6 +70,14 @@ describe("shorts MVP infrastructure", () => {
     });
     expect(JSON.stringify(compute.toJSON())).toContain("test-worker-image");
     expect(JSON.stringify(compute.toJSON())).not.toContain(":latest");
+    compute.hasResourceProperties("AWS::Batch::JobDefinition", {
+      ContainerProperties: Match.objectLike({
+        Environment: Match.arrayWith([
+          { Name: "AWS_REGION", Value: "ap-northeast-2" },
+          { Name: "AWS_DEFAULT_REGION", Value: "ap-northeast-2" },
+        ]),
+      }),
+    });
     compute.hasResourceProperties("AWS::Logs::LogGroup", { RetentionInDays: 14 });
     compute.hasResourceProperties("AWS::EC2::SecurityGroup", {
       SecurityGroupEgress: Match.arrayWith([Match.objectLike({

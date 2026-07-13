@@ -147,6 +147,45 @@ def test_render_array_child_failure_retries_only_its_shard() -> None:
     }
 
 
+def test_render_failure_at_deadline_uses_a_render_specific_message() -> None:
+    module, _ = _load_lambda("batch_state")
+    patches: list[tuple[str, str, dict[str, object]]] = []
+
+    def rest(table: str, **kwargs):
+        if table == "dispatch_batches":
+            return []
+        if table == "generated_shorts" and "render_batch_job_id" in kwargs["query"]:
+            return [{
+                "id": "short-a",
+                "job_id": "job-a",
+                "render_shard_index": 0,
+                "status": "rendering",
+                "render_attempt_count": 2,
+            }]
+        if table == "video_jobs":
+            return [{
+                "id": "job-a",
+                "status": "rendering",
+                "deadline_at": (datetime.now(UTC) + timedelta(seconds=30)).isoformat(),
+            }]
+        return []
+
+    module.rest = rest
+    module.patch = lambda table, query, body: patches.append((table, query, body))
+
+    result = module.handler({"detail": {
+        "jobId": "render-a",
+        "status": "FAILED",
+        "statusReason": "container exited",
+    }}, None)
+
+    assert result == {"failedRenderJobId": "job-a"}
+    job_patch = next(body for table, _, body in patches if table == "video_jobs")
+    assert job_patch["error_code"] == "render_failed"
+    assert job_patch["error_message"] == module.RENDER_FINAL_MESSAGE
+    assert "가져오지" not in str(job_patch["error_message"])
+
+
 def test_prepare_retry_message_is_deduplicated_by_failed_batch_id() -> None:
     module, _ = _load_lambda("batch_submitter")
     module._prepare_gate = MagicMock(return_value="open")
