@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 from .schemas import SubtitleSegment, TemplateId
 
@@ -147,9 +147,15 @@ def create_title_panel(
     text_color: str | None = None,
     font_size: int | None = None,
     font_scale: float = 1.0,
+    panel_height: int = PANEL_HEIGHT,
+    overlay_mode: bool = False,
 ) -> Path:
     style = TEMPLATE_STYLES[template_id]
-    image = Image.new("RGB", (PANEL_WIDTH, PANEL_HEIGHT), style.background)
+    image = Image.new(
+        "RGBA" if overlay_mode else "RGB",
+        (PANEL_WIDTH, panel_height),
+        (0, 0, 0, 0) if overlay_mode else style.background,
+    )
     draw = ImageDraw.Draw(image)
     lines = wrap_korean_title(title)
     if font_size:
@@ -172,7 +178,21 @@ def create_title_panel(
 
     total_height = sum(height + padding_y * 2 for _, _, _, height, padding_y in line_metrics)
     total_height += TITLE_LINE_GAP * max(0, len(line_metrics) - 1)
-    row_y = PANEL_HEIGHT - TITLE_BOTTOM_MARGIN - total_height
+    bottom_margin = min(TITLE_BOTTOM_MARGIN, max(24, round(panel_height * 0.105)))
+    row_y = max(12, panel_height - bottom_margin - total_height)
+
+    if overlay_mode:
+        background = (*ImageColor.getrgb(style.background), 217)
+        draw.rounded_rectangle(
+            (
+                54,
+                max(8, row_y - 26),
+                PANEL_WIDTH - 54,
+                min(panel_height - 8, row_y + total_height + 26),
+            ),
+            radius=28,
+            fill=background,
+        )
 
     for index, (line, box, width, height, accent_padding_y) in enumerate(line_metrics):
         color = text_color or (style.primary if index == 0 else style.accent)
@@ -198,9 +218,20 @@ def create_title_panel(
     return output_path
 
 
-def create_channel_panel(channel_name: str, template_id: TemplateId, output_path: Path) -> Path:
+def create_channel_panel(
+    channel_name: str,
+    template_id: TemplateId,
+    output_path: Path,
+    *,
+    panel_height: int = PANEL_HEIGHT,
+    overlay_mode: bool = False,
+) -> Path:
     style = TEMPLATE_STYLES[template_id]
-    image = Image.new("RGB", (PANEL_WIDTH, PANEL_HEIGHT), style.background)
+    image = Image.new(
+        "RGBA" if overlay_mode else "RGB",
+        (PANEL_WIDTH, panel_height),
+        (0, 0, 0, 0) if overlay_mode else style.background,
+    )
     draw = ImageDraw.Draw(image)
     font = load_font(48, "bold")
     name = " ".join(channel_name.split()).strip() or "YouTube 채널"
@@ -214,7 +245,24 @@ def create_channel_panel(channel_name: str, template_id: TemplateId, output_path
     text_box = draw.textbbox((0, 0), name, font=font)
     text_height = text_box[3] - text_box[1]
     group_height = max(icon_size, text_height)
-    y = CHANNEL_TOP_MARGIN + (group_height - icon_size) // 2
+    top_margin = (
+        max(12, (panel_height - group_height) // 2)
+        if overlay_mode
+        else min(CHANNEL_TOP_MARGIN, max(24, round(panel_height * 0.114)))
+    )
+    y = top_margin + (group_height - icon_size) // 2
+    if overlay_mode:
+        background = (*ImageColor.getrgb(style.background), 217)
+        draw.rounded_rectangle(
+            (
+                max(40, x - 32),
+                max(6, top_margin - 24),
+                min(PANEL_WIDTH - 40, x + group_width + 32),
+                min(panel_height - 6, top_margin + group_height + 24),
+            ),
+            radius=28,
+            fill=background,
+        )
     draw.ellipse((x, y, x + icon_size, y + icon_size), fill=style.channel)
     inner = style.background
     draw.ellipse((x + 20, y + 13, x + 44, y + 37), fill=inner)
@@ -222,7 +270,7 @@ def create_channel_panel(channel_name: str, template_id: TemplateId, output_path
     draw.text(
         (
             x + icon_size + gap - text_box[0],
-            CHANNEL_TOP_MARGIN + (group_height - text_height) // 2 - text_box[1],
+            top_margin + (group_height - text_height) // 2 - text_box[1],
         ),
         name,
         font=font,
@@ -243,6 +291,9 @@ def create_panel_overlays(
     title_color: str | None = None,
     title_font_size: int | None = None,
     title_font_scale: float = 1.0,
+    top_height: int = PANEL_HEIGHT,
+    bottom_height: int = PANEL_HEIGHT,
+    overlay_mode: bool = False,
 ) -> tuple[Path, Path]:
     top = create_title_panel(
         title,
@@ -251,8 +302,16 @@ def create_panel_overlays(
         text_color=title_color,
         font_size=title_font_size,
         font_scale=title_font_scale,
+        panel_height=top_height,
+        overlay_mode=overlay_mode,
     )
-    bottom = create_channel_panel(channel_name, template_id, directory / f"{prefix}_bottom.png")
+    bottom = create_channel_panel(
+        channel_name,
+        template_id,
+        directory / f"{prefix}_bottom.png",
+        panel_height=bottom_height,
+        overlay_mode=overlay_mode,
+    )
     return top, bottom
 
 
@@ -270,6 +329,7 @@ def create_ass_subtitles(
     clip_start: float,
     clip_end: float,
     output_path: Path,
+    margin_v: int = 445,
 ) -> Path | None:
     dialogues: list[str] = []
     for segment in segments:
@@ -307,7 +367,7 @@ def create_ass_subtitles(
             "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
             "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
             f"Style: Default,{font_name},48,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,"
-            "-1,0,0,0,100,100,0,0,3,3,0,2,60,60,445,1",
+            f"-1,0,0,0,100,100,0,0,3,3,0,2,60,60,{margin_v},1",
             "",
             "[Events]",
             "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",

@@ -1,13 +1,68 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from .config import Settings
 from .errors import RenderError
 from .media import media_duration, probe_media, run_command, video_fps
 from .overlays import TEMPLATE_STYLES, create_ass_subtitles, create_panel_overlays
-from .schemas import HighlightClip, SubtitleSegment, TemplateId
+from .schemas import (
+    HighlightClip,
+    SubtitleSegment,
+    TemplateId,
+    VideoAspectRatio,
+)
+
+CANVAS_WIDTH = 1080
+CANVAS_HEIGHT = 1920
+VIDEO_HEIGHTS = {
+    VideoAspectRatio.LANDSCAPE: 608,
+    VideoAspectRatio.SQUARE: 1080,
+    VideoAspectRatio.PORTRAIT: 1350,
+    VideoAspectRatio.FULL_VERTICAL: 1920,
+}
+
+
+@dataclass(frozen=True, slots=True)
+class VideoLayout:
+    video_height: int
+    video_y: int
+    top_height: int
+    top_y: int
+    bottom_height: int
+    bottom_y: int
+    overlay_mode: bool
+    subtitle_margin_v: int
+
+
+def video_layout(video_aspect_ratio: VideoAspectRatio) -> VideoLayout:
+    video_height = VIDEO_HEIGHTS[video_aspect_ratio]
+    if video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL:
+        return VideoLayout(
+            video_height=video_height,
+            video_y=0,
+            top_height=360,
+            top_y=96,
+            bottom_height=180,
+            bottom_y=1620,
+            overlay_mode=True,
+            subtitle_margin_v=445,
+        )
+    panel_height = (CANVAS_HEIGHT - video_height) // 2
+    video_bottom = panel_height + video_height
+    subtitle_inset = max(64, round(video_height * 0.08))
+    return VideoLayout(
+        video_height=video_height,
+        video_y=panel_height,
+        top_height=panel_height,
+        top_y=0,
+        bottom_height=panel_height,
+        bottom_y=video_bottom,
+        overlay_mode=False,
+        subtitle_margin_v=CANVAS_HEIGHT - (video_bottom - subtitle_inset),
+    )
 
 
 def _escape_filter_path(path: Path) -> str:
@@ -33,19 +88,21 @@ class VideoRenderer:
         output_path: Path,
         clip: HighlightClip,
         work_dir: Path,
+        video_aspect_ratio: VideoAspectRatio = VideoAspectRatio.SQUARE,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         duration = clip.end_seconds - clip.start_seconds
         probe = probe_media(source_path, timeout=min(30, self.settings.ffmpeg_timeout_seconds))
         fps = min(30.0, video_fps(probe))
         has_audio = any(stream.get("codec_type") == "audio" for stream in probe.get("streams", []))
+        target_height = VIDEO_HEIGHTS[video_aspect_ratio]
         command = [
             "ffmpeg", "-hide_banner", "-loglevel", "warning", "-y",
             "-ss", f"{clip.start_seconds:.3f}", "-t", f"{duration:.3f}",
             "-i", str(source_path),
             "-vf", (
-                "scale=1080:1080:force_original_aspect_ratio=increase,"
-                f"crop=1080:1080,fps={fps:.3f}"
+                f"scale={CANVAS_WIDTH}:{target_height}:force_original_aspect_ratio=increase,"
+                f"crop={CANVAS_WIDTH}:{target_height},fps={fps:.3f}"
             ),
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
             "-pix_fmt", "yuv420p", "-r", f"{fps:.3f}",
@@ -74,6 +131,7 @@ class VideoRenderer:
         work_dir: Path,
         prefix: str,
         title_font_scale: float = 1.0,
+        video_aspect_ratio: VideoAspectRatio = VideoAspectRatio.SQUARE,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         probe = probe_media(clean_path, timeout=min(30, self.settings.ffmpeg_timeout_seconds))
@@ -82,6 +140,7 @@ class VideoRenderer:
             raise RenderError("clean clip 길이가 올바르지 않습니다.")
         fps = min(30.0, video_fps(probe))
         has_audio = any(stream.get("codec_type") == "audio" for stream in probe.get("streams", []))
+        layout = video_layout(video_aspect_ratio)
         top, bottom = create_panel_overlays(
             title=title,
             channel_name=channel_name,
@@ -89,6 +148,9 @@ class VideoRenderer:
             directory=work_dir / "overlays",
             prefix=prefix,
             title_font_scale=title_font_scale,
+            top_height=layout.top_height,
+            bottom_height=layout.bottom_height,
+            overlay_mode=layout.overlay_mode,
         )
         ass_path = None
         if subtitles_enabled:
@@ -97,13 +159,15 @@ class VideoRenderer:
                 clip_start=0,
                 clip_end=duration,
                 output_path=work_dir / "subtitles" / f"{prefix}.ass",
+                margin_v=layout.subtitle_margin_v,
             )
         background = TEMPLATE_STYLES[template_id].background.replace("#", "0x")
         filters = [
-            f"color=c={background}:s=1080x1920:r={fps:.3f}:d={duration:.3f}[base]",
-            "[base][0:v]overlay=x=0:y=420:shortest=1[with_video]",
-            "[with_video][1:v]overlay=x=0:y=0:shortest=1[with_top]",
-            "[with_top][2:v]overlay=x=0:y=1500:shortest=1[composed]",
+            f"color=c={background}:s={CANVAS_WIDTH}x{CANVAS_HEIGHT}:r={fps:.3f}:d={duration:.3f}[base]",
+            f"[0:v]setpts=PTS-STARTPTS,fps={fps:.3f}[center]",
+            f"[base][center]overlay=x=0:y={layout.video_y}:shortest=1[with_video]",
+            f"[with_video][1:v]overlay=x=0:y={layout.top_y}:shortest=1[with_top]",
+            f"[with_top][2:v]overlay=x=0:y={layout.bottom_y}:shortest=1[composed]",
         ]
         video_label = "composed"
         if ass_path:
@@ -159,6 +223,7 @@ class VideoRenderer:
         log: Callable[[str], None] | None = None,
         title_color: str | None = None,
         title_font_size: int | None = None,
+        video_aspect_ratio: VideoAspectRatio = VideoAspectRatio.SQUARE,
     ) -> Path:
         if not source_path.is_file():
             raise RenderError("원본 영상 파일을 찾지 못했습니다.")
@@ -171,6 +236,7 @@ class VideoRenderer:
         has_audio = any(
             stream.get("codec_type") == "audio" for stream in probe.get("streams", [])
         )
+        layout = video_layout(video_aspect_ratio)
         top, bottom = create_panel_overlays(
             title=clip.hook_title,
             channel_name=channel_name,
@@ -179,6 +245,9 @@ class VideoRenderer:
             prefix=f"clip_{clip_index}",
             title_color=title_color,
             title_font_size=title_font_size,
+            top_height=layout.top_height,
+            bottom_height=layout.bottom_height,
+            overlay_mode=layout.overlay_mode,
         )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.unlink(missing_ok=True)
@@ -227,13 +296,13 @@ class VideoRenderer:
         filters = [
             (
                 f"[0:v]setpts=PTS-STARTPTS,"
-                "scale=1080:1080:force_original_aspect_ratio=increase,"
-                f"crop=1080:1080,fps={fps_text}[center]"
+                f"scale={CANVAS_WIDTH}:{layout.video_height}:force_original_aspect_ratio=increase,"
+                f"crop={CANVAS_WIDTH}:{layout.video_height},fps={fps_text}[center]"
             ),
-            f"color=c={background}:s=1080x1920:r={fps_text}:d={duration:.3f}[base]",
-            "[base][center]overlay=x=0:y=420:shortest=1[with_video]",
-            "[with_video][1:v]overlay=x=0:y=0:shortest=1[with_top]",
-            "[with_top][2:v]overlay=x=0:y=1500:shortest=1[composed]",
+            f"color=c={background}:s={CANVAS_WIDTH}x{CANVAS_HEIGHT}:r={fps_text}:d={duration:.3f}[base]",
+            f"[base][center]overlay=x=0:y={layout.video_y}:shortest=1[with_video]",
+            f"[with_video][1:v]overlay=x=0:y={layout.top_y}:shortest=1[with_top]",
+            f"[with_top][2:v]overlay=x=0:y={layout.bottom_y}:shortest=1[composed]",
         ]
         video_label = "composed"
         filters.append(

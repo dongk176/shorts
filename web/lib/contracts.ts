@@ -4,6 +4,21 @@ export type PlanCode = (typeof planCodes)[number];
 export const templateIds = ["dark-red", "white-yellow", "dark-minimal", "paper"] as const;
 export type TemplateId = (typeof templateIds)[number];
 
+export const videoAspectRatios = ["16:9", "1:1", "4:5", "9:16"] as const;
+export type VideoAspectRatio = (typeof videoAspectRatios)[number];
+
+export const videoAspectRatioOptions: Array<{
+  value: VideoAspectRatio;
+  label: string;
+  width: number;
+  height: number;
+}> = [
+  { value: "16:9", label: "가로모드", width: 1080, height: 608 },
+  { value: "1:1", label: "정사각형", width: 1080, height: 1080 },
+  { value: "4:5", label: "세로형", width: 1080, height: 1350 },
+  { value: "9:16", label: "세로 꽉참", width: 1080, height: 1920 },
+];
+
 export const outputLanguages = ["ko", "en", "ja", "zh-CN", "es", "fr", "de", "pt-BR"] as const;
 export type OutputLanguage = (typeof outputLanguages)[number];
 
@@ -49,6 +64,7 @@ export type GeneratedShort = {
   subtitleSegments: Array<{ start: number; end: number; text: string }>;
   subtitlesEnabled: boolean;
   templateId: TemplateId;
+  videoAspectRatio: VideoAspectRatio;
   titleFontScale: number;
   renderVersion: number;
   rerenderProgress: number;
