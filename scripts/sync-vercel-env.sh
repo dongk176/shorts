@@ -15,9 +15,6 @@ if [[ ! -f .vercel/project.json ]]; then
 fi
 
 export AWS_ROLE_ARN="$(bash ../scripts/stack-outputs.sh VercelRoleArn Compute)"
-export AWS_BATCH_JOB_QUEUE="$(bash ../scripts/stack-outputs.sh BatchJobQueue Compute)"
-export AWS_BATCH_JOB_DEFINITION_SHORT="$(bash ../scripts/stack-outputs.sh BatchJobDefinitionShort Compute)"
-export AWS_BATCH_JOB_DEFINITION_LONG="$(bash ../scripts/stack-outputs.sh BatchJobDefinitionLong Compute)"
 export AWS_S3_OUTPUT_BUCKET="$(bash ../scripts/stack-outputs.sh MediaBucketName Foundation)"
 export CLOUDFRONT_DOMAIN="$(bash ../scripts/stack-outputs.sh CloudFrontDomain Foundation)"
 export CLOUDFRONT_KEY_PAIR_ID="$(bash ../scripts/stack-outputs.sh CloudFrontKeyPairId Foundation)"
@@ -29,8 +26,7 @@ export VIDEO_JOB_BACKEND="${VIDEO_JOB_BACKEND:-aws_batch}"
 
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
-for name in DATABASE_URL YOUTUBE_API_KEY AWS_ROLE_ARN AWS_REGION AWS_BATCH_JOB_QUEUE \
-  AWS_BATCH_JOB_DEFINITION_SHORT AWS_BATCH_JOB_DEFINITION_LONG AWS_S3_OUTPUT_BUCKET \
+for name in DATABASE_URL YOUTUBE_API_KEY AWS_ROLE_ARN AWS_REGION AWS_S3_OUTPUT_BUCKET \
   CLOUDFRONT_DOMAIN CLOUDFRONT_KEY_PAIR_ID CLOUDFRONT_PRIVATE_KEY_B64 \
   MVP_PLAN_ENFORCEMENT MVP_MAX_ACTIVE_JOBS_PER_SESSION VIDEO_JOB_BACKEND; do
   value="${!name:-}"

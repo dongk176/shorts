@@ -2,21 +2,28 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from functools import lru_cache
 from typing import Any
 
 import boto3
 
+_runtime_secret_cache: tuple[float, dict[str, str]] | None = None
 
-@lru_cache(maxsize=1)
+
 def runtime_secret() -> dict[str, str]:
+    global _runtime_secret_cache
+    now = time.monotonic()
+    if _runtime_secret_cache and _runtime_secret_cache[0] > now:
+        return _runtime_secret_cache[1]
     response = boto3.client("secretsmanager").get_secret_value(
         SecretId=os.environ["RUNTIME_SECRET_ARN"]
     )
-    return json.loads(response.get("SecretString") or "{}")
+    value = json.loads(response.get("SecretString") or "{}")
+    _runtime_secret_cache = (now + 60, value)
+    return value
 
 
 def rest(

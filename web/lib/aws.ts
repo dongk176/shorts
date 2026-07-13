@@ -1,18 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { BatchClient, SubmitJobCommand } from "@aws-sdk/client-batch";
 import { DeleteObjectsCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 
 const region = process.env.AWS_REGION || "ap-northeast-2";
-const workerRetryStrategy = {
-  attempts: 2,
-  evaluateOnExit: [
-    { action: "EXIT" as const, onExitCode: "42" },
-    { action: "EXIT" as const, onExitCode: "43" },
-    { action: "RETRY" as const, onExitCode: "*" },
-  ],
-};
-
 function credentials() {
   const roleArn = process.env.AWS_ROLE_ARN;
   if (!roleArn || (!process.env.VERCEL && !process.env.VERCEL_OIDC_TOKEN)) return undefined;
@@ -24,47 +13,12 @@ function credentials() {
   });
 }
 
-function batchClient() { return new BatchClient({ region, credentials: credentials() }); }
 function s3Client() { return new S3Client({ region, credentials: credentials() }); }
 
 export function latestJobDefinitionName(value: string) {
   const arnName = /:job-definition\/([^:]+)(?::\d+)?$/.exec(value)?.[1];
   if (arnName) return arnName;
   return value.replace(/:\d+$/, "");
-}
-
-export async function submitInitialJob(jobId: string, durationSeconds: number) {
-  if (process.env.AWS_BATCH_MOCK === "true") return `mock-${randomUUID()}`;
-  const jobQueue = process.env.AWS_BATCH_JOB_QUEUE;
-  const definition = durationSeconds <= 900 ? process.env.AWS_BATCH_JOB_DEFINITION_SHORT : process.env.AWS_BATCH_JOB_DEFINITION_LONG;
-  if (!jobQueue || !definition) throw new Error("AWS Batch 작업 설정이 완료되지 않았습니다.");
-  const result = await batchClient().send(new SubmitJobCommand({
-    jobName: `shorts-initial-${jobId}`,
-    jobQueue,
-    jobDefinition: latestJobDefinitionName(definition),
-    containerOverrides: { command: ["python", "-m", "shorts_worker", "initial", "--job-id", jobId] },
-    retryStrategy: workerRetryStrategy,
-    timeout: { attemptDurationSeconds: 5400 },
-  }));
-  if (!result.jobId) throw new Error("AWS Batch 작업 ID를 받지 못했습니다.");
-  return result.jobId;
-}
-
-export async function submitRerender(shortId: string) {
-  if (process.env.AWS_BATCH_MOCK === "true") return `mock-${randomUUID()}`;
-  const jobQueue = process.env.AWS_BATCH_JOB_QUEUE;
-  const definition = process.env.AWS_BATCH_JOB_DEFINITION_SHORT;
-  if (!jobQueue || !definition) throw new Error("AWS Batch 재렌더링 설정이 완료되지 않았습니다.");
-  const result = await batchClient().send(new SubmitJobCommand({
-    jobName: `shorts-rerender-${shortId}`,
-    jobQueue,
-    jobDefinition: latestJobDefinitionName(definition),
-    containerOverrides: { command: ["python", "-m", "shorts_worker", "rerender", "--short-id", shortId] },
-    retryStrategy: workerRetryStrategy,
-    timeout: { attemptDurationSeconds: 5400 },
-  }));
-  if (!result.jobId) throw new Error("AWS Batch 재렌더링 작업 ID를 받지 못했습니다.");
-  return result.jobId;
 }
 
 export async function deleteShortObjects(keys: string[]) {

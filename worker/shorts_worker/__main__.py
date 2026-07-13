@@ -13,6 +13,13 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
     initial = subparsers.add_parser("initial")
     initial.add_argument("--job-id", required=True)
+    prepare = subparsers.add_parser("prepare")
+    prepare.add_argument("--job-id", required=True)
+    prepare_array = subparsers.add_parser("prepare-array")
+    prepare_array.add_argument("--dispatch-batch-id", required=True)
+    render = subparsers.add_parser("render-shard")
+    render.add_argument("--job-id", required=True)
+    render.add_argument("--shard-index", type=int)
     rerender = subparsers.add_parser("rerender")
     rerender.add_argument("--short-id", required=True)
     pull = subparsers.add_parser("pull")
@@ -23,8 +30,23 @@ def main() -> None:
     pull.add_argument("--idle-timeout", type=float, default=0)
     args = parser.parse_args()
     worker = BatchWorker(Settings())
-    if args.command == "initial":
+    if args.command in {"initial", "prepare"}:
         worker.initial(args.job_id)
+    elif args.command == "prepare-array":
+        import os
+
+        array_index = int(os.getenv("AWS_BATCH_JOB_ARRAY_INDEX", "0"))
+        job_id = worker.repository.get_dispatch_job(args.dispatch_batch_id, array_index)
+        if not job_id:
+            raise KeyError(f"{args.dispatch_batch_id}:{array_index}")
+        worker.prepare(job_id)
+    elif args.command == "render-shard":
+        import os
+
+        shard_index = args.shard_index
+        if shard_index is None:
+            shard_index = int(os.getenv("AWS_BATCH_JOB_ARRAY_INDEX", "0"))
+        worker.render_shard(args.job_id, shard_index)
     elif args.command == "rerender":
         worker.rerender(args.short_id)
     elif args.command == "pull":

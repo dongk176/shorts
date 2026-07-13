@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { submitRerender } from "@/lib/aws";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
 import { requireMvpSession } from "@/lib/session";
@@ -21,27 +20,20 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
     if (rows[0].renderedConfigHash === rows[0].currentConfigHash) {
       return NextResponse.json({ status: "ready", unchanged: true });
     }
-    await db`
-      update shorts_mvp.generated_shorts
-      set status='rerendering', rerender_progress=5,
-        pending_render_hash=${rows[0].currentConfigHash}
-      where id=${shortId}
-    `;
-    try {
-      const batchJobId = await submitRerender(shortId);
-      await db`
-        update shorts_mvp.generated_shorts set rerender_batch_job_id=${batchJobId}
-        where id=${shortId} and status='rerendering'
-      `;
-      return NextResponse.json({ status: "rerendering", batchJobId }, { status: 202 });
-    } catch (error) {
-      await db`
+    await db.begin(async (tx) => {
+      await tx`
         update shorts_mvp.generated_shorts
-        set status='ready', rerender_progress=0,
-          pending_render_hash=null, rerender_batch_job_id=null
+        set status='rerendering', rerender_progress=5,
+          pending_render_hash=${rows[0].currentConfigHash}
         where id=${shortId}
       `;
-      throw error;
-    }
+      await tx`
+        insert into shorts_mvp.short_outbox (short_id)
+        values (${shortId})
+        on conflict (short_id) do update set status='pending', available_at=now(),
+          dispatched_at=null, last_error=null
+      `;
+    });
+    return NextResponse.json({ status: "rerendering" }, { status: 202 });
   } catch (error) { return apiError(error); }
 }

@@ -75,6 +75,7 @@ export async function getRecentJobs(db: Sql, sessionId: string, onlyJobId?: stri
     progress: row.progress,
     errorMessage: row.errorMessage,
     createdAt: row.createdAt.toISOString(),
+    expiresAt: row.expiresAt?.toISOString() ?? null,
     shorts: shorts.get(row.id) || [],
   })) as VideoJob[];
 }

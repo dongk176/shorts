@@ -75,7 +75,7 @@ npm run infra:setup
 owner:<team>:project:<project>:environment:production
 ```
 
-Vercel에는 `AWS_ROLE_ARN`, region, Batch queue/definitions, S3 bucket, CloudFront signing 설정만 저장합니다. 서버 코드는 요청 컨텍스트의 Vercel OIDC token을 `sts.amazonaws.com` 전용 audience로 교환해 `@vercel/oidc-aws-credentials-provider`를 사용하고 로컬에서는 AWS 기본 credential chain을 사용합니다.
+Vercel에는 `AWS_ROLE_ARN`, region, S3 bucket, CloudFront signing 설정만 저장합니다. 신규 생성과 재렌더 접수는 DB Outbox에만 기록하며, Lambda Dispatcher가 SQS와 AWS Batch로 전달합니다. 서버 코드는 미디어 조회·삭제에 필요할 때만 요청 컨텍스트의 Vercel OIDC token을 `sts.amazonaws.com` 전용 audience로 교환합니다.
 
 ## 환경변수
 
@@ -86,10 +86,10 @@ Vercel에는 `AWS_ROLE_ARN`, region, Batch queue/definitions, S3 bucket, CloudFr
 | `GEMINI_API_KEY` | worker | 구조화된 하이라이트 선정(없으면 deterministic fallback) |
 | `OPENAI_API_KEY` | worker | 자막이 없을 때만 음성 인식 |
 | `AWS_ROLE_ARN`, `AWS_REGION` | Vercel | OIDC assume role |
-| `AWS_BATCH_JOB_QUEUE` | Vercel | 작업 queue |
-| `AWS_BATCH_JOB_DEFINITION_SHORT/LONG` | Vercel | 15분 이하/초과 job definition |
 | `AWS_S3_OUTPUT_BUCKET` | Vercel, worker | private media bucket |
-| `BOT_CHECK_COOLDOWN_SECONDS` | worker | BOT_CHECK 이후 공유 회로 차단 시간(기본 1800초) |
+| `WORK_DISPATCH_QUEUE_URL` | worker/Lambda | Prepare·Render 작업 전달 SQS |
+| `STATE_EVENT_QUEUE_URL` | worker/Lambda | 진행률·heartbeat 일괄 반영 SQS |
+| `BOT_CHECK_COOLDOWN_SECONDS` | worker | BOT_CHECK 이후 공유 회로 차단 시간(기본 60초) |
 | `CLOUDFRONT_DOMAIN` | Vercel | output CDN |
 | `CLOUDFRONT_KEY_PAIR_ID` | Vercel | Signed URL public-key id |
 | `CLOUDFRONT_PRIVATE_KEY_B64` | Vercel secret | Signed URL private key |
@@ -110,9 +110,10 @@ make verify
 
 ## 비용 통제 및 장애 대응
 
-- 원본 최대 60분, 다운로드 최대 1080p, 출력 최대 30fps, 최대 5개
-- Batch Fargate 총 12 vCPU, On-Demand, NAT Gateway 없음
-- 세션 동시 작업 1개, YouTube 수집 전역 동시 실행 1개, request idempotency
+- 원본 최대 60분, 다운로드 최대 1080p, 출력 최대 30fps, 최대 15개
+- Prepare는 Fargate On-Demand, Render는 EC2 Spot 우선·On-Demand fallback, 유휴 EC2 `minvCpus=0`
+- 세션 동시 작업 1개, Outbox/SQS idempotency, 작업별 15분 deadline
+- BOT_CHECK/429는 사용자에게 숨기고 60초 후 최대 10회 재시도하며, 최근 50회 중 20% 이상이면 1분 회로 차단
 - S3 versioning 없음, incomplete multipart 1일, media 30일 lifecycle
 - ECR 최근 8개, CloudWatch 14일
 - Worker heartbeat 60초, Batch 실패 이벤트와 2시간 stale cleanup
