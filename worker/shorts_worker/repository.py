@@ -14,10 +14,12 @@ from psycopg.types.json import Jsonb
 
 
 class WorkerRepository:
-    def __init__(self, database_url: str) -> None:
+    def __init__(self, database_url: str, aws_region: str) -> None:
         self.database_url = database_url
         self.state_queue_url = os.getenv("STATE_EVENT_QUEUE_URL")
-        self.state_queue = boto3.client("sqs") if self.state_queue_url else None
+        self.state_queue = (
+            boto3.client("sqs", region_name=aws_region) if self.state_queue_url else None
+        )
 
     def _enqueue_state_event(self, payload: dict[str, Any]) -> bool:
         if not self.state_queue_url or not self.state_queue:
@@ -116,8 +118,8 @@ class WorkerRepository:
                 """
                 update shorts_mvp.video_jobs
                 set status='starting', stage='starting', progress=7,
-                  attempt_count=case when %s is null then attempt_count + 1
-                                     else greatest(attempt_count,%s) end,
+                  attempt_count=case when %s::integer is null then attempt_count + 1
+                                     else greatest(attempt_count,%s::integer) end,
                   next_attempt_at=null, error_code=null, error_message=null,
                   started_at=coalesce(started_at,now()), heartbeat_at=now()
                 where id=%s and (

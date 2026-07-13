@@ -15,6 +15,9 @@ FINAL_MESSAGE = (
     "영상을 가져오지 못했습니다. 영상이 공개 상태인지, 로그인·연령·지역 제한이 "
     "없는지, 삭제되거나 비공개 처리되지 않았는지 확인한 뒤 다시 시도해 주세요."
 )
+RENDER_FINAL_MESSAGE = (
+    "쇼츠 영상을 만드는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+)
 TERMINAL_STATUSES = {"completed", "failed", "expired", "deleted"}
 
 
@@ -126,7 +129,7 @@ def _render_rows(parent_job_id: str, array_index: int | None) -> list[dict[str, 
     return rest("generated_shorts", query=f"{query}&limit=100") or []
 
 
-def _fail_job(job_id: str, error_code: str) -> None:
+def _fail_job(job_id: str, error_code: str, error_message: str) -> None:
     encoded_job_id = _encoded(job_id)
     patch(
         "video_jobs",
@@ -136,7 +139,7 @@ def _fail_job(job_id: str, error_code: str) -> None:
             "stage": "failed",
             "progress": 100,
             "error_code": error_code,
-            "error_message": FINAL_MESSAGE,
+            "error_message": error_message,
             "source_deleted_at": iso_now(),
         },
     )
@@ -170,7 +173,7 @@ def _handle_render_failure(
         return {"ignoredRenderJobId": job_id}
     deadline = datetime.fromisoformat(jobs[0]["deadline_at"].replace("Z", "+00:00"))
     if deadline <= datetime.now(UTC) + timedelta(seconds=75):
-        _fail_job(job_id, "render_failed")
+        _fail_job(job_id, "render_failed", RENDER_FINAL_MESSAGE)
         return {"failedRenderJobId": job_id}
     patch(
         "generated_shorts",
