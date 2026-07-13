@@ -178,7 +178,11 @@ def create_title_panel(
 
     total_height = sum(height + padding_y * 2 for _, _, _, height, padding_y in line_metrics)
     total_height += TITLE_LINE_GAP * max(0, len(line_metrics) - 1)
-    bottom_margin = min(TITLE_BOTTOM_MARGIN, max(24, round(panel_height * 0.105)))
+    bottom_margin = (
+        12
+        if panel_height == 285 and not overlay_mode
+        else min(TITLE_BOTTOM_MARGIN, max(24, round(panel_height * 0.105)))
+    )
     row_y = max(12, panel_height - bottom_margin - total_height)
 
     for index, (line, box, width, height, accent_padding_y) in enumerate(line_metrics):
