@@ -79,6 +79,24 @@ def test_two_line_title_sits_near_video_and_accent_contains_text(tmp_path: Path)
         assert max(y for _, y in second_line_text) < red_bottom
 
 
+def test_portrait_title_sits_closer_to_video(tmp_path: Path) -> None:
+    output = create_title_panel(
+        "첫 번째 제목\n두 번째 제목",
+        TemplateId.DARK_RED,
+        tmp_path / "portrait-title.png",
+        panel_height=285,
+    )
+    with Image.open(output).convert("RGB") as image:
+        visible_pixels = [
+            (x, y)
+            for y in range(image.height)
+            for x in range(image.width)
+            if image.getpixel((x, y)) != (0, 0, 0)
+        ]
+        assert visible_pixels
+        assert max(y for _, y in visible_pixels) >= 270
+
+
 def test_channel_panel_sits_near_video(tmp_path: Path) -> None:
     output = create_channel_panel(
         "디글 클래식 : Diggle Classic",
