@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { clipLengthRules, expectedShortCount } from "./contracts";
+import { AI_CLIP_MAX_SECONDS, AI_CLIP_MIN_SECONDS, expectedShortCount } from "./contracts";
 
 describe("clip rules", () => {
-  it("keeps all user options inside 20–180 seconds", () => {
-    expect(clipLengthRules).toEqual({
-      sec_30: { min: 20, max: 30, target: 29 },
-      sec_31_60: { min: 31, max: 60, target: 50 },
-      sec_61_180: { min: 61, max: 180, target: 90 },
-    });
+  it("uses the fixed AI-selected duration range", () => {
+    expect([AI_CLIP_MIN_SECONDS, AI_CLIP_MAX_SECONDS]).toEqual([30, 60]);
   });
 
   it.each([

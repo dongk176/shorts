@@ -64,6 +64,13 @@ function dbWithRows(...responses: unknown[][]) {
   return tag;
 }
 
+function dbForSuccessfulJobCreation() {
+  const db = dbWithRows([], []);
+  const tx = dbWithRows([], [], [{ active: 0 }], [], []);
+  Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
+  return db;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.session.mockResolvedValue({ id: "session-a", selectedPlanCode: "plus" });
@@ -75,7 +82,6 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
       templateId: "dark-red",
-      clipLengthOption: "sec_30",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
       rightsConfirmed: false,
@@ -105,7 +111,7 @@ describe("job API security and idempotency", () => {
     expect(mocks.submitInitial).not.toHaveBeenCalled();
   });
 
-  it("rejects a selected range shorter than the chosen clip length", async () => {
+  it("rejects a selected range shorter than thirty seconds", async () => {
     mocks.getDb.mockReturnValue(dbWithRows([]));
     mocks.analyze.mockResolvedValue({
       videoId: "dQw4w9WgXcQ",
@@ -119,7 +125,6 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
       templateId: "dark-red",
-      clipLengthOption: "sec_31_60",
       rangeStartSeconds: 100,
       rangeEndSeconds: 120,
       rightsConfirmed: true,
@@ -127,6 +132,31 @@ describe("job API security and idempotency", () => {
     }));
     expect(response.status).toBe(400);
     expect(mocks.submitInitial).not.toHaveBeenCalled();
+  });
+
+  it("accepts an exact thirty-second range without a length option", async () => {
+    mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
+    mocks.analyze.mockResolvedValue({
+      videoId: "dQw4w9WgXcQ",
+      normalizedUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      title: "테스트 영상",
+      channelName: "채널",
+      thumbnailUrl: "https://example.com/thumb.jpg",
+      durationSeconds: 600,
+      expectedShortCount: 3,
+    });
+    mocks.submitInitial.mockResolvedValue("batch-a");
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
+      templateId: "dark-red",
+      rangeStartSeconds: 100,
+      rangeEndSeconds: 130,
+      rightsConfirmed: true,
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d2",
+    }));
+
+    expect(response.status).toBe(202);
   });
 
   it("does not expose another session's job", async () => {

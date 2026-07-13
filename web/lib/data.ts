@@ -68,7 +68,6 @@ export async function getRecentJobs(db: Sql, sessionId: string, onlyJobId?: stri
     channelName: row.channelName,
     thumbnailUrl: row.thumbnailUrl,
     sourceDurationSeconds: row.sourceDurationSeconds,
-    clipLengthOption: row.clipLengthOption,
     outputLanguage: row.outputLanguage,
     expectedShortCount: row.expectedShortCount,
     status: row.status,

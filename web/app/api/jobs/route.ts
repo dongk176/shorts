@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { submitInitialJob } from "@/lib/aws";
-import { clipLengthOptions, clipLengthRules, expectedShortCount, outputLanguages, templateIds } from "@/lib/contracts";
+import { AI_CLIP_MIN_SECONDS, expectedShortCount, outputLanguages, templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
 import { getInitialJobBackend } from "@/lib/job-backend";
@@ -14,7 +14,6 @@ import { analyzeYoutubeUrl } from "@/lib/youtube";
 const schema = z.object({
   youtubeUrl: z.string().min(1).max(2048),
   templateId: z.enum(templateIds),
-  clipLengthOption: z.enum(clipLengthOptions),
   outputLanguage: z.enum(outputLanguages).default("ko"),
   rightsConfirmed: z.literal(true),
   requestId: z.string().uuid(),
@@ -36,12 +35,11 @@ export async function POST(request: Request) {
     const rangeStartSeconds = Math.round(input.rangeStartSeconds * 1000) / 1000;
     const rangeEndSeconds = Math.round(input.rangeEndSeconds * 1000) / 1000;
     const selectedDurationSeconds = rangeEndSeconds - rangeStartSeconds;
-    const minimumClipSeconds = clipLengthRules[input.clipLengthOption].min;
     if (
       rangeEndSeconds > metadata.durationSeconds + 0.001
-      || selectedDurationSeconds < minimumClipSeconds
+      || selectedDurationSeconds < AI_CLIP_MIN_SECONDS
     ) {
-      throw new Error(`선택 구간은 영상 안에 있어야 하며 최소 ${minimumClipSeconds}초여야 합니다.`);
+      throw new Error(`선택 구간은 영상 안에 있어야 하며 최소 ${AI_CLIP_MIN_SECONDS}초여야 합니다.`);
     }
     const selectedShortCount = expectedShortCount(selectedDurationSeconds);
     const maxActive = Number(process.env.MVP_MAX_ACTIVE_JOBS_PER_SESSION || 1);
@@ -82,7 +80,7 @@ export async function POST(request: Request) {
         ) values (
           ${jobId}, ${session.id}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${metadata.channelName}, ${metadata.thumbnailUrl}, ${metadata.durationSeconds}, ${rangeStartSeconds},
-          ${rangeEndSeconds}, ${input.templateId}, ${input.clipLengthOption}, ${input.outputLanguage}, ${selectedShortCount},
+          ${rangeEndSeconds}, ${input.templateId}, 'sec_31_60', ${input.outputLanguage}, ${selectedShortCount},
           true, ${executionBackend}, 'queued', 'queued', 5
         )
       `;
