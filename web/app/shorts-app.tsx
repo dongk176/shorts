@@ -14,6 +14,7 @@ import type {
 import { AI_CLIP_MIN_SECONDS, expectedShortCount, outputLanguageOptions } from "@/lib/contracts";
 
 type Analysis = {
+  analysisId: string;
   videoId: string;
   normalizedUrl: string;
   title: string;
@@ -221,6 +222,9 @@ function ProjectCard({ job, onOpen }: { job: VideoJob; onOpen: () => void }) {
   const readyCount = job.shorts.filter((item) => item.status === "ready").length;
   const rerenderingShort = job.shorts.find((item) => item.status === "rerendering");
   const isProcessing = !terminalStatuses.has(job.status) || Boolean(rerenderingShort);
+  const daysUntilExpiration = job.expiresAt
+    ? Math.max(0, Math.ceil((new Date(job.expiresAt).getTime() - Date.now()) / 86_400_000))
+    : null;
   const estimatedTotalSeconds = rerenderingShort
     ? Math.max(60, rerenderingShort.durationSeconds * 2)
     : Math.max(180, job.sourceDurationSeconds * 0.35 + job.expectedShortCount * 60);
@@ -229,17 +233,18 @@ function ProjectCard({ job, onOpen }: { job: VideoJob; onOpen: () => void }) {
     : Math.max(1, Math.ceil((estimatedTotalSeconds * (100 - Math.min(job.progress, 99))) / 100 / 60));
   const displayedProgress = rerenderingShort ? rerenderingShort.rerenderProgress : job.progress;
   return (
-    <button type="button" onClick={onOpen} disabled={isProcessing} className={`project-card group text-left ${isProcessing ? "project-card-processing" : ""}`}>
+    <button type="button" onClick={onOpen} disabled={isProcessing && readyCount === 0} className={`project-card group text-left ${isProcessing ? "project-card-processing" : ""}`}>
       <div className="relative aspect-video overflow-hidden bg-neutral-900">
         {job.thumbnailUrl ? <Image src={job.thumbnailUrl} alt="" fill unoptimized className={`object-cover transition duration-300 group-hover:scale-[1.03] ${isProcessing ? "grayscale" : ""}`} /> : null}
+        {daysUntilExpiration !== null && <span className="absolute left-2 top-2 z-10 rounded bg-black/75 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">{daysUntilExpiration > 0 ? `${daysUntilExpiration}일 뒤 만료` : "오늘 만료"}</span>}
         {!isProcessing && <span className="absolute bottom-2 right-2 rounded bg-black/75 px-2 py-1 text-[11px] font-semibold">{formatDuration(job.sourceDurationSeconds)}</span>}
         <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
-        {isProcessing && <div className="project-processing-overlay"><ProgressRing progress={displayedProgress} /><strong>약 {remainingMinutes}분 남음</strong></div>}
+        {isProcessing && readyCount === 0 && <div className="project-processing-overlay"><ProgressRing progress={displayedProgress} /><strong>약 {remainingMinutes}분 남음</strong></div>}
       </div>
       <div className="p-4">
         <h3 className="line-clamp-1 text-sm font-bold text-white">{job.videoTitle}</h3>
         <div className="mt-3 flex items-center justify-between text-xs text-neutral-500">
-          <span className={rerenderingShort ? "text-violet-300" : job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-neutral-400"}>{rerenderingShort ? "● 수정 반영 중" : job.status === "completed" ? "● 완료" : job.status === "failed" ? "● 생성 실패" : "● 생성 중"}</span>
+          <span className={rerenderingShort ? "text-violet-300" : job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-neutral-400"}>{rerenderingShort ? "● 수정 반영 중" : job.status === "completed" ? "● 완료" : job.status === "failed" ? "● 생성 실패" : job.status === "retry_waiting" ? "● 원본 영상을 준비하고 있습니다" : readyCount > 0 ? `● ${readyCount}개 먼저 완료` : "● 생성 중"}</span>
           <span>{isProcessing && !rerenderingShort ? `최대 쇼츠 ${job.expectedShortCount}개` : `쇼츠 ${readyCount || job.shorts.length}개`}</span>
           <span>{new Date(job.createdAt).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })}</span>
         </div>
@@ -420,8 +425,8 @@ export function ShortsApp() {
     if (!analysis || !rightsConfirmed) return;
     setBusy(true); setError(null);
     try {
-      const value = await requestJson<{ jobId: string; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ youtubeUrl: analysis.normalizedUrl, templateId, outputLanguage, rangeStartSeconds, rangeEndSeconds, rightsConfirmed: true, requestId: crypto.randomUUID() }) });
-      const pendingJob: VideoJob = { id: value.jobId, videoTitle: analysis.title, channelName: analysis.channelName, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: analysis.expectedShortCount, status: "queued", stage: "queued", progress: 5, errorMessage: null, createdAt: new Date().toISOString(), shorts: [] };
+      const value = await requestJson<{ jobId: string; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, outputLanguage, rangeStartSeconds, rangeEndSeconds, rightsConfirmed: true, requestId: crypto.randomUUID() }) });
+      const pendingJob: VideoJob = { id: value.jobId, videoTitle: analysis.title, channelName: analysis.channelName, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: analysis.expectedShortCount, status: "queued", stage: "queued", progress: 5, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
       setState((current) => current ? { ...current, usage: value.usage, recentJobs: [pendingJob, ...current.recentJobs.filter((job) => job.id !== pendingJob.id)] } : current);
       setActiveJob(pendingJob);
       setScrollToProjects(true);

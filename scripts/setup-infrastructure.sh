@@ -6,7 +6,7 @@ REGION="${AWS_REGION:-ap-northeast-2}"
 ENVIRONMENT="${DEPLOY_ENV:-production}"
 cd "$ROOT"
 
-echo "생성 예정: private S3, CloudFront OAC/key group, ECR, NAT 없는 VPC, Batch Fargate(최대 12 vCPU), IAM/OIDC roles, Secrets Manager, EventBridge/Lambda, 14일 logs"
+echo "생성 예정: private S3, CloudFront, ECR, NAT 없는 VPC, Prepare Fargate, Render EC2 Spot/On-Demand, SQS, IAM/OIDC, EventBridge/Lambda"
 
 for command in aws openssl node npm; do
   if ! command -v "$command" >/dev/null 2>&1; then

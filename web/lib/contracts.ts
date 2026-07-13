@@ -69,6 +69,7 @@ export type VideoJob = {
   progress: number;
   errorMessage: string | null;
   createdAt: string;
+  expiresAt: string | null;
   shorts: GeneratedShort[];
 };
 

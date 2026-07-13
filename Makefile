@@ -1,15 +1,20 @@
+WORKER_PYTHON ?= .venv/bin/python
+WORKER_RUFF ?= .venv/bin/ruff
+
 .PHONY: dev test lint build verify clean
 
 dev:
 	cd web && npm run dev
 
 test:
-	cd worker && .venv/bin/python -m pytest -q
+	cd worker && $(WORKER_PYTHON) -m pytest -q
 	cd web && npm run test
 	cd web && npm run typecheck
+	cd infra/aws && npm run test
 
 lint:
-	cd worker && .venv/bin/ruff check .
+	cd worker && $(WORKER_RUFF) check .
+	cd worker && $(WORKER_RUFF) check ../infra/aws/lambda
 	cd web && npm run lint
 	cd web && npm run typecheck
 

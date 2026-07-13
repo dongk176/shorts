@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { submitInitialJob } from "@/lib/aws";
 import { AI_CLIP_MIN_SECONDS, expectedShortCount, outputLanguages, templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
@@ -9,10 +8,10 @@ import { getInitialJobBackend } from "@/lib/job-backend";
 import { assertJobCreationAllowed } from "@/lib/job-policy";
 import { requireMvpSession } from "@/lib/session";
 import { getUsageSnapshot } from "@/lib/usage";
-import { analyzeYoutubeUrl } from "@/lib/youtube";
 
 const schema = z.object({
-  youtubeUrl: z.string().min(1).max(2048),
+  analysisId: z.string().uuid(),
+  youtubeUrl: z.string().max(2048).optional(),
   templateId: z.enum(templateIds),
   outputLanguage: z.enum(outputLanguages).default("ko"),
   rightsConfirmed: z.literal(true),
@@ -31,7 +30,22 @@ export async function POST(request: Request) {
     if (existing[0]) return NextResponse.json({ jobId: existing[0].id, status: existing[0].status, usage: await getUsageSnapshot(db, session.id) });
     // Circuit breaker logic removed to allow continuous testing with proxies.
 
-    const metadata = await analyzeYoutubeUrl(input.youtubeUrl);
+    const analyses = await db`
+      select youtube_url, youtube_video_id, video_title, channel_name,
+        thumbnail_url, duration_seconds
+      from shorts_mvp.youtube_analyses
+      where id=${input.analysisId} and mvp_session_id=${session.id} and expires_at > now()
+      limit 1
+    `;
+    if (!analyses[0]) throw new Error("영상 분석 정보가 만료되었습니다. 링크를 다시 확인해 주세요.");
+    const metadata = {
+      normalizedUrl: analyses[0].youtubeUrl,
+      videoId: analyses[0].youtubeVideoId,
+      title: analyses[0].videoTitle,
+      channelName: analyses[0].channelName,
+      thumbnailUrl: analyses[0].thumbnailUrl,
+      durationSeconds: Number(analyses[0].durationSeconds),
+    };
     const rangeStartSeconds = Math.round(input.rangeStartSeconds * 1000) / 1000;
     const rangeEndSeconds = Math.round(input.rangeEndSeconds * 1000) / 1000;
     const selectedDurationSeconds = rangeEndSeconds - rangeStartSeconds;
@@ -59,7 +73,7 @@ export async function POST(request: Request) {
       const limits = await tx`
         select count(*) filter (where status in (
             'validating','queued','starting','downloading','transcribing','selecting',
-            'extracting','rendering','uploading'
+            'extracting','rendering','uploading','retry_waiting'
           ))::int as active
         from shorts_mvp.video_jobs where mvp_session_id=${session.id}
       `;
@@ -76,18 +90,24 @@ export async function POST(request: Request) {
           channel_name, thumbnail_url, source_duration_seconds, range_start_seconds,
           range_end_seconds, template_id,
           clip_length_option, output_language, expected_short_count, rights_confirmed, execution_backend,
-          status, stage, progress
+          status, stage, progress, deadline_at, planned_short_count
         ) values (
           ${jobId}, ${session.id}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${metadata.channelName}, ${metadata.thumbnailUrl}, ${metadata.durationSeconds}, ${rangeStartSeconds},
           ${rangeEndSeconds}, ${input.templateId}, 'sec_31_60', ${input.outputLanguage}, ${selectedShortCount},
-          true, ${executionBackend}, 'queued', 'queued', 5
+          true, ${executionBackend}, 'queued', 'queued', 5, now() + interval '15 minutes', ${selectedShortCount}
         )
       `;
       await tx`
         insert into shorts_mvp.usage_reservations (mvp_session_id, job_id, source_duration_seconds)
         values (${session.id}, ${jobId}, ${Math.ceil(selectedDurationSeconds)})
       `;
+      if (executionBackend === "aws_batch") {
+        await tx`
+          insert into shorts_mvp.job_outbox (job_id, kind, attempt_count)
+          values (${jobId}, 'prepare', 0)
+        `;
+      }
       return null;
     });
     if (duplicate) {
@@ -98,18 +118,6 @@ export async function POST(request: Request) {
       });
     }
 
-    if (executionBackend === "aws_batch") {
-      try {
-        const batchJobId = await submitInitialJob(jobId, selectedDurationSeconds);
-        await db`update shorts_mvp.video_jobs set aws_batch_job_id = ${batchJobId} where id = ${jobId}`;
-      } catch (error) {
-        await db.begin(async (tx) => {
-          await tx`update shorts_mvp.video_jobs set status='failed', stage='failed', progress=100, error_code='batch_submit_failed', error_message=${error instanceof Error ? error.message : "Batch 제출 실패"} where id=${jobId}`;
-          await tx`update shorts_mvp.usage_reservations set status='released', released_at=now() where job_id=${jobId} and status='reserved'`;
-        });
-        throw error;
-      }
-    }
     return NextResponse.json({
       jobId,
       status: "queued",

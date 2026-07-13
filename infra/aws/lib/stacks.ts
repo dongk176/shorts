@@ -9,9 +9,11 @@ import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as lambdaEventSources from "aws-cdk-lib/aws-lambda-event-sources";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
 
@@ -145,12 +147,22 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     const vpc = new ec2.Vpc(this, "WorkerVpc", {
       maxAzs: 2,
       natGateways: 0,
-      subnetConfiguration: [{
-        name: "PublicWorkers",
-        subnetType: ec2.SubnetType.PUBLIC,
-        cidrMask: 24,
-      }],
+      subnetConfiguration: [
+        {
+          name: "PublicWorkers",
+          subnetType: ec2.SubnetType.PUBLIC,
+          cidrMask: 24,
+        },
+        {
+          name: "ScaleWorkers",
+          subnetType: ec2.SubnetType.PUBLIC,
+          cidrMask: 19,
+        },
+      ],
     });
+    const workerSubnetIds = vpc.selectSubnets({
+      subnetGroupName: "ScaleWorkers",
+    }).subnetIds;
     const securityGroup = new ec2.SecurityGroup(this, "WorkerSecurityGroup", {
       vpc,
       description: "No inbound traffic; outbound HTTPS for Batch workers",
@@ -190,21 +202,89 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     runtimeSecret.grantRead(executionRole);
     workerLogGroup.grantWrite(executionRole);
 
-    const compute = new batch.CfnComputeEnvironment(this, "FargateCompute", {
+    const workDlq = new sqs.Queue(this, "WorkDispatchDlq", {
+      retentionPeriod: cdk.Duration.days(14),
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
+    });
+    const workQueue = new sqs.Queue(this, "WorkDispatchQueue", {
+      visibilityTimeout: cdk.Duration.minutes(15),
+      retentionPeriod: cdk.Duration.days(1),
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
+      deadLetterQueue: { queue: workDlq, maxReceiveCount: 5 },
+    });
+    const stateQueue = new sqs.Queue(this, "StateEventQueue", {
+      visibilityTimeout: cdk.Duration.minutes(2),
+      retentionPeriod: cdk.Duration.days(1),
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
+      deadLetterQueue: { queue: workDlq, maxReceiveCount: 5 },
+    });
+    workQueue.grantSendMessages(taskRole);
+    stateQueue.grantSendMessages(taskRole);
+
+    const prepareMaxVcpus = Number(this.node.tryGetContext("prepareMaxVcpus") || 4000);
+    const renderMaxVcpus = Number(this.node.tryGetContext("renderMaxVcpus") || 4000);
+    const compute = new batch.CfnComputeEnvironment(this, "PrepareFargateCompute", {
       type: "MANAGED",
       state: "ENABLED",
       computeResources: {
         type: "FARGATE",
-        maxvCpus: 12,
-        subnets: vpc.publicSubnets.map((subnet) => subnet.subnetId),
+        maxvCpus: prepareMaxVcpus,
+        subnets: workerSubnetIds,
         securityGroupIds: [securityGroup.securityGroupId],
       },
     });
-    const queue = new batch.CfnJobQueue(this, "JobQueue", {
+    const queue = new batch.CfnJobQueue(this, "PrepareJobQueue", {
       priority: 10,
       state: "ENABLED",
       computeEnvironmentOrder: [{ order: 1, computeEnvironment: compute.ref }],
-      jobQueueName: `shorts-mvp-${props.environment}`,
+      jobQueueName: `shorts-mvp-prepare-${props.environment}`,
+    });
+
+    const ecsInstanceRole = new iam.Role(this, "RenderEcsInstanceRole", {
+      assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AmazonEC2ContainerServiceforEC2Role"),
+      ],
+    });
+    const instanceProfile = new iam.CfnInstanceProfile(this, "RenderInstanceProfile", {
+      roles: [ecsInstanceRole.roleName],
+    });
+    const renderResources = {
+      maxvCpus: renderMaxVcpus,
+      minvCpus: 0,
+      desiredvCpus: 0,
+      instanceTypes: ["default_x86_64"],
+      instanceRole: instanceProfile.attrArn,
+      subnets: workerSubnetIds,
+      securityGroupIds: [securityGroup.securityGroupId],
+      ec2Configuration: [{ imageType: "ECS_AL2023" }],
+    };
+    const renderSpot = new batch.CfnComputeEnvironment(this, "RenderSpotCompute", {
+      type: "MANAGED",
+      state: "ENABLED",
+      computeResources: {
+        ...renderResources,
+        type: "SPOT",
+        allocationStrategy: "SPOT_PRICE_CAPACITY_OPTIMIZED",
+      },
+    });
+    const renderOnDemand = new batch.CfnComputeEnvironment(this, "RenderOnDemandCompute", {
+      type: "MANAGED",
+      state: "ENABLED",
+      computeResources: {
+        ...renderResources,
+        type: "EC2",
+        allocationStrategy: "BEST_FIT_PROGRESSIVE",
+      },
+    });
+    const renderQueue = new batch.CfnJobQueue(this, "RenderJobQueue", {
+      priority: 10,
+      state: "ENABLED",
+      computeEnvironmentOrder: [
+        { order: 1, computeEnvironment: renderSpot.ref },
+        { order: 2, computeEnvironment: renderOnDemand.ref },
+      ],
+      jobQueueName: `shorts-mvp-render-${props.environment}`,
     });
     const secret = (key: string) => ({
       name: key,
@@ -227,7 +307,9 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { name: "AWS_REGION", value: this.region },
         { name: "AWS_S3_OUTPUT_BUCKET", value: bucket.bucketName },
         { name: "TEMP_ROOT", value: "/tmp/shorts-jobs" },
-        { name: "BOT_CHECK_COOLDOWN_SECONDS", value: "1800" },
+        { name: "BOT_CHECK_COOLDOWN_SECONDS", value: "60" },
+        { name: "WORK_DISPATCH_QUEUE_URL", value: workQueue.queueUrl },
+        { name: "STATE_EVENT_QUEUE_URL", value: stateQueue.queueUrl },
       ],
       secrets: [
         secret("DATABASE_URL"),
@@ -245,6 +327,37 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { action: "RETRY", onExitCode: "*" },
       ],
     };
+    const prepareDefinition = new batch.CfnJobDefinition(this, "PrepareJobDefinition", {
+      type: "container",
+      platformCapabilities: ["FARGATE"],
+      jobDefinitionName: `shorts-mvp-prepare-${props.environment}`,
+      retryStrategy: { attempts: 1 },
+      timeout: { attemptDurationSeconds: 840 },
+      containerProperties: {
+        ...baseContainer,
+        runtimePlatform: { cpuArchitecture: "X86_64", operatingSystemFamily: "LINUX" },
+        ephemeralStorage: { sizeInGiB: 30 },
+        resourceRequirements: [
+          { type: "VCPU", value: "4" },
+          { type: "MEMORY", value: "8192" },
+        ],
+      },
+    });
+    const renderDefinition = new batch.CfnJobDefinition(this, "RenderJobDefinition", {
+      type: "container",
+      platformCapabilities: ["EC2"],
+      jobDefinitionName: `shorts-mvp-render-${props.environment}`,
+      retryStrategy: { attempts: 2 },
+      timeout: { attemptDurationSeconds: 600 },
+      containerProperties: {
+        ...baseContainer,
+        networkConfiguration: undefined,
+        resourceRequirements: [
+          { type: "VCPU", value: "4" },
+          { type: "MEMORY", value: "8192" },
+        ],
+      },
+    });
     const shortDefinition = new batch.CfnJobDefinition(this, "ShortJobDefinition", {
       type: "container",
       platformCapabilities: ["FARGATE"],
@@ -292,13 +405,22 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     runtimeSecret.grantRead(lambdaRole);
     bucket.grantReadWrite(lambdaRole);
     lambdaRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["batch:DescribeJobs"],
+      actions: ["batch:DescribeJobs", "batch:SubmitJob", "batch:TerminateJob", "batch:CancelJob"],
       resources: ["*"],
     }));
+    workQueue.grantConsumeMessages(lambdaRole);
+    workQueue.grantSendMessages(lambdaRole);
+    stateQueue.grantConsumeMessages(lambdaRole);
     const lambdaEnvironment = {
       RUNTIME_SECRET_ARN: runtimeSecret.secretArn,
       MEDIA_BUCKET: bucket.bucketName,
       AWS_BATCH_JOB_QUEUE: queue.ref,
+      WORK_DISPATCH_QUEUE_URL: workQueue.queueUrl,
+      PREPARE_BATCH_QUEUE: queue.ref,
+      PREPARE_JOB_DEFINITION: prepareDefinition.ref,
+      RENDER_BATCH_QUEUE: renderQueue.ref,
+      RENDER_JOB_DEFINITION: renderDefinition.ref,
+      STATE_EVENT_QUEUE_URL: stateQueue.queueUrl,
     };
     const lambdaCode = lambda.Code.fromAsset(path.join(__dirname, "../lambda"), {
       exclude: ["__pycache__", "*.pyc"],
@@ -333,9 +455,51 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       environment: lambdaEnvironment,
       logGroup: batchStateLogGroup,
     });
-    new events.Rule(this, "HourlyCleanup", {
-      schedule: events.Schedule.rate(cdk.Duration.hours(1)),
+    const outboxDispatcher = new lambda.Function(this, "OutboxDispatcherFunction", {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "outbox_dispatcher.handler",
+      code: lambdaCode,
+      role: lambdaRole,
+      timeout: cdk.Duration.seconds(50),
+      memorySize: 256,
+      environment: lambdaEnvironment,
+    });
+    const batchSubmitter = new lambda.Function(this, "BatchSubmitterFunction", {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "batch_submitter.handler",
+      code: lambdaCode,
+      role: lambdaRole,
+      timeout: cdk.Duration.minutes(2),
+      memorySize: 256,
+      reservedConcurrentExecutions: 1,
+      environment: lambdaEnvironment,
+    });
+    batchSubmitter.addEventSource(new lambdaEventSources.SqsEventSource(workQueue, {
+      batchSize: 10,
+      maxBatchingWindow: cdk.Duration.seconds(1),
+      reportBatchItemFailures: true,
+    }));
+    const stateWriter = new lambda.Function(this, "StateWriterFunction", {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "state_writer.handler",
+      code: lambdaCode,
+      role: lambdaRole,
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 256,
+      environment: lambdaEnvironment,
+    });
+    stateWriter.addEventSource(new lambdaEventSources.SqsEventSource(stateQueue, {
+      batchSize: 10,
+      maxBatchingWindow: cdk.Duration.seconds(1),
+      reportBatchItemFailures: true,
+    }));
+    new events.Rule(this, "MinuteCleanup", {
+      schedule: events.Schedule.rate(cdk.Duration.minutes(1)),
       targets: [new targets.LambdaFunction(cleanup)],
+    });
+    new events.Rule(this, "MinuteOutboxDispatch", {
+      schedule: events.Schedule.rate(cdk.Duration.minutes(1)),
+      targets: [new targets.LambdaFunction(outboxDispatcher)],
     });
     new events.Rule(this, "BatchStateEvents", {
       eventPattern: {
@@ -374,20 +538,6 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       }),
       maxSessionDuration: cdk.Duration.hours(1),
     });
-    vercelRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["batch:SubmitJob"],
-      resources: [
-        queue.attrJobQueueArn,
-        shortDefinition.ref,
-        longDefinition.ref,
-        `${shortDefinition.ref}:*`,
-        `${longDefinition.ref}:*`,
-      ],
-    }));
-    vercelRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["batch:DescribeJobs"],
-      resources: ["*"],
-    }));
     bucket.grantDelete(vercelRole, "outputs/*");
     bucket.grantDelete(vercelRole, "thumbnails/*");
     bucket.grantDelete(vercelRole, "edit-sources/*");
@@ -427,6 +577,12 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     new cdk.CfnOutput(this, "BatchJobQueue", { value: queue.ref });
     new cdk.CfnOutput(this, "BatchJobDefinitionShort", { value: shortDefinition.ref });
     new cdk.CfnOutput(this, "BatchJobDefinitionLong", { value: longDefinition.ref });
+    new cdk.CfnOutput(this, "PrepareBatchJobQueue", { value: queue.ref });
+    new cdk.CfnOutput(this, "PrepareBatchJobDefinition", { value: prepareDefinition.ref });
+    new cdk.CfnOutput(this, "RenderBatchJobQueue", { value: renderQueue.ref });
+    new cdk.CfnOutput(this, "RenderBatchJobDefinition", { value: renderDefinition.ref });
+    new cdk.CfnOutput(this, "WorkDispatchQueueUrl", { value: workQueue.queueUrl });
+    new cdk.CfnOutput(this, "StateEventQueueUrl", { value: stateQueue.queueUrl });
     new cdk.CfnOutput(this, "VercelRoleArn", { value: vercelRole.roleArn });
     new cdk.CfnOutput(this, "WorkerTaskRoleArn", { value: taskRole.roleArn });
     new cdk.CfnOutput(this, "GithubWorkerBuildRoleArn", { value: githubRole.roleArn });

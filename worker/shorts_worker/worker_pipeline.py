@@ -4,15 +4,17 @@ import os
 import shutil
 import threading
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 from .config import Settings
-from .errors import BotCheckError
+from .errors import BotCheckError, IngestionError
 from .ingestion import YtDlpIngestionProvider
 from .media import run_command
+from .queueing import WorkQueue
 from .renderer import VideoRenderer
 from .repository import WorkerRepository
 from .schemas import (
@@ -37,6 +39,12 @@ class BatchWorker:
         self.transcriber = AudioTranscriber(settings)
         self.selector = TranscriptSelector(settings)
         self.renderer = VideoRenderer(settings)
+        self.queue = WorkQueue(settings.aws_region)
+
+    FINAL_INGESTION_MESSAGE = (
+        "영상을 가져오지 못했습니다. 영상이 공개 상태인지, 로그인·연령·지역 제한이 "
+        "없는지, 삭제되거나 비공개 처리되지 않았는지 확인한 뒤 다시 시도해 주세요."
+    )
 
     @contextmanager
     def heartbeat(self, job_id: str):
@@ -93,21 +101,38 @@ class BatchWorker:
         return output
 
     def initial(self, job_id: str, *, attempt_override: int | None = None) -> None:
+        self.prepare(job_id, attempt_override=attempt_override)
+
+    def prepare(self, job_id: str, *, attempt_override: int | None = None) -> None:
         job = self.repository.get_job(job_id)
         if not job:
             raise KeyError(job_id)
         work_dir = self.settings.temp_dir / job_id
-        attempt = attempt_override or max(1, int(os.getenv("AWS_BATCH_JOB_ATTEMPT", "1")))
+        deadline = job.get("deadline_at")
+        if (
+            int(job.get("attempt_count") or 0) >= 10
+            or (deadline and deadline <= datetime.now(UTC) + timedelta(minutes=5))
+        ):
+            self.repository.fail_job(
+                job_id, "prepare_deadline", self.FINAL_INGESTION_MESSAGE
+            )
+            return
+        claimed = self.repository.claim_prepare_attempt(
+            job_id, attempt_override=attempt_override
+        )
+        if not claimed:
+            return
+        attempt = int(claimed["attempt_count"])
         shutil.rmtree(work_dir, ignore_errors=True)
         work_dir.mkdir(parents=True)
         try:
-            self.repository.begin_attempt(job_id, attempt)
             with self.heartbeat(job_id):
                 self.repository.stage(job_id, "downloading", 10, "원본 영상을 준비하고 있습니다.")
                 with self.repository.ingestion_slot():
                     bundle = self.ingestion.download_bundle(
                         job["youtube_url"], work_dir / "source"
                     )
+                self.repository.record_ingestion_result(job_id, "success")
                 metadata = bundle.metadata
                 if (
                     metadata.video_id != job["youtube_video_id"]
@@ -147,11 +172,7 @@ class BatchWorker:
                     )
                     short_id = str(uuid4())
                     clean_path = work_dir / "clean" / f"{short_id}.mp4"
-                    output_path = work_dir / "outputs" / f"{short_id}.mp4"
-                    thumbnail_path = work_dir / "thumbnails" / f"{short_id}.jpg"
                     clean_path.parent.mkdir(parents=True, exist_ok=True)
-                    output_path.parent.mkdir(parents=True, exist_ok=True)
-                    thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
                     self.renderer.extract_clean_clip(
                         source_path=source,
                         output_path=clean_path,
@@ -159,33 +180,10 @@ class BatchWorker:
                         work_dir=work_dir,
                     )
                     relative_subtitles = self._relative_subtitles(transcript, clip)
-                    self.repository.stage(
-                        job_id,
-                        "rendering",
-                        60 + round(25 * index / len(clips)),
-                        f"쇼츠 {index}/{len(clips)}를 만들었습니다.",
-                    )
-                    self.renderer.render_clean_clip(
-                        clean_path=clean_path,
-                        output_path=output_path,
-                        title=clip.hook_title,
-                        channel_name=job["channel_name"],
-                        template_id=TemplateId(job["template_id"]),
-                        transcript=relative_subtitles,
-                        subtitles_enabled=False,
-                        work_dir=work_dir,
-                        prefix=f"short-{index}",
-                    )
-                    self._thumbnail(output_path, thumbnail_path, work_dir)
                     prefix = f"{job['mvp_session_id']}/{job_id}/{short_id}"
                     clean_key = f"edit-sources/{prefix}.mp4"
-                    output_key = f"outputs/{prefix}/v1.mp4"
-                    thumbnail_key = f"thumbnails/{prefix}.jpg"
-                    self.repository.stage(job_id, "uploading", 86, "영상을 업로드하고 있습니다.")
                     self.storage.upload(clean_path, clean_key, "video/mp4")
-                    size = self.storage.upload(output_path, output_key, "video/mp4")
-                    self.storage.upload(thumbnail_path, thumbnail_key, "image/jpeg")
-                    self.repository.add_short(
+                    self.repository.add_pending_short(
                         short_id=short_id,
                         job=job,
                         clip_index=index,
@@ -194,30 +192,132 @@ class BatchWorker:
                         hook_title=clip.hook_title,
                         subtitles=[item.model_dump() for item in relative_subtitles],
                         clean_key=clean_key,
-                        output_key=output_key,
-                        thumbnail_key=thumbnail_key,
-                        file_size=size,
                         expires_at=expires_at,
+                        shard_index=(index - 1) // 4,
                     )
-                self.repository.complete_job(job_id)
-        except Exception as exc:
-            prefix = f"{job['mvp_session_id']}/{job_id}/"
-            for storage_prefix in (
-                f"outputs/{prefix}",
-                f"edit-sources/{prefix}",
-                f"thumbnails/{prefix}",
-            ):
-                try:
-                    self.storage.delete_prefix(storage_prefix)
-                except Exception:
-                    pass
+                self.repository.mark_render_queued(job_id, len(clips))
+                shard_count = (len(clips) + 3) // 4
+                if self.queue.queue_url:
+                    self.queue.send({
+                        "kind": "render",
+                        "jobId": job_id,
+                        "shardCount": shard_count,
+                    })
+                else:
+                    for shard_index in range(shard_count):
+                        self.render_shard(job_id, shard_index)
+        except BotCheckError as exc:
+            self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
-            non_retryable = isinstance(exc, BotCheckError)
-            if non_retryable or attempt >= 2:
-                self.repository.fail_job(job_id, type(exc).__name__, str(exc))
-            else:
+            self.repository.record_ingestion_result(job_id, "bot_check")
+            if attempt < 10 and self.repository.can_retry_prepare(job_id):
                 self.repository.retry_job(job_id, type(exc).__name__, str(exc))
+                if self.queue.queue_url:
+                    self.queue.send({"kind": "prepare_retry", "jobId": job_id}, delay_seconds=60)
+            else:
+                self.repository.fail_job(
+                    job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
+                )
+        except IngestionError as exc:
+            self._cleanup_initial_objects(job)
+            self.repository.remove_partial_shorts(job_id)
+            self.repository.record_ingestion_result(job_id, "other_error")
+            self.repository.fail_job(
+                job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
+            )
+        except Exception as exc:
+            self._cleanup_initial_objects(job)
+            self.repository.remove_partial_shorts(job_id)
+            self.repository.record_ingestion_result(job_id, "other_error")
+            self.repository.fail_job(job_id, type(exc).__name__, str(exc))
             traceback.print_exc()
+            raise
+        finally:
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+    def _cleanup_initial_objects(self, job: dict[str, object]) -> None:
+        prefix = f"{job['mvp_session_id']}/{job['id']}/"
+        for storage_prefix in (
+            f"outputs/{prefix}",
+            f"edit-sources/{prefix}",
+            f"thumbnails/{prefix}",
+        ):
+            try:
+                self.storage.delete_prefix(storage_prefix)
+            except Exception:
+                pass
+
+    def render_shard(self, job_id: str, shard_index: int) -> None:
+        job = self.repository.get_job(job_id)
+        if not job:
+            raise KeyError(job_id)
+        if job["status"] in {"completed", "failed", "expired", "deleted"}:
+            return
+        if job.get("deadline_at") and job["deadline_at"] <= datetime.now(UTC):
+            self.repository.fail_job(
+                job_id, "render_deadline", "쇼츠 생성 제한 시간이 초과되었습니다."
+            )
+            return
+        items = self.repository.get_render_shard(job_id, shard_index)
+        pending = [item for item in items if item["status"] == "rendering"]
+        if not pending:
+            self.repository.maybe_complete_job(job_id)
+            return
+
+        failures: list[Exception] = []
+        with ThreadPoolExecutor(max_workers=min(2, len(pending))) as executor:
+            futures = [executor.submit(self._render_initial_short, item) for item in pending]
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as exc:
+                    failures.append(exc)
+        if failures:
+            raise failures[0]
+        self.repository.maybe_complete_job(job_id)
+
+    def _render_initial_short(self, item: dict[str, object]) -> None:
+        short_id = str(item["id"])
+        if not self.repository.begin_initial_render(short_id):
+            return
+        work_dir = self.settings.temp_dir / f"render-{short_id}"
+        shutil.rmtree(work_dir, ignore_errors=True)
+        work_dir.mkdir(parents=True)
+        try:
+            clean_path = self.storage.download(
+                str(item["clean_clip_s3_key"]), work_dir / "clean.mp4"
+            )
+            self.repository.update_initial_render_progress(short_id, 30)
+            output_path = work_dir / "output.mp4"
+            thumbnail_path = work_dir / "thumbnail.jpg"
+            subtitles = [
+                SubtitleSegment.model_validate(segment)
+                for segment in item["subtitle_segments"]  # type: ignore[union-attr]
+            ]
+            self.renderer.render_clean_clip(
+                clean_path=clean_path,
+                output_path=output_path,
+                title=str(item["hook_title"]),
+                channel_name=str(item["channel_display_name"]),
+                template_id=TemplateId(str(item["template_id"])),
+                transcript=subtitles,
+                subtitles_enabled=bool(item["subtitles_enabled"]),
+                work_dir=work_dir,
+                prefix="initial",
+                title_font_scale=float(item["title_font_scale"]),
+            )
+            self._thumbnail(output_path, thumbnail_path, work_dir)
+            self.repository.update_initial_render_progress(short_id, 82)
+            prefix = f"{item['mvp_session_id']}/{item['job_id']}/{short_id}"
+            output_key = f"outputs/{prefix}/v1.mp4"
+            thumbnail_key = f"thumbnails/{prefix}.jpg"
+            size = self.storage.upload(output_path, output_key, "video/mp4")
+            self.storage.upload(thumbnail_path, thumbnail_key, "image/jpeg")
+            self.repository.complete_initial_render(
+                short_id, output_key, thumbnail_key, size
+            )
+        except Exception as exc:
+            self.repository.fail_initial_render(short_id, type(exc).__name__, str(exc))
             raise
         finally:
             shutil.rmtree(work_dir, ignore_errors=True)

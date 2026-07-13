@@ -65,11 +65,21 @@ function dbWithRows(...responses: unknown[][]) {
 }
 
 function dbForSuccessfulJobCreation() {
-  const db = dbWithRows([], []);
-  const tx = dbWithRows([], [], [{ active: 0 }], [], []);
+  const db = dbWithRows([], [analysisRow]);
+  const tx = dbWithRows([], [], [{ active: 0 }], [], [], []);
   Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
   return db;
 }
+
+const analysisId = "6bce83c4-b12e-4d11-8f16-2fef8a96c541";
+const analysisRow = {
+  youtubeUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  youtubeVideoId: "dQw4w9WgXcQ",
+  videoTitle: "테스트 영상",
+  channelName: "채널",
+  thumbnailUrl: "https://example.com/thumb.jpg",
+  durationSeconds: 600,
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -81,6 +91,7 @@ describe("job API security and idempotency", () => {
   it("rejects creation when rights confirmation is missing", async () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
+      analysisId,
       templateId: "dark-red",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
@@ -95,6 +106,7 @@ describe("job API security and idempotency", () => {
     mocks.getDb.mockReturnValue(dbWithRows([{ id: "job-existing", status: "queued" }]));
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
+      analysisId,
       templateId: "dark-red",
       clipLengthOption: "sec_31_60",
       rangeStartSeconds: 0,
@@ -112,18 +124,10 @@ describe("job API security and idempotency", () => {
   });
 
   it("rejects a selected range shorter than thirty seconds", async () => {
-    mocks.getDb.mockReturnValue(dbWithRows([]));
-    mocks.analyze.mockResolvedValue({
-      videoId: "dQw4w9WgXcQ",
-      normalizedUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-      title: "테스트 영상",
-      channelName: "채널",
-      thumbnailUrl: "https://example.com/thumb.jpg",
-      durationSeconds: 600,
-      expectedShortCount: 3,
-    });
+    mocks.getDb.mockReturnValue(dbWithRows([], [analysisRow]));
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
+      analysisId,
       templateId: "dark-red",
       rangeStartSeconds: 100,
       rangeEndSeconds: 120,
@@ -136,19 +140,9 @@ describe("job API security and idempotency", () => {
 
   it("accepts an exact thirty-second range without a length option", async () => {
     mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
-    mocks.analyze.mockResolvedValue({
-      videoId: "dQw4w9WgXcQ",
-      normalizedUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-      title: "테스트 영상",
-      channelName: "채널",
-      thumbnailUrl: "https://example.com/thumb.jpg",
-      durationSeconds: 600,
-      expectedShortCount: 3,
-    });
-    mocks.submitInitial.mockResolvedValue("batch-a");
-
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
+      analysisId,
       templateId: "dark-red",
       rangeStartSeconds: 100,
       rangeEndSeconds: 130,
@@ -217,6 +211,31 @@ describe("short ownership, expiry, and edit validation", () => {
       { params: Promise.resolve({ shortId: "short-b" }) },
     );
     expect(response.status).toBe(404);
+    expect(mocks.submitRerender).not.toHaveBeenCalled();
+  });
+
+  it("queues rerendering in the database without calling Batch from Vercel", async () => {
+    const db = dbWithRows([{
+      id: "short-a",
+      status: "ready",
+      renderedConfigHash: "old-hash",
+      currentConfigHash: "new-hash",
+    }]);
+    const tx = dbWithRows([], []);
+    const begin = vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx));
+    Object.assign(db, {
+      begin,
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await rerenderShort(
+      new Request("http://localhost/api/shorts/short-a/rerender", { method: "POST" }),
+      { params: Promise.resolve({ shortId: "short-a" }) },
+    );
+
+    expect(response.status).toBe(202);
+    expect(begin).toHaveBeenCalledOnce();
+    expect(tx).toHaveBeenCalledTimes(2);
     expect(mocks.submitRerender).not.toHaveBeenCalled();
   });
 

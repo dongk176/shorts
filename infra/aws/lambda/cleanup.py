@@ -6,12 +6,15 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import boto3
-
 from common import iso_now, patch, rest
 
 s3 = boto3.client("s3")
 batch = boto3.client("batch")
 bucket = os.environ["MEDIA_BUCKET"]
+FINAL_MESSAGE = (
+    "영상을 가져오지 못했습니다. 영상이 공개 상태인지, 로그인·연령·지역 제한이 "
+    "없는지, 삭제되거나 비공개 처리되지 않았는지 확인한 뒤 다시 시도해 주세요."
+)
 
 
 def _delete_keys(keys: list[str]) -> int:
@@ -114,6 +117,73 @@ def release_stale_jobs() -> int:
     return released
 
 
+def enforce_deadlines() -> int:
+    now = urllib.parse.quote(iso_now(), safe="")
+    jobs = rest("video_jobs", query=(
+        "select=id,aws_batch_job_id,status,dispatch_batch_id"
+        f"&deadline_at=lte.{now}&status=not.in.(completed,failed,expired,deleted)&limit=500"
+    )) or []
+    for job in jobs:
+        batch_ids: set[str] = set()
+        batch_id = job.get("aws_batch_job_id")
+        if batch_id and job.get("dispatch_batch_id"):
+            encoded_dispatch = urllib.parse.quote(job["dispatch_batch_id"], safe="")
+            encoded_job = urllib.parse.quote(job["id"], safe="")
+            items = rest("dispatch_batch_items", query=(
+                "select=array_index,dispatch_batches(item_count)"
+                f"&dispatch_batch_id=eq.{encoded_dispatch}&job_id=eq.{encoded_job}&limit=1"
+            )) or []
+            if items and int(items[0].get("dispatch_batches", {}).get("item_count", 1)) > 1:
+                batch_ids.add(f"{batch_id}:{items[0]['array_index']}")
+            else:
+                batch_ids.add(batch_id)
+        elif batch_id:
+            batch_ids.add(batch_id)
+        shorts = rest("generated_shorts", query=(
+            "select=id,render_batch_job_id,output_s3_key,clean_clip_s3_key,thumbnail_s3_key"
+            f"&job_id=eq.{urllib.parse.quote(job['id'], safe='')}"
+            "&render_batch_job_id=not.is.null"
+        )) or []
+        batch_ids.update(
+            item["render_batch_job_id"] for item in shorts if item.get("render_batch_job_id")
+        )
+        for active_batch_id in batch_ids:
+            try:
+                batch.terminate_job(
+                    jobId=active_batch_id, reason="15 minute job deadline reached"
+                )
+            except Exception:
+                try:
+                    batch.cancel_job(
+                        jobId=active_batch_id, reason="15 minute job deadline reached"
+                    )
+                except Exception:
+                    pass
+        _delete_keys([
+            key
+            for item in shorts
+            for key in (
+                item.get("output_s3_key"), item.get("clean_clip_s3_key"),
+                item.get("thumbnail_s3_key"),
+            )
+            if key
+        ])
+        for item in shorts:
+            patch("generated_shorts", f"id=eq.{item['id']}&status=eq.rendering", {
+                "status": "failed", "render_error_code": "job_deadline",
+                "render_error_message": FINAL_MESSAGE,
+            })
+        patch("video_jobs", f"id=eq.{job['id']}", {
+            "status": "failed", "stage": "failed", "progress": 100,
+            "error_code": "job_deadline", "error_message": FINAL_MESSAGE,
+            "source_deleted_at": iso_now(),
+        })
+        patch("usage_reservations", f"job_id=eq.{job['id']}&status=eq.reserved", {
+            "status": "released", "released_at": iso_now(),
+        })
+    return len(jobs)
+
+
 def reset_stale_rerenders() -> int:
     cutoff = urllib.parse.quote((datetime.now(UTC) - timedelta(hours=2)).isoformat(), safe="")
     items = rest(
@@ -147,6 +217,7 @@ def reset_stale_rerenders() -> int:
 
 
 def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
+    deadlines = enforce_deadlines()
     expired, objects = expire_shorts()
     stale = release_stale_jobs()
     rerenders = reset_stale_rerenders()
@@ -155,4 +226,5 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
         "deletedObjects": objects,
         "releasedStaleJobs": stale,
         "resetStaleRerenders": rerenders,
+        "enforcedDeadlines": deadlines,
     }

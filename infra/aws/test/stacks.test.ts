@@ -38,11 +38,20 @@ describe("shorts MVP infrastructure", () => {
     });
   });
 
-  it("uses public subnets without NAT and caps Batch at 12 vCPU", () => {
+  it("uses scalable Prepare Fargate and zero-idle Render Spot with fallback", () => {
     const { compute } = stacks();
     compute.resourceCountIs("AWS::EC2::NatGateway", 0);
     compute.hasResourceProperties("AWS::Batch::ComputeEnvironment", {
-      ComputeResources: Match.objectLike({ MaxvCpus: 12, Type: "FARGATE" }),
+      ComputeResources: Match.objectLike({ MaxvCpus: 4000, Type: "FARGATE" }),
+    });
+    compute.hasResourceProperties("AWS::Batch::ComputeEnvironment", {
+      ComputeResources: Match.objectLike({
+        MaxvCpus: 4000, MinvCpus: 0, Type: "SPOT",
+        AllocationStrategy: "SPOT_PRICE_CAPACITY_OPTIMIZED",
+      }),
+    });
+    compute.hasResourceProperties("AWS::Batch::ComputeEnvironment", {
+      ComputeResources: Match.objectLike({ MaxvCpus: 4000, MinvCpus: 0, Type: "EC2" }),
     });
     compute.hasResourceProperties("AWS::Batch::JobDefinition", {
       ContainerProperties: Match.objectLike({
@@ -65,22 +74,22 @@ describe("shorts MVP infrastructure", () => {
     });
   });
 
-  it("serializes BOT_CHECK recovery without automatic Batch retries", () => {
+  it("uses a one-minute SQS retry and no native Prepare retry", () => {
     const { compute } = stacks();
     compute.hasResourceProperties("AWS::Batch::JobDefinition", {
       ContainerProperties: Match.objectLike({
         Environment: Match.arrayWith([
-          { Name: "BOT_CHECK_COOLDOWN_SECONDS", Value: "1800" },
+          { Name: "BOT_CHECK_COOLDOWN_SECONDS", Value: "60" },
         ]),
       }),
       RetryStrategy: {
-        Attempts: 2,
-        EvaluateOnExit: [
-          { Action: "EXIT", OnExitCode: "42" },
-          { Action: "EXIT", OnExitCode: "43" },
-          { Action: "RETRY", OnExitCode: "*" },
-        ],
+        Attempts: 1,
       },
+      Timeout: { AttemptDurationSeconds: 840 },
+    });
+    compute.resourceCountIs("AWS::SQS::Queue", 3);
+    compute.hasResourceProperties("AWS::Events::Rule", {
+      ScheduleExpression: "rate(1 minute)",
     });
   });
 

@@ -15,7 +15,8 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     encoded = urllib.parse.quote(str(batch_job_id), safe="")
     jobs = rest(
         "video_jobs",
-        query=f"select=id,status&aws_batch_job_id=eq.{encoded}&limit=1",
+        query=(f"select=id,status,dispatch_batch_id&aws_batch_job_id=eq.{encoded}"
+               "&dispatch_batch_id=is.null&limit=1"),
     ) or []
     if jobs and status == "FAILED" and jobs[0]["status"] not in {
         "completed", "failed", "expired", "deleted"

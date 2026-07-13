@@ -11,7 +11,7 @@
 ## Safety invariants
 
 - Accept only the supported YouTube hostnames and never bypass authentication,
-  age, DRM, private-video, or download restrictions.
+  age, DRM, or private-video restrictions. (Bot check download restrictions may be retried up to 10 times).
 - Never invoke user-derived commands with a shell. Pass argument arrays to
   subprocesses and keep timeouts enabled.
 - Resolve served paths beneath `storage/`; never use user input as a filename.
