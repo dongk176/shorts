@@ -45,8 +45,8 @@ export VERCEL_PROJECT_NAME="${VERCEL_PROJECT_NAME:?VERCEL_PROJECT_NAME is requir
 npm --prefix infra/aws install
 npx --prefix infra/aws cdk bootstrap "aws://${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}/$REGION"
 context_args=()
-github_oidc_arn="$(aws iam list-open-id-connect-providers --query "OpenIDConnectProviderList[?contains(Arn, 'token.actions.githubusercontent.com')].Arn | [0]" --output text)"
-vercel_oidc_arn="$(aws iam list-open-id-connect-providers --query "OpenIDConnectProviderList[?contains(Arn, 'oidc.vercel.com/${VERCEL_TEAM_SLUG}')].Arn | [0]" --output text)"
+github_oidc_arn="${GITHUB_OIDC_PROVIDER_ARN:-$(aws iam list-open-id-connect-providers --query "OpenIDConnectProviderList[?contains(Arn, 'token.actions.githubusercontent.com')].Arn | [0]" --output text)}"
+vercel_oidc_arn="${VERCEL_OIDC_PROVIDER_ARN:-$(aws iam list-open-id-connect-providers --query "OpenIDConnectProviderList[?contains(Arn, 'oidc.vercel.com/${VERCEL_TEAM_SLUG}')].Arn | [0]" --output text)}"
 if [[ -n "$github_oidc_arn" && "$github_oidc_arn" != "None" ]]; then
   context_args+=("-c" "githubOidcProviderArn=$github_oidc_arn")
 fi
