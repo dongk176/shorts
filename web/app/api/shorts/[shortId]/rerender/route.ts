@@ -14,7 +14,10 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
           subtitle_segments::text, template_id, video_aspect_ratio,
           title_font_scale::text)) as current_config_hash
       from shorts_mvp.generated_shorts
-      where id=${shortId} and mvp_session_id=${session.id} and deleted_at is null
+      where id=${shortId} and (
+        (${session.userId}::uuid is not null and user_id=${session.userId})
+        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+      ) and deleted_at is null
         and expires_at > now() and status in ('ready','rerendering')
         and output_s3_key is not null
     `;
@@ -30,7 +33,10 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
           pending_render_hash=md5(concat_ws('|', hook_title, channel_display_name,
             subtitles_enabled::text, subtitle_segments::text, template_id,
             video_aspect_ratio, title_font_scale::text))
-        where id=${shortId} and mvp_session_id=${session.id}
+        where id=${shortId} and (
+          (${session.userId}::uuid is not null and user_id=${session.userId})
+          or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+        )
           and status='ready' and deleted_at is null and expires_at > now()
           and rendered_config_hash is distinct from md5(concat_ws('|', hook_title,
             channel_display_name, subtitles_enabled::text, subtitle_segments::text,

@@ -3,6 +3,8 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { AuthControls } from "@/components/auth-controls";
+import { TitleOverlayPreview } from "@/components/title-overlay-preview";
 import type {
   GeneratedShort,
   MvpState,
@@ -41,16 +43,6 @@ function aspectLayout(value: VideoAspectRatio) {
     ? 445
     : 1920 - (Math.round(videoTop * 19.2) + option.height - Math.max(64, Math.round(option.height * 0.08)));
   return { option, videoHeight, videoTop, fullVertical, subtitleBottom: subtitleMargin / 19.2 };
-}
-
-function previewTitleLines(value: string) {
-  const manual = value.split("\n").map((line) => line.trim()).filter(Boolean);
-  if (manual.length > 1) return manual.slice(0, 2);
-  const clean = value.replace(/\s+/g, " ").trim();
-  if (clean.length <= 20) return [clean || "핵심 장면"];
-  const candidates = [...clean].map((character, index) => character === " " ? index : -1).filter((index) => index > 0 && index <= 20);
-  const split = candidates.length ? candidates.reduce((best, index) => Math.abs(index - clean.length / 2) < Math.abs(best - clean.length / 2) ? index : best) : 20;
-  return [clean.slice(0, split).trim(), clean.slice(split).trim().slice(0, 20)];
 }
 
 const terminalStatuses = new Set(["completed", "failed", "expired", "deleted"]);
@@ -190,7 +182,6 @@ function Editor({ item, onClose, onChanged }: { item: GeneratedShort; onClose: (
   const validTitle = title.trim().length > 0 && title.length <= 80 && title.split("\n").length <= 2;
   const template = templates.find((value) => value.id === templateId) || templates[0];
   const editorLayout = aspectLayout(item.videoAspectRatio || "1:1");
-  const titleLines = previewTitleLines(title);
   const activeSubtitle = segments.find((segment) => segment.start <= previewTime && segment.end > previewTime)?.text;
 
   useEffect(() => {
@@ -219,9 +210,7 @@ function Editor({ item, onClose, onChanged }: { item: GeneratedShort; onClose: (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="editor-title">
       <div className="grid max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-white/10 bg-[#151517] sm:grid-cols-[320px_1fr] sm:rounded-2xl">
         <div className="sticky top-0 mx-auto aspect-[9/16] w-full max-w-[320px] overflow-hidden" style={{ background: template.background }}>
-          <div className={`absolute inset-x-0 z-10 flex flex-col items-center justify-end gap-1.5 px-5 text-center font-extrabold leading-[1.18] ${editorLayout.fullVertical ? "pb-5" : item.videoAspectRatio === "4:5" ? "" : "pb-[4.1%]"}`} style={{ top: editorLayout.fullVertical ? "5%" : 0, height: editorLayout.fullVertical ? "18.75%" : `${editorLayout.videoTop}%`, paddingBottom: item.videoAspectRatio === "4:5" ? "0.75%" : undefined, background: editorLayout.fullVertical ? "transparent" : template.background, fontSize: `${20 * titleFontScale}px` }}>
-            {titleLines.map((line, index) => <span key={`${line}-${index}`} className="max-w-full px-1.5 py-0.5" style={{ color: index === 0 ? template.primary : template.accent, background: index === 1 && template.accentBackground ? template.accentBackground : "transparent", borderRadius: template.accentBackground ? 4 : 0 }}>{line}</span>)}
-          </div>
+          <TitleOverlayPreview title={title} fontScale={titleFontScale} videoAspectRatio={item.videoAspectRatio || "1:1"} primary={template.primary} accent={template.accent} accentBackground={template.accentBackground} background={template.background} />
           {cleanVideoUrl ? <video className="absolute inset-x-0 w-full object-cover" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }} src={cleanVideoUrl} controls playsInline onTimeUpdate={(event) => setPreviewTime(event.currentTarget.currentTime)} /> : <div className="absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}>클린 영상 준비 중</div>}
           {subtitlesEnabled && activeSubtitle && <div className="pointer-events-none absolute inset-x-5 z-20 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white" style={{ bottom: `${editorLayout.subtitleBottom}%` }}>{activeSubtitle}</div>}
           <div className={`absolute inset-x-0 z-10 flex items-start justify-center gap-2 text-sm font-bold ${editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.videoTop}%`, background: editorLayout.fullVertical ? "transparent" : template.background, color: template.channel }}><span className="relative mt-0.5 h-5 w-5 rounded-full" style={{ background: template.channel }}><span className="absolute left-1/2 top-[4px] h-1.5 w-1.5 -translate-x-1/2 rounded-full" style={{ background: template.background }} /><span className="absolute bottom-[3px] left-1/2 h-1.5 w-3 -translate-x-1/2 rounded-t-full" style={{ background: template.background }} /></span><span className="max-w-[72%] truncate">{channel}</span></div>
@@ -270,7 +259,7 @@ function ProjectCard({ job, onOpen }: { job: VideoJob; onOpen: () => void }) {
         <h3 className="line-clamp-1 text-sm font-bold text-white">{job.videoTitle}</h3>
         <div className="mt-3 flex items-center justify-between text-xs text-neutral-500">
           <span className={rerenderingShort ? "text-violet-300" : job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-neutral-400"}>{rerenderingShort ? "● 수정 반영 중" : job.status === "completed" ? "● 완료" : job.status === "failed" ? "● 생성 실패" : job.status === "retry_waiting" ? "● 원본 영상을 준비하고 있습니다" : readyCount > 0 ? `● ${readyCount}개 먼저 완료` : "● 생성 중"}</span>
-          <span>{isProcessing && !rerenderingShort ? `최대 쇼츠 ${job.expectedShortCount}개` : `쇼츠 ${readyCount || job.shorts.length}개`}</span>
+          {(!isProcessing || rerenderingShort) && <span>{`쇼츠 ${readyCount || job.shorts.length}개`}</span>}
           <span>{new Date(job.createdAt).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })}</span>
         </div>
         {job.status === "failed" && job.errorMessage && <p className="mt-3 line-clamp-3 text-xs leading-5 text-red-300">{job.errorMessage}</p>}
@@ -368,6 +357,15 @@ export function ShortsApp() {
   }, []);
 
   useEffect(() => { void loadState().catch((cause) => setError(cause instanceof Error ? cause.message : "초기화 실패")); }, [loadState]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const authError = url.searchParams.get("auth_error");
+    if (!authError) return;
+    setError(authError);
+    url.searchParams.delete("auth_error");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
 
   useEffect(() => {
     if (!scrollToProjects || !state?.recentJobs.length) return;
@@ -468,7 +466,7 @@ export function ShortsApp() {
             <Link href="/pricing" className="nav-link">가격</Link>
             <a href="#results" className="nav-link">대시보드</a>
           </nav>
-          <a href="#workspace" className="header-cta">로그인 <span aria-hidden="true">→</span></a>
+          <AuthControls user={state?.user || null} />
         </div>
       </header>
       <main id="top" className="relative mx-auto max-w-6xl space-y-10 px-5 pb-20 pt-12 sm:px-8 sm:pt-20">
@@ -493,7 +491,7 @@ export function ShortsApp() {
       {analysis && <section ref={analysisSectionRef} className="scroll-mt-24 space-y-8 sm:scroll-mt-28"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 선택 구간 예상 쇼츠 {expectedShortCount(selectedDurationSeconds)}개</p><p className="mt-1 text-xs text-neutral-500">이번 작업은 선택한 구간 {formatDuration(selectedDurationSeconds)}만 사용량으로 계산됩니다.</p></div></div><div className="rounded-2xl border border-white/10 bg-[#141416] p-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-xl font-bold">사용할 영상 구간</h2><p className="mt-1 text-sm text-neutral-500">기본값은 영상 전체입니다. 양쪽 슬라이더로 시작과 끝을 정하세요.</p></div><strong className="text-red-300">{formatTimestamp(rangeStartSeconds)}–{formatTimestamp(rangeEndSeconds)}</strong></div><div className="relative mt-6 h-8"><div className="absolute inset-x-0 top-3 h-2 rounded-full bg-neutral-800" /><div className="absolute top-3 h-2 rounded-full bg-red-500" style={{ left: `${(rangeStartSeconds / analysis.durationSeconds) * 100}%`, right: `${100 - (rangeEndSeconds / analysis.durationSeconds) * 100}%` }} /><input aria-label="시작 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeStartSeconds} onChange={(event) => setRangeStartSeconds(Math.min(Number(event.target.value), rangeEndSeconds - 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /><input aria-label="끝 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeEndSeconds} onChange={(event) => setRangeEndSeconds(Math.max(Number(event.target.value), rangeStartSeconds + 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /></div><div className="mt-3 flex justify-between text-xs text-neutral-500"><span>0:00</span><span>선택 {formatDuration(selectedDurationSeconds)}</span><span>{formatTimestamp(analysis.durationSeconds)}</span></div>{!rangeIsValid && <p className="mt-3 text-sm text-red-400">AI 쇼츠 생성을 위해 최소 {AI_CLIP_MIN_SECONDS}초 구간이 필요합니다.</p>}<button type="button" onClick={() => { setRangeStartSeconds(0); setRangeEndSeconds(analysis.durationSeconds); }} className="mt-4 rounded-lg border border-white/15 px-3 py-2 text-sm">전체 구간으로 초기화</button></div><TemplatePicker value={templateId} onChange={setTemplateId} videoAspectRatio={videoAspectRatio} onVideoAspectRatioChange={setVideoAspectRatio} /><label className="flex items-start gap-3 rounded-xl border border-white/10 p-4 text-sm"><input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-red-500" />내가 소유하거나 사용 허가를 받은 영상입니다.</label><button disabled={!rightsConfirmed || !rangeIsValid || busy || (!allowConcurrentJobs && Boolean(activeJob && !terminalStatuses.has(activeJob.status)))} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">쇼츠 생성하기</button></section>}
       {state?.recentJobs.length ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28"><div className="mb-5 flex items-center gap-2"><h2 className="text-2xl font-bold">내 프로젝트</h2><span className="text-sm text-neutral-500">({state.recentJobs.length})</span></div><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{state.recentJobs.map((job) => <ProjectCard key={job.id} job={job} onOpen={() => setOpenedProjectId(job.id)} />)}</div></section> : null}
     </main>
-    <footer className="site-footer"><div className="mx-auto flex max-w-6xl flex-col gap-6 px-5 py-10 sm:px-8 md:flex-row md:items-center md:justify-between"><div><span className="brand-type">Easy <em>Cut</em></span><p className="mt-2 text-xs text-neutral-500">© 2026 Easy Cut. 아카이브를 바이럴 콘텐츠로 변환하세요.</p></div><div className="flex flex-wrap gap-6 text-xs text-neutral-400"><a href="#">이용약관</a><a href="#">개인정보처리방침</a><a href="#">고객 지원</a><a href="#">제휴 프로그램</a></div></div></footer>
+    <footer className="site-footer"><div className="mx-auto flex max-w-6xl flex-col gap-6 px-5 py-10 sm:px-8"><div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between"><div><span className="brand-type">Easy <em>Cut</em></span><p className="mt-2 text-xs text-neutral-500">© 2026 Easy Cut. 아카이브를 바이럴 콘텐츠로 변환하세요.</p></div><div className="flex flex-wrap gap-6 text-xs text-neutral-400"><Link href="/terms">이용약관</Link><Link href="/privacy">개인정보처리방침</Link><Link href="/support">고객 지원</Link><a href="#">제휴 프로그램</a></div></div><p className="border-t border-white/5 pt-5 text-[11px] leading-5 text-neutral-600">아티룸 · 대표 김동민 · 사업자등록번호 638-04-03590 · 통신판매업 신고번호 2025-서울마포-2971 · 서울특별시 마포구 성산로8길 40 · 고객센터 010-3603-2874 · artiroom176@gmail.com</p></div></footer>
     </div>
   );
 }

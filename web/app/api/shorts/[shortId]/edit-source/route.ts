@@ -16,7 +16,10 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
     const rows = await db`
       select clean_clip_s3_key, expires_at
       from shorts_mvp.generated_shorts
-      where id=${shortId} and mvp_session_id=${session.id}
+      where id=${shortId} and (
+        (${session.userId}::uuid is not null and user_id=${session.userId})
+        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+      )
         and status in ('ready', 'rerendering') and deleted_at is null and expires_at > now()
     `;
     if (!rows[0]) throw new Error("편집용 영상을 찾을 수 없습니다.");

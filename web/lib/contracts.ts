@@ -91,6 +91,12 @@ export type VideoJob = {
 
 export type MvpState = {
   sessionId: string;
+  user: {
+    id: string;
+    email: string | null;
+    displayName: string | null;
+    avatarUrl: string | null;
+  } | null;
   selectedPlanCode: PlanCode;
   generatedShortCount: number;
   plans: Plan[];
