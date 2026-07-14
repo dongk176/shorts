@@ -53,6 +53,9 @@ body {
 .creator-one { background: linear-gradient(145deg,#f59e8b,#7c3643); }.creator-two { background: linear-gradient(145deg,#6f83c8,#272d52); }.creator-three { background: linear-gradient(145deg,#a078ff,#4b286e); }.creator-more { background: #303437; }
 .site-footer { position: relative; z-index: 1; border-top: 1px solid rgba(255,255,255,.08); background: #0b0f10; }.site-footer a:hover { color:#ffb4a8; }
 @keyframes sheen { to { background-position: -180% center; } }
+.login-dialog { animation: login-dialog-enter .24s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes login-dialog-enter { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .login-dialog { animation: none; } }
 @media (max-width: 640px) { .url-console { flex-direction: column; }.ai-button { width: 100%; }.hero-title { letter-spacing: -.045em; } }
 
 button,
@@ -163,6 +166,13 @@ video {
 .pricing-card ul { display: flex; flex: 1; flex-direction: column; gap: 15px; }.pricing-card li { display: flex; align-items: center; gap: 10px; color: #c4c4c6; font-size: 13px; }.pricing-card li span { color: #ff8c7c; font-weight: 900; }
 .pricing-cta { display: flex; min-height: 48px; align-items: center; justify-content: center; margin-top: 30px; border: 1px solid rgba(255,255,255,.16); border-radius: 12px; color: white; font-size: 13px; font-weight: 800; transition: background .2s,border-color .2s,transform .2s; }.pricing-cta:hover { border-color: #ffb4a8; background: rgba(255,180,168,.06); transform: translateY(-1px); }.pricing-cta-primary { border-color: #ff6b57; background: #ff6b57; color: #410000; }.pricing-cta-primary:hover { background: #ff806e; }
 .pricing-note { margin-top: 46px; text-align: center; color: #737376; font-size: 12px; }
+.legal-document h2 { scroll-margin-top: 32px; }
+.legal-document ul { display: grid; gap: 6px; }
+.legal-document table { width: 100%; min-width: 640px; border-collapse: collapse; border: 1px solid rgba(255,255,255,.1); background: rgba(25,28,30,.55); }
+.legal-document th, .legal-document td { border-bottom: 1px solid rgba(255,255,255,.08); padding: 13px 15px; text-align: left; vertical-align: top; }
+.legal-document th { color: #fff; background: rgba(255,255,255,.045); font-size: 12px; }
+.legal-document td { color: #c4c4c6; font-size: 13px; line-height: 1.7; }
+.legal-document tr:last-child td { border-bottom: 0; }
 
 /* Analysis workspace: keep the controls, without an enclosing card surface. */
 main#top > section.scroll-mt-24 > div:first-child,

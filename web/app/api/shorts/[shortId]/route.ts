@@ -24,7 +24,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
     const db = getDb();
     const existing = await db`
       select id, subtitle_segments from shorts_mvp.generated_shorts
-      where id=${shortId} and mvp_session_id=${session.id}
+      where id=${shortId} and (
+        (${session.userId}::uuid is not null and user_id=${session.userId})
+        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+      )
         and deleted_at is null and expires_at > now()
         and status='ready' and output_s3_key is not null
     `;
@@ -44,7 +47,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
         hook_title=${input.hookTitle}, channel_display_name=${input.channelDisplayName},
         subtitles_enabled=${input.subtitlesEnabled}, subtitle_segments=${db.json(input.subtitleSegments)},
         template_id=${input.templateId}, title_font_scale=${input.titleFontScale}
-      where id=${shortId} and mvp_session_id=${session.id} and deleted_at is null and expires_at > now()
+      where id=${shortId} and (
+        (${session.userId}::uuid is not null and user_id=${session.userId})
+        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+      ) and deleted_at is null and expires_at > now()
         and status='ready' and output_s3_key is not null
       returning id, render_version
     `;
@@ -61,7 +67,10 @@ export async function DELETE(_: Request, context: { params: Promise<{ shortId: s
     const rows = await db`
       update shorts_mvp.generated_shorts
       set status='deleted', deleted_at=coalesce(deleted_at, now())
-      where id=${shortId} and mvp_session_id=${session.id}
+      where id=${shortId} and (
+        (${session.userId}::uuid is not null and user_id=${session.userId})
+        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+      )
         and (status='deleted' or (deleted_at is null and status in ('ready','rerendering')))
       returning id, output_s3_key, clean_clip_s3_key, thumbnail_s3_key
     `;

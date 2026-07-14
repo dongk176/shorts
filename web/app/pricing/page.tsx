@@ -9,7 +9,7 @@ export default function PricingPage() {
         <div className="mx-auto flex h-[72px] max-w-6xl items-center justify-between px-5 sm:px-8">
           <Link href="/" className="flex items-center gap-3" aria-label="Easy Cut 홈"><span className="brand-mark" aria-hidden="true"><Image src="/east-cut-logo.png" alt="" width={34} height={34} priority /></span><span className="brand-type">Easy <em>Cut</em></span></Link>
           <nav className="hidden items-center gap-8 text-sm font-semibold text-neutral-300 md:flex" aria-label="주요 메뉴"><Link href="/#templates" className="nav-link">템플릿</Link><span className="nav-link text-[#ffb4a8]">가격</span><Link href="/#results" className="nav-link">대시보드</Link></nav>
-          <Link href="/#workspace" className="header-cta">로그인 <span aria-hidden="true">→</span></Link>
+          <a href="/auth/sign-in?next=%2Fpricing" className="header-cta">Google로 로그인 <span aria-hidden="true">→</span></a>
         </div>
       </header>
       <main className="pricing-main">

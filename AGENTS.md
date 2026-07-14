@@ -10,8 +10,13 @@
 
 ## Safety invariants
 
-- Accept only the supported YouTube hostnames and never bypass authentication,
-  age, DRM, private-video, or download restrictions.
+- Follow `docs/youtube-compliance.md` for YouTube ingestion risk controls. Public,
+  rights-confirmed videos may use a small preconfigured set of company-controlled
+  direct, WARP, or contracted proxy paths for routing and network-error failover.
+- Fail over only on connection errors. Bot challenges, 429s, authentication, age,
+  payment, geographic, private-video, or DRM restrictions must fail closed and must
+  never trigger identity, cookie, token, proxy, IP, region, or client rotation.
+- Never pass YouTube account credentials, account cookies, or browser profiles to workers.
 - Never invoke user-derived commands with a shell. Pass argument arrays to
   subprocesses and keep timeouts enabled.
 - Resolve served paths beneath `storage/`; never use user input as a filename.
