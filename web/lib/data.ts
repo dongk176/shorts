@@ -1,5 +1,6 @@
 import type { Sql } from "postgres";
 import type { GeneratedShort, Plan, VideoJob } from "@/lib/contracts";
+import type { MvpSession } from "@/lib/session";
 
 export async function getPlans(db: Sql): Promise<Plan[]> {
   const rows = await db`
@@ -60,10 +61,21 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
   return result;
 }
 
-export async function getRecentJobs(db: Sql, sessionId: string, onlyJobId?: string): Promise<VideoJob[]> {
+export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: string): Promise<VideoJob[]> {
   const rows = onlyJobId
-    ? await db`select * from shorts_mvp.video_jobs where id = ${onlyJobId} and mvp_session_id = ${sessionId}`
-    : await db`select * from shorts_mvp.video_jobs where mvp_session_id = ${sessionId} order by created_at desc limit 10`;
+    ? await db`
+        select * from shorts_mvp.video_jobs
+        where id = ${onlyJobId} and (
+          (${session.userId}::uuid is not null and user_id=${session.userId})
+          or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+        )
+      `
+    : await db`
+        select * from shorts_mvp.video_jobs
+        where (${session.userId}::uuid is not null and user_id=${session.userId})
+          or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+        order by created_at desc limit 10
+      `;
   const shorts = await getShortsForJobs(db, rows.map((row) => row.id));
   return rows.map((row) => ({
     id: row.id,

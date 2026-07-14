@@ -83,7 +83,7 @@ const analysisRow = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.session.mockResolvedValue({ id: "session-a", selectedPlanCode: "plus" });
+  mocks.session.mockResolvedValue({ id: "session-a", selectedPlanCode: "plus", userId: null, user: null });
   mocks.usage.mockResolvedValue(usage);
 });
 
@@ -174,7 +174,11 @@ describe("job API security and idempotency", () => {
       { params: Promise.resolve({ jobId: "job-b" }) },
     );
     expect(response.status).toBe(404);
-    expect(mocks.recentJobs).toHaveBeenCalledWith(expect.anything(), "session-a", "job-b");
+    expect(mocks.recentJobs).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: "session-a", userId: null }),
+      "job-b",
+    );
   });
 });
 
@@ -186,7 +190,10 @@ describe("plan API", () => {
     }));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ selectedPlanCode: "pro", usage });
-    expect(mocks.usage).toHaveBeenCalledWith(expect.anything(), "session-a");
+    expect(mocks.usage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: "session-a", selectedPlanCode: "pro", userId: null }),
+    );
   });
 });
 

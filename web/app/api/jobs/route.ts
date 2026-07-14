@@ -34,15 +34,24 @@ export async function POST(request: Request) {
     const session = await requireMvpSession();
     const db = getDb();
     const executionBackend = getInitialJobBackend();
-    const existing = await db`select id, status from shorts_mvp.video_jobs where mvp_session_id = ${session.id} and request_id = ${input.requestId}`;
-    if (existing[0]) return NextResponse.json({ jobId: existing[0].id, status: existing[0].status, usage: await getUsageSnapshot(db, session.id) });
+    const existing = await db`
+      select id, status from shorts_mvp.video_jobs
+      where request_id=${input.requestId} and (
+        (${session.userId}::uuid is not null and user_id=${session.userId})
+        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+      )
+    `;
+    if (existing[0]) return NextResponse.json({ jobId: existing[0].id, status: existing[0].status, usage: await getUsageSnapshot(db, session) });
     // Circuit breaker logic removed to allow continuous testing with proxies.
 
     const analyses = await db`
       select youtube_url, youtube_video_id, video_title, channel_name,
         thumbnail_url, duration_seconds
       from shorts_mvp.youtube_analyses
-      where id=${input.analysisId} and mvp_session_id=${session.id} and expires_at > now()
+      where id=${input.analysisId} and (
+        (${session.userId}::uuid is not null and user_id=${session.userId})
+        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+      ) and expires_at > now()
       limit 1
     `;
     if (!analyses[0]) throw new Error("영상 분석 정보가 만료되었습니다. 링크를 다시 확인해 주세요.");
@@ -68,10 +77,13 @@ export async function POST(request: Request) {
     const maxActive = Number(process.env.MVP_MAX_ACTIVE_JOBS_PER_SESSION || 1);
     const jobId = randomUUID();
     const duplicate = await db.begin(async (tx) => {
-      await tx`select pg_advisory_xact_lock(hashtextextended(${session.id}, 0))`;
+      await tx`select pg_advisory_xact_lock(hashtextextended(${session.userId || session.id}, 0))`;
       const concurrentExisting = await tx`
         select id, status from shorts_mvp.video_jobs
-        where mvp_session_id=${session.id} and request_id=${input.requestId}
+        where request_id=${input.requestId} and (
+          (${session.userId}::uuid is not null and user_id=${session.userId})
+          or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+        )
       `;
       if (concurrentExisting[0]) {
         return {
@@ -84,9 +96,12 @@ export async function POST(request: Request) {
             'validating','queued','starting','downloading','transcribing','selecting',
             'extracting','rendering','uploading','retry_waiting'
           ))::int as active
-        from shorts_mvp.video_jobs where mvp_session_id=${session.id}
+        from shorts_mvp.video_jobs where (
+          (${session.userId}::uuid is not null and user_id=${session.userId})
+          or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+        )
       `;
-      const beforeUsage = await getUsageSnapshot(tx, session.id);
+      const beforeUsage = await getUsageSnapshot(tx, session);
       assertJobCreationAllowed({
         activeJobs: limits[0].active,
         maxActiveJobs: maxActive,
@@ -95,13 +110,13 @@ export async function POST(request: Request) {
       });
       await tx`
         insert into shorts_mvp.video_jobs (
-          id, mvp_session_id, request_id, youtube_url, youtube_video_id, video_title,
+          id, mvp_session_id, user_id, request_id, youtube_url, youtube_video_id, video_title,
           channel_name, thumbnail_url, source_duration_seconds, range_start_seconds,
           range_end_seconds, template_id, video_aspect_ratio,
           clip_length_option, output_language, expected_short_count, rights_confirmed, execution_backend,
           status, stage, progress, deadline_at, planned_short_count
         ) values (
-          ${jobId}, ${session.id}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
+          ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${metadata.channelName}, ${metadata.thumbnailUrl}, ${metadata.durationSeconds}, ${rangeStartSeconds},
           ${rangeEndSeconds}, ${input.templateId}, ${input.videoAspectRatio},
           'sec_31_60', ${input.outputLanguage}, ${selectedShortCount},
@@ -110,8 +125,8 @@ export async function POST(request: Request) {
         )
       `;
       await tx`
-        insert into shorts_mvp.usage_reservations (mvp_session_id, job_id, source_duration_seconds)
-        values (${session.id}, ${jobId}, ${Math.ceil(selectedDurationSeconds)})
+        insert into shorts_mvp.usage_reservations (mvp_session_id, user_id, job_id, source_duration_seconds)
+        values (${session.id}, ${session.userId}, ${jobId}, ${Math.ceil(selectedDurationSeconds)})
       `;
       if (executionBackend === "aws_batch") {
         await tx`
@@ -125,7 +140,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         jobId: duplicate.id,
         status: duplicate.status,
-        usage: await getUsageSnapshot(db, session.id),
+        usage: await getUsageSnapshot(db, session),
       });
     }
 
@@ -133,7 +148,7 @@ export async function POST(request: Request) {
       jobId,
       status: "queued",
       executionBackend,
-      usage: await getUsageSnapshot(db, session.id),
+      usage: await getUsageSnapshot(db, session),
     }, { status: 202 });
   } catch (error) { return apiError(error); }
 }

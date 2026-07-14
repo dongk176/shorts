@@ -12,8 +12,8 @@ export async function GET(_: Request, context: { params: Promise<{ jobId: string
     const { jobId } = await context.params;
     const session = await requireMvpSession();
     const db = getDb();
-    const jobs = await getRecentJobs(db, session.id, jobId);
+    const jobs = await getRecentJobs(db, session, jobId);
     if (!jobs[0]) throw new Error("작업을 찾을 수 없습니다.");
-    return NextResponse.json({ job: jobs[0], usage: await getUsageSnapshot(db, session.id) });
+    return NextResponse.json({ job: jobs[0], usage: await getUsageSnapshot(db, session) });
   } catch (error) { return apiError(error); }
 }
