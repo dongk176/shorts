@@ -46,6 +46,8 @@ npm run dev
 
 브라우저는 <http://localhost:3000>에서 엽니다. 로컬에서 AWS를 아직 만들지 않았다면 `.env.local`의 `AWS_BATCH_MOCK=true`로 control plane UI를 확인할 수 있지만 실제 영상은 생성되지 않습니다. 실제 생성은 AWS Batch 설정을 사용해야 합니다.
 
+Worker의 YouTube JavaScript 실행 환경은 `yt-dlp==2026.7.4`, `yt-dlp-ejs==0.8.0`, Deno `2.8.3` 조합으로 고정합니다. 호환성 문제를 피하려면 세 버전을 함께 검토하고 갱신해야 합니다. EJS는 일반적인 YouTube player JavaScript 처리를 지원하지만 봇 체크 회피나 다운로드 성공을 보장하지 않으며, 원격 EJS 컴포넌트·계정 쿠키·PO Token은 사용하지 않습니다.
+
 ## Supabase migration
 
 `.env.local`에 기존 Supabase의 direct `DATABASE_URL`을 넣고 실행합니다.

@@ -34,7 +34,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: worker/requirements-dev.txt
+          cache-dependency-path: |
+            worker/requirements.txt
+            worker/requirements-dev.txt
       - run: pip install -r worker/requirements-dev.txt
       - run: ruff check worker
       - run: pytest -q worker/tests
