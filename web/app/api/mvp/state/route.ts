@@ -12,9 +12,9 @@ export async function GET() {
     const session = await requireMvpSession();
     const db = getDb();
     const [plans, usage, recentJobs, generatedShortCount] = await Promise.all([
-      getPlans(db), getUsageSnapshot(db, session.id), getRecentJobs(db, session.id),
+      getPlans(db), getUsageSnapshot(db, session), getRecentJobs(db, session),
       getGeneratedShortCount(db),
     ]);
-    return NextResponse.json({ sessionId: session.id, selectedPlanCode: session.selectedPlanCode, generatedShortCount, plans, usage, recentJobs });
+    return NextResponse.json({ sessionId: session.id, user: session.user, selectedPlanCode: session.selectedPlanCode, generatedShortCount, plans, usage, recentJobs });
   } catch (error) { return apiError(error); }
 }

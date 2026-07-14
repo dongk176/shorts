@@ -46,6 +46,8 @@ npm run dev
 
 브라우저는 <http://localhost:3000>에서 엽니다. 로컬에서 AWS를 아직 만들지 않았다면 `.env.local`의 `AWS_BATCH_MOCK=true`로 control plane UI를 확인할 수 있지만 실제 영상은 생성되지 않습니다. 실제 생성은 AWS Batch 설정을 사용해야 합니다.
 
+Worker의 YouTube JavaScript 실행 환경은 `yt-dlp==2026.7.4`, `yt-dlp-ejs==0.8.0`, Deno `2.8.3` 조합으로 고정합니다. 호환성 문제를 피하려면 세 버전을 함께 검토하고 갱신해야 합니다. EJS는 일반적인 YouTube player JavaScript 처리를 지원하지만 봇 체크 회피나 다운로드 성공을 보장하지 않으며, 원격 EJS 컴포넌트·계정 쿠키·PO Token은 사용하지 않습니다.
+
 ## Supabase migration
 
 `.env.local`에 기존 Supabase의 direct `DATABASE_URL`을 넣고 실행합니다.
@@ -128,12 +130,17 @@ make verify
 
 ## 저작권 및 한계
 
-소유하거나 명시적으로 사용 허가를 받은 공개 영상만 처리해야 합니다. 비공개·연령 제한·DRM·로그인 필요 영상 우회나 브라우저 쿠키 사용은 구현하지 않습니다. yt-dlp 기반 수집은 YouTube 정책과 변경에 영향을 받으므로 상용 공개 전 법무·약관 검토가 필요합니다. 얼굴/화자 추적 없이 중앙 crop하며 AI 품질은 원본 자막과 음질에 좌우됩니다.
+소유하거나 명시적으로 사용 허가를 받은 공개 영상만 처리합니다. 콘텐츠 권리 확인과 YouTube의
+플랫폼 정책은 별개이므로 유료 상용화 전 법무 검토가 필요합니다. 운영 기준과 네트워크 경로는
+[YouTube ingestion risk policy](docs/youtube-compliance.md)를 따릅니다.
 
-Worker는 영상·메타데이터를 한 번의 yt-dlp 프로세스로 수집하고, 자막을 별도로 요청하지
-않고 필요할 때만 오디오 전사 경로를 사용합니다. BOT_CHECK/429와 일시적인 네트워크 오류는
-사용자에게 중간 실패를 노출하지 않고 60초 뒤 재시도합니다. 원본 전체는 S3에 저장하지 않으며
-작업 중 임시 디스크에만 존재하고 `finally`에서 삭제됩니다.
+Worker는 회사가 관리하는 direct, WARP, contracted fallback proxy를 네트워크 라우팅과 연결 장애
+대응에 사용할 수 있습니다. DNS·TLS·connection reset·timeout 같은 연결 오류에만 다른 승인 경로로
+failover합니다. BOT_CHECK/429·로그인·연령·유료·지역·비공개·DRM 제한이 확인되면 회로를 열고,
+이를 피하기 위한 계정·쿠키·토큰·프록시·IP·지역·client 회전은 하지 않습니다.
+
+원본 전체는 S3에 저장하지 않으며 작업 중 임시 디스크에만 존재하고 `finally`에서 삭제됩니다.
+얼굴/화자 추적 없이 중앙 crop하며 AI 품질은 원본 자막과 음질에 좌우됩니다.
 
 ### Mac pull worker
 

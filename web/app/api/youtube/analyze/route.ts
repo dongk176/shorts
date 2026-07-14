@@ -14,10 +14,10 @@ export async function POST(request: Request) {
     const analysis = await analyzeYoutubeUrl(body.youtubeUrl);
     const rows = await getDb()`
       insert into shorts_mvp.youtube_analyses (
-        mvp_session_id, youtube_url, youtube_video_id, video_title,
+        mvp_session_id, user_id, youtube_url, youtube_video_id, video_title,
         channel_name, thumbnail_url, duration_seconds
       ) values (
-        ${session.id}, ${analysis.normalizedUrl}, ${analysis.videoId}, ${analysis.title},
+        ${session.id}, ${session.userId}, ${analysis.normalizedUrl}, ${analysis.videoId}, ${analysis.title},
         ${analysis.channelName}, ${analysis.thumbnailUrl}, ${analysis.durationSeconds}
       ) returning id
     `;

@@ -13,7 +13,17 @@ export async function POST(request: Request) {
     const body = schema.parse(await request.json());
     const session = await requireMvpSession();
     const db = getDb();
-    await db`update shorts_mvp.mvp_sessions set selected_plan_code = ${body.planCode} where id = ${session.id}`;
-    return NextResponse.json({ selectedPlanCode: body.planCode, usage: await getUsageSnapshot(db, session.id) });
+    if (session.userId) {
+      await db.begin(async (tx) => {
+        await tx`update shorts_mvp.app_users set selected_plan_code=${body.planCode} where id=${session.userId}`;
+        await tx`update shorts_mvp.mvp_sessions set selected_plan_code=${body.planCode} where user_id=${session.userId}`;
+      });
+    } else {
+      await db`update shorts_mvp.mvp_sessions set selected_plan_code=${body.planCode} where id=${session.id} and user_id is null`;
+    }
+    return NextResponse.json({
+      selectedPlanCode: body.planCode,
+      usage: await getUsageSnapshot(db, { ...session, selectedPlanCode: body.planCode }),
+    });
   } catch (error) { return apiError(error); }
 }

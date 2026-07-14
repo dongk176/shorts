@@ -31,11 +31,11 @@ try {
       id,mvp_session_id,request_id,youtube_url,youtube_video_id,video_title,channel_name,
       thumbnail_url,source_duration_seconds,range_start_seconds,range_end_seconds,
       template_id,clip_length_option,
-      expected_short_count,rights_confirmed
+      expected_short_count,planned_short_count,rights_confirmed
     ) values (
       ${jobId},${sessionId},${crypto.randomUUID()},'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
       'dQw4w9WgXcQ','integration','channel','https://example.com/thumb.jpg',3600,0,3600,
-      'dark-red','sec_30',5,true
+      'dark-red','sec_30',5,5,true
     )
   `;
   await sql`
@@ -67,6 +67,22 @@ try {
     where table_schema='public' and table_name like 'shorts_mvp%'
   `;
   assert.equal(publicObjects[0].count, 0);
+  const authColumns = await sql`
+    select table_name,column_name from information_schema.columns
+    where table_schema='shorts_mvp' and (
+      (table_name='app_users' and column_name in ('display_name','avatar_url','provider','selected_plan_code','last_sign_in_at'))
+      or (table_name='mvp_sessions' and column_name='user_id')
+      or (table_name='youtube_analyses' and column_name='user_id')
+    )
+  `;
+  assert.equal(authColumns.length, 7);
+  const authForeignKey = await sql`
+    select count(*)::int as count
+    from pg_catalog.pg_constraint
+    where conname='app_users_auth_user_id_fkey'
+      and conrelid='shorts_mvp.app_users'::regclass
+  `;
+  assert.equal(authForeignKey[0].count, 1);
   process.stdout.write("Supabase plan/reservation/consume/idempotency/public-schema live tests passed\n");
 } finally {
   await sql`delete from shorts_mvp.mvp_sessions where id=${sessionId}`.catch(() => undefined);

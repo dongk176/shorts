@@ -1,4 +1,4 @@
-FROM denoland/deno:bin-2.3.7 AS deno
+FROM denoland/deno:bin-2.8.3 AS deno
 
 FROM python:3.12-slim
 
@@ -20,7 +20,9 @@ RUN curl -L -o /tmp/wireproxy.tar.gz https://github.com/pufferffish/wireproxy/re
 
 WORKDIR /app/worker
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && deno --version \
+    && python -c "from importlib.metadata import version; assert version('yt-dlp') == '2026.7.4'; assert version('yt-dlp-ejs') == '0.8.0'"
 COPY . .
 
 ENTRYPOINT ["./entrypoint.sh"]
