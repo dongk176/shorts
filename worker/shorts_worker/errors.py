@@ -19,6 +19,10 @@ class RetryableIngestionError(IngestionError):
     """A temporary acquisition failure that can succeed on a later attempt."""
 
 
+class RetryExhaustedIngestionError(IngestionError):
+    """A temporary acquisition failure that exhausted its bounded retries."""
+
+
 class BotCheckError(IngestionError):
     """YouTube rejected the worker egress as automated traffic."""
 

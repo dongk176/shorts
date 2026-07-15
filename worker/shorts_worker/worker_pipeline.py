@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from .config import Settings
 from .errors import BotCheckError, IngestionError, RetryableIngestionError
-from .ingestion import YtDlpIngestionProvider
+from .ingestion import DownloadedAssetBundle, YtDlpIngestionProvider
 from .media import run_command
 from .queueing import WorkQueue
 from .renderer import VideoRenderer
@@ -101,6 +101,99 @@ class BatchWorker:
                 )
         return result
 
+    @staticmethod
+    def _transcript_coverage(
+        transcript: list[SubtitleSegment], duration_seconds: float
+    ) -> float:
+        if duration_seconds <= 0 or not transcript:
+            return 0.0
+        ranges = sorted(
+            (
+                max(0.0, min(duration_seconds, segment.start)),
+                max(0.0, min(duration_seconds, segment.end)),
+            )
+            for segment in transcript
+            if segment.end > segment.start
+        )
+        covered = 0.0
+        current_start: float | None = None
+        current_end = 0.0
+        for start, end in ranges:
+            if end <= start:
+                continue
+            if current_start is None:
+                current_start, current_end = start, end
+            elif start <= current_end:
+                current_end = max(current_end, end)
+            else:
+                covered += current_end - current_start
+                current_start, current_end = start, end
+        if current_start is not None:
+            covered += current_end - current_start
+        return round(min(1.0, covered / duration_seconds), 4)
+
+    def _resolve_transcript(
+        self,
+        *,
+        job_id: str,
+        bundle: DownloadedAssetBundle,
+        source: Path,
+        work_dir: Path,
+        duration_seconds: float,
+    ) -> list[SubtitleSegment]:
+        transcript: list[SubtitleSegment] = []
+        parse_status = "not_available"
+        if bundle.subtitle_path:
+            transcript = parse_subtitle_file(bundle.subtitle_path)
+            parse_status = "parsed" if transcript else "empty"
+
+        fallback_reason: str | None = None
+        openai_result_status = "not_needed"
+        if not transcript:
+            fallback_reason = (
+                "caption_parse_empty"
+                if bundle.subtitle_path
+                else bundle.subtitle_fetch_status
+            )
+            if not self.settings.openai_api_key:
+                openai_result_status = "not_configured"
+            else:
+                transcript = self.transcriber.transcribe(source, work_dir)
+                openai_result_status = "segments" if transcript else "empty"
+
+        transcript_source = bundle.subtitle_source if parse_status == "parsed" else "none"
+        if openai_result_status == "segments":
+            transcript_source = "openai"
+        _log_event(
+            "subtitle_pipeline_observed",
+            job_id=job_id,
+            caption_source=bundle.subtitle_source,
+            caption_language=bundle.subtitle_language,
+            caption_fetch_status=bundle.subtitle_fetch_status,
+            caption_matching_track_count=bundle.subtitle_matching_track_count,
+            caption_failed_attempt_count=bundle.subtitle_failed_attempt_count,
+            caption_empty_attempt_count=bundle.subtitle_empty_attempt_count,
+            video_attempt_count=bundle.video_attempt_count,
+            video_failed_attempt_count=bundle.video_failed_attempt_count,
+            video_failure_reasons=bundle.video_failure_reasons,
+            caption_attempt_count=bundle.subtitle_attempt_count,
+            caption_work_failed_attempt_count=(
+                bundle.subtitle_work_failed_attempt_count
+            ),
+            caption_failure_reasons=bundle.subtitle_failure_reasons,
+            caption_parse_status=parse_status,
+            openai_fallback_selected=fallback_reason is not None,
+            openai_fallback_reason=fallback_reason,
+            openai_configured=bool(self.settings.openai_api_key),
+            openai_result_status=openai_result_status,
+            transcript_source=transcript_source,
+            transcript_segment_count=len(transcript),
+            transcript_coverage_ratio=self._transcript_coverage(
+                transcript, duration_seconds
+            ),
+        )
+        return transcript
+
     def _thumbnail(self, video: Path, output: Path, work_dir: Path) -> Path:
         result = run_command(
             [
@@ -155,7 +248,7 @@ class BatchWorker:
                 self.repository.stage(job_id, "downloading", 10, "원본 영상을 준비하고 있습니다.")
                 with self.repository.ingestion_slot():
                     bundle = self.ingestion.download_bundle(
-                        job["youtube_url"], work_dir / "source"
+                        job["youtube_url"], work_dir / "source", job_id=job_id
                     )
                 self.repository.record_ingestion_result(job_id, "success")
                 metadata = bundle.metadata
@@ -167,12 +260,13 @@ class BatchWorker:
                 source = bundle.video_path
 
                 self.repository.stage(job_id, "transcribing", 28, "영상 내용을 분석하고 있습니다.")
-                transcript: list[SubtitleSegment] = []
-                subtitle_path = bundle.subtitle_path
-                if subtitle_path:
-                    transcript = parse_subtitle_file(subtitle_path)
-                if not transcript:
-                    transcript = self.transcriber.transcribe(source, work_dir)
+                transcript = self._resolve_transcript(
+                    job_id=job_id,
+                    bundle=bundle,
+                    source=source,
+                    work_dir=work_dir,
+                    duration_seconds=metadata.duration_seconds,
+                )
 
                 self.repository.stage(job_id, "selecting", 42, "쇼츠로 만들 장면을 찾고 있습니다.")
                 clips = self.selector.select(
@@ -187,7 +281,6 @@ class BatchWorker:
                 if not clips:
                     raise RuntimeError("사용할 수 있는 하이라이트 구간이 없습니다.")
 
-                expires_at = datetime.now(UTC) + timedelta(days=min(30, int(job["retention_days"])))
                 for index, clip in enumerate(clips, start=1):
                     self.repository.stage(
                         job_id,
@@ -220,7 +313,7 @@ class BatchWorker:
                         hook_title=clip.hook_title,
                         subtitles=[item.model_dump() for item in relative_subtitles],
                         clean_key=clean_key,
-                        expires_at=expires_at,
+                        retention_days=int(job["retention_days"]),
                         shard_index=(index - 1) // 4,
                     )
                     if not inserted:
@@ -244,18 +337,14 @@ class BatchWorker:
         except BotCheckError as exc:
             _log_event(
                 "prepare_failed", job_id=job_id, attempt=attempt,
-                error_type=type(exc).__name__, retryable=True,
+                error_type=type(exc).__name__, retryable=False,
             )
             self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
             self.repository.record_ingestion_result(job_id, "bot_check")
-            if attempt < 10 and self.repository.can_retry_prepare(job_id):
-                self.repository.retry_job(job_id, type(exc).__name__, str(exc))
-                self._enqueue_prepare_retry(job_id)
-            else:
-                self.repository.fail_job(
-                    job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
-                )
+            self.repository.fail_job(
+                job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
+            )
         except RetryableIngestionError as exc:
             _log_event(
                 "prepare_failed", job_id=job_id, attempt=attempt,

@@ -7,7 +7,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from shorts_worker.errors import BotCheckError, IngestionError, RetryableIngestionError
+from shorts_worker.errors import (
+    BotCheckError,
+    IngestionError,
+    RetryableIngestionError,
+    RetryExhaustedIngestionError,
+)
 from shorts_worker.worker_pipeline import BatchWorker
 
 
@@ -42,31 +47,27 @@ def _worker(tmp_path, error: Exception) -> BatchWorker:
     return worker
 
 
-def test_bot_check_is_hidden_and_requeued_after_exactly_60_seconds(tmp_path) -> None:
+def test_bot_check_fails_closed_without_requeue(tmp_path) -> None:
     worker = _worker(tmp_path, BotCheckError("Sign in to confirm you're not a bot"))
 
     worker.prepare("job-a")
 
-    worker.repository.retry_job.assert_called_once()
-    worker.repository.fail_job.assert_not_called()
-    worker.queue.send.assert_called_once_with(
-        {"kind": "prepare_retry", "jobId": "job-a"}, delay_seconds=60
+    worker.repository.retry_job.assert_not_called()
+    worker.queue.send.assert_not_called()
+    worker.repository.fail_job.assert_called_once_with(
+        "job-a", "BotCheckError", worker.FINAL_INGESTION_MESSAGE
     )
 
 
-def test_bot_check_array_retry_uses_parent_batch_id(tmp_path, monkeypatch) -> None:
+def test_bot_check_array_attempt_does_not_requeue_parent(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("AWS_BATCH_JOB_ID", "batch-parent:3")
     worker = _worker(tmp_path, BotCheckError("bot check"))
 
     worker.prepare("job-a")
 
-    worker.queue.send.assert_called_once_with(
-        {
-            "kind": "prepare_retry",
-            "jobId": "job-a",
-            "failedBatchJobId": "batch-parent",
-        },
-        delay_seconds=60,
+    worker.queue.send.assert_not_called()
+    worker.repository.fail_job.assert_called_once_with(
+        "job-a", "BotCheckError", worker.FINAL_INGESTION_MESSAGE
     )
 
 
@@ -105,6 +106,21 @@ def test_temporary_ingestion_error_is_requeued(tmp_path) -> None:
     worker.repository.fail_job.assert_not_called()
     worker.queue.send.assert_called_once_with(
         {"kind": "prepare_retry", "jobId": "job-a"}, delay_seconds=60
+    )
+
+
+def test_exhausted_video_work_fails_without_another_prepare_retry(tmp_path) -> None:
+    worker = _worker(
+        tmp_path,
+        RetryExhaustedIngestionError("video download failed ten times"),
+    )
+
+    worker.prepare("job-a")
+
+    worker.repository.retry_job.assert_not_called()
+    worker.queue.send.assert_not_called()
+    worker.repository.fail_job.assert_called_once_with(
+        "job-a", "RetryExhaustedIngestionError", worker.FINAL_INGESTION_MESSAGE
     )
 
 
