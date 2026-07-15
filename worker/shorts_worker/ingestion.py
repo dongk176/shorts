@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 import subprocess
 import sys
 import time
@@ -21,6 +22,8 @@ from .url_validation import validate_youtube_url
 
 MAX_ACQUISITION_ATTEMPTS = 10
 MAX_RECORDED_FAILURE_REASONS = 10
+RETRY_DELAY_BASE_SECONDS = (5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0, 60.0)
+RETRY_DELAY_JITTER_RATIO = 0.2
 
 
 def _log_ingestion_event(event: str, **fields: object) -> None:
@@ -104,10 +107,18 @@ class YtDlpIngestionProvider(IngestionProvider):
         self.max_attempts = max(1, min(MAX_ACQUISITION_ATTEMPTS, int(max_attempts)))
         self.retry_backoff_seconds = max(0.0, float(retry_backoff_seconds))
 
-    def _wait_before_retry(self, failed_attempt: int) -> None:
+    def _retry_delay_seconds(self, failed_attempt: int) -> float:
         if self.retry_backoff_seconds <= 0:
-            return
-        time.sleep(min(30.0, self.retry_backoff_seconds * (2 ** (failed_attempt - 1))))
+            return 0.0
+        index = max(0, min(failed_attempt - 1, len(RETRY_DELAY_BASE_SECONDS) - 1))
+        base_delay = RETRY_DELAY_BASE_SECONDS[index] * self.retry_backoff_seconds
+        jitter = base_delay * RETRY_DELAY_JITTER_RATIO
+        return random.uniform(base_delay - jitter, base_delay + jitter)
+
+    @staticmethod
+    def _wait_before_retry(delay_seconds: float) -> None:
+        if delay_seconds > 0:
+            time.sleep(delay_seconds)
 
     def _log_failed_work_attempt(
         self,
@@ -116,6 +127,7 @@ class YtDlpIngestionProvider(IngestionProvider):
         attempt: int,
         error: Exception,
         job_id: str | None,
+        next_retry_delay_seconds: float | None,
     ) -> str:
         reason = _failure_reason(error)
         _log_ingestion_event(
@@ -125,6 +137,11 @@ class YtDlpIngestionProvider(IngestionProvider):
             attempt=attempt,
             max_attempts=self.max_attempts,
             retrying=attempt < self.max_attempts,
+            next_retry_delay_seconds=(
+                round(next_retry_delay_seconds, 3)
+                if next_retry_delay_seconds is not None
+                else None
+            ),
             error_type=type(error).__name__,
             failure_reason=reason,
         )
@@ -382,10 +399,19 @@ class YtDlpIngestionProvider(IngestionProvider):
                     failure_reasons=result.failure_reasons,
                 )
                 return result
-            except RetryableIngestionError as exc:
+            except (RetryableIngestionError, BotCheckError) as exc:
+                next_retry_delay = (
+                    self._retry_delay_seconds(attempt)
+                    if attempt < self.max_attempts
+                    else None
+                )
                 failure_reasons.append(
                     self._log_failed_work_attempt(
-                        asset="video", attempt=attempt, error=exc, job_id=job_id
+                        asset="video",
+                        attempt=attempt,
+                        error=exc,
+                        job_id=job_id,
+                        next_retry_delay_seconds=next_retry_delay,
                     )
                 )
                 failure_reasons = failure_reasons[-MAX_RECORDED_FAILURE_REASONS:]
@@ -396,13 +422,20 @@ class YtDlpIngestionProvider(IngestionProvider):
                         asset="video",
                         attempt_count=attempt,
                         failed_attempt_count=attempt,
+                        error_type=type(exc).__name__,
                         failure_reasons=tuple(failure_reasons),
                     )
+                    if isinstance(exc, BotCheckError):
+                        raise
                     raise RetryExhaustedIngestionError(
                         "원본 영상 다운로드가 임시 네트워크 오류로 "
                         f"{self.max_attempts}회 실패했습니다."
                     ) from exc
-                self._wait_before_retry(attempt)
+                if next_retry_delay is None:
+                    raise AssertionError(
+                        "retry delay is required before the last attempt"
+                    ) from exc
+                self._wait_before_retry(next_retry_delay)
             except IngestionError as exc:
                 self._log_terminal_work_failure(
                     asset="video", attempt=attempt, error=exc, job_id=job_id
@@ -422,7 +455,7 @@ class YtDlpIngestionProvider(IngestionProvider):
         track_empty_attempt_count = 0
         matching_track_count = 0
         for attempt in range(1, self.max_attempts + 1):
-            retry_error: RetryableIngestionError | None = None
+            retry_error: RetryableIngestionError | BotCheckError | None = None
             try:
                 info = self._extract_info(normalized)
                 result = self._download_best_subtitles_result(
@@ -463,7 +496,7 @@ class YtDlpIngestionProvider(IngestionProvider):
                     _, separator, detail = result.failure_reasons[-1].partition(": ")
                     retry_message = detail if separator else result.failure_reasons[-1]
                 retry_error = RetryableIngestionError(retry_message)
-            except RetryableIngestionError as exc:
+            except (RetryableIngestionError, BotCheckError) as exc:
                 retry_error = exc
             except IngestionError as exc:
                 self._log_terminal_work_failure(
@@ -473,12 +506,18 @@ class YtDlpIngestionProvider(IngestionProvider):
 
             if retry_error is None:
                 raise AssertionError("retryable subtitle result requires an error")
+            next_retry_delay = (
+                self._retry_delay_seconds(attempt)
+                if attempt < self.max_attempts
+                else None
+            )
             work_failure_reasons.append(
                 self._log_failed_work_attempt(
                     asset="subtitle",
                     attempt=attempt,
                     error=retry_error,
                     job_id=job_id,
+                    next_retry_delay_seconds=next_retry_delay,
                 )
             )
             work_failure_reasons = work_failure_reasons[-MAX_RECORDED_FAILURE_REASONS:]
@@ -506,7 +545,9 @@ class YtDlpIngestionProvider(IngestionProvider):
                     failure_reasons=exhausted.failure_reasons,
                 )
                 return exhausted
-            self._wait_before_retry(attempt)
+            if next_retry_delay is None:
+                raise AssertionError("retry delay is required before the last attempt")
+            self._wait_before_retry(next_retry_delay)
         raise AssertionError("unreachable")
 
     def download_bundle(

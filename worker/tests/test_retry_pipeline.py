@@ -47,7 +47,7 @@ def _worker(tmp_path, error: Exception) -> BatchWorker:
     return worker
 
 
-def test_bot_check_fails_closed_without_requeue(tmp_path) -> None:
+def test_bot_check_does_not_requeue_prepare(tmp_path) -> None:
     worker = _worker(tmp_path, BotCheckError("Sign in to confirm you're not a bot"))
 
     worker.prepare("job-a")
@@ -66,6 +66,7 @@ def test_bot_check_array_attempt_does_not_requeue_parent(tmp_path, monkeypatch) 
     worker.prepare("job-a")
 
     worker.queue.send.assert_not_called()
+    worker.repository.retry_job.assert_not_called()
     worker.repository.fail_job.assert_called_once_with(
         "job-a", "BotCheckError", worker.FINAL_INGESTION_MESSAGE
     )
@@ -97,15 +98,15 @@ def test_non_retryable_ingestion_error_fails_without_requeue(tmp_path) -> None:
     )
 
 
-def test_temporary_ingestion_error_is_requeued(tmp_path) -> None:
+def test_escaped_temporary_ingestion_error_does_not_requeue_prepare(tmp_path) -> None:
     worker = _worker(tmp_path, RetryableIngestionError("connection timed out"))
 
     worker.prepare("job-a")
 
-    worker.repository.retry_job.assert_called_once()
-    worker.repository.fail_job.assert_not_called()
-    worker.queue.send.assert_called_once_with(
-        {"kind": "prepare_retry", "jobId": "job-a"}, delay_seconds=60
+    worker.repository.retry_job.assert_not_called()
+    worker.queue.send.assert_not_called()
+    worker.repository.fail_job.assert_called_once_with(
+        "job-a", "RetryableIngestionError", worker.FINAL_INGESTION_MESSAGE
     )
 
 
