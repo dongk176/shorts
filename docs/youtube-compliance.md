@@ -19,11 +19,12 @@ including direct AWS egress, WARP, or a contracted fallback proxy, for ordinary
 network routing and availability. Every egress must be documented, access-controlled,
 monitored, and subject to the same concurrency and request budgets.
 
-An egress path may fail over only for connection failures such as DNS, TLS,
+An egress path may fail over for connection failures such as DNS, TLS,
 connection reset, timeout, or an unavailable proxy. A bot challenge, HTTP 429,
-geographic restriction, authentication requirement, or content restriction must
-open the circuit for that request class. It must not trigger identity, account,
-proxy, IP, region, client, cookie, or token rotation intended to defeat the restriction.
+geographic restriction, authentication requirement, or content restriction
+must not trigger identity, account, proxy, IP, region, client, cookie,
+or token rotation intended to defeat the restriction, but bot challenges
+and HTTP 429 responses may be retried up to the worker's standard limit.
 
 ## Controls
 
@@ -31,8 +32,9 @@ proxy, IP, region, client, cookie, or token rotation intended to defeat the rest
 - Require an affirmative ownership or license representation for every job.
 - Keep the one-download-at-a-time default and enforce a shared request budget across
   all workers and egress paths.
-- Classify bot challenges and 429 responses separately from transient network errors.
-- Use exponential backoff and an egress-wide circuit breaker for bot/429 responses.
+- Retry bot challenges and HTTP 429 responses within the failing asset work only,
+  for at most ten total attempts on the same egress, with bounded jittered delays.
+  A successful sibling video or subtitle acquisition must not be restarted.
 - Do not pass YouTube account credentials, account cookies, or browser profiles to workers.
 - Do not access private, paid, age-restricted, region-restricted, removed, or DRM content.
 - Keep full source media only on task ephemeral storage and delete it in `finally`.
@@ -47,9 +49,9 @@ belong in the runtime secret store, not in this document.
 
 | Path | Permitted purpose | Bot/429 behavior |
 | --- | --- | --- |
-| AWS direct egress | Default public-video retrieval | Open circuit; do not rotate |
-| WARP | Stable company-controlled routing | Open circuit; do not rotate |
-| Contracted fallback proxy | Network outage failover only | Open circuit; do not rotate |
+| AWS direct egress | Default public-video retrieval | Standard retry; do not rotate |
+| WARP | Stable company-controlled routing | Standard retry; do not rotate |
+| Contracted fallback proxy | Network outage failover only | Standard retry; do not rotate |
 
 Residential proxy pools, per-request IP rotation, user-supplied proxies, and routing
 selected to evade a platform restriction are not approved.

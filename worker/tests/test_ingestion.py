@@ -14,6 +14,7 @@ from shorts_worker.errors import (
     RetryExhaustedIngestionError,
 )
 from shorts_worker.ingestion import (
+    RETRY_DELAY_BASE_SECONDS,
     SubtitleDownloadResult,
     VideoDownloadResult,
     VideoMetadata,
@@ -502,3 +503,182 @@ def test_subtitle_work_uses_openai_fallback_status_after_ten_network_failures(
     assert result.work_attempt_count == 10
     assert result.work_failed_attempt_count == 10
     assert len(result.failure_reasons) == 10
+
+
+def test_retry_delays_use_the_staged_schedule_with_twenty_percent_jitter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = YtDlpIngestionProvider()
+    bounds: list[tuple[float, float]] = []
+
+    def choose_upper_bound(lower: float, upper: float) -> float:
+        bounds.append((lower, upper))
+        return upper
+
+    monkeypatch.setattr("shorts_worker.ingestion.random.uniform", choose_upper_bound)
+
+    delays = [provider._retry_delay_seconds(attempt) for attempt in range(1, 10)]
+
+    assert len(bounds) == 9
+    for base, (lower, upper), delay in zip(
+        RETRY_DELAY_BASE_SECONDS, bounds, delays, strict=True
+    ):
+        assert lower == pytest.approx(base * 0.8)
+        assert upper == pytest.approx(base * 1.2)
+        assert delay == pytest.approx(upper)
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["Sign in to confirm you're not a bot", "HTTP Error 429: Too Many Requests"],
+)
+def test_video_work_retries_bot_checks_independently_until_tenth_attempt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, message: str
+) -> None:
+    provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
+    attempts = 0
+    video_path = tmp_path / "source.mp4"
+    video_path.write_bytes(b"video")
+
+    def download_once(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 10:
+            raise BotCheckError(message)
+        return VideoMetadata("dQw4w9WgXcQ", "title", "channel", "", 120), video_path
+
+    monkeypatch.setattr(provider, "_download_video_once", download_once)
+
+    result = provider._download_video_work(
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "dQw4w9WgXcQ",
+        tmp_path,
+        job_id="job-a",
+    )
+
+    assert attempts == 10
+    assert result.attempt_count == 10
+    assert result.failed_attempt_count == 9
+    assert all(reason.startswith("BotCheckError:") for reason in result.failure_reasons)
+
+
+def test_video_work_fails_after_tenth_bot_check(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+) -> None:
+    provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
+    attempts = 0
+
+    def download_once(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise BotCheckError("Sign in to confirm you're not a bot")
+
+    monkeypatch.setattr(provider, "_download_video_once", download_once)
+
+    with pytest.raises(BotCheckError):
+        provider._download_video_work(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "dQw4w9WgXcQ",
+            tmp_path,
+            job_id="job-a",
+        )
+
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert attempts == 10
+    assert events[-1]["event"] == "ingestion_work_exhausted"
+    assert events[-1]["error_type"] == "BotCheckError"
+
+
+def test_subtitle_bot_checks_use_openai_fallback_status_after_ten_failures(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
+    attempts = 0
+
+    def extract_info(_url: str):
+        nonlocal attempts
+        attempts += 1
+        raise BotCheckError("Sign in to confirm you're not a bot")
+
+    monkeypatch.setattr(provider, "_extract_info", extract_info)
+
+    result = provider._download_subtitle_work(
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        tmp_path,
+        job_id="job-a",
+    )
+
+    assert attempts == 10
+    assert result.status == "download_failed"
+    assert result.work_attempt_count == 10
+    assert result.work_failed_attempt_count == 10
+    assert all(reason.startswith("BotCheckError:") for reason in result.failure_reasons)
+
+
+def test_subtitle_retries_do_not_redownload_successful_video(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
+    video_attempts = 0
+    subtitle_attempts = 0
+    video_path = tmp_path / "source.mp4"
+    video_path.write_bytes(b"video")
+
+    def download_video_once(*_args, **_kwargs):
+        nonlocal video_attempts
+        video_attempts += 1
+        return VideoMetadata("dQw4w9WgXcQ", "title", "channel", "", 120), video_path
+
+    def extract_info(_url: str):
+        nonlocal subtitle_attempts
+        subtitle_attempts += 1
+        if subtitle_attempts < 3:
+            raise BotCheckError("Sign in to confirm you're not a bot")
+        return {"id": "dQw4w9WgXcQ", "duration": 120}
+
+    monkeypatch.setattr(provider, "_download_video_once", download_video_once)
+    monkeypatch.setattr(provider, "_extract_info", extract_info)
+
+    bundle = provider.download_bundle(
+        "https://youtu.be/dQw4w9WgXcQ", tmp_path / "bundle", job_id="job-a"
+    )
+
+    assert video_attempts == 1
+    assert subtitle_attempts == 3
+    assert bundle.video_attempt_count == 1
+    assert bundle.subtitle_attempt_count == 3
+    assert bundle.subtitle_fetch_status == "no_tracks"
+
+
+def test_video_retries_do_not_refetch_successful_subtitle_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
+    video_attempts = 0
+    subtitle_attempts = 0
+    video_path = tmp_path / "source.mp4"
+    video_path.write_bytes(b"video")
+
+    def download_video_once(*_args, **_kwargs):
+        nonlocal video_attempts
+        video_attempts += 1
+        if video_attempts < 3:
+            raise BotCheckError("HTTP Error 429: Too Many Requests")
+        return VideoMetadata("dQw4w9WgXcQ", "title", "channel", "", 120), video_path
+
+    def extract_info(_url: str):
+        nonlocal subtitle_attempts
+        subtitle_attempts += 1
+        return {"id": "dQw4w9WgXcQ", "duration": 120}
+
+    monkeypatch.setattr(provider, "_download_video_once", download_video_once)
+    monkeypatch.setattr(provider, "_extract_info", extract_info)
+
+    bundle = provider.download_bundle(
+        "https://youtu.be/dQw4w9WgXcQ", tmp_path / "bundle", job_id="job-a"
+    )
+
+    assert video_attempts == 3
+    assert subtitle_attempts == 1
+    assert bundle.video_attempt_count == 3
+    assert bundle.subtitle_attempt_count == 1
