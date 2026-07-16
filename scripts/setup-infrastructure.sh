@@ -25,11 +25,13 @@ aws sts get-caller-identity >/dev/null
 repository_name="shorts-mvp-worker-$ENVIRONMENT"
 if aws ecr describe-repositories --region "$REGION" \
   --repository-names "$repository_name" >/dev/null 2>&1; then
-  if ! aws ecr describe-images --region "$REGION" --repository-name "$repository_name" \
-    --image-ids "imageTag=$WORKER_IMAGE_TAG" >/dev/null 2>&1; then
-    echo "ECR에 Worker 이미지 $WORKER_IMAGE_TAG 가 없습니다. GitHub Actions 완료 후 다시 배포하세요." >&2
-    exit 2
-  fi
+  for image_tag in "$WORKER_IMAGE_TAG" "$WORKER_IMAGE_TAG-prepare"; do
+    if ! aws ecr describe-images --region "$REGION" --repository-name "$repository_name" \
+      --image-ids "imageTag=$image_tag" >/dev/null 2>&1; then
+      echo "ECR에 Worker 이미지 $image_tag 가 없습니다. GitHub Actions 완료 후 다시 배포하세요." >&2
+      exit 2
+    fi
+  done
 fi
 
 mkdir -p .secrets

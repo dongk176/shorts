@@ -95,6 +95,9 @@ describe("shorts MVP infrastructure", () => {
     ).toHaveLength(1);
     expect(JSON.stringify(jobDefinitions)).not.toContain("WARP_CONF_B64");
     expect(JSON.stringify(compute.toJSON())).toContain("test-worker-image");
+    expect(JSON.stringify(prepareJobDefinition)).toContain("test-worker-image-prepare");
+    expect(JSON.stringify(renderJobDefinition)).toContain("test-worker-image");
+    expect(JSON.stringify(renderJobDefinition)).not.toContain("test-worker-image-prepare");
     expect(JSON.stringify(compute.toJSON())).not.toContain(":latest");
     compute.hasResourceProperties("AWS::Batch::JobDefinition", {
       ContainerProperties: Match.objectLike({
@@ -140,6 +143,14 @@ describe("shorts MVP infrastructure", () => {
       ReservedConcurrentExecutions: 10,
       Timeout: 30,
     });
+    compute.hasResourceProperties("AWS::Lambda::Function", {
+      Handler: "outbox_dispatcher.handler",
+      Environment: {
+        Variables: Match.objectLike({
+          BATCH_SUBMITTER_FUNCTION_NAME: Match.anyValue(),
+        }),
+      },
+    });
     compute.hasResourceProperties("AWS::Events::Rule", {
       ScheduleExpression: "rate(1 minute)",
     });
@@ -148,8 +159,11 @@ describe("shorts MVP infrastructure", () => {
   it("does not create wildcard IAM actions", () => {
     const { compute } = stacks();
     const policies = compute.findResources("AWS::IAM::Policy");
-    expect(JSON.stringify(policies)).toContain("lambda:InvokeFunction");
-    expect(JSON.stringify(policies)).toContain("OutboxDispatcherFunction");
+    const serializedPolicies = JSON.stringify(policies);
+    expect(serializedPolicies).toContain("lambda:InvokeFunction");
+    expect(serializedPolicies).toContain("OutboxDispatcherFunction");
+    expect(serializedPolicies).toContain("function:shorts-mvp-batch-submitter-test");
+    expect(serializedPolicies).not.toContain("function/shorts-mvp-batch-submitter-test");
     for (const policy of Object.values(policies) as Array<Record<string, unknown>>) {
       expect(JSON.stringify(policy)).not.toContain('"Action":"*"');
     }

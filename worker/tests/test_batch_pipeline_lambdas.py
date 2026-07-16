@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import sys
@@ -31,6 +32,7 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
     os.environ["PREPARE_JOB_DEFINITION"] = "prepare-definition:1"
     os.environ["RENDER_BATCH_QUEUE"] = "render-queue"
     os.environ["RENDER_JOB_DEFINITION"] = "render-definition:1"
+    os.environ["BATCH_SUBMITTER_FUNCTION_NAME"] = "batch-submitter"
     spec = importlib.util.spec_from_file_location(
         f"test_{name}_{id(fake_sqs)}", LAMBDA_DIR / f"{name}.py"
     )
@@ -222,7 +224,6 @@ def test_failed_short_cleanup_deletes_versions_before_marking_deleted() -> None:
 
 def test_prepare_retry_message_is_deduplicated_by_failed_batch_id() -> None:
     module, _ = _load_lambda("batch_submitter")
-    module._prepare_gate = MagicMock(return_value="open")
     module.rest = MagicMock(return_value=[{
         "id": "job-a",
         "attempt_count": 1,
@@ -244,7 +245,6 @@ def test_prepare_retry_message_is_deduplicated_by_failed_batch_id() -> None:
 
 def test_prepare_retry_returns_to_the_centrally_scheduled_outbox() -> None:
     module, _ = _load_lambda("batch_submitter")
-    module._prepare_gate = MagicMock(return_value="open")
     module.rest = MagicMock(return_value=[{
         "id": "job-a",
         "attempt_count": 2,
@@ -283,15 +283,13 @@ def test_batch_submission_claim_reuses_an_already_recorded_job() -> None:
     module.batch.submit_job.assert_not_called()
 
 
-def test_circuit_probe_has_a_distinct_minute_scoped_submission() -> None:
+def test_prepare_batch_submits_without_a_global_circuit_delay() -> None:
     module, _ = _load_lambda("batch_submitter")
     module.rest = MagicMock(return_value=[{
         "status": "queued",
         "aws_batch_job_id": None,
     }])
-    module._prepare_gate = MagicMock(return_value="probe")
-    module._submit_once = MagicMock(return_value="probe-batch")
-    module._delay = MagicMock()
+    module._submit_once = MagicMock(return_value="batch-a")
 
     result = module._submit({
         "kind": "prepare_batch",
@@ -299,12 +297,47 @@ def test_circuit_probe_has_a_distinct_minute_scoped_submission() -> None:
         "itemCount": 20,
     })
 
-    assert result == "probe-batch"
+    assert result == "batch-a"
     request, submission_key = module._submit_once.call_args.args
-    assert request["jobName"].startswith("shorts-probe-dispatch-abcdef-")
-    assert "arrayProperties" not in request
-    assert submission_key.startswith("prepare-probe:dispatch-abcdef:")
-    module._delay.assert_called_once()
+    assert request["jobName"] == "shorts-prepare-dispatch-abcdef"
+    assert request["arrayProperties"] == {"size": 20}
+    assert submission_key == "prepare:dispatch-abcdef"
+    source = (LAMBDA_DIR / "batch_submitter.py").read_text(encoding="utf-8")
+    assert "claim_ingestion_gate" not in source
+    assert "DelaySeconds=60" not in source
+
+
+def test_outbox_dispatcher_submits_prepare_directly_without_sqs() -> None:
+    module, aws_client = _load_lambda("outbox_dispatcher")
+    aws_client.invoke.return_value = {
+        "Payload": io.BytesIO(b'{"batchJobId":"batch-a"}')
+    }
+
+    def rest(table: str, **_kwargs):
+        if table == "rpc/claim_job_outbox":
+            return [{"dispatch_batch_id": "dispatch-a", "item_count": 1}]
+        if table == "rpc/claim_short_outbox":
+            return []
+        return []
+
+    module.rest = rest
+
+    result = module.handler({}, None)
+
+    assert result == {
+        "dispatchedBatches": 1,
+        "dispatchedJobs": 1,
+        "dispatchedRerenders": 0,
+    }
+    invocation = aws_client.invoke.call_args.kwargs
+    assert invocation["FunctionName"] == "batch-submitter"
+    assert invocation["InvocationType"] == "RequestResponse"
+    assert json.loads(invocation["Payload"]) == {
+        "kind": "prepare_batch",
+        "dispatchBatchId": "dispatch-a",
+        "itemCount": 1,
+    }
+    aws_client.send_message.assert_not_called()
 
 
 def test_completion_migration_never_revives_terminal_or_late_jobs() -> None:

@@ -55,11 +55,45 @@ def test_transcription_observability_records_usage_without_source_text(
         "status": "succeeded",
         "chunk_count": 4,
         "silent_chunk_count": 1,
+        "skipped_chunk_count": 0,
+        "failed_chunk_count": 0,
+        "failed_audio_seconds": 0.0,
         "input_tokens": 120,
         "output_tokens": 45,
         "transcript_segment_count": 1,
         "transcript_coverage_ratio": 0.2,
     }
+
+
+def test_partial_transcription_is_observed_without_failing_the_pipeline(
+    tmp_path: Path, capsys
+) -> None:
+    worker = _worker()
+    worker.transcriber.transcribe.return_value = TranscriptionResult(
+        segments=[SubtitleSegment(start=0, end=30, text="usable transcript")],
+        model="gpt-4o-mini-transcribe",
+        chunk_count=4,
+        silent_chunk_count=0,
+        input_tokens=100,
+        output_tokens=30,
+        failed_chunk_count=1,
+        skipped_chunk_count=1,
+        failed_audio_seconds=30,
+    )
+
+    transcript = worker._transcribe_source(
+        job_id="job-a",
+        source=tmp_path / "source.mp4",
+        work_dir=tmp_path,
+        duration_seconds=120,
+    )
+
+    event = json.loads(capsys.readouterr().out)
+    assert transcript[0].text == "usable transcript"
+    assert event["status"] == "partial"
+    assert event["failed_chunk_count"] == 1
+    assert event["skipped_chunk_count"] == 1
+    assert event["failed_audio_seconds"] == 30
 
 
 def test_transcription_failure_is_logged_without_provider_details(

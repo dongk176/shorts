@@ -121,12 +121,16 @@ describe("popular YouTube API route", () => {
     expect(mocks.getPopularSearchVideos).not.toHaveBeenCalled();
   });
 
-  it("blocks advanced filters for a non-Pro session", async () => {
+  it("allows advanced filters for a non-Pro session while the filter paywall is paused", async () => {
     mocks.session.mockResolvedValue({ id: "session-a", selectedPlanCode: "standard", userId: "user-a" });
+    mocks.getPopularVideos.mockResolvedValue({
+      items: [],
+      updatedAt: "2026-07-14T00:00:00.000Z",
+    });
 
-    const response = await GET(new Request("http://localhost/api/youtube/popular?type=trending&category=gaming"));
+    const response = await GET(new Request("http://localhost/api/youtube/popular?type=trending&category=gaming&reusable=true&longForm=true"));
 
-    expect(response.status).toBe(403);
-    expect(mocks.getPopularVideos).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(mocks.getPopularVideos).toHaveBeenCalledWith("trending", "gaming", true, true, false, undefined, 20);
   });
 });

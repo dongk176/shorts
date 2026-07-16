@@ -37,24 +37,36 @@ _ROUTE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 _SUPPORTED_PROXY_SCHEMES = frozenset({"http", "https", "socks5", "socks5h"})
 _SUPPORTED_EGRESS_MODES = frozenset({"auto", "webshare_isp", "warp"})
 _SUPPORTED_EGRESS_CLASSES = frozenset({"webshare_isp", "warp", "contracted_proxy"})
-_TERMINAL_RESTRICTION_MARKERS = (
-    "private video",
-    "video is private",
-    "video unavailable",
-    "sign in to watch",
-    "login required",
-    "age-restricted",
-    "age restricted",
-    "confirm your age",
-    "not available in your country",
-    "not available in your region",
-    "members-only",
-    "members only",
-    "join this channel",
-    "paid content",
-    "purchase this content",
-    "drm protected",
-    "drm-protected",
+_TERMINAL_RESTRICTIONS = (
+    (
+        ("private video", "video is private"),
+        "youtube_private_video",
+        "비공개 영상은 지원하지 않습니다.",
+    ),
+    (
+        ("not available in your country", "not available in your region"),
+        "youtube_region_restricted",
+        "지역 제한이 있는 영상은 지원하지 않습니다.",
+    ),
+    (
+        ("members-only", "members only", "join this channel"),
+        "youtube_members_only",
+        "채널 멤버십 전용 영상은 지원하지 않습니다.",
+    ),
+    (
+        ("paid content", "purchase this content"),
+        "youtube_paid_content",
+        "유료 영상은 지원하지 않습니다.",
+    ),
+    (
+        ("drm protected", "drm-protected"),
+        "youtube_drm_restricted",
+        "DRM으로 보호된 영상은 지원하지 않습니다.",
+    ),
+)
+_URL_PATTERN = re.compile(r"(?i)\b(?:https?|socks5h?)://\S+")
+_SENSITIVE_VALUE_PATTERN = re.compile(
+    r"(?i)\b(authorization|cookie|password|proxy|token)\s*[:=]\s*(?:bearer\s+)?\S+"
 )
 
 
@@ -65,6 +77,14 @@ def _log_ingestion_event(event: str, **fields: object) -> None:
 def _failure_reason(error: Exception) -> str:
     message = " ".join(str(error).split())[:240]
     return f"{type(error).__name__}: {message}"
+
+
+def _safe_upstream_reason(output: str) -> str:
+    lines = [" ".join(line.split()) for line in output.splitlines() if line.strip()]
+    reason = lines[-1] if lines else "yt-dlp returned no error detail"
+    reason = _URL_PATTERN.sub("[url]", reason)
+    reason = _SENSITIVE_VALUE_PATTERN.sub(lambda match: f"{match.group(1)}=[redacted]", reason)
+    return reason[:500]
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,7 +233,11 @@ class EgressRoutePool:
         for route in self.routes:
             if route.route_id == normalized:
                 return route
-        raise IngestionError("작업에 배정된 수집 경로를 현재 설정에서 찾을 수 없습니다.")
+        raise IngestionError(
+            "작업에 배정된 수집 경로를 현재 설정에서 찾을 수 없습니다.",
+            code="ingestion_route_not_configured",
+            details={"route_id": normalized},
+        )
 
     def acquire(
         self,
@@ -339,7 +363,11 @@ class YtDlpIngestionProvider(IngestionProvider):
     ) -> EgressRoute | None:
         if self._route_pool is None:
             if required_route_id:
-                raise IngestionError("작업에 수집 경로가 배정되었지만 프록시 풀이 비어 있습니다.")
+                raise IngestionError(
+                    "작업에 수집 경로가 배정되었지만 프록시 풀이 비어 있습니다.",
+                    code="ingestion_route_pool_empty",
+                    details={"route_id": required_route_id},
+                )
             return None
         if required_route_id:
             route = self._route_pool.required(required_route_id)
@@ -457,6 +485,18 @@ class YtDlpIngestionProvider(IngestionProvider):
         if selected_route is None:
             selected_route = self._acquire_route(job_id=job_id, asset=asset, attempt=attempt)
 
+        failure_context: dict[str, object] = {
+            "asset": asset,
+            "work_attempt": attempt,
+        }
+        if selected_route is not None:
+            failure_context.update(
+                {
+                    "route_id": selected_route.route_id,
+                    "egress_class": selected_route.egress_class,
+                }
+            )
+
         if selected_route is not None:
             proxies: list[str | None] = [selected_route.proxy_url]
         else:
@@ -485,12 +525,16 @@ class YtDlpIngestionProvider(IngestionProvider):
                 )
             except subprocess.TimeoutExpired:
                 last_error = RetryableIngestionError(
-                    "YouTube 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."
+                    "YouTube 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.",
+                    code="youtube_timeout",
+                    details=failure_context,
                 )
                 continue
             except OSError as exc:
                 raise IngestionError(
-                    "yt-dlp를 실행할 수 없습니다. 설치 상태를 확인해 주세요."
+                    "yt-dlp를 실행할 수 없습니다. 설치 상태를 확인해 주세요.",
+                    code="yt_dlp_unavailable",
+                    details=failure_context,
                 ) from exc
 
             if result.returncode == 0:
@@ -514,7 +558,9 @@ class YtDlpIngestionProvider(IngestionProvider):
                 last_error = BotCheckError(
                     "YouTube가 현재 서버의 자동 요청을 제한했습니다. 로그인 정보나 쿠키를 "
                     "이용한 우회는 지원하지 않습니다. 잠시 후 다시 시도하거나 다른 사용 "
-                    "허가된 공개 영상을 이용해 주세요."
+                    "허가된 공개 영상을 이용해 주세요.",
+                    code="youtube_bot_challenge",
+                    details=failure_context,
                 )
                 continue
 
@@ -528,19 +574,24 @@ class YtDlpIngestionProvider(IngestionProvider):
                     )
                 last_error = BotCheckError(
                     "YouTube가 현재 서버의 요청 빈도를 제한했습니다. 같은 서버에서 즉시 "
-                    "재시도하지 않고 잠시 대기합니다."
+                    "재시도하지 않고 잠시 대기합니다.",
+                    code="youtube_rate_limited",
+                    details=failure_context,
                 )
                 continue
 
-            if any(marker in lowered_output for marker in _TERMINAL_RESTRICTION_MARKERS):
-                raise IngestionError("인증 또는 콘텐츠 제한이 있는 영상은 지원하지 않습니다.")
+            for markers, code, message in _TERMINAL_RESTRICTIONS:
+                if any(marker in lowered_output for marker in markers):
+                    raise IngestionError(message, code=code, details=failure_context)
 
             if (
                 "unable to download video data" in lowered_output
                 and "http error 403" in lowered_output
             ):
                 last_error = RetryableIngestionError(
-                    "YouTube 영상 데이터 요청이 일시적으로 거부되었습니다."
+                    "YouTube 영상 데이터 요청이 일시적으로 거부되었습니다.",
+                    code="youtube_media_forbidden",
+                    details=failure_context,
                 )
                 continue
 
@@ -549,7 +600,11 @@ class YtDlpIngestionProvider(IngestionProvider):
                 or "proxy" in lowered_output
                 or "socks" in lowered_output
             ):
-                last_error = RetryableIngestionError("프록시 연결 오류로 다운로드할 수 없습니다.")
+                last_error = RetryableIngestionError(
+                    "프록시 연결 오류로 다운로드할 수 없습니다.",
+                    code="ingestion_proxy_connection_failed",
+                    details=failure_context,
+                )
                 continue
 
             if any(
@@ -566,21 +621,29 @@ class YtDlpIngestionProvider(IngestionProvider):
                 )
             ):
                 last_error = RetryableIngestionError(
-                    "YouTube와의 임시 네트워크 연결 오류로 영상을 가져오지 못했습니다."
+                    "YouTube와의 임시 네트워크 연결 오류로 영상을 가져오지 못했습니다.",
+                    code="youtube_network_error",
+                    details=failure_context,
                 )
                 continue
 
-            detail = output.strip().splitlines()
-            last_line = detail[-1] if detail else "알 수 없는 오류"
             raise IngestionError(
                 "영상을 가져오지 못했습니다. 공개 영상인지, 로그인이 필요하지 않은지 "
-                "확인해 주세요. "
-                f"({last_line[:300]})"
+                "확인해 주세요.",
+                code="youtube_extractor_failed",
+                details={
+                    **failure_context,
+                    "upstream_reason": _safe_upstream_reason(output),
+                },
             )
         if last_error:
             raise last_error
 
-        raise IngestionError("알 수 없는 내부 오류가 발생했습니다.")
+        raise IngestionError(
+            "알 수 없는 내부 오류가 발생했습니다.",
+            code="ingestion_no_egress_attempt",
+            details=failure_context,
+        )
 
     def _run_for_route(
         self,
@@ -629,9 +692,17 @@ class YtDlpIngestionProvider(IngestionProvider):
         try:
             info = json.loads(result.stdout)
         except json.JSONDecodeError as exc:
-            raise IngestionError("YouTube 영상 정보를 해석하지 못했습니다.") from exc
+            raise IngestionError(
+                "YouTube 영상 정보를 해석하지 못했습니다.",
+                code="youtube_metadata_invalid",
+                details={"asset": asset, "work_attempt": attempt},
+            ) from exc
         if str(info.get("id", "")) != expected_id:
-            raise IngestionError("요청한 영상과 다른 영상 정보가 반환되어 처리를 중단했습니다.")
+            raise IngestionError(
+                "요청한 영상과 다른 영상 정보가 반환되어 처리를 중단했습니다.",
+                code="youtube_video_id_mismatch",
+                details={"asset": asset, "work_attempt": attempt},
+            )
         return info
 
     @staticmethod
@@ -640,9 +711,15 @@ class YtDlpIngestionProvider(IngestionProvider):
         try:
             duration_seconds = float(duration)
         except (TypeError, ValueError) as exc:
-            raise IngestionError("영상 길이를 확인할 수 없는 영상은 지원하지 않습니다.") from exc
+            raise IngestionError(
+                "영상 길이를 확인할 수 없는 영상은 지원하지 않습니다.",
+                code="youtube_duration_missing",
+            ) from exc
         if duration_seconds <= 0:
-            raise IngestionError("영상 길이를 확인할 수 없는 영상은 지원하지 않습니다.")
+            raise IngestionError(
+                "영상 길이를 확인할 수 없는 영상은 지원하지 않습니다.",
+                code="youtube_duration_invalid",
+            )
         thumbnails = info.get("thumbnails") or []
         thumbnail = str(info.get("thumbnail") or "")
         if not thumbnail and thumbnails:
@@ -668,7 +745,10 @@ class YtDlpIngestionProvider(IngestionProvider):
         if range_start_seconds is None and range_end_seconds is None:
             return []
         if range_start_seconds is None or range_end_seconds is None:
-            raise IngestionError("다운로드 구간의 시작과 끝이 모두 필요합니다.")
+            raise IngestionError(
+                "다운로드 구간의 시작과 끝이 모두 필요합니다.",
+                code="ingestion_range_incomplete",
+            )
 
         start = float(range_start_seconds)
         end = float(range_end_seconds)
@@ -679,7 +759,14 @@ class YtDlpIngestionProvider(IngestionProvider):
             or end <= start
             or end > MAX_SOURCE_DURATION_SECONDS
         ):
-            raise IngestionError("유효하지 않은 영상 다운로드 구간입니다.")
+            raise IngestionError(
+                "유효하지 않은 영상 다운로드 구간입니다.",
+                code="ingestion_range_invalid",
+                details={
+                    "range_start_seconds": start if math.isfinite(start) else str(start),
+                    "range_end_seconds": end if math.isfinite(end) else str(end),
+                },
+            )
 
         return [
             "--download-sections",
@@ -729,9 +816,17 @@ class YtDlpIngestionProvider(IngestionProvider):
         try:
             info = json.loads(info_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise IngestionError("YouTube 영상 정보를 해석하지 못했습니다.") from exc
+            raise IngestionError(
+                "YouTube 영상 정보를 해석하지 못했습니다.",
+                code="youtube_download_metadata_invalid",
+                details={"asset": "video", "work_attempt": attempt},
+            ) from exc
         if str(info.get("id", "")) != expected_id:
-            raise IngestionError("요청한 영상과 다른 영상이 반환되어 처리를 중단했습니다.")
+            raise IngestionError(
+                "요청한 영상과 다른 영상이 반환되어 처리를 중단했습니다.",
+                code="youtube_video_id_mismatch",
+                details={"asset": "video", "work_attempt": attempt},
+            )
 
         video_candidates = [
             path
@@ -739,7 +834,11 @@ class YtDlpIngestionProvider(IngestionProvider):
             if path.is_file() and path.suffix.lower() in {".m4v", ".mkv", ".mov", ".mp4", ".webm"}
         ]
         if not video_candidates:
-            raise IngestionError("다운로드된 영상 파일을 찾지 못했습니다.")
+            raise IngestionError(
+                "다운로드된 영상 파일을 찾지 못했습니다.",
+                code="ingestion_downloaded_file_missing",
+                details={"asset": "video", "work_attempt": attempt},
+            )
         return (
             self._metadata_from_info(info),
             max(video_candidates, key=lambda path: path.stat().st_size),
@@ -825,7 +924,12 @@ class YtDlpIngestionProvider(IngestionProvider):
                         raise
                     raise RetryExhaustedIngestionError(
                         "원본 영상 다운로드가 임시 네트워크 오류로 "
-                        f"{attempt_limit}회 실패했습니다."
+                        f"{attempt_limit}회 실패했습니다.",
+                        details={
+                            "asset": "video",
+                            "attempt_count": attempt_limit,
+                            "failure_reasons": tuple(failure_reasons),
+                        },
                     ) from exc
                 if next_retry_delay is None:
                     raise AssertionError("retry delay is required before the last attempt") from exc
@@ -853,7 +957,11 @@ class YtDlpIngestionProvider(IngestionProvider):
             == "webshare_isp"
             and not route_id
         ):
-            raise IngestionError("ISP 수집 모드에서 작업에 전용 경로가 배정되지 않았습니다.")
+            raise IngestionError(
+                "ISP 수집 모드에서 작업에 전용 경로가 배정되지 않았습니다.",
+                code="ingestion_route_assignment_missing",
+                details={"egress_class": "webshare_isp"},
+            )
         normalized, expected_id = validate_youtube_url(youtube_url)
         destination.mkdir(parents=True, exist_ok=True)
         video = self._download_video_work(
@@ -900,5 +1008,9 @@ class YtDlpIngestionProvider(IngestionProvider):
             if path.is_file() and path.suffix.lower() not in {".part", ".ytdl", ".json"}
         )
         if not candidates:
-            raise IngestionError("다운로드된 영상 파일을 찾지 못했습니다.")
+            raise IngestionError(
+                "다운로드된 영상 파일을 찾지 못했습니다.",
+                code="ingestion_downloaded_file_missing",
+                details={"asset": "video"},
+            )
         return max(candidates, key=lambda path: path.stat().st_size)

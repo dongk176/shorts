@@ -31,16 +31,16 @@ try {
       id,mvp_session_id,request_id,youtube_url,youtube_video_id,video_title,channel_name,
       thumbnail_url,source_duration_seconds,range_start_seconds,range_end_seconds,
       template_id,clip_length_option,
-      expected_short_count,planned_short_count,rights_confirmed
+      expected_short_count,planned_short_count
     ) values (
       ${jobId},${sessionId},${crypto.randomUUID()},'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
       'dQw4w9WgXcQ','integration','channel','https://example.com/thumb.jpg',3600,0,3600,
-      'dark-red','sec_30',5,5,true
+      'dark-red','sec_30',5,5
     )
   `;
   let rangeDownload = await sql`
     select range_download_status, downloaded_media_duration_seconds,
-      downloaded_media_bytes, range_download_verified_at
+      downloaded_media_bytes, range_download_verified_at, rights_confirmed
     from shorts_mvp.video_jobs where id=${jobId}
   `;
   assert.deepEqual(
@@ -49,8 +49,9 @@ try {
       rangeDownload[0].downloadedMediaDurationSeconds,
       rangeDownload[0].downloadedMediaBytes,
       rangeDownload[0].rangeDownloadVerifiedAt,
+      rangeDownload[0].rightsConfirmed,
     ],
-    ["pending", null, null, null],
+    ["pending", null, null, null, false],
   );
   await sql`
     update shorts_mvp.video_jobs

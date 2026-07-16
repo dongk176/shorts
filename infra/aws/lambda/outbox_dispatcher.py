@@ -2,56 +2,79 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import UTC, datetime
 from typing import Any
 
 import boto3
 from common import log_event, patch, rest
 
 sqs = boto3.client("sqs")
+lambda_client = boto3.client("lambda")
 queue_url = os.environ["WORK_DISPATCH_QUEUE_URL"]
+batch_submitter_function = os.environ["BATCH_SUBMITTER_FUNCTION_NAME"]
 
 
-def _circuit_limit() -> int:
+def _submit_prepare_batch(dispatch_batch_id: str, item_count: int) -> str:
+    response = lambda_client.invoke(
+        FunctionName=batch_submitter_function,
+        InvocationType="RequestResponse",
+        Payload=json.dumps({
+            "kind": "prepare_batch",
+            "dispatchBatchId": dispatch_batch_id,
+            "itemCount": item_count,
+        }, separators=(",", ":")).encode(),
+    )
+    payload = json.loads(response["Payload"].read() or b"{}")
+    if response.get("FunctionError"):
+        raise RuntimeError("Direct Batch submission Lambda failed")
+    batch_job_id = str(payload.get("batchJobId") or "").strip()
+    if not batch_job_id:
+        raise RuntimeError("Direct Batch submission returned no job id")
+    return batch_job_id
+
+
+def _recorded_batch_job_id(dispatch_batch_id: str) -> str | None:
     rows = rest(
-        "ingestion_circuit",
-        query="select=blocked_until,reason&singleton=eq.true&limit=1",
+        "dispatch_batches",
+        query=f"select=aws_batch_job_id&id=eq.{dispatch_batch_id}&limit=1",
     ) or []
-    if not rows:
-        return 10000
-    blocked_until = rows[0].get("blocked_until")
-    blocked = blocked_until and datetime.fromisoformat(
-        blocked_until.replace("Z", "+00:00")
-    ) > datetime.now(UTC)
-    if blocked:
-        return 0
-    return 1 if rows[0].get("reason") else 10000
+    value = rows[0].get("aws_batch_job_id") if rows else None
+    return str(value) if value else None
 
 
 def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
-    limit = _circuit_limit()
-    if limit == 0:
-        return {"dispatchedBatches": 0, "dispatchedJobs": 0}
     batches = rest(
         "rpc/claim_job_outbox",
         method="POST",
-        body={"p_limit": limit},
+        body={"p_limit": 10000},
         prefer="return=representation",
     ) or []
     jobs = 0
     for item in batches:
         batch_id = item["dispatch_batch_id"]
+        item_count = int(item["item_count"])
         try:
-            sqs.send_message(
-                QueueUrl=queue_url,
-                MessageBody=json.dumps({
-                    "kind": "prepare_batch",
-                    "dispatchBatchId": batch_id,
-                    "itemCount": int(item["item_count"]),
-                }, separators=(",", ":")),
+            batch_job_id = _submit_prepare_batch(batch_id, item_count)
+            log_event(
+                "job_outbox_submitted_immediately",
+                dispatch_batch_id=batch_id,
+                batch_job_id=batch_job_id,
+                item_count=item_count,
             )
-            jobs += int(item["item_count"])
+            jobs += item_count
         except Exception as exc:
+            # A synchronous invocation response can be lost after the child Lambda
+            # commits the Batch id. Reconcile that ambiguous outcome before releasing
+            # the proxy leases or making the outbox item pending again.
+            recorded_batch_job_id = _recorded_batch_job_id(batch_id)
+            if recorded_batch_job_id:
+                log_event(
+                    "job_outbox_submit_reconciled",
+                    dispatch_batch_id=batch_id,
+                    batch_job_id=recorded_batch_job_id,
+                    item_count=item_count,
+                )
+                jobs += item_count
+                continue
             log_event(
                 "job_outbox_dispatch_failed",
                 dispatch_batch_id=batch_id,

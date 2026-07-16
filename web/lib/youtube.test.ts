@@ -1,5 +1,23 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const playbackMocks = vi.hoisted(() => ({
+  verify: vi.fn(),
+}));
+
+vi.mock("@/lib/youtube-playback", () => ({
+  verifyYoutubePlaybackAvailability: playbackMocks.verify,
+}));
+
 import { analyzeYoutubeUrl, normalizeYoutubeUrl } from "./youtube";
+
+beforeEach(() => {
+  playbackMocks.verify.mockReset();
+  playbackMocks.verify.mockResolvedValue({
+    creationAllowed: true,
+    creationBlockCode: null,
+    creationBlockReason: null,
+  });
+});
 
 describe("YouTube URL allowlist", () => {
   it.each([
@@ -136,6 +154,31 @@ describe("YouTube duration validation", () => {
     },
     {
       contentDetails: { duration: "PT2M" },
+      status: { uploadStatus: "deleted", privacyStatus: "public", embeddable: true },
+      code: "removed",
+    },
+    {
+      contentDetails: { duration: "PT2M" },
+      status: {
+        uploadStatus: "rejected",
+        privacyStatus: "public",
+        embeddable: true,
+        rejectionReason: "copyright",
+      },
+      code: "copyright_restricted",
+    },
+    {
+      contentDetails: { duration: "PT2M" },
+      status: {
+        uploadStatus: "processed",
+        privacyStatus: "private",
+        embeddable: true,
+        publishAt: "2099-01-01T00:00:00Z",
+      },
+      code: "not_yet_available",
+    },
+    {
+      contentDetails: { duration: "PT2M" },
       status: { uploadStatus: "processed", privacyStatus: "public", embeddable: false },
       code: "embedding_disabled",
     },
@@ -181,6 +224,62 @@ describe("YouTube duration validation", () => {
       creationAllowed: false,
       creationBlockCode: "availability_unverified",
     });
+
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("blocks a video when the direct playback response requires membership", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{
+        id: "dQw4w9WgXcQ",
+        snippet: {
+          title: "멤버십 영상",
+          channelTitle: "채널",
+          thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
+        },
+        contentDetails: { duration: "PT2M" },
+        status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
+      }],
+    }), { status: 200 })));
+    playbackMocks.verify.mockResolvedValue({
+      creationAllowed: false,
+      creationBlockCode: "members_only",
+      creationBlockReason: "채널 멤버십 전용 영상은 쇼츠로 만들 수 없습니다.",
+    });
+
+    await expect(analyzeYoutubeUrl("https://youtu.be/dQw4w9WgXcQ")).resolves.toMatchObject({
+      creationAllowed: false,
+      creationBlockCode: "members_only",
+    });
+    expect(playbackMocks.verify).toHaveBeenCalledWith("dQw4w9WgXcQ");
+
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("blocks an upcoming video before making a playback request", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{
+        id: "dQw4w9WgXcQ",
+        snippet: {
+          title: "예약 공개",
+          channelTitle: "채널",
+          thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
+        },
+        contentDetails: { duration: "PT2M" },
+        status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
+        liveStreamingDetails: { scheduledStartTime: "2026-07-18T00:00:00Z" },
+      }],
+    }), { status: 200 })));
+
+    await expect(analyzeYoutubeUrl("https://youtu.be/dQw4w9WgXcQ")).resolves.toMatchObject({
+      creationAllowed: false,
+      creationBlockCode: "not_yet_available",
+    });
+    expect(playbackMocks.verify).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();

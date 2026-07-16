@@ -4,6 +4,7 @@ import json
 import math
 import os
 import shutil
+import tempfile
 import threading
 import time
 import traceback
@@ -129,6 +130,28 @@ class BatchWorker:
     FINAL_PROCESSING_MESSAGE = "쇼츠를 준비하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
     FINAL_RENDER_MESSAGE = "쇼츠 영상을 만드는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
 
+    def _fail_ingestion_job(
+        self,
+        job_id: str,
+        error: IngestionError,
+        *,
+        job_attempt: int,
+        assigned_route_id: str | None,
+        assigned_egress_class: str | None,
+    ) -> None:
+        error_details = error.failure_details()
+        error_details["job_attempt"] = job_attempt
+        if assigned_route_id:
+            error_details["assigned_route_id"] = assigned_route_id
+        if assigned_egress_class:
+            error_details["assigned_egress_class"] = assigned_egress_class
+        self.repository.fail_job(
+            job_id,
+            error.code,
+            self.FINAL_INGESTION_MESSAGE,
+            error_details=error_details,
+        )
+
     @contextmanager
     def heartbeat(self, job_id: str):
         stop = threading.Event()
@@ -222,9 +245,12 @@ class BatchWorker:
             job_id=job_id,
             provider="openai",
             model=result.model,
-            status="succeeded",
+            status="partial" if result.failed_chunk_count else "succeeded",
             chunk_count=result.chunk_count,
             silent_chunk_count=result.silent_chunk_count,
+            skipped_chunk_count=result.skipped_chunk_count,
+            failed_chunk_count=result.failed_chunk_count,
+            failed_audio_seconds=result.failed_audio_seconds,
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
             transcript_segment_count=len(result.segments),
@@ -377,7 +403,11 @@ class BatchWorker:
                         )
                         route_is_leased = False
                         raise RetryExhaustedIngestionError(
-                            "사용 가능한 모든 ISP 경로에서 원본 영상 다운로드가 실패했습니다."
+                            "사용 가능한 모든 ISP 경로에서 원본 영상 다운로드가 실패했습니다.",
+                            details={
+                                "route_attempt_count": len(attempted_route_ids),
+                                "attempted_route_ids": tuple(attempted_route_ids),
+                            },
                         ) from exc
 
                     shutil.rmtree(destination, ignore_errors=True)
@@ -392,7 +422,12 @@ class BatchWorker:
                     route_is_leased = bool(next_route_id)
                     if not next_route_id:
                         raise RetryExhaustedIngestionError(
-                            "대기 시간 안에 사용할 수 있는 ISP 경로를 확보하지 못했습니다."
+                            "대기 시간 안에 사용할 수 있는 ISP 경로를 확보하지 못했습니다.",
+                            code="ingestion_route_wait_exhausted",
+                            details={
+                                "route_attempt_count": len(attempted_route_ids),
+                                "attempted_route_ids": tuple(attempted_route_ids),
+                            },
                         ) from exc
                     route_id = next_route_id
                 except IngestionError:
@@ -455,7 +490,7 @@ class BatchWorker:
         route_id = str(job.get("ingestion_route_id") or "").strip() or None
         egress_class = self.ingestion.egress_class_for(route_id) if route_id else None
         route_cleanup_owned_by_download = False
-        work_dir = self.settings.temp_dir / job_id
+        work_dir: Path | None = None
         deadline = job.get("deadline_at")
         if int(job.get("attempt_count") or 0) >= 10 or (
             deadline and deadline <= datetime.now(UTC) + timedelta(minutes=5)
@@ -466,9 +501,11 @@ class BatchWorker:
         if not claimed:
             return
         attempt = int(claimed["attempt_count"])
-        shutil.rmtree(work_dir, ignore_errors=True)
-        work_dir.mkdir(parents=True)
         try:
+            work_dir = Path(tempfile.mkdtemp(
+                prefix=f"prepare-{job_id}-attempt-{attempt}-",
+                dir=self.settings.temp_dir,
+            ))
             with self.heartbeat(job_id):
                 if not self.settings.openai_api_key:
                     _log_event(
@@ -481,7 +518,11 @@ class BatchWorker:
                     raise TranscriptionError(
                         "OPENAI_API_KEY가 없어 필수 전사를 시작할 수 없습니다."
                     )
-                self.repository.stage(job_id, "downloading", 10, "원본 영상을 준비하고 있습니다.")
+                _log_event(
+                    "prepare_download_starting",
+                    job_id=job_id,
+                    attempt=attempt,
+                )
                 range_start_seconds = float(job["range_start_seconds"])
                 range_end_seconds = float(job["range_end_seconds"])
                 source_duration_seconds = float(job["source_duration_seconds"])
@@ -563,7 +604,13 @@ class BatchWorker:
                     "unexpected_duration",
                 }:
                     raise IngestionError(
-                        "선택한 구간만 다운로드되지 않아 전체 영상 처리를 중단했습니다."
+                        "선택한 구간만 다운로드되지 않아 전체 영상 처리를 중단했습니다.",
+                        code="ingestion_range_mismatch",
+                        details={
+                            "range_download_status": range_download_status,
+                            "source_duration_seconds": source_duration_seconds,
+                            "downloaded_duration_seconds": downloaded_duration_seconds,
+                        },
                     )
 
                 self.repository.stage(job_id, "transcribing", 28, "영상 내용을 분석하고 있습니다.")
@@ -672,7 +719,13 @@ class BatchWorker:
                     egress_class=None,
                     job_attempt=attempt,
                 )
-            self.repository.fail_job(job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE)
+            self._fail_ingestion_job(
+                job_id,
+                exc,
+                job_attempt=attempt,
+                assigned_route_id=route_id,
+                assigned_egress_class=egress_class,
+            )
         except RetryableIngestionError as exc:
             _log_event(
                 "prepare_failed",
@@ -691,7 +744,13 @@ class BatchWorker:
                     egress_class=None,
                     job_attempt=attempt,
                 )
-            self.repository.fail_job(job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE)
+            self._fail_ingestion_job(
+                job_id,
+                exc,
+                job_attempt=attempt,
+                assigned_route_id=route_id,
+                assigned_egress_class=egress_class,
+            )
         except IngestionError as exc:
             _log_event(
                 "prepare_failed",
@@ -710,7 +769,13 @@ class BatchWorker:
                     egress_class=None,
                     job_attempt=attempt,
                 )
-            self.repository.fail_job(job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE)
+            self._fail_ingestion_job(
+                job_id,
+                exc,
+                job_attempt=attempt,
+                assigned_route_id=route_id,
+                assigned_egress_class=egress_class,
+            )
         except Exception as exc:
             _log_event(
                 "prepare_failed",
@@ -742,7 +807,8 @@ class BatchWorker:
                     )
                 except Exception:
                     pass
-            shutil.rmtree(work_dir, ignore_errors=True)
+            if work_dir is not None:
+                shutil.rmtree(work_dir, ignore_errors=True)
 
     def _cleanup_initial_objects(self, job: dict[str, object]) -> None:
         prefix = f"{job['mvp_session_id']}/{job['id']}/"

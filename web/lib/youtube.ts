@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { expectedShortCount, type YoutubeCreationBlockCode } from "@/lib/contracts";
+import { verifyYoutubePlaybackAvailability } from "@/lib/youtube-playback";
 
 const youtubeId = /^[A-Za-z0-9_-]{11}$/;
 
@@ -50,6 +51,14 @@ const responseSchema = z.object({
       uploadStatus: z.string(),
       privacyStatus: z.string(),
       embeddable: z.boolean(),
+      failureReason: z.string().optional(),
+      rejectionReason: z.string().optional(),
+      publishAt: z.string().optional(),
+    }).optional(),
+    liveStreamingDetails: z.object({
+      scheduledStartTime: z.string().optional(),
+      actualStartTime: z.string().optional(),
+      actualEndTime: z.string().optional(),
     }).optional(),
   })),
 });
@@ -110,6 +119,13 @@ export function getYoutubeCreationAvailability(
       creationBlockReason: "영상 공개 상태를 확인할 수 없어 쇼츠를 만들 수 없습니다.",
     };
   }
+  if (item.status.publishAt && Date.parse(item.status.publishAt) > Date.now()) {
+    return {
+      creationAllowed: false,
+      creationBlockCode: "not_yet_available",
+      creationBlockReason: "아직 예약 공개 시간이 되지 않은 영상입니다.",
+    };
+  }
   if (item.status.privacyStatus !== "public") {
     return {
       creationAllowed: false,
@@ -118,6 +134,20 @@ export function getYoutubeCreationAvailability(
     };
   }
   if (item.status.uploadStatus !== "processed") {
+    if (item.status.uploadStatus === "deleted") {
+      return {
+        creationAllowed: false,
+        creationBlockCode: "removed",
+        creationBlockReason: "삭제되었거나 게시가 중단된 영상은 쇼츠로 만들 수 없습니다.",
+      };
+    }
+    if (item.status.rejectionReason === "copyright") {
+      return {
+        creationAllowed: false,
+        creationBlockCode: "copyright_restricted",
+        creationBlockReason: "저작권 제한으로 재생이 중단된 영상은 쇼츠로 만들 수 없습니다.",
+      };
+    }
     return {
       creationAllowed: false,
       creationBlockCode: "not_processed",
@@ -129,6 +159,16 @@ export function getYoutubeCreationAvailability(
       creationAllowed: false,
       creationBlockCode: "embedding_disabled",
       creationBlockReason: "외부 재생이 제한된 영상은 쇼츠로 만들 수 없습니다.",
+    };
+  }
+  if (
+    item.liveStreamingDetails?.scheduledStartTime
+    && !item.liveStreamingDetails.actualStartTime
+  ) {
+    return {
+      creationAllowed: false,
+      creationBlockCode: "not_yet_available",
+      creationBlockReason: "아직 공개 또는 재생이 시작되지 않은 영상입니다.",
     };
   }
   return {
@@ -143,18 +183,26 @@ export async function analyzeYoutubeUrl(input: string) {
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) throw new Error("YOUTUBE_API_KEY가 설정되지 않았습니다.");
   const endpoint = new URL("https://www.googleapis.com/youtube/v3/videos");
-  endpoint.searchParams.set("part", "snippet,contentDetails,status");
+  endpoint.searchParams.set("part", "snippet,contentDetails,status,liveStreamingDetails");
   endpoint.searchParams.set("id", videoId);
   endpoint.searchParams.set("key", apiKey);
   const response = await fetch(endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
   if (!response.ok) throw new Error("YouTube 영상 정보를 확인하지 못했습니다.");
   const parsed = responseSchema.parse(await response.json());
   const item = parsed.items[0];
-  if (!item) throw new Error("공개적으로 확인할 수 없는 영상입니다.");
+  if (!item) {
+    const playback = await verifyYoutubePlaybackAvailability(videoId);
+    throw new Error(
+      playback.creationBlockReason || "비공개, 삭제 또는 이용이 중단된 영상입니다.",
+    );
+  }
   const durationSeconds = parseIsoDuration(item.contentDetails.duration);
   if (durationSeconds <= 0 || durationSeconds > 3600) throw new Error("최대 60분 길이의 영상까지만 만들 수 있습니다.");
   const thumbnails = Object.values(item.snippet.thumbnails);
-  const availability = getYoutubeCreationAvailability(item);
+  const metadataAvailability = getYoutubeCreationAvailability(item);
+  const availability = metadataAvailability.creationAllowed
+    ? await verifyYoutubePlaybackAvailability(videoId)
+    : metadataAvailability;
   const channelThumbnailUrl = await getChannelThumbnailUrl(item.snippet.channelId, apiKey);
   return {
     videoId,
