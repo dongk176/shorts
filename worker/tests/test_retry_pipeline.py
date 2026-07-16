@@ -71,6 +71,17 @@ def test_missing_openai_key_fails_before_youtube_download(tmp_path) -> None:
     )
 
 
+def test_prepare_omits_download_section_when_full_source_is_selected(tmp_path) -> None:
+    worker = _worker(tmp_path, RuntimeError("stop after download arguments"))
+
+    with pytest.raises(RuntimeError, match="stop after download arguments"):
+        worker.prepare("job-a")
+
+    download_kwargs = worker.ingestion.download_bundle.call_args.kwargs
+    assert download_kwargs["range_start_seconds"] is None
+    assert download_kwargs["range_end_seconds"] is None
+
+
 def test_prepare_transcribes_only_the_downloaded_range_before_selection(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
