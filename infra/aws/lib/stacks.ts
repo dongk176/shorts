@@ -74,6 +74,7 @@ export class ShortsMvpFoundationStack extends cdk.Stack {
           GEMINI_API_KEY: "",
           GEMINI_OPENAI_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/openai/",
           YOUTUBE_API_KEY: "",
+          INGESTION_PROXY_ROUTES_JSON: "",
           WARP_CONF_B64: "",
           WARP_CONF_A_B64: "",
           WARP_CONF_B_B64: "",
@@ -182,7 +183,8 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     });
     securityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), "HTTPS only");
     securityGroup.addEgressRule(
-      ec2.Peer.anyIpv4(), ec2.Port.udp(2408), "Cloudflare WARP WireGuard"
+      ec2.Peer.anyIpv4(), ec2.Port.tcpRange(1000, 9999),
+      "Dedicated ISP proxy direct connections"
     );
     securityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(5432), "Supabase Postgres");
     securityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(6543), "Supabase pooler");
@@ -326,18 +328,14 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", value: "gpt-5-nano" },
         { name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", value: "30" },
         { name: "OPENAI_TRANSCRIBE_MAX_WORKERS", value: "4" },
-        { name: "WARP_BOT_CHECK_COOLDOWN_SECONDS", value: "15" },
+        { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
+        { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "300" },
       ],
       secrets: [
         secret("DATABASE_URL"),
         secret("OPENAI_API_KEY"),
         secret("GEMINI_API_KEY"),
         secret("GEMINI_OPENAI_BASE_URL"),
-        secret("WARP_CONF_B64"),
-        secret("WARP_CONF_A_B64"),
-        secret("WARP_CONF_B_B64"),
-        secret("WARP_CONF_C_B64"),
-        secret("WARP_CONF_D_B64"),
       ],
     };
     const retryStrategy = {
@@ -356,6 +354,10 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       timeout: { attemptDurationSeconds: 3600 },
       containerProperties: {
         ...baseContainer,
+        secrets: [
+          ...baseContainer.secrets,
+          secret("INGESTION_PROXY_ROUTES_JSON"),
+        ],
         runtimePlatform: { cpuArchitecture: "X86_64", operatingSystemFamily: "LINUX" },
         ephemeralStorage: { sizeInGiB: 30 },
         resourceRequirements: [

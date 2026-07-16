@@ -335,6 +335,22 @@ def test_bot_check_array_attempt_does_not_requeue_parent(tmp_path, monkeypatch) 
     )
 
 
+def test_centrally_assigned_isp_route_is_released_and_requeued_on_bot_check(
+    tmp_path,
+) -> None:
+    worker = _worker(tmp_path, BotCheckError("bot check"))
+    worker.repository.get_job.return_value["ingestion_route_id"] = "webshare-03"
+    worker.ingestion.egress_class_for.return_value = "webshare_isp"
+
+    worker.prepare("job-a")
+
+    worker.repository.release_ingestion_route.assert_called_once_with(
+        "job-a", "webshare-03", result="bot_check", cooldown_seconds=300
+    )
+    worker.repository.retry_job.assert_called_once()
+    worker.repository.fail_job.assert_not_called()
+
+
 def test_prepare_does_not_start_inside_the_last_five_minutes(tmp_path) -> None:
     worker = _worker(tmp_path, BotCheckError("bot check"))
     worker.repository.get_job.return_value["deadline_at"] = datetime.now(UTC) + timedelta(

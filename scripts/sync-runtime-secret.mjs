@@ -19,18 +19,47 @@ export const runtimeSecretNames = [
   "GEMINI_API_KEY",
   "GEMINI_OPENAI_BASE_URL",
   "YOUTUBE_API_KEY",
+  "INGESTION_PROXY_ROUTES_JSON",
   "WARP_CONF_B64",
   "WARP_CONF_A_B64",
   "WARP_CONF_B_B64",
   "WARP_CONF_C_B64",
   "WARP_CONF_D_B64",
 ];
-const values = Object.fromEntries(runtimeSecretNames.map((name) => [name, process.env[name] || ""]));
-values.DATABASE_URL = normalizeWorkerDatabaseUrl(values.DATABASE_URL);
-const present = runtimeSecretNames.filter((name) => Boolean(values[name]));
+
+export function mergeRuntimeSecretValues(existing = {}, environment = process.env) {
+  const values = Object.fromEntries(runtimeSecretNames.map((name) => {
+    const supplied = Object.prototype.hasOwnProperty.call(environment, name);
+    return [name, supplied ? String(environment[name] || "") : String(existing[name] || "")];
+  }));
+  values.DATABASE_URL = normalizeWorkerDatabaseUrl(values.DATABASE_URL);
+  return values;
+}
+
+function readExistingSecret() {
+  try {
+    const output = execFileSync("aws", [
+      "secretsmanager",
+      "get-secret-value",
+      "--region",
+      process.env.AWS_REGION || "ap-northeast-2",
+      "--secret-id",
+      process.env.SECRET_ARN,
+      "--query",
+      "SecretString",
+      "--output",
+      "text",
+    ], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    return JSON.parse(output);
+  } catch {
+    throw new Error("기존 AWS runtime secret을 안전하게 읽지 못했습니다.");
+  }
+}
 
 export function syncRuntimeSecret() {
   if (!process.env.SECRET_ARN) throw new Error("SECRET_ARN is required");
+  const values = mergeRuntimeSecretValues(readExistingSecret());
+  const present = runtimeSecretNames.filter((name) => Boolean(values[name]));
   try {
     execFileSync("aws", [
       "secretsmanager",
@@ -40,8 +69,11 @@ export function syncRuntimeSecret() {
       "--secret-id",
       process.env.SECRET_ARN,
       "--secret-string",
-      JSON.stringify(values),
-    ], { stdio: ["ignore", "ignore", "ignore"] });
+      "file:///dev/stdin",
+    ], {
+      input: JSON.stringify(values),
+      stdio: ["pipe", "ignore", "ignore"],
+    });
   } catch {
     throw new Error("AWS runtime secret 동기화에 실패했습니다. AWS 로그인과 리전을 확인해 주세요.");
   }

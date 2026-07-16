@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  mergeRuntimeSecretValues,
   normalizeWorkerDatabaseUrl,
   runtimeSecretNames,
 } from "./sync-runtime-secret.mjs";
+
+test("preserves the externally imported proxy pool when local env omits it", () => {
+  const values = mergeRuntimeSecretValues(
+    { INGESTION_PROXY_ROUTES_JSON: "secret-routes", OPENAI_API_KEY: "old-key" },
+    { OPENAI_API_KEY: "new-key" },
+  );
+
+  assert.equal(values.INGESTION_PROXY_ROUTES_JSON, "secret-routes");
+  assert.equal(values.OPENAI_API_KEY, "new-key");
+});
 
 test("includes the legacy and four named WARP configurations", () => {
   assert.deepEqual(

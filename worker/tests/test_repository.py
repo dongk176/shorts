@@ -1,5 +1,6 @@
 import inspect
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from shorts_worker.repository import WorkerRepository
@@ -22,6 +23,35 @@ def test_prepare_attempt_casts_nullable_override_to_integer() -> None:
     implementation = inspect.getsource(WorkerRepository.claim_prepare_attempt)
     assert "%s::integer is null" in implementation
     assert "greatest(attempt_count,%s::integer)" in implementation
+
+
+def test_retry_job_returns_to_the_outbox_scheduler() -> None:
+    implementation = inspect.getsource(WorkerRepository.retry_job)
+
+    assert "insert into shorts_mvp.job_outbox" in implementation
+    assert "on conflict (job_id,kind,attempt_count) do nothing" in implementation
+
+
+def test_route_release_uses_the_schema_qualified_atomic_function() -> None:
+    implementation = inspect.getsource(WorkerRepository.release_ingestion_route)
+
+    assert "shorts_mvp.release_ingestion_route" in implementation
+
+
+def test_webshare_migration_seeds_ten_central_slots_and_extends_deadline_on_admission() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607160002_webshare_ingestion_slots.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "generate_series(1,10)" in migration
+    assert "for update of o skip locked" in migration
+    assert "for update of s skip locked" in migration
+    assert "lease_expires_at=clock_timestamp() + interval '20 minutes'" in migration
+    assert "30 + ceil(j.source_duration_seconds / 60.0)" in migration
+    assert "public." not in migration
 
 
 def test_pending_short_uses_one_database_clock_for_creation_and_expiry() -> None:

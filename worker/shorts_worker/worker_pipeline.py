@@ -252,6 +252,9 @@ class BatchWorker:
         job = self.repository.get_job(job_id)
         if not job:
             raise KeyError(job_id)
+        route_id = str(job.get("ingestion_route_id") or "").strip() or None
+        egress_class = self.ingestion.egress_class_for(route_id) if route_id else None
+        route_released = False
         work_dir = self.settings.temp_dir / job_id
         deadline = job.get("deadline_at")
         if int(job.get("attempt_count") or 0) >= 10 or (
@@ -287,19 +290,66 @@ class BatchWorker:
                     range_start_seconds=range_start_seconds,
                     range_end_seconds=range_end_seconds,
                 )
-                with self.repository.ingestion_slot():
-                    bundle = self.ingestion.download_bundle(
-                        job["youtube_url"],
-                        work_dir / "source",
-                        range_start_seconds=(
-                            range_start_seconds if partial_range_requested else None
-                        ),
-                        range_end_seconds=(
-                            range_end_seconds if partial_range_requested else None
-                        ),
-                        job_id=job_id,
-                    )
-                self.repository.record_ingestion_result(job_id, "success")
+                try:
+                    with self.repository.ingestion_slot():
+                        bundle = self.ingestion.download_bundle(
+                            job["youtube_url"],
+                            work_dir / "source",
+                            range_start_seconds=(
+                                range_start_seconds if partial_range_requested else None
+                            ),
+                            range_end_seconds=(
+                                range_end_seconds if partial_range_requested else None
+                            ),
+                            job_id=job_id,
+                            route_id=route_id,
+                        )
+                except BotCheckError:
+                    if route_id:
+                        self.repository.release_ingestion_route(
+                            job_id,
+                            route_id,
+                            result="bot_check",
+                            cooldown_seconds=300,
+                        )
+                        route_released = True
+                    raise
+                except RetryableIngestionError:
+                    if route_id:
+                        self.repository.release_ingestion_route(
+                            job_id,
+                            route_id,
+                            result="network_error",
+                            cooldown_seconds=60,
+                        )
+                        route_released = True
+                    raise
+                except IngestionError:
+                    if route_id:
+                        self.repository.release_ingestion_route(
+                            job_id,
+                            route_id,
+                            result="terminal",
+                            cooldown_seconds=0,
+                        )
+                        route_released = True
+                    raise
+                else:
+                    if route_id:
+                        self.repository.release_ingestion_route(
+                            job_id,
+                            route_id,
+                            result="success",
+                            cooldown_seconds=0,
+                        )
+                        route_released = True
+                self.repository.record_ingestion_result(
+                    job_id,
+                    "success",
+                    route_id=route_id,
+                    egress_class=egress_class,
+                    job_attempt=attempt,
+                )
                 metadata = bundle.metadata
                 if (
                     metadata.video_id != job["youtube_video_id"]
@@ -438,29 +488,53 @@ class BatchWorker:
             self.repository.fail_job(job_id, type(exc).__name__, self.FINAL_PROCESSING_MESSAGE)
             raise
         except BotCheckError as exc:
+            retryable = bool(route_id) and self.repository.can_retry_prepare(job_id)
             _log_event(
                 "prepare_failed",
                 job_id=job_id,
                 attempt=attempt,
                 error_type=type(exc).__name__,
-                retryable=False,
+                retryable=retryable,
             )
             self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
-            self.repository.record_ingestion_result(job_id, "bot_check")
-            self.repository.fail_job(job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE)
+            self.repository.record_ingestion_result(
+                job_id,
+                "bot_check",
+                route_id=route_id,
+                egress_class=egress_class,
+                job_attempt=attempt,
+            )
+            if retryable:
+                self.repository.retry_job(job_id, type(exc).__name__, str(exc))
+            else:
+                self.repository.fail_job(
+                    job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
+                )
         except RetryableIngestionError as exc:
+            retryable = bool(route_id) and self.repository.can_retry_prepare(job_id)
             _log_event(
                 "prepare_failed",
                 job_id=job_id,
                 attempt=attempt,
                 error_type=type(exc).__name__,
-                retryable=False,
+                retryable=retryable,
             )
             self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
-            self.repository.record_ingestion_result(job_id, "other_error")
-            self.repository.fail_job(job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE)
+            self.repository.record_ingestion_result(
+                job_id,
+                "other_error",
+                route_id=route_id,
+                egress_class=egress_class,
+                job_attempt=attempt,
+            )
+            if retryable:
+                self.repository.retry_job(job_id, type(exc).__name__, str(exc))
+            else:
+                self.repository.fail_job(
+                    job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
+                )
         except IngestionError as exc:
             _log_event(
                 "prepare_failed",
@@ -471,7 +545,13 @@ class BatchWorker:
             )
             self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
-            self.repository.record_ingestion_result(job_id, "other_error")
+            self.repository.record_ingestion_result(
+                job_id,
+                "other_error",
+                route_id=route_id,
+                egress_class=egress_class,
+                job_attempt=attempt,
+            )
             self.repository.fail_job(job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE)
         except Exception as exc:
             _log_event(
@@ -483,11 +563,27 @@ class BatchWorker:
             )
             self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
-            self.repository.record_ingestion_result(job_id, "other_error")
+            self.repository.record_ingestion_result(
+                job_id,
+                "other_error",
+                route_id=route_id,
+                egress_class=egress_class,
+                job_attempt=attempt,
+            )
             self.repository.fail_job(job_id, type(exc).__name__, self.FINAL_PROCESSING_MESSAGE)
             traceback.print_exc()
             raise
         finally:
+            if route_id and not route_released:
+                try:
+                    self.repository.release_ingestion_route(
+                        job_id,
+                        route_id,
+                        result="terminal",
+                        cooldown_seconds=0,
+                    )
+                except Exception:
+                    pass
             shutil.rmtree(work_dir, ignore_errors=True)
 
     def _cleanup_initial_objects(self, job: dict[str, object]) -> None:
