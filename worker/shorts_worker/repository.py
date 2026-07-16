@@ -93,7 +93,7 @@ class WorkerRepository:
                 set status='starting', stage='starting', progress=7,
                     worker_id=%s, claimed_at=now(), heartbeat_at=now(),
                     attempt_count=j.attempt_count + 1,
-                    error_code=null, error_message=null
+                    error_code=null, error_message=null, error_details='{}'::jsonb
                 from candidate
                 where j.id=candidate.id
                 returning j.id, j.attempt_count
@@ -168,11 +168,13 @@ class WorkerRepository:
             row = connection.execute(
                 """
                 update shorts_mvp.video_jobs
-                set status='starting', stage='starting', progress=7,
+                set status='downloading', stage='downloading', progress=10,
                   attempt_count=case when %s::integer is null then attempt_count + 1
                                      else greatest(attempt_count,%s::integer) end,
                   next_attempt_at=null, error_code=null, error_message=null,
-                  started_at=coalesce(started_at,now()), heartbeat_at=now(),
+                  error_details='{}'::jsonb,
+                  started_at=coalesce(started_at,now()),
+                  claimed_at=coalesce(claimed_at,now()), heartbeat_at=now(),
                   range_download_status='pending',
                   downloaded_media_duration_seconds=null,
                   downloaded_media_bytes=null,
@@ -697,16 +699,25 @@ class WorkerRepository:
                 (job_id,),
             )
 
-    def fail_job(self, job_id: str, error_code: str, message: str) -> bool:
+    def fail_job(
+        self,
+        job_id: str,
+        error_code: str,
+        message: str,
+        *,
+        error_details: dict[str, object] | None = None,
+    ) -> bool:
+        persisted_details = error_details or {}
         with self.connect() as connection, connection.transaction():
             failed = connection.execute(
                 """
                 update shorts_mvp.video_jobs set status='failed', stage='failed', progress=100,
-                  error_code=%s, error_message=%s, source_deleted_at=now(), heartbeat_at=now()
+                  error_code=%s, error_message=%s, error_details=%s,
+                  source_deleted_at=now(), heartbeat_at=now()
                 where id=%s and status not in ('completed','failed','expired','deleted')
                 returning id
                 """,
-                (error_code[:100], message[:1000], job_id),
+                (error_code[:100], message[:1000], Jsonb(persisted_details), job_id),
             ).fetchone()
             if not failed:
                 return False
@@ -730,10 +741,14 @@ class WorkerRepository:
             )
             connection.execute(
                 """
-                insert into shorts_mvp.job_events (job_id,stage,progress,message)
-                values (%s,'failed',100,%s)
+                insert into shorts_mvp.job_events (job_id,stage,progress,message,metadata)
+                values (%s,'failed',100,%s,%s)
                 """,
-                (job_id, message[:500]),
+                (
+                    job_id,
+                    message[:500],
+                    Jsonb({"error_code": error_code[:100], **persisted_details}),
+                ),
             )
             return True
 

@@ -60,7 +60,7 @@ export class ShortsMvpFoundationStack extends cdk.Stack {
       repositoryName: `shorts-mvp-worker-${props.environment}`,
       imageScanOnPush: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
-      lifecycleRules: [{ maxImageCount: 8, description: "Keep the latest eight worker images" }],
+      lifecycleRules: [{ maxImageCount: 16, description: "Keep recent prepare and render images" }],
     });
     this.runtimeSecret = new secretsmanager.Secret(this, "WorkerRuntimeSecret", {
       secretName: `shorts-mvp/${props.environment}/worker-runtime`,
@@ -157,6 +157,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         "workerImageTag must be an immutable published image tag; latest is not allowed",
       );
     }
+    const prepareWorkerImageTag = `${workerImageTag}-prepare`;
     const vpc = new ec2.Vpc(this, "WorkerVpc", {
       maxAzs: 2,
       natGateways: 0,
@@ -305,7 +306,6 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       valueFrom: `${runtimeSecret.secretArn}:${key}::`,
     });
     const baseContainer = {
-      image: `${repository.repositoryUri}:${workerImageTag}`,
       executionRoleArn: executionRole.roleArn,
       jobRoleArn: taskRole.roleArn,
       networkConfiguration: { assignPublicIp: "ENABLED" },
@@ -352,6 +352,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       timeout: { attemptDurationSeconds: 3600 },
       containerProperties: {
         ...baseContainer,
+        image: `${repository.repositoryUri}:${prepareWorkerImageTag}`,
         environment: [
           ...baseContainer.environment,
           { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
@@ -377,6 +378,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       timeout: { attemptDurationSeconds: 1200 },
       containerProperties: {
         ...baseContainer,
+        image: `${repository.repositoryUri}:${workerImageTag}`,
         networkConfiguration: undefined,
         resourceRequirements: [
           { type: "VCPU", value: "4" },
@@ -392,6 +394,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       timeout: { attemptDurationSeconds: 5400 },
       containerProperties: {
         ...baseContainer,
+        image: `${repository.repositoryUri}:${workerImageTag}`,
         runtimePlatform: {
           cpuArchitecture: "X86_64",
           operatingSystemFamily: "LINUX",
@@ -410,6 +413,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       timeout: { attemptDurationSeconds: 5400 },
       containerProperties: {
         ...baseContainer,
+        image: `${repository.repositoryUri}:${workerImageTag}`,
         runtimePlatform: {
           cpuArchitecture: "X86_64",
           operatingSystemFamily: "LINUX",
@@ -493,7 +497,9 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       memorySize: 256,
       environment: lambdaEnvironment,
     });
+    const batchSubmitterFunctionName = `shorts-mvp-batch-submitter-${props.environment}`;
     const batchSubmitter = new lambda.Function(this, "BatchSubmitterFunction", {
+      functionName: batchSubmitterFunctionName,
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "batch_submitter.handler",
       code: lambdaCode,
@@ -503,6 +509,19 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       reservedConcurrentExecutions: 10,
       environment: lambdaEnvironment,
     });
+    outboxDispatcher.addEnvironment(
+      "BATCH_SUBMITTER_FUNCTION_NAME",
+      batchSubmitterFunctionName,
+    );
+    lambdaRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["lambda:InvokeFunction"],
+      resources: [this.formatArn({
+        service: "lambda",
+        resource: "function",
+        resourceName: batchSubmitterFunctionName,
+        arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+      })],
+    }));
     batchSubmitter.addEventSource(new lambdaEventSources.SqsEventSource(workQueue, {
       batchSize: 1,
       reportBatchItemFailures: true,

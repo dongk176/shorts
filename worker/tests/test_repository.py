@@ -23,6 +23,8 @@ def test_prepare_attempt_casts_nullable_override_to_integer() -> None:
     implementation = inspect.getsource(WorkerRepository.claim_prepare_attempt)
     assert "%s::integer is null" in implementation
     assert "greatest(attempt_count,%s::integer)" in implementation
+    assert "status='downloading', stage='downloading', progress=10" in implementation
+    assert "claimed_at=coalesce(claimed_at,now())" in implementation
 
 
 def test_retry_job_returns_to_the_outbox_scheduler() -> None:
@@ -30,6 +32,54 @@ def test_retry_job_returns_to_the_outbox_scheduler() -> None:
 
     assert "insert into shorts_mvp.job_outbox" in implementation
     assert "on conflict (job_id,kind,attempt_count) do nothing" in implementation
+
+
+def test_fail_job_persists_structured_error_details() -> None:
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+    connection.execute.return_value.fetchone.return_value = {"id": "job-a"}
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+    details = {
+        "category": "ingestion",
+        "reason": "비공개 영상은 지원하지 않습니다.",
+        "job_attempt": 2,
+    }
+
+    assert repository.fail_job(
+        "job-a",
+        "youtube_private_video",
+        "사용자용 메시지",
+        error_details=details,
+    )
+
+    failure_parameters = connection.execute.call_args_list[0].args[1]
+    assert failure_parameters[0] == "youtube_private_video"
+    assert failure_parameters[1] == "사용자용 메시지"
+    assert failure_parameters[2].obj == details
+    event_parameters = connection.execute.call_args_list[-1].args[1]
+    assert event_parameters[2].obj == {
+        "error_code": "youtube_private_video",
+        **details,
+    }
+
+
+def test_ingestion_failure_details_migration_is_schema_qualified() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607170004_ingestion_failure_details.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "shorts_mvp.video_jobs" in migration
+    assert "error_details jsonb not null default '{}'::jsonb" in migration
+    assert "jsonb_typeof(error_details) = 'object'" in migration
+    assert "public." not in migration
 
 
 def test_route_release_uses_the_schema_qualified_atomic_function() -> None:

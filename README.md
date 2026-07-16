@@ -70,7 +70,7 @@ export VERCEL_PROJECT_NAME=your-vercel-project
 npm run infra:setup
 ```
 
-이 명령은 CloudFront RSA key를 `.secrets/`에 생성하고, CDK bootstrap/deploy, runtime secret, Vercel production env 동기화를 수행합니다. `.secrets/`와 `.env.local`은 Git에서 제외됩니다. Worker는 GitHub Actions OIDC로 `linux/amd64` 이미지를 ECR에 게시하므로 로컬 Docker가 필요하지 않습니다. Job Definition은 `latest`가 아니라 커밋 SHA 이미지에 고정됩니다. 기존 환경을 갱신할 때는 변경을 커밋하고 GitHub Actions 이미지 게시가 끝난 뒤 실행해야 하며, 이미지가 없으면 배포 스크립트가 중단됩니다.
+이 명령은 CloudFront RSA key를 `.secrets/`에 생성하고, CDK bootstrap/deploy, runtime secret, Vercel production env 동기화를 수행합니다. `.secrets/`와 `.env.local`은 Git에서 제외됩니다. Worker는 GitHub Actions OIDC로 다운로드 전용 `SHA-prepare` 이미지와 렌더 전용 `SHA` 이미지를 `linux/amd64`로 ECR에 게시하므로 로컬 Docker가 필요하지 않습니다. Job Definition은 `latest`가 아니라 커밋 SHA 이미지에 고정됩니다. 기존 환경을 갱신할 때는 변경을 커밋하고 GitHub Actions 이미지 게시가 끝난 뒤 실행해야 하며, 두 이미지 중 하나라도 없으면 배포 스크립트가 중단됩니다.
 
 ## Vercel OIDC
 
@@ -137,7 +137,7 @@ make verify
 
 ## 저작권 및 한계
 
-소유하거나 명시적으로 사용 허가를 받은 공개 영상만 처리합니다. 콘텐츠 권리 확인과 YouTube의
+지원되는 공개 영상만 처리하며, 사용자는 콘텐츠를 적법하게 사용할 책임이 있습니다. 콘텐츠 권리와 YouTube의
 플랫폼 정책은 별개이므로 유료 상용화 전 법무 검토가 필요합니다. 운영 기준과 네트워크 경로는
 [YouTube ingestion risk policy](docs/youtube-compliance.md)를 따릅니다.
 

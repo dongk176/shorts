@@ -150,6 +150,7 @@ def test_rate_limit_uses_bot_check_circuit_error(monkeypatch) -> None:
         YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
 
     assert "요청 빈도를 제한" in str(caught.value)
+    assert caught.value.code == "youtube_rate_limited"
 
 
 def test_rate_limit_fails_over_configured_egress_paths_then_fails(monkeypatch) -> None:
@@ -188,7 +189,7 @@ def test_missing_warp_does_not_try_dead_local_proxy(monkeypatch) -> None:
             args=args,
             returncode=1,
             stdout="",
-            stderr="ERROR: video unavailable",
+            stderr="ERROR: private video",
         )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -309,10 +310,68 @@ def test_content_restriction_never_fails_over_egress(monkeypatch) -> None:
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    with pytest.raises(IngestionError, match="인증 또는 콘텐츠 제한"):
+    with pytest.raises(IngestionError, match="비공개") as caught:
         YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
 
+    assert caught.value.code == "youtube_private_video"
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("upstream_error", "expected_code"),
+    [
+        ("ERROR: This video is not available in your country", "youtube_region_restricted"),
+        ("ERROR: This video is members-only", "youtube_members_only"),
+        ("ERROR: Please purchase this content", "youtube_paid_content"),
+        ("ERROR: This format is DRM-protected", "youtube_drm_restricted"),
+    ],
+)
+def test_content_restrictions_have_distinct_failure_codes(
+    monkeypatch: pytest.MonkeyPatch,
+    upstream_error: str,
+    expected_code: str,
+) -> None:
+    monkeypatch.delenv("WARP_PROXY_URL", raising=False)
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr=upstream_error
+        ),
+    )
+
+    with pytest.raises(IngestionError) as caught:
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+    assert caught.value.code == expected_code
+
+
+def test_unknown_upstream_failure_detail_redacts_urls_and_credentials(monkeypatch) -> None:
+    monkeypatch.delenv("WARP_PROXY_URL", raising=False)
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr=(
+                "ERROR: extractor failed at https://user:pass@example.test/video?token=secret "
+                "Authorization: Bearer top-secret"
+            ),
+        ),
+    )
+
+    with pytest.raises(IngestionError) as caught:
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+    assert caught.value.code == "youtube_extractor_failed"
+    upstream_reason = str(caught.value.failure_details()["upstream_reason"])
+    assert "[url]" in upstream_reason
+    assert "[redacted]" in upstream_reason
+    assert "secret" not in upstream_reason
 
 
 def test_temporary_network_failure_is_retryable(monkeypatch) -> None:
@@ -329,8 +388,10 @@ def test_temporary_network_failure_is_retryable(monkeypatch) -> None:
         ),
     )
 
-    with pytest.raises(RetryableIngestionError):
+    with pytest.raises(RetryableIngestionError) as caught:
         YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+    assert caught.value.code == "youtube_network_error"
 
 
 def test_media_data_forbidden_is_retryable(monkeypatch) -> None:
@@ -347,8 +408,10 @@ def test_media_data_forbidden_is_retryable(monkeypatch) -> None:
         ),
     )
 
-    with pytest.raises(RetryableIngestionError):
+    with pytest.raises(RetryableIngestionError) as caught:
         YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+    assert caught.value.code == "youtube_media_forbidden"
 
 
 def test_generic_forbidden_remains_terminal(monkeypatch) -> None:
@@ -369,6 +432,7 @@ def test_generic_forbidden_remains_terminal(monkeypatch) -> None:
         YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
 
     assert type(caught.value) is IngestionError
+    assert caught.value.code == "youtube_extractor_failed"
 
 
 def test_media_data_forbidden_with_content_restriction_remains_terminal(

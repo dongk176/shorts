@@ -51,13 +51,27 @@ jobs:
       - id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - name: Build and publish prepare image
+        uses: docker/build-push-action@v6
         with:
           context: worker
+          target: prepare
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.AWS_ECR_REPOSITORY_URI }}:latest-prepare
+            ${{ env.AWS_ECR_REPOSITORY_URI }}:${{ github.sha }}-prepare
+          cache-from: type=gha,scope=prepare
+          cache-to: type=gha,mode=max,scope=prepare
+      - name: Build and publish render image
+        uses: docker/build-push-action@v6
+        with:
+          context: worker
+          target: render
           platforms: linux/amd64
           push: true
           tags: |
             ${{ env.AWS_ECR_REPOSITORY_URI }}:latest
             ${{ env.AWS_ECR_REPOSITORY_URI }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=render
+          cache-to: type=gha,mode=max,scope=render

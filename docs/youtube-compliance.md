@@ -10,8 +10,7 @@ change, and qualified counsel should review the commercial service.
 ## Operating decision
 
 The service may process any supported public YouTube URL.
-Private, paid, age-restricted, region-restricted, login-required, removed, or
-DRM-protected content remains unsupported.
+Paid, region-restricted, or DRM-protected content remains unsupported.
 
 The service may use company-controlled egress paths,
 including direct AWS egress, WARP, ISP proxy pools, or contracted fallback proxies, for ordinary
@@ -22,8 +21,8 @@ An egress path may fail over for connection failures (such as DNS, TLS,
 connection reset, timeout, unavailable proxy) or when encountering a bot challenge
 or HTTP 429. After the server-side availability gate succeeds, yt-dlp's exact media-data
 HTTP 403 failure may also retry as a transient delivery failure only when the response has
-no authentication, age, payment, region, private-video, membership, or DRM restriction marker.
-Geographic restriction, authentication requirement, or content restriction must not trigger
+no payment, region, membership, or DRM restriction marker.
+Geographic restriction or content restriction must not trigger
 identity, account, region, client, cookie, or token rotation intended to defeat the restriction.
 Bot challenges, HTTP 429 responses, and eligible media-data HTTP 403 failures may be retried on
 the same or an alternative egress up to the worker's standard limit.
@@ -38,7 +37,7 @@ the same or an alternative egress up to the worker's standard limit.
   the video acquisition work only, for at most ten total attempts, with bounded jittered delays.
   A successful video acquisition must not be restarted by later processing stages.
 - Do not pass YouTube account credentials, account cookies, or browser profiles to workers.
-- Do not access private, paid, age-restricted, region-restricted, removed, or DRM content.
+- Do not access paid, region-restricted, or DRM content.
 - Keep full source media only on task ephemeral storage and delete it in `finally`.
 - Record the selected egress class and error category without logging proxy URLs,
   credentials, signed URLs, tokens, cookies, or full command output.

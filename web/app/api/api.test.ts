@@ -146,25 +146,24 @@ describe("job API security and idempotency", () => {
       templateId: "dark-red",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d9",
     }));
     expect(response.status).toBe(401);
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
 
-  it("rejects creation when rights confirmation is missing", async () => {
+  it("creates a job without a per-job rights confirmation", async () => {
+    mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
       analysisId,
       templateId: "dark-red",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
-      rightsConfirmed: false,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d0",
     }));
-    expect(response.status).toBe(400);
-    expect(mocks.session).not.toHaveBeenCalled();
+    expect(response.status).toBe(202);
+    expect(mocks.authenticatedSession).toHaveBeenCalledOnce();
   });
 
   it("returns an existing request without a second Batch submission", async () => {
@@ -176,7 +175,6 @@ describe("job API security and idempotency", () => {
       clipLengthOption: "sec_31_60",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d0",
     }));
     expect(response.status).toBe(200);
@@ -197,7 +195,6 @@ describe("job API security and idempotency", () => {
       templateId: "dark-red",
       rangeStartSeconds: 100,
       rangeEndSeconds: 120,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d1",
     }));
     expect(response.status).toBe(400);
@@ -216,7 +213,6 @@ describe("job API security and idempotency", () => {
       templateId: "dark-red",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d4",
     }));
 
@@ -235,7 +231,6 @@ describe("job API security and idempotency", () => {
       templateId: "dark-red",
       rangeStartSeconds: 100,
       rangeEndSeconds: 130,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d2",
     }));
 
@@ -253,7 +248,6 @@ describe("job API security and idempotency", () => {
       templateId: "dark-red",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d5",
     }));
 
@@ -274,7 +268,6 @@ describe("job API security and idempotency", () => {
       videoAspectRatio: "5:4",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d4",
     }));
 
@@ -288,7 +281,6 @@ describe("job API security and idempotency", () => {
       videoAspectRatio: "3:2",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d3",
     }));
     expect(response.status).toBe(400);
