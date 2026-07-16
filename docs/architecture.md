@@ -8,7 +8,7 @@
 
 ## Data plane
 
-`worker/`는 HTTP 서버가 아닌 CLI입니다. Prepare Fargate task는 공개 YouTube 원본을 task `/tmp`에만 받고, 자막/음성 인식, 하이라이트 선택, 1080×1080 clean clip 생성까지만 수행합니다. Render EC2 task는 최대 4개 clean clip을 받아 FFmpeg 최대 2개를 병렬 실행하고 1080×1920 output/thumbnail을 생성합니다. 모든 종료 경로에서 temp tree를 지웁니다.
+`worker/`는 HTTP 서버가 아닌 CLI입니다. Prepare Fargate task는 공개 YouTube 원본을 task `/tmp`에만 받고, OpenAI 전체 오디오 전사, Gemini/OpenAI 하이라이트 선택, 1080×1080 clean clip 생성까지만 수행합니다. Render EC2 task는 최대 4개 clean clip을 받아 FFmpeg 최대 2개를 병렬 실행하고 1080×1920 output/thumbnail을 생성합니다. 모든 종료 경로에서 temp tree를 지웁니다.
 
 Rerender는 private clean clip만 받아 편집된 overlay를 적용합니다. 새 version key 업로드 → DB transaction으로 key/version 교체 → 이전 object 삭제 순서여서 실패 시 기존 output이 유지됩니다.
 

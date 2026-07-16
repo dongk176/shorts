@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { fitPreviewTitleFont, wrapPreviewTitle } from "./title-preview";
+import {
+  fitPreviewTitleFont,
+  titleLineBackground,
+  titleLineColor,
+  wrapPreviewTitle,
+} from "./title-preview";
 
 describe("render-matched title preview", () => {
   it("preserves two user-authored lines without wrapping either line again", () => {
@@ -20,5 +25,20 @@ describe("render-matched title preview", () => {
     expect(size).toBe(84);
     const smaller = fitPreviewTitleFont(["12345678901234567890"], (line, fontSize) => line.length * fontSize);
     expect(smaller).toBe(46);
+  });
+
+  it("uses the second-line background and text colors for both full-vertical lines", () => {
+    expect(titleLineBackground(0, true, "#000000", "#E32626")).toBe("#E32626");
+    expect(titleLineBackground(1, true, "#000000", "#E32626")).toBe("#E32626");
+    expect(titleLineColor(0, true, "#FFFFFF", "#F04444")).toBe("#F04444");
+    expect(titleLineColor(1, true, "#FFFFFF", "#F04444")).toBe("#F04444");
+    expect(titleLineBackground(1, true, "#000000", null)).toBe("#000000");
+  });
+
+  it("preserves the existing accent-only background outside overlay mode", () => {
+    expect(titleLineBackground(0, false, "#000000", "#E32626")).toBeNull();
+    expect(titleLineBackground(1, false, "#000000", "#E32626")).toBe("#E32626");
+    expect(titleLineColor(0, false, "#FFFFFF", "#F04444")).toBe("#FFFFFF");
+    expect(titleLineColor(1, false, "#FFFFFF", "#F04444")).toBe("#F04444");
   });
 });

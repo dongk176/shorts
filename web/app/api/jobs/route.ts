@@ -10,10 +10,10 @@ import {
   videoAspectRatios,
 } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
-import { apiError } from "@/lib/http";
+import { apiError, HttpError } from "@/lib/http";
 import { getInitialJobBackend } from "@/lib/job-backend";
 import { assertJobCreationAllowed } from "@/lib/job-policy";
-import { requireMvpSession } from "@/lib/session";
+import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { getUsageSnapshot } from "@/lib/usage";
 
 const schema = z.object({
@@ -31,14 +31,14 @@ const schema = z.object({
 export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
-    const session = await requireMvpSession();
+    const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const executionBackend = getInitialJobBackend();
     const existing = await db`
       select id, status from shorts_mvp.video_jobs
       where request_id=${input.requestId} and (
         (${session.userId}::uuid is not null and user_id=${session.userId})
-        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+        or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
       )
     `;
     if (existing[0]) return NextResponse.json({ jobId: existing[0].id, status: existing[0].status, usage: await getUsageSnapshot(db, session) });
@@ -46,20 +46,28 @@ export async function POST(request: Request) {
 
     const analyses = await db`
       select youtube_url, youtube_video_id, video_title, channel_name,
-        thumbnail_url, duration_seconds
+        channel_thumbnail_url, thumbnail_url, duration_seconds, creation_allowed, creation_block_code,
+        creation_block_reason
       from shorts_mvp.youtube_analyses
       where id=${input.analysisId} and (
         (${session.userId}::uuid is not null and user_id=${session.userId})
-        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+        or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
       ) and expires_at > now()
       limit 1
     `;
     if (!analyses[0]) throw new Error("영상 분석 정보가 만료되었습니다. 링크를 다시 확인해 주세요.");
+    if (analyses[0].creationAllowed !== true) {
+      throw new HttpError(
+        409,
+        analyses[0].creationBlockReason || "이 영상은 쇼츠로 만들 수 없습니다. 영상 정보를 다시 확인해 주세요.",
+      );
+    }
     const metadata = {
       normalizedUrl: analyses[0].youtubeUrl,
       videoId: analyses[0].youtubeVideoId,
       title: analyses[0].videoTitle,
       channelName: analyses[0].channelName,
+      channelThumbnailUrl: analyses[0].channelThumbnailUrl || null,
       thumbnailUrl: analyses[0].thumbnailUrl,
       durationSeconds: Number(analyses[0].durationSeconds),
     };
@@ -82,7 +90,7 @@ export async function POST(request: Request) {
         select id, status from shorts_mvp.video_jobs
         where request_id=${input.requestId} and (
           (${session.userId}::uuid is not null and user_id=${session.userId})
-          or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+          or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
         )
       `;
       if (concurrentExisting[0]) {
@@ -98,7 +106,7 @@ export async function POST(request: Request) {
           ))::int as active
         from shorts_mvp.video_jobs where (
           (${session.userId}::uuid is not null and user_id=${session.userId})
-          or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+          or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
         )
       `;
       const beforeUsage = await getUsageSnapshot(tx, session);
@@ -111,13 +119,13 @@ export async function POST(request: Request) {
       await tx`
         insert into shorts_mvp.video_jobs (
           id, mvp_session_id, user_id, request_id, youtube_url, youtube_video_id, video_title,
-          channel_name, thumbnail_url, source_duration_seconds, range_start_seconds,
+          channel_name, channel_thumbnail_url, thumbnail_url, source_duration_seconds, range_start_seconds,
           range_end_seconds, template_id, video_aspect_ratio,
           clip_length_option, output_language, expected_short_count, rights_confirmed, execution_backend,
           status, stage, progress, deadline_at, planned_short_count
         ) values (
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
-          ${metadata.channelName}, ${metadata.thumbnailUrl}, ${metadata.durationSeconds}, ${rangeStartSeconds},
+          ${metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${metadata.durationSeconds}, ${rangeStartSeconds},
           ${rangeEndSeconds}, ${input.templateId}, ${input.videoAspectRatio},
           'sec_31_60', ${input.outputLanguage}, ${selectedShortCount},
           true, ${executionBackend}, 'queued', 'queued', 5,

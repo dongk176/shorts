@@ -24,6 +24,25 @@ export async function getGeneratedShortCount(db: Sql): Promise<number> {
   return Number(rows[0].value);
 }
 
+let publicStateCache: {
+  expiresAt: number;
+  value: Promise<{ plans: Plan[]; generatedShortCount: number }>;
+} | null = null;
+
+export async function getPublicMvpState(db: Sql) {
+  const now = Date.now();
+  if (publicStateCache && publicStateCache.expiresAt > now) return publicStateCache.value;
+  const value = Promise.all([getPlans(db), getGeneratedShortCount(db)])
+    .then(([plans, generatedShortCount]) => ({ plans, generatedShortCount }));
+  publicStateCache = { expiresAt: now + 30_000, value };
+  try {
+    return await value;
+  } catch (error) {
+    if (publicStateCache?.value === value) publicStateCache = null;
+    throw error;
+  }
+}
+
 export async function getShortsForJobs(db: Sql, jobIds: string[]) {
   if (!jobIds.length) return new Map<string, GeneratedShort[]>();
   const rows = await db`
@@ -67,13 +86,13 @@ export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: st
         select * from shorts_mvp.video_jobs
         where id = ${onlyJobId} and (
           (${session.userId}::uuid is not null and user_id=${session.userId})
-          or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+          or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
         )
       `
     : await db`
         select * from shorts_mvp.video_jobs
         where (${session.userId}::uuid is not null and user_id=${session.userId})
-          or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+          or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
         order by created_at desc limit 10
       `;
   const shorts = await getShortsForJobs(db, rows.map((row) => row.id));
@@ -81,8 +100,20 @@ export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: st
     id: row.id,
     videoTitle: row.videoTitle,
     channelName: row.channelName,
+    channelThumbnailUrl: row.channelThumbnailUrl || null,
     thumbnailUrl: row.thumbnailUrl,
     sourceDurationSeconds: row.sourceDurationSeconds,
+    rangeDownloadStatus: row.rangeDownloadStatus || "pending",
+    downloadedMediaDurationSeconds:
+      row.downloadedMediaDurationSeconds === null ||
+      row.downloadedMediaDurationSeconds === undefined
+        ? null
+        : Number(row.downloadedMediaDurationSeconds),
+    downloadedMediaBytes:
+      row.downloadedMediaBytes === null || row.downloadedMediaBytes === undefined
+        ? null
+        : Number(row.downloadedMediaBytes),
+    rangeDownloadVerifiedAt: row.rangeDownloadVerifiedAt?.toISOString() ?? null,
     outputLanguage: row.outputLanguage,
     expectedShortCount: row.expectedShortCount,
     status: row.status,

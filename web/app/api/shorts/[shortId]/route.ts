@@ -4,7 +4,7 @@ import { deleteShortObjects } from "@/lib/aws";
 import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
-import { requireMvpSession } from "@/lib/session";
+import { requireAuthenticatedMvpSession } from "@/lib/session";
 
 const subtitle = z.object({ start: z.number().nonnegative(), end: z.number().positive(), text: z.string().max(200) }).refine((item) => item.end > item.start);
 const patchSchema = z.object({
@@ -20,13 +20,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
   try {
     const { shortId } = await context.params;
     const input = patchSchema.parse(await request.json());
-    const session = await requireMvpSession();
+    const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const existing = await db`
       select id, subtitle_segments from shorts_mvp.generated_shorts
       where id=${shortId} and (
         (${session.userId}::uuid is not null and user_id=${session.userId})
-        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+        or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
       )
         and deleted_at is null and expires_at > now()
         and status='ready' and output_s3_key is not null
@@ -49,7 +49,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
         template_id=${input.templateId}, title_font_scale=${input.titleFontScale}
       where id=${shortId} and (
         (${session.userId}::uuid is not null and user_id=${session.userId})
-        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+        or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
       ) and deleted_at is null and expires_at > now()
         and status='ready' and output_s3_key is not null
       returning id, render_version
@@ -62,14 +62,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
 export async function DELETE(_: Request, context: { params: Promise<{ shortId: string }> }) {
   try {
     const { shortId } = await context.params;
-    const session = await requireMvpSession();
+    const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const rows = await db`
       update shorts_mvp.generated_shorts
       set status='deleted', deleted_at=coalesce(deleted_at, now())
       where id=${shortId} and (
         (${session.userId}::uuid is not null and user_id=${session.userId})
-        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+        or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
       )
         and (status='deleted' or (deleted_at is null and status in ('ready','rerendering')))
       returning id, output_s3_key, clean_clip_s3_key, thumbnail_s3_key

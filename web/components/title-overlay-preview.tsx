@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { VideoAspectRatio } from "@/lib/contracts";
-import { fitPreviewTitleFont, wrapPreviewTitle } from "@/lib/title-preview";
+import {
+  fitPreviewTitleFont,
+  titleLineBackground,
+  titleLineColor,
+  wrapPreviewTitle,
+} from "@/lib/title-preview";
 
 const CANVAS_WIDTH = 1080;
 const TITLE_LINE_GAP = 18;
@@ -17,6 +22,7 @@ function titlePanelLayout(videoAspectRatio: VideoAspectRatio) {
   }
   const videoHeights: Record<Exclude<VideoAspectRatio, "9:16">, number> = {
     "16:9": 608,
+    "5:4": 864,
     "1:1": 1080,
     "4:5": 1350,
   };
@@ -85,16 +91,21 @@ export function TitleOverlayPreview({
         }}
       >
         {lines.map((line, index) => {
-          const highlighted = index === 1 && accentBackground;
+          const lineBackground = titleLineBackground(
+            index,
+            layout.overlay,
+            background,
+            accentBackground,
+          );
           return (
             <span
               key={`${line}-${index}`}
               className="max-w-full shrink-0 whitespace-nowrap"
               style={{
-                color: index === 0 ? primary : accent,
-                background: highlighted ? accentBackground : "transparent",
-                borderRadius: highlighted ? canvasWidth(TITLE_RADIUS) : 0,
-                padding: highlighted
+                color: titleLineColor(index, layout.overlay, primary, accent),
+                background: lineBackground || "transparent",
+                borderRadius: lineBackground ? canvasWidth(TITLE_RADIUS) : 0,
+                padding: lineBackground
                   ? `${canvasWidth(TITLE_ACCENT_PADDING_Y)} ${canvasWidth(TITLE_ACCENT_PADDING_X)}`
                   : 0,
               }}

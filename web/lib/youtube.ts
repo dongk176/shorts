@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { expectedShortCount } from "@/lib/contracts";
+import { expectedShortCount, type YoutubeCreationBlockCode } from "@/lib/contracts";
 
 const youtubeId = /^[A-Za-z0-9_-]{11}$/;
 
@@ -21,7 +21,7 @@ export function normalizeYoutubeUrl(input: string) {
   return { videoId: id, normalizedUrl: `https://www.youtube.com/watch?v=${id}` };
 }
 
-function parseIsoDuration(value: string) {
+export function parseIsoDuration(value: string) {
   const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(value);
   if (!match) throw new Error("영상 길이를 확인하지 못했습니다.");
   return Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0);
@@ -30,17 +30,120 @@ function parseIsoDuration(value: string) {
 const responseSchema = z.object({
   items: z.array(z.object({
     id: z.string(),
-    snippet: z.object({ title: z.string(), channelTitle: z.string(), thumbnails: z.record(z.string(), z.object({ url: z.string().url() })) }),
-    contentDetails: z.object({ duration: z.string() }),
+    snippet: z.object({
+      title: z.string(),
+      channelTitle: z.string(),
+      channelId: z.string().optional(),
+      thumbnails: z.record(z.string(), z.object({ url: z.string().url() })),
+    }),
+    contentDetails: z.object({
+      duration: z.string(),
+      regionRestriction: z.object({
+        allowed: z.array(z.string()).optional(),
+        blocked: z.array(z.string()).optional(),
+      }).optional(),
+      contentRating: z.object({
+        ytRating: z.string().optional(),
+      }).optional(),
+    }),
+    status: z.object({
+      uploadStatus: z.string(),
+      privacyStatus: z.string(),
+      embeddable: z.boolean(),
+    }).optional(),
   })),
 });
+
+const channelResponseSchema = z.object({
+  items: z.array(z.object({
+    snippet: z.object({
+      thumbnails: z.record(z.string(), z.object({ url: z.string().url() })),
+    }),
+  })),
+});
+
+async function getChannelThumbnailUrl(channelId: string | undefined, apiKey: string) {
+  if (!channelId) return null;
+  const endpoint = new URL("https://www.googleapis.com/youtube/v3/channels");
+  endpoint.searchParams.set("part", "snippet");
+  endpoint.searchParams.set("id", channelId);
+  endpoint.searchParams.set("key", apiKey);
+  try {
+    const response = await fetch(endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) return null;
+    const parsed = channelResponseSchema.parse(await response.json());
+    const thumbnails = Object.values(parsed.items[0]?.snippet.thumbnails || {});
+    return thumbnails.at(-1)?.url || thumbnails[0]?.url || null;
+  } catch {
+    return null;
+  }
+}
+
+type CreationAvailability = {
+  creationAllowed: boolean;
+  creationBlockCode: YoutubeCreationBlockCode | null;
+  creationBlockReason: string | null;
+};
+
+export function getYoutubeCreationAvailability(
+  item: z.infer<typeof responseSchema>["items"][number],
+): CreationAvailability {
+  const restriction = item.contentDetails.regionRestriction;
+  if (restriction?.allowed !== undefined || (restriction?.blocked?.length || 0) > 0) {
+    return {
+      creationAllowed: false,
+      creationBlockCode: "region_restricted",
+      creationBlockReason: "국가별 시청 제한이 있는 영상은 쇼츠로 만들 수 없습니다.",
+    };
+  }
+  if (item.contentDetails.contentRating?.ytRating === "ytAgeRestricted") {
+    return {
+      creationAllowed: false,
+      creationBlockCode: "age_restricted",
+      creationBlockReason: "연령 제한이 있는 영상은 쇼츠로 만들 수 없습니다.",
+    };
+  }
+  if (!item.status) {
+    return {
+      creationAllowed: false,
+      creationBlockCode: "availability_unverified",
+      creationBlockReason: "영상 공개 상태를 확인할 수 없어 쇼츠를 만들 수 없습니다.",
+    };
+  }
+  if (item.status.privacyStatus !== "public") {
+    return {
+      creationAllowed: false,
+      creationBlockCode: "not_public",
+      creationBlockReason: "전체 공개 영상만 쇼츠로 만들 수 있습니다.",
+    };
+  }
+  if (item.status.uploadStatus !== "processed") {
+    return {
+      creationAllowed: false,
+      creationBlockCode: "not_processed",
+      creationBlockReason: "YouTube 처리가 완료된 영상만 쇼츠로 만들 수 있습니다.",
+    };
+  }
+  if (!item.status.embeddable) {
+    return {
+      creationAllowed: false,
+      creationBlockCode: "embedding_disabled",
+      creationBlockReason: "외부 재생이 제한된 영상은 쇼츠로 만들 수 없습니다.",
+    };
+  }
+  return {
+    creationAllowed: true,
+    creationBlockCode: null,
+    creationBlockReason: null,
+  };
+}
 
 export async function analyzeYoutubeUrl(input: string) {
   const { videoId, normalizedUrl } = normalizeYoutubeUrl(input);
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) throw new Error("YOUTUBE_API_KEY가 설정되지 않았습니다.");
   const endpoint = new URL("https://www.googleapis.com/youtube/v3/videos");
-  endpoint.searchParams.set("part", "snippet,contentDetails");
+  endpoint.searchParams.set("part", "snippet,contentDetails,status");
   endpoint.searchParams.set("id", videoId);
   endpoint.searchParams.set("key", apiKey);
   const response = await fetch(endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
@@ -51,13 +154,17 @@ export async function analyzeYoutubeUrl(input: string) {
   const durationSeconds = parseIsoDuration(item.contentDetails.duration);
   if (durationSeconds <= 0 || durationSeconds > 3600) throw new Error("최대 60분 길이의 영상까지만 만들 수 있습니다.");
   const thumbnails = Object.values(item.snippet.thumbnails);
+  const availability = getYoutubeCreationAvailability(item);
+  const channelThumbnailUrl = await getChannelThumbnailUrl(item.snippet.channelId, apiKey);
   return {
     videoId,
     normalizedUrl,
     title: item.snippet.title,
     channelName: Array.from(item.snippet.channelTitle.trim()).slice(0, 50).join("") || "YouTube 채널",
+    channelThumbnailUrl,
     thumbnailUrl: thumbnails.at(-1)?.url || thumbnails[0]?.url || "",
     durationSeconds,
     expectedShortCount: expectedShortCount(durationSeconds),
+    ...availability,
   };
 }

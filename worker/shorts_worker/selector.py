@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import math
 import re
 from collections.abc import Iterable
+from typing import Any
 
 from .config import Settings
 from .errors import ShortsMakerError
@@ -17,6 +19,10 @@ from .schemas import (
     SelectionResponse,
     SubtitleSegment,
 )
+
+
+def _log_selection_event(event: str, **fields: object) -> None:
+    print(json.dumps({"event": event, **fields}, separators=(",", ":")), flush=True)
 
 
 def clip_count_for_duration(duration_seconds: float, *, maximum_seconds: int = 3600) -> int:
@@ -216,6 +222,7 @@ def normalize_clips(
     range_start_seconds: float = 0,
     range_end_seconds: float | None = None,
     output_language: OutputLanguage = OutputLanguage.KO,
+    backfill: bool = True,
 ) -> list[HighlightClip]:
     """Clamp invalid LLM times and enforce at most five seconds of pairwise overlap."""
     if duration_seconds <= 0 or required_count < 1:
@@ -254,7 +261,7 @@ def normalize_clips(
         )
     for candidate in candidates:
         accept(candidate)
-    if len(accepted) < minimum_count:
+    if backfill and len(accepted) < minimum_count:
         for candidate in deterministic_fallback(
             video_title, duration_seconds, minimum_count, transcript,
             range_start_seconds, range_end_seconds, output_language,
@@ -279,7 +286,7 @@ class TranscriptSelector:
             total += len(line) + 1
         return "\n".join(lines)
 
-    def _select_with_gemini(
+    def _selection_messages(
         self,
         *,
         video_title: str,
@@ -289,16 +296,8 @@ class TranscriptSelector:
         range_start_seconds: float = 0,
         range_end_seconds: float | None = None,
         output_language: OutputLanguage = OutputLanguage.KO,
-    ) -> list[HighlightClip]:
-        from openai import OpenAI
-
+    ) -> list[dict[str, str]]:
         range_end_seconds = duration_seconds if range_end_seconds is None else range_end_seconds
-        client = OpenAI(
-            api_key=self.settings.gemini_api_key,
-            base_url=self.settings.gemini_openai_base_url,
-            timeout=self.settings.ai_timeout_seconds,
-            max_retries=1,
-        )
         language_name = OUTPUT_LANGUAGE_NAMES[output_language]
         minimum_count = minimum_clip_count_for_duration(range_end_seconds - range_start_seconds)
         system = (
@@ -339,19 +338,27 @@ class TranscriptSelector:
             "\n\n타임스탬프 자막:\n"
             f"{self._transcript_text(transcript)}"
         )
+        return [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+
+    @staticmethod
+    def _parse_selection(
+        client: Any,
+        model: str,
+        messages: list[dict[str, str]],
+    ) -> list[HighlightClip]:
         response = client.beta.chat.completions.parse(
-            model=self.settings.gemini_text_model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            model=model,
+            messages=messages,
             response_format=SelectionResponse,
         )
         if not response.choices:
-            raise ValueError("Gemini가 하이라이트 후보를 반환하지 않았습니다.")
+            raise ValueError("하이라이트 후보가 비어 있습니다.")
         parsed = response.choices[0].message.parsed
         if parsed is None:
-            raise ValueError("Gemini 구조화 응답을 해석할 수 없습니다.")
+            raise ValueError("구조화 응답을 해석할 수 없습니다.")
         if not isinstance(parsed, SelectionResponse):
             parsed = SelectionResponse.model_validate(parsed)
         return [
@@ -363,6 +370,39 @@ class TranscriptSelector:
             )
             for candidate in parsed.clips
         ]
+
+    def _select_with_gemini(
+        self,
+        *,
+        messages: list[dict[str, str]],
+    ) -> list[HighlightClip]:
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=self.settings.gemini_api_key,
+            base_url=self.settings.gemini_openai_base_url,
+            timeout=self.settings.ai_timeout_seconds,
+            max_retries=1,
+        )
+        return self._parse_selection(client, self.settings.gemini_text_model, messages)
+
+    def _select_with_openai(
+        self,
+        *,
+        messages: list[dict[str, str]],
+    ) -> list[HighlightClip]:
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=self.settings.openai_api_key,
+            timeout=self.settings.ai_timeout_seconds,
+            max_retries=1,
+        )
+        return self._parse_selection(
+            client,
+            self.settings.openai_highlight_fallback_model,
+            messages,
+        )
 
     def select(
         self,
@@ -376,10 +416,61 @@ class TranscriptSelector:
         output_language: OutputLanguage = OutputLanguage.KO,
     ) -> list[HighlightClip]:
         range_end_seconds = duration_seconds if range_end_seconds is None else range_end_seconds
-        candidates: list[HighlightClip] = []
-        if self.settings.gemini_api_key and transcript:
+        available_duration = range_end_seconds - range_start_seconds
+        minimum_count = minimum_clip_count_for_duration(available_duration)
+        messages = self._selection_messages(
+            video_title=video_title,
+            duration_seconds=duration_seconds,
+            transcript=transcript,
+            required_count=required_count,
+            range_start_seconds=range_start_seconds,
+            range_end_seconds=range_end_seconds,
+            output_language=output_language,
+        )
+
+        providers = (
+            (
+                "gemini",
+                self.settings.gemini_text_model,
+                bool(self.settings.gemini_api_key),
+                self._select_with_gemini,
+            ),
+            (
+                "openai",
+                self.settings.openai_highlight_fallback_model,
+                bool(self.settings.openai_api_key),
+                self._select_with_openai,
+            ),
+        )
+        for provider, model, configured, select_provider in providers:
+            if not transcript:
+                _log_selection_event(
+                    "highlight_selection_provider",
+                    provider=provider,
+                    model=model,
+                    status="skipped",
+                    reason="transcript_empty",
+                )
+                continue
+            if not configured:
+                _log_selection_event(
+                    "highlight_selection_provider",
+                    provider=provider,
+                    model=model,
+                    status="skipped",
+                    reason="not_configured",
+                )
+                continue
+            _log_selection_event(
+                "highlight_selection_provider",
+                provider=provider,
+                model=model,
+                status="started",
+            )
             try:
-                candidates = self._select_with_gemini(
+                candidates = select_provider(messages=messages)
+                normalized = normalize_clips(
+                    candidates,
                     video_title=video_title,
                     duration_seconds=duration_seconds,
                     transcript=transcript,
@@ -387,11 +478,46 @@ class TranscriptSelector:
                     range_start_seconds=range_start_seconds,
                     range_end_seconds=range_end_seconds,
                     output_language=output_language,
+                    backfill=False,
                 )
-            except Exception:
-                candidates = []
-        return normalize_clips(
-            candidates,
+            except Exception as exc:
+                _log_selection_event(
+                    "highlight_selection_provider",
+                    provider=provider,
+                    model=model,
+                    status="failed",
+                    reason="provider_error",
+                    error_type=type(exc).__name__,
+                )
+                continue
+            if len(normalized) < minimum_count:
+                _log_selection_event(
+                    "highlight_selection_provider",
+                    provider=provider,
+                    model=model,
+                    status="failed",
+                    reason="insufficient_candidates",
+                    clip_count=len(normalized),
+                    minimum_clip_count=minimum_count,
+                )
+                continue
+            _log_selection_event(
+                "highlight_selection_provider",
+                provider=provider,
+                model=model,
+                status="succeeded",
+                clip_count=len(normalized),
+            )
+            _log_selection_event(
+                "highlight_selection_completed",
+                source=provider,
+                model=model,
+                clip_count=len(normalized),
+            )
+            return normalized
+
+        fallback = normalize_clips(
+            [],
             video_title=video_title,
             duration_seconds=duration_seconds,
             required_count=required_count,
@@ -400,3 +526,10 @@ class TranscriptSelector:
             range_end_seconds=range_end_seconds,
             output_language=output_language,
         )
+        _log_selection_event(
+            "highlight_selection_completed",
+            source="deterministic",
+            model=None,
+            clip_count=len(fallback),
+        )
+        return fallback

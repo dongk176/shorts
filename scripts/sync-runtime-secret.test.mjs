@@ -1,6 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeWorkerDatabaseUrl } from "./sync-runtime-secret.mjs";
+import {
+  normalizeWorkerDatabaseUrl,
+  runtimeSecretNames,
+} from "./sync-runtime-secret.mjs";
+
+test("includes the legacy and four named WARP configurations", () => {
+  assert.deepEqual(
+    runtimeSecretNames.filter((name) => name.startsWith("WARP_CONF_")),
+    [
+      "WARP_CONF_B64",
+      "WARP_CONF_A_B64",
+      "WARP_CONF_B_B64",
+      "WARP_CONF_C_B64",
+      "WARP_CONF_D_B64",
+    ],
+  );
+});
 
 test("removes client-only Supabase URL options for psycopg", () => {
   const normalized = new URL(normalizeWorkerDatabaseUrl(

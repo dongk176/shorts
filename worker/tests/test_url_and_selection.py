@@ -177,6 +177,10 @@ def test_deterministic_fallback_uses_forty_five_seconds() -> None:
 def test_gemini_defaults_match_ai_talk(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_TEXT_MODEL", raising=False)
     monkeypatch.delenv("GEMINI_OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_TRANSCRIBE_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_HIGHLIGHT_FALLBACK_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_TRANSCRIBE_CHUNK_SECONDS", raising=False)
+    monkeypatch.delenv("OPENAI_TRANSCRIBE_MAX_WORKERS", raising=False)
 
     settings = Settings(gemini_api_key=None, openai_api_key=None)
 
@@ -185,6 +189,10 @@ def test_gemini_defaults_match_ai_talk(monkeypatch) -> None:
         settings.gemini_openai_base_url
         == "https://generativelanguage.googleapis.com/v1beta/openai/"
     )
+    assert settings.openai_transcribe_model == "gpt-4o-mini-transcribe"
+    assert settings.openai_highlight_fallback_model == "gpt-5-nano"
+    assert settings.openai_transcribe_chunk_seconds == 30
+    assert settings.openai_transcribe_max_workers == 4
 
 
 def test_worker_database_url_removes_web_only_options() -> None:
@@ -232,13 +240,14 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     )
     selector = TranscriptSelector(settings)
 
-    clips = selector._select_with_gemini(
+    messages = selector._selection_messages(
         video_title="테스트 영상",
         duration_seconds=120,
         transcript=[SubtitleSegment(start=10, end=20, text="중요한 테스트 자막")],
         required_count=1,
         output_language=OutputLanguage.JA,
     )
+    clips = selector._select_with_gemini(messages=messages)
 
     client_options = captured["client"]
     request = captured["request"]
@@ -262,28 +271,43 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     assert "예시" not in request["messages"][0]["content"]
     assert clips[0].hook_title == "Gemini가 고른\n핵심 장면의 반전"
 
-    selector._select_with_gemini(
+    english_messages = selector._selection_messages(
         video_title="English title test",
         duration_seconds=120,
         transcript=[SubtitleSegment(start=10, end=20, text="Important transcript")],
         required_count=1,
         output_language=OutputLanguage.EN,
     )
+    selector._select_with_gemini(messages=english_messages)
     english_request = captured["request"]
     assert isinstance(english_request, dict)
     assert "자연스러운 영어 구어체" in english_request["messages"][0]["content"]
     assert "공백 포함 5~18자" in english_request["messages"][0]["content"]
 
 
-def test_openai_key_alone_does_not_enable_gemini_selection(monkeypatch) -> None:
+def test_missing_gemini_key_uses_openai_nano(monkeypatch) -> None:
     selector = TranscriptSelector(
         Settings(openai_api_key="openai-test-key", gemini_api_key=None)
     )
+    nano_calls = 0
 
     def unexpected_call(**_kwargs):
         raise AssertionError("Gemini must not run without GEMINI_API_KEY")
 
+    def nano_call(**_kwargs):
+        nonlocal nano_calls
+        nano_calls += 1
+        return [
+            HighlightClip(
+                start_seconds=10,
+                end_seconds=50,
+                hook_title="Nano 선택\n핵심 구간",
+                reason="OpenAI fallback",
+            )
+        ]
+
     monkeypatch.setattr(selector, "_select_with_gemini", unexpected_call)
+    monkeypatch.setattr(selector, "_select_with_openai", nano_call)
     clips = selector.select(
         video_title="Fallback 영상",
         duration_seconds=120,
@@ -292,7 +316,120 @@ def test_openai_key_alone_does_not_enable_gemini_selection(monkeypatch) -> None:
     )
 
     assert len(clips) == 1
-    assert "AI를 사용할 수 없어" in clips[0].reason
+    assert nano_calls == 1
+    assert clips[0].reason == "OpenAI fallback"
+
+
+def test_gemini_success_does_not_call_openai_nano(monkeypatch) -> None:
+    selector = TranscriptSelector(
+        Settings(openai_api_key="openai-test-key", gemini_api_key="gemini-test-key")
+    )
+
+    monkeypatch.setattr(
+        selector,
+        "_select_with_gemini",
+        lambda **_kwargs: [
+            HighlightClip(
+                start_seconds=10,
+                end_seconds=50,
+                hook_title="Gemini 선택\n핵심 구간",
+                reason="Gemini success",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        selector,
+        "_select_with_openai",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Nano must not run after Gemini success")
+        ),
+    )
+
+    clips = selector.select(
+        video_title="테스트 영상",
+        duration_seconds=120,
+        transcript=[SubtitleSegment(start=0, end=60, text="자막")],
+        required_count=1,
+    )
+
+    assert clips[0].reason == "Gemini success"
+
+
+def test_gemini_error_uses_openai_nano(monkeypatch) -> None:
+    selector = TranscriptSelector(
+        Settings(openai_api_key="openai-test-key", gemini_api_key="gemini-test-key")
+    )
+    monkeypatch.setattr(
+        selector,
+        "_select_with_gemini",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("Gemini unavailable")),
+    )
+    monkeypatch.setattr(
+        selector,
+        "_select_with_openai",
+        lambda **_kwargs: [
+            HighlightClip(
+                start_seconds=20,
+                end_seconds=60,
+                hook_title="Nano 선택\n대체 구간",
+                reason="Nano success",
+            )
+        ],
+    )
+
+    clips = selector.select(
+        video_title="테스트 영상",
+        duration_seconds=120,
+        transcript=[SubtitleSegment(start=0, end=60, text="자막")],
+        required_count=1,
+    )
+
+    assert clips[0].reason == "Nano success"
+
+
+def test_insufficient_gemini_candidates_use_openai_nano(monkeypatch) -> None:
+    selector = TranscriptSelector(
+        Settings(openai_api_key="openai-test-key", gemini_api_key="gemini-test-key")
+    )
+    monkeypatch.setattr(
+        selector,
+        "_select_with_gemini",
+        lambda **_kwargs: [
+            HighlightClip(
+                start_seconds=10,
+                end_seconds=50,
+                hook_title="후보 하나\n최소 미달",
+                reason="Gemini",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        selector,
+        "_select_with_openai",
+        lambda **_kwargs: [
+            HighlightClip(
+                start_seconds=10,
+                end_seconds=50,
+                hook_title="Nano 첫째\n핵심 구간",
+                reason="Nano one",
+            ),
+            HighlightClip(
+                start_seconds=70,
+                end_seconds=110,
+                hook_title="Nano 둘째\n핵심 구간",
+                reason="Nano two",
+            ),
+        ],
+    )
+
+    clips = selector.select(
+        video_title="긴 테스트 영상",
+        duration_seconds=300,
+        transcript=[SubtitleSegment(start=0, end=120, text="자막")],
+        required_count=2,
+    )
+
+    assert [clip.reason for clip in clips] == ["Nano one", "Nano two"]
 
 
 def test_fallback_title_removes_subtitle_speaker_markers() -> None:
@@ -355,13 +492,14 @@ def test_long_transcript_fallback_title_does_not_fail_generation() -> None:
 
 def test_selector_falls_back_when_gemini_fails(monkeypatch) -> None:
     selector = TranscriptSelector(
-        Settings(openai_api_key=None, gemini_api_key="gemini-test-key")
+        Settings(openai_api_key="openai-test-key", gemini_api_key="gemini-test-key")
     )
 
     def failing_call(**_kwargs):
         raise RuntimeError("simulated Gemini failure")
 
     monkeypatch.setattr(selector, "_select_with_gemini", failing_call)
+    monkeypatch.setattr(selector, "_select_with_openai", failing_call)
     clips = selector.select(
         video_title="Fallback 영상",
         duration_seconds=300,

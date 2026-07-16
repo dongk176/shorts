@@ -38,6 +38,42 @@ try {
       'dark-red','sec_30',5,5,true
     )
   `;
+  let rangeDownload = await sql`
+    select range_download_status, downloaded_media_duration_seconds,
+      downloaded_media_bytes, range_download_verified_at
+    from shorts_mvp.video_jobs where id=${jobId}
+  `;
+  assert.deepEqual(
+    [
+      rangeDownload[0].rangeDownloadStatus,
+      rangeDownload[0].downloadedMediaDurationSeconds,
+      rangeDownload[0].downloadedMediaBytes,
+      rangeDownload[0].rangeDownloadVerifiedAt,
+    ],
+    ["pending", null, null, null],
+  );
+  await sql`
+    update shorts_mvp.video_jobs
+    set range_download_status='full_source_expected',
+      downloaded_media_duration_seconds=3600,
+      downloaded_media_bytes=1024,
+      range_download_verified_at=now()
+    where id=${jobId}
+  `;
+  rangeDownload = await sql`
+    select range_download_status, downloaded_media_duration_seconds::float8,
+      downloaded_media_bytes, range_download_verified_at
+    from shorts_mvp.video_jobs where id=${jobId}
+  `;
+  assert.deepEqual(
+    [
+      rangeDownload[0].rangeDownloadStatus,
+      rangeDownload[0].downloadedMediaDurationSeconds,
+      Number(rangeDownload[0].downloadedMediaBytes),
+      rangeDownload[0].rangeDownloadVerifiedAt instanceof Date,
+    ],
+    ["full_source_expected", 3600, 1024, true],
+  );
   await sql`
     insert into shorts_mvp.usage_reservations (mvp_session_id,job_id,source_duration_seconds)
     values (${sessionId},${jobId},3600)

@@ -11,7 +11,7 @@ export function normalizeWorkerDatabaseUrl(value) {
   return url.toString();
 }
 
-const names = [
+export const runtimeSecretNames = [
   "DATABASE_URL",
   "SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
@@ -20,10 +20,14 @@ const names = [
   "GEMINI_OPENAI_BASE_URL",
   "YOUTUBE_API_KEY",
   "WARP_CONF_B64",
+  "WARP_CONF_A_B64",
+  "WARP_CONF_B_B64",
+  "WARP_CONF_C_B64",
+  "WARP_CONF_D_B64",
 ];
-const values = Object.fromEntries(names.map((name) => [name, process.env[name] || ""]));
+const values = Object.fromEntries(runtimeSecretNames.map((name) => [name, process.env[name] || ""]));
 values.DATABASE_URL = normalizeWorkerDatabaseUrl(values.DATABASE_URL);
-const present = names.filter((name) => Boolean(values[name]));
+const present = runtimeSecretNames.filter((name) => Boolean(values[name]));
 
 export function syncRuntimeSecret() {
   if (!process.env.SECRET_ARN) throw new Error("SECRET_ARN is required");

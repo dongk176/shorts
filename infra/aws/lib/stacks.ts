@@ -75,6 +75,10 @@ export class ShortsMvpFoundationStack extends cdk.Stack {
           GEMINI_OPENAI_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/openai/",
           YOUTUBE_API_KEY: "",
           WARP_CONF_B64: "",
+          WARP_CONF_A_B64: "",
+          WARP_CONF_B_B64: "",
+          WARP_CONF_C_B64: "",
+          WARP_CONF_D_B64: "",
         }),
         generateStringKey: "_bootstrap",
         excludePunctuation: true,
@@ -318,6 +322,11 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { name: "TEMP_ROOT", value: "/tmp/shorts-jobs" },
         { name: "WORK_DISPATCH_QUEUE_URL", value: workQueue.queueUrl },
         { name: "STATE_EVENT_QUEUE_URL", value: stateQueue.queueUrl },
+        { name: "OPENAI_TRANSCRIBE_MODEL", value: "gpt-4o-mini-transcribe" },
+        { name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", value: "gpt-5-nano" },
+        { name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", value: "30" },
+        { name: "OPENAI_TRANSCRIBE_MAX_WORKERS", value: "4" },
+        { name: "WARP_BOT_CHECK_COOLDOWN_SECONDS", value: "15" },
       ],
       secrets: [
         secret("DATABASE_URL"),
@@ -325,6 +334,10 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         secret("GEMINI_API_KEY"),
         secret("GEMINI_OPENAI_BASE_URL"),
         secret("WARP_CONF_B64"),
+        secret("WARP_CONF_A_B64"),
+        secret("WARP_CONF_B_B64"),
+        secret("WARP_CONF_C_B64"),
+        secret("WARP_CONF_D_B64"),
       ],
     };
     const retryStrategy = {

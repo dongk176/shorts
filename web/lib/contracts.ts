@@ -4,8 +4,17 @@ export type PlanCode = (typeof planCodes)[number];
 export const templateIds = ["dark-red", "white-yellow", "dark-minimal", "paper"] as const;
 export type TemplateId = (typeof templateIds)[number];
 
-export const videoAspectRatios = ["16:9", "1:1", "4:5", "9:16"] as const;
+export const videoAspectRatios = ["16:9", "5:4", "1:1", "4:5", "9:16"] as const;
 export type VideoAspectRatio = (typeof videoAspectRatios)[number];
+
+export const rangeDownloadStatuses = [
+  "pending",
+  "selected_range",
+  "full_source_expected",
+  "full_source_unexpected",
+  "unexpected_duration",
+] as const;
+export type RangeDownloadStatus = (typeof rangeDownloadStatuses)[number];
 
 export const videoAspectRatioOptions: Array<{
   value: VideoAspectRatio;
@@ -14,6 +23,7 @@ export const videoAspectRatioOptions: Array<{
   height: number;
 }> = [
   { value: "16:9", label: "가로모드", width: 1080, height: 608 },
+  { value: "5:4", label: "가로 5:4", width: 1080, height: 864 },
   { value: "1:1", label: "정사각형", width: 1080, height: 1080 },
   { value: "4:5", label: "세로형", width: 1080, height: 1350 },
   { value: "9:16", label: "세로 꽉참", width: 1080, height: 1920 },
@@ -46,6 +56,32 @@ export type UsageSnapshot = {
   enforcementEnabled: boolean;
 };
 
+export type YoutubeAnalysis = {
+  analysisId: string;
+  videoId: string;
+  normalizedUrl: string;
+  title: string;
+  channelName: string;
+  channelThumbnailUrl: string | null;
+  thumbnailUrl: string;
+  durationSeconds: number;
+  expectedShortCount: number;
+  creationAllowed: boolean;
+  creationBlockCode: YoutubeCreationBlockCode | null;
+  creationBlockReason: string | null;
+};
+
+export const youtubeCreationBlockCodes = [
+  "region_restricted",
+  "age_restricted",
+  "not_public",
+  "not_processed",
+  "embedding_disabled",
+  "availability_unverified",
+] as const;
+
+export type YoutubeCreationBlockCode = typeof youtubeCreationBlockCodes[number];
+
 export type Plan = {
   code: PlanCode;
   displayName: string;
@@ -76,8 +112,13 @@ export type VideoJob = {
   id: string;
   videoTitle: string;
   channelName: string;
+  channelThumbnailUrl: string | null;
   thumbnailUrl: string;
   sourceDurationSeconds: number;
+  rangeDownloadStatus: RangeDownloadStatus;
+  downloadedMediaDurationSeconds: number | null;
+  downloadedMediaBytes: number | null;
+  rangeDownloadVerifiedAt: string | null;
   outputLanguage: OutputLanguage;
   expectedShortCount: number;
   status: string;
@@ -90,7 +131,7 @@ export type VideoJob = {
 };
 
 export type MvpState = {
-  sessionId: string;
+  sessionId: string | null;
   user: {
     id: string;
     email: string | null;

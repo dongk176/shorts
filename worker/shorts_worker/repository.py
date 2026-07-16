@@ -12,6 +12,15 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+_RANGE_DOWNLOAD_STATUSES = frozenset(
+    {
+        "selected_range",
+        "full_source_expected",
+        "full_source_unexpected",
+        "unexpected_duration",
+    }
+)
+
 
 class WorkerRepository:
     def __init__(self, database_url: str, aws_region: str) -> None:
@@ -97,15 +106,15 @@ class WorkerRepository:
         """Allow parallel YouTube acquisition."""
         yield
 
-
-
     def get_short(self, short_id: str) -> dict[str, Any] | None:
         with self.connect() as connection:
             return connection.execute(
                 """
-                select * from shorts_mvp.generated_shorts
-                where id=%s and deleted_at is null and expires_at > now()
-                  and status='rerendering'
+                select s.*, j.channel_thumbnail_url
+                from shorts_mvp.generated_shorts s
+                join shorts_mvp.video_jobs j on j.id=s.job_id
+                where s.id=%s and s.deleted_at is null and s.expires_at > now()
+                  and s.status='rerendering'
                 """,
                 (short_id,),
             ).fetchone()
@@ -121,7 +130,11 @@ class WorkerRepository:
                   attempt_count=case when %s::integer is null then attempt_count + 1
                                      else greatest(attempt_count,%s::integer) end,
                   next_attempt_at=null, error_code=null, error_message=null,
-                  started_at=coalesce(started_at,now()), heartbeat_at=now()
+                  started_at=coalesce(started_at,now()), heartbeat_at=now(),
+                  range_download_status='pending',
+                  downloaded_media_duration_seconds=null,
+                  downloaded_media_bytes=null,
+                  range_download_verified_at=null
                 where id=%s and (
                     status in ('queued','retry_waiting')
                     or (execution_backend='mac_pull' and status='starting')
@@ -169,6 +182,53 @@ class WorkerRepository:
             ).fetchone()
             return bool(row and row["allowed"])
 
+    def record_range_download_observation(
+        self,
+        job_id: str,
+        *,
+        status: str,
+        duration_seconds: float | None,
+        media_bytes: int | None,
+    ) -> None:
+        if status not in _RANGE_DOWNLOAD_STATUSES:
+            raise ValueError(f"unsupported range download status: {status}")
+        if duration_seconds is not None and duration_seconds <= 0:
+            raise ValueError("download duration must be positive when provided")
+        if media_bytes is not None and media_bytes <= 0:
+            raise ValueError("download observation values must be positive")
+
+        with self.connect() as connection, connection.transaction():
+            connection.execute(
+                """
+                update shorts_mvp.video_jobs
+                set range_download_status=%s,
+                    downloaded_media_duration_seconds=%s,
+                    downloaded_media_bytes=%s,
+                    range_download_verified_at=now(), heartbeat_at=now()
+                where id=%s
+                """,
+                (status, duration_seconds, media_bytes, job_id),
+            )
+            connection.execute(
+                """
+                insert into shorts_mvp.job_events
+                  (job_id,stage,progress,message,metadata)
+                values (
+                  %s,'downloading',20,'다운로드한 영상 범위를 확인했습니다.',%s
+                )
+                """,
+                (
+                    job_id,
+                    Jsonb(
+                        {
+                            "range_download_status": status,
+                            "downloaded_media_duration_seconds": duration_seconds,
+                            "downloaded_media_bytes": media_bytes,
+                        }
+                    ),
+                ),
+            )
+
     def record_ingestion_result(self, job_id: str, result: str) -> None:
         with self.connect() as connection, connection.transaction():
             connection.execute(
@@ -202,10 +262,15 @@ class WorkerRepository:
 
     def stage(self, job_id: str, stage: str, progress: int, message: str) -> None:
         bounded_progress = max(0, min(100, progress))
-        if self._enqueue_state_event({
-            "type": "stage", "jobId": job_id, "stage": stage,
-            "progress": bounded_progress, "message": message,
-        }):
+        if self._enqueue_state_event(
+            {
+                "type": "stage",
+                "jobId": job_id,
+                "stage": stage,
+                "progress": bounded_progress,
+                "message": message,
+            }
+        ):
             return
         with self.connect() as connection:
             connection.execute(
@@ -336,14 +401,17 @@ class WorkerRepository:
                 "select id from shorts_mvp.video_jobs where id=%s for share",
                 (job["id"],),
             ).fetchone()
-            active_job = locked_job and connection.execute(
-                """
+            active_job = (
+                locked_job
+                and connection.execute(
+                    """
                 select id from shorts_mvp.video_jobs
                 where id=%s and status not in ('completed','failed','expired','deleted')
                   and deadline_at > clock_timestamp()
                 """,
-                (job["id"],),
-            ).fetchone()
+                    (job["id"],),
+                ).fetchone()
+            )
             if not active_job:
                 return False
             connection.execute(
@@ -371,13 +439,22 @@ class WorkerRepository:
                   render_error_code=null, render_error_message=null
                 """,
                 (
-                    short_id, job["id"], job["mvp_session_id"], job.get("user_id"),
-                    clip_index, start_seconds, end_seconds, end_seconds - start_seconds,
+                    short_id,
+                    job["id"],
+                    job["mvp_session_id"],
+                    job.get("user_id"),
+                    clip_index,
+                    start_seconds,
+                    end_seconds,
+                    end_seconds - start_seconds,
                     hook_title,
                     (" ".join(str(job["channel_name"]).split())[:50] or "YouTube 채널"),
-                    Jsonb(subtitles), job["template_id"],
+                    Jsonb(subtitles),
+                    job["template_id"],
                     job.get("video_aspect_ratio") or "1:1",
-                    clean_key, retention_days, shard_index,
+                    clean_key,
+                    retention_days,
+                    shard_index,
                 ),
             )
             return True
@@ -399,15 +476,19 @@ class WorkerRepository:
 
     def get_render_shard(self, job_id: str, shard_index: int) -> list[dict[str, Any]]:
         with self.connect() as connection:
-            return list(connection.execute(
-                """
-                select * from shorts_mvp.generated_shorts
-                where job_id=%s and render_shard_index=%s and deleted_at is null
-                  and status in ('rendering','ready')
-                order by clip_index
+            return list(
+                connection.execute(
+                    """
+                select s.*, j.channel_thumbnail_url
+                from shorts_mvp.generated_shorts s
+                join shorts_mvp.video_jobs j on j.id=s.job_id
+                where s.job_id=%s and s.render_shard_index=%s and s.deleted_at is null
+                  and s.status in ('rendering','ready')
+                order by s.clip_index
                 """,
-                (job_id, shard_index),
-            ).fetchall())
+                    (job_id, shard_index),
+                ).fetchall()
+            )
 
     def begin_initial_render(self, short_id: str) -> bool:
         with self.connect() as connection:
@@ -471,9 +552,7 @@ class WorkerRepository:
                 )
             return bool(updated)
 
-    def initial_render_matches(
-        self, short_id: str, output_key: str, thumbnail_key: str
-    ) -> bool:
+    def initial_render_matches(self, short_id: str, output_key: str, thumbnail_key: str) -> bool:
         with self.connect() as connection:
             row = connection.execute(
                 """
@@ -598,9 +677,7 @@ class WorkerRepository:
                 (job_id,),
             )
 
-    def complete_rerender(
-        self, short_id: str, new_key: str, size: int, version: int
-    ) -> str | None:
+    def complete_rerender(self, short_id: str, new_key: str, size: int, version: int) -> str | None:
         with self.connect() as connection, connection.transaction():
             row = connection.execute(
                 """

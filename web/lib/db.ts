@@ -10,7 +10,14 @@ export function getDb(): Sql {
       max: 4,
       idle_timeout: 20,
       connect_timeout: 15,
+      max_lifetime: 60 * 15,
       prepare: false,
+      connection: {
+        application_name: "shorts-maker-web",
+        statement_timeout: 10_000,
+        lock_timeout: 3_000,
+        idle_in_transaction_session_timeout: 10_000,
+      },
       transform: postgres.camel,
     });
   }
