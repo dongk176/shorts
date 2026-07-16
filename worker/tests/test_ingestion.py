@@ -85,7 +85,8 @@ def test_download_bundle_only_fetches_video_and_never_requests_subtitles(
     assert not any("--sub-langs" in call for call in calls)
     download_call = calls[0]
     assert download_call[download_call.index("--download-sections") + 1] == "*30.000-90.000"
-    assert "--force-keyframes-at-cuts" in download_call
+    assert "--no-force-keyframes-at-cuts" in download_call
+    assert "--force-keyframes-at-cuts" not in download_call
     assert not (tmp_path / "subtitles").exists()
     assert bundle.metadata.video_id == "dQw4w9WgXcQ"
     assert bundle.video_path == tmp_path / "video" / "source.mp4"

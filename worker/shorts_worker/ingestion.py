@@ -674,7 +674,7 @@ class YtDlpIngestionProvider(IngestionProvider):
         return [
             "--download-sections",
             f"*{start:.3f}-{end:.3f}",
-            "--force-keyframes-at-cuts",
+            "--no-force-keyframes-at-cuts",
         ]
 
     def _download_video_once(
