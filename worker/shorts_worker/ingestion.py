@@ -380,7 +380,7 @@ class YtDlpIngestionProvider(IngestionProvider):
                 if fallback_proxy not in proxies:
                     proxies.append(fallback_proxy)
 
-        last_error: RetryableIngestionError | None = None
+        last_error: IngestionError | None = None
         for proxy in proxies:
             current_args = list(args)
             if proxy:
@@ -423,11 +423,12 @@ class YtDlpIngestionProvider(IngestionProvider):
                         asset=asset,
                         attempt=attempt,
                     )
-                raise BotCheckError(
+                last_error = BotCheckError(
                     "YouTube가 현재 서버의 자동 요청을 제한했습니다. 로그인 정보나 쿠키를 "
                     "이용한 우회는 지원하지 않습니다. 잠시 후 다시 시도하거나 다른 사용 "
                     "허가된 공개 영상을 이용해 주세요."
                 )
+                continue
 
             if "http error 429" in lowered_output or "too many requests" in lowered_output:
                 if selected_route is not None and self._route_pool is not None:
@@ -437,10 +438,11 @@ class YtDlpIngestionProvider(IngestionProvider):
                         asset=asset,
                         attempt=attempt,
                     )
-                raise BotCheckError(
+                last_error = BotCheckError(
                     "YouTube가 현재 서버의 요청 빈도를 제한했습니다. 같은 서버에서 즉시 "
                     "재시도하지 않고 잠시 대기합니다."
                 )
+                continue
 
             if any(marker in lowered_output for marker in _TERMINAL_RESTRICTION_MARKERS):
                 raise IngestionError("인증 또는 콘텐츠 제한이 있는 영상은 지원하지 않습니다.")
