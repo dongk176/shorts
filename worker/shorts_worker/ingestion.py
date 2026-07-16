@@ -30,10 +30,13 @@ MAX_SOURCE_DURATION_SECONDS = 60 * 60
 MAX_RECORDED_FAILURE_REASONS = 10
 RETRY_DELAY_BASE_SECONDS = (5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0, 60.0)
 RETRY_DELAY_JITTER_RATIO = 0.2
+MAX_CONFIGURED_EGRESS_ROUTES = 32
 MAX_WARP_EGRESS_ROUTES = 4
 DEFAULT_BOT_CHECK_ROUTE_COOLDOWN_SECONDS = 15.0
 _ROUTE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 _SUPPORTED_PROXY_SCHEMES = frozenset({"http", "https", "socks5", "socks5h"})
+_SUPPORTED_EGRESS_MODES = frozenset({"auto", "webshare_isp", "warp"})
+_SUPPORTED_EGRESS_CLASSES = frozenset({"webshare_isp", "warp", "contracted_proxy"})
 _TERMINAL_RESTRICTION_MARKERS = (
     "private video",
     "video is private",
@@ -95,47 +98,95 @@ class VideoDownloadResult:
 class EgressRoute:
     route_id: str
     proxy_url: str
-    egress_class: str = "warp"
+    egress_class: str
 
 
-def _configured_warp_routes() -> tuple[EgressRoute, ...]:
-    raw_routes = os.environ.get("WARP_PROXY_ROUTES_JSON", "").strip()
+def _parse_configured_routes(
+    environment_name: str,
+    *,
+    default_egress_class: str,
+    max_routes: int,
+) -> tuple[EgressRoute, ...]:
+    raw_routes = os.environ.get(environment_name, "").strip()
     if not raw_routes:
         return ()
     try:
         payload = json.loads(raw_routes)
     except json.JSONDecodeError as exc:
-        raise ValueError("WARP_PROXY_ROUTES_JSON must contain valid JSON") from exc
+        raise ValueError(f"{environment_name} must contain valid JSON") from exc
     if not isinstance(payload, list) or not payload:
-        raise ValueError("WARP_PROXY_ROUTES_JSON must be a non-empty JSON array")
-    if len(payload) > MAX_WARP_EGRESS_ROUTES:
-        raise ValueError(f"WARP_PROXY_ROUTES_JSON supports at most {MAX_WARP_EGRESS_ROUTES} routes")
+        raise ValueError(f"{environment_name} must be a non-empty JSON array")
+    if len(payload) > max_routes:
+        raise ValueError(f"{environment_name} supports at most {max_routes} routes")
 
     routes: list[EgressRoute] = []
     route_ids: set[str] = set()
     proxy_urls: set[str] = set()
     for item in payload:
         if not isinstance(item, dict):
-            raise ValueError("each WARP route must be a JSON object")
+            raise ValueError(f"each {environment_name} route must be a JSON object")
         route_id = str(item.get("id") or "").strip().lower()
         proxy_url = str(item.get("proxy_url") or "").strip()
+        egress_class = str(item.get("egress_class") or default_egress_class).strip().lower()
         parsed_proxy = urlsplit(proxy_url)
         if not _ROUTE_ID_PATTERN.fullmatch(route_id):
-            raise ValueError("WARP route ids must use lowercase letters, digits, _ or -")
+            raise ValueError("route ids must use lowercase letters, digits, _ or -")
         if (
             parsed_proxy.scheme.lower() not in _SUPPORTED_PROXY_SCHEMES
             or not parsed_proxy.hostname
             or parsed_proxy.port is None
         ):
-            raise ValueError("WARP route proxy URLs must be valid HTTP or SOCKS URLs")
+            raise ValueError("route proxy URLs must be valid HTTP or SOCKS URLs")
+        if egress_class not in _SUPPORTED_EGRESS_CLASSES:
+            raise ValueError(f"unsupported egress class: {egress_class}")
         if route_id in route_ids:
-            raise ValueError(f"duplicate WARP route id: {route_id}")
+            raise ValueError(f"duplicate route id: {route_id}")
         if proxy_url in proxy_urls:
-            raise ValueError("duplicate WARP route proxy URL")
+            raise ValueError("duplicate route proxy URL")
         route_ids.add(route_id)
         proxy_urls.add(proxy_url)
-        routes.append(EgressRoute(route_id=route_id, proxy_url=proxy_url))
+        routes.append(
+            EgressRoute(
+                route_id=route_id,
+                proxy_url=proxy_url,
+                egress_class=egress_class,
+            )
+        )
     return tuple(routes)
+
+
+def _configured_warp_routes() -> tuple[EgressRoute, ...]:
+    return _parse_configured_routes(
+        "WARP_PROXY_ROUTES_JSON",
+        default_egress_class="warp",
+        max_routes=MAX_WARP_EGRESS_ROUTES,
+    )
+
+
+def _configured_routes() -> tuple[EgressRoute, ...]:
+    mode = os.environ.get("INGESTION_EGRESS_MODE", "auto").strip().lower() or "auto"
+    if mode not in _SUPPORTED_EGRESS_MODES:
+        raise ValueError(f"unsupported INGESTION_EGRESS_MODE: {mode}")
+
+    configured = _parse_configured_routes(
+        "INGESTION_PROXY_ROUTES_JSON",
+        default_egress_class="contracted_proxy",
+        max_routes=MAX_CONFIGURED_EGRESS_ROUTES,
+    )
+    if mode == "webshare_isp":
+        if not configured:
+            raise ValueError("webshare_isp mode requires INGESTION_PROXY_ROUTES_JSON")
+        if any(route.egress_class != "webshare_isp" for route in configured):
+            raise ValueError("webshare_isp mode only accepts webshare_isp routes")
+        return configured
+    if mode == "warp":
+        routes = _configured_warp_routes()
+        if not routes:
+            raise ValueError("warp mode requires WARP_PROXY_ROUTES_JSON")
+        return routes
+    if configured:
+        return configured
+    return _configured_warp_routes()
 
 
 class EgressRoutePool:
@@ -156,6 +207,13 @@ class EgressRoutePool:
         self._lock = threading.Lock()
         self._next_index = 0
         self._cooldown_until = {route.route_id: 0.0 for route in routes}
+
+    def required(self, route_id: str) -> EgressRoute:
+        normalized = str(route_id).strip().lower()
+        for route in self.routes:
+            if route.route_id == normalized:
+                return route
+        raise IngestionError("작업에 배정된 수집 경로를 현재 설정에서 찾을 수 없습니다.")
 
     def acquire(
         self,
@@ -232,6 +290,7 @@ class IngestionProvider(ABC):
         range_start_seconds: float | None = None,
         range_end_seconds: float | None = None,
         job_id: str | None = None,
+        route_id: str | None = None,
     ) -> DownloadedAssetBundle:
         raise NotImplementedError
 
@@ -251,15 +310,14 @@ class YtDlpIngestionProvider(IngestionProvider):
         self.max_attempts = max(1, min(MAX_ACQUISITION_ATTEMPTS, int(max_attempts)))
         self.retry_backoff_seconds = max(0.0, float(retry_backoff_seconds))
         if bot_check_cooldown_seconds is None:
-            raw_cooldown = os.environ.get(
-                "WARP_BOT_CHECK_COOLDOWN_SECONDS",
-                str(DEFAULT_BOT_CHECK_ROUTE_COOLDOWN_SECONDS),
+            raw_cooldown = os.environ.get("INGESTION_BOT_CHECK_COOLDOWN_SECONDS") or os.environ.get(
+                "WARP_BOT_CHECK_COOLDOWN_SECONDS", str(DEFAULT_BOT_CHECK_ROUTE_COOLDOWN_SECONDS)
             )
             try:
                 bot_check_cooldown_seconds = float(raw_cooldown)
             except ValueError as exc:
-                raise ValueError("WARP_BOT_CHECK_COOLDOWN_SECONDS must be a number") from exc
-        routes = _configured_warp_routes()
+                raise ValueError("INGESTION_BOT_CHECK_COOLDOWN_SECONDS must be a number") from exc
+        routes = _configured_routes()
         self._route_pool = (
             EgressRoutePool(
                 routes,
@@ -277,10 +335,30 @@ class YtDlpIngestionProvider(IngestionProvider):
         job_id: str | None,
         asset: str,
         attempt: int,
+        required_route_id: str | None = None,
     ) -> EgressRoute | None:
         if self._route_pool is None:
+            if required_route_id:
+                raise IngestionError("작업에 수집 경로가 배정되었지만 프록시 풀이 비어 있습니다.")
             return None
+        if required_route_id:
+            route = self._route_pool.required(required_route_id)
+            _log_ingestion_event(
+                "ingestion_route_selected",
+                job_id=job_id,
+                asset=asset,
+                attempt=attempt,
+                route_id=route.route_id,
+                egress_class=route.egress_class,
+                centrally_assigned=True,
+            )
+            return route
         return self._route_pool.acquire(job_id=job_id, asset=asset, attempt=attempt)
+
+    def egress_class_for(self, route_id: str | None) -> str | None:
+        if not route_id or self._route_pool is None:
+            return None
+        return self._route_pool.required(route_id).egress_class
 
     def _retry_delay_seconds(self, failed_attempt: int) -> float:
         if self.retry_backoff_seconds <= 0:
@@ -596,7 +674,7 @@ class YtDlpIngestionProvider(IngestionProvider):
         return [
             "--download-sections",
             f"*{start:.3f}-{end:.3f}",
-            "--force-keyframes-at-cuts",
+            "--no-force-keyframes-at-cuts",
         ]
 
     def _download_video_once(
@@ -666,10 +744,17 @@ class YtDlpIngestionProvider(IngestionProvider):
         job_id: str | None,
         range_start_seconds: float | None = None,
         range_end_seconds: float | None = None,
+        route_id: str | None = None,
     ) -> VideoDownloadResult:
         failure_reasons: list[str] = []
-        for attempt in range(1, self.max_attempts + 1):
-            route = self._acquire_route(job_id=job_id, asset="video", attempt=attempt)
+        attempt_limit = 1 if route_id else self.max_attempts
+        for attempt in range(1, attempt_limit + 1):
+            route = self._acquire_route(
+                job_id=job_id,
+                asset="video",
+                attempt=attempt,
+                required_route_id=route_id,
+            )
             try:
                 metadata, path = self._download_video_once(
                     normalized,
@@ -701,7 +786,7 @@ class YtDlpIngestionProvider(IngestionProvider):
                 return result
             except (RetryableIngestionError, BotCheckError) as exc:
                 next_retry_delay = (
-                    self._retry_delay_seconds(attempt) if attempt < self.max_attempts else None
+                    self._retry_delay_seconds(attempt) if attempt < attempt_limit else None
                 )
                 failure_reasons.append(
                     self._log_failed_work_attempt(
@@ -714,7 +799,7 @@ class YtDlpIngestionProvider(IngestionProvider):
                     )
                 )
                 failure_reasons = failure_reasons[-MAX_RECORDED_FAILURE_REASONS:]
-                if attempt >= self.max_attempts:
+                if attempt >= attempt_limit:
                     _log_ingestion_event(
                         "ingestion_work_exhausted",
                         job_id=job_id,
@@ -726,9 +811,11 @@ class YtDlpIngestionProvider(IngestionProvider):
                     )
                     if isinstance(exc, BotCheckError):
                         raise
+                    if route_id:
+                        raise
                     raise RetryExhaustedIngestionError(
                         "원본 영상 다운로드가 임시 네트워크 오류로 "
-                        f"{self.max_attempts}회 실패했습니다."
+                        f"{attempt_limit}회 실패했습니다."
                     ) from exc
                 if next_retry_delay is None:
                     raise AssertionError("retry delay is required before the last attempt") from exc
@@ -748,8 +835,15 @@ class YtDlpIngestionProvider(IngestionProvider):
         range_start_seconds: float | None = None,
         range_end_seconds: float | None = None,
         job_id: str | None = None,
+        route_id: str | None = None,
     ) -> DownloadedAssetBundle:
         """Download the source video with bounded retries and managed egress routing."""
+        if (
+            (os.environ.get("INGESTION_EGRESS_MODE", "auto").strip().lower() or "auto")
+            == "webshare_isp"
+            and not route_id
+        ):
+            raise IngestionError("ISP 수집 모드에서 작업에 전용 경로가 배정되지 않았습니다.")
         normalized, expected_id = validate_youtube_url(youtube_url)
         destination.mkdir(parents=True, exist_ok=True)
         video = self._download_video_work(
@@ -759,6 +853,7 @@ class YtDlpIngestionProvider(IngestionProvider):
             job_id=job_id,
             range_start_seconds=range_start_seconds,
             range_end_seconds=range_end_seconds,
+            route_id=route_id,
         )
 
         return DownloadedAssetBundle(

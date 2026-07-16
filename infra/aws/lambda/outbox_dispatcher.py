@@ -67,6 +67,12 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
             patch("video_jobs", f"dispatch_batch_id=eq.{batch_id}", {
                 "dispatch_batch_id": None,
             })
+            rest(
+                "rpc/release_dispatch_batch_routes",
+                method="POST",
+                body={"p_dispatch_batch_id": batch_id},
+                prefer="return=representation",
+            )
             raise
     rerenders = rest(
         "rpc/claim_short_outbox", method="POST", body={"p_limit": 100},

@@ -6,6 +6,11 @@ WARP_PROXY_URL=""
 WARP_PROXY_ROUTES_JSON=""
 declare -a wireproxy_pids=()
 
+if [ "${INGESTION_EGRESS_MODE:-auto}" = "webshare_isp" ]; then
+  echo "Dedicated ISP proxy pool mode is enabled; WARP tunnels are disabled."
+  exec "$@"
+fi
+
 cleanup_wireproxies() {
   local pid
   for pid in "${wireproxy_pids[@]:-}"; do

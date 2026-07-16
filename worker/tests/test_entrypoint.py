@@ -4,6 +4,13 @@ from types import SimpleNamespace
 from shorts_worker import __main__ as worker_main
 
 
+def test_entrypoint_disables_warp_for_the_isp_pool() -> None:
+    script = (Path(__file__).parents[1] / "entrypoint.sh").read_text(encoding="utf-8")
+
+    assert 'INGESTION_EGRESS_MODE:-auto' in script
+    assert 'Dedicated ISP proxy pool mode is enabled' in script
+
+
 def test_entrypoint_starts_four_preconfigured_wireproxy_routes() -> None:
     script = (Path(__file__).parents[1] / "entrypoint.sh").read_text(encoding="utf-8")
 

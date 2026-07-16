@@ -85,7 +85,8 @@ def test_download_bundle_only_fetches_video_and_never_requests_subtitles(
     assert not any("--sub-langs" in call for call in calls)
     download_call = calls[0]
     assert download_call[download_call.index("--download-sections") + 1] == "*30.000-90.000"
-    assert "--force-keyframes-at-cuts" in download_call
+    assert "--no-force-keyframes-at-cuts" in download_call
+    assert "--force-keyframes-at-cuts" not in download_call
     assert not (tmp_path / "subtitles").exists()
     assert bundle.metadata.video_id == "dQw4w9WgXcQ"
     assert bundle.video_path == tmp_path / "video" / "source.mp4"
@@ -671,3 +672,62 @@ def test_multi_warp_video_keeps_ten_attempt_budget_across_cooldown_waits(
     assert result.attempt_count == 10
     assert result.failed_attempt_count == 9
     assert waits == [pytest.approx(10), pytest.approx(10)]
+
+
+def test_centrally_assigned_webshare_route_uses_only_that_proxy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    routes = [
+        {
+            "id": f"webshare-{index:02d}",
+            "proxy_url": f"http://user:pass@192.0.2.{index}:{2000 + index}",
+            "egress_class": "webshare_isp",
+        }
+        for index in range(1, 11)
+    ]
+    monkeypatch.setenv("INGESTION_EGRESS_MODE", "webshare_isp")
+    monkeypatch.setenv("INGESTION_PROXY_ROUTES_JSON", json.dumps(routes))
+    provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
+    info: dict[str, object] = {
+        "id": "dQw4w9WgXcQ",
+        "title": "테스트 영상",
+        "channel": "테스트 채널",
+        "duration": 120,
+    }
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **_kwargs):
+        calls.append(args)
+        return _fake_success(args, info)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    provider.download_bundle(
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        tmp_path,
+        job_id="job-a",
+        route_id="webshare-07",
+    )
+
+    assert len(calls) == 1
+    assert calls[0][calls[0].index("--proxy") + 1] == routes[6]["proxy_url"]
+
+
+def test_webshare_mode_fails_closed_without_a_central_route_assignment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    routes = [{
+        "id": "webshare-01",
+        "proxy_url": "http://user:pass@192.0.2.1:2001",
+        "egress_class": "webshare_isp",
+    }]
+    monkeypatch.setenv("INGESTION_EGRESS_MODE", "webshare_isp")
+    monkeypatch.setenv("INGESTION_PROXY_ROUTES_JSON", json.dumps(routes))
+    provider = YtDlpIngestionProvider()
+
+    with pytest.raises(IngestionError, match="전용 경로"):
+        provider.download_bundle(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            tmp_path,
+            job_id="job-a",
+        )

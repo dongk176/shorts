@@ -51,9 +51,9 @@ belong in the runtime secret store, not in this document.
 
 | Path | Permitted purpose | Bot/429 behavior |
 | --- | --- | --- |
-| AWS direct egress | Default public-video retrieval | Standard retry |
-| WARP | Stable company-controlled routing | Standard retry |
-| ISP proxy pools | Dynamic proxy rotation | Standard retry |
+| AWS direct egress | Operator-controlled emergency fallback; inactive by default | Standard retry |
+| WARP | Manual rollback only; inactive in worker job definitions | Standard retry |
+| Dedicated ISP proxy pool | Default public-video retrieval, one active download per IP | Standard retry |
 | Contracted fallback proxy | Network outage failover only | Standard retry |
 
 

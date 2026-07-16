@@ -6,13 +6,14 @@
 - `app_users`: `auth.users` Google 계정, 이메일/표시명/프로필 이미지, 계정 plan
 - `user_subscriptions`: 향후 결제 상태
 - `mvp_sessions`: hashed browser token, 선택 plan, 로그인 사용자 연결
-- `video_jobs`: 원본 metadata, deadline/retry/Batch/stage/heartbeat/expiry
+- `video_jobs`: 원본 metadata, queue/processing deadline, ISP route lease, retry/Batch/stage/heartbeat/expiry
 - `generated_shorts`: 구간, render shard/progress, private object keys, render version/hash
 - `youtube_analyses`: 짧게 유지되는 YouTube 사전 분석 결과와 사용자 소유권
 - `job_outbox`, `dispatch_batches`, `dispatch_batch_items`: Prepare 제출과 Array child 매핑
 - `batch_submission_claims`: SQS 중복 전달과 Batch 제출 응답 유실 중복 방지
 - `short_outbox`: 재렌더 제출
-- `ingestion_attempts`, `ingestion_circuit`: 수집 성공률과 1분 회로 차단
+- `ingestion_route_slots`: `webshare-01`~`webshare-10` 중앙 다운로드 lease와 cooldown; endpoint/인증정보는 저장하지 않음
+- `ingestion_attempts`, `ingestion_circuit`: route별 수집 결과와 1분 회로 차단
 - `usage_reservations`: queued/running 원본 초
 - `usage_events`: 성공한 원본 초, `(job_id,event_type)` idempotency
 - `job_events`: stage 변경 이벤트

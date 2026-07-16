@@ -242,19 +242,16 @@ def test_prepare_retry_message_is_deduplicated_by_failed_batch_id() -> None:
     module.batch.submit_job.assert_not_called()
 
 
-def test_prepare_retry_reserves_the_next_attempt_for_prestart_failures() -> None:
+def test_prepare_retry_returns_to_the_centrally_scheduled_outbox() -> None:
     module, _ = _load_lambda("batch_submitter")
     module._prepare_gate = MagicMock(return_value="open")
     module.rest = MagicMock(return_value=[{
         "id": "job-a",
         "attempt_count": 2,
-        "deadline_at": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
         "status": "retry_waiting",
         "aws_batch_job_id": "failed-batch",
     }])
     module.batch = MagicMock()
-    module._submit_once = MagicMock(return_value="retry-batch")
-    module.patch = MagicMock()
 
     result = module._submit({
         "kind": "prepare_retry",
@@ -262,21 +259,10 @@ def test_prepare_retry_reserves_the_next_attempt_for_prestart_failures() -> None
         "failedBatchJobId": "failed-batch",
     })
 
-    assert result == "retry-batch"
-    request, submission_key = module._submit_once.call_args.args
-    command = request["containerOverrides"]["command"]
-    assert command[-2:] == ["--attempt", "3"]
-    assert submission_key == "prepare-retry:job-a:3"
-    module.patch.assert_called_once_with(
-        "video_jobs",
-        "id=eq.job-a&aws_batch_job_id=eq.failed-batch",
-        {
-            "aws_batch_job_id": "retry-batch",
-            "dispatch_batch_id": None,
-            "attempt_count": 3,
-            "next_attempt_at": None,
-        },
-    )
+    assert result is None
+    assert module.rest.call_args_list[-1].args[0] == "rpc/enqueue_prepare_retry"
+    assert module.rest.call_args_list[-1].kwargs["body"] == {"p_job_id": "job-a"}
+    module.batch.submit_job.assert_not_called()
 
 
 def test_batch_submission_claim_reuses_an_already_recorded_job() -> None:
