@@ -328,8 +328,6 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", value: "gpt-5-nano" },
         { name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", value: "30" },
         { name: "OPENAI_TRANSCRIBE_MAX_WORKERS", value: "4" },
-        { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
-        { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "300" },
       ],
       secrets: [
         secret("DATABASE_URL"),
@@ -354,6 +352,11 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       timeout: { attemptDurationSeconds: 3600 },
       containerProperties: {
         ...baseContainer,
+        environment: [
+          ...baseContainer.environment,
+          { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
+          { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "300" },
+        ],
         secrets: [
           ...baseContainer.secrets,
           secret("INGESTION_PROXY_ROUTES_JSON"),

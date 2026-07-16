@@ -76,6 +76,11 @@ describe("shorts MVP infrastructure", () => {
         JSON.stringify(definition).includes("INGESTION_PROXY_ROUTES_JSON")
       ))
     ).toHaveLength(1);
+    expect(
+      jobDefinitions.filter((definition) => (
+        JSON.stringify(definition).includes("INGESTION_EGRESS_MODE")
+      ))
+    ).toHaveLength(1);
     expect(JSON.stringify(jobDefinitions)).not.toContain("WARP_CONF_B64");
     expect(JSON.stringify(compute.toJSON())).toContain("test-worker-image");
     expect(JSON.stringify(compute.toJSON())).not.toContain(":latest");
