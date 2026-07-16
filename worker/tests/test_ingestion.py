@@ -138,7 +138,7 @@ def test_rate_limit_uses_bot_check_circuit_error(monkeypatch) -> None:
     assert "요청 빈도를 제한" in str(caught.value)
 
 
-def test_rate_limit_fails_closed_without_network_rotation(monkeypatch) -> None:
+def test_rate_limit_fails_over_configured_egress_paths_then_fails(monkeypatch) -> None:
     calls: list[list[str]] = []
     monkeypatch.setenv("WARP_PROXY_URL", "socks5://127.0.0.1:1080")
     monkeypatch.setenv("FALLBACK_PROXY_URL", "socks5://127.0.0.1:2080")
@@ -157,7 +157,10 @@ def test_rate_limit_fails_closed_without_network_rotation(monkeypatch) -> None:
     with pytest.raises(BotCheckError):
         YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
 
-    assert len(calls) == 1
+    assert len(calls) == 3
+    assert calls[0][-2:] == ["--proxy", "socks5://127.0.0.1:1080"]
+    assert "--proxy" not in calls[1]
+    assert calls[2][-2:] == ["--proxy", "socks5://127.0.0.1:2080"]
 
 
 def test_missing_warp_does_not_try_dead_local_proxy(monkeypatch) -> None:
@@ -225,7 +228,7 @@ def test_ready_warp_proxy_is_used_first(monkeypatch) -> None:
     assert calls[0][-2:] == ["--proxy", "socks5://127.0.0.1:1080"]
 
 
-def test_bot_check_fails_closed_without_network_rotation(monkeypatch) -> None:
+def test_bot_check_fails_over_configured_egress_paths_then_fails(monkeypatch) -> None:
     calls: list[list[str]] = []
     monkeypatch.setenv("WARP_PROXY_URL", "socks5://127.0.0.1:1080")
     monkeypatch.setenv("FALLBACK_PROXY_URL", "socks5://127.0.0.1:2080")
@@ -244,11 +247,13 @@ def test_bot_check_fails_closed_without_network_rotation(monkeypatch) -> None:
     with pytest.raises(BotCheckError):
         YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
 
-    assert len(calls) == 1
+    assert len(calls) == 3
     assert calls[0][-2:] == ["--proxy", "socks5://127.0.0.1:1080"]
+    assert "--proxy" not in calls[1]
+    assert calls[2][-2:] == ["--proxy", "socks5://127.0.0.1:2080"]
 
 
-def test_warp_bot_check_does_not_fall_back_to_direct_connection(monkeypatch) -> None:
+def test_warp_bot_check_falls_back_to_direct_connection(monkeypatch) -> None:
     calls: list[list[str]] = []
     monkeypatch.setenv("WARP_PROXY_URL", "socks5://127.0.0.1:1080")
     monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
@@ -266,7 +271,31 @@ def test_warp_bot_check_does_not_fall_back_to_direct_connection(monkeypatch) -> 
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    with pytest.raises(BotCheckError):
+    result = YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+    assert result.returncode == 0
+    assert len(calls) == 2
+    assert calls[0][-2:] == ["--proxy", "socks5://127.0.0.1:1080"]
+    assert "--proxy" not in calls[1]
+
+
+def test_content_restriction_never_fails_over_egress(monkeypatch) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setenv("WARP_PROXY_URL", "socks5://127.0.0.1:1080")
+    monkeypatch.setenv("FALLBACK_PROXY_URL", "socks5://127.0.0.1:2080")
+
+    def fake_run(args: list[str], **_kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout="",
+            stderr="ERROR: This video is private",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(IngestionError, match="인증 또는 콘텐츠 제한"):
         YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
 
     assert len(calls) == 1
