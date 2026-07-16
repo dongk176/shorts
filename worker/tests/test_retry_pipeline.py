@@ -49,12 +49,31 @@ def _worker(tmp_path, error: Exception) -> BatchWorker:
     worker.repository.can_retry_prepare.return_value = True
     worker.repository.ingestion_slot.side_effect = _context
     worker.ingestion = MagicMock()
+    worker.ingestion.configured_route_count = 10
     worker.ingestion.download_bundle.side_effect = error
     worker.storage = MagicMock()
     worker.queue = MagicMock()
     worker.queue.queue_url = "https://sqs.example/dispatch"
     worker.heartbeat = MagicMock(side_effect=lambda _job_id: _context())
     return worker
+
+
+def _assert_ingestion_failure(
+    worker: BatchWorker,
+    *,
+    code: str,
+    reason: str,
+    job_attempt: int = 1,
+) -> dict[str, object]:
+    worker.repository.fail_job.assert_called_once()
+    args = worker.repository.fail_job.call_args.args
+    kwargs = worker.repository.fail_job.call_args.kwargs
+    assert args == ("job-a", code, worker.FINAL_INGESTION_MESSAGE)
+    details = kwargs["error_details"]
+    assert details["category"] == "ingestion"
+    assert details["reason"] == reason
+    assert details["job_attempt"] == job_attempt
+    return details
 
 
 def test_missing_openai_key_fails_before_youtube_download(tmp_path) -> None:
@@ -80,6 +99,14 @@ def test_prepare_omits_download_section_when_full_source_is_selected(tmp_path) -
     download_kwargs = worker.ingestion.download_bundle.call_args.kwargs
     assert download_kwargs["range_start_seconds"] is None
     assert download_kwargs["range_end_seconds"] is None
+
+
+def test_prepare_uses_a_fresh_attempt_directory_and_cleans_it(tmp_path) -> None:
+    worker = _worker(tmp_path, IngestionError("Private video"))
+
+    worker.prepare("job-a")
+
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_prepare_transcribes_only_the_downloaded_range_before_selection(
@@ -216,9 +243,12 @@ def test_prepare_stops_before_openai_when_range_download_was_ignored(
         duration_seconds=120,
         media_bytes=5,
     )
-    worker.repository.fail_job.assert_called_once_with(
-        "job-a", "IngestionError", worker.FINAL_INGESTION_MESSAGE
+    details = _assert_ingestion_failure(
+        worker,
+        code="ingestion_range_mismatch",
+        reason="선택한 구간만 다운로드되지 않아 전체 영상 처리를 중단했습니다.",
     )
+    assert details["range_download_status"] == "full_source_unexpected"
 
 
 def test_prepare_persists_original_timestamps_for_clips_from_ranged_media(
@@ -317,8 +347,10 @@ def test_bot_check_does_not_requeue_prepare(tmp_path) -> None:
 
     worker.repository.retry_job.assert_not_called()
     worker.queue.send.assert_not_called()
-    worker.repository.fail_job.assert_called_once_with(
-        "job-a", "BotCheckError", worker.FINAL_INGESTION_MESSAGE
+    _assert_ingestion_failure(
+        worker,
+        code="youtube_bot_challenge",
+        reason="Sign in to confirm you're not a bot",
     )
 
 
@@ -330,25 +362,85 @@ def test_bot_check_array_attempt_does_not_requeue_parent(tmp_path, monkeypatch) 
 
     worker.queue.send.assert_not_called()
     worker.repository.retry_job.assert_not_called()
-    worker.repository.fail_job.assert_called_once_with(
-        "job-a", "BotCheckError", worker.FINAL_INGESTION_MESSAGE
+    _assert_ingestion_failure(
+        worker,
+        code="youtube_bot_challenge",
+        reason="bot check",
     )
 
 
-def test_centrally_assigned_isp_route_is_released_and_requeued_on_bot_check(
+def test_centrally_assigned_isp_route_rotates_inline_without_requeue(
     tmp_path,
 ) -> None:
     worker = _worker(tmp_path, BotCheckError("bot check"))
     worker.repository.get_job.return_value["ingestion_route_id"] = "webshare-03"
     worker.ingestion.egress_class_for.return_value = "webshare_isp"
+    worker.ingestion.configured_route_count = 2
+    worker.repository.rotate_ingestion_route.return_value = "webshare-04"
 
     worker.prepare("job-a")
 
-    worker.repository.release_ingestion_route.assert_called_once_with(
-        "job-a", "webshare-03", result="bot_check", cooldown_seconds=300
+    assert [
+        call.kwargs["route_id"]
+        for call in worker.ingestion.download_bundle.call_args_list
+    ] == ["webshare-03", "webshare-04"]
+    worker.repository.rotate_ingestion_route.assert_called_once_with(
+        "job-a",
+        "webshare-03",
+        result="bot_check",
+        cooldown_seconds=30,
+        excluded_route_ids=["webshare-03"],
     )
-    worker.repository.retry_job.assert_called_once()
-    worker.repository.fail_job.assert_not_called()
+    worker.repository.release_ingestion_route.assert_called_once_with(
+        "job-a", "webshare-04", result="bot_check", cooldown_seconds=30
+    )
+    worker.repository.retry_job.assert_not_called()
+    details = _assert_ingestion_failure(
+        worker,
+        code="ingestion_retry_exhausted",
+        reason="사용 가능한 모든 ISP 경로에서 원본 영상 다운로드가 실패했습니다.",
+    )
+    assert details["attempted_route_ids"] == ("webshare-03", "webshare-04")
+    assert details["cause"]["code"] == "youtube_bot_challenge"
+
+
+def test_inline_rotation_can_try_all_ten_configured_routes(tmp_path) -> None:
+    worker = _worker(tmp_path, AssertionError("replaced below"))
+    worker.ingestion.configured_route_count = 10
+    worker.ingestion.egress_class_for.return_value = "webshare_isp"
+    successful_bundle = DownloadedAssetBundle(
+        metadata=VideoMetadata("dQw4w9WgXcQ", "테스트 영상", "채널", "", 120),
+        video_path=tmp_path / "source.mp4",
+    )
+    worker.ingestion.download_bundle.side_effect = [
+        *(BotCheckError("bot check") for _ in range(9)),
+        successful_bundle,
+    ]
+    worker.repository.rotate_ingestion_route.side_effect = [
+        f"webshare-{index:02d}" for index in range(2, 11)
+    ]
+
+    bundle, route_id = worker._download_with_inline_route_rotation(
+        job_id="job-a",
+        job_attempt=1,
+        youtube_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        destination=tmp_path / "source",
+        range_start_seconds=None,
+        range_end_seconds=None,
+        initial_route_id="webshare-01",
+    )
+
+    assert bundle is successful_bundle
+    assert route_id == "webshare-10"
+    assert [
+        call.kwargs["route_id"]
+        for call in worker.ingestion.download_bundle.call_args_list
+    ] == [f"webshare-{index:02d}" for index in range(1, 11)]
+    assert worker.repository.rotate_ingestion_route.call_count == 9
+    worker.repository.release_ingestion_route.assert_called_once_with(
+        "job-a", "webshare-10", result="success", cooldown_seconds=0
+    )
+    worker.repository.retry_job.assert_not_called()
 
 
 def test_prepare_does_not_start_inside_the_last_five_minutes(tmp_path) -> None:
@@ -372,8 +464,10 @@ def test_non_retryable_ingestion_error_fails_without_requeue(tmp_path) -> None:
 
     worker.queue.send.assert_not_called()
     worker.repository.retry_job.assert_not_called()
-    worker.repository.fail_job.assert_called_once_with(
-        "job-a", "IngestionError", worker.FINAL_INGESTION_MESSAGE
+    _assert_ingestion_failure(
+        worker,
+        code="ingestion_unknown",
+        reason="Private video",
     )
 
 
@@ -384,8 +478,10 @@ def test_escaped_temporary_ingestion_error_does_not_requeue_prepare(tmp_path) ->
 
     worker.repository.retry_job.assert_not_called()
     worker.queue.send.assert_not_called()
-    worker.repository.fail_job.assert_called_once_with(
-        "job-a", "RetryableIngestionError", worker.FINAL_INGESTION_MESSAGE
+    _assert_ingestion_failure(
+        worker,
+        code="ingestion_temporary_failure",
+        reason="connection timed out",
     )
 
 
@@ -399,8 +495,10 @@ def test_exhausted_video_work_fails_without_another_prepare_retry(tmp_path) -> N
 
     worker.repository.retry_job.assert_not_called()
     worker.queue.send.assert_not_called()
-    worker.repository.fail_job.assert_called_once_with(
-        "job-a", "RetryExhaustedIngestionError", worker.FINAL_INGESTION_MESSAGE
+    _assert_ingestion_failure(
+        worker,
+        code="ingestion_retry_exhausted",
+        reason="video download failed ten times",
     )
 
 
@@ -423,8 +521,11 @@ def test_tenth_attempt_is_the_last_bot_check_attempt(tmp_path) -> None:
 
     worker.queue.send.assert_not_called()
     worker.repository.retry_job.assert_not_called()
-    worker.repository.fail_job.assert_called_once_with(
-        "job-a", "BotCheckError", worker.FINAL_INGESTION_MESSAGE
+    _assert_ingestion_failure(
+        worker,
+        code="youtube_bot_challenge",
+        reason="bot check",
+        job_attempt=10,
     )
 
 

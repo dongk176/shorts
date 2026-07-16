@@ -9,6 +9,7 @@ import {
   templateIds,
   videoAspectRatios,
 } from "@/lib/contracts";
+import { wakeOutboxDispatcher } from "@/lib/aws";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
 import { getInitialJobBackend } from "@/lib/job-backend";
@@ -22,7 +23,6 @@ const schema = z.object({
   templateId: z.enum(templateIds),
   videoAspectRatio: z.enum(videoAspectRatios).default("1:1"),
   outputLanguage: z.enum(outputLanguages).default("ko"),
-  rightsConfirmed: z.literal(true),
   requestId: z.string().uuid(),
   rangeStartSeconds: z.number().nonnegative(),
   rangeEndSeconds: z.number().positive(),
@@ -128,7 +128,7 @@ export async function POST(request: Request) {
           ${metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${metadata.durationSeconds}, ${rangeStartSeconds},
           ${rangeEndSeconds}, ${input.templateId}, ${input.videoAspectRatio},
           'sec_31_60', ${input.outputLanguage}, ${selectedShortCount},
-          true, ${executionBackend}, 'queued', 'queued', 5,
+          false, ${executionBackend}, 'queued', 'queued', 5,
           now() + ${deadlineMinutes} * interval '1 minute', ${selectedShortCount}
         )
       `;
@@ -150,6 +150,17 @@ export async function POST(request: Request) {
         status: duplicate.status,
         usage: await getUsageSnapshot(db, session),
       });
+    }
+
+    if (executionBackend === "aws_batch") {
+      try {
+        await wakeOutboxDispatcher();
+      } catch (error) {
+        console.error("outbox_dispatch_wake_failed", {
+          jobId,
+          errorName: error instanceof Error ? error.name : "UnknownError",
+        });
+      }
     }
 
     return NextResponse.json({

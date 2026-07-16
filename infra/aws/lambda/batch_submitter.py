@@ -10,25 +10,6 @@ import boto3
 from common import iso_now, log_event, patch, rest
 
 batch = boto3.client("batch")
-sqs = boto3.client("sqs")
-queue_url = os.environ["WORK_DISPATCH_QUEUE_URL"]
-def _prepare_gate() -> str:
-    rows = rest(
-        "rpc/claim_ingestion_gate",
-        method="POST",
-        body={},
-        prefer="return=representation",
-    ) or []
-    action = str(rows[0].get("action") or "open") if rows else "open"
-    return action if action in {"open", "wait", "probe"} else "wait"
-
-
-def _delay(payload: dict[str, Any]) -> None:
-    sqs.send_message(
-        QueueUrl=queue_url,
-        MessageBody=json.dumps(payload, separators=(",", ":")),
-        DelaySeconds=60,
-    )
 
 
 def _existing_batch_job(job_queue: str, job_name: str) -> str | None:
@@ -102,18 +83,6 @@ def _submit(payload: dict[str, Any]) -> str | None:
         recorded_id = existing_batches[0].get("aws_batch_job_id")
         if recorded_id:
             return str(recorded_id)
-        prepare_gate = _prepare_gate()
-        if prepare_gate == "wait":
-            _delay(payload)
-            return None
-        if prepare_gate == "probe" and count > 1:
-            minute_bucket = int(datetime.now(UTC).timestamp() // 60)
-            request["jobName"] = f"shorts-probe-{dispatch_id}-{minute_bucket}"
-            probe_id = _submit_once(
-                request, f"prepare-probe:{dispatch_id}:{minute_bucket}"
-            )
-            _delay(payload)
-            return probe_id
         if count > 1:
             request["arrayProperties"] = {"size": count}
         batch_id = _submit_once(request, f"prepare:{dispatch_id}")
@@ -272,7 +241,18 @@ def _submit(payload: dict[str, Any]) -> str | None:
     raise ValueError(f"Unsupported work kind: {kind}")
 
 
-def handler(event: dict[str, Any], _context: Any) -> dict[str, list[dict[str, str]]]:
+def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
+    if event.get("kind"):
+        result = _submit(event)
+        log_event(
+            "batch_submit_succeeded",
+            kind=event.get("kind"),
+            job_id=event.get("jobId"),
+            batch_job_id=result,
+            invocation="direct",
+        )
+        return {"batchJobId": result}
+
     failures: list[dict[str, str]] = []
     for record in event.get("Records", []):
         payload: dict[str, Any] = {}

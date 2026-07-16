@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { ProPaywall, type ProPaywallStep } from "@/components/pro-paywall";
+import { POPULAR_VIDEO_FILTERS_REQUIRE_PRO } from "@/lib/youtube-popular-access";
 import type {
   PopularVideo,
   PopularVideoCategory,
@@ -264,8 +265,8 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
     window.location.assign(`/?analysisId=${encodeURIComponent(analysis.analysisId)}#shorts-settings`);
   };
 
-  const applyProFilter = (update: () => void) => {
-    if (!hasProAccess) {
+  const applyFilter = (update: () => void) => {
+    if (POPULAR_VIDEO_FILTERS_REQUIRE_PRO && !hasProAccess) {
       setPaywallStep("notice");
       return;
     }
@@ -298,7 +299,7 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
       <section className="relative z-30 -mx-2 mt-2 rounded-2xl border border-white/10 bg-[#15191a]/90 p-4 shadow-[0_16px_50px_rgba(0,0,0,.22)] backdrop-blur-2xl md:mx-0 md:p-5" aria-label="인기 영상 필터">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <fieldset className="min-w-0">
-            <legend className="mb-2 text-[11px] font-extrabold text-neutral-500">인기 기준</legend>
+            <legend className="mb-2 text-sm font-black text-neutral-200">인기 기준</legend>
             <div className="flex flex-wrap gap-2 pb-1">
               {dataTypeOptions.map((option) => (
                 <button
@@ -309,7 +310,7 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
                     setDataType(option.value);
                     setActiveVideoId(null);
                   }}
-                  className={`shrink-0 rounded-full border px-4 py-2 text-xs font-bold transition ${dataType === option.value ? "border-[#ff715e] bg-[#ff715e]/15 text-[#ffb4a8] shadow-[0_0_18px_rgba(255,85,64,.1)]" : "border-white/10 bg-white/[.025] text-neutral-400 hover:border-white/25 hover:text-white"}`}
+                  className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition ${dataType === option.value ? "border-[#ff715e] bg-[#ff715e]/15 text-[#ffd0c9] shadow-[0_0_18px_rgba(255,85,64,.1)]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
                 >
                   {option.label}
                 </button>
@@ -326,7 +327,7 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
                 setKoreanOnly((current) => !current);
                 setActiveVideoId(null);
               }}
-              className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${koreanOnly ? "border-emerald-300/60 bg-emerald-400/15 text-emerald-100" : "border-white/10 bg-white/[.025] text-neutral-400 hover:border-white/25 hover:text-white"}`}
+              className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${koreanOnly ? "border-emerald-300/60 bg-emerald-400/15 text-emerald-50" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
             >
               <span className={`relative h-5 w-9 rounded-full transition ${koreanOnly ? "bg-emerald-400" : "bg-white/15"}`} aria-hidden="true">
                 <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${koreanOnly ? "left-[18px]" : "left-0.5"}`} />
@@ -336,10 +337,10 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
             <button
               type="button"
               role="switch"
-              aria-label="롱폼만 보기 (Pro 전용)"
+              aria-label={`롱폼만 보기${POPULAR_VIDEO_FILTERS_REQUIRE_PRO ? " (Pro 전용)" : ""}`}
               aria-checked={longFormOnly}
-              onClick={() => applyProFilter(() => setLongFormOnly((current) => !current))}
-              className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${longFormOnly ? "border-[#ff8b7c]/60 bg-[#ff715e]/15 text-[#ffc0b7]" : "border-white/10 bg-white/[.025] text-neutral-400 hover:border-violet-300/35 hover:text-white"}`}
+              onClick={() => applyFilter(() => setLongFormOnly((current) => !current))}
+              className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${longFormOnly ? "border-[#ff8b7c]/60 bg-[#ff715e]/15 text-[#ffd0c9]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
             >
               <span className={`relative h-5 w-9 rounded-full transition ${longFormOnly ? "bg-[#ff715e]" : "bg-white/15"}`} aria-hidden="true">
                 <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${longFormOnly ? "left-[18px]" : "left-0.5"}`} />
@@ -349,10 +350,10 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
             <button
               type="button"
               role="switch"
-              aria-label="재사용 허용 영상만 보기 (Pro 전용)"
+              aria-label={`재사용 허용 영상만 보기${POPULAR_VIDEO_FILTERS_REQUIRE_PRO ? " (Pro 전용)" : ""}`}
               aria-checked={reusableOnly}
-              onClick={() => applyProFilter(() => setReusableOnly((current) => !current))}
-              className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2 text-xs font-bold transition ${reusableOnly ? "border-violet-300/60 bg-violet-400/15 text-violet-100" : "border-white/10 bg-white/[.025] text-neutral-400 hover:border-violet-300/35 hover:text-white"}`}
+              onClick={() => applyFilter(() => setReusableOnly((current) => !current))}
+              className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${reusableOnly ? "border-violet-300/60 bg-violet-400/15 text-violet-50" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
             >
               <span className={`relative h-5 w-9 rounded-full transition ${reusableOnly ? "bg-violet-400" : "bg-white/15"}`} aria-hidden="true">
                 <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${reusableOnly ? "left-[18px]" : "left-0.5"}`} />
@@ -363,16 +364,16 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
         </div>
 
         <fieldset className="mt-4 min-w-0 border-t border-white/[.07] pt-4">
-          <legend className="mb-2 text-[11px] font-extrabold text-neutral-500">카테고리</legend>
+          <legend className="mb-2 text-sm font-black text-neutral-200">카테고리</legend>
           <div className="flex gap-2 overflow-x-auto pb-1 md:flex-wrap md:overflow-visible">
             {categoryOptions.map((option) => (
               <button
                 key={option.value}
                 type="button"
-                aria-label={`${option.label} 카테고리 (Pro 전용)`}
+                aria-label={`${option.label} 카테고리${POPULAR_VIDEO_FILTERS_REQUIRE_PRO ? " (Pro 전용)" : ""}`}
                 aria-pressed={category === option.value}
-                onClick={() => applyProFilter(() => setCategory(option.value))}
-                className={`shrink-0 rounded-full border px-4 py-2 text-xs font-bold transition ${category === option.value ? "border-violet-300/60 bg-violet-400/15 text-violet-100 shadow-[0_0_18px_rgba(160,120,255,.1)]" : "border-white/10 bg-white/[.025] text-neutral-400 hover:border-violet-300/35 hover:text-white"}`}
+                onClick={() => applyFilter(() => setCategory(option.value))}
+                className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition ${category === option.value ? "border-violet-300/60 bg-violet-400/15 text-violet-50 shadow-[0_0_18px_rgba(160,120,255,.1)]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
               >
                 {option.label}
               </button>

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +14,13 @@ from .media import media_duration, probe_media, run_command
 from .schemas import SubtitleSegment
 
 SENTENCE_RE = re.compile(r"(?<=[.!?。！？])\s+|\n+")
+MIN_TRANSCRIBE_CHUNK_SECONDS = 1.0
+TRANSCRIBE_CHUNK_MAX_ATTEMPTS = 2
+TRANSCRIBE_CHUNK_RETRY_DELAY_SECONDS = 1.0
+
+
+def _log_event(event: str, **fields: object) -> None:
+    print(json.dumps({"event": event, **fields}, separators=(",", ":"), default=str), flush=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +31,9 @@ class TranscriptionResult:
     silent_chunk_count: int
     input_tokens: int
     output_tokens: int
+    failed_chunk_count: int = 0
+    skipped_chunk_count: int = 0
+    failed_audio_seconds: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +43,7 @@ class _ChunkTranscriptionResult:
     silent: bool
     input_tokens: int
     output_tokens: int
+    skipped: bool = False
 
 
 def _plain_text_segments(text: str, duration: float, offset: float) -> list[SubtitleSegment]:
@@ -138,12 +151,28 @@ class AudioTranscriber:
         duration: float,
         offset: float,
     ) -> _ChunkTranscriptionResult:
-        with chunk.open("rb") as audio_file:
-            response = client.audio.transcriptions.create(
-                model=self.settings.openai_transcribe_model,
-                file=audio_file,
-                response_format="json",
+        def request(audio_path: Path) -> Any:
+            with audio_path.open("rb") as audio_file:
+                return client.audio.transcriptions.create(
+                    model=self.settings.openai_transcribe_model,
+                    file=audio_file,
+                    response_format="json",
+                )
+
+        try:
+            response = request(chunk)
+        except Exception:
+            retry_chunk = self._normalize_retry_chunk(chunk)
+            _log_event(
+                "transcription_chunk_retrying",
+                chunk_index=index,
+                duration_seconds=round(duration, 3),
+                media_bytes=chunk.stat().st_size,
+                attempt=TRANSCRIBE_CHUNK_MAX_ATTEMPTS,
+                retry_format=retry_chunk.suffix.lstrip("."),
             )
+            time.sleep(TRANSCRIBE_CHUNK_RETRY_DELAY_SECONDS)
+            response = request(retry_chunk)
         data = self._response_dict(response)
         text = " ".join(str(data.get("text") or "").split())
         segments = _plain_text_segments(text, duration, offset)
@@ -156,6 +185,35 @@ class AudioTranscriber:
             output_tokens=output_tokens,
         )
 
+    def _normalize_retry_chunk(self, chunk: Path) -> Path:
+        retry_chunk = chunk.with_name(f"{chunk.stem}.retry.wav")
+        try:
+            result = run_command(
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    str(chunk),
+                    "-vn",
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "16000",
+                    "-c:a",
+                    "pcm_s16le",
+                    str(retry_chunk),
+                ],
+                timeout=self.settings.ffmpeg_timeout_seconds,
+            )
+        except Exception:
+            return chunk
+        if result.returncode != 0 or not retry_chunk.is_file():
+            return chunk
+        return retry_chunk
+
     def transcribe(self, video_path: Path, work_dir: Path) -> TranscriptionResult:
         if not self.settings.openai_api_key:
             raise TranscriptionError("OPENAI_API_KEY가 없어 필수 전사를 시작할 수 없습니다.")
@@ -166,7 +224,7 @@ class AudioTranscriber:
             client = OpenAI(
                 api_key=self.settings.openai_api_key,
                 timeout=self.settings.ai_timeout_seconds,
-                max_retries=1,
+                max_retries=0,
             )
             chunks = self._extract_chunks(video_path, work_dir / "audio")
             chunk_specs: list[tuple[int, Path, float, float]] = []
@@ -183,11 +241,36 @@ class AudioTranscriber:
             raise TranscriptionError("OpenAI 전사를 준비하지 못했습니다.") from exc
 
         results: dict[int, _ChunkTranscriptionResult] = {}
-        max_workers = max(
-            1,
-            min(self.settings.openai_transcribe_max_workers, len(chunk_specs)),
-        )
-        try:
+        transcribable_specs: list[tuple[int, Path, float, float]] = []
+        skipped_chunk_count = 0
+        for index, chunk, duration, offset in chunk_specs:
+            if duration >= MIN_TRANSCRIBE_CHUNK_SECONDS:
+                transcribable_specs.append((index, chunk, duration, offset))
+                continue
+            skipped_chunk_count += 1
+            results[index] = _ChunkTranscriptionResult(
+                index=index,
+                segments=[],
+                silent=True,
+                input_tokens=0,
+                output_tokens=0,
+                skipped=True,
+            )
+            _log_event(
+                "transcription_chunk_skipped",
+                chunk_index=index,
+                duration_seconds=round(duration, 3),
+                media_bytes=chunk.stat().st_size,
+                reason="too_short",
+            )
+
+        failed_chunk_count = 0
+        failed_audio_seconds = 0.0
+        if transcribable_specs:
+            max_workers = max(
+                1,
+                min(self.settings.openai_transcribe_max_workers, len(transcribable_specs)),
+            )
             with ThreadPoolExecutor(
                 max_workers=max_workers,
                 thread_name_prefix="openai-transcribe",
@@ -201,23 +284,40 @@ class AudioTranscriber:
                         duration=duration,
                         offset=offset,
                     ): index
-                    for index, chunk, duration, offset in chunk_specs
+                    for index, chunk, duration, offset in transcribable_specs
                 }
                 for future in as_completed(futures):
-                    result = future.result()
+                    index = futures[future]
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        _chunk_index, chunk, duration, _offset = chunk_specs[index]
+                        failed_chunk_count += 1
+                        failed_audio_seconds += duration
+                        _log_event(
+                            "transcription_chunk_skipped",
+                            chunk_index=index,
+                            duration_seconds=round(duration, 3),
+                            media_bytes=chunk.stat().st_size,
+                            reason="attempts_exhausted",
+                            attempt_count=TRANSCRIBE_CHUNK_MAX_ATTEMPTS,
+                            error_type=type(exc).__name__,
+                        )
+                        continue
                     results[result.index] = result
-        except Exception as exc:
-            raise TranscriptionError("OpenAI 오디오 전사에 실패했습니다.") from exc
 
-        ordered = [results[index] for index in range(len(chunk_specs))]
+        ordered = [results[index] for index in sorted(results)]
         segments = [segment for result in ordered for segment in result.segments]
         if not segments:
             raise TranscriptionError("전체 오디오 전사 결과가 비어 있습니다.")
         return TranscriptionResult(
             segments=segments,
             model=self.settings.openai_transcribe_model,
-            chunk_count=len(ordered),
-            silent_chunk_count=sum(result.silent for result in ordered),
+            chunk_count=len(chunk_specs),
+            silent_chunk_count=sum(result.silent and not result.skipped for result in ordered),
             input_tokens=sum(result.input_tokens for result in ordered),
             output_tokens=sum(result.output_tokens for result in ordered),
+            failed_chunk_count=failed_chunk_count,
+            skipped_chunk_count=skipped_chunk_count,
+            failed_audio_seconds=round(failed_audio_seconds, 3),
         )

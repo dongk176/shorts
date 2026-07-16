@@ -3,3 +3,9 @@ __pycache__
 .pytest_cache
 .ruff_cache
 *.pyc
+.DS_Store
+tests
+requirements-dev.txt
+wgcf
+wgcf-account.toml
+wgcf-profile.conf

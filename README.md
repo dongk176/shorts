@@ -70,7 +70,7 @@ export VERCEL_PROJECT_NAME=your-vercel-project
 npm run infra:setup
 ```
 
-이 명령은 CloudFront RSA key를 `.secrets/`에 생성하고, CDK bootstrap/deploy, runtime secret, Vercel production env 동기화를 수행합니다. `.secrets/`와 `.env.local`은 Git에서 제외됩니다. Worker는 GitHub Actions OIDC로 `linux/amd64` 이미지를 ECR에 게시하므로 로컬 Docker가 필요하지 않습니다. Job Definition은 `latest`가 아니라 커밋 SHA 이미지에 고정됩니다. 기존 환경을 갱신할 때는 변경을 커밋하고 GitHub Actions 이미지 게시가 끝난 뒤 실행해야 하며, 이미지가 없으면 배포 스크립트가 중단됩니다.
+이 명령은 CloudFront RSA key를 `.secrets/`에 생성하고, CDK bootstrap/deploy, runtime secret, Vercel production env 동기화를 수행합니다. `.secrets/`와 `.env.local`은 Git에서 제외됩니다. Worker는 GitHub Actions OIDC로 다운로드 전용 `SHA-prepare` 이미지와 렌더 전용 `SHA` 이미지를 `linux/amd64`로 ECR에 게시하므로 로컬 Docker가 필요하지 않습니다. Job Definition은 `latest`가 아니라 커밋 SHA 이미지에 고정됩니다. 기존 환경을 갱신할 때는 변경을 커밋하고 GitHub Actions 이미지 게시가 끝난 뒤 실행해야 하며, 두 이미지 중 하나라도 없으면 배포 스크립트가 중단됩니다.
 
 ## Vercel OIDC
 
@@ -80,7 +80,7 @@ npm run infra:setup
 owner:<team>:project:<project>:environment:production
 ```
 
-Vercel에는 `AWS_ROLE_ARN`, region, S3 bucket, CloudFront signing 설정만 저장합니다. 신규 생성과 재렌더 접수는 DB Outbox에만 기록하며, Lambda Dispatcher가 SQS와 AWS Batch로 전달합니다. 서버 코드는 미디어 조회·삭제에 필요할 때만 요청 컨텍스트의 Vercel OIDC token을 `sts.amazonaws.com` 전용 audience로 교환합니다.
+Vercel에는 `AWS_ROLE_ARN`, region, S3 bucket, Dispatcher ARN, CloudFront signing 설정만 저장합니다. 신규 생성과 재렌더 접수는 DB Outbox에 기록하며, 신규 생성 직후 Lambda Dispatcher를 비동기로 깨워 SQS와 AWS Batch로 전달합니다. 1분 주기 Dispatcher는 즉시 호출 실패 시의 복구 경로로 유지합니다. 서버 코드는 AWS 요청이 필요할 때만 요청 컨텍스트의 Vercel OIDC token을 `sts.amazonaws.com` 전용 audience로 교환합니다.
 
 ## 환경변수
 
@@ -97,6 +97,7 @@ Vercel에는 `AWS_ROLE_ARN`, region, S3 bucket, CloudFront signing 설정만 저
 | `OPENAI_TRANSCRIBE_MAX_WORKERS` | worker | 병렬 전사 호출 수, 기본 4 |
 | `AWS_ROLE_ARN`, `AWS_REGION` | Vercel | OIDC assume role |
 | `AWS_S3_OUTPUT_BUCKET` | Vercel, worker | private media bucket |
+| `AWS_OUTBOX_DISPATCHER_FUNCTION_ARN` | Vercel | 작업 생성 직후 Outbox Dispatcher 즉시 호출 |
 | `WORK_DISPATCH_QUEUE_URL` | worker/Lambda | Prepare·Render 작업 전달 SQS |
 | `STATE_EVENT_QUEUE_URL` | worker/Lambda | 진행률·heartbeat 일괄 반영 SQS |
 | `CLOUDFRONT_DOMAIN` | Vercel | output CDN |
@@ -136,7 +137,7 @@ make verify
 
 ## 저작권 및 한계
 
-소유하거나 명시적으로 사용 허가를 받은 공개 영상만 처리합니다. 콘텐츠 권리 확인과 YouTube의
+지원되는 공개 영상만 처리하며, 사용자는 콘텐츠를 적법하게 사용할 책임이 있습니다. 콘텐츠 권리와 YouTube의
 플랫폼 정책은 별개이므로 유료 상용화 전 법무 검토가 필요합니다. 운영 기준과 네트워크 경로는
 [YouTube ingestion risk policy](docs/youtube-compliance.md)를 따릅니다.
 

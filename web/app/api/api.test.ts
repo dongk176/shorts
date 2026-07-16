@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   analyze: vi.fn(),
   submitInitial: vi.fn(),
   submitRerender: vi.fn(),
+  wakeDispatcher: vi.fn(),
   deleteObjects: vi.fn(),
 }));
 
@@ -36,6 +37,7 @@ vi.mock("@/lib/youtube", async (importOriginal) => ({
 vi.mock("@/lib/aws", () => ({
   submitInitialJob: mocks.submitInitial,
   submitRerender: mocks.submitRerender,
+  wakeOutboxDispatcher: mocks.wakeDispatcher,
   deleteShortObjects: mocks.deleteObjects,
 }));
 
@@ -107,6 +109,7 @@ beforeEach(() => {
   mocks.publicState.mockResolvedValue({ plans: [], generatedShortCount: 4321 });
   mocks.authenticatedSession.mockImplementation(() => mocks.session());
   mocks.authenticatedUser.mockResolvedValue({ id: "auth-a" });
+  mocks.wakeDispatcher.mockResolvedValue(undefined);
 });
 
 describe("MVP state visibility", () => {
@@ -143,25 +146,24 @@ describe("job API security and idempotency", () => {
       templateId: "dark-red",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d9",
     }));
     expect(response.status).toBe(401);
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
 
-  it("rejects creation when rights confirmation is missing", async () => {
+  it("creates a job without a per-job rights confirmation", async () => {
+    mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
       analysisId,
       templateId: "dark-red",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
-      rightsConfirmed: false,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d0",
     }));
-    expect(response.status).toBe(400);
-    expect(mocks.session).not.toHaveBeenCalled();
+    expect(response.status).toBe(202);
+    expect(mocks.authenticatedSession).toHaveBeenCalledOnce();
   });
 
   it("returns an existing request without a second Batch submission", async () => {
@@ -173,7 +175,6 @@ describe("job API security and idempotency", () => {
       clipLengthOption: "sec_31_60",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d0",
     }));
     expect(response.status).toBe(200);
@@ -183,6 +184,7 @@ describe("job API security and idempotency", () => {
       usage,
     });
     expect(mocks.submitInitial).not.toHaveBeenCalled();
+    expect(mocks.wakeDispatcher).not.toHaveBeenCalled();
   });
 
   it("rejects a selected range shorter than thirty seconds", async () => {
@@ -193,7 +195,6 @@ describe("job API security and idempotency", () => {
       templateId: "dark-red",
       rangeStartSeconds: 100,
       rangeEndSeconds: 120,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d1",
     }));
     expect(response.status).toBe(400);
@@ -212,7 +213,6 @@ describe("job API security and idempotency", () => {
       templateId: "dark-red",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d4",
     }));
 
@@ -231,11 +231,33 @@ describe("job API security and idempotency", () => {
       templateId: "dark-red",
       rangeStartSeconds: 100,
       rangeEndSeconds: 130,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d2",
     }));
 
     expect(response.status).toBe(202);
+    expect(mocks.wakeDispatcher).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the queued job recoverable when the immediate dispatcher wake fails", async () => {
+    mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
+    mocks.wakeDispatcher.mockRejectedValueOnce(new Error("temporary invoke failure"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rangeStartSeconds: 0,
+      rangeEndSeconds: 120,
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d5",
+    }));
+
+    expect(response.status).toBe(202);
+    expect(mocks.wakeDispatcher).toHaveBeenCalledOnce();
+    expect(error).toHaveBeenCalledWith("outbox_dispatch_wake_failed", {
+      jobId: expect.any(String),
+      errorName: "Error",
+    });
+    error.mockRestore();
   });
 
   it("accepts the 5:4 video region ratio", async () => {
@@ -246,7 +268,6 @@ describe("job API security and idempotency", () => {
       videoAspectRatio: "5:4",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d4",
     }));
 
@@ -260,7 +281,6 @@ describe("job API security and idempotency", () => {
       videoAspectRatio: "3:2",
       rangeStartSeconds: 0,
       rangeEndSeconds: 120,
-      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d3",
     }));
     expect(response.status).toBe(400);

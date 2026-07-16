@@ -71,6 +71,18 @@ describe("shorts MVP infrastructure", () => {
     const jobDefinitions = Object.values(
       compute.findResources("AWS::Batch::JobDefinition")
     ) as Array<Record<string, unknown>>;
+    const jobDefinition = (name: string) => jobDefinitions.find((definition) => (
+      (definition.Properties as Record<string, unknown>)?.JobDefinitionName === name
+    ));
+    const prepareJobDefinition = jobDefinition("shorts-mvp-prepare-test");
+    const renderJobDefinition = jobDefinition("shorts-mvp-render-test");
+
+    expect(prepareJobDefinition).toBeDefined();
+    expect(renderJobDefinition).toBeDefined();
+    expect(JSON.stringify(prepareJobDefinition)).toContain("INGESTION_EGRESS_MODE");
+    expect(JSON.stringify(prepareJobDefinition)).toContain("INGESTION_BOT_CHECK_COOLDOWN_SECONDS");
+    expect(JSON.stringify(prepareJobDefinition)).toContain("INGESTION_PROXY_ROUTES_JSON");
+    expect(JSON.stringify(renderJobDefinition)).not.toContain("INGESTION_");
     expect(
       jobDefinitions.filter((definition) => (
         JSON.stringify(definition).includes("INGESTION_PROXY_ROUTES_JSON")
@@ -83,6 +95,9 @@ describe("shorts MVP infrastructure", () => {
     ).toHaveLength(1);
     expect(JSON.stringify(jobDefinitions)).not.toContain("WARP_CONF_B64");
     expect(JSON.stringify(compute.toJSON())).toContain("test-worker-image");
+    expect(JSON.stringify(prepareJobDefinition)).toContain("test-worker-image-prepare");
+    expect(JSON.stringify(renderJobDefinition)).toContain("test-worker-image");
+    expect(JSON.stringify(renderJobDefinition)).not.toContain("test-worker-image-prepare");
     expect(JSON.stringify(compute.toJSON())).not.toContain(":latest");
     compute.hasResourceProperties("AWS::Batch::JobDefinition", {
       ContainerProperties: Match.objectLike({
@@ -94,7 +109,7 @@ describe("shorts MVP infrastructure", () => {
           { Name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", Value: "30" },
           { Name: "OPENAI_TRANSCRIBE_MAX_WORKERS", Value: "4" },
           { Name: "INGESTION_EGRESS_MODE", Value: "webshare_isp" },
-          { Name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", Value: "300" },
+          { Name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", Value: "30" },
         ]),
       }),
     });
@@ -128,6 +143,14 @@ describe("shorts MVP infrastructure", () => {
       ReservedConcurrentExecutions: 10,
       Timeout: 30,
     });
+    compute.hasResourceProperties("AWS::Lambda::Function", {
+      Handler: "outbox_dispatcher.handler",
+      Environment: {
+        Variables: Match.objectLike({
+          BATCH_SUBMITTER_FUNCTION_NAME: Match.anyValue(),
+        }),
+      },
+    });
     compute.hasResourceProperties("AWS::Events::Rule", {
       ScheduleExpression: "rate(1 minute)",
     });
@@ -136,6 +159,11 @@ describe("shorts MVP infrastructure", () => {
   it("does not create wildcard IAM actions", () => {
     const { compute } = stacks();
     const policies = compute.findResources("AWS::IAM::Policy");
+    const serializedPolicies = JSON.stringify(policies);
+    expect(serializedPolicies).toContain("lambda:InvokeFunction");
+    expect(serializedPolicies).toContain("OutboxDispatcherFunction");
+    expect(serializedPolicies).toContain("function:shorts-mvp-batch-submitter-test");
+    expect(serializedPolicies).not.toContain("function/shorts-mvp-batch-submitter-test");
     for (const policy of Object.values(policies) as Array<Record<string, unknown>>) {
       expect(JSON.stringify(policy)).not.toContain('"Action":"*"');
     }

@@ -10,13 +10,13 @@
 
 ## Safety invariants
 
-- Follow `docs/youtube-compliance.md` for YouTube ingestion risk controls. Public,
-  rights-confirmed videos may use a small preconfigured set of company-controlled
-  direct, WARP, or contracted proxy paths for routing and network-error failover.
-- Fail over only on connection errors. Authentication, age, payment, geographic,
-  private-video, or DRM restrictions must fail closed and must never trigger
+- Follow `docs/youtube-compliance.md` for YouTube ingestion risk controls. Public
+  videos may use company-controlled direct, WARP, ISP proxy pools,
+  or contracted proxy paths for routing and failover.
+- Fail over on connection errors, bot challenges, or 429s. Payment,
+  geographic, or DRM restrictions must fail closed and must never trigger
   identity, cookie, token, proxy, IP, region, or client rotation. Bot challenges
-  and 429s may be retried up to 10 times, but must not trigger IP rotation.
+  and 429s may be retried up to 10 times.
 - Never pass YouTube account credentials, account cookies, or browser profiles to workers.
 - Never invoke user-derived commands with a shell. Pass argument arrays to
   subprocesses and keep timeouts enabled.

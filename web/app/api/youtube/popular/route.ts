@@ -11,6 +11,7 @@ import {
   getPopularSearchVideos,
   PopularSearchSnapshotUnavailableError,
 } from "@/lib/youtube-popular-search";
+import { POPULAR_VIDEO_FILTERS_REQUIRE_PRO } from "@/lib/youtube-popular-access";
 
 export const dynamic = "force-dynamic";
 
@@ -39,12 +40,11 @@ export async function GET(request: Request) {
   try {
     const session = await requireMvpSession();
     const hasProAccess = session.selectedPlanCode === "pro";
-    if (!hasProAccess && (
-      query.data.cursor
-      || query.data.category !== "all"
-      || query.data.reusable
-      || query.data.longForm
-    )) {
+    const requiresProAccess = Boolean(query.data.cursor) || (
+      POPULAR_VIDEO_FILTERS_REQUIRE_PRO
+      && (query.data.category !== "all" || query.data.reusable || query.data.longForm)
+    );
+    if (!hasProAccess && requiresProAccess) {
       const response = NextResponse.json({ detail: "해당 기능은 Pro 전용 기능이에요." }, { status: 403 });
       response.headers.set("Cache-Control", "private, no-store");
       return response;
