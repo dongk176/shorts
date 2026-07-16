@@ -80,7 +80,7 @@ npm run infra:setup
 owner:<team>:project:<project>:environment:production
 ```
 
-Vercel에는 `AWS_ROLE_ARN`, region, S3 bucket, CloudFront signing 설정만 저장합니다. 신규 생성과 재렌더 접수는 DB Outbox에만 기록하며, Lambda Dispatcher가 SQS와 AWS Batch로 전달합니다. 서버 코드는 미디어 조회·삭제에 필요할 때만 요청 컨텍스트의 Vercel OIDC token을 `sts.amazonaws.com` 전용 audience로 교환합니다.
+Vercel에는 `AWS_ROLE_ARN`, region, S3 bucket, Dispatcher ARN, CloudFront signing 설정만 저장합니다. 신규 생성과 재렌더 접수는 DB Outbox에 기록하며, 신규 생성 직후 Lambda Dispatcher를 비동기로 깨워 SQS와 AWS Batch로 전달합니다. 1분 주기 Dispatcher는 즉시 호출 실패 시의 복구 경로로 유지합니다. 서버 코드는 AWS 요청이 필요할 때만 요청 컨텍스트의 Vercel OIDC token을 `sts.amazonaws.com` 전용 audience로 교환합니다.
 
 ## 환경변수
 
@@ -97,6 +97,7 @@ Vercel에는 `AWS_ROLE_ARN`, region, S3 bucket, CloudFront signing 설정만 저
 | `OPENAI_TRANSCRIBE_MAX_WORKERS` | worker | 병렬 전사 호출 수, 기본 4 |
 | `AWS_ROLE_ARN`, `AWS_REGION` | Vercel | OIDC assume role |
 | `AWS_S3_OUTPUT_BUCKET` | Vercel, worker | private media bucket |
+| `AWS_OUTBOX_DISPATCHER_FUNCTION_ARN` | Vercel | 작업 생성 직후 Outbox Dispatcher 즉시 호출 |
 | `WORK_DISPATCH_QUEUE_URL` | worker/Lambda | Prepare·Render 작업 전달 SQS |
 | `STATE_EVENT_QUEUE_URL` | worker/Lambda | 진행률·heartbeat 일괄 반영 SQS |
 | `CLOUDFRONT_DOMAIN` | Vercel | output CDN |

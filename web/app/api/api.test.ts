@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   analyze: vi.fn(),
   submitInitial: vi.fn(),
   submitRerender: vi.fn(),
+  wakeDispatcher: vi.fn(),
   deleteObjects: vi.fn(),
 }));
 
@@ -36,6 +37,7 @@ vi.mock("@/lib/youtube", async (importOriginal) => ({
 vi.mock("@/lib/aws", () => ({
   submitInitialJob: mocks.submitInitial,
   submitRerender: mocks.submitRerender,
+  wakeOutboxDispatcher: mocks.wakeDispatcher,
   deleteShortObjects: mocks.deleteObjects,
 }));
 
@@ -107,6 +109,7 @@ beforeEach(() => {
   mocks.publicState.mockResolvedValue({ plans: [], generatedShortCount: 4321 });
   mocks.authenticatedSession.mockImplementation(() => mocks.session());
   mocks.authenticatedUser.mockResolvedValue({ id: "auth-a" });
+  mocks.wakeDispatcher.mockResolvedValue(undefined);
 });
 
 describe("MVP state visibility", () => {
@@ -183,6 +186,7 @@ describe("job API security and idempotency", () => {
       usage,
     });
     expect(mocks.submitInitial).not.toHaveBeenCalled();
+    expect(mocks.wakeDispatcher).not.toHaveBeenCalled();
   });
 
   it("rejects a selected range shorter than thirty seconds", async () => {
@@ -236,6 +240,30 @@ describe("job API security and idempotency", () => {
     }));
 
     expect(response.status).toBe(202);
+    expect(mocks.wakeDispatcher).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the queued job recoverable when the immediate dispatcher wake fails", async () => {
+    mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
+    mocks.wakeDispatcher.mockRejectedValueOnce(new Error("temporary invoke failure"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rangeStartSeconds: 0,
+      rangeEndSeconds: 120,
+      rightsConfirmed: true,
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d5",
+    }));
+
+    expect(response.status).toBe(202);
+    expect(mocks.wakeDispatcher).toHaveBeenCalledOnce();
+    expect(error).toHaveBeenCalledWith("outbox_dispatch_wake_failed", {
+      jobId: expect.any(String),
+      errorName: "Error",
+    });
+    error.mockRestore();
   });
 
   it("accepts the 5:4 video region ratio", async () => {

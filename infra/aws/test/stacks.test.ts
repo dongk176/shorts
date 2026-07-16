@@ -148,6 +148,8 @@ describe("shorts MVP infrastructure", () => {
   it("does not create wildcard IAM actions", () => {
     const { compute } = stacks();
     const policies = compute.findResources("AWS::IAM::Policy");
+    expect(JSON.stringify(policies)).toContain("lambda:InvokeFunction");
+    expect(JSON.stringify(policies)).toContain("OutboxDispatcherFunction");
     for (const policy of Object.values(policies) as Array<Record<string, unknown>>) {
       expect(JSON.stringify(policy)).not.toContain('"Action":"*"');
     }

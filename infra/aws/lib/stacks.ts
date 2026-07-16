@@ -570,6 +570,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     bucket.grantDelete(vercelRole, "thumbnails/*");
     bucket.grantDelete(vercelRole, "edit-sources/*");
     bucket.grantRead(vercelRole, "outputs/*");
+    outboxDispatcher.grantInvoke(vercelRole);
 
     const githubOrg = this.node.tryGetContext("githubOrg") || "dongk176";
     const githubRepo = this.node.tryGetContext("githubRepo") || "shorts";
@@ -611,6 +612,9 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     new cdk.CfnOutput(this, "RenderBatchJobDefinition", { value: renderDefinition.ref });
     new cdk.CfnOutput(this, "WorkDispatchQueueUrl", { value: workQueue.queueUrl });
     new cdk.CfnOutput(this, "StateEventQueueUrl", { value: stateQueue.queueUrl });
+    new cdk.CfnOutput(this, "OutboxDispatcherFunctionArn", {
+      value: outboxDispatcher.functionArn,
+    });
     new cdk.CfnOutput(this, "VercelRoleArn", { value: vercelRole.roleArn });
     new cdk.CfnOutput(this, "WorkerTaskRoleArn", { value: taskRole.roleArn });
     new cdk.CfnOutput(this, "GithubWorkerBuildRoleArn", { value: githubRole.roleArn });
