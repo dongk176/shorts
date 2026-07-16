@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
-import { requireMvpSession } from "@/lib/session";
+import { requireAuthenticatedMvpSession } from "@/lib/session";
 
 export async function POST(_: Request, context: { params: Promise<{ shortId: string }> }) {
   try {
     const { shortId } = await context.params;
-    const session = await requireMvpSession();
+    const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const rows = await db`
       select id, status, rendered_config_hash,
@@ -16,7 +16,7 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
       from shorts_mvp.generated_shorts
       where id=${shortId} and (
         (${session.userId}::uuid is not null and user_id=${session.userId})
-        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+        or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
       ) and deleted_at is null
         and expires_at > now() and status in ('ready','rerendering')
         and output_s3_key is not null
@@ -35,7 +35,7 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
             video_aspect_ratio, title_font_scale::text))
         where id=${shortId} and (
           (${session.userId}::uuid is not null and user_id=${session.userId})
-          or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+          or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
         )
           and status='ready' and deleted_at is null and expires_at > now()
           and rendered_config_hash is distinct from md5(concat_ws('|', hook_title,

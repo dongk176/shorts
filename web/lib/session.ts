@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { User } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { getDb } from "@/lib/db";
+import { HttpError } from "@/lib/http";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 export const MVP_SESSION_COOKIE = "shorts_mvp_session";
@@ -28,7 +29,7 @@ function profileValue(value: unknown, maxLength: number) {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, maxLength) : null;
 }
 
-function authProfile(user: User): AuthProfile {
+export function authProfile(user: User): AuthProfile {
   const metadata = user.user_metadata || {};
   return {
     id: user.id,
@@ -48,47 +49,113 @@ function setSessionCookie(cookieStore: Awaited<ReturnType<typeof cookies>>, toke
   });
 }
 
+type StoredSession = {
+  id: string;
+  selectedPlanCode: string;
+  userId: string | null;
+  lastSeenAt: Date;
+};
+
+async function findStoredSession(
+  db: ReturnType<typeof getDb>,
+  token: string | undefined,
+): Promise<StoredSession | undefined> {
+  if (!token) return undefined;
+  const rows = await db`
+    select id, selected_plan_code, user_id, last_seen_at
+    from shorts_mvp.mvp_sessions
+    where token_hash=${hashToken(token)}
+    limit 1
+  `;
+  const existing = rows[0] as StoredSession | undefined;
+  if (existing?.lastSeenAt instanceof Date && existing.lastSeenAt.getTime() < Date.now() - 5 * 60 * 1000) {
+    await db`
+      update shorts_mvp.mvp_sessions
+      set last_seen_at=now()
+      where id=${existing.id} and last_seen_at < now() - interval '5 minutes'
+    `;
+  }
+  return existing;
+}
+
+async function createStoredSession(
+  db: ReturnType<typeof getDb>,
+  cookieStore: Awaited<ReturnType<typeof cookies>>,
+  userId: string | null,
+  selectedPlanCode = "plus",
+): Promise<StoredSession> {
+  const token = randomBytes(32).toString("base64url");
+  const rows = await db`
+    insert into shorts_mvp.mvp_sessions (token_hash, selected_plan_code, user_id)
+    values (${hashToken(token)}, ${selectedPlanCode}, ${userId})
+    returning id, selected_plan_code, user_id, last_seen_at
+  `;
+  setSessionCookie(cookieStore, token);
+  return rows[0] as StoredSession;
+}
+
 export async function requireMvpSession(authenticatedUser?: User | null): Promise<MvpSession> {
   const cookieStore = await cookies();
-  let token = cookieStore.get(MVP_SESSION_COOKIE)?.value;
+  const token = cookieStore.get(MVP_SESSION_COOKIE)?.value;
   const db = getDb();
-  let existing: { id: string; selectedPlanCode: string; userId: string | null } | undefined;
-
-  if (token) {
-    const rows = await db`
-      update shorts_mvp.mvp_sessions
-      set last_seen_at = now()
-      where token_hash = ${hashToken(token)}
-      returning id, selected_plan_code, user_id
-    `;
-    existing = rows[0] as typeof existing;
-  }
-
+  const existing = await findStoredSession(db, token);
   const authUser = authenticatedUser === undefined ? await getAuthenticatedUser() : authenticatedUser;
   if (!authUser) {
     if (existing && !existing.userId) {
-      return { ...existing, user: null };
+      return {
+        id: existing.id,
+        selectedPlanCode: existing.selectedPlanCode,
+        userId: null,
+        user: null,
+      };
     }
-    token = randomBytes(32).toString("base64url");
-    const rows = await db`
-      insert into shorts_mvp.mvp_sessions (token_hash)
-      values (${hashToken(token)})
-      returning id, selected_plan_code, user_id
-    `;
-    setSessionCookie(cookieStore, token);
-    return { ...(rows[0] as Omit<MvpSession, "user">), user: null };
+    const created = await createStoredSession(db, cookieStore, null);
+    return { id: created.id, selectedPlanCode: created.selectedPlanCode, userId: null, user: null };
   }
 
   const profile = authProfile(authUser);
+  const appUsers = await db`
+    select id, selected_plan_code
+    from shorts_mvp.app_users
+    where auth_user_id=${authUser.id}
+    limit 1
+  `;
+  const appUser = appUsers[0] as { id: string; selectedPlanCode: string } | undefined;
+  if (!appUser) throw new Error("로그인 계정 연결이 완료되지 않았습니다. 다시 로그인해 주세요.");
+
+  const activeSession = existing?.userId === appUser.id
+    ? existing
+    : await createStoredSession(db, cookieStore, appUser.id, appUser.selectedPlanCode);
+
+  return {
+    id: activeSession.id,
+    selectedPlanCode: appUser.selectedPlanCode,
+    userId: appUser.id,
+    user: profile,
+  };
+}
+
+export async function requireAuthenticatedMvpSession(): Promise<MvpSession & { userId: string }> {
+  const session = await requireMvpSession();
+  if (!session.userId) throw new HttpError(401, "로그인이 필요합니다.");
+  return session as MvpSession & { userId: string };
+}
+
+export async function claimMvpSession(authenticatedUser: User): Promise<MvpSession> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(MVP_SESSION_COOKIE)?.value;
+  const db = getDb();
+  const existing = await findStoredSession(db, token);
+  const profile = authProfile(authenticatedUser);
   const preferredPlan = existing?.selectedPlanCode || "plus";
-  const provider = profileValue(authUser.app_metadata?.provider, 100) || "google";
+  const provider = profileValue(authenticatedUser.app_metadata?.provider, 100) || "google";
   const appUsers = await db`
     insert into shorts_mvp.app_users (
       auth_user_id, email, display_name, avatar_url, provider,
       selected_plan_code, last_sign_in_at
     ) values (
-      ${authUser.id}, ${profile.email}, ${profile.displayName}, ${profile.avatarUrl},
-      ${provider}, ${preferredPlan}, ${authUser.last_sign_in_at || new Date().toISOString()}
+      ${authenticatedUser.id}, ${profile.email}, ${profile.displayName}, ${profile.avatarUrl},
+      ${provider}, ${preferredPlan}, ${authenticatedUser.last_sign_in_at || new Date().toISOString()}
     )
     on conflict (auth_user_id) do update set
       email=excluded.email,
@@ -99,19 +166,9 @@ export async function requireMvpSession(authenticatedUser?: User | null): Promis
     returning id, selected_plan_code
   `;
   const appUser = appUsers[0] as { id: string; selectedPlanCode: string };
-
-  if (!existing || (existing.userId && existing.userId !== appUser.id)) {
-    token = randomBytes(32).toString("base64url");
-    const rows = await db`
-      insert into shorts_mvp.mvp_sessions (token_hash, selected_plan_code, user_id)
-      values (${hashToken(token)}, ${appUser.selectedPlanCode}, ${appUser.id})
-      returning id, selected_plan_code, user_id
-    `;
-    existing = rows[0] as typeof existing;
-    setSessionCookie(cookieStore, token);
-  }
-  if (!existing) throw new Error("로그인 세션을 만들지 못했습니다.");
-  const activeSession = existing;
+  const activeSession = !existing || (existing.userId && existing.userId !== appUser.id)
+    ? await createStoredSession(db, cookieStore, appUser.id, appUser.selectedPlanCode)
+    : existing;
 
   await db.begin(async (tx) => {
     await tx`

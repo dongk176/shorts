@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from shorts_worker.config import Settings
 from shorts_worker.renderer import VideoRenderer, video_layout
@@ -33,6 +34,7 @@ def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
     ("video_aspect_ratio", "expected_clean_size"),
     [
         (VideoAspectRatio.LANDSCAPE, (1080, 608)),
+        (VideoAspectRatio.LANDSCAPE_FIVE_FOUR, (1080, 864)),
         (VideoAspectRatio.SQUARE, (1080, 1080)),
         (VideoAspectRatio.PORTRAIT, (1080, 1350)),
         (VideoAspectRatio.FULL_VERTICAL, (1080, 1920)),
@@ -76,6 +78,8 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
     output = tmp_path / "storage" / "fixture.mp4"
     renderer = VideoRenderer(settings)
     clean = tmp_path / "clean.mp4"
+    channel_thumbnail = tmp_path / "channel-thumbnail.png"
+    Image.new("RGB", (128, 128), "#2166d1").save(channel_thumbnail)
     clip = HighlightClip(
         start_seconds=0.25,
         end_seconds=2.25,
@@ -98,6 +102,7 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
         subtitles_enabled=False,
         work_dir=tmp_path / "work",
         prefix="fixture",
+        channel_thumbnail_path=channel_thumbnail,
         video_aspect_ratio=video_aspect_ratio,
     )
 
@@ -132,6 +137,7 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
 
 def test_video_layout_centers_non_full_ratios_and_reserves_safe_overlays() -> None:
     assert video_layout(VideoAspectRatio.LANDSCAPE).video_y == 656
+    assert video_layout(VideoAspectRatio.LANDSCAPE_FIVE_FOUR).video_y == 528
     assert video_layout(VideoAspectRatio.SQUARE).video_y == 420
     assert video_layout(VideoAspectRatio.PORTRAIT).video_y == 285
     full = video_layout(VideoAspectRatio.FULL_VERTICAL)

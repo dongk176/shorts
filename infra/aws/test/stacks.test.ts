@@ -65,6 +65,10 @@ describe("shorts MVP infrastructure", () => {
         },
         Secrets: Match.arrayWith([
           Match.objectLike({ Name: "WARP_CONF_B64" }),
+          Match.objectLike({ Name: "WARP_CONF_A_B64" }),
+          Match.objectLike({ Name: "WARP_CONF_B_B64" }),
+          Match.objectLike({ Name: "WARP_CONF_C_B64" }),
+          Match.objectLike({ Name: "WARP_CONF_D_B64" }),
         ]),
       }),
     });
@@ -75,6 +79,11 @@ describe("shorts MVP infrastructure", () => {
         Environment: Match.arrayWith([
           { Name: "AWS_REGION", Value: "ap-northeast-2" },
           { Name: "AWS_DEFAULT_REGION", Value: "ap-northeast-2" },
+          { Name: "OPENAI_TRANSCRIBE_MODEL", Value: "gpt-4o-mini-transcribe" },
+          { Name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", Value: "gpt-5-nano" },
+          { Name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", Value: "30" },
+          { Name: "OPENAI_TRANSCRIBE_MAX_WORKERS", Value: "4" },
+          { Name: "WARP_BOT_CHECK_COOLDOWN_SECONDS", Value: "15" },
         ]),
       }),
     });

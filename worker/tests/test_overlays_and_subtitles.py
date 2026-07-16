@@ -12,7 +12,7 @@ from shorts_worker.overlays import (
     wrap_korean_title,
 )
 from shorts_worker.schemas import SubtitleSegment, TemplateId
-from shorts_worker.subtitles import AudioTranscriber, parse_subtitle_text
+from shorts_worker.subtitles import AudioTranscriber
 
 
 def test_korean_title_wraps_to_at_most_two_lines() -> None:
@@ -115,7 +115,32 @@ def test_channel_panel_sits_near_video(tmp_path: Path) -> None:
         assert max(y for _, y in visible_pixels) <= 120
 
 
-def test_full_vertical_panels_have_no_large_background_and_keep_line_accent(tmp_path: Path) -> None:
+def test_channel_panel_uses_circular_channel_thumbnail(tmp_path: Path) -> None:
+    avatar = tmp_path / "avatar.png"
+    Image.new("RGB", (120, 80), (33, 102, 209)).save(avatar)
+    output = create_channel_panel(
+        "실제 채널",
+        TemplateId.DARK_RED,
+        tmp_path / "channel-with-avatar.png",
+        channel_thumbnail_path=avatar,
+    )
+    with Image.open(output).convert("RGB") as image:
+        blue_pixels = [
+            (x, y)
+            for y in range(image.height)
+            for x in range(image.width)
+            if image.getpixel((x, y)) == (33, 102, 209)
+        ]
+        assert blue_pixels
+        assert max(x for x, _ in blue_pixels) - min(x for x, _ in blue_pixels) == 63
+        assert max(y for _, y in blue_pixels) - min(y for _, y in blue_pixels) == 63
+        top_left = (min(x for x, _ in blue_pixels), min(y for _, y in blue_pixels))
+        assert image.getpixel(top_left) == (0, 0, 0)
+
+
+def test_full_vertical_panels_keep_transparent_canvas_and_box_both_title_lines(
+    tmp_path: Path,
+) -> None:
     title = create_title_panel(
         "세로 화면 제목\n둘째 줄 강조",
         TemplateId.DARK_RED,
@@ -137,66 +162,31 @@ def test_full_vertical_panels_have_no_large_background_and_keep_line_accent(tmp_
             assert image.getbbox() is not None
     with Image.open(title).convert("RGBA") as image:
         assert image.getpixel((100, 180))[3] == 0
+        red_rows = sorted({
+            y
+            for y in range(image.height)
+            for x in range(image.width)
+            if image.getpixel((x, y)) == (227, 38, 38, 255)
+        })
+        assert red_rows
         assert any(
-            pixel == (227, 38, 38, 255)
-            for pixel in image.getdata()
+            current - previous > 1
+            for previous, current in zip(red_rows, red_rows[1:], strict=False)
         )
 
 
-def test_vtt_and_srt_cues_are_normalized() -> None:
-    content = """WEBVTT
-
-00:00:01.000 --> 00:00:03.500
-<c>첫 번째 자막</c>
-
-2
-00:00:04,000 --> 00:00:06,250
-두 번째 자막
-"""
-    segments = parse_subtitle_text(content)
-    assert [(item.start, item.end, item.text) for item in segments] == [
-        (1.0, 3.5, "첫 번째 자막"),
-        (4.0, 6.25, "두 번째 자막"),
-    ]
-
-
-def test_youtube_rolling_captions_emit_each_phrase_once() -> None:
-    content = """WEBVTT
-
-00:00:00.000 --> 00:00:02.149
-빼 놓을 수 없잖아요. 그런데 요즘 맛집 찾기 저만 어려운가요? 조금만
-
-00:00:02.149 --> 00:00:02.159
-맛집 찾기 저만 어려운가요? 조금만
-
-00:00:02.159 --> 00:00:04.710
-맛집 찾기 저만 어려운가요? 조금만 검색해도 광고, 광고, 또 광고.
-"""
-    segments = parse_subtitle_text(content)
-    assert [(item.start, item.end, item.text) for item in segments] == [
-        (
-            0.0,
-            2.149,
-            "빼 놓을 수 없잖아요. 그런데 요즘 맛집 찾기 저만 어려운가요? 조금만",
-        ),
-        (2.159, 4.71, "검색해도 광고, 광고, 또 광고."),
-    ]
-
-
-def test_repeated_caption_after_a_real_gap_is_preserved() -> None:
-    content = """WEBVTT
-
-00:00:00.000 --> 00:00:01.000
-정말 중요한 이야기입니다
-
-00:00:02.000 --> 00:00:03.000
-정말 중요한 이야기입니다
-"""
-    segments = parse_subtitle_text(content)
-    assert [item.text for item in segments] == [
-        "정말 중요한 이야기입니다",
-        "정말 중요한 이야기입니다",
-    ]
+def test_full_vertical_uses_second_line_text_color_for_both_rows(tmp_path: Path) -> None:
+    output = create_title_panel(
+        "첫 번째 제목\n두 번째 제목",
+        TemplateId.DARK_MINIMAL,
+        tmp_path / "vertical-title-color.png",
+        panel_height=360,
+        overlay_mode=True,
+    )
+    with Image.open(output).convert("RGBA") as image:
+        pixels = list(image.getdata())
+        assert (240, 68, 68, 255) in pixels
+        assert (255, 255, 255, 255) not in pixels
 
 
 def test_ass_subtitle_keeps_two_line_marker(tmp_path: Path) -> None:
@@ -218,7 +208,7 @@ def test_ass_subtitle_keeps_two_line_marker(tmp_path: Path) -> None:
     assert r"\\N" not in content
 
 
-def test_gpt4o_transcription_uses_supported_json_response(tmp_path: Path) -> None:
+def test_gpt4o_mini_transcription_uses_supported_json_response(tmp_path: Path) -> None:
     chunk = tmp_path / "audio.m4a"
     chunk.write_bytes(b"fixture")
     calls: list[dict[str, object]] = []
@@ -234,10 +224,19 @@ def test_gpt4o_transcription_uses_supported_json_response(tmp_path: Path) -> Non
         (),
         {"audio": type("Audio", (), {"transcriptions": Transcriptions()})()},
     )()
-    transcriber = AudioTranscriber(Settings(openai_transcribe_model="gpt-4o-transcribe"))
-    segments = transcriber._transcribe_chunk(client, chunk, duration=10, offset=5)
+    transcriber = AudioTranscriber(
+        Settings(openai_transcribe_model="gpt-4o-mini-transcribe")
+    )
+    result = transcriber._transcribe_chunk(
+        client,
+        index=0,
+        chunk=chunk,
+        duration=10,
+        offset=5,
+    )
 
     assert len(calls) == 1
+    assert calls[0]["model"] == "gpt-4o-mini-transcribe"
     assert calls[0]["response_format"] == "json"
-    assert segments[0].start == 5
-    assert segments[-1].end == 15
+    assert result.segments[0].start == 5
+    assert result.segments[-1].end == 15

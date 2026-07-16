@@ -11,6 +11,7 @@
     "infra:synth": "npm --prefix infra/aws run synth",
     "infra:setup": "bash scripts/setup-infrastructure.sh",
     "db:migrate": "bash scripts/apply-supabase.sh",
+    "db:backfill-project-owner": "node scripts/backfill-project-owner.mjs",
     "db:test": "node scripts/test-supabase.mjs",
     "verify": "bash scripts/verify-local.sh"
   }

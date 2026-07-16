@@ -9,10 +9,11 @@ import {
 } from "./contracts";
 
 describe("clip rules", () => {
-  it("defines the four supported video-region ratios and render sizes", () => {
-    expect(videoAspectRatios).toEqual(["16:9", "1:1", "4:5", "9:16"]);
+  it("defines the five supported video-region ratios and render sizes", () => {
+    expect(videoAspectRatios).toEqual(["16:9", "5:4", "1:1", "4:5", "9:16"]);
     expect(videoAspectRatioOptions.map(({ value, width, height }) => [value, width, height])).toEqual([
       ["16:9", 1080, 608],
+      ["5:4", 1080, 864],
       ["1:1", 1080, 1080],
       ["4:5", 1080, 1350],
       ["9:16", 1080, 1920],

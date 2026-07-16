@@ -2,23 +2,31 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   session: vi.fn(),
+  authenticatedSession: vi.fn(),
   getDb: vi.fn(),
   usage: vi.fn(),
   recentJobs: vi.fn(),
+  publicState: vi.fn(),
+  authenticatedUser: vi.fn(),
   analyze: vi.fn(),
   submitInitial: vi.fn(),
   submitRerender: vi.fn(),
   deleteObjects: vi.fn(),
 }));
 
-vi.mock("@/lib/session", () => ({ requireMvpSession: mocks.session }));
+vi.mock("@/lib/session", () => ({
+  requireMvpSession: mocks.session,
+  requireAuthenticatedMvpSession: mocks.authenticatedSession,
+}));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
+vi.mock("@/lib/supabase/server", () => ({ getAuthenticatedUser: mocks.authenticatedUser }));
 vi.mock("@/lib/usage", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/usage")>()),
   getUsageSnapshot: mocks.usage,
 }));
 vi.mock("@/lib/data", () => ({
   getRecentJobs: mocks.recentJobs,
+  getPublicMvpState: mocks.publicState,
   getPlans: vi.fn(),
 }));
 vi.mock("@/lib/youtube", async (importOriginal) => ({
@@ -32,8 +40,10 @@ vi.mock("@/lib/aws", () => ({
 }));
 
 import { GET as getJob } from "./jobs/[jobId]/route";
+import { HttpError } from "@/lib/http";
 import { POST as createJob } from "./jobs/route";
 import { POST as selectPlan } from "./mvp/plan/route";
+import { GET as getMvpState } from "./mvp/state/route";
 import { GET as accessShort } from "./shorts/[shortId]/access/route";
 import { GET as accessEditSource } from "./shorts/[shortId]/edit-source/route";
 import { POST as rerenderShort } from "./shorts/[shortId]/rerender/route";
@@ -77,17 +87,69 @@ const analysisRow = {
   youtubeVideoId: "dQw4w9WgXcQ",
   videoTitle: "테스트 영상",
   channelName: "채널",
+  channelThumbnailUrl: "https://yt3.ggpht.com/channel-avatar",
   thumbnailUrl: "https://example.com/thumb.jpg",
   durationSeconds: 600,
+  creationAllowed: true,
+  creationBlockCode: null,
+  creationBlockReason: null,
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.session.mockResolvedValue({ id: "session-a", selectedPlanCode: "plus", userId: null, user: null });
+  mocks.session.mockResolvedValue({
+    id: "session-a",
+    selectedPlanCode: "plus",
+    userId: "user-a",
+    user: { id: "auth-a", email: "owner@example.com", displayName: null, avatarUrl: null },
+  });
   mocks.usage.mockResolvedValue(usage);
+  mocks.publicState.mockResolvedValue({ plans: [], generatedShortCount: 4321 });
+  mocks.authenticatedSession.mockImplementation(() => mocks.session());
+  mocks.authenticatedUser.mockResolvedValue({ id: "auth-a" });
+});
+
+describe("MVP state visibility", () => {
+  it("does not query or return projects for an anonymous session", async () => {
+    mocks.authenticatedUser.mockResolvedValue(null);
+    mocks.publicState.mockResolvedValue({
+      plans: [{ code: "plus", displayName: "Plus", monthlySourceSeconds: 6000, retentionDays: 30 }],
+      generatedShortCount: 4321,
+    });
+    mocks.getDb.mockReturnValue(vi.fn());
+    const response = await getMvpState();
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ sessionId: null, user: null, recentJobs: [] });
+    expect(mocks.session).not.toHaveBeenCalled();
+    expect(mocks.usage).not.toHaveBeenCalled();
+    expect(mocks.recentJobs).not.toHaveBeenCalled();
+  });
+
+  it("returns only the authenticated user's project query result", async () => {
+    mocks.getDb.mockReturnValue(vi.fn());
+    mocks.recentJobs.mockResolvedValue([{ id: "job-a" }]);
+    const response = await getMvpState();
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ recentJobs: [{ id: "job-a" }] });
+    expect(mocks.recentJobs).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ userId: "user-a" }));
+  });
 });
 
 describe("job API security and idempotency", () => {
+  it("requires login before creating a job", async () => {
+    mocks.authenticatedSession.mockRejectedValue(new HttpError(401, "로그인이 필요합니다."));
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rangeStartSeconds: 0,
+      rangeEndSeconds: 120,
+      rightsConfirmed: true,
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d9",
+    }));
+    expect(response.status).toBe(401);
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
   it("rejects creation when rights confirmation is missing", async () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
@@ -138,6 +200,29 @@ describe("job API security and idempotency", () => {
     expect(mocks.submitInitial).not.toHaveBeenCalled();
   });
 
+  it("rejects job creation when the analysis is blocked by YouTube availability", async () => {
+    mocks.getDb.mockReturnValue(dbWithRows([], [{
+      ...analysisRow,
+      creationAllowed: false,
+      creationBlockCode: "region_restricted",
+      creationBlockReason: "국가별 시청 제한이 있는 영상은 쇼츠로 만들 수 없습니다.",
+    }]));
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rangeStartSeconds: 0,
+      rangeEndSeconds: 120,
+      rightsConfirmed: true,
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d4",
+    }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      detail: "국가별 시청 제한이 있는 영상은 쇼츠로 만들 수 없습니다.",
+    });
+    expect(mocks.submitInitial).not.toHaveBeenCalled();
+  });
+
   it("accepts an exact thirty-second range without a length option", async () => {
     mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
@@ -148,6 +233,21 @@ describe("job API security and idempotency", () => {
       rangeEndSeconds: 130,
       rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d2",
+    }));
+
+    expect(response.status).toBe(202);
+  });
+
+  it("accepts the 5:4 video region ratio", async () => {
+    mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      videoAspectRatio: "5:4",
+      rangeStartSeconds: 0,
+      rangeEndSeconds: 120,
+      rightsConfirmed: true,
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d4",
     }));
 
     expect(response.status).toBe(202);
@@ -176,7 +276,7 @@ describe("job API security and idempotency", () => {
     expect(response.status).toBe(404);
     expect(mocks.recentJobs).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ id: "session-a", userId: null }),
+      expect.objectContaining({ id: "session-a", userId: "user-a" }),
       "job-b",
     );
   });
@@ -184,6 +284,7 @@ describe("job API security and idempotency", () => {
 
 describe("plan API", () => {
   it("changes only the MVP session plan and preserves the usage snapshot", async () => {
+    mocks.session.mockResolvedValue({ id: "session-a", selectedPlanCode: "plus", userId: null, user: null });
     mocks.getDb.mockReturnValue(dbWithRows([]));
     const response = await selectPlan(jsonRequest("http://localhost/api/mvp/plan", {
       planCode: "pro",

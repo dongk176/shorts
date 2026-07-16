@@ -129,6 +129,21 @@ function objectValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function responseFieldShape(value: unknown, path = "root", depth = 0): string {
+  if (depth > 2) return "";
+  const object = objectValue(value);
+  if (!object) return "";
+  const safeKeys = Object.keys(object)
+    .filter((key) => /^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(key))
+    .slice(0, 20);
+  const parts = safeKeys.length ? [`${path}=[${safeKeys.join(",")}]`] : [];
+  for (const key of safeKeys) {
+    const child = objectValue(object[key]);
+    if (child) parts.push(responseFieldShape(child, `${path}.${key}`, depth + 1));
+  }
+  return parts.filter(Boolean).join(" ").slice(0, 700);
+}
+
 function sanitizedProviderDiagnostic(...values: unknown[]) {
   const messages = values
     .map((value) => stringValue(value, 128))
@@ -204,10 +219,10 @@ async function thePayOnePost(path: "/api/auth" | "/api/audt", payload: unknown) 
 export async function registerThePayOneCard(input: CardRegistrationRequest): Promise<CardRegistrationResult> {
   const { root, resultCode } = await thePayOnePost("/api/auth", {
     auth: {
-      // The 2025 manual documents trxType, while the live /api/auth service
-      // reports trnType as its required discriminator. Send both for compatibility.
+      // The live /api/auth service requires trnType, while recurring merchants
+      // must identify the card flow with trxType=card.
       trnType: "ONTR",
-      trxType: "ONTR",
+      trxType: "card",
       trackId: input.trackId,
       amount: 0,
       payerName: input.payerName,
@@ -229,13 +244,26 @@ export async function registerThePayOneCard(input: CardRegistrationRequest): Pro
       },
     },
   });
-  const auth = objectValue(root.auth) || objectValue(root.pay);
+  const auth = objectValue(root.auth);
   const card = objectValue(auth?.card);
   const cardId = stringValue(card?.cardId, 256);
   const transactionId = stringValue(auth?.trxId, 128);
-  const last4 = stringValue(card?.last4, 4) || input.cardNumber.slice(-4);
-  if (!auth || !card || !cardId || !transactionId || !/^\d{4}$/.test(last4)) {
-    throw new ThePayOneError("더페이원 카드 등록 응답에 필수 정보가 없습니다.");
+  const providerLast4 = stringValue(card?.last4, 16);
+  const last4 = providerLast4 && /^\d{4}$/.test(providerLast4)
+    ? providerLast4
+    : input.cardNumber.slice(-4);
+  if (!auth || !card || !cardId || !transactionId) {
+    const missing = [
+      !auth && "auth",
+      !card && "card",
+      !cardId && "cardId",
+      !transactionId && "trxId",
+    ].filter(Boolean).join(",");
+    throw new ThePayOneError(
+      "더페이원 카드 등록 응답에 필수 정보가 없습니다.",
+      "INVALID_SUCCESS_RESPONSE",
+      `누락: ${missing} · ${responseFieldShape(root)}`,
+    );
   }
   return {
     resultCode,

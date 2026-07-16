@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { OAUTH_NEXT_COOKIE, requestAppOrigin, safeNextPath } from "@/lib/auth";
-import { requireMvpSession } from "@/lib/session";
+import { claimMvpSession } from "@/lib/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
       const supabase = await createSupabaseServerClient();
       const { data, error } = await supabase.auth.exchangeCodeForSession(code);
       if (!error && data.user) {
-        await requireMvpSession(data.user);
+        await claimMvpSession(data.user);
         const response = NextResponse.redirect(new URL(next, requestAppOrigin(request)), { status: 303 });
         response.cookies.delete(OAUTH_NEXT_COOKIE);
         return response;

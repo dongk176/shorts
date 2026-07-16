@@ -4,14 +4,24 @@ from types import SimpleNamespace
 from shorts_worker import __main__ as worker_main
 
 
-def test_wireproxy_is_not_daemonized_twice() -> None:
+def test_entrypoint_starts_four_preconfigured_wireproxy_routes() -> None:
     script = (Path(__file__).parents[1] / "entrypoint.sh").read_text(encoding="utf-8")
 
     assert 'wireproxy -d' not in script
     assert "[Socks5]" in script
-    assert "BindAddress = 127.0.0.1:1080" in script
+    assert "WARP_CONF_${suffix}_B64" in script
+    assert "WARP_PROXY_ROUTES_JSON" in script
+    for port in range(1081, 1085):
+        assert f"{port}" in script
     assert 'touch /dev/log' in script
-    assert 'wireproxy -c "$WARP_CONFIG_PATH" &' in script
+    assert 'wireproxy -c "$config_path" &' in script
+
+
+def test_entrypoint_keeps_legacy_single_warp_configuration() -> None:
+    script = (Path(__file__).parents[1] / "entrypoint.sh").read_text(encoding="utf-8")
+
+    assert 'start_wireproxy "warp" "$WARP_CONF_B64" 1080 "$WARP_CONFIG_PATH"' in script
+    assert "Legacy WARP_CONF_B64 cannot be combined" in script
 
 
 def test_prepare_array_command_resolves_the_array_index(monkeypatch) -> None:

@@ -59,7 +59,7 @@ describe("ThePayOne client", () => {
     expect(body).toMatchObject({
       auth: {
         trnType: "ONTR",
-        trxType: "ONTR",
+        trxType: "card",
         amount: 0,
         udf2: "00",
         recurring: true,
@@ -71,6 +71,28 @@ describe("ThePayOne client", () => {
       },
     });
     expect(JSON.stringify(body)).not.toContain("merchant-test");
+  });
+
+  it("uses the submitted card suffix when the optional provider last4 is malformed", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: { resultCd: "0000" },
+      auth: {
+        trxId: "A260714000002",
+        card: { cardId: "card_test_token", last4: "" },
+      },
+    }), { status: 200 })));
+
+    const result = await registerThePayOneCard({
+      trackId: "EC-AUTH-TEST-LAST4",
+      payerName: "테스트",
+      payerEmail: "tester@example.com",
+      payerTel: "01012345678",
+      cardNumber: "4242424242420123",
+      expiry: "2910",
+      authDob: "900101",
+      authPw: "12",
+    });
+    expect(result.last4).toBe("0123");
   });
 
   it("uses the documented Korean 폐기 status", async () => {

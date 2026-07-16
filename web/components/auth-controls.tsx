@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AuthProfile } from "@/lib/session";
 
@@ -41,8 +41,23 @@ const loginProviders = [
   },
 ] as const;
 
-export function AuthControls({ user, next = "/" }: { user: AuthProfile | null; next?: string }) {
-  const [loginOpen, setLoginOpen] = useState(false);
+export function AuthControls({
+  user,
+  next = "/",
+  loginOpen: controlledLoginOpen,
+  onLoginOpenChange,
+}: {
+  user: AuthProfile | null;
+  next?: string;
+  loginOpen?: boolean;
+  onLoginOpenChange?: (open: boolean) => void;
+}) {
+  const [internalLoginOpen, setInternalLoginOpen] = useState(false);
+  const loginOpen = controlledLoginOpen ?? internalLoginOpen;
+  const setLoginOpen = useCallback((open: boolean) => {
+    if (controlledLoginOpen === undefined) setInternalLoginOpen(open);
+    onLoginOpenChange?.(open);
+  }, [controlledLoginOpen, onLoginOpenChange]);
 
   useEffect(() => {
     if (!loginOpen || user) return;
@@ -56,7 +71,7 @@ export function AuthControls({ user, next = "/" }: { user: AuthProfile | null; n
       document.removeEventListener("keydown", closeOnEscape);
       document.body.style.overflow = previousOverflow;
     };
-  }, [loginOpen, user]);
+  }, [loginOpen, setLoginOpen, user]);
 
   if (!user) {
     return (
