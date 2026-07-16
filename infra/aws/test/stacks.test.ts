@@ -71,6 +71,18 @@ describe("shorts MVP infrastructure", () => {
     const jobDefinitions = Object.values(
       compute.findResources("AWS::Batch::JobDefinition")
     ) as Array<Record<string, unknown>>;
+    const jobDefinition = (name: string) => jobDefinitions.find((definition) => (
+      (definition.Properties as Record<string, unknown>)?.JobDefinitionName === name
+    ));
+    const prepareJobDefinition = jobDefinition("shorts-mvp-prepare-test");
+    const renderJobDefinition = jobDefinition("shorts-mvp-render-test");
+
+    expect(prepareJobDefinition).toBeDefined();
+    expect(renderJobDefinition).toBeDefined();
+    expect(JSON.stringify(prepareJobDefinition)).toContain("INGESTION_EGRESS_MODE");
+    expect(JSON.stringify(prepareJobDefinition)).toContain("INGESTION_BOT_CHECK_COOLDOWN_SECONDS");
+    expect(JSON.stringify(prepareJobDefinition)).toContain("INGESTION_PROXY_ROUTES_JSON");
+    expect(JSON.stringify(renderJobDefinition)).not.toContain("INGESTION_");
     expect(
       jobDefinitions.filter((definition) => (
         JSON.stringify(definition).includes("INGESTION_PROXY_ROUTES_JSON")
@@ -94,7 +106,7 @@ describe("shorts MVP infrastructure", () => {
           { Name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", Value: "30" },
           { Name: "OPENAI_TRANSCRIBE_MAX_WORKERS", Value: "4" },
           { Name: "INGESTION_EGRESS_MODE", Value: "webshare_isp" },
-          { Name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", Value: "300" },
+          { Name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", Value: "30" },
         ]),
       }),
     });

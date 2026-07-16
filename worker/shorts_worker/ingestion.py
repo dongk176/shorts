@@ -360,6 +360,10 @@ class YtDlpIngestionProvider(IngestionProvider):
             return None
         return self._route_pool.required(route_id).egress_class
 
+    @property
+    def configured_route_count(self) -> int:
+        return len(self._route_pool.routes) if self._route_pool is not None else 0
+
     def _retry_delay_seconds(self, failed_attempt: int) -> float:
         if self.retry_backoff_seconds <= 0:
             return 0.0
@@ -428,9 +432,15 @@ class YtDlpIngestionProvider(IngestionProvider):
             "--no-playlist",
             "--no-warnings",
             "--socket-timeout",
-            "20",
+            "15",
             "--retries",
-            "2",
+            "1",
+            "--fragment-retries",
+            "1",
+            "--extractor-retries",
+            "1",
+            "--file-access-retries",
+            "1",
         ]
 
     def _run(

@@ -123,6 +123,31 @@ class WorkerRepository:
             ).fetchone()
             return bool(row and row["released"])
 
+    def rotate_ingestion_route(
+        self,
+        job_id: str,
+        current_route_id: str | None,
+        *,
+        result: str,
+        cooldown_seconds: int,
+        excluded_route_ids: list[str],
+    ) -> str | None:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                select route_id
+                from shorts_mvp.rotate_ingestion_route(%s,%s,%s,%s,%s::text[])
+                """,
+                (
+                    job_id,
+                    current_route_id,
+                    result,
+                    cooldown_seconds,
+                    excluded_route_ids,
+                ),
+            ).fetchone()
+            return str(row["route_id"]) if row and row.get("route_id") else None
+
     def get_short(self, short_id: str) -> dict[str, Any] | None:
         with self.connect() as connection:
             return connection.execute(

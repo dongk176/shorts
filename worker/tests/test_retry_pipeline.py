@@ -49,6 +49,7 @@ def _worker(tmp_path, error: Exception) -> BatchWorker:
     worker.repository.can_retry_prepare.return_value = True
     worker.repository.ingestion_slot.side_effect = _context
     worker.ingestion = MagicMock()
+    worker.ingestion.configured_route_count = 10
     worker.ingestion.download_bundle.side_effect = error
     worker.storage = MagicMock()
     worker.queue = MagicMock()
@@ -335,20 +336,76 @@ def test_bot_check_array_attempt_does_not_requeue_parent(tmp_path, monkeypatch) 
     )
 
 
-def test_centrally_assigned_isp_route_is_released_and_requeued_on_bot_check(
+def test_centrally_assigned_isp_route_rotates_inline_without_requeue(
     tmp_path,
 ) -> None:
     worker = _worker(tmp_path, BotCheckError("bot check"))
     worker.repository.get_job.return_value["ingestion_route_id"] = "webshare-03"
     worker.ingestion.egress_class_for.return_value = "webshare_isp"
+    worker.ingestion.configured_route_count = 2
+    worker.repository.rotate_ingestion_route.return_value = "webshare-04"
 
     worker.prepare("job-a")
 
-    worker.repository.release_ingestion_route.assert_called_once_with(
-        "job-a", "webshare-03", result="bot_check", cooldown_seconds=300
+    assert [
+        call.kwargs["route_id"]
+        for call in worker.ingestion.download_bundle.call_args_list
+    ] == ["webshare-03", "webshare-04"]
+    worker.repository.rotate_ingestion_route.assert_called_once_with(
+        "job-a",
+        "webshare-03",
+        result="bot_check",
+        cooldown_seconds=30,
+        excluded_route_ids=["webshare-03"],
     )
-    worker.repository.retry_job.assert_called_once()
-    worker.repository.fail_job.assert_not_called()
+    worker.repository.release_ingestion_route.assert_called_once_with(
+        "job-a", "webshare-04", result="bot_check", cooldown_seconds=30
+    )
+    worker.repository.retry_job.assert_not_called()
+    worker.repository.fail_job.assert_called_once_with(
+        "job-a",
+        "RetryExhaustedIngestionError",
+        worker.FINAL_INGESTION_MESSAGE,
+    )
+
+
+def test_inline_rotation_can_try_all_ten_configured_routes(tmp_path) -> None:
+    worker = _worker(tmp_path, AssertionError("replaced below"))
+    worker.ingestion.configured_route_count = 10
+    worker.ingestion.egress_class_for.return_value = "webshare_isp"
+    successful_bundle = DownloadedAssetBundle(
+        metadata=VideoMetadata("dQw4w9WgXcQ", "테스트 영상", "채널", "", 120),
+        video_path=tmp_path / "source.mp4",
+    )
+    worker.ingestion.download_bundle.side_effect = [
+        *(BotCheckError("bot check") for _ in range(9)),
+        successful_bundle,
+    ]
+    worker.repository.rotate_ingestion_route.side_effect = [
+        f"webshare-{index:02d}" for index in range(2, 11)
+    ]
+
+    bundle, route_id = worker._download_with_inline_route_rotation(
+        job_id="job-a",
+        job_attempt=1,
+        youtube_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        destination=tmp_path / "source",
+        range_start_seconds=None,
+        range_end_seconds=None,
+        initial_route_id="webshare-01",
+    )
+
+    assert bundle is successful_bundle
+    assert route_id == "webshare-10"
+    assert [
+        call.kwargs["route_id"]
+        for call in worker.ingestion.download_bundle.call_args_list
+    ] == [f"webshare-{index:02d}" for index in range(1, 11)]
+    assert worker.repository.rotate_ingestion_route.call_count == 9
+    worker.repository.release_ingestion_route.assert_called_once_with(
+        "job-a", "webshare-10", result="success", cooldown_seconds=0
+    )
+    worker.repository.retry_job.assert_not_called()
 
 
 def test_prepare_does_not_start_inside_the_last_five_minutes(tmp_path) -> None:
