@@ -9,6 +9,7 @@ import {
   templateIds,
   videoAspectRatios,
 } from "@/lib/contracts";
+import { wakeOutboxDispatcher } from "@/lib/aws";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
 import { getInitialJobBackend } from "@/lib/job-backend";
@@ -150,6 +151,17 @@ export async function POST(request: Request) {
         status: duplicate.status,
         usage: await getUsageSnapshot(db, session),
       });
+    }
+
+    if (executionBackend === "aws_batch") {
+      try {
+        await wakeOutboxDispatcher();
+      } catch (error) {
+        console.error("outbox_dispatch_wake_failed", {
+          jobId,
+          errorName: error instanceof Error ? error.name : "UnknownError",
+        });
+      }
     }
 
     return NextResponse.json({

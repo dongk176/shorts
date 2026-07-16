@@ -1,4 +1,5 @@
 import { DeleteObjectsCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
+import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 
 const region = process.env.AWS_REGION || "ap-northeast-2";
@@ -14,6 +15,17 @@ function credentials() {
 }
 
 function s3Client() { return new S3Client({ region, credentials: credentials() }); }
+function lambdaClient() { return new LambdaClient({ region, credentials: credentials() }); }
+
+export async function wakeOutboxDispatcher() {
+  const functionArn = process.env.AWS_OUTBOX_DISPATCHER_FUNCTION_ARN;
+  if (!functionArn) throw new Error("AWS_OUTBOX_DISPATCHER_FUNCTION_ARN이 설정되지 않았습니다.");
+  await lambdaClient().send(new InvokeCommand({
+    FunctionName: functionArn,
+    InvocationType: "Event",
+    Payload: new TextEncoder().encode(JSON.stringify({ source: "job_created" })),
+  }));
+}
 
 export function latestJobDefinitionName(value: string) {
   const arnName = /:job-definition\/([^:]+)(?::\d+)?$/.exec(value)?.[1];
