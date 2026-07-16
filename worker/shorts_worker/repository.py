@@ -103,8 +103,25 @@ class WorkerRepository:
 
     @contextmanager
     def ingestion_slot(self) -> Iterator[None]:
-        """Allow parallel YouTube acquisition."""
+        """Compatibility context; production slots are reserved by the dispatcher."""
         yield
+
+    def release_ingestion_route(
+        self,
+        job_id: str,
+        route_id: str,
+        *,
+        result: str,
+        cooldown_seconds: int = 0,
+    ) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                select shorts_mvp.release_ingestion_route(%s,%s,%s,%s) as released
+                """,
+                (job_id, route_id, result, cooldown_seconds),
+            ).fetchone()
+            return bool(row and row["released"])
 
     def get_short(self, short_id: str) -> dict[str, Any] | None:
         with self.connect() as connection:
@@ -151,16 +168,29 @@ class WorkerRepository:
         self.claim_prepare_attempt(job_id, attempt_override=attempt)
 
     def retry_job(self, job_id: str, error_code: str, message: str) -> None:
-        with self.connect() as connection:
-            connection.execute(
+        with self.connect() as connection, connection.transaction():
+            retry = connection.execute(
                 """
                 update shorts_mvp.video_jobs
                 set status='retry_waiting', stage='downloading', progress=10,
                   next_attempt_at=now() + interval '60 seconds',
                   error_code=%s, error_message=null, heartbeat_at=now()
                 where id=%s and status not in ('completed','failed','expired','deleted')
+                  and attempt_count < 10 and queue_expires_at > now()
+                returning attempt_count,next_attempt_at
                 """,
                 (error_code[:100], job_id),
+            ).fetchone()
+            if not retry:
+                return
+            connection.execute(
+                """
+                insert into shorts_mvp.job_outbox
+                  (job_id,kind,attempt_count,available_at)
+                values (%s,'prepare',%s,%s)
+                on conflict (job_id,kind,attempt_count) do nothing
+                """,
+                (job_id, retry["attempt_count"], retry["next_attempt_at"]),
             )
             connection.execute(
                 """
@@ -229,11 +259,23 @@ class WorkerRepository:
                 ),
             )
 
-    def record_ingestion_result(self, job_id: str, result: str) -> None:
+    def record_ingestion_result(
+        self,
+        job_id: str,
+        result: str,
+        *,
+        route_id: str | None = None,
+        egress_class: str | None = None,
+        job_attempt: int | None = None,
+    ) -> None:
         with self.connect() as connection, connection.transaction():
             connection.execute(
-                "insert into shorts_mvp.ingestion_attempts (job_id,result) values (%s,%s)",
-                (job_id, result),
+                """
+                insert into shorts_mvp.ingestion_attempts
+                  (job_id,result,route_id,egress_class,job_attempt)
+                values (%s,%s,%s,%s,%s)
+                """,
+                (job_id, result, route_id, egress_class, job_attempt),
             )
             recent = connection.execute(
                 """

@@ -140,10 +140,11 @@ make verify
 플랫폼 정책은 별개이므로 유료 상용화 전 법무 검토가 필요합니다. 운영 기준과 네트워크 경로는
 [YouTube ingestion risk policy](docs/youtube-compliance.md)를 따릅니다.
 
-Worker는 회사가 관리하는 direct, WARP, contracted fallback proxy를 네트워크 라우팅과 연결 장애
-대응에 사용할 수 있습니다. DNS·TLS·connection reset·timeout 같은 연결 오류에만 다른 승인 경로로
-failover합니다. BOT_CHECK/429·로그인·연령·유료·지역·비공개·DRM 제한이 확인되면 회로를 열고,
-이를 피하기 위한 계정·쿠키·토큰·프록시·IP·지역·client 회전은 하지 않습니다.
+Worker의 활성 YouTube 수집 경로는 AWS Secrets Manager에 보관한 Dedicated ISP proxy 10개입니다.
+Dispatcher가 IP별 다운로드 슬롯을 하나씩 예약하므로 동시에 최대 10개만 다운로드하고, 나머지
+작업은 Outbox에서 기다립니다. 연결 오류, BOT_CHECK, HTTP 429는 승인된 다른 ISP 경로로 최대
+10회 재시도할 수 있습니다. 로그인·연령·유료·지역·비공개·DRM 제한은 경로를 바꾸지 않고 즉시
+종료합니다. WARP 설정은 안정화 기간의 수동 롤백 용도로만 보관하며 활성 작업에는 주입하지 않습니다.
 
 원본 전체는 S3에 저장하지 않으며 작업 중 임시 디스크에만 존재하고 `finally`에서 삭제됩니다.
 얼굴/화자 추적 없이 중앙 crop하며 AI 품질은 원본 음질과 전사 품질에 좌우됩니다.

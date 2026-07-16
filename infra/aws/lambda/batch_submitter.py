@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.parse
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import boto3
@@ -12,12 +12,6 @@ from common import iso_now, log_event, patch, rest
 batch = boto3.client("batch")
 sqs = boto3.client("sqs")
 queue_url = os.environ["WORK_DISPATCH_QUEUE_URL"]
-FINAL_MESSAGE = (
-    "영상을 가져오지 못했습니다. 영상이 공개 상태인지, 로그인·연령·지역 제한이 "
-    "없는지, 삭제되거나 비공개 처리되지 않았는지 확인한 뒤 다시 시도해 주세요."
-)
-
-
 def _prepare_gate() -> str:
     rows = rest(
         "rpc/claim_ingestion_gate",
@@ -136,7 +130,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
         encoded = urllib.parse.quote(job_id, safe="")
         failed_batch_id = payload.get("failedBatchJobId")
         rows = rest("video_jobs", query=(
-            "select=id,attempt_count,deadline_at,status,aws_batch_job_id"
+            "select=id,attempt_count,status,aws_batch_job_id"
             f"&id=eq.{encoded}&limit=1"
         )) or []
         if not rows:
@@ -144,50 +138,15 @@ def _submit(payload: dict[str, Any]) -> str | None:
         job = rows[0]
         if failed_batch_id and job.get("aws_batch_job_id") != failed_batch_id:
             return None
-        deadline = datetime.fromisoformat(job["deadline_at"].replace("Z", "+00:00"))
-        if job["status"] != "retry_waiting" or int(job["attempt_count"]) >= 10 \
-                or deadline <= datetime.now(UTC) + timedelta(minutes=5):
-            patch("video_jobs", f"id=eq.{encoded}&status=eq.retry_waiting", {
-                "status": "failed", "stage": "failed", "progress": 100,
-                "error_code": "prepare_deadline", "error_message": FINAL_MESSAGE,
-                "source_deleted_at": iso_now(),
-            })
-            patch("usage_reservations", f"job_id=eq.{encoded}&status=eq.reserved", {
-                "status": "released", "released_at": iso_now(),
-            })
+        if job["status"] != "retry_waiting" or int(job["attempt_count"]) >= 10:
             return None
-        prepare_gate = _prepare_gate()
-        if prepare_gate == "wait":
-            _delay(payload)
-            return None
-        next_attempt = int(job["attempt_count"]) + 1
-        job_name = f"shorts-retry-{job_id}-a{next_attempt}"
-        request = dict(
-            jobName=job_name,
-            jobQueue=os.environ["PREPARE_BATCH_QUEUE"],
-            jobDefinition=os.environ["PREPARE_JOB_DEFINITION"],
-            containerOverrides={"command": [
-                "python", "-m", "shorts_worker", "prepare", "--job-id", job_id,
-                "--attempt", str(next_attempt),
-            ]},
-            retryStrategy={"attempts": 1},
-            timeout={"attemptDurationSeconds": 3600},
+        rest(
+            "rpc/enqueue_prepare_retry",
+            method="POST",
+            body={"p_job_id": job_id},
+            prefer="return=representation",
         )
-        retry_batch_id = _submit_once(
-            request, f"prepare-retry:{job_id}:{next_attempt}"
-        )
-        update_query = f"id=eq.{encoded}"
-        if failed_batch_id:
-            update_query += (
-                f"&aws_batch_job_id=eq.{urllib.parse.quote(str(failed_batch_id), safe='')}"
-            )
-        else:
-            update_query += "&status=eq.retry_waiting"
-        patch("video_jobs", update_query, {
-            "aws_batch_job_id": retry_batch_id, "dispatch_batch_id": None,
-            "attempt_count": next_attempt, "next_attempt_at": None,
-        })
-        return retry_batch_id
+        return None
     if kind == "render":
         job_id = str(payload["jobId"])
         count = max(1, int(payload["shardCount"]))

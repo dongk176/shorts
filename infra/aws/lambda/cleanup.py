@@ -145,10 +145,16 @@ def release_stale_jobs() -> int:
 
 def enforce_deadlines() -> int:
     now = urllib.parse.quote(iso_now(), safe="")
-    jobs = rest("video_jobs", query=(
+    processing_jobs = rest("video_jobs", query=(
         "select=id,aws_batch_job_id,status,dispatch_batch_id"
-        f"&deadline_at=lte.{now}&status=not.in.(completed,failed,expired,deleted)&limit=500"
+        f"&deadline_at=lte.{now}"
+        "&status=not.in.(completed,failed,expired,deleted,queued,retry_waiting)&limit=500"
     )) or []
+    queued_jobs = rest("video_jobs", query=(
+        "select=id,aws_batch_job_id,status,dispatch_batch_id"
+        f"&queue_expires_at=lte.{now}&status=in.(queued,retry_waiting)&limit=500"
+    )) or []
+    jobs = list({job["id"]: job for job in [*processing_jobs, *queued_jobs]}.values())
     enforced = 0
     for job in jobs:
         claimed = rest(

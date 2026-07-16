@@ -64,14 +64,19 @@ describe("shorts MVP infrastructure", () => {
           OperatingSystemFamily: "LINUX",
         },
         Secrets: Match.arrayWith([
-          Match.objectLike({ Name: "WARP_CONF_B64" }),
-          Match.objectLike({ Name: "WARP_CONF_A_B64" }),
-          Match.objectLike({ Name: "WARP_CONF_B_B64" }),
-          Match.objectLike({ Name: "WARP_CONF_C_B64" }),
-          Match.objectLike({ Name: "WARP_CONF_D_B64" }),
+          Match.objectLike({ Name: "INGESTION_PROXY_ROUTES_JSON" }),
         ]),
       }),
     });
+    const jobDefinitions = Object.values(
+      compute.findResources("AWS::Batch::JobDefinition")
+    ) as Array<Record<string, unknown>>;
+    expect(
+      jobDefinitions.filter((definition) => (
+        JSON.stringify(definition).includes("INGESTION_PROXY_ROUTES_JSON")
+      ))
+    ).toHaveLength(1);
+    expect(JSON.stringify(jobDefinitions)).not.toContain("WARP_CONF_B64");
     expect(JSON.stringify(compute.toJSON())).toContain("test-worker-image");
     expect(JSON.stringify(compute.toJSON())).not.toContain(":latest");
     compute.hasResourceProperties("AWS::Batch::JobDefinition", {
@@ -83,16 +88,17 @@ describe("shorts MVP infrastructure", () => {
           { Name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", Value: "gpt-5-nano" },
           { Name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", Value: "30" },
           { Name: "OPENAI_TRANSCRIBE_MAX_WORKERS", Value: "4" },
-          { Name: "WARP_BOT_CHECK_COOLDOWN_SECONDS", Value: "15" },
+          { Name: "INGESTION_EGRESS_MODE", Value: "webshare_isp" },
+          { Name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", Value: "300" },
         ]),
       }),
     });
     compute.hasResourceProperties("AWS::Logs::LogGroup", { RetentionInDays: 14 });
     compute.hasResourceProperties("AWS::EC2::SecurityGroup", {
       SecurityGroupEgress: Match.arrayWith([Match.objectLike({
-        IpProtocol: "udp",
-        FromPort: 2408,
-        ToPort: 2408,
+        IpProtocol: "tcp",
+        FromPort: 1000,
+        ToPort: 9999,
       })]),
     });
   });
