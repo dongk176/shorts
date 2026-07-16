@@ -355,7 +355,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         environment: [
           ...baseContainer.environment,
           { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
-          { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "300" },
+          { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "30" },
         ],
         secrets: [
           ...baseContainer.secrets,

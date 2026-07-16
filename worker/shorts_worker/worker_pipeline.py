@@ -5,10 +5,12 @@ import math
 import os
 import shutil
 import threading
+import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from functools import cached_property
 from pathlib import Path
 from uuid import uuid4
 
@@ -18,9 +20,10 @@ from .errors import (
     BotCheckError,
     IngestionError,
     RetryableIngestionError,
+    RetryExhaustedIngestionError,
     TranscriptionError,
 )
-from .ingestion import YtDlpIngestionProvider
+from .ingestion import DownloadedAssetBundle, YtDlpIngestionProvider
 from .media import media_duration, probe_media, run_command
 from .queueing import WorkQueue
 from .renderer import VideoRenderer
@@ -98,17 +101,26 @@ def is_partial_range_requested(
 
 
 class BatchWorker:
+    MAX_INLINE_INGESTION_ROUTES = 10
+    INGESTION_ROUTE_WAIT_SECONDS = 30.0
+    INGESTION_ROUTE_POLL_SECONDS = 1.0
+
     def __init__(self, settings: Settings) -> None:
         settings.validate_runtime()
         settings.ensure_directories()
         self.settings = settings
         self.repository = WorkerRepository(str(settings.database_url), settings.aws_region)
         self.storage = ObjectStorage(str(settings.s3_bucket), settings.aws_region)
-        self.ingestion = YtDlpIngestionProvider(timeout_seconds=settings.download_timeout_seconds)
         self.transcriber = AudioTranscriber(settings)
         self.selector = TranscriptSelector(settings)
         self.renderer = VideoRenderer(settings)
         self.queue = WorkQueue(settings.aws_region)
+
+    @cached_property
+    def ingestion(self) -> YtDlpIngestionProvider:
+        return YtDlpIngestionProvider(
+            timeout_seconds=self.settings.download_timeout_seconds
+        )
 
     FINAL_INGESTION_MESSAGE = (
         "영상을 가져오지 못했습니다. 영상이 공개 상태인지, 로그인·연령·지역 제한이 "
@@ -248,13 +260,201 @@ class BatchWorker:
     def initial(self, job_id: str, *, attempt_override: int | None = None) -> None:
         self.prepare(job_id, attempt_override=attempt_override)
 
+    def _claim_next_ingestion_route(
+        self,
+        *,
+        job_id: str,
+        current_route_id: str,
+        result: str,
+        cooldown_seconds: int,
+        attempted_route_ids: list[str],
+    ) -> str | None:
+        next_route_id = self.repository.rotate_ingestion_route(
+            job_id,
+            current_route_id,
+            result=result,
+            cooldown_seconds=cooldown_seconds,
+            excluded_route_ids=list(attempted_route_ids),
+        )
+        if next_route_id:
+            return next_route_id
+
+        wait_deadline = time.monotonic() + self.INGESTION_ROUTE_WAIT_SECONDS
+        _log_event(
+            "ingestion_route_wait_started",
+            job_id=job_id,
+            attempted_route_count=len(attempted_route_ids),
+            max_wait_seconds=self.INGESTION_ROUTE_WAIT_SECONDS,
+        )
+        while time.monotonic() < wait_deadline:
+            remaining = wait_deadline - time.monotonic()
+            time.sleep(min(self.INGESTION_ROUTE_POLL_SECONDS, max(0.0, remaining)))
+            next_route_id = self.repository.rotate_ingestion_route(
+                job_id,
+                None,
+                result=result,
+                cooldown_seconds=0,
+                excluded_route_ids=list(attempted_route_ids),
+            )
+            if next_route_id:
+                return next_route_id
+        return None
+
+    def _download_with_inline_route_rotation(
+        self,
+        *,
+        job_id: str,
+        job_attempt: int,
+        youtube_url: str,
+        destination: Path,
+        range_start_seconds: float | None,
+        range_end_seconds: float | None,
+        initial_route_id: str | None,
+    ) -> tuple[DownloadedAssetBundle, str | None]:
+        if not initial_route_id:
+            return (
+                self.ingestion.download_bundle(
+                    youtube_url,
+                    destination,
+                    range_start_seconds=range_start_seconds,
+                    range_end_seconds=range_end_seconds,
+                    job_id=job_id,
+                    route_id=None,
+                ),
+                None,
+            )
+
+        max_route_attempts = max(
+            1,
+            min(
+                self.MAX_INLINE_INGESTION_ROUTES,
+                self.ingestion.configured_route_count,
+            ),
+        )
+        attempted_route_ids: list[str] = []
+        route_id = initial_route_id
+        route_is_leased = True
+
+        try:
+            while True:
+                egress_class = self.ingestion.egress_class_for(route_id)
+                try:
+                    bundle = self.ingestion.download_bundle(
+                        youtube_url,
+                        destination,
+                        range_start_seconds=range_start_seconds,
+                        range_end_seconds=range_end_seconds,
+                        job_id=job_id,
+                        route_id=route_id,
+                    )
+                except (BotCheckError, RetryableIngestionError) as exc:
+                    is_bot_check = isinstance(exc, BotCheckError)
+                    route_result = "bot_check" if is_bot_check else "network_error"
+                    ingestion_result = "bot_check" if is_bot_check else "other_error"
+                    cooldown_seconds = 30
+                    attempted_route_ids.append(route_id)
+                    self.repository.record_ingestion_result(
+                        job_id,
+                        ingestion_result,
+                        route_id=route_id,
+                        egress_class=egress_class,
+                        job_attempt=job_attempt,
+                    )
+                    _log_event(
+                        "ingestion_route_attempt_failed",
+                        job_id=job_id,
+                        route_id=route_id,
+                        error_type=type(exc).__name__,
+                        attempted_route_count=len(attempted_route_ids),
+                        max_route_attempts=max_route_attempts,
+                    )
+                    if len(attempted_route_ids) >= max_route_attempts:
+                        self.repository.release_ingestion_route(
+                            job_id,
+                            route_id,
+                            result=route_result,
+                            cooldown_seconds=cooldown_seconds,
+                        )
+                        route_is_leased = False
+                        raise RetryExhaustedIngestionError(
+                            "사용 가능한 모든 ISP 경로에서 원본 영상 다운로드가 실패했습니다."
+                        ) from exc
+
+                    shutil.rmtree(destination, ignore_errors=True)
+                    destination.mkdir(parents=True, exist_ok=True)
+                    next_route_id = self._claim_next_ingestion_route(
+                        job_id=job_id,
+                        current_route_id=route_id,
+                        result=route_result,
+                        cooldown_seconds=cooldown_seconds,
+                        attempted_route_ids=attempted_route_ids,
+                    )
+                    route_is_leased = bool(next_route_id)
+                    if not next_route_id:
+                        raise RetryExhaustedIngestionError(
+                            "대기 시간 안에 사용할 수 있는 ISP 경로를 확보하지 못했습니다."
+                        ) from exc
+                    route_id = next_route_id
+                except IngestionError:
+                    self.repository.record_ingestion_result(
+                        job_id,
+                        "other_error",
+                        route_id=route_id,
+                        egress_class=egress_class,
+                        job_attempt=job_attempt,
+                    )
+                    self.repository.release_ingestion_route(
+                        job_id,
+                        route_id,
+                        result="terminal",
+                        cooldown_seconds=0,
+                    )
+                    route_is_leased = False
+                    raise
+                except Exception:
+                    self.repository.record_ingestion_result(
+                        job_id,
+                        "other_error",
+                        route_id=route_id,
+                        egress_class=egress_class,
+                        job_attempt=job_attempt,
+                    )
+                    self.repository.release_ingestion_route(
+                        job_id,
+                        route_id,
+                        result="terminal",
+                        cooldown_seconds=0,
+                    )
+                    route_is_leased = False
+                    raise
+                else:
+                    self.repository.release_ingestion_route(
+                        job_id,
+                        route_id,
+                        result="success",
+                        cooldown_seconds=0,
+                    )
+                    route_is_leased = False
+                    return bundle, route_id
+        finally:
+            if route_is_leased:
+                try:
+                    self.repository.release_ingestion_route(
+                        job_id,
+                        route_id,
+                        result="terminal",
+                        cooldown_seconds=0,
+                    )
+                except Exception:
+                    pass
+
     def prepare(self, job_id: str, *, attempt_override: int | None = None) -> None:
         job = self.repository.get_job(job_id)
         if not job:
             raise KeyError(job_id)
         route_id = str(job.get("ingestion_route_id") or "").strip() or None
         egress_class = self.ingestion.egress_class_for(route_id) if route_id else None
-        route_released = False
+        route_cleanup_owned_by_download = False
         work_dir = self.settings.temp_dir / job_id
         deadline = job.get("deadline_at")
         if int(job.get("attempt_count") or 0) >= 10 or (
@@ -290,64 +490,31 @@ class BatchWorker:
                     range_start_seconds=range_start_seconds,
                     range_end_seconds=range_end_seconds,
                 )
-                try:
-                    with self.repository.ingestion_slot():
-                        bundle = self.ingestion.download_bundle(
-                            job["youtube_url"],
-                            work_dir / "source",
-                            range_start_seconds=(
-                                range_start_seconds if partial_range_requested else None
-                            ),
-                            range_end_seconds=(
-                                range_end_seconds if partial_range_requested else None
-                            ),
-                            job_id=job_id,
-                            route_id=route_id,
-                        )
-                except BotCheckError:
-                    if route_id:
-                        self.repository.release_ingestion_route(
-                            job_id,
-                            route_id,
-                            result="bot_check",
-                            cooldown_seconds=300,
-                        )
-                        route_released = True
-                    raise
-                except RetryableIngestionError:
-                    if route_id:
-                        self.repository.release_ingestion_route(
-                            job_id,
-                            route_id,
-                            result="network_error",
-                            cooldown_seconds=60,
-                        )
-                        route_released = True
-                    raise
-                except IngestionError:
-                    if route_id:
-                        self.repository.release_ingestion_route(
-                            job_id,
-                            route_id,
-                            result="terminal",
-                            cooldown_seconds=0,
-                        )
-                        route_released = True
-                    raise
-                else:
-                    if route_id:
-                        self.repository.release_ingestion_route(
-                            job_id,
-                            route_id,
-                            result="success",
-                            cooldown_seconds=0,
-                        )
-                        route_released = True
+                route_cleanup_owned_by_download = bool(route_id)
+                with self.repository.ingestion_slot():
+                    bundle, successful_route_id = self._download_with_inline_route_rotation(
+                        job_id=job_id,
+                        job_attempt=attempt,
+                        youtube_url=job["youtube_url"],
+                        destination=work_dir / "source",
+                        range_start_seconds=(
+                            range_start_seconds if partial_range_requested else None
+                        ),
+                        range_end_seconds=(
+                            range_end_seconds if partial_range_requested else None
+                        ),
+                        initial_route_id=route_id,
+                    )
+                successful_egress_class = (
+                    self.ingestion.egress_class_for(successful_route_id)
+                    if successful_route_id
+                    else None
+                )
                 self.repository.record_ingestion_result(
                     job_id,
                     "success",
-                    route_id=route_id,
-                    egress_class=egress_class,
+                    route_id=successful_route_id,
+                    egress_class=successful_egress_class,
                     job_attempt=attempt,
                 )
                 metadata = bundle.metadata
@@ -488,53 +655,43 @@ class BatchWorker:
             self.repository.fail_job(job_id, type(exc).__name__, self.FINAL_PROCESSING_MESSAGE)
             raise
         except BotCheckError as exc:
-            retryable = bool(route_id) and self.repository.can_retry_prepare(job_id)
             _log_event(
                 "prepare_failed",
                 job_id=job_id,
                 attempt=attempt,
                 error_type=type(exc).__name__,
-                retryable=retryable,
+                retryable=False,
             )
             self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
-            self.repository.record_ingestion_result(
-                job_id,
-                "bot_check",
-                route_id=route_id,
-                egress_class=egress_class,
-                job_attempt=attempt,
-            )
-            if retryable:
-                self.repository.retry_job(job_id, type(exc).__name__, str(exc))
-            else:
-                self.repository.fail_job(
-                    job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
+            if not route_id:
+                self.repository.record_ingestion_result(
+                    job_id,
+                    "bot_check",
+                    route_id=None,
+                    egress_class=None,
+                    job_attempt=attempt,
                 )
+            self.repository.fail_job(job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE)
         except RetryableIngestionError as exc:
-            retryable = bool(route_id) and self.repository.can_retry_prepare(job_id)
             _log_event(
                 "prepare_failed",
                 job_id=job_id,
                 attempt=attempt,
                 error_type=type(exc).__name__,
-                retryable=retryable,
+                retryable=False,
             )
             self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
-            self.repository.record_ingestion_result(
-                job_id,
-                "other_error",
-                route_id=route_id,
-                egress_class=egress_class,
-                job_attempt=attempt,
-            )
-            if retryable:
-                self.repository.retry_job(job_id, type(exc).__name__, str(exc))
-            else:
-                self.repository.fail_job(
-                    job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE
+            if not route_id:
+                self.repository.record_ingestion_result(
+                    job_id,
+                    "other_error",
+                    route_id=None,
+                    egress_class=None,
+                    job_attempt=attempt,
                 )
+            self.repository.fail_job(job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE)
         except IngestionError as exc:
             _log_event(
                 "prepare_failed",
@@ -545,13 +702,14 @@ class BatchWorker:
             )
             self._cleanup_initial_objects(job)
             self.repository.remove_partial_shorts(job_id)
-            self.repository.record_ingestion_result(
-                job_id,
-                "other_error",
-                route_id=route_id,
-                egress_class=egress_class,
-                job_attempt=attempt,
-            )
+            if not route_id:
+                self.repository.record_ingestion_result(
+                    job_id,
+                    "other_error",
+                    route_id=None,
+                    egress_class=None,
+                    job_attempt=attempt,
+                )
             self.repository.fail_job(job_id, type(exc).__name__, self.FINAL_INGESTION_MESSAGE)
         except Exception as exc:
             _log_event(
@@ -574,7 +732,7 @@ class BatchWorker:
             traceback.print_exc()
             raise
         finally:
-            if route_id and not route_released:
+            if route_id and not route_cleanup_owned_by_download:
                 try:
                     self.repository.release_ingestion_route(
                         job_id,

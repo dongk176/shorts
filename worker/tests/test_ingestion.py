@@ -31,6 +31,19 @@ def _fake_success(args: list[str], info: dict[str, object]) -> subprocess.Comple
     return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
 
 
+def test_yt_dlp_retries_are_bounded_for_fast_route_failover() -> None:
+    args = YtDlpIngestionProvider._base_args()
+
+    assert args[args.index("--socket-timeout") + 1] == "15"
+    for option in (
+        "--retries",
+        "--fragment-retries",
+        "--extractor-retries",
+        "--file-access-retries",
+    ):
+        assert args[args.index(option) + 1] == "1"
+
+
 def test_youtube_bot_challenge_does_not_recommend_cookie_bypass(monkeypatch) -> None:
     monkeypatch.setattr(
         subprocess,

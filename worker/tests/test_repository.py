@@ -38,6 +38,13 @@ def test_route_release_uses_the_schema_qualified_atomic_function() -> None:
     assert "shorts_mvp.release_ingestion_route" in implementation
 
 
+def test_route_rotation_uses_the_schema_qualified_atomic_function() -> None:
+    implementation = inspect.getsource(WorkerRepository.rotate_ingestion_route)
+
+    assert "shorts_mvp.rotate_ingestion_route" in implementation
+    assert "%s::text[]" in implementation
+
+
 def test_webshare_migration_seeds_ten_central_slots_and_extends_deadline_on_admission() -> None:
     migration = (
         Path(__file__).parents[2]
@@ -51,6 +58,21 @@ def test_webshare_migration_seeds_ten_central_slots_and_extends_deadline_on_admi
     assert "for update of s skip locked" in migration
     assert "lease_expires_at=clock_timestamp() + interval '20 minutes'" in migration
     assert "30 + ceil(j.source_duration_seconds / 60.0)" in migration
+    assert "public." not in migration
+
+
+def test_inline_route_rotation_migration_locks_and_excludes_attempted_routes() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607170001_inline_ingestion_route_rotation.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "create or replace function shorts_mvp.rotate_ingestion_route" in migration
+    assert "for update of s skip locked" in migration
+    assert "p_excluded_route_ids" in migration
+    assert "lease_expires_at=clock_timestamp() + interval '20 minutes'" in migration
     assert "public." not in migration
 
 
