@@ -68,8 +68,10 @@ def classify_range_download(
     full_distance = abs(downloaded_duration_seconds - source_duration_seconds)
     selected_tolerance = max(2.0, min(5.0, selected_duration * 0.05))
     full_tolerance = max(2.0, min(5.0, source_duration_seconds * 0.02))
-    partial_range_requested = (
-        range_start_seconds > 0.5 or range_end_seconds < source_duration_seconds - 0.5
+    partial_range_requested = is_partial_range_requested(
+        source_duration_seconds=source_duration_seconds,
+        range_start_seconds=range_start_seconds,
+        range_end_seconds=range_end_seconds,
     )
 
     if not partial_range_requested:
@@ -81,6 +83,18 @@ def classify_range_download(
     if full_distance <= full_tolerance:
         return "full_source_unexpected"
     return "unexpected_duration"
+
+
+def is_partial_range_requested(
+    *,
+    source_duration_seconds: float,
+    range_start_seconds: float,
+    range_end_seconds: float,
+) -> bool:
+    return (
+        range_start_seconds > 0.5
+        or range_end_seconds < source_duration_seconds - 0.5
+    )
 
 
 class BatchWorker:
@@ -268,12 +282,21 @@ class BatchWorker:
                 range_start_seconds = float(job["range_start_seconds"])
                 range_end_seconds = float(job["range_end_seconds"])
                 source_duration_seconds = float(job["source_duration_seconds"])
+                partial_range_requested = is_partial_range_requested(
+                    source_duration_seconds=source_duration_seconds,
+                    range_start_seconds=range_start_seconds,
+                    range_end_seconds=range_end_seconds,
+                )
                 with self.repository.ingestion_slot():
                     bundle = self.ingestion.download_bundle(
                         job["youtube_url"],
                         work_dir / "source",
-                        range_start_seconds=range_start_seconds,
-                        range_end_seconds=range_end_seconds,
+                        range_start_seconds=(
+                            range_start_seconds if partial_range_requested else None
+                        ),
+                        range_end_seconds=(
+                            range_end_seconds if partial_range_requested else None
+                        ),
                         job_id=job_id,
                     )
                 self.repository.record_ingestion_result(job_id, "success")
