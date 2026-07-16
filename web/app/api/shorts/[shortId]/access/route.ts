@@ -4,21 +4,21 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
-import { requireMvpSession } from "@/lib/session";
+import { requireAuthenticatedMvpSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(_: Request, context: { params: Promise<{ shortId: string }> }) {
   try {
     const { shortId } = await context.params;
-    const session = await requireMvpSession();
+    const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const rows = await db`
       select output_s3_key, expires_at, render_version
       from shorts_mvp.generated_shorts
       where id=${shortId} and (
         (${session.userId}::uuid is not null and user_id=${session.userId})
-        or (${session.userId}::uuid is null and mvp_session_id=${session.id})
+        or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
       )
         and status in ('ready', 'rerendering') and deleted_at is null and expires_at > now()
     `;

@@ -1,7 +1,7 @@
 # YouTube ingestion risk policy
 
 Status: **controlled production use; legal review pending**
-Last reviewed: 2026-07-14
+Last reviewed: 2026-07-15
 Owner: 아티룸
 
 This is an engineering risk policy, not legal advice. YouTube's policies can
@@ -9,32 +9,34 @@ change, and qualified counsel should review the commercial service.
 
 ## Operating decision
 
-The service may process a supported public YouTube URL when the user expressly
-confirms that they own the content or have permission from the rights holder.
+The service may process any supported public YouTube URL.
 Private, paid, age-restricted, region-restricted, login-required, removed, or
 DRM-protected content remains unsupported.
 
-The service may use a small, preconfigured set of company-controlled egress paths,
-including direct AWS egress, WARP, or a contracted fallback proxy, for ordinary
+The service may use company-controlled egress paths,
+including direct AWS egress, WARP, ISP proxy pools, or contracted fallback proxies, for ordinary
 network routing and availability. Every egress must be documented, access-controlled,
 monitored, and subject to the same concurrency and request budgets.
 
-An egress path may fail over for connection failures such as DNS, TLS,
-connection reset, timeout, or an unavailable proxy. A bot challenge, HTTP 429,
-geographic restriction, authentication requirement, or content restriction
-must not trigger identity, account, proxy, IP, region, client, cookie,
-or token rotation intended to defeat the restriction, but bot challenges
-and HTTP 429 responses may be retried up to the worker's standard limit.
+An egress path may fail over for connection failures (such as DNS, TLS,
+connection reset, timeout, unavailable proxy) or when encountering a bot challenge
+or HTTP 429. After the server-side availability gate succeeds, yt-dlp's exact media-data
+HTTP 403 failure may also retry as a transient delivery failure only when the response has
+no authentication, age, payment, region, private-video, membership, or DRM restriction marker.
+Geographic restriction, authentication requirement, or content restriction must not trigger
+identity, account, region, client, cookie, or token rotation intended to defeat the restriction.
+Bot challenges, HTTP 429 responses, and eligible media-data HTTP 403 failures may be retried on
+the same or an alternative egress up to the worker's standard limit.
 
 ## Controls
 
 - Accept only supported YouTube hostnames and validate the video ID before work starts.
-- Require an affirmative ownership or license representation for every job.
+
 - Keep the one-download-at-a-time default and enforce a shared request budget across
   all workers and egress paths.
-- Retry bot challenges and HTTP 429 responses within the failing asset work only,
-  for at most ten total attempts on the same egress, with bounded jittered delays.
-  A successful sibling video or subtitle acquisition must not be restarted.
+- Retry bot challenges, HTTP 429 responses, and eligible media-data HTTP 403 failures within
+  the video acquisition work only, for at most ten total attempts, with bounded jittered delays.
+  A successful video acquisition must not be restarted by later processing stages.
 - Do not pass YouTube account credentials, account cookies, or browser profiles to workers.
 - Do not access private, paid, age-restricted, region-restricted, removed, or DRM content.
 - Keep full source media only on task ephemeral storage and delete it in `finally`.
@@ -49,12 +51,12 @@ belong in the runtime secret store, not in this document.
 
 | Path | Permitted purpose | Bot/429 behavior |
 | --- | --- | --- |
-| AWS direct egress | Default public-video retrieval | Standard retry; do not rotate |
-| WARP | Stable company-controlled routing | Standard retry; do not rotate |
-| Contracted fallback proxy | Network outage failover only | Standard retry; do not rotate |
+| AWS direct egress | Default public-video retrieval | Standard retry |
+| WARP | Stable company-controlled routing | Standard retry |
+| ISP proxy pools | Dynamic proxy rotation | Standard retry |
+| Contracted fallback proxy | Network outage failover only | Standard retry |
 
-Residential proxy pools, per-request IP rotation, user-supplied proxies, and routing
-selected to evade a platform restriction are not approved.
+
 
 ## Official policy context
 
@@ -77,7 +79,7 @@ the public terms and actual data flow match.
 
 - [ ] Counsel has reviewed copyright, contract, privacy, and platform-policy risk.
 - [ ] Enabled egress paths are recorded and use a shared request budget.
-- [ ] Failover tests prove bot/429 responses cannot cause IP or identity rotation.
+- [ ] Failover tests prove bot/429 responses cannot cause identity rotation.
 - [ ] Authentication, age, payment, region, private-video, and DRM restrictions fail closed.
 - [ ] Circuit breaker, backoff, audit events, ephemeral cleanup, and kill switch are tested.
 - [ ] Public terms and privacy disclosures match the implemented data flow.

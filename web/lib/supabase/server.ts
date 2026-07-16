@@ -20,8 +20,16 @@ export async function createSupabaseServerClient() {
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (values) => {
-        for (const { name, value, options } of values) {
-          cookieStore.set(name, value, options);
+        try {
+          for (const { name, value, options } of values) {
+            cookieStore.set(name, value, options);
+          }
+        } catch (error) {
+          // Server Components receive a read-only cookie store. Supabase may
+          // still attempt a refresh while getUser() is reading the session;
+          // Route Handlers keep using the writable path above.
+          if (error instanceof Error && error.message.includes("Cookies can only be modified")) return;
+          throw error;
         }
       },
     },

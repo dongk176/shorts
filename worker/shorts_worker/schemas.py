@@ -14,6 +14,7 @@ class TemplateId(str, Enum):
 
 class VideoAspectRatio(str, Enum):
     LANDSCAPE = "16:9"
+    LANDSCAPE_FIVE_FOUR = "5:4"
     SQUARE = "1:1"
     PORTRAIT = "4:5"
     FULL_VERTICAL = "9:16"

@@ -2,6 +2,26 @@ const TITLE_MAX_CHARS = 20;
 const TITLE_MAX_LINES = 2;
 export const TITLE_MAX_WIDTH = 930;
 
+export function titleLineBackground(
+  index: number,
+  overlayMode: boolean,
+  background: string,
+  accentBackground: string | null,
+) {
+  if (overlayMode) return accentBackground || background;
+  if (index === 1 && accentBackground) return accentBackground;
+  return null;
+}
+
+export function titleLineColor(
+  index: number,
+  overlayMode: boolean,
+  primary: string,
+  accent: string,
+) {
+  return overlayMode || index === 1 ? accent : primary;
+}
+
 function characters(value: string) {
   return Array.from(value);
 }

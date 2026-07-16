@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
 
 from .schemas import SubtitleSegment, TemplateId
 
@@ -169,11 +169,8 @@ def create_title_panel(
         box = draw.textbbox((0, 0), line, font=font)
         width = box[2] - box[0]
         height = box[3] - box[1]
-        accent_padding_y = (
-            TITLE_ACCENT_PADDING_Y
-            if index == 1 and style.accent_background
-            else 0
-        )
+        has_line_background = overlay_mode or (index == 1 and style.accent_background)
+        accent_padding_y = TITLE_ACCENT_PADDING_Y if has_line_background else 0
         line_metrics.append((line, box, width, height, accent_padding_y))
 
     total_height = sum(height + padding_y * 2 for _, _, _, height, padding_y in line_metrics)
@@ -186,12 +183,18 @@ def create_title_panel(
     row_y = max(12, panel_height - bottom_margin - total_height)
 
     for index, (line, box, width, height, accent_padding_y) in enumerate(line_metrics):
-        color = text_color or (style.primary if index == 0 else style.accent)
+        color = text_color or (
+            style.accent if overlay_mode or index == 1 else style.primary
+        )
         visible_x = (PANEL_WIDTH - width) // 2
         visible_y = row_y + accent_padding_y
         draw_x = visible_x - box[0]
         draw_y = visible_y - box[1]
-        if index == 1 and style.accent_background:
+        if overlay_mode:
+            line_background = style.accent_background or style.background
+        else:
+            line_background = style.accent_background if index == 1 else None
+        if line_background:
             draw.rounded_rectangle(
                 (
                     visible_x - TITLE_ACCENT_PADDING_X,
@@ -200,7 +203,7 @@ def create_title_panel(
                     row_y + height + TITLE_ACCENT_PADDING_Y * 2,
                 ),
                 radius=8,
-                fill=style.accent_background,
+                fill=line_background,
             )
         draw.text((draw_x, draw_y), line, font=font, fill=color, stroke_width=0)
         row_y += height + accent_padding_y * 2 + TITLE_LINE_GAP
@@ -214,6 +217,7 @@ def create_channel_panel(
     template_id: TemplateId,
     output_path: Path,
     *,
+    channel_thumbnail_path: Path | None = None,
     panel_height: int = PANEL_HEIGHT,
     overlay_mode: bool = False,
 ) -> Path:
@@ -242,10 +246,26 @@ def create_channel_panel(
         else min(CHANNEL_TOP_MARGIN, max(24, round(panel_height * 0.114)))
     )
     y = top_margin + (group_height - icon_size) // 2
-    draw.ellipse((x, y, x + icon_size, y + icon_size), fill=style.channel)
-    inner = style.background
-    draw.ellipse((x + 20, y + 13, x + 44, y + 37), fill=inner)
-    draw.arc((x + 13, y + 31, x + 51, y + 65), 180, 360, fill=inner, width=8)
+    avatar_rendered = False
+    if channel_thumbnail_path and channel_thumbnail_path.is_file():
+        try:
+            with Image.open(channel_thumbnail_path) as source:
+                avatar = ImageOps.fit(
+                    source.convert("RGB"),
+                    (icon_size, icon_size),
+                    method=Image.Resampling.LANCZOS,
+                )
+            mask = Image.new("L", (icon_size, icon_size), 0)
+            ImageDraw.Draw(mask).ellipse((0, 0, icon_size - 1, icon_size - 1), fill=255)
+            image.paste(avatar, (x, y), mask)
+            avatar_rendered = True
+        except (OSError, ValueError, UnidentifiedImageError):
+            avatar_rendered = False
+    if not avatar_rendered:
+        draw.ellipse((x, y, x + icon_size, y + icon_size), fill=style.channel)
+        inner = style.background
+        draw.ellipse((x + 20, y + 13, x + 44, y + 37), fill=inner)
+        draw.arc((x + 13, y + 31, x + 51, y + 65), 180, 360, fill=inner, width=8)
     draw.text(
         (
             x + icon_size + gap - text_box[0],
@@ -270,6 +290,7 @@ def create_panel_overlays(
     title_color: str | None = None,
     title_font_size: int | None = None,
     title_font_scale: float = 1.0,
+    channel_thumbnail_path: Path | None = None,
     top_height: int = PANEL_HEIGHT,
     bottom_height: int = PANEL_HEIGHT,
     overlay_mode: bool = False,
@@ -288,6 +309,7 @@ def create_panel_overlays(
         channel_name,
         template_id,
         directory / f"{prefix}_bottom.png",
+        channel_thumbnail_path=channel_thumbnail_path,
         panel_height=bottom_height,
         overlay_mode=overlay_mode,
     )

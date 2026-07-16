@@ -65,13 +65,19 @@ describe("MVP session cookie", () => {
     });
     const transaction = vi.fn().mockResolvedValue([]);
     const db = vi.fn()
-      .mockResolvedValueOnce([{ id: "session-anonymous", selectedPlanCode: "standard", userId: null }])
+      .mockResolvedValueOnce([{ id: "session-anonymous", selectedPlanCode: "standard", userId: null, lastSeenAt: new Date() }])
       .mockResolvedValueOnce([{ id: "app-user", selectedPlanCode: "standard" }]);
     Object.assign(db, { begin: vi.fn((callback: (tx: typeof transaction) => unknown) => callback(transaction)) });
     mocks.getDb.mockReturnValue(db);
 
-    const { requireMvpSession } = await import("./session");
-    await expect(requireMvpSession()).resolves.toEqual({
+    const { claimMvpSession } = await import("./session");
+    await expect(claimMvpSession({
+      id: "11111111-1111-4111-8111-111111111111",
+      email: "creator@example.com",
+      app_metadata: { provider: "google" },
+      user_metadata: { full_name: "Creator", avatar_url: "https://example.com/avatar.png" },
+      last_sign_in_at: "2026-07-13T17:00:00.000Z",
+    } as never)).resolves.toEqual({
       id: "session-anonymous",
       selectedPlanCode: "standard",
       userId: "app-user",
@@ -83,6 +89,41 @@ describe("MVP session cookie", () => {
       },
     });
     expect(transaction).toHaveBeenCalledTimes(6);
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it("reads an authenticated session without claiming resources again", async () => {
+    const set = vi.fn();
+    mocks.cookies.mockResolvedValue({
+      get: vi.fn().mockReturnValue({ value: "authenticated-token" }),
+      set,
+    });
+    mocks.getAuthenticatedUser.mockResolvedValue({
+      id: "11111111-1111-4111-8111-111111111111",
+      email: "creator@example.com",
+      app_metadata: { provider: "google" },
+      user_metadata: {},
+    });
+    const db = vi.fn()
+      .mockResolvedValueOnce([{
+        id: "session-authenticated",
+        selectedPlanCode: "standard",
+        userId: "app-user",
+        lastSeenAt: new Date(),
+      }])
+      .mockResolvedValueOnce([{ id: "app-user", selectedPlanCode: "standard" }]);
+    const begin = vi.fn();
+    Object.assign(db, { begin });
+    mocks.getDb.mockReturnValue(db);
+
+    const { requireMvpSession } = await import("./session");
+    await expect(requireMvpSession()).resolves.toMatchObject({
+      id: "session-authenticated",
+      userId: "app-user",
+      selectedPlanCode: "standard",
+    });
+    expect(db).toHaveBeenCalledTimes(2);
+    expect(begin).not.toHaveBeenCalled();
     expect(set).not.toHaveBeenCalled();
   });
 });

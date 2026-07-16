@@ -27,5 +27,9 @@ class BotCheckError(IngestionError):
     """YouTube rejected the worker egress as automated traffic."""
 
 
+class TranscriptionError(ShortsMakerError):
+    """Required audio transcription failed or produced no usable text."""
+
+
 class RenderError(ShortsMakerError):
     pass

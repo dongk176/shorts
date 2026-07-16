@@ -24,7 +24,7 @@ export async function getUsageSnapshot(
         from shorts_mvp.usage_events e
         where (
           (${session.userId}::uuid is not null and e.user_id=${session.userId})
-          or (${session.userId}::uuid is null and e.mvp_session_id=${session.id})
+          or (${session.userId}::uuid is null and e.user_id is null and e.mvp_session_id=${session.id})
         )
           and e.event_type = 'source_consumed'
           and e.occurred_at >= ${start}
@@ -35,7 +35,7 @@ export async function getUsageSnapshot(
         from shorts_mvp.usage_reservations r
         where (
           (${session.userId}::uuid is not null and r.user_id=${session.userId})
-          or (${session.userId}::uuid is null and r.mvp_session_id=${session.id})
+          or (${session.userId}::uuid is null and r.user_id is null and r.mvp_session_id=${session.id})
         ) and r.status = 'reserved'
       ), 0)::int as reserved_seconds
     from shorts_mvp.plans p

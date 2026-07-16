@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import threading
 from pathlib import Path
 
 import pytest
@@ -15,32 +14,20 @@ from shorts_worker.errors import (
 )
 from shorts_worker.ingestion import (
     RETRY_DELAY_BASE_SECONDS,
-    SubtitleDownloadResult,
-    VideoDownloadResult,
     VideoMetadata,
     YtDlpIngestionProvider,
 )
 
 
-def _fake_success(
-    args: list[str], info: dict[str, object], *, write_caption: bool = True
-) -> subprocess.CompletedProcess[str]:
+def _fake_success(args: list[str], info: dict[str, object]) -> subprocess.CompletedProcess[str]:
     stdout = ""
     if "--dump-single-json" in args:
         stdout = json.dumps(info)
     elif "--write-info-json" in args:
         output = Path(args[args.index("--output") + 1])
         output.parent.mkdir(parents=True, exist_ok=True)
-        (output.parent / "source.info.json").write_text(
-            json.dumps(info), encoding="utf-8"
-        )
+        (output.parent / "source.info.json").write_text(json.dumps(info), encoding="utf-8")
         (output.parent / "source.mp4").write_bytes(b"video")
-    elif write_caption and (
-        "--write-subs" in args or "--write-auto-subs" in args
-    ):
-        output = Path(args[args.index("--output") + 1])
-        output.parent.mkdir(parents=True, exist_ok=True)
-        (output.parent / "captions.ko.vtt").write_text("WEBVTT\n", encoding="utf-8")
     return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
 
 
@@ -65,7 +52,7 @@ def test_youtube_bot_challenge_does_not_recommend_cookie_bypass(monkeypatch) -> 
     assert "cookies" not in message.lower()
 
 
-def test_download_bundle_skips_caption_fetch_when_no_tracks_exist(
+def test_download_bundle_only_fetches_video_and_never_requests_subtitles(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls: list[list[str]] = []
@@ -87,129 +74,50 @@ def test_download_bundle_skips_caption_fetch_when_no_tracks_exist(
     bundle = provider.download_bundle(
         "https://youtu.be/dQw4w9WgXcQ",
         tmp_path,
+        range_start_seconds=30,
+        range_end_seconds=90,
     )
 
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert any("--write-info-json" in call for call in calls)
-    assert any("--dump-single-json" in call for call in calls)
     assert not any("--write-subs" in call for call in calls)
     assert not any("--write-auto-subs" in call for call in calls)
+    assert not any("--sub-langs" in call for call in calls)
+    download_call = calls[0]
+    assert download_call[download_call.index("--download-sections") + 1] == "*30.000-90.000"
+    assert "--force-keyframes-at-cuts" in download_call
+    assert not (tmp_path / "subtitles").exists()
     assert bundle.metadata.video_id == "dQw4w9WgXcQ"
     assert bundle.video_path == tmp_path / "video" / "source.mp4"
-    assert bundle.subtitle_path is None
-    assert bundle.subtitle_source == "none"
-    assert bundle.subtitle_fetch_status == "no_tracks"
 
 
-def test_download_bundle_prefers_official_subtitles(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [(-1, 30), (30, 30), (30, 3601), (float("nan"), 30)],
+)
+def test_download_bundle_rejects_invalid_ranges_before_running_yt_dlp(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    start: float,
+    end: float,
 ) -> None:
+    provider = YtDlpIngestionProvider()
     calls: list[list[str]] = []
-    info: dict[str, object] = {
-        "id": "dQw4w9WgXcQ",
-        "title": "테스트",
-        "duration": 120,
-        "language": "ko",
-        "subtitles": {"ko": [{}]},
-        "automatic_captions": {"ko-orig": [{}]},
-    }
+    monkeypatch.setattr(
+        provider,
+        "_run",
+        lambda args, **_kwargs: calls.append(args),
+    )
 
-    def fake_run(args: list[str], *, timeout: float | None = None):
-        calls.append(args)
-        return _fake_success(args, info)
+    with pytest.raises(IngestionError):
+        provider.download_bundle(
+            "https://youtu.be/dQw4w9WgXcQ",
+            tmp_path,
+            range_start_seconds=start,
+            range_end_seconds=end,
+        )
 
-    provider = YtDlpIngestionProvider()
-    monkeypatch.setattr(provider, "_run", fake_run)
-    bundle = provider.download_bundle("https://youtu.be/dQw4w9WgXcQ", tmp_path)
-
-    assert len(calls) == 3
-    assert any("--write-subs" in call for call in calls)
-    assert not any("--write-auto-subs" in call for call in calls)
-    assert bundle.subtitle_path == tmp_path / "subtitles" / "captions.ko.vtt"
-    assert bundle.subtitle_source == "official"
-    assert bundle.subtitle_language == "ko"
-    assert bundle.subtitle_fetch_status == "downloaded"
-
-
-def test_download_bundle_falls_back_to_automatic_subtitles(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    calls: list[list[str]] = []
-    info: dict[str, object] = {
-        "id": "dQw4w9WgXcQ",
-        "title": "테스트",
-        "duration": 120,
-        "subtitles": {"en": [{}]},
-        "automatic_captions": {"ko": [{}]},
-    }
-
-    def fake_run(args: list[str], *, timeout: float | None = None):
-        calls.append(args)
-        return _fake_success(args, info)
-
-    provider = YtDlpIngestionProvider()
-    monkeypatch.setattr(provider, "_run", fake_run)
-    bundle = provider.download_bundle("https://youtu.be/dQw4w9WgXcQ", tmp_path)
-
-    assert len(calls) == 3
-    assert not any("--write-subs" in call for call in calls)
-    assert any("--write-auto-subs" in call for call in calls)
-    assert bundle.subtitle_path == tmp_path / "subtitles" / "captions.ko.vtt"
-    assert bundle.subtitle_source == "automatic"
-    assert bundle.subtitle_language == "ko"
-    assert bundle.subtitle_fetch_status == "downloaded"
-
-
-def test_download_bundle_records_failed_official_attempt_before_automatic_success(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    info: dict[str, object] = {
-        "id": "dQw4w9WgXcQ",
-        "title": "테스트",
-        "duration": 120,
-        "subtitles": {"ko": [{}]},
-        "automatic_captions": {"ko": [{}]},
-    }
-
-    def fake_run(args: list[str], *, timeout: float | None = None):
-        if "--write-subs" in args:
-            raise IngestionError("official subtitle download failed")
-        return _fake_success(args, info)
-
-    provider = YtDlpIngestionProvider()
-    monkeypatch.setattr(provider, "_run", fake_run)
-
-    bundle = provider.download_bundle("https://youtu.be/dQw4w9WgXcQ", tmp_path)
-
-    assert bundle.subtitle_source == "automatic"
-    assert bundle.subtitle_fetch_status == "downloaded"
-    assert bundle.subtitle_matching_track_count == 2
-    assert bundle.subtitle_failed_attempt_count == 1
-
-
-def test_download_bundle_does_not_use_foreign_subtitle_tracks(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    calls: list[list[str]] = []
-    info: dict[str, object] = {
-        "id": "dQw4w9WgXcQ",
-        "title": "테스트",
-        "duration": 120,
-        "subtitles": {"ja": [{}]},
-        "automatic_captions": {"en": [{}]},
-    }
-
-    def fake_run(args: list[str], *, timeout: float | None = None):
-        calls.append(args)
-        return _fake_success(args, info)
-
-    provider = YtDlpIngestionProvider()
-    monkeypatch.setattr(provider, "_run", fake_run)
-    bundle = provider.download_bundle("https://youtu.be/dQw4w9WgXcQ", tmp_path)
-
-    assert len(calls) == 2
-    assert bundle.subtitle_path is None
-    assert bundle.subtitle_fetch_status == "no_matching_language"
+    assert calls == []
 
 
 def test_rate_limit_uses_bot_check_circuit_error(monkeypatch) -> None:
@@ -247,9 +155,7 @@ def test_rate_limit_fails_closed_without_network_rotation(monkeypatch) -> None:
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     with pytest.raises(BotCheckError):
-        YtDlpIngestionProvider()._run(
-            ["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"]
-        )
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
 
     assert len(calls) == 1
 
@@ -312,9 +218,7 @@ def test_ready_warp_proxy_is_used_first(monkeypatch) -> None:
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    result = YtDlpIngestionProvider()._run(
-        ["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"]
-    )
+    result = YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
 
     assert result.returncode == 0
     assert len(calls) == 1
@@ -363,9 +267,7 @@ def test_warp_bot_check_does_not_fall_back_to_direct_connection(monkeypatch) -> 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     with pytest.raises(BotCheckError):
-        YtDlpIngestionProvider()._run(
-            ["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"]
-        )
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
 
     assert len(calls) == 1
 
@@ -388,37 +290,107 @@ def test_temporary_network_failure_is_retryable(monkeypatch) -> None:
         YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
 
 
-def test_download_bundle_runs_video_and_subtitle_work_concurrently(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
-    barrier = threading.Barrier(2, timeout=2)
-    video_path = tmp_path / "video.mp4"
-    video_path.write_bytes(b"video")
-
-    def video_work(*_args, **_kwargs) -> VideoDownloadResult:
-        barrier.wait()
-        return VideoDownloadResult(
-            metadata=VideoMetadata("dQw4w9WgXcQ", "title", "channel", "", 120),
-            path=video_path,
-            attempt_count=1,
-            failed_attempt_count=0,
-            failure_reasons=(),
-        )
-
-    def subtitle_work(*_args, **_kwargs) -> SubtitleDownloadResult:
-        barrier.wait()
-        return SubtitleDownloadResult(None, "none", None, "no_tracks")
-
-    monkeypatch.setattr(provider, "_download_video_work", video_work)
-    monkeypatch.setattr(provider, "_download_subtitle_work", subtitle_work)
-
-    bundle = provider.download_bundle(
-        "https://youtu.be/dQw4w9WgXcQ", tmp_path / "bundle", job_id="job-a"
+def test_media_data_forbidden_is_retryable(monkeypatch) -> None:
+    monkeypatch.delenv("WARP_PROXY_URL", raising=False)
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="ERROR: unable to download video data: HTTP Error 403: Forbidden",
+        ),
     )
 
-    assert bundle.video_path == video_path
-    assert bundle.subtitle_fetch_status == "no_tracks"
+    with pytest.raises(RetryableIngestionError):
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+
+def test_generic_forbidden_remains_terminal(monkeypatch) -> None:
+    monkeypatch.delenv("WARP_PROXY_URL", raising=False)
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="ERROR: HTTP Error 403: Forbidden",
+        ),
+    )
+
+    with pytest.raises(IngestionError) as caught:
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+    assert type(caught.value) is IngestionError
+
+
+def test_media_data_forbidden_with_content_restriction_remains_terminal(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("WARP_PROXY_URL", raising=False)
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr=(
+                "ERROR: This video is private\n"
+                "ERROR: unable to download video data: HTTP Error 403: Forbidden"
+            ),
+        ),
+    )
+
+    with pytest.raises(IngestionError) as caught:
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+    assert type(caught.value) is IngestionError
+
+
+def test_media_data_forbidden_retries_exactly_ten_times(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("WARP_PROXY_URL", raising=False)
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+    provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
+    calls = 0
+
+    def forbidden(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="ERROR: unable to download video data: HTTP Error 403: Forbidden",
+        )
+
+    def download_once(*_args, **kwargs):
+        provider._run(
+            ["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"],
+            route=kwargs.get("route"),
+            job_id=kwargs.get("job_id"),
+            attempt=kwargs.get("attempt", 1),
+        )
+
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    monkeypatch.setattr(provider, "_download_video_once", download_once)
+
+    with pytest.raises(RetryExhaustedIngestionError):
+        provider._download_video_work(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "dQw4w9WgXcQ",
+            tmp_path,
+            job_id="job-a",
+        )
+
+    assert calls == 10
 
 
 def test_video_work_retries_at_most_ten_times_and_records_reasons(
@@ -479,32 +451,6 @@ def test_video_work_stops_after_tenth_temporary_failure(
     assert attempts == 10
 
 
-def test_subtitle_work_uses_openai_fallback_status_after_ten_network_failures(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
-    attempts = 0
-
-    def extract_info(_url: str):
-        nonlocal attempts
-        attempts += 1
-        raise RetryableIngestionError("temporary failure in name resolution")
-
-    monkeypatch.setattr(provider, "_extract_info", extract_info)
-
-    result = provider._download_subtitle_work(
-        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-        tmp_path,
-        job_id="job-a",
-    )
-
-    assert attempts == 10
-    assert result.status == "download_failed"
-    assert result.work_attempt_count == 10
-    assert result.work_failed_attempt_count == 10
-    assert len(result.failure_reasons) == 10
-
-
 def test_retry_delays_use_the_staged_schedule_with_twenty_percent_jitter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -520,9 +466,7 @@ def test_retry_delays_use_the_staged_schedule_with_twenty_percent_jitter(
     delays = [provider._retry_delay_seconds(attempt) for attempt in range(1, 10)]
 
     assert len(bounds) == 9
-    for base, (lower, upper), delay in zip(
-        RETRY_DELAY_BASE_SECONDS, bounds, delays, strict=True
-    ):
+    for base, (lower, upper), delay in zip(RETRY_DELAY_BASE_SECONDS, bounds, delays, strict=True):
         assert lower == pytest.approx(base * 0.8)
         assert upper == pytest.approx(base * 1.2)
         assert delay == pytest.approx(upper)
@@ -589,96 +533,112 @@ def test_video_work_fails_after_tenth_bot_check(
     assert events[-1]["error_type"] == "BotCheckError"
 
 
-def test_subtitle_bot_checks_use_openai_fallback_status_after_ten_failures(
+def test_multi_warp_routes_wait_for_cooldown_instead_of_failing(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    routes = [
+        {"id": f"warp-{suffix}", "proxy_url": f"socks5://127.0.0.1:{port}"}
+        for suffix, port in zip("abcd", range(1081, 1085), strict=True)
+    ]
+    monkeypatch.setenv("WARP_PROXY_ROUTES_JSON", json.dumps(routes))
+    now = [100.0]
+    waits: list[float] = []
+
+    def wait(seconds: float) -> None:
+        waits.append(seconds)
+        now[0] += seconds
+
+    provider = YtDlpIngestionProvider(
+        retry_backoff_seconds=0,
+        bot_check_cooldown_seconds=12,
+        route_clock=lambda: now[0],
+        route_waiter=wait,
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **_kwargs):
+        calls.append(args)
+        if len(calls) <= 4:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=1,
+                stdout="",
+                stderr="ERROR: Sign in to confirm you're not a bot",
+            )
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    for _ in range(4):
+        with pytest.raises(BotCheckError):
+            provider._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+    result = provider._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+    selected_proxies = [call[call.index("--proxy") + 1] for call in calls]
+    assert result.returncode == 0
+    assert selected_proxies == [
+        "socks5://127.0.0.1:1081",
+        "socks5://127.0.0.1:1082",
+        "socks5://127.0.0.1:1083",
+        "socks5://127.0.0.1:1084",
+        "socks5://127.0.0.1:1081",
+    ]
+    assert waits == [pytest.approx(12)]
+    events = capsys.readouterr().out
+    assert "ingestion_routes_waiting" in events
+    assert "127.0.0.1" not in events
+
+
+def test_multi_warp_video_keeps_ten_attempt_budget_across_cooldown_waits(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
-    attempts = 0
+    routes = [
+        {"id": f"warp-{suffix}", "proxy_url": f"socks5://127.0.0.1:{port}"}
+        for suffix, port in zip("abcd", range(1081, 1085), strict=True)
+    ]
+    monkeypatch.setenv("WARP_PROXY_ROUTES_JSON", json.dumps(routes))
+    now = [0.0]
+    waits: list[float] = []
 
-    def extract_info(_url: str):
-        nonlocal attempts
-        attempts += 1
-        raise BotCheckError("Sign in to confirm you're not a bot")
+    def wait(seconds: float) -> None:
+        waits.append(seconds)
+        now[0] += seconds
 
-    monkeypatch.setattr(provider, "_extract_info", extract_info)
+    provider = YtDlpIngestionProvider(
+        retry_backoff_seconds=0,
+        bot_check_cooldown_seconds=10,
+        route_clock=lambda: now[0],
+        route_waiter=wait,
+    )
+    info: dict[str, object] = {
+        "id": "dQw4w9WgXcQ",
+        "title": "테스트 영상",
+        "channel": "테스트 채널",
+        "duration": 120,
+    }
+    calls: list[list[str]] = []
 
-    result = provider._download_subtitle_work(
+    def fake_run(args: list[str], **_kwargs):
+        calls.append(args)
+        if len(calls) < 10:
+            return subprocess.CompletedProcess(
+                args=args,
+                returncode=1,
+                stdout="",
+                stderr="ERROR: HTTP Error 429: Too Many Requests",
+            )
+        return _fake_success(args, info)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = provider._download_video_work(
         "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "dQw4w9WgXcQ",
         tmp_path,
         job_id="job-a",
     )
 
-    assert attempts == 10
-    assert result.status == "download_failed"
-    assert result.work_attempt_count == 10
-    assert result.work_failed_attempt_count == 10
-    assert all(reason.startswith("BotCheckError:") for reason in result.failure_reasons)
-
-
-def test_subtitle_retries_do_not_redownload_successful_video(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
-    video_attempts = 0
-    subtitle_attempts = 0
-    video_path = tmp_path / "source.mp4"
-    video_path.write_bytes(b"video")
-
-    def download_video_once(*_args, **_kwargs):
-        nonlocal video_attempts
-        video_attempts += 1
-        return VideoMetadata("dQw4w9WgXcQ", "title", "channel", "", 120), video_path
-
-    def extract_info(_url: str):
-        nonlocal subtitle_attempts
-        subtitle_attempts += 1
-        if subtitle_attempts < 3:
-            raise BotCheckError("Sign in to confirm you're not a bot")
-        return {"id": "dQw4w9WgXcQ", "duration": 120}
-
-    monkeypatch.setattr(provider, "_download_video_once", download_video_once)
-    monkeypatch.setattr(provider, "_extract_info", extract_info)
-
-    bundle = provider.download_bundle(
-        "https://youtu.be/dQw4w9WgXcQ", tmp_path / "bundle", job_id="job-a"
-    )
-
-    assert video_attempts == 1
-    assert subtitle_attempts == 3
-    assert bundle.video_attempt_count == 1
-    assert bundle.subtitle_attempt_count == 3
-    assert bundle.subtitle_fetch_status == "no_tracks"
-
-
-def test_video_retries_do_not_refetch_successful_subtitle_result(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
-    video_attempts = 0
-    subtitle_attempts = 0
-    video_path = tmp_path / "source.mp4"
-    video_path.write_bytes(b"video")
-
-    def download_video_once(*_args, **_kwargs):
-        nonlocal video_attempts
-        video_attempts += 1
-        if video_attempts < 3:
-            raise BotCheckError("HTTP Error 429: Too Many Requests")
-        return VideoMetadata("dQw4w9WgXcQ", "title", "channel", "", 120), video_path
-
-    def extract_info(_url: str):
-        nonlocal subtitle_attempts
-        subtitle_attempts += 1
-        return {"id": "dQw4w9WgXcQ", "duration": 120}
-
-    monkeypatch.setattr(provider, "_download_video_once", download_video_once)
-    monkeypatch.setattr(provider, "_extract_info", extract_info)
-
-    bundle = provider.download_bundle(
-        "https://youtu.be/dQw4w9WgXcQ", tmp_path / "bundle", job_id="job-a"
-    )
-
-    assert video_attempts == 3
-    assert subtitle_attempts == 1
-    assert bundle.video_attempt_count == 3
-    assert bundle.subtitle_attempt_count == 1
+    assert len(calls) == 10
+    assert result.attempt_count == 10
+    assert result.failed_attempt_count == 9
+    assert waits == [pytest.approx(10), pytest.approx(10)]

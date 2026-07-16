@@ -2,7 +2,7 @@
 
 | 데이터 | 위치 | 보관 기간 | 접근 |
 | --- | --- | --- | --- |
-| 전체 YouTube 원본/추출 오디오/임시 자막 | Prepare Fargate ephemeral `/tmp` | task 동안만 | worker |
+| 전체 YouTube 원본/추출 오디오/전사 중간 데이터 | Prepare Fargate ephemeral `/tmp` | task 동안만 | worker |
 | 1080×1080 clean clip | S3 `edit-sources/` | 최초 생성부터 최대 30일 | worker만 |
 | 1080×1920 output | S3 `outputs/` | 최초 생성부터 최대 30일 | CloudFront Signed URL |
 | thumbnail | S3 `thumbnails/` | output과 동일 | 서버/정리 작업 |

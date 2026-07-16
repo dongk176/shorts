@@ -1,6 +1,6 @@
 # Shorts Maker MVP
 
-공개 YouTube 영상의 자막과 내용을 분석해 최대 15개의 세로 쇼츠를 만드는 배포형 MVP입니다. 웹/control plane은 Vercel의 Next.js, 운영 데이터는 기존 `ai talk`와 같은 Supabase 프로젝트의 `shorts_mvp` schema, 영상 처리는 AWS Batch, 파일은 private S3와 CloudFront Signed URL을 사용합니다. SQLite와 로컬 `storage/`는 운영 경로에서 사용하지 않습니다.
+공개 YouTube 영상의 오디오를 전사하고 내용을 분석해 최대 15개의 세로 쇼츠를 만드는 배포형 MVP입니다. 웹/control plane은 Vercel의 Next.js, 운영 데이터는 기존 `ai talk`와 같은 Supabase 프로젝트의 `shorts_mvp` schema, 영상 처리는 AWS Batch, 파일은 private S3와 CloudFront Signed URL을 사용합니다. SQLite와 로컬 `storage/`는 운영 경로에서 사용하지 않습니다.
 
 ## 구조
 
@@ -12,7 +12,8 @@ Browser
        └─ CloudFront Signed URL
 AWS Batch Prepare Fargate
   ├─ YouTube 원본을 /tmp에만 다운로드
-  ├─ 자막 → AI/fallback 구간 선택 → clean clip 업로드
+  ├─ OpenAI 전체 오디오 전사 → Gemini/OpenAI/fallback 구간 선택
+  ├─ clean clip 업로드
   └─ 전체 원본과 중간 파일 즉시 삭제
 AWS Batch Render EC2 Spot / On-Demand
   ├─ clean clip을 최대 4개씩 처리
@@ -86,9 +87,14 @@ Vercel에는 `AWS_ROLE_ARN`, region, S3 bucket, CloudFront signing 설정만 저
 | 이름 | 위치 | 용도 |
 | --- | --- | --- |
 | `DATABASE_URL` | Vercel, worker | 기존 Supabase 직접 연결 |
-| `YOUTUBE_API_KEY` | Vercel | 링크 metadata 및 60분 제한 검증 |
-| `GEMINI_API_KEY` | worker | 구조화된 하이라이트 선정(없으면 deterministic fallback) |
-| `OPENAI_API_KEY` | worker | 자막이 없을 때만 음성 인식 |
+| `YOUTUBE_API_KEY` | Vercel | 링크 metadata 검증 및 일일 인기 영상 수집 |
+| `CRON_SECRET` | Vercel | 인기 영상 자정 수집 API 인증 |
+| `GEMINI_API_KEY` | worker | 1차 구조화 하이라이트 선정(없거나 실패하면 OpenAI fallback) |
+| `OPENAI_API_KEY` | worker | 필수 전체 오디오 전사 및 Gemini 실패 시 하이라이트 선정 |
+| `OPENAI_TRANSCRIBE_MODEL` | worker | 기본 `gpt-4o-mini-transcribe` |
+| `OPENAI_HIGHLIGHT_FALLBACK_MODEL` | worker | 기본 `gpt-5-nano` |
+| `OPENAI_TRANSCRIBE_CHUNK_SECONDS` | worker | 전사 오디오 청크 길이, 기본 30초 |
+| `OPENAI_TRANSCRIBE_MAX_WORKERS` | worker | 병렬 전사 호출 수, 기본 4 |
 | `AWS_ROLE_ARN`, `AWS_REGION` | Vercel | OIDC assume role |
 | `AWS_S3_OUTPUT_BUCKET` | Vercel, worker | private media bucket |
 | `WORK_DISPATCH_QUEUE_URL` | worker/Lambda | Prepare·Render 작업 전달 SQS |
@@ -140,7 +146,7 @@ failover합니다. BOT_CHECK/429·로그인·연령·유료·지역·비공개·
 이를 피하기 위한 계정·쿠키·토큰·프록시·IP·지역·client 회전은 하지 않습니다.
 
 원본 전체는 S3에 저장하지 않으며 작업 중 임시 디스크에만 존재하고 `finally`에서 삭제됩니다.
-얼굴/화자 추적 없이 중앙 crop하며 AI 품질은 원본 자막과 음질에 좌우됩니다.
+얼굴/화자 추적 없이 중앙 crop하며 AI 품질은 원본 음질과 전사 품질에 좌우됩니다.
 
 ### Mac pull worker
 

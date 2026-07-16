@@ -19,6 +19,7 @@ CANVAS_WIDTH = 1080
 CANVAS_HEIGHT = 1920
 VIDEO_HEIGHTS = {
     VideoAspectRatio.LANDSCAPE: 608,
+    VideoAspectRatio.LANDSCAPE_FIVE_FOUR: 864,
     VideoAspectRatio.SQUARE: 1080,
     VideoAspectRatio.PORTRAIT: 1350,
     VideoAspectRatio.FULL_VERTICAL: 1920,
@@ -131,6 +132,7 @@ class VideoRenderer:
         work_dir: Path,
         prefix: str,
         title_font_scale: float = 1.0,
+        channel_thumbnail_path: Path | None = None,
         video_aspect_ratio: VideoAspectRatio = VideoAspectRatio.SQUARE,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -148,6 +150,7 @@ class VideoRenderer:
             directory=work_dir / "overlays",
             prefix=prefix,
             title_font_scale=title_font_scale,
+            channel_thumbnail_path=channel_thumbnail_path,
             top_height=layout.top_height,
             bottom_height=layout.bottom_height,
             overlay_mode=layout.overlay_mode,
@@ -223,6 +226,7 @@ class VideoRenderer:
         log: Callable[[str], None] | None = None,
         title_color: str | None = None,
         title_font_size: int | None = None,
+        channel_thumbnail_path: Path | None = None,
         video_aspect_ratio: VideoAspectRatio = VideoAspectRatio.SQUARE,
     ) -> Path:
         if not source_path.is_file():
@@ -245,6 +249,7 @@ class VideoRenderer:
             prefix=f"clip_{clip_index}",
             title_color=title_color,
             title_font_size=title_font_size,
+            channel_thumbnail_path=channel_thumbnail_path,
             top_height=layout.top_height,
             bottom_height=layout.bottom_height,
             overlay_mode=layout.overlay_mode,

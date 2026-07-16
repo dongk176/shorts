@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import json
+import math
+import os
 import random
+import re
 import subprocess
 import sys
+import threading
 import time
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from .errors import (
     BotCheckError,
@@ -21,9 +26,33 @@ from .schemas import MAX_CHANNEL_NAME_CHARS
 from .url_validation import validate_youtube_url
 
 MAX_ACQUISITION_ATTEMPTS = 10
+MAX_SOURCE_DURATION_SECONDS = 60 * 60
 MAX_RECORDED_FAILURE_REASONS = 10
 RETRY_DELAY_BASE_SECONDS = (5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0, 60.0)
 RETRY_DELAY_JITTER_RATIO = 0.2
+MAX_WARP_EGRESS_ROUTES = 4
+DEFAULT_BOT_CHECK_ROUTE_COOLDOWN_SECONDS = 15.0
+_ROUTE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+_SUPPORTED_PROXY_SCHEMES = frozenset({"http", "https", "socks5", "socks5h"})
+_TERMINAL_RESTRICTION_MARKERS = (
+    "private video",
+    "video is private",
+    "video unavailable",
+    "sign in to watch",
+    "login required",
+    "age-restricted",
+    "age restricted",
+    "confirm your age",
+    "not available in your country",
+    "not available in your region",
+    "members-only",
+    "members only",
+    "join this channel",
+    "paid content",
+    "purchase this content",
+    "drm protected",
+    "drm-protected",
+)
 
 
 def _log_ingestion_event(event: str, **fields: object) -> None:
@@ -48,19 +77,9 @@ class VideoMetadata:
 class DownloadedAssetBundle:
     metadata: VideoMetadata
     video_path: Path
-    subtitle_path: Path | None
-    subtitle_source: str = "none"
-    subtitle_language: str | None = None
-    subtitle_fetch_status: str = "unknown"
-    subtitle_matching_track_count: int = 0
-    subtitle_failed_attempt_count: int = 0
-    subtitle_empty_attempt_count: int = 0
     video_attempt_count: int = 1
     video_failed_attempt_count: int = 0
     video_failure_reasons: tuple[str, ...] = ()
-    subtitle_attempt_count: int = 1
-    subtitle_work_failed_attempt_count: int = 0
-    subtitle_failure_reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,24 +92,146 @@ class VideoDownloadResult:
 
 
 @dataclass(frozen=True, slots=True)
-class SubtitleDownloadResult:
-    path: Path | None
-    source: str
-    language: str | None
-    status: str
-    matching_track_count: int = 0
-    failed_attempt_count: int = 0
-    empty_attempt_count: int = 0
-    work_attempt_count: int = 1
-    work_failed_attempt_count: int = 0
-    failure_reasons: tuple[str, ...] = ()
-    retryable: bool = False
+class EgressRoute:
+    route_id: str
+    proxy_url: str
+    egress_class: str = "warp"
+
+
+def _configured_warp_routes() -> tuple[EgressRoute, ...]:
+    raw_routes = os.environ.get("WARP_PROXY_ROUTES_JSON", "").strip()
+    if not raw_routes:
+        return ()
+    try:
+        payload = json.loads(raw_routes)
+    except json.JSONDecodeError as exc:
+        raise ValueError("WARP_PROXY_ROUTES_JSON must contain valid JSON") from exc
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("WARP_PROXY_ROUTES_JSON must be a non-empty JSON array")
+    if len(payload) > MAX_WARP_EGRESS_ROUTES:
+        raise ValueError(f"WARP_PROXY_ROUTES_JSON supports at most {MAX_WARP_EGRESS_ROUTES} routes")
+
+    routes: list[EgressRoute] = []
+    route_ids: set[str] = set()
+    proxy_urls: set[str] = set()
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("each WARP route must be a JSON object")
+        route_id = str(item.get("id") or "").strip().lower()
+        proxy_url = str(item.get("proxy_url") or "").strip()
+        parsed_proxy = urlsplit(proxy_url)
+        if not _ROUTE_ID_PATTERN.fullmatch(route_id):
+            raise ValueError("WARP route ids must use lowercase letters, digits, _ or -")
+        if (
+            parsed_proxy.scheme.lower() not in _SUPPORTED_PROXY_SCHEMES
+            or not parsed_proxy.hostname
+            or parsed_proxy.port is None
+        ):
+            raise ValueError("WARP route proxy URLs must be valid HTTP or SOCKS URLs")
+        if route_id in route_ids:
+            raise ValueError(f"duplicate WARP route id: {route_id}")
+        if proxy_url in proxy_urls:
+            raise ValueError("duplicate WARP route proxy URL")
+        route_ids.add(route_id)
+        proxy_urls.add(proxy_url)
+        routes.append(EgressRoute(route_id=route_id, proxy_url=proxy_url))
+    return tuple(routes)
+
+
+class EgressRoutePool:
+    def __init__(
+        self,
+        routes: tuple[EgressRoute, ...],
+        *,
+        bot_check_cooldown_seconds: float,
+        clock: Callable[[], float] | None = None,
+        waiter: Callable[[float], None] | None = None,
+    ) -> None:
+        if not routes:
+            raise ValueError("an egress route pool requires at least one route")
+        self.routes = routes
+        self.bot_check_cooldown_seconds = max(0.0, min(300.0, float(bot_check_cooldown_seconds)))
+        self._clock = clock or time.monotonic
+        self._waiter = waiter or time.sleep
+        self._lock = threading.Lock()
+        self._next_index = 0
+        self._cooldown_until = {route.route_id: 0.0 for route in routes}
+
+    def acquire(
+        self,
+        *,
+        job_id: str | None,
+        asset: str,
+        attempt: int,
+    ) -> EgressRoute:
+        while True:
+            with self._lock:
+                now = self._clock()
+                for offset in range(len(self.routes)):
+                    index = (self._next_index + offset) % len(self.routes)
+                    route = self.routes[index]
+                    if self._cooldown_until[route.route_id] <= now:
+                        self._next_index = (index + 1) % len(self.routes)
+                        break
+                else:
+                    route = None
+                    wait_seconds = max(0.0, min(self._cooldown_until.values()) - now)
+
+            if route is not None:
+                _log_ingestion_event(
+                    "ingestion_route_selected",
+                    job_id=job_id,
+                    asset=asset,
+                    attempt=attempt,
+                    route_id=route.route_id,
+                    egress_class=route.egress_class,
+                )
+                return route
+
+            _log_ingestion_event(
+                "ingestion_routes_waiting",
+                job_id=job_id,
+                asset=asset,
+                attempt=attempt,
+                wait_seconds=round(wait_seconds, 3),
+                reason="all_routes_cooling_down",
+            )
+            self._waiter(wait_seconds)
+
+    def mark_bot_check(
+        self,
+        route: EgressRoute,
+        *,
+        job_id: str | None,
+        asset: str,
+        attempt: int,
+    ) -> None:
+        with self._lock:
+            cooldown_until = self._clock() + self.bot_check_cooldown_seconds
+            self._cooldown_until[route.route_id] = max(
+                self._cooldown_until[route.route_id], cooldown_until
+            )
+        _log_ingestion_event(
+            "ingestion_route_cooldown_started",
+            job_id=job_id,
+            asset=asset,
+            attempt=attempt,
+            route_id=route.route_id,
+            egress_class=route.egress_class,
+            cooldown_seconds=round(self.bot_check_cooldown_seconds, 3),
+        )
 
 
 class IngestionProvider(ABC):
     @abstractmethod
     def download_bundle(
-        self, youtube_url: str, destination: Path, *, job_id: str | None = None
+        self,
+        youtube_url: str,
+        destination: Path,
+        *,
+        range_start_seconds: float | None = None,
+        range_end_seconds: float | None = None,
+        job_id: str | None = None,
     ) -> DownloadedAssetBundle:
         raise NotImplementedError
 
@@ -102,10 +243,44 @@ class YtDlpIngestionProvider(IngestionProvider):
         timeout_seconds: float = 600,
         max_attempts: int = MAX_ACQUISITION_ATTEMPTS,
         retry_backoff_seconds: float = 1.0,
+        bot_check_cooldown_seconds: float | None = None,
+        route_clock: Callable[[], float] | None = None,
+        route_waiter: Callable[[float], None] | None = None,
     ) -> None:
         self.timeout_seconds = timeout_seconds
         self.max_attempts = max(1, min(MAX_ACQUISITION_ATTEMPTS, int(max_attempts)))
         self.retry_backoff_seconds = max(0.0, float(retry_backoff_seconds))
+        if bot_check_cooldown_seconds is None:
+            raw_cooldown = os.environ.get(
+                "WARP_BOT_CHECK_COOLDOWN_SECONDS",
+                str(DEFAULT_BOT_CHECK_ROUTE_COOLDOWN_SECONDS),
+            )
+            try:
+                bot_check_cooldown_seconds = float(raw_cooldown)
+            except ValueError as exc:
+                raise ValueError("WARP_BOT_CHECK_COOLDOWN_SECONDS must be a number") from exc
+        routes = _configured_warp_routes()
+        self._route_pool = (
+            EgressRoutePool(
+                routes,
+                bot_check_cooldown_seconds=bot_check_cooldown_seconds,
+                clock=route_clock,
+                waiter=route_waiter,
+            )
+            if routes
+            else None
+        )
+
+    def _acquire_route(
+        self,
+        *,
+        job_id: str | None,
+        asset: str,
+        attempt: int,
+    ) -> EgressRoute | None:
+        if self._route_pool is None:
+            return None
+        return self._route_pool.acquire(job_id=job_id, asset=asset, attempt=attempt)
 
     def _retry_delay_seconds(self, failed_attempt: int) -> float:
         if self.retry_backoff_seconds <= 0:
@@ -128,6 +303,7 @@ class YtDlpIngestionProvider(IngestionProvider):
         error: Exception,
         job_id: str | None,
         next_retry_delay_seconds: float | None,
+        route: EgressRoute | None,
     ) -> str:
         reason = _failure_reason(error)
         _log_ingestion_event(
@@ -138,12 +314,12 @@ class YtDlpIngestionProvider(IngestionProvider):
             max_attempts=self.max_attempts,
             retrying=attempt < self.max_attempts,
             next_retry_delay_seconds=(
-                round(next_retry_delay_seconds, 3)
-                if next_retry_delay_seconds is not None
-                else None
+                round(next_retry_delay_seconds, 3) if next_retry_delay_seconds is not None else None
             ),
             error_type=type(error).__name__,
             failure_reason=reason,
+            route_id=route.route_id if route else None,
+            egress_class=route.egress_class if route else None,
         )
         return reason
 
@@ -184,16 +360,25 @@ class YtDlpIngestionProvider(IngestionProvider):
         args: list[str],
         *,
         timeout: float | None = None,
+        route: EgressRoute | None = None,
+        job_id: str | None = None,
+        asset: str = "standalone",
+        attempt: int = 1,
     ) -> subprocess.CompletedProcess[str]:
-        import os
+        selected_route = route
+        if selected_route is None:
+            selected_route = self._acquire_route(job_id=job_id, asset=asset, attempt=attempt)
 
-        proxies: list[str | None] = []
-        if warp_proxy := os.environ.get("WARP_PROXY_URL"):
-            proxies.append(warp_proxy)
-        proxies.append(None)
-        if fallback_proxy := os.environ.get("FALLBACK_PROXY_URL"):
-            if fallback_proxy not in proxies:
-                proxies.append(fallback_proxy)
+        if selected_route is not None:
+            proxies: list[str | None] = [selected_route.proxy_url]
+        else:
+            proxies = []
+            if warp_proxy := os.environ.get("WARP_PROXY_URL"):
+                proxies.append(warp_proxy)
+            proxies.append(None)
+            if fallback_proxy := os.environ.get("FALLBACK_PROXY_URL"):
+                if fallback_proxy not in proxies:
+                    proxies.append(fallback_proxy)
 
         last_error: RetryableIngestionError | None = None
         for proxy in proxies:
@@ -219,18 +404,25 @@ class YtDlpIngestionProvider(IngestionProvider):
                 raise IngestionError(
                     "yt-dlp를 실행할 수 없습니다. 설치 상태를 확인해 주세요."
                 ) from exc
-            
+
             if result.returncode == 0:
                 return result
-                
+
             output = result.stderr or result.stdout
             lowered_output = output.lower()
             bot_challenges = (
                 "sign in to confirm you’re not a bot",
                 "sign in to confirm you're not a bot",
             )
-            
+
             if any(message in lowered_output for message in bot_challenges):
+                if selected_route is not None and self._route_pool is not None:
+                    self._route_pool.mark_bot_check(
+                        selected_route,
+                        job_id=job_id,
+                        asset=asset,
+                        attempt=attempt,
+                    )
                 raise BotCheckError(
                     "YouTube가 현재 서버의 자동 요청을 제한했습니다. 로그인 정보나 쿠키를 "
                     "이용한 우회는 지원하지 않습니다. 잠시 후 다시 시도하거나 다른 사용 "
@@ -238,31 +430,51 @@ class YtDlpIngestionProvider(IngestionProvider):
                 )
 
             if "http error 429" in lowered_output or "too many requests" in lowered_output:
+                if selected_route is not None and self._route_pool is not None:
+                    self._route_pool.mark_bot_check(
+                        selected_route,
+                        job_id=job_id,
+                        asset=asset,
+                        attempt=attempt,
+                    )
                 raise BotCheckError(
                     "YouTube가 현재 서버의 요청 빈도를 제한했습니다. 같은 서버에서 즉시 "
                     "재시도하지 않고 잠시 대기합니다."
                 )
+
+            if any(marker in lowered_output for marker in _TERMINAL_RESTRICTION_MARKERS):
+                raise IngestionError("인증 또는 콘텐츠 제한이 있는 영상은 지원하지 않습니다.")
+
+            if (
+                "unable to download video data" in lowered_output
+                and "http error 403" in lowered_output
+            ):
+                last_error = RetryableIngestionError(
+                    "YouTube 영상 데이터 요청이 일시적으로 거부되었습니다."
+                )
+                continue
 
             if (
                 "connection refused" in lowered_output
                 or "proxy" in lowered_output
                 or "socks" in lowered_output
             ):
-                last_error = RetryableIngestionError(
-                    "프록시 연결 오류로 다운로드할 수 없습니다."
-                )
+                last_error = RetryableIngestionError("프록시 연결 오류로 다운로드할 수 없습니다.")
                 continue
 
-            if any(message in lowered_output for message in (
-                "connection reset",
-                "connection timed out",
-                "network is unreachable",
-                "name or service not known",
-                "remote end closed connection",
-                "remote disconnected",
-                "temporary failure in name resolution",
-                "tlsv1 alert",
-            )):
+            if any(
+                message in lowered_output
+                for message in (
+                    "connection reset",
+                    "connection timed out",
+                    "network is unreachable",
+                    "name or service not known",
+                    "remote end closed connection",
+                    "remote disconnected",
+                    "temporary failure in name resolution",
+                    "tlsv1 alert",
+                )
+            ):
                 last_error = RetryableIngestionError(
                     "YouTube와의 임시 네트워크 연결 오류로 영상을 가져오지 못했습니다."
                 )
@@ -280,9 +492,38 @@ class YtDlpIngestionProvider(IngestionProvider):
 
         raise IngestionError("알 수 없는 내부 오류가 발생했습니다.")
 
-    def _extract_info(self, youtube_url: str) -> dict[str, Any]:
+    def _run_for_route(
+        self,
+        args: list[str],
+        *,
+        timeout: float | None,
+        route: EgressRoute | None,
+        job_id: str | None,
+        asset: str,
+        attempt: int,
+    ) -> subprocess.CompletedProcess[str]:
+        if route is None:
+            return self._run(args, timeout=timeout)
+        return self._run(
+            args,
+            timeout=timeout,
+            route=route,
+            job_id=job_id,
+            asset=asset,
+            attempt=attempt,
+        )
+
+    def _extract_info(
+        self,
+        youtube_url: str,
+        *,
+        route: EgressRoute | None = None,
+        job_id: str | None = None,
+        asset: str = "metadata",
+        attempt: int = 1,
+    ) -> dict[str, Any]:
         normalized, expected_id = validate_youtube_url(youtube_url)
-        result = self._run(
+        result = self._run_for_route(
             [
                 *self._base_args(),
                 "--dump-single-json",
@@ -290,6 +531,10 @@ class YtDlpIngestionProvider(IngestionProvider):
                 normalized,
             ],
             timeout=min(self.timeout_seconds, 120),
+            route=route,
+            job_id=job_id,
+            asset=asset,
+            attempt=attempt,
         )
         try:
             info = json.loads(result.stdout)
@@ -315,22 +560,58 @@ class YtDlpIngestionProvider(IngestionProvider):
         return VideoMetadata(
             video_id=str(info.get("id", "")),
             title=str(info.get("title") or "제목 없는 영상")[:500],
-            channel_name=str(
-                info.get("channel") or info.get("uploader") or "YouTube 채널"
-            )[:MAX_CHANNEL_NAME_CHARS],
+            channel_name=str(info.get("channel") or info.get("uploader") or "YouTube 채널")[
+                :MAX_CHANNEL_NAME_CHARS
+            ],
             thumbnail_url=thumbnail,
             duration_seconds=duration_seconds,
         )
 
     def analyze_url(self, youtube_url: str) -> VideoMetadata:
-        return self._metadata_from_info(self._extract_info(youtube_url))
+        return self._metadata_from_info(self._extract_info(youtube_url, asset="metadata"))
+
+    @staticmethod
+    def _download_section_args(
+        range_start_seconds: float | None,
+        range_end_seconds: float | None,
+    ) -> list[str]:
+        if range_start_seconds is None and range_end_seconds is None:
+            return []
+        if range_start_seconds is None or range_end_seconds is None:
+            raise IngestionError("다운로드 구간의 시작과 끝이 모두 필요합니다.")
+
+        start = float(range_start_seconds)
+        end = float(range_end_seconds)
+        if (
+            not math.isfinite(start)
+            or not math.isfinite(end)
+            or start < 0
+            or end <= start
+            or end > MAX_SOURCE_DURATION_SECONDS
+        ):
+            raise IngestionError("유효하지 않은 영상 다운로드 구간입니다.")
+
+        return [
+            "--download-sections",
+            f"*{start:.3f}-{end:.3f}",
+            "--force-keyframes-at-cuts",
+        ]
 
     def _download_video_once(
-        self, normalized: str, expected_id: str, destination: Path
+        self,
+        normalized: str,
+        expected_id: str,
+        destination: Path,
+        *,
+        route: EgressRoute | None,
+        job_id: str | None,
+        attempt: int,
+        range_start_seconds: float | None = None,
+        range_end_seconds: float | None = None,
     ) -> tuple[VideoMetadata, Path]:
         destination.mkdir(parents=True, exist_ok=True)
         output_template = destination / "source.%(ext)s"
-        self._run(
+        self._run_for_route(
             [
                 *self._base_args(),
                 "--format",
@@ -341,11 +622,17 @@ class YtDlpIngestionProvider(IngestionProvider):
                 ),
                 "--merge-output-format",
                 "mp4",
+                *self._download_section_args(range_start_seconds, range_end_seconds),
                 "--write-info-json",
                 "--output",
                 str(output_template),
                 normalized,
-            ]
+            ],
+            timeout=None,
+            route=route,
+            job_id=job_id,
+            asset="video",
+            attempt=attempt,
         )
 
         info_path = destination / "source.info.json"
@@ -359,8 +646,7 @@ class YtDlpIngestionProvider(IngestionProvider):
         video_candidates = [
             path
             for path in destination.glob("source.*")
-            if path.is_file()
-            and path.suffix.lower() in {".m4v", ".mkv", ".mov", ".mp4", ".webm"}
+            if path.is_file() and path.suffix.lower() in {".m4v", ".mkv", ".mov", ".mp4", ".webm"}
         ]
         if not video_candidates:
             raise IngestionError("다운로드된 영상 파일을 찾지 못했습니다.")
@@ -376,12 +662,22 @@ class YtDlpIngestionProvider(IngestionProvider):
         destination: Path,
         *,
         job_id: str | None,
+        range_start_seconds: float | None = None,
+        range_end_seconds: float | None = None,
     ) -> VideoDownloadResult:
         failure_reasons: list[str] = []
         for attempt in range(1, self.max_attempts + 1):
+            route = self._acquire_route(job_id=job_id, asset="video", attempt=attempt)
             try:
                 metadata, path = self._download_video_once(
-                    normalized, expected_id, destination
+                    normalized,
+                    expected_id,
+                    destination,
+                    route=route,
+                    job_id=job_id,
+                    attempt=attempt,
+                    range_start_seconds=range_start_seconds,
+                    range_end_seconds=range_end_seconds,
                 )
                 result = VideoDownloadResult(
                     metadata=metadata,
@@ -397,13 +693,13 @@ class YtDlpIngestionProvider(IngestionProvider):
                     attempt_count=result.attempt_count,
                     failed_attempt_count=result.failed_attempt_count,
                     failure_reasons=result.failure_reasons,
+                    route_id=route.route_id if route else None,
+                    egress_class=route.egress_class if route else None,
                 )
                 return result
             except (RetryableIngestionError, BotCheckError) as exc:
                 next_retry_delay = (
-                    self._retry_delay_seconds(attempt)
-                    if attempt < self.max_attempts
-                    else None
+                    self._retry_delay_seconds(attempt) if attempt < self.max_attempts else None
                 )
                 failure_reasons.append(
                     self._log_failed_work_attempt(
@@ -412,6 +708,7 @@ class YtDlpIngestionProvider(IngestionProvider):
                         error=exc,
                         job_id=job_id,
                         next_retry_delay_seconds=next_retry_delay,
+                        route=route,
                     )
                 )
                 failure_reasons = failure_reasons[-MAX_RECORDED_FAILURE_REASONS:]
@@ -432,9 +729,7 @@ class YtDlpIngestionProvider(IngestionProvider):
                         f"{self.max_attempts}회 실패했습니다."
                     ) from exc
                 if next_retry_delay is None:
-                    raise AssertionError(
-                        "retry delay is required before the last attempt"
-                    ) from exc
+                    raise AssertionError("retry delay is required before the last attempt") from exc
                 self._wait_before_retry(next_retry_delay)
             except IngestionError as exc:
                 self._log_terminal_work_failure(
@@ -443,154 +738,33 @@ class YtDlpIngestionProvider(IngestionProvider):
                 raise
         raise AssertionError("unreachable")
 
-    def _download_subtitle_work(
+    def download_bundle(
         self,
-        normalized: str,
+        youtube_url: str,
         destination: Path,
         *,
-        job_id: str | None,
-    ) -> SubtitleDownloadResult:
-        work_failure_reasons: list[str] = []
-        track_failed_attempt_count = 0
-        track_empty_attempt_count = 0
-        matching_track_count = 0
-        for attempt in range(1, self.max_attempts + 1):
-            retry_error: RetryableIngestionError | BotCheckError | None = None
-            try:
-                info = self._extract_info(normalized)
-                result = self._download_best_subtitles_result(
-                    normalized, info, destination
-                )
-                track_failed_attempt_count += result.failed_attempt_count
-                track_empty_attempt_count += result.empty_attempt_count
-                matching_track_count = max(
-                    matching_track_count, result.matching_track_count
-                )
-                if not result.retryable:
-                    combined_reasons = [
-                        *work_failure_reasons,
-                        *result.failure_reasons,
-                    ][-MAX_RECORDED_FAILURE_REASONS:]
-                    completed = replace(
-                        result,
-                        matching_track_count=matching_track_count,
-                        failed_attempt_count=track_failed_attempt_count,
-                        empty_attempt_count=track_empty_attempt_count,
-                        work_attempt_count=attempt,
-                        work_failed_attempt_count=len(work_failure_reasons),
-                        failure_reasons=tuple(combined_reasons),
-                    )
-                    _log_ingestion_event(
-                        "ingestion_work_completed",
-                        job_id=job_id,
-                        asset="subtitle",
-                        attempt_count=completed.work_attempt_count,
-                        failed_attempt_count=completed.work_failed_attempt_count,
-                        track_failed_attempt_count=completed.failed_attempt_count,
-                        status=completed.status,
-                        failure_reasons=completed.failure_reasons,
-                    )
-                    return completed
-                retry_message = "자막 다운로드 중 임시 네트워크 오류가 발생했습니다."
-                if result.failure_reasons:
-                    _, separator, detail = result.failure_reasons[-1].partition(": ")
-                    retry_message = detail if separator else result.failure_reasons[-1]
-                retry_error = RetryableIngestionError(retry_message)
-            except (RetryableIngestionError, BotCheckError) as exc:
-                retry_error = exc
-            except IngestionError as exc:
-                self._log_terminal_work_failure(
-                    asset="subtitle", attempt=attempt, error=exc, job_id=job_id
-                )
-                raise
-
-            if retry_error is None:
-                raise AssertionError("retryable subtitle result requires an error")
-            next_retry_delay = (
-                self._retry_delay_seconds(attempt)
-                if attempt < self.max_attempts
-                else None
-            )
-            work_failure_reasons.append(
-                self._log_failed_work_attempt(
-                    asset="subtitle",
-                    attempt=attempt,
-                    error=retry_error,
-                    job_id=job_id,
-                    next_retry_delay_seconds=next_retry_delay,
-                )
-            )
-            work_failure_reasons = work_failure_reasons[-MAX_RECORDED_FAILURE_REASONS:]
-            if attempt >= self.max_attempts:
-                exhausted = SubtitleDownloadResult(
-                    path=None,
-                    source="none",
-                    language=None,
-                    status="download_failed",
-                    matching_track_count=matching_track_count,
-                    failed_attempt_count=track_failed_attempt_count,
-                    empty_attempt_count=track_empty_attempt_count,
-                    work_attempt_count=attempt,
-                    work_failed_attempt_count=attempt,
-                    failure_reasons=tuple(work_failure_reasons),
-                )
-                _log_ingestion_event(
-                    "ingestion_work_completed",
-                    job_id=job_id,
-                    asset="subtitle",
-                    attempt_count=exhausted.work_attempt_count,
-                    failed_attempt_count=exhausted.work_failed_attempt_count,
-                    track_failed_attempt_count=exhausted.failed_attempt_count,
-                    status=exhausted.status,
-                    failure_reasons=exhausted.failure_reasons,
-                )
-                return exhausted
-            if next_retry_delay is None:
-                raise AssertionError("retry delay is required before the last attempt")
-            self._wait_before_retry(next_retry_delay)
-        raise AssertionError("unreachable")
-
-    def download_bundle(
-        self, youtube_url: str, destination: Path, *, job_id: str | None = None
+        range_start_seconds: float | None = None,
+        range_end_seconds: float | None = None,
+        job_id: str | None = None,
     ) -> DownloadedAssetBundle:
-        """Download video and captions concurrently with independent bounded retries."""
+        """Download the source video with bounded retries and managed egress routing."""
         normalized, expected_id = validate_youtube_url(youtube_url)
         destination.mkdir(parents=True, exist_ok=True)
-        with ThreadPoolExecutor(
-            max_workers=2, thread_name_prefix="youtube-acquisition"
-        ) as executor:
-            video_future = executor.submit(
-                self._download_video_work,
-                normalized,
-                expected_id,
-                destination / "video",
-                job_id=job_id,
-            )
-            subtitle_future = executor.submit(
-                self._download_subtitle_work,
-                normalized,
-                destination / "subtitles",
-                job_id=job_id,
-            )
-            video = video_future.result()
-            subtitle = subtitle_future.result()
+        video = self._download_video_work(
+            normalized,
+            expected_id,
+            destination / "video",
+            job_id=job_id,
+            range_start_seconds=range_start_seconds,
+            range_end_seconds=range_end_seconds,
+        )
 
         return DownloadedAssetBundle(
             metadata=video.metadata,
             video_path=video.path,
-            subtitle_path=subtitle.path,
-            subtitle_source=subtitle.source,
-            subtitle_language=subtitle.language,
-            subtitle_fetch_status=subtitle.status,
-            subtitle_matching_track_count=subtitle.matching_track_count,
-            subtitle_failed_attempt_count=subtitle.failed_attempt_count,
-            subtitle_empty_attempt_count=subtitle.empty_attempt_count,
             video_attempt_count=video.attempt_count,
             video_failed_attempt_count=video.failed_attempt_count,
             video_failure_reasons=video.failure_reasons,
-            subtitle_attempt_count=subtitle.work_attempt_count,
-            subtitle_work_failed_attempt_count=subtitle.work_failed_attempt_count,
-            subtitle_failure_reasons=subtitle.failure_reasons,
         )
 
     def download_video(self, youtube_url: str, destination: Path) -> Path:
@@ -621,118 +795,3 @@ class YtDlpIngestionProvider(IngestionProvider):
         if not candidates:
             raise IngestionError("다운로드된 영상 파일을 찾지 못했습니다.")
         return max(candidates, key=lambda path: path.stat().st_size)
-
-    @staticmethod
-    def _pick_language(languages: dict[str, Any], prefix: str) -> str | None:
-        if prefix in languages:
-            return prefix
-        prefix_lower = prefix.lower()
-        matches = sorted(
-            key
-            for key in languages
-            if key.lower().startswith(prefix_lower + "-")
-            or key.lower().startswith(prefix_lower + "_")
-            or key.lower().startswith(prefix_lower + ".")
-        )
-        return matches[0] if matches else None
-
-    def download_subtitles(self, youtube_url: str, destination: Path) -> Path | None:
-        normalized, _ = validate_youtube_url(youtube_url)
-        info = self._extract_info(normalized)
-        return self._download_best_subtitles(normalized, info, destination)
-
-    def _download_best_subtitles(
-        self, normalized_url: str, info: dict[str, Any], destination: Path
-    ) -> Path | None:
-        return self._download_best_subtitles_result(
-            normalized_url, info, destination
-        ).path
-
-    def _download_best_subtitles_result(
-        self, normalized_url: str, info: dict[str, Any], destination: Path
-    ) -> SubtitleDownloadResult:
-        destination.mkdir(parents=True, exist_ok=True)
-        tracks = (
-            ("official", info.get("subtitles") or {}, "--write-subs"),
-            ("automatic", info.get("automatic_captions") or {}, "--write-auto-subs"),
-        )
-        has_any_tracks = any(languages for _, languages, _ in tracks)
-        matching_track_count = 0
-        failed_attempt_count = 0
-        empty_attempt_count = 0
-        retryable_failure_count = 0
-        failure_reasons: list[str] = []
-        for source, languages, mode in tracks:
-            language = self._pick_language(languages, "ko")
-            if not language:
-                continue
-            matching_track_count += 1
-            for old_caption in destination.glob("captions*"):
-                if old_caption.is_file():
-                    old_caption.unlink(missing_ok=True)
-            try:
-                self._run(
-                    [
-                        *self._base_args(),
-                        "--skip-download",
-                        mode,
-                        "--sub-langs",
-                        language,
-                        "--sub-format",
-                        "vtt/srt/best",
-                        "--output",
-                        str(destination / "captions.%(ext)s"),
-                        normalized_url,
-                    ],
-                    timeout=min(self.timeout_seconds, 180),
-                )
-            except BotCheckError:
-                raise
-            except RetryableIngestionError as exc:
-                failed_attempt_count += 1
-                retryable_failure_count += 1
-                failure_reasons.append(_failure_reason(exc))
-                failure_reasons = failure_reasons[-MAX_RECORDED_FAILURE_REASONS:]
-                continue
-            except IngestionError as exc:
-                failed_attempt_count += 1
-                failure_reasons.append(_failure_reason(exc))
-                failure_reasons = failure_reasons[-MAX_RECORDED_FAILURE_REASONS:]
-                continue
-            candidates = [
-                path
-                for path in destination.glob("captions*")
-                if path.is_file() and path.suffix.lower() in {".vtt", ".srt"}
-            ]
-            if candidates:
-                return SubtitleDownloadResult(
-                    path=max(candidates, key=lambda path: path.stat().st_size),
-                    source=source,
-                    language=language,
-                    status="downloaded",
-                    matching_track_count=matching_track_count,
-                    failed_attempt_count=failed_attempt_count,
-                    empty_attempt_count=empty_attempt_count,
-                    failure_reasons=tuple(failure_reasons),
-                )
-            empty_attempt_count += 1
-
-        if not has_any_tracks:
-            status = "no_tracks"
-        elif matching_track_count == 0:
-            status = "no_matching_language"
-        elif failed_attempt_count:
-            status = "download_failed"
-        else:
-            status = "download_empty"
-        return SubtitleDownloadResult(
-            path=None,
-            source="none",
-            language=None,
-            status=status,
-            matching_track_count=matching_track_count,
-            failed_attempt_count=failed_attempt_count,
-            empty_attempt_count=empty_attempt_count,
-            failure_reasons=tuple(failure_reasons),
-            retryable=retryable_failure_count > 0,
-        )

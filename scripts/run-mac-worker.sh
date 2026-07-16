@@ -10,7 +10,7 @@ if [[ -f .env.local ]]; then
   set +a
 fi
 
-for name in DATABASE_URL OPENAI_API_KEY GEMINI_API_KEY; do
+for name in DATABASE_URL OPENAI_API_KEY; do
   [[ -n "${!name:-}" ]] || { echo "필수 환경변수가 없습니다: $name" >&2; exit 2; }
 done
 command -v docker >/dev/null 2>&1 || { echo "Docker Desktop이 필요합니다." >&2; exit 2; }
@@ -45,6 +45,9 @@ while true; do
     --env AWS_SESSION_TOKEN \
     --env OPENAI_API_KEY \
     --env OPENAI_TRANSCRIBE_MODEL \
+    --env OPENAI_HIGHLIGHT_FALLBACK_MODEL \
+    --env OPENAI_TRANSCRIBE_CHUNK_SECONDS \
+    --env OPENAI_TRANSCRIBE_MAX_WORKERS \
     --env GEMINI_API_KEY \
     --env GEMINI_TEXT_MODEL \
     --env GEMINI_OPENAI_BASE_URL \
