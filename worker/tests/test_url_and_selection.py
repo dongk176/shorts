@@ -268,8 +268,11 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     assert "자연스러운 일본어 구어체" in request["messages"][0]["content"]
     assert "공백 포함 5~18자" in request["messages"][0]["content"]
     assert "hook_title_line1" in request["messages"][0]["content"]
+    assert "reason에는 이 구간이 쇼츠로 매력적인 이유" in request["messages"][0]["content"]
+    assert "reason은 자연스러운 일본어" in request["messages"][0]["content"]
     assert "예시" not in request["messages"][0]["content"]
     assert clips[0].hook_title == "Gemini가 고른\n핵심 장면의 반전"
+    assert clips[0].reason == "테스트 후보"
 
     english_messages = selector._selection_messages(
         video_title="English title test",

@@ -664,6 +664,7 @@ class BatchWorker:
                         start_seconds=range_start_seconds + clip.start_seconds,
                         end_seconds=range_start_seconds + clip.end_seconds,
                         hook_title=clip.hook_title,
+                        highlight_reason=clip.reason,
                         subtitles=[item.model_dump() for item in relative_subtitles],
                         clean_key=clean_key,
                         retention_days=int(job["retention_days"]),

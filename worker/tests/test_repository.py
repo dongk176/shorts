@@ -82,6 +82,19 @@ def test_ingestion_failure_details_migration_is_schema_qualified() -> None:
     assert "public." not in migration
 
 
+def test_highlight_reason_migration_is_schema_qualified() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607170007_generated_short_highlight_reason.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "shorts_mvp.generated_shorts" in migration
+    assert "highlight_reason text not null default ''" in migration
+    assert "public." not in migration
+
+
 def test_route_release_uses_the_schema_qualified_atomic_function() -> None:
     implementation = inspect.getsource(WorkerRepository.release_ingestion_route)
 
@@ -161,6 +174,7 @@ def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> 
         start_seconds=10,
         end_seconds=40,
         hook_title="hook",
+        highlight_reason="reason",
         subtitles=[],
         clean_key="edit-sources/short-a.mp4",
         retention_days=30,

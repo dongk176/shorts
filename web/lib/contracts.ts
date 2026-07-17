@@ -104,6 +104,7 @@ export type GeneratedShort = {
   endSeconds: number;
   durationSeconds: number;
   hookTitle: string;
+  highlightReason: string;
   channelDisplayName: string;
   subtitleSegments: Array<{ start: number; end: number; text: string }>;
   subtitlesEnabled: boolean;
