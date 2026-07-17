@@ -53,6 +53,7 @@ const publicObjects = async () => sql`
 try {
   const before = JSON.stringify(await publicObjects());
   for (const file of migrationFiles) {
+    process.stdout.write(`Supabase migration 적용: ${file}\n`);
     const migration = fs.readFileSync(path.join(migrationDirectory, file), "utf8");
     await sql.unsafe(migration, [], { prepare: false });
   }
@@ -67,6 +68,17 @@ try {
     (plan) => `${plan.code}:${plan.monthly_source_seconds}:${plan.retention_days}`,
   );
   if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("plan seed 검증에 실패했습니다.");
+  const [dispatcher] = await sql`
+    select pg_get_functiondef(
+      'shorts_mvp.claim_job_outbox(integer)'::regprocedure
+    ) as definition
+  `;
+  if (
+    !dispatcher?.definition?.includes("shorts_mvp.ingestion_route_slots")
+    || !dispatcher.definition.includes("ingestion_route_id")
+  ) {
+    throw new Error("prepare dispatcher의 ingestion route 배정 함수가 최신 상태가 아닙니다.");
+  }
   process.stdout.write("Supabase shorts_mvp migration 및 public schema 무변경 검증 완료\n");
 } finally {
   await sql.end({ timeout: 3 });
