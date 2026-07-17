@@ -404,6 +404,47 @@ def test_centrally_assigned_isp_route_rotates_inline_without_requeue(
     assert details["cause"]["code"] == "youtube_bot_challenge"
 
 
+def test_retryable_extractor_failure_rotates_inline_to_the_next_route(tmp_path) -> None:
+    worker = _worker(tmp_path, AssertionError("replaced below"))
+    worker.ingestion.configured_route_count = 2
+    worker.ingestion.egress_class_for.return_value = "webshare_isp"
+    successful_bundle = DownloadedAssetBundle(
+        metadata=VideoMetadata("dQw4w9WgXcQ", "테스트 영상", "채널", "", 120),
+        video_path=tmp_path / "source.mp4",
+    )
+    worker.ingestion.download_bundle.side_effect = [
+        RetryableIngestionError(
+            "temporary unavailable",
+            code="youtube_extractor_failed",
+        ),
+        successful_bundle,
+    ]
+    worker.repository.rotate_ingestion_route.return_value = "webshare-04"
+
+    bundle, route_id = worker._download_with_inline_route_rotation(
+        job_id="job-a",
+        job_attempt=1,
+        youtube_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        destination=tmp_path / "source",
+        range_start_seconds=None,
+        range_end_seconds=None,
+        initial_route_id="webshare-03",
+    )
+
+    assert bundle is successful_bundle
+    assert route_id == "webshare-04"
+    worker.repository.rotate_ingestion_route.assert_called_once_with(
+        "job-a",
+        "webshare-03",
+        result="network_error",
+        cooldown_seconds=30,
+        excluded_route_ids=["webshare-03"],
+    )
+    worker.repository.release_ingestion_route.assert_called_once_with(
+        "job-a", "webshare-04", result="success", cooldown_seconds=0
+    )
+
+
 def test_inline_rotation_can_try_all_ten_configured_routes(tmp_path) -> None:
     worker = _worker(tmp_path, AssertionError("replaced below"))
     worker.ingestion.configured_route_count = 10

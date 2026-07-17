@@ -347,6 +347,61 @@ def test_content_restrictions_have_distinct_failure_codes(
     assert caught.value.code == expected_code
 
 
+@pytest.mark.parametrize(
+    "upstream_error",
+    [
+        "ERROR: [youtube] abc: Video unavailable. This content isn't available.",
+        "ERROR: [youtube] abc: Video unavailable. This content isn’t available.",
+    ],
+)
+def test_generic_content_unavailable_is_retryable(
+    monkeypatch: pytest.MonkeyPatch,
+    upstream_error: str,
+) -> None:
+    monkeypatch.delenv("WARP_PROXY_URL", raising=False)
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr=upstream_error
+        ),
+    )
+
+    with pytest.raises(RetryableIngestionError) as caught:
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+    assert caught.value.code == "youtube_extractor_failed"
+    assert caught.value.retryable is True
+    assert caught.value.failure_details()["upstream_reason"] == upstream_error
+
+
+def test_explicit_region_restriction_remains_terminal_with_generic_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("WARP_PROXY_URL", raising=False)
+    monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr=(
+                "ERROR: Video unavailable. This content isn’t available.\n"
+                "ERROR: This video is not available in your country"
+            ),
+        ),
+    )
+
+    with pytest.raises(IngestionError) as caught:
+        YtDlpIngestionProvider()._run(["yt-dlp", "https://youtu.be/dQw4w9WgXcQ"])
+
+    assert type(caught.value) is IngestionError
+    assert caught.value.code == "youtube_region_restricted"
+
+
 def test_unknown_upstream_failure_detail_redacts_urls_and_credentials(monkeypatch) -> None:
     monkeypatch.delenv("WARP_PROXY_URL", raising=False)
     monkeypatch.delenv("FALLBACK_PROXY_URL", raising=False)

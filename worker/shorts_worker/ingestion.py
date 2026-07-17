@@ -64,6 +64,10 @@ _TERMINAL_RESTRICTIONS = (
         "DRM으로 보호된 영상은 지원하지 않습니다.",
     ),
 )
+_RETRYABLE_CONTENT_UNAVAILABLE_MARKERS = (
+    "video unavailable. this content isn't available.",
+    "video unavailable. this content isn’t available.",
+)
 _URL_PATTERN = re.compile(r"(?i)\b(?:https?|socks5h?)://\S+")
 _SENSITIVE_VALUE_PATTERN = re.compile(
     r"(?i)\b(authorization|cookie|password|proxy|token)\s*[:=]\s*(?:bearer\s+)?\S+"
@@ -583,6 +587,21 @@ class YtDlpIngestionProvider(IngestionProvider):
             for markers, code, message in _TERMINAL_RESTRICTIONS:
                 if any(marker in lowered_output for marker in markers):
                     raise IngestionError(message, code=code, details=failure_context)
+
+            if any(
+                marker in lowered_output
+                for marker in _RETRYABLE_CONTENT_UNAVAILABLE_MARKERS
+            ):
+                last_error = RetryableIngestionError(
+                    "YouTube가 일시적으로 영상 재생 정보를 반환하지 않았습니다. "
+                    "다른 허용된 수집 경로에서 다시 시도합니다.",
+                    code="youtube_extractor_failed",
+                    details={
+                        **failure_context,
+                        "upstream_reason": _safe_upstream_reason(output),
+                    },
+                )
+                continue
 
             if (
                 "unable to download video data" in lowered_output

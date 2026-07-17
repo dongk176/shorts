@@ -22,6 +22,9 @@ for command in aws git openssl node npm; do
 done
 aws sts get-caller-identity >/dev/null
 
+echo "Supabase schema migration을 먼저 적용합니다."
+npm run db:migrate
+
 repository_name="shorts-mvp-worker-$ENVIRONMENT"
 if aws ecr describe-repositories --region "$REGION" \
   --repository-names "$repository_name" >/dev/null 2>&1; then
