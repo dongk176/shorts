@@ -329,6 +329,10 @@ class TranscriptSelector:
             f"- 자연스러운 {language_name} 구어체로 작성할 것.\n"
             "- 1행은 hook_title_line1, 2행은 hook_title_line2에 줄바꿈 없는 문자열로 "
             "반환할 것.\n\n"
+            "[선정 이유]\n"
+            "- reason에는 이 구간이 쇼츠로 매력적인 이유를 구체적인 장면이나 발언을 "
+            "근거로 1~2문장으로 작성할 것.\n"
+            f"- reason은 자연스러운 {language_name}로 작성할 것.\n\n"
             "최종 응답은 요청된 Pydantic JSON 구조로만 반환할 것."
         )
         user = (

@@ -69,7 +69,7 @@ class HighlightClip(BaseModel):
     start_seconds: float
     end_seconds: float
     hook_title: str = Field(min_length=1, max_length=MAX_HOOK_TITLE_CHARS)
-    reason: str = ""
+    reason: str = Field(default="", max_length=1000)
 
     @field_validator("hook_title", mode="before")
     @classmethod
@@ -86,7 +86,7 @@ class HighlightCandidate(BaseModel):
     end_seconds: float
     hook_title_line1: str = Field(min_length=1, max_length=MAX_HOOK_TITLE_CHARS // 2)
     hook_title_line2: str = Field(min_length=1, max_length=MAX_HOOK_TITLE_CHARS // 2)
-    reason: str = ""
+    reason: str = Field(min_length=1, max_length=500)
 
     @field_validator("hook_title_line1", "hook_title_line2", mode="before")
     @classmethod

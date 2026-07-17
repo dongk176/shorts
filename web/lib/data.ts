@@ -47,7 +47,7 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
   if (!jobIds.length) return new Map<string, GeneratedShort[]>();
   const rows = await db`
     select id, job_id, clip_index, start_seconds, end_seconds, duration_seconds,
-      hook_title, channel_display_name, subtitle_segments, subtitles_enabled,
+      hook_title, highlight_reason, channel_display_name, subtitle_segments, subtitles_enabled,
       template_id, video_aspect_ratio, title_font_scale, render_version,
       rerender_progress, status, expires_at
     from shorts_mvp.generated_shorts
@@ -64,6 +64,7 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       endSeconds: Number(row.endSeconds),
       durationSeconds: Number(row.durationSeconds),
       hookTitle: row.hookTitle,
+      highlightReason: row.highlightReason || "",
       channelDisplayName: row.channelDisplayName,
       subtitleSegments: row.subtitleSegments,
       subtitlesEnabled: row.subtitlesEnabled,

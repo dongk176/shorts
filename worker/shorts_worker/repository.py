@@ -388,6 +388,7 @@ class WorkerRepository:
         start_seconds: float,
         end_seconds: float,
         hook_title: str,
+        highlight_reason: str,
         subtitles: list[dict[str, Any]],
         clean_key: str,
         output_key: str,
@@ -400,12 +401,13 @@ class WorkerRepository:
                 """
                 insert into shorts_mvp.generated_shorts (
                   id, job_id, mvp_session_id, user_id, clip_index, start_seconds,
-                  end_seconds, duration_seconds, hook_title, channel_display_name,
+                  end_seconds, duration_seconds, hook_title, highlight_reason,
+                  channel_display_name,
                   subtitle_segments, subtitles_enabled, template_id, video_aspect_ratio,
                   clean_clip_s3_key,
                   output_s3_key, thumbnail_s3_key, file_size_bytes, expires_at, status
                 ) values (
-                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,%s,%s,%s,%s,'ready'
+                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,%s,%s,%s,%s,'ready'
                 )
                 on conflict (job_id, clip_index) do nothing
                 returning id
@@ -420,6 +422,7 @@ class WorkerRepository:
                     end_seconds,
                     end_seconds - start_seconds,
                     hook_title,
+                    highlight_reason,
                     job["channel_name"],
                     Jsonb(subtitles),
                     job["template_id"],
@@ -460,6 +463,7 @@ class WorkerRepository:
         start_seconds: float,
         end_seconds: float,
         hook_title: str,
+        highlight_reason: str,
         subtitles: list[dict[str, Any]],
         clean_key: str,
         retention_days: int,
@@ -487,13 +491,14 @@ class WorkerRepository:
                 """
                 insert into shorts_mvp.generated_shorts (
                   id, job_id, mvp_session_id, user_id, clip_index, start_seconds,
-                  end_seconds, duration_seconds, hook_title, channel_display_name,
+                  end_seconds, duration_seconds, hook_title, highlight_reason,
+                  channel_display_name,
                   subtitle_segments, subtitles_enabled, template_id, video_aspect_ratio,
                   clean_clip_s3_key,
                   output_s3_key, thumbnail_s3_key, file_size_bytes, created_at,
                   expires_at, status, render_shard_index, render_progress
                 ) values (
-                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,null,null,null,
+                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,null,null,null,
                   now(),
                   now() + make_interval(days => least(greatest(%s::integer, 1), 30)),
                   'rendering',%s,0
@@ -502,6 +507,7 @@ class WorkerRepository:
                   clean_clip_s3_key=excluded.clean_clip_s3_key,
                   subtitle_segments=excluded.subtitle_segments,
                   hook_title=excluded.hook_title,
+                  highlight_reason=excluded.highlight_reason,
                   video_aspect_ratio=excluded.video_aspect_ratio,
                   render_shard_index=excluded.render_shard_index,
                   status='rendering', render_progress=0,
@@ -517,6 +523,7 @@ class WorkerRepository:
                     end_seconds,
                     end_seconds - start_seconds,
                     hook_title,
+                    highlight_reason,
                     (" ".join(str(job["channel_name"]).split())[:50] or "YouTube 채널"),
                     Jsonb(subtitles),
                     job["template_id"],

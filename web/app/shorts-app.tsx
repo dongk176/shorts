@@ -494,32 +494,51 @@ function ProjectWorkspace({ job, onBack, onChanged }: { job: VideoJob; onBack: (
   };
 
   if (!selected) return <div className="project-workspace"><button onClick={onBack}>← 프로젝트로 돌아가기</button><p className={`m-auto max-w-xl px-6 text-center leading-7 ${job.status === "failed" ? "text-red-300" : "text-neutral-500"}`}>{job.status === "failed" && job.errorMessage ? job.errorMessage : "아직 생성된 쇼츠가 없습니다."}</p></div>;
-  const selectedUrl = playbackUrl(selected);
-  const selectedIsRerendering = selected.status === "rerendering";
-  const selectedRemainingMinutes = Math.max(1, Math.ceil(selected.durationSeconds / 30));
   return (
     <div className="project-workspace">
       <header className="workspace-header">
-        <div className="min-w-0"><button onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 내 프로젝트</button><h1 className="mt-1 truncate text-lg font-bold">{job.videoTitle}</h1></div>
-        <div className="flex shrink-0 gap-2"><button disabled={selectedIsRerendering} onClick={() => setEditing(true)} className="workspace-button disabled:opacity-40">✦ 템플릿 적용</button><button onClick={() => void Promise.all(job.shorts.map(download))} className="workspace-button workspace-button-primary">↓ 모든 쇼츠 다운로드</button></div>
+        <div className="min-w-0"><button onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 내 프로젝트</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 className="truncate text-lg font-bold">{job.videoTitle}</h1><span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
+        <button onClick={() => void Promise.all(job.shorts.map(download))} className="workspace-button workspace-button-primary shrink-0">↓ 모든 쇼츠 다운로드</button>
       </header>
-      <div className="workspace-body">
-        <aside className="shorts-rail">
-          <div className="flex items-center justify-between border-b border-white/10 p-4"><strong className="text-sm">생성된 쇼츠 ({job.shorts.length})</strong><span className="text-xs text-neutral-500">타임라인순</span></div>
-          <div className="space-y-3 overflow-y-auto p-3">{job.shorts.map((item) => {
+      <main className="short-results-workspace">
+        <div className="short-results-list">
+          {job.shorts.map((item, index) => {
             const itemUrl = playbackUrl(item);
-            return <button key={item.id} onClick={() => setSelectedId(item.id)} className={`rail-card ${selected.id === item.id ? "rail-card-active" : ""}`}><div className="flex aspect-[9/16] w-16 shrink-0 items-center justify-center overflow-hidden rounded bg-black text-[10px] text-neutral-600">{itemUrl ? <video src={itemUrl} muted preload="metadata" className="h-full w-full object-cover" /> : "VIDEO"}</div><div className="min-w-0 flex-1 py-1"><span className="text-[10px] text-violet-300">✦ 하이라이트 훅</span><h3 className="mt-1 line-clamp-3 text-left text-xs font-semibold leading-5">{item.hookTitle}</h3><span className="mt-2 block text-left text-[10px] text-neutral-500">{formatDuration(item.durationSeconds)}</span></div></button>;
-          })}</div>
-        </aside>
-        <main className="preview-stage"><div className="relative overflow-hidden rounded-xl shadow-2xl">{selectedUrl ? <video key={shortPlaybackVersionKey(selected)} src={selectedUrl} controls={!selectedIsRerendering} playsInline className={`max-h-full max-w-full ${selectedIsRerendering ? "grayscale" : ""}`} /> : <div className="flex aspect-[9/16] h-[70vh] items-center justify-center bg-black text-sm text-neutral-500">영상 준비 중</div>}{selectedIsRerendering && <div className="project-processing-overlay"><ProgressRing progress={selected.rerenderProgress} /><strong>약 {selectedRemainingMinutes}분 남음</strong></div>}</div></main>
-        <aside className="tools-panel">
-          <div className="rounded-xl border border-violet-400/20 bg-violet-400/10 p-4 text-xs leading-5 text-neutral-300"><strong className="block text-violet-200">✦ AI 하이라이트</strong>시청자의 관심을 끌 장면을 앞부분에 배치했어요. 편집에서 제목과 자막, 템플릿을 바꿀 수 있습니다.</div>
-          <div><h2 className="tool-heading">빠른 작업</h2><div className="grid grid-cols-2 gap-2"><button disabled={selectedIsRerendering} onClick={() => setEditing(true)} className="tool-button bg-blue-600 disabled:opacity-40">✎ 편집하기</button><button disabled={!selectedUrl || selectedIsRerendering} onClick={() => void download(selected)} className="tool-button bg-emerald-700 disabled:opacity-40">↓ 다운로드</button></div></div>
-          <div><h2 className="tool-heading">제목</h2><div className="tool-field">{selected.hookTitle}</div></div>
-          <div><h2 className="tool-heading">원본 영상 타임라인</h2><div className="tool-field">◷ {formatTimestamp(selected.startSeconds)} ~ {formatTimestamp(selected.endSeconds)}</div></div>
-          <div className="min-h-0 flex-1"><h2 className="tool-heading">스크립트</h2><div className="tool-field h-full overflow-y-auto leading-6">{selected.subtitleSegments.map((segment) => segment.text).join(" ") || "추출된 스크립트가 없습니다."}</div></div>
-        </aside>
-      </div>
+            const itemIsRerendering = item.status === "rerendering";
+            const itemRemainingMinutes = Math.max(1, Math.ceil(item.durationSeconds / 30));
+            const script = item.subtitleSegments.map((segment) => segment.text).join(" ") || "추출된 스크립트가 없습니다.";
+            return (
+              <article key={item.id} className="short-result-card">
+                <div className="short-result-heading">
+                  <span>#{index + 1}</span>
+                  <h2>{item.hookTitle}</h2>
+                </div>
+                <div className="short-result-layout">
+                  <div className="short-video-column">
+                    <div className="short-video-shell">
+                      {itemUrl ? <video key={shortPlaybackVersionKey(item)} src={itemUrl} controls={!itemIsRerendering} playsInline preload="metadata" className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
+                      <span className="short-duration-badge">{formatDuration(item.durationSeconds)}</span>
+                      {itemIsRerendering && <div className="project-processing-overlay"><ProgressRing progress={item.rerenderProgress} /><strong>약 {itemRemainingMinutes}분 남음</strong></div>}
+                    </div>
+                    <div className="short-result-actions">
+                      <button disabled={itemIsRerendering} onClick={() => { setSelectedId(item.id); setEditing(true); }} className="tool-button short-edit-button disabled:opacity-40">✎ 편집하기</button>
+                      <button disabled={!itemUrl || itemIsRerendering} onClick={() => void download(item)} className="tool-button short-download-button disabled:opacity-40">↓ 다운로드</button>
+                    </div>
+                  </div>
+                  <div className="short-detail-column">
+                    <div className="short-highlight-note"><strong>✦ AI 하이라이트</strong><p>{item.highlightReason.trim() || "이 쇼츠의 선정 이유가 저장되지 않았습니다."}</p></div>
+                    <div className="short-source-range"><span>원본 영상 타임라인</span><strong>◷ {formatTimestamp(item.startSeconds)} ~ {formatTimestamp(item.endSeconds)}</strong></div>
+                    <section className="short-script-panel">
+                      <h3>스크립트</h3>
+                      <p>{script}</p>
+                    </section>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </main>
       {editing && <Editor item={selected} channelThumbnailUrl={job.channelThumbnailUrl} onClose={() => setEditing(false)} onChanged={onChanged} />}
     </div>
   );
