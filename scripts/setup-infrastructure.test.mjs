@@ -12,3 +12,12 @@ test("applies Supabase migrations before deploying worker infrastructure", () =>
   assert.notEqual(deployIndex, -1);
   assert.ok(migrationIndex < deployIndex);
 });
+
+test("does not re-import the stack-managed Vercel OIDC provider", () => {
+  assert.doesNotMatch(
+    script,
+    /vercel_oidc_arn=.*list-open-id-connect-providers/,
+  );
+  assert.match(script, /if \[\[ -n "\$\{VERCEL_OIDC_PROVIDER_ARN:-\}" \]\]; then/);
+  assert.match(script, /vercelOidcProviderArn=\$VERCEL_OIDC_PROVIDER_ARN/);
+});

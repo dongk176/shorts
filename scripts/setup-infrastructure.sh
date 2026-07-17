@@ -51,15 +51,14 @@ npm --prefix infra/aws install
 npx --prefix infra/aws cdk bootstrap "aws://${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}/$REGION"
 context_args=()
 github_oidc_arn="${GITHUB_OIDC_PROVIDER_ARN:-$(aws iam list-open-id-connect-providers --query "OpenIDConnectProviderList[?contains(Arn, 'token.actions.githubusercontent.com')].Arn | [0]" --output text)}"
-vercel_oidc_arn="${VERCEL_OIDC_PROVIDER_ARN:-$(aws iam list-open-id-connect-providers --query "OpenIDConnectProviderList[?contains(Arn, 'oidc.vercel.com/${VERCEL_TEAM_SLUG}')].Arn | [0]" --output text)}"
 if [[ -n "$github_oidc_arn" && "$github_oidc_arn" != "None" ]]; then
   context_args+=("-c" "githubOidcProviderArn=$github_oidc_arn")
 fi
-if [[ -n "$vercel_oidc_arn" && "$vercel_oidc_arn" != "None" ]]; then
+if [[ -n "${VERCEL_OIDC_PROVIDER_ARN:-}" ]]; then
   aws iam add-client-id-to-open-id-connect-provider \
-    --open-id-connect-provider-arn "$vercel_oidc_arn" \
+    --open-id-connect-provider-arn "$VERCEL_OIDC_PROVIDER_ARN" \
     --client-id sts.amazonaws.com >/dev/null
-  context_args+=("-c" "vercelOidcProviderArn=$vercel_oidc_arn")
+  context_args+=("-c" "vercelOidcProviderArn=$VERCEL_OIDC_PROVIDER_ARN")
 fi
 deploy_args=(
   -c "environment=$ENVIRONMENT"
