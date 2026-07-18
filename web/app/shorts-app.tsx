@@ -427,7 +427,7 @@ function ProjectCard({ job, onOpen }: { job: VideoJob; onOpen: () => void }) {
   const displayedProgress = rerenderingShort ? rerenderingShort.rerenderProgress : job.progress;
   return (
     <button type="button" onClick={onOpen} disabled={isProcessing && readyCount === 0} className={`project-card group text-left ${isProcessing ? "project-card-processing" : ""}`}>
-      <div className="relative aspect-video overflow-hidden bg-neutral-900">
+      <div className="relative aspect-video overflow-hidden rounded-[14px] bg-neutral-900">
         {job.thumbnailUrl ? <Image src={job.thumbnailUrl} alt="" fill unoptimized className={`object-cover transition duration-300 group-hover:scale-[1.03] ${isProcessing ? "grayscale" : ""}`} /> : null}
         {daysUntilExpiration !== null && <span className="absolute left-2 top-2 z-10 rounded bg-black/75 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">{daysUntilExpiration > 0 ? `${daysUntilExpiration}일 뒤 만료` : "오늘 만료"}</span>}
         {job.isExample && <span className="absolute right-2 top-2 z-10 rounded bg-red-500 px-2 py-1 text-[11px] font-extrabold text-white shadow-lg">예시 작업</span>}
@@ -435,7 +435,7 @@ function ProjectCard({ job, onOpen }: { job: VideoJob; onOpen: () => void }) {
         <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
         {isProcessing && readyCount === 0 && <div className="project-processing-overlay"><ProgressRing progress={displayedProgress} /><strong>약 {remainingMinutes}분 남음</strong></div>}
       </div>
-      <div className="p-4">
+      <div className="pt-3">
         <h3 className="line-clamp-1 text-sm font-bold text-white">{job.videoTitle}</h3>
         <div className="mt-3 flex items-center justify-between text-xs text-neutral-500">
           <span className={rerenderingShort ? "text-violet-300" : job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-neutral-400"}>{rerenderingShort ? "● 수정 반영 중" : job.status === "completed" ? "● 완료" : job.status === "failed" ? "● 생성 실패" : job.status === "retry_waiting" ? "● 원본 영상을 준비하고 있습니다" : readyCount > 0 ? `● ${readyCount}개 먼저 완료` : "● 생성 중"}</span>
