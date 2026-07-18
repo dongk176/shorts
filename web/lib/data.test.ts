@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Sql } from "postgres";
-import { getGeneratedShortCount, getShortsForJobs } from "./data";
+import { getGeneratedShortCount, getPublicExampleJobs, getShortsForJobs } from "./data";
 
 describe("generated shorts counter", () => {
   it("returns the persisted public counter as a number", async () => {
@@ -40,5 +40,67 @@ describe("generated short details", () => {
     expect(shorts.get("job-a")?.[0]?.highlightReason).toBe(
       "반전이 드러나는 핵심 발언이 포함된 구간입니다.",
     );
+  });
+
+  it("maps a permanent short without an expiry timestamp", async () => {
+    const query = vi.fn()
+      .mockReturnValueOnce(["job-a"])
+      .mockResolvedValueOnce([{
+        id: "short-a",
+        jobId: "job-a",
+        clipIndex: 1,
+        startSeconds: "12",
+        endSeconds: "54",
+        durationSeconds: "42",
+        hookTitle: "후킹 제목",
+        highlightReason: "",
+        channelDisplayName: "채널",
+        subtitleSegments: [],
+        subtitlesEnabled: false,
+        templateId: "dark-red",
+        videoAspectRatio: "9:16",
+        titleFontScale: "1",
+        renderVersion: 1,
+        rerenderProgress: 100,
+        status: "ready",
+        expiresAt: null,
+      }]) as unknown as Sql;
+
+    const shorts = await getShortsForJobs(query, ["job-a"]);
+
+    expect(shorts.get("job-a")?.[0]?.expiresAt).toBeNull();
+  });
+});
+
+describe("public example projects", () => {
+  it("marks the returned project as an example", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([{
+        id: "job-a",
+        isExample: true,
+        videoTitle: "예시 영상",
+        channelName: "채널",
+        channelThumbnailUrl: null,
+        thumbnailUrl: "https://example.com/thumb.jpg",
+        sourceDurationSeconds: 600,
+        rangeDownloadStatus: "verified",
+        downloadedMediaDurationSeconds: "600",
+        downloadedMediaBytes: "1024",
+        rangeDownloadVerifiedAt: new Date("2026-07-18T00:00:00.000Z"),
+        outputLanguage: "ko",
+        expectedShortCount: 12,
+        status: "completed",
+        stage: "completed",
+        progress: 100,
+        errorMessage: null,
+        createdAt: new Date("2026-07-18T00:00:00.000Z"),
+        expiresAt: null,
+      }])
+      .mockReturnValueOnce(["job-a"])
+      .mockResolvedValueOnce([]) as unknown as Sql;
+
+    const jobs = await getPublicExampleJobs(query);
+
+    expect(jobs).toMatchObject([{ id: "job-a", isExample: true, expiresAt: null }]);
   });
 });

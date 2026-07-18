@@ -23,7 +23,7 @@ function stacks() {
 }
 
 describe("shorts MVP infrastructure", () => {
-  it("keeps S3 private with 30-day lifecycle and CloudFront OAC", () => {
+  it("keeps S3 private, expires regular media, and retains example media", () => {
     const { foundation } = stacks();
     foundation.hasResourceProperties("AWS::S3::Bucket", {
       PublicAccessBlockConfiguration: {
@@ -33,12 +33,19 @@ describe("shorts MVP infrastructure", () => {
         RestrictPublicBuckets: true,
       },
       LifecycleConfiguration: {
-        Rules: Match.arrayWith([Match.objectLike({ ExpirationInDays: 30, Status: "Enabled" })]),
+        Rules: Match.arrayWith([
+          Match.objectLike({ Prefix: "outputs/", ExpirationInDays: 30, Status: "Enabled" }),
+          Match.objectLike({ Prefix: "thumbnails/", ExpirationInDays: 30, Status: "Enabled" }),
+          Match.objectLike({ Prefix: "edit-sources/", ExpirationInDays: 30, Status: "Enabled" }),
+        ]),
       },
     });
     foundation.resourceCountIs("AWS::CloudFront::OriginAccessControl", 1);
     foundation.hasResourceProperties("AWS::CloudFront::Function", {
       FunctionCode: Match.stringLikeRegexp("/outputs/"),
+    });
+    foundation.hasResourceProperties("AWS::CloudFront::Function", {
+      FunctionCode: Match.stringLikeRegexp("/examples/"),
     });
   });
 

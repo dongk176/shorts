@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { getPublicMvpState, getRecentJobs } from "@/lib/data";
+import { getPublicExampleJobs, getPublicMvpState, getRecentJobs } from "@/lib/data";
 import { apiError } from "@/lib/http";
 import { requireMvpSession } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
@@ -13,9 +13,10 @@ export async function GET() {
   const requestId = randomUUID();
   try {
     const db = getDb();
-    const [{ plans, generatedShortCount }, authenticatedUser] = await Promise.all([
+    const [{ plans, generatedShortCount }, authenticatedUser, publicExampleJobs] = await Promise.all([
       getPublicMvpState(db),
       getAuthenticatedUser(),
+      getPublicExampleJobs(db),
     ]);
     if (!authenticatedUser) {
       const selectedPlanCode = "plus";
@@ -37,7 +38,7 @@ export async function GET() {
           nextResetAt: next.toISOString(),
           enforcementEnabled: process.env.MVP_PLAN_ENFORCEMENT === "true",
         },
-        recentJobs: [],
+        recentJobs: publicExampleJobs,
       }, { headers: { "x-request-id": requestId } });
       response.headers.set("Cache-Control", "private, no-store");
       return response;

@@ -23,13 +23,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const existing = await db`
-      select id, subtitle_segments from shorts_mvp.generated_shorts
-      where id=${shortId} and (
-        (${session.userId}::uuid is not null and user_id=${session.userId})
-        or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+      select s.id, s.subtitle_segments from shorts_mvp.generated_shorts s
+      join shorts_mvp.video_jobs j on j.id=s.job_id
+      where s.id=${shortId} and not j.is_example and (
+        (${session.userId}::uuid is not null and s.user_id=${session.userId})
+        or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
       )
-        and deleted_at is null and expires_at > now()
-        and status='ready' and output_s3_key is not null
+        and s.deleted_at is null and s.expires_at > now()
+        and s.status='ready' and s.output_s3_key is not null
     `;
     if (!existing[0]) throw new Error("편집할 쇼츠를 찾을 수 없습니다.");
     const timestamps = existing[0].subtitleSegments as Array<{ start: number; end: number }>;
@@ -43,16 +44,17 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
       throw new Error("MVP에서는 자막 시간은 변경할 수 없습니다.");
     }
     const rows = await db`
-      update shorts_mvp.generated_shorts set
+      update shorts_mvp.generated_shorts s set
         hook_title=${input.hookTitle}, channel_display_name=${input.channelDisplayName},
         subtitles_enabled=${input.subtitlesEnabled}, subtitle_segments=${db.json(input.subtitleSegments)},
         template_id=${input.templateId}, title_font_scale=${input.titleFontScale}
-      where id=${shortId} and (
-        (${session.userId}::uuid is not null and user_id=${session.userId})
-        or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
-      ) and deleted_at is null and expires_at > now()
-        and status='ready' and output_s3_key is not null
-      returning id, render_version
+      from shorts_mvp.video_jobs j
+      where s.id=${shortId} and j.id=s.job_id and not j.is_example and (
+        (${session.userId}::uuid is not null and s.user_id=${session.userId})
+        or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
+      ) and s.deleted_at is null and s.expires_at > now()
+        and s.status='ready' and s.output_s3_key is not null
+      returning s.id, s.render_version
     `;
     if (!rows[0]) throw new Error("편집할 쇼츠를 찾을 수 없습니다.");
     return NextResponse.json({ id: rows[0].id, renderVersion: rows[0].renderVersion, saved: true });
@@ -65,14 +67,15 @@ export async function DELETE(_: Request, context: { params: Promise<{ shortId: s
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const rows = await db`
-      update shorts_mvp.generated_shorts
+      update shorts_mvp.generated_shorts s
       set status='deleted', deleted_at=coalesce(deleted_at, now())
-      where id=${shortId} and (
-        (${session.userId}::uuid is not null and user_id=${session.userId})
-        or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+      from shorts_mvp.video_jobs j
+      where s.id=${shortId} and j.id=s.job_id and not j.is_example and (
+        (${session.userId}::uuid is not null and s.user_id=${session.userId})
+        or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
       )
-        and (status='deleted' or (deleted_at is null and status in ('ready','rerendering')))
-      returning id, output_s3_key, clean_clip_s3_key, thumbnail_s3_key
+        and (s.status='deleted' or (s.deleted_at is null and s.status in ('ready','rerendering')))
+      returning s.id, s.output_s3_key, s.clean_clip_s3_key, s.thumbnail_s3_key
     `;
     if (!rows[0]) throw new Error("삭제할 쇼츠를 찾을 수 없습니다.");
     await deleteShortObjects([rows[0].outputS3Key, rows[0].cleanClipS3Key, rows[0].thumbnailS3Key].filter(Boolean));

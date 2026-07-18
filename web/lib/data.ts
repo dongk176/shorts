@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Row, Sql } from "postgres";
 import type { GeneratedShort, Plan, VideoJob } from "@/lib/contracts";
 import type { MvpSession } from "@/lib/session";
 
@@ -74,7 +74,7 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       renderVersion: row.renderVersion,
       rerenderProgress: row.rerenderProgress,
       status: row.status,
-      expiresAt: row.expiresAt.toISOString(),
+      expiresAt: row.expiresAt?.toISOString() ?? null,
     };
     result.set(row.jobId, [...(result.get(row.jobId) || []), item]);
   }
@@ -88,17 +88,33 @@ export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: st
         where id = ${onlyJobId} and (
           (${session.userId}::uuid is not null and user_id=${session.userId})
           or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+          or (is_example and status='completed')
         )
       `
     : await db`
         select * from shorts_mvp.video_jobs
-        where (${session.userId}::uuid is not null and user_id=${session.userId})
+        where ((${session.userId}::uuid is not null and user_id=${session.userId})
           or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
-        order by created_at desc limit 10
+          or (is_example and status='completed'))
+        order by is_example desc, created_at desc limit 10
       `;
+  return mapJobs(db, rows);
+}
+
+export async function getPublicExampleJobs(db: Sql): Promise<VideoJob[]> {
+  const rows = await db`
+    select * from shorts_mvp.video_jobs
+    where is_example and status='completed'
+    order by created_at desc limit 10
+  `;
+  return mapJobs(db, rows);
+}
+
+async function mapJobs(db: Sql, rows: Row[]): Promise<VideoJob[]> {
   const shorts = await getShortsForJobs(db, rows.map((row) => row.id));
   return rows.map((row) => ({
     id: row.id,
+    isExample: Boolean(row.isExample),
     videoTitle: row.videoTitle,
     channelName: row.channelName,
     channelThumbnailUrl: row.channelThumbnailUrl || null,

@@ -114,11 +114,12 @@ export type GeneratedShort = {
   renderVersion: number;
   rerenderProgress: number;
   status: string;
-  expiresAt: string;
+  expiresAt: string | null;
 };
 
 export type VideoJob = {
   id: string;
+  isExample: boolean;
   videoTitle: string;
   channelName: string;
   channelThumbnailUrl: string | null;

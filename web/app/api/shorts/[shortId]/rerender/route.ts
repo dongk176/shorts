@@ -9,17 +9,18 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const rows = await db`
-      select id, status, rendered_config_hash,
-        md5(concat_ws('|', hook_title, channel_display_name, subtitles_enabled::text,
-          subtitle_segments::text, template_id, video_aspect_ratio,
-          title_font_scale::text)) as current_config_hash
-      from shorts_mvp.generated_shorts
-      where id=${shortId} and (
-        (${session.userId}::uuid is not null and user_id=${session.userId})
-        or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
-      ) and deleted_at is null
-        and expires_at > now() and status in ('ready','rerendering')
-        and output_s3_key is not null
+      select s.id, s.status, s.rendered_config_hash,
+        md5(concat_ws('|', s.hook_title, s.channel_display_name, s.subtitles_enabled::text,
+          s.subtitle_segments::text, s.template_id, s.video_aspect_ratio,
+          s.title_font_scale::text)) as current_config_hash
+      from shorts_mvp.generated_shorts s
+      join shorts_mvp.video_jobs j on j.id=s.job_id
+      where s.id=${shortId} and not j.is_example and (
+        (${session.userId}::uuid is not null and s.user_id=${session.userId})
+        or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
+      ) and s.deleted_at is null
+        and s.expires_at > now() and s.status in ('ready','rerendering')
+        and s.output_s3_key is not null
     `;
     if (!rows[0]) throw new Error("재렌더링할 쇼츠를 찾을 수 없습니다.");
     if (rows[0].status === "rerendering") return NextResponse.json({ status: "rerendering" });
@@ -28,20 +29,21 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
     }
     await db.begin(async (tx) => {
       const updated = await tx`
-        update shorts_mvp.generated_shorts
+        update shorts_mvp.generated_shorts s
         set status='rerendering', rerender_progress=5,
-          pending_render_hash=md5(concat_ws('|', hook_title, channel_display_name,
-            subtitles_enabled::text, subtitle_segments::text, template_id,
-            video_aspect_ratio, title_font_scale::text))
-        where id=${shortId} and (
-          (${session.userId}::uuid is not null and user_id=${session.userId})
-          or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+          pending_render_hash=md5(concat_ws('|', s.hook_title, s.channel_display_name,
+            s.subtitles_enabled::text, s.subtitle_segments::text, s.template_id,
+            s.video_aspect_ratio, s.title_font_scale::text))
+        from shorts_mvp.video_jobs j
+        where s.id=${shortId} and j.id=s.job_id and not j.is_example and (
+          (${session.userId}::uuid is not null and s.user_id=${session.userId})
+          or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
         )
-          and status='ready' and deleted_at is null and expires_at > now()
-          and rendered_config_hash is distinct from md5(concat_ws('|', hook_title,
-            channel_display_name, subtitles_enabled::text, subtitle_segments::text,
-            template_id, video_aspect_ratio, title_font_scale::text))
-        returning id
+          and s.status='ready' and s.deleted_at is null and s.expires_at > now()
+          and s.rendered_config_hash is distinct from md5(concat_ws('|', s.hook_title,
+            s.channel_display_name, s.subtitles_enabled::text, s.subtitle_segments::text,
+            s.template_id, s.video_aspect_ratio, s.title_font_scale::text))
+        returning s.id
       `;
       if (!updated[0]) throw new Error("재렌더링할 쇼츠 상태가 변경되었습니다.");
       await tx`

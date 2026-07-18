@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   usage: vi.fn(),
   recentJobs: vi.fn(),
   publicState: vi.fn(),
+  publicExamples: vi.fn(),
   authenticatedUser: vi.fn(),
   analyze: vi.fn(),
   submitInitial: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock("@/lib/usage", async (importOriginal) => ({
 }));
 vi.mock("@/lib/data", () => ({
   getRecentJobs: mocks.recentJobs,
+  getPublicExampleJobs: mocks.publicExamples,
   getPublicMvpState: mocks.publicState,
   getPlans: vi.fn(),
 }));
@@ -107,13 +109,14 @@ beforeEach(() => {
   });
   mocks.usage.mockResolvedValue(usage);
   mocks.publicState.mockResolvedValue({ plans: [], generatedShortCount: 4321 });
+  mocks.publicExamples.mockResolvedValue([{ id: "example-job", isExample: true }]);
   mocks.authenticatedSession.mockImplementation(() => mocks.session());
   mocks.authenticatedUser.mockResolvedValue({ id: "auth-a" });
   mocks.wakeDispatcher.mockResolvedValue(undefined);
 });
 
 describe("MVP state visibility", () => {
-  it("does not query or return projects for an anonymous session", async () => {
+  it("returns public example projects without creating an anonymous session", async () => {
     mocks.authenticatedUser.mockResolvedValue(null);
     mocks.publicState.mockResolvedValue({
       plans: [{ code: "plus", displayName: "Plus", monthlySourceSeconds: 6000, retentionDays: 30 }],
@@ -122,10 +125,15 @@ describe("MVP state visibility", () => {
     mocks.getDb.mockReturnValue(vi.fn());
     const response = await getMvpState();
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ sessionId: null, user: null, recentJobs: [] });
+    await expect(response.json()).resolves.toMatchObject({
+      sessionId: null,
+      user: null,
+      recentJobs: [{ id: "example-job", isExample: true }],
+    });
     expect(mocks.session).not.toHaveBeenCalled();
     expect(mocks.usage).not.toHaveBeenCalled();
     expect(mocks.recentJobs).not.toHaveBeenCalled();
+    expect(mocks.publicExamples).toHaveBeenCalledWith(expect.anything());
   });
 
   it("returns only the authenticated user's project query result", async () => {
