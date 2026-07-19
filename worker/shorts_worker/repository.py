@@ -12,14 +12,9 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-_RANGE_DOWNLOAD_STATUSES = frozenset(
-    {
-        "selected_range",
-        "full_source_expected",
-        "full_source_unexpected",
-        "unexpected_duration",
-    }
-)
+from .schemas import default_comment_overlays
+
+_SOURCE_DOWNLOAD_STATUSES = frozenset({"full_source_expected", "unexpected_duration"})
 
 
 class WorkerRepository:
@@ -52,10 +47,8 @@ class WorkerRepository:
         with self.connect() as connection:
             return connection.execute(
                 """
-                select j.*, s.selected_plan_code, p.retention_days
+                select j.*, j.retention_days_snapshot as retention_days
                 from shorts_mvp.video_jobs j
-                join shorts_mvp.mvp_sessions s on s.id = j.mvp_session_id
-                join shorts_mvp.plans p on p.code = s.selected_plan_code
                 where j.id = %s
                 """,
                 (job_id,),
@@ -239,7 +232,7 @@ class WorkerRepository:
             ).fetchone()
             return bool(row and row["allowed"])
 
-    def record_range_download_observation(
+    def record_source_download_observation(
         self,
         job_id: str,
         *,
@@ -247,8 +240,8 @@ class WorkerRepository:
         duration_seconds: float | None,
         media_bytes: int | None,
     ) -> None:
-        if status not in _RANGE_DOWNLOAD_STATUSES:
-            raise ValueError(f"unsupported range download status: {status}")
+        if status not in _SOURCE_DOWNLOAD_STATUSES:
+            raise ValueError(f"unsupported source download status: {status}")
         if duration_seconds is not None and duration_seconds <= 0:
             raise ValueError("download duration must be positive when provided")
         if media_bytes is not None and media_bytes <= 0:
@@ -271,14 +264,14 @@ class WorkerRepository:
                 insert into shorts_mvp.job_events
                   (job_id,stage,progress,message,metadata)
                 values (
-                  %s,'downloading',20,'다운로드한 영상 범위를 확인했습니다.',%s
+                  %s,'downloading',20,'다운로드한 전체 영상을 확인했습니다.',%s
                 )
                 """,
                 (
                     job_id,
                     Jsonb(
                         {
-                            "range_download_status": status,
+                            "source_download_status": status,
                             "downloaded_media_duration_seconds": duration_seconds,
                             "downloaded_media_bytes": media_bytes,
                         }
@@ -388,6 +381,7 @@ class WorkerRepository:
         start_seconds: float,
         end_seconds: float,
         hook_title: str,
+        highlight_reason: str,
         subtitles: list[dict[str, Any]],
         clean_key: str,
         output_key: str,
@@ -395,17 +389,24 @@ class WorkerRepository:
         file_size: int,
         expires_at: Any,
     ) -> None:
+        comments = (
+            default_comment_overlays(end_seconds - start_seconds)
+            if job["template_id"] == "comment-capture"
+            else []
+        )
         with self.connect() as connection:
             inserted = connection.execute(
                 """
                 insert into shorts_mvp.generated_shorts (
                   id, job_id, mvp_session_id, user_id, clip_index, start_seconds,
-                  end_seconds, duration_seconds, hook_title, channel_display_name,
-                  subtitle_segments, subtitles_enabled, template_id, video_aspect_ratio,
+                  end_seconds, duration_seconds, hook_title, highlight_reason,
+                  channel_display_name,
+                  subtitle_segments, subtitles_enabled, comment_overlays,
+                  template_id, video_aspect_ratio,
                   clean_clip_s3_key,
                   output_s3_key, thumbnail_s3_key, file_size_bytes, expires_at, status
                 ) values (
-                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,%s,%s,%s,%s,'ready'
+                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,%s,%s,%s,%s,%s,'ready'
                 )
                 on conflict (job_id, clip_index) do nothing
                 returning id
@@ -420,8 +421,10 @@ class WorkerRepository:
                     end_seconds,
                     end_seconds - start_seconds,
                     hook_title,
+                    highlight_reason,
                     job["channel_name"],
                     Jsonb(subtitles),
+                    Jsonb(comments),
                     job["template_id"],
                     job.get("video_aspect_ratio") or "1:1",
                     clean_key,
@@ -444,8 +447,9 @@ class WorkerRepository:
                 update shorts_mvp.generated_shorts
                 set rendered_config_hash=md5(concat_ws('|', hook_title,
                   channel_display_name, subtitles_enabled::text,
-                  subtitle_segments::text, template_id, video_aspect_ratio,
-                  title_font_scale::text))
+                  subtitle_segments::text, comment_overlays::text, template_id, video_aspect_ratio,
+                  title_font_scale::text, title_text_styles::text,
+                  title_text_styles_initialized::text))
                 where id=%s and rendered_config_hash is null
                 """,
                 (short_id,),
@@ -460,11 +464,17 @@ class WorkerRepository:
         start_seconds: float,
         end_seconds: float,
         hook_title: str,
+        highlight_reason: str,
         subtitles: list[dict[str, Any]],
         clean_key: str,
         retention_days: int,
         shard_index: int,
     ) -> bool:
+        comments = (
+            default_comment_overlays(end_seconds - start_seconds)
+            if job["template_id"] == "comment-capture"
+            else []
+        )
         with self.connect() as connection, connection.transaction():
             locked_job = connection.execute(
                 "select id from shorts_mvp.video_jobs where id=%s for share",
@@ -487,13 +497,15 @@ class WorkerRepository:
                 """
                 insert into shorts_mvp.generated_shorts (
                   id, job_id, mvp_session_id, user_id, clip_index, start_seconds,
-                  end_seconds, duration_seconds, hook_title, channel_display_name,
-                  subtitle_segments, subtitles_enabled, template_id, video_aspect_ratio,
+                  end_seconds, duration_seconds, hook_title, highlight_reason,
+                  channel_display_name,
+                  subtitle_segments, subtitles_enabled, comment_overlays,
+                  template_id, video_aspect_ratio,
                   clean_clip_s3_key,
                   output_s3_key, thumbnail_s3_key, file_size_bytes, created_at,
                   expires_at, status, render_shard_index, render_progress
                 ) values (
-                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,null,null,null,
+                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,%s,null,null,null,
                   now(),
                   now() + make_interval(days => least(greatest(%s::integer, 1), 30)),
                   'rendering',%s,0
@@ -501,7 +513,13 @@ class WorkerRepository:
                 on conflict (job_id, clip_index) do update set
                   clean_clip_s3_key=excluded.clean_clip_s3_key,
                   subtitle_segments=excluded.subtitle_segments,
+                  comment_overlays=case
+                    when generated_shorts.comment_overlays='[]'::jsonb
+                      then excluded.comment_overlays
+                    else generated_shorts.comment_overlays
+                  end,
                   hook_title=excluded.hook_title,
+                  highlight_reason=excluded.highlight_reason,
                   video_aspect_ratio=excluded.video_aspect_ratio,
                   render_shard_index=excluded.render_shard_index,
                   status='rendering', render_progress=0,
@@ -517,8 +535,10 @@ class WorkerRepository:
                     end_seconds,
                     end_seconds - start_seconds,
                     hook_title,
+                    highlight_reason,
                     (" ".join(str(job["channel_name"]).split())[:50] or "YouTube 채널"),
                     Jsonb(subtitles),
+                    Jsonb(comments),
                     job["template_id"],
                     job.get("video_aspect_ratio") or "1:1",
                     clean_key,
@@ -594,8 +614,10 @@ class WorkerRepository:
                     status='ready', render_progress=100,
                     rendered_config_hash=md5(concat_ws('|', hook_title,
                       channel_display_name, subtitles_enabled::text,
-                      subtitle_segments::text, template_id, video_aspect_ratio,
-                      title_font_scale::text)),
+                      subtitle_segments::text, comment_overlays::text,
+                      template_id, video_aspect_ratio,
+                      title_font_scale::text, title_text_styles::text,
+                      title_text_styles_initialized::text)),
                     render_error_code=null, render_error_message=null
                 where s.id=%s and s.status='rendering'
                   and exists (

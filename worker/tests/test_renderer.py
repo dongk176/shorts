@@ -10,7 +10,13 @@ from PIL import Image
 
 from shorts_worker.config import Settings
 from shorts_worker.renderer import VideoRenderer, video_layout
-from shorts_worker.schemas import HighlightClip, TemplateId, VideoAspectRatio
+from shorts_worker.schemas import (
+    CommentOverlay,
+    HighlightClip,
+    TemplateId,
+    VideoAspectRatio,
+    default_comment_overlays,
+)
 
 pytestmark = pytest.mark.render
 
@@ -92,18 +98,24 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
         work_dir=tmp_path / "work",
         video_aspect_ratio=video_aspect_ratio,
     )
+    comment_template = video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+    comments = [
+        CommentOverlay.model_validate(comment)
+        for comment in default_comment_overlays(2.0)
+    ] if comment_template else []
     renderer.render_clean_clip(
         clean_path=clean,
         output_path=output,
         title=clip.hook_title,
         channel_name="테스트 채널",
-        template_id=TemplateId.DARK_RED,
+        template_id=TemplateId.COMMENT_CAPTURE if comment_template else TemplateId.DARK_RED,
         transcript=[],
         subtitles_enabled=False,
         work_dir=tmp_path / "work",
         prefix="fixture",
         channel_thumbnail_path=channel_thumbnail,
         video_aspect_ratio=video_aspect_ratio,
+        comment_overlays=comments,
     )
 
     probe = _run(

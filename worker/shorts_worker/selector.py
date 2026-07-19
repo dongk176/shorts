@@ -132,22 +132,18 @@ def deterministic_fallback(
     duration_seconds: float,
     required_count: int,
     transcript: list[SubtitleSegment] | None = None,
-    range_start_seconds: float = 0,
-    range_end_seconds: float | None = None,
     output_language: OutputLanguage = OutputLanguage.KO,
 ) -> list[HighlightClip]:
     if required_count < 1:
         return []
-    range_end_seconds = duration_seconds if range_end_seconds is None else range_end_seconds
-    available_duration = range_end_seconds - range_start_seconds
-    clip_length = min(AI_CLIP_FALLBACK_SECONDS, available_duration)
-    max_start = max(range_start_seconds, range_end_seconds - clip_length)
+    clip_length = min(AI_CLIP_FALLBACK_SECONDS, duration_seconds)
+    max_start = max(0.0, duration_seconds - clip_length)
     if required_count == 1:
-        starts = [range_start_seconds + (available_duration - clip_length) / 2]
+        starts = [(duration_seconds - clip_length) / 2]
     else:
-        movable = max(0.0, available_duration - clip_length)
+        movable = max(0.0, duration_seconds - clip_length)
         margin = min(15.0, movable / (required_count + 1))
-        first = range_start_seconds + margin
+        first = margin
         last = max(first, max_start - margin)
         step = (last - first) / (required_count - 1)
         starts = [first + index * step for index in range(required_count)]
@@ -155,11 +151,11 @@ def deterministic_fallback(
     return [
         HighlightClip(
             start_seconds=round(start, 3),
-            end_seconds=round(min(range_end_seconds, start + clip_length), 3),
+            end_seconds=round(min(duration_seconds, start + clip_length), 3),
             hook_title=_fallback_title(
                 transcript,
                 start,
-                min(range_end_seconds, start + clip_length),
+                min(duration_seconds, start + clip_length),
                 index + 1,
                 output_language,
             ),
@@ -219,20 +215,16 @@ def normalize_clips(
     duration_seconds: float,
     required_count: int,
     transcript: list[SubtitleSegment] | None = None,
-    range_start_seconds: float = 0,
-    range_end_seconds: float | None = None,
     output_language: OutputLanguage = OutputLanguage.KO,
     backfill: bool = True,
 ) -> list[HighlightClip]:
     """Clamp invalid LLM times and enforce at most five seconds of pairwise overlap."""
     if duration_seconds <= 0 or required_count < 1:
         return []
-    range_end_seconds = duration_seconds if range_end_seconds is None else range_end_seconds
-    available_duration = range_end_seconds - range_start_seconds
-    minimum_length = min(AI_CLIP_MIN_SECONDS, available_duration)
-    maximum_length = min(AI_CLIP_MAX_SECONDS, available_duration)
+    minimum_length = min(AI_CLIP_MIN_SECONDS, duration_seconds)
+    maximum_length = min(AI_CLIP_MAX_SECONDS, duration_seconds)
     accepted: list[HighlightClip] = []
-    minimum_count = minimum_clip_count_for_duration(available_duration)
+    minimum_count = minimum_clip_count_for_duration(duration_seconds)
 
     def accept(candidate: HighlightClip) -> None:
         if len(accepted) >= required_count:
@@ -246,15 +238,13 @@ def normalize_clips(
             return
         raw_length = raw_end - raw_start
         length = max(minimum_length, min(maximum_length, raw_length))
-        start = _find_start(
-            raw_start, length, accepted, range_start_seconds, range_end_seconds
-        )
+        start = _find_start(raw_start, length, accepted, 0, duration_seconds)
         if start is None:
             return
         accepted.append(
             HighlightClip(
                 start_seconds=round(start, 3),
-                end_seconds=round(min(range_end_seconds, start + length), 3),
+                end_seconds=round(min(duration_seconds, start + length), 3),
                 hook_title=_two_line_title(candidate.hook_title, output_language),
                 reason=str(candidate.reason or ""),
             )
@@ -264,7 +254,7 @@ def normalize_clips(
     if backfill and len(accepted) < minimum_count:
         for candidate in deterministic_fallback(
             video_title, duration_seconds, minimum_count, transcript,
-            range_start_seconds, range_end_seconds, output_language,
+            output_language,
         ):
             accept(candidate)
     return sorted(accepted, key=lambda clip: clip.start_seconds)
@@ -293,13 +283,10 @@ class TranscriptSelector:
         duration_seconds: float,
         transcript: list[SubtitleSegment],
         required_count: int,
-        range_start_seconds: float = 0,
-        range_end_seconds: float | None = None,
         output_language: OutputLanguage = OutputLanguage.KO,
     ) -> list[dict[str, str]]:
-        range_end_seconds = duration_seconds if range_end_seconds is None else range_end_seconds
         language_name = OUTPUT_LANGUAGE_NAMES[output_language]
-        minimum_count = minimum_clip_count_for_duration(range_end_seconds - range_start_seconds)
+        minimum_count = minimum_clip_count_for_duration(duration_seconds)
         system = (
             "너는 대한민국 상위 0.1% 조회수를 만들어내는 탑티어 숏폼 기획자이자 편집자야.\n\n"
             "아래 제공되는 유튜브 롱폼 대본을 분석해서, 대중의 시선을 사로잡을 쇼츠용 "
@@ -325,15 +312,19 @@ class TranscriptSelector:
             "[후킹 제목]\n"
             "- 형식: 각 쇼츠당 반드시 2행으로 작성할 것.\n"
             "- 글자 수: 1행과 2행을 각각 공백 포함 5~18자로 작성할 것.\n"
-            "- 톤앤매너: 군더더기 없이 직관적이고 타격감 있는 단어를 사용할 것.\n"
+            "- 톤앤매너: 군더더기 없이 직관적이고 타격감 있는 구어체 단어를 사용할 것.\n"
             f"- 자연스러운 {language_name} 구어체로 작성할 것.\n"
             "- 1행은 hook_title_line1, 2행은 hook_title_line2에 줄바꿈 없는 문자열로 "
             "반환할 것.\n\n"
+            "[선정 이유]\n"
+            "- reason에는 이 구간이 쇼츠로 매력적인 이유를 구체적인 장면이나 발언을 "
+            "근거로 1~2문장으로 작성할 것.\n"
+            f"- reason은 자연스러운 {language_name}로 작성할 것.\n\n"
             "최종 응답은 요청된 Pydantic JSON 구조로만 반환할 것."
         )
         user = (
             f"영상 제목: {video_title}\n영상 길이: {duration_seconds:.3f}초\n"
-            f"선택 가능 구간: {range_start_seconds:.3f}~{range_end_seconds:.3f}초\n"
+            f"분석 범위: 전체 영상 0.000~{duration_seconds:.3f}초\n"
             f"최소 쇼츠 수: {minimum_count}\n최대 쇼츠 수: {required_count}"
             "\n\n타임스탬프 자막:\n"
             f"{self._transcript_text(transcript)}"
@@ -411,20 +402,14 @@ class TranscriptSelector:
         duration_seconds: float,
         transcript: list[SubtitleSegment],
         required_count: int,
-        range_start_seconds: float = 0,
-        range_end_seconds: float | None = None,
         output_language: OutputLanguage = OutputLanguage.KO,
     ) -> list[HighlightClip]:
-        range_end_seconds = duration_seconds if range_end_seconds is None else range_end_seconds
-        available_duration = range_end_seconds - range_start_seconds
-        minimum_count = minimum_clip_count_for_duration(available_duration)
+        minimum_count = minimum_clip_count_for_duration(duration_seconds)
         messages = self._selection_messages(
             video_title=video_title,
             duration_seconds=duration_seconds,
             transcript=transcript,
             required_count=required_count,
-            range_start_seconds=range_start_seconds,
-            range_end_seconds=range_end_seconds,
             output_language=output_language,
         )
 
@@ -475,8 +460,6 @@ class TranscriptSelector:
                     duration_seconds=duration_seconds,
                     transcript=transcript,
                     required_count=required_count,
-                    range_start_seconds=range_start_seconds,
-                    range_end_seconds=range_end_seconds,
                     output_language=output_language,
                     backfill=False,
                 )
@@ -522,8 +505,6 @@ class TranscriptSelector:
             duration_seconds=duration_seconds,
             required_count=required_count,
             transcript=transcript,
-            range_start_seconds=range_start_seconds,
-            range_end_seconds=range_end_seconds,
             output_language=output_language,
         )
         _log_selection_event(

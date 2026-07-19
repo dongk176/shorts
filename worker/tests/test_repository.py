@@ -82,6 +82,19 @@ def test_ingestion_failure_details_migration_is_schema_qualified() -> None:
     assert "public." not in migration
 
 
+def test_highlight_reason_migration_is_schema_qualified() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607170007_generated_short_highlight_reason.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "shorts_mvp.generated_shorts" in migration
+    assert "highlight_reason text not null default ''" in migration
+    assert "public." not in migration
+
+
 def test_route_release_uses_the_schema_qualified_atomic_function() -> None:
     implementation = inspect.getsource(WorkerRepository.release_ingestion_route)
 
@@ -136,6 +149,8 @@ def test_pending_short_uses_one_database_clock_for_creation_and_expiry() -> None
         in implementation
     )
     assert "expires_at: Any" not in implementation
+    assert "when generated_shorts.comment_overlays='[]'::jsonb" in implementation
+    assert "else generated_shorts.comment_overlays" in implementation
 
 
 def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> None:
@@ -161,6 +176,7 @@ def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> 
         start_seconds=10,
         end_seconds=40,
         hook_title="hook",
+        highlight_reason="Gemini가 선택한 이유",
         subtitles=[],
         clean_key="edit-sources/short-a.mp4",
         retention_days=30,
@@ -177,4 +193,5 @@ def test_prepare_passes_retention_days_instead_of_worker_clock_expiry() -> None:
     implementation = inspect.getsource(BatchWorker.prepare)
 
     assert 'retention_days=int(job["retention_days"])' in implementation
+    assert "highlight_reason=clip.reason" in implementation
     assert "timedelta(days=" not in implementation

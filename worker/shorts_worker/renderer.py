@@ -7,11 +7,18 @@ from pathlib import Path
 from .config import Settings
 from .errors import RenderError
 from .media import media_duration, probe_media, run_command, video_fps
-from .overlays import TEMPLATE_STYLES, create_ass_subtitles, create_panel_overlays
+from .overlays import (
+    TEMPLATE_STYLES,
+    create_ass_subtitles,
+    create_comment_panel,
+    create_panel_overlays,
+)
 from .schemas import (
+    CommentOverlay,
     HighlightClip,
     SubtitleSegment,
     TemplateId,
+    TitleTextStyle,
     VideoAspectRatio,
 )
 
@@ -134,6 +141,8 @@ class VideoRenderer:
         title_font_scale: float = 1.0,
         channel_thumbnail_path: Path | None = None,
         video_aspect_ratio: VideoAspectRatio = VideoAspectRatio.SQUARE,
+        comment_overlays: list[CommentOverlay] | None = None,
+        title_text_styles: list[TitleTextStyle] | None = None,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         probe = probe_media(clean_path, timeout=min(30, self.settings.ffmpeg_timeout_seconds))
@@ -142,7 +151,13 @@ class VideoRenderer:
             raise RenderError("clean clip 길이가 올바르지 않습니다.")
         fps = min(30.0, video_fps(probe))
         has_audio = any(stream.get("codec_type") == "audio" for stream in probe.get("streams", []))
-        layout = video_layout(video_aspect_ratio)
+        layout_ratio = (
+            VideoAspectRatio.PORTRAIT
+            if template_id is TemplateId.COMMENT_CAPTURE
+            and video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+            else video_aspect_ratio
+        )
+        layout = video_layout(layout_ratio)
         top, bottom = create_panel_overlays(
             title=title,
             channel_name=channel_name,
@@ -154,7 +169,25 @@ class VideoRenderer:
             top_height=layout.top_height,
             bottom_height=layout.bottom_height,
             overlay_mode=layout.overlay_mode,
+            title_text_styles=title_text_styles,
         )
+        visible_comments = (
+            sorted(comment_overlays or [], key=lambda item: item.start_seconds)
+            if template_id is TemplateId.COMMENT_CAPTURE
+            else []
+        )
+        comment_panels = [
+            (
+                comment,
+                create_comment_panel(
+                    comment,
+                    work_dir / "overlays" / f"{prefix}_comment_{index}.png",
+                    panel_height=layout.bottom_height,
+                    overlay_mode=layout.overlay_mode,
+                ),
+            )
+            for index, comment in enumerate(visible_comments)
+        ]
         ass_path = None
         if subtitles_enabled:
             ass_path = create_ass_subtitles(
@@ -167,15 +200,27 @@ class VideoRenderer:
         background = TEMPLATE_STYLES[template_id].background.replace("#", "0x")
         filters = [
             f"color=c={background}:s={CANVAS_WIDTH}x{CANVAS_HEIGHT}:r={fps:.3f}:d={duration:.3f}[base]",
-            f"[0:v]setpts=PTS-STARTPTS,fps={fps:.3f}[center]",
+            (
+                f"[0:v]setpts=PTS-STARTPTS,fps={fps:.3f},"
+                f"scale={CANVAS_WIDTH}:{layout.video_height}:force_original_aspect_ratio=decrease,"
+                f"pad={CANVAS_WIDTH}:{layout.video_height}:(ow-iw)/2:(oh-ih)/2:color=black[center]"
+            ),
             f"[base][center]overlay=x=0:y={layout.video_y}:shortest=1[with_video]",
             f"[with_video][1:v]overlay=x=0:y={layout.top_y}:shortest=1[with_top]",
             f"[with_top][2:v]overlay=x=0:y={layout.bottom_y}:shortest=1[composed]",
         ]
         video_label = "composed"
+        for index, (comment, _) in enumerate(comment_panels):
+            next_label = f"with_comment_{index}"
+            filters.append(
+                f"[{video_label}][{index + 3}:v]overlay=x=0:y={layout.bottom_y}:"
+                f"enable='between(t,{comment.start_seconds:.3f},{comment.end_seconds:.3f})':"
+                f"shortest=1[{next_label}]"
+            )
+            video_label = next_label
         if ass_path:
             filters.append(
-                f"[composed]subtitles=filename='{_escape_filter_path(ass_path)}'[captioned]"
+                f"[{video_label}]subtitles=filename='{_escape_filter_path(ass_path)}'[captioned]"
             )
             video_label = "captioned"
         command = [
@@ -184,6 +229,8 @@ class VideoRenderer:
             "-loop", "1", "-framerate", f"{fps:.3f}", "-i", str(top),
             "-loop", "1", "-framerate", f"{fps:.3f}", "-i", str(bottom),
         ]
+        for _, panel in comment_panels:
+            command.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", str(panel)])
         audio_label = None
         if has_audio:
             filters.append("[0:a]asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11[audio]")
@@ -228,6 +275,7 @@ class VideoRenderer:
         title_font_size: int | None = None,
         channel_thumbnail_path: Path | None = None,
         video_aspect_ratio: VideoAspectRatio = VideoAspectRatio.SQUARE,
+        title_text_styles: list[TitleTextStyle] | None = None,
     ) -> Path:
         if not source_path.is_file():
             raise RenderError("원본 영상 파일을 찾지 못했습니다.")
@@ -253,6 +301,7 @@ class VideoRenderer:
             top_height=layout.top_height,
             bottom_height=layout.bottom_height,
             overlay_mode=layout.overlay_mode,
+            title_text_styles=title_text_styles,
         )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.unlink(missing_ok=True)
