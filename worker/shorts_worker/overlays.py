@@ -4,9 +4,9 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, UnidentifiedImageError
 
-from .schemas import SubtitleSegment, TemplateId
+from .schemas import CommentOverlay, SubtitleSegment, TemplateId, TitleTextStyle
 
 PANEL_WIDTH = 1080
 PANEL_HEIGHT = 420
@@ -31,6 +31,7 @@ TEMPLATE_STYLES = {
     TemplateId.WHITE_YELLOW: TemplateStyle("#FFFFFF", "#111111", "#111111", "#FFD84D", "#111111"),
     TemplateId.DARK_MINIMAL: TemplateStyle("#000000", "#FFFFFF", "#F04444", None, "#FFFFFF"),
     TemplateId.PAPER: TemplateStyle("#F3F0E9", "#111111", "#D52B2B", None, "#363636"),
+    TemplateId.COMMENT_CAPTURE: TemplateStyle("#000000", "#FFFFFF", "#35E6E3", None, "#FFFFFF"),
 }
 
 
@@ -139,6 +140,112 @@ def _title_font(draw: ImageDraw.ImageDraw, lines: list[str]) -> ImageFont.FreeTy
     return load_font(22, "bold")
 
 
+def _title_line_character_indices(title: str, lines: list[str]) -> list[list[int | None]]:
+    normalized: list[tuple[str, int]] = []
+    for index, character in enumerate(title):
+        if character.isspace():
+            if normalized and normalized[-1][0] != " ":
+                normalized.append((" ", index))
+            continue
+        normalized.append((character, index))
+    while normalized and normalized[0][0] == " ":
+        normalized.pop(0)
+    while normalized and normalized[-1][0] == " ":
+        normalized.pop()
+
+    search_from = 0
+    result: list[list[int | None]] = []
+    for line in lines:
+        searchable = line
+        synthetic_ellipsis = False
+
+        def find_start(search_from_value: int, searchable_value: str) -> int:
+            for candidate in range(
+                search_from_value,
+                len(normalized) - len(searchable_value) + 1,
+            ):
+                if all(
+                    normalized[candidate + offset][0] == character
+                    for offset, character in enumerate(searchable_value)
+                ):
+                    return candidate
+            return -1
+
+        start = find_start(search_from, searchable)
+        if start < 0 and line.endswith("…"):
+            searchable = line[:-1]
+            synthetic_ellipsis = True
+            start = find_start(search_from, searchable)
+        if start < 0:
+            result.append([None] * len(line))
+            continue
+        search_from = start + len(searchable)
+        indices: list[int | None] = [index for _, index in normalized[start:search_from]]
+        if synthetic_ellipsis:
+            indices.append(None)
+        result.append(indices)
+    return result
+
+
+def _title_style_runs(
+    line: str,
+    indices: list[int | None],
+    styles: list[TitleTextStyle],
+) -> list[tuple[int, int, str | None, str | None]]:
+    runs: list[tuple[int, int, str | None, str | None]] = []
+    for character_index, _ in enumerate(line):
+        title_index = indices[character_index] if character_index < len(indices) else None
+        style = next(
+            (
+                item
+                for item in styles
+                if title_index is not None and item.start <= title_index < item.end
+            ),
+            None,
+        )
+        color = style.color if style else None
+        background_color = style.background_color if style else None
+        if runs and runs[-1][1] == character_index and runs[-1][2:] == (color, background_color):
+            start, _, run_color, run_background = runs[-1]
+            runs[-1] = (start, character_index + 1, run_color, run_background)
+        else:
+            runs.append((character_index, character_index + 1, color, background_color))
+    return runs
+
+
+def default_title_text_styles(
+    title: str,
+    template_id: TemplateId,
+    *,
+    overlay_mode: bool = False,
+) -> list[TitleTextStyle]:
+    style = TEMPLATE_STYLES[template_id]
+    selected_background = (
+        style.accent_background or style.background
+        if overlay_mode
+        else style.accent_background
+    )
+    if not selected_background:
+        return []
+    lines = wrap_korean_title(title)
+    indices = _title_line_character_indices(title, lines)
+    selected_indices = [
+        index
+        for line_indices in (indices if overlay_mode else indices[1:2])
+        for index in line_indices
+        if index is not None
+    ]
+    if not selected_indices:
+        return []
+    return [
+        TitleTextStyle(
+            start=min(selected_indices),
+            end=max(selected_indices) + 1,
+            backgroundColor=selected_background,
+        )
+    ]
+
+
 def create_title_panel(
     title: str,
     template_id: TemplateId,
@@ -149,6 +256,7 @@ def create_title_panel(
     font_scale: float = 1.0,
     panel_height: int = PANEL_HEIGHT,
     overlay_mode: bool = False,
+    title_text_styles: list[TitleTextStyle] | None = None,
 ) -> Path:
     style = TEMPLATE_STYLES[template_id]
     image = Image.new(
@@ -158,6 +266,13 @@ def create_title_panel(
     )
     draw = ImageDraw.Draw(image)
     lines = wrap_korean_title(title)
+    line_character_indices = _title_line_character_indices(title, lines)
+    if title_text_styles is None:
+        title_text_styles = default_title_text_styles(
+            title,
+            template_id,
+            overlay_mode=overlay_mode,
+        )
     if font_size:
         font = load_font(font_size, "bold")
     else:
@@ -169,7 +284,14 @@ def create_title_panel(
         box = draw.textbbox((0, 0), line, font=font)
         width = box[2] - box[0]
         height = box[3] - box[1]
-        has_line_background = overlay_mode or (index == 1 and style.accent_background)
+        has_line_background = any(
+            run_background
+            for _, _, _, run_background in _title_style_runs(
+                line,
+                line_character_indices[index],
+                title_text_styles,
+            )
+        )
         accent_padding_y = TITLE_ACCENT_PADDING_Y if has_line_background else 0
         line_metrics.append((line, box, width, height, accent_padding_y))
 
@@ -190,22 +312,31 @@ def create_title_panel(
         visible_y = row_y + accent_padding_y
         draw_x = visible_x - box[0]
         draw_y = visible_y - box[1]
-        if overlay_mode:
-            line_background = style.accent_background or style.background
-        else:
-            line_background = style.accent_background if index == 1 else None
-        if line_background:
+        runs = _title_style_runs(line, line_character_indices[index], title_text_styles)
+        for run_start, run_end, _, run_background in runs:
+            if not run_background:
+                continue
+            run_x = _text_width(draw, line[:run_start], font)
+            run_right = _text_width(draw, line[:run_end], font)
             draw.rounded_rectangle(
                 (
-                    visible_x - TITLE_ACCENT_PADDING_X,
+                    visible_x + run_x - TITLE_ACCENT_PADDING_X,
                     row_y,
-                    visible_x + width + TITLE_ACCENT_PADDING_X,
+                    visible_x + run_right + TITLE_ACCENT_PADDING_X,
                     row_y + height + TITLE_ACCENT_PADDING_Y * 2,
                 ),
-                radius=8,
-                fill=line_background,
+                radius=10,
+                fill=run_background,
             )
-        draw.text((draw_x, draw_y), line, font=font, fill=color, stroke_width=0)
+        for run_start, run_end, run_color, _ in runs:
+            run_x = _text_width(draw, line[:run_start], font)
+            draw.text(
+                (draw_x + run_x, draw_y),
+                line[run_start:run_end],
+                font=font,
+                fill=run_color or color,
+                stroke_width=0,
+            )
         row_y += height + accent_padding_y * 2 + TITLE_LINE_GAP
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path, format="PNG", optimize=True)
@@ -222,6 +353,15 @@ def create_channel_panel(
     overlay_mode: bool = False,
 ) -> Path:
     style = TEMPLATE_STYLES[template_id]
+    if template_id is TemplateId.COMMENT_CAPTURE:
+        image = Image.new(
+            "RGBA" if overlay_mode else "RGB",
+            (PANEL_WIDTH, panel_height),
+            (4, 4, 4, 244) if overlay_mode else "#040404",
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        image.save(output_path, format="PNG", optimize=True)
+        return output_path
     image = Image.new(
         "RGBA" if overlay_mode else "RGB",
         (PANEL_WIDTH, panel_height),
@@ -280,6 +420,170 @@ def create_channel_panel(
     return output_path
 
 
+def _wrap_comment_text(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    max_width: int,
+) -> list[str]:
+    clean = " ".join(text.split()) or "아 진짜 ㅋㅋㅋㅋㅋㅋㅋㅋ"
+    lines: list[str] = []
+    remaining = clean
+    while remaining and len(lines) < 2:
+        if _text_width(draw, remaining, font) <= max_width:
+            lines.append(remaining)
+            remaining = ""
+            break
+        split_at = 1
+        for index in range(1, len(remaining) + 1):
+            if _text_width(draw, remaining[:index], font) > max_width:
+                break
+            split_at = index
+        preferred = remaining.rfind(" ", max(1, split_at // 2), split_at + 1)
+        if preferred > 0:
+            split_at = preferred
+        lines.append(remaining[:split_at].strip())
+        remaining = remaining[split_at:].strip()
+    if remaining and lines:
+        while lines[-1] and _text_width(draw, lines[-1] + "…", font) > max_width:
+            lines[-1] = lines[-1][:-1].rstrip()
+        lines[-1] += "…"
+    return lines
+
+
+def _draw_reaction_icon(
+    draw: ImageDraw.ImageDraw,
+    x: int,
+    y: int,
+    size: int,
+    *,
+    down: bool = False,
+) -> None:
+    # YouTube-style outlined thumb: a separate cuff and a naturally tapered hand.
+    points = [
+        (x + size * 0.31, y + size * 0.43),
+        (x + size * 0.47, y + size * 0.10),
+        (x + size * 0.52, y + size * 0.04),
+        (x + size * 0.60, y + size * 0.05),
+        (x + size * 0.64, y + size * 0.12),
+        (x + size * 0.62, y + size * 0.33),
+        (x + size * 0.84, y + size * 0.33),
+        (x + size * 0.94, y + size * 0.38),
+        (x + size * 0.98, y + size * 0.48),
+        (x + size * 0.89, y + size * 0.85),
+        (x + size * 0.82, y + size * 0.92),
+        (x + size * 0.31, y + size * 0.92),
+        (x + size * 0.31, y + size * 0.43),
+    ]
+    if down:
+        points = [(px, y + size - (py - y)) for px, py in points]
+    stroke = max(2, round(size * 0.065))
+    draw.line(points, fill="#D0D0D0", width=stroke, joint="curve")
+    cuff_top = y + size * (0.43 if not down else 0.08)
+    cuff_bottom = y + size * (0.92 if not down else 0.57)
+    draw.rounded_rectangle(
+        (x + size * 0.02, cuff_top, x + size * 0.26, cuff_bottom),
+        radius=max(2, round(size * 0.055)),
+        outline="#D0D0D0",
+        width=stroke,
+    )
+
+
+def create_comment_panel(
+    comment: CommentOverlay,
+    output_path: Path,
+    *,
+    panel_height: int = PANEL_HEIGHT,
+    overlay_mode: bool = False,
+) -> Path:
+    """Render a deliberately plain, screenshot-like comment strip."""
+    scale = max(0.58, min(1.0, panel_height / 285))
+    base = Image.new(
+        "RGBA",
+        (PANEL_WIDTH, panel_height),
+        (4, 4, 4, 244) if overlay_mode else (4, 4, 4, 255),
+    )
+    draw = ImageDraw.Draw(base)
+    avatar_size = round(72 * scale)
+    left = round(28 * scale)
+    top = round(48 * scale)
+    content_x = left + avatar_size + round(29 * scale)
+    meta_font = load_font(max(18, round(30 * scale)), "bold")
+    body_font = load_font(max(22, round(37 * scale)), "regular")
+    action_font = load_font(max(17, round(28 * scale)), "regular")
+
+    # Only the identity-like metadata is blurred; the comment and reactions remain crisp.
+    metadata = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    metadata_draw = ImageDraw.Draw(metadata)
+    metadata_draw.ellipse(
+        (left, top, left + avatar_size, top + avatar_size),
+        fill=comment.avatar_color,
+    )
+    initial_font = load_font(max(20, round(34 * scale)), "bold")
+    initial_box = metadata_draw.textbbox((0, 0), comment.initial, font=initial_font)
+    metadata_draw.text(
+        (
+            left + (avatar_size - (initial_box[2] - initial_box[0])) / 2 - initial_box[0],
+            top + (avatar_size - (initial_box[3] - initial_box[1])) / 2 - initial_box[1],
+        ),
+        comment.initial,
+        font=initial_font,
+        fill="#FFFFFF",
+    )
+    metadata_draw.text(
+        (content_x, top),
+        f"@{comment.nickname}  {comment.age_label}",
+        font=meta_font,
+        fill="#F0F0F0",
+    )
+    base.alpha_composite(
+        metadata.filter(ImageFilter.GaussianBlur(radius=max(5, round(8.2 * scale))))
+    )
+
+    # A subtle whole-detail blur keeps the strip feeling like a captured social
+    # screenshot instead of freshly typeset overlay text.
+    details = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    details_draw = ImageDraw.Draw(details)
+    text_top = top + round(53 * scale)
+    lines = _wrap_comment_text(details_draw, comment.text, body_font, PANEL_WIDTH - content_x - left)
+    line_height = round(47 * scale)
+    for index, line in enumerate(lines):
+        details_draw.text((content_x, text_top + index * line_height), line, font=body_font, fill="#E8E8E8")
+
+    actions_y = text_top + len(lines) * line_height + round(17 * scale)
+    icon_size = round(34 * scale)
+    _draw_reaction_icon(details_draw, content_x, actions_y, icon_size)
+    if comment.like_count >= 10_000:
+        amount = (comment.like_count // 1_000) / 10
+        likes = f"{amount:g}만"
+    elif comment.like_count >= 1_000:
+        amount = (comment.like_count // 100) / 10
+        likes = f"{amount:g}천"
+    else:
+        likes = f"{comment.like_count:,}"
+    details_draw.text(
+        (content_x + icon_size + round(12 * scale), actions_y - round(2 * scale)),
+        likes,
+        font=action_font,
+        fill="#BEBEBE",
+    )
+    likes_width = _text_width(details_draw, likes, action_font)
+    dislike_x = content_x + icon_size + round(30 * scale) + likes_width
+    _draw_reaction_icon(details_draw, dislike_x, actions_y, icon_size, down=True)
+    details_draw.text(
+        (dislike_x + icon_size + round(36 * scale), actions_y - round(2 * scale)),
+        "답글",
+        font=action_font,
+        fill="#C4C4C4",
+    )
+    base.alpha_composite(details.filter(ImageFilter.GaussianBlur(radius=max(0.35, 0.52 * scale))))
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output = base if overlay_mode else base.convert("RGB")
+    output.save(output_path, format="PNG", optimize=True)
+    return output_path
+
+
 def create_panel_overlays(
     *,
     title: str,
@@ -294,6 +598,7 @@ def create_panel_overlays(
     top_height: int = PANEL_HEIGHT,
     bottom_height: int = PANEL_HEIGHT,
     overlay_mode: bool = False,
+    title_text_styles: list[TitleTextStyle] | None = None,
 ) -> tuple[Path, Path]:
     top = create_title_panel(
         title,
@@ -304,6 +609,7 @@ def create_panel_overlays(
         font_scale=title_font_scale,
         panel_height=top_height,
         overlay_mode=overlay_mode,
+        title_text_styles=title_text_styles,
     )
     bottom = create_channel_panel(
         channel_name,

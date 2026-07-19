@@ -16,7 +16,7 @@ from shorts_worker.errors import (
 )
 from shorts_worker.ingestion import DownloadedAssetBundle, VideoMetadata
 from shorts_worker.schemas import HighlightClip, SubtitleSegment
-from shorts_worker.worker_pipeline import BatchWorker, classify_range_download
+from shorts_worker.worker_pipeline import BatchWorker, classify_full_source_download
 
 
 @contextmanager
@@ -39,8 +39,6 @@ def _worker(tmp_path, error: Exception) -> BatchWorker:
         "attempt_count": 0,
         "deadline_at": datetime.now(UTC) + timedelta(minutes=15),
         "source_duration_seconds": 120,
-        "range_start_seconds": 0,
-        "range_end_seconds": 120,
     }
     worker.repository.claim_prepare_attempt.return_value = {
         "attempt_count": 1,
@@ -90,15 +88,15 @@ def test_missing_openai_key_fails_before_youtube_download(tmp_path) -> None:
     )
 
 
-def test_prepare_omits_download_section_when_full_source_is_selected(tmp_path) -> None:
+def test_prepare_downloads_full_source_without_range_arguments(tmp_path) -> None:
     worker = _worker(tmp_path, RuntimeError("stop after download arguments"))
 
     with pytest.raises(RuntimeError, match="stop after download arguments"):
         worker.prepare("job-a")
 
     download_kwargs = worker.ingestion.download_bundle.call_args.kwargs
-    assert download_kwargs["range_start_seconds"] is None
-    assert download_kwargs["range_end_seconds"] is None
+    assert "range_start_seconds" not in download_kwargs
+    assert "range_end_seconds" not in download_kwargs
 
 
 def test_prepare_uses_a_fresh_attempt_directory_and_cleans_it(tmp_path) -> None:
@@ -109,7 +107,7 @@ def test_prepare_uses_a_fresh_attempt_directory_and_cleans_it(tmp_path) -> None:
     assert list(tmp_path.iterdir()) == []
 
 
-def test_prepare_transcribes_only_the_downloaded_range_before_selection(
+def test_prepare_transcribes_the_full_source_before_selection(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     worker = _worker(tmp_path, AssertionError("replaced below"))
@@ -120,8 +118,6 @@ def test_prepare_transcribes_only_the_downloaded_range_before_selection(
             "video_title": "테스트 영상",
             "source_duration_seconds": 120,
             "expected_short_count": 1,
-            "range_start_seconds": 30,
-            "range_end_seconds": 90,
             "output_language": "ko",
         }
     )
@@ -138,19 +134,19 @@ def test_prepare_transcribes_only_the_downloaded_range_before_selection(
 
     def transcribe(**kwargs):
         order.append("transcribe")
-        assert kwargs["duration_seconds"] == pytest.approx(60)
+        assert kwargs["duration_seconds"] == pytest.approx(120)
         return [SubtitleSegment(start=0, end=30, text="전사 결과")]
 
     def select(**kwargs):
         order.append("select")
-        assert kwargs["duration_seconds"] == pytest.approx(60)
-        assert kwargs["range_start_seconds"] == 0
-        assert kwargs["range_end_seconds"] == pytest.approx(60)
+        assert kwargs["duration_seconds"] == pytest.approx(120)
+        assert "range_start_seconds" not in kwargs
+        assert "range_end_seconds" not in kwargs
         raise RuntimeError("stop after ordering assertion point")
 
     monkeypatch.setattr(
         "shorts_worker.worker_pipeline.probe_media",
-        lambda _path: {"format": {"duration": "60"}},
+        lambda _path: {"format": {"duration": "120"}},
     )
     worker.ingestion.download_bundle.side_effect = download
     worker._transcribe_source = MagicMock(side_effect=transcribe)
@@ -162,12 +158,12 @@ def test_prepare_transcribes_only_the_downloaded_range_before_selection(
 
     assert order == ["download", "transcribe", "select"]
     download_kwargs = worker.ingestion.download_bundle.call_args.kwargs
-    assert download_kwargs["range_start_seconds"] == 30
-    assert download_kwargs["range_end_seconds"] == 90
-    worker.repository.record_range_download_observation.assert_called_once_with(
+    assert "range_start_seconds" not in download_kwargs
+    assert "range_end_seconds" not in download_kwargs
+    worker.repository.record_source_download_observation.assert_called_once_with(
         "job-a",
-        status="selected_range",
-        duration_seconds=60,
+        status="full_source_expected",
+        duration_seconds=120,
         media_bytes=5,
     )
 
@@ -175,37 +171,29 @@ def test_prepare_transcribes_only_the_downloaded_range_before_selection(
 @pytest.mark.parametrize(
     (
         "source_duration",
-        "range_start",
-        "range_end",
         "downloaded_duration",
         "expected",
     ),
     [
-        (120, 30, 90, 60, "selected_range"),
-        (120, 30, 90, 120, "full_source_unexpected"),
-        (120, 0, 120, 120, "full_source_expected"),
-        (120, 30, 90, 80, "unexpected_duration"),
+        (120, 120, "full_source_expected"),
+        (120, 80, "unexpected_duration"),
     ],
 )
-def test_classify_range_download(
+def test_classify_full_source_download(
     source_duration: float,
-    range_start: float,
-    range_end: float,
     downloaded_duration: float,
     expected: str,
 ) -> None:
     assert (
-        classify_range_download(
+        classify_full_source_download(
             source_duration_seconds=source_duration,
-            range_start_seconds=range_start,
-            range_end_seconds=range_end,
             downloaded_duration_seconds=downloaded_duration,
         )
         == expected
     )
 
 
-def test_prepare_stops_before_openai_when_range_download_was_ignored(
+def test_prepare_stops_before_openai_when_full_source_duration_is_wrong(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     worker = _worker(tmp_path, AssertionError("replaced below"))
@@ -216,8 +204,6 @@ def test_prepare_stops_before_openai_when_range_download_was_ignored(
             "video_title": "테스트 영상",
             "source_duration_seconds": 120,
             "expected_short_count": 1,
-            "range_start_seconds": 30,
-            "range_end_seconds": 90,
             "output_language": "ko",
         }
     )
@@ -231,27 +217,27 @@ def test_prepare_stops_before_openai_when_range_download_was_ignored(
     worker._transcribe_source = MagicMock()
     monkeypatch.setattr(
         "shorts_worker.worker_pipeline.probe_media",
-        lambda _path: {"format": {"duration": "120"}},
+        lambda _path: {"format": {"duration": "80"}},
     )
 
     worker.prepare("job-a")
 
     worker._transcribe_source.assert_not_called()
-    worker.repository.record_range_download_observation.assert_called_once_with(
+    worker.repository.record_source_download_observation.assert_called_once_with(
         "job-a",
-        status="full_source_unexpected",
-        duration_seconds=120,
+        status="unexpected_duration",
+        duration_seconds=80,
         media_bytes=5,
     )
     details = _assert_ingestion_failure(
         worker,
-        code="ingestion_range_mismatch",
-        reason="선택한 구간만 다운로드되지 않아 전체 영상 처리를 중단했습니다.",
+        code="ingestion_source_duration_mismatch",
+        reason="다운로드한 전체 영상의 길이가 원본과 일치하지 않습니다.",
     )
-    assert details["range_download_status"] == "full_source_unexpected"
+    assert details["source_download_status"] == "unexpected_duration"
 
 
-def test_prepare_persists_original_timestamps_for_clips_from_ranged_media(
+def test_prepare_persists_full_source_timestamps_for_clips(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     worker = _worker(tmp_path, AssertionError("replaced below"))
@@ -262,8 +248,6 @@ def test_prepare_persists_original_timestamps_for_clips_from_ranged_media(
             "video_title": "테스트 영상",
             "source_duration_seconds": 120,
             "expected_short_count": 1,
-            "range_start_seconds": 30,
-            "range_end_seconds": 90,
             "output_language": "ko",
             "video_aspect_ratio": "1:1",
             "retention_days": 30,
@@ -288,7 +272,7 @@ def test_prepare_persists_original_timestamps_for_clips_from_ranged_media(
     worker.repository.mark_render_queued.return_value = True
     monkeypatch.setattr(
         "shorts_worker.worker_pipeline.probe_media",
-        lambda _path: {"format": {"duration": "60"}},
+        lambda _path: {"format": {"duration": "120"}},
     )
 
     worker.prepare("job-a")
@@ -297,8 +281,8 @@ def test_prepare_persists_original_timestamps_for_clips_from_ranged_media(
     assert relative_clip.start_seconds == 10
     assert relative_clip.end_seconds == 40
     pending_kwargs = worker.repository.add_pending_short.call_args.kwargs
-    assert pending_kwargs["start_seconds"] == 40
-    assert pending_kwargs["end_seconds"] == 70
+    assert pending_kwargs["start_seconds"] == 10
+    assert pending_kwargs["end_seconds"] == 40
 
 
 def test_prepare_records_unexpected_duration_when_downloaded_media_cannot_be_probed(
@@ -332,7 +316,7 @@ def test_prepare_records_unexpected_duration_when_downloaded_media_cannot_be_pro
         worker.prepare("job-a")
 
     worker._transcribe_source.assert_not_called()
-    worker.repository.record_range_download_observation.assert_called_once_with(
+    worker.repository.record_source_download_observation.assert_called_once_with(
         "job-a",
         status="unexpected_duration",
         duration_seconds=None,
@@ -426,8 +410,6 @@ def test_retryable_extractor_failure_rotates_inline_to_the_next_route(tmp_path) 
         job_attempt=1,
         youtube_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         destination=tmp_path / "source",
-        range_start_seconds=None,
-        range_end_seconds=None,
         initial_route_id="webshare-03",
     )
 
@@ -466,8 +448,6 @@ def test_inline_rotation_can_try_all_ten_configured_routes(tmp_path) -> None:
         job_attempt=1,
         youtube_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         destination=tmp_path / "source",
-        range_start_seconds=None,
-        range_end_seconds=None,
         initial_route_id="webshare-01",
     )
 

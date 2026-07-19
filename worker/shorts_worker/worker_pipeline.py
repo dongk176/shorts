@@ -30,10 +30,12 @@ from .queueing import WorkQueue
 from .renderer import VideoRenderer
 from .repository import WorkerRepository
 from .schemas import (
+    CommentOverlay,
     HighlightClip,
     OutputLanguage,
     SubtitleSegment,
     TemplateId,
+    TitleTextStyle,
     VideoAspectRatio,
 )
 from .selector import TranscriptSelector
@@ -45,60 +47,25 @@ def _log_event(event: str, **fields: object) -> None:
     print(json.dumps({"event": event, **fields}, separators=(",", ":"), default=str), flush=True)
 
 
-def classify_range_download(
+def classify_full_source_download(
     *,
     source_duration_seconds: float,
-    range_start_seconds: float,
-    range_end_seconds: float,
     downloaded_duration_seconds: float,
 ) -> str:
     values = (
         source_duration_seconds,
-        range_start_seconds,
-        range_end_seconds,
         downloaded_duration_seconds,
     )
     if (
         not all(math.isfinite(value) for value in values)
         or source_duration_seconds <= 0
-        or range_start_seconds < 0
-        or range_end_seconds <= range_start_seconds
         or downloaded_duration_seconds <= 0
     ):
         return "unexpected_duration"
 
-    selected_duration = range_end_seconds - range_start_seconds
-    selected_distance = abs(downloaded_duration_seconds - selected_duration)
     full_distance = abs(downloaded_duration_seconds - source_duration_seconds)
-    selected_tolerance = max(2.0, min(5.0, selected_duration * 0.05))
     full_tolerance = max(2.0, min(5.0, source_duration_seconds * 0.02))
-    partial_range_requested = is_partial_range_requested(
-        source_duration_seconds=source_duration_seconds,
-        range_start_seconds=range_start_seconds,
-        range_end_seconds=range_end_seconds,
-    )
-
-    if not partial_range_requested:
-        if full_distance <= full_tolerance:
-            return "full_source_expected"
-        return "unexpected_duration"
-    if selected_distance <= selected_tolerance and selected_distance <= full_distance:
-        return "selected_range"
-    if full_distance <= full_tolerance:
-        return "full_source_unexpected"
-    return "unexpected_duration"
-
-
-def is_partial_range_requested(
-    *,
-    source_duration_seconds: float,
-    range_start_seconds: float,
-    range_end_seconds: float,
-) -> bool:
-    return (
-        range_start_seconds > 0.5
-        or range_end_seconds < source_duration_seconds - 0.5
-    )
+    return "full_source_expected" if full_distance <= full_tolerance else "unexpected_duration"
 
 
 class BatchWorker:
@@ -333,8 +300,6 @@ class BatchWorker:
         job_attempt: int,
         youtube_url: str,
         destination: Path,
-        range_start_seconds: float | None,
-        range_end_seconds: float | None,
         initial_route_id: str | None,
     ) -> tuple[DownloadedAssetBundle, str | None]:
         if not initial_route_id:
@@ -342,8 +307,6 @@ class BatchWorker:
                 self.ingestion.download_bundle(
                     youtube_url,
                     destination,
-                    range_start_seconds=range_start_seconds,
-                    range_end_seconds=range_end_seconds,
                     job_id=job_id,
                     route_id=None,
                 ),
@@ -368,8 +331,6 @@ class BatchWorker:
                     bundle = self.ingestion.download_bundle(
                         youtube_url,
                         destination,
-                        range_start_seconds=range_start_seconds,
-                        range_end_seconds=range_end_seconds,
                         job_id=job_id,
                         route_id=route_id,
                     )
@@ -523,14 +484,7 @@ class BatchWorker:
                     job_id=job_id,
                     attempt=attempt,
                 )
-                range_start_seconds = float(job["range_start_seconds"])
-                range_end_seconds = float(job["range_end_seconds"])
                 source_duration_seconds = float(job["source_duration_seconds"])
-                partial_range_requested = is_partial_range_requested(
-                    source_duration_seconds=source_duration_seconds,
-                    range_start_seconds=range_start_seconds,
-                    range_end_seconds=range_end_seconds,
-                )
                 route_cleanup_owned_by_download = bool(route_id)
                 with self.repository.ingestion_slot():
                     bundle, successful_route_id = self._download_with_inline_route_rotation(
@@ -538,12 +492,6 @@ class BatchWorker:
                         job_attempt=attempt,
                         youtube_url=job["youtube_url"],
                         destination=work_dir / "source",
-                        range_start_seconds=(
-                            range_start_seconds if partial_range_requested else None
-                        ),
-                        range_end_seconds=(
-                            range_end_seconds if partial_range_requested else None
-                        ),
                         initial_route_id=route_id,
                     )
                 successful_egress_class = (
@@ -570,44 +518,37 @@ class BatchWorker:
                 try:
                     downloaded_duration_seconds = media_duration(probe_media(source))
                 except Exception:
-                    self.repository.record_range_download_observation(
+                    self.repository.record_source_download_observation(
                         job_id,
                         status="unexpected_duration",
                         duration_seconds=None,
                         media_bytes=downloaded_media_bytes,
                     )
                     raise
-                range_download_status = classify_range_download(
+                source_download_status = classify_full_source_download(
                     source_duration_seconds=source_duration_seconds,
-                    range_start_seconds=range_start_seconds,
-                    range_end_seconds=range_end_seconds,
                     downloaded_duration_seconds=downloaded_duration_seconds,
                 )
-                self.repository.record_range_download_observation(
+                self.repository.record_source_download_observation(
                     job_id,
-                    status=range_download_status,
+                    status=source_download_status,
                     duration_seconds=downloaded_duration_seconds or None,
                     media_bytes=downloaded_media_bytes,
                 )
                 _log_event(
-                    "range_download_observed",
+                    "source_download_observed",
                     job_id=job_id,
-                    status=range_download_status,
+                    status=source_download_status,
                     source_duration_seconds=source_duration_seconds,
-                    requested_start_seconds=range_start_seconds,
-                    requested_end_seconds=range_end_seconds,
                     downloaded_duration_seconds=downloaded_duration_seconds,
                     downloaded_media_bytes=downloaded_media_bytes,
                 )
-                if range_download_status in {
-                    "full_source_unexpected",
-                    "unexpected_duration",
-                }:
+                if source_download_status == "unexpected_duration":
                     raise IngestionError(
-                        "선택한 구간만 다운로드되지 않아 전체 영상 처리를 중단했습니다.",
-                        code="ingestion_range_mismatch",
+                        "다운로드한 전체 영상의 길이가 원본과 일치하지 않습니다.",
+                        code="ingestion_source_duration_mismatch",
                         details={
-                            "range_download_status": range_download_status,
+                            "source_download_status": source_download_status,
                             "source_duration_seconds": source_duration_seconds,
                             "downloaded_duration_seconds": downloaded_duration_seconds,
                         },
@@ -627,8 +568,6 @@ class BatchWorker:
                     duration_seconds=downloaded_duration_seconds,
                     transcript=transcript,
                     required_count=int(job["expected_short_count"]),
-                    range_start_seconds=0,
-                    range_end_seconds=downloaded_duration_seconds,
                     output_language=OutputLanguage(job["output_language"]),
                 )
                 if not clips:
@@ -661,8 +600,8 @@ class BatchWorker:
                         short_id=short_id,
                         job=job,
                         clip_index=index,
-                        start_seconds=range_start_seconds + clip.start_seconds,
-                        end_seconds=range_start_seconds + clip.end_seconds,
+                        start_seconds=clip.start_seconds,
+                        end_seconds=clip.end_seconds,
                         hook_title=clip.hook_title,
                         highlight_reason=clip.reason,
                         subtitles=[item.model_dump() for item in relative_subtitles],
@@ -877,6 +816,15 @@ class BatchWorker:
                 SubtitleSegment.model_validate(segment)
                 for segment in item["subtitle_segments"]  # type: ignore[union-attr]
             ]
+            comments = [
+                CommentOverlay.model_validate(comment)
+                for comment in (item.get("comment_overlays") or [])  # type: ignore[union-attr]
+            ]
+            raw_title_text_styles = item.get("title_text_styles")  # type: ignore[union-attr]
+            title_text_styles = None if not item.get("title_text_styles_initialized") else [  # type: ignore[union-attr]
+                TitleTextStyle.model_validate(style)
+                for style in (raw_title_text_styles or [])  # type: ignore[union-attr]
+            ]
             channel_thumbnail_path = download_channel_thumbnail(
                 str(item.get("channel_thumbnail_url") or "") or None,
                 work_dir / "channel-thumbnail.png",
@@ -894,6 +842,8 @@ class BatchWorker:
                 title_font_scale=float(item["title_font_scale"]),
                 channel_thumbnail_path=channel_thumbnail_path,
                 video_aspect_ratio=VideoAspectRatio(str(item.get("video_aspect_ratio") or "1:1")),
+                comment_overlays=comments,
+                title_text_styles=title_text_styles,
             )
             self._thumbnail(output_path, thumbnail_path, work_dir)
             self.repository.update_initial_render_progress(short_id, 82)
@@ -954,6 +904,15 @@ class BatchWorker:
             subtitles = [
                 SubtitleSegment.model_validate(segment) for segment in item["subtitle_segments"]
             ]
+            comments = [
+                CommentOverlay.model_validate(comment)
+                for comment in (item.get("comment_overlays") or [])
+            ]
+            raw_title_text_styles = item.get("title_text_styles")
+            title_text_styles = None if not item.get("title_text_styles_initialized") else [
+                TitleTextStyle.model_validate(style)
+                for style in (raw_title_text_styles or [])
+            ]
             channel_thumbnail_path = download_channel_thumbnail(
                 str(item.get("channel_thumbnail_url") or "") or None,
                 work_dir / "channel-thumbnail.png",
@@ -971,6 +930,8 @@ class BatchWorker:
                 title_font_scale=float(item["title_font_scale"]),
                 channel_thumbnail_path=channel_thumbnail_path,
                 video_aspect_ratio=VideoAspectRatio(str(item.get("video_aspect_ratio") or "1:1")),
+                comment_overlays=comments,
+                title_text_styles=title_text_styles,
             )
             self.repository.update_rerender_progress(short_id, 82)
             version = int(item["render_version"]) + 1

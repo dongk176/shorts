@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import math
 import os
 import random
 import re
@@ -26,7 +25,6 @@ from .schemas import MAX_CHANNEL_NAME_CHARS
 from .url_validation import validate_youtube_url
 
 MAX_ACQUISITION_ATTEMPTS = 10
-MAX_SOURCE_DURATION_SECONDS = 60 * 60
 MAX_RECORDED_FAILURE_REASONS = 10
 RETRY_DELAY_BASE_SECONDS = (5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0, 60.0)
 RETRY_DELAY_JITTER_RATIO = 0.2
@@ -315,8 +313,6 @@ class IngestionProvider(ABC):
         youtube_url: str,
         destination: Path,
         *,
-        range_start_seconds: float | None = None,
-        range_end_seconds: float | None = None,
         job_id: str | None = None,
         route_id: str | None = None,
     ) -> DownloadedAssetBundle:
@@ -756,43 +752,6 @@ class YtDlpIngestionProvider(IngestionProvider):
     def analyze_url(self, youtube_url: str) -> VideoMetadata:
         return self._metadata_from_info(self._extract_info(youtube_url, asset="metadata"))
 
-    @staticmethod
-    def _download_section_args(
-        range_start_seconds: float | None,
-        range_end_seconds: float | None,
-    ) -> list[str]:
-        if range_start_seconds is None and range_end_seconds is None:
-            return []
-        if range_start_seconds is None or range_end_seconds is None:
-            raise IngestionError(
-                "다운로드 구간의 시작과 끝이 모두 필요합니다.",
-                code="ingestion_range_incomplete",
-            )
-
-        start = float(range_start_seconds)
-        end = float(range_end_seconds)
-        if (
-            not math.isfinite(start)
-            or not math.isfinite(end)
-            or start < 0
-            or end <= start
-            or end > MAX_SOURCE_DURATION_SECONDS
-        ):
-            raise IngestionError(
-                "유효하지 않은 영상 다운로드 구간입니다.",
-                code="ingestion_range_invalid",
-                details={
-                    "range_start_seconds": start if math.isfinite(start) else str(start),
-                    "range_end_seconds": end if math.isfinite(end) else str(end),
-                },
-            )
-
-        return [
-            "--download-sections",
-            f"*{start:.3f}-{end:.3f}",
-            "--no-force-keyframes-at-cuts",
-        ]
-
     def _download_video_once(
         self,
         normalized: str,
@@ -802,8 +761,6 @@ class YtDlpIngestionProvider(IngestionProvider):
         route: EgressRoute | None,
         job_id: str | None,
         attempt: int,
-        range_start_seconds: float | None = None,
-        range_end_seconds: float | None = None,
     ) -> tuple[VideoMetadata, Path]:
         destination.mkdir(parents=True, exist_ok=True)
         output_template = destination / "source.%(ext)s"
@@ -818,7 +775,6 @@ class YtDlpIngestionProvider(IngestionProvider):
                 ),
                 "--merge-output-format",
                 "mp4",
-                *self._download_section_args(range_start_seconds, range_end_seconds),
                 "--write-info-json",
                 "--output",
                 str(output_template),
@@ -870,8 +826,6 @@ class YtDlpIngestionProvider(IngestionProvider):
         destination: Path,
         *,
         job_id: str | None,
-        range_start_seconds: float | None = None,
-        range_end_seconds: float | None = None,
         route_id: str | None = None,
     ) -> VideoDownloadResult:
         failure_reasons: list[str] = []
@@ -891,8 +845,6 @@ class YtDlpIngestionProvider(IngestionProvider):
                     route=route,
                     job_id=job_id,
                     attempt=attempt,
-                    range_start_seconds=range_start_seconds,
-                    range_end_seconds=range_end_seconds,
                 )
                 result = VideoDownloadResult(
                     metadata=metadata,
@@ -965,8 +917,6 @@ class YtDlpIngestionProvider(IngestionProvider):
         youtube_url: str,
         destination: Path,
         *,
-        range_start_seconds: float | None = None,
-        range_end_seconds: float | None = None,
         job_id: str | None = None,
         route_id: str | None = None,
     ) -> DownloadedAssetBundle:
@@ -988,8 +938,6 @@ class YtDlpIngestionProvider(IngestionProvider):
             expected_id,
             destination / "video",
             job_id=job_id,
-            range_start_seconds=range_start_seconds,
-            range_end_seconds=range_end_seconds,
             route_id=route_id,
         )
 

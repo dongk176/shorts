@@ -149,6 +149,8 @@ def test_pending_short_uses_one_database_clock_for_creation_and_expiry() -> None
         in implementation
     )
     assert "expires_at: Any" not in implementation
+    assert "when generated_shorts.comment_overlays='[]'::jsonb" in implementation
+    assert "else generated_shorts.comment_overlays" in implementation
 
 
 def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> None:
@@ -191,4 +193,5 @@ def test_prepare_passes_retention_days_instead_of_worker_clock_expiry() -> None:
     implementation = inspect.getsource(BatchWorker.prepare)
 
     assert 'retention_days=int(job["retention_days"])' in implementation
+    assert "highlight_reason=clip.reason" in implementation
     assert "timedelta(days=" not in implementation

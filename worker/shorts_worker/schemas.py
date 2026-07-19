@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import secrets
 from enum import Enum
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -10,6 +12,7 @@ class TemplateId(str, Enum):
     WHITE_YELLOW = "white-yellow"
     DARK_MINIMAL = "dark-minimal"
     PAPER = "paper"
+    COMMENT_CAPTURE = "comment-capture"
 
 
 class VideoAspectRatio(str, Enum):
@@ -61,6 +64,85 @@ class SubtitleSegment(BaseModel):
     @classmethod
     def clean_text(cls, value: str) -> str:
         return " ".join(value.split())
+
+
+class CommentOverlay(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    id: str
+    start_seconds: float = Field(alias="startSeconds", ge=0)
+    end_seconds: float = Field(alias="endSeconds", gt=0)
+    text: str = Field(min_length=1, max_length=200)
+    initial: str = Field(min_length=1, max_length=2)
+    avatar_color: str = Field(alias="avatarColor", pattern=r"^#[0-9A-Fa-f]{6}$")
+    nickname: str = Field(min_length=1, max_length=30)
+    like_count: int = Field(alias="likeCount", ge=1_312, le=999_999)
+    age_label: str = Field(alias="ageLabel", min_length=1, max_length=20)
+
+    @field_validator("text", "nickname", "age_label")
+    @classmethod
+    def clean_comment_text(cls, value: str) -> str:
+        return " ".join(value.split())
+
+    @field_validator("end_seconds")
+    @classmethod
+    def validate_range(cls, value: float, info) -> float:
+        start = info.data.get("start_seconds")
+        if start is not None and value <= start:
+            raise ValueError("comment end must be after start")
+        return value
+
+
+class TitleTextStyle(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    background_color: str | None = Field(
+        default=None,
+        alias="backgroundColor",
+        pattern=r"^#[0-9A-Fa-f]{6}$",
+    )
+
+    @field_validator("end")
+    @classmethod
+    def validate_title_style_range(cls, value: int, info) -> int:
+        start = info.data.get("start")
+        if start is not None and value <= start:
+            raise ValueError("title style end must be after start")
+        return value
+
+
+_COMMENT_COLORS = ("#8B2CC4", "#D84572", "#2674C8", "#257A5A", "#C76624", "#6655C7")
+_COMMENT_NICKNAME_PREFIXES = ("하루", "모카", "여름", "초코", "구름", "새벽", "라온", "소담")
+_COMMENT_NICKNAME_SUFFIXES = ("기록", "한스푼", "로그", "이야기", "채널", "노트", "생활", "공간")
+
+
+def default_comment_overlays(duration_seconds: float) -> list[dict[str, object]]:
+    """Create three non-overlapping placeholder comments once for persisted rendering."""
+    duration = max(0.3, float(duration_seconds))
+    boundaries = [0.0, duration / 3, duration * 2 / 3, duration]
+    comments: list[dict[str, object]] = []
+    for index in range(3):
+        nickname = (
+            secrets.choice(_COMMENT_NICKNAME_PREFIXES)
+            + secrets.choice(_COMMENT_NICKNAME_SUFFIXES)
+            + str(secrets.randbelow(90) + 10)
+        )
+        comment = CommentOverlay(
+            id=str(uuid4()),
+            startSeconds=round(boundaries[index], 3),
+            endSeconds=round(boundaries[index + 1], 3),
+            text="아 진짜 ㅋㅋㅋㅋㅋㅋㅋㅋ",
+            initial=nickname[0],
+            avatarColor=secrets.choice(_COMMENT_COLORS),
+            nickname=nickname,
+            likeCount=secrets.randbelow(18_689) + 1_312,
+            ageLabel=f"{secrets.randbelow(11) + 1}개월 전",
+        )
+        comments.append(comment.model_dump(by_alias=True))
+    return comments
 
 
 class HighlightClip(BaseModel):

@@ -114,19 +114,6 @@ def test_overlapping_clips_are_repositioned_to_five_seconds_or_less() -> None:
     assert overlap_seconds(clips[0], clips[1]) <= 5.001
 
 
-def test_clips_stay_inside_user_selected_range() -> None:
-    clips = normalize_clips(
-        [HighlightClip(start_seconds=10, end_seconds=50, hook_title="범위 밖 후보")],
-        video_title="범위 검증",
-        duration_seconds=600,
-        required_count=2,
-        range_start_seconds=180,
-        range_end_seconds=360,
-    )
-    assert len(clips) == 1
-    assert all(180 <= clip.start_seconds < clip.end_seconds <= 360 for clip in clips)
-
-
 def test_valid_ai_clip_count_is_not_filled_to_maximum() -> None:
     clips = normalize_clips(
         [
@@ -165,13 +152,11 @@ def test_deterministic_fallback_uses_forty_five_seconds() -> None:
         "fallback 영상",
         180,
         1,
-        range_start_seconds=30,
-        range_end_seconds=150,
     )
 
     assert len(clips) == 1
     assert clips[0].end_seconds - clips[0].start_seconds == AI_CLIP_FALLBACK_SECONDS
-    assert 30 <= clips[0].start_seconds < clips[0].end_seconds <= 150
+    assert 0 <= clips[0].start_seconds < clips[0].end_seconds <= 180
 
 
 def test_gemini_defaults_match_ai_talk(monkeypatch) -> None:
@@ -265,6 +250,10 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     assert "탑티어 숏폼 기획자" in request["messages"][0]["content"]
     assert "쇼츠용 킬러 구간" in request["messages"][0]["content"]
     assert "1. 길이: 각 구간은 30~60초 사이로 구성할 것." in request["messages"][0]["content"]
+    assert (
+        "군더더기 없이 직관적이고 타격감 있는 구어체 단어"
+        in request["messages"][0]["content"]
+    )
     assert "자연스러운 일본어 구어체" in request["messages"][0]["content"]
     assert "공백 포함 5~18자" in request["messages"][0]["content"]
     assert "hook_title_line1" in request["messages"][0]["content"]

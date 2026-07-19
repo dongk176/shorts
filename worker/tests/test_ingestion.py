@@ -87,8 +87,6 @@ def test_download_bundle_only_fetches_video_and_never_requests_subtitles(
     bundle = provider.download_bundle(
         "https://youtu.be/dQw4w9WgXcQ",
         tmp_path,
-        range_start_seconds=30,
-        range_end_seconds=90,
     )
 
     assert len(calls) == 1
@@ -97,42 +95,12 @@ def test_download_bundle_only_fetches_video_and_never_requests_subtitles(
     assert not any("--write-auto-subs" in call for call in calls)
     assert not any("--sub-langs" in call for call in calls)
     download_call = calls[0]
-    assert download_call[download_call.index("--download-sections") + 1] == "*30.000-90.000"
-    assert "--no-force-keyframes-at-cuts" in download_call
+    assert "--download-sections" not in download_call
     assert "--force-keyframes-at-cuts" not in download_call
+    assert "--no-force-keyframes-at-cuts" not in download_call
     assert not (tmp_path / "subtitles").exists()
     assert bundle.metadata.video_id == "dQw4w9WgXcQ"
     assert bundle.video_path == tmp_path / "video" / "source.mp4"
-
-
-@pytest.mark.parametrize(
-    ("start", "end"),
-    [(-1, 30), (30, 30), (30, 3601), (float("nan"), 30)],
-)
-def test_download_bundle_rejects_invalid_ranges_before_running_yt_dlp(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    start: float,
-    end: float,
-) -> None:
-    provider = YtDlpIngestionProvider()
-    calls: list[list[str]] = []
-    monkeypatch.setattr(
-        provider,
-        "_run",
-        lambda args, **_kwargs: calls.append(args),
-    )
-
-    with pytest.raises(IngestionError):
-        provider.download_bundle(
-            "https://youtu.be/dQw4w9WgXcQ",
-            tmp_path,
-            range_start_seconds=start,
-            range_end_seconds=end,
-        )
-
-    assert calls == []
-
 
 def test_rate_limit_uses_bot_check_circuit_error(monkeypatch) -> None:
     monkeypatch.setattr(

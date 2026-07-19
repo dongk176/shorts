@@ -8,10 +8,11 @@ from shorts_worker.config import Settings
 from shorts_worker.overlays import (
     create_ass_subtitles,
     create_channel_panel,
+    create_comment_panel,
     create_title_panel,
     wrap_korean_title,
 )
-from shorts_worker.schemas import SubtitleSegment, TemplateId
+from shorts_worker.schemas import CommentOverlay, SubtitleSegment, TemplateId, TitleTextStyle
 from shorts_worker.subtitles import AudioTranscriber
 
 
@@ -36,6 +37,37 @@ def test_korean_title_overlay_is_created(tmp_path: Path) -> None:
         tmp_path / "title.png",
     )
     assert output.is_file()
+
+
+def test_title_overlay_applies_colors_only_to_selected_character_range(tmp_path: Path) -> None:
+    output = create_title_panel(
+        "선택 색상 테스트",
+        TemplateId.DARK_MINIMAL,
+        tmp_path / "styled-title.png",
+        title_text_styles=[
+            TitleTextStyle(
+                start=0,
+                end=2,
+                color="#00FF00",
+                backgroundColor="#123456",
+            )
+        ],
+    )
+    with Image.open(output).convert("RGB") as image:
+        pixels = list(image.getdata())
+        assert (18, 52, 86) in pixels
+        assert (0, 255, 0) in pixels
+
+
+def test_explicit_empty_title_styles_remove_template_accent_background(tmp_path: Path) -> None:
+    output = create_title_panel(
+        "첫 번째 제목\n두 번째 제목",
+        TemplateId.DARK_RED,
+        tmp_path / "title-without-background.png",
+        title_text_styles=[],
+    )
+    with Image.open(output).convert("RGB") as image:
+        assert (227, 38, 38) not in list(image.getdata())
     with Image.open(output) as image:
         assert image.size == (1080, 420)
         assert image.getbbox() is not None
@@ -136,6 +168,28 @@ def test_channel_panel_uses_circular_channel_thumbnail(tmp_path: Path) -> None:
         assert max(y for _, y in blue_pixels) - min(y for _, y in blue_pixels) == 63
         top_left = (min(x for x, _ in blue_pixels), min(y for _, y in blue_pixels))
         assert image.getpixel(top_left) == (0, 0, 0)
+
+
+def test_comment_panel_is_plain_black_with_crisp_comment_content(tmp_path: Path) -> None:
+    output = create_comment_panel(
+        CommentOverlay(
+            id="comment-1",
+            startSeconds=0,
+            endSeconds=5,
+            text="댓글 테스트입니다",
+            initial="소",
+            avatarColor="#8B2CC4",
+            nickname="소담기록24",
+            likeCount=1_312,
+            ageLabel="5개월 전",
+        ),
+        tmp_path / "comment.png",
+        panel_height=285,
+    )
+    with Image.open(output).convert("RGB") as image:
+        assert image.size == (1080, 285)
+        assert image.getpixel((1079, 284)) == (4, 4, 4)
+        assert len(image.getcolors(maxcolors=1_000_000) or []) > 20
 
 
 def test_full_vertical_panels_keep_transparent_canvas_and_box_both_title_lines(
