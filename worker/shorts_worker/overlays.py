@@ -503,7 +503,6 @@ def create_comment_panel(
         (PANEL_WIDTH, panel_height),
         (4, 4, 4, 244) if overlay_mode else (4, 4, 4, 255),
     )
-    draw = ImageDraw.Draw(base)
     avatar_size = round(72 * scale)
     left = round(28 * scale)
     top = round(48 * scale)
@@ -545,10 +544,20 @@ def create_comment_panel(
     details = Image.new("RGBA", base.size, (0, 0, 0, 0))
     details_draw = ImageDraw.Draw(details)
     text_top = top + round(53 * scale)
-    lines = _wrap_comment_text(details_draw, comment.text, body_font, PANEL_WIDTH - content_x - left)
+    lines = _wrap_comment_text(
+        details_draw,
+        comment.text,
+        body_font,
+        PANEL_WIDTH - content_x - left,
+    )
     line_height = round(47 * scale)
     for index, line in enumerate(lines):
-        details_draw.text((content_x, text_top + index * line_height), line, font=body_font, fill="#E8E8E8")
+        details_draw.text(
+            (content_x, text_top + index * line_height),
+            line,
+            font=body_font,
+            fill="#E8E8E8",
+        )
 
     actions_y = text_top + len(lines) * line_height + round(17 * scale)
     icon_size = round(34 * scale)
