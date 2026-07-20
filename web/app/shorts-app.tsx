@@ -47,7 +47,11 @@ import {
   customCenteredLayerStyle,
   customVideoFrameStyle,
 } from "@/lib/custom-template-preview-layout";
-import { COMMENT_LIKE_COUNT_MIN, randomCommentLikeCount } from "@/lib/comment-overlay";
+import {
+  COMMENT_CAPTURE_BODY_FONT_CQW,
+  COMMENT_LIKE_COUNT_MIN,
+  randomCommentLikeCount,
+} from "@/lib/comment-overlay";
 
 const templates: Array<{ id: TemplateId; name: string; label: string; background: string; primary: string; accent: string; accentBackground: string | null; channel: string }> = [
   { id: "comment-capture", name: "댓글 캡처", label: "댓글 반응과 함께\n시청 지속시간 상승", background: "#000000", primary: "#FFFFFF", accent: "#35E6E3", accentBackground: null, channel: "#FFFFFF" },
@@ -326,7 +330,7 @@ function CommentCaptureCard({ comment }: { comment: CommentOverlay | null }) {
         <div className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.65cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
         <div className="min-w-0 flex-1">
           <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight text-neutral-100 blur-[0.52cqw]">@{comment.nickname} <span className="font-normal text-neutral-400">{comment.ageLabel}</span></div>
-          <p className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap text-[4.05cqw] font-normal leading-[1.28] text-white/95 blur-[0.05cqw]">{comment.text}</p>
+          <p className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap font-normal leading-[1.28] text-white/95 blur-[0.05cqw]" style={{ fontSize: `${COMMENT_CAPTURE_BODY_FONT_CQW}cqw` }}>{comment.text}</p>
           <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] text-neutral-300/80 blur-[0.035cqw]">
             <ReactionIcon /><span>{formatCompactKoreanCount(comment.likeCount)}</span>
             <span className="ml-[2.2cqw]"><ReactionIcon down /></span>

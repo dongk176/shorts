@@ -21,6 +21,7 @@ TITLE_LINE_GAP = 18
 TITLE_ACCENT_PADDING_X = 24
 TITLE_ACCENT_PADDING_Y = 10
 CHANNEL_TOP_MARGIN = 48
+COMMENT_BODY_FONT_SIZE = 35
 
 
 @dataclass(frozen=True, slots=True)
@@ -532,7 +533,7 @@ def create_comment_panel(
     top = round(48 * scale)
     content_x = left + avatar_size + round(29 * scale)
     meta_font = load_font(max(18, round(30 * scale)), "bold")
-    body_font = load_font(max(22, round(37 * scale)), "regular")
+    body_font = load_font(max(22, round(COMMENT_BODY_FONT_SIZE * scale)), "regular")
     action_font = load_font(max(17, round(28 * scale)), "regular")
 
     # Only the identity-like metadata is blurred; the comment and reactions remain crisp.

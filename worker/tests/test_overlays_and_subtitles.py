@@ -6,6 +6,7 @@ from PIL import Image
 
 from shorts_worker.config import Settings
 from shorts_worker.overlays import (
+    COMMENT_BODY_FONT_SIZE,
     create_ass_subtitles,
     create_channel_panel,
     create_comment_panel,
@@ -255,6 +256,7 @@ def test_channel_panel_uses_circular_channel_thumbnail(tmp_path: Path) -> None:
 
 
 def test_comment_panel_is_plain_black_with_crisp_comment_content(tmp_path: Path) -> None:
+    assert COMMENT_BODY_FONT_SIZE == 35
     output = create_comment_panel(
         CommentOverlay(
             id="comment-1",
