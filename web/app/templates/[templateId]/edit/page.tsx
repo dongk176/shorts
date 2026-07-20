@@ -4,6 +4,8 @@ import { getDb } from "@/lib/db";
 import { requireMvpSession } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { TemplateEditor } from "../../template-editor";
+import { getBillingSummary } from "@/lib/billing";
+import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 
 export default async function EditTemplatePage({ params }: { params: Promise<{ templateId: string }> }) {
   const { templateId } = await params;
@@ -18,5 +20,6 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ t
   `;
   if (!rows[0]) notFound();
   const template = customTemplateFromRow(rows[0]);
-  return <TemplateEditor initialTemplate={template} baseTemplateId={template.baseTemplateId} initialConfig={template.config} />;
+  const billing = await getBillingSummary(db, session.userId);
+  return <TemplateEditor initialTemplate={template} baseTemplateId={template.baseTemplateId} initialConfig={template.config} canSaveCustomTemplates={billingSupportsCustomTemplates(billing)} />;
 }

@@ -20,6 +20,7 @@ import {
   customVideoFrameStyle,
 } from "@/lib/custom-template-preview-layout";
 import { CENTER_SNAP_THRESHOLD_PX, snapAxisToCenter } from "@/lib/template-editor-snap";
+import { CustomTemplatePlanOverlay } from "@/components/custom-template-plan-overlay";
 
 type LayerId = "video" | "title" | "channel";
 type History = { past: TemplateConfig[]; present: TemplateConfig; future: TemplateConfig[] };
@@ -69,7 +70,7 @@ function ColorPalette({ value, onChange, allowNone = false }: { value: TemplateP
   );
 }
 
-export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig }: { initialTemplate: CustomTemplate | null; baseTemplateId: TemplateId; initialConfig: TemplateConfig }) {
+export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig, canSaveCustomTemplates }: { initialTemplate: CustomTemplate | null; baseTemplateId: TemplateId; initialConfig: TemplateConfig; canSaveCustomTemplates: boolean }) {
   const [history, setHistory] = useState<History>({ past: [], present: initialConfig, future: [] });
   const [name, setName] = useState(initialTemplate?.name || "나의 템플릿");
   const [selectedLayer, setSelectedLayer] = useState<LayerId>("title");
@@ -79,6 +80,7 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
   const [message, setMessage] = useState<string | null>(null);
   const [savedTemplate, setSavedTemplate] = useState(initialTemplate);
   const [centerGuides, setCenterGuides] = useState<CenterGuides>(hiddenCenterGuides);
+  const [planOverlayOpen, setPlanOverlayOpen] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const transactionRef = useRef<TemplateConfig | null>(null);
   const baselineRef = useRef(JSON.stringify({ name: initialTemplate?.name || "나의 템플릿", config: initialConfig }));
@@ -223,6 +225,10 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
   });
 
   const save = async () => {
+    if (!canSaveCustomTemplates) {
+      setPlanOverlayOpen(true);
+      return;
+    }
     if (!name.trim()) { setMessage("템플릿 이름을 입력해 주세요."); return; }
     setSaving(true);
     setMessage(null);
@@ -235,6 +241,10 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
           : { name: name.trim(), baseTemplateId, config }),
       });
       const payload = await response.json() as { template?: CustomTemplate; detail?: string };
+      if (response.status === 403) {
+        setPlanOverlayOpen(true);
+        return;
+      }
       if (!response.ok || !payload.template) throw new Error(payload.detail || "템플릿을 저장하지 못했습니다.");
       setSavedTemplate(payload.template);
       setName(payload.template.name);
@@ -258,6 +268,7 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
 
   return (
     <div className="min-h-dvh bg-[#101012] text-neutral-100">
+      <CustomTemplatePlanOverlay open={planOverlayOpen} onClose={() => setPlanOverlayOpen(false)} />
       <div className="hidden min-h-dvh lg:block">
         <header className="fixed inset-x-0 top-0 z-50 flex h-16 items-center justify-between border-b border-white/10 bg-[#171719]/95 px-5 backdrop-blur-xl">
           <div className="flex items-center gap-4"><Link href="/templates" className="text-sm font-bold text-neutral-400 hover:text-white">← 라이브러리</Link><span className="h-5 w-px bg-white/10" /><strong className="tracking-[-.03em]">Easy Cut <span className="text-[#ff715e]">템플릿 커스텀</span></strong></div>

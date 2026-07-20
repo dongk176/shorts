@@ -4,6 +4,8 @@ import { apiError, HttpError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { customTemplateFromRow } from "@/lib/custom-templates";
 import { customTemplateInputSchema, MAX_PERSONAL_TEMPLATES } from "@/lib/template-config";
+import { getBillingSummary } from "@/lib/billing";
+import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
 
 export async function GET() {
   try {
@@ -27,6 +29,7 @@ export async function POST(request: Request) {
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const created = await db.begin(async (tx) => {
+      assertCustomTemplateAccess(await getBillingSummary(tx, session.userId));
       await tx`select pg_advisory_xact_lock(hashtextextended(${`custom-template:${session.userId}`}, 0))`;
       const counts = await tx`
         select count(*)::int as count from shorts_mvp.custom_templates where user_id=${session.userId}

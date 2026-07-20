@@ -27,7 +27,7 @@ export const pricingPlans: PricingPlan[] = [
     minutes: 100,
     features: [
       "동시 작업 1개 · 프로젝트 7일 보관",
-      "전체 템플릿 4종",
+      "기본 템플릿 사용",
     ],
   },
   {
@@ -39,7 +39,7 @@ export const pricingPlans: PricingPlan[] = [
     popular: true,
     features: [
       "동시 작업 2개 · 프로젝트 15일 보관",
-      "전체 템플릿 4종",
+      "기본 · 커스텀 템플릿 사용",
     ],
   },
   {
@@ -50,7 +50,7 @@ export const pricingPlans: PricingPlan[] = [
     badge: "전문가를 위한 플랜",
     features: [
       "동시 작업 3개 · 프로젝트 30일 보관",
-      "전체 템플릿 4종",
+      "기본 · 커스텀 템플릿 사용",
     ],
   },
 ];

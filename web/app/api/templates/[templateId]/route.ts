@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { customTemplateFromRow } from "@/lib/custom-templates";
+import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { templateConfigSchema } from "@/lib/template-config";
+import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
 
 const paramsSchema = z.object({ templateId: z.string().uuid() });
 const updateSchema = z.object({
@@ -39,6 +41,7 @@ export async function PUT(request: Request, context: Context) {
     const input = updateSchema.parse(await request.json());
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    assertCustomTemplateAccess(await getBillingSummary(db, session.userId));
     const rows = await db`
       update shorts_mvp.custom_templates
       set name=${input.name}, config=${db.json(input.config)}, version=version + 1

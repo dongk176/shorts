@@ -3,6 +3,10 @@ import { TemplateEditor } from "../template-editor";
 import { createDefaultTemplateConfig } from "@/lib/template-config";
 import { templateIds, type TemplateId } from "@/lib/contracts";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
+import { getDb } from "@/lib/db";
+import { getBillingSummary } from "@/lib/billing";
+import { requireMvpSession } from "@/lib/session";
+import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 
 export default async function NewTemplatePage({ searchParams }: { searchParams: Promise<{ base?: string }> }) {
   const user = await getAuthenticatedUser();
@@ -10,5 +14,7 @@ export default async function NewTemplatePage({ searchParams }: { searchParams: 
   const baseTemplateId = (templateIds.includes(base as TemplateId) ? base : "dark-minimal") as TemplateId;
   const next = `/templates/new${base ? `?base=${encodeURIComponent(base)}` : ""}`;
   if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(next)}`);
-  return <TemplateEditor initialTemplate={null} baseTemplateId={baseTemplateId} initialConfig={createDefaultTemplateConfig(baseTemplateId)} />;
+  const session = await requireMvpSession(user);
+  const billing = await getBillingSummary(getDb(), session.userId);
+  return <TemplateEditor initialTemplate={null} baseTemplateId={baseTemplateId} initialConfig={createDefaultTemplateConfig(baseTemplateId)} canSaveCustomTemplates={billingSupportsCustomTemplates(billing)} />;
 }

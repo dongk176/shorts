@@ -7,6 +7,7 @@ import { createPageMetadata } from "@/lib/seo";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { requireMvpSession } from "@/lib/session";
 import { getDb } from "@/lib/db";
+import { getBillingSummary } from "@/lib/billing";
 import { customTemplateFromRow } from "@/lib/custom-templates";
 import type { CustomTemplate } from "@/lib/template-config";
 import {
@@ -14,6 +15,7 @@ import {
   resolveStoredFavoriteTemplateKeys,
   type TemplateFavoriteKey,
 } from "@/lib/template-favorites";
+import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 import { TemplateLibrary } from "./template-library";
 
 const PAGE_PATH = "/templates";
@@ -27,11 +29,12 @@ export const metadata: Metadata = createPageMetadata({
 export default async function TemplatesPage() {
   const user = await getAuthenticatedUser();
   let personalTemplates: CustomTemplate[] = [];
+  let canUseCustomTemplates = false;
   let initialFavoriteTemplateKeys: TemplateFavoriteKey[] = [...DEFAULT_FAVORITE_TEMPLATE_KEYS];
   if (user) {
     const session = await requireMvpSession(user);
     const db = getDb();
-    const [templateRows, favoriteRows] = await Promise.all([
+    const [templateRows, favoriteRows, billing] = await Promise.all([
       db`
         select id, name, base_template_id, config, version, created_at, updated_at
         from shorts_mvp.custom_templates where user_id=${session.userId}
@@ -41,8 +44,10 @@ export default async function TemplatesPage() {
         select template_keys from shorts_mvp.template_favorite_preferences
         where user_id=${session.userId}
       `,
+      getBillingSummary(db, session.userId),
     ]);
     personalTemplates = templateRows.map(customTemplateFromRow);
+    canUseCustomTemplates = billingSupportsCustomTemplates(billing);
     if (favoriteRows[0]) {
       initialFavoriteTemplateKeys = resolveStoredFavoriteTemplateKeys(favoriteRows[0].templateKeys);
     }
@@ -55,6 +60,7 @@ export default async function TemplatesPage() {
         <TemplateLibrary
           personalTemplates={personalTemplates}
           authenticated={Boolean(user)}
+          canUseCustomTemplates={canUseCustomTemplates}
           initialFavoriteTemplateKeys={initialFavoriteTemplateKeys}
         />
       </main>

@@ -52,6 +52,7 @@ import {
   COMMENT_LIKE_COUNT_MIN,
   randomCommentLikeCount,
 } from "@/lib/comment-overlay";
+import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 
 const templates: Array<{ id: TemplateId; name: string; label: string; background: string; primary: string; accent: string; accentBackground: string | null; channel: string }> = [
   { id: "comment-capture", name: "댓글 캡처", label: "댓글 반응과 함께\n시청 지속시간 상승", background: "#000000", primary: "#FFFFFF", accent: "#35E6E3", accentBackground: null, channel: "#FFFFFF" },
@@ -410,14 +411,15 @@ function CustomHomeTemplatePreview({ template }: { template: CustomTemplate }) {
   </div>;
 }
 
-function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioChange, channelName, channelThumbnailUrl, personalTemplates, favoriteTemplateKeys, customTemplateId, onCustomTemplateChange }: { value: TemplateId; onChange: (value: TemplateId) => void; videoAspectRatio: VideoAspectRatio; onVideoAspectRatioChange: (value: VideoAspectRatio) => void; channelName: string; channelThumbnailUrl: string | null; personalTemplates: CustomTemplate[]; favoriteTemplateKeys: TemplateFavoriteKey[]; customTemplateId: string | null; onCustomTemplateChange: (template: CustomTemplate | null) => void }) {
-  const selectedCustom = personalTemplates.find((template) => template.id === customTemplateId);
+function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioChange, channelName, channelThumbnailUrl, personalTemplates, favoriteTemplateKeys, customTemplateId, onCustomTemplateChange, canUseCustomTemplates }: { value: TemplateId; onChange: (value: TemplateId) => void; videoAspectRatio: VideoAspectRatio; onVideoAspectRatioChange: (value: VideoAspectRatio) => void; channelName: string; channelThumbnailUrl: string | null; personalTemplates: CustomTemplate[]; favoriteTemplateKeys: TemplateFavoriteKey[]; customTemplateId: string | null; onCustomTemplateChange: (template: CustomTemplate | null) => void; canUseCustomTemplates: boolean }) {
+  const usablePersonalTemplates = canUseCustomTemplates ? personalTemplates : [];
+  const selectedCustom = usablePersonalTemplates.find((template) => template.id === customTemplateId);
   const selectedTemplate = templates.find((template) => template.id === value) || templates[0];
   const effectiveAspectRatio = selectedCustom?.config.video.aspectRatio ?? videoAspectRatio;
   const favoriteCards = favoriteTemplateKeys.flatMap<FavoriteTemplateCard>((templateKey) => {
     const customId = favoriteCustomTemplateId(templateKey);
     if (customId) {
-      const template = personalTemplates.find((item) => item.id === customId);
+      const template = usablePersonalTemplates.find((item) => item.id === customId);
       return template ? [{ kind: "custom" as const, template }] : [];
     }
     const presetId = favoritePresetTemplateId(templateKey);
@@ -426,7 +428,7 @@ function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioC
     return template ? [{ kind: "preset" as const, template }] : [];
   });
   const favoriteCustomIds = new Set(favoriteCards.flatMap((card) => card.kind === "custom" ? [card.template.id] : []));
-  const remainingPersonalTemplates = personalTemplates.filter((template) => !favoriteCustomIds.has(template.id));
+  const remainingPersonalTemplates = usablePersonalTemplates.filter((template) => !favoriteCustomIds.has(template.id));
   return (
     <div id="template-picker">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -464,6 +466,11 @@ function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioC
       {!customTemplateId && value === "comment-capture" && (
         <p className="mt-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[.06] px-4 py-3 text-sm text-cyan-100">
           AI가 실제 사람이 작성한 것처럼 자연스러운 댓글을 만들어줘요.
+        </p>
+      )}
+      {!canUseCustomTemplates && personalTemplates.length > 0 && (
+        <p className="mt-3 rounded-xl border border-[#ff9b8d]/15 bg-[#ff715e]/[.05] px-4 py-3 text-sm text-[#ffc0b7]">
+          저장한 커스텀 템플릿은 STANDARD·PRO 플랜에서 사용할 수 있어요. <Link href="/pricing?plan=standard&cycle=monthly" className="font-black underline underline-offset-2">요금제 보기</Link>
         </p>
       )}
     </div>
@@ -1074,12 +1081,15 @@ export function ShortsApp() {
   const analysisCreationBlocked = Boolean(analysis && analysis.creationAllowed !== true);
   const activeJobCount = state?.recentJobs.filter((job) => !terminalStatuses.has(job.status)).length || 0;
   const planEnforcementEnabled = state?.usage.enforcementEnabled ?? true;
+  const canUseCustomTemplates = Boolean(state && billingSupportsCustomTemplates(state.billing));
   const maxActiveJobs = planEnforcementEnabled ? (state?.billing.maxActiveJobs || 1) : 1;
   const activeJobBlocksCreation = Boolean(
     state?.user
     && activeJobCount >= maxActiveJobs,
   );
-  const selectedPersonalTemplate = personalTemplates.find((template) => template.id === customTemplateId);
+  const selectedPersonalTemplate = canUseCustomTemplates
+    ? personalTemplates.find((template) => template.id === customTemplateId)
+    : undefined;
   const effectiveVideoAspectRatio = selectedPersonalTemplate?.config.video.aspectRatio ?? videoAspectRatio;
   const closeCreationRestriction = useCallback(() => setCreationRestrictionOpen(false), []);
   const closeConcurrentJobNotice = useCallback(() => setConcurrentJobNoticeOpen(false), []);
@@ -1315,7 +1325,7 @@ export function ShortsApp() {
     }
     setBusy(true); setError(null);
     try {
-      const value = await requestJson<{ jobId: string; projectNumber: number; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, requestId: crypto.randomUUID() }) });
+      const value = await requestJson<{ jobId: string; projectNumber: number; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, requestId: crypto.randomUUID() }) });
       const pendingJob: VideoJob = { id: value.jobId, projectNumber: value.projectNumber, isExample: false, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: analysis.expectedShortCount, status: "queued", stage: "queued", progress: SIMULATED_PROGRESS_START, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
       setState((current) => current ? { ...current, usage: value.usage, recentJobs: [pendingJob, ...current.recentJobs.filter((job) => job.id !== pendingJob.id)] } : current);
       setActiveJob(pendingJob);
@@ -1395,7 +1405,7 @@ export function ShortsApp() {
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}
       {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>서비스 상태를 불러오지 못했습니다.</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">다시 시도</button></div>}
       {analysis && <section id="shorts-settings" ref={analysisSectionRef} className="scroll-mt-24 rounded-2xl border border-white/10 bg-[#141416] p-5 sm:scroll-mt-28"><label htmlFor="output-language" className="text-xl font-bold">제목 언어</label><p className="mt-1 text-sm text-neutral-500">원본 영상 언어와 관계없이 선택한 언어로 후킹 제목을 만듭니다.</p><select id="output-language" value={outputLanguage} onChange={(event) => setOutputLanguage(event.target.value as OutputLanguage)} className="mt-3 h-12 w-full rounded-xl border border-white/10 bg-[#141416] px-4 text-sm text-neutral-100 outline-none focus:border-red-500 sm:max-w-xs">{outputLanguageOptions.map((option) => <option key={option.code} value={option.code}>{option.label}</option>)}</select></section>}
-      {analysis && <section className="scroll-mt-24 space-y-8 sm:scroll-mt-28"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {analysis.expectedShortCount}개</p><p className="mt-1 text-xs text-neutral-500">{planEnforcementEnabled ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.` : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p></div></div><TemplatePicker value={templateId} onChange={setTemplateId} videoAspectRatio={effectiveVideoAspectRatio} onVideoAspectRatioChange={setVideoAspectRatio} channelName={analysis.channelName} channelThumbnailUrl={analysis.channelThumbnailUrl} personalTemplates={personalTemplates} favoriteTemplateKeys={favoriteTemplateKeys} customTemplateId={customTemplateId} onCustomTemplateChange={(template) => { setCustomTemplateId(template?.id || null); if (template) { setTemplateId(template.baseTemplateId); setVideoAspectRatio(template.config.video.aspectRatio); } }} />{analysisCreationBlocked && <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">생성 불가 사유 보기</button>}<button disabled={analysisCreationBlocked || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">{analysisCreationBlocked ? "쇼츠 생성 불가" : stateLoadStatus !== "ready" ? "로그인 확인 중..." : !state?.user ? "로그인 후 쇼츠 생성하기" : !planEnforcementEnabled || state.billing.canCreateJobs ? "쇼츠 생성하기" : "플랜 선택하고 쇼츠 만들기"}</button></section>}
+      {analysis && <section className="scroll-mt-24 space-y-8 sm:scroll-mt-28"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {analysis.expectedShortCount}개</p><p className="mt-1 text-xs text-neutral-500">{planEnforcementEnabled ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.` : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p></div></div><TemplatePicker value={templateId} onChange={setTemplateId} videoAspectRatio={effectiveVideoAspectRatio} onVideoAspectRatioChange={setVideoAspectRatio} channelName={analysis.channelName} channelThumbnailUrl={analysis.channelThumbnailUrl} personalTemplates={personalTemplates} favoriteTemplateKeys={favoriteTemplateKeys} customTemplateId={canUseCustomTemplates ? customTemplateId : null} canUseCustomTemplates={canUseCustomTemplates} onCustomTemplateChange={(template) => { setCustomTemplateId(template?.id || null); if (template) { setTemplateId(template.baseTemplateId); setVideoAspectRatio(template.config.video.aspectRatio); } }} />{analysisCreationBlocked && <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">생성 불가 사유 보기</button>}<button disabled={analysisCreationBlocked || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">{analysisCreationBlocked ? "쇼츠 생성 불가" : stateLoadStatus !== "ready" ? "로그인 확인 중..." : !state?.user ? "로그인 후 쇼츠 생성하기" : !planEnforcementEnabled || state.billing.canCreateJobs ? "쇼츠 생성하기" : "플랜 선택하고 쇼츠 만들기"}</button></section>}
       {state?.user && state.recentJobs.length ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28"><div className="mb-5 flex items-center gap-2"><h2 className="text-2xl font-bold">내 프로젝트</h2><span className="text-sm text-neutral-500">({state.recentJobs.length})</span></div><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{state.recentJobs.map((job) => <ProjectCard key={job.id} job={job} />)}</div></section> : null}
     </main>
     <SiteFooter />

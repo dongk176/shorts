@@ -18,6 +18,7 @@ import { assertJobCreationAllowed } from "@/lib/job-policy";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { getUsageSnapshot } from "@/lib/usage";
 import { templateSnapshotFromRow } from "@/lib/custom-templates";
+import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
 
 const schema = z.object({
   analysisId: z.string().uuid(),
@@ -100,7 +101,9 @@ export async function POST(request: Request) {
       }
       let resolvedTemplateId = input.templateId;
       let templateSnapshot: ReturnType<typeof templateSnapshotFromRow> | null = null;
+      const billing = await getBillingSummary(tx, session.userId);
       if (input.customTemplateId) {
+        assertCustomTemplateAccess(billing);
         const customTemplates = await tx`
           select id, name, base_template_id, config, version
           from shorts_mvp.custom_templates
@@ -122,7 +125,6 @@ export async function POST(request: Request) {
         )
       `;
       const beforeUsage = await getUsageSnapshot(tx, session);
-      const billing = await getBillingSummary(tx, session.userId);
       if (beforeUsage.enforcementEnabled && !billing.canCreateJobs) {
         throw new HttpError(402, "쇼츠를 만들려면 활성 구독이 필요합니다.");
       }

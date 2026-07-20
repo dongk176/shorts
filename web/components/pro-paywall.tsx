@@ -122,7 +122,7 @@ export function ProPaywall({
             <div className="mx-auto max-w-3xl">
               <p className="text-[10px] font-black uppercase tracking-[.16em] text-violet-300">Upgrade your plan</p>
               <h2 id="pricing-overlay-title" className="mt-1.5 text-xl font-black tracking-[-.04em] text-white md:text-[28px]">내게 맞는 플랜을 선택하세요</h2>
-              <p className="mt-1.5 text-xs leading-5 text-neutral-400 md:text-sm">연간 결제 시 20% 할인되며, 모든 플랜에서 템플릿 4종을 사용할 수 있습니다.</p>
+              <p className="mt-1.5 text-xs leading-5 text-neutral-400 md:text-sm">PLUS는 기본 템플릿을, STANDARD·PRO는 커스텀 템플릿까지 사용할 수 있습니다.</p>
               {checkoutError && <p role="alert" className="mt-2 text-xs font-bold text-red-300">{checkoutError}</p>}
             </div>
             <button
