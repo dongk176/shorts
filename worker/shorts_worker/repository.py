@@ -12,9 +12,13 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from .schemas import default_comment_overlays
-
 _SOURCE_DOWNLOAD_STATUSES = frozenset({"full_source_expected", "unexpected_duration"})
+
+
+def _custom_subtitles_enabled(job: dict[str, Any]) -> bool:
+    snapshot = job.get("template_snapshot") or {}
+    config = snapshot.get("config") or {}
+    return bool(config.get("subtitle", {}).get("visible", False))
 
 
 class WorkerRepository:
@@ -383,17 +387,13 @@ class WorkerRepository:
         hook_title: str,
         highlight_reason: str,
         subtitles: list[dict[str, Any]],
+        comment_overlays: list[dict[str, Any]],
         clean_key: str,
         output_key: str,
         thumbnail_key: str,
         file_size: int,
         expires_at: Any,
     ) -> None:
-        comments = (
-            default_comment_overlays(end_seconds - start_seconds)
-            if job["template_id"] == "comment-capture"
-            else []
-        )
         with self.connect() as connection:
             inserted = connection.execute(
                 """
@@ -402,11 +402,11 @@ class WorkerRepository:
                   end_seconds, duration_seconds, hook_title, highlight_reason,
                   channel_display_name,
                   subtitle_segments, subtitles_enabled, comment_overlays,
-                  template_id, video_aspect_ratio,
+                  template_id, custom_template_id, template_snapshot, video_aspect_ratio,
                   clean_clip_s3_key,
                   output_s3_key, thumbnail_s3_key, file_size_bytes, expires_at, status
                 ) values (
-                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,%s,%s,%s,%s,%s,'ready'
+                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'ready'
                 )
                 on conflict (job_id, clip_index) do nothing
                 returning id
@@ -424,8 +424,11 @@ class WorkerRepository:
                     highlight_reason,
                     job["channel_name"],
                     Jsonb(subtitles),
-                    Jsonb(comments),
+                    _custom_subtitles_enabled(job),
+                    Jsonb(comment_overlays),
                     job["template_id"],
+                    job.get("custom_template_id"),
+                    Jsonb(job["template_snapshot"]) if job.get("template_snapshot") else None,
                     job.get("video_aspect_ratio") or "1:1",
                     clean_key,
                     output_key,
@@ -447,7 +450,8 @@ class WorkerRepository:
                 update shorts_mvp.generated_shorts
                 set rendered_config_hash=md5(concat_ws('|', hook_title,
                   channel_display_name, subtitles_enabled::text,
-                  subtitle_segments::text, comment_overlays::text, template_id, video_aspect_ratio,
+                  subtitle_segments::text, comment_overlays::text, template_id,
+                  coalesce(template_snapshot::text,''), video_aspect_ratio,
                   title_font_scale::text, title_text_styles::text,
                   title_text_styles_initialized::text))
                 where id=%s and rendered_config_hash is null
@@ -465,16 +469,20 @@ class WorkerRepository:
         end_seconds: float,
         hook_title: str,
         highlight_reason: str,
+        selection_raw_start_seconds: float | None,
+        selection_raw_end_seconds: float | None,
+        selection_raw_duration_seconds: float | None,
+        selection_candidate_index: int | None,
+        selection_provider: str | None,
+        selection_model: str | None,
+        selection_length_adjustment: str | None,
+        selection_repositioned: bool | None,
         subtitles: list[dict[str, Any]],
+        comment_overlays: list[dict[str, Any]],
         clean_key: str,
         retention_days: int,
         shard_index: int,
     ) -> bool:
-        comments = (
-            default_comment_overlays(end_seconds - start_seconds)
-            if job["template_id"] == "comment-capture"
-            else []
-        )
         with self.connect() as connection, connection.transaction():
             locked_job = connection.execute(
                 "select id from shorts_mvp.video_jobs where id=%s for share",
@@ -497,15 +505,20 @@ class WorkerRepository:
                 """
                 insert into shorts_mvp.generated_shorts (
                   id, job_id, mvp_session_id, user_id, clip_index, start_seconds,
-                  end_seconds, duration_seconds, hook_title, highlight_reason,
+                  end_seconds, duration_seconds,
+                  selection_raw_start_seconds, selection_raw_end_seconds,
+                  selection_raw_duration_seconds, selection_candidate_index,
+                  selection_provider, selection_model, selection_length_adjustment,
+                  selection_repositioned, hook_title, highlight_reason,
                   channel_display_name,
                   subtitle_segments, subtitles_enabled, comment_overlays,
-                  template_id, video_aspect_ratio,
+                  template_id, custom_template_id, template_snapshot, video_aspect_ratio,
                   clean_clip_s3_key,
                   output_s3_key, thumbnail_s3_key, file_size_bytes, created_at,
                   expires_at, status, render_shard_index, render_progress
                 ) values (
-                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,false,%s,%s,%s,%s,null,null,null,
+                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                  %s,%s,%s,%s,%s,%s,%s,null,null,null,
                   now(),
                   now() + make_interval(days => least(greatest(%s::integer, 1), 30)),
                   'rendering',%s,0
@@ -520,7 +533,17 @@ class WorkerRepository:
                   end,
                   hook_title=excluded.hook_title,
                   highlight_reason=excluded.highlight_reason,
+                  selection_raw_start_seconds=excluded.selection_raw_start_seconds,
+                  selection_raw_end_seconds=excluded.selection_raw_end_seconds,
+                  selection_raw_duration_seconds=excluded.selection_raw_duration_seconds,
+                  selection_candidate_index=excluded.selection_candidate_index,
+                  selection_provider=excluded.selection_provider,
+                  selection_model=excluded.selection_model,
+                  selection_length_adjustment=excluded.selection_length_adjustment,
+                  selection_repositioned=excluded.selection_repositioned,
                   video_aspect_ratio=excluded.video_aspect_ratio,
+                  custom_template_id=excluded.custom_template_id,
+                  template_snapshot=excluded.template_snapshot,
                   render_shard_index=excluded.render_shard_index,
                   status='rendering', render_progress=0,
                   render_error_code=null, render_error_message=null
@@ -534,12 +557,23 @@ class WorkerRepository:
                     start_seconds,
                     end_seconds,
                     end_seconds - start_seconds,
+                    selection_raw_start_seconds,
+                    selection_raw_end_seconds,
+                    selection_raw_duration_seconds,
+                    selection_candidate_index,
+                    selection_provider,
+                    selection_model,
+                    selection_length_adjustment,
+                    selection_repositioned,
                     hook_title,
                     highlight_reason,
                     (" ".join(str(job["channel_name"]).split())[:50] or "YouTube 채널"),
                     Jsonb(subtitles),
-                    Jsonb(comments),
+                    _custom_subtitles_enabled(job),
+                    Jsonb(comment_overlays),
                     job["template_id"],
+                    job.get("custom_template_id"),
+                    Jsonb(job["template_snapshot"]) if job.get("template_snapshot") else None,
                     job.get("video_aspect_ratio") or "1:1",
                     clean_key,
                     retention_days,
@@ -615,7 +649,7 @@ class WorkerRepository:
                     rendered_config_hash=md5(concat_ws('|', hook_title,
                       channel_display_name, subtitles_enabled::text,
                       subtitle_segments::text, comment_overlays::text,
-                      template_id, video_aspect_ratio,
+                      template_id, coalesce(template_snapshot::text,''), video_aspect_ratio,
                       title_font_scale::text, title_text_styles::text,
                       title_text_styles_initialized::text)),
                     render_error_code=null, render_error_message=null

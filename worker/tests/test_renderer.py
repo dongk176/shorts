@@ -9,9 +9,10 @@ import pytest
 from PIL import Image
 
 from shorts_worker.config import Settings
-from shorts_worker.renderer import VideoRenderer, video_layout
+from shorts_worker.renderer import VideoRenderer, continuous_comment_windows, video_layout
 from shorts_worker.schemas import (
     CommentOverlay,
+    CustomTemplateConfig,
     HighlightClip,
     TemplateId,
     VideoAspectRatio,
@@ -99,10 +100,17 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
         video_aspect_ratio=video_aspect_ratio,
     )
     comment_template = video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
-    comments = [
-        CommentOverlay.model_validate(comment)
-        for comment in default_comment_overlays(2.0)
-    ] if comment_template else []
+    comments = (
+        [CommentOverlay.model_validate(comment) for comment in default_comment_overlays(2.0)]
+        if comment_template
+        else []
+    )
+    if comment_template:
+        assert len(comments) == 5
+        assert all(
+            comments[index].start_seconds >= comments[index - 1].end_seconds
+            for index in range(1, len(comments))
+        )
     renderer.render_clean_clip(
         clean_path=clean,
         output_path=output,
@@ -157,3 +165,175 @@ def test_video_layout_centers_non_full_ratios_and_reserves_safe_overlays() -> No
     assert full.overlay_mode is True
     assert full.top_y == 96
     assert full.bottom_y == 1620
+
+
+def test_comment_windows_cover_entire_clip_even_when_saved_ranges_have_gaps() -> None:
+    comments = [
+        CommentOverlay.model_validate(
+            {
+                "id": f"comment-{index}",
+                "startSeconds": start,
+                "endSeconds": end,
+                "text": f"댓글 {index}",
+                "initial": "댓",
+                "avatarColor": "#2674C8",
+                "nickname": f"테스트{index}",
+                "likeCount": 1312,
+                "ageLabel": "1개월 전",
+            }
+        )
+        for index, (start, end) in enumerate(((1.2, 2.0), (4.8, 5.4), (8.0, 9.0)), start=1)
+    ]
+
+    windows = continuous_comment_windows(comments, 12.0)
+
+    assert [(start, end) for _, start, end in windows] == [(0.0, 4.8), (4.8, 8.0), (8.0, 12.0)]
+
+
+def test_custom_template_config_rejects_video_outside_canvas() -> None:
+    with pytest.raises(ValueError):
+        CustomTemplateConfig.model_validate(
+            {
+                "schemaVersion": 1,
+                "background": {"kind": "color", "color": "#111111"},
+                "video": {
+                    "aspectRatio": "16:9",
+                    "x": 500,
+                    "y": 0,
+                    "width": 1080,
+                    "height": 608,
+                    "fit": "cover",
+                },
+                "title": {
+                    "visible": True,
+                    "x": 540,
+                    "y": 200,
+                    "maxWidth": 900,
+                    "fontSize": 72,
+                    "primaryColor": "#FFFFFF",
+                    "accentColor": "#FF4D4F",
+                    "backgroundColor": None,
+                },
+                "subtitle": {
+                    "visible": True,
+                    "x": 540,
+                    "y": 1400,
+                    "maxWidth": 900,
+                    "fontSize": 48,
+                    "color": "#FFFFFF",
+                    "backgroundColor": "#000000",
+                },
+                "channel": {
+                    "visible": True,
+                    "x": 540,
+                    "y": 1650,
+                    "maxWidth": 800,
+                    "fontSize": 42,
+                    "color": "#FFFFFF",
+                    "backgroundColor": None,
+                },
+            }
+        )
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
+def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
+    clean = tmp_path / "clean.mp4"
+    _run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=640x360:rate=12",
+            "-t",
+            "1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(clean),
+        ]
+    )
+    config = CustomTemplateConfig.model_validate(
+        {
+            "schemaVersion": 1,
+            "background": {"kind": "color", "color": "#111111"},
+            "video": {
+                "aspectRatio": "16:9",
+                "x": 140,
+                "y": 600,
+                "width": 800,
+                "height": 450,
+                "fit": "cover",
+            },
+            "title": {
+                "visible": True,
+                "x": 540,
+                "y": 260,
+                "maxWidth": 900,
+                "fontSize": 72,
+                "primaryColor": "#FFFFFF",
+                "accentColor": "#FF4D4F",
+                "backgroundColor": None,
+            },
+            "subtitle": {
+                "visible": True,
+                "x": 540,
+                "y": 1400,
+                "maxWidth": 900,
+                "fontSize": 48,
+                "color": "#FFFFFF",
+                "backgroundColor": "#000000",
+            },
+            "channel": {
+                "visible": True,
+                "x": 540,
+                "y": 1700,
+                "maxWidth": 800,
+                "fontSize": 42,
+                "color": "#FFFFFF",
+                "backgroundColor": None,
+            },
+        }
+    )
+    output = tmp_path / "custom.mp4"
+
+    VideoRenderer(
+        Settings(temp_dir=tmp_path / "temp", ffmpeg_timeout_seconds=120)
+    ).render_clean_clip(
+        clean_path=clean,
+        output_path=output,
+        title="개인 템플릿\n렌더링 확인",
+        channel_name="테스트 채널",
+        template_id=TemplateId.DARK_MINIMAL,
+        transcript=[],
+        subtitles_enabled=False,
+        work_dir=tmp_path / "work",
+        prefix="custom",
+        custom_template_config=config,
+    )
+
+    probe = json.loads(
+        _run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(output)]).stdout
+    )
+    video = next(stream for stream in probe["streams"] if stream["codec_type"] == "video")
+    assert (video["width"], video["height"]) == (1080, 1920)
+    assert output.stat().st_size > 10_000
+
+
+def test_bundled_custom_backgrounds_are_full_vertical_rgb_images() -> None:
+    directory = Path(__file__).parents[1] / "shorts_worker" / "assets" / "template_backgrounds"
+    assets = sorted(directory.glob("*.png"))
+    assert len(assets) == 8
+    for asset in assets:
+        with Image.open(asset) as image:
+            assert image.size == (1080, 1920)
+            assert image.mode == "RGB"

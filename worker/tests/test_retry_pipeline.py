@@ -237,7 +237,13 @@ def test_prepare_stops_before_openai_when_full_source_duration_is_wrong(
     assert details["source_download_status"] == "unexpected_duration"
 
 
-def test_prepare_persists_full_source_timestamps_for_clips(
+@pytest.mark.parametrize(
+    ("template_id", "expects_comment_generation"),
+    [("dark-red", False), ("comment-capture", True)],
+)
+def test_prepare_persists_full_source_timestamps_and_generates_template_comments(
+    template_id: str,
+    expects_comment_generation: bool,
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     worker = _worker(tmp_path, AssertionError("replaced below"))
@@ -251,6 +257,7 @@ def test_prepare_persists_full_source_timestamps_for_clips(
             "output_language": "ko",
             "video_aspect_ratio": "1:1",
             "retention_days": 30,
+            "template_id": template_id,
         }
     )
     source = tmp_path / "source.mp4"
@@ -265,8 +272,23 @@ def test_prepare_persists_full_source_timestamps_for_clips(
     )
     worker.selector = MagicMock()
     worker.selector.select.return_value = [
-        HighlightClip(start_seconds=10, end_seconds=40, hook_title="핵심 장면")
+        HighlightClip(
+            start_seconds=10,
+            end_seconds=40,
+            hook_title="핵심 장면",
+            selection_raw_start_seconds=10,
+            selection_raw_end_seconds=27,
+            selection_raw_duration_seconds=17,
+            selection_candidate_index=1,
+            selection_provider="gemini",
+            selection_model="gemini-2.5-flash-lite",
+            selection_length_adjustment="min_clamp",
+            selection_repositioned=False,
+        )
     ]
+    generated_comments = [{"text": "AI 댓글", "startSeconds": 0, "endSeconds": 3}]
+    worker.comment_generator = MagicMock()
+    worker.comment_generator.generate.return_value = {1: generated_comments}
     worker.renderer = MagicMock()
     worker.repository.add_pending_short.return_value = True
     worker.repository.mark_render_queued.return_value = True
@@ -283,6 +305,24 @@ def test_prepare_persists_full_source_timestamps_for_clips(
     pending_kwargs = worker.repository.add_pending_short.call_args.kwargs
     assert pending_kwargs["start_seconds"] == 10
     assert pending_kwargs["end_seconds"] == 40
+    assert pending_kwargs["selection_raw_start_seconds"] == 10
+    assert pending_kwargs["selection_raw_end_seconds"] == 27
+    assert pending_kwargs["selection_raw_duration_seconds"] == 17
+    assert pending_kwargs["selection_candidate_index"] == 1
+    assert pending_kwargs["selection_provider"] == "gemini"
+    assert pending_kwargs["selection_model"] == "gemini-2.5-flash-lite"
+    assert pending_kwargs["selection_length_adjustment"] == "min_clamp"
+    assert pending_kwargs["selection_repositioned"] is False
+    if expects_comment_generation:
+        worker.comment_generator.generate.assert_called_once()
+        comment_input = worker.comment_generator.generate.call_args.args[0][0]
+        assert comment_input.transcript == [
+            SubtitleSegment(start=0, end=30, text="전사 결과")
+        ]
+        assert pending_kwargs["comment_overlays"] == generated_comments
+    else:
+        worker.comment_generator.generate.assert_not_called()
+        assert pending_kwargs["comment_overlays"] == []
 
 
 def test_prepare_records_unexpected_duration_when_downloaded_media_cannot_be_probed(

@@ -16,6 +16,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .channel_thumbnail import download_channel_thumbnail
+from .comment_generator import CommentClipInput, CommentGenerator
 from .config import Settings
 from .errors import (
     BotCheckError,
@@ -31,16 +32,26 @@ from .renderer import VideoRenderer
 from .repository import WorkerRepository
 from .schemas import (
     CommentOverlay,
+    CustomTemplateConfig,
     HighlightClip,
     OutputLanguage,
     SubtitleSegment,
     TemplateId,
     TitleTextStyle,
     VideoAspectRatio,
+    default_comment_overlays,
 )
 from .selector import TranscriptSelector
 from .storage import ObjectStorage
 from .subtitles import AudioTranscriber
+
+
+def _custom_template_config(item: dict[str, object]) -> CustomTemplateConfig | None:
+    snapshot = item.get("template_snapshot")
+    if not isinstance(snapshot, dict):
+        return None
+    config = snapshot.get("config")
+    return CustomTemplateConfig.model_validate(config) if isinstance(config, dict) else None
 
 
 def _log_event(event: str, **fields: object) -> None:
@@ -81,6 +92,7 @@ class BatchWorker:
         self.storage = ObjectStorage(str(settings.s3_bucket), settings.aws_region)
         self.transcriber = AudioTranscriber(settings)
         self.selector = TranscriptSelector(settings)
+        self.comment_generator = CommentGenerator(settings)
         self.renderer = VideoRenderer(settings)
         self.queue = WorkQueue(settings.aws_region)
 
@@ -573,6 +585,43 @@ class BatchWorker:
                 if not clips:
                     raise RuntimeError("사용할 수 있는 하이라이트 구간이 없습니다.")
 
+                clip_subtitles = {
+                    index: self._relative_subtitles(transcript, clip)
+                    for index, clip in enumerate(clips, start=1)
+                }
+                comments_by_clip: dict[int, list[dict[str, object]]] = {
+                    index: [] for index in clip_subtitles
+                }
+                if str(job.get("template_id")) == TemplateId.COMMENT_CAPTURE.value:
+                    self.repository.stage(
+                        job_id,
+                        "selecting",
+                        44,
+                        "시청자 반응을 만들고 있습니다.",
+                    )
+                    comment_inputs = [
+                        CommentClipInput(
+                            clip_index=index,
+                            hook_title=clip.hook_title,
+                            reason=clip.reason,
+                            duration_seconds=clip.end_seconds - clip.start_seconds,
+                            transcript=clip_subtitles[index],
+                        )
+                        for index, clip in enumerate(clips, start=1)
+                    ]
+                    try:
+                        comments_by_clip = self.comment_generator.generate(comment_inputs)
+                    except Exception as exc:
+                        _log_event(
+                            "comment_generation_unexpected_fallback",
+                            job_id=job_id,
+                            error_type=type(exc).__name__,
+                        )
+                        comments_by_clip = {
+                            item.clip_index: default_comment_overlays(item.duration_seconds)
+                            for item in comment_inputs
+                        }
+
                 for index, clip in enumerate(clips, start=1):
                     self.repository.stage(
                         job_id,
@@ -592,7 +641,7 @@ class BatchWorker:
                             str(job.get("video_aspect_ratio") or "1:1")
                         ),
                     )
-                    relative_subtitles = self._relative_subtitles(transcript, clip)
+                    relative_subtitles = clip_subtitles[index]
                     prefix = f"{job['mvp_session_id']}/{job_id}/{short_id}"
                     clean_key = f"edit-sources/{prefix}.mp4"
                     self.storage.upload(clean_path, clean_key, "video/mp4")
@@ -604,7 +653,16 @@ class BatchWorker:
                         end_seconds=clip.end_seconds,
                         hook_title=clip.hook_title,
                         highlight_reason=clip.reason,
+                        selection_raw_start_seconds=clip.selection_raw_start_seconds,
+                        selection_raw_end_seconds=clip.selection_raw_end_seconds,
+                        selection_raw_duration_seconds=clip.selection_raw_duration_seconds,
+                        selection_candidate_index=clip.selection_candidate_index,
+                        selection_provider=clip.selection_provider,
+                        selection_model=clip.selection_model,
+                        selection_length_adjustment=clip.selection_length_adjustment,
+                        selection_repositioned=clip.selection_repositioned,
                         subtitles=[item.model_dump() for item in relative_subtitles],
+                        comment_overlays=comments_by_clip[index],
                         clean_key=clean_key,
                         retention_days=int(job["retention_days"]),
                         shard_index=(index - 1) // 4,
@@ -844,6 +902,7 @@ class BatchWorker:
                 video_aspect_ratio=VideoAspectRatio(str(item.get("video_aspect_ratio") or "1:1")),
                 comment_overlays=comments,
                 title_text_styles=title_text_styles,
+                custom_template_config=_custom_template_config(item),
             )
             self._thumbnail(output_path, thumbnail_path, work_dir)
             self.repository.update_initial_render_progress(short_id, 82)
@@ -932,6 +991,7 @@ class BatchWorker:
                 video_aspect_ratio=VideoAspectRatio(str(item.get("video_aspect_ratio") or "1:1")),
                 comment_overlays=comments,
                 title_text_styles=title_text_styles,
+                custom_template_config=_custom_template_config(item),
             )
             self.repository.update_rerender_progress(short_id, 82)
             version = int(item["render_version"]) + 1

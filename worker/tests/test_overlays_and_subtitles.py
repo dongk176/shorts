@@ -243,6 +243,20 @@ def test_full_vertical_uses_second_line_text_color_for_both_rows(tmp_path: Path)
         assert (255, 255, 255, 255) not in pixels
 
 
+def test_full_vertical_paper_uses_different_colors_for_each_title_row(tmp_path: Path) -> None:
+    output = create_title_panel(
+        "첫 번째 제목\n두 번째 제목",
+        TemplateId.PAPER,
+        tmp_path / "vertical-paper-title-color.png",
+        panel_height=360,
+        overlay_mode=True,
+    )
+    with Image.open(output).convert("RGBA") as image:
+        pixels = list(image.getdata())
+        assert (17, 17, 17, 255) in pixels
+        assert (213, 43, 43, 255) in pixels
+
+
 def test_ass_subtitle_keeps_two_line_marker(tmp_path: Path) -> None:
     output = create_ass_subtitles(
         [

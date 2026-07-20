@@ -6,7 +6,13 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, UnidentifiedImageError
 
-from .schemas import CommentOverlay, SubtitleSegment, TemplateId, TitleTextStyle
+from .schemas import (
+    CommentOverlay,
+    CustomTemplateConfig,
+    SubtitleSegment,
+    TemplateId,
+    TitleTextStyle,
+)
 
 PANEL_WIDTH = 1080
 PANEL_HEIGHT = 420
@@ -32,6 +38,20 @@ TEMPLATE_STYLES = {
     TemplateId.DARK_MINIMAL: TemplateStyle("#000000", "#FFFFFF", "#F04444", None, "#FFFFFF"),
     TemplateId.PAPER: TemplateStyle("#F3F0E9", "#111111", "#D52B2B", None, "#363636"),
     TemplateId.COMMENT_CAPTURE: TemplateStyle("#000000", "#FFFFFF", "#35E6E3", None, "#FFFFFF"),
+}
+
+CUSTOM_BACKGROUND_ASSETS = {
+    name: Path(__file__).parent / "assets" / "template_backgrounds" / f"{name}.png"
+    for name in (
+        "news-blue-geometric",
+        "news-blue-diagonal",
+        "news-red-globe",
+        "trust-network",
+        "trust-circuit",
+        "white-vinyl",
+        "white-grid",
+        "white-hanji",
+    )
 }
 
 
@@ -102,7 +122,7 @@ def wrap_korean_title(title: str, max_chars: int = 20, max_lines: int = 2) -> li
         remaining = remaining[split_at:].strip()
     if remaining:
         last = lines[-1]
-        lines[-1] = (last[: max(1, max_chars - 1)].rstrip() + "…")
+        lines[-1] = last[: max(1, max_chars - 1)].rstrip() + "…"
     return lines
 
 
@@ -221,9 +241,7 @@ def default_title_text_styles(
 ) -> list[TitleTextStyle]:
     style = TEMPLATE_STYLES[template_id]
     selected_background = (
-        style.accent_background or style.background
-        if overlay_mode
-        else style.accent_background
+        style.accent_background or style.background if overlay_mode else style.accent_background
     )
     if not selected_background:
         return []
@@ -306,7 +324,9 @@ def create_title_panel(
 
     for index, (line, box, width, height, accent_padding_y) in enumerate(line_metrics):
         color = text_color or (
-            style.accent if overlay_mode or index == 1 else style.primary
+            style.accent
+            if (overlay_mode and template_id != TemplateId.PAPER) or index == 1
+            else style.primary
         )
         visible_x = (PANEL_WIDTH - width) // 2
         visible_y = row_y + accent_padding_y
@@ -631,6 +651,156 @@ def create_panel_overlays(
     return top, bottom
 
 
+def _draw_centered_custom_text(
+    image: Image.Image,
+    *,
+    text: str,
+    x: int,
+    y: int,
+    max_width: int,
+    font_size: int,
+    color: str,
+    background_color: str | None,
+    accent_color: str | None = None,
+) -> None:
+    draw = ImageDraw.Draw(image)
+    lines = wrap_korean_title(text, max_chars=20, max_lines=2)
+    font = load_font(font_size, "bold")
+    while font_size > 20 and max(_text_width(draw, line, font) for line in lines) > max_width:
+        font_size -= 2
+        font = load_font(font_size, "bold")
+    boxes = [draw.textbbox((0, 0), line, font=font) for line in lines]
+    heights = [box[3] - box[1] for box in boxes]
+    gap = max(6, round(font_size * 0.18))
+    total_height = sum(heights) + gap * max(0, len(lines) - 1)
+    cursor_y = y - total_height / 2
+    for index, (line, box, height) in enumerate(zip(lines, boxes, heights, strict=True)):
+        width = box[2] - box[0]
+        left = x - width / 2
+        if background_color:
+            padding_x = max(10, round(font_size * 0.28))
+            padding_y = max(6, round(font_size * 0.14))
+            draw.rounded_rectangle(
+                (
+                    left - padding_x,
+                    cursor_y - padding_y,
+                    left + width + padding_x,
+                    cursor_y + height + padding_y,
+                ),
+                radius=max(6, round(font_size * 0.14)),
+                fill=background_color,
+            )
+        draw.text(
+            (left - box[0], cursor_y - box[1]),
+            line,
+            font=font,
+            fill=accent_color if accent_color and index == len(lines) - 1 else color,
+        )
+        cursor_y += height + gap
+
+
+def create_custom_canvas_overlays(
+    *,
+    title: str,
+    channel_name: str,
+    config: CustomTemplateConfig,
+    directory: Path,
+    prefix: str,
+    channel_thumbnail_path: Path | None = None,
+    include_channel: bool = True,
+) -> tuple[Path, Path, Path]:
+    """Create trusted full-canvas assets for a validated personal template."""
+    directory.mkdir(parents=True, exist_ok=True)
+    background_path = directory / f"{prefix}_custom_background.png"
+    title_path = directory / f"{prefix}_custom_title.png"
+    channel_path = directory / f"{prefix}_custom_channel.png"
+
+    if config.background.kind == "image":
+        asset = CUSTOM_BACKGROUND_ASSETS.get(config.background.asset_id or "")
+        if not asset or not asset.is_file():
+            raise ValueError("지원하지 않는 템플릿 배경입니다.")
+        with Image.open(asset) as source:
+            background = ImageOps.fit(
+                source.convert("RGB"), (PANEL_WIDTH, 1920), method=Image.Resampling.LANCZOS
+            )
+    else:
+        background = Image.new("RGB", (PANEL_WIDTH, 1920), config.background.color or "#111111")
+    background.save(background_path, format="PNG", optimize=True)
+
+    title_image = Image.new("RGBA", (PANEL_WIDTH, 1920), (0, 0, 0, 0))
+    if config.title.visible:
+        _draw_centered_custom_text(
+            title_image,
+            text=title,
+            x=config.title.x,
+            y=config.title.y,
+            max_width=config.title.max_width,
+            font_size=config.title.font_size,
+            color=config.title.primary_color,
+            accent_color=config.title.accent_color,
+            background_color=config.title.background_color,
+        )
+    title_image.save(title_path, format="PNG", optimize=True)
+
+    channel_image = Image.new("RGBA", (PANEL_WIDTH, 1920), (0, 0, 0, 0))
+    if include_channel and config.channel.visible:
+        draw = ImageDraw.Draw(channel_image)
+        font_size = config.channel.font_size
+        font = load_font(font_size, "bold")
+        name = " ".join(channel_name.split())[:50] or "YouTube 채널"
+        while font_size > 20 and _text_width(draw, name, font) > config.channel.max_width - 84:
+            font_size -= 2
+            font = load_font(font_size, "bold")
+        text_box = draw.textbbox((0, 0), name, font=font)
+        text_width = text_box[2] - text_box[0]
+        text_height = text_box[3] - text_box[1]
+        icon_size = max(36, round(font_size * 1.25))
+        gap = max(12, round(font_size * 0.36))
+        group_width = icon_size + gap + text_width
+        left = config.channel.x - group_width / 2
+        top = config.channel.y - max(icon_size, text_height) / 2
+        if config.channel.background_color:
+            pad = max(8, round(font_size * 0.24))
+            draw.rounded_rectangle(
+                (
+                    left - pad,
+                    top - pad,
+                    left + group_width + pad,
+                    top + max(icon_size, text_height) + pad,
+                ),
+                radius=max(6, round(font_size * 0.18)),
+                fill=config.channel.background_color,
+            )
+        avatar_rendered = False
+        if channel_thumbnail_path and channel_thumbnail_path.is_file():
+            try:
+                with Image.open(channel_thumbnail_path) as source:
+                    avatar = ImageOps.fit(
+                        source.convert("RGB"),
+                        (icon_size, icon_size),
+                        method=Image.Resampling.LANCZOS,
+                    )
+                mask = Image.new("L", (icon_size, icon_size), 0)
+                ImageDraw.Draw(mask).ellipse((0, 0, icon_size - 1, icon_size - 1), fill=255)
+                channel_image.paste(avatar, (round(left), round(top)), mask)
+                avatar_rendered = True
+            except (OSError, ValueError, UnidentifiedImageError):
+                avatar_rendered = False
+        if not avatar_rendered:
+            draw.ellipse((left, top, left + icon_size, top + icon_size), fill=config.channel.color)
+        draw.text(
+            (
+                left + icon_size + gap - text_box[0],
+                config.channel.y - text_height / 2 - text_box[1],
+            ),
+            name,
+            font=font,
+            fill=config.channel.color,
+        )
+    channel_image.save(channel_path, format="PNG", optimize=True)
+    return background_path, title_path, channel_path
+
+
 def _ass_timestamp(seconds: float) -> str:
     centiseconds = max(0, round(seconds * 100))
     hours, remainder = divmod(centiseconds, 360_000)
@@ -646,6 +816,11 @@ def create_ass_subtitles(
     clip_end: float,
     output_path: Path,
     margin_v: int = 445,
+    font_size: int = 48,
+    text_color: str = "#FFFFFF",
+    background_color: str | None = "#000000",
+    margin_l: int = 60,
+    margin_r: int = 60,
 ) -> Path | None:
     dialogues: list[str] = []
     for segment in segments:
@@ -657,8 +832,7 @@ def create_ass_subtitles(
         if not lines:
             continue
         escaped_lines = [
-            line.replace("\\", r"\\").replace("{", r"\{").replace("}", r"\}")
-            for line in lines
+            line.replace("\\", r"\\").replace("{", r"\{").replace("}", r"\}") for line in lines
         ]
         text = r"\N".join(escaped_lines)
         dialogues.append(
@@ -668,7 +842,20 @@ def create_ass_subtitles(
         )
     if not dialogues:
         return None
+
+    def ass_color(color: str, alpha: str = "00") -> str:
+        value = color.lstrip("#")
+        return f"&H{alpha}{value[4:6]}{value[2:4]}{value[0:2]}"
+
     font_name = "Noto Sans CJK KR"
+    back_color = ass_color(background_color or "#000000", "80" if background_color else "FF")
+    border_style = 3 if background_color else 1
+    style_line = (
+        f"Style: Default,{font_name},{font_size},{ass_color(text_color)},"
+        f"{ass_color(text_color)},&H00000000,{back_color},"
+        f"-1,0,0,0,100,100,0,0,{border_style},3,0,2,"
+        f"{margin_l},{margin_r},{margin_v},1"
+    )
     content = "\n".join(
         [
             "[Script Info]",
@@ -682,8 +869,7 @@ def create_ass_subtitles(
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
             "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
             "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-            f"Style: Default,{font_name},48,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,"
-            f"-1,0,0,0,100,100,0,0,3,3,0,2,60,60,{margin_v},1",
+            style_line,
             "",
             "[Events]",
             "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",

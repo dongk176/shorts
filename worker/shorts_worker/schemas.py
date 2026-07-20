@@ -4,7 +4,7 @@ import secrets
 from enum import Enum
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class TemplateId(str, Enum):
@@ -21,6 +21,88 @@ class VideoAspectRatio(str, Enum):
     SQUARE = "1:1"
     PORTRAIT = "4:5"
     FULL_VERTICAL = "9:16"
+
+
+class TemplateBackground(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str = Field(pattern=r"^(color|image)$")
+    color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    asset_id: str | None = Field(default=None, alias="assetId", pattern=r"^[a-z0-9-]+$")
+
+    @model_validator(mode="after")
+    def validate_kind_value(self) -> TemplateBackground:
+        if self.kind == "color" and not self.color:
+            raise ValueError("color background requires color")
+        if self.kind == "image" and not self.asset_id:
+            raise ValueError("image background requires assetId")
+        return self
+
+
+class TemplateVideoLayer(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    aspect_ratio: VideoAspectRatio = Field(alias="aspectRatio")
+    x: int = Field(ge=0, le=840)
+    y: int = Field(ge=0, le=1785)
+    width: int = Field(ge=240, le=1080)
+    height: int = Field(ge=135, le=1920)
+    fit: str = Field(pattern=r"^cover$")
+
+    @model_validator(mode="after")
+    def validate_bounds_and_ratio(self) -> TemplateVideoLayer:
+        ratios = {
+            VideoAspectRatio.LANDSCAPE: 9 / 16,
+            VideoAspectRatio.LANDSCAPE_FIVE_FOUR: 4 / 5,
+            VideoAspectRatio.SQUARE: 1,
+            VideoAspectRatio.PORTRAIT: 5 / 4,
+            VideoAspectRatio.FULL_VERTICAL: 16 / 9,
+        }
+        if abs(self.height - round(self.width * ratios[self.aspect_ratio])) > 1:
+            raise ValueError("video layer ratio is invalid")
+        if self.x + self.width > 1080 or self.y + self.height > 1920:
+            raise ValueError("video layer exceeds canvas")
+        return self
+
+
+class TemplateTextLayer(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    visible: bool
+    x: int = Field(ge=0, le=1080)
+    y: int = Field(ge=0, le=1920)
+    max_width: int = Field(alias="maxWidth", ge=180, le=1080)
+    font_size: int = Field(alias="fontSize", ge=20, le=96)
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    background_color: str | None = Field(
+        default=None, alias="backgroundColor", pattern=r"^#[0-9A-Fa-f]{6}$"
+    )
+
+
+class TemplateTitleLayer(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    visible: bool
+    x: int = Field(ge=0, le=1080)
+    y: int = Field(ge=0, le=1920)
+    max_width: int = Field(alias="maxWidth", ge=180, le=1080)
+    font_size: int = Field(alias="fontSize", ge=24, le=96)
+    primary_color: str = Field(alias="primaryColor", pattern=r"^#[0-9A-Fa-f]{6}$")
+    accent_color: str = Field(alias="accentColor", pattern=r"^#[0-9A-Fa-f]{6}$")
+    background_color: str | None = Field(
+        default=None, alias="backgroundColor", pattern=r"^#[0-9A-Fa-f]{6}$"
+    )
+
+
+class CustomTemplateConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_version: int = Field(alias="schemaVersion", ge=1, le=1)
+    background: TemplateBackground
+    video: TemplateVideoLayer
+    title: TemplateTitleLayer
+    subtitle: TemplateTextLayer
+    channel: TemplateTextLayer
 
 
 class OutputLanguage(str, Enum):
@@ -119,29 +201,53 @@ _COMMENT_NICKNAME_PREFIXES = ("하루", "모카", "여름", "초코", "구름", 
 _COMMENT_NICKNAME_SUFFIXES = ("기록", "한스푼", "로그", "이야기", "채널", "노트", "생활", "공간")
 
 
+def build_comment_overlay(
+    *,
+    start_seconds: float,
+    end_seconds: float,
+    text: str,
+) -> dict[str, object]:
+    """Attach renderer metadata to validated AI or fallback comment content."""
+    nickname = (
+        secrets.choice(_COMMENT_NICKNAME_PREFIXES)
+        + secrets.choice(_COMMENT_NICKNAME_SUFFIXES)
+        + str(secrets.randbelow(90) + 10)
+    )
+    comment = CommentOverlay(
+        id=str(uuid4()),
+        startSeconds=round(start_seconds, 3),
+        endSeconds=round(end_seconds, 3),
+        text=text,
+        initial=nickname[0],
+        avatarColor=secrets.choice(_COMMENT_COLORS),
+        nickname=nickname,
+        likeCount=secrets.randbelow(18_689) + 1_312,
+        ageLabel=f"{secrets.randbelow(11) + 1}개월 전",
+    )
+    return comment.model_dump(by_alias=True)
+
+
 def default_comment_overlays(duration_seconds: float) -> list[dict[str, object]]:
-    """Create three non-overlapping placeholder comments once for persisted rendering."""
-    duration = max(0.3, float(duration_seconds))
-    boundaries = [0.0, duration / 3, duration * 2 / 3, duration]
+    """Create five safe, non-overlapping comments when both AI providers fail."""
+    duration = max(0.5, float(duration_seconds))
+    fallback_texts = (
+        "아니 이건 생각 못했네 ㅋㅋ",
+        "여기서 좀 소름 돋음",
+        "나만 이제 알았냐",
+        "이 부분은 ㄹㅇ 공감됨",
+        "와 마지막 말이 핵심이네",
+    )
+    slot_duration = duration / len(fallback_texts)
     comments: list[dict[str, object]] = []
-    for index in range(3):
-        nickname = (
-            secrets.choice(_COMMENT_NICKNAME_PREFIXES)
-            + secrets.choice(_COMMENT_NICKNAME_SUFFIXES)
-            + str(secrets.randbelow(90) + 10)
+    for index, text in enumerate(fallback_texts):
+        slot_start = index * slot_duration
+        comments.append(
+            build_comment_overlay(
+                start_seconds=max(0.0, slot_start),
+                end_seconds=min(duration, (index + 1) * slot_duration),
+                text=text,
+            )
         )
-        comment = CommentOverlay(
-            id=str(uuid4()),
-            startSeconds=round(boundaries[index], 3),
-            endSeconds=round(boundaries[index + 1], 3),
-            text="아 진짜 ㅋㅋㅋㅋㅋㅋㅋㅋ",
-            initial=nickname[0],
-            avatarColor=secrets.choice(_COMMENT_COLORS),
-            nickname=nickname,
-            likeCount=secrets.randbelow(18_689) + 1_312,
-            ageLabel=f"{secrets.randbelow(11) + 1}개월 전",
-        )
-        comments.append(comment.model_dump(by_alias=True))
     return comments
 
 
@@ -152,6 +258,17 @@ class HighlightClip(BaseModel):
     end_seconds: float
     hook_title: str = Field(min_length=1, max_length=MAX_HOOK_TITLE_CHARS)
     reason: str = Field(default="", max_length=1000)
+    selection_raw_start_seconds: float | None = None
+    selection_raw_end_seconds: float | None = None
+    selection_raw_duration_seconds: float | None = None
+    selection_candidate_index: int | None = Field(default=None, ge=1)
+    selection_provider: str | None = Field(default=None, max_length=50)
+    selection_model: str | None = Field(default=None, max_length=200)
+    selection_length_adjustment: str | None = Field(
+        default=None,
+        pattern=r"^(none|min_clamp|max_clamp)$",
+    )
+    selection_repositioned: bool | None = None
 
     @field_validator("hook_title", mode="before")
     @classmethod

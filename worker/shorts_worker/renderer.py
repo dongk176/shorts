@@ -11,10 +11,12 @@ from .overlays import (
     TEMPLATE_STYLES,
     create_ass_subtitles,
     create_comment_panel,
+    create_custom_canvas_overlays,
     create_panel_overlays,
 )
 from .schemas import (
     CommentOverlay,
+    CustomTemplateConfig,
     HighlightClip,
     SubtitleSegment,
     TemplateId,
@@ -73,6 +75,26 @@ def video_layout(video_aspect_ratio: VideoAspectRatio) -> VideoLayout:
     )
 
 
+def continuous_comment_windows(
+    comments: list[CommentOverlay], duration: float
+) -> list[tuple[CommentOverlay, float, float]]:
+    """Hold each comment until the next starts, covering the complete clip without gaps."""
+    if duration <= 0:
+        return []
+    ordered = sorted(comments, key=lambda item: item.start_seconds)
+    windows: list[tuple[CommentOverlay, float, float]] = []
+    for index, comment in enumerate(ordered):
+        start = 0.0 if index == 0 else min(duration, max(0.0, comment.start_seconds))
+        end = (
+            duration
+            if index == len(ordered) - 1
+            else min(duration, max(start, ordered[index + 1].start_seconds))
+        )
+        if end > start:
+            windows.append((comment, start, end))
+    return windows
+
+
 def _escape_filter_path(path: Path) -> str:
     return (
         str(path.resolve())
@@ -105,15 +127,32 @@ class VideoRenderer:
         has_audio = any(stream.get("codec_type") == "audio" for stream in probe.get("streams", []))
         target_height = VIDEO_HEIGHTS[video_aspect_ratio]
         command = [
-            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-y",
-            "-ss", f"{clip.start_seconds:.3f}", "-t", f"{duration:.3f}",
-            "-i", str(source_path),
-            "-vf", (
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-y",
+            "-ss",
+            f"{clip.start_seconds:.3f}",
+            "-t",
+            f"{duration:.3f}",
+            "-i",
+            str(source_path),
+            "-vf",
+            (
                 f"scale={CANVAS_WIDTH}:{target_height}:force_original_aspect_ratio=increase,"
                 f"crop={CANVAS_WIDTH}:{target_height},fps={fps:.3f}"
             ),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-            "-pix_fmt", "yuv420p", "-r", f"{fps:.3f}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "20",
+            "-pix_fmt",
+            "yuv420p",
+            "-r",
+            f"{fps:.3f}",
         ]
         if has_audio:
             command.extend(["-c:a", "aac", "-b:a", "128k"])
@@ -143,6 +182,7 @@ class VideoRenderer:
         video_aspect_ratio: VideoAspectRatio = VideoAspectRatio.SQUARE,
         comment_overlays: list[CommentOverlay] | None = None,
         title_text_styles: list[TitleTextStyle] | None = None,
+        custom_template_config: CustomTemplateConfig | None = None,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         probe = probe_media(clean_path, timeout=min(30, self.settings.ffmpeg_timeout_seconds))
@@ -151,6 +191,24 @@ class VideoRenderer:
             raise RenderError("clean clip 길이가 올바르지 않습니다.")
         fps = min(30.0, video_fps(probe))
         has_audio = any(stream.get("codec_type") == "audio" for stream in probe.get("streams", []))
+        if custom_template_config is not None:
+            return self._render_custom_clean_clip(
+                clean_path=clean_path,
+                output_path=output_path,
+                title=title,
+                channel_name=channel_name,
+                template_id=template_id,
+                transcript=transcript,
+                subtitles_enabled=subtitles_enabled,
+                work_dir=work_dir,
+                prefix=prefix,
+                channel_thumbnail_path=channel_thumbnail_path,
+                comment_overlays=comment_overlays or [],
+                config=custom_template_config,
+                duration=duration,
+                fps=fps,
+                has_audio=has_audio,
+            )
         layout_ratio = (
             VideoAspectRatio.PORTRAIT
             if template_id is TemplateId.COMMENT_CAPTURE
@@ -176,6 +234,7 @@ class VideoRenderer:
             if template_id is TemplateId.COMMENT_CAPTURE
             else []
         )
+        comment_windows = continuous_comment_windows(visible_comments, duration)
         comment_panels = [
             (
                 comment,
@@ -186,7 +245,7 @@ class VideoRenderer:
                     overlay_mode=layout.overlay_mode,
                 ),
             )
-            for index, comment in enumerate(visible_comments)
+            for index, (comment, _, _) in enumerate(comment_windows)
         ]
         ass_path = None
         if subtitles_enabled:
@@ -210,11 +269,13 @@ class VideoRenderer:
             f"[with_top][2:v]overlay=x=0:y={layout.bottom_y}:shortest=1[composed]",
         ]
         video_label = "composed"
-        for index, (comment, _) in enumerate(comment_panels):
+        for index, ((_comment, _), (_, start, end)) in enumerate(
+            zip(comment_panels, comment_windows, strict=False)
+        ):
             next_label = f"with_comment_{index}"
             filters.append(
                 f"[{video_label}][{index + 3}:v]overlay=x=0:y={layout.bottom_y}:"
-                f"enable='between(t,{comment.start_seconds:.3f},{comment.end_seconds:.3f})':"
+                f"enable='gte(t,{start:.3f})*lt(t,{end:.3f})':"
                 f"shortest=1[{next_label}]"
             )
             video_label = next_label
@@ -224,10 +285,25 @@ class VideoRenderer:
             )
             video_label = "captioned"
         command = [
-            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-y",
-            "-i", str(clean_path),
-            "-loop", "1", "-framerate", f"{fps:.3f}", "-i", str(top),
-            "-loop", "1", "-framerate", f"{fps:.3f}", "-i", str(bottom),
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-y",
+            "-i",
+            str(clean_path),
+            "-loop",
+            "1",
+            "-framerate",
+            f"{fps:.3f}",
+            "-i",
+            str(top),
+            "-loop",
+            "1",
+            "-framerate",
+            f"{fps:.3f}",
+            "-i",
+            str(bottom),
         ]
         for _, panel in comment_panels:
             command.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", str(panel)])
@@ -238,10 +314,22 @@ class VideoRenderer:
         command.extend(["-filter_complex", ";".join(filters), "-map", f"[{video_label}]"])
         if audio_label:
             command.extend(["-map", f"[{audio_label}]"])
-        command.extend([
-            "-t", f"{duration:.3f}", "-c:v", "libx264", "-preset", "veryfast",
-            "-crf", "23", "-pix_fmt", "yuv420p", "-r", f"{fps:.3f}",
-        ])
+        command.extend(
+            [
+                "-t",
+                f"{duration:.3f}",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "23",
+                "-pix_fmt",
+                "yuv420p",
+                "-r",
+                f"{fps:.3f}",
+            ]
+        )
         if audio_label:
             command.extend(["-c:a", "aac", "-b:a", "128k"])
         command.extend(["-movflags", "+faststart", str(output_path)])
@@ -255,6 +343,165 @@ class VideoRenderer:
             {},
         )
         if int(video.get("width", 0)) != 1080 or int(video.get("height", 0)) != 1920:
+            output_path.unlink(missing_ok=True)
+            raise RenderError("완성 영상 해상도를 검증하지 못했습니다.")
+        return output_path
+
+    def _render_custom_clean_clip(
+        self,
+        *,
+        clean_path: Path,
+        output_path: Path,
+        title: str,
+        channel_name: str,
+        template_id: TemplateId,
+        transcript: list[SubtitleSegment],
+        subtitles_enabled: bool,
+        work_dir: Path,
+        prefix: str,
+        channel_thumbnail_path: Path | None,
+        comment_overlays: list[CommentOverlay],
+        config: CustomTemplateConfig,
+        duration: float,
+        fps: float,
+        has_audio: bool,
+    ) -> Path:
+        background, title_overlay, channel_overlay = create_custom_canvas_overlays(
+            title=title,
+            channel_name=channel_name,
+            config=config,
+            directory=work_dir / "overlays",
+            prefix=prefix,
+            channel_thumbnail_path=channel_thumbnail_path,
+            include_channel=template_id is not TemplateId.COMMENT_CAPTURE,
+        )
+        visible_comments = (
+            sorted(comment_overlays, key=lambda item: item.start_seconds)
+            if template_id is TemplateId.COMMENT_CAPTURE
+            else []
+        )
+        comment_windows = continuous_comment_windows(visible_comments, duration)
+        comment_panels = [
+            create_comment_panel(
+                comment,
+                work_dir / "overlays" / f"{prefix}_custom_comment_{index}.png",
+                panel_height=320,
+                overlay_mode=True,
+            )
+            for index, (comment, _, _) in enumerate(comment_windows)
+        ]
+        ass_path = None
+        if subtitles_enabled and config.subtitle.visible:
+            ass_path = create_ass_subtitles(
+                transcript,
+                clip_start=0,
+                clip_end=duration,
+                output_path=work_dir / "subtitles" / f"{prefix}.ass",
+                margin_v=max(0, CANVAS_HEIGHT - config.subtitle.y - config.subtitle.font_size),
+                margin_l=max(0, (CANVAS_WIDTH - config.subtitle.max_width) // 2),
+                margin_r=max(0, (CANVAS_WIDTH - config.subtitle.max_width) // 2),
+                font_size=config.subtitle.font_size,
+                text_color=config.subtitle.color,
+                background_color=config.subtitle.background_color,
+            )
+        frame = config.video
+        filters = [
+            f"[1:v]setpts=PTS-STARTPTS,scale={CANVAS_WIDTH}:{CANVAS_HEIGHT}[base]",
+            (
+                f"[0:v]setpts=PTS-STARTPTS,fps={fps:.3f},"
+                f"scale={frame.width}:{frame.height}:force_original_aspect_ratio=increase,"
+                f"crop={frame.width}:{frame.height}[custom_video]"
+            ),
+            f"[base][custom_video]overlay=x={frame.x}:y={frame.y}:shortest=1[with_video]",
+            "[with_video][2:v]overlay=x=0:y=0:shortest=1[with_title]",
+            "[with_title][3:v]overlay=x=0:y=0:shortest=1[composed]",
+        ]
+        video_label = "composed"
+        comment_y = max(0, min(CANVAS_HEIGHT - 320, config.channel.y - 160))
+        for index, (_, start, end) in enumerate(comment_windows):
+            next_label = f"with_comment_{index}"
+            filters.append(
+                f"[{video_label}][{index + 4}:v]overlay=x=0:y={comment_y}:"
+                f"enable='gte(t,{start:.3f})*lt(t,{end:.3f})':shortest=1[{next_label}]"
+            )
+            video_label = next_label
+        if ass_path:
+            filters.append(
+                f"[{video_label}]subtitles=filename='{_escape_filter_path(ass_path)}'[captioned]"
+            )
+            video_label = "captioned"
+        command = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-y",
+            "-i",
+            str(clean_path),
+            "-loop",
+            "1",
+            "-framerate",
+            f"{fps:.3f}",
+            "-i",
+            str(background),
+            "-loop",
+            "1",
+            "-framerate",
+            f"{fps:.3f}",
+            "-i",
+            str(title_overlay),
+            "-loop",
+            "1",
+            "-framerate",
+            f"{fps:.3f}",
+            "-i",
+            str(channel_overlay),
+        ]
+        for panel in comment_panels:
+            command.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", str(panel)])
+        audio_label = None
+        if has_audio:
+            filters.append("[0:a]asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11[audio]")
+            audio_label = "audio"
+        command.extend(["-filter_complex", ";".join(filters), "-map", f"[{video_label}]"])
+        if audio_label:
+            command.extend(["-map", f"[{audio_label}]"])
+        command.extend(
+            [
+                "-t",
+                f"{duration:.3f}",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "23",
+                "-pix_fmt",
+                "yuv420p",
+                "-r",
+                f"{fps:.3f}",
+            ]
+        )
+        if audio_label:
+            command.extend(["-c:a", "aac", "-b:a", "128k"])
+        command.extend(["-movflags", "+faststart", str(output_path)])
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        result = run_command(command, timeout=self.settings.ffmpeg_timeout_seconds, cwd=work_dir)
+        if result.returncode != 0 or not output_path.is_file() or output_path.stat().st_size == 0:
+            raise RenderError("개인 템플릿 렌더링에 실패했습니다.")
+        output_probe = probe_media(output_path, timeout=30)
+        video = next(
+            (
+                stream
+                for stream in output_probe.get("streams", [])
+                if stream.get("codec_type") == "video"
+            ),
+            {},
+        )
+        if (
+            int(video.get("width", 0)) != CANVAS_WIDTH
+            or int(video.get("height", 0)) != CANVAS_HEIGHT
+        ):
             output_path.unlink(missing_ok=True)
             raise RenderError("완성 영상 해상도를 검증하지 못했습니다.")
         return output_path
@@ -285,9 +532,7 @@ class VideoRenderer:
 
         probe = probe_media(source_path, timeout=min(30, self.settings.ffmpeg_timeout_seconds))
         fps = video_fps(probe)
-        has_audio = any(
-            stream.get("codec_type") == "audio" for stream in probe.get("streams", [])
-        )
+        has_audio = any(stream.get("codec_type") == "audio" for stream in probe.get("streams", []))
         layout = video_layout(video_aspect_ratio)
         top, bottom = create_panel_overlays(
             title=clip.hook_title,
@@ -360,8 +605,7 @@ class VideoRenderer:
         ]
         video_label = "composed"
         filters.append(
-            f"[{audio_input_index}:a]asetpts=PTS-STARTPTS,"
-            "loudnorm=I=-16:TP=-1.5:LRA=11[audio]"
+            f"[{audio_input_index}:a]asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11[audio]"
         )
         command.extend(
             [

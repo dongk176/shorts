@@ -54,6 +54,11 @@ class Settings:
             "OPENAI_HIGHLIGHT_FALLBACK_MODEL", "gpt-5-nano"
         )
     )
+    openai_comment_fallback_model: str = field(
+        default_factory=lambda: os.getenv(
+            "OPENAI_COMMENT_FALLBACK_MODEL", "gpt-5-nano"
+        )
+    )
     openai_transcribe_chunk_seconds: int = field(
         default_factory=lambda: _positive_int("OPENAI_TRANSCRIBE_CHUNK_SECONDS", 30)
     )
@@ -63,6 +68,11 @@ class Settings:
     gemini_api_key: str | None = field(default_factory=lambda: os.getenv("GEMINI_API_KEY"))
     gemini_text_model: str = field(
         default_factory=lambda: os.getenv("GEMINI_TEXT_MODEL")
+        or "gemini-2.5-flash-lite"
+    )
+    gemini_comment_model: str = field(
+        default_factory=lambda: os.getenv("GEMINI_COMMENT_MODEL")
+        or os.getenv("GEMINI_TEXT_MODEL")
         or "gemini-2.5-flash-lite"
     )
     gemini_openai_base_url: str = field(

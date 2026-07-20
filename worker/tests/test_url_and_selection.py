@@ -112,6 +112,8 @@ def test_overlapping_clips_are_repositioned_to_five_seconds_or_less() -> None:
     )
     assert len(clips) == 2
     assert overlap_seconds(clips[0], clips[1]) <= 5.001
+    assert clips[0].selection_repositioned is False
+    assert clips[1].selection_repositioned is True
 
 
 def test_valid_ai_clip_count_is_not_filled_to_maximum() -> None:
@@ -139,12 +141,23 @@ def test_ai_clip_lengths_are_clamped_to_thirty_through_sixty_seconds() -> None:
         video_title="길이 검증",
         duration_seconds=400,
         required_count=3,
+        selection_provider="gemini",
+        selection_model="gemini-2.5-flash-lite",
     )
     assert [clip.end_seconds - clip.start_seconds for clip in clips] == [
         AI_CLIP_MIN_SECONDS,
         45,
         AI_CLIP_MAX_SECONDS,
     ]
+    assert [clip.selection_raw_duration_seconds for clip in clips] == [10, 45, 90]
+    assert [clip.selection_candidate_index for clip in clips] == [1, 2, 3]
+    assert [clip.selection_length_adjustment for clip in clips] == [
+        "min_clamp",
+        "none",
+        "max_clamp",
+    ]
+    assert {clip.selection_provider for clip in clips} == {"gemini"}
+    assert {clip.selection_model for clip in clips} == {"gemini-2.5-flash-lite"}
 
 
 def test_deterministic_fallback_uses_forty_five_seconds() -> None:
@@ -157,6 +170,10 @@ def test_deterministic_fallback_uses_forty_five_seconds() -> None:
     assert len(clips) == 1
     assert clips[0].end_seconds - clips[0].start_seconds == AI_CLIP_FALLBACK_SECONDS
     assert 0 <= clips[0].start_seconds < clips[0].end_seconds <= 180
+    assert clips[0].selection_provider == "deterministic"
+    assert clips[0].selection_raw_start_seconds is None
+    assert clips[0].selection_raw_end_seconds is None
+    assert clips[0].selection_raw_duration_seconds is None
 
 
 def test_gemini_defaults_match_ai_talk(monkeypatch) -> None:
@@ -164,6 +181,8 @@ def test_gemini_defaults_match_ai_talk(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("OPENAI_TRANSCRIBE_MODEL", raising=False)
     monkeypatch.delenv("OPENAI_HIGHLIGHT_FALLBACK_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_COMMENT_FALLBACK_MODEL", raising=False)
+    monkeypatch.delenv("GEMINI_COMMENT_MODEL", raising=False)
     monkeypatch.delenv("OPENAI_TRANSCRIBE_CHUNK_SECONDS", raising=False)
     monkeypatch.delenv("OPENAI_TRANSCRIBE_MAX_WORKERS", raising=False)
 
@@ -176,6 +195,8 @@ def test_gemini_defaults_match_ai_talk(monkeypatch) -> None:
     )
     assert settings.openai_transcribe_model == "gpt-4o-mini-transcribe"
     assert settings.openai_highlight_fallback_model == "gpt-5-nano"
+    assert settings.openai_comment_fallback_model == "gpt-5-nano"
+    assert settings.gemini_comment_model == "gemini-2.5-flash-lite"
     assert settings.openai_transcribe_chunk_seconds == 30
     assert settings.openai_transcribe_max_workers == 4
 
@@ -310,6 +331,8 @@ def test_missing_gemini_key_uses_openai_nano(monkeypatch) -> None:
     assert len(clips) == 1
     assert nano_calls == 1
     assert clips[0].reason == "OpenAI fallback"
+    assert clips[0].selection_provider == "openai"
+    assert clips[0].selection_model == "gpt-5-nano"
 
 
 def test_gemini_success_does_not_call_openai_nano(monkeypatch) -> None:
@@ -345,6 +368,8 @@ def test_gemini_success_does_not_call_openai_nano(monkeypatch) -> None:
     )
 
     assert clips[0].reason == "Gemini success"
+    assert clips[0].selection_provider == "gemini"
+    assert clips[0].selection_model == "gemini-2.5-flash-lite"
 
 
 def test_gemini_error_uses_openai_nano(monkeypatch) -> None:
