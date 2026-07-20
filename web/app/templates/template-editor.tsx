@@ -21,12 +21,38 @@ import {
 } from "@/lib/custom-template-preview-layout";
 import { CENTER_SNAP_THRESHOLD_PX, snapAxisToCenter } from "@/lib/template-editor-snap";
 import { CustomTemplatePlanOverlay } from "@/components/custom-template-plan-overlay";
+import {
+  TemplateCommentPrototype,
+  type TemplateCommentSize,
+  type TemplateCommentTheme,
+} from "@/components/template-comment-prototype";
 
-type LayerId = "video" | "title" | "channel";
+type LayerId = "video" | "title" | "channel" | "comment";
+type TemplateLayerId = Exclude<LayerId, "comment">;
+type TextLayerId = Exclude<TemplateLayerId, "video">;
 type History = { past: TemplateConfig[]; present: TemplateConfig; future: TemplateConfig[] };
 type CenterGuides = { x: boolean; y: boolean };
+type CommentPrototypeState = {
+  visible: boolean;
+  theme: TemplateCommentTheme;
+  size: TemplateCommentSize;
+  y: number;
+};
 
-const layerLabels: Record<LayerId, string> = { video: "영상", title: "제목", channel: "채널명" };
+const layerLabels: Record<LayerId, string> = { video: "영상", title: "제목", channel: "채널명", comment: "댓글" };
+const standardLayerIds: LayerId[] = ["video", "title", "channel"];
+const commentLayerIds: LayerId[] = [...standardLayerIds, "comment"];
+const commentSizeOptions: { value: TemplateCommentSize; label: string }[] = [
+  { value: "small", label: "작게" },
+  { value: "medium", label: "기본" },
+  { value: "large", label: "크게" },
+];
+const commentThemeOptions = [
+  { value: "dark", label: "다크 모드", background: "#09090b", foreground: "#ffffff" },
+  { value: "light", label: "화이트 모드", background: "#ffffff", foreground: "#18181b" },
+] as const;
+const COMMENT_Y_MIN = 720;
+const COMMENT_Y_MAX = 1600;
 const hiddenCenterGuides: CenterGuides = { x: false, y: false };
 const compactTextColors = ["#FFFFFF", "#111111", "#35E6E3"] as const satisfies readonly TemplatePresetColor[];
 const compactTextBackgroundColors = ["#111111", "#FFFFFF"] as const satisfies readonly TemplatePresetColor[];
@@ -71,6 +97,7 @@ function ColorPalette({ value, onChange, allowNone = false }: { value: TemplateP
 }
 
 export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig, canSaveCustomTemplates }: { initialTemplate: CustomTemplate | null; baseTemplateId: TemplateId; initialConfig: TemplateConfig; canSaveCustomTemplates: boolean }) {
+  const commentLayerEnabled = baseTemplateId === "comment-capture";
   const [history, setHistory] = useState<History>({ past: [], present: initialConfig, future: [] });
   const [name, setName] = useState(initialTemplate?.name || "나의 템플릿");
   const [selectedLayer, setSelectedLayer] = useState<LayerId>("title");
@@ -81,11 +108,18 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
   const [savedTemplate, setSavedTemplate] = useState(initialTemplate);
   const [centerGuides, setCenterGuides] = useState<CenterGuides>(hiddenCenterGuides);
   const [planOverlayOpen, setPlanOverlayOpen] = useState(false);
+  const [commentPrototype, setCommentPrototype] = useState<CommentPrototypeState>(() => ({
+    visible: true,
+    theme: "light",
+    size: "medium",
+    y: clamp(initialConfig.video.y + initialConfig.video.height, COMMENT_Y_MIN, COMMENT_Y_MAX),
+  }));
   const canvasRef = useRef<HTMLDivElement>(null);
   const transactionRef = useRef<TemplateConfig | null>(null);
   const baselineRef = useRef(JSON.stringify({ name: initialTemplate?.name || "나의 템플릿", config: initialConfig }));
   const config = history.present;
   const dirty = JSON.stringify({ name, config }) !== baselineRef.current;
+  const availableLayerIds = commentLayerEnabled ? commentLayerIds : standardLayerIds;
 
   const commit = useCallback((updater: (current: TemplateConfig) => TemplateConfig) => {
     setHistory((current) => {
@@ -130,7 +164,7 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  const beginPointerAction = (event: ReactPointerEvent, layer: LayerId, mode: "move" | "resize" = "move") => {
+  const beginPointerAction = (event: ReactPointerEvent, layer: TemplateLayerId, mode: "move" | "resize" = "move") => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     event.preventDefault();
@@ -218,6 +252,34 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
     window.addEventListener("pointercancel", finish, { once: true });
   };
 
+  const beginCommentPointerAction = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedLayer("comment");
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const startPointerY = event.clientY;
+    const startLayerY = commentPrototype.y;
+    const toCanvasY = TEMPLATE_CANVAS.height / canvas.getBoundingClientRect().height;
+
+    const move = (moveEvent: PointerEvent) => {
+      const deltaY = Math.round((moveEvent.clientY - startPointerY) * toCanvasY);
+      setCommentPrototype((current) => ({
+        ...current,
+        y: clamp(startLayerY + deltaY, COMMENT_Y_MIN, COMMENT_Y_MAX),
+      }));
+    };
+    const finish = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish, { once: true });
+    window.addEventListener("pointercancel", finish, { once: true });
+  };
+
   const changeAspect = (aspectRatio: VideoAspectRatio) => commit((next) => {
     const preferredWidth = Math.min(next.video.width, TEMPLATE_CANVAS.width);
     next.video = videoFrameForAspect(aspectRatio, preferredWidth);
@@ -259,7 +321,7 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
     }
   };
 
-  const selectedTextLayer = selectedLayer === "video" ? null : config[selectedLayer];
+  const selectedTextLayer = selectedLayer === "title" || selectedLayer === "channel" ? config[selectedLayer] : null;
   const background = backgroundStyle(config);
   const selectedBackgroundColor = config.background.kind === "color" ? config.background.color : null;
   const visibleBackgroundColors = showAllBackgroundColors
@@ -290,6 +352,7 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
                   </div>
                   <CustomTemplateTitlePreview title={config.title} firstLine="놓치면 후회할" secondLine="핵심 한 가지" selected={selectedLayer === "title"} onPointerDown={(event) => beginPointerAction(event, "title")} />
                   {config.channel.visible && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</button>}
+                  {commentLayerEnabled && commentPrototype.visible && <TemplateCommentPrototype selected={selectedLayer === "comment"} theme={commentPrototype.theme} size={commentPrototype.size} y={commentPrototype.y} onSelect={() => setSelectedLayer("comment")} onPointerDown={beginCommentPointerAction} />}
                   {centerGuides.x && <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-1/2 z-50 w-px -translate-x-1/2 bg-[#ff2bd6] shadow-[0_0_5px_rgba(255,43,214,.95)]" />}
                   {centerGuides.y && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-1/2 z-50 h-px -translate-y-1/2 bg-[#ff2bd6] shadow-[0_0_5px_rgba(255,43,214,.95)]" />}
                 </div>
@@ -305,18 +368,51 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
 
             <section><label className="block text-[15px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">템플릿 이름<input value={name} maxLength={50} onChange={(event) => setName(event.target.value)} className="mt-3 h-11 w-full rounded-xl border border-white/10 bg-black/25 px-3 text-sm font-medium text-white outline-none transition focus:border-[#ff715e]" /></label></section>
 
-            <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">편집 레이어</h2><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">미리보기에서 직접 선택하거나 아래 레이어를 고르세요.</p><div className="mt-3 grid grid-cols-3 gap-1.5 rounded-xl border border-white/10 bg-black/20 p-1.5">{(Object.keys(layerLabels) as LayerId[]).map((layer) => <button key={layer} type="button" onClick={() => setSelectedLayer(layer)} className={`rounded-lg px-1 py-2.5 text-xs font-bold transition ${selectedLayer === layer ? "bg-[#ff715e] text-black" : "text-neutral-400 hover:bg-white/5 hover:text-white"}`}>{layerLabels[layer]}</button>)}</div></section>
+            <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">편집 레이어</h2><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">미리보기에서 직접 선택하거나 아래 레이어를 고르세요.</p><div className={`mt-3 grid gap-1.5 rounded-xl border border-white/10 bg-black/20 p-1.5 ${commentLayerEnabled ? "grid-cols-4" : "grid-cols-3"}`}>{availableLayerIds.map((layer) => <button key={layer} type="button" onClick={() => setSelectedLayer(layer)} className={`rounded-lg px-1 py-2.5 text-xs font-bold transition ${selectedLayer === layer ? "bg-[#ff715e] text-black" : "text-neutral-400 hover:bg-white/5 hover:text-white"}`}>{layerLabels[layer]}</button>)}</div></section>
 
             {selectedLayer === "video" && <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">영상 프레임</h2><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5"><h3 className="text-sm font-semibold text-neutral-200">영상 비율</h3><div className="mt-3 grid grid-cols-5 gap-1">{videoAspectRatioOptions.map((option) => <button key={option.value} type="button" onClick={() => changeAspect(option.value)} className={`rounded-lg py-2 text-[10px] font-bold transition ${config.video.aspectRatio === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400 hover:bg-white/10"}`}>{option.value}</button>)}</div><p className="mt-3 text-[11px] leading-5 text-neutral-500">프레임을 끌어 이동하고 오른쪽 아래 핸들로 비율을 유지한 채 크기를 조절하세요.</p></div></section>}
 
             {selectedTextLayer && <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">{selectedLayer === "title" ? "제목 스타일" : "채널명 스타일"}</h2><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
-              <div className="flex items-center justify-between"><span className="text-sm font-semibold text-neutral-200">레이어 표시</span><button type="button" onClick={() => commit((next) => { next[selectedLayer as Exclude<LayerId, "video">].visible = !selectedTextLayer.visible; return next; })} className={`rounded-full px-3 py-1 text-xs font-bold ${selectedTextLayer.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}>{selectedTextLayer.visible ? "켜짐" : "꺼짐"}</button></div>
-              <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">글자 크기 <span className="float-right text-sm text-[#ff9b8d]">{selectedTextLayer.fontSize}px</span><input type="range" min={selectedLayer === "channel" ? 20 : 24} max={selectedLayer === "title" ? 96 : 64} value={selectedTextLayer.fontSize} onChange={(event) => commit((next) => { next[selectedLayer as Exclude<LayerId, "video">].fontSize = Number(event.target.value); return next; })} className="mt-3 w-full accent-[#ff715e]" /></label>
+              <div className="flex items-center justify-between"><span className="text-sm font-semibold text-neutral-200">레이어 표시</span><button type="button" onClick={() => commit((next) => { next[selectedLayer as TextLayerId].visible = !selectedTextLayer.visible; return next; })} className={`rounded-full px-3 py-1 text-xs font-bold ${selectedTextLayer.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}>{selectedTextLayer.visible ? "켜짐" : "꺼짐"}</button></div>
+              <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">글자 크기 <span className="float-right text-sm text-[#ff9b8d]">{selectedTextLayer.fontSize}px</span><input type="range" min={selectedLayer === "channel" ? 20 : 24} max={selectedLayer === "title" ? 96 : 64} value={selectedTextLayer.fontSize} onChange={(event) => commit((next) => { next[selectedLayer as TextLayerId].fontSize = Number(event.target.value); return next; })} className="mt-3 w-full accent-[#ff715e]" /></label>
               {selectedLayer === "title" ? <>
                 <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">1행 제목</h3><div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-xs font-semibold text-neutral-400">글자색</p><div className="mt-2"><ColorPalette key="title-line-1-text" value={config.title.primaryColor} onChange={(color) => { if (color) commit((next) => { next.title.primaryColor = color; return next; }); }} /></div></div><div><p className="text-xs font-semibold text-neutral-400">배경색</p><div className="mt-2"><ColorPalette key="title-line-1-background" allowNone value={config.title.primaryBackgroundColor} onChange={(color) => commit((next) => { next.title.primaryBackgroundColor = color; return next; })} /></div></div></div></div>
                 <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">2행 제목</h3><div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-xs font-semibold text-neutral-400">글자색</p><div className="mt-2"><ColorPalette key="title-line-2-text" value={config.title.accentColor} onChange={(color) => { if (color) commit((next) => { next.title.accentColor = color; return next; }); }} /></div></div><div><p className="text-xs font-semibold text-neutral-400">배경색</p><div className="mt-2"><ColorPalette key="title-line-2-background" allowNone value={config.title.accentBackgroundColor} onChange={(color) => commit((next) => { next.title.accentBackgroundColor = color; return next; })} /></div></div></div></div>
               </> : <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">채널명</h3><div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-xs font-semibold text-neutral-400">글자색</p><div className="mt-2"><ColorPalette key="channel-color" value={config.channel.color} onChange={(color) => { if (color) commit((next) => { next.channel.color = color; return next; }); }} /></div></div><div><p className="text-xs font-semibold text-neutral-400">배경색</p><div className="mt-2"><ColorPalette key="channel-background" allowNone value={config.channel.backgroundColor} onChange={(color) => commit((next) => { next.channel.backgroundColor = color; return next; })} /></div></div></div></div>}
             </div></section>}
+
+            {selectedLayer === "comment" && commentLayerEnabled && <section>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">댓글 레이아웃</h2>
+                <span className="rounded-full border border-[#ff9b8d]/30 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">미리보기 전용</span>
+              </div>
+              <p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">예시 문구는 고정되어 있으며, 지금은 디자인만 비교할 수 있습니다.</p>
+              <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-neutral-200">레이어 표시</span>
+                  <button type="button" onClick={() => setCommentPrototype((current) => ({ ...current, visible: !current.visible }))} className={`rounded-full px-3 py-1 text-xs font-bold ${commentPrototype.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}>{commentPrototype.visible ? "켜짐" : "꺼짐"}</button>
+                </div>
+
+                <div className="mt-5 border-t border-white/10 pt-4">
+                  <h3 className="text-sm font-semibold text-neutral-200">댓글 모드</h3>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {commentThemeOptions.map((option) => <button key={option.value} type="button" onClick={() => setCommentPrototype((current) => ({ ...current, theme: option.value }))} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold transition ${commentPrototype.theme === option.value ? "border-[#ff715e] bg-[#ff715e]/10 text-white" : "border-white/10 bg-white/[.03] text-neutral-400 hover:border-white/30 hover:text-white"}`}><span className="h-5 w-8 border border-white/15" style={{ backgroundColor: option.background }}><span className="mx-auto mt-[8px] block h-px w-4" style={{ backgroundColor: option.foreground }} /></span>{option.label}</button>)}
+                  </div>
+                  <p className="mt-2 text-[11px] leading-5 text-neutral-500">두 모드 모두 가로 여백 없이 캔버스 너비 전체를 채우며 모서리는 각지게 유지합니다.</p>
+                </div>
+
+                <div className="mt-5 border-t border-white/10 pt-4">
+                  <h3 className="text-sm font-semibold text-neutral-200">댓글 크기</h3>
+                  <div className="mt-3 grid grid-cols-3 gap-1.5">{commentSizeOptions.map((option) => <button key={option.value} type="button" onClick={() => setCommentPrototype((current) => ({ ...current, size: option.value }))} className={`rounded-lg py-2.5 text-xs font-bold transition ${commentPrototype.size === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400 hover:bg-white/10 hover:text-white"}`}>{option.label}</button>)}</div>
+                  <p className="mt-2 text-[11px] leading-5 text-neutral-500">크기를 바꾸면 프로필·문구·반응 버튼과 안쪽 여백이 함께 줄고, 카드 높이도 내용에 맞춰 자동 조절됩니다.</p>
+                </div>
+
+                <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">세로 위치 <span className="float-right text-sm text-[#ff9b8d]">{Math.round((commentPrototype.y / TEMPLATE_CANVAS.height) * 100)}%</span><input type="range" min={COMMENT_Y_MIN} max={COMMENT_Y_MAX} step={10} value={commentPrototype.y} onChange={(event) => setCommentPrototype((current) => ({ ...current, y: Number(event.target.value) }))} className="mt-3 w-full accent-[#ff715e]" /></label>
+                <p className="mt-2 text-[11px] leading-5 text-neutral-500">슬라이더를 쓰거나 미리보기의 댓글 카드를 위아래로 직접 끌어보세요.</p>
+
+                <div className="mt-5 rounded-lg border border-amber-300/20 bg-amber-300/[.06] px-3 py-2.5 text-[11px] leading-5 text-amber-100/75">이번 시안은 저장 및 실제 렌더링에는 아직 반영되지 않습니다. 디자인 확정 후 템플릿 설정과 렌더러에 연결합니다.</div>
+              </div>
+            </section>}
 
             <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">배경</h2><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">완성 영상과 같은 9:16 비율로 배경을 비교하세요.</p><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
               <h3 className="text-sm font-semibold text-neutral-200">이미지 배경</h3><div className="mt-3 grid grid-cols-3 gap-2">{stockBackgrounds.map((asset) => <button key={asset.id} type="button" title={asset.label} aria-label={`${asset.label} 배경 선택`} aria-pressed={config.background.kind === "image" && config.background.assetId === asset.id} onClick={() => commit((next) => { next.background = { kind: "image", assetId: asset.id }; return next; })} className={`relative aspect-[9/16] overflow-hidden rounded-lg border transition ${config.background.kind === "image" && config.background.assetId === asset.id ? "border-[#ff715e] ring-2 ring-[#ff715e]/25" : "border-white/10 hover:border-white/35"}`}><span className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${asset.src})` }} /><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-black/20 px-1 py-1.5 text-[9px] font-bold leading-3 text-white">{asset.label}</span></button>)}</div>
