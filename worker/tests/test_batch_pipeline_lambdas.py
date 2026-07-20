@@ -138,7 +138,12 @@ def test_render_array_child_failure_retries_only_its_shard() -> None:
         "arrayProperties": {"index": 2},
     }}, None)
 
-    assert result == {"retriedRenderJobId": "job-a", "shardIndex": 2}
+    assert result == {
+        "retriedRenderJobId": "job-a",
+        "shardIndex": 2,
+        "failureCategory": "application",
+        "retryCount": 1,
+    }
     assert any(table == "generated_shorts" and "render_shard_index=eq.2" in query
                for table, query, _ in patches)
     message = json.loads(sqs.send_message.call_args.kwargs["MessageBody"])
@@ -147,6 +152,7 @@ def test_render_array_child_failure_retries_only_its_shard() -> None:
         "jobId": "job-a",
         "shardIndex": 2,
         "failedBatchJobId": "render-parent",
+        "retryCount": 1,
     }
 
 
@@ -182,7 +188,11 @@ def test_render_failure_at_deadline_uses_a_render_specific_message() -> None:
         "statusReason": "container exited",
     }}, None)
 
-    assert result == {"failedRenderJobId": "job-a"}
+    assert result == {
+        "failedRenderJobId": "job-a",
+        "failureCategory": "application",
+        "retryCount": 0,
+    }
     job_patch = next(body for table, _, body in patches if table == "video_jobs")
     assert job_patch["error_code"] == "render_failed"
     assert job_patch["error_message"] == module.RENDER_FINAL_MESSAGE
@@ -190,6 +200,89 @@ def test_render_failure_at_deadline_uses_a_render_specific_message() -> None:
     short_patch = next(body for table, _, body in patches if table == "generated_shorts")
     assert short_patch["status"] == "failed"
     assert short_patch["render_error_code"] == "render_failed"
+
+
+def test_render_oom_fails_without_repeating_the_same_resource_shape() -> None:
+    module, sqs = _load_lambda("batch_state")
+    patches: list[tuple[str, str, dict[str, object]]] = []
+
+    def rest(table: str, **kwargs):
+        if table == "dispatch_batches":
+            return []
+        if table == "generated_shorts" and "render_batch_job_id" in kwargs["query"]:
+            return [{
+                "id": "short-a",
+                "job_id": "job-a",
+                "render_shard_index": 0,
+                "status": "rendering",
+                "render_attempt_count": 1,
+            }]
+        if table == "video_jobs":
+            return [{
+                "id": "job-a",
+                "status": "rendering",
+                "deadline_at": (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
+            }]
+        return []
+
+    module.rest = rest
+    module.patch = lambda table, query, body: patches.append((table, query, body))
+
+    result = module.handler({"detail": {
+        "jobId": "render-a",
+        "status": "FAILED",
+        "statusReason": "Essential container exited",
+        "container": {"exitCode": 137, "reason": "OutOfMemoryError"},
+        "parameters": {"renderRetryCount": "0"},
+    }}, None)
+
+    assert result == {
+        "failedRenderJobId": "job-a",
+        "failureCategory": "oom",
+        "retryCount": 0,
+    }
+    assert next(body for table, _, body in patches if table == "video_jobs")[
+        "error_code"
+    ] == "render_oom"
+    assert all("status=in.(rendering,rerendering)" in query
+               for table, query, _ in patches if table == "generated_shorts")
+    sqs.send_message.assert_not_called()
+
+
+def test_render_retry_budget_is_capped_after_one_external_retry() -> None:
+    module, sqs = _load_lambda("batch_state")
+    module.patch = MagicMock()
+
+    def rest(table: str, **kwargs):
+        if table == "dispatch_batches":
+            return []
+        if table == "generated_shorts" and "render_batch_job_id" in kwargs["query"]:
+            return [{
+                "id": "short-a",
+                "job_id": "job-a",
+                "render_shard_index": 0,
+                "status": "rendering",
+                "render_attempt_count": 1,
+            }]
+        if table == "video_jobs":
+            return [{
+                "id": "job-a",
+                "status": "rendering",
+                "deadline_at": (datetime.now(UTC) + timedelta(minutes=5)).isoformat(),
+            }]
+        return []
+
+    module.rest = rest
+    result = module.handler({"detail": {
+        "jobId": "render-retry-a",
+        "status": "FAILED",
+        "statusReason": "Essential container exited",
+        "parameters": {"renderRetryCount": "1"},
+    }}, None)
+
+    assert result["failedRenderJobId"] == "job-a"
+    assert result["retryCount"] == 1
+    sqs.send_message.assert_not_called()
 
 
 def test_failed_short_cleanup_deletes_versions_before_marking_deleted() -> None:
@@ -305,6 +398,82 @@ def test_prepare_batch_submits_without_a_global_circuit_delay() -> None:
     source = (LAMBDA_DIR / "batch_submitter.py").read_text(encoding="utf-8")
     assert "claim_ingestion_gate" not in source
     assert "DelaySeconds=60" not in source
+
+
+def test_render_submission_uses_fair_share_and_one_batch_attempt() -> None:
+    module, _ = _load_lambda("batch_submitter")
+
+    def rest(table: str, **kwargs):
+        if table == "generated_shorts":
+            return [{"id": "short-a", "render_batch_job_id": None}]
+        if table == "video_jobs":
+            return [{
+                "id": "job-a",
+                "status": "rendering",
+                "deadline_at": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
+                "mvp_session_id": "session-a",
+                "user_id": "user-a",
+            }]
+        return []
+
+    module.rest = rest
+    module._submit_once = MagicMock(return_value="render-parent")
+    module.patch = MagicMock()
+
+    result = module._submit({
+        "kind": "render",
+        "jobId": "job-a",
+        "shardCount": 4,
+    })
+
+    assert result == "render-parent"
+    request, submission_key = module._submit_once.call_args.args
+    assert submission_key == "render:job-a"
+    assert request["arrayProperties"] == {"size": 4}
+    assert request["retryStrategy"] == {"attempts": 1}
+    assert request["schedulingPriorityOverride"] == 0
+    assert request["parameters"] == {"renderRetryCount": "0"}
+    assert request["shareIdentifier"].startswith("user")
+    assert request["shareIdentifier"].isalnum()
+    assert request["containerOverrides"]["environment"][0]["name"] == (
+        "RENDER_SUBMITTED_AT"
+    )
+
+
+def test_render_retry_preserves_share_and_increments_retry_parameter() -> None:
+    module, _ = _load_lambda("batch_submitter")
+
+    def rest(table: str, **kwargs):
+        if table == "generated_shorts":
+            return [{"id": "short-a"}]
+        if table == "video_jobs":
+            return [{
+                "id": "job-a",
+                "status": "rendering",
+                "deadline_at": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
+                "mvp_session_id": "session-a",
+                "user_id": "user-a",
+            }]
+        return []
+
+    module.rest = rest
+    module._submit_once = MagicMock(return_value="render-retry")
+    module.patch = MagicMock()
+
+    result = module._submit({
+        "kind": "render_retry",
+        "jobId": "job-a",
+        "shardIndex": 2,
+        "failedBatchJobId": "render-parent",
+        "retryCount": 1,
+    })
+
+    assert result == "render-retry"
+    request, _ = module._submit_once.call_args.args
+    assert request["parameters"] == {"renderRetryCount": "1"}
+    assert request["retryStrategy"] == {"attempts": 1}
+    assert request["schedulingPriorityOverride"] == 0
+    assert request["jobName"].endswith("-2-1")
 
 
 def test_outbox_dispatcher_submits_prepare_directly_without_sqs() -> None:

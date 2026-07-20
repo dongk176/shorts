@@ -19,6 +19,7 @@ RENDER_FINAL_MESSAGE = (
     "쇼츠 영상을 만드는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
 )
 TERMINAL_STATUSES = {"completed", "failed", "expired", "deleted"}
+MAX_EXTERNAL_RENDER_RETRIES = 1
 
 
 def _encoded(value: object) -> str:
@@ -45,6 +46,46 @@ def _send_delayed(payload: dict[str, Any]) -> None:
         MessageBody=json.dumps(payload, separators=(",", ":")),
         DelaySeconds=60,
     )
+
+
+def _render_retry_count(detail: dict[str, Any]) -> int:
+    parameters = detail.get("parameters") or {}
+    raw_value = parameters.get("renderRetryCount")
+    if raw_value is None:
+        job_name = str(detail.get("jobName") or "")
+        if job_name.startswith("shorts-render-retry-"):
+            raw_value = job_name.rsplit("-", 1)[-1]
+    try:
+        return max(0, int(raw_value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _render_failure_category(detail: dict[str, Any], reason: str) -> str:
+    container = detail.get("container") or {}
+    exit_code = container.get("exitCode")
+    combined = " ".join(
+        str(value)
+        for value in (reason, container.get("reason"), detail.get("statusReason"))
+        if value
+    ).casefold()
+    if str(exit_code) == "137" or any(
+        marker in combined for marker in ("outofmemory", "out of memory", "oom")
+    ):
+        return "oom"
+    if any(
+        marker in combined
+        for marker in (
+            "host ec2",
+            "instance terminated",
+            "spot interruption",
+            "task failed to start",
+            "ecs agent",
+            "internal error",
+        )
+    ):
+        return "infrastructure"
+    return "application"
 
 
 def _prepare_jobs(parent_job_id: str, array_index: int | None) -> list[dict[str, Any]]:
@@ -152,7 +193,7 @@ def _fail_job(job_id: str, error_code: str, error_message: str) -> None:
         "generated_shorts",
         (
             f"job_id=eq.{encoded_job_id}&deleted_at=is.null"
-            "&status=in.(rendering,rerendering,ready)"
+            "&status=in.(rendering,rerendering)"
         ),
         {
             "status": "failed",
@@ -164,7 +205,10 @@ def _fail_job(job_id: str, error_code: str, error_message: str) -> None:
 
 
 def _handle_render_failure(
-    parent_job_id: str, array_index: int | None, reason: str
+    parent_job_id: str,
+    array_index: int | None,
+    reason: str,
+    detail: dict[str, Any],
 ) -> dict[str, Any] | None:
     rows = _render_rows(parent_job_id, array_index)
     if not rows:
@@ -185,9 +229,24 @@ def _handle_render_failure(
     if not jobs or jobs[0]["status"] in TERMINAL_STATUSES:
         return {"ignoredRenderJobId": job_id}
     deadline = datetime.fromisoformat(jobs[0]["deadline_at"].replace("Z", "+00:00"))
-    if deadline <= datetime.now(UTC) + timedelta(seconds=75):
-        _fail_job(job_id, "render_failed", RENDER_FINAL_MESSAGE)
-        return {"failedRenderJobId": job_id}
+    retry_count = _render_retry_count(detail)
+    failure_category = _render_failure_category(detail, reason)
+    worker_attempt_count = max(int(row["render_attempt_count"]) for row in rows)
+    retry_exhausted = (
+        retry_count >= MAX_EXTERNAL_RENDER_RETRIES or worker_attempt_count >= 2
+    )
+    if (
+        failure_category == "oom"
+        or retry_exhausted
+        or deadline <= datetime.now(UTC) + timedelta(seconds=75)
+    ):
+        error_code = "render_oom" if failure_category == "oom" else "render_failed"
+        _fail_job(job_id, error_code, RENDER_FINAL_MESSAGE)
+        return {
+            "failedRenderJobId": job_id,
+            "failureCategory": failure_category,
+            "retryCount": retry_count,
+        }
     patch(
         "generated_shorts",
         (
@@ -196,7 +255,7 @@ def _handle_render_failure(
         ),
         {
             "render_progress": 0,
-            "render_error_code": "batch_failed",
+            "render_error_code": f"batch_{failure_category}",
             "render_error_message": reason[:1000],
         },
     )
@@ -205,8 +264,14 @@ def _handle_render_failure(
         "jobId": job_id,
         "shardIndex": shard_index,
         "failedBatchJobId": parent_job_id,
+        "retryCount": retry_count + 1,
     })
-    return {"retriedRenderJobId": job_id, "shardIndex": shard_index}
+    return {
+        "retriedRenderJobId": job_id,
+        "shardIndex": shard_index,
+        "failureCategory": failure_category,
+        "retryCount": retry_count + 1,
+    }
 
 
 def _handle_rerender_failure(batch_job_id: str) -> dict[str, Any] | None:
@@ -248,9 +313,9 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     if prepare:
         log_event("batch_failure_handled", batch_job_id=parent_job_id, **prepare)
         return prepare
-    render = _handle_render_failure(parent_job_id, array_index, reason)
+    render = _handle_render_failure(parent_job_id, array_index, reason, detail)
     if render:
-        log_event("batch_failure_handled", batch_job_id=parent_job_id, **render)
+        log_event("render_batch_failure_handled", batch_job_id=parent_job_id, **render)
         return render
     rerender = _handle_rerender_failure(str(batch_job_id))
     result = rerender or {"ignored": True}

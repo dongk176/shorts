@@ -300,14 +300,26 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         allocationStrategy: "BEST_FIT_PROGRESSIVE",
       },
     });
-    const renderQueue = new batch.CfnJobQueue(this, "RenderJobQueue", {
+    const renderSchedulingPolicy = new batch.CfnSchedulingPolicy(
+      this,
+      "RenderFairSharePolicy",
+      {
+        name: `shorts-mvp-render-fair-share-${props.environment}`,
+        fairsharePolicy: {
+          computeReservation: 10,
+          shareDecaySeconds: 600,
+        },
+      },
+    );
+    const renderQueue = new batch.CfnJobQueue(this, "RenderFairShareJobQueue", {
       priority: 10,
       state: "ENABLED",
+      schedulingPolicyArn: renderSchedulingPolicy.attrArn,
       computeEnvironmentOrder: [
         { order: 1, computeEnvironment: renderSpot.ref },
         { order: 2, computeEnvironment: renderOnDemand.ref },
       ],
-      jobQueueName: `shorts-mvp-render-${props.environment}`,
+      jobQueueName: `shorts-mvp-render-fair-${props.environment}`,
     });
     const secret = (key: string) => ({
       name: key,
@@ -338,6 +350,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { name: "GEMINI_COMMENT_MODEL", value: "gemini-2.5-flash-lite" },
         { name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", value: "30" },
         { name: "OPENAI_TRANSCRIBE_MAX_WORKERS", value: "4" },
+        { name: "FFMPEG_THREADS", value: "2" },
       ],
       secrets: [
         secret("DATABASE_URL"),
@@ -354,10 +367,12 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { action: "RETRY", onExitCode: "*" },
       ],
     };
+    const prepareDefinitionName = `shorts-mvp-prepare-${props.environment}`;
+    const renderDefinitionName = `shorts-mvp-render-${props.environment}`;
     const prepareDefinition = new batch.CfnJobDefinition(this, "PrepareJobDefinition", {
       type: "container",
       platformCapabilities: ["FARGATE"],
-      jobDefinitionName: `shorts-mvp-prepare-${props.environment}`,
+      jobDefinitionName: prepareDefinitionName,
       retryStrategy: { attempts: 1 },
       timeout: { attemptDurationSeconds: 3600 },
       containerProperties: {
@@ -383,15 +398,15 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     const renderDefinition = new batch.CfnJobDefinition(this, "RenderJobDefinition", {
       type: "container",
       platformCapabilities: ["EC2"],
-      jobDefinitionName: `shorts-mvp-render-${props.environment}`,
-      retryStrategy: { attempts: 2 },
+      jobDefinitionName: renderDefinitionName,
+      retryStrategy: { attempts: 1 },
       timeout: { attemptDurationSeconds: 1200 },
       containerProperties: {
         ...baseContainer,
         image: `${repository.repositoryUri}:${workerImageTag}`,
         networkConfiguration: undefined,
         resourceRequirements: [
-          { type: "VCPU", value: "4" },
+          { type: "VCPU", value: "2" },
           { type: "MEMORY", value: "8192" },
         ],
       },
@@ -460,9 +475,9 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       AWS_BATCH_JOB_QUEUE: queue.ref,
       WORK_DISPATCH_QUEUE_URL: workQueue.queueUrl,
       PREPARE_BATCH_QUEUE: queue.ref,
-      PREPARE_JOB_DEFINITION: prepareDefinition.ref,
+      PREPARE_JOB_DEFINITION: prepareDefinitionName,
       RENDER_BATCH_QUEUE: renderQueue.ref,
-      RENDER_JOB_DEFINITION: renderDefinition.ref,
+      RENDER_JOB_DEFINITION: renderDefinitionName,
       STATE_EVENT_QUEUE_URL: stateQueue.queueUrl,
     };
     const lambdaCode = lambda.Code.fromAsset(path.join(__dirname, "../lambda"), {
@@ -477,6 +492,61 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       logGroupName: `/shorts-mvp/${props.environment}/batch-state`,
       retention: logs.RetentionDays.TWO_WEEKS,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    const renderMetricNamespace = `ShortsMvp/${props.environment}`;
+    new logs.MetricFilter(this, "RenderShortSucceededMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "render_short_succeeded" }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "RenderShortSucceeded",
+      metricValue: "1",
+    });
+    new logs.MetricFilter(this, "RenderShortDurationMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "render_short_succeeded" && $.elapsed_seconds = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "RenderShortDurationSeconds",
+      metricValue: "$.elapsed_seconds",
+    });
+    new logs.MetricFilter(this, "RenderQueueDelayMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "render_shard_started" && $.queue_delay_seconds = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "RenderQueueDelaySeconds",
+      metricValue: "$.queue_delay_seconds",
+    });
+    new logs.MetricFilter(this, "RenderPeakMemoryMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "render_short_succeeded" && $.container_peak_memory_bytes = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "RenderPeakMemoryBytes",
+      metricValue: "$.container_peak_memory_bytes",
+    });
+    new logs.MetricFilter(this, "RenderBatchFailureMetric", {
+      logGroup: batchStateLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "render_batch_failure_handled" }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "RenderBatchFailure",
+      metricValue: "1",
+    });
+    new logs.MetricFilter(this, "RenderBatchOomMetric", {
+      logGroup: batchStateLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "render_batch_failure_handled" && $.failureCategory = "oom" }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "RenderBatchOom",
+      metricValue: "1",
     });
     const cleanup = new lambda.Function(this, "CleanupFunction", {
       runtime: lambda.Runtime.PYTHON_3_12,

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
+from shorts_worker import worker_pipeline
 from shorts_worker.errors import (
     BotCheckError,
     IngestionError,
@@ -635,6 +637,26 @@ def _initial_render_worker(tmp_path, completion_result) -> BatchWorker:
     worker.renderer = MagicMock()
     worker._thumbnail = MagicMock()
     return worker
+
+
+def test_render_shard_processes_two_short_shard_sequentially() -> None:
+    worker = BatchWorker.__new__(BatchWorker)
+    worker.repository = MagicMock()
+    worker.repository.get_job.return_value = {"status": "rendering", "deadline_at": None}
+    worker.repository.get_render_shard.return_value = [
+        {"id": "short-a", "status": "rendering"},
+        {"id": "short-b", "status": "rendering"},
+    ]
+    rendered: list[str] = []
+    worker._render_initial_short = lambda item: rendered.append(str(item["id"]))
+
+    worker.render_shard("job-a", 0)
+
+    assert BatchWorker.RENDER_SHARD_SIZE == 2
+    assert rendered == ["short-a", "short-b"]
+    worker.repository.maybe_complete_job.assert_called_once_with("job-a")
+    source = Path(worker_pipeline.__file__).read_text(encoding="utf-8")
+    assert "ThreadPoolExecutor" not in source
 
 
 def _initial_render_item() -> dict[str, object]:

@@ -94,6 +94,9 @@ class Settings:
     ffmpeg_timeout_seconds: float = field(
         default_factory=lambda: _positive_float("FFMPEG_TIMEOUT_SECONDS", 300)
     )
+    ffmpeg_threads: int = field(
+        default_factory=lambda: _positive_int("FFMPEG_THREADS", 2)
+    )
     max_video_duration_seconds: int = field(
         default_factory=lambda: _positive_int("MAX_VIDEO_DURATION_SECONDS", 3600)
     )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import urllib.parse
@@ -10,6 +11,19 @@ import boto3
 from common import iso_now, log_event, patch, rest
 
 batch = boto3.client("batch")
+
+
+def _share_identifier(*values: object) -> str:
+    identity = next((str(value) for value in values if value), "anonymous")
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:40]
+    return f"user{digest}"
+
+
+def _render_container_overrides(command: list[str]) -> dict[str, object]:
+    return {
+        "command": command,
+        "environment": [{"name": "RENDER_SUBMITTED_AT", "value": iso_now()}],
+    }
 
 
 def _existing_batch_job(job_queue: str, job_name: str) -> str | None:
@@ -133,7 +147,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
         if recorded_ids:
             return sorted(recorded_ids)[0]
         jobs = rest("video_jobs", query=(
-            "select=id,status,deadline_at"
+            "select=id,status,deadline_at,mvp_session_id,user_id"
             f"&id=eq.{encoded_job_id}&limit=1"
         )) or []
         if not jobs or jobs[0]["status"] != "rendering":
@@ -145,10 +159,15 @@ def _submit(payload: dict[str, Any]) -> str | None:
             "jobName": f"shorts-render-{job_id}",
             "jobQueue": os.environ["RENDER_BATCH_QUEUE"],
             "jobDefinition": os.environ["RENDER_JOB_DEFINITION"],
-            "containerOverrides": {"command": [
+            "shareIdentifier": _share_identifier(
+                jobs[0].get("user_id"), jobs[0].get("mvp_session_id"), job_id
+            ),
+            "schedulingPriorityOverride": 0,
+            "parameters": {"renderRetryCount": "0"},
+            "containerOverrides": _render_container_overrides([
                 "python", "-m", "shorts_worker", "render-shard", "--job-id", job_id,
-            ]},
-            "retryStrategy": {"attempts": 2},
+            ]),
+            "retryStrategy": {"attempts": 1},
             "timeout": {"attemptDurationSeconds": 1200},
         }
         if count > 1:
@@ -164,6 +183,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
         job_id = str(payload["jobId"])
         shard_index = max(0, int(payload["shardIndex"]))
         failed_batch_id = str(payload["failedBatchJobId"])
+        retry_count = max(1, int(payload.get("retryCount") or 1))
         encoded_job_id = urllib.parse.quote(job_id, safe="")
         encoded_failed_batch_id = urllib.parse.quote(failed_batch_id, safe="")
         pending = rest("generated_shorts", query=(
@@ -173,7 +193,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
             "&status=eq.rendering&limit=1"
         )) or []
         jobs = rest("video_jobs", query=(
-            "select=id,status,deadline_at"
+            "select=id,status,deadline_at,mvp_session_id,user_id"
             f"&id=eq.{encoded_job_id}&limit=1"
         )) or []
         if not pending or not jobs or jobs[0]["status"] != "rendering":
@@ -182,17 +202,22 @@ def _submit(payload: dict[str, Any]) -> str | None:
         if deadline <= datetime.now(UTC):
             return None
         retry_name = (
-            f"shorts-render-retry-{job_id}-{shard_index}-{failed_batch_id}"
+            f"shorts-render-retry-{job_id}-{shard_index}-{retry_count}"
         )
         request = dict(
             jobName=retry_name,
             jobQueue=os.environ["RENDER_BATCH_QUEUE"],
             jobDefinition=os.environ["RENDER_JOB_DEFINITION"],
-            containerOverrides={"command": [
+            shareIdentifier=_share_identifier(
+                jobs[0].get("user_id"), jobs[0].get("mvp_session_id"), job_id
+            ),
+            schedulingPriorityOverride=0,
+            parameters={"renderRetryCount": str(retry_count)},
+            containerOverrides=_render_container_overrides([
                 "python", "-m", "shorts_worker", "render-shard", "--job-id", job_id,
                 "--shard-index", str(shard_index),
-            ]},
-            retryStrategy={"attempts": 2},
+            ]),
+            retryStrategy={"attempts": 1},
             timeout={"attemptDurationSeconds": 1200},
         )
         render_retry_id = _submit_once(
@@ -211,7 +236,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
         short_id = str(payload["shortId"])
         encoded_short_id = urllib.parse.quote(short_id, safe="")
         shorts = rest("generated_shorts", query=(
-            "select=id,status,render_version,rerender_batch_job_id"
+            "select=id,status,render_version,rerender_batch_job_id,mvp_session_id"
             f"&id=eq.{encoded_short_id}&status=eq.rerendering&limit=1"
         )) or []
         if not shorts:
@@ -223,9 +248,13 @@ def _submit(payload: dict[str, Any]) -> str | None:
             jobName=f"shorts-rerender-{short_id}-v{version}",
             jobQueue=os.environ["RENDER_BATCH_QUEUE"],
             jobDefinition=os.environ["RENDER_JOB_DEFINITION"],
-            containerOverrides={"command": [
+            shareIdentifier=_share_identifier(
+                shorts[0].get("mvp_session_id"), short_id
+            ),
+            schedulingPriorityOverride=0,
+            containerOverrides=_render_container_overrides([
                 "python", "-m", "shorts_worker", "rerender", "--short-id", short_id,
-            ]},
+            ]),
             retryStrategy={"attempts": 2},
             timeout={"attemptDurationSeconds": 600},
         )

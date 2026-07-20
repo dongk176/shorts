@@ -67,6 +67,16 @@ describe("shorts MVP infrastructure", () => {
     compute.hasResourceProperties("AWS::Batch::ComputeEnvironment", {
       ComputeResources: Match.objectLike({ MaxvCpus: 4000, MinvCpus: 0, Type: "EC2" }),
     });
+    compute.hasResourceProperties("AWS::Batch::SchedulingPolicy", {
+      FairsharePolicy: {
+        ComputeReservation: 10,
+        ShareDecaySeconds: 600,
+      },
+    });
+    compute.hasResourceProperties("AWS::Batch::JobQueue", {
+      JobQueueName: "shorts-mvp-render-fair-test",
+      SchedulingPolicyArn: Match.anyValue(),
+    });
     compute.hasResourceProperties("AWS::Batch::JobDefinition", {
       ContainerProperties: Match.objectLike({
         RuntimePlatform: {
@@ -108,6 +118,8 @@ describe("shorts MVP infrastructure", () => {
     expect(JSON.stringify(prepareJobDefinition)).toContain("test-worker-image-prepare");
     expect(JSON.stringify(renderJobDefinition)).toContain("test-worker-image");
     expect(JSON.stringify(renderJobDefinition)).not.toContain("test-worker-image-prepare");
+    expect(JSON.stringify(renderJobDefinition)).toContain('"Type":"VCPU","Value":"2"');
+    expect(JSON.stringify(renderJobDefinition)).toContain('"Type":"MEMORY","Value":"8192"');
     expect(JSON.stringify(compute.toJSON())).not.toContain(":latest");
     compute.hasResourceProperties("AWS::Batch::JobDefinition", {
       ContainerProperties: Match.objectLike({
@@ -120,6 +132,7 @@ describe("shorts MVP infrastructure", () => {
           { Name: "GEMINI_COMMENT_MODEL", Value: "gemini-2.5-flash-lite" },
           { Name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", Value: "30" },
           { Name: "OPENAI_TRANSCRIBE_MAX_WORKERS", Value: "4" },
+          { Name: "FFMPEG_THREADS", Value: "2" },
           { Name: "INGESTION_EGRESS_MODE", Value: "webshare_isp" },
           { Name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", Value: "30" },
         ]),
@@ -145,8 +158,10 @@ describe("shorts MVP infrastructure", () => {
     });
     compute.hasResourceProperties("AWS::Batch::JobDefinition", {
       JobDefinitionName: "shorts-mvp-render-test",
+      RetryStrategy: { Attempts: 1 },
       Timeout: { AttemptDurationSeconds: 1200 },
     });
+    compute.resourceCountIs("AWS::Logs::MetricFilter", 6);
     compute.resourceCountIs("AWS::SQS::Queue", 3);
     compute.hasResourceProperties("AWS::SQS::Queue", {
       VisibilityTimeout: 180,
@@ -154,6 +169,13 @@ describe("shorts MVP infrastructure", () => {
     compute.hasResourceProperties("AWS::Lambda::Function", {
       ReservedConcurrentExecutions: 10,
       Timeout: 30,
+      Handler: "batch_submitter.handler",
+      Environment: {
+        Variables: Match.objectLike({
+          PREPARE_JOB_DEFINITION: "shorts-mvp-prepare-test",
+          RENDER_JOB_DEFINITION: "shorts-mvp-render-test",
+        }),
+      },
     });
     compute.hasResourceProperties("AWS::Lambda::Function", {
       Handler: "outbox_dispatcher.handler",

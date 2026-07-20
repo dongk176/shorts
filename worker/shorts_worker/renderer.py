@@ -155,6 +155,8 @@ class VideoRenderer:
             f"{duration:.3f}",
             "-i",
             str(source_path),
+            "-filter_threads",
+            str(self.settings.ffmpeg_threads),
             "-vf",
             (
                 f"scale={CANVAS_WIDTH}:{target_height}:force_original_aspect_ratio=increase,"
@@ -162,6 +164,8 @@ class VideoRenderer:
             ),
             "-c:v",
             "libx264",
+            "-threads:v",
+            str(self.settings.ffmpeg_threads),
             "-preset",
             "veryfast",
             "-crf",
@@ -328,7 +332,14 @@ class VideoRenderer:
         if has_audio:
             filters.append("[0:a]asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11[audio]")
             audio_label = "audio"
-        command.extend(["-filter_complex", ";".join(filters), "-map", f"[{video_label}]"])
+        command.extend([
+            "-filter_complex_threads",
+            str(self.settings.ffmpeg_threads),
+            "-filter_complex",
+            ";".join(filters),
+            "-map",
+            f"[{video_label}]",
+        ])
         if audio_label:
             command.extend(["-map", f"[{audio_label}]"])
         command.extend(
@@ -337,6 +348,8 @@ class VideoRenderer:
                 f"{duration:.3f}",
                 "-c:v",
                 "libx264",
+                "-threads:v",
+                str(self.settings.ffmpeg_threads),
                 "-preset",
                 "veryfast",
                 "-crf",
@@ -471,7 +484,14 @@ class VideoRenderer:
         if has_audio:
             filters.append("[0:a]asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11[audio]")
             audio_label = "audio"
-        command.extend(["-filter_complex", ";".join(filters), "-map", f"[{video_label}]"])
+        command.extend([
+            "-filter_complex_threads",
+            str(self.settings.ffmpeg_threads),
+            "-filter_complex",
+            ";".join(filters),
+            "-map",
+            f"[{video_label}]",
+        ])
         if audio_label:
             command.extend(["-map", f"[{audio_label}]"])
         command.extend(
@@ -480,6 +500,8 @@ class VideoRenderer:
                 f"{duration:.3f}",
                 "-c:v",
                 "libx264",
+                "-threads:v",
+                str(self.settings.ffmpeg_threads),
                 "-preset",
                 "veryfast",
                 "-crf",
@@ -617,6 +639,8 @@ class VideoRenderer:
         )
         command.extend(
             [
+                "-filter_complex_threads",
+                str(self.settings.ffmpeg_threads),
                 "-filter_complex",
                 ";".join(filters),
                 "-map",
@@ -627,6 +651,8 @@ class VideoRenderer:
                 f"{duration:.3f}",
                 "-c:v",
                 "libx264",
+                "-threads:v",
+                str(self.settings.ffmpeg_threads),
                 "-preset",
                 "veryfast",
                 "-crf",

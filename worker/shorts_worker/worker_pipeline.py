@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import math
 import os
+import resource
 import shutil
+import sys
 import tempfile
 import threading
 import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from functools import cached_property
@@ -58,6 +59,30 @@ def _log_event(event: str, **fields: object) -> None:
     print(json.dumps({"event": event, **fields}, separators=(",", ":"), default=str), flush=True)
 
 
+def _container_memory_peak_bytes() -> int:
+    for path in (
+        Path("/sys/fs/cgroup/memory.peak"),
+        Path("/sys/fs/cgroup/memory/memory.max_usage_in_bytes"),
+    ):
+        try:
+            return max(0, int(path.read_text(encoding="utf-8").strip()))
+        except (OSError, ValueError):
+            continue
+    peak = int(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
+    return peak if sys.platform == "darwin" else peak * 1024
+
+
+def _render_queue_delay_seconds() -> float | None:
+    submitted_at = os.getenv("RENDER_SUBMITTED_AT")
+    if not submitted_at:
+        return None
+    try:
+        submitted = datetime.fromisoformat(submitted_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return round(max(0.0, (datetime.now(UTC) - submitted).total_seconds()), 3)
+
+
 def classify_full_source_download(
     *,
     source_duration_seconds: float,
@@ -83,6 +108,7 @@ class BatchWorker:
     MAX_INLINE_INGESTION_ROUTES = 10
     INGESTION_ROUTE_WAIT_SECONDS = 30.0
     INGESTION_ROUTE_POLL_SECONDS = 1.0
+    RENDER_SHARD_SIZE = 2
 
     def __init__(self, settings: Settings) -> None:
         settings.validate_runtime()
@@ -669,7 +695,7 @@ class BatchWorker:
                         comment_overlays=comments_by_clip[index],
                         clean_key=clean_key,
                         retention_days=int(job["retention_days"]),
-                        shard_index=(index - 1) // 4,
+                        shard_index=(index - 1) // self.RENDER_SHARD_SIZE,
                     )
                     if not inserted:
                         try:
@@ -679,7 +705,9 @@ class BatchWorker:
                         raise RuntimeError("작업 제한 시간이 종료되었습니다.")
                 if not self.repository.mark_render_queued(job_id, len(clips)):
                     raise RuntimeError("작업 제한 시간이 종료되었습니다.")
-                shard_count = (len(clips) + 3) // 4
+                shard_count = (
+                    len(clips) + self.RENDER_SHARD_SIZE - 1
+                ) // self.RENDER_SHARD_SIZE
                 if self.queue.queue_url:
                     self.queue.send(
                         {
@@ -839,28 +867,55 @@ class BatchWorker:
             self.repository.maybe_complete_job(job_id)
             return
 
-        failures: list[Exception] = []
-        with ThreadPoolExecutor(max_workers=min(2, len(pending))) as executor:
-            futures = [executor.submit(self._render_initial_short, item) for item in pending]
-            for future in as_completed(futures):
-                try:
-                    future.result()
-                except Exception as exc:
-                    failures.append(exc)
-        if failures:
+        started_at = time.monotonic()
+        _log_event(
+            "render_shard_started",
+            job_id=job_id,
+            shard_index=shard_index,
+            pending_count=len(pending),
+            queue_delay_seconds=_render_queue_delay_seconds(),
+            batch_job_id=os.getenv("AWS_BATCH_JOB_ID"),
+        )
+        try:
+            for item in pending:
+                self._render_initial_short(item)
+        except Exception as exc:
             _log_event(
                 "render_shard_failed",
                 job_id=job_id,
                 shard_index=shard_index,
-                error_type=type(failures[0]).__name__,
+                elapsed_seconds=round(time.monotonic() - started_at, 3),
+                error_type=type(exc).__name__,
+                container_peak_memory_bytes=_container_memory_peak_bytes(),
             )
-            raise failures[0]
+            raise
         self.repository.maybe_complete_job(job_id)
+        _log_event(
+            "render_shard_succeeded",
+            job_id=job_id,
+            shard_index=shard_index,
+            elapsed_seconds=round(time.monotonic() - started_at, 3),
+            rendered_count=len(pending),
+            container_peak_memory_bytes=_container_memory_peak_bytes(),
+        )
 
     def _render_initial_short(self, item: dict[str, object]) -> None:
         short_id = str(item["id"])
         if not self.repository.begin_initial_render(short_id):
             return
+        started_at = time.monotonic()
+        clip_duration_seconds = max(
+            0.0,
+            float(item.get("end_seconds") or 0) - float(item.get("start_seconds") or 0),
+        )
+        _log_event(
+            "render_short_started",
+            job_id=item["job_id"],
+            short_id=short_id,
+            clip_duration_seconds=round(clip_duration_seconds, 3),
+            template_id=item["template_id"],
+            batch_attempt=os.getenv("AWS_BATCH_JOB_ATTEMPT", "1"),
+        )
         work_dir = self.settings.temp_dir / f"render-{short_id}"
         uploaded_keys: list[str] = []
         committed = False
@@ -933,6 +988,15 @@ class BatchWorker:
                             self.storage.delete(key)
                         except Exception:
                             pass
+            _log_event(
+                "render_short_succeeded" if committed else "render_short_discarded",
+                job_id=item["job_id"],
+                short_id=short_id,
+                elapsed_seconds=round(time.monotonic() - started_at, 3),
+                clip_duration_seconds=round(clip_duration_seconds, 3),
+                output_size_bytes=size,
+                container_peak_memory_bytes=_container_memory_peak_bytes(),
+            )
         except Exception as exc:
             # Once the commit request has started its outcome can be ambiguous: the
             # database may already point at these keys even if the response was lost.
@@ -944,6 +1008,15 @@ class BatchWorker:
                     except Exception:
                         pass
             self.repository.fail_initial_render(short_id, type(exc).__name__, str(exc))
+            _log_event(
+                "render_short_failed",
+                job_id=item["job_id"],
+                short_id=short_id,
+                elapsed_seconds=round(time.monotonic() - started_at, 3),
+                clip_duration_seconds=round(clip_duration_seconds, 3),
+                error_type=type(exc).__name__,
+                container_peak_memory_bytes=_container_memory_peak_bytes(),
+            )
             raise
         finally:
             shutil.rmtree(work_dir, ignore_errors=True)
