@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
 import type { CommentOverlay, VideoAspectRatio } from "@/lib/contracts";
 import { videoAspectRatioOptions } from "@/lib/contracts";
 import { stockBackgrounds, type CustomTemplate } from "@/lib/template-config";
@@ -224,9 +225,8 @@ function CustomTemplatePreview({ template }: { template: CustomTemplate }) {
   const textPosition = (x: number, y: number, width: number) => ({ left: `${x / 10.8}%`, top: `${y / 19.2}%`, width: `${width / 10.8}%`, transform: "translate(-50%, -50%)" });
   return <div className="relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg" style={{ ...background, containerType: "inline-size" }}>
     <div className="absolute bg-neutral-700" style={{ left: `${config.video.x / 10.8}%`, top: `${config.video.y / 19.2}%`, width: `${config.video.width / 10.8}%`, height: `${config.video.height / 19.2}%` }}><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" /></div>
-    {config.title.visible && <div className="absolute z-20 whitespace-pre-line rounded px-[1.5cqw] py-[.8cqw] text-center font-black leading-tight" style={{ ...textPosition(config.title.x, config.title.y, config.title.maxWidth), color: config.title.primaryColor, backgroundColor: config.title.backgroundColor || "transparent", fontSize: `${config.title.fontSize / 10.8}cqw` }}>놓치면 후회할<br /><span style={{ color: config.title.accentColor }}>핵심 한 가지</span></div>}
+    <CustomTemplateTitlePreview title={config.title} firstLine="놓치면 후회할" secondLine="핵심 한 가지" />
     {config.channel.visible && <div className="absolute z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold" style={{ ...textPosition(config.channel.x, config.channel.y, config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: `${config.channel.fontSize / 10.8}cqw` }}>● Easy Cut</div>}
-    {config.subtitle.visible && <div className="absolute z-40 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold" style={{ ...textPosition(config.subtitle.x, config.subtitle.y, config.subtitle.maxWidth), color: config.subtitle.color, backgroundColor: config.subtitle.backgroundColor || "transparent", fontSize: `${config.subtitle.fontSize / 10.8}cqw` }}>실제 자막 미리보기</div>}
   </div>;
 }
 

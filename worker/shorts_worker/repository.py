@@ -15,12 +15,6 @@ from psycopg.types.json import Jsonb
 _SOURCE_DOWNLOAD_STATUSES = frozenset({"full_source_expected", "unexpected_duration"})
 
 
-def _custom_subtitles_enabled(job: dict[str, Any]) -> bool:
-    snapshot = job.get("template_snapshot") or {}
-    config = snapshot.get("config") or {}
-    return bool(config.get("subtitle", {}).get("visible", False))
-
-
 class WorkerRepository:
     def __init__(self, database_url: str, aws_region: str) -> None:
         self.database_url = database_url
@@ -424,7 +418,7 @@ class WorkerRepository:
                     highlight_reason,
                     job["channel_name"],
                     Jsonb(subtitles),
-                    _custom_subtitles_enabled(job),
+                    False,
                     Jsonb(comment_overlays),
                     job["template_id"],
                     job.get("custom_template_id"),
@@ -569,7 +563,7 @@ class WorkerRepository:
                     highlight_reason,
                     (" ".join(str(job["channel_name"]).split())[:50] or "YouTube 채널"),
                     Jsonb(subtitles),
-                    _custom_subtitles_enabled(job),
+                    False,
                     Jsonb(comment_overlays),
                     job["template_id"],
                     job.get("custom_template_id"),

@@ -9,10 +9,17 @@ from shorts_worker.overlays import (
     create_ass_subtitles,
     create_channel_panel,
     create_comment_panel,
+    create_custom_canvas_overlays,
     create_title_panel,
     wrap_korean_title,
 )
-from shorts_worker.schemas import CommentOverlay, SubtitleSegment, TemplateId, TitleTextStyle
+from shorts_worker.schemas import (
+    CommentOverlay,
+    CustomTemplateConfig,
+    SubtitleSegment,
+    TemplateId,
+    TitleTextStyle,
+)
 from shorts_worker.subtitles import AudioTranscriber
 
 
@@ -37,6 +44,64 @@ def test_korean_title_overlay_is_created(tmp_path: Path) -> None:
         tmp_path / "title.png",
     )
     assert output.is_file()
+
+
+def test_custom_title_lines_use_independent_background_colors(tmp_path: Path) -> None:
+    config = CustomTemplateConfig.model_validate(
+        {
+            "schemaVersion": 2,
+            "background": {"kind": "color", "color": "#111111"},
+            "video": {
+                "aspectRatio": "5:4",
+                "x": 0,
+                "y": 528,
+                "width": 1080,
+                "height": 864,
+                "fit": "cover",
+            },
+            "title": {
+                "visible": True,
+                "x": 540,
+                "y": 260,
+                "maxWidth": 900,
+                "fontSize": 72,
+                "primaryColor": "#FFFFFF",
+                "accentColor": "#FF4D4F",
+                "primaryBackgroundColor": "#16A34A",
+                "accentBackgroundColor": "#2563EB",
+            },
+            "subtitle": {
+                "visible": False,
+                "x": 540,
+                "y": 1400,
+                "maxWidth": 900,
+                "fontSize": 48,
+                "color": "#FFFFFF",
+                "backgroundColor": "#000000",
+            },
+            "channel": {
+                "visible": False,
+                "x": 540,
+                "y": 1700,
+                "maxWidth": 800,
+                "fontSize": 42,
+                "color": "#FFFFFF",
+                "backgroundColor": None,
+            },
+        }
+    )
+    _, title_path, _ = create_custom_canvas_overlays(
+        title="첫 번째 줄\n두 번째 줄",
+        channel_name="테스트 채널",
+        config=config,
+        directory=tmp_path,
+        prefix="line-backgrounds",
+    )
+
+    with Image.open(title_path).convert("RGBA") as image:
+        colors = {color for _, color in image.getcolors(maxcolors=1_000_000) or []}
+    assert (22, 163, 74, 255) in colors
+    assert (37, 99, 235, 255) in colors
 
 
 def test_title_overlay_applies_colors_only_to_selected_character_range(tmp_path: Path) -> None:
@@ -216,12 +281,14 @@ def test_full_vertical_panels_keep_transparent_canvas_and_box_both_title_lines(
             assert image.getbbox() is not None
     with Image.open(title).convert("RGBA") as image:
         assert image.getpixel((100, 180))[3] == 0
-        red_rows = sorted({
-            y
-            for y in range(image.height)
-            for x in range(image.width)
-            if image.getpixel((x, y)) == (227, 38, 38, 255)
-        })
+        red_rows = sorted(
+            {
+                y
+                for y in range(image.height)
+                for x in range(image.width)
+                if image.getpixel((x, y)) == (227, 38, 38, 255)
+            }
+        )
         assert red_rows
         assert any(
             current - previous > 1
@@ -292,9 +359,7 @@ def test_gpt4o_mini_transcription_uses_supported_json_response(tmp_path: Path) -
         (),
         {"audio": type("Audio", (), {"transcriptions": Transcriptions()})()},
     )()
-    transcriber = AudioTranscriber(
-        Settings(openai_transcribe_model="gpt-4o-mini-transcribe")
-    )
+    transcriber = AudioTranscriber(Settings(openai_transcribe_model="gpt-4o-mini-transcribe"))
     result = transcriber._transcribe_chunk(
         client,
         index=0,

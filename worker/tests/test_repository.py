@@ -144,10 +144,7 @@ def test_pending_short_uses_one_database_clock_for_creation_and_expiry() -> None
 
     assert "file_size_bytes, created_at," in implementation
     assert "now()," in implementation
-    assert (
-        "now() + make_interval(days => least(greatest(%s::integer, 1), 30))"
-        in implementation
-    )
+    assert "now() + make_interval(days => least(greatest(%s::integer, 1), 30))" in implementation
     assert "expires_at: Any" not in implementation
     assert "when generated_shorts.comment_overlays='[]'::jsonb" in implementation
     assert "else generated_shorts.comment_overlays" in implementation
@@ -171,6 +168,7 @@ def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> 
             "mvp_session_id": "session-a",
             "channel_name": "channel-a",
             "template_id": "dark-red",
+            "template_snapshot": {"config": {"subtitle": {"visible": True}}},
         },
         clip_index=1,
         start_seconds=10,
@@ -198,6 +196,7 @@ def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> 
     assert "selection_raw_start_seconds" in insert_call.args[0]
     assert "selection_length_adjustment=excluded.selection_length_adjustment" in insert_call.args[0]
     assert insert_call.args[0].count("%s") == len(insert_call.args[1])
+    assert insert_call.args[1][20] is False
     assert insert_call.args[1][-2] == 30
 
 

@@ -391,18 +391,13 @@ class VideoRenderer:
             for index, (comment, _, _) in enumerate(comment_windows)
         ]
         ass_path = None
-        if subtitles_enabled and config.subtitle.visible:
+        if subtitles_enabled:
             ass_path = create_ass_subtitles(
                 transcript,
                 clip_start=0,
                 clip_end=duration,
                 output_path=work_dir / "subtitles" / f"{prefix}.ass",
-                margin_v=max(0, CANVAS_HEIGHT - config.subtitle.y - config.subtitle.font_size),
-                margin_l=max(0, (CANVAS_WIDTH - config.subtitle.max_width) // 2),
-                margin_r=max(0, (CANVAS_WIDTH - config.subtitle.max_width) // 2),
-                font_size=config.subtitle.font_size,
-                text_color=config.subtitle.color,
-                background_color=config.subtitle.background_color,
+                margin_v=445,
             )
         frame = config.video
         filters = [

@@ -15,6 +15,7 @@ from shorts_worker.schemas import (
     CustomTemplateConfig,
     HighlightClip,
     TemplateId,
+    TemplateTitleLayer,
     VideoAspectRatio,
     default_comment_overlays,
 )
@@ -236,6 +237,24 @@ def test_custom_template_config_rejects_video_outside_canvas() -> None:
         )
 
 
+def test_custom_title_layer_upgrades_a_legacy_shared_background() -> None:
+    title = TemplateTitleLayer.model_validate(
+        {
+            "visible": True,
+            "x": 540,
+            "y": 260,
+            "maxWidth": 900,
+            "fontSize": 72,
+            "primaryColor": "#FFFFFF",
+            "accentColor": "#FF4D4F",
+            "backgroundColor": "#E32626",
+        }
+    )
+
+    assert title.primary_background_color == "#E32626"
+    assert title.accent_background_color == "#E32626"
+
+
 @pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
@@ -264,7 +283,7 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
     )
     config = CustomTemplateConfig.model_validate(
         {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "background": {"kind": "color", "color": "#111111"},
             "video": {
                 "aspectRatio": "16:9",
@@ -282,7 +301,8 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
                 "fontSize": 72,
                 "primaryColor": "#FFFFFF",
                 "accentColor": "#FF4D4F",
-                "backgroundColor": None,
+                "primaryBackgroundColor": "#16A34A",
+                "accentBackgroundColor": "#2563EB",
             },
             "subtitle": {
                 "visible": True,

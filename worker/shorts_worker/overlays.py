@@ -479,34 +479,38 @@ def _draw_reaction_icon(
     *,
     down: bool = False,
 ) -> None:
-    # YouTube-style outlined thumb: a separate cuff and a naturally tapered hand.
-    points = [
-        (x + size * 0.31, y + size * 0.43),
-        (x + size * 0.47, y + size * 0.10),
-        (x + size * 0.52, y + size * 0.04),
-        (x + size * 0.60, y + size * 0.05),
-        (x + size * 0.64, y + size * 0.12),
-        (x + size * 0.62, y + size * 0.33),
-        (x + size * 0.84, y + size * 0.33),
-        (x + size * 0.94, y + size * 0.38),
-        (x + size * 0.98, y + size * 0.48),
-        (x + size * 0.89, y + size * 0.85),
-        (x + size * 0.82, y + size * 0.92),
-        (x + size * 0.31, y + size * 0.92),
-        (x + size * 0.31, y + size * 0.43),
-    ]
-    if down:
-        points = [(px, y + size - (py - y)) for px, py in points]
-    stroke = max(2, round(size * 0.065))
-    draw.line(points, fill="#D0D0D0", width=stroke, joint="curve")
-    cuff_top = y + size * (0.43 if not down else 0.08)
-    cuff_bottom = y + size * (0.92 if not down else 0.57)
-    draw.rounded_rectangle(
-        (x + size * 0.02, cuff_top, x + size * 0.26, cuff_bottom),
-        radius=max(2, round(size * 0.055)),
-        outline="#D0D0D0",
-        width=stroke,
+    # Rounded, continuous YouTube-style hand outline. The dislike icon is the
+    # same silhouette rotated 180 degrees, including its wrist.
+    outline = (
+        (0.08, 0.53),
+        (0.25, 0.51),
+        (0.31, 0.45),
+        (0.43, 0.11),
+        (0.47, 0.06),
+        (0.55, 0.07),
+        (0.61, 0.12),
+        (0.63, 0.20),
+        (0.58, 0.42),
+        (0.81, 0.42),
+        (0.91, 0.45),
+        (0.97, 0.51),
+        (0.98, 0.59),
+        (0.94, 0.68),
+        (0.92, 0.77),
+        (0.86, 0.87),
+        (0.78, 0.92),
+        (0.36, 0.92),
+        (0.25, 0.86),
+        (0.13, 0.85),
+        (0.07, 0.80),
+        (0.07, 0.58),
     )
+    if down:
+        outline = tuple((1 - px, 1 - py) for px, py in outline)
+    points = [(x + size * px, y + size * py) for px, py in outline]
+    points.append(points[0])
+    stroke = max(3, round(size * 0.09))
+    draw.line(points, fill="#F1F1F1", width=stroke, joint="curve")
 
 
 def create_comment_panel(
@@ -556,7 +560,7 @@ def create_comment_panel(
         fill="#F0F0F0",
     )
     base.alpha_composite(
-        metadata.filter(ImageFilter.GaussianBlur(radius=max(5, round(8.2 * scale))))
+        metadata.filter(ImageFilter.GaussianBlur(radius=max(3, round(5.5 * scale))))
     )
 
     # A subtle whole-detail blur keeps the strip feeling like a captured social
@@ -660,7 +664,8 @@ def _draw_centered_custom_text(
     max_width: int,
     font_size: int,
     color: str,
-    background_color: str | None,
+    primary_background_color: str | None,
+    accent_background_color: str | None,
     accent_color: str | None = None,
 ) -> None:
     draw = ImageDraw.Draw(image)
@@ -677,7 +682,11 @@ def _draw_centered_custom_text(
     for index, (line, box, height) in enumerate(zip(lines, boxes, heights, strict=True)):
         width = box[2] - box[0]
         left = x - width / 2
-        if background_color:
+        is_accent_line = index > 0
+        line_background_color = (
+            accent_background_color if is_accent_line else primary_background_color
+        )
+        if line_background_color:
             padding_x = max(10, round(font_size * 0.28))
             padding_y = max(6, round(font_size * 0.14))
             draw.rounded_rectangle(
@@ -688,13 +697,13 @@ def _draw_centered_custom_text(
                     cursor_y + height + padding_y,
                 ),
                 radius=max(6, round(font_size * 0.14)),
-                fill=background_color,
+                fill=line_background_color,
             )
         draw.text(
             (left - box[0], cursor_y - box[1]),
             line,
             font=font,
-            fill=accent_color if accent_color and index == len(lines) - 1 else color,
+            fill=accent_color if accent_color and is_accent_line else color,
         )
         cursor_y += height + gap
 
@@ -738,7 +747,8 @@ def create_custom_canvas_overlays(
             font_size=config.title.font_size,
             color=config.title.primary_color,
             accent_color=config.title.accent_color,
-            background_color=config.title.background_color,
+            primary_background_color=config.title.primary_background_color,
+            accent_background_color=config.title.accent_background_color,
         )
     title_image.save(title_path, format="PNG", optimize=True)
 

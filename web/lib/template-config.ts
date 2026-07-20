@@ -26,6 +26,34 @@ export const templatePresetColors = [
 
 export type TemplatePresetColor = (typeof templatePresetColors)[number];
 
+export const templatePresetColorNames: Record<TemplatePresetColor, string> = {
+  "#000000": "블랙",
+  "#111111": "딥 차콜",
+  "#1B1B1E": "차콜",
+  "#353438": "웜 그레이",
+  "#64748B": "슬레이트",
+  "#FFFFFF": "화이트",
+  "#F3F0E9": "아이보리",
+  "#E32626": "딥 레드",
+  "#FF4D4F": "레드",
+  "#FF715E": "코랄",
+  "#FFB4A8": "소프트 코랄",
+  "#F97316": "오렌지",
+  "#FFD84D": "옐로",
+  "#8BFF5A": "라임",
+  "#16A34A": "그린",
+  "#35E6E3": "아쿠아",
+  "#3B82F6": "블루",
+  "#2563EB": "딥 블루",
+  "#A78BFA": "퍼플",
+  "#DB2777": "핑크",
+};
+
+export const templatePresetColorOptions = templatePresetColors.map((color) => ({
+  color,
+  name: templatePresetColorNames[color],
+}));
+
 const colorSchema = z.enum(templatePresetColors);
 const backgroundSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("color"), color: colorSchema }).strict(),
@@ -42,25 +70,63 @@ const textLayerSchema = z.object({
   backgroundColor: colorSchema.nullable(),
 }).strict();
 
-export const templateConfigSchema = z.object({
-  schemaVersion: z.literal(1),
+const videoLayerSchema = z.object({
+  aspectRatio: z.enum(videoAspectRatios),
+  x: z.number().int().min(0).max(TEMPLATE_CANVAS.width - 240),
+  y: z.number().int().min(0).max(TEMPLATE_CANVAS.height - 135),
+  width: z.number().int().min(240).max(TEMPLATE_CANVAS.width),
+  height: z.number().int().min(135).max(TEMPLATE_CANVAS.height),
+  fit: z.literal("cover"),
+}).strict();
+
+const legacyTitleLayerSchema = textLayerSchema.extend({
+  fontSize: z.number().int().min(24).max(96),
+  primaryColor: colorSchema,
+  accentColor: colorSchema,
+}).omit({ color: true }).strict();
+
+const titleLayerSchema = textLayerSchema.omit({ color: true, backgroundColor: true }).extend({
+  fontSize: z.number().int().min(24).max(96),
+  primaryColor: colorSchema,
+  accentColor: colorSchema,
+  primaryBackgroundColor: colorSchema.nullable(),
+  accentBackgroundColor: colorSchema.nullable(),
+}).strict();
+
+const sharedTemplateLayers = {
   background: backgroundSchema,
-  video: z.object({
-    aspectRatio: z.enum(videoAspectRatios),
-    x: z.number().int().min(0).max(TEMPLATE_CANVAS.width - 240),
-    y: z.number().int().min(0).max(TEMPLATE_CANVAS.height - 135),
-    width: z.number().int().min(240).max(TEMPLATE_CANVAS.width),
-    height: z.number().int().min(135).max(TEMPLATE_CANVAS.height),
-    fit: z.literal("cover"),
-  }).strict(),
-  title: textLayerSchema.extend({
-    fontSize: z.number().int().min(24).max(96),
-    primaryColor: colorSchema,
-    accentColor: colorSchema,
-  }).omit({ color: true }).strict(),
+  video: videoLayerSchema,
   subtitle: textLayerSchema.extend({ fontSize: z.number().int().min(24).max(72) }).strict(),
   channel: textLayerSchema.extend({ fontSize: z.number().int().min(20).max(64) }).strict(),
-}).strict().superRefine((config, context) => {
+} as const;
+
+const currentTemplateConfigSchema = z.object({
+  schemaVersion: z.literal(2),
+  ...sharedTemplateLayers,
+  title: titleLayerSchema,
+}).strict();
+
+const legacyTemplateConfigSchema = z.object({
+  schemaVersion: z.literal(1),
+  ...sharedTemplateLayers,
+  title: legacyTitleLayerSchema,
+}).strict().transform((config) => {
+  const { backgroundColor, ...title } = config.title;
+  return {
+    ...config,
+    schemaVersion: 2 as const,
+    title: {
+      ...title,
+      primaryBackgroundColor: backgroundColor,
+      accentBackgroundColor: backgroundColor,
+    },
+  };
+});
+
+export const templateConfigSchema = z.union([
+  currentTemplateConfigSchema,
+  legacyTemplateConfigSchema,
+]).superRefine((config, context) => {
   const expectedHeight = Math.round(config.video.width * aspectHeightRatio(config.video.aspectRatio));
   if (Math.abs(config.video.height - expectedHeight) > 1) {
     context.addIssue({ code: "custom", path: ["video", "height"], message: "영상 프레임 비율이 올바르지 않습니다." });
@@ -115,16 +181,16 @@ export function createDefaultTemplateConfig(baseTemplateId: TemplateId = "dark-m
   const light = baseTemplateId === "white-yellow" || baseTemplateId === "paper";
   const accent = baseTemplateId === "comment-capture" ? "#35E6E3" : baseTemplateId === "white-yellow" ? "#FFD84D" : "#FF4D4F";
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     background: { kind: "color", color: light ? "#F3F0E9" : "#111111" },
     video: videoFrameForAspect("5:4"),
     title: {
       visible: true, x: 540, y: 250, maxWidth: 920, fontSize: 72,
       primaryColor: light ? "#111111" : "#FFFFFF", accentColor: accent,
-      backgroundColor: null,
+      primaryBackgroundColor: null, accentBackgroundColor: null,
     },
     subtitle: {
-      visible: true, x: 540, y: 1410, maxWidth: 900, fontSize: 48,
+      visible: false, x: 540, y: 1410, maxWidth: 900, fontSize: 48,
       color: "#FFFFFF", backgroundColor: "#000000",
     },
     channel: {

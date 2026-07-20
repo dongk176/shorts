@@ -6,17 +6,21 @@ import {
   TEMPLATE_CANVAS,
   aspectHeightRatio,
   stockBackgrounds,
-  templatePresetColors,
+  templatePresetColorOptions,
   videoFrameForAspect,
   type CustomTemplate,
+  type TemplatePresetColor,
   type TemplateConfig,
 } from "@/lib/template-config";
 import { videoAspectRatioOptions, type TemplateId, type VideoAspectRatio } from "@/lib/contracts";
 
-type LayerId = "video" | "title" | "subtitle" | "channel";
+type LayerId = "video" | "title" | "channel";
 type History = { past: TemplateConfig[]; present: TemplateConfig; future: TemplateConfig[] };
 
-const layerLabels: Record<LayerId, string> = { video: "영상", title: "제목", subtitle: "자막", channel: "채널명" };
+const layerLabels: Record<LayerId, string> = { video: "영상", title: "제목", channel: "채널명" };
+const compactTextColors = ["#FFFFFF", "#111111", "#35E6E3"] as const satisfies readonly TemplatePresetColor[];
+const compactTextBackgroundColors = ["#111111", "#FFFFFF"] as const satisfies readonly TemplatePresetColor[];
+const compactBackgroundColors = ["#000000", "#111111", "#FFFFFF", "#F3F0E9", "#E32626", "#2563EB"] as const satisfies readonly TemplatePresetColor[];
 
 function cloneConfig(config: TemplateConfig) {
   return structuredClone(config);
@@ -42,13 +46,25 @@ function layerPosition(x: number, y: number, width: number): React.CSSProperties
   };
 }
 
-function ColorPalette({ value, onChange, allowNone = false }: { value: string | null; onChange: (value: (typeof templatePresetColors)[number] | null) => void; allowNone?: boolean }) {
+function compactColorOptions(value: TemplatePresetColor | null, colors: readonly TemplatePresetColor[]) {
+  const defaults = colors.map((color) => templatePresetColorOptions.find((option) => option.color === color)!);
+  if (!value || defaults.some((option) => option.color === value)) return defaults;
+  const selected = templatePresetColorOptions.find((option) => option.color === value);
+  return selected ? [selected, ...defaults.slice(0, colors.length - 1)] : defaults;
+}
+
+function ColorPalette({ value, onChange, allowNone = false }: { value: TemplatePresetColor | null; onChange: (value: TemplatePresetColor | null) => void; allowNone?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleOptions = expanded
+    ? templatePresetColorOptions
+    : compactColorOptions(value, allowNone ? compactTextBackgroundColors : compactTextColors);
   return (
-    <div className="grid grid-cols-7 gap-2">
-      {allowNone && <button type="button" title="배경 없음" aria-label="배경 없음" aria-pressed={value === null} onClick={() => onChange(null)} className={`relative aspect-square rounded-md border ${value === null ? "border-[#ff715e] ring-2 ring-[#ff715e]/25" : "border-white/10"}`}><span className="absolute inset-x-1 top-1/2 h-px -rotate-45 bg-red-400" /></button>}
-      {templatePresetColors.map((color) => (
-        <button key={color} type="button" title={color} aria-label={color} aria-pressed={value === color} onClick={() => onChange(color)} className={`aspect-square rounded-md border ${value === color ? "border-white ring-2 ring-[#ff715e]/60" : "border-white/10"}`} style={{ backgroundColor: color }} />
+    <div className="flex flex-wrap gap-2">
+      {allowNone && <button type="button" title="없음" aria-label="배경 없음" aria-pressed={value === null} onClick={() => onChange(null)} className={`flex h-8 w-8 items-center justify-center rounded-full border border-dashed text-[8px] font-bold transition ${value === null ? "border-[#ff715e] text-white ring-2 ring-[#ff715e]/25" : "border-white/35 bg-white/[.03] text-neutral-400 hover:border-white/60 hover:text-white"}`}>없음</button>}
+      {visibleOptions.map((option) => (
+        <button key={option.color} type="button" title={option.name} aria-label={`색상 ${option.name}`} aria-pressed={value === option.color} onClick={() => onChange(option.color)} className={`h-8 w-8 rounded-full border border-white/20 transition ${value === option.color ? "ring-2 ring-[#ff715e] ring-offset-2 ring-offset-[#19191c]" : "hover:scale-105 hover:border-white/50"}`} style={{ backgroundColor: option.color }} />
       ))}
+      <button type="button" title={expanded ? "접기" : "전체 보기"} aria-label={expanded ? "색상 접기" : "색상 전체 보기"} aria-expanded={expanded} onClick={() => setExpanded((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-neutral-200 transition hover:border-white/40 hover:bg-[#454449]">{expanded ? "−" : "+"}</button>
     </div>
   );
 }
@@ -58,6 +74,7 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
   const [name, setName] = useState(initialTemplate?.name || "나의 템플릿");
   const [selectedLayer, setSelectedLayer] = useState<LayerId>("title");
   const [zoom, setZoom] = useState(1);
+  const [showAllBackgroundColors, setShowAllBackgroundColors] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [savedTemplate, setSavedTemplate] = useState(initialTemplate);
@@ -201,10 +218,12 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
   const background = backgroundStyle(config);
   const titleStyle = {
     ...layerPosition(config.title.x, config.title.y, config.title.maxWidth),
-    color: config.title.primaryColor,
     fontSize: `${(config.title.fontSize / TEMPLATE_CANVAS.width) * 100}cqw`,
-    backgroundColor: config.title.backgroundColor || "transparent",
   };
+  const selectedBackgroundColor = config.background.kind === "color" ? config.background.color : null;
+  const visibleBackgroundColors = showAllBackgroundColors
+    ? templatePresetColorOptions
+    : compactColorOptions(selectedBackgroundColor, compactBackgroundColors);
 
   return (
     <div className="min-h-dvh bg-[#101012] text-neutral-100">
@@ -217,19 +236,18 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
           </div>
         </header>
 
-        <main className="min-h-dvh pb-10 pl-6 pr-[344px] pt-24">
+        <main className="min-h-dvh pb-10 pl-6 pr-[504px] pt-24">
           <div className="mx-auto flex max-w-[920px] flex-col items-center">
             <div className="mb-4 flex w-full max-w-[500px] items-center justify-between text-xs font-bold text-neutral-500"><span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-emerald-300">● LIVE PREVIEW</span><span>9:16 · 1080 × 1920</span></div>
-            <div className="flex min-h-[680px] w-full items-center justify-center overflow-auto rounded-2xl border border-white/[.06] bg-[#09090a] p-8 shadow-inner">
+            <div className="flex min-h-[680px] w-full items-center justify-center overflow-auto">
               <div style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}>
                 <div ref={canvasRef} className="relative aspect-[9/16] w-[360px] touch-none overflow-hidden rounded-[12px] shadow-[0_30px_100px_rgba(0,0,0,.65)]" style={{ ...background, containerType: "inline-size" }} onPointerDown={() => setSelectedLayer("video")}>
                   <div onPointerDown={(event) => beginPointerAction(event, "video")} className={`absolute cursor-move overflow-hidden bg-neutral-700 ${selectedLayer === "video" ? "ring-2 ring-[#ff715e] ring-inset" : ""}`} style={{ left: `${config.video.x / 10.8}%`, top: `${config.video.y / 19.2}%`, width: `${config.video.width / 10.8}%`, height: `${config.video.height / 19.2}%` }}>
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,#73737c,#2c2c31_70%)]" /><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
                     <button type="button" aria-label="영상 크기 조절" onPointerDown={(event) => beginPointerAction(event, "video", "resize")} className="absolute bottom-0 right-0 h-6 w-6 cursor-nwse-resize border-l border-t border-white bg-[#ff715e]" />
                   </div>
-                  {config.title.visible && <button type="button" onPointerDown={(event) => beginPointerAction(event, "title")} className={`absolute z-20 cursor-move whitespace-pre-line rounded px-[1.8cqw] py-[1cqw] text-center font-black leading-[1.18] ${selectedLayer === "title" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={titleStyle}>놓치면 후회할{`\n`}<span style={{ color: config.title.accentColor }}>핵심 한 가지</span></button>}
+                  {config.title.visible && <button type="button" onPointerDown={(event) => beginPointerAction(event, "title")} className={`absolute z-20 flex cursor-move flex-col items-center text-center font-black leading-[1.18] ${selectedLayer === "title" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={titleStyle}><span className="rounded px-[1.8cqw] py-[1cqw]" style={{ color: config.title.primaryColor, backgroundColor: config.title.primaryBackgroundColor || "transparent" }}>놓치면 후회할</span><span className="mt-[.8cqw] rounded px-[1.8cqw] py-[1cqw]" style={{ color: config.title.accentColor, backgroundColor: config.title.accentBackgroundColor || "transparent" }}>핵심 한 가지</span></button>}
                   {config.channel.visible && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...layerPosition(config.channel.x, config.channel.y, config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: `${config.channel.fontSize / 10.8}cqw` }}>● Easy Cut</button>}
-                  {config.subtitle.visible && <button type="button" onPointerDown={(event) => beginPointerAction(event, "subtitle")} className={`absolute z-40 cursor-move truncate rounded px-[2cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "subtitle" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...layerPosition(config.subtitle.x, config.subtitle.y, config.subtitle.maxWidth), color: config.subtitle.color, backgroundColor: config.subtitle.backgroundColor || "transparent", fontSize: `${config.subtitle.fontSize / 10.8}cqw` }}>실제 자막이 이 위치에 표시됩니다</button>}
                 </div>
               </div>
             </div>
@@ -237,20 +255,29 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
           </div>
         </main>
 
-        <aside className="fixed bottom-0 right-0 top-16 z-40 flex w-80 flex-col border-l border-white/10 bg-[#19191c]">
-          <div className="flex-1 space-y-7 overflow-y-auto px-5 pb-32 pt-6">
-            <label className="block text-xs font-bold text-neutral-400">템플릿 이름<input value={name} maxLength={50} onChange={(event) => setName(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/25 px-3 text-sm text-white outline-none focus:border-[#ff715e]" /></label>
-            <section><h2 className="text-xs font-bold text-neutral-400">편집 레이어</h2><div className="mt-2 grid grid-cols-4 gap-1">{(Object.keys(layerLabels) as LayerId[]).map((layer) => <button key={layer} type="button" onClick={() => setSelectedLayer(layer)} className={`rounded-lg px-1 py-2 text-xs font-bold ${selectedLayer === layer ? "bg-[#ff715e] text-black" : "bg-white/5 text-neutral-400"}`}>{layerLabels[layer]}</button>)}</div></section>
-            {selectedLayer === "video" && <section className="space-y-3"><h2 className="text-xs font-bold text-neutral-400">영상 비율</h2><div className="grid grid-cols-5 gap-1">{videoAspectRatioOptions.map((option) => <button key={option.value} type="button" onClick={() => changeAspect(option.value)} className={`rounded-lg py-2 text-[10px] font-bold ${config.video.aspectRatio === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400"}`}>{option.value}</button>)}</div><p className="text-[11px] leading-5 text-neutral-500">프레임을 끌어 이동하고 오른쪽 아래 핸들로 비율을 유지한 채 크기를 조절하세요.</p></section>}
-            {selectedTextLayer && <>
-              <section className="flex items-center justify-between"><span className="text-xs font-bold text-neutral-400">레이어 표시</span><button type="button" onClick={() => commit((next) => { next[selectedLayer as Exclude<LayerId, "video">].visible = !selectedTextLayer.visible; return next; })} className={`rounded-full px-3 py-1 text-xs font-bold ${selectedTextLayer.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}>{selectedTextLayer.visible ? "켜짐" : "꺼짐"}</button></section>
-              <label className="block text-xs font-bold text-neutral-400">글자 크기 <span className="float-right text-white">{selectedTextLayer.fontSize}px</span><input type="range" min={selectedLayer === "channel" ? 20 : 24} max={selectedLayer === "title" ? 96 : selectedLayer === "subtitle" ? 72 : 64} value={selectedTextLayer.fontSize} onChange={(event) => commit((next) => { next[selectedLayer as Exclude<LayerId, "video">].fontSize = Number(event.target.value); return next; })} className="mt-3 w-full accent-[#ff715e]" /></label>
-              <section><h2 className="mb-3 text-xs font-bold text-neutral-400">글자 색상</h2><ColorPalette value={selectedLayer === "title" ? config.title.primaryColor : selectedLayer === "subtitle" ? config.subtitle.color : config.channel.color} onChange={(color) => { if (!color) return; commit((next) => { if (selectedLayer === "title") next.title.primaryColor = color; else if (selectedLayer === "subtitle") next.subtitle.color = color; else next.channel.color = color; return next; }); }} /></section>
-              {selectedLayer === "title" && <section><h2 className="mb-3 text-xs font-bold text-neutral-400">강조 색상</h2><ColorPalette value={config.title.accentColor} onChange={(color) => { if (color) commit((next) => { next.title.accentColor = color; return next; }); }} /></section>}
-              <section><h2 className="mb-3 text-xs font-bold text-neutral-400">글자 배경</h2><ColorPalette allowNone value={selectedTextLayer.backgroundColor} onChange={(color) => commit((next) => { next[selectedLayer as Exclude<LayerId, "video">].backgroundColor = color; return next; })} /></section>
-            </>}
-            <section><h2 className="mb-3 text-xs font-bold text-neutral-400">배경 이미지</h2><div className="grid grid-cols-2 gap-2">{stockBackgrounds.map((asset) => <button key={asset.id} type="button" onClick={() => commit((next) => { next.background = { kind: "image", assetId: asset.id }; return next; })} className={`relative aspect-[9/12] overflow-hidden rounded-lg border ${config.background.kind === "image" && config.background.assetId === asset.id ? "border-[#ff715e] ring-2 ring-[#ff715e]/25" : "border-white/10"}`}><span className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${asset.src})` }} /><span className="absolute inset-x-0 bottom-0 bg-black/60 px-1 py-1 text-[10px] font-bold">{asset.label}</span></button>)}</div></section>
-            <section><h2 className="mb-3 text-xs font-bold text-neutral-400">단색 배경</h2><ColorPalette value={config.background.kind === "color" ? config.background.color : null} onChange={(color) => { if (color) commit((next) => { next.background = { kind: "color", color }; return next; }); }} /></section>
+        <aside className="fixed bottom-0 right-0 top-16 z-40 flex w-[480px] flex-col border-l border-white/10 bg-[#19191c]">
+          <div className="flex-1 space-y-9 overflow-y-auto px-6 pb-32 pt-7">
+            <div><h1 className="text-xl font-extrabold tracking-[-.025em] text-[#f6f4f7]">템플릿 편집</h1><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">왼쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</p></div>
+
+            <section><label className="block text-[15px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">템플릿 이름<input value={name} maxLength={50} onChange={(event) => setName(event.target.value)} className="mt-3 h-11 w-full rounded-xl border border-white/10 bg-black/25 px-3 text-sm font-medium text-white outline-none transition focus:border-[#ff715e]" /></label></section>
+
+            <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">편집 레이어</h2><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">미리보기에서 직접 선택하거나 아래 레이어를 고르세요.</p><div className="mt-3 grid grid-cols-3 gap-1.5 rounded-xl border border-white/10 bg-black/20 p-1.5">{(Object.keys(layerLabels) as LayerId[]).map((layer) => <button key={layer} type="button" onClick={() => setSelectedLayer(layer)} className={`rounded-lg px-1 py-2.5 text-xs font-bold transition ${selectedLayer === layer ? "bg-[#ff715e] text-black" : "text-neutral-400 hover:bg-white/5 hover:text-white"}`}>{layerLabels[layer]}</button>)}</div></section>
+
+            {selectedLayer === "video" && <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">영상 프레임</h2><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5"><h3 className="text-sm font-semibold text-neutral-200">영상 비율</h3><div className="mt-3 grid grid-cols-5 gap-1">{videoAspectRatioOptions.map((option) => <button key={option.value} type="button" onClick={() => changeAspect(option.value)} className={`rounded-lg py-2 text-[10px] font-bold transition ${config.video.aspectRatio === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400 hover:bg-white/10"}`}>{option.value}</button>)}</div><p className="mt-3 text-[11px] leading-5 text-neutral-500">프레임을 끌어 이동하고 오른쪽 아래 핸들로 비율을 유지한 채 크기를 조절하세요.</p></div></section>}
+
+            {selectedTextLayer && <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">{selectedLayer === "title" ? "제목 스타일" : "채널명 스타일"}</h2><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
+              <div className="flex items-center justify-between"><span className="text-sm font-semibold text-neutral-200">레이어 표시</span><button type="button" onClick={() => commit((next) => { next[selectedLayer as Exclude<LayerId, "video">].visible = !selectedTextLayer.visible; return next; })} className={`rounded-full px-3 py-1 text-xs font-bold ${selectedTextLayer.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}>{selectedTextLayer.visible ? "켜짐" : "꺼짐"}</button></div>
+              <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">글자 크기 <span className="float-right text-sm text-[#ff9b8d]">{selectedTextLayer.fontSize}px</span><input type="range" min={selectedLayer === "channel" ? 20 : 24} max={selectedLayer === "title" ? 96 : 64} value={selectedTextLayer.fontSize} onChange={(event) => commit((next) => { next[selectedLayer as Exclude<LayerId, "video">].fontSize = Number(event.target.value); return next; })} className="mt-3 w-full accent-[#ff715e]" /></label>
+              {selectedLayer === "title" ? <>
+                <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">1행 제목</h3><div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-xs font-semibold text-neutral-400">글자색</p><div className="mt-2"><ColorPalette key="title-line-1-text" value={config.title.primaryColor} onChange={(color) => { if (color) commit((next) => { next.title.primaryColor = color; return next; }); }} /></div></div><div><p className="text-xs font-semibold text-neutral-400">배경색</p><div className="mt-2"><ColorPalette key="title-line-1-background" allowNone value={config.title.primaryBackgroundColor} onChange={(color) => commit((next) => { next.title.primaryBackgroundColor = color; return next; })} /></div></div></div></div>
+                <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">2행 제목</h3><div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-xs font-semibold text-neutral-400">글자색</p><div className="mt-2"><ColorPalette key="title-line-2-text" value={config.title.accentColor} onChange={(color) => { if (color) commit((next) => { next.title.accentColor = color; return next; }); }} /></div></div><div><p className="text-xs font-semibold text-neutral-400">배경색</p><div className="mt-2"><ColorPalette key="title-line-2-background" allowNone value={config.title.accentBackgroundColor} onChange={(color) => commit((next) => { next.title.accentBackgroundColor = color; return next; })} /></div></div></div></div>
+              </> : <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">채널명</h3><div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-xs font-semibold text-neutral-400">글자색</p><div className="mt-2"><ColorPalette key="channel-color" value={config.channel.color} onChange={(color) => { if (color) commit((next) => { next.channel.color = color; return next; }); }} /></div></div><div><p className="text-xs font-semibold text-neutral-400">배경색</p><div className="mt-2"><ColorPalette key="channel-background" allowNone value={config.channel.backgroundColor} onChange={(color) => commit((next) => { next.channel.backgroundColor = color; return next; })} /></div></div></div></div>}
+            </div></section>}
+
+            <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">배경</h2><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">완성 영상과 같은 9:16 비율로 배경을 비교하세요.</p><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
+              <h3 className="text-sm font-semibold text-neutral-200">이미지 배경</h3><div className="mt-3 grid grid-cols-3 gap-2">{stockBackgrounds.map((asset) => <button key={asset.id} type="button" title={asset.label} aria-label={`${asset.label} 배경 선택`} aria-pressed={config.background.kind === "image" && config.background.assetId === asset.id} onClick={() => commit((next) => { next.background = { kind: "image", assetId: asset.id }; return next; })} className={`relative aspect-[9/16] overflow-hidden rounded-lg border transition ${config.background.kind === "image" && config.background.assetId === asset.id ? "border-[#ff715e] ring-2 ring-[#ff715e]/25" : "border-white/10 hover:border-white/35"}`}><span className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${asset.src})` }} /><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-black/20 px-1 py-1.5 text-[9px] font-bold leading-3 text-white">{asset.label}</span></button>)}</div>
+              <div className="mt-6 border-t border-white/10 pt-5"><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold text-neutral-200">단색 배경</h3><button type="button" aria-expanded={showAllBackgroundColors} onClick={() => setShowAllBackgroundColors((current) => !current)} className="text-[11px] font-bold text-[#ff9b8d] transition hover:text-white">{showAllBackgroundColors ? "접기" : "전체 보기"}</button></div><div className="mt-3 grid grid-cols-3 gap-2">{visibleBackgroundColors.map((option) => <button key={option.color} type="button" title={option.name} aria-label={`${option.name} 단색 배경 선택`} aria-pressed={selectedBackgroundColor === option.color} onClick={() => commit((next) => { next.background = { kind: "color", color: option.color }; return next; })} className={`relative aspect-[9/16] overflow-hidden rounded-lg border transition ${selectedBackgroundColor === option.color ? "border-[#ff715e] ring-2 ring-[#ff715e]/25" : "border-white/10 hover:border-white/35"}`} style={{ backgroundColor: option.color }}><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-black/20 px-1 py-1.5 text-[9px] font-bold leading-3 text-white">{option.name}</span></button>)}</div></div>
+            </div></section>
           </div>
           <div className="absolute inset-x-0 bottom-0 border-t border-white/10 bg-[#19191c]/95 p-5 backdrop-blur-xl"><button type="button" disabled={saving || !dirty} onClick={() => void save()} className="h-12 w-full rounded-xl bg-[#ff715e] text-sm font-black text-black transition hover:bg-[#ff8a78] disabled:bg-neutral-700 disabled:text-neutral-400">{saving ? "저장 중..." : savedTemplate ? "템플릿 저장" : "내 템플릿으로 저장"}</button>{message && <p className="mt-2 text-center text-[11px] leading-4 text-neutral-400">{message}</p>}</div>
         </aside>

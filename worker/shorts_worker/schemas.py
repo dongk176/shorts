@@ -89,15 +89,29 @@ class TemplateTitleLayer(BaseModel):
     font_size: int = Field(alias="fontSize", ge=24, le=96)
     primary_color: str = Field(alias="primaryColor", pattern=r"^#[0-9A-Fa-f]{6}$")
     accent_color: str = Field(alias="accentColor", pattern=r"^#[0-9A-Fa-f]{6}$")
-    background_color: str | None = Field(
-        default=None, alias="backgroundColor", pattern=r"^#[0-9A-Fa-f]{6}$"
+    primary_background_color: str | None = Field(
+        default=None, alias="primaryBackgroundColor", pattern=r"^#[0-9A-Fa-f]{6}$"
     )
+    accent_background_color: str | None = Field(
+        default=None, alias="accentBackgroundColor", pattern=r"^#[0-9A-Fa-f]{6}$"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def upgrade_legacy_background(cls, value: object) -> object:
+        if not isinstance(value, dict) or "backgroundColor" not in value:
+            return value
+        upgraded = dict(value)
+        background_color = upgraded.pop("backgroundColor")
+        upgraded.setdefault("primaryBackgroundColor", background_color)
+        upgraded.setdefault("accentBackgroundColor", background_color)
+        return upgraded
 
 
 class CustomTemplateConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    schema_version: int = Field(alias="schemaVersion", ge=1, le=1)
+    schema_version: int = Field(alias="schemaVersion", ge=1, le=2)
     background: TemplateBackground
     video: TemplateVideoLayer
     title: TemplateTitleLayer

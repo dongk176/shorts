@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 import { AuthControls } from "@/components/auth-controls";
+import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { TitleOverlayPreview } from "@/components/title-overlay-preview";
@@ -386,9 +387,8 @@ function CustomHomeTemplatePreview({ template }: { template: CustomTemplate }) {
   const textPosition = (x: number, y: number, width: number) => ({ left: `${x / 10.8}%`, top: `${y / 19.2}%`, width: `${width / 10.8}%`, transform: "translate(-50%, -50%)" });
   return <div className="relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg" style={{ ...background, containerType: "inline-size" }}>
     <div className="absolute bg-neutral-700" style={{ left: `${config.video.x / 10.8}%`, top: `${config.video.y / 19.2}%`, width: `${config.video.width / 10.8}%`, height: `${config.video.height / 19.2}%` }}><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" /></div>
-    {config.title.visible && <div className="absolute z-20 whitespace-pre-line rounded px-[1.5cqw] py-[.8cqw] text-center font-black leading-tight" style={{ ...textPosition(config.title.x, config.title.y, config.title.maxWidth), color: config.title.primaryColor, backgroundColor: config.title.backgroundColor || "transparent", fontSize: `${config.title.fontSize / 10.8}cqw` }}>AI가 만든 제목<br /><span style={{ color: config.title.accentColor }}>핵심 포인트</span></div>}
+    <CustomTemplateTitlePreview title={config.title} firstLine="AI가 만든 제목" secondLine="핵심 포인트" />
     {config.channel.visible && <div className="absolute z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold" style={{ ...textPosition(config.channel.x, config.channel.y, config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: `${config.channel.fontSize / 10.8}cqw` }}>● 채널 이름</div>}
-    {config.subtitle.visible && <div className="absolute z-40 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold" style={{ ...textPosition(config.subtitle.x, config.subtitle.y, config.subtitle.maxWidth), color: config.subtitle.color, backgroundColor: config.subtitle.backgroundColor || "transparent", fontSize: `${config.subtitle.fontSize / 10.8}cqw` }}>실제 자막</div>}
   </div>;
 }
 
