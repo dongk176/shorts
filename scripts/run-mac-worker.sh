@@ -4,11 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-if [[ -f .env.local ]]; then
-  set -a
-  source .env.local
-  set +a
-fi
+source scripts/load-env.sh
+load_env_file .env.local
 
 for name in DATABASE_URL OPENAI_API_KEY; do
   [[ -n "${!name:-}" ]] || { echo "필수 환경변수가 없습니다: $name" >&2; exit 2; }

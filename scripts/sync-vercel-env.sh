@@ -3,11 +3,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/web"
-if [[ -f ../.env.local ]]; then
-  set -a
-  source ../.env.local
-  set +a
-fi
+source ../scripts/load-env.sh
+load_env_file ../.env.local
 command -v vercel >/dev/null 2>&1 || { echo "vercel CLI가 필요합니다." >&2; exit 2; }
 vercel whoami >/dev/null
 if [[ ! -f .vercel/project.json ]]; then
