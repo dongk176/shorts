@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultTemplateConfig, templateConfigSchema, templatePresetColorOptions, templatePresetColors, videoFrameForAspect } from "@/lib/template-config";
+import { COMMENT_BACKGROUND_COLOR, createDefaultTemplateConfig, templateConfigSchema, templatePresetColorOptions, templatePresetColors, videoFrameForAspect } from "@/lib/template-config";
 
 describe("personal template config", () => {
   it("creates bounded frames for every supported aspect ratio", () => {
@@ -25,7 +25,10 @@ describe("personal template config", () => {
   });
 
   it("starts comment capture templates with the channel layer hidden", () => {
-    expect(createDefaultTemplateConfig("comment-capture").channel.visible).toBe(false);
+    const commentConfig = createDefaultTemplateConfig("comment-capture");
+    expect(commentConfig.channel.visible).toBe(false);
+    expect(commentConfig.background).toEqual({ kind: "color", color: COMMENT_BACKGROUND_COLOR });
+    expect(templatePresetColors).toContain(COMMENT_BACKGROUND_COLOR);
     expect(createDefaultTemplateConfig("dark-minimal").channel.visible).toBe(true);
   });
 

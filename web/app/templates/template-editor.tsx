@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   TEMPLATE_CANVAS,
+  COMMENT_BACKGROUND_COLOR,
   aspectHeightRatio,
   stockBackgrounds,
   templatePresetColorOptions,
@@ -48,15 +49,16 @@ const commentSizeOptions: { value: TemplateCommentSize; label: string }[] = [
   { value: "large", label: "크게" },
 ];
 const commentThemeOptions = [
-  { value: "dark", label: "다크 모드", background: "#09090b", foreground: "#ffffff" },
+  { value: "dark", label: "다크 모드", background: COMMENT_BACKGROUND_COLOR, foreground: "#ffffff" },
   { value: "light", label: "화이트 모드", background: "#ffffff", foreground: "#18181b" },
 ] as const;
 const COMMENT_Y_MIN = 720;
 const COMMENT_Y_MAX = 1480;
+const COMMENT_VIDEO_SNAP_THRESHOLD_PX = 18;
 const hiddenCenterGuides: CenterGuides = { x: false, y: false };
 const compactTextColors = ["#FFFFFF", "#111111", "#35E6E3"] as const satisfies readonly TemplatePresetColor[];
 const compactTextBackgroundColors = ["#111111", "#FFFFFF"] as const satisfies readonly TemplatePresetColor[];
-const compactBackgroundColors = ["#000000", "#111111", "#FFFFFF", "#F3F0E9", "#E32626", "#2563EB"] as const satisfies readonly TemplatePresetColor[];
+const compactBackgroundColors = [COMMENT_BACKGROUND_COLOR, "#000000", "#111111", "#FFFFFF", "#F3F0E9", "#E32626", "#2563EB"] as const satisfies readonly TemplatePresetColor[];
 
 function cloneConfig(config: TemplateConfig) {
   return structuredClone(config);
@@ -64,6 +66,13 @@ function cloneConfig(config: TemplateConfig) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function snapCommentYToVideo(candidateY: number, videoBottom: number, threshold: number) {
+  if (videoBottom < COMMENT_Y_MIN || videoBottom > COMMENT_Y_MAX) {
+    return { value: candidateY, snapped: false };
+  }
+  return snapAxisToCenter(candidateY, videoBottom, threshold);
 }
 
 function backgroundStyle(config: TemplateConfig): React.CSSProperties {
@@ -114,12 +123,21 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
     size: "medium",
     y: clamp(initialConfig.video.y + initialConfig.video.height, COMMENT_Y_MIN, COMMENT_Y_MAX),
   }));
+  const [commentDockedToVideo, setCommentDockedToVideo] = useState(() => {
+    const videoBottom = initialConfig.video.y + initialConfig.video.height;
+    return videoBottom >= COMMENT_Y_MIN && videoBottom <= COMMENT_Y_MAX;
+  });
+  const [commentSnapGuide, setCommentSnapGuide] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const transactionRef = useRef<TemplateConfig | null>(null);
   const baselineRef = useRef(JSON.stringify({ name: initialTemplate?.name || "나의 템플릿", config: initialConfig }));
   const config = history.present;
   const dirty = JSON.stringify({ name, config }) !== baselineRef.current;
   const availableLayerIds = commentLayerEnabled ? commentLayerIds : standardLayerIds;
+  const videoBottom = config.video.y + config.video.height;
+  const commentCanDockToVideo = videoBottom >= COMMENT_Y_MIN && videoBottom <= COMMENT_Y_MAX;
+  const commentIsDockedToVideo = commentDockedToVideo && commentCanDockToVideo;
+  const commentY = commentIsDockedToVideo ? videoBottom : commentPrototype.y;
 
   const commit = useCallback((updater: (current: TemplateConfig) => TemplateConfig) => {
     setHistory((current) => {
@@ -260,20 +278,29 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
     setSelectedLayer("comment");
     event.currentTarget.setPointerCapture(event.pointerId);
     const startPointerY = event.clientY;
-    const startLayerY = commentPrototype.y;
+    const startLayerY = commentY;
     const toCanvasY = TEMPLATE_CANVAS.height / canvas.getBoundingClientRect().height;
 
     const move = (moveEvent: PointerEvent) => {
       const deltaY = Math.round((moveEvent.clientY - startPointerY) * toCanvasY);
+      const candidateY = clamp(startLayerY + deltaY, COMMENT_Y_MIN, COMMENT_Y_MAX);
+      const vertical = snapCommentYToVideo(
+        candidateY,
+        videoBottom,
+        COMMENT_VIDEO_SNAP_THRESHOLD_PX * toCanvasY,
+      );
       setCommentPrototype((current) => ({
         ...current,
-        y: clamp(startLayerY + deltaY, COMMENT_Y_MIN, COMMENT_Y_MAX),
+        y: vertical.value,
       }));
+      setCommentDockedToVideo(vertical.snapped);
+      setCommentSnapGuide(vertical.snapped);
     };
     const finish = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
+      setCommentSnapGuide(false);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", finish, { once: true });
@@ -352,10 +379,11 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
                   </div>
                   <CustomTemplateTitlePreview title={config.title} firstLine="놓치면 후회할" secondLine="핵심 한 가지" selected={selectedLayer === "title"} onPointerDown={(event) => beginPointerAction(event, "title")} />
                   {config.channel.visible && !commentLayerEnabled && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</button>}
-                  {commentLayerEnabled && <div className="absolute inset-x-0 z-40" style={{ top: `${(commentPrototype.y / TEMPLATE_CANVAS.height) * 100}%` }}>
+                  {commentLayerEnabled && <div className="absolute inset-x-0 z-40" style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>
                     {commentPrototype.visible && <TemplateCommentPrototype selected={selectedLayer === "comment"} theme={commentPrototype.theme} size={commentPrototype.size} onSelect={() => setSelectedLayer("comment")} onPointerDown={beginCommentPointerAction} />}
                     {config.channel.visible && <button type="button" onClick={() => setSelectedLayer("channel")} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setSelectedLayer("channel"); }} className={`relative z-30 mx-auto mt-[2cqw] block truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ width: customCanvasWidth(config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</button>}
                   </div>}
+                  {commentSnapGuide && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 z-50 h-px bg-[#35e6e3] shadow-[0_0_7px_rgba(53,230,227,.9)]" style={{ top: `${(videoBottom / TEMPLATE_CANVAS.height) * 100}%` }}><span className="absolute right-2 -translate-y-full rounded-t bg-[#35e6e3] px-1.5 py-0.5 text-[7px] font-black text-black">영상 하단에 맞춤</span></div>}
                   {centerGuides.x && <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-1/2 z-50 w-px -translate-x-1/2 bg-[#ff2bd6] shadow-[0_0_5px_rgba(255,43,214,.95)]" />}
                   {centerGuides.y && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-1/2 z-50 h-px -translate-y-1/2 bg-[#ff2bd6] shadow-[0_0_5px_rgba(255,43,214,.95)]" />}
                 </div>
@@ -410,8 +438,8 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
                   <p className="mt-2 text-[11px] leading-5 text-neutral-500">크기를 바꾸면 프로필·문구·반응 버튼과 안쪽 여백이 함께 줄고, 카드 높이도 내용에 맞춰 자동 조절됩니다.</p>
                 </div>
 
-                <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">세로 위치 <span className="float-right text-sm text-[#ff9b8d]">{Math.round((commentPrototype.y / TEMPLATE_CANVAS.height) * 100)}%</span><input type="range" min={COMMENT_Y_MIN} max={COMMENT_Y_MAX} step={10} value={commentPrototype.y} onChange={(event) => setCommentPrototype((current) => ({ ...current, y: Number(event.target.value) }))} className="mt-3 w-full accent-[#ff715e]" /></label>
-                <p className="mt-2 text-[11px] leading-5 text-neutral-500">슬라이더를 쓰거나 미리보기의 댓글 카드를 위아래로 직접 끌어보세요.</p>
+                <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">세로 위치 <span className="float-right text-sm text-[#ff9b8d]">{Math.round((commentY / TEMPLATE_CANVAS.height) * 100)}%</span><input type="range" min={COMMENT_Y_MIN} max={COMMENT_Y_MAX} step={10} value={commentY} onChange={(event) => { const vertical = snapCommentYToVideo(Number(event.target.value), videoBottom, 30); setCommentPrototype((current) => ({ ...current, y: vertical.value })); setCommentDockedToVideo(vertical.snapped); }} className="mt-3 w-full accent-[#ff715e]" /></label>
+                <p className={`mt-2 text-[11px] leading-5 ${commentIsDockedToVideo ? "font-semibold text-[#74efec]" : "text-neutral-500"}`}>{commentIsDockedToVideo ? "영상 하단에 자석처럼 붙어 있습니다." : "슬라이더를 쓰거나 댓글 카드를 끌어 영상 하단 가까이 가져가 보세요."}</p>
 
                 <div className="mt-5 rounded-lg border border-amber-300/20 bg-amber-300/[.06] px-3 py-2.5 text-[11px] leading-5 text-amber-100/75">이번 시안은 저장 및 실제 렌더링에는 아직 반영되지 않습니다. 디자인 확정 후 템플릿 설정과 렌더러에 연결합니다.</div>
               </div>

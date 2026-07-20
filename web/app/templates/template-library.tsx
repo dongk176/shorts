@@ -13,7 +13,7 @@ import {
   customCenteredLayerStyle,
   customVideoFrameStyle,
 } from "@/lib/custom-template-preview-layout";
-import { stockBackgrounds, type CustomTemplate } from "@/lib/template-config";
+import { COMMENT_BACKGROUND_COLOR, stockBackgrounds, type CustomTemplate } from "@/lib/template-config";
 import {
   customTemplateFavoriteKey,
   presetTemplateFavoriteKey,
@@ -42,7 +42,7 @@ const templates: readonly TemplateShowcase[] = [
     description: "댓글 반응을 활용해 시청 흐름을 이어가는 구성",
     category: "소셜",
     label: "댓글 반응과 함께\n시청 지속시간 상승",
-    background: "#000000",
+    background: COMMENT_BACKGROUND_COLOR,
     primary: "#ffffff",
     accent: "#35e6e3",
     accentBackground: null,
@@ -145,7 +145,7 @@ function formatCompactKoreanCount(value: number) {
 
 function CommentCaptureCard({ comment }: { comment: CommentOverlay }) {
   return (
-    <div className="h-full w-full bg-[#040404] pb-[0.6cqw] pl-[4.4cqw] pr-[2.8cqw] pt-[4.5cqw] text-left text-white">
+    <div className="h-full w-full pb-[0.6cqw] pl-[4.4cqw] pr-[2.8cqw] pt-[4.5cqw] text-left text-white" style={{ backgroundColor: COMMENT_BACKGROUND_COLOR }}>
       <div className="flex items-start gap-[2.7cqw]">
         <div className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.65cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
         <div className="min-w-0 flex-1">

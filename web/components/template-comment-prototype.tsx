@@ -1,4 +1,5 @@
 import type { CSSProperties, PointerEventHandler } from "react";
+import { COMMENT_BACKGROUND_COLOR } from "@/lib/template-config";
 
 export type TemplateCommentTheme = "dark" | "light";
 export type TemplateCommentSize = "small" | "medium" | "large";
@@ -13,7 +14,7 @@ function ReactionIcon({ kind, color }: { kind: "like" | "dislike"; color: string
   return (
     <svg
       aria-hidden="true"
-      viewBox="0 0 100 100"
+      viewBox="-6 -6 112 112"
       fill="none"
       stroke={color}
       strokeLinecap="round"
@@ -44,9 +45,9 @@ export function TemplateCommentPrototype({
   const dark = theme === "dark";
   const foreground = dark ? "#f7f7f8" : "#161619";
   const muted = dark ? "#a5a5aa" : "#6b6b73";
-  const identityBlur = `blur(${canvasWidth(0.42)})`;
+  const identityBlur = `blur(${canvasWidth(0.7)})`;
   const style: CSSProperties = {
-    backgroundColor: dark ? "#09090b" : "#ffffff",
+    backgroundColor: dark ? COMMENT_BACKGROUND_COLOR : "#ffffff",
     color: foreground,
     padding: `${canvasWidth(3.2)} ${canvasWidth(4.4)} ${canvasWidth(3.4)}`,
   };

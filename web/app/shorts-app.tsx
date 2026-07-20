@@ -35,7 +35,7 @@ import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-play
 import { stateRetryDelayMs } from "@/lib/state-loading";
 import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
-import { stockBackgrounds, type CustomTemplate } from "@/lib/template-config";
+import { COMMENT_BACKGROUND_COLOR, stockBackgrounds, type CustomTemplate } from "@/lib/template-config";
 import {
   DEFAULT_FAVORITE_TEMPLATE_KEYS,
   favoriteCustomTemplateId,
@@ -55,7 +55,7 @@ import {
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 
 const templates: Array<{ id: TemplateId; name: string; label: string; background: string; primary: string; accent: string; accentBackground: string | null; channel: string }> = [
-  { id: "comment-capture", name: "댓글 캡처", label: "댓글 반응과 함께\n시청 지속시간 상승", background: "#000000", primary: "#FFFFFF", accent: "#35E6E3", accentBackground: null, channel: "#FFFFFF" },
+  { id: "comment-capture", name: "댓글 캡처", label: "댓글 반응과 함께\n시청 지속시간 상승", background: COMMENT_BACKGROUND_COLOR, primary: "#FFFFFF", accent: "#35E6E3", accentBackground: null, channel: "#FFFFFF" },
   { id: "dark-red", name: "다크 레드", label: "지금 꼭 알아야 할\n핵심 한 가지", background: "#000000", primary: "#FFFFFF", accent: "#FFFFFF", accentBackground: "#E32626", channel: "#FFFFFF" },
   { id: "white-yellow", name: "화이트 옐로", label: "생각보다 쉬운\n핵심 한 가지", background: "#FFFFFF", primary: "#111111", accent: "#111111", accentBackground: "#FFD84D", channel: "#111111" },
   { id: "dark-minimal", name: "다크 미니멀", label: "놓치기 쉬운\n결정적 순간", background: "#000000", primary: "#FFFFFF", accent: "#F04444", accentBackground: null, channel: "#FFFFFF" },

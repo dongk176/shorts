@@ -3,6 +3,7 @@ import { templateIds, videoAspectRatios, type TemplateId, type VideoAspectRatio 
 
 export const TEMPLATE_CANVAS = { width: 1080, height: 1920 } as const;
 export const MAX_PERSONAL_TEMPLATES = 50;
+export const COMMENT_BACKGROUND_COLOR = "#040404" as const;
 
 export const stockBackgrounds = [
   { id: "news-blue-geometric", label: "뉴스 블루", src: "/template-backgrounds/news-blue-geometric.png" },
@@ -19,7 +20,7 @@ export type StockBackgroundId = (typeof stockBackgrounds)[number]["id"];
 export const stockBackgroundIds = stockBackgrounds.map((item) => item.id) as [StockBackgroundId, ...StockBackgroundId[]];
 
 export const templatePresetColors = [
-  "#000000", "#111111", "#1B1B1E", "#353438", "#64748B", "#FFFFFF", "#F3F0E9",
+  COMMENT_BACKGROUND_COLOR, "#000000", "#111111", "#1B1B1E", "#353438", "#64748B", "#FFFFFF", "#F3F0E9",
   "#E32626", "#FF4D4F", "#FF715E", "#FFB4A8", "#F97316", "#FFD84D", "#8BFF5A",
   "#16A34A", "#35E6E3", "#3B82F6", "#2563EB", "#A78BFA", "#DB2777",
 ] as const;
@@ -27,6 +28,7 @@ export const templatePresetColors = [
 export type TemplatePresetColor = (typeof templatePresetColors)[number];
 
 export const templatePresetColorNames: Record<TemplatePresetColor, string> = {
+  [COMMENT_BACKGROUND_COLOR]: "댓글 배경",
   "#000000": "블랙",
   "#111111": "딥 차콜",
   "#1B1B1E": "차콜",
@@ -182,7 +184,7 @@ export function createDefaultTemplateConfig(baseTemplateId: TemplateId = "dark-m
   const accent = baseTemplateId === "comment-capture" ? "#35E6E3" : baseTemplateId === "white-yellow" ? "#FFD84D" : "#FF4D4F";
   return {
     schemaVersion: 2,
-    background: { kind: "color", color: light ? "#F3F0E9" : "#111111" },
+    background: { kind: "color", color: baseTemplateId === "comment-capture" ? COMMENT_BACKGROUND_COLOR : light ? "#F3F0E9" : "#111111" },
     video: videoFrameForAspect("5:4"),
     title: {
       visible: true, x: 540, y: 250, maxWidth: 920, fontSize: 72,
