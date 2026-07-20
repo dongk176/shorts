@@ -160,6 +160,9 @@ def deterministic_fallback(
                 output_language,
             ),
             reason="자막 또는 AI를 사용할 수 없어 영상 전체에 고르게 배치한 구간입니다.",
+            selection_provider="deterministic",
+            selection_length_adjustment="none",
+            selection_repositioned=False,
         )
         for index, start in enumerate(starts)
     ]
@@ -217,6 +220,8 @@ def normalize_clips(
     transcript: list[SubtitleSegment] | None = None,
     output_language: OutputLanguage = OutputLanguage.KO,
     backfill: bool = True,
+    selection_provider: str | None = None,
+    selection_model: str | None = None,
 ) -> list[HighlightClip]:
     """Clamp invalid LLM times and enforce at most five seconds of pairwise overlap."""
     if duration_seconds <= 0 or required_count < 1:
@@ -226,7 +231,14 @@ def normalize_clips(
     accepted: list[HighlightClip] = []
     minimum_count = minimum_clip_count_for_duration(duration_seconds)
 
-    def accept(candidate: HighlightClip) -> None:
+    def accept(
+        candidate: HighlightClip,
+        *,
+        candidate_index: int | None,
+        provider: str | None,
+        model: str | None,
+        record_raw_selection: bool,
+    ) -> None:
         if len(accepted) >= required_count:
             return
         try:
@@ -241,22 +253,58 @@ def normalize_clips(
         start = _find_start(raw_start, length, accepted, 0, duration_seconds)
         if start is None:
             return
+        rounded_start = round(start, 3)
+        rounded_end = round(min(duration_seconds, start + length), 3)
+        if raw_length < minimum_length - 1e-6:
+            length_adjustment = "min_clamp"
+        elif raw_length > maximum_length + 1e-6:
+            length_adjustment = "max_clamp"
+        else:
+            length_adjustment = "none"
+        if record_raw_selection:
+            rounded_raw_start = round(raw_start, 3)
+            rounded_raw_end = round(raw_end, 3)
+            rounded_raw_duration = round(rounded_raw_end - rounded_raw_start, 3)
+        else:
+            rounded_raw_start = None
+            rounded_raw_end = None
+            rounded_raw_duration = None
         accepted.append(
             HighlightClip(
-                start_seconds=round(start, 3),
-                end_seconds=round(min(duration_seconds, start + length), 3),
+                start_seconds=rounded_start,
+                end_seconds=rounded_end,
                 hook_title=_two_line_title(candidate.hook_title, output_language),
                 reason=str(candidate.reason or ""),
+                selection_raw_start_seconds=rounded_raw_start,
+                selection_raw_end_seconds=rounded_raw_end,
+                selection_raw_duration_seconds=rounded_raw_duration,
+                selection_candidate_index=candidate_index,
+                selection_provider=provider,
+                selection_model=model,
+                selection_length_adjustment=length_adjustment,
+                selection_repositioned=rounded_start != round(raw_start, 3),
             )
         )
-    for candidate in candidates:
-        accept(candidate)
+    for candidate_index, candidate in enumerate(candidates, start=1):
+        accept(
+            candidate,
+            candidate_index=candidate_index,
+            provider=selection_provider,
+            model=selection_model,
+            record_raw_selection=True,
+        )
     if backfill and len(accepted) < minimum_count:
         for candidate in deterministic_fallback(
             video_title, duration_seconds, minimum_count, transcript,
             output_language,
         ):
-            accept(candidate)
+            accept(
+                candidate,
+                candidate_index=None,
+                provider="deterministic",
+                model=None,
+                record_raw_selection=False,
+            )
     return sorted(accepted, key=lambda clip: clip.start_seconds)
 
 
@@ -462,6 +510,8 @@ class TranscriptSelector:
                     required_count=required_count,
                     output_language=output_language,
                     backfill=False,
+                    selection_provider=provider,
+                    selection_model=model,
                 )
             except Exception as exc:
                 _log_selection_event(

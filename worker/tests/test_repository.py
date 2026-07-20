@@ -177,6 +177,14 @@ def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> 
         end_seconds=40,
         hook_title="hook",
         highlight_reason="Gemini가 선택한 이유",
+        selection_raw_start_seconds=12,
+        selection_raw_end_seconds=32,
+        selection_raw_duration_seconds=20,
+        selection_candidate_index=2,
+        selection_provider="gemini",
+        selection_model="gemini-2.5-flash-lite",
+        selection_length_adjustment="min_clamp",
+        selection_repositioned=False,
         subtitles=[],
         clean_key="edit-sources/short-a.mp4",
         retention_days=30,
@@ -186,7 +194,29 @@ def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> 
     insert_call = connection.execute.call_args_list[2]
     assert "created_at" in insert_call.args[0]
     assert "now() + make_interval" in insert_call.args[0]
+    assert "selection_raw_start_seconds" in insert_call.args[0]
+    assert "selection_length_adjustment=excluded.selection_length_adjustment" in insert_call.args[0]
+    assert insert_call.args[0].count("%s") == len(insert_call.args[1])
     assert insert_call.args[1][-2] == 30
+
+
+def test_selection_observability_migration_stays_in_shorts_schema() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607200003_generated_short_selection_observability.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "shorts_mvp.generated_shorts" in migration
+    assert "selection_raw_start_seconds" in migration
+    assert "selection_raw_end_seconds" in migration
+    assert "selection_raw_duration_seconds" in migration
+    assert "selection_provider" in migration
+    assert "selection_model" in migration
+    assert "selection_length_adjustment" in migration
+    assert "selection_repositioned" in migration
+    assert "public." not in migration
 
 
 def test_prepare_passes_retention_days_instead_of_worker_clock_expiry() -> None:

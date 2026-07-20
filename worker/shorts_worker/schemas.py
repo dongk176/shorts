@@ -152,6 +152,17 @@ class HighlightClip(BaseModel):
     end_seconds: float
     hook_title: str = Field(min_length=1, max_length=MAX_HOOK_TITLE_CHARS)
     reason: str = Field(default="", max_length=1000)
+    selection_raw_start_seconds: float | None = None
+    selection_raw_end_seconds: float | None = None
+    selection_raw_duration_seconds: float | None = None
+    selection_candidate_index: int | None = Field(default=None, ge=1)
+    selection_provider: str | None = Field(default=None, max_length=50)
+    selection_model: str | None = Field(default=None, max_length=200)
+    selection_length_adjustment: str | None = Field(
+        default=None,
+        pattern=r"^(none|min_clamp|max_clamp)$",
+    )
+    selection_repositioned: bool | None = None
 
     @field_validator("hook_title", mode="before")
     @classmethod
