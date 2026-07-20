@@ -131,7 +131,7 @@ def test_valid_ai_clip_count_is_not_filled_to_maximum() -> None:
     assert len(clips) == 3
 
 
-def test_ai_clip_lengths_are_clamped_to_thirty_through_sixty_seconds() -> None:
+def test_short_ai_clip_is_stably_expanded_between_thirty_and_forty_seconds() -> None:
     clips = normalize_clips(
         [
             HighlightClip(start_seconds=10, end_seconds=20, hook_title="짧은 후보"),
@@ -144,11 +144,11 @@ def test_ai_clip_lengths_are_clamped_to_thirty_through_sixty_seconds() -> None:
         selection_provider="gemini",
         selection_model="gemini-2.5-flash-lite",
     )
-    assert [clip.end_seconds - clip.start_seconds for clip in clips] == [
-        AI_CLIP_MIN_SECONDS,
-        45,
-        AI_CLIP_MAX_SECONDS,
-    ]
+    durations = [clip.end_seconds - clip.start_seconds for clip in clips]
+    assert AI_CLIP_MIN_SECONDS <= durations[0] <= 40
+    assert durations[1:] == [45, AI_CLIP_MAX_SECONDS]
+    assert clips[0].start_seconds < 10
+    assert clips[0].end_seconds > 20
     assert [clip.selection_raw_duration_seconds for clip in clips] == [10, 45, 90]
     assert [clip.selection_candidate_index for clip in clips] == [1, 2, 3]
     assert [clip.selection_length_adjustment for clip in clips] == [
@@ -158,6 +158,43 @@ def test_ai_clip_lengths_are_clamped_to_thirty_through_sixty_seconds() -> None:
     ]
     assert {clip.selection_provider for clip in clips} == {"gemini"}
     assert {clip.selection_model for clip in clips} == {"gemini-2.5-flash-lite"}
+
+    repeated = normalize_clips(
+        [HighlightClip(start_seconds=10, end_seconds=20, hook_title="짧은 후보")],
+        video_title="길이 검증",
+        duration_seconds=400,
+        required_count=1,
+        selection_provider="gemini",
+        selection_model="gemini-2.5-flash-lite",
+    )
+    assert repeated[0].start_seconds == clips[0].start_seconds
+    assert repeated[0].end_seconds == clips[0].end_seconds
+
+
+def test_short_ai_clips_receive_varied_deterministic_lengths() -> None:
+    candidates = [
+        HighlightClip(
+            start_seconds=20 + index * 70,
+            end_seconds=35 + index * 70,
+            hook_title=f"짧은 후보 {index + 1}",
+        )
+        for index in range(6)
+    ]
+
+    clips = normalize_clips(
+        candidates,
+        video_title="길이 다양성 검증",
+        duration_seconds=500,
+        required_count=6,
+        selection_provider="gemini",
+        selection_model="gemini-2.5-flash-lite",
+    )
+    durations = [round(clip.end_seconds - clip.start_seconds, 1) for clip in clips]
+
+    assert len(clips) == 6
+    assert all(30 <= duration <= 40 for duration in durations)
+    assert len(set(durations)) > 1
+    assert all(clip.selection_length_adjustment == "min_clamp" for clip in clips)
 
 
 def test_deterministic_fallback_uses_forty_five_seconds() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -45,6 +46,27 @@ def clip_count_for_duration(duration_seconds: float, *, maximum_seconds: int = 3
 
 def minimum_clip_count_for_duration(duration_seconds: float) -> int:
     return 1 if duration_seconds < 4 * 60 else 2
+
+
+def _expanded_short_clip_length(
+    *,
+    video_title: str,
+    candidate_index: int | None,
+    raw_start: float,
+    raw_end: float,
+    minimum_length: float,
+    maximum_length: float,
+) -> float:
+    """Choose a stable 30-40 second target for an AI range shorter than 30 seconds."""
+    upper = min(40.0, maximum_length)
+    if upper <= minimum_length:
+        return minimum_length
+    seed = (
+        f"{video_title}\x1f{candidate_index or 0}\x1f{raw_start:.3f}\x1f{raw_end:.3f}"
+    ).encode()
+    bucket_count = round((upper - minimum_length) * 10)
+    bucket = int.from_bytes(hashlib.sha256(seed).digest()[:8], "big") % (bucket_count + 1)
+    return round(minimum_length + bucket / 10, 1)
 
 
 def overlap_seconds(left: HighlightClip, right: HighlightClip) -> float:
@@ -249,8 +271,20 @@ def normalize_clips(
         if not math.isfinite(raw_start) or not math.isfinite(raw_end) or raw_end <= raw_start:
             return
         raw_length = raw_end - raw_start
-        length = max(minimum_length, min(maximum_length, raw_length))
-        start = _find_start(raw_start, length, accepted, 0, duration_seconds)
+        if raw_length < minimum_length - 1e-6:
+            length = _expanded_short_clip_length(
+                video_title=video_title,
+                candidate_index=candidate_index,
+                raw_start=raw_start,
+                raw_end=raw_end,
+                minimum_length=minimum_length,
+                maximum_length=maximum_length,
+            )
+            desired_start = raw_start - (length - raw_length) / 2
+        else:
+            length = min(maximum_length, raw_length)
+            desired_start = raw_start
+        start = _find_start(desired_start, length, accepted, 0, duration_seconds)
         if start is None:
             return
         rounded_start = round(start, 3)
