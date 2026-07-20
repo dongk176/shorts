@@ -21,29 +21,18 @@ import {
   customVideoFrameStyle,
 } from "@/lib/custom-template-preview-layout";
 import { CENTER_SNAP_THRESHOLD_PX, snapAxisToCenter } from "@/lib/template-editor-snap";
-import { CustomTemplatePlanOverlay } from "@/components/custom-template-plan-overlay";
-import {
-  TemplateCommentPrototype,
-  type TemplateCommentSize,
-  type TemplateCommentTheme,
-} from "@/components/template-comment-prototype";
+import { TemplateCommentPrototype } from "@/components/template-comment-prototype";
 
 type LayerId = "video" | "title" | "channel" | "comment";
 type TemplateLayerId = Exclude<LayerId, "comment">;
 type TextLayerId = Exclude<TemplateLayerId, "video">;
 type History = { past: TemplateConfig[]; present: TemplateConfig; future: TemplateConfig[] };
 type CenterGuides = { x: boolean; y: boolean };
-type CommentPrototypeState = {
-  visible: boolean;
-  theme: TemplateCommentTheme;
-  size: TemplateCommentSize;
-  y: number;
-};
 
 const layerLabels: Record<LayerId, string> = { video: "영상", title: "제목", channel: "채널명", comment: "댓글" };
 const standardLayerIds: LayerId[] = ["video", "title", "channel"];
 const commentLayerIds: LayerId[] = [...standardLayerIds, "comment"];
-const commentSizeOptions: { value: TemplateCommentSize; label: string }[] = [
+const commentSizeOptions: { value: TemplateConfig["comment"]["size"]; label: string }[] = [
   { value: "small", label: "작게" },
   { value: "medium", label: "기본" },
   { value: "large", label: "크게" },
@@ -105,7 +94,7 @@ function ColorPalette({ value, onChange, allowNone = false }: { value: TemplateP
   );
 }
 
-export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig, canSaveCustomTemplates }: { initialTemplate: CustomTemplate | null; baseTemplateId: TemplateId; initialConfig: TemplateConfig; canSaveCustomTemplates: boolean }) {
+export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig }: { initialTemplate: CustomTemplate | null; baseTemplateId: TemplateId; initialConfig: TemplateConfig }) {
   const commentLayerEnabled = baseTemplateId === "comment-capture";
   const [history, setHistory] = useState<History>({ past: [], present: initialConfig, future: [] });
   const [name, setName] = useState(initialTemplate?.name || "나의 템플릿");
@@ -116,17 +105,6 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
   const [message, setMessage] = useState<string | null>(null);
   const [savedTemplate, setSavedTemplate] = useState(initialTemplate);
   const [centerGuides, setCenterGuides] = useState<CenterGuides>(hiddenCenterGuides);
-  const [planOverlayOpen, setPlanOverlayOpen] = useState(false);
-  const [commentPrototype, setCommentPrototype] = useState<CommentPrototypeState>(() => ({
-    visible: true,
-    theme: "light",
-    size: "medium",
-    y: clamp(initialConfig.video.y + initialConfig.video.height, COMMENT_Y_MIN, COMMENT_Y_MAX),
-  }));
-  const [commentDockedToVideo, setCommentDockedToVideo] = useState(() => {
-    const videoBottom = initialConfig.video.y + initialConfig.video.height;
-    return videoBottom >= COMMENT_Y_MIN && videoBottom <= COMMENT_Y_MAX;
-  });
   const [commentSnapGuide, setCommentSnapGuide] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const transactionRef = useRef<TemplateConfig | null>(null);
@@ -136,8 +114,8 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
   const availableLayerIds = commentLayerEnabled ? commentLayerIds : standardLayerIds;
   const videoBottom = config.video.y + config.video.height;
   const commentCanDockToVideo = videoBottom >= COMMENT_Y_MIN && videoBottom <= COMMENT_Y_MAX;
-  const commentIsDockedToVideo = commentDockedToVideo && commentCanDockToVideo;
-  const commentY = commentIsDockedToVideo ? videoBottom : commentPrototype.y;
+  const commentIsDockedToVideo = config.comment.dockedToVideo && commentCanDockToVideo;
+  const commentY = commentIsDockedToVideo ? videoBottom : config.comment.y;
 
   const commit = useCallback((updater: (current: TemplateConfig) => TemplateConfig) => {
     setHistory((current) => {
@@ -277,6 +255,7 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
     event.stopPropagation();
     setSelectedLayer("comment");
     event.currentTarget.setPointerCapture(event.pointerId);
+    transactionRef.current = cloneConfig(config);
     const startPointerY = event.clientY;
     const startLayerY = commentY;
     const toCanvasY = TEMPLATE_CANVAS.height / canvas.getBoundingClientRect().height;
@@ -289,11 +268,11 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
         videoBottom,
         COMMENT_VIDEO_SNAP_THRESHOLD_PX * toCanvasY,
       );
-      setCommentPrototype((current) => ({
-        ...current,
-        y: vertical.value,
-      }));
-      setCommentDockedToVideo(vertical.snapped);
+      updateTransient((next) => {
+        next.comment.y = vertical.value;
+        next.comment.dockedToVideo = vertical.snapped;
+        return next;
+      });
       setCommentSnapGuide(vertical.snapped);
     };
     const finish = () => {
@@ -301,6 +280,12 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
       setCommentSnapGuide(false);
+      const before = transactionRef.current;
+      transactionRef.current = null;
+      if (!before) return;
+      setHistory((current) => JSON.stringify(before) === JSON.stringify(current.present)
+        ? current
+        : { past: [...current.past.slice(-49), before], present: current.present, future: [] });
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", finish, { once: true });
@@ -314,10 +299,6 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
   });
 
   const save = async () => {
-    if (!canSaveCustomTemplates) {
-      setPlanOverlayOpen(true);
-      return;
-    }
     if (!name.trim()) { setMessage("템플릿 이름을 입력해 주세요."); return; }
     setSaving(true);
     setMessage(null);
@@ -330,10 +311,6 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
           : { name: name.trim(), baseTemplateId, config }),
       });
       const payload = await response.json() as { template?: CustomTemplate; detail?: string };
-      if (response.status === 403) {
-        setPlanOverlayOpen(true);
-        return;
-      }
       if (!response.ok || !payload.template) throw new Error(payload.detail || "템플릿을 저장하지 못했습니다.");
       setSavedTemplate(payload.template);
       setName(payload.template.name);
@@ -357,7 +334,6 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
 
   return (
     <div className="min-h-dvh bg-[#101012] text-neutral-100">
-      <CustomTemplatePlanOverlay open={planOverlayOpen} onClose={() => setPlanOverlayOpen(false)} />
       <div className="hidden min-h-dvh lg:block">
         <header className="fixed inset-x-0 top-0 z-50 flex h-16 items-center justify-between border-b border-white/10 bg-[#171719]/95 px-5 backdrop-blur-xl">
           <div className="flex items-center gap-4"><Link href="/templates" className="text-sm font-bold text-neutral-400 hover:text-white">← 라이브러리</Link><span className="h-5 w-px bg-white/10" /><strong className="tracking-[-.03em]">Easy Cut <span className="text-[#ff715e]">템플릿 커스텀</span></strong></div>
@@ -380,7 +356,7 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
                   <CustomTemplateTitlePreview title={config.title} firstLine="놓치면 후회할" secondLine="핵심 한 가지" selected={selectedLayer === "title"} onPointerDown={(event) => beginPointerAction(event, "title")} />
                   {config.channel.visible && !commentLayerEnabled && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</button>}
                   {commentLayerEnabled && <div className="absolute inset-x-0 z-40" style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>
-                    {commentPrototype.visible && <TemplateCommentPrototype selected={selectedLayer === "comment"} theme={commentPrototype.theme} size={commentPrototype.size} onSelect={() => setSelectedLayer("comment")} onPointerDown={beginCommentPointerAction} />}
+                    {config.comment.visible && <TemplateCommentPrototype selected={selectedLayer === "comment"} theme={config.comment.theme} size={config.comment.size} onSelect={() => setSelectedLayer("comment")} onPointerDown={beginCommentPointerAction} />}
                     {config.channel.visible && <button type="button" onClick={() => setSelectedLayer("channel")} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setSelectedLayer("channel"); }} className={`relative z-30 mx-auto mt-[2cqw] block truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ width: customCanvasWidth(config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</button>}
                   </div>}
                   {commentSnapGuide && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 z-50 h-px bg-[#35e6e3] shadow-[0_0_7px_rgba(53,230,227,.9)]" style={{ top: `${(videoBottom / TEMPLATE_CANVAS.height) * 100}%` }}><span className="absolute right-2 -translate-y-full rounded-t bg-[#35e6e3] px-1.5 py-0.5 text-[7px] font-black text-black">영상 하단에 맞춤</span></div>}
@@ -415,33 +391,33 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig,
             {selectedLayer === "comment" && commentLayerEnabled && <section>
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">댓글 레이아웃</h2>
-                <span className="rounded-full border border-[#ff9b8d]/30 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">미리보기 전용</span>
+                <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold text-emerald-300">렌더링 적용</span>
               </div>
-              <p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">예시 문구는 고정되어 있으며, 지금은 디자인만 비교할 수 있습니다.</p>
+              <p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">예시 문구는 편집용으로 고정되며, 저장한 모드·크기·위치가 실제 댓글에 적용됩니다.</p>
               <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-neutral-200">레이어 표시</span>
-                  <button type="button" onClick={() => setCommentPrototype((current) => ({ ...current, visible: !current.visible }))} className={`rounded-full px-3 py-1 text-xs font-bold ${commentPrototype.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}>{commentPrototype.visible ? "켜짐" : "꺼짐"}</button>
+                  <button type="button" onClick={() => commit((next) => { next.comment.visible = !next.comment.visible; return next; })} className={`rounded-full px-3 py-1 text-xs font-bold ${config.comment.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}>{config.comment.visible ? "켜짐" : "꺼짐"}</button>
                 </div>
 
                 <div className="mt-5 border-t border-white/10 pt-4">
                   <h3 className="text-sm font-semibold text-neutral-200">댓글 모드</h3>
                   <div className="mt-3 grid grid-cols-2 gap-2">
-                    {commentThemeOptions.map((option) => <button key={option.value} type="button" onClick={() => setCommentPrototype((current) => ({ ...current, theme: option.value }))} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold transition ${commentPrototype.theme === option.value ? "border-[#ff715e] bg-[#ff715e]/10 text-white" : "border-white/10 bg-white/[.03] text-neutral-400 hover:border-white/30 hover:text-white"}`}><span className="h-5 w-8 border border-white/15" style={{ backgroundColor: option.background }}><span className="mx-auto mt-[8px] block h-px w-4" style={{ backgroundColor: option.foreground }} /></span>{option.label}</button>)}
+                    {commentThemeOptions.map((option) => <button key={option.value} type="button" onClick={() => commit((next) => { next.comment.theme = option.value; return next; })} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold transition ${config.comment.theme === option.value ? "border-[#ff715e] bg-[#ff715e]/10 text-white" : "border-white/10 bg-white/[.03] text-neutral-400 hover:border-white/30 hover:text-white"}`}><span className="h-5 w-8 border border-white/15" style={{ backgroundColor: option.background }}><span className="mx-auto mt-[8px] block h-px w-4" style={{ backgroundColor: option.foreground }} /></span>{option.label}</button>)}
                   </div>
                   <p className="mt-2 text-[11px] leading-5 text-neutral-500">두 모드 모두 가로 여백 없이 캔버스 너비 전체를 채우며 모서리는 각지게 유지합니다.</p>
                 </div>
 
                 <div className="mt-5 border-t border-white/10 pt-4">
                   <h3 className="text-sm font-semibold text-neutral-200">댓글 크기</h3>
-                  <div className="mt-3 grid grid-cols-3 gap-1.5">{commentSizeOptions.map((option) => <button key={option.value} type="button" onClick={() => setCommentPrototype((current) => ({ ...current, size: option.value }))} className={`rounded-lg py-2.5 text-xs font-bold transition ${commentPrototype.size === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400 hover:bg-white/10 hover:text-white"}`}>{option.label}</button>)}</div>
+                  <div className="mt-3 grid grid-cols-3 gap-1.5">{commentSizeOptions.map((option) => <button key={option.value} type="button" onClick={() => commit((next) => { next.comment.size = option.value; return next; })} className={`rounded-lg py-2.5 text-xs font-bold transition ${config.comment.size === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400 hover:bg-white/10 hover:text-white"}`}>{option.label}</button>)}</div>
                   <p className="mt-2 text-[11px] leading-5 text-neutral-500">크기를 바꾸면 프로필·문구·반응 버튼과 안쪽 여백이 함께 줄고, 카드 높이도 내용에 맞춰 자동 조절됩니다.</p>
                 </div>
 
-                <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">세로 위치 <span className="float-right text-sm text-[#ff9b8d]">{Math.round((commentY / TEMPLATE_CANVAS.height) * 100)}%</span><input type="range" min={COMMENT_Y_MIN} max={COMMENT_Y_MAX} step={10} value={commentY} onChange={(event) => { const vertical = snapCommentYToVideo(Number(event.target.value), videoBottom, 30); setCommentPrototype((current) => ({ ...current, y: vertical.value })); setCommentDockedToVideo(vertical.snapped); }} className="mt-3 w-full accent-[#ff715e]" /></label>
+                <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">세로 위치 <span className="float-right text-sm text-[#ff9b8d]">{Math.round((commentY / TEMPLATE_CANVAS.height) * 100)}%</span><input type="range" min={COMMENT_Y_MIN} max={COMMENT_Y_MAX} step={10} value={commentY} onChange={(event) => { const vertical = snapCommentYToVideo(Number(event.target.value), videoBottom, 30); commit((next) => { next.comment.y = vertical.value; next.comment.dockedToVideo = vertical.snapped; return next; }); }} className="mt-3 w-full accent-[#ff715e]" /></label>
                 <p className={`mt-2 text-[11px] leading-5 ${commentIsDockedToVideo ? "font-semibold text-[#74efec]" : "text-neutral-500"}`}>{commentIsDockedToVideo ? "영상 하단에 자석처럼 붙어 있습니다." : "슬라이더를 쓰거나 댓글 카드를 끌어 영상 하단 가까이 가져가 보세요."}</p>
 
-                <div className="mt-5 rounded-lg border border-amber-300/20 bg-amber-300/[.06] px-3 py-2.5 text-[11px] leading-5 text-amber-100/75">이번 시안은 저장 및 실제 렌더링에는 아직 반영되지 않습니다. 디자인 확정 후 템플릿 설정과 렌더러에 연결합니다.</div>
+                <div className="mt-5 rounded-lg border border-emerald-300/20 bg-emerald-300/[.06] px-3 py-2.5 text-[11px] leading-5 text-emerald-100/75">저장하면 댓글 카드와 채널명 배치가 완성 영상에도 같은 설정으로 적용됩니다.</div>
               </div>
             </section>}
 

@@ -246,7 +246,7 @@ def test_custom_template_config_rejects_video_outside_canvas() -> None:
 def test_custom_video_geometry_uses_saved_pixels_without_rounding() -> None:
     config = CustomTemplateConfig.model_validate(
         {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "background": {"kind": "color", "color": "#111111"},
             "video": {
                 "aspectRatio": "16:9",
@@ -341,7 +341,7 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
     )
     config = CustomTemplateConfig.model_validate(
         {
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "background": {"kind": "color", "color": "#16A34A"},
             "video": {
                 "aspectRatio": "16:9",
@@ -372,13 +372,20 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
                 "backgroundColor": "#000000",
             },
             "channel": {
-                "visible": True,
+                "visible": False,
                 "x": 540,
                 "y": 1700,
                 "maxWidth": 800,
                 "fontSize": 42,
                 "color": "#FFFFFF",
                 "backgroundColor": None,
+            },
+            "comment": {
+                "visible": True,
+                "theme": "light",
+                "size": "small",
+                "y": 1050,
+                "dockedToVideo": True,
             },
         }
     )
@@ -391,11 +398,24 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
         output_path=output,
         title="개인 템플릿\n렌더링 확인",
         channel_name="테스트 채널",
-        template_id=TemplateId.DARK_MINIMAL,
+        template_id=TemplateId.COMMENT_CAPTURE,
         transcript=[],
         subtitles_enabled=False,
         work_dir=tmp_path / "work",
         prefix="custom",
+        comment_overlays=[
+            CommentOverlay(
+                id="render-comment",
+                startSeconds=0,
+                endSeconds=1,
+                text="렌더링 댓글 레이아웃 확인",
+                initial="확",
+                avatarColor="#D84572",
+                nickname="렌더확인24",
+                likeCount=121,
+                ageLabel="2시간 전",
+            )
+        ],
         custom_template_config=config,
     )
 
@@ -424,6 +444,7 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
         ]
     )
     with Image.open(rendered_frame).convert("RGB") as image:
+
         def is_video(pixel: tuple[int, int, int]) -> bool:
             return pixel[0] > pixel[1] * 1.5 and pixel[0] > pixel[2] * 1.5
 
@@ -435,6 +456,7 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
         assert is_video(image.getpixel((540, 600)))
         assert is_video(image.getpixel((540, 1049)))
         assert not is_video(image.getpixel((540, 1050)))
+        assert all(channel >= 245 for channel in image.getpixel((10, 1060)))
 
 
 def test_bundled_custom_backgrounds_are_full_vertical_rgb_images() -> None:

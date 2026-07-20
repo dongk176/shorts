@@ -11,6 +11,7 @@ from .schemas import (
     CustomTemplateConfig,
     SubtitleSegment,
     TemplateId,
+    TemplateTextLayer,
     TitleTextStyle,
 )
 
@@ -22,6 +23,8 @@ TITLE_ACCENT_PADDING_X = 24
 TITLE_ACCENT_PADDING_Y = 10
 CHANNEL_TOP_MARGIN = 48
 COMMENT_BODY_FONT_SIZE = 35
+COMMENT_SIZE_SCALES = {"small": 0.82, "medium": 1.0, "large": 1.16}
+COMMENT_DARK_BACKGROUND = "#040404"
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +41,9 @@ TEMPLATE_STYLES = {
     TemplateId.WHITE_YELLOW: TemplateStyle("#FFFFFF", "#111111", "#111111", "#FFD84D", "#111111"),
     TemplateId.DARK_MINIMAL: TemplateStyle("#000000", "#FFFFFF", "#F04444", None, "#FFFFFF"),
     TemplateId.PAPER: TemplateStyle("#F3F0E9", "#111111", "#D52B2B", None, "#363636"),
-    TemplateId.COMMENT_CAPTURE: TemplateStyle("#000000", "#FFFFFF", "#35E6E3", None, "#FFFFFF"),
+    TemplateId.COMMENT_CAPTURE: TemplateStyle(
+        COMMENT_DARK_BACKGROUND, "#FFFFFF", "#35E6E3", None, "#FFFFFF"
+    ),
 }
 
 CUSTOM_BACKGROUND_ASSETS = {
@@ -479,6 +484,7 @@ def _draw_reaction_icon(
     size: int,
     *,
     down: bool = False,
+    color: str = "#F1F1F1",
 ) -> None:
     # Rounded, continuous YouTube-style hand outline. The dislike icon is the
     # same silhouette rotated 180 degrees, including its wrist.
@@ -511,7 +517,119 @@ def _draw_reaction_icon(
     points = [(x + size * px, y + size * py) for px, py in outline]
     points.append(points[0])
     stroke = max(3, round(size * 0.09))
-    draw.line(points, fill="#F1F1F1", width=stroke, joint="curve")
+    draw.line(points, fill=color, width=stroke, joint="curve")
+
+
+def _create_custom_comment_panel(
+    comment: CommentOverlay,
+    output_path: Path,
+    *,
+    theme: str,
+    size: str,
+    overlay_mode: bool,
+) -> Path:
+    """Mirror the browser comment card's 1080px canvas measurements."""
+    scale = COMMENT_SIZE_SCALES[size]
+    foreground = "#F7F7F8" if theme == "dark" else "#161619"
+    muted = "#A5A5AA" if theme == "dark" else "#6B6B73"
+    background = COMMENT_DARK_BACKGROUND if theme == "dark" else "#FFFFFF"
+    left = round(47.52 * scale)
+    top = round(34.56 * scale)
+    bottom = round(36.72 * scale)
+    avatar_size = round(101.52 * scale)
+    content_x = left + avatar_size + round(27 * scale)
+    meta_font = load_font(max(20, round(34.02 * scale)), "bold")
+    body_font = load_font(max(22, round(39.10 * scale)), "regular")
+    action_font = load_font(max(18, round(33.48 * scale)), "regular")
+    scratch = Image.new("RGBA", (PANEL_WIDTH, 1), (0, 0, 0, 0))
+    scratch_draw = ImageDraw.Draw(scratch)
+    lines = _wrap_comment_text(
+        scratch_draw,
+        comment.text,
+        body_font,
+        PANEL_WIDTH - content_x - left,
+    )
+    meta_box = scratch_draw.textbbox(
+        (0, 0), f"{comment.nickname} · {comment.age_label}", font=meta_font
+    )
+    meta_height = meta_box[3] - meta_box[1]
+    meta_gap = round(12.96 * scale)
+    line_height = round(55.50 * scale)
+    actions_gap = round(22.68 * scale)
+    icon_size = round(44.28 * scale)
+    content_height = meta_height + meta_gap + len(lines) * line_height + actions_gap + icon_size
+    panel_height = top + max(avatar_size, content_height) + bottom
+    base = Image.new("RGBA", (PANEL_WIDTH, panel_height), background)
+
+    identity = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    identity_draw = ImageDraw.Draw(identity)
+    identity_draw.ellipse(
+        (left, top, left + avatar_size, top + avatar_size),
+        fill=comment.avatar_color,
+    )
+    initial_font = load_font(max(20, round(38.88 * scale)), "bold")
+    initial_box = identity_draw.textbbox((0, 0), comment.initial, font=initial_font)
+    identity_draw.text(
+        (
+            left + (avatar_size - (initial_box[2] - initial_box[0])) / 2 - initial_box[0],
+            top + (avatar_size - (initial_box[3] - initial_box[1])) / 2 - initial_box[1],
+        ),
+        comment.initial,
+        font=initial_font,
+        fill="#FFFFFF",
+    )
+    identity_draw.text(
+        (content_x, top - meta_box[1]),
+        f"{comment.nickname} · {comment.age_label}",
+        font=meta_font,
+        fill=foreground,
+    )
+    base.alpha_composite(
+        identity.filter(ImageFilter.GaussianBlur(radius=max(3, round(7.56 * scale))))
+    )
+
+    draw = ImageDraw.Draw(base)
+    text_top = top + meta_height + meta_gap
+    for index, line in enumerate(lines):
+        draw.text(
+            (content_x, text_top + index * line_height),
+            line,
+            font=body_font,
+            fill=foreground,
+        )
+    actions_y = text_top + len(lines) * line_height + actions_gap
+    _draw_reaction_icon(draw, content_x, actions_y, icon_size, color=foreground)
+    if comment.like_count >= 10_000:
+        amount = (comment.like_count // 1_000) / 10
+        likes = f"{amount:g}만"
+    elif comment.like_count >= 1_000:
+        amount = (comment.like_count // 100) / 10
+        likes = f"{amount:g}천"
+    else:
+        likes = f"{comment.like_count:,}"
+    likes_x = content_x + icon_size + round(14.58 * scale)
+    likes_box = action_font.getbbox(likes)
+    likes_y = (
+        actions_y
+        + (icon_size - (likes_box[3] - likes_box[1])) / 2
+        - likes_box[1]
+    )
+    draw.text((likes_x, likes_y), likes, font=action_font, fill=muted)
+    dislike_x = likes_x + _text_width(draw, likes, action_font) + round(45.36 * scale)
+    _draw_reaction_icon(draw, dislike_x, actions_y, icon_size, down=True, color=foreground)
+    reply_x = dislike_x + icon_size + round(45.36 * scale)
+    reply_box = action_font.getbbox("답글")
+    reply_y = (
+        actions_y
+        + (icon_size - (reply_box[3] - reply_box[1])) / 2
+        - reply_box[1]
+    )
+    draw.text((reply_x, reply_y), "답글", font=action_font, fill=muted)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output = base if overlay_mode else base.convert("RGB")
+    output.save(output_path, format="PNG", optimize=True)
+    return output_path
 
 
 def create_comment_panel(
@@ -520,8 +638,18 @@ def create_comment_panel(
     *,
     panel_height: int = PANEL_HEIGHT,
     overlay_mode: bool = False,
+    theme: str | None = None,
+    size: str | None = None,
 ) -> Path:
     """Render a deliberately plain, screenshot-like comment strip."""
+    if theme is not None and size is not None:
+        return _create_custom_comment_panel(
+            comment,
+            output_path,
+            theme=theme,
+            size=size,
+            overlay_mode=overlay_mode,
+        )
     scale = max(0.58, min(1.0, panel_height / 285))
     base = Image.new(
         "RGBA",
@@ -615,6 +743,115 @@ def create_comment_panel(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output = base if overlay_mode else base.convert("RGB")
     output.save(output_path, format="PNG", optimize=True)
+    return output_path
+
+
+def _draw_custom_channel(
+    image: Image.Image,
+    *,
+    channel_name: str,
+    layer: TemplateTextLayer,
+    center_y: float,
+    channel_thumbnail_path: Path | None,
+    center_x: float | None = None,
+) -> int:
+    draw = ImageDraw.Draw(image)
+    font_size = layer.font_size
+    font = load_font(font_size, "bold")
+    name = " ".join(channel_name.split())[:50] or "YouTube 채널"
+    while font_size > 20 and _text_width(draw, name, font) > layer.max_width - 84:
+        font_size -= 2
+        font = load_font(font_size, "bold")
+    text_box = draw.textbbox((0, 0), name, font=font)
+    text_width = text_box[2] - text_box[0]
+    text_height = text_box[3] - text_box[1]
+    icon_size = max(36, round(font_size * 1.25))
+    gap = max(12, round(font_size * 0.36))
+    group_width = icon_size + gap + text_width
+    group_height = max(icon_size, text_height)
+    resolved_x = layer.x if center_x is None else center_x
+    left = resolved_x - group_width / 2
+    top = center_y - group_height / 2
+    pad = max(8, round(font_size * 0.24)) if layer.background_color else 0
+    if layer.background_color:
+        draw.rounded_rectangle(
+            (
+                left - pad,
+                top - pad,
+                left + group_width + pad,
+                top + group_height + pad,
+            ),
+            radius=max(6, round(font_size * 0.18)),
+            fill=layer.background_color,
+        )
+    avatar_rendered = False
+    if channel_thumbnail_path and channel_thumbnail_path.is_file():
+        try:
+            with Image.open(channel_thumbnail_path) as source:
+                avatar = ImageOps.fit(
+                    source.convert("RGB"),
+                    (icon_size, icon_size),
+                    method=Image.Resampling.LANCZOS,
+                )
+            mask = Image.new("L", (icon_size, icon_size), 0)
+            ImageDraw.Draw(mask).ellipse((0, 0, icon_size - 1, icon_size - 1), fill=255)
+            image.paste(avatar, (round(left), round(top)), mask)
+            avatar_rendered = True
+        except (OSError, ValueError, UnidentifiedImageError):
+            avatar_rendered = False
+    if not avatar_rendered:
+        draw.ellipse((left, top, left + icon_size, top + icon_size), fill=layer.color)
+    draw.text(
+        (
+            left + icon_size + gap - text_box[0],
+            center_y - text_height / 2 - text_box[1],
+        ),
+        name,
+        font=font,
+        fill=layer.color,
+    )
+    return group_height + pad * 2
+
+
+def create_custom_comment_overlay(
+    comment: CommentOverlay,
+    output_path: Path,
+    *,
+    config: CustomTemplateConfig,
+    channel_name: str,
+    channel_thumbnail_path: Path | None = None,
+) -> Path:
+    """Create one opaque full-width card with an optional channel row below it."""
+    create_comment_panel(
+        comment,
+        output_path,
+        overlay_mode=True,
+        theme=config.comment.theme,
+        size=config.comment.size,
+    )
+    if not config.channel.visible:
+        return output_path
+    with Image.open(output_path) as source:
+        panel = source.convert("RGBA")
+    gap = round(21.6 * COMMENT_SIZE_SCALES[config.comment.size])
+    channel_height = max(36, round(config.channel.font_size * 1.25))
+    if config.channel.background_color:
+        channel_height += max(8, round(config.channel.font_size * 0.24)) * 2
+    combined = Image.new(
+        "RGBA",
+        (PANEL_WIDTH, panel.height + gap + channel_height),
+        (0, 0, 0, 0),
+    )
+    combined.alpha_composite(panel, (0, 0))
+    _draw_custom_channel(
+        combined,
+        channel_name=channel_name,
+        layer=config.channel,
+        center_y=panel.height + gap + channel_height / 2,
+        center_x=PANEL_WIDTH / 2,
+        channel_thumbnail_path=channel_thumbnail_path,
+    )
+    combined.save(output_path, format="PNG", optimize=True)
     return output_path
 
 
@@ -718,6 +955,7 @@ def create_custom_canvas_overlays(
     prefix: str,
     channel_thumbnail_path: Path | None = None,
     include_channel: bool = True,
+    channel_y_override: float | None = None,
 ) -> tuple[Path, Path, Path]:
     """Create trusted full-canvas assets for a validated personal template."""
     directory.mkdir(parents=True, exist_ok=True)
@@ -755,58 +993,12 @@ def create_custom_canvas_overlays(
 
     channel_image = Image.new("RGBA", (PANEL_WIDTH, 1920), (0, 0, 0, 0))
     if include_channel and config.channel.visible:
-        draw = ImageDraw.Draw(channel_image)
-        font_size = config.channel.font_size
-        font = load_font(font_size, "bold")
-        name = " ".join(channel_name.split())[:50] or "YouTube 채널"
-        while font_size > 20 and _text_width(draw, name, font) > config.channel.max_width - 84:
-            font_size -= 2
-            font = load_font(font_size, "bold")
-        text_box = draw.textbbox((0, 0), name, font=font)
-        text_width = text_box[2] - text_box[0]
-        text_height = text_box[3] - text_box[1]
-        icon_size = max(36, round(font_size * 1.25))
-        gap = max(12, round(font_size * 0.36))
-        group_width = icon_size + gap + text_width
-        left = config.channel.x - group_width / 2
-        top = config.channel.y - max(icon_size, text_height) / 2
-        if config.channel.background_color:
-            pad = max(8, round(font_size * 0.24))
-            draw.rounded_rectangle(
-                (
-                    left - pad,
-                    top - pad,
-                    left + group_width + pad,
-                    top + max(icon_size, text_height) + pad,
-                ),
-                radius=max(6, round(font_size * 0.18)),
-                fill=config.channel.background_color,
-            )
-        avatar_rendered = False
-        if channel_thumbnail_path and channel_thumbnail_path.is_file():
-            try:
-                with Image.open(channel_thumbnail_path) as source:
-                    avatar = ImageOps.fit(
-                        source.convert("RGB"),
-                        (icon_size, icon_size),
-                        method=Image.Resampling.LANCZOS,
-                    )
-                mask = Image.new("L", (icon_size, icon_size), 0)
-                ImageDraw.Draw(mask).ellipse((0, 0, icon_size - 1, icon_size - 1), fill=255)
-                channel_image.paste(avatar, (round(left), round(top)), mask)
-                avatar_rendered = True
-            except (OSError, ValueError, UnidentifiedImageError):
-                avatar_rendered = False
-        if not avatar_rendered:
-            draw.ellipse((left, top, left + icon_size, top + icon_size), fill=config.channel.color)
-        draw.text(
-            (
-                left + icon_size + gap - text_box[0],
-                config.channel.y - text_height / 2 - text_box[1],
-            ),
-            name,
-            font=font,
-            fill=config.channel.color,
+        _draw_custom_channel(
+            channel_image,
+            channel_name=channel_name,
+            layer=config.channel,
+            center_y=config.channel.y if channel_y_override is None else channel_y_override,
+            channel_thumbnail_path=channel_thumbnail_path,
         )
     channel_image.save(channel_path, format="PNG", optimize=True)
     return background_path, title_path, channel_path

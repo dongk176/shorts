@@ -334,34 +334,7 @@ describe("job API security and idempotency", () => {
     expect(response.status).toBe(202);
   });
 
-  it("rejects a custom template when the active plan is Plus", async () => {
-    const db = dbWithRows([], [analysisRow]);
-    const tx = dbWithRows([], []);
-    Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
-    mocks.getDb.mockReturnValue(db);
-
-    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
-      analysisId,
-      templateId: "dark-red",
-      customTemplateId: "14f19366-89b7-4c54-8ec6-c0f2b75584c1",
-      requestId: "15d58bd6-beca-4cf0-a8bf-f49746a9955c",
-    }));
-
-    expect(response.status).toBe(403);
-    await expect(response.json()).resolves.toMatchObject({
-      detail: "커스텀 템플릿은 스탠다드 또는 프로 플랜에서 사용할 수 있습니다.",
-    });
-  });
-
-  it("uses the saved custom-template ratio even when the client sends another ratio", async () => {
-    mocks.billing.mockResolvedValue({
-      status: "active", planCode: "standard", billingCycle: "monthly",
-      currentPeriodStart: "2026-07-01T00:00:00.000Z", currentPeriodEnd: "2026-08-01T00:00:00.000Z",
-      nextChargeAt: "2026-08-01T00:00:00.000Z", cancelAtPeriodEnd: false,
-      scheduledPlanCode: null, scheduledBillingCycle: null, cardIssuer: "11",
-      cardNumberMasked: "12345678****1234", cardLast4: "1234",
-      canCreateJobs: true, maxActiveJobs: 2, retentionDays: 15,
-    });
+  it("lets Plus use a saved custom-template ratio even when the client sends another ratio", async () => {
     const customTemplateId = "14f19366-89b7-4c54-8ec6-c0f2b75584c1";
     const config = createDefaultTemplateConfig();
     config.video = videoFrameForAspect("4:5");
@@ -673,22 +646,34 @@ describe("short ownership, expiry, and edit validation", () => {
 });
 
 describe("custom-template plan access", () => {
-  it("does not let a Plus subscriber save a personal template", async () => {
-    const tx = dbWithRows();
+  it("lets a Plus subscriber save a personal template", async () => {
+    const config = createDefaultTemplateConfig("dark-minimal");
+    const tx = dbWithRows(
+      [],
+      [{ count: 0 }],
+      [{
+        id: "14f19366-89b7-4c54-8ec6-c0f2b75584c1",
+        name: "플러스 템플릿",
+        baseTemplateId: "dark-minimal",
+        config,
+        version: 1,
+        createdAt: "2026-07-20T00:00:00.000Z",
+        updatedAt: "2026-07-20T00:00:00.000Z",
+      }],
+    );
     const db = dbWithRows();
     Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
     mocks.getDb.mockReturnValue(db);
 
     const response = await createPersonalTemplate(jsonRequest("http://localhost/api/templates", {
-      name: "플러스 저장 시도",
+      name: "플러스 템플릿",
       baseTemplateId: "dark-minimal",
-      config: createDefaultTemplateConfig("dark-minimal"),
+      config,
     }));
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(201);
     await expect(response.json()).resolves.toMatchObject({
-      detail: "커스텀 템플릿은 스탠다드 또는 프로 플랜에서 사용할 수 있습니다.",
+      template: { name: "플러스 템플릿", config: { schemaVersion: 3 } },
     });
-    expect(tx).not.toHaveBeenCalled();
   });
 });

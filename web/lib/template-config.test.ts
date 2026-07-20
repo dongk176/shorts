@@ -27,13 +27,22 @@ describe("personal template config", () => {
   it("starts comment capture templates with the channel layer hidden", () => {
     const commentConfig = createDefaultTemplateConfig("comment-capture");
     expect(commentConfig.channel.visible).toBe(false);
+    expect(commentConfig.comment).toEqual({
+      visible: true,
+      theme: "dark",
+      size: "medium",
+      y: commentConfig.video.y + commentConfig.video.height,
+      dockedToVideo: true,
+    });
     expect(commentConfig.background).toEqual({ kind: "color", color: COMMENT_BACKGROUND_COLOR });
     expect(templatePresetColors).toContain(COMMENT_BACKGROUND_COLOR);
     expect(createDefaultTemplateConfig("dark-minimal").channel.visible).toBe(true);
   });
 
-  it("upgrades a shared v1 title background into independent v2 line backgrounds", () => {
+  it("upgrades a shared v1 title background and comment defaults into v3", () => {
     const current = createDefaultTemplateConfig();
+    const { comment, ...legacyCurrent } = current;
+    expect(comment).toBeDefined();
     const legacyTitle = {
       visible: current.title.visible,
       x: current.title.x,
@@ -44,14 +53,31 @@ describe("personal template config", () => {
       accentColor: current.title.accentColor,
     };
     const parsed = templateConfigSchema.parse({
-      ...current,
+      ...legacyCurrent,
       schemaVersion: 1,
       title: { ...legacyTitle, backgroundColor: "#E32626" },
     });
-    expect(parsed.schemaVersion).toBe(2);
+    expect(parsed.schemaVersion).toBe(3);
     expect(parsed.title.primaryBackgroundColor).toBe("#E32626");
     expect(parsed.title.accentBackgroundColor).toBe("#E32626");
     expect(parsed.title).not.toHaveProperty("backgroundColor");
+    expect(parsed.comment.y).toBe(parsed.video.y + parsed.video.height);
+    expect(parsed.comment.dockedToVideo).toBe(true);
+  });
+
+  it("upgrades v2 templates with renderable comment defaults", () => {
+    const current = createDefaultTemplateConfig("comment-capture");
+    const { comment, ...withoutComment } = current;
+    expect(comment).toBeDefined();
+    const parsed = templateConfigSchema.parse({ ...withoutComment, schemaVersion: 2 });
+    expect(parsed.schemaVersion).toBe(3);
+    expect(parsed.comment).toEqual({
+      visible: true,
+      theme: "dark",
+      size: "medium",
+      y: parsed.video.y + parsed.video.height,
+      dockedToVideo: true,
+    });
   });
 
   it("provides a display name for every selectable template color", () => {

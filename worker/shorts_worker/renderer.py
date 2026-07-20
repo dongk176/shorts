@@ -12,6 +12,7 @@ from .overlays import (
     create_ass_subtitles,
     create_comment_panel,
     create_custom_canvas_overlays,
+    create_custom_comment_overlay,
     create_panel_overlays,
 )
 from .schemas import (
@@ -332,14 +333,16 @@ class VideoRenderer:
         if has_audio:
             filters.append("[0:a]asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11[audio]")
             audio_label = "audio"
-        command.extend([
-            "-filter_complex_threads",
-            str(self.settings.ffmpeg_threads),
-            "-filter_complex",
-            ";".join(filters),
-            "-map",
-            f"[{video_label}]",
-        ])
+        command.extend(
+            [
+                "-filter_complex_threads",
+                str(self.settings.ffmpeg_threads),
+                "-filter_complex",
+                ";".join(filters),
+                "-map",
+                f"[{video_label}]",
+            ]
+        )
         if audio_label:
             command.extend(["-map", f"[{audio_label}]"])
         command.extend(
@@ -396,6 +399,21 @@ class VideoRenderer:
         fps: float,
         has_audio: bool,
     ) -> Path:
+        video_bottom = config.video.y + config.video.height
+        comment_y = (
+            video_bottom
+            if config.comment.docked_to_video and 720 <= video_bottom <= 1480
+            else config.comment.y
+        )
+        visible_comments = (
+            sorted(comment_overlays, key=lambda item: item.start_seconds)
+            if template_id is TemplateId.COMMENT_CAPTURE and config.comment.visible
+            else []
+        )
+        comment_windows = continuous_comment_windows(visible_comments, duration)
+        include_static_channel = (
+            template_id is not TemplateId.COMMENT_CAPTURE or not comment_windows
+        )
         background, title_overlay, channel_overlay = create_custom_canvas_overlays(
             title=title,
             channel_name=channel_name,
@@ -403,20 +421,20 @@ class VideoRenderer:
             directory=work_dir / "overlays",
             prefix=prefix,
             channel_thumbnail_path=channel_thumbnail_path,
-            include_channel=template_id is not TemplateId.COMMENT_CAPTURE,
+            include_channel=include_static_channel,
+            channel_y_override=(
+                comment_y + 22 + max(36, round(config.channel.font_size * 1.25)) / 2
+                if template_id is TemplateId.COMMENT_CAPTURE
+                else None
+            ),
         )
-        visible_comments = (
-            sorted(comment_overlays, key=lambda item: item.start_seconds)
-            if template_id is TemplateId.COMMENT_CAPTURE
-            else []
-        )
-        comment_windows = continuous_comment_windows(visible_comments, duration)
         comment_panels = [
-            create_comment_panel(
+            create_custom_comment_overlay(
                 comment,
                 work_dir / "overlays" / f"{prefix}_custom_comment_{index}.png",
-                panel_height=320,
-                overlay_mode=True,
+                config=config,
+                channel_name=channel_name,
+                channel_thumbnail_path=channel_thumbnail_path,
             )
             for index, (comment, _, _) in enumerate(comment_windows)
         ]
@@ -438,7 +456,6 @@ class VideoRenderer:
             "[with_title][3:v]overlay=x=0:y=0:shortest=1[composed]",
         ]
         video_label = "composed"
-        comment_y = max(0, min(CANVAS_HEIGHT - 320, config.channel.y - 160))
         for index, (_, start, end) in enumerate(comment_windows):
             next_label = f"with_comment_{index}"
             filters.append(
@@ -484,14 +501,16 @@ class VideoRenderer:
         if has_audio:
             filters.append("[0:a]asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11[audio]")
             audio_label = "audio"
-        command.extend([
-            "-filter_complex_threads",
-            str(self.settings.ffmpeg_threads),
-            "-filter_complex",
-            ";".join(filters),
-            "-map",
-            f"[{video_label}]",
-        ])
+        command.extend(
+            [
+                "-filter_complex_threads",
+                str(self.settings.ffmpeg_threads),
+                "-filter_complex",
+                ";".join(filters),
+                "-map",
+                f"[{video_label}]",
+            ]
+        )
         if audio_label:
             command.extend(["-map", f"[{audio_label}]"])
         command.extend(

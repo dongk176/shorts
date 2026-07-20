@@ -95,6 +95,14 @@ const titleLayerSchema = textLayerSchema.omit({ color: true, backgroundColor: tr
   accentBackgroundColor: colorSchema.nullable(),
 }).strict();
 
+const commentLayerSchema = z.object({
+  visible: z.boolean(),
+  theme: z.enum(["dark", "light"]),
+  size: z.enum(["small", "medium", "large"]),
+  y: z.number().int().min(0).max(TEMPLATE_CANVAS.height),
+  dockedToVideo: z.boolean(),
+}).strict();
+
 const sharedTemplateLayers = {
   background: backgroundSchema,
   video: videoLayerSchema,
@@ -103,10 +111,21 @@ const sharedTemplateLayers = {
 } as const;
 
 const currentTemplateConfigSchema = z.object({
+  schemaVersion: z.literal(3),
+  ...sharedTemplateLayers,
+  title: titleLayerSchema,
+  comment: commentLayerSchema,
+}).strict();
+
+const previousTemplateConfigSchema = z.object({
   schemaVersion: z.literal(2),
   ...sharedTemplateLayers,
   title: titleLayerSchema,
-}).strict();
+}).strict().transform((config) => ({
+  ...config,
+  schemaVersion: 3 as const,
+  comment: defaultCommentLayer(config.video),
+}));
 
 const legacyTemplateConfigSchema = z.object({
   schemaVersion: z.literal(1),
@@ -116,17 +135,19 @@ const legacyTemplateConfigSchema = z.object({
   const { backgroundColor, ...title } = config.title;
   return {
     ...config,
-    schemaVersion: 2 as const,
+    schemaVersion: 3 as const,
     title: {
       ...title,
       primaryBackgroundColor: backgroundColor,
       accentBackgroundColor: backgroundColor,
     },
+    comment: defaultCommentLayer(config.video),
   };
 });
 
 export const templateConfigSchema = z.union([
   currentTemplateConfigSchema,
+  previousTemplateConfigSchema,
   legacyTemplateConfigSchema,
 ]).superRefine((config, context) => {
   const expectedHeight = Math.round(config.video.width * aspectHeightRatio(config.video.aspectRatio));
@@ -179,11 +200,21 @@ export function videoFrameForAspect(aspectRatio: VideoAspectRatio, width: number
   };
 }
 
+function defaultCommentLayer(video: { y: number; height: number }) {
+  return {
+    visible: true,
+    theme: "dark" as const,
+    size: "medium" as const,
+    y: Math.min(TEMPLATE_CANVAS.height, video.y + video.height),
+    dockedToVideo: true,
+  };
+}
+
 export function createDefaultTemplateConfig(baseTemplateId: TemplateId = "dark-minimal"): TemplateConfig {
   const light = baseTemplateId === "white-yellow" || baseTemplateId === "paper";
   const accent = baseTemplateId === "comment-capture" ? "#35E6E3" : baseTemplateId === "white-yellow" ? "#FFD84D" : "#FF4D4F";
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     background: { kind: "color", color: baseTemplateId === "comment-capture" ? COMMENT_BACKGROUND_COLOR : light ? "#F3F0E9" : "#111111" },
     video: videoFrameForAspect("5:4"),
     title: {
@@ -198,6 +229,10 @@ export function createDefaultTemplateConfig(baseTemplateId: TemplateId = "dark-m
     channel: {
       visible: baseTemplateId !== "comment-capture", x: 540, y: 1650, maxWidth: 800, fontSize: 42,
       color: light ? "#353438" : "#FFFFFF", backgroundColor: null,
+    },
+    comment: {
+      ...defaultCommentLayer(videoFrameForAspect("5:4")),
+      visible: baseTemplateId === "comment-capture",
     },
   };
 }

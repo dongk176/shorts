@@ -110,15 +110,48 @@ class TemplateTitleLayer(BaseModel):
         return upgraded
 
 
+class TemplateCommentLayer(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    visible: bool = True
+    theme: str = Field(default="dark", pattern=r"^(dark|light)$")
+    size: str = Field(default="medium", pattern=r"^(small|medium|large)$")
+    y: int = Field(default=1392, ge=0, le=1920)
+    docked_to_video: bool = Field(default=True, alias="dockedToVideo")
+
+
 class CustomTemplateConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    schema_version: int = Field(alias="schemaVersion", ge=1, le=2)
+    schema_version: int = Field(alias="schemaVersion", ge=1, le=3)
     background: TemplateBackground
     video: TemplateVideoLayer
     title: TemplateTitleLayer
     subtitle: TemplateTextLayer
     channel: TemplateTextLayer
+    comment: TemplateCommentLayer
+
+    @model_validator(mode="before")
+    @classmethod
+    def upgrade_comment_layer(cls, value: object) -> object:
+        if not isinstance(value, dict) or "comment" in value:
+            return value
+        upgraded = dict(value)
+        video = upgraded.get("video")
+        y = 1392
+        if isinstance(video, dict):
+            video_y = video.get("y")
+            video_height = video.get("height")
+            if isinstance(video_y, int) and isinstance(video_height, int):
+                y = min(1920, video_y + video_height)
+        upgraded["comment"] = {
+            "visible": True,
+            "theme": "dark",
+            "size": "medium",
+            "y": y,
+            "dockedToVideo": True,
+        }
+        return upgraded
 
 
 class OutputLanguage(str, Enum):

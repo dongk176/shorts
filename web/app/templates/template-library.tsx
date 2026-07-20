@@ -246,12 +246,10 @@ function CustomTemplatePreview({ template }: { template: CustomTemplate }) {
 export function TemplateLibrary({
   personalTemplates,
   authenticated,
-  canUseCustomTemplates,
   initialFavoriteTemplateKeys,
 }: {
   personalTemplates: CustomTemplate[];
   authenticated: boolean;
-  canUseCustomTemplates: boolean;
   initialFavoriteTemplateKeys: TemplateFavoriteKey[];
 }) {
   const [query, setQuery] = useState("");
@@ -359,7 +357,7 @@ export function TemplateLibrary({
             <article key={template.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#ff715e]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#ff715e]/50 hover:shadow-[0_20px_55px_rgba(255,113,94,.09)]">
               <Link href={`/templates/${template.id}/edit`} className="flex flex-1 flex-col">
                 <div className="flex flex-1 items-center justify-center px-2 py-4"><CustomTemplatePreview template={template} /></div>
-                <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4"><div className="min-w-0"><h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">{canUseCustomTemplates ? "내가 저장한 템플릿" : "편집 가능 · 저장과 사용은 Standard부터"}</p></div><span className="shrink-0 rounded-full border border-[#ff715e]/20 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">{canUseCustomTemplates ? "내 템플릿" : "잠김"}</span></div>
+                <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4"><div className="min-w-0"><h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">내가 저장한 템플릿</p></div><span className="shrink-0 rounded-full border border-[#ff715e]/20 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></div>
               </Link>
               <TemplateFavoriteButton
                 active={favoriteTemplateKeySet.has(templateKey)}

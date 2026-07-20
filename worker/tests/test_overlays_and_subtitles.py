@@ -11,6 +11,7 @@ from shorts_worker.overlays import (
     create_channel_panel,
     create_comment_panel,
     create_custom_canvas_overlays,
+    create_custom_comment_overlay,
     create_title_panel,
     wrap_korean_title,
 )
@@ -113,12 +114,10 @@ def test_custom_title_lines_use_independent_background_colors(tmp_path: Path) ->
     assert (37, 99, 235, 255) in colors
     all_background_points = primary_points + accent_points
     background_center_x = (
-        min(x for x, _ in all_background_points)
-        + max(x for x, _ in all_background_points)
+        min(x for x, _ in all_background_points) + max(x for x, _ in all_background_points)
     ) / 2
     background_center_y = (
-        min(y for _, y in all_background_points)
-        + max(y for _, y in all_background_points)
+        min(y for _, y in all_background_points) + max(y for _, y in all_background_points)
     ) / 2
     assert abs(background_center_x - config.title.x) <= 1
     assert abs(background_center_y - config.title.y) <= 1
@@ -283,6 +282,95 @@ def test_comment_panel_is_plain_black_with_crisp_comment_content(tmp_path: Path)
             if image.getpixel((x, y)) != (4, 4, 4)
         ]
         assert min(x for x, _ in content_pixels) >= 28
+
+
+def test_custom_comment_overlay_applies_saved_theme_size_and_channel_flow(tmp_path: Path) -> None:
+    config = CustomTemplateConfig.model_validate(
+        {
+            "schemaVersion": 3,
+            "background": {"kind": "color", "color": "#040404"},
+            "video": {
+                "aspectRatio": "5:4",
+                "x": 0,
+                "y": 528,
+                "width": 1080,
+                "height": 864,
+                "fit": "cover",
+            },
+            "title": {
+                "visible": False,
+                "x": 540,
+                "y": 250,
+                "maxWidth": 920,
+                "fontSize": 72,
+                "primaryColor": "#FFFFFF",
+                "accentColor": "#35E6E3",
+                "primaryBackgroundColor": None,
+                "accentBackgroundColor": None,
+            },
+            "subtitle": {
+                "visible": False,
+                "x": 540,
+                "y": 1410,
+                "maxWidth": 900,
+                "fontSize": 48,
+                "color": "#FFFFFF",
+                "backgroundColor": "#000000",
+            },
+            "channel": {
+                "visible": True,
+                "x": 540,
+                "y": 1650,
+                "maxWidth": 800,
+                "fontSize": 42,
+                "color": "#111111",
+                "backgroundColor": None,
+            },
+            "comment": {
+                "visible": True,
+                "theme": "light",
+                "size": "small",
+                "y": 1392,
+                "dockedToVideo": True,
+            },
+        }
+    )
+    comment = CommentOverlay(
+        id="comment-custom",
+        startSeconds=0,
+        endSeconds=5,
+        text="잠깐 보려고 눌렀는데 어느새 끝까지 다 봤네 ㅋㅋ",
+        initial="소",
+        avatarColor="#D84572",
+        nickname="소담기록24",
+        likeCount=121,
+        ageLabel="2시간 전",
+    )
+    output = create_custom_comment_overlay(
+        comment,
+        tmp_path / "custom-comment.png",
+        config=config,
+        channel_name="테스트 채널",
+    )
+
+    with Image.open(output).convert("RGBA") as image:
+        assert image.width == 1080
+        assert 220 < image.height < 400
+        assert image.getpixel((0, 0)) == (255, 255, 255, 255)
+        assert image.getpixel((0, image.height - 1))[3] == 0
+
+    dark_config = config.model_copy(
+        update={"comment": config.comment.model_copy(update={"theme": "dark", "size": "large"})}
+    )
+    dark_output = create_custom_comment_overlay(
+        comment,
+        tmp_path / "custom-comment-dark.png",
+        config=dark_config,
+        channel_name="테스트 채널",
+    )
+    with Image.open(dark_output).convert("RGBA") as dark_image, Image.open(output) as light_image:
+        assert dark_image.getpixel((0, 0)) == (4, 4, 4, 255)
+        assert dark_image.height > light_image.height
 
 
 def test_full_vertical_panels_keep_transparent_canvas_and_box_both_title_lines(

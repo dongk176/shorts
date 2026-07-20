@@ -27,7 +27,7 @@ export const pricingPlans: PricingPlan[] = [
     minutes: 100,
     features: [
       "동시 작업 1개 · 프로젝트 7일 보관",
-      "기본 템플릿 사용",
+      "기본 · 커스텀 템플릿 사용",
     ],
   },
   {
