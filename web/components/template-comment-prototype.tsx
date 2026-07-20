@@ -13,16 +13,15 @@ function ReactionIcon({ kind, color }: { kind: "like" | "dislike"; color: string
   return (
     <svg
       aria-hidden="true"
-      viewBox="0 0 24 24"
+      viewBox="0 0 100 100"
       fill="none"
       stroke={color}
       strokeLinecap="round"
       strokeLinejoin="round"
-      strokeWidth="1.8"
+      strokeWidth="9"
       className={kind === "dislike" ? "rotate-180" : undefined}
     >
-      <path d="M7.2 10.2 10.5 3c.3-.7 1.1-1.1 1.8-.8.8.3 1.2 1.1 1 1.9l-1 4.1h5.4c1.7 0 2.9 1.6 2.4 3.2l-2.1 7a2.5 2.5 0 0 1-2.4 1.8H7.2" />
-      <path d="M3.5 9.2h3.7v11H3.5z" />
+      <path d="M8 53 25 51 31 45 43 11 47 6 55 7 61 12 63 20 58 42 81 42 91 45 97 51 98 59 94 68 92 77 86 87 78 92 36 92 25 86 13 85 7 80 7 58Z" />
     </svg>
   );
 }
@@ -47,6 +46,7 @@ export function TemplateCommentPrototype({
   const dark = theme === "dark";
   const foreground = dark ? "#f7f7f8" : "#161619";
   const muted = dark ? "#a5a5aa" : "#6b6b73";
+  const identityBlur = `blur(${canvasWidth(0.42)})`;
   const style: CSSProperties = {
     top: `${(y / 1920) * 100}%`,
     backgroundColor: dark ? "#09090b" : "#ffffff",
@@ -66,28 +66,30 @@ export function TemplateCommentPrototype({
       <span className="flex min-w-0 items-start" style={{ gap: canvasWidth(2.5) }}>
         <span
           aria-hidden="true"
-          className="shrink-0 rounded-full bg-[radial-gradient(circle_at_38%_32%,#ffafbd_0,#ef4770_38%,#a50d7c_72%,#6a075b_100%)] shadow-[inset_0_0_0_1px_rgba(255,255,255,.18)]"
-          style={{ width: canvasWidth(9.4), height: canvasWidth(9.4) }}
-        />
+          className="grid shrink-0 place-items-center rounded-full bg-[#d84572] font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.18)]"
+          style={{ width: canvasWidth(9.4), height: canvasWidth(9.4), fontSize: canvasWidth(3.6), filter: identityBlur }}
+        >
+          소
+        </span>
         <span className="min-w-0 flex-1">
-          <span className="flex items-center font-semibold" style={{ gap: canvasWidth(1.5), fontSize: canvasWidth(3.15), color: muted }}>
-            <span className="blur-[.45px]">예능하는 여자</span>
+          <span className="flex items-center font-semibold" style={{ gap: canvasWidth(1.5), fontSize: canvasWidth(3.15), color: foreground, filter: identityBlur }}>
+            <span>소담기록24</span>
             <span aria-hidden="true">·</span>
-            <span>1일 전</span>
+            <span>2시간 전</span>
           </span>
           <span
             className="block break-keep font-medium leading-[1.42] tracking-[-.02em]"
             style={{ marginTop: canvasWidth(1.2), fontSize: canvasWidth(3.62), color: foreground }}
           >
-            난 진짜 난다긴다 하는 개그맨들보다 데프콘이 가장 웃긴거 같음
+            잠깐 보려고 눌렀는데 어느새 끝까지 다 봤네 ㅋㅋ
           </span>
           <span className="flex items-center font-semibold" style={{ marginTop: canvasWidth(2.1), gap: canvasWidth(4.2), fontSize: canvasWidth(3.1), color: muted }}>
             <span className="flex items-center" style={{ gap: canvasWidth(1.35) }}>
               <span style={{ width: canvasWidth(4.1), height: canvasWidth(4.1) }}><ReactionIcon kind="like" color={foreground} /></span>
-              <span>2.1만</span>
+              <span>121</span>
             </span>
             <span style={{ width: canvasWidth(4.1), height: canvasWidth(4.1) }}><ReactionIcon kind="dislike" color={foreground} /></span>
-            <span style={{ color: foreground }}>답글</span>
+            <span>답글</span>
           </span>
         </span>
       </span>
