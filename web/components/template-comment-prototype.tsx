@@ -27,6 +27,72 @@ function ReactionIcon({ kind, color }: { kind: "like" | "dislike"; color: string
   );
 }
 
+function commentAppearance(theme: TemplateCommentTheme, size: TemplateCommentSize) {
+  const scale = sizeScale[size];
+  const canvasWidth = (value: number) => `${value * scale}cqw`;
+  const dark = theme === "dark";
+  const foreground = dark ? "#f7f7f8" : "#161619";
+  const muted = dark ? "#a5a5aa" : "#6b6b73";
+  const identityBlur = `blur(${canvasWidth(0.7)})`;
+  const style: CSSProperties = {
+    backgroundColor: dark ? COMMENT_BACKGROUND_COLOR : "#ffffff",
+    color: foreground,
+    padding: `${canvasWidth(3.2)} ${canvasWidth(4.4)} ${canvasWidth(3.4)}`,
+  };
+  return { canvasWidth, foreground, muted, identityBlur, style };
+}
+
+function TemplateCommentContents({
+  canvasWidth,
+  foreground,
+  muted,
+  identityBlur,
+}: ReturnType<typeof commentAppearance>) {
+  return <span className="flex min-w-0 items-start" style={{ gap: canvasWidth(2.5) }}>
+    <span
+      aria-hidden="true"
+      className="grid shrink-0 place-items-center rounded-full bg-[#d84572] font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.18)]"
+      style={{ width: canvasWidth(9.4), height: canvasWidth(9.4), fontSize: canvasWidth(3.6), filter: identityBlur }}
+    >
+      소
+    </span>
+    <span className="min-w-0 flex-1">
+      <span className="flex items-center font-semibold" style={{ gap: canvasWidth(1.5), fontSize: canvasWidth(3.15), color: foreground, filter: identityBlur }}>
+        <span>소담기록24</span>
+        <span aria-hidden="true">·</span>
+        <span>2시간 전</span>
+      </span>
+      <span
+        className="block break-keep font-medium leading-[1.42] tracking-[-.02em]"
+        style={{ marginTop: canvasWidth(1.2), fontSize: canvasWidth(3.62), color: foreground }}
+      >
+        잠깐 보려고 눌렀는데 어느새 끝까지 다 봤네 ㅋㅋ
+      </span>
+      <span className="flex items-center font-semibold" style={{ marginTop: canvasWidth(2.1), gap: canvasWidth(4.2), fontSize: canvasWidth(3.1), color: muted }}>
+        <span className="flex items-center" style={{ gap: canvasWidth(1.35) }}>
+          <span style={{ width: canvasWidth(4.1), height: canvasWidth(4.1) }}><ReactionIcon kind="like" color={foreground} /></span>
+          <span>121</span>
+        </span>
+        <span style={{ width: canvasWidth(4.1), height: canvasWidth(4.1) }}><ReactionIcon kind="dislike" color={foreground} /></span>
+        <span>답글</span>
+      </span>
+    </span>
+  </span>;
+}
+
+export function TemplateCommentPreview({ theme, size }: { theme: TemplateCommentTheme; size: TemplateCommentSize }) {
+  const appearance = commentAppearance(theme, size);
+  return (
+    <div
+      aria-label="댓글 미리보기"
+      className="relative z-40 block w-full overflow-hidden rounded-none border-0 text-left shadow-none"
+      style={appearance.style}
+    >
+      <TemplateCommentContents {...appearance} />
+    </div>
+  );
+}
+
 export function TemplateCommentPrototype({
   selected,
   theme,
@@ -40,17 +106,7 @@ export function TemplateCommentPrototype({
   onSelect: () => void;
   onPointerDown: PointerEventHandler<HTMLButtonElement>;
 }) {
-  const scale = sizeScale[size];
-  const canvasWidth = (value: number) => `${value * scale}cqw`;
-  const dark = theme === "dark";
-  const foreground = dark ? "#f7f7f8" : "#161619";
-  const muted = dark ? "#a5a5aa" : "#6b6b73";
-  const identityBlur = `blur(${canvasWidth(0.7)})`;
-  const style: CSSProperties = {
-    backgroundColor: dark ? COMMENT_BACKGROUND_COLOR : "#ffffff",
-    color: foreground,
-    padding: `${canvasWidth(3.2)} ${canvasWidth(4.4)} ${canvasWidth(3.4)}`,
-  };
+  const appearance = commentAppearance(theme, size);
 
   return (
     <button
@@ -59,38 +115,9 @@ export function TemplateCommentPrototype({
       onClick={onSelect}
       onPointerDown={onPointerDown}
       className={`relative z-40 block w-full cursor-ns-resize appearance-none overflow-hidden rounded-none border-0 text-left shadow-none ${selected ? "outline outline-2 outline-[#ff715e] outline-offset-[-2px]" : ""}`}
-      style={style}
+      style={appearance.style}
     >
-      <span className="flex min-w-0 items-start" style={{ gap: canvasWidth(2.5) }}>
-        <span
-          aria-hidden="true"
-          className="grid shrink-0 place-items-center rounded-full bg-[#d84572] font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.18)]"
-          style={{ width: canvasWidth(9.4), height: canvasWidth(9.4), fontSize: canvasWidth(3.6), filter: identityBlur }}
-        >
-          소
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center font-semibold" style={{ gap: canvasWidth(1.5), fontSize: canvasWidth(3.15), color: foreground, filter: identityBlur }}>
-            <span>소담기록24</span>
-            <span aria-hidden="true">·</span>
-            <span>2시간 전</span>
-          </span>
-          <span
-            className="block break-keep font-medium leading-[1.42] tracking-[-.02em]"
-            style={{ marginTop: canvasWidth(1.2), fontSize: canvasWidth(3.62), color: foreground }}
-          >
-            잠깐 보려고 눌렀는데 어느새 끝까지 다 봤네 ㅋㅋ
-          </span>
-          <span className="flex items-center font-semibold" style={{ marginTop: canvasWidth(2.1), gap: canvasWidth(4.2), fontSize: canvasWidth(3.1), color: muted }}>
-            <span className="flex items-center" style={{ gap: canvasWidth(1.35) }}>
-              <span style={{ width: canvasWidth(4.1), height: canvasWidth(4.1) }}><ReactionIcon kind="like" color={foreground} /></span>
-              <span>121</span>
-            </span>
-            <span style={{ width: canvasWidth(4.1), height: canvasWidth(4.1) }}><ReactionIcon kind="dislike" color={foreground} /></span>
-            <span>답글</span>
-          </span>
-        </span>
-      </span>
+      <TemplateCommentContents {...appearance} />
     </button>
   );
 }

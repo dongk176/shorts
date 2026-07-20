@@ -2,18 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
+import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
 import { TemplateFavoriteButton } from "@/components/template-favorite-button";
 import { TemplateFavoriteToast } from "@/components/template-favorite-toast";
 import { COMMENT_CAPTURE_BODY_FONT_CQW } from "@/lib/comment-overlay";
 import type { CommentOverlay, TemplateId, VideoAspectRatio } from "@/lib/contracts";
 import { videoAspectRatioOptions } from "@/lib/contracts";
-import {
-  customCanvasWidth,
-  customCenteredLayerStyle,
-  customVideoFrameStyle,
-} from "@/lib/custom-template-preview-layout";
-import { COMMENT_BACKGROUND_COLOR, stockBackgrounds, type CustomTemplate } from "@/lib/template-config";
+import { COMMENT_BACKGROUND_COLOR, type CustomTemplate } from "@/lib/template-config";
 import {
   customTemplateFavoriteKey,
   presetTemplateFavoriteKey,
@@ -231,16 +226,7 @@ function EmptyTemplateCard({ authenticated }: { authenticated: boolean }) {
 }
 
 function CustomTemplatePreview({ template }: { template: CustomTemplate }) {
-  const config = template.config;
-  const imageAssetId = config.background.kind === "image" ? config.background.assetId : null;
-  const background = config.background.kind === "color"
-    ? { backgroundColor: config.background.color }
-    : { backgroundImage: `url(${stockBackgrounds.find((item) => item.id === imageAssetId)?.src})`, backgroundPosition: "center", backgroundSize: "cover" };
-  return <div className="relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg" style={{ ...background, containerType: "inline-size" }}>
-    <div className="absolute bg-neutral-700" style={customVideoFrameStyle(config.video)}><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" /></div>
-    <CustomTemplateTitlePreview title={config.title} firstLine="놓치면 후회할" secondLine="핵심 한 가지" />
-    {config.channel.visible && <div className="absolute z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold" style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</div>}
-  </div>;
+  return <CustomTemplateCanvasPreview template={template} firstLine="놓치면 후회할" secondLine="핵심 한 가지" channelLabel="Easy Cut" />;
 }
 
 export function TemplateLibrary({

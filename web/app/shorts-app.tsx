@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 import { AuthControls } from "@/components/auth-controls";
-import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
+import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { TitleOverlayPreview } from "@/components/title-overlay-preview";
@@ -35,18 +35,13 @@ import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-play
 import { stateRetryDelayMs } from "@/lib/state-loading";
 import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
-import { COMMENT_BACKGROUND_COLOR, stockBackgrounds, type CustomTemplate } from "@/lib/template-config";
+import { COMMENT_BACKGROUND_COLOR, type CustomTemplate } from "@/lib/template-config";
 import {
   DEFAULT_FAVORITE_TEMPLATE_KEYS,
   favoriteCustomTemplateId,
   favoritePresetTemplateId,
   type TemplateFavoriteKey,
 } from "@/lib/template-favorites";
-import {
-  customCanvasWidth,
-  customCenteredLayerStyle,
-  customVideoFrameStyle,
-} from "@/lib/custom-template-preview-layout";
 import {
   COMMENT_CAPTURE_BODY_FONT_CQW,
   COMMENT_LIKE_COUNT_MIN,
@@ -399,16 +394,7 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
 }
 
 function CustomHomeTemplatePreview({ template }: { template: CustomTemplate }) {
-  const config = template.config;
-  const imageAssetId = config.background.kind === "image" ? config.background.assetId : null;
-  const background = config.background.kind === "color"
-    ? { backgroundColor: config.background.color }
-    : { backgroundImage: `url(${stockBackgrounds.find((asset) => asset.id === imageAssetId)?.src})`, backgroundPosition: "center", backgroundSize: "cover" };
-  return <div className="relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg" style={{ ...background, containerType: "inline-size" }}>
-    <div className="absolute bg-neutral-700" style={customVideoFrameStyle(config.video)}><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" /></div>
-    <CustomTemplateTitlePreview title={config.title} firstLine="AI가 만든 제목" secondLine="핵심 포인트" />
-    {config.channel.visible && <div className="absolute z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold" style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● 채널 이름</div>}
-  </div>;
+  return <CustomTemplateCanvasPreview template={template} firstLine="AI가 만든 제목" secondLine="핵심 포인트" channelLabel="채널 이름" />;
 }
 
 function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioChange, channelName, channelThumbnailUrl, personalTemplates, favoriteTemplateKeys, customTemplateId, onCustomTemplateChange, canUseCustomTemplates }: { value: TemplateId; onChange: (value: TemplateId) => void; videoAspectRatio: VideoAspectRatio; onVideoAspectRatioChange: (value: VideoAspectRatio) => void; channelName: string; channelThumbnailUrl: string | null; personalTemplates: CustomTemplate[]; favoriteTemplateKeys: TemplateFavoriteKey[]; customTemplateId: string | null; onCustomTemplateChange: (template: CustomTemplate | null) => void; canUseCustomTemplates: boolean }) {

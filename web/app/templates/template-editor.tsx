@@ -16,8 +16,12 @@ import {
 import { videoAspectRatioOptions, type TemplateId, type VideoAspectRatio } from "@/lib/contracts";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
 import {
+  CUSTOM_COMMENT_Y_MAX,
+  CUSTOM_COMMENT_Y_MIN,
   customCanvasWidth,
   customCenteredLayerStyle,
+  customCommentCanDockToVideo,
+  customCommentLayerY,
   customVideoFrameStyle,
 } from "@/lib/custom-template-preview-layout";
 import { CENTER_SNAP_THRESHOLD_PX, snapAxisToCenter } from "@/lib/template-editor-snap";
@@ -41,9 +45,9 @@ const commentThemeOptions = [
   { value: "dark", label: "다크 모드", background: COMMENT_BACKGROUND_COLOR, foreground: "#ffffff" },
   { value: "light", label: "화이트 모드", background: "#ffffff", foreground: "#18181b" },
 ] as const;
-const COMMENT_Y_MIN = 720;
-const COMMENT_Y_MAX = 1480;
 const COMMENT_VIDEO_SNAP_THRESHOLD_PX = 18;
+const COMMENT_Y_MIN = CUSTOM_COMMENT_Y_MIN;
+const COMMENT_Y_MAX = CUSTOM_COMMENT_Y_MAX;
 const hiddenCenterGuides: CenterGuides = { x: false, y: false };
 const compactTextColors = ["#FFFFFF", "#111111", "#35E6E3"] as const satisfies readonly TemplatePresetColor[];
 const compactTextBackgroundColors = ["#111111", "#FFFFFF"] as const satisfies readonly TemplatePresetColor[];
@@ -113,9 +117,9 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
   const dirty = JSON.stringify({ name, config }) !== baselineRef.current;
   const availableLayerIds = commentLayerEnabled ? commentLayerIds : standardLayerIds;
   const videoBottom = config.video.y + config.video.height;
-  const commentCanDockToVideo = videoBottom >= COMMENT_Y_MIN && videoBottom <= COMMENT_Y_MAX;
+  const commentCanDockToVideo = customCommentCanDockToVideo(config.video);
   const commentIsDockedToVideo = config.comment.dockedToVideo && commentCanDockToVideo;
-  const commentY = commentIsDockedToVideo ? videoBottom : config.comment.y;
+  const commentY = customCommentLayerY(config);
 
   const commit = useCallback((updater: (current: TemplateConfig) => TemplateConfig) => {
     setHistory((current) => {
