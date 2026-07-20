@@ -30,14 +30,12 @@ export function TemplateCommentPrototype({
   selected,
   theme,
   size,
-  y,
   onSelect,
   onPointerDown,
 }: {
   selected: boolean;
   theme: TemplateCommentTheme;
   size: TemplateCommentSize;
-  y: number;
   onSelect: () => void;
   onPointerDown: PointerEventHandler<HTMLButtonElement>;
 }) {
@@ -48,7 +46,6 @@ export function TemplateCommentPrototype({
   const muted = dark ? "#a5a5aa" : "#6b6b73";
   const identityBlur = `blur(${canvasWidth(0.42)})`;
   const style: CSSProperties = {
-    top: `${(y / 1920) * 100}%`,
     backgroundColor: dark ? "#09090b" : "#ffffff",
     color: foreground,
     padding: `${canvasWidth(3.2)} ${canvasWidth(4.4)} ${canvasWidth(3.4)}`,
@@ -60,7 +57,7 @@ export function TemplateCommentPrototype({
       aria-label="댓글 레이어 선택 및 세로 이동"
       onClick={onSelect}
       onPointerDown={onPointerDown}
-      className={`absolute inset-x-0 z-40 w-full cursor-ns-resize appearance-none overflow-hidden rounded-none border-0 text-left shadow-none ${selected ? "outline outline-2 outline-[#ff715e] outline-offset-[-2px]" : ""}`}
+      className={`relative z-40 block w-full cursor-ns-resize appearance-none overflow-hidden rounded-none border-0 text-left shadow-none ${selected ? "outline outline-2 outline-[#ff715e] outline-offset-[-2px]" : ""}`}
       style={style}
     >
       <span className="flex min-w-0 items-start" style={{ gap: canvasWidth(2.5) }}>

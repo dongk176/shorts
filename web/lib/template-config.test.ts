@@ -24,6 +24,11 @@ describe("personal template config", () => {
     expect(createDefaultTemplateConfig().subtitle.visible).toBe(false);
   });
 
+  it("starts comment capture templates with the channel layer hidden", () => {
+    expect(createDefaultTemplateConfig("comment-capture").channel.visible).toBe(false);
+    expect(createDefaultTemplateConfig("dark-minimal").channel.visible).toBe(true);
+  });
+
   it("upgrades a shared v1 title background into independent v2 line backgrounds", () => {
     const current = createDefaultTemplateConfig();
     const legacyTitle = {

@@ -194,7 +194,7 @@ export function createDefaultTemplateConfig(baseTemplateId: TemplateId = "dark-m
       color: "#FFFFFF", backgroundColor: "#000000",
     },
     channel: {
-      visible: true, x: 540, y: 1650, maxWidth: 800, fontSize: 42,
+      visible: baseTemplateId !== "comment-capture", x: 540, y: 1650, maxWidth: 800, fontSize: 42,
       color: light ? "#353438" : "#FFFFFF", backgroundColor: null,
     },
   };
