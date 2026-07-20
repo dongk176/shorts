@@ -27,7 +27,7 @@ EventBridge + Lambda
 
 ## 제품 동작
 
-- 플랜은 Plus 100분, Standard 300분, Pro 600분이며 MVP에서는 결제 없이 브라우저별로 선택합니다. `app_users`와 `user_subscriptions`는 향후용이고 현재 로직에는 연결하지 않습니다.
+- Toss 자동결제로 Plus 100분, Standard 200분, Pro 600분 플랜을 제공합니다. 원래 미구독 생성은 서버에서 차단되지만, 현재는 `MVP_PLAN_ENFORCEMENT=false`로 로그인 사용자에게 쇼츠 생성을 임시 개방합니다.
 - 사용량은 생성된 쇼츠 길이가 아니라 **처리한 원본 영상 전체 길이**입니다. 제출 즉시 reserved, 성공 시 consumed, 시스템 실패 시 released가 됩니다. 텍스트/템플릿 재렌더링은 0초입니다.
 - 쇼츠 길이는 AI가 내용 흐름에 맞춰 30~60초 사이에서 각각 결정합니다.
 - 4분 미만 3개, 4~10분 5개, 10~20분 8개, 20~30분 10개, 30~45분 12개, 45~60분 15개를 목표로 합니다.
@@ -57,7 +57,7 @@ Worker의 YouTube JavaScript 실행 환경은 `yt-dlp==2026.7.4`, `yt-dlp-ejs==0
 npm run db:migrate
 ```
 
-스크립트는 migration 전후 `public` schema 객체 목록을 비교하고, Plus/Standard/Pro seed까지 확인합니다. SQL은 [migration](supabase/migrations/202607120001_shorts_mvp.sql)에 있으며 모든 객체는 schema-qualified 되어 있습니다.
+스크립트는 migration 전후 `public` schema 객체 목록을 비교하고, Free/Plus/Standard/Pro 가격·처리시간·동시 작업·보관기간 seed까지 확인합니다. SQL은 [migrations](supabase/migrations)에 있으며 모든 객체는 schema-qualified 되어 있습니다.
 
 ## AWS provisioning
 
@@ -88,13 +88,20 @@ Vercel에는 `AWS_ROLE_ARN`, region, S3 bucket, Dispatcher ARN, CloudFront signi
 | --- | --- | --- |
 | `DATABASE_URL` | Vercel, worker | 기존 Supabase 직접 연결 |
 | `YOUTUBE_API_KEY` | Vercel | 링크 metadata 검증 및 일일 인기 영상 수집 |
-| `CRON_SECRET` | Vercel | 인기 영상 자정 수집 API 인증 |
+| `CRON_SECRET` | Vercel | 인기 영상 수집 및 구독 갱신 API 인증 |
+| `NEXT_PUBLIC_TOSS_CLIENT_KEY` | Vercel | Toss 브라우저 결제창 초기화 |
+| `TOSS_SECRET_KEY` | Vercel secret | Toss 결제 승인·조회·빌링 API 인증 |
+| `TOSS_BILLING_KEY_ENCRYPTION_KEY` | Vercel secret | 저장 빌링키 AES-256-GCM 암호화 |
+| `TOSS_WEBHOOK_SECRET` | Vercel secret | Toss 웹훅 URL의 비공개 경로 값 |
+| `MVP_PLAN_ENFORCEMENT` | Vercel | 기본 `false`; `true`일 때 활성 구독과 처리시간 grant를 강제 |
 | `GEMINI_API_KEY` | worker | 1차 구조화 하이라이트 선정(없거나 실패하면 OpenAI fallback) |
 | `OPENAI_API_KEY` | worker | 필수 전체 오디오 전사 및 Gemini 실패 시 하이라이트 선정 |
 | `OPENAI_TRANSCRIBE_MODEL` | worker | 기본 `gpt-4o-mini-transcribe` |
 | `OPENAI_HIGHLIGHT_FALLBACK_MODEL` | worker | 기본 `gpt-5-nano` |
+| `OPENAI_COMMENT_FALLBACK_MODEL` | worker | 댓글 생성용 Gemini 실패 시 fallback, 기본 `gpt-5-nano` |
 | `OPENAI_TRANSCRIBE_CHUNK_SECONDS` | worker | 전사 오디오 청크 길이, 기본 30초 |
 | `OPENAI_TRANSCRIBE_MAX_WORKERS` | worker | 병렬 전사 호출 수, 기본 4 |
+| `GEMINI_COMMENT_MODEL` | worker | 댓글 캡처 템플릿의 댓글 생성 모델, 기본 `gemini-2.5-flash-lite` |
 | `AWS_ROLE_ARN`, `AWS_REGION` | Vercel | OIDC assume role |
 | `AWS_S3_OUTPUT_BUCKET` | Vercel, worker | private media bucket |
 | `AWS_OUTBOX_DISPATCHER_FUNCTION_ARN` | Vercel | 작업 생성 직후 Outbox Dispatcher 즉시 호출 |
@@ -103,8 +110,6 @@ Vercel에는 `AWS_ROLE_ARN`, region, S3 bucket, Dispatcher ARN, CloudFront signi
 | `CLOUDFRONT_DOMAIN` | Vercel | output CDN |
 | `CLOUDFRONT_KEY_PAIR_ID` | Vercel | Signed URL public-key id |
 | `CLOUDFRONT_PRIVATE_KEY_B64` | Vercel secret | Signed URL private key |
-| `MVP_PLAN_ENFORCEMENT` | Vercel | 기본 `false`; plan 한도 차단 여부 |
-| `MVP_MAX_ACTIVE_JOBS_PER_SESSION` | Vercel | 기본 1 |
 
 Supabase REST를 쓰는 cleanup Lambda에는 AWS Secrets Manager를 통해 `SUPABASE_URL`과 `SUPABASE_SERVICE_ROLE_KEY`가 필요합니다. 이 값은 브라우저에 노출되지 않습니다.
 
@@ -122,7 +127,7 @@ make verify
 
 - 원본 최대 60분, 다운로드 최대 1080p, 출력 최대 30fps, 최대 15개
 - Prepare는 Fargate On-Demand, Render는 EC2 Spot 우선·On-Demand fallback, 유휴 EC2 `minvCpus=0`
-- 세션 동시 작업 1개, Outbox/SQS idempotency, 입력 길이별 31~90분 deadline
+- 플랜별 동시 작업 1~3개, Outbox/SQS idempotency, 입력 길이별 31~90분 deadline
 - BOT_CHECK/429는 사용자에게 숨기고 60초 후 최대 10회 재시도하며, 최근 50회 중 20% 이상이면 1분 회로 차단
 - S3 versioning 없음, incomplete multipart 1일, media 30일 lifecycle
 - ECR 최근 8개, CloudWatch 14일
@@ -131,9 +136,9 @@ make verify
 
 장애 조사와 수동 복구는 [AWS runbook](docs/aws-runbook.md)을 따릅니다.
 
-## 결제 도입 시
+## 결제 및 사용량
 
-현재 플랜 선택은 `mvp_sessions.selected_plan_code`만 변경합니다. 실제 결제를 붙일 때는 인증된 `app_users`, webhook으로 관리되는 `user_subscriptions`, 결제 기간과 entitlement 검증을 source of truth로 전환하고 브라우저 MVP session 사용량을 사용자 계정으로 이전해야 합니다. 자세한 기준은 [MVP billing](docs/mvp-billing.md)에 있습니다.
+활성 `user_subscriptions`와 결제 승인으로 생성된 `usage_grants`가 권한의 source of truth입니다. 구독 갱신은 시간별 Vercel Cron이 직접 수행하며, 애드온은 Toss 일반결제 승인 이후 90일 grant로 적립됩니다. 자세한 기준은 [MVP billing](docs/mvp-billing.md)에 있습니다.
 
 ## 저작권 및 한계
 

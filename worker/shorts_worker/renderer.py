@@ -20,6 +20,7 @@ from .schemas import (
     HighlightClip,
     SubtitleSegment,
     TemplateId,
+    TemplateVideoLayer,
     TitleTextStyle,
     VideoAspectRatio,
 )
@@ -33,6 +34,22 @@ VIDEO_HEIGHTS = {
     VideoAspectRatio.PORTRAIT: 1350,
     VideoAspectRatio.FULL_VERTICAL: 1920,
 }
+
+
+def custom_video_geometry_filters(
+    frame: TemplateVideoLayer,
+    *,
+    fps: float,
+) -> tuple[str, str]:
+    """Translate saved 1080x1920 template pixels directly into FFmpeg geometry."""
+    return (
+        (
+            f"[0:v]setpts=PTS-STARTPTS,fps={fps:.3f},"
+            f"scale={frame.width}:{frame.height}:force_original_aspect_ratio=increase,"
+            f"crop={frame.width}:{frame.height}[custom_video]"
+        ),
+        f"[base][custom_video]overlay=x={frame.x}:y={frame.y}:shortest=1[with_video]",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -400,14 +417,10 @@ class VideoRenderer:
                 margin_v=445,
             )
         frame = config.video
+        video_geometry_filters = custom_video_geometry_filters(frame, fps=fps)
         filters = [
             f"[1:v]setpts=PTS-STARTPTS,scale={CANVAS_WIDTH}:{CANVAS_HEIGHT}[base]",
-            (
-                f"[0:v]setpts=PTS-STARTPTS,fps={fps:.3f},"
-                f"scale={frame.width}:{frame.height}:force_original_aspect_ratio=increase,"
-                f"crop={frame.width}:{frame.height}[custom_video]"
-            ),
-            f"[base][custom_video]overlay=x={frame.x}:y={frame.y}:shortest=1[with_video]",
+            *video_geometry_filters,
             "[with_video][2:v]overlay=x=0:y=0:shortest=1[with_title]",
             "[with_title][3:v]overlay=x=0:y=0:shortest=1[composed]",
         ]

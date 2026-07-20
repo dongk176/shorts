@@ -60,12 +60,25 @@ try {
   const after = JSON.stringify(await publicObjects());
   if (before !== after) throw new Error("migration 적용 중 public schema 객체가 변경되었습니다.");
   const plans = await sql`
-    select code, monthly_source_seconds, retention_days
+    select code, monthly_source_seconds, retention_days, monthly_price_krw,
+      yearly_price_krw, max_active_jobs
     from shorts_mvp.plans order by sort_order
   `;
-  const expected = ["plus:6000:30", "standard:18000:30", "pro:36000:30"];
+  const expected = [
+    "free:0:1:0:0:0",
+    "plus:6000:7:9900:95040:1",
+    "standard:12000:15:19900:191040:2",
+    "pro:36000:30:49900:479040:3",
+  ];
   const actual = plans.map(
-    (plan) => `${plan.code}:${plan.monthly_source_seconds}:${plan.retention_days}`,
+    (plan) => [
+      plan.code,
+      plan.monthly_source_seconds,
+      plan.retention_days,
+      plan.monthly_price_krw,
+      plan.yearly_price_krw,
+      plan.max_active_jobs,
+    ].join(":"),
   );
   if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("plan seed 검증에 실패했습니다.");
   const [dispatcher] = await sql`

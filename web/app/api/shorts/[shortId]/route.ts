@@ -23,7 +23,7 @@ const commentOverlay = z.object({
   initial: z.string().trim().min(1).max(2),
   avatarColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
   nickname: z.string().trim().min(1).max(30),
-  likeCount: z.number().int().min(1_312).max(999_999),
+  likeCount: z.number().int().min(10).max(999_999),
   ageLabel: z.string().trim().min(1).max(20),
 }).refine((item) => item.endSeconds > item.startSeconds, "댓글 종료 시간은 시작 시간보다 뒤여야 합니다.");
 const patchSchema = z.object({

@@ -13,11 +13,20 @@ import {
   type TemplateConfig,
 } from "@/lib/template-config";
 import { videoAspectRatioOptions, type TemplateId, type VideoAspectRatio } from "@/lib/contracts";
+import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
+import {
+  customCanvasWidth,
+  customCenteredLayerStyle,
+  customVideoFrameStyle,
+} from "@/lib/custom-template-preview-layout";
+import { CENTER_SNAP_THRESHOLD_PX, snapAxisToCenter } from "@/lib/template-editor-snap";
 
 type LayerId = "video" | "title" | "channel";
 type History = { past: TemplateConfig[]; present: TemplateConfig; future: TemplateConfig[] };
+type CenterGuides = { x: boolean; y: boolean };
 
 const layerLabels: Record<LayerId, string> = { video: "영상", title: "제목", channel: "채널명" };
+const hiddenCenterGuides: CenterGuides = { x: false, y: false };
 const compactTextColors = ["#FFFFFF", "#111111", "#35E6E3"] as const satisfies readonly TemplatePresetColor[];
 const compactTextBackgroundColors = ["#111111", "#FFFFFF"] as const satisfies readonly TemplatePresetColor[];
 const compactBackgroundColors = ["#000000", "#111111", "#FFFFFF", "#F3F0E9", "#E32626", "#2563EB"] as const satisfies readonly TemplatePresetColor[];
@@ -35,15 +44,6 @@ function backgroundStyle(config: TemplateConfig): React.CSSProperties {
   const assetId = config.background.assetId;
   const asset = stockBackgrounds.find((item) => item.id === assetId);
   return { backgroundImage: `url(${asset?.src || ""})`, backgroundPosition: "center", backgroundSize: "cover" };
-}
-
-function layerPosition(x: number, y: number, width: number): React.CSSProperties {
-  return {
-    left: `${(x / TEMPLATE_CANVAS.width) * 100}%`,
-    top: `${(y / TEMPLATE_CANVAS.height) * 100}%`,
-    width: `${(width / TEMPLATE_CANVAS.width) * 100}%`,
-    transform: "translate(-50%, -50%)",
-  };
 }
 
 function compactColorOptions(value: TemplatePresetColor | null, colors: readonly TemplatePresetColor[]) {
@@ -78,6 +78,7 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [savedTemplate, setSavedTemplate] = useState(initialTemplate);
+  const [centerGuides, setCenterGuides] = useState<CenterGuides>(hiddenCenterGuides);
   const canvasRef = useRef<HTMLDivElement>(null);
   const transactionRef = useRef<TemplateConfig | null>(null);
   const baselineRef = useRef(JSON.stringify({ name: initialTemplate?.name || "나의 템플릿", config: initialConfig }));
@@ -133,6 +134,7 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
     event.preventDefault();
     event.stopPropagation();
     setSelectedLayer(layer);
+    setCenterGuides(hiddenCenterGuides);
     event.currentTarget.setPointerCapture(event.pointerId);
     transactionRef.current = cloneConfig(config);
     const startX = event.clientX;
@@ -145,23 +147,55 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
     const move = (moveEvent: PointerEvent) => {
       const dx = Math.round((moveEvent.clientX - startX) * toCanvasX);
       const dy = Math.round((moveEvent.clientY - startY) * toCanvasY);
-      updateTransient((next) => {
+      const snapThresholdX = CENTER_SNAP_THRESHOLD_PX * toCanvasX;
+      const snapThresholdY = CENTER_SNAP_THRESHOLD_PX * toCanvasY;
+
+      if (mode === "move") {
         if (layer === "video") {
-          if (mode === "resize") {
-            const ratio = aspectHeightRatio(next.video.aspectRatio);
-            const maxWidth = Math.min(TEMPLATE_CANVAS.width - startConfig.video.x, (TEMPLATE_CANVAS.height - startConfig.video.y) / ratio);
-            const width = Math.round(clamp(startConfig.video.width + dx, 240, maxWidth));
-            next.video.width = width;
-            next.video.height = Math.round(width * ratio);
-          } else {
-            next.video.x = clamp(startConfig.video.x + dx, 0, TEMPLATE_CANVAS.width - next.video.width);
-            next.video.y = clamp(startConfig.video.y + dy, 0, TEMPLATE_CANVAS.height - next.video.height);
-          }
-        } else {
-          const target = next[layer];
-          target.x = clamp(startConfig[layer].x + dx, 0, TEMPLATE_CANVAS.width);
-          target.y = clamp(startConfig[layer].y + dy, 0, TEMPLATE_CANVAS.height);
+          const maxX = TEMPLATE_CANVAS.width - startConfig.video.width;
+          const maxY = TEMPLATE_CANVAS.height - startConfig.video.height;
+          const candidateX = clamp(startConfig.video.x + dx, 0, maxX);
+          const candidateY = clamp(startConfig.video.y + dy, 0, maxY);
+          const horizontal = snapAxisToCenter(
+            candidateX + startConfig.video.width / 2,
+            TEMPLATE_CANVAS.width / 2,
+            snapThresholdX,
+          );
+          const vertical = snapAxisToCenter(
+            candidateY + startConfig.video.height / 2,
+            TEMPLATE_CANVAS.height / 2,
+            snapThresholdY,
+          );
+
+          updateTransient((next) => {
+            next.video.x = Math.round(clamp(horizontal.value - startConfig.video.width / 2, 0, maxX));
+            next.video.y = Math.round(clamp(vertical.value - startConfig.video.height / 2, 0, maxY));
+            return next;
+          });
+          setCenterGuides({ x: horizontal.snapped, y: vertical.snapped });
+          return;
         }
+
+        const candidateX = clamp(startConfig[layer].x + dx, 0, TEMPLATE_CANVAS.width);
+        const candidateY = clamp(startConfig[layer].y + dy, 0, TEMPLATE_CANVAS.height);
+        const horizontal = snapAxisToCenter(candidateX, TEMPLATE_CANVAS.width / 2, snapThresholdX);
+        const vertical = snapAxisToCenter(candidateY, TEMPLATE_CANVAS.height / 2, snapThresholdY);
+
+        updateTransient((next) => {
+          next[layer].x = horizontal.value;
+          next[layer].y = vertical.value;
+          return next;
+        });
+        setCenterGuides({ x: horizontal.snapped, y: vertical.snapped });
+        return;
+      }
+
+      updateTransient((next) => {
+        const ratio = aspectHeightRatio(next.video.aspectRatio);
+        const maxWidth = Math.min(TEMPLATE_CANVAS.width - startConfig.video.x, (TEMPLATE_CANVAS.height - startConfig.video.y) / ratio);
+        const width = Math.round(clamp(startConfig.video.width + dx, 240, maxWidth));
+        next.video.width = width;
+        next.video.height = Math.round(width * ratio);
         return next;
       });
     };
@@ -169,6 +203,7 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
+      setCenterGuides(hiddenCenterGuides);
       const before = transactionRef.current;
       transactionRef.current = null;
       if (!before) return;
@@ -216,10 +251,6 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
 
   const selectedTextLayer = selectedLayer === "video" ? null : config[selectedLayer];
   const background = backgroundStyle(config);
-  const titleStyle = {
-    ...layerPosition(config.title.x, config.title.y, config.title.maxWidth),
-    fontSize: `${(config.title.fontSize / TEMPLATE_CANVAS.width) * 100}cqw`,
-  };
   const selectedBackgroundColor = config.background.kind === "color" ? config.background.color : null;
   const visibleBackgroundColors = showAllBackgroundColors
     ? templatePresetColorOptions
@@ -242,12 +273,14 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
             <div className="flex min-h-[680px] w-full items-center justify-center overflow-auto">
               <div style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}>
                 <div ref={canvasRef} className="relative aspect-[9/16] w-[360px] touch-none overflow-hidden rounded-[12px] shadow-[0_30px_100px_rgba(0,0,0,.65)]" style={{ ...background, containerType: "inline-size" }} onPointerDown={() => setSelectedLayer("video")}>
-                  <div onPointerDown={(event) => beginPointerAction(event, "video")} className={`absolute cursor-move overflow-hidden bg-neutral-700 ${selectedLayer === "video" ? "ring-2 ring-[#ff715e] ring-inset" : ""}`} style={{ left: `${config.video.x / 10.8}%`, top: `${config.video.y / 19.2}%`, width: `${config.video.width / 10.8}%`, height: `${config.video.height / 19.2}%` }}>
+                  <div onPointerDown={(event) => beginPointerAction(event, "video")} className={`absolute cursor-move overflow-hidden bg-neutral-700 ${selectedLayer === "video" ? "ring-2 ring-[#ff715e] ring-inset" : ""}`} style={customVideoFrameStyle(config.video)}>
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,#73737c,#2c2c31_70%)]" /><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
                     <button type="button" aria-label="영상 크기 조절" onPointerDown={(event) => beginPointerAction(event, "video", "resize")} className="absolute bottom-0 right-0 h-6 w-6 cursor-nwse-resize border-l border-t border-white bg-[#ff715e]" />
                   </div>
-                  {config.title.visible && <button type="button" onPointerDown={(event) => beginPointerAction(event, "title")} className={`absolute z-20 flex cursor-move flex-col items-center text-center font-black leading-[1.18] ${selectedLayer === "title" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={titleStyle}><span className="rounded px-[1.8cqw] py-[1cqw]" style={{ color: config.title.primaryColor, backgroundColor: config.title.primaryBackgroundColor || "transparent" }}>놓치면 후회할</span><span className="mt-[.8cqw] rounded px-[1.8cqw] py-[1cqw]" style={{ color: config.title.accentColor, backgroundColor: config.title.accentBackgroundColor || "transparent" }}>핵심 한 가지</span></button>}
-                  {config.channel.visible && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...layerPosition(config.channel.x, config.channel.y, config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: `${config.channel.fontSize / 10.8}cqw` }}>● Easy Cut</button>}
+                  <CustomTemplateTitlePreview title={config.title} firstLine="놓치면 후회할" secondLine="핵심 한 가지" selected={selectedLayer === "title"} onPointerDown={(event) => beginPointerAction(event, "title")} />
+                  {config.channel.visible && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</button>}
+                  {centerGuides.x && <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-1/2 z-50 w-px -translate-x-1/2 bg-[#ff2bd6] shadow-[0_0_5px_rgba(255,43,214,.95)]" />}
+                  {centerGuides.y && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-1/2 z-50 h-px -translate-y-1/2 bg-[#ff2bd6] shadow-[0_0_5px_rgba(255,43,214,.95)]" />}
                 </div>
               </div>
             </div>

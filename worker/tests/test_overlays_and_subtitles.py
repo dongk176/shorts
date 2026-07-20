@@ -100,8 +100,27 @@ def test_custom_title_lines_use_independent_background_colors(tmp_path: Path) ->
 
     with Image.open(title_path).convert("RGBA") as image:
         colors = {color for _, color in image.getcolors(maxcolors=1_000_000) or []}
+        primary_points: list[tuple[int, int]] = []
+        accent_points: list[tuple[int, int]] = []
+        for index, pixel in enumerate(image.getdata()):
+            point = (index % image.width, index // image.width)
+            if pixel == (22, 163, 74, 255):
+                primary_points.append(point)
+            elif pixel == (37, 99, 235, 255):
+                accent_points.append(point)
     assert (22, 163, 74, 255) in colors
     assert (37, 99, 235, 255) in colors
+    all_background_points = primary_points + accent_points
+    background_center_x = (
+        min(x for x, _ in all_background_points)
+        + max(x for x, _ in all_background_points)
+    ) / 2
+    background_center_y = (
+        min(y for _, y in all_background_points)
+        + max(y for _, y in all_background_points)
+    ) / 2
+    assert abs(background_center_x - config.title.x) <= 1
+    assert abs(background_center_y - config.title.y) <= 1
 
 
 def test_title_overlay_applies_colors_only_to_selected_character_range(tmp_path: Path) -> None:
@@ -245,7 +264,7 @@ def test_comment_panel_is_plain_black_with_crisp_comment_content(tmp_path: Path)
             initial="소",
             avatarColor="#8B2CC4",
             nickname="소담기록24",
-            likeCount=1_312,
+            likeCount=10,
             ageLabel="5개월 전",
         ),
         tmp_path / "comment.png",
@@ -255,6 +274,13 @@ def test_comment_panel_is_plain_black_with_crisp_comment_content(tmp_path: Path)
         assert image.size == (1080, 285)
         assert image.getpixel((1079, 284)) == (4, 4, 4)
         assert len(image.getcolors(maxcolors=1_000_000) or []) > 20
+        content_pixels = [
+            (x, y)
+            for y in range(image.height)
+            for x in range(image.width)
+            if image.getpixel((x, y)) != (4, 4, 4)
+        ]
+        assert min(x for x, _ in content_pixels) >= 28
 
 
 def test_full_vertical_panels_keep_transparent_canvas_and_box_both_title_lines(

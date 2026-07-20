@@ -46,10 +46,12 @@ while true; do
     --env OPENAI_API_KEY \
     --env OPENAI_TRANSCRIBE_MODEL \
     --env OPENAI_HIGHLIGHT_FALLBACK_MODEL \
+    --env OPENAI_COMMENT_FALLBACK_MODEL \
     --env OPENAI_TRANSCRIBE_CHUNK_SECONDS \
     --env OPENAI_TRANSCRIBE_MAX_WORKERS \
     --env GEMINI_API_KEY \
     --env GEMINI_TEXT_MODEL \
+    --env GEMINI_COMMENT_MODEL \
     --env GEMINI_OPENAI_BASE_URL \
     --env TEMP_ROOT \
     "$image_name" \

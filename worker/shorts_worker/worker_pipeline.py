@@ -39,7 +39,7 @@ from .schemas import (
     TemplateId,
     TitleTextStyle,
     VideoAspectRatio,
-    default_comment_overlays,
+    fallback_comment_overlays,
 )
 from .selector import TranscriptSelector
 from .storage import ObjectStorage
@@ -618,7 +618,11 @@ class BatchWorker:
                             error_type=type(exc).__name__,
                         )
                         comments_by_clip = {
-                            item.clip_index: default_comment_overlays(item.duration_seconds)
+                            item.clip_index: fallback_comment_overlays(
+                                item.duration_seconds,
+                                count=item.target_count,
+                                clip_index=item.clip_index,
+                            )
                             for item in comment_inputs
                         }
 

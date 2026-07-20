@@ -26,7 +26,7 @@ export default async function AiShortsMakerPage() {
     "@type": "Article",
     headline: "유튜브 영상으로 AI 쇼츠 만드는 방법",
     description: "유튜브 링크 입력부터 AI 하이라이트 분석, 쇼츠 편집과 다운로드까지 설명하는 이지컷 가이드",
-    image: `${SITE_URL}/easy-cut-og-1200x630-v2.png`,
+    image: `${SITE_URL}/easy-cut-og-1200x630-v3.jpg`,
     datePublished: PUBLISHED_DATE,
     dateModified: PUBLISHED_DATE,
     inLanguage: "ko-KR",

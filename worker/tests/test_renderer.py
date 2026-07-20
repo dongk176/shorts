@@ -9,7 +9,12 @@ import pytest
 from PIL import Image
 
 from shorts_worker.config import Settings
-from shorts_worker.renderer import VideoRenderer, continuous_comment_windows, video_layout
+from shorts_worker.renderer import (
+    VideoRenderer,
+    continuous_comment_windows,
+    custom_video_geometry_filters,
+    video_layout,
+)
 from shorts_worker.schemas import (
     CommentOverlay,
     CustomTemplateConfig,
@@ -108,6 +113,7 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
     )
     if comment_template:
         assert len(comments) == 5
+        assert all(10 <= comment.like_count <= 8_000 for comment in comments)
         assert all(
             comments[index].start_seconds >= comments[index - 1].end_seconds
             for index in range(1, len(comments))
@@ -237,6 +243,58 @@ def test_custom_template_config_rejects_video_outside_canvas() -> None:
         )
 
 
+def test_custom_video_geometry_uses_saved_pixels_without_rounding() -> None:
+    config = CustomTemplateConfig.model_validate(
+        {
+            "schemaVersion": 2,
+            "background": {"kind": "color", "color": "#111111"},
+            "video": {
+                "aspectRatio": "16:9",
+                "x": 137,
+                "y": 601,
+                "width": 800,
+                "height": 450,
+                "fit": "cover",
+            },
+            "title": {
+                "visible": False,
+                "x": 540,
+                "y": 260,
+                "maxWidth": 900,
+                "fontSize": 72,
+                "primaryColor": "#FFFFFF",
+                "accentColor": "#FF4D4F",
+                "primaryBackgroundColor": None,
+                "accentBackgroundColor": None,
+            },
+            "subtitle": {
+                "visible": False,
+                "x": 540,
+                "y": 1400,
+                "maxWidth": 900,
+                "fontSize": 48,
+                "color": "#FFFFFF",
+                "backgroundColor": "#000000",
+            },
+            "channel": {
+                "visible": False,
+                "x": 540,
+                "y": 1700,
+                "maxWidth": 800,
+                "fontSize": 42,
+                "color": "#FFFFFF",
+                "backgroundColor": None,
+            },
+        }
+    )
+
+    scale, overlay = custom_video_geometry_filters(config.video, fps=29.97)
+
+    assert "scale=800:450" in scale
+    assert "crop=800:450" in scale
+    assert overlay == "[base][custom_video]overlay=x=137:y=601:shortest=1[with_video]"
+
+
 def test_custom_title_layer_upgrades_a_legacy_shared_background() -> None:
     title = TemplateTitleLayer.model_validate(
         {
@@ -271,7 +329,7 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
             "-f",
             "lavfi",
             "-i",
-            "testsrc2=size=640x360:rate=12",
+            "color=c=red:size=640x360:rate=12",
             "-t",
             "1",
             "-c:v",
@@ -284,7 +342,7 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
     config = CustomTemplateConfig.model_validate(
         {
             "schemaVersion": 2,
-            "background": {"kind": "color", "color": "#111111"},
+            "background": {"kind": "color", "color": "#16A34A"},
             "video": {
                 "aspectRatio": "16:9",
                 "x": 140,
@@ -347,6 +405,36 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
     video = next(stream for stream in probe["streams"] if stream["codec_type"] == "video")
     assert (video["width"], video["height"]) == (1080, 1920)
     assert output.stat().st_size > 10_000
+
+    rendered_frame = tmp_path / "custom-frame.png"
+    _run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-ss",
+            "0.2",
+            "-i",
+            str(output),
+            "-frames:v",
+            "1",
+            str(rendered_frame),
+        ]
+    )
+    with Image.open(rendered_frame).convert("RGB") as image:
+        def is_video(pixel: tuple[int, int, int]) -> bool:
+            return pixel[0] > pixel[1] * 1.5 and pixel[0] > pixel[2] * 1.5
+
+        assert not is_video(image.getpixel((139, 800)))
+        assert is_video(image.getpixel((140, 800)))
+        assert is_video(image.getpixel((939, 800)))
+        assert not is_video(image.getpixel((940, 800)))
+        assert not is_video(image.getpixel((540, 599)))
+        assert is_video(image.getpixel((540, 600)))
+        assert is_video(image.getpixel((540, 1049)))
+        assert not is_video(image.getpixel((540, 1050)))
 
 
 def test_bundled_custom_backgrounds_are_full_vertical_rgb_images() -> None:

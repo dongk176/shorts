@@ -6,6 +6,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .fallback_comments import select_fallback_comment_texts
+
 
 class TemplateId(str, Enum):
     DARK_RED = "dark-red"
@@ -172,7 +174,7 @@ class CommentOverlay(BaseModel):
     initial: str = Field(min_length=1, max_length=2)
     avatar_color: str = Field(alias="avatarColor", pattern=r"^#[0-9A-Fa-f]{6}$")
     nickname: str = Field(min_length=1, max_length=30)
-    like_count: int = Field(alias="likeCount", ge=1_312, le=999_999)
+    like_count: int = Field(alias="likeCount", ge=10, le=999_999)
     age_label: str = Field(alias="ageLabel", min_length=1, max_length=20)
 
     @field_validator("text", "nickname", "age_label")
@@ -213,6 +215,8 @@ class TitleTextStyle(BaseModel):
 _COMMENT_COLORS = ("#8B2CC4", "#D84572", "#2674C8", "#257A5A", "#C76624", "#6655C7")
 _COMMENT_NICKNAME_PREFIXES = ("하루", "모카", "여름", "초코", "구름", "새벽", "라온", "소담")
 _COMMENT_NICKNAME_SUFFIXES = ("기록", "한스푼", "로그", "이야기", "채널", "노트", "생활", "공간")
+COMMENT_LIKE_COUNT_MIN = 10
+COMMENT_LIKE_COUNT_MAX = 8_000
 
 
 def build_comment_overlay(
@@ -235,22 +239,27 @@ def build_comment_overlay(
         initial=nickname[0],
         avatarColor=secrets.choice(_COMMENT_COLORS),
         nickname=nickname,
-        likeCount=secrets.randbelow(18_689) + 1_312,
+        likeCount=secrets.randbelow(COMMENT_LIKE_COUNT_MAX - COMMENT_LIKE_COUNT_MIN + 1)
+        + COMMENT_LIKE_COUNT_MIN,
         ageLabel=f"{secrets.randbelow(11) + 1}개월 전",
     )
     return comment.model_dump(by_alias=True)
 
 
-def default_comment_overlays(duration_seconds: float) -> list[dict[str, object]]:
-    """Create five safe, non-overlapping comments when both AI providers fail."""
+def fallback_comment_overlays(
+    duration_seconds: float,
+    *,
+    count: int,
+    clip_index: int,
+) -> list[dict[str, object]]:
+    """Create stable, non-overlapping fallback comments for one numbered short."""
     duration = max(0.5, float(duration_seconds))
-    fallback_texts = (
-        "아니 이건 생각 못했네 ㅋㅋ",
-        "여기서 좀 소름 돋음",
-        "나만 이제 알았냐",
-        "이 부분은 ㄹㅇ 공감됨",
-        "와 마지막 말이 핵심이네",
+    fallback_texts = select_fallback_comment_texts(
+        count,
+        clip_index=clip_index,
     )
+    if not fallback_texts:
+        return []
     slot_duration = duration / len(fallback_texts)
     comments: list[dict[str, object]] = []
     for index, text in enumerate(fallback_texts):
@@ -263,6 +272,11 @@ def default_comment_overlays(duration_seconds: float) -> list[dict[str, object]]
             )
         )
     return comments
+
+
+def default_comment_overlays(duration_seconds: float) -> list[dict[str, object]]:
+    """Create five fallback comments for legacy and renderer-only callers."""
+    return fallback_comment_overlays(duration_seconds, count=5, clip_index=1)
 
 
 class HighlightClip(BaseModel):

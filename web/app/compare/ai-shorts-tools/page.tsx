@@ -97,7 +97,7 @@ export default async function AiShortsToolsComparisonPage() {
     "@type": "Article",
     headline: "AI 쇼츠 제작 툴 비교: 이지컷·알파컷·피카클립",
     description: "이지컷, 알파컷, 피카클립의 공개 기능과 요금 기준을 비교한 가이드",
-    image: `${SITE_URL}/easy-cut-og-1200x630-v2.png`,
+    image: `${SITE_URL}/easy-cut-og-1200x630-v3.jpg`,
     datePublished: REVIEWED_DATE,
     dateModified: REVIEWED_DATE,
     inLanguage: "ko-KR",

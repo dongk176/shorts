@@ -1,15 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
-import type { CommentOverlay, VideoAspectRatio } from "@/lib/contracts";
+import { TemplateFavoriteButton } from "@/components/template-favorite-button";
+import { TemplateFavoriteToast } from "@/components/template-favorite-toast";
+import type { CommentOverlay, TemplateId, VideoAspectRatio } from "@/lib/contracts";
 import { videoAspectRatioOptions } from "@/lib/contracts";
+import {
+  customCanvasWidth,
+  customCenteredLayerStyle,
+  customVideoFrameStyle,
+} from "@/lib/custom-template-preview-layout";
 import { stockBackgrounds, type CustomTemplate } from "@/lib/template-config";
+import {
+  customTemplateFavoriteKey,
+  presetTemplateFavoriteKey,
+  updateFavoriteTemplateKeys,
+  type TemplateFavoriteKey,
+} from "@/lib/template-favorites";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
 
 type TemplateShowcase = {
-  id: string;
+  id: TemplateId;
   name: string;
   description: string;
   category: string;
@@ -131,13 +144,13 @@ function formatCompactKoreanCount(value: number) {
 
 function CommentCaptureCard({ comment }: { comment: CommentOverlay }) {
   return (
-    <div className="h-full w-full bg-[#040404] px-[2.8cqw] pb-[0.6cqw] pt-[4.5cqw] text-left text-white">
+    <div className="h-full w-full bg-[#040404] pb-[0.6cqw] pl-[4.4cqw] pr-[2.8cqw] pt-[4.5cqw] text-left text-white">
       <div className="flex items-start gap-[2.7cqw]">
-        <div className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.9cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
+        <div className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.65cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
         <div className="min-w-0 flex-1">
-          <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight text-neutral-100 blur-[0.72cqw]">@{comment.nickname} <span className="font-normal text-neutral-400">{comment.ageLabel}</span></div>
-          <p className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap text-[4.05cqw] font-normal leading-[1.28] text-white/95 blur-[0.07cqw]">{comment.text}</p>
-          <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] text-neutral-300/80 blur-[0.05cqw]">
+          <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight text-neutral-100 blur-[0.52cqw]">@{comment.nickname} <span className="font-normal text-neutral-400">{comment.ageLabel}</span></div>
+          <p className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap text-[4.05cqw] font-normal leading-[1.28] text-white/95 blur-[0.05cqw]">{comment.text}</p>
+          <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] text-neutral-300/80 blur-[0.035cqw]">
             <ReactionIcon /><span>{formatCompactKoreanCount(comment.likeCount)}</span>
             <span className="ml-[2.2cqw]"><ReactionIcon down /></span>
             <span className="ml-[3cqw] text-[3.25cqw] text-neutral-200">답글</span>
@@ -222,16 +235,78 @@ function CustomTemplatePreview({ template }: { template: CustomTemplate }) {
   const background = config.background.kind === "color"
     ? { backgroundColor: config.background.color }
     : { backgroundImage: `url(${stockBackgrounds.find((item) => item.id === imageAssetId)?.src})`, backgroundPosition: "center", backgroundSize: "cover" };
-  const textPosition = (x: number, y: number, width: number) => ({ left: `${x / 10.8}%`, top: `${y / 19.2}%`, width: `${width / 10.8}%`, transform: "translate(-50%, -50%)" });
   return <div className="relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg" style={{ ...background, containerType: "inline-size" }}>
-    <div className="absolute bg-neutral-700" style={{ left: `${config.video.x / 10.8}%`, top: `${config.video.y / 19.2}%`, width: `${config.video.width / 10.8}%`, height: `${config.video.height / 19.2}%` }}><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" /></div>
+    <div className="absolute bg-neutral-700" style={customVideoFrameStyle(config.video)}><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" /></div>
     <CustomTemplateTitlePreview title={config.title} firstLine="놓치면 후회할" secondLine="핵심 한 가지" />
-    {config.channel.visible && <div className="absolute z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold" style={{ ...textPosition(config.channel.x, config.channel.y, config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: `${config.channel.fontSize / 10.8}cqw` }}>● Easy Cut</div>}
+    {config.channel.visible && <div className="absolute z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold" style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</div>}
   </div>;
 }
 
-export function TemplateLibrary({ personalTemplates, authenticated }: { personalTemplates: CustomTemplate[]; authenticated: boolean }) {
+export function TemplateLibrary({
+  personalTemplates,
+  authenticated,
+  initialFavoriteTemplateKeys,
+}: {
+  personalTemplates: CustomTemplate[];
+  authenticated: boolean;
+  initialFavoriteTemplateKeys: TemplateFavoriteKey[];
+}) {
   const [query, setQuery] = useState("");
+  const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState(initialFavoriteTemplateKeys);
+  const [savingTemplateKey, setSavingTemplateKey] = useState<TemplateFavoriteKey | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const favoriteTemplateKeySet = useMemo(() => new Set(favoriteTemplateKeys), [favoriteTemplateKeys]);
+
+  const showToast = useCallback((message: string) => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    setToastMessage(message);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMessage(null);
+      toastTimerRef.current = null;
+    }, 2_400);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+  }, []);
+
+  const toggleFavorite = useCallback(async (templateKey: TemplateFavoriteKey) => {
+    if (!authenticated) {
+      showToast("로그인 후 자주 쓰는 템플릿을 저장할 수 있습니다.");
+      return;
+    }
+    if (savingTemplateKey) return;
+
+    const update = updateFavoriteTemplateKeys(favoriteTemplateKeys, templateKey);
+    if (update.status === "limit") {
+      showToast("자주 쓰는 템플릿은 최대 4개까지 등록할 수 있습니다.");
+      return;
+    }
+
+    const previousTemplateKeys = favoriteTemplateKeys;
+    setFavoriteTemplateKeys(update.templateKeys);
+    setSavingTemplateKey(templateKey);
+    try {
+      const response = await fetch("/api/template-favorites", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ templateKeys: update.templateKeys }),
+      });
+      const body = await response.json().catch(() => ({})) as { detail?: string; templateKeys?: TemplateFavoriteKey[] };
+      if (!response.ok) throw new Error(body.detail || "자주 쓰는 템플릿을 저장하지 못했습니다.");
+      setFavoriteTemplateKeys(body.templateKeys || update.templateKeys);
+      showToast(update.status === "added"
+        ? "자주 쓰는 템플릿에 등록되었습니다."
+        : "자주 쓰는 템플릿에서 해제되었습니다.");
+    } catch (error) {
+      setFavoriteTemplateKeys(previousTemplateKeys);
+      showToast(error instanceof Error ? error.message : "자주 쓰는 템플릿을 저장하지 못했습니다.");
+    } finally {
+      setSavingTemplateKey(null);
+    }
+  }, [authenticated, favoriteTemplateKeys, savingTemplateKey, showToast]);
+
   const visibleTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
     if (!normalizedQuery) return templates;
@@ -273,32 +348,53 @@ export function TemplateLibrary({ personalTemplates, authenticated }: { personal
         </label>
       </div>
 
-      <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3" aria-live="polite">
+      <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4" aria-live="polite">
         {!query.trim() && <EmptyTemplateCard authenticated={authenticated} />}
-        {visiblePersonalTemplates.map((template) => (
-          <Link href={`/templates/${template.id}/edit`} key={template.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#ff715e]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#ff715e]/50 hover:shadow-[0_20px_55px_rgba(255,113,94,.09)]">
-            <div className="flex flex-1 items-center justify-center overflow-hidden rounded-xl bg-[#0e0e11] px-5 py-5"><CustomTemplatePreview template={template} /></div>
-            <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4"><div className="min-w-0"><h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">내가 저장한 템플릿</p></div><span className="shrink-0 rounded-full border border-[#ff715e]/20 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></div>
-          </Link>
-        ))}
-        {visibleTemplates.map((template) => (
-          <Link
-            href={authenticated ? `/templates/new?base=${template.id}` : `/auth/sign-in?next=${encodeURIComponent(`/templates/new?base=${template.id}`)}`}
-            key={template.id}
-            className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-white/[.08] bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#ff715e]/30 hover:shadow-[0_20px_55px_rgba(255,113,94,.09)]"
-          >
-            <div className="flex flex-1 items-center justify-center overflow-hidden rounded-xl bg-[#0e0e11] px-5 py-5">
-              <TemplatePreview template={template} />
-            </div>
-            <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4">
-              <div className="min-w-0">
-                <h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2>
-                <p className="mt-1 truncate text-xs text-[#777780]">{template.description}</p>
-              </div>
-              <span className="shrink-0 rounded-full border border-white/[.08] bg-[#1f1f22] px-2.5 py-1 text-[10px] font-bold text-[#94949e]">{template.category}</span>
-            </div>
-          </Link>
-        ))}
+        {visiblePersonalTemplates.map((template) => {
+          const templateKey = customTemplateFavoriteKey(template.id);
+          return (
+            <article key={template.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#ff715e]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#ff715e]/50 hover:shadow-[0_20px_55px_rgba(255,113,94,.09)]">
+              <Link href={`/templates/${template.id}/edit`} className="flex flex-1 flex-col">
+                <div className="flex flex-1 items-center justify-center px-2 py-4"><CustomTemplatePreview template={template} /></div>
+                <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4"><div className="min-w-0"><h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">내가 저장한 템플릿</p></div><span className="shrink-0 rounded-full border border-[#ff715e]/20 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></div>
+              </Link>
+              <TemplateFavoriteButton
+                active={favoriteTemplateKeySet.has(templateKey)}
+                busy={savingTemplateKey === templateKey}
+                templateName={template.name}
+                onClick={() => void toggleFavorite(templateKey)}
+              />
+            </article>
+          );
+        })}
+        {visibleTemplates.map((template) => {
+          const templateKey = presetTemplateFavoriteKey(template.id);
+          return (
+            <article key={template.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-white/[.08] bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#ff715e]/30 hover:shadow-[0_20px_55px_rgba(255,113,94,.09)]">
+              <Link
+                href={authenticated ? `/templates/new?base=${template.id}` : `/auth/sign-in?next=${encodeURIComponent(`/templates/new?base=${template.id}`)}`}
+                className="flex flex-1 flex-col"
+              >
+                <div className="flex flex-1 items-center justify-center px-2 py-4">
+                  <TemplatePreview template={template} />
+                </div>
+                <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2>
+                    <p className="mt-1 truncate text-xs text-[#777780]">{template.description}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-white/[.08] bg-[#1f1f22] px-2.5 py-1 text-[10px] font-bold text-[#94949e]">{template.category}</span>
+                </div>
+              </Link>
+              <TemplateFavoriteButton
+                active={favoriteTemplateKeySet.has(templateKey)}
+                busy={savingTemplateKey === templateKey}
+                templateName={template.name}
+                onClick={() => void toggleFavorite(templateKey)}
+              />
+            </article>
+          );
+        })}
       </div>
 
       {visibleTemplates.length === 0 && visiblePersonalTemplates.length === 0 && (
@@ -307,6 +403,7 @@ export function TemplateLibrary({ personalTemplates, authenticated }: { personal
           <button type="button" onClick={() => setQuery("")} className="mt-3 text-sm font-bold text-[#ff9b8d] hover:text-[#ffb4a8]">전체 템플릿 보기</button>
         </div>
       )}
+      <TemplateFavoriteToast message={toastMessage} />
     </div>
   );
 }

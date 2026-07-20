@@ -528,7 +528,7 @@ def create_comment_panel(
         (4, 4, 4, 244) if overlay_mode else (4, 4, 4, 255),
     )
     avatar_size = round(72 * scale)
-    left = round(28 * scale)
+    left = round(44 * scale)
     top = round(48 * scale)
     content_x = left + avatar_size + round(29 * scale)
     meta_font = load_font(max(18, round(30 * scale)), "bold")
@@ -560,7 +560,7 @@ def create_comment_panel(
         fill="#F0F0F0",
     )
     base.alpha_composite(
-        metadata.filter(ImageFilter.GaussianBlur(radius=max(3, round(5.5 * scale))))
+        metadata.filter(ImageFilter.GaussianBlur(radius=max(2, round(4.5 * scale))))
     )
 
     # A subtle whole-detail blur keeps the strip feeling like a captured social
@@ -609,7 +609,7 @@ def create_comment_panel(
         font=action_font,
         fill="#C4C4C4",
     )
-    base.alpha_composite(details.filter(ImageFilter.GaussianBlur(radius=max(0.35, 0.52 * scale))))
+    base.alpha_composite(details.filter(ImageFilter.GaussianBlur(radius=max(0.25, 0.4 * scale))))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output = base if overlay_mode else base.convert("RGB")

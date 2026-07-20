@@ -9,6 +9,7 @@ import { CustomTemplateTitlePreview } from "@/components/custom-template-title-p
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { TitleOverlayPreview } from "@/components/title-overlay-preview";
+import { VideoAspectRatioPicker } from "@/components/video-aspect-ratio-picker";
 import type {
   CommentOverlay,
   GeneratedShort,
@@ -35,6 +36,18 @@ import { stateRetryDelayMs } from "@/lib/state-loading";
 import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
 import { stockBackgrounds, type CustomTemplate } from "@/lib/template-config";
+import {
+  DEFAULT_FAVORITE_TEMPLATE_KEYS,
+  favoriteCustomTemplateId,
+  favoritePresetTemplateId,
+  type TemplateFavoriteKey,
+} from "@/lib/template-favorites";
+import {
+  customCanvasWidth,
+  customCenteredLayerStyle,
+  customVideoFrameStyle,
+} from "@/lib/custom-template-preview-layout";
+import { COMMENT_LIKE_COUNT_MIN, randomCommentLikeCount } from "@/lib/comment-overlay";
 
 const templates: Array<{ id: TemplateId; name: string; label: string; background: string; primary: string; accent: string; accentBackground: string | null; channel: string }> = [
   { id: "comment-capture", name: "댓글 캡처", label: "댓글 반응과 함께\n시청 지속시간 상승", background: "#000000", primary: "#FFFFFF", accent: "#35E6E3", accentBackground: null, channel: "#FFFFFF" },
@@ -44,7 +57,9 @@ const templates: Array<{ id: TemplateId; name: string; label: string; background
   { id: "paper", name: "페이퍼", label: "오늘 바로 쓰는\n핵심 방법", background: "#F3F0E9", primary: "#111111", accent: "#D52B2B", accentBackground: null, channel: "#363636" },
 ];
 
-const recommendedTemplates = templates.filter((template) => template.id !== "dark-red" && template.id !== "white-yellow");
+type FavoriteTemplateCard =
+  | { kind: "custom"; template: CustomTemplate }
+  | { kind: "preset"; template: (typeof templates)[number] };
 
 const titleTextColorOptions = [
   { name: "화이트", color: "#FFFFFF" },
@@ -90,7 +105,7 @@ function randomComment(startSeconds: number, endSeconds: number): CommentOverlay
     initial: nickname.slice(0, 1),
     avatarColor: randomItem(commentAvatarColors),
     nickname,
-    likeCount: Math.floor(Math.random() * 18_689) + 1_312,
+    likeCount: randomCommentLikeCount(),
     ageLabel: `${Math.floor(Math.random() * 11) + 1}개월 전`,
   };
 }
@@ -306,13 +321,13 @@ function formatCompactKoreanCount(value: number) {
 
 function CommentCaptureCard({ comment }: { comment: CommentOverlay | null }) {
   return (
-    <div className="h-full w-full bg-[#040404] px-[2.8cqw] pb-[0.6cqw] pt-[4.5cqw] text-left text-white">
+    <div className="h-full w-full bg-[#040404] pb-[0.6cqw] pl-[4.4cqw] pr-[2.8cqw] pt-[4.5cqw] text-left text-white">
       {comment ? <div className="flex items-start gap-[2.7cqw]">
-        <div className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.9cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
+        <div className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.65cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
         <div className="min-w-0 flex-1">
-          <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight text-neutral-100 blur-[0.72cqw]">@{comment.nickname} <span className="font-normal text-neutral-400">{comment.ageLabel}</span></div>
-          <p className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap text-[4.05cqw] font-normal leading-[1.28] text-white/95 blur-[0.07cqw]">{comment.text}</p>
-          <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] text-neutral-300/80 blur-[0.05cqw]">
+          <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight text-neutral-100 blur-[0.52cqw]">@{comment.nickname} <span className="font-normal text-neutral-400">{comment.ageLabel}</span></div>
+          <p className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap text-[4.05cqw] font-normal leading-[1.28] text-white/95 blur-[0.05cqw]">{comment.text}</p>
+          <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] text-neutral-300/80 blur-[0.035cqw]">
             <ReactionIcon /><span>{formatCompactKoreanCount(comment.likeCount)}</span>
             <span className="ml-[2.2cqw]"><ReactionIcon down /></span>
             <span className="ml-[3cqw] text-[3.25cqw] text-neutral-200">답글</span>
@@ -384,17 +399,30 @@ function CustomHomeTemplatePreview({ template }: { template: CustomTemplate }) {
   const background = config.background.kind === "color"
     ? { backgroundColor: config.background.color }
     : { backgroundImage: `url(${stockBackgrounds.find((asset) => asset.id === imageAssetId)?.src})`, backgroundPosition: "center", backgroundSize: "cover" };
-  const textPosition = (x: number, y: number, width: number) => ({ left: `${x / 10.8}%`, top: `${y / 19.2}%`, width: `${width / 10.8}%`, transform: "translate(-50%, -50%)" });
   return <div className="relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg" style={{ ...background, containerType: "inline-size" }}>
-    <div className="absolute bg-neutral-700" style={{ left: `${config.video.x / 10.8}%`, top: `${config.video.y / 19.2}%`, width: `${config.video.width / 10.8}%`, height: `${config.video.height / 19.2}%` }}><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" /></div>
+    <div className="absolute bg-neutral-700" style={customVideoFrameStyle(config.video)}><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" /></div>
     <CustomTemplateTitlePreview title={config.title} firstLine="AI가 만든 제목" secondLine="핵심 포인트" />
-    {config.channel.visible && <div className="absolute z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold" style={{ ...textPosition(config.channel.x, config.channel.y, config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: `${config.channel.fontSize / 10.8}cqw` }}>● 채널 이름</div>}
+    {config.channel.visible && <div className="absolute z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold" style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● 채널 이름</div>}
   </div>;
 }
 
-function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioChange, channelName, channelThumbnailUrl, personalTemplates, customTemplateId, onCustomTemplateChange }: { value: TemplateId; onChange: (value: TemplateId) => void; videoAspectRatio: VideoAspectRatio; onVideoAspectRatioChange: (value: VideoAspectRatio) => void; channelName: string; channelThumbnailUrl: string | null; personalTemplates: CustomTemplate[]; customTemplateId: string | null; onCustomTemplateChange: (template: CustomTemplate | null) => void }) {
+function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioChange, channelName, channelThumbnailUrl, personalTemplates, favoriteTemplateKeys, customTemplateId, onCustomTemplateChange }: { value: TemplateId; onChange: (value: TemplateId) => void; videoAspectRatio: VideoAspectRatio; onVideoAspectRatioChange: (value: VideoAspectRatio) => void; channelName: string; channelThumbnailUrl: string | null; personalTemplates: CustomTemplate[]; favoriteTemplateKeys: TemplateFavoriteKey[]; customTemplateId: string | null; onCustomTemplateChange: (template: CustomTemplate | null) => void }) {
   const selectedCustom = personalTemplates.find((template) => template.id === customTemplateId);
-  const selectedTemplate = recommendedTemplates.find((template) => template.id === value) || recommendedTemplates[0];
+  const selectedTemplate = templates.find((template) => template.id === value) || templates[0];
+  const effectiveAspectRatio = selectedCustom?.config.video.aspectRatio ?? videoAspectRatio;
+  const favoriteCards = favoriteTemplateKeys.flatMap<FavoriteTemplateCard>((templateKey) => {
+    const customId = favoriteCustomTemplateId(templateKey);
+    if (customId) {
+      const template = personalTemplates.find((item) => item.id === customId);
+      return template ? [{ kind: "custom" as const, template }] : [];
+    }
+    const presetId = favoritePresetTemplateId(templateKey);
+    if (!presetId) return [];
+    const template = templates.find((item) => item.id === presetId);
+    return template ? [{ kind: "preset" as const, template }] : [];
+  });
+  const favoriteCustomIds = new Set(favoriteCards.flatMap((card) => card.kind === "custom" ? [card.template.id] : []));
+  const remainingPersonalTemplates = personalTemplates.filter((template) => !favoriteCustomIds.has(template.id));
   return (
     <div id="template-picker">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -402,35 +430,31 @@ function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioC
           <h2 className="text-xl font-bold">템플릿</h2>
           <span className="text-xs font-semibold text-red-300">{selectedCustom?.name || selectedTemplate.name}</span>
         </div>
-        <fieldset className="min-w-0">
-          <legend className="mb-2 text-xs font-semibold text-neutral-400">영상 비율</legend>
-          <div className="flex flex-wrap gap-1.5">
-            {videoAspectRatioOptions.map((option) => {
-              const selected = videoAspectRatio === option.value;
-              return <button key={option.value} type="button" aria-pressed={selected} onClick={() => onVideoAspectRatioChange(option.value)} className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition ${selected ? "border-red-500 bg-red-500/15 text-white" : "border-white/10 bg-[#141416] text-neutral-400 hover:border-white/30"}`}><span>{option.label}</span><span className="ml-1 text-[10px] text-neutral-500">{option.value}</span></button>;
-            })}
-          </div>
-        </fieldset>
+        <VideoAspectRatioPicker value={effectiveAspectRatio} lockedValue={selectedCustom?.config.video.aspectRatio} onChange={onVideoAspectRatioChange} />
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {personalTemplates.map((template) => {
-          const selected = customTemplateId === template.id;
-          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`rounded-xl border-2 bg-[#141416] p-2.5 transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
-        })}
-        {recommendedTemplates.map((template) => {
-          const selected = !customTemplateId && value === template.id;
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {favoriteCards.map((card) => {
+          if (card.kind === "custom") {
+            const selected = customTemplateId === card.template.id;
+            return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
+          }
+          const selected = !customTemplateId && value === card.template.id;
           return (
             <button
-              key={template.id}
+              key={`favorite-preset-${card.template.id}`}
               type="button"
               aria-pressed={selected}
-              onClick={() => { onCustomTemplateChange(null); onChange(template.id); }}
-              className={`rounded-xl border-2 bg-[#141416] p-2.5 transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
+              onClick={() => { onCustomTemplateChange(null); onChange(card.template.id); }}
+              className={`rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
             >
-              <TemplatePreview template={template} videoAspectRatio={videoAspectRatio} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} />
-              <span className="mt-2.5 block text-center text-sm font-semibold">{template.name}</span>
+              <TemplatePreview template={card.template} videoAspectRatio={effectiveAspectRatio} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} />
+              <span className="mt-2.5 block text-center text-sm font-semibold">{card.template.name}</span>
             </button>
           );
+        })}
+        {remainingPersonalTemplates.map((template) => {
+          const selected = customTemplateId === template.id;
+          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
         })}
       </div>
       {!customTemplateId && value === "comment-capture" && (
@@ -572,7 +596,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [comments, setComments] = useState<CommentOverlay[]>(() => {
     if (item.commentOverlays?.length) return item.commentOverlays.map((comment) => ({
       ...comment,
-      likeCount: Math.max(1_312, comment.likeCount),
+      likeCount: Math.max(COMMENT_LIKE_COUNT_MIN, comment.likeCount),
     }));
     return item.templateId === "comment-capture" ? defaultComments(item.durationSeconds) : [];
   });
@@ -1023,6 +1047,7 @@ export function ShortsApp() {
   const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
   const [customTemplateId, setCustomTemplateId] = useState<string | null>(null);
   const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
+  const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState<TemplateFavoriteKey[]>([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);
   const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>("5:4");
   const [activeJob, setActiveJob] = useState<VideoJob | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -1050,6 +1075,8 @@ export function ShortsApp() {
     state?.user
     && activeJobCount >= maxActiveJobs,
   );
+  const selectedPersonalTemplate = personalTemplates.find((template) => template.id === customTemplateId);
+  const effectiveVideoAspectRatio = selectedPersonalTemplate?.config.video.aspectRatio ?? videoAspectRatio;
   const closeCreationRestriction = useCallback(() => setCreationRestrictionOpen(false), []);
   const closeConcurrentJobNotice = useCallback(() => setConcurrentJobNoticeOpen(false), []);
 
@@ -1084,15 +1111,22 @@ export function ShortsApp() {
   useEffect(() => {
     if (!state?.user) {
       setPersonalTemplates([]);
+      setFavoriteTemplateKeys([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);
       setCustomTemplateId(null);
       return;
     }
     const controller = new AbortController();
-    void requestJson<{ templates: CustomTemplate[] }>("/api/templates", { signal: controller.signal }, 12_000)
-      .then((value) => setPersonalTemplates(value.templates))
+    void Promise.all([
+      requestJson<{ templates: CustomTemplate[] }>("/api/templates", { signal: controller.signal }, 12_000),
+      requestJson<{ templateKeys: TemplateFavoriteKey[] }>("/api/template-favorites", { signal: controller.signal }, 12_000),
+    ])
+      .then(([templateResponse, favoriteResponse]) => {
+        setPersonalTemplates(templateResponse.templates);
+        setFavoriteTemplateKeys(favoriteResponse.templateKeys);
+      })
       .catch((cause) => {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(cause instanceof Error ? cause.message : "개인 템플릿을 불러오지 못했습니다.");
+        setError(cause instanceof Error ? cause.message : "템플릿을 불러오지 못했습니다.");
       });
     return () => controller.abort();
   }, [state?.user]);
@@ -1277,7 +1311,7 @@ export function ShortsApp() {
     }
     setBusy(true); setError(null);
     try {
-      const value = await requestJson<{ jobId: string; projectNumber: number; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId, videoAspectRatio, outputLanguage, requestId: crypto.randomUUID() }) });
+      const value = await requestJson<{ jobId: string; projectNumber: number; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, requestId: crypto.randomUUID() }) });
       const pendingJob: VideoJob = { id: value.jobId, projectNumber: value.projectNumber, isExample: false, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: analysis.expectedShortCount, status: "queued", stage: "queued", progress: SIMULATED_PROGRESS_START, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
       setState((current) => current ? { ...current, usage: value.usage, recentJobs: [pendingJob, ...current.recentJobs.filter((job) => job.id !== pendingJob.id)] } : current);
       setActiveJob(pendingJob);
@@ -1338,7 +1372,7 @@ export function ShortsApp() {
       />
       <main id="top" className="relative mx-auto w-full max-w-6xl flex-1 space-y-10 px-5 pb-20 pt-7 sm:px-8 sm:pt-10">
       <section className="hero mx-auto flex max-w-4xl flex-col items-center text-center">
-        <h1 className="hero-title">당신의 영상 편집자를<br /><span>해고하세요</span></h1>
+        <h1 className="hero-title">트렌드를 찾고,<br /><span>쇼츠로 선점하세요</span></h1>
         <p className="mt-5 max-w-2xl text-sm leading-6 text-[#d5aaa4] sm:text-base">영상 URL을 입력하면 AI가 핵심 하이라이트를 찾고,<br className="hidden sm:block" /> 30~60초 숏폼과 후킹 제목·자막을 자동으로 만듭니다.</p>
         <form id="workspace" onSubmit={analyze} className="url-console mt-10 w-full max-w-3xl">
           <div className="relative flex-1">
@@ -1357,7 +1391,7 @@ export function ShortsApp() {
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}
       {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>서비스 상태를 불러오지 못했습니다.</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">다시 시도</button></div>}
       {analysis && <section id="shorts-settings" ref={analysisSectionRef} className="scroll-mt-24 rounded-2xl border border-white/10 bg-[#141416] p-5 sm:scroll-mt-28"><label htmlFor="output-language" className="text-xl font-bold">제목 언어</label><p className="mt-1 text-sm text-neutral-500">원본 영상 언어와 관계없이 선택한 언어로 후킹 제목을 만듭니다.</p><select id="output-language" value={outputLanguage} onChange={(event) => setOutputLanguage(event.target.value as OutputLanguage)} className="mt-3 h-12 w-full rounded-xl border border-white/10 bg-[#141416] px-4 text-sm text-neutral-100 outline-none focus:border-red-500 sm:max-w-xs">{outputLanguageOptions.map((option) => <option key={option.code} value={option.code}>{option.label}</option>)}</select></section>}
-      {analysis && <section className="scroll-mt-24 space-y-8 sm:scroll-mt-28"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {analysis.expectedShortCount}개</p><p className="mt-1 text-xs text-neutral-500">{planEnforcementEnabled ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.` : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p></div></div><TemplatePicker value={templateId} onChange={setTemplateId} videoAspectRatio={videoAspectRatio} onVideoAspectRatioChange={setVideoAspectRatio} channelName={analysis.channelName} channelThumbnailUrl={analysis.channelThumbnailUrl} personalTemplates={personalTemplates} customTemplateId={customTemplateId} onCustomTemplateChange={(template) => { setCustomTemplateId(template?.id || null); if (template) { setTemplateId(template.baseTemplateId); setVideoAspectRatio(template.config.video.aspectRatio); } }} />{analysisCreationBlocked && <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">생성 불가 사유 보기</button>}<button disabled={analysisCreationBlocked || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">{analysisCreationBlocked ? "쇼츠 생성 불가" : stateLoadStatus !== "ready" ? "로그인 확인 중..." : !state?.user ? "로그인 후 쇼츠 생성하기" : !planEnforcementEnabled || state.billing.canCreateJobs ? "쇼츠 생성하기" : "플랜 선택하고 쇼츠 만들기"}</button></section>}
+      {analysis && <section className="scroll-mt-24 space-y-8 sm:scroll-mt-28"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {analysis.expectedShortCount}개</p><p className="mt-1 text-xs text-neutral-500">{planEnforcementEnabled ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.` : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p></div></div><TemplatePicker value={templateId} onChange={setTemplateId} videoAspectRatio={effectiveVideoAspectRatio} onVideoAspectRatioChange={setVideoAspectRatio} channelName={analysis.channelName} channelThumbnailUrl={analysis.channelThumbnailUrl} personalTemplates={personalTemplates} favoriteTemplateKeys={favoriteTemplateKeys} customTemplateId={customTemplateId} onCustomTemplateChange={(template) => { setCustomTemplateId(template?.id || null); if (template) { setTemplateId(template.baseTemplateId); setVideoAspectRatio(template.config.video.aspectRatio); } }} />{analysisCreationBlocked && <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">생성 불가 사유 보기</button>}<button disabled={analysisCreationBlocked || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">{analysisCreationBlocked ? "쇼츠 생성 불가" : stateLoadStatus !== "ready" ? "로그인 확인 중..." : !state?.user ? "로그인 후 쇼츠 생성하기" : !planEnforcementEnabled || state.billing.canCreateJobs ? "쇼츠 생성하기" : "플랜 선택하고 쇼츠 만들기"}</button></section>}
       {state?.user && state.recentJobs.length ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28"><div className="mb-5 flex items-center gap-2"><h2 className="text-2xl font-bold">내 프로젝트</h2><span className="text-sm text-neutral-500">({state.recentJobs.length})</span></div><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{state.recentJobs.map((job) => <ProjectCard key={job.id} job={job} />)}</div></section> : null}
     </main>
     <SiteFooter />

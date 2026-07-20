@@ -60,6 +60,7 @@ import { GET as accessShort } from "./shorts/[shortId]/access/route";
 import { GET as accessEditSource } from "./shorts/[shortId]/edit-source/route";
 import { POST as rerenderShort } from "./shorts/[shortId]/rerender/route";
 import { PATCH as patchShort } from "./shorts/[shortId]/route";
+import { createDefaultTemplateConfig, videoFrameForAspect } from "@/lib/template-config";
 
 const usage = {
   usedSeconds: 60,
@@ -332,6 +333,46 @@ describe("job API security and idempotency", () => {
     expect(response.status).toBe(202);
   });
 
+  it("uses the saved custom-template ratio even when the client sends another ratio", async () => {
+    const customTemplateId = "14f19366-89b7-4c54-8ec6-c0f2b75584c1";
+    const config = createDefaultTemplateConfig();
+    config.video = videoFrameForAspect("4:5");
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows(
+      [],
+      [],
+      [{
+        id: customTemplateId,
+        name: "세로 고정 템플릿",
+        baseTemplateId: "dark-minimal",
+        config,
+        version: 3,
+      }],
+      [{ active: 0 }],
+      [{ projectNumber: 7 }],
+      [{ id: "reservation-custom" }],
+      [],
+      [],
+    );
+    Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      customTemplateId,
+      videoAspectRatio: "16:9",
+      requestId: "47b1209d-213b-4f56-9668-ed2511c595f7",
+    }));
+
+    expect(response.status).toBe(202);
+    const insertCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes("insert into shorts_mvp.video_jobs"),
+    );
+    expect(insertCall?.slice(1)).toContain("4:5");
+    expect(insertCall?.slice(1)).not.toContain("16:9");
+  });
+
   it("rejects an unsupported video aspect ratio before touching the database", async () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
@@ -468,7 +509,7 @@ describe("short ownership, expiry, and edit validation", () => {
         initial: "소",
         avatarColor: "#8B2CC4",
         nickname: "소담기록24",
-        likeCount: 1_312,
+        likeCount: 10,
         ageLabel: "5개월 전",
       }],
       templateId: "comment-capture",

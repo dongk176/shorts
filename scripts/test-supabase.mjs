@@ -18,9 +18,20 @@ const sql = postgres(process.env.DATABASE_URL, { max: 1, transform: postgres.cam
 const sessionId = crypto.randomUUID();
 const jobId = crypto.randomUUID();
 try {
-  const plans = await sql`select code, monthly_source_seconds from shorts_mvp.plans order by sort_order`;
-  assert.deepEqual(plans.map((row) => [row.code, row.monthlySourceSeconds]), [
-    ["plus", 6000], ["standard", 18000], ["pro", 36000],
+  const plans = await sql`
+    select code, monthly_source_seconds, retention_days, max_active_jobs
+    from shorts_mvp.plans order by sort_order
+  `;
+  assert.deepEqual(plans.map((row) => [
+    row.code,
+    row.monthlySourceSeconds,
+    row.retentionDays,
+    row.maxActiveJobs,
+  ]), [
+    ["free", 0, 1, 0],
+    ["plus", 6000, 7, 1],
+    ["standard", 12000, 15, 2],
+    ["pro", 36000, 30, 3],
   ]);
   await sql`
     insert into shorts_mvp.mvp_sessions (id,token_hash)
