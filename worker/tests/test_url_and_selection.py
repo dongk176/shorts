@@ -270,7 +270,12 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     assert "타임스탬프 자막" in request["messages"][1]["content"]
     assert "탑티어 숏폼 기획자" in request["messages"][0]["content"]
     assert "쇼츠용 킬러 구간" in request["messages"][0]["content"]
-    assert "1. 길이: 각 구간은 30~60초 사이로 구성할 것." in request["messages"][0]["content"]
+    assert (
+        "1. **길이 및 완결성**: 각 구간은 30~60초 사이로 구성하되, "
+        "**가급적 45~60초 분량을 우선적으로 확보**하여 시청자가 맥락을 깊이 있게 "
+        "이해할 수 있도록 할 것. 단순히 30초에 맞춰 성급하게 자르는 것을 엄격히 금지함."
+        in request["messages"][0]["content"]
+    )
     assert (
         "군더더기 없이 직관적이고 타격감 있는 구어체 단어"
         in request["messages"][0]["content"]
