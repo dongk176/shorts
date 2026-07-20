@@ -1,19 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { VideoAspectRatio } from "@/lib/contracts";
+import type { TitleTextStyle, VideoAspectRatio } from "@/lib/contracts";
 import {
   fitPreviewTitleFont,
-  titleLineBackground,
+  titleLineCharacterIndices,
   titleLineColor,
   wrapPreviewTitle,
 } from "@/lib/title-preview";
 
 const CANVAS_WIDTH = 1080;
 const TITLE_LINE_GAP = 18;
-const TITLE_ACCENT_PADDING_X = 24;
-const TITLE_ACCENT_PADDING_Y = 10;
-const TITLE_RADIUS = 8;
 const TITLE_FONT_FAMILY = '"Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
 
 function titlePanelLayout(videoAspectRatio: VideoAspectRatio) {
@@ -34,24 +31,44 @@ function canvasWidth(value: number) {
   return `${value / (CANVAS_WIDTH / 100)}cqw`;
 }
 
+function styledLineRuns(line: string, indices: Array<number | null>, styles: TitleTextStyle[]) {
+  const runs: Array<{ text: string; color?: string; backgroundColor?: string }> = [];
+  Array.from(line).forEach((character, characterIndex) => {
+    const titleIndex = indices[characterIndex];
+    const style = titleIndex === null
+      ? undefined
+      : styles.find((item) => item.start <= titleIndex && item.end > titleIndex);
+    const previous = runs.at(-1);
+    if (previous && previous.color === style?.color && previous.backgroundColor === style?.backgroundColor) {
+      previous.text += character;
+    } else {
+      runs.push({ text: character, color: style?.color, backgroundColor: style?.backgroundColor });
+    }
+  });
+  return runs;
+}
+
 export function TitleOverlayPreview({
   title,
   fontScale,
   videoAspectRatio,
   primary,
   accent,
-  accentBackground,
   background,
+  keepPrimaryFirstLine = false,
+  textStyles = [],
 }: {
   title: string;
   fontScale: number;
   videoAspectRatio: VideoAspectRatio;
   primary: string;
   accent: string;
-  accentBackground: string | null;
   background: string;
+  keepPrimaryFirstLine?: boolean;
+  textStyles?: TitleTextStyle[];
 }) {
   const lines = useMemo(() => wrapPreviewTitle(title), [title]);
+  const lineIndices = useMemo(() => titleLineCharacterIndices(title, lines), [lines, title]);
   const [fittedFontSize, setFittedFontSize] = useState(() => fitPreviewTitleFont(lines));
   const layout = titlePanelLayout(videoAspectRatio);
   const bottomMargin = layout.panelHeight === 285 && !layout.overlay
@@ -91,26 +108,31 @@ export function TitleOverlayPreview({
         }}
       >
         {lines.map((line, index) => {
-          const lineBackground = titleLineBackground(
-            index,
-            layout.overlay,
-            background,
-            accentBackground,
-          );
           return (
             <span
               key={`${line}-${index}`}
               className="max-w-full shrink-0 whitespace-nowrap"
               style={{
-                color: titleLineColor(index, layout.overlay, primary, accent),
-                background: lineBackground || "transparent",
-                borderRadius: lineBackground ? canvasWidth(TITLE_RADIUS) : 0,
-                padding: lineBackground
-                  ? `${canvasWidth(TITLE_ACCENT_PADDING_Y)} ${canvasWidth(TITLE_ACCENT_PADDING_X)}`
-                  : 0,
+                color: titleLineColor(index, layout.overlay, primary, accent, keepPrimaryFirstLine),
+                background: "transparent",
               }}
             >
-              {line}
+              {styledLineRuns(line, lineIndices[index], textStyles).map((run, runIndex) => (
+                <span
+                  key={`${run.text}-${runIndex}`}
+                  style={{
+                    color: run.color || "inherit",
+                    background: run.backgroundColor || "transparent",
+                    borderRadius: run.backgroundColor ? "0.12em" : 0,
+                    boxDecorationBreak: "clone",
+                    display: run.backgroundColor ? "inline-block" : "inline",
+                    padding: run.backgroundColor ? "0.14em 0.34em" : 0,
+                    WebkitBoxDecorationBreak: "clone",
+                  }}
+                >
+                  {run.text}
+                </span>
+              ))}
             </span>
           );
         })}

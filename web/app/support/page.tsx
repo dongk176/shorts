@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import { LegalDocument, LegalSection } from "@/components/legal-document";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = { title: "고객센터 | Easy Cut", description: "Easy Cut 고객센터 및 사업자 정보" };
+export const metadata: Metadata = createPageMetadata({
+  title: "고객센터·사업자 정보 | 이지컷",
+  description: "이지컷 고객센터 운영시간, 연락처와 사업자 정보를 확인하세요.",
+  path: "/support",
+});
 
 export default function SupportPage() {
   return (
@@ -9,7 +14,7 @@ export default function SupportPage() {
       <LegalSection title="고객센터">
         <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/[.03] p-5 sm:p-6">
           <p><strong className="inline-block w-24 text-white">운영시간</strong>평일 14:00 ~ 19:00</p>
-          <p><strong className="inline-block w-24 text-white">전화</strong><a href="tel:010-3603-2874" className="text-[#ff8c7c] underline underline-offset-4">010-3603-2874</a></p>
+          <p><strong className="inline-block w-24 text-white">전화</strong><a href="tel:010-4836-2874" className="text-[#ff8c7c] underline underline-offset-4">010-4836-2874</a></p>
           <p><strong className="inline-block w-24 text-white">이메일</strong><a href="mailto:artiroom176@gmail.com" className="text-[#ff8c7c] underline underline-offset-4">artiroom176@gmail.com</a></p>
         </div>
         <p className="text-neutral-500">주말과 공휴일에 접수된 문의는 다음 영업일 운영시간부터 순차적으로 답변합니다.</p>

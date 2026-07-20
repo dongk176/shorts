@@ -1,12 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  session: vi.fn(),
   getPopularVideos: vi.fn(),
   getPopularSearchVideos: vi.fn(),
 }));
-
-vi.mock("@/lib/session", () => ({ requireMvpSession: mocks.session }));
 
 vi.mock("@/lib/youtube-popular", () => ({
   getPopularVideos: mocks.getPopularVideos,
@@ -24,7 +21,6 @@ import { GET } from "./route";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.session.mockResolvedValue({ id: "session-a", selectedPlanCode: "pro", userId: "user-a" });
 });
 
 describe("popular YouTube API route", () => {
@@ -94,8 +90,7 @@ describe("popular YouTube API route", () => {
     await expect(response.json()).resolves.toEqual({ detail: "인기 영상을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." });
   });
 
-  it("returns only the first 20 popular videos to a non-Pro session", async () => {
-    mocks.session.mockResolvedValue({ id: "session-a", selectedPlanCode: "standard", userId: "user-a" });
+  it("returns the same first page size for every plan", async () => {
     mocks.getPopularVideos.mockResolvedValue({
       items: [],
       updatedAt: "2026-07-14T00:00:00.000Z",
@@ -106,23 +101,26 @@ describe("popular YouTube API route", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(mocks.getPopularVideos).toHaveBeenCalledWith("trending", "all", false, false, false, undefined, 20);
+    expect(mocks.getPopularVideos).toHaveBeenCalledWith("trending", "all", false, false, false, undefined, 48);
     expect(mocks.getPopularSearchVideos).not.toHaveBeenCalled();
   });
 
-  it("blocks a non-Pro cursor before loading the next page", async () => {
-    mocks.session.mockResolvedValue({ id: "session-a", selectedPlanCode: "plus", userId: "user-a" });
+  it("allows pagination without a plan entitlement", async () => {
+    mocks.getPopularSearchVideos.mockResolvedValue({
+      items: [],
+      updatedAt: "2026-07-14T00:00:00.000Z",
+    });
 
     const response = await GET(new Request("http://localhost/api/youtube/popular?type=views&cursor=preview-page-2"));
 
-    expect(response.status).toBe(403);
-    await expect(response.json()).resolves.toEqual({ detail: "해당 기능은 Pro 전용 기능이에요." });
+    expect(response.status).toBe(200);
     expect(mocks.getPopularVideos).not.toHaveBeenCalled();
-    expect(mocks.getPopularSearchVideos).not.toHaveBeenCalled();
+    expect(mocks.getPopularSearchVideos).toHaveBeenCalledWith(
+      "all", false, false, false, "preview-page-2", 48,
+    );
   });
 
-  it("allows advanced filters for a non-Pro session while the filter paywall is paused", async () => {
-    mocks.session.mockResolvedValue({ id: "session-a", selectedPlanCode: "standard", userId: "user-a" });
+  it("allows advanced filters without a plan entitlement", async () => {
     mocks.getPopularVideos.mockResolvedValue({
       items: [],
       updatedAt: "2026-07-14T00:00:00.000Z",
@@ -131,6 +129,6 @@ describe("popular YouTube API route", () => {
     const response = await GET(new Request("http://localhost/api/youtube/popular?type=trending&category=gaming&reusable=true&longForm=true"));
 
     expect(response.status).toBe(200);
-    expect(mocks.getPopularVideos).toHaveBeenCalledWith("trending", "gaming", true, true, false, undefined, 20);
+    expect(mocks.getPopularVideos).toHaveBeenCalledWith("trending", "gaming", true, true, false, undefined, 48);
   });
 });

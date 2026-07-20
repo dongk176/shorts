@@ -82,7 +82,7 @@ async function createStoredSession(
   db: ReturnType<typeof getDb>,
   cookieStore: Awaited<ReturnType<typeof cookies>>,
   userId: string | null,
-  selectedPlanCode = "plus",
+  selectedPlanCode = "free",
 ): Promise<StoredSession> {
   const token = randomBytes(32).toString("base64url");
   const rows = await db`
@@ -115,9 +115,14 @@ export async function requireMvpSession(authenticatedUser?: User | null): Promis
 
   const profile = authProfile(authUser);
   const appUsers = await db`
-    select id, selected_plan_code
-    from shorts_mvp.app_users
-    where auth_user_id=${authUser.id}
+    select u.id, coalesce(s.plan_code,'free') as selected_plan_code
+    from shorts_mvp.app_users u
+    left join lateral (
+      select plan_code from shorts_mvp.user_subscriptions
+      where user_id=u.id and status in ('trialing','active','past_due')
+      order by created_at desc limit 1
+    ) s on true
+    where u.auth_user_id=${authUser.id}
     limit 1
   `;
   const appUser = appUsers[0] as { id: string; selectedPlanCode: string } | undefined;
@@ -147,7 +152,7 @@ export async function claimMvpSession(authenticatedUser: User): Promise<MvpSessi
   const db = getDb();
   const existing = await findStoredSession(db, token);
   const profile = authProfile(authenticatedUser);
-  const preferredPlan = existing?.selectedPlanCode || "plus";
+  const preferredPlan = "free";
   const provider = profileValue(authenticatedUser.app_metadata?.provider, 100) || "google";
   const appUsers = await db`
     insert into shorts_mvp.app_users (
@@ -165,7 +170,18 @@ export async function claimMvpSession(authenticatedUser: User): Promise<MvpSessi
       last_sign_in_at=excluded.last_sign_in_at
     returning id, selected_plan_code
   `;
-  const appUser = appUsers[0] as { id: string; selectedPlanCode: string };
+  const insertedUser = appUsers[0] as { id: string; selectedPlanCode: string };
+  const entitlementRows = await db`
+    select coalesce((
+      select plan_code from shorts_mvp.user_subscriptions
+      where user_id=${insertedUser.id} and status in ('trialing','active','past_due')
+      order by created_at desc limit 1
+    ),'free') as selected_plan_code
+  `;
+  const appUser = {
+    id: insertedUser.id,
+    selectedPlanCode: String(entitlementRows[0]?.selectedPlanCode || "free"),
+  };
   const activeSession = !existing || (existing.userId && existing.userId !== appUser.id)
     ? await createStoredSession(db, cookieStore, appUser.id, appUser.selectedPlanCode)
     : existing;

@@ -66,7 +66,6 @@ describe("free YouTube search collection", () => {
       regionCode: "KR",
       relevanceLanguage: "ko",
       videoDuration: "any",
-      videoEmbeddable: "true",
       safeSearch: "moderate",
       maxResults: "50",
     });
@@ -100,7 +99,7 @@ describe("free YouTube search collection", () => {
     expect(result.items).toHaveLength(3);
   });
 
-  it("excludes live, private, non-embeddable, and incomplete details", async () => {
+  it("excludes live, private, and incomplete details", async () => {
     const ids = ["liveVideo01", "privateVid1", "noEmbedVid1", "missingView1", "validVideo1"];
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({ items: ids.map((videoId) => ({ id: { videoId } })) }))
@@ -114,8 +113,12 @@ describe("free YouTube search collection", () => {
 
     const result = await collectSearchVideoPages({ fetchImpl: fetchMock });
 
-    expect(result.items).toHaveLength(1);
+    expect(result.items).toHaveLength(2);
     expect(result.items[0]).toMatchObject({
+      videoId: "noEmbedVid1",
+      searchRank: 3,
+    });
+    expect(result.items[1]).toMatchObject({
       videoId: "validVideo1",
       category: "science",
       searchRank: 5,

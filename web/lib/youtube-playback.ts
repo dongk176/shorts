@@ -113,23 +113,23 @@ export function classifyYoutubePlaybackResponse(
 
   if (containsAny(reasonText, BOT_CHALLENGE_MARKERS)) {
     return blocked(
-      "availability_unverified",
-      "YouTube가 링크 검증 요청을 일시적으로 제한했습니다. 잠시 후 다시 확인해 주세요.",
+      "bot_challenge",
+      "이 영상은 현재 YouTube에서 재생 가능 여부를 확인할 수 없는 상태입니다. 잠시 후 다시 확인해 주세요.",
     );
   }
   if (containsAny(reasonText, ["playercaptchaviewmodel", "captcha challenge"])) {
     return blocked(
-      "availability_unverified",
-      "YouTube가 링크 검증 요청에 추가 확인을 요구했습니다. 잠시 후 다시 확인해 주세요.",
+      "bot_challenge",
+      "이 영상은 현재 YouTube에서 재생 가능 여부를 확인할 수 없는 상태입니다. 잠시 후 다시 확인해 주세요.",
     );
   }
   if (containsAny(reasonText, ["private video", "video is private"])) {
-    return blocked("not_public", "비공개 영상은 쇼츠로 만들 수 없습니다.");
+    return blocked("not_public", "이 영상은 비공개 영상입니다.");
   }
   if (containsAny(reasonText, ["copyright", "copyright claim", "copyright grounds"])) {
     return blocked(
       "copyright_restricted",
-      "저작권 제한으로 재생이 중단된 영상은 쇼츠로 만들 수 없습니다.",
+      "이 영상은 저작권 문제로 재생이 제한된 영상입니다.",
     );
   }
   if (containsAny(reasonText, [
@@ -142,7 +142,7 @@ export function classifyYoutubePlaybackResponse(
     "is not available anymore",
     "has been deleted",
   ])) {
-    return blocked("removed", "삭제되었거나 게시가 중단된 영상은 쇼츠로 만들 수 없습니다.");
+    return blocked("removed", "이 영상은 삭제되었거나 게시가 중단된 영상입니다.");
   }
   if (containsAny(reasonText, [
     "members-only",
@@ -150,7 +150,7 @@ export function classifyYoutubePlaybackResponse(
     "join this channel",
     "channel members",
   ])) {
-    return blocked("members_only", "채널 멤버십 전용 영상은 쇼츠로 만들 수 없습니다.");
+    return blocked("members_only", "이 영상은 채널 멤버십 전용 영상입니다.");
   }
   if (containsAny(reasonText, [
     "purchase this content",
@@ -159,7 +159,7 @@ export function classifyYoutubePlaybackResponse(
     "buy this",
     "purchase required",
   ]) || reasonText.includes("ypctrailerrenderer")) {
-    return blocked("paid_content", "구매 또는 대여가 필요한 영상은 쇼츠로 만들 수 없습니다.");
+    return blocked("paid_content", "이 영상은 구매 또는 대여가 필요한 영상입니다.");
   }
   if (containsAny(reasonText, [
     "age-restricted",
@@ -167,14 +167,14 @@ export function classifyYoutubePlaybackResponse(
     "confirm your age",
     "inappropriate for some users",
   ]) || status === "AGE_CHECK_REQUIRED" || status === "AGE_VERIFICATION_REQUIRED") {
-    return blocked("age_restricted", "연령 확인이 필요한 영상은 쇼츠로 만들 수 없습니다.");
+    return blocked("age_restricted", "이 영상은 연령 확인이 필요한 영상입니다.");
   }
   if (containsAny(reasonText, [
     "not available in your country",
     "not available in your region",
     "not available in this country",
   ])) {
-    return blocked("region_restricted", "국가별 시청 제한이 있는 영상은 쇼츠로 만들 수 없습니다.");
+    return blocked("region_restricted", "이 영상은 국가별 시청이 제한된 영상입니다.");
   }
   if (containsAny(reasonText, [
     "premiere will begin",
@@ -182,7 +182,7 @@ export function classifyYoutubePlaybackResponse(
     "scheduled to begin",
     "upcoming event",
   ]) || status === "LIVE_STREAM_OFFLINE") {
-    return blocked("not_yet_available", "아직 공개 또는 재생이 시작되지 않은 영상입니다.");
+    return blocked("not_yet_available", "이 영상은 아직 공개 또는 재생이 시작되지 않은 영상입니다.");
   }
   if (containsAny(reasonText, [
     "sign in to watch",
@@ -193,36 +193,32 @@ export function classifyYoutubePlaybackResponse(
   ]) || status === "LOGIN_REQUIRED") {
     return blocked(
       "authentication_required",
-      "로그인 또는 계정 인증이 필요한 영상은 쇼츠로 만들 수 없습니다.",
+      "이 영상은 로그인 또는 계정 인증이 필요한 영상입니다.",
     );
   }
   if (containsAny(reasonText, ["drm protected", "drm-protected"])) {
-    return blocked("drm_protected", "DRM으로 보호된 영상은 쇼츠로 만들 수 없습니다.");
+    return blocked("drm_protected", "이 영상은 DRM으로 보호된 영상입니다.");
   }
   if (status !== "OK") {
     if (containsAny(reasonText, ["video unavailable", "unavailable video"])) {
-      return blocked("playback_unavailable", "현재 재생할 수 없는 영상은 쇼츠로 만들 수 없습니다.");
+      return blocked("playback_unavailable", "이 영상은 현재 재생할 수 없는 영상입니다.");
     }
     return blocked(
       "availability_unverified",
-      "YouTube 실제 재생 가능 여부를 확인할 수 없어 쇼츠를 만들 수 없습니다.",
+      "이 영상은 현재 재생 가능 여부를 확인할 수 없는 영상입니다.",
     );
   }
-  if (playability.playableInEmbed === false) {
-    return blocked("embedding_disabled", "외부 재생이 제한된 영상은 쇼츠로 만들 수 없습니다.");
-  }
-
   const streamingData = isRecord(playerResponse.streamingData)
     ? playerResponse.streamingData
     : null;
   if (!streamingData) {
     return blocked(
       "playback_unavailable",
-      "재생 가능한 영상 포맷을 확인할 수 없어 쇼츠를 만들 수 없습니다.",
+      "이 영상은 재생 가능한 포맷을 확인할 수 없는 영상입니다.",
     );
   }
   if (hasOnlyDrmFormats(streamingData)) {
-    return blocked("drm_protected", "DRM으로 보호된 영상은 쇼츠로 만들 수 없습니다.");
+    return blocked("drm_protected", "이 영상은 DRM으로 보호된 영상입니다.");
   }
   const hasPlaybackLocator = playbackFormats(streamingData).some(formatHasLocator)
     || (typeof streamingData.serverAbrStreamingUrl === "string"
@@ -230,7 +226,7 @@ export function classifyYoutubePlaybackResponse(
   if (!hasPlaybackLocator) {
     return blocked(
       "playback_unavailable",
-      "재생 가능한 영상 포맷을 확인할 수 없어 쇼츠를 만들 수 없습니다.",
+      "이 영상은 재생 가능한 포맷을 확인할 수 없는 영상입니다.",
     );
   }
 

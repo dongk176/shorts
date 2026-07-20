@@ -23,7 +23,7 @@ function stacks() {
 }
 
 describe("shorts MVP infrastructure", () => {
-  it("keeps S3 private with 30-day lifecycle and CloudFront OAC", () => {
+  it("keeps S3 private, expires regular media, and retains example media", () => {
     const { foundation } = stacks();
     foundation.hasResourceProperties("AWS::S3::Bucket", {
       PublicAccessBlockConfiguration: {
@@ -33,12 +33,22 @@ describe("shorts MVP infrastructure", () => {
         RestrictPublicBuckets: true,
       },
       LifecycleConfiguration: {
-        Rules: Match.arrayWith([Match.objectLike({ ExpirationInDays: 30, Status: "Enabled" })]),
+        Rules: Match.arrayWith([
+          Match.objectLike({ Prefix: "outputs/", ExpirationInDays: 30, Status: "Enabled" }),
+          Match.objectLike({ Prefix: "thumbnails/", ExpirationInDays: 30, Status: "Enabled" }),
+          Match.objectLike({ Prefix: "edit-sources/", ExpirationInDays: 30, Status: "Enabled" }),
+        ]),
       },
     });
     foundation.resourceCountIs("AWS::CloudFront::OriginAccessControl", 1);
     foundation.hasResourceProperties("AWS::CloudFront::Function", {
       FunctionCode: Match.stringLikeRegexp("/outputs/"),
+    });
+    foundation.hasResourceProperties("AWS::CloudFront::Function", {
+      FunctionCode: Match.stringLikeRegexp("/examples/"),
+    });
+    foundation.hasResourceProperties("AWS::CloudFront::Function", {
+      FunctionCode: Match.stringLikeRegexp("/edit-sources/"),
     });
   });
 
@@ -106,6 +116,8 @@ describe("shorts MVP infrastructure", () => {
           { Name: "AWS_DEFAULT_REGION", Value: "ap-northeast-2" },
           { Name: "OPENAI_TRANSCRIBE_MODEL", Value: "gpt-4o-mini-transcribe" },
           { Name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", Value: "gpt-5-nano" },
+          { Name: "OPENAI_COMMENT_FALLBACK_MODEL", Value: "gpt-5-nano" },
+          { Name: "GEMINI_COMMENT_MODEL", Value: "gemini-2.5-flash-lite" },
           { Name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", Value: "30" },
           { Name: "OPENAI_TRANSCRIBE_MAX_WORKERS", Value: "4" },
           { Name: "INGESTION_EGRESS_MODE", Value: "webshare_isp" },

@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import { LegalDocument, LegalSection } from "@/components/legal-document";
+import { createPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = { title: "개인정보처리방침 | Easy Cut", description: "Easy Cut 개인정보처리방침" };
+export const metadata: Metadata = createPageMetadata({
+  title: "개인정보처리방침 | 이지컷",
+  description: "이지컷 AI 쇼츠 제작 서비스 개인정보처리방침입니다.",
+  path: "/privacy",
+});
 
 export default function PrivacyPage() {
   return (
@@ -13,7 +18,7 @@ export default function PrivacyPage() {
       <LegalSection title="2. 처리하는 개인정보 항목">
         <div className="overflow-x-auto"><table><thead><tr><th>구분</th><th>처리 항목</th></tr></thead><tbody>
           <tr><td>소셜 로그인</td><td>계정 식별자, 이메일 주소, 표시 이름, 프로필 이미지, 로그인 제공자 및 최근 로그인 시각</td></tr>
-          <tr><td>서비스 이용</td><td>YouTube URL·영상 ID·제목·채널명·길이·썸네일, 선택 구간, 생성된 제목·자막·편집 설정·결과물, 프로젝트 상태 및 이용량</td></tr>
+          <tr><td>서비스 이용</td><td>YouTube URL·영상 ID·제목·채널명·길이·썸네일, 생성된 제목·자막·편집 설정·결과물, 프로젝트 상태 및 이용량</td></tr>
           <tr><td>자동 생성 정보</td><td>세션 쿠키, 접속 시각, IP 주소, 브라우저·기기 정보, 요청 및 오류 기록</td></tr>
         </tbody></table></div>
         <p>Easy Cut은 Google 또는 다른 소셜 로그인 제공자의 비밀번호를 수집하거나 저장하지 않습니다.</p>
@@ -47,7 +52,7 @@ export default function PrivacyPage() {
       <LegalSection title="11. 만 14세 미만 아동"><p>Easy Cut은 만 14세 미만 아동을 대상으로 하지 않으며 법정대리인의 동의 없이 만 14세 미만 아동의 개인정보를 의도적으로 수집하지 않습니다.</p></LegalSection>
       <LegalSection title="12. 개인정보 보호책임자 및 문의">
         <div className="overflow-x-auto"><table><tbody>
-          <tr><th>개인정보처리자</th><td>아티룸</td></tr><tr><th>대표 및 개인정보 보호책임자</th><td>김동민</td></tr><tr><th>전화</th><td><a href="tel:010-3603-2874" className="text-[#ff8c7c] underline underline-offset-4">010-3603-2874</a> (평일 14:00 ~ 19:00)</td></tr><tr><th>이메일</th><td><a href="mailto:artiroom176@gmail.com" className="text-[#ff8c7c] underline underline-offset-4">artiroom176@gmail.com</a></td></tr><tr><th>주소</th><td>서울특별시 마포구 성산로8길 40</td></tr>
+          <tr><th>개인정보처리자</th><td>아티룸</td></tr><tr><th>대표 및 개인정보 보호책임자</th><td>김동민</td></tr><tr><th>전화</th><td><a href="tel:010-4836-2874" className="text-[#ff8c7c] underline underline-offset-4">010-4836-2874</a> (평일 14:00 ~ 19:00)</td></tr><tr><th>이메일</th><td><a href="mailto:artiroom176@gmail.com" className="text-[#ff8c7c] underline underline-offset-4">artiroom176@gmail.com</a></td></tr><tr><th>주소</th><td>서울특별시 마포구 성산로8길 40</td></tr>
         </tbody></table></div>
         <p>개인정보 보호 관련 문의와 권리 행사는 위 고객센터를 통해 접수할 수 있습니다.</p>
         <ul><li>• 개인정보침해신고센터: 국번 없이 118</li><li>• 개인정보분쟁조정위원회: 1833-6972</li></ul>

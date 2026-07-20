@@ -65,7 +65,7 @@ beforeEach(() => {
 
 describe("popular video shorts preparation", () => {
   it("rechecks current YouTube availability before creating an analysis", async () => {
-    const response = await POST(request({ videoId: video.videoId, source: "pro" }));
+    const response = await POST(request({ videoId: video.videoId, source: "popular" }));
 
     expect(response.status).toBe(201);
     expect(mocks.getStoredPopularVideo).toHaveBeenCalledWith(video.videoId);
@@ -83,7 +83,7 @@ describe("popular video shorts preparation", () => {
     mocks.getStoredPopularSearchVideo.mockResolvedValue(null);
     mocks.getStoredFreeVideo.mockResolvedValue(null);
 
-    const response = await POST(request({ videoId: video.videoId, source: "pro" }));
+    const response = await POST(request({ videoId: video.videoId, source: "popular" }));
 
     expect(response.status).toBe(404);
     expect(mocks.createYoutubeAnalysis).not.toHaveBeenCalled();
@@ -105,7 +105,7 @@ describe("popular video shorts preparation", () => {
     mocks.getStoredPopularVideo.mockResolvedValue(null);
     mocks.getStoredPopularSearchVideo.mockResolvedValue(video);
 
-    const response = await POST(request({ videoId: video.videoId, source: "pro" }));
+    const response = await POST(request({ videoId: video.videoId, source: "popular" }));
 
     expect(response.status).toBe(201);
     expect(mocks.getStoredPopularSearchVideo).toHaveBeenCalledWith(video.videoId);
@@ -123,7 +123,7 @@ describe("popular video shorts preparation", () => {
   it("allows a non-Pro session to prepare a video from the visible preview", async () => {
     mocks.session.mockResolvedValue({ id: "session-a", selectedPlanCode: "standard", userId: "user-a" });
 
-    const response = await POST(request({ videoId: video.videoId, source: "pro" }));
+    const response = await POST(request({ videoId: video.videoId, source: "popular" }));
 
     expect(response.status).toBe(201);
     expect(mocks.getStoredPopularVideo).toHaveBeenCalledWith(video.videoId);

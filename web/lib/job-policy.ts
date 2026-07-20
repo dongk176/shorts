@@ -1,4 +1,5 @@
 import type { UsageSnapshot } from "@/lib/contracts";
+import { HttpError } from "@/lib/http";
 
 export function assertJobCreationAllowed(input: {
   activeJobs: number;
@@ -7,13 +8,12 @@ export function assertJobCreationAllowed(input: {
   usage: UsageSnapshot;
 }) {
   if (input.activeJobs >= input.maxActiveJobs) {
-    throw new Error("현재 처리 중인 작업이 있습니다. 완료 후 다시 시도해 주세요.");
+    throw new HttpError(409, "현재 처리 중인 작업이 있습니다. 완료 후 다시 시도해 주세요.");
   }
   if (
     input.usage.enforcementEnabled
-    && input.usage.usedSeconds + input.usage.reservedSeconds + input.sourceDurationSeconds
-      > input.usage.limitSeconds
+    && input.sourceDurationSeconds > input.usage.remainingSeconds
   ) {
-    throw new Error("선택한 플랜의 이번 달 원본 영상 처리 시간을 초과합니다.");
+    throw new HttpError(402, "사용 가능한 원본 영상 처리 시간이 부족합니다.");
   }
 }

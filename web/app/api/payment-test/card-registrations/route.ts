@@ -6,6 +6,9 @@ import {
   assertLocalPaymentMutation,
   assertLocalPaymentTestHost,
   assertPaymentTester,
+  assertSupportedPaymentTestCardIssuer,
+  isHanaProviderDiagnostic,
+  paymentTestCardIssuers,
   PaymentTestAccessError,
 } from "@/lib/payment-test";
 import { requireMvpSession } from "@/lib/session";
@@ -25,6 +28,7 @@ export const dynamic = "force-dynamic";
 
 const registrationSchema = z.object({
   requestId: z.string().uuid(),
+  cardIssuer: z.enum(paymentTestCardIssuers),
   payerName: z.string().trim().min(1).max(20),
   payerEmail: z.string().trim().email().max(100),
   payerTel: z.string().transform((value) => value.replace(/[^0-9]/g, "")).refine((value) => /^\d{10,11}$/.test(value)),
@@ -46,6 +50,7 @@ const registrationSchema = z.object({
 }).strict();
 
 const invalidFieldMessages: Record<string, string> = {
+  cardIssuer: "카드사를 선택해 주세요.",
   payerName: "이름은 1~20자로 입력해 주세요.",
   payerEmail: "이메일 주소 형식을 확인해 주세요.",
   payerTel: "휴대전화 번호는 숫자 10~11자리로 입력해 주세요.",
@@ -96,9 +101,18 @@ function json(body: unknown, init?: ResponseInit) {
 }
 
 function paymentError(error: unknown) {
-  if (error instanceof PaymentTestAccessError) return json({ detail: error.message }, { status: error.status });
+  if (error instanceof PaymentTestAccessError) {
+    return json({ detail: error.message, errorCode: error.errorCode }, { status: error.status });
+  }
   if (error instanceof PaymentConfigurationError) return json({ detail: error.message }, { status: 503 });
   if (error instanceof ThePayOneError) {
+    if (isHanaProviderDiagnostic(error.diagnostic)) {
+      return json({
+        detail: "하나카드는 현재 더페이원 카드 등록을 지원하지 않습니다. 다른 카드사를 이용해 주세요.",
+        errorCode: "HANA_CARD_UNSUPPORTED",
+        resultCode: error.resultCode,
+      }, { status: 422 });
+    }
     const detail = error.diagnostic ? `${error.message} · 상세: ${error.diagnostic}` : error.message;
     return json({ detail, resultCode: error.resultCode }, { status: 502 });
   }
@@ -134,6 +148,7 @@ export async function POST(request: Request) {
     const session = await requireMvpSession();
     const tester = assertPaymentTester(session);
     const input = registrationSchema.parse(await request.json());
+    assertSupportedPaymentTestCardIssuer(input.cardIssuer);
     const config = getThePayOneConfig();
     const db = getDb();
 

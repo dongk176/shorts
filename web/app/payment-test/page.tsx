@@ -49,7 +49,7 @@ export default async function PaymentTestPage() {
   const allowed = isPaymentTesterEmail(profile?.email);
 
   return (
-    <div className="app-shell min-h-screen overflow-visible text-neutral-100">
+    <div className="app-shell site-header-only min-h-screen overflow-visible text-neutral-100">
       <header className="site-header">
         <div className="mx-auto flex h-[72px] max-w-6xl items-center justify-between px-5 sm:px-8">
           <Link href="/" className="flex items-center gap-3" aria-label="Easy Cut 홈">

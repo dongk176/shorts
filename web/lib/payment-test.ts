@@ -1,9 +1,42 @@
 import type { MvpSession } from "@/lib/session";
 
 export class PaymentTestAccessError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly errorCode: string | null = null,
+  ) {
     super(message);
   }
+}
+
+export const paymentTestCardIssuers = [
+  "bc", "kb", "shinhan", "samsung", "hyundai", "lotte", "nh", "woori", "hana", "other",
+] as const;
+
+export type PaymentTestCardIssuer = (typeof paymentTestCardIssuers)[number];
+
+export const PAYMENT_TEST_CHARGE_AMOUNT = 1000;
+export const PAYMENT_TEST_CHARGE_COUNT = 3;
+export const PAYMENT_TEST_INTERVAL_SECONDS = 60;
+export const PAYMENT_TEST_CONFIRMATION = "1,000원씩 3회 실제 결제";
+
+export function assertSupportedPaymentTestCardIssuer(issuer: PaymentTestCardIssuer) {
+  if (issuer === "hana") {
+    throw new PaymentTestAccessError(
+      "하나카드는 현재 더페이원 카드 등록을 지원하지 않습니다. 다른 카드사를 이용해 주세요.",
+      422,
+      "HANA_CARD_UNSUPPORTED",
+    );
+  }
+}
+
+export function isHanaCardIssuerName(value: string | null | undefined) {
+  return Boolean(value && /(하나|외환|hana|keb)/i.test(value));
+}
+
+export function isHanaProviderDiagnostic(value: string | null | undefined) {
+  return isHanaCardIssuerName(value);
 }
 
 export function isLocalHostname(hostname: string) {

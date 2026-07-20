@@ -7,10 +7,9 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 const navigation = [
-  { href: "/#templates", label: "템플릿", path: null },
-  { href: "/pricing", label: "가격", path: "/pricing" },
-  { href: "/#results", label: "대시보드", path: null },
-  { href: "/실시간인기", label: "실시간 인기", path: "/실시간인기" },
+  { href: "/templates", label: "템플릿", path: "/templates" },
+  { href: "/pricing", label: "요금제", path: "/pricing" },
+  { href: "/popular", label: "실시간 인기", path: "/popular" },
 ] as const;
 
 function NavigationLinks({ pathname, onNavigate, mobile = false }: {
@@ -25,7 +24,7 @@ function NavigationLinks({ pathname, onNavigate, mobile = false }: {
     // Keep the framework-provided pathname when it is not URI encoded.
   }
   return navigation.map((item) => {
-    const active = item.path === decodedPathname || (item.path === "/실시간인기" && decodedPathname === "/popular");
+    const active = item.path === decodedPathname;
     return (
       <Link
         key={item.href}
@@ -66,7 +65,7 @@ export function SiteHeader({ children }: { children: ReactNode }) {
   return (
     <header className="site-header">
       <div ref={menuRef} className="relative mx-auto flex h-[72px] max-w-6xl items-center justify-between px-5 sm:px-8">
-        <Link href="/" className="flex shrink-0 items-center gap-3" aria-label="Easy Cut 홈">
+        <Link href="/" className="flex shrink-0 items-center gap-3" aria-label="이지컷 Easy Cut 홈">
           <span className="brand-mark" aria-hidden="true"><Image src="/east-cut-logo.png" alt="" width={34} height={34} priority /></span>
           <span className="brand-type">Easy <em>Cut</em></span>
         </Link>

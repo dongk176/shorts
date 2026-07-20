@@ -56,6 +56,7 @@ export type PopularVideo = {
 export type PopularVideoResponse = {
   items: PopularVideo[];
   updatedAt: string;
+  totalCount?: number;
   nextCursor?: string;
 };
 
@@ -466,7 +467,7 @@ export async function getPopularVideos(
         and (${koreanOnly}=false or is_korean)
     )
     select video_id, category, title, channel_name, thumbnail_url, duration_seconds,
-      view_count, published_at, license, category_rank
+      view_count, published_at, license, category_rank, count(*) over() as total_count
     from candidates
     where duplicate_rank=1
     order by
@@ -481,6 +482,7 @@ export async function getPopularVideos(
   return {
     items: rows.slice(0, limit).map((row) => rowToPopularVideo(row as Record<string, unknown>)),
     updatedAt: run.completedAt,
+    totalCount: rows[0] ? Number(rows[0].totalCount) : 0,
     ...(hasNext ? { nextCursor: encodeCursor(run.id, offset + limit) } : {}),
   };
 }

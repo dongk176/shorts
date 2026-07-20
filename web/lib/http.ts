@@ -12,8 +12,13 @@ export function apiError(error: unknown, fallback = "요청을 처리하지 못�
   const errorCode = typeof (error as { code?: unknown })?.code === "string"
     ? (error as { code: string }).code
     : null;
-  const status = error instanceof HttpError
+  const explicitStatus = error instanceof HttpError
     ? error.status
+    : typeof (error as { status?: unknown })?.status === "number"
+      ? Math.max(400, Math.min(599, Number((error as { status: number }).status)))
+      : null;
+  const status = explicitStatus !== null
+    ? explicitStatus
     : errorCode === "57014" || /timeout|시간 초과/i.test(message)
       ? 503
       : /찾을 수 없|접근/.test(message)

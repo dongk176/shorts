@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  chargeThePayOneRecurringCard,
   decryptCardToken,
   encryptCardToken,
   isValidLuhn,
@@ -105,6 +106,79 @@ describe("ThePayOne client", () => {
     await revokeThePayOneCard("card_test_token", "EC-AUDT-TEST");
     const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
     expect(body).toEqual({ audt: { cardId: "card_test_token", status: "폐기", trackId: "EC-AUDT-TEST" } });
+  });
+
+  it("charges a registered card with the production recurring payload", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: { resultCd: "0000", resultMsg: "정상" },
+      pay: {
+        trxId: "T260717000001",
+        card: {
+          last4: "4242",
+          issuer: "테스트카드",
+          cardType: "신용",
+          acquirer: "테스트",
+        },
+      },
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(chargeThePayOneRecurringCard({
+      trackId: "EC-PAY-TEST",
+      cardId: "card_test_token",
+      amount: 1000,
+      payerName: "테스트",
+      payerEmail: "tester@example.com",
+      payerTel: "01012345678",
+      referenceId: "run-test-1",
+    })).resolves.toMatchObject({
+      resultCode: "0000",
+      providerTransactionId: "T260717000001",
+      last4: "4242",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(url.toString()).toBe("https://api.thepayone.com/api/pay");
+    expect(new Headers(init.headers).get("Authorization")).toBe("pay-key-test");
+    expect(JSON.parse(String(init.body))).toEqual({
+      pay: {
+        trxType: "ONTR",
+        trackId: "EC-PAY-TEST",
+        amount: 1000,
+        payerName: "테스트",
+        payerEmail: "tester@example.com",
+        payerTel: "01012345678",
+        udf1: "run-test-1",
+        udf2: "00",
+        card: { Installment: "00", cardId: "card_test_token" },
+        products: [
+          {
+            name: "Easy Cut 구독 결제 테스트",
+            qty: "1",
+            price: "1000",
+            desc: "즉시 시작 1분 간격 3회 반복결제 테스트",
+          },
+        ],
+        metadata: { recurring: "pay" },
+      },
+    });
+  });
+
+  it("marks a network interruption as an unknown payment outcome", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("network down")));
+
+    await expect(chargeThePayOneRecurringCard({
+      trackId: "EC-PAY-UNKNOWN",
+      cardId: "card_test_token",
+      amount: 1000,
+      payerName: "테스트",
+      payerEmail: "tester@example.com",
+      payerTel: "01012345678",
+      referenceId: "run-test-2",
+    })).rejects.toMatchObject({
+      resultCode: "NETWORK_ERROR",
+      outcomeUnknown: true,
+    });
   });
 
   it("keeps the public error generic and provides only a redacted local diagnostic", async () => {

@@ -6,13 +6,16 @@ const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
   usage: vi.fn(),
   recentJobs: vi.fn(),
+  projectByNumber: vi.fn(),
   publicState: vi.fn(),
+  publicExamples: vi.fn(),
   authenticatedUser: vi.fn(),
   analyze: vi.fn(),
   submitInitial: vi.fn(),
   submitRerender: vi.fn(),
   wakeDispatcher: vi.fn(),
   deleteObjects: vi.fn(),
+  billing: vi.fn(),
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -20,6 +23,10 @@ vi.mock("@/lib/session", () => ({
   requireAuthenticatedMvpSession: mocks.authenticatedSession,
 }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
+vi.mock("@/lib/billing", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/billing")>()),
+  getBillingSummary: mocks.billing,
+}));
 vi.mock("@/lib/supabase/server", () => ({ getAuthenticatedUser: mocks.authenticatedUser }));
 vi.mock("@/lib/usage", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/usage")>()),
@@ -27,6 +34,8 @@ vi.mock("@/lib/usage", async (importOriginal) => ({
 }));
 vi.mock("@/lib/data", () => ({
   getRecentJobs: mocks.recentJobs,
+  getProjectByNumber: mocks.projectByNumber,
+  getPublicExampleJobs: mocks.publicExamples,
   getPublicMvpState: mocks.publicState,
   getPlans: vi.fn(),
 }));
@@ -42,6 +51,7 @@ vi.mock("@/lib/aws", () => ({
 }));
 
 import { GET as getJob } from "./jobs/[jobId]/route";
+import { GET as getProject } from "./projects/[projectNumber]/route";
 import { HttpError } from "@/lib/http";
 import { POST as createJob } from "./jobs/route";
 import { POST as selectPlan } from "./mvp/plan/route";
@@ -56,9 +66,14 @@ const usage = {
   reservedSeconds: 0,
   limitSeconds: 6000,
   remainingSeconds: 5940,
+  baseUsedSeconds: 60,
+  baseReservedSeconds: 0,
+  baseLimitSeconds: 6000,
+  baseRemainingSeconds: 5940,
+  addonRemainingSeconds: 0,
   periodStart: "2026-06-30T15:00:00.000Z",
   nextResetAt: "2026-07-31T15:00:00.000Z",
-  enforcementEnabled: false,
+  enforcementEnabled: true as const,
 };
 
 function jsonRequest(url: string, body: unknown) {
@@ -78,7 +93,7 @@ function dbWithRows(...responses: unknown[][]) {
 
 function dbForSuccessfulJobCreation() {
   const db = dbWithRows([], [analysisRow]);
-  const tx = dbWithRows([], [], [{ active: 0 }], [], [], []);
+  const tx = dbWithRows([], [], [{ active: 0 }], [{ projectNumber: 1 }], [{ id: "reservation-a" }], [], []);
   Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
   return db;
 }
@@ -107,25 +122,39 @@ beforeEach(() => {
   });
   mocks.usage.mockResolvedValue(usage);
   mocks.publicState.mockResolvedValue({ plans: [], generatedShortCount: 4321 });
+  mocks.publicExamples.mockResolvedValue([{ id: "example-job", isExample: true }]);
   mocks.authenticatedSession.mockImplementation(() => mocks.session());
   mocks.authenticatedUser.mockResolvedValue({ id: "auth-a" });
   mocks.wakeDispatcher.mockResolvedValue(undefined);
+  mocks.billing.mockResolvedValue({
+    status: "active", planCode: "plus", billingCycle: "monthly",
+    currentPeriodStart: "2026-07-01T00:00:00.000Z", currentPeriodEnd: "2026-08-01T00:00:00.000Z",
+    nextChargeAt: "2026-08-01T00:00:00.000Z", cancelAtPeriodEnd: false,
+    scheduledPlanCode: null, scheduledBillingCycle: null, cardIssuer: "11",
+    cardNumberMasked: "12345678****1234", cardLast4: "1234",
+    canCreateJobs: true, maxActiveJobs: 1, retentionDays: 7,
+  });
 });
 
 describe("MVP state visibility", () => {
-  it("does not query or return projects for an anonymous session", async () => {
+  it("hides all projects until the visitor signs in", async () => {
     mocks.authenticatedUser.mockResolvedValue(null);
     mocks.publicState.mockResolvedValue({
-      plans: [{ code: "plus", displayName: "Plus", monthlySourceSeconds: 6000, retentionDays: 30 }],
+      plans: [{ code: "free", displayName: "Free", monthlySourceSeconds: 0, retentionDays: 1, monthlyPriceKrw: 0, yearlyPriceKrw: 0, maxActiveJobs: 0 }],
       generatedShortCount: 4321,
     });
     mocks.getDb.mockReturnValue(vi.fn());
     const response = await getMvpState();
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ sessionId: null, user: null, recentJobs: [] });
+    await expect(response.json()).resolves.toMatchObject({
+      sessionId: null,
+      user: null,
+      recentJobs: [],
+    });
     expect(mocks.session).not.toHaveBeenCalled();
     expect(mocks.usage).not.toHaveBeenCalled();
     expect(mocks.recentJobs).not.toHaveBeenCalled();
+    expect(mocks.publicExamples).not.toHaveBeenCalled();
   });
 
   it("returns only the authenticated user's project query result", async () => {
@@ -144,8 +173,6 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-red",
-      rangeStartSeconds: 0,
-      rangeEndSeconds: 120,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d9",
     }));
     expect(response.status).toBe(401);
@@ -158,28 +185,79 @@ describe("job API security and idempotency", () => {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
       analysisId,
       templateId: "dark-red",
-      rangeStartSeconds: 0,
-      rangeEndSeconds: 120,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d0",
     }));
     expect(response.status).toBe(202);
     expect(mocks.authenticatedSession).toHaveBeenCalledOnce();
   });
 
+  it("lets a signed-in free user create while plan enforcement is disabled", async () => {
+    mocks.usage.mockResolvedValue({
+      ...usage,
+      limitSeconds: 0,
+      remainingSeconds: 0,
+      baseLimitSeconds: 0,
+      baseRemainingSeconds: 0,
+      enforcementEnabled: false,
+    });
+    mocks.billing.mockResolvedValue({
+      status: "none", planCode: "free", billingCycle: null,
+      currentPeriodStart: null, currentPeriodEnd: null, nextChargeAt: null,
+      cancelAtPeriodEnd: false, scheduledPlanCode: null, scheduledBillingCycle: null,
+      cardIssuer: null, cardNumberMasked: null, cardLast4: null,
+      canCreateJobs: false, maxActiveJobs: 0, retentionDays: 1,
+    });
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows([], [], [{ active: 0 }], [{ projectNumber: 2 }], [{ id: "reservation-free" }], []);
+    Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511e0",
+    }));
+
+    expect(response.status).toBe(202);
+    expect(tx).toHaveBeenCalledTimes(6);
+  });
+
+  it("still requires an active subscription when plan enforcement is restored", async () => {
+    mocks.billing.mockResolvedValue({
+      status: "none", planCode: "free", billingCycle: null,
+      currentPeriodStart: null, currentPeriodEnd: null, nextChargeAt: null,
+      cancelAtPeriodEnd: false, scheduledPlanCode: null, scheduledBillingCycle: null,
+      cardIssuer: null, cardNumberMasked: null, cardLast4: null,
+      canCreateJobs: false, maxActiveJobs: 0, retentionDays: 1,
+    });
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows([], [], [{ active: 0 }]);
+    Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511e1",
+    }));
+
+    expect(response.status).toBe(402);
+    expect(tx).toHaveBeenCalledTimes(3);
+  });
+
   it("returns an existing request without a second Batch submission", async () => {
-    mocks.getDb.mockReturnValue(dbWithRows([{ id: "job-existing", status: "queued" }]));
+    mocks.getDb.mockReturnValue(dbWithRows([{ id: "job-existing", projectNumber: 7, status: "queued" }]));
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
       analysisId,
       templateId: "dark-red",
       clipLengthOption: "sec_31_60",
-      rangeStartSeconds: 0,
-      rangeEndSeconds: 120,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d0",
     }));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       jobId: "job-existing",
+      projectNumber: 7,
       status: "queued",
       usage,
     });
@@ -187,43 +265,27 @@ describe("job API security and idempotency", () => {
     expect(mocks.wakeDispatcher).not.toHaveBeenCalled();
   });
 
-  it("rejects a selected range shorter than thirty seconds", async () => {
-    mocks.getDb.mockReturnValue(dbWithRows([], [analysisRow]));
-    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
-      youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
-      analysisId,
-      templateId: "dark-red",
-      rangeStartSeconds: 100,
-      rangeEndSeconds: 120,
-      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d1",
-    }));
-    expect(response.status).toBe(400);
-    expect(mocks.submitInitial).not.toHaveBeenCalled();
-  });
-
   it("rejects job creation when the analysis is blocked by YouTube availability", async () => {
     mocks.getDb.mockReturnValue(dbWithRows([], [{
       ...analysisRow,
       creationAllowed: false,
       creationBlockCode: "region_restricted",
-      creationBlockReason: "국가별 시청 제한이 있는 영상은 쇼츠로 만들 수 없습니다.",
+      creationBlockReason: "이 영상은 국가별 시청이 제한된 영상입니다.",
     }]));
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-red",
-      rangeStartSeconds: 0,
-      rangeEndSeconds: 120,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d4",
     }));
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
-      detail: "국가별 시청 제한이 있는 영상은 쇼츠로 만들 수 없습니다.",
+      detail: "이 영상은 국가별 시청이 제한된 영상입니다.",
     });
     expect(mocks.submitInitial).not.toHaveBeenCalled();
   });
 
-  it("accepts an exact thirty-second range without a length option", async () => {
+  it("ignores legacy range fields and creates a full-source job", async () => {
     mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
@@ -246,8 +308,6 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-red",
-      rangeStartSeconds: 0,
-      rangeEndSeconds: 120,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d5",
     }));
 
@@ -266,8 +326,6 @@ describe("job API security and idempotency", () => {
       analysisId,
       templateId: "dark-red",
       videoAspectRatio: "5:4",
-      rangeStartSeconds: 0,
-      rangeEndSeconds: 120,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d4",
     }));
 
@@ -279,8 +337,6 @@ describe("job API security and idempotency", () => {
       analysisId,
       templateId: "dark-red",
       videoAspectRatio: "3:2",
-      rangeStartSeconds: 0,
-      rangeEndSeconds: 120,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d3",
     }));
     expect(response.status).toBe(400);
@@ -300,21 +356,68 @@ describe("job API security and idempotency", () => {
       "job-b",
     );
   });
+
+  it("loads an owned project by its numeric route", async () => {
+    mocks.getDb.mockReturnValue(vi.fn());
+    mocks.projectByNumber.mockResolvedValue({ id: "job-a", projectNumber: 12 });
+
+    const response = await getProject(
+      new Request("http://localhost/api/projects/12"),
+      { params: Promise.resolve({ projectNumber: "12" }) },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      project: { id: "job-a", projectNumber: 12 },
+    });
+    expect(mocks.projectByNumber).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: "session-a", userId: "user-a" }),
+      12,
+    );
+  });
+
+  it("does not expose another user's numeric project route", async () => {
+    mocks.getDb.mockReturnValue(vi.fn());
+    mocks.projectByNumber.mockResolvedValue(null);
+
+    const response = await getProject(
+      new Request("http://localhost/api/projects/13"),
+      { params: Promise.resolve({ projectNumber: "13" }) },
+    );
+
+    expect(response.status).toBe(404);
+  });
+
+  it("rejects malformed project numbers before creating a session", async () => {
+    const response = await getProject(
+      new Request("http://localhost/api/projects/not-a-number"),
+      { params: Promise.resolve({ projectNumber: "not-a-number" }) },
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.session).not.toHaveBeenCalled();
+    expect(mocks.authenticatedSession).not.toHaveBeenCalled();
+  });
+
+  it("requires login for direct numeric project routes", async () => {
+    mocks.authenticatedSession.mockRejectedValue(new HttpError(401, "로그인이 필요합니다."));
+
+    const response = await getProject(
+      new Request("http://localhost/api/projects/98"),
+      { params: Promise.resolve({ projectNumber: "98" }) },
+    );
+
+    expect(response.status).toBe(401);
+    expect(mocks.projectByNumber).not.toHaveBeenCalled();
+  });
 });
 
 describe("plan API", () => {
-  it("changes only the MVP session plan and preserves the usage snapshot", async () => {
-    mocks.session.mockResolvedValue({ id: "session-a", selectedPlanCode: "plus", userId: null, user: null });
-    mocks.getDb.mockReturnValue(dbWithRows([]));
-    const response = await selectPlan(jsonRequest("http://localhost/api/mvp/plan", {
-      planCode: "pro",
-    }));
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ selectedPlanCode: "pro", usage });
-    expect(mocks.usage).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ id: "session-a", selectedPlanCode: "pro", userId: null }),
-    );
+  it("rejects direct plan mutations", async () => {
+    const response = await selectPlan();
+    expect(response.status).toBe(410);
+    await expect(response.json()).resolves.toMatchObject({ detail: expect.stringContaining("결제 승인") });
   });
 });
 
@@ -344,6 +447,106 @@ describe("short ownership, expiry, and edit validation", () => {
       templateId: "dark-red",
     }), { params: Promise.resolve({ shortId: "short-b" }) });
     expect(response.status).toBe(404);
+  });
+
+  it("persists a valid timed comment overlay for the comment template", async () => {
+    const db = dbWithRows(
+      [{ id: "short-a", subtitleSegments: [], durationSeconds: "30" }],
+      [{ id: "short-a", renderVersion: 1 }],
+    );
+    mocks.getDb.mockReturnValue(db);
+    const response = await patchShort(jsonRequest("http://localhost/api/shorts/short-a", {
+      hookTitle: "유효한 제목",
+      channelDisplayName: "기존 채널",
+      subtitlesEnabled: false,
+      subtitleSegments: [],
+      commentOverlays: [{
+        id: "6bce83c4-b12e-4d11-8f16-2fef8a96c541",
+        startSeconds: 0,
+        endSeconds: 10,
+        text: "댓글 테스트입니다",
+        initial: "소",
+        avatarColor: "#8B2CC4",
+        nickname: "소담기록24",
+        likeCount: 1_312,
+        ageLabel: "5개월 전",
+      }],
+      templateId: "comment-capture",
+      titleFontScale: 1,
+    }), { params: Promise.resolve({ shortId: "short-a" }) });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ saved: true });
+    expect(db).toHaveBeenCalledTimes(2);
+  });
+
+  it("persists non-overlapping title text color ranges", async () => {
+    const db = dbWithRows(
+      [{ id: "short-a", subtitleSegments: [], durationSeconds: "30" }],
+      [{ id: "short-a", renderVersion: 1 }],
+    );
+    mocks.getDb.mockReturnValue(db);
+    const response = await patchShort(jsonRequest("http://localhost/api/shorts/short-a", {
+      hookTitle: "선택 색상 테스트",
+      channelDisplayName: "기존 채널",
+      subtitlesEnabled: false,
+      subtitleSegments: [],
+      templateId: "dark-red",
+      titleFontScale: 1,
+      titleTextStyles: [
+        { start: 0, end: 2, color: "#00FF00", backgroundColor: "#123456" },
+        { start: 3, end: 5, color: "#FFCC00" },
+      ],
+    }), { params: Promise.resolve({ shortId: "short-a" }) });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ saved: true });
+    expect(db).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects overlapping title text color ranges", async () => {
+    const db = dbWithRows([{ id: "short-a", subtitleSegments: [], durationSeconds: "30" }]);
+    mocks.getDb.mockReturnValue(db);
+    const response = await patchShort(jsonRequest("http://localhost/api/shorts/short-a", {
+      hookTitle: "선택 색상 테스트",
+      channelDisplayName: "기존 채널",
+      subtitlesEnabled: false,
+      subtitleSegments: [],
+      templateId: "dark-red",
+      titleTextStyles: [
+        { start: 0, end: 4, color: "#00FF00" },
+        { start: 3, end: 5, backgroundColor: "#123456" },
+      ],
+    }), { params: Promise.resolve({ shortId: "short-a" }) });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ detail: expect.stringContaining("겹치지 않게") });
+    expect(db).toHaveBeenCalledOnce();
+  });
+
+  it("rejects overlapping comment ranges", async () => {
+    const db = dbWithRows([{ id: "short-a", subtitleSegments: [], durationSeconds: "30" }]);
+    mocks.getDb.mockReturnValue(db);
+    const baseComment = {
+      text: "댓글 테스트입니다", initial: "소", avatarColor: "#8B2CC4",
+      nickname: "소담기록24", likeCount: 1_312, ageLabel: "5개월 전",
+    };
+    const response = await patchShort(jsonRequest("http://localhost/api/shorts/short-a", {
+      hookTitle: "유효한 제목",
+      channelDisplayName: "기존 채널",
+      subtitlesEnabled: false,
+      subtitleSegments: [],
+      commentOverlays: [
+        { ...baseComment, id: "6bce83c4-b12e-4d11-8f16-2fef8a96c541", startSeconds: 0, endSeconds: 12 },
+        { ...baseComment, id: "a74f8b4a-6044-4aa2-b71f-78776ba98a4b", startSeconds: 10, endSeconds: 20 },
+      ],
+      templateId: "comment-capture",
+      titleFontScale: 1,
+    }), { params: Promise.resolve({ shortId: "short-a" }) });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ detail: expect.stringContaining("겹치지 않게") });
+    expect(db).toHaveBeenCalledOnce();
   });
 
   it("rejects rerendering a short not owned by the session", async () => {

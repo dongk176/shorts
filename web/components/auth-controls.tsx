@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import type { AuthProfile } from "@/lib/session";
 
 function GoogleIcon() {
@@ -126,7 +127,7 @@ export function AuthControls({
                   ))}
                 </div>
                 <p className="mt-7 text-center text-[11px] leading-5 text-[#b19a96]">
-                  로그인함으로써 <a href="/terms" className="underline underline-offset-2 hover:text-white">서비스 이용약관</a> 및 <a href="/privacy" className="underline underline-offset-2 hover:text-white">개인정보처리방침</a>에 동의합니다.
+                  로그인함으로써 <Link href="/terms" className="underline underline-offset-2 hover:text-white">서비스 이용약관</Link> 및 <Link href="/privacy" className="underline underline-offset-2 hover:text-white">개인정보처리방침</Link>에 동의합니다.
                 </p>
               </div>
             </section>

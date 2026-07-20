@@ -10,9 +10,14 @@ const base = {
     reservedSeconds: 0,
     limitSeconds: 6000,
     remainingSeconds: 6000,
+    baseUsedSeconds: 0,
+    baseReservedSeconds: 0,
+    baseLimitSeconds: 6000,
+    baseRemainingSeconds: 6000,
+    addonRemainingSeconds: 0,
     periodStart: "2026-06-30T15:00:00.000Z",
     nextResetAt: "2026-07-31T15:00:00.000Z",
-    enforcementEnabled: false,
+    enforcementEnabled: true as const,
   },
 };
 
@@ -25,12 +30,17 @@ describe("job abuse and plan limits", () => {
     expect(() => assertJobCreationAllowed({ ...base, activeJobs: 1 })).toThrow("처리 중");
   });
 
-  it("allows MVP plan overage unless enforcement is enabled", () => {
-    const over = { ...base, sourceDurationSeconds: 3600, usage: { ...base.usage, usedSeconds: 5000 } };
-    expect(() => assertJobCreationAllowed(over)).not.toThrow();
-    expect(() => assertJobCreationAllowed({
-      ...over,
-      usage: { ...over.usage, enforcementEnabled: true },
-    })).toThrow("플랜");
+  it("always rejects work larger than the provider-backed remaining grant", () => {
+    const over = { ...base, sourceDurationSeconds: 3600, usage: { ...base.usage, remainingSeconds: 3599 } };
+    expect(() => assertJobCreationAllowed(over)).toThrow("처리 시간");
+  });
+
+  it("allows usage overage while temporary plan enforcement is disabled", () => {
+    const unrestricted = {
+      ...base,
+      sourceDurationSeconds: 3600,
+      usage: { ...base.usage, remainingSeconds: 0, enforcementEnabled: false },
+    };
+    expect(() => assertJobCreationAllowed(unrestricted)).not.toThrow();
   });
 });

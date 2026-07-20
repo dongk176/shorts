@@ -257,7 +257,7 @@ export async function getPopularSearchVideos(
   const offset = decodedCursor?.offset || 0;
   const rows = await db`
     select video_id, category, title, channel_name, thumbnail_url, duration_seconds,
-      view_count, published_at, license
+      view_count, published_at, license, count(*) over() as total_count
     from shorts_mvp.popular_search_items
     where run_id=${run.id}
       and (${category}='all' or category=${category})
@@ -272,6 +272,7 @@ export async function getPopularSearchVideos(
   return {
     items: rows.slice(0, limit).map((row) => rowToPopularVideo(row as Record<string, unknown>)),
     updatedAt: run.completedAt,
+    totalCount: rows[0] ? Number(rows[0].totalCount) : 0,
     ...(hasNext ? { nextCursor: encodeCursor(run.id, offset + limit) } : {}),
   };
 }

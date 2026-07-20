@@ -153,7 +153,6 @@ async function requestFreeSearchPage(options: {
   endpoint.searchParams.set("regionCode", "KR");
   endpoint.searchParams.set("relevanceLanguage", "ko");
   endpoint.searchParams.set("videoDuration", "any");
-  endpoint.searchParams.set("videoEmbeddable", "true");
   endpoint.searchParams.set("safeSearch", "moderate");
   endpoint.searchParams.set("maxResults", String(FREE_SEARCH_PAGE_SIZE));
   if (options.pageToken) endpoint.searchParams.set("pageToken", options.pageToken);
@@ -220,7 +219,6 @@ function normalizeDetails(
       (liveState && liveState !== "none")
       || item.liveStreamingDetails !== undefined
       || item.status.privacyStatus !== "public"
-      || item.status.embeddable === false
     ) return;
     const title = item.snippet.title.trim();
     const channelName = item.snippet.channelTitle.trim();

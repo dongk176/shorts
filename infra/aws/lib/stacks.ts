@@ -50,11 +50,19 @@ export class ShortsMvpFoundationStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       autoDeleteObjects: false,
       lifecycleRules: [{
-        id: "ExpireMvpMedia",
+        id: "AbortIncompleteMediaUploads",
+        enabled: true,
+        abortIncompleteMultipartUploadAfter: cdk.Duration.days(1),
+      }, ...[
+        ["ExpireOutputs", "outputs/"],
+        ["ExpireThumbnails", "thumbnails/"],
+        ["ExpireEditSources", "edit-sources/"],
+      ].map(([id, prefix]) => ({
+        id,
+        prefix,
         enabled: true,
         expiration: cdk.Duration.days(30),
-        abortIncompleteMultipartUploadAfter: cdk.Duration.days(1),
-      }],
+      }))],
     });
     this.repository = new ecr.Repository(this, "WorkerRepository", {
       repositoryName: `shorts-mvp-worker-${props.environment}`,
@@ -98,7 +106,7 @@ export class ShortsMvpFoundationStack extends cdk.Stack {
     const keyGroup = new cloudfront.KeyGroup(this, "SigningKeyGroup", { items: [publicKey] });
     const outputOnly = new cloudfront.Function(this, "OutputPrefixGuard", {
       code: cloudfront.FunctionCode.fromInline(
-        "function handler(event){var r=event.request;if(!r.uri.startsWith('/outputs/'))return {statusCode:403,statusDescription:'Forbidden'};return r;}"
+        "function handler(event){var r=event.request;if(!r.uri.startsWith('/outputs/')&&!r.uri.startsWith('/examples/')&&!r.uri.startsWith('/edit-sources/'))return {statusCode:403,statusDescription:'Forbidden'};return r;}"
       ),
     });
     const mediaHeaders = new cloudfront.ResponseHeadersPolicy(this, "MediaResponseHeaders", {
@@ -326,6 +334,8 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { name: "STATE_EVENT_QUEUE_URL", value: stateQueue.queueUrl },
         { name: "OPENAI_TRANSCRIBE_MODEL", value: "gpt-4o-mini-transcribe" },
         { name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", value: "gpt-5-nano" },
+        { name: "OPENAI_COMMENT_FALLBACK_MODEL", value: "gpt-5-nano" },
+        { name: "GEMINI_COMMENT_MODEL", value: "gemini-2.5-flash-lite" },
         { name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", value: "30" },
         { name: "OPENAI_TRANSCRIBE_MAX_WORKERS", value: "4" },
       ],

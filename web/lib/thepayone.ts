@@ -11,6 +11,7 @@ export class ThePayOneError extends Error {
     message: string,
     readonly resultCode = "UPSTREAM_ERROR",
     readonly diagnostic: string | null = null,
+    readonly outcomeUnknown = false,
   ) {
     super(message);
   }
@@ -47,6 +48,25 @@ export type CardRegistrationResult = {
 export type CardRevocationResult = {
   resultCode: string;
   providerTransactionId: string | null;
+};
+
+export type RecurringCardChargeRequest = {
+  trackId: string;
+  cardId: string;
+  amount: number;
+  payerName: string;
+  payerEmail: string;
+  payerTel: string;
+  referenceId: string;
+};
+
+export type RecurringCardChargeResult = {
+  resultCode: string;
+  providerTransactionId: string;
+  last4: string | null;
+  issuer: string | null;
+  cardType: string | null;
+  acquirer: string | null;
 };
 
 export type EncryptedCardToken = {
@@ -89,7 +109,7 @@ export function getThePayOneConfig(): ThePayOneConfig {
   };
 }
 
-export function createPaymentTrackId(prefix: "AUTH" | "AUDT") {
+export function createPaymentTrackId(prefix: "AUTH" | "AUDT" | "PAY" | "REFUND") {
   const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
   return `EC-${prefix}-${timestamp}-${randomUUID().replaceAll("-", "").slice(0, 20)}`;
 }
@@ -162,17 +182,17 @@ function sanitizedProviderDiagnostic(...values: unknown[]) {
 async function parseResponse(response: Response) {
   const contentLength = Number(response.headers.get("content-length") || 0);
   if (contentLength > MAX_RESPONSE_BYTES) {
-    throw new ThePayOneError("더페이원 응답 크기가 허용 범위를 초과했습니다.");
+    throw new ThePayOneError("더페이원 응답 크기가 허용 범위를 초과했습니다.", "INVALID_RESPONSE", null, true);
   }
   const text = await response.text();
   if (Buffer.byteLength(text, "utf8") > MAX_RESPONSE_BYTES) {
-    throw new ThePayOneError("더페이원 응답 크기가 허용 범위를 초과했습니다.");
+    throw new ThePayOneError("더페이원 응답 크기가 허용 범위를 초과했습니다.", "INVALID_RESPONSE", null, true);
   }
   let body: unknown;
   try {
     body = JSON.parse(text);
   } catch {
-    throw new ThePayOneError("더페이원에서 올바른 JSON 응답을 받지 못했습니다.");
+    throw new ThePayOneError("더페이원에서 올바른 JSON 응답을 받지 못했습니다.", "INVALID_RESPONSE", null, true);
   }
   if (!response.ok) {
     throw new ThePayOneError(`더페이원 요청에 실패했습니다. (HTTP ${response.status})`, `HTTP_${response.status}`);
@@ -181,7 +201,7 @@ async function parseResponse(response: Response) {
   const result = objectValue(root?.result);
   const resultCode = stringValue(result?.resultCd, 32);
   if (!root || !result || !resultCode) {
-    throw new ThePayOneError("더페이원 응답 형식을 확인하지 못했습니다.");
+    throw new ThePayOneError("더페이원 응답 형식을 확인하지 못했습니다.", "INVALID_RESPONSE", null, true);
   }
   if (resultCode !== "0000") {
     throw new ThePayOneError(
@@ -193,7 +213,7 @@ async function parseResponse(response: Response) {
   return { root, resultCode };
 }
 
-async function thePayOnePost(path: "/api/auth" | "/api/audt", payload: unknown) {
+async function thePayOnePost(path: "/api/auth" | "/api/audt" | "/api/pay" | "/api/refund", payload: unknown) {
   const config = getThePayOneConfig();
   let response: Response;
   try {
@@ -211,7 +231,8 @@ async function thePayOnePost(path: "/api/auth" | "/api/audt", payload: unknown) 
     });
   } catch (error) {
     if (error instanceof PaymentConfigurationError) throw error;
-    throw new ThePayOneError("더페이원 서버에 연결하지 못했습니다.");
+    if (error instanceof ThePayOneError) throw error;
+    throw new ThePayOneError("더페이원 서버에 연결하지 못했습니다.", "NETWORK_ERROR", null, true);
   }
   return parseResponse(response);
 }
@@ -288,6 +309,58 @@ export async function revokeThePayOneCard(cardId: string, trackId: string): Prom
   return {
     resultCode,
     providerTransactionId: stringValue(audit?.trxId, 128),
+  };
+}
+
+export async function chargeThePayOneRecurringCard(
+  input: RecurringCardChargeRequest,
+): Promise<RecurringCardChargeResult> {
+  const { root, resultCode } = await thePayOnePost("/api/pay", {
+    pay: {
+      trxType: "ONTR",
+      trackId: input.trackId,
+      amount: input.amount,
+      payerName: input.payerName,
+      payerEmail: input.payerEmail,
+      payerTel: input.payerTel,
+      udf1: input.referenceId,
+      udf2: "00",
+      card: {
+        Installment: "00",
+        cardId: input.cardId,
+      },
+      products: [
+        {
+          name: "Easy Cut 구독 결제 테스트",
+          qty: "1",
+          price: String(input.amount),
+          desc: "즉시 시작 1분 간격 3회 반복결제 테스트",
+        },
+      ],
+      metadata: {
+        recurring: "pay",
+      },
+    },
+  });
+  const pay = objectValue(root.pay);
+  const card = objectValue(pay?.card);
+  const transactionId = stringValue(pay?.trxId, 128);
+  if (!pay || !transactionId) {
+    throw new ThePayOneError(
+      "더페이원 결제 성공 응답에 거래번호가 없습니다.",
+      "INVALID_SUCCESS_RESPONSE",
+      responseFieldShape(root),
+      true,
+    );
+  }
+  const providerLast4 = stringValue(card?.last4, 16);
+  return {
+    resultCode,
+    providerTransactionId: transactionId,
+    last4: providerLast4 && /^\d{4}$/.test(providerLast4) ? providerLast4 : null,
+    issuer: stringValue(card?.issuer, 100),
+    cardType: stringValue(card?.cardType, 50),
+    acquirer: stringValue(card?.acquirer, 100),
   };
 }
 

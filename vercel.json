@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/youtube-daily",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/billing-renewals",
+      "schedule": "7 * * * *"
     }
   ]
 }

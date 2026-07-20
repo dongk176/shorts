@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
-  AI_CLIP_MIN_SECONDS,
   expectedShortCount,
   jobDeadlineMinutes,
   outputLanguages,
@@ -10,22 +9,24 @@ import {
   videoAspectRatios,
 } from "@/lib/contracts";
 import { wakeOutboxDispatcher } from "@/lib/aws";
+import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
+import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { apiError, HttpError } from "@/lib/http";
 import { getInitialJobBackend } from "@/lib/job-backend";
 import { assertJobCreationAllowed } from "@/lib/job-policy";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { getUsageSnapshot } from "@/lib/usage";
+import { templateSnapshotFromRow } from "@/lib/custom-templates";
 
 const schema = z.object({
   analysisId: z.string().uuid(),
   youtubeUrl: z.string().max(2048).optional(),
   templateId: z.enum(templateIds),
+  customTemplateId: z.string().uuid().nullable().optional(),
   videoAspectRatio: z.enum(videoAspectRatios).default("1:1"),
   outputLanguage: z.enum(outputLanguages).default("ko"),
   requestId: z.string().uuid(),
-  rangeStartSeconds: z.number().nonnegative(),
-  rangeEndSeconds: z.number().positive(),
 });
 
 export async function POST(request: Request) {
@@ -35,13 +36,18 @@ export async function POST(request: Request) {
     const db = getDb();
     const executionBackend = getInitialJobBackend();
     const existing = await db`
-      select id, status from shorts_mvp.video_jobs
+      select id, project_number, status from shorts_mvp.video_jobs
       where request_id=${input.requestId} and (
         (${session.userId}::uuid is not null and user_id=${session.userId})
         or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
       )
     `;
-    if (existing[0]) return NextResponse.json({ jobId: existing[0].id, status: existing[0].status, usage: await getUsageSnapshot(db, session) });
+    if (existing[0]) return NextResponse.json({
+      jobId: existing[0].id,
+      projectNumber: Number(existing[0].projectNumber),
+      status: existing[0].status,
+      usage: await getUsageSnapshot(db, session),
+    });
     // Circuit breaker logic removed to allow continuous testing with proxies.
 
     const analyses = await db`
@@ -59,7 +65,7 @@ export async function POST(request: Request) {
     if (analyses[0].creationAllowed !== true) {
       throw new HttpError(
         409,
-        analyses[0].creationBlockReason || "이 영상은 쇼츠로 만들 수 없습니다. 영상 정보를 다시 확인해 주세요.",
+        analyses[0].creationBlockReason || "이 영상은 이용 제한이 확인된 영상입니다. 영상 정보를 다시 확인해 주세요.",
       );
     }
     const metadata = {
@@ -71,23 +77,15 @@ export async function POST(request: Request) {
       thumbnailUrl: analyses[0].thumbnailUrl,
       durationSeconds: Number(analyses[0].durationSeconds),
     };
-    const rangeStartSeconds = Math.round(input.rangeStartSeconds * 1000) / 1000;
-    const rangeEndSeconds = Math.round(input.rangeEndSeconds * 1000) / 1000;
-    const selectedDurationSeconds = rangeEndSeconds - rangeStartSeconds;
-    if (
-      rangeEndSeconds > metadata.durationSeconds + 0.001
-      || selectedDurationSeconds < AI_CLIP_MIN_SECONDS
-    ) {
-      throw new Error(`선택 구간은 영상 안에 있어야 하며 최소 ${AI_CLIP_MIN_SECONDS}초여야 합니다.`);
-    }
-    const selectedShortCount = expectedShortCount(selectedDurationSeconds);
-    const deadlineMinutes = jobDeadlineMinutes(selectedDurationSeconds);
-    const maxActive = Number(process.env.MVP_MAX_ACTIVE_JOBS_PER_SESSION || 1);
+    const sourceDurationSeconds = metadata.durationSeconds;
+    const plannedShortCount = expectedShortCount(sourceDurationSeconds);
+    const deadlineMinutes = jobDeadlineMinutes(sourceDurationSeconds);
     const jobId = randomUUID();
+    let createdProjectNumber: number | null = null;
     const duplicate = await db.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtextextended(${session.userId || session.id}, 0))`;
       const concurrentExisting = await tx`
-        select id, status from shorts_mvp.video_jobs
+        select id, project_number, status from shorts_mvp.video_jobs
         where request_id=${input.requestId} and (
           (${session.userId}::uuid is not null and user_id=${session.userId})
           or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
@@ -96,8 +94,22 @@ export async function POST(request: Request) {
       if (concurrentExisting[0]) {
         return {
           id: concurrentExisting[0].id,
+          projectNumber: Number(concurrentExisting[0].projectNumber),
           status: concurrentExisting[0].status,
         };
+      }
+      let resolvedTemplateId = input.templateId;
+      let templateSnapshot: ReturnType<typeof templateSnapshotFromRow> | null = null;
+      if (input.customTemplateId) {
+        const customTemplates = await tx`
+          select id, name, base_template_id, config, version
+          from shorts_mvp.custom_templates
+          where id=${input.customTemplateId} and user_id=${session.userId}
+          limit 1
+        `;
+        if (!customTemplates[0]) throw new HttpError(404, "선택한 개인 템플릿을 찾을 수 없습니다.");
+        templateSnapshot = templateSnapshotFromRow(customTemplates[0]);
+        resolvedTemplateId = templateSnapshot.baseTemplateId;
       }
       const limits = await tx`
         select count(*) filter (where status in (
@@ -110,32 +122,44 @@ export async function POST(request: Request) {
         )
       `;
       const beforeUsage = await getUsageSnapshot(tx, session);
+      const billing = await getBillingSummary(tx, session.userId);
+      if (beforeUsage.enforcementEnabled && !billing.canCreateJobs) {
+        throw new HttpError(402, "쇼츠를 만들려면 활성 구독이 필요합니다.");
+      }
       assertJobCreationAllowed({
         activeJobs: limits[0].active,
-        maxActiveJobs: maxActive,
-        sourceDurationSeconds: selectedDurationSeconds,
+        maxActiveJobs: beforeUsage.enforcementEnabled ? billing.maxActiveJobs : 1,
+        sourceDurationSeconds,
         usage: beforeUsage,
       });
-      await tx`
+      const insertedJobs = await tx`
         insert into shorts_mvp.video_jobs (
           id, mvp_session_id, user_id, request_id, youtube_url, youtube_video_id, video_title,
           channel_name, channel_thumbnail_url, thumbnail_url, source_duration_seconds, range_start_seconds,
-          range_end_seconds, template_id, video_aspect_ratio,
+          range_end_seconds, template_id, custom_template_id, template_snapshot, video_aspect_ratio,
           clip_length_option, output_language, expected_short_count, rights_confirmed, execution_backend,
-          status, stage, progress, deadline_at, planned_short_count
+          status, stage, progress, deadline_at, planned_short_count,retention_days_snapshot
         ) values (
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
-          ${metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${metadata.durationSeconds}, ${rangeStartSeconds},
-          ${rangeEndSeconds}, ${input.templateId}, ${input.videoAspectRatio},
-          'sec_31_60', ${input.outputLanguage}, ${selectedShortCount},
-          false, ${executionBackend}, 'queued', 'queued', 5,
-          now() + ${deadlineMinutes} * interval '1 minute', ${selectedShortCount}
+          ${metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${sourceDurationSeconds}, 0,
+          ${sourceDurationSeconds}, ${resolvedTemplateId}, ${input.customTemplateId || null}, ${templateSnapshot ? tx.json(templateSnapshot) : null}, ${templateSnapshot?.config.video.aspectRatio || input.videoAspectRatio},
+          'sec_31_60', ${input.outputLanguage}, ${plannedShortCount},
+          false, ${executionBackend}, 'queued', 'queued', ${SIMULATED_PROGRESS_START},
+          now() + ${deadlineMinutes} * interval '1 minute', ${plannedShortCount},${billing.retentionDays}
         )
+        returning project_number
       `;
-      await tx`
+      createdProjectNumber = Number(insertedJobs[0].projectNumber);
+      const reservations = await tx`
         insert into shorts_mvp.usage_reservations (mvp_session_id, user_id, job_id, source_duration_seconds)
-        values (${session.id}, ${session.userId}, ${jobId}, ${Math.ceil(selectedDurationSeconds)})
+        values (${session.id}, ${session.userId}, ${jobId}, ${Math.ceil(sourceDurationSeconds)})
+        returning id
       `;
+      if (beforeUsage.enforcementEnabled) {
+        await tx`select shorts_mvp.reserve_usage_grants(
+          ${session.userId},${reservations[0].id},${Math.ceil(sourceDurationSeconds)}
+        )`;
+      }
       if (executionBackend === "aws_batch") {
         await tx`
           insert into shorts_mvp.job_outbox (job_id, kind, attempt_count)
@@ -147,9 +171,13 @@ export async function POST(request: Request) {
     if (duplicate) {
       return NextResponse.json({
         jobId: duplicate.id,
+        projectNumber: duplicate.projectNumber,
         status: duplicate.status,
         usage: await getUsageSnapshot(db, session),
       });
+    }
+    if (!createdProjectNumber || !Number.isSafeInteger(createdProjectNumber)) {
+      throw new Error("프로젝트 번호를 생성하지 못했습니다.");
     }
 
     if (executionBackend === "aws_batch") {
@@ -165,6 +193,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       jobId,
+      projectNumber: createdProjectNumber,
       status: "queued",
       executionBackend,
       usage: await getUsageSnapshot(db, session),

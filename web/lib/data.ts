@@ -1,10 +1,11 @@
-import type { Sql } from "postgres";
+import type { Row, Sql } from "postgres";
 import type { GeneratedShort, Plan, VideoJob } from "@/lib/contracts";
 import type { MvpSession } from "@/lib/session";
 
 export async function getPlans(db: Sql): Promise<Plan[]> {
   const rows = await db`
-    select code, display_name, monthly_source_seconds, retention_days
+    select code, display_name, monthly_source_seconds, retention_days,
+      monthly_price_krw,yearly_price_krw,max_active_jobs
     from shorts_mvp.plans where is_active order by sort_order
   `;
   return rows.map((row) => ({
@@ -12,6 +13,9 @@ export async function getPlans(db: Sql): Promise<Plan[]> {
     displayName: row.displayName,
     monthlySourceSeconds: row.monthlySourceSeconds,
     retentionDays: row.retentionDays,
+    monthlyPriceKrw: row.monthlyPriceKrw,
+    yearlyPriceKrw: row.yearlyPriceKrw,
+    maxActiveJobs: row.maxActiveJobs,
   })) as Plan[];
 }
 
@@ -47,8 +51,9 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
   if (!jobIds.length) return new Map<string, GeneratedShort[]>();
   const rows = await db`
     select id, job_id, clip_index, start_seconds, end_seconds, duration_seconds,
-      hook_title, channel_display_name, subtitle_segments, subtitles_enabled,
-      template_id, video_aspect_ratio, title_font_scale, render_version,
+      hook_title, highlight_reason, channel_display_name, subtitle_segments, subtitles_enabled,
+      comment_overlays, template_id, custom_template_id, template_snapshot, video_aspect_ratio, title_font_scale, title_text_styles,
+      title_text_styles_initialized, render_version,
       rerender_progress, status, expires_at
     from shorts_mvp.generated_shorts
     where job_id in ${db(jobIds)} and deleted_at is null
@@ -64,16 +69,22 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       endSeconds: Number(row.endSeconds),
       durationSeconds: Number(row.durationSeconds),
       hookTitle: row.hookTitle,
+      highlightReason: row.highlightReason || "",
       channelDisplayName: row.channelDisplayName,
       subtitleSegments: row.subtitleSegments,
+      commentOverlays: row.commentOverlays || [],
       subtitlesEnabled: row.subtitlesEnabled,
       templateId: row.templateId,
+      customTemplateId: row.customTemplateId || null,
+      templateSnapshot: row.templateSnapshot || null,
       videoAspectRatio: row.videoAspectRatio || "1:1",
       titleFontScale: Number(row.titleFontScale),
+      titleTextStyles: row.titleTextStyles || [],
+      titleTextStylesInitialized: Boolean(row.titleTextStylesInitialized),
       renderVersion: row.renderVersion,
       rerenderProgress: row.rerenderProgress,
       status: row.status,
-      expiresAt: row.expiresAt.toISOString(),
+      expiresAt: row.expiresAt?.toISOString() ?? null,
     };
     result.set(row.jobId, [...(result.get(row.jobId) || []), item]);
   }
@@ -87,33 +98,56 @@ export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: st
         where id = ${onlyJobId} and (
           (${session.userId}::uuid is not null and user_id=${session.userId})
           or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+          or (is_example and status='completed')
         )
       `
     : await db`
         select * from shorts_mvp.video_jobs
-        where (${session.userId}::uuid is not null and user_id=${session.userId})
+        where ((${session.userId}::uuid is not null and user_id=${session.userId})
           or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
-        order by created_at desc limit 10
+          or (is_example and status='completed'))
+        order by is_example desc, created_at desc limit 10
       `;
+  return mapJobs(db, rows);
+}
+
+export async function getProjectByNumber(
+  db: Sql,
+  session: MvpSession,
+  projectNumber: number,
+): Promise<VideoJob | null> {
+  const rows = await db`
+    select * from shorts_mvp.video_jobs
+    where project_number=${projectNumber} and (
+      (${session.userId}::uuid is not null and user_id=${session.userId})
+      or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+      or (is_example and status='completed')
+    )
+    limit 1
+  `;
+  return (await mapJobs(db, rows))[0] || null;
+}
+
+export async function getPublicExampleJobs(db: Sql): Promise<VideoJob[]> {
+  const rows = await db`
+    select * from shorts_mvp.video_jobs
+    where is_example and status='completed'
+    order by created_at desc limit 10
+  `;
+  return mapJobs(db, rows);
+}
+
+async function mapJobs(db: Sql, rows: Row[]): Promise<VideoJob[]> {
   const shorts = await getShortsForJobs(db, rows.map((row) => row.id));
   return rows.map((row) => ({
     id: row.id,
+    projectNumber: Number(row.projectNumber),
+    isExample: Boolean(row.isExample),
     videoTitle: row.videoTitle,
     channelName: row.channelName,
     channelThumbnailUrl: row.channelThumbnailUrl || null,
     thumbnailUrl: row.thumbnailUrl,
     sourceDurationSeconds: row.sourceDurationSeconds,
-    rangeDownloadStatus: row.rangeDownloadStatus || "pending",
-    downloadedMediaDurationSeconds:
-      row.downloadedMediaDurationSeconds === null ||
-      row.downloadedMediaDurationSeconds === undefined
-        ? null
-        : Number(row.downloadedMediaDurationSeconds),
-    downloadedMediaBytes:
-      row.downloadedMediaBytes === null || row.downloadedMediaBytes === undefined
-        ? null
-        : Number(row.downloadedMediaBytes),
-    rangeDownloadVerifiedAt: row.rangeDownloadVerifiedAt?.toISOString() ?? null,
     outputLanguage: row.outputLanguage,
     expectedShortCount: row.expectedShortCount,
     status: row.status,

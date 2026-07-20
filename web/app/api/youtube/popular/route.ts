@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireMvpSession } from "@/lib/session";
 import {
   getPopularVideos,
   PopularSnapshotUnavailableError,
@@ -11,7 +10,6 @@ import {
   getPopularSearchVideos,
   PopularSearchSnapshotUnavailableError,
 } from "@/lib/youtube-popular-search";
-import { POPULAR_VIDEO_FILTERS_REQUIRE_PRO } from "@/lib/youtube-popular-access";
 
 export const dynamic = "force-dynamic";
 
@@ -38,18 +36,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ detail: "지원하지 않는 인기 영상 필터입니다." }, { status: 400 });
   }
   try {
-    const session = await requireMvpSession();
-    const hasProAccess = session.selectedPlanCode === "pro";
-    const requiresProAccess = Boolean(query.data.cursor) || (
-      POPULAR_VIDEO_FILTERS_REQUIRE_PRO
-      && (query.data.category !== "all" || query.data.reusable || query.data.longForm)
-    );
-    if (!hasProAccess && requiresProAccess) {
-      const response = NextResponse.json({ detail: "해당 기능은 Pro 전용 기능이에요." }, { status: 403 });
-      response.headers.set("Cache-Control", "private, no-store");
-      return response;
-    }
-    const limit = hasProAccess ? 48 : 20;
+    const limit = 48;
     let result;
     if (query.data.type === "views") {
       try {

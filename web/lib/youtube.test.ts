@@ -177,11 +177,6 @@ describe("YouTube duration validation", () => {
       },
       code: "not_yet_available",
     },
-    {
-      contentDetails: { duration: "PT2M" },
-      status: { uploadStatus: "processed", privacyStatus: "public", embeddable: false },
-      code: "embedding_disabled",
-    },
   ])("marks restricted metadata as $code", async ({ contentDetails, status, code }) => {
     vi.stubEnv("YOUTUBE_API_KEY", "test-key");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
@@ -201,6 +196,32 @@ describe("YouTube duration validation", () => {
       creationAllowed: false,
       creationBlockCode: code,
     });
+
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("allows public videos with external playback disabled", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{
+        id: "dQw4w9WgXcQ",
+        snippet: {
+          title: "외부 재생 제한 영상",
+          channelTitle: "채널",
+          thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
+        },
+        contentDetails: { duration: "PT2M" },
+        status: { uploadStatus: "processed", privacyStatus: "public", embeddable: false },
+      }],
+    }), { status: 200 })));
+
+    await expect(analyzeYoutubeUrl("https://youtu.be/dQw4w9WgXcQ")).resolves.toMatchObject({
+      creationAllowed: true,
+      creationBlockCode: null,
+      creationBlockReason: null,
+    });
+    expect(playbackMocks.verify).toHaveBeenCalledWith("dQw4w9WgXcQ");
 
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
@@ -246,12 +267,43 @@ describe("YouTube duration validation", () => {
     playbackMocks.verify.mockResolvedValue({
       creationAllowed: false,
       creationBlockCode: "members_only",
-      creationBlockReason: "채널 멤버십 전용 영상은 쇼츠로 만들 수 없습니다.",
+      creationBlockReason: "이 영상은 채널 멤버십 전용 영상입니다.",
     });
 
     await expect(analyzeYoutubeUrl("https://youtu.be/dQw4w9WgXcQ")).resolves.toMatchObject({
       creationAllowed: false,
       creationBlockCode: "members_only",
+    });
+    expect(playbackMocks.verify).toHaveBeenCalledWith("dQw4w9WgXcQ");
+
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("allows a public video when direct playback receives a bot challenge", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{
+        id: "dQw4w9WgXcQ",
+        snippet: {
+          title: "공개 영상",
+          channelTitle: "채널",
+          thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
+        },
+        contentDetails: { duration: "PT2M" },
+        status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
+      }],
+    }), { status: 200 })));
+    playbackMocks.verify.mockResolvedValue({
+      creationAllowed: false,
+      creationBlockCode: "bot_challenge",
+      creationBlockReason: "이 영상은 현재 YouTube에서 재생 가능 여부를 확인할 수 없는 상태입니다.",
+    });
+
+    await expect(analyzeYoutubeUrl("https://youtu.be/dQw4w9WgXcQ")).resolves.toMatchObject({
+      creationAllowed: true,
+      creationBlockCode: null,
+      creationBlockReason: null,
     });
     expect(playbackMocks.verify).toHaveBeenCalledWith("dQw4w9WgXcQ");
 

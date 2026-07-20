@@ -18,8 +18,9 @@ export function titleLineColor(
   overlayMode: boolean,
   primary: string,
   accent: string,
+  keepPrimaryFirstLine = false,
 ) {
-  return overlayMode || index === 1 ? accent : primary;
+  return (overlayMode && !keepPrimaryFirstLine) || index === 1 ? accent : primary;
 }
 
 function characters(value: string) {
@@ -83,6 +84,45 @@ export function wrapPreviewTitle(title: string): string[] {
     lines[lines.length - 1] = `${sliceCharacters(lines[lines.length - 1], 0, TITLE_MAX_CHARS - 1).trimEnd()}…`;
   }
   return lines;
+}
+
+export function titleLineCharacterIndices(title: string, lines: string[]) {
+  const normalized: Array<{ character: string; index: number }> = [];
+  Array.from(title).forEach((character, index) => {
+    if (/\s/u.test(character)) {
+      if (normalized.length && normalized[normalized.length - 1].character !== " ") {
+        normalized.push({ character: " ", index });
+      }
+      return;
+    }
+    normalized.push({ character, index });
+  });
+  while (normalized[0]?.character === " ") normalized.shift();
+  while (normalized.at(-1)?.character === " ") normalized.pop();
+  let searchFrom = 0;
+  return lines.map((line) => {
+    let searchableCharacters = Array.from(line);
+    let syntheticEllipsis = false;
+    const findStart = () => {
+      for (let candidate = searchFrom; candidate <= normalized.length - searchableCharacters.length; candidate += 1) {
+        if (searchableCharacters.every((character, offset) => normalized[candidate + offset].character === character)) {
+          return candidate;
+        }
+      }
+      return -1;
+    };
+    let start = findStart();
+    if (start < 0 && line.endsWith("…")) {
+      searchableCharacters = Array.from(line.slice(0, -1));
+      syntheticEllipsis = true;
+      start = findStart();
+    }
+    if (start < 0) return Array.from(line).map(() => null);
+    searchFrom = start + searchableCharacters.length;
+    const indices = normalized.slice(start, searchFrom).map((item) => item.index as number | null);
+    if (syntheticEllipsis) indices.push(null);
+    return indices;
+  });
 }
 
 function estimatedCharacterWidth(character: string) {

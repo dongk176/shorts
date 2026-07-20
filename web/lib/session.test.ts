@@ -24,14 +24,14 @@ describe("MVP session cookie", () => {
     let storedHash = "";
     const db = vi.fn((_strings: TemplateStringsArray, value: string) => {
       storedHash = value;
-      return Promise.resolve([{ id: "session-new", selectedPlanCode: "plus", userId: null }]);
+      return Promise.resolve([{ id: "session-new", selectedPlanCode: "free", userId: null }]);
     });
     mocks.getDb.mockReturnValue(db);
 
     const { requireMvpSession } = await import("./session");
     await expect(requireMvpSession()).resolves.toEqual({
       id: "session-new",
-      selectedPlanCode: "plus",
+      selectedPlanCode: "free",
       userId: null,
       user: null,
     });
@@ -66,7 +66,8 @@ describe("MVP session cookie", () => {
     const transaction = vi.fn().mockResolvedValue([]);
     const db = vi.fn()
       .mockResolvedValueOnce([{ id: "session-anonymous", selectedPlanCode: "standard", userId: null, lastSeenAt: new Date() }])
-      .mockResolvedValueOnce([{ id: "app-user", selectedPlanCode: "standard" }]);
+      .mockResolvedValueOnce([{ id: "app-user", selectedPlanCode: "free" }])
+      .mockResolvedValueOnce([{ selectedPlanCode: "standard" }]);
     Object.assign(db, { begin: vi.fn((callback: (tx: typeof transaction) => unknown) => callback(transaction)) });
     mocks.getDb.mockReturnValue(db);
 

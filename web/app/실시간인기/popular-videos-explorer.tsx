@@ -2,8 +2,6 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { ProPaywall, type ProPaywallStep } from "@/components/pro-paywall";
-import { POPULAR_VIDEO_FILTERS_REQUIRE_PRO } from "@/lib/youtube-popular-access";
 import type {
   PopularVideo,
   PopularVideoCategory,
@@ -11,9 +9,9 @@ import type {
   PopularVideoType,
 } from "@/lib/youtube-popular";
 
-const dataTypeOptions: Array<{ value: PopularVideoType; label: string; description: string }> = [
-  { value: "trending", label: "실시간 급상승", description: "현재 한국 인기 차트 영상" },
-  { value: "views", label: "조회수 상위", description: "수집된 인기 영상 중 조회수 상위" },
+const dataTypeOptions: Array<{ value: PopularVideoType; label: string }> = [
+  { value: "trending", label: "실시간 급상승" },
+  { value: "views", label: "조회수 상위" },
 ];
 
 const categoryOptions: Array<{ value: PopularVideoCategory; label: string }> = [
@@ -26,6 +24,8 @@ const categoryOptions: Array<{ value: PopularVideoCategory; label: string }> = [
   { value: "science", label: "과학·기술" },
   { value: "howto", label: "요리·노하우" },
 ];
+
+const countFormatter = new Intl.NumberFormat("ko-KR");
 
 function formatDuration(seconds: number) {
   const hours = Math.floor(seconds / 3600);
@@ -162,7 +162,7 @@ function LoadingSkeleton() {
   );
 }
 
-export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasProAccess: boolean; isAuthenticated: boolean }) {
+export function PopularVideosExplorer() {
   const [dataType, setDataType] = useState<PopularVideoType>("trending");
   const [koreanOnly, setKoreanOnly] = useState(false);
   const [longFormOnly, setLongFormOnly] = useState(false);
@@ -175,7 +175,6 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
-  const [paywallStep, setPaywallStep] = useState<ProPaywallStep>("closed");
   const loadMoreController = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -216,7 +215,6 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
   }, [category, dataType, koreanOnly, longFormOnly, reusableOnly, retryCount]);
 
   const selectedType = dataTypeOptions.find((option) => option.value === dataType) || dataTypeOptions[0];
-  const selectedCategory = categoryOptions.find((option) => option.value === category) || categoryOptions[0];
 
   const loadMore = async () => {
     if (!response?.nextCursor || loadingMore) return;
@@ -240,6 +238,7 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
         return {
           items: Array.from(videos.values()),
           updatedAt: current.updatedAt,
+          totalCount: next.totalCount ?? current.totalCount,
           nextCursor: next.nextCursor,
         };
       });
@@ -255,7 +254,7 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
     const result = await fetch("/api/youtube/popular/prepare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ videoId: video.videoId, source: "pro" }),
+      body: JSON.stringify({ videoId: video.videoId, source: "popular" }),
     });
     if (!result.ok) {
       const body = await result.json().catch(() => ({})) as { detail?: string };
@@ -266,32 +265,23 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
   };
 
   const applyFilter = (update: () => void) => {
-    if (POPULAR_VIDEO_FILTERS_REQUIRE_PRO && !hasProAccess) {
-      setPaywallStep("notice");
-      return;
-    }
     update();
     setActiveVideoId(null);
   };
 
   const requestMore = () => {
-    if (!hasProAccess) {
-      setPaywallStep("notice");
-      return;
-    }
     void loadMore();
   };
 
   return (
     <main className="relative mx-auto w-full max-w-6xl px-5 pb-24 pt-7 sm:px-8 sm:pt-10">
-      <ProPaywall step={paywallStep} onStepChange={setPaywallStep} isAuthenticated={isAuthenticated} />
       <section className="hero relative isolate mx-auto flex max-w-4xl flex-col items-center px-4 pb-2 text-center sm:pb-3">
         <span className="pointer-events-none absolute left-[8%] top-5 -z-10 h-40 w-40 rounded-full bg-[#ff5540]/20 blur-[70px] sm:h-56 sm:w-56" aria-hidden="true" />
         <span className="pointer-events-none absolute right-[7%] top-14 -z-10 h-44 w-44 rounded-full bg-[#a078ff]/20 blur-[80px] sm:h-60 sm:w-60" aria-hidden="true" />
         <h1 className="hero-title"><span>실시간 인기</span></h1>
         <p className="mt-5 max-w-2xl text-sm leading-7 text-[#d5aaa4] sm:text-base">
           <span className="block">지금 떠오르는 영상을 놓치지 마세요.</span>
-          <strong className="block font-extrabold text-[#ff9b8d]">구독 회원에게는 콘텐츠가 6시간 먼저 공개됩니다.</strong>
+          <strong className="block font-extrabold text-[#ff9b8d]">모든 사용자에게 같은 목록과 필터를 제공합니다.</strong>
         </p>
         <p className="mt-6 text-xs font-semibold text-neutral-500" aria-live="polite"><span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.7)]" aria-hidden="true" /><span className="text-neutral-400">마지막 업데이트</span> {formatUpdatedAt(response?.updatedAt || null)}</p>
       </section>
@@ -337,7 +327,7 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
             <button
               type="button"
               role="switch"
-              aria-label={`롱폼만 보기${POPULAR_VIDEO_FILTERS_REQUIRE_PRO ? " (Pro 전용)" : ""}`}
+              aria-label="롱폼만 보기"
               aria-checked={longFormOnly}
               onClick={() => applyFilter(() => setLongFormOnly((current) => !current))}
               className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${longFormOnly ? "border-[#ff8b7c]/60 bg-[#ff715e]/15 text-[#ffd0c9]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
@@ -350,7 +340,7 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
             <button
               type="button"
               role="switch"
-              aria-label={`재사용 허용 영상만 보기${POPULAR_VIDEO_FILTERS_REQUIRE_PRO ? " (Pro 전용)" : ""}`}
+              aria-label="재사용 허용 영상만 보기"
               aria-checked={reusableOnly}
               onClick={() => applyFilter(() => setReusableOnly((current) => !current))}
               className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${reusableOnly ? "border-violet-300/60 bg-violet-400/15 text-violet-50" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
@@ -370,7 +360,7 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
               <button
                 key={option.value}
                 type="button"
-                aria-label={`${option.label} 카테고리${POPULAR_VIDEO_FILTERS_REQUIRE_PRO ? " (Pro 전용)" : ""}`}
+                aria-label={`${option.label} 카테고리`}
                 aria-pressed={category === option.value}
                 onClick={() => applyFilter(() => setCategory(option.value))}
                 className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition ${category === option.value ? "border-violet-300/60 bg-violet-400/15 text-violet-50 shadow-[0_0_18px_rgba(160,120,255,.1)]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
@@ -385,9 +375,8 @@ export function PopularVideosExplorer({ hasProAccess, isAuthenticated }: { hasPr
       <div className="mb-5 mt-8 flex items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-black tracking-[-.025em] text-white">{selectedType.label}</h2>
-          <p className="mt-1 text-xs text-neutral-500">{selectedType.description} · {selectedCategory.label}{koreanOnly ? " · 한국어" : ""}{longFormOnly ? " · 4분 이상" : ""}{reusableOnly ? " · 재사용 허용" : ""}</p>
+          <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{!loading && response ? `${countFormatter.format(response.totalCount ?? response.items.length)}개` : "개수 확인 중"}</p>
         </div>
-        {!loading && response && <span className="text-xs font-bold tabular-nums text-neutral-500">{response.items.length}개 영상</span>}
       </div>
 
       {loading ? <LoadingSkeleton /> : error ? (

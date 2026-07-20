@@ -102,35 +102,35 @@ export function getYoutubeCreationAvailability(
     return {
       creationAllowed: false,
       creationBlockCode: "region_restricted",
-      creationBlockReason: "국가별 시청 제한이 있는 영상은 쇼츠로 만들 수 없습니다.",
+      creationBlockReason: "이 영상은 국가별 시청이 제한된 영상입니다.",
     };
   }
   if (item.contentDetails.contentRating?.ytRating === "ytAgeRestricted") {
     return {
       creationAllowed: false,
       creationBlockCode: "age_restricted",
-      creationBlockReason: "연령 제한이 있는 영상은 쇼츠로 만들 수 없습니다.",
+      creationBlockReason: "이 영상은 연령 제한이 적용된 영상입니다.",
     };
   }
   if (!item.status) {
     return {
       creationAllowed: false,
       creationBlockCode: "availability_unverified",
-      creationBlockReason: "영상 공개 상태를 확인할 수 없어 쇼츠를 만들 수 없습니다.",
+      creationBlockReason: "이 영상은 공개 상태를 확인할 수 없는 영상입니다.",
     };
   }
   if (item.status.publishAt && Date.parse(item.status.publishAt) > Date.now()) {
     return {
       creationAllowed: false,
       creationBlockCode: "not_yet_available",
-      creationBlockReason: "아직 예약 공개 시간이 되지 않은 영상입니다.",
+      creationBlockReason: "이 영상은 아직 예약 공개 시간이 되지 않은 영상입니다.",
     };
   }
   if (item.status.privacyStatus !== "public") {
     return {
       creationAllowed: false,
       creationBlockCode: "not_public",
-      creationBlockReason: "전체 공개 영상만 쇼츠로 만들 수 있습니다.",
+      creationBlockReason: "이 영상은 전체 공개가 아닌 영상입니다.",
     };
   }
   if (item.status.uploadStatus !== "processed") {
@@ -138,27 +138,20 @@ export function getYoutubeCreationAvailability(
       return {
         creationAllowed: false,
         creationBlockCode: "removed",
-        creationBlockReason: "삭제되었거나 게시가 중단된 영상은 쇼츠로 만들 수 없습니다.",
+        creationBlockReason: "이 영상은 삭제되었거나 게시가 중단된 영상입니다.",
       };
     }
     if (item.status.rejectionReason === "copyright") {
       return {
         creationAllowed: false,
         creationBlockCode: "copyright_restricted",
-        creationBlockReason: "저작권 제한으로 재생이 중단된 영상은 쇼츠로 만들 수 없습니다.",
+        creationBlockReason: "이 영상은 저작권 문제로 재생이 제한된 영상입니다.",
       };
     }
     return {
       creationAllowed: false,
       creationBlockCode: "not_processed",
-      creationBlockReason: "YouTube 처리가 완료된 영상만 쇼츠로 만들 수 있습니다.",
-    };
-  }
-  if (!item.status.embeddable) {
-    return {
-      creationAllowed: false,
-      creationBlockCode: "embedding_disabled",
-      creationBlockReason: "외부 재생이 제한된 영상은 쇼츠로 만들 수 없습니다.",
+      creationBlockReason: "이 영상은 YouTube 처리가 아직 완료되지 않은 영상입니다.",
     };
   }
   if (
@@ -168,7 +161,7 @@ export function getYoutubeCreationAvailability(
     return {
       creationAllowed: false,
       creationBlockCode: "not_yet_available",
-      creationBlockReason: "아직 공개 또는 재생이 시작되지 않은 영상입니다.",
+      creationBlockReason: "이 영상은 아직 공개 또는 재생이 시작되지 않은 영상입니다.",
     };
   }
   return {
@@ -200,9 +193,12 @@ export async function analyzeYoutubeUrl(input: string) {
   if (durationSeconds <= 0 || durationSeconds > 3600) throw new Error("최대 60분 길이의 영상까지만 만들 수 있습니다.");
   const thumbnails = Object.values(item.snippet.thumbnails);
   const metadataAvailability = getYoutubeCreationAvailability(item);
-  const availability = metadataAvailability.creationAllowed
+  const playbackAvailability = metadataAvailability.creationAllowed
     ? await verifyYoutubePlaybackAvailability(videoId)
     : metadataAvailability;
+  const availability = playbackAvailability.creationBlockCode === "bot_challenge"
+    ? { creationAllowed: true, creationBlockCode: null, creationBlockReason: null }
+    : playbackAvailability;
   const channelThumbnailUrl = await getChannelThumbnailUrl(item.snippet.channelId, apiKey);
   return {
     videoId,

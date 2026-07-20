@@ -14,13 +14,14 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const rows = await db`
-      select clean_clip_s3_key, expires_at
-      from shorts_mvp.generated_shorts
-      where id=${shortId} and (
-        (${session.userId}::uuid is not null and user_id=${session.userId})
-        or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+      select s.clean_clip_s3_key, s.expires_at
+      from shorts_mvp.generated_shorts s
+      join shorts_mvp.video_jobs j on j.id=s.job_id
+      where s.id=${shortId} and not j.is_example and (
+        (${session.userId}::uuid is not null and s.user_id=${session.userId})
+        or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
       )
-        and status in ('ready', 'rerendering') and deleted_at is null and expires_at > now()
+        and s.status in ('ready', 'rerendering') and s.deleted_at is null and s.expires_at > now()
     `;
     if (!rows[0]) throw new Error("편집용 영상을 찾을 수 없습니다.");
     const domain = process.env.CLOUDFRONT_DOMAIN;

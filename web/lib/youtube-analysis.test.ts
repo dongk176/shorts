@@ -79,7 +79,7 @@ describe("YouTube analysis persistence", () => {
       durationSeconds: metadata.durationSeconds,
       creationAllowed: false,
       creationBlockCode: "region_restricted",
-      creationBlockReason: "국가별 시청 제한이 있는 영상은 쇼츠로 만들 수 없습니다.",
+      creationBlockReason: "이 영상은 국가별 시청이 제한된 영상입니다.",
     }]));
 
     await expect(getYoutubeAnalysis(session, "6bce83c4-b12e-4d11-8f16-2fef8a96c541")).resolves.toMatchObject({

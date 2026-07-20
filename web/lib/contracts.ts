@@ -1,20 +1,39 @@
-export const planCodes = ["plus", "standard", "pro"] as const;
+export const planCodes = ["free", "plus", "standard", "pro"] as const;
 export type PlanCode = (typeof planCodes)[number];
 
-export const templateIds = ["dark-red", "white-yellow", "dark-minimal", "paper"] as const;
+export const paidPlanCodes = ["plus", "standard", "pro"] as const;
+export type PaidPlanCode = (typeof paidPlanCodes)[number];
+
+export const billingCycles = ["monthly", "yearly"] as const;
+export type BillingCycle = (typeof billingCycles)[number];
+
+export const subscriptionStatuses = ["none", "pending", "active", "past_due", "canceled", "expired"] as const;
+export type SubscriptionStatus = (typeof subscriptionStatuses)[number];
+
+export const templateIds = ["dark-red", "white-yellow", "dark-minimal", "paper", "comment-capture"] as const;
 export type TemplateId = (typeof templateIds)[number];
+
+export type CommentOverlay = {
+  id: string;
+  startSeconds: number;
+  endSeconds: number;
+  text: string;
+  initial: string;
+  avatarColor: string;
+  nickname: string;
+  likeCount: number;
+  ageLabel: string;
+};
+
+export type TitleTextStyle = {
+  start: number;
+  end: number;
+  color?: string;
+  backgroundColor?: string;
+};
 
 export const videoAspectRatios = ["16:9", "5:4", "1:1", "4:5", "9:16"] as const;
 export type VideoAspectRatio = (typeof videoAspectRatios)[number];
-
-export const rangeDownloadStatuses = [
-  "pending",
-  "selected_range",
-  "full_source_expected",
-  "full_source_unexpected",
-  "unexpected_duration",
-] as const;
-export type RangeDownloadStatus = (typeof rangeDownloadStatuses)[number];
 
 export const videoAspectRatioOptions: Array<{
   value: VideoAspectRatio;
@@ -51,9 +70,32 @@ export type UsageSnapshot = {
   reservedSeconds: number;
   limitSeconds: number;
   remainingSeconds: number;
+  baseUsedSeconds: number;
+  baseReservedSeconds: number;
+  baseLimitSeconds: number;
+  baseRemainingSeconds: number;
+  addonRemainingSeconds: number;
   periodStart: string;
   nextResetAt: string;
   enforcementEnabled: boolean;
+};
+
+export type BillingSummary = {
+  status: SubscriptionStatus;
+  planCode: PlanCode;
+  billingCycle: BillingCycle | null;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  nextChargeAt: string | null;
+  cancelAtPeriodEnd: boolean;
+  scheduledPlanCode: PaidPlanCode | null;
+  scheduledBillingCycle: BillingCycle | null;
+  cardIssuer: string | null;
+  cardNumberMasked: string | null;
+  cardLast4: string | null;
+  canCreateJobs: boolean;
+  maxActiveJobs: number;
+  retentionDays: number;
 };
 
 export type YoutubeAnalysis = {
@@ -86,6 +128,7 @@ export const youtubeCreationBlockCodes = [
   "not_processed",
   "embedding_disabled",
   "availability_unverified",
+  "bot_challenge",
 ] as const;
 
 export type YoutubeCreationBlockCode = typeof youtubeCreationBlockCodes[number];
@@ -95,6 +138,9 @@ export type Plan = {
   displayName: string;
   monthlySourceSeconds: number;
   retentionDays: number;
+  monthlyPriceKrw: number;
+  yearlyPriceKrw: number;
+  maxActiveJobs: number;
 };
 
 export type GeneratedShort = {
@@ -104,29 +150,33 @@ export type GeneratedShort = {
   endSeconds: number;
   durationSeconds: number;
   hookTitle: string;
+  highlightReason: string;
   channelDisplayName: string;
   subtitleSegments: Array<{ start: number; end: number; text: string }>;
+  commentOverlays: CommentOverlay[];
   subtitlesEnabled: boolean;
   templateId: TemplateId;
+  customTemplateId?: string | null;
+  templateSnapshot?: Record<string, unknown> | null;
   videoAspectRatio: VideoAspectRatio;
   titleFontScale: number;
+  titleTextStyles: TitleTextStyle[];
+  titleTextStylesInitialized: boolean;
   renderVersion: number;
   rerenderProgress: number;
   status: string;
-  expiresAt: string;
+  expiresAt: string | null;
 };
 
 export type VideoJob = {
   id: string;
+  projectNumber: number;
+  isExample: boolean;
   videoTitle: string;
   channelName: string;
   channelThumbnailUrl: string | null;
   thumbnailUrl: string;
   sourceDurationSeconds: number;
-  rangeDownloadStatus: RangeDownloadStatus;
-  downloadedMediaDurationSeconds: number | null;
-  downloadedMediaBytes: number | null;
-  rangeDownloadVerifiedAt: string | null;
   outputLanguage: OutputLanguage;
   expectedShortCount: number;
   status: string;
@@ -149,6 +199,7 @@ export type MvpState = {
   selectedPlanCode: PlanCode;
   generatedShortCount: number;
   plans: Plan[];
+  billing: BillingSummary;
   usage: UsageSnapshot;
   recentJobs: VideoJob[];
 };
@@ -171,6 +222,6 @@ export function jobDeadlineMinutes(durationSeconds: number) {
     throw new Error("작업 제한 시간을 계산할 수 없는 영상 길이입니다.");
   }
   // Allow a 30-minute fixed overhead for queueing/retries plus one minute of
-  // processing budget per selected source minute (31-90 minutes total).
+  // processing budget per full source minute (31-90 minutes total).
   return 30 + Math.ceil(durationSeconds / 60);
 }

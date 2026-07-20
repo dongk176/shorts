@@ -20,9 +20,6 @@ export CLOUDFRONT_DOMAIN="$(bash ../scripts/stack-outputs.sh CloudFrontDomain Fo
 export CLOUDFRONT_KEY_PAIR_ID="$(bash ../scripts/stack-outputs.sh CloudFrontKeyPairId Foundation)"
 export CLOUDFRONT_PRIVATE_KEY_B64="$(base64 < ../.secrets/cloudfront-private.pem | tr -d '\n')"
 export AWS_REGION="${AWS_REGION:-ap-northeast-2}"
-export MVP_PLAN_ENFORCEMENT="${MVP_PLAN_ENFORCEMENT:-false}"
-export MVP_MAX_ACTIVE_JOBS_PER_SESSION="${MVP_MAX_ACTIVE_JOBS_PER_SESSION:-1}"
-export NEXT_PUBLIC_ALLOW_CONCURRENT_JOBS="${NEXT_PUBLIC_ALLOW_CONCURRENT_JOBS:-false}"
 export VIDEO_JOB_BACKEND="${VIDEO_JOB_BACKEND:-aws_batch}"
 
 tmp="$(mktemp)"
@@ -30,8 +27,9 @@ trap 'rm -f "$tmp"' EXIT
 for name in DATABASE_URL SUPABASE_URL SUPABASE_PUBLISHABLE_KEY YOUTUBE_API_KEY \
   AWS_ROLE_ARN AWS_REGION AWS_S3_OUTPUT_BUCKET \
   CLOUDFRONT_DOMAIN CLOUDFRONT_KEY_PAIR_ID CLOUDFRONT_PRIVATE_KEY_B64 \
-  MVP_PLAN_ENFORCEMENT MVP_MAX_ACTIVE_JOBS_PER_SESSION NEXT_PUBLIC_ALLOW_CONCURRENT_JOBS \
-  VIDEO_JOB_BACKEND; do
+  NEXT_PUBLIC_TOSS_CLIENT_KEY TOSS_SECRET_KEY TOSS_BILLING_KEY_ENCRYPTION_KEY \
+  TOSS_WEBHOOK_SECRET CRON_SECRET \
+  VIDEO_JOB_BACKEND MVP_PLAN_ENFORCEMENT; do
   value="${!name:-}"
   [[ -n "$value" ]] || { echo "건너뜀(값 없음): $name"; continue; }
   printf '%s' "$value" > "$tmp"

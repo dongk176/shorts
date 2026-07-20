@@ -56,7 +56,18 @@ describe("YouTube direct playback availability", () => {
       },
     })).toMatchObject({
       creationAllowed: false,
-      creationBlockCode: "availability_unverified",
+      creationBlockCode: "bot_challenge",
+    });
+  });
+
+  it("allows a usable format when external playback is disabled", () => {
+    expect(classifyYoutubePlaybackResponse({
+      ...playableResponse(),
+      playabilityStatus: { status: "OK", playableInEmbed: false },
+    })).toEqual({
+      creationAllowed: true,
+      creationBlockCode: null,
+      creationBlockReason: null,
     });
   });
 

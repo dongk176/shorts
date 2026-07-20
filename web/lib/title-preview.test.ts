@@ -41,4 +41,9 @@ describe("render-matched title preview", () => {
     expect(titleLineColor(0, false, "#FFFFFF", "#F04444")).toBe("#FFFFFF");
     expect(titleLineColor(1, false, "#FFFFFF", "#F04444")).toBe("#F04444");
   });
+
+  it("keeps the first paper line primary-colored in full-vertical mode", () => {
+    expect(titleLineColor(0, true, "#111111", "#D52B2B", true)).toBe("#111111");
+    expect(titleLineColor(1, true, "#111111", "#D52B2B", true)).toBe("#D52B2B");
+  });
 });

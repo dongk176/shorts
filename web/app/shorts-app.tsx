@@ -6,35 +6,121 @@ import Image from "next/image";
 import Link from "next/link";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import { TitleOverlayPreview } from "@/components/title-overlay-preview";
 import type {
+  CommentOverlay,
   GeneratedShort,
   MvpState,
   OutputLanguage,
   TemplateId,
+  TitleTextStyle,
   UsageSnapshot,
   VideoAspectRatio,
   VideoJob,
   YoutubeAnalysis,
 } from "@/lib/contracts";
-import { AI_CLIP_MIN_SECONDS, expectedShortCount, outputLanguageOptions, videoAspectRatioOptions } from "@/lib/contracts";
+import { outputLanguageOptions, videoAspectRatioOptions } from "@/lib/contracts";
+import {
+  estimatedCreationMinutes,
+  estimatedProgress,
+  estimatedRemainingLabel,
+  estimatedRemainingMinutes,
+  estimatedRerenderMinutes,
+  SIMULATED_PROGRESS_START,
+} from "@/lib/creation-progress";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
 import { stateRetryDelayMs } from "@/lib/state-loading";
+import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
+import { stockBackgrounds, type CustomTemplate } from "@/lib/template-config";
 
 const templates: Array<{ id: TemplateId; name: string; label: string; background: string; primary: string; accent: string; accentBackground: string | null; channel: string }> = [
+  { id: "comment-capture", name: "댓글 캡처", label: "댓글 반응과 함께\n시청 지속시간 상승", background: "#000000", primary: "#FFFFFF", accent: "#35E6E3", accentBackground: null, channel: "#FFFFFF" },
   { id: "dark-red", name: "다크 레드", label: "지금 꼭 알아야 할\n핵심 한 가지", background: "#000000", primary: "#FFFFFF", accent: "#FFFFFF", accentBackground: "#E32626", channel: "#FFFFFF" },
   { id: "white-yellow", name: "화이트 옐로", label: "생각보다 쉬운\n핵심 한 가지", background: "#FFFFFF", primary: "#111111", accent: "#111111", accentBackground: "#FFD84D", channel: "#111111" },
   { id: "dark-minimal", name: "다크 미니멀", label: "놓치기 쉬운\n결정적 순간", background: "#000000", primary: "#FFFFFF", accent: "#F04444", accentBackground: null, channel: "#FFFFFF" },
   { id: "paper", name: "페이퍼", label: "오늘 바로 쓰는\n핵심 방법", background: "#F3F0E9", primary: "#111111", accent: "#D52B2B", accentBackground: null, channel: "#363636" },
 ];
 
-function aspectLayout(value: VideoAspectRatio) {
-  const option = videoAspectRatioOptions.find((item) => item.value === value)
+const recommendedTemplates = templates.filter((template) => template.id !== "dark-red" && template.id !== "white-yellow");
+
+const titleTextColorOptions = [
+  { name: "화이트", color: "#FFFFFF" },
+  { name: "블랙", color: "#111111" },
+  { name: "댓글 블루", color: "#35E6E3" },
+  { name: "선명한 블루", color: "#3B82F6" },
+  { name: "레드", color: "#FF4D4F" },
+  { name: "옐로", color: "#FFD84D" },
+  { name: "라임", color: "#8BFF5A" },
+  { name: "오렌지", color: "#FF8A3D" },
+  { name: "핑크", color: "#FF65B3" },
+  { name: "퍼플", color: "#A78BFA" },
+] as const;
+
+const titleBackgroundColorOptions = [
+  { name: "차콜", color: "#111111" },
+  { name: "화이트", color: "#FFFFFF" },
+  { name: "댓글 블루", color: "#35E6E3" },
+  { name: "딥 블루", color: "#2563EB" },
+  { name: "레드", color: "#E32626" },
+  { name: "옐로", color: "#FFD84D" },
+  { name: "그린", color: "#16A34A" },
+  { name: "오렌지", color: "#F97316" },
+  { name: "핑크", color: "#DB2777" },
+  { name: "퍼플", color: "#7C3AED" },
+] as const;
+
+const commentAvatarColors = ["#8B2CC4", "#D84572", "#2674C8", "#257A5A", "#C76624", "#6655C7"];
+const commentNicknamePrefixes = ["하루", "모카", "여름", "초코", "구름", "새벽", "라온", "소담"];
+const commentNicknameSuffixes = ["기록", "한스푼", "로그", "이야기", "채널", "노트", "생활", "공간"];
+
+function randomItem<T>(values: T[]) {
+  return values[Math.floor(Math.random() * values.length)];
+}
+
+function randomComment(startSeconds: number, endSeconds: number): CommentOverlay {
+  const nickname = `${randomItem(commentNicknamePrefixes)}${randomItem(commentNicknameSuffixes)}${Math.floor(Math.random() * 90) + 10}`;
+  return {
+    id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+    startSeconds: Math.round(startSeconds * 1000) / 1000,
+    endSeconds: Math.round(endSeconds * 1000) / 1000,
+    text: "아 진짜 ㅋㅋㅋㅋㅋㅋㅋㅋ",
+    initial: nickname.slice(0, 1),
+    avatarColor: randomItem(commentAvatarColors),
+    nickname,
+    likeCount: Math.floor(Math.random() * 18_689) + 1_312,
+    ageLabel: `${Math.floor(Math.random() * 11) + 1}개월 전`,
+  };
+}
+
+function defaultComments(durationSeconds: number) {
+  const duration = Math.max(0.3, durationSeconds);
+  return [0, 1, 2].map((index) => randomComment(
+    duration * index / 3,
+    duration * (index + 1) / 3,
+  ));
+}
+
+const templateCommentSample: CommentOverlay = {
+  id: "template-comment-sample",
+  startSeconds: 0,
+  endSeconds: 10,
+  text: "아 진짜 ㅋㅋㅋㅋㅋㅋㅋㅋ",
+  initial: "소",
+  avatarColor: "#8B2CC4",
+  nickname: "소담기록24",
+  likeCount: 1_312,
+  ageLabel: "5개월 전",
+};
+
+function aspectLayout(value: VideoAspectRatio, reserveCommentSpace = false) {
+  const layoutValue = reserveCommentSpace && value === "9:16" ? "4:5" : value;
+  const option = videoAspectRatioOptions.find((item) => item.value === layoutValue)
     || videoAspectRatioOptions.find((item) => item.value === "1:1")!;
   const videoHeight = option.height / 19.2;
   const videoTop = (100 - videoHeight) / 2;
-  const fullVertical = value === "9:16";
+  const fullVertical = layoutValue === "9:16";
   const subtitleMargin = fullVertical
     ? 445
     : 1920 - (Math.round(videoTop * 19.2) + option.height - Math.max(64, Math.round(option.height * 0.08)));
@@ -42,7 +128,6 @@ function aspectLayout(value: VideoAspectRatio) {
 }
 
 const terminalStatuses = new Set(["completed", "failed", "expired", "deleted"]);
-const allowConcurrentJobs = process.env.NEXT_PUBLIC_ALLOW_CONCURRENT_JOBS === "true";
 function formatDuration(seconds: number) {
   const value = Math.max(0, Math.round(seconds));
   const hours = Math.floor(value / 3600);
@@ -58,28 +143,81 @@ function formatTimestamp(seconds: number) {
   return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 }
 
-function ProgressRing({ progress }: { progress: number }) {
-  const target = Math.max(1, Math.min(99, Math.round(Number.isFinite(progress) ? progress : 1)));
-  const [value, setValue] = useState(target);
+function isProjectExpired(job: VideoJob) {
+  return Boolean(job.expiresAt && new Date(job.expiresAt).getTime() <= Date.now());
+}
 
-  useEffect(() => {
-    setValue((current) => target < current ? target : current);
-    const timer = window.setInterval(() => {
-      setValue((current) => {
-        if (current >= target) {
-          window.clearInterval(timer);
-          return current;
-        }
-        return current + 1;
-      });
-    }, 45);
-    return () => window.clearInterval(timer);
-  }, [target]);
+function ProgressRing({ progress }: { progress: number }) {
+  const value = Math.max(
+    SIMULATED_PROGRESS_START,
+    Math.min(99, Number.isFinite(progress) ? progress : SIMULATED_PROGRESS_START),
+  );
+  const displayedValue = Math.floor(value);
 
   return (
-    <div className="brand-progress" role="progressbar" aria-label={`진행률 ${value}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={value}>
+    <div className="brand-progress" role="progressbar" aria-label={`진행률 ${displayedValue}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={displayedValue}>
       <span className="brand-progress-spinner" aria-hidden="true" style={{ background: `conic-gradient(from -90deg, #ff5540 0%, #a078ff ${value}%, rgba(255,255,255,.18) ${value}% 100%)` }} />
-      <span className="brand-progress-value">{value}%</span>
+      <span className="brand-progress-value">{displayedValue}%</span>
+    </div>
+  );
+}
+
+function EstimatedProcessingOverlay({
+  operationKey,
+  durationSeconds,
+  createdAt,
+  rerender = false,
+}: {
+  operationKey: string;
+  durationSeconds: number;
+  createdAt?: string;
+  rerender?: boolean;
+}) {
+  const estimatedMinutes = rerender
+    ? estimatedRerenderMinutes(durationSeconds)
+    : estimatedCreationMinutes(durationSeconds);
+  const [clock, setClock] = useState<{ startedAtMs: number; nowMs: number } | null>(null);
+
+  useEffect(() => {
+    const storageKey = `estimated-progress:${operationKey}`;
+    const parsedCreatedAt = createdAt ? Date.parse(createdAt) : Number.NaN;
+    let storedStartedAt = Number.NaN;
+    try {
+      storedStartedAt = Number(window.sessionStorage.getItem(storageKey));
+    } catch {
+      // Session storage is optional; timing still works for the current mount.
+    }
+    const startedAtMs = Number.isFinite(parsedCreatedAt)
+      ? parsedCreatedAt
+      : Number.isFinite(storedStartedAt) && storedStartedAt > 0
+        ? storedStartedAt
+        : Date.now();
+
+    if (!Number.isFinite(parsedCreatedAt) && !(Number.isFinite(storedStartedAt) && storedStartedAt > 0)) {
+      try {
+        window.sessionStorage.setItem(storageKey, String(startedAtMs));
+      } catch {
+        // Session storage is optional; timing still works for the current mount.
+      }
+    }
+
+    const update = () => setClock({ startedAtMs, nowMs: Date.now() });
+    update();
+    const timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [createdAt, operationKey]);
+
+  const progress = clock
+    ? estimatedProgress(clock.startedAtMs, clock.nowMs, estimatedMinutes)
+    : SIMULATED_PROGRESS_START;
+  const remainingMinutes = clock
+    ? estimatedRemainingMinutes(clock.startedAtMs, clock.nowMs, estimatedMinutes)
+    : estimatedMinutes;
+
+  return (
+    <div className="project-processing-overlay">
+      <ProgressRing progress={progress} />
+      <strong>{estimatedRemainingLabel(remainingMinutes)}</strong>
     </div>
   );
 }
@@ -150,11 +288,45 @@ function ChannelAvatar({
   );
 }
 
+function ReactionIcon({ down = false }: { down?: boolean }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className={`h-[1.08em] w-[1.08em] fill-none stroke-current stroke-[1.65] ${down ? "rotate-180" : ""}`}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7.4 10.1 10.9 3.4a1.45 1.45 0 0 1 2.73.68l-.34 4.43h5.05a2.17 2.17 0 0 1 2.12 2.62l-1.38 6.51a2.17 2.17 0 0 1-2.12 1.72H7.4m0-9.26v9.26H3.55a1.1 1.1 0 0 1-1.1-1.1v-7.06a1.1 1.1 0 0 1 1.1-1.1H7.4Z" />
+    </svg>
+  );
+}
+
+function formatCompactKoreanCount(value: number) {
+  const compact = (amount: number) => Number.isInteger(amount) ? String(amount) : amount.toFixed(1);
+  if (value >= 10_000) return `${compact(Math.floor(value / 1_000) / 10)}만`;
+  if (value >= 1_000) return `${compact(Math.floor(value / 100) / 10)}천`;
+  return value.toLocaleString("ko-KR");
+}
+
+function CommentCaptureCard({ comment }: { comment: CommentOverlay | null }) {
+  return (
+    <div className="h-full w-full bg-[#040404] px-[2.8cqw] pb-[0.6cqw] pt-[4.5cqw] text-left text-white">
+      {comment ? <div className="flex items-start gap-[2.7cqw]">
+        <div className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.9cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
+        <div className="min-w-0 flex-1">
+          <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight text-neutral-100 blur-[0.72cqw]">@{comment.nickname} <span className="font-normal text-neutral-400">{comment.ageLabel}</span></div>
+          <p className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap text-[4.05cqw] font-normal leading-[1.28] text-white/95 blur-[0.07cqw]">{comment.text}</p>
+          <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] text-neutral-300/80 blur-[0.05cqw]">
+            <ReactionIcon /><span>{formatCompactKoreanCount(comment.likeCount)}</span>
+            <span className="ml-[2.2cqw]"><ReactionIcon down /></span>
+            <span className="ml-[3cqw] text-[3.25cqw] text-neutral-200">답글</span>
+          </div>
+        </div>
+      </div> : null}
+    </div>
+  );
+}
+
 function TemplatePreview({ template, videoAspectRatio, channelName, channelThumbnailUrl }: { template: (typeof templates)[number]; videoAspectRatio: VideoAspectRatio; channelName: string; channelThumbnailUrl: string | null }) {
   const [firstLine, secondLine] = template.label.split("\n");
   const isLight = template.id === "white-yellow" || template.id === "paper";
   const foreground = isLight ? "text-black" : "text-white";
-  const layout = aspectLayout(videoAspectRatio);
+  const layout = aspectLayout(videoAspectRatio, template.id === "comment-capture");
   const previewLine = (line: string, index: number) => {
     const lineBackground = titleLineBackground(
       index,
@@ -171,6 +343,7 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
             layout.fullVertical,
             template.primary,
             template.accent,
+            template.id === "paper",
           ),
           background: lineBackground || "transparent",
           borderRadius: lineBackground ? "1cqw" : 0,
@@ -187,7 +360,7 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
       className={`relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg ${foreground}`}
       style={{ aspectRatio: "9 / 16", background: template.background, containerType: "inline-size" }}
     >
-      <div data-template-title className={`absolute inset-x-0 z-10 flex flex-col items-center justify-end px-[4.9cqw] text-center text-[6.7cqw] font-extrabold leading-[1.25] ${videoAspectRatio === "4:5" ? "pb-[1.2cqw]" : "pb-[4.9cqw]"}`} style={layout.fullVertical ? { top: "5%", height: "18.75%" } : { top: 0, height: `${layout.videoTop}%` }}>
+      <div data-template-title className={`absolute inset-x-0 z-10 flex flex-col items-center justify-end px-[4.9cqw] text-center text-[6.7cqw] font-extrabold leading-[1.25] ${layout.option.value === "4:5" ? "pb-[1.2cqw]" : "pb-[4.9cqw]"}`} style={layout.fullVertical ? { top: "5%", height: "18.75%" } : { top: 0, height: `${layout.videoTop}%` }}>
         {previewLine(firstLine, 0)}
         {previewLine(secondLine, 1)}
       </div>
@@ -195,24 +368,39 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
         <div className={`h-[22cqw] w-[22cqw] rounded-full border-2 ${isLight ? "border-neutral-500" : "border-neutral-400"}`} aria-hidden="true" />
       </div>
-      <div className={`absolute inset-x-0 z-10 flex items-start justify-center px-[4.9cqw] pt-[4.9cqw] text-[5.5cqw] font-semibold ${template.id === "paper" ? "text-neutral-700" : ""}`} style={layout.fullVertical ? { bottom: "6.25%", height: "9.375%" } : { top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.videoTop}%` }}>
-        <div className="flex items-center justify-center gap-[2.4cqw] whitespace-nowrap">
-          <ChannelAvatar url={channelThumbnailUrl} className="h-[6.1cqw] w-[6.1cqw]" fallbackForeground={template.channel} fallbackBackground={template.background} sizes="10px" />
-          <span className="max-w-[70cqw] truncate">{channelName}</span>
-        </div>
+      <div className={`absolute inset-x-0 z-10 overflow-hidden text-[5.5cqw] font-semibold ${template.id === "paper" ? "text-neutral-700" : ""}`} style={layout.fullVertical ? { bottom: "6.25%", height: "9.375%" } : { top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.videoTop}%` }}>
+        {template.id === "comment-capture"
+          ? <CommentCaptureCard comment={templateCommentSample} />
+          : <div className="flex items-start justify-center px-[4.9cqw] pt-[4.9cqw]"><div className="flex items-center justify-center gap-[2.4cqw] whitespace-nowrap"><ChannelAvatar url={channelThumbnailUrl} className="h-[6.1cqw] w-[6.1cqw]" fallbackForeground={template.channel} fallbackBackground={template.background} sizes="10px" /><span className="max-w-[70cqw] truncate">{channelName}</span></div></div>}
       </div>
     </div>
   );
 }
 
-function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioChange, channelName, channelThumbnailUrl }: { value: TemplateId; onChange: (value: TemplateId) => void; videoAspectRatio: VideoAspectRatio; onVideoAspectRatioChange: (value: VideoAspectRatio) => void; channelName: string; channelThumbnailUrl: string | null }) {
-  const selectedName = templates.find((template) => template.id === value)?.name;
+function CustomHomeTemplatePreview({ template }: { template: CustomTemplate }) {
+  const config = template.config;
+  const imageAssetId = config.background.kind === "image" ? config.background.assetId : null;
+  const background = config.background.kind === "color"
+    ? { backgroundColor: config.background.color }
+    : { backgroundImage: `url(${stockBackgrounds.find((asset) => asset.id === imageAssetId)?.src})`, backgroundPosition: "center", backgroundSize: "cover" };
+  const textPosition = (x: number, y: number, width: number) => ({ left: `${x / 10.8}%`, top: `${y / 19.2}%`, width: `${width / 10.8}%`, transform: "translate(-50%, -50%)" });
+  return <div className="relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg" style={{ ...background, containerType: "inline-size" }}>
+    <div className="absolute bg-neutral-700" style={{ left: `${config.video.x / 10.8}%`, top: `${config.video.y / 19.2}%`, width: `${config.video.width / 10.8}%`, height: `${config.video.height / 19.2}%` }}><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" /></div>
+    {config.title.visible && <div className="absolute z-20 whitespace-pre-line rounded px-[1.5cqw] py-[.8cqw] text-center font-black leading-tight" style={{ ...textPosition(config.title.x, config.title.y, config.title.maxWidth), color: config.title.primaryColor, backgroundColor: config.title.backgroundColor || "transparent", fontSize: `${config.title.fontSize / 10.8}cqw` }}>AI가 만든 제목<br /><span style={{ color: config.title.accentColor }}>핵심 포인트</span></div>}
+    {config.channel.visible && <div className="absolute z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold" style={{ ...textPosition(config.channel.x, config.channel.y, config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: `${config.channel.fontSize / 10.8}cqw` }}>● 채널 이름</div>}
+    {config.subtitle.visible && <div className="absolute z-40 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold" style={{ ...textPosition(config.subtitle.x, config.subtitle.y, config.subtitle.maxWidth), color: config.subtitle.color, backgroundColor: config.subtitle.backgroundColor || "transparent", fontSize: `${config.subtitle.fontSize / 10.8}cqw` }}>실제 자막</div>}
+  </div>;
+}
+
+function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioChange, channelName, channelThumbnailUrl, personalTemplates, customTemplateId, onCustomTemplateChange }: { value: TemplateId; onChange: (value: TemplateId) => void; videoAspectRatio: VideoAspectRatio; onVideoAspectRatioChange: (value: VideoAspectRatio) => void; channelName: string; channelThumbnailUrl: string | null; personalTemplates: CustomTemplate[]; customTemplateId: string | null; onCustomTemplateChange: (template: CustomTemplate | null) => void }) {
+  const selectedCustom = personalTemplates.find((template) => template.id === customTemplateId);
+  const selectedTemplate = recommendedTemplates.find((template) => template.id === value) || recommendedTemplates[0];
   return (
-    <div id="templates">
+    <div id="template-picker">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-bold">템플릿</h2>
-          <span className="text-xs font-semibold text-red-300">{selectedName}</span>
+          <span className="text-xs font-semibold text-red-300">{selectedCustom?.name || selectedTemplate.name}</span>
         </div>
         <fieldset className="min-w-0">
           <legend className="mb-2 text-xs font-semibold text-neutral-400">영상 비율</legend>
@@ -224,15 +412,19 @@ function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioC
           </div>
         </fieldset>
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {templates.map((template) => {
-          const selected = value === template.id;
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {personalTemplates.map((template) => {
+          const selected = customTemplateId === template.id;
+          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`rounded-xl border-2 bg-[#141416] p-2.5 transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
+        })}
+        {recommendedTemplates.map((template) => {
+          const selected = !customTemplateId && value === template.id;
           return (
             <button
               key={template.id}
               type="button"
               aria-pressed={selected}
-              onClick={() => onChange(template.id)}
+              onClick={() => { onCustomTemplateChange(null); onChange(template.id); }}
               className={`rounded-xl border-2 bg-[#141416] p-2.5 transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
             >
               <TemplatePreview template={template} videoAspectRatio={videoAspectRatio} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} />
@@ -241,6 +433,11 @@ function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioC
           );
         })}
       </div>
+      {!customTemplateId && value === "comment-capture" && (
+        <p className="mt-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[.06] px-4 py-3 text-sm text-cyan-100">
+          AI가 실제 사람이 작성한 것처럼 자연스러운 댓글을 만들어줘요.
+        </p>
+      )}
     </div>
   );
 }
@@ -347,21 +544,62 @@ function NoticeDialog({
   );
 }
 
-function Editor({ item, channelThumbnailUrl, onClose, onChanged }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void> }) {
+function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string }) {
+  const initialTemplate = templates.find((value) => value.id === item.templateId) || templates[0];
+  const initialTitleAspectRatio = item.templateId === "comment-capture" && item.videoAspectRatio === "9:16"
+    ? "4:5"
+    : item.videoAspectRatio || "1:1";
+  const initialTitleTextStyles = item.titleTextStylesInitialized
+    ? item.titleTextStyles
+    : defaultTemplateTitleTextStyles(
+      item.hookTitle,
+      initialTitleAspectRatio,
+      initialTemplate.background,
+      initialTemplate.accentBackground,
+    );
   const [title, setTitle] = useState(item.hookTitle);
+  const [titleTextStyles, setTitleTextStyles] = useState<TitleTextStyle[]>(initialTitleTextStyles);
+  const [titleSelection, setTitleSelection] = useState<{ start: number; end: number } | null>(null);
+  const [titleTextColor, setTitleTextColor] = useState(initialTitleTextStyles.find((style) => style.color)?.color || "#FFFFFF");
+  const [titleBackgroundColor, setTitleBackgroundColor] = useState(initialTitleTextStyles.find((style) => style.backgroundColor)?.backgroundColor || "#E32626");
+  const [showAllTextColors, setShowAllTextColors] = useState(false);
+  const [showAllBackgroundColors, setShowAllBackgroundColors] = useState(false);
+  const titleInputRef = useRef<HTMLTextAreaElement>(null);
   const [channel, setChannel] = useState(item.channelDisplayName);
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(item.subtitlesEnabled);
   const [segments, setSegments] = useState(item.subtitleSegments);
   const [templateId, setTemplateId] = useState(item.templateId);
+  const [comments, setComments] = useState<CommentOverlay[]>(() => {
+    if (item.commentOverlays?.length) return item.commentOverlays.map((comment) => ({
+      ...comment,
+      likeCount: Math.max(1_312, comment.likeCount),
+    }));
+    return item.templateId === "comment-capture" ? defaultComments(item.durationSeconds) : [];
+  });
   const [titleFontScale, setTitleFontScale] = useState(item.titleFontScale || 1);
   const [cleanVideoUrl, setCleanVideoUrl] = useState<string | null>(null);
+  const [videoLoadError, setVideoLoadError] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const validTitle = title.trim().length > 0 && title.length <= 80 && title.split("\n").length <= 2;
   const template = templates.find((value) => value.id === templateId) || templates[0];
-  const editorLayout = aspectLayout(item.videoAspectRatio || "1:1");
+  const originalAspectRatio = item.videoAspectRatio || "1:1";
+  const commentNeedsVerticalFit = templateId === "comment-capture" && originalAspectRatio === "9:16";
+  const editorLayout = aspectLayout(originalAspectRatio, templateId === "comment-capture");
   const activeSubtitle = segments.find((segment) => segment.start <= previewTime && segment.end > previewTime)?.text;
+  const orderedCommentsForPreview = [...comments].sort(
+    (left, right) => left.startSeconds - right.startSeconds,
+  );
+  const activeComment = orderedCommentsForPreview.reduce<CommentOverlay | null>(
+    (active, comment) => comment.startSeconds <= previewTime ? comment : active,
+    orderedCommentsForPreview[0] || null,
+  );
+  const orderedComments = [...comments].sort((left, right) => left.startSeconds - right.startSeconds);
+  const validComments = comments.length > 0
+    && comments.every((comment) => Number.isFinite(comment.startSeconds) && Number.isFinite(comment.endSeconds) && comment.startSeconds >= 0 && comment.endSeconds > comment.startSeconds && comment.endSeconds <= item.durationSeconds + 0.001 && comment.text.trim().length > 0)
+    && orderedComments.every((comment, index) => index === 0 || comment.startSeconds >= orderedComments[index - 1].endSeconds - 0.001);
+  const editorValid = validTitle && (templateId === "comment-capture" ? validComments : channel.trim().length > 0);
 
   useEffect(() => {
     let cancelled = false;
@@ -371,89 +609,221 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged }: { item: Gener
     return () => { cancelled = true; };
   }, [item.id]);
 
+  const selectTemplate = (value: TemplateId) => {
+    setTemplateId(value);
+    const selectedTemplate = templates.find((template) => template.id === value) || templates[0];
+    const selectedTitleAspectRatio = value === "comment-capture" && originalAspectRatio === "9:16"
+      ? "4:5"
+      : originalAspectRatio;
+    const defaultStyles = defaultTemplateTitleTextStyles(
+      title,
+      selectedTitleAspectRatio,
+      selectedTemplate.background,
+      selectedTemplate.accentBackground,
+    );
+    setTitleTextStyles(defaultStyles);
+    const defaultBackground = defaultStyles.find((style) => style.backgroundColor)?.backgroundColor;
+    if (defaultBackground) setTitleBackgroundColor(defaultBackground);
+    if (value === "comment-capture" && comments.length === 0) {
+      setComments(defaultComments(item.durationSeconds));
+    }
+  };
+
+  const updateComment = (id: string, values: Partial<CommentOverlay>) => {
+    setComments((current) => current.map((comment) => comment.id === id ? { ...comment, ...values } : comment));
+  };
+
+  const addComment = () => {
+    setComments((current) => {
+      if (current.length >= 20) return current;
+      if (current.length === 0) return [randomComment(0, item.durationSeconds)];
+      const longest = current.reduce((selected, comment) => (
+        comment.endSeconds - comment.startSeconds > selected.endSeconds - selected.startSeconds ? comment : selected
+      ));
+      const midpoint = Math.round(((longest.startSeconds + longest.endSeconds) / 2) * 1000) / 1000;
+      if (midpoint <= longest.startSeconds || midpoint >= longest.endSeconds) return current;
+      return [
+        ...current.map((comment) => comment.id === longest.id ? { ...comment, endSeconds: midpoint } : comment),
+        randomComment(midpoint, longest.endSeconds),
+      ];
+    });
+  };
+
+  const captureTitleSelection = () => {
+    const input = titleInputRef.current;
+    if (!input || input.selectionStart === input.selectionEnd) return;
+    setTitleSelection({
+      start: codePointOffset(title, input.selectionStart),
+      end: codePointOffset(title, input.selectionEnd),
+    });
+    const selectedIndex = codePointOffset(title, input.selectionStart);
+    const currentStyle = titleTextStyles.find((style) => style.start <= selectedIndex && style.end > selectedIndex);
+    if (currentStyle?.color) setTitleTextColor(currentStyle.color);
+    if (currentStyle?.backgroundColor) setTitleBackgroundColor(currentStyle.backgroundColor);
+  };
+
+  const updateSelectedTitleStyle = (patch: { color?: string | null; backgroundColor?: string | null }) => {
+    if (!titleSelection) return;
+    setTitleTextStyles((current) => applyTitleTextStyle(
+      current,
+      Array.from(title).length,
+      titleSelection.start,
+      titleSelection.end,
+      patch,
+    ));
+  };
+
   const save = async () => {
     setSaving(true); setError(null);
     try {
       await requestJson(`/api/shorts/${item.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hookTitle: title, channelDisplayName: channel, subtitlesEnabled, subtitleSegments: segments, templateId, titleFontScale }),
+        body: JSON.stringify({ hookTitle: title, channelDisplayName: channel, subtitlesEnabled, subtitleSegments: segments, commentOverlays: orderedComments, templateId, titleFontScale, titleTextStyles }),
       });
       await requestJson(`/api/shorts/${item.id}/rerender`, { method: "POST" });
+      try {
+        window.sessionStorage.setItem(
+          `estimated-progress:rerender:${item.id}:${item.renderVersion}`,
+          String(Date.now()),
+        );
+      } catch {
+        // Storage can be disabled; the overlay will start when rerendering is first observed.
+      }
       await onChanged();
       onClose();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "저장하지 못했습니다."); }
     finally { setSaving(false); }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="editor-title">
-      <div className="grid max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-white/10 bg-[#151517] sm:grid-cols-[320px_1fr] sm:rounded-2xl">
-        <div className="sticky top-0 mx-auto aspect-[9/16] w-full max-w-[320px] overflow-hidden" style={{ background: template.background }}>
-          <TitleOverlayPreview title={title} fontScale={titleFontScale} videoAspectRatio={item.videoAspectRatio || "1:1"} primary={template.primary} accent={template.accent} accentBackground={template.accentBackground} background={template.background} />
-          {cleanVideoUrl ? <video className="absolute inset-x-0 w-full object-cover" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }} src={cleanVideoUrl} controls playsInline onTimeUpdate={(event) => setPreviewTime(event.currentTarget.currentTime)} /> : <div className="absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}>클린 영상 준비 중</div>}
+  const editorContent = (
+    <>
+      {standalone && <header className="editor-topbar">
+        <div className="editor-topbar-inner">
+          <div className="min-w-0"><span className="editor-eyebrow">EASY CUT EDITOR</span><h1 className="truncate">{projectLabel || "쇼츠 편집"}</h1></div>
+          <button type="button" onClick={onClose} className="editor-close-button" aria-label="편집기 닫기">✕ 닫기</button>
+        </div>
+      </header>}
+      <div className={standalone ? "editor-page-body" : "grid max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-white/10 bg-[#151517] sm:grid-cols-[320px_1fr] sm:rounded-2xl"}>
+        <section className={standalone ? "editor-preview-pane" : ""}>
+        <div className={standalone ? "editor-video-frame" : "sticky top-0 mx-auto aspect-[9/16] w-full max-w-[320px] overflow-hidden"} style={{ background: template.background, containerType: "inline-size" }}>
+          <TitleOverlayPreview title={title} fontScale={titleFontScale} videoAspectRatio={commentNeedsVerticalFit ? "4:5" : originalAspectRatio} primary={template.primary} accent={template.accent} background={template.background} keepPrimaryFirstLine={template.id === "paper"} textStyles={titleTextStyles} />
+          {cleanVideoUrl ? <video className={`absolute inset-x-0 w-full bg-black ${commentNeedsVerticalFit ? "object-contain" : "object-cover"}`} style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }} src={cleanVideoUrl} controls playsInline preload="metadata" onLoadedMetadata={() => setVideoLoadError(false)} onError={() => setVideoLoadError(true)} onTimeUpdate={(event) => setPreviewTime(event.currentTarget.currentTime)} /> : <div className="absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}>클린 영상 준비 중</div>}
+          {videoLoadError && <div className="pointer-events-none absolute inset-x-3 z-30 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100" style={{ top: `${editorLayout.videoTop + 2}%` }}>편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>}
           {subtitlesEnabled && activeSubtitle && <div className="pointer-events-none absolute inset-x-5 z-20 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white" style={{ bottom: `${editorLayout.subtitleBottom}%` }}>{activeSubtitle}</div>}
-          <div className={`absolute inset-x-0 z-10 flex items-start justify-center gap-2 text-sm font-bold ${editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.videoTop}%`, background: editorLayout.fullVertical ? "transparent" : template.background, color: template.channel }}><ChannelAvatar url={channelThumbnailUrl} className="mt-0.5 h-5 w-5" fallbackForeground={template.channel} fallbackBackground={template.background} sizes="20px" /><span className="max-w-[72%] truncate">{channel}</span></div>
+          <div className={`absolute inset-x-0 z-10 overflow-hidden text-sm font-bold ${templateId === "comment-capture" ? "" : editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.videoTop}%`, background: editorLayout.fullVertical && templateId !== "comment-capture" ? "transparent" : template.background, color: template.channel }}>
+            {templateId === "comment-capture"
+              ? <CommentCaptureCard comment={activeComment} />
+              : <div className="flex items-start justify-center gap-2"><ChannelAvatar url={channelThumbnailUrl} className="mt-0.5 h-5 w-5" fallbackForeground={template.channel} fallbackBackground={template.background} sizes="20px" /><span className="max-w-[72%] truncate">{channel}</span></div>}
+          </div>
         </div>
-        <div className="p-5 sm:p-6">
-          <div className="flex items-center justify-between"><div><h2 id="editor-title" className="text-xl font-bold">쇼츠 편집</h2><p className="mt-1 text-xs text-neutral-500">왼쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</p></div><button onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-white/10">닫기</button></div>
-          <label className="mt-5 block text-sm font-semibold">후킹 제목<textarea value={title} onChange={(event) => setTitle(event.target.value)} maxLength={80} rows={2} className="mt-2 w-full rounded-lg border border-white/15 bg-black/30 p-3" /></label>
+        </section>
+        <section className={standalone ? "editor-controls-pane" : "p-5 sm:p-6"}>
+          <div className="flex items-center justify-between"><div><h2 id="editor-title" className="text-xl font-bold">쇼츠 편집</h2><p className="mt-1 text-xs text-neutral-500">왼쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</p></div>{!standalone && <button onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-white/10">닫기</button>}</div>
+          <label className="editor-section editor-section-heading block font-semibold">후킹 제목<textarea ref={titleInputRef} value={title} onChange={(event) => { setTitle(event.target.value); setTitleTextStyles([]); setTitleSelection(null); }} onSelect={captureTitleSelection} onDoubleClick={captureTitleSelection} maxLength={80} rows={2} className="mt-2 w-full rounded-lg border border-white/15 bg-black/30 p-3 text-sm" /></label>
           <p className={`mt-1 text-xs ${validTitle ? "text-neutral-500" : "text-red-400"}`}>최대 2줄·80자 ({title.length}/80)</p>
-          <label className="mt-4 block text-sm font-semibold"><span className="flex items-center justify-between"><span>제목 글자 크기</span><strong className="text-red-300">{Math.round(titleFontScale * 100)}%</strong></span><input aria-label="제목 글자 크기" type="range" min={0.8} max={1.2} step={0.05} value={titleFontScale} onChange={(event) => setTitleFontScale(Number(event.target.value))} className="mt-3 w-full accent-red-500" /></label>
-          <label className="mt-4 block text-sm font-semibold">채널명<input value={channel} onChange={(event) => setChannel(event.target.value)} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>
-          <label className="mt-4 flex items-center gap-3 text-sm font-semibold"><input type="checkbox" checked={subtitlesEnabled} onChange={(event) => setSubtitlesEnabled(event.target.checked)} className="h-4 w-4 accent-red-500" />자동 자막 표시</label>
-          {subtitlesEnabled && <div className="mt-3 max-h-44 space-y-2 overflow-y-auto rounded-lg border border-white/10 p-3">{segments.map((segment, index) => <label key={`${segment.start}-${index}`} className="grid grid-cols-[70px_1fr] items-center gap-2 text-xs text-neutral-500"><span>{formatTimestamp(segment.start)}</span><input value={segment.text} onChange={(event) => setSegments((current) => current.map((value, position) => position === index ? { ...value, text: event.target.value } : value))} className="h-9 rounded border border-white/10 bg-black/30 px-2 text-sm text-white" /></label>)}</div>}
-          <div className="mt-5"><div className="mb-3 flex items-end justify-between"><div><h3 className="text-sm font-semibold">템플릿</h3><p className="mt-1 text-xs text-neutral-500">최종 영상의 제목·영상·채널 배치를 미리 확인하세요.</p></div><span className="text-xs font-semibold text-red-300">{template.name}</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{templates.map((value) => <button key={value.id} type="button" aria-pressed={templateId === value.id} onClick={() => setTemplateId(value.id)} className={`rounded-xl border-2 p-2 transition ${templateId === value.id ? "border-red-500 bg-red-500/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}><TemplatePreview template={value} videoAspectRatio={item.videoAspectRatio || "1:1"} channelName={channel} channelThumbnailUrl={channelThumbnailUrl} /><span className="mt-2 block text-center text-xs font-semibold">{value.name}</span></button>)}</div></div>
+          <div className="editor-section">
+            <h3 className="text-sm font-semibold">제목 스타일</h3>
+            <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-xs leading-5 text-neutral-400">제목에서 원하는 글자를 더블클릭하거나 드래그해 선택한 뒤 색상을 변경하세요.</p>
+            <p className={`mt-2 truncate rounded-lg px-2.5 py-2 text-xs ${titleSelection ? "bg-white/10 text-white" : "bg-white/[.04] text-neutral-500"}`}>
+              {titleSelection ? `선택: ${Array.from(title).slice(titleSelection.start, titleSelection.end).join("")}` : "선택된 글자가 없습니다."}
+            </p>
+            <div className="mt-3 grid grid-cols-2 items-start gap-5">
+              <fieldset disabled={!titleSelection}>
+                <legend className="sr-only">글자색</legend>
+                <div className="flex items-center justify-between gap-3"><span className={`text-xs font-semibold ${titleSelection ? "text-neutral-200" : "text-neutral-600"}`}>글자색</span></div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(showAllTextColors ? titleTextColorOptions : titleTextColorOptions.slice(0, 3)).map((option) => <button key={option.color} type="button" aria-label={`글자색 ${option.name}`} title={option.name} aria-pressed={titleTextColor === option.color} onClick={() => { setTitleTextColor(option.color); updateSelectedTitleStyle({ color: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleTextColor === option.color ? "ring-2 ring-[#ff715e] ring-offset-2 ring-offset-[#111113]" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
+                  <button type="button" aria-label={showAllTextColors ? "글자색 접기" : "글자색 전체 보기"} title={showAllTextColors ? "접기" : "전체 보기"} aria-expanded={showAllTextColors} onClick={() => setShowAllTextColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-neutral-200 transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllTextColors ? "−" : "+"}</button>
+                </div>
+              </fieldset>
+              <fieldset disabled={!titleSelection}>
+                <legend className="sr-only">텍스트 배경색</legend>
+                <div className="flex items-center justify-between gap-3"><span className={`text-xs font-semibold ${titleSelection ? "text-neutral-200" : "text-neutral-600"}`}>텍스트 배경색</span></div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button type="button" aria-label="텍스트 배경색 없음" title="없음" onClick={() => updateSelectedTitleStyle({ backgroundColor: null })} className="flex h-8 w-8 items-center justify-center rounded-full border border-dashed border-white/35 bg-white/[.03] text-[8px] font-bold text-neutral-400 transition hover:border-white/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-30">없음</button>
+                  {(showAllBackgroundColors ? titleBackgroundColorOptions : titleBackgroundColorOptions.slice(0, 2)).map((option) => <button key={option.color} type="button" aria-label={`텍스트 배경색 ${option.name}`} title={option.name} aria-pressed={titleBackgroundColor === option.color} onClick={() => { setTitleBackgroundColor(option.color); updateSelectedTitleStyle({ backgroundColor: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleBackgroundColor === option.color ? "ring-2 ring-[#ff715e] ring-offset-2 ring-offset-[#111113]" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
+                  <button type="button" aria-label={showAllBackgroundColors ? "텍스트 배경색 접기" : "텍스트 배경색 전체 보기"} title={showAllBackgroundColors ? "접기" : "전체 보기"} aria-expanded={showAllBackgroundColors} onClick={() => setShowAllBackgroundColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-neutral-200 transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllBackgroundColors ? "−" : "+"}</button>
+                </div>
+              </fieldset>
+            </div>
+            </div>
+          </div>
+          <label className="editor-section editor-section-heading block font-semibold"><span className="flex items-center justify-between"><span>제목 글자 크기</span><strong className="text-sm text-red-300">{Math.round(titleFontScale * 100)}%</strong></span><input aria-label="제목 글자 크기" type="range" min={0.8} max={1.2} step={0.05} value={titleFontScale} onChange={(event) => setTitleFontScale(Number(event.target.value))} className="mt-3 w-full accent-red-500" /></label>
+          {templateId !== "comment-capture" && <label className="editor-section block text-sm font-semibold">채널명<input value={channel} onChange={(event) => setChannel(event.target.value)} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>}
+          <label className="hidden"><input type="checkbox" checked={subtitlesEnabled} onChange={(event) => setSubtitlesEnabled(event.target.checked)} />자동 자막 표시</label>
+          {subtitlesEnabled && <div className="hidden">{segments.map((segment, index) => <label key={`${segment.start}-${index}`}><span>{formatTimestamp(segment.start)}</span><input value={segment.text} onChange={(event) => setSegments((current) => current.map((value, position) => position === index ? { ...value, text: event.target.value } : value))} /></label>)}</div>}
+          <div className="editor-section"><div className="mb-3 flex items-end justify-between"><div><h3 className="text-sm font-semibold">템플릿</h3><p className="mt-1 text-xs text-neutral-500">최종 영상의 제목·영상·하단 구성을 미리 확인하세요.</p></div><span className="text-xs font-semibold text-red-300">{template.name}</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-5">{templates.map((value) => <button key={value.id} type="button" aria-pressed={templateId === value.id} onClick={() => selectTemplate(value.id)} className={`rounded-xl border-2 p-2 transition ${templateId === value.id ? "border-red-500 bg-red-500/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}><TemplatePreview template={value} videoAspectRatio={item.videoAspectRatio || "1:1"} channelName={channel} channelThumbnailUrl={channelThumbnailUrl} /><span className="mt-2 block text-center text-xs font-semibold">{value.name}</span></button>)}</div></div>
+          {templateId === "comment-capture" && <section className="editor-section">
+            <div className="flex items-start justify-between gap-4"><div><h3 className="text-sm font-bold">시간별 댓글</h3><p className="mt-1 text-xs leading-5 text-neutral-500">각 구간에는 댓글 하나만 표시됩니다. 새 댓글의 랜덤 정보는 저장 후에도 유지됩니다.</p></div><button type="button" disabled={comments.length >= 20} onClick={addComment} className="shrink-0 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold disabled:opacity-40">+ 댓글 추가</button></div>
+            <div className="mt-4 space-y-3">
+              {orderedComments.map((comment, index) => <article key={comment.id} className="rounded-lg border border-white/10 bg-[#101012] p-3">
+                <div className="flex items-center justify-between gap-3"><strong className="text-xs text-neutral-300">댓글 {index + 1}</strong><button type="button" onClick={() => setComments((current) => current.filter((value) => value.id !== comment.id))} className="text-xs font-semibold text-red-300 hover:text-red-200">삭제</button></div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <label className="text-xs text-neutral-400">시작(초)<input aria-label={`댓글 ${index + 1} 시작 시간`} type="number" min={0} max={item.durationSeconds} step={0.1} value={comment.startSeconds} onChange={(event) => updateComment(comment.id, { startSeconds: Number(event.target.value) })} className="mt-1 h-9 w-full rounded border border-white/10 bg-black/30 px-2 text-sm text-white" /></label>
+                  <label className="text-xs text-neutral-400">종료(초)<input aria-label={`댓글 ${index + 1} 종료 시간`} type="number" min={0} max={item.durationSeconds} step={0.1} value={comment.endSeconds} onChange={(event) => updateComment(comment.id, { endSeconds: Number(event.target.value) })} className="mt-1 h-9 w-full rounded border border-white/10 bg-black/30 px-2 text-sm text-white" /></label>
+                </div>
+                <label className="mt-3 block text-xs text-neutral-400">댓글 내용<textarea aria-label={`댓글 ${index + 1} 내용`} value={comment.text} maxLength={200} rows={2} onChange={(event) => updateComment(comment.id, { text: event.target.value })} className="mt-1 w-full rounded border border-white/10 bg-black/30 p-2 text-sm text-white" /></label>
+                <div className="mt-3 aspect-[5/1] overflow-hidden border border-white/5" style={{ containerType: "inline-size" }}><CommentCaptureCard comment={comment} /></div>
+              </article>)}
+            </div>
+            {!validComments && <p className="mt-3 text-xs leading-5 text-red-400">댓글을 하나 이상 두고, 텍스트와 시간이 비어 있거나 서로 겹치지 않도록 조정해 주세요. 최대 길이는 {item.durationSeconds.toFixed(1)}초입니다.</p>}
+          </section>}
           {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
-          <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={!validTitle || !channel.trim() || saving} onClick={() => void save()} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{saving ? "처리 중..." : "영상에 적용"}</button></div>
-        </div>
+          <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={!editorValid || saving} onClick={() => void save()} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{saving ? "처리 중..." : "영상에 적용"}</button></div>
+        </section>
       </div>
-    </div>
+    </>
   );
+
+  if (standalone) return <main className="editor-page" aria-labelledby="editor-title">{editorContent}</main>;
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="editor-title">{editorContent}</div>;
 }
 
-function ProjectCard({ job, onOpen }: { job: VideoJob; onOpen: () => void }) {
+function ProjectCard({ job }: { job: VideoJob }) {
   const readyCount = job.shorts.filter((item) => item.status === "ready").length;
   const rerenderingShort = job.shorts.find((item) => item.status === "rerendering");
   const isProcessing = !terminalStatuses.has(job.status) || Boolean(rerenderingShort);
+  const projectExpired = isProjectExpired(job);
   const daysUntilExpiration = job.expiresAt
-    ? Math.max(0, Math.ceil((new Date(job.expiresAt).getTime() - Date.now()) / 86_400_000))
+    ? Math.ceil((new Date(job.expiresAt).getTime() - Date.now()) / 86_400_000)
     : null;
-  const estimatedTotalSeconds = rerenderingShort
-    ? Math.max(60, rerenderingShort.durationSeconds * 2)
-    : Math.max(180, job.sourceDurationSeconds * 0.35 + job.expectedShortCount * 60);
-  const remainingMinutes = rerenderingShort
-    ? Math.max(1, Math.ceil(rerenderingShort.durationSeconds / 30))
-    : Math.max(1, Math.ceil((estimatedTotalSeconds * (100 - Math.min(job.progress, 99))) / 100 / 60));
-  const displayedProgress = rerenderingShort ? rerenderingShort.rerenderProgress : job.progress;
   return (
-    <button type="button" onClick={onOpen} disabled={isProcessing && readyCount === 0} className={`project-card group text-left ${isProcessing ? "project-card-processing" : ""}`}>
+    <Link
+      href={`/${job.projectNumber}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`프로젝트 /${job.projectNumber}: ${job.videoTitle} 새 탭에서 열기`}
+      className={`project-card group text-left ${isProcessing ? "project-card-processing" : ""}`}
+    >
       <div className="relative aspect-video overflow-hidden bg-neutral-900">
         {job.thumbnailUrl ? <Image src={job.thumbnailUrl} alt="" fill unoptimized className={`object-cover transition duration-300 group-hover:scale-[1.03] ${isProcessing ? "grayscale" : ""}`} /> : null}
-        {daysUntilExpiration !== null && <span className="absolute left-2 top-2 z-10 rounded bg-black/75 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">{daysUntilExpiration > 0 ? `${daysUntilExpiration}일 뒤 만료` : "오늘 만료"}</span>}
+        {daysUntilExpiration !== null && <span className="absolute left-2 top-2 z-10 rounded bg-black/75 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">{projectExpired ? "만료됨" : daysUntilExpiration > 0 ? `${daysUntilExpiration}일 뒤 만료` : "오늘 만료"}</span>}
+        {job.isExample && <span className="absolute right-2 top-2 z-10 rounded bg-red-500 px-2 py-1 text-[11px] font-extrabold text-white shadow-lg">예시 작업</span>}
         {!isProcessing && <span className="absolute bottom-2 right-2 rounded bg-black/75 px-2 py-1 text-[11px] font-semibold">{formatDuration(job.sourceDurationSeconds)}</span>}
         <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
-        {isProcessing && readyCount === 0 && <div className="project-processing-overlay"><ProgressRing progress={displayedProgress} /><strong>약 {remainingMinutes}분 남음</strong></div>}
+        {isProcessing && readyCount === 0 && (rerenderingShort
+          ? <EstimatedProcessingOverlay operationKey={`rerender:${rerenderingShort.id}:${rerenderingShort.renderVersion}`} durationSeconds={rerenderingShort.durationSeconds} rerender />
+          : <EstimatedProcessingOverlay operationKey={`create:${job.id}`} durationSeconds={job.sourceDurationSeconds} createdAt={job.createdAt} />)}
       </div>
       <div className="p-4">
         <h3 className="line-clamp-1 text-sm font-bold text-white">{job.videoTitle}</h3>
         <div className="mt-3 flex items-center justify-between text-xs text-neutral-500">
-          <span className={rerenderingShort ? "text-violet-300" : job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-neutral-400"}>{rerenderingShort ? "● 수정 반영 중" : job.status === "completed" ? "● 완료" : job.status === "failed" ? "● 생성 실패" : job.status === "retry_waiting" ? "● 원본 영상을 준비하고 있습니다" : readyCount > 0 ? `● ${readyCount}개 먼저 완료` : "● 생성 중"}</span>
+          <span className={projectExpired ? "text-neutral-500" : rerenderingShort ? "text-violet-300" : job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-neutral-400"}>{projectExpired ? "● 만료됨" : rerenderingShort ? "● 수정 반영 중" : job.status === "completed" ? "● 완료" : job.status === "failed" ? "● 생성 실패" : job.status === "retry_waiting" ? "● 원본 영상을 준비하고 있습니다" : readyCount > 0 ? `● ${readyCount}개 먼저 완료` : "● 생성 중"}</span>
           {(!isProcessing || rerenderingShort) && <span>{`쇼츠 ${readyCount || job.shorts.length}개`}</span>}
           <span>{new Date(job.createdAt).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })}</span>
         </div>
         {job.status === "failed" && job.errorMessage && <p className="mt-3 line-clamp-3 text-xs leading-5 text-red-300">{job.errorMessage}</p>}
       </div>
-    </button>
+    </Link>
   );
 }
 
-function ProjectWorkspace({ job, onBack, onChanged }: { job: VideoJob; onBack: () => void; onChanged: () => Promise<void> }) {
-  const [selectedId, setSelectedId] = useState(job.shorts[0]?.id || "");
+function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }) {
   const [accessUrls, setAccessUrls] = useState<Record<string, string>>({});
-  const [editing, setEditing] = useState(false);
   const requestedAccessVersions = useRef(new Set<string>());
   const mounted = useRef(true);
-  const selected = job.shorts.find((item) => item.id === selectedId) || job.shorts[0];
+  const selected = job.shorts[0];
 
   useEffect(() => {
     mounted.current = true;
@@ -493,36 +863,154 @@ function ProjectWorkspace({ job, onBack, onChanged }: { job: VideoJob; onBack: (
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000);
   };
 
-  if (!selected) return <div className="project-workspace"><button onClick={onBack}>← 프로젝트로 돌아가기</button><p className={`m-auto max-w-xl px-6 text-center leading-7 ${job.status === "failed" ? "text-red-300" : "text-neutral-500"}`}>{job.status === "failed" && job.errorMessage ? job.errorMessage : "아직 생성된 쇼츠가 없습니다."}</p></div>;
-  const selectedUrl = playbackUrl(selected);
-  const selectedIsRerendering = selected.status === "rerendering";
-  const selectedRemainingMinutes = Math.max(1, Math.ceil(selected.durationSeconds / 30));
+  if (!selected) {
+    const projectExpired = isProjectExpired(job);
+    const message = job.status === "failed" && job.errorMessage
+      ? job.errorMessage
+      : !terminalStatuses.has(job.status)
+        ? "쇼츠를 생성하고 있습니다. 완료되는 대로 이 화면에 표시됩니다."
+        : projectExpired || job.status === "expired" || job.status === "deleted"
+          ? "보관 기간이 끝나 이 프로젝트의 쇼츠를 볼 수 없습니다."
+          : "아직 생성된 쇼츠가 없습니다.";
+    return <div className="project-workspace"><button onClick={onBack}>← 프로젝트로 돌아가기</button><p className={`m-auto max-w-xl px-6 text-center leading-7 ${job.status === "failed" ? "text-red-300" : "text-neutral-500"}`}>{message}</p></div>;
+  }
   return (
     <div className="project-workspace">
       <header className="workspace-header">
-        <div className="min-w-0"><button onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 내 프로젝트</button><h1 className="mt-1 truncate text-lg font-bold">{job.videoTitle}</h1></div>
-        <div className="flex shrink-0 gap-2"><button disabled={selectedIsRerendering} onClick={() => setEditing(true)} className="workspace-button disabled:opacity-40">✦ 템플릿 적용</button><button onClick={() => void Promise.all(job.shorts.map(download))} className="workspace-button workspace-button-primary">↓ 모든 쇼츠 다운로드</button></div>
+        <div className="min-w-0"><button onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 프로젝트 /{job.projectNumber}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 className="truncate text-lg font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
+        <button onClick={() => void Promise.all(job.shorts.map(download))} className="workspace-button workspace-button-primary shrink-0">↓ 모든 쇼츠 다운로드</button>
       </header>
-      <div className="workspace-body">
-        <aside className="shorts-rail">
-          <div className="flex items-center justify-between border-b border-white/10 p-4"><strong className="text-sm">생성된 쇼츠 ({job.shorts.length})</strong><span className="text-xs text-neutral-500">타임라인순</span></div>
-          <div className="space-y-3 overflow-y-auto p-3">{job.shorts.map((item) => {
+      <main className="short-results-workspace">
+        <div className="short-results-list">
+          {job.shorts.map((item, index) => {
             const itemUrl = playbackUrl(item);
-            return <button key={item.id} onClick={() => setSelectedId(item.id)} className={`rail-card ${selected.id === item.id ? "rail-card-active" : ""}`}><div className="flex aspect-[9/16] w-16 shrink-0 items-center justify-center overflow-hidden rounded bg-black text-[10px] text-neutral-600">{itemUrl ? <video src={itemUrl} muted preload="metadata" className="h-full w-full object-cover" /> : "VIDEO"}</div><div className="min-w-0 flex-1 py-1"><span className="text-[10px] text-violet-300">✦ 하이라이트 훅</span><h3 className="mt-1 line-clamp-3 text-left text-xs font-semibold leading-5">{item.hookTitle}</h3><span className="mt-2 block text-left text-[10px] text-neutral-500">{formatDuration(item.durationSeconds)}</span></div></button>;
-          })}</div>
-        </aside>
-        <main className="preview-stage"><div className="relative overflow-hidden rounded-xl shadow-2xl">{selectedUrl ? <video key={shortPlaybackVersionKey(selected)} src={selectedUrl} controls={!selectedIsRerendering} playsInline className={`max-h-full max-w-full ${selectedIsRerendering ? "grayscale" : ""}`} /> : <div className="flex aspect-[9/16] h-[70vh] items-center justify-center bg-black text-sm text-neutral-500">영상 준비 중</div>}{selectedIsRerendering && <div className="project-processing-overlay"><ProgressRing progress={selected.rerenderProgress} /><strong>약 {selectedRemainingMinutes}분 남음</strong></div>}</div></main>
-        <aside className="tools-panel">
-          <div className="rounded-xl border border-violet-400/20 bg-violet-400/10 p-4 text-xs leading-5 text-neutral-300"><strong className="block text-violet-200">✦ AI 하이라이트</strong>시청자의 관심을 끌 장면을 앞부분에 배치했어요. 편집에서 제목과 자막, 템플릿을 바꿀 수 있습니다.</div>
-          <div><h2 className="tool-heading">빠른 작업</h2><div className="grid grid-cols-2 gap-2"><button disabled={selectedIsRerendering} onClick={() => setEditing(true)} className="tool-button bg-blue-600 disabled:opacity-40">✎ 편집하기</button><button disabled={!selectedUrl || selectedIsRerendering} onClick={() => void download(selected)} className="tool-button bg-emerald-700 disabled:opacity-40">↓ 다운로드</button></div></div>
-          <div><h2 className="tool-heading">제목</h2><div className="tool-field">{selected.hookTitle}</div></div>
-          <div><h2 className="tool-heading">원본 영상 타임라인</h2><div className="tool-field">◷ {formatTimestamp(selected.startSeconds)} ~ {formatTimestamp(selected.endSeconds)}</div></div>
-          <div className="min-h-0 flex-1"><h2 className="tool-heading">스크립트</h2><div className="tool-field h-full overflow-y-auto leading-6">{selected.subtitleSegments.map((segment) => segment.text).join(" ") || "추출된 스크립트가 없습니다."}</div></div>
-        </aside>
-      </div>
-      {editing && <Editor item={selected} channelThumbnailUrl={job.channelThumbnailUrl} onClose={() => setEditing(false)} onChanged={onChanged} />}
+            const itemIsRerendering = item.status === "rerendering";
+            const script = item.subtitleSegments.map((segment) => segment.text).join(" ") || "추출된 스크립트가 없습니다.";
+            return (
+              <article key={item.id} className="short-result-card">
+                <div className="short-result-heading">
+                  <span>#{index + 1}</span>
+                  <h2>{item.hookTitle}</h2>
+                </div>
+                <div className="short-result-layout">
+                  <div className="short-video-column">
+                    <div className="short-video-shell">
+                      {itemUrl ? <video key={shortPlaybackVersionKey(item)} src={itemUrl} controls={!itemIsRerendering} playsInline preload="metadata" className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
+                      <span className="short-duration-badge">{formatDuration(item.durationSeconds)}</span>
+                      {itemIsRerendering && <EstimatedProcessingOverlay operationKey={`rerender:${item.id}:${item.renderVersion}`} durationSeconds={item.durationSeconds} rerender />}
+                    </div>
+                    <div className="short-result-actions">
+                      {job.isExample || itemIsRerendering
+                        ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">✎ 편집하기</button>
+                        : <Link href={`/${job.projectNumber}/edit/${item.id}`} target="_blank" rel="noopener noreferrer" className="tool-button short-edit-button flex items-center justify-center" aria-label={`${item.hookTitle} 새 탭에서 편집하기`}>✎ 편집하기</Link>}
+                      <button disabled={!itemUrl || itemIsRerendering} onClick={() => void download(item)} className="tool-button short-download-button disabled:opacity-40">↓ 다운로드</button>
+                    </div>
+                  </div>
+                  <div className="short-detail-column">
+                    <div className="short-highlight-note"><strong>✦ AI 하이라이트</strong><p>{item.highlightReason.trim()}</p></div>
+                    <div className="short-source-range"><span>원본 영상 타임라인</span><strong>◷ {formatTimestamp(item.startSeconds)} ~ {formatTimestamp(item.endSeconds)}</strong></div>
+                    <section className="short-script-panel">
+                      <h3>스크립트</h3>
+                      <p>{script}</p>
+                    </section>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </main>
     </div>
   );
+}
+
+export function ShortEditorPage({ projectNumber, shortId }: { projectNumber: number; shortId: string }) {
+  const [project, setProject] = useState<VideoJob | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const loadProject = useCallback(async () => {
+    try {
+      const value = await requestJson<{ project: VideoJob }>(`/api/projects/${projectNumber}`, undefined, 12_000);
+      setProject(value.project);
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "편집할 쇼츠를 불러오지 못했습니다.");
+    }
+  }, [projectNumber]);
+
+  useEffect(() => { void loadProject(); }, [loadProject]);
+  const item = project?.shorts.find((value) => value.id === shortId);
+  const closeEditor = () => {
+    window.close();
+    window.setTimeout(() => { if (!window.closed) window.location.href = `/${projectNumber}`; }, 100);
+  };
+
+  if (error) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-xl font-bold">편집기를 열 수 없습니다.</h1><p className="mt-3 text-sm text-red-300">{error}</p><Link href={`/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
+  if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">편집기를 준비하고 있습니다…</main>;
+  if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-xl font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
+
+  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={`프로젝트 /${project.projectNumber} · ${item.hookTitle}`} onClose={closeEditor} onChanged={loadProject} />;
+}
+
+export function ProjectPage({ projectNumber }: { projectNumber: number }) {
+  const [project, setProject] = useState<VideoJob | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadProject = useCallback(async () => {
+    try {
+      const value = await requestJson<{ project: VideoJob }>(
+        `/api/projects/${projectNumber}`,
+        undefined,
+        12_000,
+      );
+      setProject(value.project);
+      setLoadError(null);
+    } catch (cause) {
+      setLoadError(cause instanceof Error ? cause.message : "프로젝트를 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }, [projectNumber]);
+
+  useEffect(() => {
+    void loadProject();
+  }, [loadProject]);
+
+  const projectHasBackgroundWork = Boolean(
+    project
+    && (
+      !terminalStatuses.has(project.status)
+      || project.shorts.some((item) => item.status === "rerendering")
+    ),
+  );
+
+  useEffect(() => {
+    if (!projectHasBackgroundWork) return;
+    const timer = window.setInterval(() => {
+      void loadProject();
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, [loadProject, projectHasBackgroundWork]);
+
+  const returnToProjects = () => {
+    window.location.assign("/#results");
+  };
+
+  if (!project) {
+    return (
+      <div className="project-workspace">
+        <button onClick={returnToProjects}>← 프로젝트로 돌아가기</button>
+        <div className="m-auto max-w-xl px-6 text-center">
+          <p className={`leading-7 ${loadError ? "text-red-300" : "text-neutral-500"}`}>
+            {loadError || (loading ? "프로젝트를 불러오는 중입니다." : "프로젝트를 찾을 수 없습니다.")}
+          </p>
+          {loadError && <button type="button" onClick={() => { setLoading(true); void loadProject(); }} className="mt-5 rounded-lg border border-white/15 px-4 py-2 text-sm font-semibold text-white">다시 시도</button>}
+        </div>
+      </div>
+    );
+  }
+
+  return <ProjectWorkspace job={project} onBack={returnToProjects} />;
 }
 
 export function ShortsApp() {
@@ -532,12 +1020,11 @@ export function ShortsApp() {
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(null);
   const [outputLanguage, setOutputLanguage] = useState<OutputLanguage>("ko");
-  const [rangeStartSeconds, setRangeStartSeconds] = useState(0);
-  const [rangeEndSeconds, setRangeEndSeconds] = useState(0);
-  const [templateId, setTemplateId] = useState<TemplateId>("dark-red");
+  const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
+  const [customTemplateId, setCustomTemplateId] = useState<string | null>(null);
+  const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
   const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>("5:4");
   const [activeJob, setActiveJob] = useState<VideoJob | null>(null);
-  const [openedProjectId, setOpenedProjectId] = useState<string | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginNext, setLoginNext] = useState("/");
   const [creationRestrictionOpen, setCreationRestrictionOpen] = useState(false);
@@ -556,7 +1043,13 @@ export function ShortsApp() {
   const activeJobHasRerendering = Boolean(activeJob?.shorts.some((item) => item.status === "rerendering"));
   const hasBackgroundWork = Boolean(state?.recentJobs.some((job) => !terminalStatuses.has(job.status) || job.shorts.some((item) => item.status === "rerendering")));
   const analysisCreationBlocked = Boolean(analysis && analysis.creationAllowed !== true);
-  const activeJobBlocksCreation = Boolean(!allowConcurrentJobs && activeJob && !terminalStatuses.has(activeJob.status));
+  const activeJobCount = state?.recentJobs.filter((job) => !terminalStatuses.has(job.status)).length || 0;
+  const planEnforcementEnabled = state?.usage.enforcementEnabled ?? true;
+  const maxActiveJobs = planEnforcementEnabled ? (state?.billing.maxActiveJobs || 1) : 1;
+  const activeJobBlocksCreation = Boolean(
+    state?.user
+    && activeJobCount >= maxActiveJobs,
+  );
   const closeCreationRestriction = useCallback(() => setCreationRestrictionOpen(false), []);
   const closeConcurrentJobNotice = useCallback(() => setConcurrentJobNoticeOpen(false), []);
 
@@ -587,6 +1080,22 @@ export function ShortsApp() {
       setStateLoadError(cause instanceof Error ? cause.message : "프로젝트를 불러오지 못했습니다.");
     });
   };
+
+  useEffect(() => {
+    if (!state?.user) {
+      setPersonalTemplates([]);
+      setCustomTemplateId(null);
+      return;
+    }
+    const controller = new AbortController();
+    void requestJson<{ templates: CustomTemplate[] }>("/api/templates", { signal: controller.signal }, 12_000)
+      .then((value) => setPersonalTemplates(value.templates))
+      .catch((cause) => {
+        if (cause instanceof DOMException && cause.name === "AbortError") return;
+        setError(cause instanceof Error ? cause.message : "개인 템플릿을 불러오지 못했습니다.");
+      });
+    return () => controller.abort();
+  }, [state?.user]);
 
   useEffect(() => {
     let stopped = false;
@@ -628,10 +1137,8 @@ export function ShortsApp() {
       .then((value) => {
         setYoutubeUrl(value.normalizedUrl);
         setAnalysis(value);
-        setRangeStartSeconds(0);
-        setRangeEndSeconds(value.durationSeconds);
         setCreationRestrictionReason(
-          value.creationAllowed ? null : value.creationBlockReason || "영상 이용 제한을 확인했습니다.",
+          value.creationAllowed ? null : value.creationBlockReason || "이 영상은 이용 제한이 확인된 영상입니다.",
         );
         setCreationRestrictionOpen(value.creationAllowed !== true);
         setScrollToAnalysis(true);
@@ -690,20 +1197,12 @@ export function ShortsApp() {
   }, [activeJobHasRerendering, activeJobId, activeJobStatus, loadState]);
 
   useEffect(() => {
-    if (!allowConcurrentJobs || !hasBackgroundWork) return;
+    if (!hasBackgroundWork) return;
     const timer = window.setInterval(() => {
       void loadState().catch((cause) => setError(cause instanceof Error ? cause.message : "작업 상태 확인 실패"));
     }, 5_000);
     return () => window.clearInterval(timer);
   }, [hasBackgroundWork, loadState]);
-
-  const selectedDurationSeconds = Math.max(0, rangeEndSeconds - rangeStartSeconds);
-  const rangeIsValid = Boolean(
-    analysis
-    && rangeStartSeconds >= 0
-    && rangeEndSeconds <= analysis.durationSeconds
-    && selectedDurationSeconds >= AI_CLIP_MIN_SECONDS
-  );
 
   const pasteYoutubeUrl = async () => {
     try {
@@ -715,9 +1214,6 @@ export function ShortsApp() {
       setError(cause instanceof Error ? cause.message : "클립보드를 읽지 못했습니다.");
     }
   };
-
-  const openedProject = state?.recentJobs.find((job) => job.id === openedProjectId) || null;
-  if (openedProject) return <ProjectWorkspace job={openedProject} onBack={() => setOpenedProjectId(null)} onChanged={loadState} />;
 
   const analyze = async (event: FormEvent) => {
     event.preventDefault();
@@ -733,10 +1229,8 @@ export function ShortsApp() {
     try {
       const value = await requestJson<YoutubeAnalysis>("/api/youtube/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ youtubeUrl }) });
       setAnalysis(value);
-      setRangeStartSeconds(0);
-      setRangeEndSeconds(value.durationSeconds);
       setCreationRestrictionReason(
-        value.creationAllowed ? null : value.creationBlockReason || "영상 이용 제한을 확인했습니다.",
+        value.creationAllowed ? null : value.creationBlockReason || "이 영상은 이용 제한이 확인된 영상입니다.",
       );
       setCreationRestrictionOpen(value.creationAllowed !== true);
     }
@@ -756,6 +1250,11 @@ export function ShortsApp() {
   const createJob = async () => {
     if (!analysis) return;
     if (analysis.creationAllowed !== true) {
+      if (!analysis.creationBlockReason) {
+        setCreationRestrictionReason("이 영상은 이용 제한이 확인된 영상입니다.");
+        setCreationRestrictionOpen(true);
+        return;
+      }
       setCreationRestrictionReason(
         analysis.creationBlockReason || "이 영상은 쇼츠로 만들 수 없습니다.",
       );
@@ -768,22 +1267,24 @@ export function ShortsApp() {
       setLoginOpen(true);
       return;
     }
+    if (state.usage.enforcementEnabled && !state.billing.canCreateJobs) {
+      window.location.href = "/pricing?plan=standard&cycle=monthly";
+      return;
+    }
     if (activeJobBlocksCreation) {
       setConcurrentJobNoticeOpen(true);
       return;
     }
     setBusy(true); setError(null);
     try {
-      const value = await requestJson<{ jobId: string; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, videoAspectRatio, outputLanguage, rangeStartSeconds, rangeEndSeconds, requestId: crypto.randomUUID() }) });
-      const pendingJob: VideoJob = { id: value.jobId, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, rangeDownloadStatus: "pending", downloadedMediaDurationSeconds: null, downloadedMediaBytes: null, rangeDownloadVerifiedAt: null, outputLanguage, expectedShortCount: analysis.expectedShortCount, status: "queued", stage: "queued", progress: 5, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
+      const value = await requestJson<{ jobId: string; projectNumber: number; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId, videoAspectRatio, outputLanguage, requestId: crypto.randomUUID() }) });
+      const pendingJob: VideoJob = { id: value.jobId, projectNumber: value.projectNumber, isExample: false, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: analysis.expectedShortCount, status: "queued", stage: "queued", progress: SIMULATED_PROGRESS_START, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
       setState((current) => current ? { ...current, usage: value.usage, recentJobs: [pendingJob, ...current.recentJobs.filter((job) => job.id !== pendingJob.id)] } : current);
       setActiveJob(pendingJob);
       setScrollToProjects(true);
       pollStarted.current = Date.now();
       setYoutubeUrl("");
       setAnalysis(null);
-      setRangeStartSeconds(0);
-      setRangeEndSeconds(0);
       setCreationRestrictionOpen(false);
       setCreationRestrictionReason(null);
       setScrollToAnalysis(false);
@@ -800,6 +1301,12 @@ export function ShortsApp() {
       if (cause instanceof HttpRequestError && cause.status === 401) {
         setLoginNext(next);
         setLoginOpen(true);
+      } else if (
+        cause instanceof HttpRequestError
+        && cause.status === 402
+        && state.usage.enforcementEnabled
+      ) {
+        window.location.href = "/pricing?plan=standard&cycle=monthly";
       } else if (cause instanceof HttpRequestError && cause.message.includes("현재 처리 중인 작업")) {
         setConcurrentJobNoticeOpen(true);
       } else {
@@ -810,29 +1317,29 @@ export function ShortsApp() {
   };
 
   return (
-    <div className="app-shell flex min-h-screen flex-col text-neutral-100">
+    <div className="app-shell site-chrome flex min-h-screen flex-col text-neutral-100">
       <div className="ambient ambient-coral" aria-hidden="true" />
       <div className="ambient ambient-violet" aria-hidden="true" />
       <SiteHeader><AuthControls user={state?.user || null} next={loginNext} loginOpen={loginOpen} onLoginOpenChange={setLoginOpen} /></SiteHeader>
       <NoticeDialog
         open={creationRestrictionOpen && Boolean(creationRestrictionReason)}
         dialogId="creation-restriction"
-        title="이 영상은 쇼츠를 만들 수 없습니다."
-        description={creationRestrictionReason || "영상 이용 제한을 확인했습니다."}
+        title="영상 이용 제한 안내"
+        description={creationRestrictionReason || "이 영상은 이용 제한이 확인된 영상입니다."}
         onClose={closeCreationRestriction}
       />
       <NoticeDialog
         open={concurrentJobNoticeOpen}
         dialogId="concurrent-job-notice"
-        title="다른 쇼츠를 만들고 있어요"
-        description={activeJob ? `“${activeJob.videoTitle}” 작업이 진행 중입니다. 현재 작업이 끝난 뒤 다시 생성해 주세요.` : "현재 다른 쇼츠 작업이 진행 중입니다. 작업이 끝난 뒤 다시 생성해 주세요."}
+        title="동시 작업 한도에 도달했어요"
+        description={`동시에 ${maxActiveJobs}개까지 처리할 수 있습니다. 진행 중인 작업이 끝난 뒤 다시 시도해 주세요.`}
         variant="info"
         onClose={closeConcurrentJobNotice}
       />
       <main id="top" className="relative mx-auto w-full max-w-6xl flex-1 space-y-10 px-5 pb-20 pt-7 sm:px-8 sm:pt-10">
       <section className="hero mx-auto flex max-w-4xl flex-col items-center text-center">
-        <h1 className="hero-title">유튜브 링크 하나로<br /><span>바이럴 숏폼을</span> 만들어보세요</h1>
-        <p className="mt-5 max-w-2xl text-sm leading-6 text-[#d5aaa4] sm:text-base">아래에 긴 영상 URL을 입력하세요.<br className="hidden sm:block" /> AI가 가장 몰입도 높은 순간을 자동으로 분석하고 편집합니다.</p>
+        <h1 className="hero-title">당신의 영상 편집자를<br /><span>해고하세요</span></h1>
+        <p className="mt-5 max-w-2xl text-sm leading-6 text-[#d5aaa4] sm:text-base">영상 URL을 입력하면 AI가 핵심 하이라이트를 찾고,<br className="hidden sm:block" /> 30~60초 숏폼과 후킹 제목·자막을 자동으로 만듭니다.</p>
         <form id="workspace" onSubmit={analyze} className="url-console mt-10 w-full max-w-3xl">
           <div className="relative flex-1">
             <span className="absolute inset-y-0 left-4 flex items-center text-xl text-[#d7aaa4]" aria-hidden="true">↗</span>
@@ -845,14 +1352,15 @@ export function ShortsApp() {
           <strong aria-busy={!state} className="min-h-8 text-2xl font-extrabold tabular-nums text-white">{state ? <CountUpNumber value={state.generatedShortCount} /> : "—"}</strong>
           <p className="text-xs font-medium text-[#c99d97]">지금까지 생성된 쇼츠</p>
         </div>
+        {state?.user && <div className="mt-6 flex flex-wrap items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[.035] px-5 py-3 text-xs text-neutral-400">{planEnforcementEnabled ? <><strong className="text-white">{state.billing.planCode.toUpperCase()}</strong><span>기본 {Math.floor(state.usage.baseRemainingSeconds / 60)}분</span><span>추가 {Math.floor(state.usage.addonRemainingSeconds / 60)}분</span><Link href="/pricing" className="font-bold text-[#ff9b8d]">구독 관리</Link></> : <strong className="text-[#ff9b8d]">지금은 플랜 제한 없이 생성할 수 있어요</strong>}</div>}
       </section>
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}
       {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>서비스 상태를 불러오지 못했습니다.</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">다시 시도</button></div>}
       {analysis && <section id="shorts-settings" ref={analysisSectionRef} className="scroll-mt-24 rounded-2xl border border-white/10 bg-[#141416] p-5 sm:scroll-mt-28"><label htmlFor="output-language" className="text-xl font-bold">제목 언어</label><p className="mt-1 text-sm text-neutral-500">원본 영상 언어와 관계없이 선택한 언어로 후킹 제목을 만듭니다.</p><select id="output-language" value={outputLanguage} onChange={(event) => setOutputLanguage(event.target.value as OutputLanguage)} className="mt-3 h-12 w-full rounded-xl border border-white/10 bg-[#141416] px-4 text-sm text-neutral-100 outline-none focus:border-red-500 sm:max-w-xs">{outputLanguageOptions.map((option) => <option key={option.code} value={option.code}>{option.label}</option>)}</select></section>}
-      {analysis && <section className="scroll-mt-24 space-y-8 sm:scroll-mt-28"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 선택 구간 예상 쇼츠 {expectedShortCount(selectedDurationSeconds)}개</p><p className="mt-1 text-xs text-neutral-500">이번 작업은 선택한 구간 {formatDuration(selectedDurationSeconds)}만 사용량으로 계산됩니다.</p></div></div><div className="rounded-2xl border border-white/10 bg-[#141416] p-5"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-xl font-bold">사용할 영상 구간</h2><p className="mt-1 text-sm text-neutral-500">기본값은 영상 전체입니다. 양쪽 슬라이더로 시작과 끝을 정하세요.</p></div><strong className="text-red-300">{formatTimestamp(rangeStartSeconds)}–{formatTimestamp(rangeEndSeconds)}</strong></div><div className="relative mt-6 h-8"><div className="absolute inset-x-0 top-3 h-2 rounded-full bg-neutral-800" /><div className="absolute top-3 h-2 rounded-full bg-red-500" style={{ left: `${(rangeStartSeconds / analysis.durationSeconds) * 100}%`, right: `${100 - (rangeEndSeconds / analysis.durationSeconds) * 100}%` }} /><input aria-label="시작 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeStartSeconds} onChange={(event) => setRangeStartSeconds(Math.min(Number(event.target.value), rangeEndSeconds - 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /><input aria-label="끝 지점" type="range" min={0} max={analysis.durationSeconds} step={1} value={rangeEndSeconds} onChange={(event) => setRangeEndSeconds(Math.max(Number(event.target.value), rangeStartSeconds + 1))} className="range-thumb absolute inset-x-0 top-0 w-full" /></div><div className="mt-3 flex justify-between text-xs text-neutral-500"><span>0:00</span><span>선택 {formatDuration(selectedDurationSeconds)}</span><span>{formatTimestamp(analysis.durationSeconds)}</span></div>{!rangeIsValid && <p className="mt-3 text-sm text-red-400">AI 쇼츠 생성을 위해 최소 {AI_CLIP_MIN_SECONDS}초 구간이 필요합니다.</p>}<button type="button" onClick={() => { setRangeStartSeconds(0); setRangeEndSeconds(analysis.durationSeconds); }} className="mt-4 rounded-lg border border-white/15 px-3 py-2 text-sm">전체 구간으로 초기화</button></div><TemplatePicker value={templateId} onChange={setTemplateId} videoAspectRatio={videoAspectRatio} onVideoAspectRatioChange={setVideoAspectRatio} channelName={analysis.channelName} channelThumbnailUrl={analysis.channelThumbnailUrl} />{analysisCreationBlocked && <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">생성 불가 사유 보기</button>}<button disabled={analysisCreationBlocked || !rangeIsValid || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">{analysisCreationBlocked ? "쇼츠 생성 불가" : stateLoadStatus !== "ready" ? "로그인 확인 중..." : state?.user ? "쇼츠 생성하기" : "로그인 후 쇼츠 생성하기"}</button></section>}
-      {state?.user && state.recentJobs.length ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28"><div className="mb-5 flex items-center gap-2"><h2 className="text-2xl font-bold">내 프로젝트</h2><span className="text-sm text-neutral-500">({state.recentJobs.length})</span></div><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{state.recentJobs.map((job) => <ProjectCard key={job.id} job={job} onOpen={() => setOpenedProjectId(job.id)} />)}</div></section> : null}
+      {analysis && <section className="scroll-mt-24 space-y-8 sm:scroll-mt-28"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {analysis.expectedShortCount}개</p><p className="mt-1 text-xs text-neutral-500">{planEnforcementEnabled ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.` : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p></div></div><TemplatePicker value={templateId} onChange={setTemplateId} videoAspectRatio={videoAspectRatio} onVideoAspectRatioChange={setVideoAspectRatio} channelName={analysis.channelName} channelThumbnailUrl={analysis.channelThumbnailUrl} personalTemplates={personalTemplates} customTemplateId={customTemplateId} onCustomTemplateChange={(template) => { setCustomTemplateId(template?.id || null); if (template) { setTemplateId(template.baseTemplateId); setVideoAspectRatio(template.config.video.aspectRatio); } }} />{analysisCreationBlocked && <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">생성 불가 사유 보기</button>}<button disabled={analysisCreationBlocked || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">{analysisCreationBlocked ? "쇼츠 생성 불가" : stateLoadStatus !== "ready" ? "로그인 확인 중..." : !state?.user ? "로그인 후 쇼츠 생성하기" : !planEnforcementEnabled || state.billing.canCreateJobs ? "쇼츠 생성하기" : "플랜 선택하고 쇼츠 만들기"}</button></section>}
+      {state?.user && state.recentJobs.length ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28"><div className="mb-5 flex items-center gap-2"><h2 className="text-2xl font-bold">내 프로젝트</h2><span className="text-sm text-neutral-500">({state.recentJobs.length})</span></div><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{state.recentJobs.map((job) => <ProjectCard key={job.id} job={job} />)}</div></section> : null}
     </main>
-    <footer className="site-footer"><div className="mx-auto flex max-w-6xl flex-col gap-6 px-5 py-10 sm:px-8"><div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between"><div><span className="brand-type">Easy <em>Cut</em></span><p className="mt-2 text-xs text-neutral-500">© 2026 Easy Cut. 아카이브를 바이럴 콘텐츠로 변환하세요.</p></div><div className="flex flex-wrap gap-6 text-xs text-neutral-400"><Link href="/terms">이용약관</Link><Link href="/privacy">개인정보처리방침</Link><Link href="/support">고객 지원</Link><a href="#">제휴 프로그램</a></div></div><p className="border-t border-white/5 pt-5 text-[11px] leading-5 text-neutral-600">아티룸 · 대표 김동민 · 사업자등록번호 638-04-03590 · 통신판매업 신고번호 2025-서울마포-2971 · 서울특별시 마포구 성산로8길 40 · 고객센터 010-3603-2874 · artiroom176@gmail.com</p></div></footer>
+    <SiteFooter />
     </div>
   );
 }
