@@ -262,6 +262,21 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       computeEnvironmentOrder: [{ order: 1, computeEnvironment: compute.ref }],
       jobQueueName: `shorts-mvp-prepare-${props.environment}`,
     });
+    const projectSchedulingPolicy = new batch.CfnSchedulingPolicy(
+      this,
+      "ProjectFargateFairSharePolicy",
+      {
+        name: `shorts-mvp-project-fargate-fair-share-${props.environment}`,
+        fairsharePolicy: { computeReservation: 10, shareDecaySeconds: 600 },
+      },
+    );
+    const projectQueue = new batch.CfnJobQueue(this, "ProjectFargateJobQueue", {
+      priority: 20,
+      state: "ENABLED",
+      schedulingPolicyArn: projectSchedulingPolicy.attrArn,
+      computeEnvironmentOrder: [{ order: 1, computeEnvironment: compute.ref }],
+      jobQueueName: `shorts-mvp-project-fargate-${props.environment}`,
+    });
 
     const ecsInstanceRole = new iam.Role(this, "RenderEcsInstanceRole", {
       assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
@@ -369,6 +384,8 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     };
     const prepareDefinitionName = `shorts-mvp-prepare-${props.environment}`;
     const renderDefinitionName = `shorts-mvp-render-${props.environment}`;
+    const projectDefinitionName = `shorts-mvp-project-fargate-${props.environment}`;
+    const rerenderDefinitionName = `shorts-mvp-rerender-fargate-${props.environment}`;
     const prepareDefinition = new batch.CfnJobDefinition(this, "PrepareJobDefinition", {
       type: "container",
       platformCapabilities: ["FARGATE"],
@@ -408,6 +425,45 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         resourceRequirements: [
           { type: "VCPU", value: "2" },
           { type: "MEMORY", value: "8192" },
+        ],
+      },
+    });
+    const projectDefinition = new batch.CfnJobDefinition(this, "ProjectFargateJobDefinition", {
+      type: "container",
+      platformCapabilities: ["FARGATE"],
+      jobDefinitionName: projectDefinitionName,
+      retryStrategy: { attempts: 1 },
+      timeout: { attemptDurationSeconds: 7200 },
+      containerProperties: {
+        ...baseContainer,
+        image: `${repository.repositoryUri}:${workerImageTag}`,
+        environment: [
+          ...baseContainer.environment,
+          { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
+          { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "30" },
+        ],
+        secrets: [...baseContainer.secrets, secret("INGESTION_PROXY_ROUTES_JSON")],
+        runtimePlatform: { cpuArchitecture: "X86_64", operatingSystemFamily: "LINUX" },
+        ephemeralStorage: { sizeInGiB: 30 },
+        resourceRequirements: [
+          { type: "VCPU", value: "4" },
+          { type: "MEMORY", value: "30720" },
+        ],
+      },
+    });
+    const rerenderDefinition = new batch.CfnJobDefinition(this, "RerenderFargateJobDefinition", {
+      type: "container",
+      platformCapabilities: ["FARGATE"],
+      jobDefinitionName: rerenderDefinitionName,
+      retryStrategy: { attempts: 1 },
+      timeout: { attemptDurationSeconds: 1200 },
+      containerProperties: {
+        ...baseContainer,
+        image: `${repository.repositoryUri}:${workerImageTag}`,
+        runtimePlatform: { cpuArchitecture: "X86_64", operatingSystemFamily: "LINUX" },
+        resourceRequirements: [
+          { type: "VCPU", value: "2" },
+          { type: "MEMORY", value: "16384" },
         ],
       },
     });
@@ -478,6 +534,9 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       PREPARE_JOB_DEFINITION: prepareDefinitionName,
       RENDER_BATCH_QUEUE: renderQueue.ref,
       RENDER_JOB_DEFINITION: renderDefinitionName,
+      PROJECT_BATCH_QUEUE: projectQueue.ref,
+      PROJECT_JOB_DEFINITION: projectDefinitionName,
+      RERENDER_JOB_DEFINITION: rerenderDefinitionName,
       STATE_EVENT_QUEUE_URL: stateQueue.queueUrl,
     };
     const lambdaCode = lambda.Code.fromAsset(path.join(__dirname, "../lambda"), {
@@ -548,6 +607,69 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       metricName: "RenderBatchOom",
       metricValue: "1",
     });
+    new logs.MetricFilter(this, "ProjectDurationMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_run_finalized" && $.elapsed_seconds = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "ProjectDurationSeconds",
+      metricValue: "$.elapsed_seconds",
+    });
+    new logs.MetricFilter(this, "ProjectPeakMemoryMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_run_finalized" && $.container_peak_memory_bytes = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "ProjectPeakMemoryBytes",
+      metricValue: "$.container_peak_memory_bytes",
+    });
+    new logs.MetricFilter(this, "ProjectOutputFailureMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_output_failed" }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "ProjectOutputFailure",
+      metricValue: "1",
+    });
+    new logs.MetricFilter(this, "ProjectSuccessPercentMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_run_finalized" && $.result.success_percent = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "ProjectSuccessPercent",
+      metricValue: "$.result.success_percent",
+    });
+    new logs.MetricFilter(this, "ProjectQueueDelayMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_run_started" && $.queue_delay_seconds = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "ProjectQueueDelaySeconds",
+      metricValue: "$.queue_delay_seconds",
+    });
+    new logs.MetricFilter(this, "ProjectResumeMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_run_started" && $.resume = true }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "ProjectResume",
+      metricValue: "1",
+    });
+    new logs.MetricFilter(this, "ProjectBatchOomMetric", {
+      logGroup: batchStateLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_batch_failure_handled" && $.failureCategory = "oom" }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "ProjectBatchOom",
+      metricValue: "1",
+    });
     const cleanup = new lambda.Function(this, "CleanupFunction", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "cleanup.handler",
@@ -573,7 +695,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       handler: "outbox_dispatcher.handler",
       code: lambdaCode,
       role: lambdaRole,
-      timeout: cdk.Duration.seconds(50),
+      timeout: cdk.Duration.minutes(5),
       memorySize: 256,
       environment: lambdaEnvironment,
     });
@@ -709,6 +831,13 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     new cdk.CfnOutput(this, "PrepareBatchJobDefinition", { value: prepareDefinition.ref });
     new cdk.CfnOutput(this, "RenderBatchJobQueue", { value: renderQueue.ref });
     new cdk.CfnOutput(this, "RenderBatchJobDefinition", { value: renderDefinition.ref });
+    new cdk.CfnOutput(this, "ProjectFargateBatchJobQueue", { value: projectQueue.ref });
+    new cdk.CfnOutput(this, "ProjectFargateBatchJobDefinition", {
+      value: projectDefinition.ref,
+    });
+    new cdk.CfnOutput(this, "RerenderFargateBatchJobDefinition", {
+      value: rerenderDefinition.ref,
+    });
     new cdk.CfnOutput(this, "WorkDispatchQueueUrl", { value: workQueue.queueUrl });
     new cdk.CfnOutput(this, "StateEventQueueUrl", { value: stateQueue.queueUrl });
     new cdk.CfnOutput(this, "OutboxDispatcherFunctionArn", {

@@ -96,9 +96,13 @@ describe("shorts MVP infrastructure", () => {
     ));
     const prepareJobDefinition = jobDefinition("shorts-mvp-prepare-test");
     const renderJobDefinition = jobDefinition("shorts-mvp-render-test");
+    const projectJobDefinition = jobDefinition("shorts-mvp-project-fargate-test");
+    const rerenderJobDefinition = jobDefinition("shorts-mvp-rerender-fargate-test");
 
     expect(prepareJobDefinition).toBeDefined();
     expect(renderJobDefinition).toBeDefined();
+    expect(projectJobDefinition).toBeDefined();
+    expect(rerenderJobDefinition).toBeDefined();
     expect(JSON.stringify(prepareJobDefinition)).toContain("INGESTION_EGRESS_MODE");
     expect(JSON.stringify(prepareJobDefinition)).toContain("INGESTION_BOT_CHECK_COOLDOWN_SECONDS");
     expect(JSON.stringify(prepareJobDefinition)).toContain("INGESTION_PROXY_ROUTES_JSON");
@@ -107,12 +111,12 @@ describe("shorts MVP infrastructure", () => {
       jobDefinitions.filter((definition) => (
         JSON.stringify(definition).includes("INGESTION_PROXY_ROUTES_JSON")
       ))
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     expect(
       jobDefinitions.filter((definition) => (
         JSON.stringify(definition).includes("INGESTION_EGRESS_MODE")
       ))
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     expect(JSON.stringify(jobDefinitions)).not.toContain("WARP_CONF_B64");
     expect(JSON.stringify(compute.toJSON())).toContain("test-worker-image");
     expect(JSON.stringify(prepareJobDefinition)).toContain("test-worker-image-prepare");
@@ -120,6 +124,11 @@ describe("shorts MVP infrastructure", () => {
     expect(JSON.stringify(renderJobDefinition)).not.toContain("test-worker-image-prepare");
     expect(JSON.stringify(renderJobDefinition)).toContain('"Type":"VCPU","Value":"2"');
     expect(JSON.stringify(renderJobDefinition)).toContain('"Type":"MEMORY","Value":"8192"');
+    expect(JSON.stringify(projectJobDefinition)).toContain('"Type":"VCPU","Value":"4"');
+    expect(JSON.stringify(projectJobDefinition)).toContain('"Type":"MEMORY","Value":"30720"');
+    expect(JSON.stringify(projectJobDefinition)).toContain('"SizeInGiB":30');
+    expect(JSON.stringify(rerenderJobDefinition)).toContain('"Type":"VCPU","Value":"2"');
+    expect(JSON.stringify(rerenderJobDefinition)).toContain('"Type":"MEMORY","Value":"16384"');
     expect(JSON.stringify(compute.toJSON())).not.toContain(":latest");
     compute.hasResourceProperties("AWS::Batch::JobDefinition", {
       ContainerProperties: Match.objectLike({
@@ -161,7 +170,12 @@ describe("shorts MVP infrastructure", () => {
       RetryStrategy: { Attempts: 1 },
       Timeout: { AttemptDurationSeconds: 1200 },
     });
-    compute.resourceCountIs("AWS::Logs::MetricFilter", 6);
+    compute.hasResourceProperties("AWS::Batch::JobDefinition", {
+      JobDefinitionName: "shorts-mvp-project-fargate-test",
+      RetryStrategy: { Attempts: 1 },
+      Timeout: { AttemptDurationSeconds: 7200 },
+    });
+    compute.resourceCountIs("AWS::Logs::MetricFilter", 13);
     compute.resourceCountIs("AWS::SQS::Queue", 3);
     compute.hasResourceProperties("AWS::SQS::Queue", {
       VisibilityTimeout: 180,
@@ -174,6 +188,8 @@ describe("shorts MVP infrastructure", () => {
         Variables: Match.objectLike({
           PREPARE_JOB_DEFINITION: "shorts-mvp-prepare-test",
           RENDER_JOB_DEFINITION: "shorts-mvp-render-test",
+          PROJECT_JOB_DEFINITION: "shorts-mvp-project-fargate-test",
+          RERENDER_JOB_DEFINITION: "shorts-mvp-rerender-fargate-test",
         }),
       },
     });

@@ -103,7 +103,7 @@ def release_stale_jobs() -> int:
         "video_jobs",
         query=(
             "select=id,aws_batch_job_id,status,heartbeat_at,created_at,"
-            "execution_backend,claimed_at"
+            "execution_backend,claimed_at,pipeline_version"
             f"&status=not.in.{terminal}&created_at=lt.{cutoff}&limit=100"
         ),
     ) or []
@@ -122,23 +122,35 @@ def release_stale_jobs() -> int:
                 "SUBMITTED", "PENDING", "RUNNABLE", "STARTING", "RUNNING"
             }:
                 continue
-        patch(
-            "video_jobs",
-            f"id=eq.{job['id']}",
-            {
-                "status": "failed",
-                "stage": "failed",
-                "progress": 100,
-                "error_code": "stale_job",
-                "error_message": "작업 heartbeat가 2시간 이상 중단되었습니다.",
-                "source_deleted_at": iso_now(),
-            },
-        )
-        patch(
-            "usage_reservations",
-            f"job_id=eq.{job['id']}&status=eq.reserved",
-            {"status": "released", "released_at": iso_now()},
-        )
+        if int(job.get("pipeline_version") or 1) == 2:
+            rest(
+                "rpc/finalize_project_job",
+                method="POST",
+                body={
+                    "p_job_id": job["id"],
+                    "p_error_code": "stale_job",
+                    "p_error_message": "작업 heartbeat가 2시간 이상 중단되었습니다.",
+                },
+                prefer="return=representation",
+            )
+        else:
+            patch(
+                "video_jobs",
+                f"id=eq.{job['id']}",
+                {
+                    "status": "failed",
+                    "stage": "failed",
+                    "progress": 100,
+                    "error_code": "stale_job",
+                    "error_message": "작업 heartbeat가 2시간 이상 중단되었습니다.",
+                    "source_deleted_at": iso_now(),
+                },
+            )
+            patch(
+                "usage_reservations",
+                f"job_id=eq.{job['id']}&status=eq.reserved",
+                {"status": "released", "released_at": iso_now()},
+            )
         released += 1
     return released
 
@@ -182,7 +194,7 @@ def enforce_deadlines() -> int:
         elif batch_id:
             batch_ids.add(batch_id)
         shorts = rest("generated_shorts", query=(
-            "select=id,render_batch_job_id,output_s3_key,clean_clip_s3_key,thumbnail_s3_key"
+            "select=id,status,render_batch_job_id,output_s3_key,clean_clip_s3_key,thumbnail_s3_key"
             f"&job_id=eq.{urllib.parse.quote(job['id'], safe='')}"
         )) or []
         batch_ids.update(
@@ -203,6 +215,7 @@ def enforce_deadlines() -> int:
         _delete_keys([
             key
             for item in shorts
+            if item.get("status") == "failed"
             for key in (
                 item.get("output_s3_key"), item.get("clean_clip_s3_key"),
                 item.get("thumbnail_s3_key"),

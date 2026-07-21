@@ -70,6 +70,55 @@ def _submit_once(request: dict[str, Any], submission_key: str) -> str:
 
 def _submit(payload: dict[str, Any]) -> str | None:
     kind = payload.get("kind")
+    if kind in {"project", "project_resume"}:
+        job_id = str(payload["jobId"])
+        resume = kind == "project_resume"
+        encoded_job_id = urllib.parse.quote(job_id, safe="")
+        jobs = rest("video_jobs", query=(
+            "select=id,status,pipeline_version,project_resume_count,aws_batch_job_id,"
+            "mvp_session_id,user_id,preparation_finished_at"
+            f"&id=eq.{encoded_job_id}&limit=1"
+        )) or []
+        if not jobs or int(jobs[0].get("pipeline_version") or 1) != 2:
+            return None
+        job = jobs[0]
+        expected_status = "rendering" if resume else "queued"
+        if job["status"] != expected_status:
+            return None
+        if resume and (
+            int(job.get("project_resume_count") or 0) != 1
+            or not job.get("preparation_finished_at")
+        ):
+            return None
+        if job.get("aws_batch_job_id"):
+            return str(job["aws_batch_job_id"])
+        suffix = "resume-1" if resume else "0"
+        command = ["python", "-m", "shorts_worker", "project", "--job-id", job_id]
+        if resume:
+            command.append("--resume")
+        request = dict(
+            jobName=f"shorts-project-{job_id}-{suffix}",
+            jobQueue=os.environ["PROJECT_BATCH_QUEUE"],
+            jobDefinition=os.environ["PROJECT_JOB_DEFINITION"],
+            shareIdentifier=_share_identifier(
+                job.get("user_id"), job.get("mvp_session_id"), job_id
+            ),
+            schedulingPriorityOverride=0,
+            containerOverrides=_render_container_overrides(command),
+            retryStrategy={"attempts": 1},
+            timeout={"attemptDurationSeconds": 7200},
+        )
+        submission_key = f"project:{job_id}:resume:1" if resume else f"project:{job_id}:0"
+        project_batch_id = _submit_once(request, submission_key)
+        patch(
+            "video_jobs",
+            f"id=eq.{encoded_job_id}&status=eq.{expected_status}",
+            {
+                "aws_batch_job_id": project_batch_id,
+                "batch_job_definition": os.environ["PROJECT_JOB_DEFINITION"],
+            },
+        )
+        return project_batch_id
     if kind == "prepare_batch":
         dispatch_id = str(payload["dispatchBatchId"])
         count = max(1, min(10000, int(payload["itemCount"])))
@@ -234,6 +283,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
         return render_retry_id
     if kind == "rerender":
         short_id = str(payload["shortId"])
+        rerender_attempt = max(0, min(1, int(payload.get("attempt") or 0)))
         encoded_short_id = urllib.parse.quote(short_id, safe="")
         shorts = rest("generated_shorts", query=(
             "select=id,status,render_version,rerender_batch_job_id,mvp_session_id"
@@ -245,9 +295,9 @@ def _submit(payload: dict[str, Any]) -> str | None:
             return str(shorts[0]["rerender_batch_job_id"])
         version = int(shorts[0]["render_version"]) + 1
         request = dict(
-            jobName=f"shorts-rerender-{short_id}-v{version}",
-            jobQueue=os.environ["RENDER_BATCH_QUEUE"],
-            jobDefinition=os.environ["RENDER_JOB_DEFINITION"],
+            jobName=f"shorts-rerender-{short_id}-v{version}-a{rerender_attempt}",
+            jobQueue=os.environ["PROJECT_BATCH_QUEUE"],
+            jobDefinition=os.environ["RERENDER_JOB_DEFINITION"],
             shareIdentifier=_share_identifier(
                 shorts[0].get("mvp_session_id"), short_id
             ),
@@ -255,11 +305,12 @@ def _submit(payload: dict[str, Any]) -> str | None:
             containerOverrides=_render_container_overrides([
                 "python", "-m", "shorts_worker", "rerender", "--short-id", short_id,
             ]),
-            retryStrategy={"attempts": 2},
-            timeout={"attemptDurationSeconds": 600},
+            parameters={"rerenderAttempt": str(rerender_attempt)},
+            retryStrategy={"attempts": 1},
+            timeout={"attemptDurationSeconds": 1200},
         )
         rerender_batch_id = _submit_once(
-            request, f"rerender:{short_id}:v{version}"
+            request, f"rerender:{short_id}:{version}:{rerender_attempt}"
         )
         patch(
             "generated_shorts",

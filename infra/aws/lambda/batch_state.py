@@ -5,6 +5,7 @@ import os
 import urllib.parse
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 import boto3
 from common import iso_now, log_event, patch, rest
@@ -48,6 +49,85 @@ def _send_delayed(payload: dict[str, Any]) -> None:
     )
 
 
+def _project_job(
+    batch_job_id: str, detail: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    rows = rest(
+        "video_jobs",
+        query=(
+            "select=id,status,pipeline_version,project_resume_count,preparation_finished_at"
+            f"&aws_batch_job_id=eq.{_encoded(batch_job_id)}&pipeline_version=eq.2&limit=1"
+        ),
+    ) or []
+    if rows:
+        return rows[0]
+    job_name = str((detail or {}).get("jobName") or "")
+    if not job_name.startswith("shorts-project-"):
+        return None
+    candidate = job_name.removeprefix("shorts-project-")
+    candidate = (
+        candidate.removesuffix("-resume-1")
+        if candidate.endswith("-resume-1")
+        else candidate.removesuffix("-0")
+    )
+    try:
+        job_id = str(UUID(candidate))
+    except ValueError:
+        return None
+    rows = rest(
+        "video_jobs",
+        query=(
+            "select=id,status,pipeline_version,project_resume_count,preparation_finished_at,"
+            "aws_batch_job_id"
+            f"&id=eq.{_encoded(job_id)}&pipeline_version=eq.2&limit=1"
+        ),
+    ) or []
+    if not rows:
+        return None
+    if not rows[0].get("aws_batch_job_id"):
+        patch("video_jobs", f"id=eq.{_encoded(job_id)}&aws_batch_job_id=is.null", {
+            "aws_batch_job_id": batch_job_id,
+        })
+    return rows[0]
+
+
+def _handle_project_failure(
+    batch_job_id: str, reason: str, detail: dict[str, Any]
+) -> dict[str, Any] | None:
+    job = _project_job(batch_job_id, detail)
+    if not job:
+        return None
+    if job["status"] in TERMINAL_STATUSES:
+        return {"ignoredProjectJobId": job["id"]}
+    category = _render_failure_category(detail, reason)
+    results = rest(
+        "rpc/handle_project_batch_failure",
+        method="POST",
+        body={
+            "p_job_id": job["id"],
+            "p_batch_job_id": batch_job_id,
+            "p_reason": reason[:1000],
+        },
+        prefer="return=representation",
+    ) or []
+    if not results:
+        return None
+    action = str(results[0].get("action") or "ignored")
+    if action == "resume":
+        sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps({
+                "kind": "project_resume", "jobId": job["id"],
+            }, separators=(",", ":")),
+        )
+    return {
+        "projectJobId": job["id"],
+        "action": action,
+        "failureCategory": category,
+        "resumeCount": int(results[0].get("resume_count") or 0),
+    }
+
+
 def _render_retry_count(detail: dict[str, Any]) -> int:
     parameters = detail.get("parameters") or {}
     raw_value = parameters.get("renderRetryCount")
@@ -80,6 +160,11 @@ def _render_failure_category(detail: dict[str, Any], reason: str) -> str:
             "instance terminated",
             "spot interruption",
             "task failed to start",
+            "resourceinitializationerror",
+            "cannotpullcontainererror",
+            "capacity is unavailable",
+            "fargate spot interruption",
+            "platform task error",
             "ecs agent",
             "internal error",
         )
@@ -274,16 +359,45 @@ def _handle_render_failure(
     }
 
 
-def _handle_rerender_failure(batch_job_id: str) -> dict[str, Any] | None:
+def _handle_rerender_failure(
+    batch_job_id: str, reason: str, detail: dict[str, Any]
+) -> dict[str, Any] | None:
     shorts = rest(
         "generated_shorts",
         query=(
-            "select=id,status"
+            "select=id,status,render_version"
             f"&rerender_batch_job_id=eq.{_encoded(batch_job_id)}&limit=1"
         ),
     ) or []
     if not shorts or shorts[0]["status"] != "rerendering":
         return None
+    failure_category = _render_failure_category(detail, reason)
+    try:
+        rerender_attempt = int((detail.get("parameters") or {}).get("rerenderAttempt") or 0)
+    except (TypeError, ValueError):
+        rerender_attempt = 0
+    if failure_category == "infrastructure" and rerender_attempt < 1:
+        patch(
+            "generated_shorts",
+            f"id=eq.{_encoded(shorts[0]['id'])}&status=eq.rerendering",
+            {
+                "rerender_progress": 0,
+                "rerender_batch_job_id": None,
+                "render_error_code": "rerender_batch_infrastructure",
+                "render_error_message": reason[:1000],
+            },
+        )
+        sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps({
+                "kind": "rerender", "shortId": shorts[0]["id"], "attempt": 1,
+            }, separators=(",", ":")),
+        )
+        return {
+            "retriedShortId": shorts[0]["id"],
+            "failureCategory": failure_category,
+            "retryCount": 1,
+        }
     patch(
         "generated_shorts",
         f"id=eq.{_encoded(shorts[0]['id'])}&status=eq.rerendering",
@@ -292,9 +406,14 @@ def _handle_rerender_failure(batch_job_id: str) -> dict[str, Any] | None:
             "rerender_progress": 0,
             "pending_render_hash": None,
             "rerender_batch_job_id": None,
+            "render_error_code": f"rerender_batch_{failure_category}",
+            "render_error_message": reason[:1000],
         },
     )
-    return {"resetShortId": shorts[0]["id"]}
+    return {
+        "resetShortId": shorts[0]["id"],
+        "failureCategory": failure_category,
+    }
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
@@ -304,11 +423,24 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     if not batch_job_id or status not in {"SUCCEEDED", "FAILED"}:
         return {"ignored": True}
     if status == "SUCCEEDED":
+        project = _project_job(str(batch_job_id), detail)
+        if project and project["status"] not in TERMINAL_STATUSES:
+            rest(
+                "rpc/finalize_project_job",
+                method="POST",
+                body={"p_job_id": project["id"]},
+                prefer="return=representation",
+            )
+            return {"reconciledProjectJobId": project["id"]}
         return {"ignored": True}
     parent_job_id, array_index, is_array_parent = _array_job(detail)
     if is_array_parent:
         return {"ignoredArrayParent": parent_job_id}
     reason = str(detail.get("statusReason") or "AWS Batch 작업이 실패했습니다.")[:1000]
+    project = _handle_project_failure(parent_job_id, reason, detail)
+    if project:
+        log_event("project_batch_failure_handled", batch_job_id=parent_job_id, **project)
+        return project
     prepare = _handle_prepare_failure(parent_job_id, array_index, reason)
     if prepare:
         log_event("batch_failure_handled", batch_job_id=parent_job_id, **prepare)
@@ -317,7 +449,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     if render:
         log_event("render_batch_failure_handled", batch_job_id=parent_job_id, **render)
         return render
-    rerender = _handle_rerender_failure(str(batch_job_id))
+    rerender = _handle_rerender_failure(str(batch_job_id), reason, detail)
     result = rerender or {"ignored": True}
     log_event("batch_failure_handled", batch_job_id=parent_job_id, **result)
     return result
