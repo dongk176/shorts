@@ -182,6 +182,178 @@ class WorkerRepository:
             ).fetchone()
             return row
 
+    def claim_project_run(self, job_id: str, *, resume: bool) -> dict[str, Any] | None:
+        with self.connect() as connection, connection.transaction():
+            if resume:
+                return connection.execute(
+                    """
+                    update shorts_mvp.video_jobs
+                    set status='rendering',stage='rendering',progress=greatest(progress,60),
+                        heartbeat_at=now(),error_code=null,error_message=null
+                    where id=%s and pipeline_version=2
+                      and preparation_finished_at is not null
+                      and project_resume_count=1
+                      and status not in ('completed','failed','expired','deleted')
+                    returning attempt_count,deadline_at
+                    """,
+                    (job_id,),
+                ).fetchone()
+            row = connection.execute(
+                """
+                update shorts_mvp.video_jobs
+                set status='downloading',stage='downloading',progress=10,
+                    attempt_count=attempt_count+1,started_at=coalesce(started_at,now()),
+                    claimed_at=coalesce(claimed_at,now()),heartbeat_at=now(),
+                    error_code=null,error_message=null,error_details='{}'::jsonb,
+                    range_download_status='pending',downloaded_media_duration_seconds=null,
+                    downloaded_media_bytes=null,range_download_verified_at=null
+                where id=%s and pipeline_version=2 and status='queued'
+                  and deadline_at > now() + interval '5 minutes'
+                returning attempt_count,deadline_at
+                """,
+                (job_id,),
+            ).fetchone()
+            if row:
+                connection.execute(
+                    "select shorts_mvp.initialize_project_output_attempts(%s)",
+                    (job_id,),
+                )
+            return row
+
+    def set_project_attempt_selected(self, job_id: str, slot_index: int) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                update shorts_mvp.project_output_attempts
+                set status='selected',selected_at=coalesce(selected_at,now()),
+                    failure_stage=null,failure_code=null,failure_message=null,failed_at=null
+                where job_id=%s and slot_index=%s and status in ('pending','selected')
+                """,
+                (job_id, slot_index),
+            )
+
+    def set_project_attempt_extracted(
+        self, job_id: str, slot_index: int, short_id: str
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                update shorts_mvp.project_output_attempts
+                set status='extracted',generated_short_id=%s,
+                    extracted_at=coalesce(extracted_at,now()),
+                    failure_stage=null,failure_code=null,failure_message=null,failed_at=null
+                where job_id=%s and slot_index=%s and status in ('selected','extracted')
+                """,
+                (short_id, job_id, slot_index),
+            )
+
+    def fail_project_attempt(
+        self,
+        job_id: str,
+        slot_index: int,
+        *,
+        stage: str,
+        code: str,
+        message: str,
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                update shorts_mvp.project_output_attempts
+                set status='failed',failure_stage=%s,failure_code=%s,
+                    failure_message=%s,failed_at=coalesce(failed_at,now())
+                where job_id=%s and slot_index=%s and status <> 'ready'
+                """,
+                (stage, code[:100], message[:1000], job_id, slot_index),
+            )
+
+    def fail_unselected_project_attempts(self, job_id: str) -> int:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                update shorts_mvp.project_output_attempts
+                set status='failed',failure_stage='selection',
+                    failure_code='selection_shortfall',
+                    failure_message='AI가 목표 개수만큼 사용할 구간을 선정하지 못했습니다.',
+                    failed_at=coalesce(failed_at,now())
+                where job_id=%s and status='pending'
+                """,
+                (job_id,),
+            )
+            return cursor.rowcount
+
+    def fail_open_project_attempts(
+        self, job_id: str, *, stage: str, code: str, message: str
+    ) -> int:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                update shorts_mvp.project_output_attempts
+                set status='failed',failure_stage=%s,failure_code=%s,
+                    failure_message=%s,failed_at=coalesce(failed_at,now())
+                where job_id=%s and status not in ('ready','failed')
+                """,
+                (stage, code[:100], message[:1000], job_id),
+            )
+            return cursor.rowcount
+
+    def mark_project_preparation_finished(self, job_id: str) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                update shorts_mvp.video_jobs
+                set status='rendering',stage='rendering',progress=60,
+                    preparation_finished_at=coalesce(preparation_finished_at,now()),
+                    source_deleted_at=coalesce(source_deleted_at,now()),heartbeat_at=now()
+                where id=%s and pipeline_version=2
+                  and status not in ('completed','failed','expired','deleted')
+                returning id
+                """,
+                (job_id,),
+            ).fetchone()
+            return bool(row)
+
+    def get_project_render_items(self, job_id: str) -> list[dict[str, Any]]:
+        with self.connect() as connection:
+            return list(connection.execute(
+                """
+                select s.*,j.channel_thumbnail_url,a.slot_index
+                from shorts_mvp.project_output_attempts a
+                join shorts_mvp.generated_shorts s on s.id=a.generated_short_id
+                join shorts_mvp.video_jobs j on j.id=a.job_id
+                where a.job_id=%s and a.status in ('extracted','rendering')
+                  and s.status='rendering' and s.deleted_at is null
+                order by a.slot_index
+                """,
+                (job_id,),
+            ).fetchall())
+
+    def mark_project_attempt_rendering(self, short_id: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                update shorts_mvp.project_output_attempts
+                set status='rendering',render_started_at=coalesce(render_started_at,now())
+                where generated_short_id=%s and status='extracted'
+                """,
+                (short_id,),
+            )
+
+    def finalize_project_job(
+        self,
+        job_id: str,
+        *,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> dict[str, Any] | None:
+        with self.connect() as connection:
+            return connection.execute(
+                """
+                select * from shorts_mvp.finalize_project_job(%s,%s,%s)
+                """,
+                (job_id, error_code, error_message),
+            ).fetchone()
+
     def begin_attempt(self, job_id: str, attempt: int) -> None:
         self.claim_prepare_attempt(job_id, attempt_override=attempt)
 
@@ -654,7 +826,9 @@ class WorkerRepository:
                       and j.status not in ('completed','failed','expired','deleted')
                       and j.deadline_at > clock_timestamp()
                   )
-                returning job_id
+                returning job_id,(
+                  select pipeline_version from shorts_mvp.video_jobs where id=s.job_id
+                ) as pipeline_version
                 """,
                 (output_key, thumbnail_key, size, short_id),
             ).fetchone()
@@ -665,10 +839,34 @@ class WorkerRepository:
                     where key='generated_shorts'
                     """
                 )
-                connection.execute(
-                    "select shorts_mvp.maybe_complete_video_job(%s)",
-                    (updated["job_id"],),
-                )
+                if int(updated["pipeline_version"] or 1) == 2:
+                    connection.execute(
+                        """
+                        update shorts_mvp.project_output_attempts
+                        set status='ready',ready_at=coalesce(ready_at,now()),
+                            failure_stage=null,failure_code=null,failure_message=null,failed_at=null
+                        where generated_short_id=%s
+                        """,
+                        (short_id,),
+                    )
+                    connection.execute(
+                        """
+                        update shorts_mvp.video_jobs j
+                        set ready_short_count=least(j.planned_short_count,(
+                              select count(*)::integer from shorts_mvp.generated_shorts s
+                              where s.job_id=j.id and s.status='ready' and s.deleted_at is null
+                            )),
+                            progress=greatest(j.progress,65),heartbeat_at=now()
+                        where j.id=%s and j.pipeline_version=2
+                          and j.status not in ('completed','failed','expired','deleted')
+                        """,
+                        (updated["job_id"],),
+                    )
+                else:
+                    connection.execute(
+                        "select shorts_mvp.maybe_complete_video_job(%s)",
+                        (updated["job_id"],),
+                    )
             return bool(updated)
 
     def initial_render_matches(self, short_id: str, output_key: str, thumbnail_key: str) -> bool:
@@ -684,16 +882,29 @@ class WorkerRepository:
             ).fetchone()
             return bool(row)
 
-    def fail_initial_render(self, short_id: str, error_code: str, message: str) -> None:
+    def fail_initial_render(
+        self, short_id: str, error_code: str, message: str, *, terminal: bool = False
+    ) -> None:
         with self.connect() as connection:
             connection.execute(
                 """
                 update shorts_mvp.generated_shorts
-                set render_error_code=%s, render_error_message=%s, render_progress=0
+                set render_error_code=%s, render_error_message=%s, render_progress=0,
+                    status=case when %s then 'failed' else status end
                 where id=%s and status='rendering'
                 """,
-                (error_code[:100], message[:1000], short_id),
+                (error_code[:100], message[:1000], terminal, short_id),
             )
+            if terminal:
+                connection.execute(
+                    """
+                    update shorts_mvp.project_output_attempts
+                    set status='failed',failure_stage='rendering',failure_code=%s,
+                        failure_message=%s,failed_at=coalesce(failed_at,now())
+                    where generated_short_id=%s and status <> 'ready'
+                    """,
+                    (error_code[:100], message[:1000], short_id),
+                )
 
     def maybe_complete_job(self, job_id: str) -> bool:
         with self.connect() as connection:
@@ -828,7 +1039,7 @@ class WorkerRepository:
                 set output_s3_key=%s, file_size_bytes=%s, render_version=%s, status='ready',
                   rerender_progress=100,
                   rendered_config_hash=pending_render_hash, pending_render_hash=null,
-                  rerender_batch_job_id=null
+                  rerender_batch_job_id=null,render_error_code=null,render_error_message=null
                 where id=%s and status='rerendering' and deleted_at is null
                   and expires_at > clock_timestamp()
                 returning id

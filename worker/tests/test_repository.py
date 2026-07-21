@@ -225,3 +225,23 @@ def test_prepare_passes_retention_days_instead_of_worker_clock_expiry() -> None:
     assert 'retention_days=int(job["retention_days"])' in implementation
     assert "highlight_reason=clip.reason" in implementation
     assert "timedelta(days=" not in implementation
+
+
+def test_fargate_project_migration_keeps_ready_outputs_and_uses_half_threshold() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607220001_fargate_project_pipeline.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "create table if not exists shorts_mvp.project_output_attempts" in migration
+    assert "when counted_ready * 2 >= current_job.planned_short_count" in migration
+    assert "where job_id=p_job_id and status='rendering'" in migration
+    assert "status in ('rendering','rerendering','ready')" not in migration.split(
+        "create or replace function shorts_mvp.finalize_project_job", 1
+    )[1].split("create or replace function shorts_mvp.handle_project_batch_failure", 1)[0]
+    assert "set status='consumed'" in migration
+    assert "set status='released'" in migration
+    assert "project_resume_count=1" in migration
+    assert "public." not in migration

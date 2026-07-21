@@ -32,6 +32,9 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
     os.environ["PREPARE_JOB_DEFINITION"] = "prepare-definition:1"
     os.environ["RENDER_BATCH_QUEUE"] = "render-queue"
     os.environ["RENDER_JOB_DEFINITION"] = "render-definition:1"
+    os.environ["PROJECT_BATCH_QUEUE"] = "project-queue"
+    os.environ["PROJECT_JOB_DEFINITION"] = "project-definition:1"
+    os.environ["RERENDER_JOB_DEFINITION"] = "rerender-definition:1"
     os.environ["BATCH_SUBMITTER_FUNCTION_NAME"] = "batch-submitter"
     spec = importlib.util.spec_from_file_location(
         f"test_{name}_{id(fake_sqs)}", LAMBDA_DIR / f"{name}.py"
@@ -358,6 +361,94 @@ def test_prepare_retry_returns_to_the_centrally_scheduled_outbox() -> None:
     module.batch.submit_job.assert_not_called()
 
 
+def test_project_submission_is_one_fargate_job_with_idempotent_key() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module.rest = MagicMock(return_value=[{
+        "id": "job-a",
+        "status": "queued",
+        "pipeline_version": 2,
+        "project_resume_count": 0,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "user-a",
+        "preparation_finished_at": None,
+    }])
+    module._submit_once = MagicMock(return_value="project-batch-a")
+    module.patch = MagicMock()
+
+    result = module._submit({"kind": "project", "jobId": "job-a"})
+
+    assert result == "project-batch-a"
+    request, submission_key = module._submit_once.call_args.args
+    assert submission_key == "project:job-a:0"
+    assert request["jobQueue"] == "project-queue"
+    assert request["jobDefinition"] == "project-definition:1"
+    assert request["retryStrategy"] == {"attempts": 1}
+    assert request["timeout"] == {"attemptDurationSeconds": 7200}
+    assert request["containerOverrides"]["command"] == [
+        "python", "-m", "shorts_worker", "project", "--job-id", "job-a",
+    ]
+    assert "arrayProperties" not in request
+
+
+def test_project_failure_after_checkpoint_submits_one_resume() -> None:
+    module, sqs = _load_lambda("batch_state")
+
+    def rest(table: str, **kwargs):
+        if table == "video_jobs":
+            return [{
+                "id": "job-a",
+                "status": "rendering",
+                "pipeline_version": 2,
+                "project_resume_count": 0,
+                "preparation_finished_at": "2026-07-22T00:00:00+00:00",
+            }]
+        if table == "rpc/handle_project_batch_failure":
+            assert kwargs["body"]["p_batch_job_id"] == "project-batch-a"
+            return [{"action": "resume", "resume_count": 1}]
+        return []
+
+    module.rest = rest
+    result = module.handler({"detail": {
+        "jobId": "project-batch-a",
+        "status": "FAILED",
+        "statusReason": "Task failed to start",
+    }}, None)
+
+    assert result == {
+        "projectJobId": "job-a",
+        "action": "resume",
+        "failureCategory": "infrastructure",
+        "resumeCount": 1,
+    }
+    assert json.loads(sqs.send_message.call_args.kwargs["MessageBody"]) == {
+        "kind": "project_resume", "jobId": "job-a",
+    }
+
+
+def test_rerender_uses_fargate_and_batch_never_retries_itself() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module.rest = MagicMock(return_value=[{
+        "id": "short-a",
+        "status": "rerendering",
+        "render_version": 3,
+        "rerender_batch_job_id": None,
+        "mvp_session_id": "session-a",
+    }])
+    module._submit_once = MagicMock(return_value="rerender-batch-a")
+    module.patch = MagicMock()
+
+    result = module._submit({"kind": "rerender", "shortId": "short-a"})
+
+    assert result == "rerender-batch-a"
+    request, submission_key = module._submit_once.call_args.args
+    assert submission_key == "rerender:short-a:4:0"
+    assert request["jobQueue"] == "project-queue"
+    assert request["jobDefinition"] == "rerender-definition:1"
+    assert request["retryStrategy"] == {"attempts": 1}
+    assert request["parameters"] == {"rerenderAttempt": "0"}
+
+
 def test_batch_submission_claim_reuses_an_already_recorded_job() -> None:
     module, _ = _load_lambda("batch_submitter")
     module.rest = MagicMock(return_value=[{
@@ -494,6 +585,7 @@ def test_outbox_dispatcher_submits_prepare_directly_without_sqs() -> None:
     result = module.handler({}, None)
 
     assert result == {
+        "dispatchedProjects": 0,
         "dispatchedBatches": 1,
         "dispatchedJobs": 1,
         "dispatchedRerenders": 0,

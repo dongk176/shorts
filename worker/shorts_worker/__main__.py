@@ -18,6 +18,9 @@ def main() -> None:
     prepare.add_argument("--attempt", type=int)
     prepare_array = subparsers.add_parser("prepare-array")
     prepare_array.add_argument("--dispatch-batch-id", required=True)
+    project = subparsers.add_parser("project")
+    project.add_argument("--job-id", required=True)
+    project.add_argument("--resume", action="store_true")
     render = subparsers.add_parser("render-shard")
     render.add_argument("--job-id", required=True)
     render.add_argument("--shard-index", type=int)
@@ -43,6 +46,8 @@ def main() -> None:
         if not job_id:
             raise KeyError(f"{args.dispatch_batch_id}:{array_index}")
         worker.prepare(job_id)
+    elif args.command == "project":
+        worker.project(args.job_id, resume=args.resume)
     elif args.command == "render-shard":
         import os
 

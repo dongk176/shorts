@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+import inspect
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-from shorts_worker import worker_pipeline
 from shorts_worker.errors import (
     BotCheckError,
     IngestionError,
@@ -655,8 +654,54 @@ def test_render_shard_processes_two_short_shard_sequentially() -> None:
     assert BatchWorker.RENDER_SHARD_SIZE == 2
     assert rendered == ["short-a", "short-b"]
     worker.repository.maybe_complete_job.assert_called_once_with("job-a")
-    source = Path(worker_pipeline.__file__).read_text(encoding="utf-8")
-    assert "ThreadPoolExecutor" not in source
+    assert "ThreadPoolExecutor" not in inspect.getsource(BatchWorker.render_shard)
+
+
+def test_project_render_isolates_one_failure_and_uses_two_workers() -> None:
+    worker = BatchWorker.__new__(BatchWorker)
+    worker.repository = MagicMock()
+    worker.repository.get_project_render_items.return_value = [
+        {"id": "short-a", "slot_index": 1},
+        {"id": "short-b", "slot_index": 2},
+        {"id": "short-c", "slot_index": 3},
+    ]
+    rendered: list[str] = []
+
+    def render(item):
+        rendered.append(str(item["id"]))
+        if item["id"] == "short-b":
+            raise RuntimeError("one output failed")
+
+    worker._render_initial_short = render
+
+    worker._render_project_outputs("job-a")
+
+    assert set(rendered) == {"short-a", "short-b", "short-c"}
+    worker.repository.fail_initial_render.assert_called_once_with(
+        "short-b", "RuntimeError", "one output failed", terminal=True
+    )
+    source = inspect.getsource(BatchWorker._render_project_outputs)
+    assert "ThreadPoolExecutor(max_workers=2" in source
+
+
+def test_project_resume_renders_checkpoints_without_downloading_source() -> None:
+    worker = BatchWorker.__new__(BatchWorker)
+    worker.repository = MagicMock()
+    worker.repository.get_job.return_value = {
+        "id": "job-a", "pipeline_version": 2,
+    }
+    worker.repository.claim_project_run.return_value = {"attempt_count": 1}
+    worker.repository.finalize_project_job.return_value = {
+        "final_status": "completed",
+    }
+    worker._render_project_outputs = MagicMock()
+    worker._download_with_inline_route_rotation = MagicMock()
+
+    worker.project("job-a", resume=True)
+
+    worker._render_project_outputs.assert_called_once_with("job-a")
+    worker.repository.finalize_project_job.assert_called_once_with("job-a")
+    worker._download_with_inline_route_rotation.assert_not_called()
 
 
 def _initial_render_item() -> dict[str, object]:

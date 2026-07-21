@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from functools import cached_property
@@ -290,6 +291,294 @@ class BatchWorker:
 
     def initial(self, job_id: str, *, attempt_override: int | None = None) -> None:
         self.prepare(job_id, attempt_override=attempt_override)
+
+    def project(self, job_id: str, *, resume: bool = False) -> None:
+        """Run one pipeline-v2 project inside a single Fargate task."""
+        job = self.repository.get_job(job_id)
+        if not job:
+            raise KeyError(job_id)
+        if int(job.get("pipeline_version") or 1) != 2:
+            raise ValueError("project command requires pipeline_version=2")
+        claimed = self.repository.claim_project_run(job_id, resume=resume)
+        if not claimed:
+            return
+
+        started_at = time.monotonic()
+        _log_event(
+            "project_run_started",
+            job_id=job_id,
+            resume=resume,
+            batch_job_id=os.getenv("AWS_BATCH_JOB_ID"),
+            queue_delay_seconds=_render_queue_delay_seconds(),
+        )
+        if resume:
+            self._render_project_outputs(job_id)
+            result = self.repository.finalize_project_job(job_id)
+            _log_event(
+                "project_run_finalized",
+                job_id=job_id,
+                resume=True,
+                elapsed_seconds=round(time.monotonic() - started_at, 3),
+                container_peak_memory_bytes=_container_memory_peak_bytes(),
+                result=result,
+            )
+            return
+
+        work_dir: Path | None = None
+        route_id = str(job.get("ingestion_route_id") or "").strip() or None
+        route_download_started = False
+        preparation_finished = False
+        try:
+            work_dir = Path(tempfile.mkdtemp(
+                prefix=f"project-{job_id}-",
+                dir=self.settings.temp_dir,
+            ))
+            with self.heartbeat(job_id):
+                if not self.settings.openai_api_key:
+                    raise TranscriptionError(
+                        "OPENAI_API_KEY가 없어 필수 전사를 시작할 수 없습니다."
+                    )
+                if not route_id:
+                    raise IngestionError(
+                        "프로젝트에 원본 다운로드 경로가 할당되지 않았습니다.",
+                        code="ingestion_route_missing",
+                    )
+                route_download_started = True
+                bundle, successful_route_id = self._download_with_inline_route_rotation(
+                    job_id=job_id,
+                    job_attempt=int(claimed["attempt_count"]),
+                    youtube_url=str(job["youtube_url"]),
+                    destination=work_dir / "source",
+                    initial_route_id=route_id,
+                )
+                self.repository.record_ingestion_result(
+                    job_id,
+                    "success",
+                    route_id=successful_route_id,
+                    egress_class=(
+                        self.ingestion.egress_class_for(successful_route_id)
+                        if successful_route_id else None
+                    ),
+                    job_attempt=int(claimed["attempt_count"]),
+                )
+                source = bundle.video_path
+                source_duration_seconds = float(job["source_duration_seconds"])
+                downloaded_duration_seconds = media_duration(probe_media(source))
+                download_status = classify_full_source_download(
+                    source_duration_seconds=source_duration_seconds,
+                    downloaded_duration_seconds=downloaded_duration_seconds,
+                )
+                self.repository.record_source_download_observation(
+                    job_id,
+                    status=download_status,
+                    duration_seconds=downloaded_duration_seconds,
+                    media_bytes=source.stat().st_size or None,
+                )
+                if (
+                    bundle.metadata.video_id != job["youtube_video_id"]
+                    or bundle.metadata.duration_seconds > self.settings.max_video_duration_seconds
+                    or download_status != "full_source_expected"
+                ):
+                    raise IngestionError(
+                        "다운로드한 전체 영상의 검증에 실패했습니다.",
+                        code="ingestion_source_validation_failed",
+                    )
+
+                self.repository.stage(job_id, "transcribing", 28, "영상 내용을 분석하고 있습니다.")
+                transcript = self._transcribe_source(
+                    job_id=job_id,
+                    source=source,
+                    work_dir=work_dir,
+                    duration_seconds=downloaded_duration_seconds,
+                )
+                self.repository.stage(job_id, "selecting", 42, "쇼츠로 만들 장면을 찾고 있습니다.")
+                target_count = int(job["planned_short_count"])
+                clips = self.selector.select(
+                    video_title=str(job["video_title"]),
+                    duration_seconds=downloaded_duration_seconds,
+                    transcript=transcript,
+                    required_count=target_count,
+                    output_language=OutputLanguage(str(job["output_language"])),
+                )[:target_count]
+                clip_subtitles = {
+                    index: self._relative_subtitles(transcript, clip)
+                    for index, clip in enumerate(clips, start=1)
+                }
+                comments_by_clip: dict[int, list[dict[str, object]]] = {
+                    index: [] for index in clip_subtitles
+                }
+                if str(job.get("template_id")) == TemplateId.COMMENT_CAPTURE.value and clips:
+                    comment_inputs = [
+                        CommentClipInput(
+                            clip_index=index,
+                            hook_title=clip.hook_title,
+                            reason=clip.reason,
+                            duration_seconds=clip.end_seconds - clip.start_seconds,
+                            transcript=clip_subtitles[index],
+                        )
+                        for index, clip in enumerate(clips, start=1)
+                    ]
+                    try:
+                        comments_by_clip = self.comment_generator.generate(comment_inputs)
+                    except Exception as exc:
+                        _log_event(
+                            "comment_generation_unexpected_fallback",
+                            job_id=job_id,
+                            error_type=type(exc).__name__,
+                        )
+                        comments_by_clip = {
+                            item.clip_index: fallback_comment_overlays(
+                                item.duration_seconds,
+                                count=item.target_count,
+                                clip_index=item.clip_index,
+                            )
+                            for item in comment_inputs
+                        }
+
+                for index, clip in enumerate(clips, start=1):
+                    self.repository.set_project_attempt_selected(job_id, index)
+                    clean_key: str | None = None
+                    try:
+                        self.repository.stage(
+                            job_id,
+                            "extracting",
+                            45 + round(15 * index / max(1, target_count)),
+                            "편집용 영상을 준비하고 있습니다.",
+                        )
+                        short_id = str(uuid4())
+                        clean_path = work_dir / "clean" / f"{short_id}.mp4"
+                        clean_path.parent.mkdir(parents=True, exist_ok=True)
+                        self.renderer.extract_clean_clip(
+                            source_path=source,
+                            output_path=clean_path,
+                            clip=clip,
+                            work_dir=work_dir,
+                            video_aspect_ratio=VideoAspectRatio(
+                                str(job.get("video_aspect_ratio") or "1:1")
+                            ),
+                        )
+                        prefix = f"{job['mvp_session_id']}/{job_id}/{short_id}"
+                        clean_key = f"edit-sources/{prefix}.mp4"
+                        self.storage.upload(clean_path, clean_key, "video/mp4")
+                        inserted = self.repository.add_pending_short(
+                            short_id=short_id,
+                            job=job,
+                            clip_index=index,
+                            start_seconds=clip.start_seconds,
+                            end_seconds=clip.end_seconds,
+                            hook_title=clip.hook_title,
+                            highlight_reason=clip.reason,
+                            selection_raw_start_seconds=clip.selection_raw_start_seconds,
+                            selection_raw_end_seconds=clip.selection_raw_end_seconds,
+                            selection_raw_duration_seconds=clip.selection_raw_duration_seconds,
+                            selection_candidate_index=clip.selection_candidate_index,
+                            selection_provider=clip.selection_provider,
+                            selection_model=clip.selection_model,
+                            selection_length_adjustment=clip.selection_length_adjustment,
+                            selection_repositioned=clip.selection_repositioned,
+                            subtitles=[item.model_dump() for item in clip_subtitles[index]],
+                            comment_overlays=comments_by_clip.get(index, []),
+                            clean_key=clean_key,
+                            retention_days=int(job["retention_days"]),
+                            shard_index=0,
+                        )
+                        if not inserted:
+                            raise RuntimeError("작업 제한 시간이 종료되었습니다.")
+                        self.repository.set_project_attempt_extracted(job_id, index, short_id)
+                    except Exception as exc:
+                        if clean_key:
+                            try:
+                                self.storage.delete(clean_key)
+                            except Exception:
+                                pass
+                        self.repository.fail_project_attempt(
+                            job_id,
+                            index,
+                            stage="extraction",
+                            code=type(exc).__name__,
+                            message=str(exc),
+                        )
+                        _log_event(
+                            "project_output_failed",
+                            job_id=job_id,
+                            slot_index=index,
+                            failure_stage="extraction",
+                            error_type=type(exc).__name__,
+                        )
+
+                self.repository.fail_unselected_project_attempts(job_id)
+                if not self.repository.mark_project_preparation_finished(job_id):
+                    raise RuntimeError("프로젝트 준비 체크포인트를 저장하지 못했습니다.")
+                preparation_finished = True
+                self._render_project_outputs(job_id)
+                result = self.repository.finalize_project_job(job_id)
+                _log_event(
+                    "project_run_finalized",
+                    job_id=job_id,
+                    resume=False,
+                    elapsed_seconds=round(time.monotonic() - started_at, 3),
+                    container_peak_memory_bytes=_container_memory_peak_bytes(),
+                    result=result,
+                )
+        except Exception as exc:
+            _log_event(
+                "project_run_failed",
+                job_id=job_id,
+                resume=False,
+                preparation_finished=preparation_finished,
+                error_type=type(exc).__name__,
+                container_peak_memory_bytes=_container_memory_peak_bytes(),
+            )
+            if not preparation_finished:
+                self._cleanup_initial_objects(job)
+            self.repository.fail_open_project_attempts(
+                job_id,
+                stage="project",
+                code=type(exc).__name__,
+                message=str(exc),
+            )
+            self.repository.finalize_project_job(
+                job_id,
+                error_code=type(exc).__name__,
+                error_message=str(exc),
+            )
+        finally:
+            if route_id and not route_download_started:
+                try:
+                    self.repository.release_ingestion_route(
+                        job_id,route_id,result="terminal",cooldown_seconds=0
+                    )
+                except Exception:
+                    pass
+            if work_dir is not None:
+                shutil.rmtree(work_dir, ignore_errors=True)
+
+    def _render_project_outputs(self, job_id: str) -> None:
+        items = self.repository.get_project_render_items(job_id)
+        if not items:
+            return
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="project-render") as executor:
+            futures = {}
+            for item in items:
+                short_id = str(item["id"])
+                self.repository.mark_project_attempt_rendering(short_id)
+                futures[executor.submit(self._render_initial_short, item)] = item
+            for future in as_completed(futures):
+                item = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    self.repository.fail_initial_render(
+                        str(item["id"]),type(exc).__name__,str(exc),terminal=True
+                    )
+                    _log_event(
+                        "project_output_failed",
+                        job_id=job_id,
+                        short_id=item["id"],
+                        slot_index=item["slot_index"],
+                        failure_stage="rendering",
+                        error_type=type(exc).__name__,
+                    )
 
     def _claim_next_ingestion_route(
         self,
