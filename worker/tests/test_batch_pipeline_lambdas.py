@@ -55,6 +55,32 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
     return module, fake_sqs
 
 
+def test_state_writer_applies_stage_counts_atomically_with_v2_rpc() -> None:
+    module, _ = _load_lambda("state_writer")
+    module.rest = MagicMock()
+
+    result = module.handler({"Records": [{
+        "messageId": "message-a",
+        "body": json.dumps({
+            "type": "stage",
+            "jobId": "job-a",
+            "stage": "rendering",
+            "progress": 72,
+            "message": "렌더링 4/12",
+            "stageCompletedCount": 4,
+            "stageTotalCount": 12,
+            "eventAt": "2026-07-22T01:00:00+00:00",
+        }),
+    }]}, None)
+
+    assert result == {"batchItemFailures": []}
+    table = module.rest.call_args.args[0]
+    body = module.rest.call_args.kwargs["body"]
+    assert table == "rpc/apply_job_state_event_v2"
+    assert body["p_stage_completed_count"] == 4
+    assert body["p_stage_total_count"] == 12
+
+
 def test_prepare_array_child_failure_is_hidden_and_retried() -> None:
     module, sqs = _load_lambda("batch_state")
 

@@ -52,6 +52,8 @@ def run_load_test(work_root: Path) -> dict[str, int]:
         temp_dir=work_root / "temp",
         ffmpeg_timeout_seconds=900,
         ffmpeg_threads=2,
+        clean_clip_preset="superfast",
+        clean_clip_crf=20,
     )
 
     def render(index: int) -> Path:

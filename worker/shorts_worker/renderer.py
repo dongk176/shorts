@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+from PIL import Image
 
 from .config import Settings
 from .errors import RenderError
@@ -63,6 +66,66 @@ class VideoLayout:
     bottom_y: int
     overlay_mode: bool
     subtitle_margin_v: int
+
+
+RenderMetricsCallback = Callable[[dict[str, object]], None]
+
+
+def _parse_ffmpeg_progress(output: str) -> dict[str, float]:
+    latest: dict[str, str] = {}
+    for raw_line in output.splitlines():
+        key, separator, value = raw_line.partition("=")
+        if separator:
+            latest[key.strip()] = value.strip()
+    parsed: dict[str, float] = {}
+    try:
+        parsed["averageFps"] = max(0.0, float(latest.get("fps", "0")))
+    except ValueError:
+        pass
+    try:
+        parsed["speed"] = max(0.0, float(latest.get("speed", "0").removesuffix("x")))
+    except ValueError:
+        pass
+    return parsed
+
+
+def create_comment_timeline_manifest(
+    panels: list[Path],
+    windows: list[tuple[CommentOverlay, float, float]],
+    *,
+    directory: Path,
+    prefix: str,
+) -> tuple[Path, int]:
+    """Normalize comment images and describe one timestamped concat stream."""
+    if not panels or len(panels) != len(windows):
+        raise ValueError("댓글 타임라인 입력이 올바르지 않습니다.")
+    directory.mkdir(parents=True, exist_ok=True)
+    sizes: list[tuple[int, int]] = []
+    for panel in panels:
+        with Image.open(panel) as source:
+            sizes.append(source.size)
+    width = max(item[0] for item in sizes)
+    height = max(item[1] for item in sizes)
+    frame_names: list[str] = []
+    durations: list[float] = []
+    for index, (panel, (_comment, start, end)) in enumerate(zip(panels, windows, strict=True)):
+        frame_name = f"{prefix}_comment_frame_{index:02d}.png"
+        frame_path = directory / frame_name
+        with Image.open(panel) as source:
+            normalized = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+            normalized.alpha_composite(source.convert("RGBA"), (0, 0))
+            normalized.save(frame_path, format="PNG", compress_level=1)
+        frame_names.append(frame_name)
+        durations.append(max(0.001, end - start))
+
+    manifest = directory / f"{prefix}_comments.ffconcat"
+    lines = ["ffconcat version 1.0"]
+    for frame_name, duration in zip(frame_names, durations, strict=True):
+        lines.extend((f"file {frame_name}", f"duration {duration:.6f}"))
+    # The concat demuxer ignores the final duration unless the last file is repeated.
+    lines.append(f"file {frame_names[-1]}")
+    manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return manifest, height
 
 
 def video_layout(video_aspect_ratio: VideoAspectRatio) -> VideoLayout:
@@ -137,10 +200,16 @@ class VideoRenderer:
         clip: HighlightClip,
         work_dir: Path,
         video_aspect_ratio: VideoAspectRatio = VideoAspectRatio.SQUARE,
+        source_probe: dict[str, object] | None = None,
+        metrics_callback: RenderMetricsCallback | None = None,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         duration = clip.end_seconds - clip.start_seconds
-        probe = probe_media(source_path, timeout=min(30, self.settings.ffmpeg_timeout_seconds))
+        probe_started_at = time.monotonic()
+        probe = source_probe or probe_media(
+            source_path, timeout=min(30, self.settings.ffmpeg_timeout_seconds)
+        )
+        probe_seconds = time.monotonic() - probe_started_at if source_probe is None else 0.0
         fps = min(30.0, video_fps(probe))
         has_audio = any(stream.get("codec_type") == "audio" for stream in probe.get("streams", []))
         target_height = VIDEO_HEIGHTS[video_aspect_ratio]
@@ -168,9 +237,9 @@ class VideoRenderer:
             "-threads:v",
             str(self.settings.ffmpeg_threads),
             "-preset",
-            "veryfast",
+            self.settings.clean_clip_preset,
             "-crf",
-            "20",
+            str(self.settings.clean_clip_crf),
             "-pix_fmt",
             "yuv420p",
             "-r",
@@ -180,11 +249,29 @@ class VideoRenderer:
             command.extend(["-c:a", "aac", "-b:a", "128k"])
         else:
             command.append("-an")
-        command.extend(["-movflags", "+faststart", str(output_path)])
+        command.extend([
+            "-movflags",
+            "+faststart",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            str(output_path),
+        ])
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        ffmpeg_started_at = time.monotonic()
         result = run_command(command, timeout=self.settings.ffmpeg_timeout_seconds, cwd=work_dir)
+        ffmpeg_seconds = time.monotonic() - ffmpeg_started_at
         if result.returncode != 0 or not output_path.is_file():
             raise RenderError("편집용 clean clip을 만들지 못했습니다.")
+        if metrics_callback:
+            metrics_callback({
+                "probeSeconds": round(probe_seconds, 3),
+                "ffmpegSeconds": round(ffmpeg_seconds, 3),
+                "preset": self.settings.clean_clip_preset,
+                "crf": self.settings.clean_clip_crf,
+                "fileBytes": output_path.stat().st_size,
+                **_parse_ffmpeg_progress(result.stdout),
+            })
         return output_path
 
     def render_clean_clip(
@@ -205,16 +292,20 @@ class VideoRenderer:
         comment_overlays: list[CommentOverlay] | None = None,
         title_text_styles: list[TitleTextStyle] | None = None,
         custom_template_config: CustomTemplateConfig | None = None,
+        metrics_callback: RenderMetricsCallback | None = None,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
+        probe_started_at = time.monotonic()
         probe = probe_media(clean_path, timeout=min(30, self.settings.ffmpeg_timeout_seconds))
+        input_probe_seconds = time.monotonic() - probe_started_at
         duration = media_duration(probe)
         if duration <= 0:
             raise RenderError("clean clip 길이가 올바르지 않습니다.")
         fps = min(30.0, video_fps(probe))
         has_audio = any(stream.get("codec_type") == "audio" for stream in probe.get("streams", []))
         if custom_template_config is not None:
-            return self._render_custom_clean_clip(
+            custom_metrics: dict[str, object] = {}
+            rendered = self._render_custom_clean_clip(
                 clean_path=clean_path,
                 output_path=output_path,
                 title=title,
@@ -230,7 +321,14 @@ class VideoRenderer:
                 duration=duration,
                 fps=fps,
                 has_audio=has_audio,
+                metrics_callback=custom_metrics.update,
             )
+            if metrics_callback:
+                metrics_callback({
+                    "inputProbeSeconds": round(input_probe_seconds, 3),
+                    **custom_metrics,
+                })
+            return rendered
         layout_ratio = (
             VideoAspectRatio.PORTRAIT
             if template_id is TemplateId.COMMENT_CAPTURE
@@ -238,6 +336,7 @@ class VideoRenderer:
             else video_aspect_ratio
         )
         layout = video_layout(layout_ratio)
+        overlay_started_at = time.monotonic()
         top, bottom = create_panel_overlays(
             title=title,
             channel_name=channel_name,
@@ -258,17 +357,22 @@ class VideoRenderer:
         )
         comment_windows = continuous_comment_windows(visible_comments, duration)
         comment_panels = [
-            (
+            create_comment_panel(
                 comment,
-                create_comment_panel(
-                    comment,
-                    work_dir / "overlays" / f"{prefix}_comment_{index}.png",
-                    panel_height=layout.bottom_height,
-                    overlay_mode=layout.overlay_mode,
-                ),
+                work_dir / "overlays" / f"{prefix}_comment_{index}.png",
+                panel_height=layout.bottom_height,
+                overlay_mode=layout.overlay_mode,
             )
             for index, (comment, _, _) in enumerate(comment_windows)
         ]
+        comment_manifest = None
+        if comment_panels:
+            comment_manifest, _ = create_comment_timeline_manifest(
+                comment_panels,
+                comment_windows,
+                directory=work_dir / "overlays" / "comment-timeline",
+                prefix=prefix,
+            )
         ass_path = None
         if subtitles_enabled:
             ass_path = create_ass_subtitles(
@@ -278,6 +382,7 @@ class VideoRenderer:
                 output_path=work_dir / "subtitles" / f"{prefix}.ass",
                 margin_v=layout.subtitle_margin_v,
             )
+        overlay_seconds = time.monotonic() - overlay_started_at
         background = TEMPLATE_STYLES[template_id].background.replace("#", "0x")
         filters = [
             f"color=c={background}:s={CANVAS_WIDTH}x{CANVAS_HEIGHT}:r={fps:.3f}:d={duration:.3f}[base]",
@@ -291,16 +396,13 @@ class VideoRenderer:
             f"[with_top][2:v]overlay=x=0:y={layout.bottom_y}:shortest=1[composed]",
         ]
         video_label = "composed"
-        for index, ((_comment, _), (_, start, end)) in enumerate(
-            zip(comment_panels, comment_windows, strict=False)
-        ):
-            next_label = f"with_comment_{index}"
+        if comment_manifest:
+            filters.append("[3:v]setpts=PTS-STARTPTS,format=rgba[comment_track]")
             filters.append(
-                f"[{video_label}][{index + 3}:v]overlay=x=0:y={layout.bottom_y}:"
-                f"enable='gte(t,{start:.3f})*lt(t,{end:.3f})':"
-                f"shortest=1[{next_label}]"
+                f"[{video_label}][comment_track]overlay=x=0:y={layout.bottom_y}:"
+                "eof_action=repeat:repeatlast=1[with_comments]"
             )
-            video_label = next_label
+            video_label = "with_comments"
         if ass_path:
             filters.append(
                 f"[{video_label}]subtitles=filename='{_escape_filter_path(ass_path)}'[captioned]"
@@ -327,8 +429,8 @@ class VideoRenderer:
             "-i",
             str(bottom),
         ]
-        for _, panel in comment_panels:
-            command.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", str(panel)])
+        if comment_manifest:
+            command.extend(["-f", "concat", "-safe", "1", "-i", str(comment_manifest)])
         audio_label = None
         if has_audio:
             filters.append("[0:a]asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11[audio]")
@@ -365,12 +467,23 @@ class VideoRenderer:
         )
         if audio_label:
             command.extend(["-c:a", "aac", "-b:a", "128k"])
-        command.extend(["-movflags", "+faststart", str(output_path)])
+        command.extend([
+            "-movflags",
+            "+faststart",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            str(output_path),
+        ])
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        ffmpeg_started_at = time.monotonic()
         result = run_command(command, timeout=self.settings.ffmpeg_timeout_seconds, cwd=work_dir)
+        ffmpeg_seconds = time.monotonic() - ffmpeg_started_at
         if result.returncode != 0 or not output_path.is_file() or output_path.stat().st_size == 0:
             raise RenderError("clean clip 렌더링에 실패했습니다.")
+        output_probe_started_at = time.monotonic()
         output_probe = probe_media(output_path, timeout=30)
+        output_probe_seconds = time.monotonic() - output_probe_started_at
         video = next(
             (s for s in output_probe.get("streams", []) if s.get("codec_type") == "video"),
             {},
@@ -378,6 +491,16 @@ class VideoRenderer:
         if int(video.get("width", 0)) != 1080 or int(video.get("height", 0)) != 1920:
             output_path.unlink(missing_ok=True)
             raise RenderError("완성 영상 해상도를 검증하지 못했습니다.")
+        if metrics_callback:
+            metrics_callback({
+                "inputProbeSeconds": round(input_probe_seconds, 3),
+                "overlaySeconds": round(overlay_seconds, 3),
+                "ffmpegSeconds": round(ffmpeg_seconds, 3),
+                "outputProbeSeconds": round(output_probe_seconds, 3),
+                "commentCount": len(comment_windows),
+                "commentInputCount": 1 if comment_manifest else 0,
+                **_parse_ffmpeg_progress(result.stdout),
+            })
         return output_path
 
     def _render_custom_clean_clip(
@@ -398,7 +521,9 @@ class VideoRenderer:
         duration: float,
         fps: float,
         has_audio: bool,
+        metrics_callback: RenderMetricsCallback | None = None,
     ) -> Path:
+        overlay_started_at = time.monotonic()
         video_bottom = config.video.y + config.video.height
         comment_y = (
             video_bottom
@@ -438,6 +563,14 @@ class VideoRenderer:
             )
             for index, (comment, _, _) in enumerate(comment_windows)
         ]
+        comment_manifest = None
+        if comment_panels:
+            comment_manifest, _ = create_comment_timeline_manifest(
+                comment_panels,
+                comment_windows,
+                directory=work_dir / "overlays" / "comment-timeline",
+                prefix=prefix,
+            )
         ass_path = None
         if subtitles_enabled:
             ass_path = create_ass_subtitles(
@@ -447,6 +580,7 @@ class VideoRenderer:
                 output_path=work_dir / "subtitles" / f"{prefix}.ass",
                 margin_v=445,
             )
+        overlay_seconds = time.monotonic() - overlay_started_at
         frame = config.video
         video_geometry_filters = custom_video_geometry_filters(frame, fps=fps)
         filters = [
@@ -456,13 +590,13 @@ class VideoRenderer:
             "[with_title][3:v]overlay=x=0:y=0:shortest=1[composed]",
         ]
         video_label = "composed"
-        for index, (_, start, end) in enumerate(comment_windows):
-            next_label = f"with_comment_{index}"
+        if comment_manifest:
+            filters.append("[4:v]setpts=PTS-STARTPTS,format=rgba[comment_track]")
             filters.append(
-                f"[{video_label}][{index + 4}:v]overlay=x=0:y={comment_y}:"
-                f"enable='gte(t,{start:.3f})*lt(t,{end:.3f})':shortest=1[{next_label}]"
+                f"[{video_label}][comment_track]overlay=x=0:y={comment_y}:"
+                "eof_action=repeat:repeatlast=1[with_comments]"
             )
-            video_label = next_label
+            video_label = "with_comments"
         if ass_path:
             filters.append(
                 f"[{video_label}]subtitles=filename='{_escape_filter_path(ass_path)}'[captioned]"
@@ -495,8 +629,8 @@ class VideoRenderer:
             "-i",
             str(channel_overlay),
         ]
-        for panel in comment_panels:
-            command.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", str(panel)])
+        if comment_manifest:
+            command.extend(["-f", "concat", "-safe", "1", "-i", str(comment_manifest)])
         audio_label = None
         if has_audio:
             filters.append("[0:a]asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11[audio]")
@@ -533,12 +667,23 @@ class VideoRenderer:
         )
         if audio_label:
             command.extend(["-c:a", "aac", "-b:a", "128k"])
-        command.extend(["-movflags", "+faststart", str(output_path)])
+        command.extend([
+            "-movflags",
+            "+faststart",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            str(output_path),
+        ])
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        ffmpeg_started_at = time.monotonic()
         result = run_command(command, timeout=self.settings.ffmpeg_timeout_seconds, cwd=work_dir)
+        ffmpeg_seconds = time.monotonic() - ffmpeg_started_at
         if result.returncode != 0 or not output_path.is_file() or output_path.stat().st_size == 0:
             raise RenderError("개인 템플릿 렌더링에 실패했습니다.")
+        output_probe_started_at = time.monotonic()
         output_probe = probe_media(output_path, timeout=30)
+        output_probe_seconds = time.monotonic() - output_probe_started_at
         video = next(
             (
                 stream
@@ -553,6 +698,15 @@ class VideoRenderer:
         ):
             output_path.unlink(missing_ok=True)
             raise RenderError("완성 영상 해상도를 검증하지 못했습니다.")
+        if metrics_callback:
+            metrics_callback({
+                "overlaySeconds": round(overlay_seconds, 3),
+                "ffmpegSeconds": round(ffmpeg_seconds, 3),
+                "outputProbeSeconds": round(output_probe_seconds, 3),
+                "commentCount": len(comment_windows),
+                "commentInputCount": 1 if comment_manifest else 0,
+                **_parse_ffmpeg_progress(result.stdout),
+            })
         return output_path
 
     def render(

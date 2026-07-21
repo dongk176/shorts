@@ -659,6 +659,7 @@ def test_render_shard_processes_two_short_shard_sequentially() -> None:
 
 def test_project_render_isolates_one_failure_and_uses_two_workers() -> None:
     worker = BatchWorker.__new__(BatchWorker)
+    worker.settings = SimpleNamespace(task_vcpus=4, ffmpeg_threads=2)
     worker.repository = MagicMock()
     worker.repository.get_project_render_items.return_value = [
         {"id": "short-a", "slot_index": 1},
@@ -667,7 +668,7 @@ def test_project_render_isolates_one_failure_and_uses_two_workers() -> None:
     ]
     rendered: list[str] = []
 
-    def render(item):
+    def render(item, _local_clean_path=None):
         rendered.append(str(item["id"]))
         if item["id"] == "short-b":
             raise RuntimeError("one output failed")
@@ -681,11 +682,16 @@ def test_project_render_isolates_one_failure_and_uses_two_workers() -> None:
         "short-b", "RuntimeError", "one output failed", terminal=True
     )
     source = inspect.getsource(BatchWorker._render_project_outputs)
-    assert "ThreadPoolExecutor(max_workers=2" in source
+    assert "max_workers=2" in source
 
 
 def test_project_resume_renders_checkpoints_without_downloading_source() -> None:
     worker = BatchWorker.__new__(BatchWorker)
+    worker.settings = SimpleNamespace(
+        clean_clip_preset="superfast",
+        clean_clip_crf=20,
+        ffmpeg_threads=2,
+    )
     worker.repository = MagicMock()
     worker.repository.get_job.return_value = {
         "id": "job-a", "pipeline_version": 2,
@@ -694,7 +700,7 @@ def test_project_resume_renders_checkpoints_without_downloading_source() -> None
     worker.repository.finalize_project_job.return_value = {
         "final_status": "completed",
     }
-    worker._render_project_outputs = MagicMock()
+    worker._render_project_outputs = MagicMock(return_value={"wallSeconds": 1.0})
     worker._download_with_inline_route_rotation = MagicMock()
 
     worker.project("job-a", resume=True)
@@ -748,6 +754,20 @@ def test_initial_render_preserves_keys_committed_by_duplicate_worker(tmp_path) -
     worker._render_initial_short(_initial_render_item())
 
     worker.storage.delete.assert_not_called()
+
+
+def test_project_initial_render_reuses_local_clean_clip_without_s3_download(tmp_path) -> None:
+    worker = _initial_render_worker(tmp_path, True)
+    local_clean = tmp_path / "project-clean.mp4"
+    local_clean.write_bytes(b"checkpointed-clean-clip")
+
+    metrics = worker._render_initial_short(_initial_render_item(), local_clean)
+
+    worker.storage.download.assert_not_called()
+    assert metrics is not None
+    assert metrics["cleanSource"] == "local"
+    assert not local_clean.exists()
+    worker.repository.merge_project_attempt_performance_metrics.assert_called_once()
 
 
 def test_rerender_preserves_output_when_commit_response_is_ambiguous(tmp_path) -> None:

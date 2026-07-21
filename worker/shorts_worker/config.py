@@ -20,6 +20,18 @@ def _positive_float(name: str, default: float) -> float:
         return default
 
 
+def _bounded_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        return min(maximum, max(minimum, int(os.getenv(name, str(default)))))
+    except ValueError:
+        return default
+
+
+def _choice(name: str, default: str, choices: frozenset[str]) -> str:
+    value = os.getenv(name, default).strip().lower()
+    return value if value in choices else default
+
+
 def normalize_database_url(value: str | None) -> str | None:
     if not value:
         return value
@@ -96,6 +108,19 @@ class Settings:
     )
     ffmpeg_threads: int = field(
         default_factory=lambda: _positive_int("FFMPEG_THREADS", 2)
+    )
+    task_vcpus: int = field(
+        default_factory=lambda: _positive_int("TASK_VCPUS", 4)
+    )
+    clean_clip_preset: str = field(
+        default_factory=lambda: _choice(
+            "CLEAN_CLIP_PRESET",
+            "superfast",
+            frozenset({"veryfast", "superfast", "ultrafast"}),
+        )
+    )
+    clean_clip_crf: int = field(
+        default_factory=lambda: _bounded_int("CLEAN_CLIP_CRF", 20, 16, 28)
     )
     max_video_duration_seconds: int = field(
         default_factory=lambda: _positive_int("MAX_VIDEO_DURATION_SECONDS", 3600)

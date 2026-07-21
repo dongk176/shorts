@@ -12,6 +12,7 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from functools import cached_property
 from pathlib import Path
@@ -71,6 +72,88 @@ def _container_memory_peak_bytes() -> int:
             continue
     peak = int(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
     return peak if sys.platform == "darwin" else peak * 1024
+
+
+def _container_memory_current_bytes() -> int:
+    for path in (
+        Path("/sys/fs/cgroup/memory.current"),
+        Path("/sys/fs/cgroup/memory/memory.usage_in_bytes"),
+    ):
+        try:
+            return max(0, int(path.read_text(encoding="utf-8").strip()))
+        except (OSError, ValueError):
+            continue
+    return 0
+
+
+def _container_cpu_usage_seconds() -> float:
+    try:
+        values = Path("/sys/fs/cgroup/cpu.stat").read_text(encoding="utf-8").splitlines()
+        usage = next(
+            int(line.split()[1])
+            for line in values
+            if line.startswith("usage_usec ")
+        )
+        return usage / 1_000_000
+    except (OSError, StopIteration, ValueError, IndexError):
+        pass
+    try:
+        return int(Path("/sys/fs/cgroup/cpuacct/cpuacct.usage").read_text().strip()) / 1e9
+    except (OSError, ValueError):
+        own = resource.getrusage(resource.RUSAGE_SELF)
+        children = resource.getrusage(resource.RUSAGE_CHILDREN)
+        return own.ru_utime + own.ru_stime + children.ru_utime + children.ru_stime
+
+
+@dataclass(slots=True)
+class PhaseResourceMonitor:
+    allocated_vcpus: int
+    _started_at: float = field(init=False, default=0.0)
+    _cpu_started_at: float = field(init=False, default=0.0)
+    _peak_memory_bytes: int = field(init=False, default=0)
+    _stop: threading.Event = field(init=False, default_factory=threading.Event)
+    _thread: threading.Thread | None = field(init=False, default=None)
+    _metrics: dict[str, object] = field(init=False, default_factory=dict)
+
+    def __enter__(self) -> PhaseResourceMonitor:
+        self._started_at = time.monotonic()
+        self._cpu_started_at = _container_cpu_usage_seconds()
+        self._peak_memory_bytes = _container_memory_current_bytes()
+
+        def sample() -> None:
+            while not self._stop.wait(0.25):
+                self._peak_memory_bytes = max(
+                    self._peak_memory_bytes,
+                    _container_memory_current_bytes(),
+                )
+
+        self._thread = threading.Thread(target=sample, name="phase-resource-monitor", daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=1)
+        wall_seconds = max(0.001, time.monotonic() - self._started_at)
+        cpu_seconds = max(0.0, _container_cpu_usage_seconds() - self._cpu_started_at)
+        self._peak_memory_bytes = max(
+            self._peak_memory_bytes,
+            _container_memory_current_bytes(),
+        )
+        self._metrics = {
+            "wallSeconds": round(wall_seconds, 3),
+            "cpuSeconds": round(cpu_seconds, 3),
+            "cpuUtilizationPercent": round(
+                min(100.0, 100 * cpu_seconds / (wall_seconds * max(1, self.allocated_vcpus))),
+                2,
+            ),
+            "peakMemoryBytes": self._peak_memory_bytes,
+        }
+
+    @property
+    def metrics(self) -> dict[str, object]:
+        return dict(self._metrics)
 
 
 def _render_queue_delay_seconds() -> float | None:
@@ -304,22 +387,50 @@ class BatchWorker:
             return
 
         started_at = time.monotonic()
+        queue_delay_seconds = _render_queue_delay_seconds()
+        self.repository.merge_job_performance_metrics(
+            job_id,
+            {
+                "schemaVersion": 1,
+                "batchQueueSeconds": queue_delay_seconds,
+                "workerImageTag": os.getenv("WORKER_IMAGE_TAG"),
+                "ffmpeg": {
+                    "cleanClipPreset": self.settings.clean_clip_preset,
+                    "cleanClipCrf": self.settings.clean_clip_crf,
+                    "cleanClipThreads": self.settings.ffmpeg_threads,
+                    "renderWorkers": 2,
+                    "outputWidth": 1080,
+                    "outputHeight": 1920,
+                    "outputFpsCap": 30,
+                },
+            },
+        )
         _log_event(
             "project_run_started",
             job_id=job_id,
             resume=resume,
             batch_job_id=os.getenv("AWS_BATCH_JOB_ID"),
-            queue_delay_seconds=_render_queue_delay_seconds(),
+            queue_delay_seconds=queue_delay_seconds,
         )
         if resume:
-            self._render_project_outputs(job_id)
+            render_summary = self._render_project_outputs(job_id)
+            total_seconds = time.monotonic() - started_at
+            self.repository.merge_job_performance_metrics(
+                job_id,
+                {
+                    "render": render_summary,
+                    "totalSeconds": round(total_seconds, 3),
+                    "resumed": True,
+                },
+            )
             result = self.repository.finalize_project_job(job_id)
             _log_event(
                 "project_run_finalized",
                 job_id=job_id,
                 resume=True,
-                elapsed_seconds=round(time.monotonic() - started_at, 3),
+                elapsed_seconds=round(total_seconds, 3),
                 container_peak_memory_bytes=_container_memory_peak_bytes(),
+                render_summary=render_summary,
                 result=result,
             )
             return
@@ -344,13 +455,18 @@ class BatchWorker:
                         code="ingestion_route_missing",
                     )
                 route_download_started = True
-                bundle, successful_route_id = self._download_with_inline_route_rotation(
-                    job_id=job_id,
-                    job_attempt=int(claimed["attempt_count"]),
-                    youtube_url=str(job["youtube_url"]),
-                    destination=work_dir / "source",
-                    initial_route_id=route_id,
-                )
+                download_started_at = time.monotonic()
+                with PhaseResourceMonitor(self.settings.task_vcpus) as download_resources:
+                    bundle, successful_route_id = self._download_with_inline_route_rotation(
+                        job_id=job_id,
+                        job_attempt=int(claimed["attempt_count"]),
+                        youtube_url=str(job["youtube_url"]),
+                        destination=work_dir / "source",
+                        initial_route_id=route_id,
+                    )
+                    source = bundle.video_path
+                    source_probe = probe_media(source)
+                    downloaded_duration_seconds = media_duration(source_probe)
                 self.repository.record_ingestion_result(
                     job_id,
                     "success",
@@ -361,9 +477,9 @@ class BatchWorker:
                     ),
                     job_attempt=int(claimed["attempt_count"]),
                 )
-                source = bundle.video_path
                 source_duration_seconds = float(job["source_duration_seconds"])
-                downloaded_duration_seconds = media_duration(probe_media(source))
+                download_seconds = time.monotonic() - download_started_at
+                source_bytes = source.stat().st_size
                 download_status = classify_full_source_download(
                     source_duration_seconds=source_duration_seconds,
                     downloaded_duration_seconds=downloaded_duration_seconds,
@@ -372,7 +488,7 @@ class BatchWorker:
                     job_id,
                     status=download_status,
                     duration_seconds=downloaded_duration_seconds,
-                    media_bytes=source.stat().st_size or None,
+                    media_bytes=source_bytes or None,
                 )
                 if (
                     bundle.metadata.video_id != job["youtube_video_id"]
@@ -383,23 +499,62 @@ class BatchWorker:
                         "다운로드한 전체 영상의 검증에 실패했습니다.",
                         code="ingestion_source_validation_failed",
                     )
+                self.repository.merge_job_performance_metrics(
+                    job_id,
+                    {
+                        "download": {
+                            **download_resources.metrics,
+                            "seconds": round(download_seconds, 3),
+                            "bytes": source_bytes,
+                            "durationSeconds": round(downloaded_duration_seconds, 3),
+                            "status": download_status,
+                        }
+                    },
+                )
 
                 self.repository.stage(job_id, "transcribing", 28, "영상 내용을 분석하고 있습니다.")
-                transcript = self._transcribe_source(
-                    job_id=job_id,
-                    source=source,
-                    work_dir=work_dir,
-                    duration_seconds=downloaded_duration_seconds,
+                transcription_started_at = time.monotonic()
+                with PhaseResourceMonitor(self.settings.task_vcpus) as transcription_resources:
+                    transcript = self._transcribe_source(
+                        job_id=job_id,
+                        source=source,
+                        work_dir=work_dir,
+                        duration_seconds=downloaded_duration_seconds,
+                    )
+                transcription_seconds = time.monotonic() - transcription_started_at
+                self.repository.merge_job_performance_metrics(
+                    job_id,
+                    {
+                        "transcription": {
+                            **transcription_resources.metrics,
+                            "seconds": round(transcription_seconds, 3),
+                            "segmentCount": len(transcript),
+                        }
+                    },
                 )
                 self.repository.stage(job_id, "selecting", 42, "쇼츠로 만들 장면을 찾고 있습니다.")
                 target_count = int(job["planned_short_count"])
-                clips = self.selector.select(
-                    video_title=str(job["video_title"]),
-                    duration_seconds=downloaded_duration_seconds,
-                    transcript=transcript,
-                    required_count=target_count,
-                    output_language=OutputLanguage(str(job["output_language"])),
-                )[:target_count]
+                selection_started_at = time.monotonic()
+                with PhaseResourceMonitor(self.settings.task_vcpus) as selection_resources:
+                    clips = self.selector.select(
+                        video_title=str(job["video_title"]),
+                        duration_seconds=downloaded_duration_seconds,
+                        transcript=transcript,
+                        required_count=target_count,
+                        output_language=OutputLanguage(str(job["output_language"])),
+                    )[:target_count]
+                selection_seconds = time.monotonic() - selection_started_at
+                self.repository.merge_job_performance_metrics(
+                    job_id,
+                    {
+                        "selection": {
+                            **selection_resources.metrics,
+                            "seconds": round(selection_seconds, 3),
+                            "selectedCount": len(clips),
+                            "targetCount": target_count,
+                        }
+                    },
+                )
                 clip_subtitles = {
                     index: self._relative_subtitles(transcript, clip)
                     for index, clip in enumerate(clips, start=1)
@@ -418,106 +573,153 @@ class BatchWorker:
                         )
                         for index, clip in enumerate(clips, start=1)
                     ]
-                    try:
-                        comments_by_clip = self.comment_generator.generate(comment_inputs)
-                    except Exception as exc:
-                        _log_event(
-                            "comment_generation_unexpected_fallback",
-                            job_id=job_id,
-                            error_type=type(exc).__name__,
-                        )
-                        comments_by_clip = {
-                            item.clip_index: fallback_comment_overlays(
-                                item.duration_seconds,
-                                count=item.target_count,
-                                clip_index=item.clip_index,
+                    comment_started_at = time.monotonic()
+                    used_comment_fallback = False
+                    with PhaseResourceMonitor(self.settings.task_vcpus) as comment_resources:
+                        try:
+                            comments_by_clip = self.comment_generator.generate(comment_inputs)
+                        except Exception as exc:
+                            used_comment_fallback = True
+                            _log_event(
+                                "comment_generation_unexpected_fallback",
+                                job_id=job_id,
+                                error_type=type(exc).__name__,
                             )
-                            for item in comment_inputs
-                        }
+                            comments_by_clip = {
+                                item.clip_index: fallback_comment_overlays(
+                                    item.duration_seconds,
+                                    count=item.target_count,
+                                    clip_index=item.clip_index,
+                                )
+                                for item in comment_inputs
+                            }
+                    self.repository.merge_job_performance_metrics(
+                        job_id,
+                        {
+                            "commentGeneration": {
+                                **comment_resources.metrics,
+                                "seconds": round(time.monotonic() - comment_started_at, 3),
+                                "clipCount": len(comment_inputs),
+                                "commentCount": sum(
+                                    len(comments) for comments in comments_by_clip.values()
+                                ),
+                                "fallback": used_comment_fallback,
+                            }
+                        },
+                    )
 
-                for index, clip in enumerate(clips, start=1):
+                for index in range(1, len(clips) + 1):
                     self.repository.set_project_attempt_selected(job_id, index)
-                    clean_key: str | None = None
-                    try:
-                        self.repository.stage(
-                            job_id,
-                            "extracting",
-                            45 + round(15 * index / max(1, target_count)),
-                            "편집용 영상을 준비하고 있습니다.",
-                        )
-                        short_id = str(uuid4())
-                        clean_path = work_dir / "clean" / f"{short_id}.mp4"
-                        clean_path.parent.mkdir(parents=True, exist_ok=True)
-                        self.renderer.extract_clean_clip(
-                            source_path=source,
-                            output_path=clean_path,
-                            clip=clip,
-                            work_dir=work_dir,
-                            video_aspect_ratio=VideoAspectRatio(
-                                str(job.get("video_aspect_ratio") or "1:1")
-                            ),
-                        )
-                        prefix = f"{job['mvp_session_id']}/{job_id}/{short_id}"
-                        clean_key = f"edit-sources/{prefix}.mp4"
-                        self.storage.upload(clean_path, clean_key, "video/mp4")
-                        inserted = self.repository.add_pending_short(
-                            short_id=short_id,
-                            job=job,
-                            clip_index=index,
-                            start_seconds=clip.start_seconds,
-                            end_seconds=clip.end_seconds,
-                            hook_title=clip.hook_title,
-                            highlight_reason=clip.reason,
-                            selection_raw_start_seconds=clip.selection_raw_start_seconds,
-                            selection_raw_end_seconds=clip.selection_raw_end_seconds,
-                            selection_raw_duration_seconds=clip.selection_raw_duration_seconds,
-                            selection_candidate_index=clip.selection_candidate_index,
-                            selection_provider=clip.selection_provider,
-                            selection_model=clip.selection_model,
-                            selection_length_adjustment=clip.selection_length_adjustment,
-                            selection_repositioned=clip.selection_repositioned,
-                            subtitles=[item.model_dump() for item in clip_subtitles[index]],
-                            comment_overlays=comments_by_clip.get(index, []),
-                            clean_key=clean_key,
-                            retention_days=int(job["retention_days"]),
-                            shard_index=0,
-                        )
-                        if not inserted:
-                            raise RuntimeError("작업 제한 시간이 종료되었습니다.")
-                        self.repository.set_project_attempt_extracted(job_id, index, short_id)
-                    except Exception as exc:
-                        if clean_key:
-                            try:
-                                self.storage.delete(clean_key)
-                            except Exception:
-                                pass
-                        self.repository.fail_project_attempt(
-                            job_id,
-                            index,
-                            stage="extraction",
-                            code=type(exc).__name__,
-                            message=str(exc),
-                        )
-                        _log_event(
-                            "project_output_failed",
-                            job_id=job_id,
-                            slot_index=index,
-                            failure_stage="extraction",
-                            error_type=type(exc).__name__,
-                        )
+                selection_shortfall = self.repository.fail_unselected_project_attempts(job_id)
+                completed_extractions = selection_shortfall
+                self.repository.stage(
+                    job_id,
+                    "extracting",
+                    45 + round(15 * completed_extractions / max(1, target_count)),
+                    f"편집용 영상을 준비하고 있습니다. ({completed_extractions}/{target_count})",
+                    completed_count=completed_extractions,
+                    total_count=target_count,
+                )
+                local_clean_paths: dict[str, Path] = {}
+                clean_results: list[dict[str, object]] = []
+                extraction_failures = 0
+                with PhaseResourceMonitor(self.settings.task_vcpus) as extraction_resources:
+                    with ThreadPoolExecutor(
+                        max_workers=2,
+                        thread_name_prefix="project-extract",
+                    ) as executor:
+                        futures = {
+                            executor.submit(
+                                self._prepare_project_clip,
+                                job_id=job_id,
+                                job=job,
+                                source=source,
+                                source_probe=source_probe,
+                                work_dir=work_dir,
+                                slot_index=index,
+                                clip=clip,
+                                subtitles=clip_subtitles[index],
+                                comments=comments_by_clip.get(index, []),
+                            ): index
+                            for index, clip in enumerate(clips, start=1)
+                        }
+                        for future in as_completed(futures):
+                            prepared = future.result()
+                            if prepared:
+                                short_id, clean_path, clean_metrics = prepared
+                                local_clean_paths[short_id] = clean_path
+                                clean_results.append(clean_metrics)
+                            else:
+                                extraction_failures += 1
+                            completed_extractions += 1
+                            self.repository.stage(
+                                job_id,
+                                "extracting",
+                                45 + round(
+                                    15 * completed_extractions / max(1, target_count)
+                                ),
+                                (
+                                    "편집용 영상을 준비하고 있습니다. "
+                                    f"({completed_extractions}/{target_count})"
+                                ),
+                                completed_count=completed_extractions,
+                                total_count=target_count,
+                            )
 
-                self.repository.fail_unselected_project_attempts(job_id)
+                clean_clip_seconds = sum(
+                    float(item.get("clipDurationSeconds") or 0) for item in clean_results
+                )
+                clean_clip_bytes = sum(
+                    int(clean.get("fileBytes") or 0)
+                    for item in clean_results
+                    if isinstance((clean := item.get("clean")), dict)
+                )
+                extraction_summary = {
+                    **extraction_resources.metrics,
+                    "selectedCount": len(clips),
+                    "succeededCount": len(clean_results),
+                    "failedCount": extraction_failures + selection_shortfall,
+                    "workers": 2,
+                    "ffmpegThreads": self.settings.ffmpeg_threads,
+                    "preset": self.settings.clean_clip_preset,
+                    "crf": self.settings.clean_clip_crf,
+                    "clipDurationSeconds": round(clean_clip_seconds, 3),
+                    "outputBytes": clean_clip_bytes,
+                    "bytesPerSecond": round(clean_clip_bytes / clean_clip_seconds, 3)
+                    if clean_clip_seconds
+                    else None,
+                }
+                self.repository.merge_job_performance_metrics(
+                    job_id,
+                    {
+                        "extraction": extraction_summary,
+                        "preparationSeconds": round(time.monotonic() - started_at, 3),
+                    },
+                )
+                _log_event("project_extraction_observed", job_id=job_id, **extraction_summary)
+
                 if not self.repository.mark_project_preparation_finished(job_id):
                     raise RuntimeError("프로젝트 준비 체크포인트를 저장하지 못했습니다.")
                 preparation_finished = True
-                self._render_project_outputs(job_id)
+                render_summary = self._render_project_outputs(job_id, local_clean_paths)
+                total_seconds = time.monotonic() - started_at
+                self.repository.merge_job_performance_metrics(
+                    job_id,
+                    {
+                        "render": render_summary,
+                        "totalSeconds": round(total_seconds, 3),
+                        "containerPeakMemoryBytes": _container_memory_peak_bytes(),
+                    },
+                )
                 result = self.repository.finalize_project_job(job_id)
                 _log_event(
                     "project_run_finalized",
                     job_id=job_id,
                     resume=False,
-                    elapsed_seconds=round(time.monotonic() - started_at, 3),
+                    elapsed_seconds=round(total_seconds, 3),
                     container_peak_memory_bytes=_container_memory_peak_bytes(),
+                    extraction_summary=extraction_summary,
+                    render_summary=render_summary,
                     result=result,
                 )
         except Exception as exc:
@@ -553,32 +755,233 @@ class BatchWorker:
             if work_dir is not None:
                 shutil.rmtree(work_dir, ignore_errors=True)
 
-    def _render_project_outputs(self, job_id: str) -> None:
+    def _prepare_project_clip(
+        self,
+        *,
+        job_id: str,
+        job: dict[str, object],
+        source: Path,
+        source_probe: dict[str, object],
+        work_dir: Path,
+        slot_index: int,
+        clip: HighlightClip,
+        subtitles: list[SubtitleSegment],
+        comments: list[dict[str, object]],
+    ) -> tuple[str, Path, dict[str, object]] | None:
+        started_at = time.monotonic()
+        short_id = str(uuid4())
+        clean_path = work_dir / "clean" / f"{short_id}.mp4"
+        clean_path.parent.mkdir(parents=True, exist_ok=True)
+        clean_key: str | None = None
+        clean_metrics: dict[str, object] = {}
+        try:
+            self.renderer.extract_clean_clip(
+                source_path=source,
+                output_path=clean_path,
+                clip=clip,
+                work_dir=work_dir / "extract" / short_id,
+                video_aspect_ratio=VideoAspectRatio(
+                    str(job.get("video_aspect_ratio") or "1:1")
+                ),
+                source_probe=source_probe,
+                metrics_callback=clean_metrics.update,
+            )
+            upload_started_at = time.monotonic()
+            prefix = f"{job['mvp_session_id']}/{job_id}/{short_id}"
+            clean_key = f"edit-sources/{prefix}.mp4"
+            uploaded_size = self.storage.upload(clean_path, clean_key, "video/mp4")
+            upload_seconds = time.monotonic() - upload_started_at
+            inserted = self.repository.add_pending_short(
+                short_id=short_id,
+                job=job,
+                clip_index=slot_index,
+                start_seconds=clip.start_seconds,
+                end_seconds=clip.end_seconds,
+                hook_title=clip.hook_title,
+                highlight_reason=clip.reason,
+                selection_raw_start_seconds=clip.selection_raw_start_seconds,
+                selection_raw_end_seconds=clip.selection_raw_end_seconds,
+                selection_raw_duration_seconds=clip.selection_raw_duration_seconds,
+                selection_candidate_index=clip.selection_candidate_index,
+                selection_provider=clip.selection_provider,
+                selection_model=clip.selection_model,
+                selection_length_adjustment=clip.selection_length_adjustment,
+                selection_repositioned=clip.selection_repositioned,
+                subtitles=[item.model_dump() for item in subtitles],
+                comment_overlays=comments,
+                clean_key=clean_key,
+                retention_days=int(job["retention_days"]),
+                shard_index=0,
+            )
+            if not inserted:
+                raise RuntimeError("작업 제한 시간이 종료되었습니다.")
+            total_seconds = time.monotonic() - started_at
+            metrics = {
+                "clipDurationSeconds": round(clip.end_seconds - clip.start_seconds, 3),
+                "commentCount": len(comments),
+                "clean": {
+                    **clean_metrics,
+                    "uploadSeconds": round(upload_seconds, 3),
+                    "fileBytes": uploaded_size,
+                    "totalSeconds": round(total_seconds, 3),
+                },
+            }
+            self.repository.merge_project_attempt_performance_metrics(
+                job_id,
+                slot_index,
+                metrics,
+            )
+            _log_event(
+                "clean_clip_succeeded",
+                job_id=job_id,
+                short_id=short_id,
+                slot_index=slot_index,
+                clip_duration_seconds=round(clip.end_seconds - clip.start_seconds, 3),
+                elapsed_seconds=round(total_seconds, 3),
+                ffmpeg_seconds=clean_metrics.get("ffmpegSeconds"),
+                upload_seconds=round(upload_seconds, 3),
+                clean_clip_bytes=uploaded_size,
+                clean_clip_bytes_per_second=round(
+                    uploaded_size / max(0.001, clip.end_seconds - clip.start_seconds),
+                    3,
+                ),
+                clean_clip_preset=self.settings.clean_clip_preset,
+                clean_clip_crf=self.settings.clean_clip_crf,
+            )
+            return short_id, clean_path, metrics
+        except Exception as exc:
+            if clean_key:
+                try:
+                    self.storage.delete(clean_key)
+                except Exception:
+                    pass
+            self.repository.fail_project_attempt(
+                job_id,
+                slot_index,
+                stage="extraction",
+                code=type(exc).__name__,
+                message=str(exc),
+            )
+            self.repository.merge_project_attempt_performance_metrics(
+                job_id,
+                slot_index,
+                {
+                    "clipDurationSeconds": round(clip.end_seconds - clip.start_seconds, 3),
+                    "commentCount": len(comments),
+                    "clean": {
+                        **clean_metrics,
+                        "totalSeconds": round(time.monotonic() - started_at, 3),
+                        "failed": True,
+                    },
+                },
+            )
+            _log_event(
+                "project_output_failed",
+                job_id=job_id,
+                slot_index=slot_index,
+                failure_stage="extraction",
+                error_type=type(exc).__name__,
+            )
+            return None
+
+    def _render_project_outputs(
+        self,
+        job_id: str,
+        local_clean_paths: dict[str, Path] | None = None,
+    ) -> dict[str, object]:
         items = self.repository.get_project_render_items(job_id)
         if not items:
-            return
-        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="project-render") as executor:
-            futures = {}
-            for item in items:
-                short_id = str(item["id"])
-                self.repository.mark_project_attempt_rendering(short_id)
-                futures[executor.submit(self._render_initial_short, item)] = item
-            for future in as_completed(futures):
-                item = futures[future]
-                try:
-                    future.result()
-                except Exception as exc:
-                    self.repository.fail_initial_render(
-                        str(item["id"]),type(exc).__name__,str(exc),terminal=True
+            return {
+                "wallSeconds": 0.0,
+                "renderedCount": 0,
+                "failedCount": 0,
+                "localCleanReuseCount": 0,
+                "s3CleanDownloadCount": 0,
+            }
+        total = len(items)
+        self.repository.stage(
+            job_id,
+            "rendering",
+            60,
+            f"쇼츠를 렌더링하고 있습니다. (0/{total})",
+            completed_count=0,
+            total_count=total,
+        )
+        results: list[dict[str, object]] = []
+        failed_count = 0
+        clean_sources: dict[str, str] = {}
+        with PhaseResourceMonitor(self.settings.task_vcpus) as resources:
+            with ThreadPoolExecutor(max_workers=2, thread_name_prefix="project-render") as executor:
+                futures = {}
+                for item in items:
+                    short_id = str(item["id"])
+                    local_path = (local_clean_paths or {}).get(short_id)
+                    clean_sources[short_id] = (
+                        "local" if local_path is not None and local_path.is_file() else "s3"
                     )
-                    _log_event(
-                        "project_output_failed",
-                        job_id=job_id,
-                        short_id=item["id"],
-                        slot_index=item["slot_index"],
-                        failure_stage="rendering",
-                        error_type=type(exc).__name__,
+                    self.repository.mark_project_attempt_rendering(short_id)
+                    futures[
+                        executor.submit(
+                            self._render_initial_short,
+                            item,
+                            local_path,
+                        )
+                    ] = item
+                completed = 0
+                for future in as_completed(futures):
+                    item = futures[future]
+                    try:
+                        render_metrics = future.result()
+                        if render_metrics:
+                            results.append(render_metrics)
+                    except Exception as exc:
+                        failed_count += 1
+                        self.repository.fail_initial_render(
+                            str(item["id"]),type(exc).__name__,str(exc),terminal=True
+                        )
+                        _log_event(
+                            "project_output_failed",
+                            job_id=job_id,
+                            short_id=item["id"],
+                            slot_index=item["slot_index"],
+                            failure_stage="rendering",
+                            error_type=type(exc).__name__,
+                        )
+                    completed += 1
+                    self.repository.stage(
+                        job_id,
+                        "rendering",
+                        60 + round(35 * completed / max(1, total)),
+                        f"쇼츠를 렌더링하고 있습니다. ({completed}/{total})",
+                        completed_count=completed,
+                        total_count=total,
                     )
+
+        ffmpeg_seconds = sum(float(item.get("ffmpegSeconds") or 0) for item in results)
+        render_seconds = sum(float(item.get("totalSeconds") or 0) for item in results)
+        clip_seconds = sum(float(item.get("clipDurationSeconds") or 0) for item in results)
+        summary = {
+            **resources.metrics,
+            "renderedCount": len(results),
+            "failedCount": failed_count,
+            "workers": 2,
+            "ffmpegThreads": self.settings.ffmpeg_threads,
+            "ffmpegSeconds": round(ffmpeg_seconds, 3),
+            "shortRenderSeconds": round(render_seconds, 3),
+            "clipDurationSeconds": round(clip_seconds, 3),
+            "renderComputeFactor": round(ffmpeg_seconds / clip_seconds, 4)
+            if clip_seconds else None,
+            "renderFfmpegShare": round(ffmpeg_seconds / render_seconds, 4)
+            if render_seconds else None,
+            "localCleanReuseCount": sum(
+                1 for source in clean_sources.values() if source == "local"
+            ),
+            "s3CleanDownloadCount": sum(
+                1 for source in clean_sources.values() if source == "s3"
+            ),
+        }
+        _log_event("project_render_observed", job_id=job_id, **summary)
+        return summary
 
     def _claim_next_ingestion_route(
         self,
@@ -1188,10 +1591,14 @@ class BatchWorker:
             container_peak_memory_bytes=_container_memory_peak_bytes(),
         )
 
-    def _render_initial_short(self, item: dict[str, object]) -> None:
+    def _render_initial_short(
+        self,
+        item: dict[str, object],
+        local_clean_path: Path | None = None,
+    ) -> dict[str, object] | None:
         short_id = str(item["id"])
         if not self.repository.begin_initial_render(short_id):
-            return
+            return None
         started_at = time.monotonic()
         clip_duration_seconds = max(
             0.0,
@@ -1209,12 +1616,23 @@ class BatchWorker:
         uploaded_keys: list[str] = []
         committed = False
         completion_started = False
+        render_metrics: dict[str, object] = {}
+        clean_source = "s3"
+        clean_acquire_seconds = 0.0
+        thumbnail_seconds = 0.0
+        upload_seconds = 0.0
         shutil.rmtree(work_dir, ignore_errors=True)
         work_dir.mkdir(parents=True)
         try:
-            clean_path = self.storage.download(
-                str(item["clean_clip_s3_key"]), work_dir / "clean.mp4"
-            )
+            clean_acquire_started_at = time.monotonic()
+            if local_clean_path is not None and local_clean_path.is_file():
+                clean_path = local_clean_path
+                clean_source = "local"
+            else:
+                clean_path = self.storage.download(
+                    str(item["clean_clip_s3_key"]), work_dir / "clean.mp4"
+                )
+            clean_acquire_seconds = time.monotonic() - clean_acquire_started_at
             self.repository.update_initial_render_progress(short_id, 30)
             output_path = work_dir / "output.mp4"
             thumbnail_path = work_dir / "thumbnail.jpg"
@@ -1251,16 +1669,21 @@ class BatchWorker:
                 comment_overlays=comments,
                 title_text_styles=title_text_styles,
                 custom_template_config=_custom_template_config(item),
+                metrics_callback=render_metrics.update,
             )
+            thumbnail_started_at = time.monotonic()
             self._thumbnail(output_path, thumbnail_path, work_dir)
+            thumbnail_seconds = time.monotonic() - thumbnail_started_at
             self.repository.update_initial_render_progress(short_id, 82)
             prefix = f"{item['mvp_session_id']}/{item['job_id']}/{short_id}"
             output_key = f"outputs/{prefix}/v1.mp4"
             thumbnail_key = f"thumbnails/{prefix}.jpg"
+            upload_started_at = time.monotonic()
             size = self.storage.upload(output_path, output_key, "video/mp4")
             uploaded_keys.append(output_key)
             self.storage.upload(thumbnail_path, thumbnail_key, "image/jpeg")
             uploaded_keys.append(thumbnail_key)
+            upload_seconds = time.monotonic() - upload_started_at
             completion_started = True
             committed = self.repository.complete_initial_render(
                 short_id, output_key, thumbnail_key, size
@@ -1277,15 +1700,42 @@ class BatchWorker:
                             self.storage.delete(key)
                         except Exception:
                             pass
+            total_seconds = time.monotonic() - started_at
+            metrics = {
+                **render_metrics,
+                "clipDurationSeconds": round(clip_duration_seconds, 3),
+                "commentCount": len(comments),
+                "cleanSource": clean_source,
+                "cleanAcquireSeconds": round(clean_acquire_seconds, 3),
+                "thumbnailSeconds": round(thumbnail_seconds, 3),
+                "uploadSeconds": round(upload_seconds, 3),
+                "outputBytes": size,
+                "totalSeconds": round(total_seconds, 3),
+                "committed": committed,
+            }
+            self.repository.merge_project_attempt_performance_metrics(
+                str(item["job_id"]),
+                int(item.get("slot_index") or item.get("clip_index") or 0),
+                {"render": metrics},
+            )
             _log_event(
                 "render_short_succeeded" if committed else "render_short_discarded",
                 job_id=item["job_id"],
                 short_id=short_id,
-                elapsed_seconds=round(time.monotonic() - started_at, 3),
+                elapsed_seconds=round(total_seconds, 3),
                 clip_duration_seconds=round(clip_duration_seconds, 3),
+                clean_source=clean_source,
+                clean_acquire_seconds=round(clean_acquire_seconds, 3),
+                overlay_seconds=render_metrics.get("overlaySeconds"),
+                ffmpeg_seconds=render_metrics.get("ffmpegSeconds"),
+                thumbnail_seconds=round(thumbnail_seconds, 3),
+                upload_seconds=round(upload_seconds, 3),
+                average_fps=render_metrics.get("averageFps"),
+                average_speed=render_metrics.get("speed"),
                 output_size_bytes=size,
                 container_peak_memory_bytes=_container_memory_peak_bytes(),
             )
+            return metrics if committed else None
         except Exception as exc:
             # Once the commit request has started its outcome can be ambiguous: the
             # database may already point at these keys even if the response was lost.
@@ -1297,6 +1747,23 @@ class BatchWorker:
                     except Exception:
                         pass
             self.repository.fail_initial_render(short_id, type(exc).__name__, str(exc))
+            self.repository.merge_project_attempt_performance_metrics(
+                str(item["job_id"]),
+                int(item.get("slot_index") or item.get("clip_index") or 0),
+                {
+                    "render": {
+                        **render_metrics,
+                        "clipDurationSeconds": round(clip_duration_seconds, 3),
+                        "cleanSource": clean_source,
+                        "cleanAcquireSeconds": round(clean_acquire_seconds, 3),
+                        "thumbnailSeconds": round(thumbnail_seconds, 3),
+                        "uploadSeconds": round(upload_seconds, 3),
+                        "totalSeconds": round(time.monotonic() - started_at, 3),
+                        "failed": True,
+                        "errorType": type(exc).__name__,
+                    }
+                },
+            )
             _log_event(
                 "render_short_failed",
                 job_id=item["job_id"],
@@ -1309,6 +1776,8 @@ class BatchWorker:
             raise
         finally:
             shutil.rmtree(work_dir, ignore_errors=True)
+            if local_clean_path is not None:
+                local_clean_path.unlink(missing_ok=True)
 
     def rerender(self, short_id: str) -> None:
         item = self.repository.get_short(short_id)

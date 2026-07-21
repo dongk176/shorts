@@ -189,6 +189,7 @@ class WorkerRepository:
                     """
                     update shorts_mvp.video_jobs
                     set status='rendering',stage='rendering',progress=greatest(progress,60),
+                        stage_completed_count=0,stage_total_count=0,
                         heartbeat_at=now(),error_code=null,error_message=null
                     where id=%s and pipeline_version=2
                       and preparation_finished_at is not null
@@ -202,6 +203,7 @@ class WorkerRepository:
                 """
                 update shorts_mvp.video_jobs
                 set status='downloading',stage='downloading',progress=10,
+                    stage_completed_count=0,stage_total_count=0,
                     attempt_count=attempt_count+1,started_at=coalesce(started_at,now()),
                     claimed_at=coalesce(claimed_at,now()),heartbeat_at=now(),
                     error_code=null,error_message=null,error_details='{}'::jsonb,
@@ -246,6 +248,53 @@ class WorkerRepository:
                 """,
                 (short_id, job_id, slot_index),
             )
+
+    def merge_project_attempt_performance_metrics(
+        self, job_id: str, slot_index: int, metrics: dict[str, object]
+    ) -> bool:
+        try:
+            with self.connect() as connection:
+                connection.execute(
+                    """
+                    update shorts_mvp.project_output_attempts
+                    set performance_metrics=performance_metrics || %s
+                    where job_id=%s and slot_index=%s
+                    """,
+                    (Jsonb(metrics), job_id, slot_index),
+                )
+            return True
+        except Exception as exc:
+            print(json.dumps({
+                "event": "performance_metrics_write_failed",
+                "scope": "project_output_attempt",
+                "job_id": job_id,
+                "slot_index": slot_index,
+                "error_type": type(exc).__name__,
+            }, separators=(",", ":")), flush=True)
+            return False
+
+    def merge_job_performance_metrics(
+        self, job_id: str, metrics: dict[str, object]
+    ) -> bool:
+        try:
+            with self.connect() as connection:
+                connection.execute(
+                    """
+                    update shorts_mvp.video_jobs
+                    set performance_metrics=performance_metrics || %s
+                    where id=%s
+                    """,
+                    (Jsonb(metrics), job_id),
+                )
+            return True
+        except Exception as exc:
+            print(json.dumps({
+                "event": "performance_metrics_write_failed",
+                "scope": "video_job",
+                "job_id": job_id,
+                "error_type": type(exc).__name__,
+            }, separators=(",", ":")), flush=True)
+            return False
 
     def fail_project_attempt(
         self,
@@ -303,6 +352,7 @@ class WorkerRepository:
                 """
                 update shorts_mvp.video_jobs
                 set status='rendering',stage='rendering',progress=60,
+                    stage_completed_count=0,stage_total_count=0,
                     preparation_finished_at=coalesce(preparation_finished_at,now()),
                     source_deleted_at=coalesce(source_deleted_at,now()),heartbeat_at=now()
                 where id=%s and pipeline_version=2
@@ -492,8 +542,23 @@ class WorkerRepository:
                     """
                 )
 
-    def stage(self, job_id: str, stage: str, progress: int, message: str) -> None:
+    def stage(
+        self,
+        job_id: str,
+        stage: str,
+        progress: int,
+        message: str,
+        *,
+        completed_count: int | None = None,
+        total_count: int | None = None,
+    ) -> None:
         bounded_progress = max(0, min(100, progress))
+        bounded_total = None if total_count is None else max(0, min(15, total_count))
+        bounded_completed = (
+            None
+            if bounded_total is None
+            else max(0, min(bounded_total, completed_count or 0))
+        )
         if self._enqueue_state_event(
             {
                 "type": "stage",
@@ -501,6 +566,8 @@ class WorkerRepository:
                 "stage": stage,
                 "progress": bounded_progress,
                 "message": message,
+                "stageCompletedCount": bounded_completed,
+                "stageTotalCount": bounded_total,
             }
         ):
             return
@@ -509,17 +576,39 @@ class WorkerRepository:
                 """
                 update shorts_mvp.video_jobs
                 set status=%s, stage=%s, progress=%s,
+                    stage_completed_count=case
+                      when %s::integer is null then stage_completed_count else %s::integer end,
+                    stage_total_count=case
+                      when %s::integer is null then stage_total_count else %s::integer end,
                     started_at=coalesce(started_at, now()), heartbeat_at=now()
                 where id=%s
                 """,
-                (stage, stage, bounded_progress, job_id),
+                (
+                    stage,
+                    stage,
+                    bounded_progress,
+                    bounded_total,
+                    bounded_completed,
+                    bounded_total,
+                    bounded_total,
+                    job_id,
+                ),
             )
             connection.execute(
                 """
-                insert into shorts_mvp.job_events (job_id, stage, progress, message)
-                values (%s,%s,%s,%s)
+                insert into shorts_mvp.job_events (job_id,stage,progress,message,metadata)
+                values (%s,%s,%s,%s,%s)
                 """,
-                (job_id, stage, bounded_progress, message),
+                (
+                    job_id,
+                    stage,
+                    bounded_progress,
+                    message,
+                    Jsonb({
+                        "stageCompletedCount": bounded_completed,
+                        "stageTotalCount": bounded_total,
+                    }) if bounded_total is not None else Jsonb({}),
+                ),
             )
 
     def heartbeat(self, job_id: str) -> None:
@@ -746,6 +835,22 @@ class WorkerRepository:
                     shard_index,
                 ),
             )
+            if int(job.get("pipeline_version") or 1) == 2:
+                checkpoint = connection.execute(
+                    """
+                    update shorts_mvp.project_output_attempts
+                    set status='extracted',generated_short_id=%s,
+                        extracted_at=coalesce(extracted_at,now()),
+                        failure_stage=null,failure_code=null,
+                        failure_message=null,failed_at=null
+                    where job_id=%s and slot_index=%s
+                      and status in ('selected','extracted')
+                    returning id
+                    """,
+                    (short_id, job["id"], clip_index),
+                ).fetchone()
+                if not checkpoint:
+                    raise RuntimeError("편집용 영상 체크포인트를 확정하지 못했습니다.")
             return True
 
     def mark_render_queued(self, job_id: str, planned_count: int) -> bool:

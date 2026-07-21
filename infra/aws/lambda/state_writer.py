@@ -15,12 +15,22 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, list[dict[str, st
             job_id = payload["jobId"]
             if payload.get("type") in {"heartbeat", "stage"}:
                 is_stage = payload.get("type") == "stage"
-                rest("rpc/apply_job_state_event", method="POST", body={
+                rest("rpc/apply_job_state_event_v2", method="POST", body={
                     "p_job_id": job_id,
                     "p_stage": payload.get("stage") if is_stage else None,
                     "p_progress": int(payload.get("progress") or 0),
                     "p_message": str(payload.get("message") or ""),
                     "p_event_at": payload["eventAt"],
+                    "p_stage_completed_count": (
+                        int(payload["stageCompletedCount"])
+                        if is_stage and payload.get("stageCompletedCount") is not None
+                        else None
+                    ),
+                    "p_stage_total_count": (
+                        int(payload["stageTotalCount"])
+                        if is_stage and payload.get("stageTotalCount") is not None
+                        else None
+                    ),
                 }, prefer="return=representation")
             else:
                 raise ValueError("Unsupported state event")

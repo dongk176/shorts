@@ -12,6 +12,7 @@ from shorts_worker.config import Settings
 from shorts_worker.renderer import (
     VideoRenderer,
     continuous_comment_windows,
+    create_comment_timeline_manifest,
     custom_video_geometry_filters,
     video_layout,
 )
@@ -118,6 +119,7 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
             comments[index].start_seconds >= comments[index - 1].end_seconds
             for index in range(1, len(comments))
         )
+    render_metrics: dict[str, object] = {}
     renderer.render_clean_clip(
         clean_path=clean,
         output_path=output,
@@ -131,7 +133,12 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
         channel_thumbnail_path=channel_thumbnail,
         video_aspect_ratio=video_aspect_ratio,
         comment_overlays=comments,
+        metrics_callback=render_metrics.update,
     )
+    if comment_template:
+        assert render_metrics["commentInputCount"] == 1
+        assert render_metrics["commentCount"] == len(comments)
+        assert float(render_metrics["ffmpegSeconds"]) > 0
 
     probe = _run(
         [
@@ -195,6 +202,54 @@ def test_comment_windows_cover_entire_clip_even_when_saved_ranges_have_gaps() ->
     windows = continuous_comment_windows(comments, 12.0)
 
     assert [(start, end) for _, start, end in windows] == [(0.0, 4.8), (4.8, 8.0), (8.0, 12.0)]
+
+
+def test_comment_timeline_normalizes_rgba_frames_and_uses_safe_relative_paths(
+    tmp_path: Path,
+) -> None:
+    panels = []
+    for index, size in enumerate(((320, 90), (280, 140), (300, 110))):
+        panel = tmp_path / f"panel-{index}.png"
+        Image.new("RGBA", size, (20 * index, 40, 180, 255)).save(panel)
+        panels.append(panel)
+    comments = [
+        CommentOverlay.model_validate({
+            "id": f"comment-{index}",
+            "startSeconds": start,
+            "endSeconds": end,
+            "text": f"댓글 {index}",
+            "initial": "댓",
+            "avatarColor": "#2674C8",
+            "nickname": "테스트",
+            "likeCount": 10,
+            "ageLabel": "방금 전",
+        })
+        for index, (start, end) in enumerate(((0, 1.25), (1.25, 3.0), (3.0, 5.0)))
+    ]
+    windows = list(zip(comments, (0.0, 1.25, 3.0), (1.25, 3.0, 5.0), strict=True))
+
+    manifest, height = create_comment_timeline_manifest(
+        panels,
+        windows,
+        directory=tmp_path / "timeline",
+        prefix="safe",
+    )
+
+    assert height == 140
+    normalized = sorted((tmp_path / "timeline").glob("safe_comment_frame_*.png"))
+    assert len(normalized) == 3
+    assert all(Image.open(frame).size == (320, 140) for frame in normalized)
+    lines = manifest.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "ffconcat version 1.0"
+    assert [line for line in lines if line.startswith("duration ")] == [
+        "duration 1.250000",
+        "duration 1.750000",
+        "duration 2.000000",
+    ]
+    file_lines = [line for line in lines if line.startswith("file ")]
+    assert len(file_lines) == 4
+    assert all("/" not in line and "\\" not in line for line in file_lines)
+    assert file_lines[-1] == file_lines[-2]
 
 
 def test_custom_template_config_rejects_video_outside_canvas() -> None:
@@ -390,6 +445,7 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
         }
     )
     output = tmp_path / "custom.mp4"
+    render_metrics: dict[str, object] = {}
 
     VideoRenderer(
         Settings(temp_dir=tmp_path / "temp", ffmpeg_timeout_seconds=120)
@@ -417,7 +473,9 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
             )
         ],
         custom_template_config=config,
+        metrics_callback=render_metrics.update,
     )
+    assert render_metrics["commentInputCount"] == 1
 
     probe = json.loads(
         _run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(output)]).stdout

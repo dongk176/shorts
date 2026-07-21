@@ -366,6 +366,8 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", value: "30" },
         { name: "OPENAI_TRANSCRIBE_MAX_WORKERS", value: "4" },
         { name: "FFMPEG_THREADS", value: "2" },
+        { name: "CLEAN_CLIP_PRESET", value: "superfast" },
+        { name: "CLEAN_CLIP_CRF", value: "20" },
       ],
       secrets: [
         secret("DATABASE_URL"),
@@ -397,6 +399,8 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         image: `${repository.repositoryUri}:${prepareWorkerImageTag}`,
         environment: [
           ...baseContainer.environment,
+          { name: "TASK_VCPUS", value: "4" },
+          { name: "WORKER_IMAGE_TAG", value: prepareWorkerImageTag },
           { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
           { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "30" },
         ],
@@ -439,6 +443,8 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         image: `${repository.repositoryUri}:${workerImageTag}`,
         environment: [
           ...baseContainer.environment,
+          { name: "TASK_VCPUS", value: "4" },
+          { name: "WORKER_IMAGE_TAG", value: workerImageTag },
           { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
           { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "30" },
         ],
@@ -460,6 +466,11 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       containerProperties: {
         ...baseContainer,
         image: `${repository.repositoryUri}:${workerImageTag}`,
+        environment: [
+          ...baseContainer.environment,
+          { name: "TASK_VCPUS", value: "2" },
+          { name: "WORKER_IMAGE_TAG", value: workerImageTag },
+        ],
         runtimePlatform: { cpuArchitecture: "X86_64", operatingSystemFamily: "LINUX" },
         resourceRequirements: [
           { type: "VCPU", value: "2" },
@@ -669,6 +680,78 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       metricNamespace: renderMetricNamespace,
       metricName: "ProjectBatchOom",
       metricValue: "1",
+    });
+    new logs.MetricFilter(this, "ProjectExtractionWallMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_extraction_observed" && $.wallSeconds = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "ProjectExtractionWallSeconds",
+      metricValue: "$.wallSeconds",
+    });
+    new logs.MetricFilter(this, "ProjectRenderWallMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_render_observed" && $.wallSeconds = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "ProjectRenderWallSeconds",
+      metricValue: "$.wallSeconds",
+    });
+    new logs.MetricFilter(this, "RenderComputeFactorMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_render_observed" && $.renderComputeFactor = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "RenderComputeFactor",
+      metricValue: "$.renderComputeFactor",
+    });
+    new logs.MetricFilter(this, "RenderFfmpegShareMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_render_observed" && $.renderFfmpegShare = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "RenderFfmpegShare",
+      metricValue: "$.renderFfmpegShare",
+    });
+    new logs.MetricFilter(this, "RenderPhaseCpuUtilizationMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_render_observed" && $.cpuUtilizationPercent = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "RenderPhaseCpuUtilization",
+      metricValue: "$.cpuUtilizationPercent",
+    });
+    new logs.MetricFilter(this, "LocalCleanReuseMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_render_observed" && $.localCleanReuseCount = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "LocalCleanReuseCount",
+      metricValue: "$.localCleanReuseCount",
+    });
+    new logs.MetricFilter(this, "S3CleanDownloadMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_render_observed" && $.s3CleanDownloadCount = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "S3CleanDownloadCount",
+      metricValue: "$.s3CleanDownloadCount",
+    });
+    new logs.MetricFilter(this, "CleanClipBytesPerSecondMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "clean_clip_succeeded" && $.clean_clip_bytes_per_second = * }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "CleanClipBytesPerSecond",
+      metricValue: "$.clean_clip_bytes_per_second",
     });
     const cleanup = new lambda.Function(this, "CleanupFunction", {
       runtime: lambda.Runtime.PYTHON_3_12,

@@ -142,6 +142,8 @@ describe("shorts MVP infrastructure", () => {
           { Name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", Value: "30" },
           { Name: "OPENAI_TRANSCRIBE_MAX_WORKERS", Value: "4" },
           { Name: "FFMPEG_THREADS", Value: "2" },
+          { Name: "CLEAN_CLIP_PRESET", Value: "superfast" },
+          { Name: "CLEAN_CLIP_CRF", Value: "20" },
           { Name: "INGESTION_EGRESS_MODE", Value: "webshare_isp" },
           { Name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", Value: "30" },
         ]),
@@ -175,7 +177,23 @@ describe("shorts MVP infrastructure", () => {
       RetryStrategy: { Attempts: 1 },
       Timeout: { AttemptDurationSeconds: 7200 },
     });
-    compute.resourceCountIs("AWS::Logs::MetricFilter", 13);
+    compute.resourceCountIs("AWS::Logs::MetricFilter", 21);
+    for (const metricName of [
+      "RenderComputeFactor",
+      "RenderFfmpegShare",
+      "RenderPhaseCpuUtilization",
+      "ProjectRenderWallSeconds",
+      "ProjectExtractionWallSeconds",
+      "CleanClipBytesPerSecond",
+      "LocalCleanReuseCount",
+      "S3CleanDownloadCount",
+    ]) {
+      compute.hasResourceProperties("AWS::Logs::MetricFilter", {
+        MetricTransformations: Match.arrayWith([
+          Match.objectLike({ MetricName: metricName }),
+        ]),
+      });
+    }
     compute.resourceCountIs("AWS::SQS::Queue", 3);
     compute.hasResourceProperties("AWS::SQS::Queue", {
       VisibilityTimeout: 180,

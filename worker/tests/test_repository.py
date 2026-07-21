@@ -244,4 +244,20 @@ def test_fargate_project_migration_keeps_ready_outputs_and_uses_half_threshold()
     assert "set status='consumed'" in migration
     assert "set status='released'" in migration
     assert "project_resume_count=1" in migration
+
+
+def test_render_performance_migration_adds_atomic_stage_counts_and_internal_metrics() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607220002_render_performance.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "stage_completed_count integer not null default 0" in migration
+    assert "stage_total_count integer not null default 0" in migration
+    assert migration.count("performance_metrics jsonb not null default '{}'::jsonb") == 2
+    assert "create or replace function shorts_mvp.apply_job_state_event_v2" in migration
+    assert "stage_completed_count=case" in migration
+    assert "stage_total_count=case" in migration
     assert "public." not in migration
