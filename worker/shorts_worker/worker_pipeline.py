@@ -206,6 +206,18 @@ class BatchWorker:
         self.renderer = VideoRenderer(settings)
         self.queue = WorkQueue(settings.aws_region)
 
+    def _project_worker_count(self) -> int:
+        return max(
+            1,
+            min(4, self.settings.task_vcpus // max(1, self.settings.ffmpeg_threads)),
+        )
+
+    def _project_resource_tier(self) -> str:
+        configured = os.getenv("PROJECT_RESOURCE_TIER", "").strip().lower()
+        if configured in {"standard", "heavy"}:
+            return configured
+        return "heavy" if self.settings.task_vcpus >= 8 else "standard"
+
     @cached_property
     def ingestion(self) -> YtDlpIngestionProvider:
         return YtDlpIngestionProvider(
@@ -388,17 +400,21 @@ class BatchWorker:
 
         started_at = time.monotonic()
         queue_delay_seconds = _render_queue_delay_seconds()
+        resource_tier = self._project_resource_tier()
+        project_worker_count = self._project_worker_count()
         self.repository.merge_job_performance_metrics(
             job_id,
             {
                 "schemaVersion": 1,
                 "batchQueueSeconds": queue_delay_seconds,
                 "workerImageTag": os.getenv("WORKER_IMAGE_TAG"),
+                "resourceTier": resource_tier,
+                "taskVcpus": self.settings.task_vcpus,
                 "ffmpeg": {
                     "cleanClipPreset": self.settings.clean_clip_preset,
                     "cleanClipCrf": self.settings.clean_clip_crf,
                     "cleanClipThreads": self.settings.ffmpeg_threads,
-                    "renderWorkers": 2,
+                    "renderWorkers": project_worker_count,
                     "outputWidth": 1080,
                     "outputHeight": 1920,
                     "outputFpsCap": 30,
@@ -411,6 +427,9 @@ class BatchWorker:
             resume=resume,
             batch_job_id=os.getenv("AWS_BATCH_JOB_ID"),
             queue_delay_seconds=queue_delay_seconds,
+            resource_tier=resource_tier,
+            task_vcpus=self.settings.task_vcpus,
+            worker_count=project_worker_count,
         )
         if resume:
             render_summary = self._render_project_outputs(job_id)
@@ -625,7 +644,7 @@ class BatchWorker:
                 extraction_failures = 0
                 with PhaseResourceMonitor(self.settings.task_vcpus) as extraction_resources:
                     with ThreadPoolExecutor(
-                        max_workers=2,
+                        max_workers=project_worker_count,
                         thread_name_prefix="project-extract",
                     ) as executor:
                         futures = {
@@ -679,7 +698,7 @@ class BatchWorker:
                     "selectedCount": len(clips),
                     "succeededCount": len(clean_results),
                     "failedCount": extraction_failures + selection_shortfall,
-                    "workers": 2,
+                    "workers": project_worker_count,
                     "ffmpegThreads": self.settings.ffmpeg_threads,
                     "preset": self.settings.clean_clip_preset,
                     "crf": self.settings.clean_clip_crf,
@@ -910,8 +929,12 @@ class BatchWorker:
         results: list[dict[str, object]] = []
         failed_count = 0
         clean_sources: dict[str, str] = {}
+        project_worker_count = self._project_worker_count()
         with PhaseResourceMonitor(self.settings.task_vcpus) as resources:
-            with ThreadPoolExecutor(max_workers=2, thread_name_prefix="project-render") as executor:
+            with ThreadPoolExecutor(
+                max_workers=project_worker_count,
+                thread_name_prefix="project-render",
+            ) as executor:
                 futures = {}
                 for item in items:
                     short_id = str(item["id"])
@@ -964,7 +987,7 @@ class BatchWorker:
             **resources.metrics,
             "renderedCount": len(results),
             "failedCount": failed_count,
-            "workers": 2,
+            "workers": project_worker_count,
             "ffmpegThreads": self.settings.ffmpeg_threads,
             "ffmpegSeconds": round(ffmpeg_seconds, 3),
             "shortRenderSeconds": round(render_seconds, 3),

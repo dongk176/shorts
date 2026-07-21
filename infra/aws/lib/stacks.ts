@@ -387,6 +387,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     const prepareDefinitionName = `shorts-mvp-prepare-${props.environment}`;
     const renderDefinitionName = `shorts-mvp-render-${props.environment}`;
     const projectDefinitionName = `shorts-mvp-project-fargate-${props.environment}`;
+    const projectHeavyDefinitionName = `shorts-mvp-project-heavy-fargate-${props.environment}`;
     const rerenderDefinitionName = `shorts-mvp-rerender-fargate-${props.environment}`;
     const prepareDefinition = new batch.CfnJobDefinition(this, "PrepareJobDefinition", {
       type: "container",
@@ -444,6 +445,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         environment: [
           ...baseContainer.environment,
           { name: "TASK_VCPUS", value: "4" },
+          { name: "PROJECT_RESOURCE_TIER", value: "standard" },
           { name: "WORKER_IMAGE_TAG", value: workerImageTag },
           { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
           { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "30" },
@@ -457,6 +459,36 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         ],
       },
     });
+    const projectHeavyDefinition = new batch.CfnJobDefinition(
+      this,
+      "ProjectHeavyFargateJobDefinition",
+      {
+        type: "container",
+        platformCapabilities: ["FARGATE"],
+        jobDefinitionName: projectHeavyDefinitionName,
+        retryStrategy: { attempts: 1 },
+        timeout: { attemptDurationSeconds: 7200 },
+        containerProperties: {
+          ...baseContainer,
+          image: `${repository.repositoryUri}:${workerImageTag}`,
+          environment: [
+            ...baseContainer.environment,
+            { name: "TASK_VCPUS", value: "8" },
+            { name: "PROJECT_RESOURCE_TIER", value: "heavy" },
+            { name: "WORKER_IMAGE_TAG", value: workerImageTag },
+            { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
+            { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "30" },
+          ],
+          secrets: [...baseContainer.secrets, secret("INGESTION_PROXY_ROUTES_JSON")],
+          runtimePlatform: { cpuArchitecture: "X86_64", operatingSystemFamily: "LINUX" },
+          ephemeralStorage: { sizeInGiB: 30 },
+          resourceRequirements: [
+            { type: "VCPU", value: "8" },
+            { type: "MEMORY", value: "16384" },
+          ],
+        },
+      },
+    );
     const rerenderDefinition = new batch.CfnJobDefinition(this, "RerenderFargateJobDefinition", {
       type: "container",
       platformCapabilities: ["FARGATE"],
@@ -547,6 +579,8 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       RENDER_JOB_DEFINITION: renderDefinitionName,
       PROJECT_BATCH_QUEUE: projectQueue.ref,
       PROJECT_JOB_DEFINITION: projectDefinitionName,
+      PROJECT_HEAVY_JOB_DEFINITION: projectHeavyDefinitionName,
+      PROJECT_HEAVY_THRESHOLD_SECONDS: "480",
       RERENDER_JOB_DEFINITION: rerenderDefinitionName,
       STATE_EVENT_QUEUE_URL: stateQueue.queueUrl,
     };
@@ -670,6 +704,24 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       ),
       metricNamespace: renderMetricNamespace,
       metricName: "ProjectResume",
+      metricValue: "1",
+    });
+    new logs.MetricFilter(this, "ProjectStandardStartedMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_run_started" && $.resource_tier = "standard" }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "ProjectStandardStarted",
+      metricValue: "1",
+    });
+    new logs.MetricFilter(this, "ProjectHeavyStartedMetric", {
+      logGroup: workerLogGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.event = "project_run_started" && $.resource_tier = "heavy" }',
+      ),
+      metricNamespace: renderMetricNamespace,
+      metricName: "ProjectHeavyStarted",
       metricValue: "1",
     });
     new logs.MetricFilter(this, "ProjectBatchOomMetric", {

@@ -12,6 +12,50 @@ from common import iso_now, log_event, patch, rest
 
 batch = boto3.client("batch")
 
+_NOMINAL_CLIP_SECONDS = {
+    "sec_30": 30,
+    "sec_31_60": 45,
+    "sec_61_180": 90,
+}
+
+
+def _project_resource_tier(job: dict[str, Any]) -> tuple[str, int]:
+    try:
+        planned_count = max(1, int(job.get("planned_short_count") or 1))
+    except (TypeError, ValueError):
+        planned_count = 1
+    nominal_seconds = _NOMINAL_CLIP_SECONDS.get(
+        str(job.get("clip_length_option") or "sec_31_60"),
+        _NOMINAL_CLIP_SECONDS["sec_31_60"],
+    )
+    try:
+        threshold_seconds = int(os.environ.get("PROJECT_HEAVY_THRESHOLD_SECONDS", "480"))
+    except ValueError:
+        threshold_seconds = 480
+    threshold_seconds = max(1, threshold_seconds)
+    estimated_seconds = planned_count * nominal_seconds
+    return ("heavy" if estimated_seconds >= threshold_seconds else "standard"), estimated_seconds
+
+
+def _project_job_definition(
+    job: dict[str, Any], *, resume: bool
+) -> tuple[str, str, int]:
+    standard_definition = os.environ["PROJECT_JOB_DEFINITION"]
+    heavy_definition = os.environ["PROJECT_HEAVY_JOB_DEFINITION"]
+    tier, estimated_seconds = _project_resource_tier(job)
+    stored_definition = str(job.get("batch_job_definition") or "").strip()
+    if resume and stored_definition in {standard_definition, heavy_definition}:
+        return (
+            stored_definition,
+            "heavy" if stored_definition == heavy_definition else "standard",
+            estimated_seconds,
+        )
+    return (
+        heavy_definition if tier == "heavy" else standard_definition,
+        tier,
+        estimated_seconds,
+    )
+
 
 def _share_identifier(*values: object) -> str:
     identity = next((str(value) for value in values if value), "anonymous")
@@ -76,7 +120,8 @@ def _submit(payload: dict[str, Any]) -> str | None:
         encoded_job_id = urllib.parse.quote(job_id, safe="")
         jobs = rest("video_jobs", query=(
             "select=id,status,pipeline_version,project_resume_count,aws_batch_job_id,"
-            "mvp_session_id,user_id,preparation_finished_at"
+            "mvp_session_id,user_id,preparation_finished_at,planned_short_count,"
+            "clip_length_option,batch_job_definition"
             f"&id=eq.{encoded_job_id}&limit=1"
         )) or []
         if not jobs or int(jobs[0].get("pipeline_version") or 1) != 2:
@@ -96,10 +141,22 @@ def _submit(payload: dict[str, Any]) -> str | None:
         command = ["python", "-m", "shorts_worker", "project", "--job-id", job_id]
         if resume:
             command.append("--resume")
+        job_definition, resource_tier, estimated_seconds = _project_job_definition(
+            job,
+            resume=resume,
+        )
+        log_event(
+            "project_resource_tier_selected",
+            job_id=job_id,
+            resource_tier=resource_tier,
+            estimated_output_seconds=estimated_seconds,
+            job_definition=job_definition,
+            resume=resume,
+        )
         request = dict(
             jobName=f"shorts-project-{job_id}-{suffix}",
             jobQueue=os.environ["PROJECT_BATCH_QUEUE"],
-            jobDefinition=os.environ["PROJECT_JOB_DEFINITION"],
+            jobDefinition=job_definition,
             shareIdentifier=_share_identifier(
                 job.get("user_id"), job.get("mvp_session_id"), job_id
             ),
@@ -115,7 +172,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
             f"id=eq.{encoded_job_id}&status=eq.{expected_status}",
             {
                 "aws_batch_job_id": project_batch_id,
-                "batch_job_definition": os.environ["PROJECT_JOB_DEFINITION"],
+                "batch_job_definition": job_definition,
             },
         )
         return project_batch_id

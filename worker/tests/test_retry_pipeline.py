@@ -657,9 +657,9 @@ def test_render_shard_processes_two_short_shard_sequentially() -> None:
     assert "ThreadPoolExecutor" not in inspect.getsource(BatchWorker.render_shard)
 
 
-def test_project_render_isolates_one_failure_and_uses_two_workers() -> None:
+def test_project_render_isolates_one_failure_and_scales_workers_from_vcpus() -> None:
     worker = BatchWorker.__new__(BatchWorker)
-    worker.settings = SimpleNamespace(task_vcpus=4, ffmpeg_threads=2)
+    worker.settings = SimpleNamespace(task_vcpus=8, ffmpeg_threads=2)
     worker.repository = MagicMock()
     worker.repository.get_project_render_items.return_value = [
         {"id": "short-a", "slot_index": 1},
@@ -675,14 +675,18 @@ def test_project_render_isolates_one_failure_and_uses_two_workers() -> None:
 
     worker._render_initial_short = render
 
-    worker._render_project_outputs("job-a")
+    summary = worker._render_project_outputs("job-a")
 
     assert set(rendered) == {"short-a", "short-b", "short-c"}
     worker.repository.fail_initial_render.assert_called_once_with(
         "short-b", "RuntimeError", "one output failed", terminal=True
     )
+    assert worker._project_worker_count() == 4
+    assert summary["workers"] == 4
+    worker.settings.task_vcpus = 4
+    assert worker._project_worker_count() == 2
     source = inspect.getsource(BatchWorker._render_project_outputs)
-    assert "max_workers=2" in source
+    assert "max_workers=project_worker_count" in source
 
 
 def test_project_resume_renders_checkpoints_without_downloading_source() -> None:
@@ -691,6 +695,7 @@ def test_project_resume_renders_checkpoints_without_downloading_source() -> None
         clean_clip_preset="superfast",
         clean_clip_crf=20,
         ffmpeg_threads=2,
+        task_vcpus=4,
     )
     worker.repository = MagicMock()
     worker.repository.get_job.return_value = {

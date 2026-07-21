@@ -261,3 +261,18 @@ def test_render_performance_migration_adds_atomic_stage_counts_and_internal_metr
     assert "stage_completed_count=case" in migration
     assert "stage_total_count=case" in migration
     assert "public." not in migration
+
+
+def test_project_resource_tier_migration_finalizes_terminal_stage_counts() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607220003_project_resource_tiers.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "sync_terminal_project_stage_counts" in migration
+    assert "new.stage_completed_count := new.stage_total_count" in migration
+    assert "set stage_completed_count=stage_total_count" in migration
+    assert "pipeline_version=2" in migration
+    assert "public." not in migration
