@@ -250,6 +250,66 @@ _COMMENT_NICKNAME_PREFIXES = ("하루", "모카", "여름", "초코", "구름", 
 _COMMENT_NICKNAME_SUFFIXES = ("기록", "한스푼", "로그", "이야기", "채널", "노트", "생활", "공간")
 COMMENT_LIKE_COUNT_MIN = 10
 COMMENT_LIKE_COUNT_MAX = 8_000
+COMMENT_DURATION_MIN_MILLISECONDS = 2_500
+COMMENT_DURATION_MAX_MILLISECONDS = 5_500
+COMMENT_DURATION_MIN_JITTER_MILLISECONDS = 250
+
+
+def random_comment_time_ranges(
+    duration_seconds: float,
+    count: int,
+) -> list[tuple[float, float]]:
+    """Split a clip into continuous, bounded comment ranges with paired jitter."""
+    if count <= 0:
+        return []
+
+    total_milliseconds = max(500, round(float(duration_seconds) * 1_000))
+    base_milliseconds, remainder = divmod(total_milliseconds, count)
+    durations = [
+        base_milliseconds + (1 if index < remainder else 0)
+        for index in range(count)
+    ]
+
+    bounds_are_feasible = (
+        count * COMMENT_DURATION_MIN_MILLISECONDS
+        <= total_milliseconds
+        <= count * COMMENT_DURATION_MAX_MILLISECONDS
+    )
+    if bounds_are_feasible:
+        rng = secrets.SystemRandom()
+        rng.shuffle(durations)
+        for index in range(0, count - 1, 2):
+            left = durations[index]
+            right = durations[index + 1]
+            if rng.randrange(2):
+                pair_capacity = min(
+                    COMMENT_DURATION_MAX_MILLISECONDS - left,
+                    right - COMMENT_DURATION_MIN_MILLISECONDS,
+                )
+                direction = 1
+            else:
+                pair_capacity = min(
+                    left - COMMENT_DURATION_MIN_MILLISECONDS,
+                    COMMENT_DURATION_MAX_MILLISECONDS - right,
+                )
+                direction = -1
+
+            minimum_jitter = min(
+                COMMENT_DURATION_MIN_JITTER_MILLISECONDS,
+                pair_capacity,
+            )
+            jitter = rng.randint(minimum_jitter, pair_capacity)
+            durations[index] += direction * jitter
+            durations[index + 1] -= direction * jitter
+        rng.shuffle(durations)
+
+    ranges: list[tuple[float, float]] = []
+    cursor = 0
+    for milliseconds in durations:
+        end = cursor + milliseconds
+        ranges.append((cursor / 1_000, end / 1_000))
+        cursor = end
+    return ranges
 
 
 def build_comment_overlay(
@@ -293,14 +353,17 @@ def fallback_comment_overlays(
     )
     if not fallback_texts:
         return []
-    slot_duration = duration / len(fallback_texts)
+    time_ranges = random_comment_time_ranges(duration, len(fallback_texts))
     comments: list[dict[str, object]] = []
-    for index, text in enumerate(fallback_texts):
-        slot_start = index * slot_duration
+    for text, (start_seconds, end_seconds) in zip(
+        fallback_texts,
+        time_ranges,
+        strict=True,
+    ):
         comments.append(
             build_comment_overlay(
-                start_seconds=max(0.0, slot_start),
-                end_seconds=min(duration, (index + 1) * slot_duration),
+                start_seconds=start_seconds,
+                end_seconds=end_seconds,
                 text=text,
             )
         )

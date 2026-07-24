@@ -9,12 +9,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings
 from .fallback_comments import select_fallback_comment_texts
-from .schemas import SubtitleSegment, build_comment_overlay
+from .schemas import SubtitleSegment, build_comment_overlay, random_comment_time_ranges
 
 MIN_COMMENT_COUNT = 5
 MAX_COMMENT_COUNT = 15
 MIN_COMMENT_SECONDS = 2.5
-MAX_COMMENT_SECONDS = 5.0
+MAX_COMMENT_SECONDS = 5.5
 MIN_COMMENT_CHARS = 4
 MAX_COMMENT_CHARS = 50
 
@@ -246,14 +246,18 @@ class CommentGenerator:
             fallback_counts[clip.clip_index] = len(fallback_texts)
 
             duration = max(0.5, float(clip.duration_seconds))
-            slot_count = max(1, len(texts))
+            time_ranges = random_comment_time_ranges(duration, len(texts))
             result[clip.clip_index] = [
                 build_comment_overlay(
-                    start_seconds=duration * index / slot_count,
-                    end_seconds=duration * (index + 1) / slot_count,
+                    start_seconds=start_seconds,
+                    end_seconds=end_seconds,
                     text=text,
                 )
-                for index, text in enumerate(texts)
+                for text, (start_seconds, end_seconds) in zip(
+                    texts,
+                    time_ranges,
+                    strict=True,
+                )
             ]
         return result, fallback_counts
 

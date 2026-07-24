@@ -79,7 +79,7 @@ def test_ai_response_schema_contains_only_clip_index_and_comment_strings() -> No
     assert "endSeconds" not in str(schema)
 
 
-def test_gemini_success_uses_server_generated_even_comment_slots() -> None:
+def test_gemini_success_uses_server_generated_random_bounded_comment_slots() -> None:
     clip = _clip()
     generator = CommentGenerator(
         Settings(gemini_api_key="gemini-key", openai_api_key="openai-key")
@@ -96,10 +96,15 @@ def test_gemini_success_uses_server_generated_even_comment_slots() -> None:
         comments[index]["startSeconds"] == comments[index - 1]["endSeconds"]
         for index in range(1, len(comments))
     )
-    assert all(
-        2.5 <= comment["endSeconds"] - comment["startSeconds"] <= 5.0
+    durations = [
+        comment["endSeconds"] - comment["startSeconds"]
         for comment in comments
+    ]
+    assert all(
+        2.5 <= duration <= 5.5
+        for duration in durations
     )
+    assert any(duration != clip.duration_seconds / len(comments) for duration in durations)
     generator._generate_with_openai.assert_not_called()
 
 
