@@ -8,6 +8,10 @@ import type {
   PopularVideoResponse,
   PopularVideoType,
 } from "@/lib/youtube-popular";
+import type { SiteLocale } from "@/lib/i18n/config";
+import { formatLocale } from "@/lib/i18n/config";
+import { formatNumber } from "@/lib/i18n/format";
+import { useI18n } from "@/lib/i18n/provider";
 
 const dataTypeOptions: Array<{ value: PopularVideoType; label: string }> = [
   { value: "trending", label: "실시간 급상승" },
@@ -25,8 +29,6 @@ const categoryOptions: Array<{ value: PopularVideoCategory; label: string }> = [
   { value: "howto", label: "요리·노하우" },
 ];
 
-const countFormatter = new Intl.NumberFormat("ko-KR");
-
 function formatDuration(seconds: number) {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -36,12 +38,27 @@ function formatDuration(seconds: number) {
     : `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
-function formatViews(value: number) {
-  return `${new Intl.NumberFormat("ko-KR", { notation: "compact", maximumFractionDigits: 1 }).format(value)}회`;
+function formatViews(value: number, locale: SiteLocale) {
+  const count = new Intl.NumberFormat(formatLocale(locale), { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  return locale === "ko" ? `${count}회` : locale === "en" ? count : `${count}回`;
 }
 
-function formatPublishedAt(value: string) {
+function formatPublishedAt(value: string, locale: SiteLocale) {
   const elapsedDays = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000));
+  if (locale === "en") {
+    if (elapsedDays === 0) return "Today";
+    if (elapsedDays < 7) return `${elapsedDays}d ago`;
+    if (elapsedDays < 30) return `${Math.floor(elapsedDays / 7)}w ago`;
+    if (elapsedDays < 365) return `${Math.floor(elapsedDays / 30)}mo ago`;
+    return `${Math.floor(elapsedDays / 365)}y ago`;
+  }
+  if (locale === "ja") {
+    if (elapsedDays === 0) return "今日";
+    if (elapsedDays < 7) return `${elapsedDays}日前`;
+    if (elapsedDays < 30) return `${Math.floor(elapsedDays / 7)}週間前`;
+    if (elapsedDays < 365) return `${Math.floor(elapsedDays / 30)}か月前`;
+    return `${Math.floor(elapsedDays / 365)}年前`;
+  }
   if (elapsedDays === 0) return "오늘";
   if (elapsedDays < 7) return `${elapsedDays}일 전`;
   if (elapsedDays < 30) return `${Math.floor(elapsedDays / 7)}주 전`;
@@ -49,9 +66,9 @@ function formatPublishedAt(value: string) {
   return `${Math.floor(elapsedDays / 365)}년 전`;
 }
 
-function formatUpdatedAt(value: string | null) {
-  if (!value) return "업데이트 확인 중";
-  return new Intl.DateTimeFormat("ko-KR", {
+function formatUpdatedAt(value: string | null, locale: SiteLocale) {
+  if (!value) return locale === "ko" ? "업데이트 확인 중" : locale === "en" ? "Checking update" : "更新を確認中";
+  return new Intl.DateTimeFormat(formatLocale(locale), {
     timeZone: "Asia/Seoul",
     month: "long",
     day: "numeric",
@@ -88,6 +105,7 @@ function VideoCard({ video, rank, active, onOpen, onClose, onPrepare }: {
   onClose: () => void;
   onPrepare: () => Promise<void>;
 }) {
+  const { locale } = useI18n();
   const youtubeUrl = `https://www.youtube.com/watch?v=${video.videoId}`;
   const [preparing, setPreparing] = useState(false);
   const [prepareError, setPrepareError] = useState<string | null>(null);
@@ -127,7 +145,7 @@ function VideoCard({ video, rank, active, onOpen, onClose, onPrepare }: {
         <h2 className="line-clamp-2 min-h-11 text-[15px] font-extrabold leading-[1.45] tracking-[-.015em] text-white">{video.title}</h2>
         <p className="mt-2 truncate text-[13px] font-semibold text-neutral-400">{video.channelName}</p>
         <div className="mt-3 flex items-center gap-2 text-[13px] font-semibold text-neutral-400">
-          <span>조회수 {formatViews(video.viewCount)}</span><span aria-hidden="true">·</span><span>{formatPublishedAt(video.publishedAt)}</span>
+          <span>{locale === "ko" ? "조회수" : locale === "en" ? "Views" : "再生回数"} {formatViews(video.viewCount, locale)}</span><span aria-hidden="true">·</span><span>{formatPublishedAt(video.publishedAt, locale)}</span>
         </div>
       </div>
       {active && (
@@ -163,6 +181,7 @@ function LoadingSkeleton() {
 }
 
 export function PopularVideosExplorer() {
+  const { locale } = useI18n();
   const [dataType, setDataType] = useState<PopularVideoType>("trending");
   const [koreanOnly, setKoreanOnly] = useState(false);
   const [longFormOnly, setLongFormOnly] = useState(false);
@@ -261,7 +280,7 @@ export function PopularVideosExplorer() {
       throw new Error(body.detail || "쇼츠 제작 화면을 준비하지 못했습니다.");
     }
     const analysis = await result.json() as { analysisId: string };
-    window.location.assign(`/?analysisId=${encodeURIComponent(analysis.analysisId)}#shorts-settings`);
+    window.location.assign(`/?analysisId=${encodeURIComponent(analysis.analysisId)}`);
   };
 
   const applyFilter = (update: () => void) => {
@@ -283,7 +302,7 @@ export function PopularVideosExplorer() {
           <span className="block">지금 떠오르는 영상을 놓치지 마세요.</span>
           <strong className="block font-extrabold text-[#ff9b8d]">모든 사용자에게 같은 목록과 필터를 제공합니다.</strong>
         </p>
-        <p className="mt-6 text-xs font-semibold text-neutral-500" aria-live="polite"><span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.7)]" aria-hidden="true" /><span className="text-neutral-400">마지막 업데이트</span> {formatUpdatedAt(response?.updatedAt || null)}</p>
+        <p className="mt-6 text-xs font-semibold text-neutral-500" aria-live="polite"><span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.7)]" aria-hidden="true" /><span className="text-neutral-400">마지막 업데이트</span> {formatUpdatedAt(response?.updatedAt || null, locale)}</p>
       </section>
 
       <section className="relative z-30 -mx-2 mt-2 rounded-2xl border border-white/10 bg-[#15191a]/90 p-4 shadow-[0_16px_50px_rgba(0,0,0,.22)] backdrop-blur-2xl md:mx-0 md:p-5" aria-label="인기 영상 필터">
@@ -375,7 +394,7 @@ export function PopularVideosExplorer() {
       <div className="mb-5 mt-8 flex items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-black tracking-[-.025em] text-white">{selectedType.label}</h2>
-          <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{!loading && response ? `${countFormatter.format(response.totalCount ?? response.items.length)}개` : "개수 확인 중"}</p>
+          <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{!loading && response ? (locale === "ko" ? `${formatNumber(response.totalCount ?? response.items.length, locale)}개` : locale === "en" ? formatNumber(response.totalCount ?? response.items.length, locale) : `${formatNumber(response.totalCount ?? response.items.length, locale)}件`) : "개수 확인 중"}</p>
         </div>
       </div>
 

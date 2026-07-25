@@ -177,10 +177,6 @@ export async function collectPopularSearchVideos(options: {
           completed_at=${now}, error_message=null
         where id=${run.id}
       `;
-      await tx`
-        delete from shorts_mvp.popular_search_runs
-        where id <> ${run.id}
-      `;
     });
     return {
       runId: run.id,
@@ -255,19 +251,46 @@ export async function getPopularSearchVideos(
   const decodedCursor = decodeCursor(cursor);
   const run = await resolveReadyRun(db, decodedCursor?.runId);
   const offset = decodedCursor?.offset || 0;
-  const rows = await db`
-    select video_id, category, title, channel_name, thumbnail_url, duration_seconds,
-      view_count, published_at, license, count(*) over() as total_count
-    from shorts_mvp.popular_search_items
-    where run_id=${run.id}
-      and (${category}='all' or category=${category})
-      and (${reusableOnly}=false or license='creativeCommon')
-      and (${longFormOnly}=false or duration_seconds >= ${POPULAR_VIDEO_LONG_FORM_SECONDS})
-      and (${koreanOnly}=false or is_korean)
-    order by view_count desc, published_at desc, video_id asc
-    offset ${offset}
-    limit ${limit + 1}
-  `;
+  const rows = reusableOnly
+    ? await db`
+      with historical_candidates as (
+        select
+          i.video_id, i.category, i.title, i.channel_name, i.thumbnail_url,
+          i.duration_seconds, i.view_count, i.published_at, i.license,
+          r.completed_at as last_seen_at,
+          row_number() over (
+            partition by i.video_id
+            order by r.completed_at desc, i.collected_at desc,
+              i.search_rank asc, i.view_count desc
+          ) as duplicate_rank
+        from shorts_mvp.popular_search_items i
+        join shorts_mvp.popular_search_runs r on r.id=i.run_id
+        where r.status='ready' and r.completed_at <= ${run.completedAt}
+          and i.license='creativeCommon'
+          and (${category}='all' or i.category=${category})
+          and (${longFormOnly}=false or i.duration_seconds >= ${POPULAR_VIDEO_LONG_FORM_SECONDS})
+          and (${koreanOnly}=false or i.is_korean)
+      )
+      select video_id, category, title, channel_name, thumbnail_url, duration_seconds,
+        view_count, published_at, license, last_seen_at, count(*) over() as total_count
+      from historical_candidates
+      where duplicate_rank=1
+      order by last_seen_at desc, view_count desc, published_at desc, video_id asc
+      offset ${offset}
+      limit ${limit + 1}
+    `
+    : await db`
+      select video_id, category, title, channel_name, thumbnail_url, duration_seconds,
+        view_count, published_at, license, count(*) over() as total_count
+      from shorts_mvp.popular_search_items
+      where run_id=${run.id}
+        and (${category}='all' or category=${category})
+        and (${longFormOnly}=false or duration_seconds >= ${POPULAR_VIDEO_LONG_FORM_SECONDS})
+        and (${koreanOnly}=false or is_korean)
+      order by view_count desc, published_at desc, video_id asc
+      offset ${offset}
+      limit ${limit + 1}
+    `;
   const hasNext = rows.length > limit;
   return {
     items: rows.slice(0, limit).map((row) => rowToPopularVideo(row as Record<string, unknown>)),

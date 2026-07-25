@@ -27,8 +27,8 @@ EventBridge + Lambda
 
 ## 제품 동작
 
-- Toss 자동결제로 Plus 100분, Standard 200분, Pro 600분 플랜을 제공합니다. 원래 미구독 생성은 서버에서 차단되지만, 현재는 `MVP_PLAN_ENFORCEMENT=false`로 로그인 사용자에게 쇼츠 생성을 임시 개방합니다.
-- 사용량은 생성된 쇼츠 길이가 아니라 **처리한 원본 영상 전체 길이**입니다. 제출 즉시 reserved, 성공 시 consumed, 시스템 실패 시 released가 됩니다. 텍스트/템플릿 재렌더링은 0초입니다.
+- 더페이원 자동결제로 Plus 100분, Standard 200분, Pro 600분 플랜을 제공하며 활성 구독과 처리시간 grant를 서버에서 강제합니다.
+- 사용량은 생성된 쇼츠 길이가 아니라 **처리한 원본 영상 전체 길이의 내림 초 단위**입니다. 제출 즉시 reserved, 렌더 성공률 50% 이상이면 consumed, 50% 미만 또는 시스템 실패면 released가 됩니다. 텍스트/템플릿 재렌더링은 0초입니다.
 - 쇼츠 길이는 AI가 내용 흐름에 맞춰 30~60초 사이에서 각각 결정합니다.
 - 4분 미만 3개, 4~10분 5개, 10~20분 8개, 20~30분 10개, 30~45분 12개, 45~60분 15개를 목표로 합니다.
 - 결과 카드에는 후킹 제목, 영상, 구간 텍스트, 공유·다운로드·편집·삭제가 표시됩니다. 편집기에서 제목, 채널명, 자막 문구/표시 여부, 템플릿을 바꾸고 clean clip만 재렌더링합니다.
@@ -89,11 +89,12 @@ Vercel에는 `AWS_ROLE_ARN`, region, S3 bucket, Dispatcher ARN, CloudFront signi
 | `DATABASE_URL` | Vercel, worker | 기존 Supabase 직접 연결 |
 | `YOUTUBE_API_KEY` | Vercel | 링크 metadata 검증 및 일일 인기 영상 수집 |
 | `CRON_SECRET` | Vercel | 인기 영상 수집 및 구독 갱신 API 인증 |
-| `NEXT_PUBLIC_TOSS_CLIENT_KEY` | Vercel | Toss 브라우저 결제창 초기화 |
-| `TOSS_SECRET_KEY` | Vercel secret | Toss 결제 승인·조회·빌링 API 인증 |
-| `TOSS_BILLING_KEY_ENCRYPTION_KEY` | Vercel secret | 저장 빌링키 AES-256-GCM 암호화 |
-| `TOSS_WEBHOOK_SECRET` | Vercel secret | Toss 웹훅 URL의 비공개 경로 값 |
-| `MVP_PLAN_ENFORCEMENT` | Vercel | 기본 `false`; `true`일 때 활성 구독과 처리시간 grant를 강제 |
+| `THEPAYONE_BILLING_ENABLED` | Vercel | 웹훅·방화벽 검증 후에만 `true`로 전환 |
+| `THEPAYONE_MID`, `THEPAYONE_TERMINAL_ID` | Vercel secret | 결과 통지의 가맹점·터미널 검증 |
+| `THEPAYONE_PAY_KEY` | Vercel secret | 더페이원 서버 API 및 단건 결제창 키 |
+| `THEPAYONE_WEBHOOK_BASE_URL`, `THEPAYONE_WEBHOOK_SECRET` | Vercel | 운영 HTTPS 통지 주소와 비밀 경로 |
+| `THEPAYONE_CARD_TOKEN_ENCRYPTION_KEY` | Vercel secret | 저장 cardId AES-256-GCM 암호화 |
+| `MVP_PLAN_ENFORCEMENT` | Vercel | 기본 `true`; `false`를 명시한 개발 환경에서만 유료 권한 강제를 해제 |
 | `GEMINI_API_KEY` | worker | 1차 구조화 하이라이트 선정(없거나 실패하면 OpenAI fallback) |
 | `OPENAI_API_KEY` | worker | 필수 전체 오디오 전사 및 Gemini 실패 시 하이라이트 선정 |
 | `OPENAI_TRANSCRIBE_MODEL` | worker | 기본 `gpt-4o-mini-transcribe` |
@@ -138,7 +139,7 @@ make verify
 
 ## 결제 및 사용량
 
-활성 `user_subscriptions`와 결제 승인으로 생성된 `usage_grants`가 권한의 source of truth입니다. 구독 갱신은 시간별 Vercel Cron이 직접 수행하며, 애드온은 Toss 일반결제 승인 이후 90일 grant로 적립됩니다. 자세한 기준은 [MVP billing](docs/mvp-billing.md)에 있습니다.
+활성 `user_subscriptions`와 결제 승인으로 생성된 `usage_grants`가 권한의 source of truth입니다. 월간 구독은 더페이원이 자동 승인하고 검증된 결과 통지가 기간을 연장합니다. 플랜 변경·연간 갱신·애드온은 암호화해 저장한 `cardId`와 연락처를 재사용하고, 매 승인 시에만 카드 인증값을 받아 처리합니다. 애드온은 승인 후 90일 grant로 적립됩니다. 자세한 기준은 [MVP billing](docs/mvp-billing.md)에 있습니다.
 
 ## 저작권 및 한계
 

@@ -7,7 +7,7 @@ import {
 
 describe("custom-template plan entitlements", () => {
   it.each([
-    ["free", true],
+    ["free", false],
     ["plus", true],
     ["standard", true],
     ["pro", true],
@@ -15,9 +15,14 @@ describe("custom-template plan entitlements", () => {
     expect(planSupportsCustomTemplates(planCode)).toBe(expected);
   });
 
-  it("does not lock custom templates when a subscription is inactive", () => {
-    expect(billingSupportsCustomTemplates({ planCode: "free", canCreateJobs: false })).toBe(true);
+  it("locks custom templates when a subscription is inactive", () => {
+    expect(billingSupportsCustomTemplates({ planCode: "free", canCreateJobs: false })).toBe(false);
     expect(() => assertCustomTemplateAccess({ planCode: "free", canCreateJobs: false }))
-      .not.toThrow();
+      .toThrow("활성 유료 플랜");
+  });
+
+  it("requires the paid period to be active", () => {
+    expect(billingSupportsCustomTemplates({ planCode: "standard", canCreateJobs: false })).toBe(false);
+    expect(billingSupportsCustomTemplates({ planCode: "standard", canCreateJobs: true })).toBe(true);
   });
 });

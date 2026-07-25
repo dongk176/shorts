@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProjectByNumber } from "@/lib/data";
+import { getProjectByNumber, getPublicExampleProjectByNumber } from "@/lib/data";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
@@ -20,8 +20,16 @@ export async function GET(
       throw new HttpError(400, "올바른 프로젝트 번호가 아닙니다.");
     }
 
+    const db = getDb();
+    const publicExample = await getPublicExampleProjectByNumber(db, projectNumber);
+    if (publicExample) {
+      const response = NextResponse.json({ project: publicExample });
+      response.headers.set("Cache-Control", "no-store");
+      return response;
+    }
+
     const session = await requireAuthenticatedMvpSession();
-    const project = await getProjectByNumber(getDb(), session, projectNumber);
+    const project = await getProjectByNumber(db, session, projectNumber);
     if (!project) throw new HttpError(404, "프로젝트를 찾을 수 없습니다.");
 
     const response = NextResponse.json({ project });

@@ -1,6 +1,20 @@
 import type { UsageSnapshot } from "@/lib/contracts";
 import { HttpError } from "@/lib/http";
 
+export const RESTRICTED_CONTENT_FAILURE_LIMIT = 3;
+export const RESTRICTED_CONTENT_FAILURE_WINDOW_MINUTES = 10;
+
+export function assertRestrictedContentCooldown(cooldownMinutes: number) {
+  const remainingMinutes = Math.max(0, Math.ceil(cooldownMinutes));
+  if (remainingMinutes > 0) {
+    throw new HttpError(
+      429,
+      `너무 자주 요청이 발생하여 잠시 ${remainingMinutes}분 동안 작업을 할 수 없습니다.`,
+      "RESTRICTED_CONTENT_COOLDOWN",
+    );
+  }
+}
+
 export function assertJobCreationAllowed(input: {
   activeJobs: number;
   maxActiveJobs: number;

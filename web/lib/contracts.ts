@@ -1,7 +1,30 @@
-export const planCodes = ["free", "plus", "standard", "pro"] as const;
+export const planCodes = [
+  "free",
+  "plus",
+  "standard",
+  "pro",
+  "easycut_pro_v2",
+  "starter_3m",
+  "starter_6m",
+  "starter_12m",
+  "expert_3m",
+  "expert_6m",
+  "expert_12m",
+] as const;
 export type PlanCode = (typeof planCodes)[number];
 
-export const paidPlanCodes = ["plus", "standard", "pro"] as const;
+export const paidPlanCodes = [
+  "plus",
+  "standard",
+  "pro",
+  "easycut_pro_v2",
+  "starter_3m",
+  "starter_6m",
+  "starter_12m",
+  "expert_3m",
+  "expert_6m",
+  "expert_12m",
+] as const;
 export type PaidPlanCode = (typeof paidPlanCodes)[number];
 
 export const billingCycles = ["monthly", "yearly"] as const;
@@ -80,7 +103,24 @@ export type UsageSnapshot = {
   enforcementEnabled: boolean;
 };
 
+export type ActiveBillingProduct = {
+  planCode: PaidPlanCode;
+  displayName: string;
+  billingCycle: BillingCycle;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  nextChargeAt: string | null;
+  cancelAtPeriodEnd: boolean;
+  monthlySourceSeconds: number;
+};
+
 export type BillingSummary = {
+  hasPaymentHistory: boolean;
+  lastPaidPlanCode: PaidPlanCode | null;
+  lastPaidBillingCycle: BillingCycle | null;
+  lastPaidAt: string | null;
+  purchasedPackageCodes: PaidPlanCode[];
+  activeProducts: ActiveBillingProduct[];
   status: SubscriptionStatus;
   planCode: PlanCode;
   billingCycle: BillingCycle | null;
@@ -93,6 +133,10 @@ export type BillingSummary = {
   cardIssuer: string | null;
   cardNumberMasked: string | null;
   cardLast4: string | null;
+  hasStoredPayerTel: boolean;
+  paymentProvider: "thepayone" | "nicepay" | null;
+  providerScheduleStatus: "none" | "active" | "paused" | "disposed" | "manual_review";
+  requiresManualReview: boolean;
   canCreateJobs: boolean;
   maxActiveJobs: number;
   retentionDays: number;
@@ -179,9 +223,15 @@ export type VideoJob = {
   sourceDurationSeconds: number;
   outputLanguage: OutputLanguage;
   expectedShortCount: number;
+  plannedShortCount: number;
+  readyShortCount: number;
+  failedShortCount: number;
+  renderSuccessPercent: number | null;
   status: string;
   stage: string;
   progress: number;
+  stageCompletedCount: number;
+  stageTotalCount: number;
   errorMessage: string | null;
   createdAt: string;
   expiresAt: string | null;

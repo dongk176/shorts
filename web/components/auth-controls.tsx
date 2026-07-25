@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import type { AuthProfile } from "@/lib/session";
+import { useI18n } from "@/lib/i18n/provider";
 
 function GoogleIcon() {
   return (
@@ -30,13 +31,13 @@ function KakaoIcon() {
 const loginProviders = [
   {
     id: "google",
-    label: "구글로 시작하기",
+    labelKey: "auth.google",
     Icon: GoogleIcon,
     className: "bg-white text-[#171717] hover:bg-[#f3f3f3]",
   },
   {
     id: "kakao",
-    label: "카카오로 시작하기",
+    labelKey: "auth.kakao",
     Icon: KakaoIcon,
     className: "bg-[#FEE500] text-[#191919] hover:bg-[#f4dc00]",
   },
@@ -53,6 +54,7 @@ export function AuthControls({
   loginOpen?: boolean;
   onLoginOpenChange?: (open: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [internalLoginOpen, setInternalLoginOpen] = useState(false);
   const loginOpen = controlledLoginOpen ?? internalLoginOpen;
   const setLoginOpen = useCallback((open: boolean) => {
@@ -78,7 +80,7 @@ export function AuthControls({
     return (
       <>
         <button type="button" className="header-cta" onClick={() => setLoginOpen(true)}>
-          로그인 <span aria-hidden="true">→</span>
+          {t("auth.login")} <span aria-hidden="true">→</span>
         </button>
         {loginOpen && createPortal(
           <div
@@ -100,7 +102,7 @@ export function AuthControls({
                 autoFocus
                 onClick={() => setLoginOpen(false)}
                 className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full text-[#b9a3a0] transition hover:bg-white/10 hover:text-white active:scale-95"
-                aria-label="로그인 창 닫기"
+                aria-label={t("auth.closeDialog")}
               >
                 <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                   <path d="m6 6 12 12M18 6 6 18" />
@@ -110,9 +112,9 @@ export function AuthControls({
                 <div className="mb-7 text-[30px] font-black tracking-[-0.055em] text-[#ffb4a8]">
                   Easy <span className="italic text-[#ff715e]">Cut</span>
                 </div>
-                <h2 id="login-dialog-title" className="text-2xl font-extrabold tracking-[-0.025em] text-[#f3f5f6]">로그인</h2>
+                <h2 id="login-dialog-title" className="text-2xl font-extrabold tracking-[-0.025em] text-[#f3f5f6]">{t("auth.login")}</h2>
                 <p id="login-dialog-description" className="sr-only">
-                  소셜 계정으로 로그인하고 프로젝트와 완성된 쇼츠를 관리하세요.
+                  {t("auth.dialogDescription")}
                 </p>
                 <div className="mt-8 space-y-4">
                   {loginProviders.map((provider) => (
@@ -122,12 +124,12 @@ export function AuthControls({
                       className={`flex min-h-14 w-full items-center justify-center gap-3 rounded-xl px-5 text-[15px] font-bold shadow-[0_6px_18px_rgba(0,0,0,.16)] transition duration-200 active:scale-[.98] ${provider.className}`}
                     >
                       <provider.Icon />
-                      {provider.label}
+                      {t(provider.labelKey)}
                     </a>
                   ))}
                 </div>
                 <p className="mt-7 text-center text-[11px] leading-5 text-[#b19a96]">
-                  로그인함으로써 <Link href="/terms" className="underline underline-offset-2 hover:text-white">서비스 이용약관</Link> 및 <Link href="/privacy" className="underline underline-offset-2 hover:text-white">개인정보처리방침</Link>에 동의합니다.
+                  {t("auth.consentPrefix")} <Link href="/terms" className="underline underline-offset-2 hover:text-white">{t("auth.terms")}</Link> {t("auth.consentAnd")} <Link href="/privacy" className="underline underline-offset-2 hover:text-white">{t("auth.privacy")}</Link>{t("auth.consentSuffix")}
                 </p>
               </div>
             </section>
@@ -137,13 +139,20 @@ export function AuthControls({
       </>
     );
   }
-  const label = user.displayName || user.email || "내 계정";
+  const label = user.displayName || user.email || t("auth.myAccount");
   return (
     <div className="flex items-center gap-2">
-      <span className="hidden max-w-40 truncate text-xs font-semibold text-neutral-300 sm:block" title={user.email || label}>{label}</span>
+      <Link
+        href="/account/activity"
+        className="hidden max-w-40 truncate rounded-md px-1.5 py-1 text-xs font-semibold text-neutral-300 transition hover:bg-white/[.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff8c7c]/70 sm:block"
+        title={user.email || label}
+        aria-label={`${label} 사용내역 보기`}
+      >
+        {label}
+      </Link>
       <form action="/auth/sign-out" method="post">
         <input type="hidden" name="next" value={next} />
-        <button type="submit" className="header-cta">로그아웃</button>
+        <button type="submit" className="header-cta">{t("auth.logout")}</button>
       </form>
     </div>
   );

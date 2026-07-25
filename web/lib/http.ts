@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 
 export class HttpError extends Error {
-  constructor(public readonly status: number, message: string) {
+  public readonly code: string;
+
+  constructor(public readonly status: number, message: string, code?: string) {
     super(message);
     this.name = "HttpError";
+    this.code = code || `HTTP_${status}`;
   }
 }
 
@@ -26,7 +29,12 @@ export function apiError(error: unknown, fallback = "요청을 처리하지 못�
         : /설정되지|완료되지|일시적으로 제한/.test(message)
           ? 503
           : 400;
-  const response = NextResponse.json({ detail: message }, { status });
+  const responseCode = error instanceof HttpError
+    ? error.code
+    : errorCode && /^[A-Z][A-Z0-9_]{2,63}$/.test(errorCode)
+      ? errorCode
+      : `HTTP_${status}`;
+  const response = NextResponse.json({ detail: message, code: responseCode }, { status });
   if (status === 503) response.headers.set("Retry-After", "2");
   return response;
 }

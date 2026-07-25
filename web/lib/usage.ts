@@ -3,7 +3,18 @@ import type { UsageSnapshot } from "@/lib/contracts";
 import type { MvpSession } from "@/lib/session";
 
 export function isPlanEnforcementEnabled() {
-  return process.env.MVP_PLAN_ENFORCEMENT === "true";
+  return process.env.MVP_PLAN_ENFORCEMENT !== "false";
+}
+
+export function billableSourceSeconds(durationSeconds: number) {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    throw new Error("차감할 원본 영상 길이가 올바르지 않습니다.");
+  }
+  const wholeSeconds = Math.floor(durationSeconds);
+  const minutes = Math.floor(wholeSeconds / 60);
+  const remainderSeconds = wholeSeconds % 60;
+  const billableMinutes = minutes + (remainderSeconds > 30 ? 1 : 0);
+  return Math.max(60, billableMinutes * 60);
 }
 
 export function currentKstPeriod(now = new Date()) {
@@ -39,13 +50,18 @@ export async function getUsageSnapshot(
   }
   const rows = await db`
     with current_base as (
-      select g.* from shorts_mvp.usage_grants g
+      select
+        coalesce(sum(g.total_seconds),0)::int as total_seconds,
+        coalesce(sum(g.consumed_seconds),0)::int as consumed_seconds,
+        coalesce(sum(g.reserved_seconds),0)::int as reserved_seconds,
+        max(g.valid_from) as valid_from,
+        least(min(g.expires_at),min(s.next_quota_at)) as next_reset_at
+      from shorts_mvp.usage_grants g
       join shorts_mvp.user_subscriptions s on s.id=g.subscription_id
       where g.user_id=${session.userId} and g.kind='base' and g.status='active'
         and g.valid_from <= clock_timestamp() and g.expires_at > clock_timestamp()
         and s.status='active' and s.current_period_start <= clock_timestamp()
         and s.current_period_end > clock_timestamp()
-      order by g.valid_from desc limit 1
     ), active_addons as (
       select coalesce(sum(total_seconds),0)::int as total_seconds,
         coalesce(sum(consumed_seconds),0)::int as consumed_seconds,
@@ -62,7 +78,7 @@ export async function getUsageSnapshot(
       a.consumed_seconds as addon_used_seconds,
       a.reserved_seconds as addon_reserved_seconds,
       b.valid_from as period_start,
-      b.expires_at as next_reset_at
+      b.next_reset_at
     from active_addons a
     left join current_base b on true
   `;

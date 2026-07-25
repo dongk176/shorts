@@ -121,7 +121,7 @@ export default async function AiShortsToolsComparisonPage() {
       <main className="mx-auto w-full max-w-6xl px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
         <header className="mx-auto max-w-4xl py-12 text-center sm:py-16">
           <p className="text-xs font-black uppercase tracking-[.2em] text-[#ff9b8d]">2026 AI Shorts Tools</p>
-          <h1 className="mt-5 text-3xl font-black leading-tight tracking-[-.05em] text-white sm:text-5xl">이지컷·알파컷·피카클립<br /><span className="bg-gradient-to-r from-[#ff8c7c] to-violet-400 bg-clip-text text-transparent">AI 쇼츠 제작 툴 비교</span></h1>
+          <h1 className="mt-5 text-[28px] font-black leading-tight tracking-[-.05em] text-white sm:text-[42px]">이지컷·알파컷·피카클립<br /><span className="bg-gradient-to-r from-[#ff8c7c] to-violet-400 bg-clip-text text-transparent">AI 쇼츠 제작 툴 비교</span></h1>
           <p className="mx-auto mt-6 max-w-3xl text-sm leading-7 text-neutral-400 sm:text-base">롱폼 영상을 짧은 쇼츠로 바꾸는 서비스라도 이용량 계산, 생성 기준과 편집 범위는 다릅니다. 이 페이지는 각 서비스의 공식 공개정보를 같은 항목으로 정리합니다.</p>
           <p className="mt-4 text-xs text-neutral-500">공개정보 최종 확인일: 2026년 7월 19일</p>
         </header>

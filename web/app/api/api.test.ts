@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   usage: vi.fn(),
   recentJobs: vi.fn(),
   projectByNumber: vi.fn(),
+  publicExampleByNumber: vi.fn(),
   publicState: vi.fn(),
   publicExamples: vi.fn(),
   authenticatedUser: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock("@/lib/usage", async (importOriginal) => ({
 vi.mock("@/lib/data", () => ({
   getRecentJobs: mocks.recentJobs,
   getProjectByNumber: mocks.projectByNumber,
+  getPublicExampleProjectByNumber: mocks.publicExampleByNumber,
   getPublicExampleJobs: mocks.publicExamples,
   getPublicMvpState: mocks.publicState,
   getPlans: vi.fn(),
@@ -125,6 +127,7 @@ beforeEach(() => {
   mocks.usage.mockResolvedValue(usage);
   mocks.publicState.mockResolvedValue({ plans: [], generatedShortCount: 4321 });
   mocks.publicExamples.mockResolvedValue([{ id: "example-job", isExample: true }]);
+  mocks.publicExampleByNumber.mockResolvedValue(null);
   mocks.authenticatedSession.mockImplementation(() => mocks.session());
   mocks.authenticatedUser.mockResolvedValue({ id: "auth-a" });
   mocks.wakeDispatcher.mockResolvedValue(undefined);
@@ -193,6 +196,30 @@ describe("job API security and idempotency", () => {
     expect(mocks.authenticatedSession).toHaveBeenCalledOnce();
   });
 
+  it("temporarily blocks only after repeated membership or paid-content failures", async () => {
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows([], [], [{
+      active: 0,
+      restrictedContentCooldownMinutes: 7,
+    }]);
+    Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      requestId: "2d9e4ec7-459c-430f-ab0c-b3d9bb16883f",
+    }));
+
+    expect(response.status).toBe(429);
+    await expect(response.json()).resolves.toEqual({
+      detail: "너무 자주 요청이 발생하여 잠시 7분 동안 작업을 할 수 없습니다.",
+      code: "RESTRICTED_CONTENT_COOLDOWN",
+    });
+    expect(mocks.usage).not.toHaveBeenCalled();
+    expect(mocks.wakeDispatcher).not.toHaveBeenCalled();
+  });
+
   it("lets a signed-in free user create while plan enforcement is disabled", async () => {
     mocks.usage.mockResolvedValue({
       ...usage,
@@ -221,7 +248,7 @@ describe("job API security and idempotency", () => {
     }));
 
     expect(response.status).toBe(202);
-    expect(tx).toHaveBeenCalledTimes(6);
+    expect(tx).toHaveBeenCalledTimes(7);
   });
 
   it("still requires an active subscription when plan enforcement is restored", async () => {
@@ -283,6 +310,7 @@ describe("job API security and idempotency", () => {
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
       detail: "이 영상은 국가별 시청이 제한된 영상입니다.",
+      code: "HTTP_409",
     });
     expect(mocks.submitInitial).not.toHaveBeenCalled();
   });
@@ -417,6 +445,28 @@ describe("job API security and idempotency", () => {
       expect.objectContaining({ id: "session-a", userId: "user-a" }),
       12,
     );
+  });
+
+  it("loads a public example project without requiring login", async () => {
+    mocks.getDb.mockReturnValue(vi.fn());
+    mocks.publicExampleByNumber.mockResolvedValue({
+      id: "example-job",
+      projectNumber: 12,
+      isExample: true,
+    });
+    mocks.authenticatedSession.mockRejectedValue(new HttpError(401, "로그인이 필요합니다."));
+
+    const response = await getProject(
+      new Request("http://localhost/api/projects/12"),
+      { params: Promise.resolve({ projectNumber: "12" }) },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      project: { id: "example-job", projectNumber: 12, isExample: true },
+    });
+    expect(mocks.authenticatedSession).not.toHaveBeenCalled();
+    expect(mocks.projectByNumber).not.toHaveBeenCalled();
   });
 
   it("does not expose another user's numeric project route", async () => {

@@ -118,9 +118,10 @@ export async function requireMvpSession(authenticatedUser?: User | null): Promis
     select u.id, coalesce(s.plan_code,'free') as selected_plan_code
     from shorts_mvp.app_users u
     left join lateral (
-      select plan_code from shorts_mvp.user_subscriptions
-      where user_id=u.id and status in ('trialing','active','past_due')
-      order by created_at desc limit 1
+      select s.plan_code from shorts_mvp.user_subscriptions s
+      join shorts_mvp.plans p on p.code=s.plan_code
+      where s.user_id=u.id and s.status in ('trialing','active','past_due')
+      order by p.max_active_jobs desc,p.retention_days desc,s.created_at desc limit 1
     ) s on true
     where u.auth_user_id=${authUser.id}
     limit 1
@@ -173,9 +174,10 @@ export async function claimMvpSession(authenticatedUser: User): Promise<MvpSessi
   const insertedUser = appUsers[0] as { id: string; selectedPlanCode: string };
   const entitlementRows = await db`
     select coalesce((
-      select plan_code from shorts_mvp.user_subscriptions
-      where user_id=${insertedUser.id} and status in ('trialing','active','past_due')
-      order by created_at desc limit 1
+      select s.plan_code from shorts_mvp.user_subscriptions s
+      join shorts_mvp.plans p on p.code=s.plan_code
+      where s.user_id=${insertedUser.id} and s.status in ('trialing','active','past_due')
+      order by p.max_active_jobs desc,p.retention_days desc,s.created_at desc limit 1
     ),'free') as selected_plan_code
   `;
   const appUser = {

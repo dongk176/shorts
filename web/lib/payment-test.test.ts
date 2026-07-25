@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  assertSupportedPaymentTestCardIssuer,
   assertLocalPaymentMutation,
   assertLocalPaymentTestHost,
   assertPaymentTester,
   isPaymentTesterEmail,
-  isHanaCardIssuerName,
   PAYMENT_TEST_CHARGE_COUNT,
   PAYMENT_TEST_INTERVAL_SECONDS,
 } from "./payment-test";
@@ -75,21 +73,8 @@ describe("local payment test access", () => {
     expect(isPaymentTesterEmail("unknown@example.com")).toBe(false);
   });
 
-  it("blocks a declared Hana card with a stable UI error code", () => {
-    expect(() => assertSupportedPaymentTestCardIssuer("hana")).toThrow("하나카드");
-    try {
-      assertSupportedPaymentTestCardIssuer("hana");
-    } catch (error) {
-      expect(error).toMatchObject({ status: 422, errorCode: "HANA_CARD_UNSUPPORTED" });
-    }
-    expect(() => assertSupportedPaymentTestCardIssuer("kb")).not.toThrow();
-    expect(isHanaCardIssuerName("하나카드")).toBe(true);
-    expect(isHanaCardIssuerName("KEB Hana")).toBe(true);
-    expect(isHanaCardIssuerName("국민카드")).toBe(false);
-  });
-
-  it("uses three charges with one-minute gaps for new local tests", () => {
-    expect(PAYMENT_TEST_CHARGE_COUNT).toBe(3);
-    expect(PAYMENT_TEST_INTERVAL_SECONDS).toBe(60);
+  it("uses five charges with three-minute gaps for new local tests", () => {
+    expect(PAYMENT_TEST_CHARGE_COUNT).toBe(5);
+    expect(PAYMENT_TEST_INTERVAL_SECONDS).toBe(180);
   });
 });

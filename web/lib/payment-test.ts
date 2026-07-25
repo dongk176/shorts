@@ -10,34 +10,11 @@ export class PaymentTestAccessError extends Error {
   }
 }
 
-export const paymentTestCardIssuers = [
-  "bc", "kb", "shinhan", "samsung", "hyundai", "lotte", "nh", "woori", "hana", "other",
-] as const;
-
-export type PaymentTestCardIssuer = (typeof paymentTestCardIssuers)[number];
-
+export const PAYMENT_TEST_ONE_TIME_AMOUNT = 1000;
 export const PAYMENT_TEST_CHARGE_AMOUNT = 1000;
-export const PAYMENT_TEST_CHARGE_COUNT = 3;
-export const PAYMENT_TEST_INTERVAL_SECONDS = 60;
-export const PAYMENT_TEST_CONFIRMATION = "1,000원씩 3회 실제 결제";
-
-export function assertSupportedPaymentTestCardIssuer(issuer: PaymentTestCardIssuer) {
-  if (issuer === "hana") {
-    throw new PaymentTestAccessError(
-      "하나카드는 현재 더페이원 카드 등록을 지원하지 않습니다. 다른 카드사를 이용해 주세요.",
-      422,
-      "HANA_CARD_UNSUPPORTED",
-    );
-  }
-}
-
-export function isHanaCardIssuerName(value: string | null | undefined) {
-  return Boolean(value && /(하나|외환|hana|keb)/i.test(value));
-}
-
-export function isHanaProviderDiagnostic(value: string | null | undefined) {
-  return isHanaCardIssuerName(value);
-}
+export const PAYMENT_TEST_CHARGE_COUNT = 5;
+export const PAYMENT_TEST_INTERVAL_SECONDS = 180;
+export const PAYMENT_TEST_CONFIRMATION = "1,000원씩 5회 실제 결제";
 
 export function isLocalHostname(hostname: string) {
   const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase();
@@ -92,6 +69,14 @@ export function assertLocalPaymentTestHost(request: Request) {
     throw new PaymentTestAccessError("결제 테스트는 이 컴퓨터의 로컬 주소에서만 사용할 수 있습니다.", 403);
   }
   requestBrowserHost(request);
+}
+
+export function localPaymentTestOrigin(request: Request) {
+  assertLocalPaymentTestHost(request);
+  const url = requestUrl(request);
+  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",", 1)[0]?.trim();
+  const protocol = forwardedProtocol === "https" ? "https:" : url.protocol === "https:" ? "https:" : "http:";
+  return new URL(`${protocol}//${requestBrowserHost(request)}`).origin;
 }
 
 export function assertLocalPaymentMutation(request: Request) {

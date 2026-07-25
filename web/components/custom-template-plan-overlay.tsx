@@ -45,18 +45,18 @@ export function CustomTemplatePlanOverlay({
         aria-describedby="custom-template-plan-description"
         className="w-full max-w-[440px] rounded-[26px] border border-[#ff9b8d]/20 bg-[#202124] p-7 text-center shadow-[0_32px_100px_rgba(0,0,0,.72),0_0_48px_rgba(255,113,94,.1)] sm:p-9"
       >
-        <p className="text-[11px] font-black uppercase tracking-[.18em] text-[#ff9b8d]">Standard · Pro</p>
+        <p className="text-[11px] font-black uppercase tracking-[.18em] text-[#ff9b8d]">Easy Cut Paid</p>
         <h2 id="custom-template-plan-title" className="mt-3 text-2xl font-black tracking-[-.04em] text-white">
-          커스텀 템플릿을 저장하려면<br />플랜 업그레이드가 필요해요
+          커스텀 템플릿을 저장하려면<br />유료 이용권이 필요해요
         </h2>
         <p id="custom-template-plan-description" className="mt-4 text-sm leading-6 text-neutral-400">
-          플러스에서는 기본 템플릿을 사용할 수 있어요.<br />직접 만든 템플릿의 저장과 사용은 스탠다드·프로에서 제공됩니다.
+          이지컷 프로 또는 기간 패키지를 이용하면<br />직접 만든 템플릿을 저장하고 사용할 수 있어요.
         </p>
         <div className="mt-7 grid gap-2.5">
           <Link
             ref={pricingRef}
-            href="/pricing?plan=standard&cycle=monthly"
-            className="flex min-h-12 items-center justify-center rounded-xl bg-[#ff715e] px-5 text-sm font-black text-black transition hover:bg-[#ff8a78]"
+            href="/pricing"
+            className="flex min-h-12 items-center justify-center rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white transition hover:bg-[#ff8a78]"
           >
             요금제 확인하기
           </Link>

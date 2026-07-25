@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { expectedShortCount, type YoutubeCreationBlockCode } from "@/lib/contracts";
-import { verifyYoutubePlaybackAvailability } from "@/lib/youtube-playback";
 
 const youtubeId = /^[A-Za-z0-9_-]{11}$/;
+const UNAVAILABLE_VIDEO_MESSAGE = "유효하지 않거나 현재 시청할 수 없는 영상입니다 (비공개, 삭제, 또는 멤버십 전용)";
 
 export function normalizeYoutubeUrl(input: string) {
   let url: URL;
@@ -94,75 +94,47 @@ type CreationAvailability = {
   creationBlockReason: string | null;
 };
 
+function unavailable(creationBlockCode: YoutubeCreationBlockCode): CreationAvailability {
+  return {
+    creationAllowed: false,
+    creationBlockCode,
+    creationBlockReason: UNAVAILABLE_VIDEO_MESSAGE,
+  };
+}
+
 export function getYoutubeCreationAvailability(
   item: z.infer<typeof responseSchema>["items"][number],
 ): CreationAvailability {
   const restriction = item.contentDetails.regionRestriction;
   if (restriction?.allowed !== undefined || (restriction?.blocked?.length || 0) > 0) {
-    return {
-      creationAllowed: false,
-      creationBlockCode: "region_restricted",
-      creationBlockReason: "이 영상은 국가별 시청이 제한된 영상입니다.",
-    };
+    return unavailable("region_restricted");
   }
   if (item.contentDetails.contentRating?.ytRating === "ytAgeRestricted") {
-    return {
-      creationAllowed: false,
-      creationBlockCode: "age_restricted",
-      creationBlockReason: "이 영상은 연령 제한이 적용된 영상입니다.",
-    };
+    return unavailable("age_restricted");
   }
   if (!item.status) {
-    return {
-      creationAllowed: false,
-      creationBlockCode: "availability_unverified",
-      creationBlockReason: "이 영상은 공개 상태를 확인할 수 없는 영상입니다.",
-    };
+    return unavailable("availability_unverified");
   }
   if (item.status.publishAt && Date.parse(item.status.publishAt) > Date.now()) {
-    return {
-      creationAllowed: false,
-      creationBlockCode: "not_yet_available",
-      creationBlockReason: "이 영상은 아직 예약 공개 시간이 되지 않은 영상입니다.",
-    };
+    return unavailable("not_yet_available");
   }
   if (item.status.privacyStatus !== "public") {
-    return {
-      creationAllowed: false,
-      creationBlockCode: "not_public",
-      creationBlockReason: "이 영상은 전체 공개가 아닌 영상입니다.",
-    };
+    return unavailable("not_public");
   }
   if (item.status.uploadStatus !== "processed") {
     if (item.status.uploadStatus === "deleted") {
-      return {
-        creationAllowed: false,
-        creationBlockCode: "removed",
-        creationBlockReason: "이 영상은 삭제되었거나 게시가 중단된 영상입니다.",
-      };
+      return unavailable("removed");
     }
     if (item.status.rejectionReason === "copyright") {
-      return {
-        creationAllowed: false,
-        creationBlockCode: "copyright_restricted",
-        creationBlockReason: "이 영상은 저작권 문제로 재생이 제한된 영상입니다.",
-      };
+      return unavailable("copyright_restricted");
     }
-    return {
-      creationAllowed: false,
-      creationBlockCode: "not_processed",
-      creationBlockReason: "이 영상은 YouTube 처리가 아직 완료되지 않은 영상입니다.",
-    };
+    return unavailable("not_processed");
   }
   if (
     item.liveStreamingDetails?.scheduledStartTime
     && !item.liveStreamingDetails.actualStartTime
   ) {
-    return {
-      creationAllowed: false,
-      creationBlockCode: "not_yet_available",
-      creationBlockReason: "이 영상은 아직 공개 또는 재생이 시작되지 않은 영상입니다.",
-    };
+    return unavailable("not_yet_available");
   }
   return {
     creationAllowed: true,
@@ -184,21 +156,12 @@ export async function analyzeYoutubeUrl(input: string) {
   const parsed = responseSchema.parse(await response.json());
   const item = parsed.items[0];
   if (!item) {
-    const playback = await verifyYoutubePlaybackAvailability(videoId);
-    throw new Error(
-      playback.creationBlockReason || "비공개, 삭제 또는 이용이 중단된 영상입니다.",
-    );
+    throw new Error(UNAVAILABLE_VIDEO_MESSAGE);
   }
   const durationSeconds = parseIsoDuration(item.contentDetails.duration);
   if (durationSeconds <= 0 || durationSeconds > 3600) throw new Error("최대 60분 길이의 영상까지만 만들 수 있습니다.");
   const thumbnails = Object.values(item.snippet.thumbnails);
-  const metadataAvailability = getYoutubeCreationAvailability(item);
-  const playbackAvailability = metadataAvailability.creationAllowed
-    ? await verifyYoutubePlaybackAvailability(videoId)
-    : metadataAvailability;
-  const availability = playbackAvailability.creationBlockCode === "bot_challenge"
-    ? { creationAllowed: true, creationBlockCode: null, creationBlockReason: null }
-    : playbackAvailability;
+  const availability = getYoutubeCreationAvailability(item);
   const channelThumbnailUrl = await getChannelThumbnailUrl(item.snippet.channelId, apiKey);
   return {
     videoId,

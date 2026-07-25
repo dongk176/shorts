@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { refreshSupabaseSession } from "@/lib/supabase/middleware";
 
 const CANONICAL_HOST = "www.easycut.co.kr";
 const LEGACY_PRODUCTION_HOSTS = new Set([
@@ -8,7 +9,7 @@ const LEGACY_PRODUCTION_HOSTS = new Set([
   "shorts-dmsthaalcls-1044-artiroom.vercel.app",
 ]);
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   if (LEGACY_PRODUCTION_HOSTS.has(request.nextUrl.hostname)) {
     const destination = request.nextUrl.clone();
     destination.protocol = "https:";
@@ -20,7 +21,7 @@ export function middleware(request: NextRequest) {
   try {
     pathname = decodeURIComponent(pathname);
   } catch {
-    return NextResponse.next();
+    return refreshSupabaseSession(request);
   }
   if (pathname === "/실시간인기") {
     const destination = request.nextUrl.clone();
@@ -28,9 +29,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(destination, 308);
   }
 
-  return NextResponse.next();
+  return refreshSupabaseSession(request);
 }
 
 export const config = {
+  runtime: "nodejs",
   matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };

@@ -58,13 +58,17 @@ export function assertBillingMutationRequest(request: Request) {
   verifiedBrowserOrigin(request);
 }
 
-export function checkoutUrls(request: Request, flow: "subscription" | "addon", checkoutId: string) {
-  const origin = verifiedBrowserOrigin(request)
+export function billingRequestOrigin(request: Request) {
+  return verifiedBrowserOrigin(request)
     || originFromHost(
       `${(firstHeaderValue(request.headers.get("x-forwarded-proto")) || "").replace(/:$/, "")}:`,
       firstHeaderValue(request.headers.get("x-forwarded-host")),
     )
     || new URL(request.url).origin;
+}
+
+export function checkoutUrls(request: Request, flow: "subscription" | "addon", checkoutId: string) {
+  const origin = billingRequestOrigin(request);
   const success = new URL("/billing/success", origin);
   success.searchParams.set("flow", flow);
   success.searchParams.set("checkoutId", checkoutId);

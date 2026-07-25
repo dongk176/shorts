@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Sql } from "postgres";
-import { getGeneratedShortCount, getPublicExampleJobs, getShortsForJobs } from "./data";
+import {
+  getAllProjects,
+  getGeneratedShortCount,
+  getPublicExampleJobs,
+  getPublicExampleProjectByNumber,
+  getShortsForJobs,
+} from "./data";
 
 describe("generated shorts counter", () => {
   it("returns the persisted public counter as a number", async () => {
@@ -103,5 +109,73 @@ describe("public example projects", () => {
     const jobs = await getPublicExampleJobs(query);
 
     expect(jobs).toMatchObject([{ id: "job-a", projectNumber: 1, isExample: true, expiresAt: null }]);
+  });
+
+  it("loads one completed example by its public project number", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([{
+        id: "job-a",
+        projectNumber: 1,
+        isExample: true,
+        videoTitle: "예시 영상",
+        channelName: "채널",
+        channelThumbnailUrl: null,
+        thumbnailUrl: "https://example.com/thumb.jpg",
+        sourceDurationSeconds: 600,
+        outputLanguage: "ko",
+        expectedShortCount: 12,
+        status: "completed",
+        stage: "completed",
+        progress: 100,
+        errorMessage: null,
+        createdAt: new Date("2026-07-18T00:00:00.000Z"),
+        expiresAt: null,
+      }])
+      .mockReturnValueOnce(["job-a"])
+      .mockResolvedValueOnce([]) as unknown as Sql;
+
+    const project = await getPublicExampleProjectByNumber(query, 1);
+
+    expect(project).toMatchObject({ id: "job-a", projectNumber: 1, isExample: true });
+  });
+});
+
+describe("all projects", () => {
+  it("returns the complete available project list", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([{
+        id: "job-a",
+        projectNumber: 11,
+        isExample: false,
+        videoTitle: "내 영상",
+        channelName: "내 채널",
+        channelThumbnailUrl: null,
+        thumbnailUrl: "https://example.com/thumb.jpg",
+        sourceDurationSeconds: 600,
+        outputLanguage: "ko",
+        expectedShortCount: 12,
+        status: "completed",
+        stage: "completed",
+        progress: 100,
+        errorMessage: null,
+        createdAt: new Date("2026-07-20T00:00:00.000Z"),
+        expiresAt: new Date("2026-08-19T00:00:00.000Z"),
+      }])
+      .mockReturnValueOnce(["job-a"])
+      .mockResolvedValueOnce([]) as unknown as Sql;
+
+    const projects = await getAllProjects(query, {
+      id: "session-a",
+      selectedPlanCode: "free",
+      userId: "user-a",
+      user: null,
+    });
+
+    expect(projects).toMatchObject([{
+      id: "job-a",
+      projectNumber: 11,
+      isExample: false,
+      expiresAt: "2026-08-19T00:00:00.000Z",
+    }]);
   });
 });

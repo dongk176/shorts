@@ -50,7 +50,7 @@ export default async function AiShortsMakerPage() {
       <main className="mx-auto w-full max-w-6xl px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
         <header className="mx-auto max-w-4xl py-12 text-center sm:py-16">
           <p className="text-xs font-black uppercase tracking-[.2em] text-[#ff9b8d]">AI Shorts Maker Guide</p>
-          <h1 className="mt-5 text-3xl font-black leading-tight tracking-[-.05em] text-white sm:text-5xl">유튜브 영상으로<br /><span className="bg-gradient-to-r from-[#ff8c7c] to-violet-400 bg-clip-text text-transparent">AI 쇼츠 만드는 방법</span></h1>
+          <h1 className="mt-5 text-[28px] font-black leading-tight tracking-[-.05em] text-white sm:text-[42px]">유튜브 영상으로<br /><span className="bg-gradient-to-r from-[#ff8c7c] to-violet-400 bg-clip-text text-transparent">AI 쇼츠 만드는 방법</span></h1>
           <p className="mx-auto mt-6 max-w-3xl text-sm leading-7 text-neutral-400 sm:text-base">긴 영상에서 핵심 구간을 찾고 제목, 자막, 비율과 템플릿을 적용해 짧은 숏폼으로 완성하는 과정을 확인하세요.</p>
         </header>
 

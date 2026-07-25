@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     // Redirect to a user-facing error instead of exposing provider or DB details.
   }
   const target = new URL("/", requestAppOrigin(request));
-  target.searchParams.set("auth_error", "Google 로그인 인증을 완료하지 못했습니다.");
+  target.searchParams.set("auth_error", "AUTH_CALLBACK_FAILED");
   const response = NextResponse.redirect(target, { status: 303 });
   response.cookies.delete(OAUTH_NEXT_COOKIE);
   return response;

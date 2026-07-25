@@ -230,6 +230,13 @@ class BatchWorker:
     )
     FINAL_PROCESSING_MESSAGE = "쇼츠를 준비하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
     FINAL_RENDER_MESSAGE = "쇼츠 영상을 만드는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+    FINAL_RESTRICTED_CONTENT_MESSAGE = (
+        "멤버십 전용 여부, 구매·대여 콘텐츠는 사용할 수 없습니다.\n"
+        "사용량은 다시 복구되었습니다. 영상 확인 후 다시 시도해주세요."
+    )
+    RESTRICTED_CONTENT_ERROR_CODES = frozenset(
+        {"youtube_members_only", "youtube_paid_content"}
+    )
 
     def _fail_ingestion_job(
         self,
@@ -742,6 +749,14 @@ class BatchWorker:
                     result=result,
                 )
         except Exception as exc:
+            error_code = (
+                exc.code if isinstance(exc, IngestionError) else type(exc).__name__
+            )
+            error_message = (
+                self.FINAL_RESTRICTED_CONTENT_MESSAGE
+                if error_code in self.RESTRICTED_CONTENT_ERROR_CODES
+                else str(exc)
+            )
             _log_event(
                 "project_run_failed",
                 job_id=job_id,
@@ -755,13 +770,13 @@ class BatchWorker:
             self.repository.fail_open_project_attempts(
                 job_id,
                 stage="project",
-                code=type(exc).__name__,
-                message=str(exc),
+                code=error_code,
+                message=error_message,
             )
             self.repository.finalize_project_job(
                 job_id,
-                error_code=type(exc).__name__,
-                error_message=str(exc),
+                error_code=error_code,
+                error_message=error_message,
             )
         finally:
             if route_id and not route_download_started:

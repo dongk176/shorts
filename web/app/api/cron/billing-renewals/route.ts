@@ -1,10 +1,16 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { processBillingRenewals } from "@/lib/billing-renewals";
 import { getDb } from "@/lib/db";
-import { safeSecretEqual } from "@/lib/toss";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function safeSecretEqual(expected: string, actual: string) {
+  const expectedBytes = Buffer.from(expected);
+  const actualBytes = Buffer.from(actual);
+  return expectedBytes.length === actualBytes.length && timingSafeEqual(expectedBytes, actualBytes);
+}
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET || "";

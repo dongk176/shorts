@@ -1,0 +1,37 @@
+# Fargate project pipeline runbook
+
+New AWS jobs use pipeline version 2 and run as one AWS Batch Fargate On-Demand
+job. The project definition is 4 vCPU, 30,720 MiB memory, 30 GiB ephemeral
+storage, a 120-minute Batch timeout, and one Batch attempt. Initial rendering is
+limited to two concurrent outputs inside the task. Edit rerenders use the same
+Fargate queue with a separate 2 vCPU / 16,384 MiB definition.
+
+## Deployment order
+
+1. Apply `202607220001_fargate_project_pipeline.sql`.
+2. Publish the immutable combined Worker image (download tools and render fonts).
+3. Deploy the compute stack and Lambda handlers.
+4. Deploy Web after the new RPCs and project outbox exist.
+
+Do not remove the legacy EC2 render queue while a pipeline-version-1 prepare or
+render job is active. After those jobs drain, remove the Spot and On-Demand EC2
+compute environments, legacy render queue, and legacy render job definition in a
+separate infrastructure deployment.
+
+At the current 30-vCPU regional Fargate On-Demand quota, at most seven 4-vCPU
+project tasks can run concurrently (rerenders and other Fargate work consume the
+same quota). The Batch compute environment is already configured above the
+requested 400-vCPU service quota, so approval increases usable concurrency
+without another stack change.
+
+## Production load gate
+
+Run the load command inside the published 4-vCPU / 30-GB image:
+
+```sh
+python fargate_render_load.py
+```
+
+It renders two 60-second comment-template outputs with 15 comments each in
+parallel and fails if the cgroup peak reaches 27 GiB. Do not enable the Web
+switch in production unless this gate passes on the actual Fargate definition.

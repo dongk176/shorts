@@ -246,6 +246,20 @@ def test_fargate_project_migration_keeps_ready_outputs_and_uses_half_threshold()
     assert "project_resume_count=1" in migration
 
 
+def test_restricted_content_failure_message_migration_is_scoped() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607230006_restricted_content_failure_message.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "youtube_members_only" in migration
+    assert "youtube_paid_content" in migration
+    assert "사용량은 다시 복구되었습니다" in migration
+    assert "video_jobs_restricted_content_failure_message" in migration
+
+
 def test_render_performance_migration_adds_atomic_stage_counts_and_internal_metrics() -> None:
     migration = (
         Path(__file__).parents[2]

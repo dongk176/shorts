@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { assertJobCreationAllowed } from "./job-policy";
+import {
+  assertJobCreationAllowed,
+  assertRestrictedContentCooldown,
+} from "./job-policy";
 
 const base = {
   activeJobs: 0,
@@ -22,6 +25,16 @@ const base = {
 };
 
 describe("job abuse and plan limits", () => {
+  it("does not throttle normal work without repeated restricted-content failures", () => {
+    expect(() => assertRestrictedContentCooldown(0)).not.toThrow();
+  });
+
+  it("reports the remaining cooldown after repeated restricted-content failures", () => {
+    expect(() => assertRestrictedContentCooldown(7.1)).toThrow(
+      "너무 자주 요청이 발생하여 잠시 8분 동안 작업을 할 수 없습니다.",
+    );
+  });
+
   it("allows one job when no abuse limit is reached", () => {
     expect(() => assertJobCreationAllowed(base)).not.toThrow();
   });
@@ -35,7 +48,7 @@ describe("job abuse and plan limits", () => {
     expect(() => assertJobCreationAllowed(over)).toThrow("처리 시간");
   });
 
-  it("allows usage overage while temporary plan enforcement is disabled", () => {
+  it("allows usage overage only when plan enforcement is explicitly disabled", () => {
     const unrestricted = {
       ...base,
       sourceDurationSeconds: 3600,

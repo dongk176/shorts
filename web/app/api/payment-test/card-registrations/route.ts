@@ -3,37 +3,31 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import {
-  assertLocalPaymentMutation,
-  assertLocalPaymentTestHost,
-  assertPaymentTester,
-  assertSupportedPaymentTestCardIssuer,
-  isHanaProviderDiagnostic,
-  paymentTestCardIssuers,
-  PaymentTestAccessError,
-} from "@/lib/payment-test";
-import { requireMvpSession } from "@/lib/session";
-import {
+  cardTokenHash,
   createPaymentTrackId,
   encryptCardToken,
-  getThePayOneConfig,
   isSupportedCardNumber,
   normalizeCardNumber,
   PaymentConfigurationError,
   registerThePayOneCard,
   ThePayOneError,
 } from "@/lib/thepayone";
+import {
+  assertLocalPaymentMutation,
+  assertLocalPaymentTestHost,
+  assertPaymentTester,
+  PaymentTestAccessError,
+} from "@/lib/payment-test";
+import { requireMvpSession } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const registrationSchema = z.object({
   requestId: z.string().uuid(),
-  cardIssuer: z.enum(paymentTestCardIssuers),
-  payerName: z.string().trim().min(1).max(20),
-  payerEmail: z.string().trim().email().max(100),
+  payerName: z.string().trim().min(1).max(30),
+  payerEmail: z.string().trim().email().max(60),
   payerTel: z.string().transform((value) => value.replace(/[^0-9]/g, "")).refine((value) => /^\d{10,11}$/.test(value)),
-  // ThePayOne documents this as an A(20) field and performs issuer validation.
-  // Do not reject structurally valid domestic PANs with an undocumented Luhn rule.
   cardNumber: z.string().transform(normalizeCardNumber).refine(isSupportedCardNumber),
   expiry: z.string().transform((value) => value.replace(/[^0-9]/g, "")).refine((value) => {
     if (!/^\d{2}(0[1-9]|1[0-2])$/.test(value)) return false;
@@ -44,39 +38,33 @@ const registrationSchema = z.object({
     const month = Number(value.slice(2));
     return year > currentYear || (year === currentYear && month >= currentMonth);
   }),
-  authDob: z.string().transform((value) => value.replace(/[^0-9]/g, "")).refine((value) => /^(\d{6}|\d{10})$/.test(value)),
-  authPw: z.string().refine((value) => /^\d{2}$/.test(value)),
+  identityNumber: z.string().transform((value) => value.replace(/[^0-9]/g, "")).refine((value) => /^(\d{6}|\d{10})$/.test(value)),
+  cardPassword: z.string().refine((value) => /^\d{2}$/.test(value)),
   consent: z.literal(true),
 }).strict();
 
 const invalidFieldMessages: Record<string, string> = {
-  cardIssuer: "카드사를 선택해 주세요.",
-  payerName: "이름은 1~20자로 입력해 주세요.",
+  payerName: "이름은 1~30자로 입력해 주세요.",
   payerEmail: "이메일 주소 형식을 확인해 주세요.",
   payerTel: "휴대전화 번호는 숫자 10~11자리로 입력해 주세요.",
   cardNumber: "카드번호는 공백이나 하이픈을 제외한 숫자 13~19자리인지 확인해 주세요.",
-  expiry: "유효기간의 월(MM)과 연도(YY)를 확인해 주세요. 예: 카드 표기가 07/29이면 월 07, 연도 29입니다.",
-  authDob: "개인카드는 생년월일 6자리(YYMMDD), 법인카드는 사업자등록번호 10자리를 입력해 주세요.",
-  authPw: "카드 비밀번호 앞 2자리를 숫자로 입력해 주세요.",
-  consent: "본인 카드 사용 및 카드등록 안내에 동의해 주세요.",
+  expiry: "유효기간의 월(MM)과 연도(YY)를 확인해 주세요. 예: 07/29는 연도 29, 월 07입니다.",
+  identityNumber: "개인카드는 생년월일 6자리, 법인카드는 사업자등록번호 10자리를 입력해 주세요.",
+  cardPassword: "카드 비밀번호 앞 2자리를 숫자로 입력해 주세요.",
+  consent: "본인 카드 사용, 0원 카드 등록 및 반복결제 테스트 안내에 동의해 주세요.",
 };
-
-function zodErrorDetail(error: z.ZodError) {
-  const field = String(error.issues[0]?.path[0] || "");
-  return invalidFieldMessages[field] || "카드 등록 입력값을 다시 확인해 주세요.";
-}
 
 type RegistrationRow = {
   id: string;
-  status: string;
+  status: "pending" | "active" | "failed" | "unknown" | "revoking" | "revoked" | "revoke_failed";
   cardLast4: string | null;
   cardIssuer: string | null;
   cardType: string | null;
   cardAcquirer: string | null;
-  providerAuthTrxId: string | null;
-  providerResultCode: string | null;
-  createdAt: string;
-  revokedAt: string | null;
+  transactionId: string | null;
+  resultCode: string | null;
+  createdAt: Date;
+  revokedAt: Date | null;
 };
 
 function safeRegistration(row: RegistrationRow) {
@@ -87,10 +75,10 @@ function safeRegistration(row: RegistrationRow) {
     issuer: row.cardIssuer,
     cardType: row.cardType,
     acquirer: row.cardAcquirer,
-    providerTransactionId: row.providerAuthTrxId,
-    resultCode: row.providerResultCode,
-    createdAt: row.createdAt,
-    revokedAt: row.revokedAt,
+    transactionId: row.transactionId,
+    resultCode: row.resultCode,
+    createdAt: row.createdAt.toISOString(),
+    revokedAt: row.revokedAt?.toISOString() || null,
   };
 }
 
@@ -106,35 +94,38 @@ function paymentError(error: unknown) {
   }
   if (error instanceof PaymentConfigurationError) return json({ detail: error.message }, { status: 503 });
   if (error instanceof ThePayOneError) {
-    if (isHanaProviderDiagnostic(error.diagnostic)) {
-      return json({
-        detail: "하나카드는 현재 더페이원 카드 등록을 지원하지 않습니다. 다른 카드사를 이용해 주세요.",
-        errorCode: "HANA_CARD_UNSUPPORTED",
-        resultCode: error.resultCode,
-      }, { status: 422 });
-    }
-    const detail = error.diagnostic ? `${error.message} · 상세: ${error.diagnostic}` : error.message;
-    return json({ detail, resultCode: error.resultCode }, { status: 502 });
+    const diagnostic = error.diagnostic ? ` · 상세: ${error.diagnostic}` : "";
+    return json({
+      detail: error.outcomeUnknown
+        ? "카드 등록 결과를 확정하지 못했습니다. 중복 등록을 막기 위해 더페이원 관리자에서 거래를 확인해 주세요."
+        : `${error.message}${diagnostic}`,
+      errorCode: error.outcomeUnknown ? "CARD_REGISTRATION_OUTCOME_UNKNOWN" : "CARD_REGISTRATION_FAILED",
+      resultCode: error.resultCode,
+    }, { status: 502 });
   }
-  if (error instanceof z.ZodError) return json({ detail: zodErrorDetail(error) }, { status: 400 });
-  return json({ detail: "카드 등록 테스트를 처리하지 못했습니다." }, { status: 500 });
+  if (error instanceof z.ZodError) {
+    const field = String(error.issues[0]?.path[0] || "");
+    return json({ detail: invalidFieldMessages[field] || "카드 등록 입력값을 다시 확인해 주세요." }, { status: 400 });
+  }
+  return json({ detail: "더페이원 0원 카드 등록 테스트를 처리하지 못했습니다." }, { status: 500 });
 }
+
+const registrationColumns = `
+  id, status, card_last4, card_issuer, card_type, card_acquirer,
+  transaction_id, result_code, created_at, revoked_at
+`;
 
 export async function GET(request: Request) {
   try {
     assertLocalPaymentTestHost(request);
-    const session = await requireMvpSession();
-    const tester = assertPaymentTester(session);
-    const db = getDb();
-    const rows = await db`
-      select
-        id, status, card_last4, card_issuer, card_type, card_acquirer,
-        provider_auth_trx_id, provider_result_code, created_at, revoked_at
+    const tester = assertPaymentTester(await requireMvpSession());
+    const rows = await getDb().unsafe<RegistrationRow[]>(`
+      select ${registrationColumns}
       from shorts_mvp.payment_method_registrations
-      where user_id=${tester.userId}
+      where user_id=$1
       order by created_at desc
       limit 20
-    ` as unknown as RegistrationRow[];
+    `, [tester.userId]);
     return json({ registrations: rows.map(safeRegistration) });
   } catch (error) {
     return paymentError(error);
@@ -143,79 +134,77 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   let registrationId: string | null = null;
+  let userId: string | null = null;
   try {
     assertLocalPaymentMutation(request);
-    const session = await requireMvpSession();
-    const tester = assertPaymentTester(session);
+    const tester = assertPaymentTester(await requireMvpSession());
+    userId = tester.userId;
     const input = registrationSchema.parse(await request.json());
-    assertSupportedPaymentTestCardIssuer(input.cardIssuer);
-    const config = getThePayOneConfig();
     const db = getDb();
-
-    const existing = await db`
-      select
-        id, status, card_last4, card_issuer, card_type, card_acquirer,
-        provider_auth_trx_id, provider_result_code, created_at, revoked_at
+    const existing = await db.unsafe<RegistrationRow[]>(`
+      select ${registrationColumns}
       from shorts_mvp.payment_method_registrations
-      where user_id=${tester.userId} and request_id=${input.requestId}
+      where user_id=$1 and request_id=$2
       limit 1
-    ` as unknown as RegistrationRow[];
+    `, [tester.userId, input.requestId]);
     if (existing[0]) return json({ registration: safeRegistration(existing[0]), duplicate: true });
 
     registrationId = randomUUID();
-    const trackId = createPaymentTrackId("AUTH");
+    const orderId = createPaymentTrackId("AUTH");
     await db`
       insert into shorts_mvp.payment_method_registrations (
-        id, user_id, merchant_id, request_id, track_id, status, billing_day
+        id,user_id,request_id,order_id,status
       ) values (
-        ${registrationId}, ${tester.userId}, ${config.merchantId}, ${input.requestId}, ${trackId}, 'pending', '00'
+        ${registrationId},${tester.userId},${input.requestId},${orderId},'pending'
       )
     `;
 
-    let providerResult;
+    let issued;
     try {
-      providerResult = await registerThePayOneCard({
-        trackId,
+      issued = await registerThePayOneCard({
+        trackId: orderId,
+        cardNumber: input.cardNumber,
+        expiry: input.expiry,
+        authDob: input.identityNumber,
+        authPw: input.cardPassword,
         payerName: input.payerName,
         payerEmail: input.payerEmail,
         payerTel: input.payerTel,
-        cardNumber: input.cardNumber,
-        expiry: input.expiry,
-        authDob: input.authDob,
-        authPw: input.authPw,
       });
     } catch (error) {
-      const resultCode = error instanceof ThePayOneError ? error.resultCode : "LOCAL_ERROR";
+      const outcomeUnknown = error instanceof ThePayOneError && error.outcomeUnknown;
       await db`
         update shorts_mvp.payment_method_registrations
-        set status='failed', provider_result_code=${resultCode}
-        where id=${registrationId} and user_id=${tester.userId}
+        set status=${outcomeUnknown ? "unknown" : "failed"},
+          result_code=${error instanceof ThePayOneError ? error.resultCode : "LOCAL_ERROR"}
+        where id=${registrationId} and user_id=${tester.userId} and status='pending'
       `;
       throw error;
     }
 
-    const encrypted = encryptCardToken(providerResult.cardId, registrationId);
+    const encrypted = encryptCardToken(issued.cardId, registrationId);
     const rows = await db`
       update shorts_mvp.payment_method_registrations
-      set
-        status='active',
-        provider_auth_trx_id=${providerResult.providerTransactionId},
-        provider_result_code=${providerResult.resultCode},
-        card_token_ciphertext=${encrypted.ciphertext},
-        card_token_iv=${encrypted.iv},
-        card_token_tag=${encrypted.tag},
-        card_last4=${providerResult.last4},
-        card_issuer=${providerResult.issuer},
-        card_type=${providerResult.cardType},
-        card_acquirer=${providerResult.acquirer}
+      set status='active',transaction_id=${issued.providerTransactionId},result_code=${issued.resultCode},
+        billing_key_ciphertext=${encrypted.ciphertext},billing_key_iv=${encrypted.iv},
+        billing_key_tag=${encrypted.tag},billing_key_hash=${cardTokenHash(issued.cardId)},
+        card_last4=${issued.last4},card_issuer_code=null,
+        card_issuer=${issued.issuer},card_type=${issued.cardType},
+        card_acquirer_code=null,card_acquirer=${issued.acquirer}
       where id=${registrationId} and user_id=${tester.userId} and status='pending'
-      returning
-        id, status, card_last4, card_issuer, card_type, card_acquirer,
-        provider_auth_trx_id, provider_result_code, created_at, revoked_at
+      returning id,status,card_last4,card_issuer,card_type,card_acquirer,
+        transaction_id,result_code,created_at,revoked_at
     ` as unknown as RegistrationRow[];
     if (!rows[0]) throw new Error("카드 등록 상태를 저장하지 못했습니다.");
     return json({ registration: safeRegistration(rows[0]) }, { status: 201 });
   } catch (error) {
+    if (registrationId && userId && !(error instanceof ThePayOneError)) {
+      await getDb()`
+        update shorts_mvp.payment_method_registrations
+        set status='failed',result_code=coalesce(result_code,'LOCAL_ERROR')
+        where id=${registrationId} and user_id=${userId} and status='pending'
+      `.catch(() => undefined);
+    }
     return paymentError(error);
   }
 }

@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   try {
     const next = safeNextPath(request.nextUrl.searchParams.get("next"));
     const provider = request.nextUrl.searchParams.get("provider") || "google";
-    if (provider !== "google" && provider !== "kakao") throw new Error("지원하지 않는 로그인 방식입니다.");
+    if (provider !== "google" && provider !== "kakao") throw new Error("AUTH_UNSUPPORTED_PROVIDER");
     const callback = new URL("/auth/callback", requestAppOrigin(request));
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase.auth.signInWithOAuth({
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
         skipBrowserRedirect: true,
       },
     });
-    if (error || !data.url) throw error || new Error("로그인 주소를 만들지 못했습니다.");
+    if (error || !data.url) throw error || new Error("AUTH_START_FAILED");
     const response = NextResponse.redirect(data.url, { status: 302 });
     response.cookies.set(OAUTH_NEXT_COOKIE, next, {
       httpOnly: true,
@@ -26,9 +26,9 @@ export async function GET(request: NextRequest) {
       maxAge: 10 * 60,
     });
     return response;
-  } catch (error) {
+  } catch {
     const target = new URL("/", requestAppOrigin(request));
-    target.searchParams.set("auth_error", error instanceof Error ? error.message : "로그인을 시작하지 못했습니다.");
+    target.searchParams.set("auth_error", "AUTH_START_FAILED");
     return NextResponse.redirect(target, { status: 302 });
   }
 }

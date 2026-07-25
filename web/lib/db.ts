@@ -1,6 +1,10 @@
 import postgres, { type Sql } from "postgres";
 
-let client: Sql | null = null;
+const globalDb = globalThis as typeof globalThis & {
+  __shortsMvpDbClient?: Sql;
+};
+
+let client: Sql | null = globalDb.__shortsMvpDbClient ?? null;
 
 export function getDb(): Sql {
   if (!client) {
@@ -20,6 +24,9 @@ export function getDb(): Sql {
       },
       transform: postgres.camel,
     });
+    if (process.env.NODE_ENV !== "production") {
+      globalDb.__shortsMvpDbClient = client;
+    }
   }
   return client;
 }

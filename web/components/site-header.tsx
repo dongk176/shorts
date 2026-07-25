@@ -5,11 +5,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
+import { HeaderUsageIndicator } from "@/components/header-usage-indicator";
+import { useI18n } from "@/lib/i18n/provider";
 
 const navigation = [
-  { href: "/templates", label: "템플릿", path: "/templates" },
-  { href: "/pricing", label: "요금제", path: "/pricing" },
-  { href: "/popular", label: "실시간 인기", path: "/popular" },
+  { href: "/projects", labelKey: "nav.projects", path: "/projects" },
+  { href: "/templates", labelKey: "nav.templates", path: "/templates" },
+  { href: "/pricing", labelKey: "nav.pricing", path: "/pricing" },
+  { href: "/popular", labelKey: "nav.popular", path: "/popular" },
 ] as const;
 
 function NavigationLinks({ pathname, onNavigate, mobile = false }: {
@@ -17,6 +20,7 @@ function NavigationLinks({ pathname, onNavigate, mobile = false }: {
   onNavigate?: () => void;
   mobile?: boolean;
 }) {
+  const { t } = useI18n();
   let decodedPathname = pathname;
   try {
     decodedPathname = decodeURIComponent(pathname);
@@ -33,14 +37,21 @@ function NavigationLinks({ pathname, onNavigate, mobile = false }: {
         aria-current={active ? "page" : undefined}
         className={`${mobile ? "rounded-xl px-4 py-3" : "nav-link"} ${active ? "text-[#ffb4a8]" : mobile ? "text-neutral-200 hover:bg-white/[.06] hover:text-white" : ""}`}
       >
-        {item.label}
+        {t(item.labelKey)}
       </Link>
     );
   });
 }
 
-export function SiteHeader({ children }: { children: ReactNode }) {
+export function SiteHeader({
+  children,
+  showUsageIndicator = true,
+}: {
+  children: ReactNode;
+  showUsageIndicator?: boolean;
+}) {
   const pathname = usePathname();
+  const { t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -64,38 +75,38 @@ export function SiteHeader({ children }: { children: ReactNode }) {
 
   return (
     <header className="site-header">
-      <div ref={menuRef} className="relative mx-auto flex h-[72px] max-w-6xl items-center justify-between px-5 sm:px-8">
-        <Link href="/" className="flex shrink-0 items-center gap-3" aria-label="이지컷 Easy Cut 홈">
+      <div className="relative mx-auto flex h-[72px] max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
+        <Link href="/" className="flex shrink-0 items-center gap-3" aria-label={t("nav.homeLabel")}>
           <span className="brand-mark" aria-hidden="true"><Image src="/east-cut-logo.png" alt="" width={34} height={34} priority /></span>
           <span className="brand-type">Easy <em>Cut</em></span>
         </Link>
-        <nav className="hidden items-center gap-8 text-sm font-semibold text-neutral-300 md:flex" aria-label="주요 메뉴">
+        <nav className="hidden items-center gap-8 text-sm font-semibold text-neutral-300 md:flex" aria-label={t("nav.primary")}>
           <NavigationLinks pathname={pathname} />
+          {showUsageIndicator ? <HeaderUsageIndicator /> : null}
         </nav>
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+        <div ref={menuRef} className="relative shrink-0">
           <button
             type="button"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/10 text-neutral-200 transition hover:border-white/25 hover:bg-white/[.06] md:hidden"
-            aria-label={menuOpen ? "메뉴 닫기" : "메뉴 열기"}
+            className="site-header-menu-trigger"
+            aria-label={menuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
             aria-expanded={menuOpen}
-            aria-controls="mobile-site-navigation"
+            aria-controls="site-navigation-menu"
+            aria-haspopup="true"
             onClick={() => setMenuOpen((open) => !open)}
           >
-            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-              {menuOpen ? <path d="m6 6 12 12M18 6 6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="site-header-menu-icon" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M4 7h16M4 12h16M4 17h16" />
             </svg>
           </button>
-          {children}
+          <div id="site-navigation-menu" className={`site-header-menu-panel${menuOpen ? " is-open" : ""}`}>
+            <nav aria-label={t("nav.mobilePrimary")} className="grid gap-1 md:hidden">
+              <NavigationLinks pathname={pathname} mobile onNavigate={() => setMenuOpen(false)} />
+            </nav>
+            <div className="site-header-menu-account" onClick={() => setMenuOpen(false)}>
+              {children}
+            </div>
+          </div>
         </div>
-        {menuOpen && (
-          <nav
-            id="mobile-site-navigation"
-            aria-label="모바일 주요 메뉴"
-            className="absolute inset-x-5 top-[64px] z-50 grid gap-1 rounded-2xl border border-white/10 bg-[#191c1e]/95 p-2 text-sm font-semibold shadow-[0_24px_70px_rgba(0,0,0,.48)] backdrop-blur-2xl sm:left-auto sm:right-8 sm:w-64 md:hidden"
-          >
-            <NavigationLinks pathname={pathname} mobile onNavigate={() => setMenuOpen(false)} />
-          </nav>
-        )}
       </div>
     </header>
   );

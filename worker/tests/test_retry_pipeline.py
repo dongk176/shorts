@@ -715,6 +715,21 @@ def test_project_resume_renders_checkpoints_without_downloading_source() -> None
     worker._download_with_inline_route_rotation.assert_not_called()
 
 
+def test_project_preserves_restricted_content_codes_and_user_message() -> None:
+    source = inspect.getsource(BatchWorker.project)
+
+    assert "exc.code if isinstance(exc, IngestionError)" in source
+    assert "RESTRICTED_CONTENT_ERROR_CODES" in source
+    assert BatchWorker.RESTRICTED_CONTENT_ERROR_CODES == {
+        "youtube_members_only",
+        "youtube_paid_content",
+    }
+    assert BatchWorker.FINAL_RESTRICTED_CONTENT_MESSAGE == (
+        "멤버십 전용 여부, 구매·대여 콘텐츠는 사용할 수 없습니다.\n"
+        "사용량은 다시 복구되었습니다. 영상 확인 후 다시 시도해주세요."
+    )
+
+
 def _initial_render_item() -> dict[str, object]:
     return {
         "id": "short-a",

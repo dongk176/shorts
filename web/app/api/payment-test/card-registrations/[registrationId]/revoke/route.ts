@@ -2,27 +2,27 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import {
-  assertLocalPaymentMutation,
-  assertPaymentTester,
-  PaymentTestAccessError,
-} from "@/lib/payment-test";
-import { requireMvpSession } from "@/lib/session";
-import {
   createPaymentTrackId,
   decryptCardToken,
   PaymentConfigurationError,
   revokeThePayOneCard,
   ThePayOneError,
 } from "@/lib/thepayone";
+import {
+  assertLocalPaymentMutation,
+  assertPaymentTester,
+  PaymentTestAccessError,
+} from "@/lib/payment-test";
+import { requireMvpSession } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type StoredRegistration = {
   id: string;
-  cardTokenCiphertext: string;
-  cardTokenIv: string;
-  cardTokenTag: string;
+  billingKeyCiphertext: string;
+  billingKeyIv: string;
+  billingKeyTag: string;
 };
 
 function json(body: unknown, init?: ResponseInit) {
@@ -35,11 +35,15 @@ function paymentError(error: unknown) {
   if (error instanceof PaymentTestAccessError) return json({ detail: error.message }, { status: error.status });
   if (error instanceof PaymentConfigurationError) return json({ detail: error.message }, { status: 503 });
   if (error instanceof ThePayOneError) {
-    const detail = error.diagnostic ? `${error.message} · 상세: ${error.diagnostic}` : error.message;
-    return json({ detail, resultCode: error.resultCode }, { status: 502 });
+    return json({
+      detail: error.outcomeUnknown
+        ? "카드 등록 폐기 결과를 확정하지 못했습니다. 더페이원 관리자에서 상태를 확인해 주세요."
+        : error.diagnostic ? `${error.message} · 상세: ${error.diagnostic}` : error.message,
+      resultCode: error.resultCode,
+    }, { status: 502 });
   }
   if (error instanceof z.ZodError) return json({ detail: "카드 등록 ID가 올바르지 않습니다." }, { status: 400 });
-  return json({ detail: "카드 등록 폐기를 처리하지 못했습니다." }, { status: 500 });
+  return json({ detail: "더페이원 카드 등록 폐기를 처리하지 못했습니다." }, { status: 500 });
 }
 
 export async function POST(
@@ -50,50 +54,50 @@ export async function POST(
   let userId: string | null = null;
   try {
     assertLocalPaymentMutation(request);
-    const session = await requireMvpSession();
-    const tester = assertPaymentTester(session);
+    const tester = assertPaymentTester(await requireMvpSession());
     userId = tester.userId;
     registrationId = z.string().uuid().parse((await context.params).registrationId);
     const db = getDb();
     const rows = await db`
       update shorts_mvp.payment_method_registrations
       set status='revoking'
-      where id=${registrationId}
-        and user_id=${userId}
-        and status in ('active', 'revoke_failed')
-      returning id, card_token_ciphertext, card_token_iv, card_token_tag
+      where id=${registrationId} and user_id=${userId} and status in ('active','revoke_failed')
+      returning id,billing_key_ciphertext,billing_key_iv,billing_key_tag
     ` as unknown as StoredRegistration[];
     const stored = rows[0];
-    if (!stored?.cardTokenCiphertext || !stored.cardTokenIv || !stored.cardTokenTag) {
+    if (!stored?.billingKeyCiphertext || !stored.billingKeyIv || !stored.billingKeyTag) {
       throw new PaymentTestAccessError("폐기할 활성 카드 등록을 찾을 수 없습니다.", 404);
     }
     const cardId = decryptCardToken({
-      ciphertext: stored.cardTokenCiphertext,
-      iv: stored.cardTokenIv,
-      tag: stored.cardTokenTag,
+      ciphertext: stored.billingKeyCiphertext,
+      iv: stored.billingKeyIv,
+      tag: stored.billingKeyTag,
     }, registrationId);
-    const trackId = createPaymentTrackId("AUDT");
+    const orderId = createPaymentTrackId("AUDT");
     try {
-      const result = await revokeThePayOneCard(cardId, trackId);
-      await db`
-        update shorts_mvp.payment_method_registrations
-        set
-          status='revoked',
-          revocation_track_id=${trackId},
-          revocation_trx_id=${result.providerTransactionId},
-          revocation_result_code=${result.resultCode},
-          revoked_at=now(),
-          card_token_ciphertext=null,
-          card_token_iv=null,
-          card_token_tag=null
-        where id=${registrationId} and user_id=${userId} and status='revoking'
-      `;
+      const result = await revokeThePayOneCard(cardId, orderId);
+      await db.begin(async (tx) => {
+        await tx`
+          update shorts_mvp.payment_method_registrations
+          set status='revoked',revocation_order_id=${orderId},
+            revocation_transaction_id=${result.providerTransactionId},revocation_result_code=${result.resultCode},
+            revoked_at=now(),billing_key_ciphertext=null,billing_key_iv=null,
+            billing_key_tag=null,billing_key_hash=null
+          where id=${registrationId} and user_id=${userId} and status='revoking'
+        `;
+        await tx`
+          update shorts_mvp.payment_test_recurring_runs
+          set status='stopped',stopped_at=now(),next_charge_at=null,
+            payer_name=null,payer_email=null,payer_tel=null
+          where registration_id=${registrationId} and user_id=${userId} and status='running'
+        `;
+      });
       return json({ registration: { id: registrationId, status: "revoked" } });
     } catch (error) {
-      const resultCode = error instanceof ThePayOneError ? error.resultCode : "LOCAL_ERROR";
       await db`
         update shorts_mvp.payment_method_registrations
-        set status='revoke_failed', revocation_track_id=${trackId}, revocation_result_code=${resultCode}
+        set status='revoke_failed',revocation_order_id=${orderId},
+          revocation_result_code=${error instanceof ThePayOneError ? error.resultCode : "LOCAL_ERROR"}
         where id=${registrationId} and user_id=${userId} and status='revoking'
       `;
       throw error;
@@ -101,14 +105,12 @@ export async function POST(
   } catch (error) {
     if (registrationId && userId && !(error instanceof ThePayOneError)) {
       try {
-        const db = getDb();
-        await db`
-          update shorts_mvp.payment_method_registrations
-          set status='revoke_failed'
+        await getDb()`
+          update shorts_mvp.payment_method_registrations set status='revoke_failed'
           where id=${registrationId} and user_id=${userId} and status='revoking'
         `;
       } catch {
-        // Keep the original sanitized error response; never include token or SQL details.
+        // Keep the original sanitized error.
       }
     }
     return paymentError(error);

@@ -28,3 +28,7 @@ infra/aws/cdk.context.json
 storage/*
 !storage/.gitkeep
 .vercel
+
+# Local generated artifacts
+supabase/.temp/
+tmp/

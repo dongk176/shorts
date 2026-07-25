@@ -214,13 +214,15 @@ function TemplatePreview({ template }: { template: TemplateShowcase }) {
   );
 }
 
-function EmptyTemplateCard({ authenticated }: { authenticated: boolean }) {
-  const href = authenticated ? "/templates/new" : `/auth/sign-in?next=${encodeURIComponent("/templates/new")}`;
+function EmptyTemplateCard({ authenticated, canUseCustomTemplates }: { authenticated: boolean; canUseCustomTemplates: boolean }) {
+  const href = !authenticated
+    ? `/auth/sign-in?next=${encodeURIComponent("/templates/new")}`
+    : canUseCustomTemplates ? "/templates/new" : "/pricing";
   return (
     <Link href={href} className="flex min-h-[456px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/[.018] px-6 text-center transition duration-300 hover:border-[#ff715e]/50 hover:bg-[#ff715e]/[.035]">
       <span className="grid h-16 w-16 place-items-center rounded-full border border-white/10 bg-[#1f1f22] text-3xl font-light text-neutral-400 shadow-inner" aria-hidden="true">+</span>
       <h2 className="mt-5 text-lg font-bold tracking-[-.025em] text-neutral-200">새 템플릿</h2>
-      <p className="mt-2 text-xs font-semibold text-neutral-500">빈 화면에서 직접 디자인하기</p>
+      <p className="mt-2 text-xs font-semibold text-neutral-500">{canUseCustomTemplates ? "빈 화면에서 직접 디자인하기" : "유료 플랜에서 직접 디자인하기"}</p>
     </Link>
   );
 }
@@ -232,10 +234,12 @@ function CustomTemplatePreview({ template }: { template: CustomTemplate }) {
 export function TemplateLibrary({
   personalTemplates,
   authenticated,
+  canUseCustomTemplates,
   initialFavoriteTemplateKeys,
 }: {
   personalTemplates: CustomTemplate[];
   authenticated: boolean;
+  canUseCustomTemplates: boolean;
   initialFavoriteTemplateKeys: TemplateFavoriteKey[];
 }) {
   const [query, setQuery] = useState("");
@@ -313,12 +317,7 @@ export function TemplateLibrary({
     <div className="mx-auto w-full max-w-[1040px]">
       <div className="flex flex-col gap-6 border-b border-white/10 pb-7 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <nav aria-label="현재 위치" className="mb-5 text-xs font-semibold text-neutral-600">
-            <Link href="/" className="transition hover:text-neutral-300">홈</Link>
-            <span className="mx-2">/</span>
-            <span className="text-neutral-500">템플릿</span>
-          </nav>
-          <h1 className="text-3xl font-black tracking-[-.045em] text-[#e4e1e6] sm:text-[40px]">템플릿 라이브러리</h1>
+          <h1 className="text-[28px] font-black tracking-[-.045em] text-[#e4e1e6] sm:text-4xl">템플릿 라이브러리</h1>
           <p className="mt-3 text-sm text-[#94949e] sm:text-base">다음 쇼츠의 시작점을 선택하세요.</p>
         </div>
 
@@ -336,12 +335,12 @@ export function TemplateLibrary({
       </div>
 
       <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4" aria-live="polite">
-        {!query.trim() && <EmptyTemplateCard authenticated={authenticated} />}
+        {!query.trim() && <EmptyTemplateCard authenticated={authenticated} canUseCustomTemplates={canUseCustomTemplates} />}
         {visiblePersonalTemplates.map((template) => {
           const templateKey = customTemplateFavoriteKey(template.id);
           return (
             <article key={template.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#ff715e]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#ff715e]/50 hover:shadow-[0_20px_55px_rgba(255,113,94,.09)]">
-              <Link href={`/templates/${template.id}/edit`} className="flex flex-1 flex-col">
+              <Link href={canUseCustomTemplates ? `/templates/${template.id}/edit` : "/pricing"} className="flex flex-1 flex-col">
                 <div className="flex flex-1 items-center justify-center px-2 py-4"><CustomTemplatePreview template={template} /></div>
                 <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4"><div className="min-w-0"><h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">내가 저장한 템플릿</p></div><span className="shrink-0 rounded-full border border-[#ff715e]/20 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></div>
               </Link>
@@ -359,7 +358,9 @@ export function TemplateLibrary({
           return (
             <article key={template.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-white/[.08] bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#ff715e]/30 hover:shadow-[0_20px_55px_rgba(255,113,94,.09)]">
               <Link
-                href={authenticated ? `/templates/new?base=${template.id}` : `/auth/sign-in?next=${encodeURIComponent(`/templates/new?base=${template.id}`)}`}
+                href={!authenticated
+                  ? `/auth/sign-in?next=${encodeURIComponent(`/templates/new?base=${template.id}`)}`
+                  : canUseCustomTemplates ? `/templates/new?base=${template.id}` : "/pricing"}
                 className="flex flex-1 flex-col"
               >
                 <div className="flex flex-1 items-center justify-center px-2 py-4">

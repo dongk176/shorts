@@ -1,26 +1,32 @@
+"use client";
+
 import Link from "next/link";
+import { useI18n } from "@/lib/i18n/provider";
 
 export function SiteFooter() {
+  const { t } = useI18n();
   return (
     <footer className="site-footer">
       <div className="site-footer-inner">
-        <Link href="/" className="site-footer-brand" aria-label="이지컷 Easy Cut 홈">
+        <Link href="/" className="site-footer-brand" aria-label={t("nav.homeLabel")}>
           <span className="brand-type">Easy <em>Cut</em></span>
           <span>© 2026</span>
         </Link>
-        <ul className="site-footer-business" aria-label="사업자 정보">
-          <li>아티룸</li>
-          <li>대표 김동민</li>
-          <li>사업자등록번호 638-04-03590</li>
-          <li>통신판매업 신고번호 2025-서울마포-2971</li>
-          <li><a href="tel:010-4836-2874">고객센터 010-4836-2874</a></li>
+        <ul className="site-footer-business" aria-label={t("footer.businessInfo")}>
+          <li>{t("footer.company")}</li>
+          <li>{t("footer.representative")}</li>
+          <li>{t("footer.businessNumber")}</li>
+          <li>{t("footer.ecommerceNumber")}</li>
+          <li><a href="tel:010-4836-2874">{t("footer.supportPhone")}</a></li>
         </ul>
-        <nav className="site-footer-links" aria-label="정책 및 고객 지원">
-          <Link href="/pricing">요금제</Link>
-          <Link href="/faq">자주 묻는 질문</Link>
-          <Link href="/terms">이용약관</Link>
-          <Link href="/privacy">개인정보처리방침</Link>
-          <Link href="/support">고객 지원</Link>
+        <nav className="site-footer-links" aria-label={t("footer.links")}>
+          <Link href="/pricing">{t("nav.pricing")}</Link>
+          <Link href="/faq">{t("footer.faq")}</Link>
+          <Link href="/terms">{t("footer.terms")}</Link>
+          <Link href="/purchase-terms">{t("footer.purchaseTerms")}</Link>
+          <Link href="/refund">{t("footer.refund")}</Link>
+          <Link href="/privacy">{t("footer.privacy")}</Link>
+          <Link href="/support">{t("footer.support")}</Link>
         </nav>
       </div>
     </footer>

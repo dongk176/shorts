@@ -1,20 +1,6 @@
 "use client";
 
-import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
-import type { BillingCycle, PaidPlanCode } from "@/lib/contracts";
-
-type Checkout = {
-  checkoutId: string;
-  clientKey: string;
-  customerKey: string;
-  orderId: string;
-  orderName: string;
-  amount: number;
-  customerEmail: string | null;
-  customerName: string | null;
-  successUrl: string;
-  failUrl: string;
-};
+import { currentClientLocale, localizeApiError } from "@/lib/i18n/errors";
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
@@ -22,51 +8,31 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const value = await response.json().catch(() => ({})) as { detail?: string } & T;
-  if (!response.ok) throw new Error(value.detail || "결제 요청을 처리하지 못했습니다.");
+  const value = await response.json().catch(() => ({})) as { detail?: string; code?: string } & T;
+  if (!response.ok) throw new Error(localizeApiError(value, response.status, currentClientLocale()));
   return value;
 }
 
-export async function requestSubscriptionBillingAuth(input:
-  | { mode: "subscribe"; planCode: PaidPlanCode; billingCycle: BillingCycle }
-  | { mode: "replace_payment_method" }
-) {
-  const checkout = await postJson<Checkout>("/api/billing/checkout", {
-    ...input,
+export async function purchaseAddonWithSavedCard(input: {
+  addonCode: string;
+  expectedChargeAmountKrw: number;
+  identityNumber: string;
+  cardPassword: string;
+  payerTel?: string;
+}) {
+  return postJson<{
+    ok: true;
+    orderId: string;
+    addedMinutes: number;
+    chargedAmountKrw: number;
+  }>("/api/billing/addons/purchase", {
+    addonCode: input.addonCode,
     requestId: crypto.randomUUID(),
-  });
-  const tossPayments = await loadTossPayments(checkout.clientKey);
-  const payment = tossPayments.payment({ customerKey: checkout.customerKey });
-  await payment.requestBillingAuth({
-    method: "CARD",
-    successUrl: checkout.successUrl,
-    failUrl: checkout.failUrl,
-    customerEmail: checkout.customerEmail || undefined,
-    customerName: checkout.customerName || undefined,
-  });
-}
-
-export async function requestAddonPayment(addonCode: string) {
-  const checkout = await postJson<Checkout>("/api/billing/addons/checkout", {
-    addonCode,
-    requestId: crypto.randomUUID(),
-  });
-  const tossPayments = await loadTossPayments(checkout.clientKey);
-  const payment = tossPayments.payment({ customerKey: checkout.customerKey });
-  await payment.requestPayment({
-    method: "CARD",
-    amount: { currency: "KRW", value: checkout.amount },
-    orderId: checkout.orderId,
-    orderName: checkout.orderName,
-    successUrl: checkout.successUrl,
-    failUrl: checkout.failUrl,
-    customerEmail: checkout.customerEmail || undefined,
-    customerName: checkout.customerName || undefined,
-    card: {
-      flowMode: "DEFAULT",
-      useEscrow: false,
-      useCardPoint: false,
-    },
+    expectedChargeAmountKrw: input.expectedChargeAmountKrw,
+    identityNumber: input.identityNumber,
+    cardPassword: input.cardPassword,
+    consent: true,
+    ...(input.payerTel ? { payerTel: input.payerTel } : {}),
   });
 }
 

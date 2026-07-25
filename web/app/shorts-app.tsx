@@ -1,14 +1,18 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import type { PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 import { AuthControls } from "@/components/auth-controls";
+import { BackgroundShowcase } from "@/components/background-showcase";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
+import { EstimatedProcessingOverlay, ProjectCard } from "@/components/project-card";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { TitleOverlayPreview } from "@/components/title-overlay-preview";
+import { TransformationShowcase } from "@/components/transformation-showcase";
 import { VideoAspectRatioPicker } from "@/components/video-aspect-ratio-picker";
 import type {
   CommentOverlay,
@@ -23,14 +27,8 @@ import type {
   YoutubeAnalysis,
 } from "@/lib/contracts";
 import { outputLanguageOptions, videoAspectRatioOptions } from "@/lib/contracts";
-import {
-  estimatedCreationMinutes,
-  estimatedProgress,
-  estimatedRemainingLabel,
-  estimatedRemainingMinutes,
-  estimatedRerenderMinutes,
-  SIMULATED_PROGRESS_START,
-} from "@/lib/creation-progress";
+import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
+import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
 import { stateRetryDelayMs } from "@/lib/state-loading";
 import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
@@ -48,6 +46,12 @@ import {
   randomCommentLikeCount,
 } from "@/lib/comment-overlay";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
+import { currentClientLocale, localizeApiError, localizeAuthError } from "@/lib/i18n/errors";
+import { messagesByLocale } from "@/lib/i18n/messages";
+import { useI18n } from "@/lib/i18n/provider";
+import { localizedValue } from "@/lib/i18n/config";
+import { outputLanguageName } from "@/lib/i18n/product";
+import { publishUsageSnapshot } from "@/lib/usage-client";
 
 const templates: Array<{ id: TemplateId; name: string; label: string; background: string; primary: string; accent: string; accentBackground: string | null; channel: string }> = [
   { id: "comment-capture", name: "댓글 캡처", label: "댓글 반응과 함께\n시청 지속시간 상승", background: COMMENT_BACKGROUND_COLOR, primary: "#FFFFFF", accent: "#35E6E3", accentBackground: null, channel: "#FFFFFF" },
@@ -144,6 +148,8 @@ function aspectLayout(value: VideoAspectRatio, reserveCommentSpace = false) {
 }
 
 const terminalStatuses = new Set(["completed", "failed", "expired", "deleted"]);
+const LOGIN_OVERLAY_DELAY_MS = 1_000;
+
 function formatDuration(seconds: number) {
   const value = Math.max(0, Math.round(seconds));
   const hours = Math.floor(value / 3600);
@@ -161,81 +167,6 @@ function formatTimestamp(seconds: number) {
 
 function isProjectExpired(job: VideoJob) {
   return Boolean(job.expiresAt && new Date(job.expiresAt).getTime() <= Date.now());
-}
-
-function ProgressRing({ progress }: { progress: number }) {
-  const value = Math.max(
-    SIMULATED_PROGRESS_START,
-    Math.min(99, Number.isFinite(progress) ? progress : SIMULATED_PROGRESS_START),
-  );
-  const displayedValue = Math.floor(value);
-
-  return (
-    <div className="brand-progress" role="progressbar" aria-label={`진행률 ${displayedValue}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={displayedValue}>
-      <span className="brand-progress-spinner" aria-hidden="true" style={{ background: `conic-gradient(from -90deg, #ff5540 0%, #a078ff ${value}%, rgba(255,255,255,.18) ${value}% 100%)` }} />
-      <span className="brand-progress-value">{displayedValue}%</span>
-    </div>
-  );
-}
-
-function EstimatedProcessingOverlay({
-  operationKey,
-  durationSeconds,
-  createdAt,
-  rerender = false,
-}: {
-  operationKey: string;
-  durationSeconds: number;
-  createdAt?: string;
-  rerender?: boolean;
-}) {
-  const estimatedMinutes = rerender
-    ? estimatedRerenderMinutes(durationSeconds)
-    : estimatedCreationMinutes(durationSeconds);
-  const [clock, setClock] = useState<{ startedAtMs: number; nowMs: number } | null>(null);
-
-  useEffect(() => {
-    const storageKey = `estimated-progress:${operationKey}`;
-    const parsedCreatedAt = createdAt ? Date.parse(createdAt) : Number.NaN;
-    let storedStartedAt = Number.NaN;
-    try {
-      storedStartedAt = Number(window.sessionStorage.getItem(storageKey));
-    } catch {
-      // Session storage is optional; timing still works for the current mount.
-    }
-    const startedAtMs = Number.isFinite(parsedCreatedAt)
-      ? parsedCreatedAt
-      : Number.isFinite(storedStartedAt) && storedStartedAt > 0
-        ? storedStartedAt
-        : Date.now();
-
-    if (!Number.isFinite(parsedCreatedAt) && !(Number.isFinite(storedStartedAt) && storedStartedAt > 0)) {
-      try {
-        window.sessionStorage.setItem(storageKey, String(startedAtMs));
-      } catch {
-        // Session storage is optional; timing still works for the current mount.
-      }
-    }
-
-    const update = () => setClock({ startedAtMs, nowMs: Date.now() });
-    update();
-    const timer = window.setInterval(update, 250);
-    return () => window.clearInterval(timer);
-  }, [createdAt, operationKey]);
-
-  const progress = clock
-    ? estimatedProgress(clock.startedAtMs, clock.nowMs, estimatedMinutes)
-    : SIMULATED_PROGRESS_START;
-  const remainingMinutes = clock
-    ? estimatedRemainingMinutes(clock.startedAtMs, clock.nowMs, estimatedMinutes)
-    : estimatedMinutes;
-
-  return (
-    <div className="project-processing-overlay">
-      <ProgressRing progress={progress} />
-      <strong>{estimatedRemainingLabel(remainingMinutes)}</strong>
-    </div>
-  );
 }
 
 function CountUpNumber({ value }: { value: number }) {
@@ -274,6 +205,310 @@ function CountUpNumber({ value }: { value: number }) {
   }, [target]);
 
   return displayedValue.toLocaleString("ko-KR");
+}
+
+const customerReviews = [
+  { name: "김지훈", rating: 5, role: "직장인 (부업)", review: "편집 귀찮아서 한 번 써봤는데 진짜 좋긴해요. 댓글 퀄리티가 수정이 조금 필요하긴한데 괜찮은 거 꽤 많이 나옴. 어차피 나중에 수정 가능해서 잘 쓰고 있음요." },
+  { name: "Alex_Choi", rating: 5, role: "전업 크리에이터", review: "영상은 그렇다 쳐도 아니 무슨 AI가 드립을 치네요??!ㅋㅋㅋㅋㅋ 실제 댓글보다 재밌어서 좋아요." },
+  { name: "이민수", rating: 5, role: "마케터 / 대행사", review: "솔직히 모르고 쇼츠 넘기다 보면 절대 모를 듯;;;" },
+  { name: "jay_studio", rating: 5, role: "직장인 (부업)", review: "걍 내 인생 딸깍템임… 추천합니다." },
+  { name: "박현우", rating: 5, role: "전업 크리에이터", review: "1달 결제하고 써봤는데, 조회수 바로 터짐 1년결제 합니다요!" },
+  { name: "creator_09", rating: 4, role: "마케터 / 대행사", review: "다 좋은데, 댓글 패턴이 살짝 비슷비슷한 느낌? 근데 영상마다는 다르게 만들어줘서 3분 정도만 편집하면 바로 쓸 수 있을 정도." },
+  { name: "최유진", rating: 4, role: "전업 크리에이터", review: "영상 퀄리티는 진짜 미쳤는데, 가끔 맥락 못 잡고 헛소리하는 댓글 하나씩 껴있음 ㅋㅋㅋ 그건 제가 알아서 지우고 올립니다." },
+  { name: "David.K", rating: 4, role: "직장인 (부업)", review: "진짜 신세계고 편하긴 한데... 구독료가 살짝 부담스럽긴 하네요. ㅠㅠ 그래도 달에 10만원씩은 쓰고 있는데, 쇼츠로 100만 이상은 벌어요 감사합니다." },
+  { name: "정성민", rating: 5, role: "영상 편집자", review: "진짜 혼자서 유튜브 채널 3개 거뜬하게 돌릴 수 있음. 영상 생성 속도만 쫌 더 빨라지면 평생 구독 갑니다." },
+  { name: "Chris_Lee", rating: 5, role: "전업 크리에이터", review: "템플릿만봐도 대중이 뭐를 좋아하는지 딱 아시는 것 같아서 연간결제 박았습니다~ 숏폼 서비스 다 써봤는데, 알파컷, 피카클립이랑은 비교 불가." },
+  { name: "강태영", rating: 5, role: "전업 크리에이터", review: "솔직히 안 유명해졌음 좋겠다… 실시간 인기 영상에서 바로 따오는 건 반칙이잖아 ㅋㅋ" },
+  { name: "user_8821", rating: 5, role: "영상 편집자", review: "알파컷 썼을 땐 하이라이트 포인트를 너무 못 잡아서 답답했는데, 이건 진짜 사람 편집자가 엑기스만 쏙쏙 뽑은 느낌임." },
+  { name: "윤서준", rating: 5, role: "직장인 (부업)", review: "댓글 진짜 존나 웃기게 다네 ㅋㅋㅋㅋㅋ 수정이 좀 필요하긴 한데 좋아요." },
+  { name: "edit_master", rating: 5, role: "영상 편집자", review: "영상 편집자 해고했습니다. 죄송합니다 ㅎ" },
+  { name: "송지아", rating: 4, role: "마케터 / 대행사", review: "와 미쳤다 진짜 ㅋㅋㅋ 근데 자막 폰트 종류 좀 늘려주세요!" },
+  { name: "Kevin_Park", rating: 5, role: "전업 크리에이터", review: "댓글 때문에 저작권이 안 걸려서 진짜 개미친 것 같아요… 저만 쓸래요.." },
+  { name: "조민재", rating: 4, role: "영상 편집자", review: "피카클립 쓸 바엔 무조건 이거 쓰셈. 근데 AI 댓글 중에 가끔 선 넘는 드립 치는 애들 있어서 업로드 전에 한 번씩 확인은 필수임 ㅋㅋㅋ 다른 템플릿 더 많이 만들어주세요!!! 댓글 템플릿은 좋음." },
+  { name: "Jason12", rating: 5, role: "직장인 (부업)", review: "쇼츠 외주 주다가 이거 쓰고 돈 굳음요; 진짜 개꿀통." },
+  { name: "한동훈", rating: 5, role: "전업 크리에이터", review: "조회수 복사기임 ㄹㅇ 안 쓸 이유가 없음." },
+  { name: "임지수", rating: 5, role: "전업 크리에이터", review: "이거 쓰고 첫 쇼츠 50만 찍음 ㅋㅋ 연간 결제 박습니다." },
+  { name: "Ryan_Kim", rating: 5, role: "직장인 (부업)", review: "부업으로 쇼츠 채널 2개 돌리는데 달에 150씩 꼬박꼬박 꽂힘. 구독료 뽕 뽑고도 남으니까 돈 안 아까워요." },
+  { name: "백승호", rating: 5, role: "직장인 (부업)", review: "알파컷 쓰다 답답해서 갈아탔는데 알고리즘 제대로 타네요. 이번 달 조회수 수익 보고 바로 직장 퇴사 마렵습니다 ㅋㅋㅋ" },
+  { name: "user_9902", rating: 5, role: "마케터 / 대행사", review: "처음엔 반신반의하면서 한 달만 끊었는데, 영상 하나 터진 걸로 1년 치 구독료 한방에 회수함요. 감사해요 사장님." },
+  { name: "오지훈", rating: 5, role: "전업 크리에이터", review: "편집자 동생한테 미안하지만... 걔 월급 줄 돈으로 이거 돌리니까 효율 10배는 나옴요;; 미안하다 고맙다!!!" },
+  { name: "Sarah_J", rating: 5, role: "마케터 / 대행사", review: "솔직히 요즘 실시간 트렌드 바로 반영해서 템플릿 짜주는 건 반칙 아닙니까? 다른 숏폼 서비스들 긴장 좀 해야 할 듯." },
+  { name: "신영우", rating: 5, role: "전업 크리에이터", review: "와 댓글 창 보고 소름 돋았네;; 이거 AI가 쓴 거 맞음? 릴스에 올렸더니 애들 진짜 사람인 줄 알고 키보드 배틀 뜨고 있음 개웃김 ㅋㅋㅋㅋ" },
+  { name: "Mike_Shin", rating: 5, role: "영상 편집자", review: "실시간 인기 영상에서 하이라이트 바로 따오는 건 걍 조회수 복사하겠다는 거 아님? 개꿀통 진짜." },
+  { name: "권민석", rating: 5, role: "직장인 (부업)", review: "인기 영상 베껴 만드는 거 귀찮았는데, 이건 링크 복붙하면 알아서 엑기스 다 따줌 ㄷㄷ 개이득." },
+  { name: "vvd_edit", rating: 4, role: "영상 편집자", review: "실시간 인기 영상 링크 넣고 딸깍 돌리면 10분 만에 떡상용 쇼츠 나옴. 다만 트렌드 영상이라 그런지 사람 몰릴 땐 서버가 쫌 벅차하는 게 눈에 보임 ㅠ 그것만 고쳐주셈." },
+  { name: "장도연", rating: 4, role: "마케터 / 대행사", review: "인기 동영상 소스로 쇼츠 양산하기 개편함. 근데 가끔 AI 댓글이 트렌드 밈을 너무 과하게 써서 뇌절할 때가 있음 ㅋㅋㅋ 그거 한두 개만 지우고 올리면 피드백 완벽함." },
+  { name: "Daniel_Oh", rating: 5, role: "전업 크리에이터", review: "솔직히 이 기능은 안 유명해졌으면 좋겠음... 남들 유행 탑승하려고 대본 짜고 있을 때 난 인기 영상 주소 넣고 쇼츠 5개 뽑아서 올림 ㅋㅋㅋ 댓글 드립이 가끔 매워서 검수하긴 해야 하는데 시간 단축은 압도적." },
+  { name: "황준호", rating: 5, role: "영상 편집자", review: "알파컷 피카클립 바로 유기함. 하이라이트 잡는 눈치가 다름." },
+  { name: "user_3114", rating: 5, role: "직장인 (부업)", review: "유튜브 인기 영상 링크 복붙하면 1분 만에 쇼츠 뚝딱임. 트렌드 날먹 치트키 ㅋㅋㅋ" },
+  { name: "Emily_Park", rating: 5, role: "전업 크리에이터", review: "솔직히 다른 사람한테 추천 안 할 듯… 내가 다 해먹게..ㅋㅋㅋㅋㅋㅋ" },
+] as const;
+
+const monetizationRelatedReviewNames = new Set([
+  "user_9902",
+  "오지훈",
+]);
+
+const visibleCustomerReviews = SHOW_MONETIZATION_CONTENT
+  ? customerReviews
+  : customerReviews.filter((review) => (
+      !review.role.includes("부업")
+      && !monetizationRelatedReviewNames.has(review.name)
+    ));
+
+const CUSTOMER_REVIEW_SCROLL_PIXELS_PER_SECOND = 60;
+const CUSTOMER_REVIEW_DRAG_THRESHOLD_PX = 4;
+
+function CustomerReviews({ generatedShortCount }: { generatedShortCount: number | null }) {
+  const { locale } = useI18n();
+  const railRef = useRef<HTMLDivElement>(null);
+  const interactionActiveRef = useRef(false);
+  const pointerTrackingRef = useRef(false);
+  const pointerTypeRef = useRef("");
+  const dragStartXRef = useRef(0);
+  const dragStartScrollLeftRef = useRef(0);
+  const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let previousTime = performance.now();
+    let scrollRemainder = 0;
+    let initialized = false;
+
+    const normalizePosition = () => {
+      const segmentWidth = rail.scrollWidth / 3;
+      if (!segmentWidth) return;
+
+      if (!initialized) {
+        rail.scrollLeft = segmentWidth;
+        initialized = true;
+        return;
+      }
+
+      if (rail.scrollLeft < segmentWidth * 0.5) {
+        rail.scrollLeft += segmentWidth;
+      } else if (rail.scrollLeft >= segmentWidth * 1.5) {
+        rail.scrollLeft -= segmentWidth;
+      }
+    };
+
+    const animate = () => {
+      const currentTime = performance.now();
+      normalizePosition();
+      const elapsed = Math.min(currentTime - previousTime, 64);
+      previousTime = currentTime;
+
+      if (
+        !reducedMotion.matches
+        && !interactionActiveRef.current
+      ) {
+        const distance = scrollRemainder
+          + elapsed * CUSTOMER_REVIEW_SCROLL_PIXELS_PER_SECOND / 1_000;
+        const wholePixels = Math.floor(distance);
+        scrollRemainder = distance - wholePixels;
+        rail.scrollLeft += wholePixels;
+      }
+
+    };
+
+    const resizeObserver = new ResizeObserver(normalizePosition);
+    resizeObserver.observe(rail);
+    normalizePosition();
+    const timer = window.setInterval(animate, 16);
+
+    return () => {
+      window.clearInterval(timer);
+      resizeObserver.disconnect();
+    };
+  }, []);
+
+  const startInteraction = (event: PointerEvent<HTMLDivElement>) => {
+    const rail = railRef.current;
+    if (!rail || event.button !== 0) return;
+
+    pointerTrackingRef.current = true;
+    pointerTypeRef.current = event.pointerType;
+    dragStartXRef.current = event.clientX;
+    dragStartScrollLeftRef.current = rail.scrollLeft;
+
+    if (event.pointerType === "touch") {
+      interactionActiveRef.current = true;
+      return;
+    }
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const moveInteraction = (event: PointerEvent<HTMLDivElement>) => {
+    const rail = railRef.current;
+    if (!rail || !pointerTrackingRef.current || pointerTypeRef.current === "touch") return;
+
+    event.preventDefault();
+    const deltaX = event.clientX - dragStartXRef.current;
+    if (!interactionActiveRef.current && Math.abs(deltaX) >= CUSTOMER_REVIEW_DRAG_THRESHOLD_PX) {
+      interactionActiveRef.current = true;
+      setDragging(true);
+    }
+    if (interactionActiveRef.current) {
+      rail.scrollLeft = dragStartScrollLeftRef.current - deltaX;
+    }
+  };
+
+  const finishInteraction = (event: PointerEvent<HTMLDivElement>) => {
+    if (!pointerTrackingRef.current) return;
+    pointerTrackingRef.current = false;
+    pointerTypeRef.current = "";
+    interactionActiveRef.current = false;
+    setDragging(false);
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  return (
+    <section className="customer-reviews-section" aria-labelledby="customer-reviews-title">
+      <div className="customer-reviews-inner">
+        <div className="customer-reviews-heading">
+          <h2 id="customer-reviews-title">{localizedValue(locale, { ko: "사용자 후기", en: "Customer reviews", ja: "ユーザーレビュー" })}</h2>
+          <div className="customer-review-count">
+            <strong aria-busy={generatedShortCount === null}>{generatedShortCount === null ? "—" : <CountUpNumber value={generatedShortCount} />}</strong>
+            <p>{localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}</p>
+          </div>
+        </div>
+        <div
+          id="customer-review-rail"
+          ref={railRef}
+          className={`customer-review-rail${dragging ? " is-dragging" : ""}`}
+          tabIndex={0}
+          aria-label={localizedValue(locale, { ko: "자동으로 왼쪽 이동하는 사용자 후기 목록. 좌우로 드래그할 수 있습니다.", en: "Customer reviews move left automatically. Drag sideways to browse.", ja: "自動で左へ移動するユーザーレビューです。左右にドラッグできます。" })}
+          onPointerDown={startInteraction}
+          onPointerMove={moveInteraction}
+          onPointerUp={finishInteraction}
+          onPointerCancel={finishInteraction}
+          onDragStart={(event) => event.preventDefault()}
+        >
+          <div className="customer-review-track">
+            {[0, 1, 2].map((copyIndex) => (
+              <div
+                key={copyIndex}
+                className="customer-review-copy"
+                aria-hidden={copyIndex === 1 ? undefined : true}
+              >
+                {visibleCustomerReviews.map((review) => (
+                  <article key={`${copyIndex}-${review.name}`} className="customer-review-card">
+                    <div className="customer-review-stars" role="img" aria-label={localizedValue(locale, { ko: `별점 5점 만점에 ${review.rating}점`, en: `${review.rating} out of 5 stars`, ja: `5点満点中${review.rating}点` })}>
+                      {[0, 1, 2, 3, 4].map((star) => <span key={star} className={star < review.rating ? "" : "is-empty"} aria-hidden="true">★</span>)}
+                    </div>
+                    <blockquote>{review.review}</blockquote>
+                    <footer>
+                      <span className="customer-review-avatar" aria-hidden="true">{review.name.slice(0, 1)}</span>
+                      <span>
+                        <strong>{review.name}</strong>
+                        <small>{localizedValue(locale, {
+                          ko: review.role,
+                          en: review.role === "전업 크리에이터" ? "Full-time creator" : review.role === "영상 편집자" ? "Video editor" : review.role === "마케터 / 대행사" ? "Marketer / agency" : "Professional with a side project",
+                          ja: review.role === "전업 크리에이터" ? "専業クリエイター" : review.role === "영상 편집자" ? "動画編集者" : review.role === "마케터 / 대행사" ? "マーケター／代理店" : "会社員（副業）",
+                        })}</small>
+                      </span>
+                    </footer>
+                  </article>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const processSteps: ReadonlyArray<{
+  number: string;
+  icon: string;
+  title: string;
+  descriptionLines: readonly string[];
+}> = [
+  {
+    number: "01",
+    icon: "↗",
+    title: "링크 복사 및 붙여넣기",
+    descriptionLines: [
+      "쇼츠로 만들고 싶은 유튜브 영상 링크를 복사해 붙여넣으세요.",
+      "긴 영상일수록 더 많은 하이라이트를 찾을 수 있어요.",
+    ],
+  },
+  {
+    number: "02",
+    icon: "✦",
+    title: "AI가 하이라이트 추출",
+    descriptionLines: [
+      "AI가 가장 바이럴 터질만한 구간을 찾아냅니다.",
+      "후킹 제목과 자막, 댓글까지 알아서 완성해드려요.",
+    ],
+  },
+  {
+    number: "03",
+    icon: "⇩",
+    title: "자유롭게 편집하고 다운로드",
+    descriptionLines: [
+      "완성된 쇼츠를 미리 확인하고 원하는 대로 편집한 뒤,",
+      "유튜브 쇼츠·릴스·틱톡에 바로 활용하세요.",
+    ],
+  },
+];
+
+function ThreeStepProcess() {
+  const { locale } = useI18n();
+  const localizedSteps = localizedValue(locale, {
+    ko: processSteps,
+    en: [
+      { number: "01", icon: "↗", title: "Copy and paste a link", descriptionLines: ["Paste the YouTube video link you want to turn into Shorts.", "Longer videos can provide more highlights."] },
+      { number: "02", icon: "✦", title: "AI extracts highlights", descriptionLines: ["AI finds the moments most likely to go viral.", "Hook titles, captions, and comments are created for you."] },
+      { number: "03", icon: "⇩", title: "Edit freely and download", descriptionLines: ["Preview the finished Shorts and edit them your way,", "then publish to YouTube Shorts, Reels, or TikTok."] },
+    ],
+    ja: [
+      { number: "01", icon: "↗", title: "リンクをコピー＆貼り付け", descriptionLines: ["ショート動画にしたいYouTube動画のリンクを貼り付けます。", "長い動画ほど多くのハイライトを見つけられます。"] },
+      { number: "02", icon: "✦", title: "AIがハイライトを抽出", descriptionLines: ["AIがバズりやすい場面を見つけます。", "フックタイトル、字幕、コメントまで自動で仕上げます。"] },
+      { number: "03", icon: "⇩", title: "自由に編集してダウンロード", descriptionLines: ["完成したショート動画を確認して自由に編集し、", "YouTube Shorts・Reels・TikTokですぐに活用できます。"] },
+    ],
+  });
+  return (
+    <section className="three-step-process-section" aria-labelledby="three-step-process-title">
+      <div className="three-step-process-inner">
+        <div className="three-step-process-heading">
+          <h2 id="three-step-process-title">{localizedValue(locale, { ko: "3단계로 끝나는 과정", en: "Done in three steps", ja: "3ステップで完成" })}</h2>
+          <p>{localizedValue(locale, { ko: "유튜브 링크 하나면 충분합니다. AI가 가장 빛나는 1분을 찾아드려요.", en: "One YouTube link is all you need. AI finds the best minute.", ja: "YouTubeリンクひとつで十分です。AIが最も輝く1分を見つけます。" })}</p>
+        </div>
+
+        <ol className="process-step-list">
+          {localizedSteps.map((step, index) => (
+            <li key={step.number} className={`process-step process-step-${index + 1}`}>
+              <div className="process-step-orb" aria-hidden="true">
+                <span className="process-step-badge">STEP {step.number}</span>
+                <span className="process-step-icon">{step.icon}</span>
+              </div>
+              <div className="process-step-copy">
+                <h3>{step.title}</h3>
+                <p>
+                  {step.descriptionLines.map((line) => <span key={line} className="block">{line}</span>)}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ol>
+
+        <div className="three-step-process-cta">
+          <a href="#workspace">{localizedValue(locale, { ko: "지금 시작하기", en: "Get started", ja: "今すぐ始める" })}</a>
+          <p><span aria-hidden="true">✓</span> {localizedValue(locale, { ko: "월 7,920원부터 시작 · 언제든 해지 가능", en: "From ₩7,920/month · Cancel anytime", ja: "月額₩7,920から・いつでも解約可能" })}</p>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function ChannelAvatar({
@@ -456,7 +691,7 @@ function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioC
       )}
       {!canUseCustomTemplates && personalTemplates.length > 0 && (
         <p className="mt-3 rounded-xl border border-[#ff9b8d]/15 bg-[#ff715e]/[.05] px-4 py-3 text-sm text-[#ffc0b7]">
-          저장한 커스텀 템플릿은 STANDARD·PRO 플랜에서 사용할 수 있어요. <Link href="/pricing?plan=standard&cycle=monthly" className="font-black underline underline-offset-2">요금제 보기</Link>
+          저장한 커스텀 템플릿은 유료 이용권에서 사용할 수 있어요. <Link href="/pricing" className="font-black underline underline-offset-2">요금제 보기</Link>
         </p>
       )}
     </div>
@@ -464,7 +699,7 @@ function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioC
 }
 
 class HttpRequestError extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(public readonly status: number, message: string, public readonly code?: string) {
     super(message);
     this.name = "HttpRequestError";
   }
@@ -484,7 +719,10 @@ async function requestJson<T>(url: string, init?: RequestInit, timeoutMs?: numbe
     response = await fetch(url, { cache: "no-store", ...init, signal: controller.signal });
   } catch (error) {
     if (controller.signal.aborted && !externalSignal?.aborted) {
-      throw new Error("응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.");
+      const locale = currentClientLocale();
+      throw new Error(locale === "ko"
+        ? "응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."
+        : messagesByLocale[locale]["error.HTTP_503"]);
     }
     throw error;
   } finally {
@@ -492,8 +730,12 @@ async function requestJson<T>(url: string, init?: RequestInit, timeoutMs?: numbe
     externalSignal?.removeEventListener("abort", abortFromExternal);
   }
   if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as { detail?: string };
-    throw new HttpRequestError(response.status, body.detail || "요청을 처리하지 못했습니다.");
+    const body = await response.json().catch(() => ({})) as { detail?: string; code?: string };
+    throw new HttpRequestError(
+      response.status,
+      localizeApiError(body, response.status, currentClientLocale()),
+      body.code,
+    );
   }
   return response.json() as Promise<T>;
 }
@@ -801,45 +1043,6 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="editor-title">{editorContent}</div>;
 }
 
-function ProjectCard({ job }: { job: VideoJob }) {
-  const readyCount = job.shorts.filter((item) => item.status === "ready").length;
-  const rerenderingShort = job.shorts.find((item) => item.status === "rerendering");
-  const isProcessing = !terminalStatuses.has(job.status) || Boolean(rerenderingShort);
-  const projectExpired = isProjectExpired(job);
-  const daysUntilExpiration = job.expiresAt
-    ? Math.ceil((new Date(job.expiresAt).getTime() - Date.now()) / 86_400_000)
-    : null;
-  return (
-    <Link
-      href={`/${job.projectNumber}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={`프로젝트 /${job.projectNumber}: ${job.videoTitle} 새 탭에서 열기`}
-      className={`project-card group text-left ${isProcessing ? "project-card-processing" : ""}`}
-    >
-      <div className="relative aspect-video overflow-hidden bg-neutral-900">
-        {job.thumbnailUrl ? <Image src={job.thumbnailUrl} alt="" fill unoptimized className={`object-cover transition duration-300 group-hover:scale-[1.03] ${isProcessing ? "grayscale" : ""}`} /> : null}
-        {daysUntilExpiration !== null && <span className="absolute left-2 top-2 z-10 rounded bg-black/75 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">{projectExpired ? "만료됨" : daysUntilExpiration > 0 ? `${daysUntilExpiration}일 뒤 만료` : "오늘 만료"}</span>}
-        {job.isExample && <span className="absolute right-2 top-2 z-10 rounded bg-red-500 px-2 py-1 text-[11px] font-extrabold text-white shadow-lg">예시 작업</span>}
-        {!isProcessing && <span className="absolute bottom-2 right-2 rounded bg-black/75 px-2 py-1 text-[11px] font-semibold">{formatDuration(job.sourceDurationSeconds)}</span>}
-        <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
-        {isProcessing && readyCount === 0 && (rerenderingShort
-          ? <EstimatedProcessingOverlay operationKey={`rerender:${rerenderingShort.id}:${rerenderingShort.renderVersion}`} durationSeconds={rerenderingShort.durationSeconds} rerender />
-          : <EstimatedProcessingOverlay operationKey={`create:${job.id}`} durationSeconds={job.sourceDurationSeconds} createdAt={job.createdAt} />)}
-      </div>
-      <div className="p-4">
-        <h3 className="line-clamp-1 text-sm font-bold text-white">{job.videoTitle}</h3>
-        <div className="mt-3 flex items-center justify-between text-xs text-neutral-500">
-          <span className={projectExpired ? "text-neutral-500" : rerenderingShort ? "text-violet-300" : job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-neutral-400"}>{projectExpired ? "● 만료됨" : rerenderingShort ? "● 수정 반영 중" : job.status === "completed" ? "● 완료" : job.status === "failed" ? "● 생성 실패" : job.status === "retry_waiting" ? "● 원본 영상을 준비하고 있습니다" : readyCount > 0 ? `● ${readyCount}개 먼저 완료` : "● 생성 중"}</span>
-          {(!isProcessing || rerenderingShort) && <span>{`쇼츠 ${readyCount || job.shorts.length}개`}</span>}
-          <span>{new Date(job.createdAt).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })}</span>
-        </div>
-        {job.status === "failed" && job.errorMessage && <p className="mt-3 line-clamp-3 text-xs leading-5 text-red-300">{job.errorMessage}</p>}
-      </div>
-    </Link>
-  );
-}
-
 function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }) {
   const [accessUrls, setAccessUrls] = useState<Record<string, string>>({});
   const requestedAccessVersions = useRef(new Set<string>());
@@ -893,14 +1096,19 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
         : projectExpired || job.status === "expired" || job.status === "deleted"
           ? "보관 기간이 끝나 이 프로젝트의 쇼츠를 볼 수 없습니다."
           : "아직 생성된 쇼츠가 없습니다.";
-    return <div className="project-workspace"><button onClick={onBack}>← 프로젝트로 돌아가기</button><p className={`m-auto max-w-xl px-6 text-center leading-7 ${job.status === "failed" ? "text-red-300" : "text-neutral-500"}`}>{message}</p></div>;
+    return <div className="project-workspace"><button onClick={onBack}>← 프로젝트로 돌아가기</button><p className={`m-auto max-w-xl whitespace-pre-line px-6 text-center leading-7 ${job.status === "failed" ? "text-red-300" : "text-neutral-500"}`}>{message}</p></div>;
   }
   return (
     <div className="project-workspace">
       <header className="workspace-header">
-        <div className="min-w-0"><button onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 프로젝트 /{job.projectNumber}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 className="truncate text-lg font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
+        <div className="min-w-0"><button onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 프로젝트 /{job.projectNumber}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
         <button onClick={() => void Promise.all(job.shorts.map(download))} className="workspace-button workspace-button-primary shrink-0">↓ 모든 쇼츠 다운로드</button>
       </header>
+      {job.status === "failed" && job.errorMessage && (
+        <div role="alert" className="mx-4 mt-4 whitespace-pre-line rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm leading-6 text-red-200 sm:mx-6">
+          {job.errorMessage}
+        </div>
+      )}
       <main className="short-results-workspace">
         <div className="short-results-list">
           {job.shorts.map((item, index) => {
@@ -965,9 +1173,9 @@ export function ShortEditorPage({ projectNumber, shortId }: { projectNumber: num
     window.setTimeout(() => { if (!window.closed) window.location.href = `/${projectNumber}`; }, 100);
   };
 
-  if (error) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-xl font-bold">편집기를 열 수 없습니다.</h1><p className="mt-3 text-sm text-red-300">{error}</p><Link href={`/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
+  if (error) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집기를 열 수 없습니다.</h1><p className="mt-3 text-sm text-red-300">{error}</p><Link href={`/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">편집기를 준비하고 있습니다…</main>;
-  if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-xl font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
+  if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
 
   return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={`프로젝트 /${project.projectNumber} · ${item.hookTitle}`} onClose={closeEditor} onChanged={loadProject} />;
 }
@@ -1034,9 +1242,21 @@ export function ProjectPage({ projectNumber }: { projectNumber: number }) {
   return <ProjectWorkspace job={project} onBack={returnToProjects} />;
 }
 
-export function ShortsApp() {
-  const [state, setState] = useState<MvpState | null>(null);
-  const [stateLoadStatus, setStateLoadStatus] = useState<"loading" | "ready" | "error">("loading");
+function initialActiveJob(state: MvpState | null) {
+  if (!state) return null;
+  const running = state.recentJobs.find((job) => !terminalStatuses.has(job.status));
+  const rerendering = state.recentJobs.find((job) => (
+    job.shorts.some((item) => item.status === "rerendering")
+  ));
+  return running || rerendering || state.recentJobs[0] || null;
+}
+
+export function ShortsApp({ initialState = null }: { initialState?: MvpState | null }) {
+  const { locale, t } = useI18n();
+  const [state, setState] = useState<MvpState | null>(initialState);
+  const [stateLoadStatus, setStateLoadStatus] = useState<"loading" | "ready" | "error">(
+    initialState ? "ready" : "loading",
+  );
   const [stateLoadError, setStateLoadError] = useState<string | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(null);
@@ -1046,9 +1266,10 @@ export function ShortsApp() {
   const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
   const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState<TemplateFavoriteKey[]>([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);
   const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>("5:4");
-  const [activeJob, setActiveJob] = useState<VideoJob | null>(null);
+  const [activeJob, setActiveJob] = useState<VideoJob | null>(() => initialActiveJob(initialState));
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginNext, setLoginNext] = useState("/");
+  const [loginPromptPending, setLoginPromptPending] = useState(false);
   const [creationRestrictionOpen, setCreationRestrictionOpen] = useState(false);
   const [creationRestrictionReason, setCreationRestrictionReason] = useState<string | null>(null);
   const [concurrentJobNoticeOpen, setConcurrentJobNoticeOpen] = useState(false);
@@ -1057,6 +1278,7 @@ export function ShortsApp() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollStarted = useRef(0);
+  const loginOpenTimer = useRef<number | null>(null);
   const stateLoadInFlight = useRef<Promise<void> | null>(null);
   const analysisSectionRef = useRef<HTMLElement>(null);
   const projectsSectionRef = useRef<HTMLElement>(null);
@@ -1079,17 +1301,32 @@ export function ShortsApp() {
   const effectiveVideoAspectRatio = selectedPersonalTemplate?.config.video.aspectRatio ?? videoAspectRatio;
   const closeCreationRestriction = useCallback(() => setCreationRestrictionOpen(false), []);
   const closeConcurrentJobNotice = useCallback(() => setConcurrentJobNoticeOpen(false), []);
+  const openLoginAfterDelay = useCallback((next: string) => {
+    if (loginOpenTimer.current !== null) return;
+    setLoginNext(next);
+    setLoginPromptPending(true);
+    loginOpenTimer.current = window.setTimeout(() => {
+      loginOpenTimer.current = null;
+      setLoginPromptPending(false);
+      setLoginOpen(true);
+    }, LOGIN_OVERLAY_DELAY_MS);
+  }, []);
+
+  useEffect(() => () => {
+    if (loginOpenTimer.current !== null) {
+      window.clearTimeout(loginOpenTimer.current);
+    }
+  }, []);
 
   const loadState = useCallback(async () => {
     if (stateLoadInFlight.current) return stateLoadInFlight.current;
     const task = (async () => {
       const value = await requestJson<MvpState>("/api/mvp/state", undefined, 12_000);
       setState(value);
+      publishUsageSnapshot(value.usage);
       setStateLoadStatus("ready");
       setStateLoadError(null);
-      const running = value.recentJobs.find((job) => !terminalStatuses.has(job.status));
-      const rerendering = value.recentJobs.find((job) => job.shorts.some((item) => item.status === "rerendering"));
-      setActiveJob(running || rerendering || value.recentJobs[0] || null);
+      setActiveJob(initialActiveJob(value));
     })();
     stateLoadInFlight.current = task;
     try {
@@ -1157,14 +1394,23 @@ export function ShortsApp() {
     const url = new URL(window.location.href);
     const authError = url.searchParams.get("auth_error");
     if (!authError) return;
-    setError(authError);
+    setError(localizeAuthError(authError, locale));
     url.searchParams.delete("auth_error");
     window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
-    const analysisId = new URL(window.location.href).searchParams.get("analysisId");
+    const currentUrl = new URL(window.location.href);
+    const analysisId = currentUrl.searchParams.get("analysisId");
     if (!analysisId) return;
+    if (currentUrl.hash === "#shorts-settings") {
+      currentUrl.hash = "";
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${currentUrl.pathname}${currentUrl.search}`,
+      );
+    }
     setBusy(true);
     setError(null);
     requestJson<YoutubeAnalysis>(`/api/youtube/analyses/${encodeURIComponent(analysisId)}`)
@@ -1183,11 +1429,24 @@ export function ShortsApp() {
 
   useEffect(() => {
     if (!scrollToAnalysis || !analysis) return;
-    const frame = window.requestAnimationFrame(() => {
-      analysisSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      setScrollToAnalysis(false);
+    let scrollFrame = 0;
+    const layoutFrame = window.requestAnimationFrame(() => {
+      scrollFrame = window.requestAnimationFrame(() => {
+        const section = analysisSectionRef.current;
+        if (section) {
+          const headerHeight = document.querySelector<HTMLElement>(".site-header")?.getBoundingClientRect().height || 0;
+          window.scrollTo({
+            top: Math.max(0, window.scrollY + section.getBoundingClientRect().top - headerHeight - 16),
+            behavior: "smooth",
+          });
+        }
+        setScrollToAnalysis(false);
+      });
     });
-    return () => window.cancelAnimationFrame(frame);
+    return () => {
+      window.cancelAnimationFrame(layoutFrame);
+      window.cancelAnimationFrame(scrollFrame);
+    };
   }, [analysis, scrollToAnalysis]);
 
   useEffect(() => {
@@ -1216,6 +1475,7 @@ export function ShortsApp() {
         if (stopped) return;
         setActiveJob(value.job);
         setState((current) => current ? { ...current, usage: value.usage, recentJobs: current.recentJobs.map((job) => job.id === value.job.id ? value.job : job) } : current);
+        publishUsageSnapshot(value.usage);
         const hasRerendering = value.job.shorts.some((item) => item.status === "rerendering");
         if (terminalStatuses.has(value.job.status) && !hasRerendering) { pollStarted.current = 0; await loadState(); return; }
       } catch (cause) { if (!stopped) setError(cause instanceof Error ? cause.message : "작업 상태 확인 실패"); }
@@ -1267,6 +1527,7 @@ export function ShortsApp() {
         value.creationAllowed ? null : value.creationBlockReason || "이 영상은 이용 제한이 확인된 영상입니다.",
       );
       setCreationRestrictionOpen(value.creationAllowed !== true);
+      setScrollToAnalysis(true);
     }
     catch (cause) {
       const message = cause instanceof Error ? cause.message : "영상 확인 실패";
@@ -1297,12 +1558,11 @@ export function ShortsApp() {
     }
     const next = `/?analysisId=${encodeURIComponent(analysis.analysisId)}`;
     if (!state?.user) {
-      setLoginNext(next);
-      setLoginOpen(true);
+      openLoginAfterDelay(next);
       return;
     }
     if (state.usage.enforcementEnabled && !state.billing.canCreateJobs) {
-      window.location.href = "/pricing?plan=standard&cycle=monthly";
+      window.location.href = "/pricing";
       return;
     }
     if (activeJobBlocksCreation) {
@@ -1312,8 +1572,9 @@ export function ShortsApp() {
     setBusy(true); setError(null);
     try {
       const value = await requestJson<{ jobId: string; projectNumber: number; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, requestId: crypto.randomUUID() }) });
-      const pendingJob: VideoJob = { id: value.jobId, projectNumber: value.projectNumber, isExample: false, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: analysis.expectedShortCount, status: "queued", stage: "queued", progress: SIMULATED_PROGRESS_START, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
+      const pendingJob: VideoJob = { id: value.jobId, projectNumber: value.projectNumber, isExample: false, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: analysis.expectedShortCount, plannedShortCount: analysis.expectedShortCount, readyShortCount: 0, failedShortCount: 0, renderSuccessPercent: null, status: "queued", stage: "queued", progress: SIMULATED_PROGRESS_START, stageCompletedCount: 0, stageTotalCount: 0, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
       setState((current) => current ? { ...current, usage: value.usage, recentJobs: [pendingJob, ...current.recentJobs.filter((job) => job.id !== pendingJob.id)] } : current);
+      publishUsageSnapshot(value.usage);
       setActiveJob(pendingJob);
       setScrollToProjects(true);
       pollStarted.current = Date.now();
@@ -1340,7 +1601,7 @@ export function ShortsApp() {
         && cause.status === 402
         && state.usage.enforcementEnabled
       ) {
-        window.location.href = "/pricing?plan=standard&cycle=monthly";
+        window.location.href = "/pricing";
       } else if (cause instanceof HttpRequestError && cause.message.includes("현재 처리 중인 작업")) {
         setConcurrentJobNoticeOpen(true);
       } else {
@@ -1372,27 +1633,38 @@ export function ShortsApp() {
       />
       <main id="top" className="relative mx-auto w-full max-w-6xl flex-1 space-y-10 px-5 pb-20 pt-7 sm:px-8 sm:pt-10">
       <section className="hero mx-auto flex max-w-4xl flex-col items-center text-center">
-        <h1 className="hero-title">트렌드를 찾고,<br /><span>쇼츠로 선점하세요</span></h1>
-        <p className="mt-5 max-w-2xl text-sm leading-6 text-[#d5aaa4] sm:text-base">영상 URL을 입력하면 AI가 핵심 하이라이트를 찾고,<br className="hidden sm:block" /> 30~60초 숏폼과 후킹 제목·자막을 자동으로 만듭니다.</p>
+        <h1 className="hero-title">{t("home.heroLine1")}<br /><span>{t("home.heroLine2")}</span></h1>
+        <p className="mt-5 max-w-2xl text-sm leading-6 text-[#d5aaa4] sm:text-base">{t("home.heroDescription")}</p>
         <form id="workspace" onSubmit={analyze} className="url-console mt-10 w-full max-w-3xl">
           <div className="relative flex-1">
             <span className="absolute inset-y-0 left-4 flex items-center text-xl text-[#d7aaa4]" aria-hidden="true">↗</span>
-            <input type="url" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="YouTube 영상 URL을 붙여 넣으세요" className="url-input" aria-label="YouTube 영상 URL" />
-            <button type="button" onClick={() => void pasteYoutubeUrl()} className="paste-button" aria-label="클립보드에서 YouTube 링크 붙여넣기" title="붙여넣기"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" aria-hidden="true"><path d="M9 5.5h6M9.5 3h5a1 1 0 0 1 1 1v3h-7V4a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/><path d="M8 5H6.75A1.75 1.75 0 0 0 5 6.75v12.5C5 20.216 5.784 21 6.75 21h10.5A1.75 1.75 0 0 0 19 19.25V6.75A1.75 1.75 0 0 0 17.25 5H16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
+            <input type="url" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} placeholder={t("home.youtubePlaceholder")} className="url-input" aria-label={t("home.youtubeLabel")} />
+            <button type="button" onClick={() => void pasteYoutubeUrl()} className="paste-button" aria-label={t("home.pasteLabel")} title={t("home.paste")}><svg viewBox="0 0 24 24" width="19" height="19" fill="none" aria-hidden="true"><path d="M9 5.5h6M9.5 3h5a1 1 0 0 1 1 1v3h-7V4a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/><path d="M8 5H6.75A1.75 1.75 0 0 0 5 6.75v12.5C5 20.216 5.784 21 6.75 21h10.5A1.75 1.75 0 0 0 19 19.25V6.75A1.75 1.75 0 0 0 17.25 5H16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
           </div>
-          <button disabled={busy} className="ai-button">{busy ? "확인 중..." : "지금 변환하기"}<span aria-hidden="true">✦</span></button>
+          <button disabled={busy} className="ai-button">{busy ? t("home.checking") : t("home.convert")}<span aria-hidden="true">✦</span></button>
         </form>
-        <div className="mt-10 flex flex-col items-center gap-1">
-          <strong aria-busy={!state} className="min-h-8 text-2xl font-extrabold tabular-nums text-white">{state ? <CountUpNumber value={state.generatedShortCount} /> : "—"}</strong>
-          <p className="text-xs font-medium text-[#c99d97]">지금까지 생성된 쇼츠</p>
-        </div>
-        {state?.user && <div className="mt-6 flex flex-wrap items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[.035] px-5 py-3 text-xs text-neutral-400">{planEnforcementEnabled ? <><strong className="text-white">{state.billing.planCode.toUpperCase()}</strong><span>기본 {Math.floor(state.usage.baseRemainingSeconds / 60)}분</span><span>추가 {Math.floor(state.usage.addonRemainingSeconds / 60)}분</span><Link href="/pricing" className="font-bold text-[#ff9b8d]">구독 관리</Link></> : <strong className="text-[#ff9b8d]">지금은 플랜 제한 없이 생성할 수 있어요</strong>}</div>}
+        {state?.user && planEnforcementEnabled && <div className="mt-6 flex flex-wrap items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[.035] px-5 py-3 text-xs text-neutral-400"><strong className="text-white">{state.billing.planCode.toUpperCase()}</strong><span>{t("home.baseMinutes", { minutes: Math.floor(state.usage.baseRemainingSeconds / 60) })}</span><span>{t("home.addonMinutes", { minutes: Math.floor(state.usage.addonRemainingSeconds / 60) })}</span><Link href="/pricing" className="font-bold text-[#ff9b8d]">{t("home.subscription")}</Link></div>}
       </section>
+      {state?.user && state.recentJobs.length ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28">
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="text-2xl font-bold">{t("home.projects")}</h2>
+            <span className="text-sm text-neutral-500">({state.recentJobs.length})</span>
+          </div>
+          <Link href="/projects" className="inline-flex min-h-10 shrink-0 items-center rounded-xl border border-white/10 px-4 text-sm font-bold text-neutral-200 transition hover:border-white/25 hover:bg-white/[.06] hover:text-white">
+            {t("home.viewAll")} <span className="ml-2" aria-hidden="true">→</span>
+          </Link>
+        </div>
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{state.recentJobs.map((job) => <ProjectCard key={job.id} job={job} />)}</div>
+      </section> : null}
+      <TransformationShowcase />
+      <BackgroundShowcase />
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}
-      {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>서비스 상태를 불러오지 못했습니다.</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">다시 시도</button></div>}
-      {analysis && <section id="shorts-settings" ref={analysisSectionRef} className="scroll-mt-24 rounded-2xl border border-white/10 bg-[#141416] p-5 sm:scroll-mt-28"><label htmlFor="output-language" className="text-xl font-bold">제목 언어</label><p className="mt-1 text-sm text-neutral-500">원본 영상 언어와 관계없이 선택한 언어로 후킹 제목을 만듭니다.</p><select id="output-language" value={outputLanguage} onChange={(event) => setOutputLanguage(event.target.value as OutputLanguage)} className="mt-3 h-12 w-full rounded-xl border border-white/10 bg-[#141416] px-4 text-sm text-neutral-100 outline-none focus:border-red-500 sm:max-w-xs">{outputLanguageOptions.map((option) => <option key={option.code} value={option.code}>{option.label}</option>)}</select></section>}
-      {analysis && <section className="scroll-mt-24 space-y-8 sm:scroll-mt-28"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {analysis.expectedShortCount}개</p><p className="mt-1 text-xs text-neutral-500">{planEnforcementEnabled ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.` : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p></div></div><TemplatePicker value={templateId} onChange={setTemplateId} videoAspectRatio={effectiveVideoAspectRatio} onVideoAspectRatioChange={setVideoAspectRatio} channelName={analysis.channelName} channelThumbnailUrl={analysis.channelThumbnailUrl} personalTemplates={personalTemplates} favoriteTemplateKeys={favoriteTemplateKeys} customTemplateId={canUseCustomTemplates ? customTemplateId : null} canUseCustomTemplates={canUseCustomTemplates} onCustomTemplateChange={(template) => { setCustomTemplateId(template?.id || null); if (template) { setTemplateId(template.baseTemplateId); setVideoAspectRatio(template.config.video.aspectRatio); } }} />{analysisCreationBlocked && <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">생성 불가 사유 보기</button>}<button disabled={analysisCreationBlocked || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} className="h-[52px] w-full rounded-xl bg-white py-4 font-bold text-black disabled:bg-neutral-800 disabled:text-neutral-500">{analysisCreationBlocked ? "쇼츠 생성 불가" : stateLoadStatus !== "ready" ? "로그인 확인 중..." : !state?.user ? "로그인 후 쇼츠 생성하기" : !planEnforcementEnabled || state.billing.canCreateJobs ? "쇼츠 생성하기" : "플랜 선택하고 쇼츠 만들기"}</button></section>}
-      {state?.user && state.recentJobs.length ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28"><div className="mb-5 flex items-center gap-2"><h2 className="text-2xl font-bold">내 프로젝트</h2><span className="text-sm text-neutral-500">({state.recentJobs.length})</span></div><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{state.recentJobs.map((job) => <ProjectCard key={job.id} job={job} />)}</div></section> : null}
+      {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>{t("home.serviceLoadError")}</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">{t("common.retry")}</button></div>}
+      {analysis && <section id="shorts-settings" ref={analysisSectionRef} className="scroll-mt-24 rounded-2xl border border-white/10 bg-[#141416] p-5 sm:scroll-mt-28"><label htmlFor="output-language" className="text-xl font-bold">{t("home.outputLanguage")}</label><p className="mt-1 text-sm text-neutral-500">{t("home.outputLanguageDescription")}</p><select id="output-language" value={outputLanguage} onChange={(event) => setOutputLanguage(event.target.value as OutputLanguage)} className="mt-3 h-12 w-full rounded-xl border border-white/10 bg-[#141416] px-4 text-sm text-neutral-100 outline-none focus:border-red-500 sm:max-w-xs">{outputLanguageOptions.map((option) => <option key={option.code} value={option.code}>{outputLanguageName(option.code, locale)}</option>)}</select></section>}
+      {analysis && <section className="scroll-mt-24 space-y-8 sm:scroll-mt-28"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {analysis.expectedShortCount}개</p><p className="mt-1 text-xs text-neutral-500">{planEnforcementEnabled ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.` : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p></div></div><TemplatePicker value={templateId} onChange={setTemplateId} videoAspectRatio={effectiveVideoAspectRatio} onVideoAspectRatioChange={setVideoAspectRatio} channelName={analysis.channelName} channelThumbnailUrl={analysis.channelThumbnailUrl} personalTemplates={personalTemplates} favoriteTemplateKeys={favoriteTemplateKeys} customTemplateId={canUseCustomTemplates ? customTemplateId : null} canUseCustomTemplates={canUseCustomTemplates} onCustomTemplateChange={(template) => { setCustomTemplateId(template?.id || null); if (template) { setTemplateId(template.baseTemplateId); setVideoAspectRatio(template.config.video.aspectRatio); } }} />{analysisCreationBlocked && <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">생성 불가 사유 보기</button>}<button disabled={analysisCreationBlocked || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}><span className="inline-flex items-center justify-center gap-2">{loginPromptPending && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}{analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs ? t("home.create") : t("home.choosePlan")}</span></button></section>}
+      <ThreeStepProcess />
+      <CustomerReviews generatedShortCount={state?.generatedShortCount ?? null} />
     </main>
     <SiteFooter />
     </div>

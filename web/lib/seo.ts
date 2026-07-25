@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const SITE_URL = "https://www.easycut.co.kr";
-export const SITE_NAME = "이지컷(Easy Cut)";
+export const SITE_NAME = "이지컷";
 export const OG_IMAGE_PATH = "/easy-cut-og-1200x630-v3.jpg";
 export const DEFAULT_DESCRIPTION = "유튜브 링크만 입력하면 AI가 하이라이트를 찾아 30~60초 쇼츠로 자동 편집합니다. 제목과 자막도 한 번에 완성하세요.";
 

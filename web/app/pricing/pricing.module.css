@@ -1,0 +1,731 @@
+.hero {
+  max-width: 760px;
+  margin-bottom: 48px;
+}
+
+.pricingStateSkeleton {
+  width: min(920px, 100%);
+  min-height: 660px;
+  margin: -10px auto 96px;
+}
+
+.skeletonStatusCard,
+.skeletonPackageGrid article {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .08);
+  background:
+    linear-gradient(105deg, transparent 32%, rgba(255, 255, 255, .045) 48%, transparent 64%),
+    rgba(24, 28, 29, .72);
+  background-size: 220% 100%, auto;
+  animation: pricing-skeleton-sheen 1.5s ease-in-out infinite;
+}
+
+.skeletonStatusCard {
+  min-height: 154px;
+  border-radius: 20px;
+  padding: 24px;
+}
+
+.skeletonStatusCard span,
+.skeletonStatusCard strong,
+.skeletonStatusCard i,
+.skeletonPackageGrid span,
+.skeletonPackageGrid strong,
+.skeletonPackageGrid i {
+  display: block;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .075);
+}
+
+.skeletonStatusCard span {
+  width: 84px;
+  height: 12px;
+}
+
+.skeletonStatusCard strong {
+  width: min(240px, 62%);
+  height: 24px;
+  margin-top: 20px;
+}
+
+.skeletonStatusCard i {
+  width: min(330px, 78%);
+  height: 11px;
+  margin-top: 18px;
+}
+
+.skeletonToolbar {
+  width: 260px;
+  height: 50px;
+  margin: 42px 0 28px auto;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, .055);
+}
+
+.skeletonPackageGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.skeletonPackageGrid article {
+  min-height: 430px;
+  border-radius: 24px;
+  padding: 34px 26px 26px;
+}
+
+.skeletonPackageGrid span {
+  width: 92px;
+  height: 13px;
+  margin: 0 auto;
+}
+
+.skeletonPackageGrid strong {
+  width: 58%;
+  height: 30px;
+  margin: 34px auto 30px;
+}
+
+.skeletonPackageGrid i {
+  width: 88%;
+  height: 12px;
+  margin: 17px 0;
+}
+
+.skeletonPackageGrid i:nth-of-type(2) {
+  width: 72%;
+}
+
+.skeletonPackageGrid button {
+  width: 100%;
+  height: 48px;
+  margin-top: 94px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .055);
+}
+
+@keyframes pricing-skeleton-sheen {
+  from { background-position: 140% 0, 0 0; }
+  to { background-position: -120% 0, 0 0; }
+}
+
+:global(.app-shell .pricing-main) > section.planSection,
+:global(.app-shell .pricing-main) > section.earlyBirdSection,
+:global(.app-shell .pricing-main) > section.activeProductsSection {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.activeProductsSection {
+  width: min(920px, 100%);
+  margin: -10px auto 52px;
+}
+
+@media (max-width: 720px) {
+  .pricingStateSkeleton {
+    min-height: 720px;
+  }
+
+  .skeletonStatusCard {
+    min-height: 142px;
+  }
+
+  .skeletonToolbar {
+    width: 100%;
+    max-width: 286px;
+    margin-top: 34px;
+  }
+
+  .skeletonPackageGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .skeletonPackageGrid article {
+    min-height: 390px;
+  }
+
+  .skeletonPackageGrid article:nth-child(2) {
+    display: none;
+  }
+}
+
+.activeProductsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 14px;
+}
+
+.activeProductCard {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(100, 216, 146, .24);
+  border-radius: 20px;
+  padding: 22px 24px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(100, 216, 146, .1), transparent 40%),
+    rgba(24, 28, 29, .88);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .2);
+}
+
+.activePackageCard {
+  border-color: rgba(255, 143, 128, .28);
+  background:
+    radial-gradient(circle at 100% 0, rgba(255, 113, 94, .13), transparent 42%),
+    rgba(24, 28, 29, .88);
+}
+
+.activeProductTopline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #858a8c;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.activeProductBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #aef0c8;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.activeProductBadge i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #64d892;
+  box-shadow: 0 0 10px rgba(100, 216, 146, .75);
+}
+
+.activeProductCard h3 {
+  margin-top: 13px;
+  color: #fff;
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: -.035em;
+}
+
+.activeProductBenefit {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.activeProductBenefit strong {
+  color: #f1f3f3;
+  font-size: 21px;
+  font-weight: 950;
+  letter-spacing: -.035em;
+}
+
+.activeProductBenefit span,
+.activeProductCard > p {
+  color: #8f9496;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.activeProductCard > p {
+  margin-top: 8px;
+}
+
+.subscriptionAction {
+  min-height: 38px;
+  margin-top: 18px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 10px;
+  padding: 0 14px;
+  color: #d9dddd;
+  font-size: 11px;
+  font-weight: 850;
+  transition: border-color .2s, background .2s, color .2s;
+}
+
+.subscriptionAction:hover {
+  border-color: rgba(255, 143, 128, .5);
+  color: #ffb0a5;
+  background: rgba(255, 113, 94, .07);
+}
+
+.subscriptionAction:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.planSection {
+  margin-bottom: 0;
+}
+
+.planSection :global(.pricing-badge) {
+  padding: 9px 18px;
+  font-size: 13px;
+}
+
+.planToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin: 0 0 28px;
+}
+
+.packageOnlyToolbar {
+  max-width: 820px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.planToolbar > span {
+  color: var(--pricing-muted);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.packageTermPicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--pricing-border);
+  border-radius: 15px;
+  padding: 5px;
+  background: rgba(25, 28, 30, .76);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .16);
+}
+
+.packageTermPicker button {
+  min-width: 76px;
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 0 11px;
+  color: #8f9395;
+  font-size: 13px;
+  font-weight: 900;
+  transition: border-color .2s, color .2s, background .2s, box-shadow .2s;
+}
+
+.packageTermPicker button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, .045);
+}
+
+.packageTermPicker button.packageTermActive {
+  border-color: rgba(255, 143, 128, .55);
+  color: #fff;
+  background: linear-gradient(110deg, rgba(240, 68, 53, .88), rgba(255, 113, 94, .88));
+  box-shadow: 0 7px 18px rgba(240, 68, 53, .18);
+}
+
+.planGrid {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 88px;
+  align-items: start;
+  margin-bottom: 96px;
+}
+
+.packageOnlyGrid {
+  grid-template-columns: 1fr;
+  max-width: 820px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.packageOnlyGrid .packageGroup::before {
+  display: none;
+}
+
+.planCard {
+  min-height: 0;
+}
+
+.monthlyPlanCard li:not(:global(.pricing-feature-unavailable)) > span:first-child {
+  color: rgba(255, 255, 255, .58);
+  text-shadow: none;
+}
+
+.packagePlanCard {
+  overflow: visible;
+}
+
+.packageGroup {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+.packageGroup::before {
+  content: "";
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  left: -45px;
+  width: 2px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(255, 255, 255, .34) 50%,
+    transparent
+  );
+  pointer-events: none;
+}
+
+.planEyebrow {
+  display: block;
+  margin-bottom: 8px;
+  color: #8e9294;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .13em;
+  text-align: center;
+}
+
+.discountEyebrow {
+  position: absolute;
+  z-index: 5;
+  top: -13px;
+  right: -10px;
+  width: fit-content;
+  margin: 0;
+  border: 1px solid rgba(255, 226, 160, .74);
+  border-radius: 8px;
+  padding: 10px 16px 10px 26px;
+  color: #39170f;
+  background: linear-gradient(135deg, #ffe6a8, #ff8f70);
+  clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 0 50%);
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: 0;
+  transform: rotate(3deg);
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, .28));
+}
+
+.discountEyebrow::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  width: 5px;
+  height: 5px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: rgba(51, 25, 17, .42);
+}
+
+.discountEyebrowViolet {
+  border-color: rgba(225, 208, 255, .72);
+  color: #25153c;
+  background: linear-gradient(135deg, #eadcff, #a982ff);
+  transform: rotate(3deg);
+}
+
+.planDescription {
+  min-height: 0;
+  margin-top: 10px;
+  color: #8f9395;
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.planCard ul {
+  flex: none;
+}
+
+.planCard :global(.pricing-billing) {
+  min-height: 0;
+}
+
+.planCard li b {
+  color: inherit;
+  font-weight: 400;
+}
+
+.planCta {
+  width: 100%;
+}
+
+.planCtaPurchased,
+.planCtaPurchased:hover {
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, .09);
+  background: rgba(255, 255, 255, .035);
+  color: #74797b;
+  box-shadow: none;
+  transform: none;
+}
+
+.earlyBirdSection {
+  width: min(1180px, 100%);
+  margin: 0 auto 96px;
+  text-align: center;
+}
+
+.earlyBirdGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.earlyBirdCard {
+  position: relative;
+  display: flex;
+  min-height: 330px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--pricing-border);
+  border-radius: 22px;
+  padding: 32px;
+  background: rgba(16, 20, 21, .72);
+  text-align: center;
+  transition: border-color .2s, transform .2s, background .2s;
+}
+
+.earlyBirdCard:hover {
+  border-color: rgba(255, 113, 94, .65);
+  background: rgba(255, 113, 94, .045);
+  transform: translateY(-3px);
+}
+
+.earlyBirdPopular {
+  border: 2px solid #ff8f80;
+  box-shadow: 0 0 22px rgba(255, 85, 64, .16);
+}
+
+.earlyBirdViolet:hover {
+  border-color: rgba(160, 120, 255, .75);
+  background: rgba(160, 120, 255, .055);
+}
+
+.discountBadge {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  border-radius: 999px;
+  padding: 10px 19px;
+  color: #fff;
+  background: linear-gradient(110deg, var(--pricing-red-strong), var(--pricing-red));
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 7px 18px rgba(240, 68, 53, .22);
+}
+
+.earlyBirdViolet .discountBadge {
+  background: linear-gradient(110deg, #7d4bdd, var(--pricing-purple));
+  box-shadow: 0 7px 18px rgba(125, 75, 221, .22);
+}
+
+.earlyBirdCard > p {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.earlyBirdCard h3 {
+  margin-top: 12px;
+  color: #fff;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -.035em;
+}
+
+.originalPrice {
+  margin-top: 18px;
+  color: #737779;
+  font-size: 13px;
+  text-decoration: line-through;
+}
+
+.earlyBirdCard > strong {
+  margin-top: 5px;
+  color: var(--pricing-red-soft);
+  font-size: 32px;
+  font-weight: 900;
+}
+
+.earlyBirdViolet > strong {
+  color: var(--pricing-purple-soft);
+}
+
+.earlyBirdCard button {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 28px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 10px;
+  color: #e0e3e4;
+  font-size: 12px;
+  font-weight: 800;
+  transition: border-color .2s, color .2s, background .2s;
+}
+
+.earlyBirdCard button:hover {
+  border-color: var(--pricing-red);
+  color: var(--pricing-red-soft);
+  background: rgba(255, 113, 94, .07);
+}
+
+.earlyBirdViolet button:hover {
+  border-color: var(--pricing-purple);
+  color: var(--pricing-purple-soft);
+  background: rgba(160, 120, 255, .08);
+}
+
+.earlyBirdNote {
+  margin-top: 24px;
+  color: var(--pricing-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.unavailableCell {
+  color: #ff9f94 !important;
+}
+
+.previewToast {
+  position: fixed;
+  z-index: 160;
+  right: 24px;
+  bottom: 80px;
+  display: flex;
+  max-width: min(410px, calc(100vw - 32px));
+  align-items: center;
+  gap: 14px;
+  border: 1px solid rgba(255, 143, 128, .35);
+  border-radius: 15px;
+  padding: 14px 15px;
+  color: #e9ebec;
+  background: rgba(31, 34, 36, .96);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.6;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .48);
+  backdrop-filter: blur(18px);
+}
+
+.previewToast button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  place-items: center;
+  border-radius: 8px;
+  color: #9da0a2;
+  background: rgba(255, 255, 255, .05);
+  font-size: 17px;
+}
+
+@media (max-width: 900px) {
+  .planToolbar {
+    max-width: 520px;
+    margin-right: auto;
+    margin-left: auto;
+  }
+
+  .planGrid {
+    grid-template-columns: 1fr;
+    max-width: 520px;
+    gap: 72px;
+    margin: 0 auto 80px;
+  }
+
+  .packageGroup {
+    order: -1;
+    grid-template-columns: 1fr;
+    gap: 34px;
+  }
+
+  .monthlyPlanCard {
+    order: 1;
+  }
+
+  .planCard {
+    min-height: 0;
+  }
+
+  .packageGroup::before {
+    top: auto;
+    right: 0;
+    bottom: -37px;
+    left: 0;
+    width: auto;
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, .34) 50%,
+      transparent
+    );
+  }
+
+  .earlyBirdGrid {
+    grid-template-columns: 1fr;
+    max-width: 520px;
+    margin: 0 auto;
+    gap: 24px;
+  }
+}
+
+@media (max-width: 520px) {
+  .hero {
+    margin-bottom: 38px;
+  }
+
+  .activeProductsSection {
+    margin-top: -8px;
+    margin-bottom: 42px;
+  }
+
+  .activeProductCard {
+    padding: 20px;
+  }
+
+  .planToolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: -4px;
+  }
+
+  .planToolbar > span {
+    text-align: right;
+  }
+
+  .packageTermPicker {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .packageTermPicker button {
+    min-width: 0;
+  }
+
+  .discountEyebrow {
+    right: 2px;
+  }
+
+  .earlyBirdSection {
+    margin-bottom: 72px;
+  }
+
+  .previewToast {
+    right: 16px;
+    bottom: 72px;
+  }
+}

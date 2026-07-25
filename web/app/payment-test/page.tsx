@@ -12,7 +12,7 @@ import { PaymentTestClient } from "./payment-test-client";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "카드 등록 테스트 | Easy Cut",
+  title: "더페이원 정기결제 테스트 | Easy Cut",
   robots: { index: false, follow: false },
 };
 
@@ -63,13 +63,13 @@ export default async function PaymentTestPage() {
         {!profile ? (
           <section className="mx-auto max-w-xl rounded-[24px] border border-white/10 bg-[#191c1e]/90 p-8 text-center shadow-2xl">
             <p className="text-xs font-extrabold uppercase tracking-[.2em] text-[#ff9b8d]">Local payment test</p>
-            <h1 className="mt-4 text-3xl font-black tracking-[-.04em]">먼저 로그인해 주세요</h1>
-            <p className="mt-4 text-sm leading-7 text-neutral-400">허용된 테스트 계정으로 로그인한 뒤 카드 등록 화면을 사용할 수 있습니다.</p>
+            <h1 className="mt-4 text-[28px] font-black tracking-[-.04em]">먼저 로그인해 주세요</h1>
+            <p className="mt-4 text-sm leading-7 text-neutral-400">허용된 테스트 계정으로 로그인한 뒤 더페이원 0원 카드 등록과 3분 간격 반복결제 테스트를 사용할 수 있습니다.</p>
           </section>
         ) : !allowed ? (
           <section className="mx-auto max-w-xl rounded-[24px] border border-amber-400/20 bg-[#191c1e]/90 p-8 text-center shadow-2xl">
             <p className="text-xs font-extrabold uppercase tracking-[.2em] text-amber-300">Access blocked</p>
-            <h1 className="mt-4 text-3xl font-black tracking-[-.04em]">테스터 허용목록을 확인해 주세요</h1>
+            <h1 className="mt-4 text-[28px] font-black tracking-[-.04em]">테스터 허용목록을 확인해 주세요</h1>
             <p className="mt-4 text-sm leading-7 text-neutral-400">
               현재 로그인 이메일을 <code className="rounded bg-black/30 px-1.5 py-1 text-neutral-200">PAYMENT_TESTER_EMAILS</code>에 추가하고 개발 서버를 다시 시작해야 합니다.
             </p>

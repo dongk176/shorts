@@ -14,9 +14,14 @@ import { getDb } from "@/lib/db";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { apiError, HttpError } from "@/lib/http";
 import { getInitialJobBackend } from "@/lib/job-backend";
-import { assertJobCreationAllowed } from "@/lib/job-policy";
+import {
+  assertJobCreationAllowed,
+  assertRestrictedContentCooldown,
+  RESTRICTED_CONTENT_FAILURE_LIMIT,
+  RESTRICTED_CONTENT_FAILURE_WINDOW_MINUTES,
+} from "@/lib/job-policy";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
-import { getUsageSnapshot } from "@/lib/usage";
+import { billableSourceSeconds, getUsageSnapshot } from "@/lib/usage";
 import { templateSnapshotFromRow } from "@/lib/custom-templates";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
 
@@ -79,6 +84,7 @@ export async function POST(request: Request) {
       durationSeconds: Number(analyses[0].durationSeconds),
     };
     const sourceDurationSeconds = metadata.durationSeconds;
+    const usageSeconds = billableSourceSeconds(sourceDurationSeconds);
     const plannedShortCount = expectedShortCount(sourceDurationSeconds);
     const deadlineMinutes = jobDeadlineMinutes(sourceDurationSeconds);
     const jobId = randomUUID();
@@ -115,15 +121,40 @@ export async function POST(request: Request) {
         resolvedTemplateId = templateSnapshot.baseTemplateId;
       }
       const limits = await tx`
-        select count(*) filter (where status in (
+        with scoped_jobs as (
+          select status,error_code,heartbeat_at
+          from shorts_mvp.video_jobs
+          where (
+            (${session.userId}::uuid is not null and user_id=${session.userId})
+            or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+          )
+        ), restricted_failures as (
+          select count(*)::int as failure_count,max(heartbeat_at) as last_failed_at
+          from scoped_jobs
+          where status='failed'
+            and error_code in ('youtube_members_only','youtube_paid_content')
+            and heartbeat_at >= clock_timestamp()
+              - ${RESTRICTED_CONTENT_FAILURE_WINDOW_MINUTES} * interval '1 minute'
+        )
+        select
+          (select count(*)::int from scoped_jobs where status in (
             'validating','queued','starting','downloading','transcribing','selecting',
             'extracting','rendering','uploading','retry_waiting'
-          ))::int as active
-        from shorts_mvp.video_jobs where (
-          (${session.userId}::uuid is not null and user_id=${session.userId})
-          or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
-        )
+          )) as active,
+          case
+            when restricted_failures.failure_count >= ${RESTRICTED_CONTENT_FAILURE_LIMIT}
+            then greatest(1,ceil(extract(epoch from (
+              restricted_failures.last_failed_at
+              + ${RESTRICTED_CONTENT_FAILURE_WINDOW_MINUTES} * interval '1 minute'
+              - clock_timestamp()
+            )) / 60.0)::int)
+            else 0
+          end as restricted_content_cooldown_minutes
+        from restricted_failures
       `;
+      assertRestrictedContentCooldown(
+        Number(limits[0].restrictedContentCooldownMinutes || 0),
+      );
       const beforeUsage = await getUsageSnapshot(tx, session);
       if (beforeUsage.enforcementEnabled && !billing.canCreateJobs) {
         throw new HttpError(402, "쇼츠를 만들려면 활성 구독이 필요합니다.");
@@ -131,7 +162,7 @@ export async function POST(request: Request) {
       assertJobCreationAllowed({
         activeJobs: limits[0].active,
         maxActiveJobs: beforeUsage.enforcementEnabled ? billing.maxActiveJobs : 1,
-        sourceDurationSeconds,
+        sourceDurationSeconds: usageSeconds,
         usage: beforeUsage,
       });
       const insertedJobs = await tx`
@@ -140,32 +171,35 @@ export async function POST(request: Request) {
           channel_name, channel_thumbnail_url, thumbnail_url, source_duration_seconds, range_start_seconds,
           range_end_seconds, template_id, custom_template_id, template_snapshot, video_aspect_ratio,
           clip_length_option, output_language, expected_short_count, rights_confirmed, execution_backend,
-          status, stage, progress, deadline_at, planned_short_count,retention_days_snapshot
+          status, stage, progress, deadline_at, planned_short_count,retention_days_snapshot,
+          pipeline_version
         ) values (
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${sourceDurationSeconds}, 0,
           ${sourceDurationSeconds}, ${resolvedTemplateId}, ${input.customTemplateId || null}, ${templateSnapshot ? tx.json(templateSnapshot) : null}, ${templateSnapshot?.config.video.aspectRatio || input.videoAspectRatio},
           'sec_31_60', ${input.outputLanguage}, ${plannedShortCount},
           false, ${executionBackend}, 'queued', 'queued', ${SIMULATED_PROGRESS_START},
-          now() + ${deadlineMinutes} * interval '1 minute', ${plannedShortCount},${billing.retentionDays}
+          now() + ${deadlineMinutes} * interval '1 minute', ${plannedShortCount},${billing.retentionDays},
+          ${executionBackend === "aws_batch" ? 2 : 1}
         )
         returning project_number
       `;
       createdProjectNumber = Number(insertedJobs[0].projectNumber);
       const reservations = await tx`
         insert into shorts_mvp.usage_reservations (mvp_session_id, user_id, job_id, source_duration_seconds)
-        values (${session.id}, ${session.userId}, ${jobId}, ${Math.ceil(sourceDurationSeconds)})
+        values (${session.id}, ${session.userId}, ${jobId}, ${usageSeconds})
         returning id
       `;
       if (beforeUsage.enforcementEnabled) {
         await tx`select shorts_mvp.reserve_usage_grants(
-          ${session.userId},${reservations[0].id},${Math.ceil(sourceDurationSeconds)}
+          ${session.userId},${reservations[0].id},${usageSeconds}
         )`;
       }
       if (executionBackend === "aws_batch") {
+        await tx`select shorts_mvp.initialize_project_output_attempts(${jobId})`;
         await tx`
-          insert into shorts_mvp.job_outbox (job_id, kind, attempt_count)
-          values (${jobId}, 'prepare', 0)
+          insert into shorts_mvp.project_job_outbox (job_id)
+          values (${jobId})
         `;
       }
       return null;

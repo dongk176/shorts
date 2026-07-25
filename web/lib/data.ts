@@ -111,6 +111,17 @@ export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: st
   return mapJobs(db, rows);
 }
 
+export async function getAllProjects(db: Sql, session: MvpSession): Promise<VideoJob[]> {
+  const rows = await db`
+    select * from shorts_mvp.video_jobs
+    where ((${session.userId}::uuid is not null and user_id=${session.userId})
+      or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+      or (is_example and status='completed'))
+    order by is_example desc, created_at desc
+  `;
+  return mapJobs(db, rows);
+}
+
 export async function getProjectByNumber(
   db: Sql,
   session: MvpSession,
@@ -137,6 +148,18 @@ export async function getPublicExampleJobs(db: Sql): Promise<VideoJob[]> {
   return mapJobs(db, rows);
 }
 
+export async function getPublicExampleProjectByNumber(
+  db: Sql,
+  projectNumber: number,
+): Promise<VideoJob | null> {
+  const rows = await db`
+    select * from shorts_mvp.video_jobs
+    where project_number=${projectNumber} and is_example and status='completed'
+    limit 1
+  `;
+  return (await mapJobs(db, rows))[0] || null;
+}
+
 async function mapJobs(db: Sql, rows: Row[]): Promise<VideoJob[]> {
   const shorts = await getShortsForJobs(db, rows.map((row) => row.id));
   return rows.map((row) => ({
@@ -150,9 +173,17 @@ async function mapJobs(db: Sql, rows: Row[]): Promise<VideoJob[]> {
     sourceDurationSeconds: row.sourceDurationSeconds,
     outputLanguage: row.outputLanguage,
     expectedShortCount: row.expectedShortCount,
+    plannedShortCount: Number(row.plannedShortCount ?? row.expectedShortCount),
+    readyShortCount: Number(row.readyShortCount ?? 0),
+    failedShortCount: Number(row.failedShortCount ?? 0),
+    renderSuccessPercent: row.renderSuccessPercent == null
+      ? null
+      : Number(row.renderSuccessPercent),
     status: row.status,
     stage: row.stage,
     progress: row.progress,
+    stageCompletedCount: Number(row.stageCompletedCount ?? 0),
+    stageTotalCount: Number(row.stageTotalCount ?? 0),
     errorMessage: row.errorMessage,
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt?.toISOString() ?? null,

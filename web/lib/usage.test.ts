@@ -1,17 +1,40 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { currentKstPeriod, isPlanEnforcementEnabled } from "./usage";
+import { billableSourceSeconds, currentKstPeriod, isPlanEnforcementEnabled } from "./usage";
 
 afterEach(() => vi.unstubAllEnvs());
 
-describe("temporary plan enforcement", () => {
-  it("is disabled by default so signed-in users can create without a plan", () => {
+describe("plan enforcement", () => {
+  it("fails closed by default so usage is always charged", () => {
     vi.stubEnv("MVP_PLAN_ENFORCEMENT", "");
-    expect(isPlanEnforcementEnabled()).toBe(false);
+    expect(isPlanEnforcementEnabled()).toBe(true);
   });
 
-  it("can be restored explicitly", () => {
-    vi.stubEnv("MVP_PLAN_ENFORCEMENT", "true");
-    expect(isPlanEnforcementEnabled()).toBe(true);
+  it("can only be disabled explicitly", () => {
+    vi.stubEnv("MVP_PLAN_ENFORCEMENT", "false");
+    expect(isPlanEnforcementEnabled()).toBe(false);
+  });
+});
+
+describe("billable source duration", () => {
+  it.each([
+    [29 * 60 + 7, 29 * 60],
+    [29 * 60 + 30, 29 * 60],
+    [29 * 60 + 31, 30 * 60],
+  ])("rounds %s source seconds to %s billable seconds at the 30-second boundary", (source, billable) => {
+    expect(billableSourceSeconds(source)).toBe(billable);
+  });
+
+  it("discards fractional seconds before applying the minute boundary", () => {
+    expect(billableSourceSeconds(90.999)).toBe(60);
+  });
+
+  it("charges at least one minute for a valid positive duration", () => {
+    expect(billableSourceSeconds(0.75)).toBe(60);
+  });
+
+  it("rejects invalid durations", () => {
+    expect(() => billableSourceSeconds(Number.NaN)).toThrow();
+    expect(() => billableSourceSeconds(0)).toThrow();
   });
 });
 

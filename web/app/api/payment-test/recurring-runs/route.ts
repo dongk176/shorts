@@ -5,7 +5,6 @@ import {
   assertLocalPaymentMutation,
   assertLocalPaymentTestHost,
   assertPaymentTester,
-  isHanaCardIssuerName,
   PAYMENT_TEST_CHARGE_AMOUNT,
   PAYMENT_TEST_CHARGE_COUNT,
   PAYMENT_TEST_CONFIRMATION,
@@ -50,8 +49,8 @@ type AttemptRow = {
   sequenceNo: number;
   status: "processing" | "succeeded" | "failed" | "unknown";
   amount: number;
-  providerTrxId: string | null;
-  providerResultCode: string | null;
+  transactionId: string | null;
+  resultCode: string | null;
   scheduledFor: Date;
   startedAt: Date;
   finishedAt: Date | null;
@@ -93,8 +92,8 @@ function safeRun(row: RunRow, attempts: AttemptRow[] = []) {
       sequenceNo: attempt.sequenceNo,
       status: attempt.status,
       amount: attempt.amount,
-      providerTransactionId: attempt.providerTrxId,
-      resultCode: attempt.providerResultCode,
+      transactionId: attempt.transactionId,
+      resultCode: attempt.resultCode,
       scheduledFor: attempt.scheduledFor.toISOString(),
       startedAt: attempt.startedAt.toISOString(),
       finishedAt: iso(attempt.finishedAt),
@@ -129,7 +128,7 @@ async function listRuns(userId: string) {
   const attempts = await db`
     select
       a.id, a.run_id, a.sequence_no, a.status, a.amount,
-      a.provider_trx_id, a.provider_result_code, a.scheduled_for,
+      a.transaction_id, a.result_code, a.scheduled_for,
       a.started_at, a.finished_at
     from shorts_mvp.payment_test_charge_attempts a
     join shorts_mvp.payment_test_recurring_runs r on r.id=a.run_id
@@ -200,20 +199,13 @@ export async function POST(request: Request) {
         where id=${input.registrationId}
           and user_id=${tester.userId}
           and status='active'
-          and card_token_ciphertext is not null
-          and card_token_iv is not null
-          and card_token_tag is not null
+          and billing_key_ciphertext is not null
+          and billing_key_iv is not null
+          and billing_key_tag is not null
         limit 1
       ` as unknown as RegistrationRow[];
       const registration = registrations[0];
       if (!registration) throw new PaymentTestAccessError("사용할 활성 카드 등록을 찾을 수 없습니다.", 404);
-      if (isHanaCardIssuerName(registration.cardIssuer)) {
-        throw new PaymentTestAccessError(
-          "하나카드는 현재 반복결제 테스트에 사용할 수 없습니다. 다른 카드를 등록해 주세요.",
-          422,
-          "HANA_CARD_UNSUPPORTED",
-        );
-      }
       const rows = await tx`
         insert into shorts_mvp.payment_test_recurring_runs (
           user_id, registration_id, request_id, status, amount,

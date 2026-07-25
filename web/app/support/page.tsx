@@ -1,16 +1,22 @@
 import type { Metadata } from "next";
 import { LegalDocument, LegalSection } from "@/components/legal-document";
 import { createPageMetadata } from "@/lib/seo";
+import { getRequestLocale } from "@/lib/i18n/server";
+import { supportTranslations } from "@/lib/i18n/legal-translations";
 
-export const metadata: Metadata = createPageMetadata({
-  title: "고객센터·사업자 정보 | 이지컷",
-  description: "이지컷 고객센터 운영시간, 연락처와 사업자 정보를 확인하세요.",
-  path: "/support",
-});
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale();
+  const translated = locale === "ko" ? undefined : supportTranslations[locale];
+  return createPageMetadata({
+    title: `${translated?.title ?? "고객센터·사업자 정보"} | Easy Cut`,
+    description: translated?.description ?? "이지컷 고객센터 운영시간, 연락처와 사업자 정보를 확인하세요.",
+    path: "/support",
+  });
+}
 
 export default function SupportPage() {
   return (
-    <LegalDocument eyebrow="Customer Support" title="고객센터" description="서비스 이용, 결제, 개인정보 및 계정 관련 문의를 아래 연락처로 보내주세요." effectiveDate="2026년 7월 14일">
+    <LegalDocument eyebrow="Customer Support" title="고객센터" description="서비스 이용, 결제, 개인정보 및 계정 관련 문의를 아래 연락처로 보내주세요." effectiveDate="2026년 7월 14일" translations={supportTranslations} showTranslationNotice={false}>
       <LegalSection title="고객센터">
         <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/[.03] p-5 sm:p-6">
           <p><strong className="inline-block w-24 text-white">운영시간</strong>평일 14:00 ~ 19:00</p>
