@@ -11,6 +11,7 @@ import {
 import { decryptBillingPhone } from "@/lib/billing-phone";
 import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { getDb } from "@/lib/db";
+import { setDefaultPaymentMethod } from "@/lib/default-payment-method";
 import { apiError, HttpError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
@@ -65,12 +66,15 @@ export async function POST(request: Request) {
     }
     const db = getDb();
     const rows = await db`
-      select s.*,m.provider,m.status as method_status,
+      select s.*,m.id as selected_payment_method_id,m.provider,m.status as method_status,
         m.provider_schedule_status as method_schedule_status,
         m.billing_key_ciphertext,m.billing_key_iv,m.billing_key_tag,
         m.billing_key_hash,m.payer_tel_ciphertext,m.payer_tel_iv,m.payer_tel_tag
       from shorts_mvp.user_subscriptions s
-      join shorts_mvp.billing_payment_methods m on m.id=s.payment_method_id
+      join shorts_mvp.app_users u on u.id=s.user_id
+      join shorts_mvp.billing_payment_methods m
+        on m.id=coalesce(u.default_payment_method_id,s.payment_method_id)
+       and m.user_id=u.id
       where s.user_id=${session.userId}
         and s.plan_code='easycut_pro_v2'
         and s.billing_cycle='monthly'
@@ -91,7 +95,7 @@ export async function POST(request: Request) {
     }
     if (
       subscription.provider !== "thepayone"
-      || !subscription.paymentMethodId
+      || !subscription.selectedPaymentMethodId
       || !subscription.billingKeyCiphertext
       || !subscription.billingKeyIv
       || !subscription.billingKeyTag
@@ -126,7 +130,7 @@ export async function POST(request: Request) {
       );
     }
     subscriptionId = subscription.id;
-    const storedPaymentMethodId = String(subscription.paymentMethodId);
+    const storedPaymentMethodId = String(subscription.selectedPaymentMethodId);
     paymentMethodId = storedPaymentMethodId;
     cardId = decryptCardToken({
       ciphertext: subscription.billingKeyCiphertext,
@@ -276,6 +280,7 @@ export async function POST(request: Request) {
       await tx`
         update shorts_mvp.user_subscriptions
         set cancel_at_period_end=false,canceled_at=null,
+          payment_method_id=${paymentMethodId},payment_provider='thepayone',
           current_period_end=${extendedPeriodEnd},
           next_charge_at=${resumedNextChargeAt},next_quota_at=${quotaEnd},
           next_retry_at=null,grace_ends_at=null,retry_count=0,
@@ -312,6 +317,11 @@ export async function POST(request: Request) {
           and provider_transaction_id=${payment.providerTransactionId}
           and validation_status in ('received','validated')
       `;
+      await setDefaultPaymentMethod(
+        tx,
+        session.userId,
+        paymentMethodId!,
+      );
       await syncCachedPlan(tx, session.userId, plan.code);
     });
     return NextResponse.json({

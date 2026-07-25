@@ -98,6 +98,38 @@ describe("billing periods", () => {
 });
 
 describe("billing summary", () => {
+  it("shows the account default card even when there is no active product", async () => {
+    const paidAt = new Date("2026-07-25T03:00:00.000Z");
+    const responses = [
+      [{
+        hasPaymentHistory: true,
+        purchasedPackageCodes: [],
+        productCode: "starter_3m",
+        billingCycle: "yearly",
+        approvedAt: paidAt,
+        defaultPaymentProvider: "thepayone",
+        defaultIssuerName: "현대카드",
+        defaultIssuerCode: null,
+        defaultCardNumberMasked: "123456******9876",
+        defaultCardLast4: "9876",
+        defaultHasStoredPayerTel: true,
+      }],
+      [],
+    ];
+    const db = (async () => responses.shift() || []) as unknown as BillingDb;
+
+    const summary = await getBillingSummary(db, "user-a");
+
+    expect(summary).toMatchObject({
+      status: "none",
+      cardIssuer: "현대카드",
+      cardNumberMasked: "123456******9876",
+      cardLast4: "9876",
+      hasStoredPayerTel: true,
+      paymentProvider: "thepayone",
+    });
+  });
+
   it("returns every currently active product and excludes overdue products", async () => {
     const activeStart = new Date("2026-01-01T00:00:00.000Z");
     const activeEnd = new Date("2099-01-01T00:00:00.000Z");
@@ -108,6 +140,12 @@ describe("billing summary", () => {
         productCode: "starter_3m",
         billingCycle: "yearly",
         approvedAt: activeStart,
+        defaultPaymentProvider: "thepayone",
+        defaultIssuerName: "현대카드",
+        defaultIssuerCode: null,
+        defaultCardNumberMasked: "654321******5678",
+        defaultCardLast4: "5678",
+        defaultHasStoredPayerTel: true,
       }],
       [
         {
@@ -163,6 +201,8 @@ describe("billing summary", () => {
       monthlySourceSeconds: 12_000,
     }]);
     expect(summary.purchasedPackageCodes).toEqual(["starter_3m"]);
+    expect(summary.cardIssuer).toBe("현대카드");
+    expect(summary.cardLast4).toBe("5678");
   });
 });
 

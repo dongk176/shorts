@@ -10,6 +10,7 @@ import {
   syncCachedPlan,
 } from "@/lib/billing";
 import { getDb } from "@/lib/db";
+import { setDefaultPaymentMethod } from "@/lib/default-payment-method";
 import {
   cardTokenHash,
   parseThePayOneWebhook,
@@ -175,6 +176,13 @@ async function processAddon(
         validation_status='processed',processing_result='addon_granted',processed_at=now()
       where id=${eventId}
     `;
+    if (paymentMethodId) {
+      await setDefaultPaymentMethod(
+        tx,
+        order.userId as string,
+        paymentMethodId,
+      );
+    }
   });
 }
 
@@ -324,6 +332,11 @@ async function processRecurring(
         processing_result='subscription_renewed',processed_at=now()
       where id=${eventId}
     `;
+    await setDefaultPaymentMethod(
+      tx,
+      subscription.userId as string,
+      method.id as string,
+    );
     await syncCachedPlan(tx, subscription.userId, plan.code);
   });
 }

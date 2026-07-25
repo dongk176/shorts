@@ -11,6 +11,10 @@ import {
 } from "@/lib/billing-phone";
 import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { getDb } from "@/lib/db";
+import {
+  getDefaultPaymentMethodId,
+  setDefaultPaymentMethod,
+} from "@/lib/default-payment-method";
 import { apiError, HttpError } from "@/lib/http";
 import { isPricingV2EarlyBirdCode } from "@/lib/pricing-v2";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
@@ -107,12 +111,14 @@ export async function POST(request: Request) {
         "PAYMENT_QUOTE_CHANGED",
       );
     }
-    if (!subscription.paymentMethodId) {
+    const paymentMethodId = await getDefaultPaymentMethodId(db, session.userId)
+      || subscription.paymentMethodId;
+    if (!paymentMethodId) {
       throw new HttpError(409, "구독 결제수단을 확인할 수 없습니다.", "PAYMENT_METHOD_REQUIRED");
     }
     const methods = await db`
       select * from shorts_mvp.billing_payment_methods
-      where id=${subscription.paymentMethodId} and user_id=${session.userId}
+      where id=${paymentMethodId} and user_id=${session.userId}
       limit 1
     `;
     const method = (methods[0] || null) as StoredMethod | null;
@@ -282,6 +288,7 @@ export async function POST(request: Request) {
         where provider='thepayone' and provider_transaction_id=${payment.providerTransactionId}
           and validation_status in ('received','validated')
       `;
+      await setDefaultPaymentMethod(tx, session.userId, method.id);
     });
 
     return NextResponse.json({

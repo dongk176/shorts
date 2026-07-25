@@ -25,6 +25,10 @@ import {
 import type { BillingCardVerification } from "@/lib/billing-card-verifications";
 import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { getDb } from "@/lib/db";
+import {
+  getDefaultPaymentMethodId,
+  setDefaultPaymentMethod,
+} from "@/lib/default-payment-method";
 import { apiError, HttpError } from "@/lib/http";
 import { validateInstallmentSelection } from "@/lib/installments";
 import {
@@ -216,10 +220,12 @@ async function currentSubscription(userId: string) {
   return (rows[0] || null) as CurrentSubscription | null;
 }
 
-async function storedMethod(id: string | null | undefined) {
+async function storedMethod(id: string | null | undefined, userId: string) {
   if (!id) return null;
   const rows = await getDb()`
-    select * from shorts_mvp.billing_payment_methods where id=${id} limit 1
+    select * from shorts_mvp.billing_payment_methods
+    where id=${id} and user_id=${userId}
+    limit 1
   `;
   return (rows[0] || null) as StoredMethod | null;
 }
@@ -461,10 +467,14 @@ export async function POST(request: Request) {
         "PAYMENT_QUOTE_CHANGED",
       );
     }
+    const defaultPaymentMethodId = reuseStoredMethod
+      ? await getDefaultPaymentMethodId(db, session.userId)
+      : null;
     const existingMethod = await storedMethod(
       reuseStoredMethod
-        ? existingCurrent?.paymentMethodId
+        ? defaultPaymentMethodId || existingCurrent?.paymentMethodId
         : current?.paymentMethodId,
+      session.userId,
     );
     const requestedCardVerificationId = "cardVerificationId" in body
       ? body.cardVerificationId
@@ -818,6 +828,11 @@ export async function POST(request: Request) {
             provider_status='card_registered',approved_at=now()
           where id=${order.id}
         `;
+        await setDefaultPaymentMethod(
+          tx,
+          session.userId,
+          paymentMethodId!,
+        );
       });
       return NextResponse.json({ ok: true, orderId: order.orderId, paymentMethodUpdated: true });
     }
@@ -1254,6 +1269,11 @@ export async function POST(request: Request) {
           payer_tel_ciphertext=null,payer_tel_iv=null,payer_tel_tag=null,revoked_at=now()
         where id=${oldMethod.id}
       `;
+      await setDefaultPaymentMethod(
+        tx,
+        session.userId,
+        paymentMethodId!,
+      );
       await syncCachedPlan(tx, session.userId, plan.code);
     });
     return NextResponse.json({

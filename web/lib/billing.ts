@@ -264,8 +264,22 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
             )
           )
       ),array[]::text[]) as purchased_package_codes,
-      last_paid.product_code,last_paid.billing_cycle,last_paid.approved_at
-    from (values (1)) seed(value)
+      last_paid.product_code,last_paid.billing_cycle,last_paid.approved_at,
+      default_method.provider as default_payment_provider,
+      default_method.issuer_name as default_issuer_name,
+      default_method.issuer_code as default_issuer_code,
+      default_method.card_number_masked as default_card_number_masked,
+      default_method.card_last4 as default_card_last4,
+      (
+        default_method.payer_tel_ciphertext is not null
+        and default_method.payer_tel_iv is not null
+        and default_method.payer_tel_tag is not null
+      ) as default_has_stored_payer_tel
+    from shorts_mvp.app_users account
+    left join shorts_mvp.billing_payment_methods default_method
+      on default_method.id=account.default_payment_method_id
+     and default_method.user_id=account.id
+     and default_method.status not in ('disposed','manual_review','replaced','revoked')
     left join lateral (
       select product_code,billing_cycle,approved_at
       from shorts_mvp.billing_orders
@@ -279,6 +293,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       order by approved_at desc nulls last,created_at desc
       limit 1
     ) last_paid on true
+    where account.id=${userId}
   `;
   const history = historyRows[0];
   const rows = await db`
@@ -308,6 +323,14 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       purchasedPackageCodes: Array.isArray(history?.purchasedPackageCodes)
         ? history.purchasedPackageCodes.filter(isPricingV2PackageCode) as PaidPlanCode[]
         : [],
+      cardIssuer: resolveStoredCardIssuer({
+        issuer: history?.defaultIssuerName || history?.defaultIssuerCode || null,
+        cardNumberMasked: history?.defaultCardNumberMasked || null,
+      }),
+      cardNumberMasked: history?.defaultCardNumberMasked || null,
+      cardLast4: history?.defaultCardLast4 || null,
+      hasStoredPayerTel: Boolean(history?.defaultHasStoredPayerTel),
+      paymentProvider: history?.defaultPaymentProvider || null,
     };
   }
   const status = row.status === "trialing" ? "active" : row.status as SubscriptionStatus;
@@ -354,13 +377,19 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
     scheduledPlanCode: row.scheduledPlanCode as PaidPlanCode | null,
     scheduledBillingCycle: row.scheduledBillingCycle as BillingCycle | null,
     cardIssuer: resolveStoredCardIssuer({
-      issuer: row.issuerName || row.issuerCode || null,
-      cardNumberMasked: row.cardNumberMasked || null,
+      issuer: history?.defaultIssuerName
+        || history?.defaultIssuerCode
+        || row.issuerName
+        || row.issuerCode
+        || null,
+      cardNumberMasked: history?.defaultCardNumberMasked || row.cardNumberMasked || null,
     }),
-    cardNumberMasked: row.cardNumberMasked || null,
-    cardLast4: row.cardLast4 || null,
-    hasStoredPayerTel: Boolean(row.hasStoredPayerTel),
-    paymentProvider: row.paymentProvider || null,
+    cardNumberMasked: history?.defaultCardNumberMasked || row.cardNumberMasked || null,
+    cardLast4: history?.defaultCardLast4 || row.cardLast4 || null,
+    hasStoredPayerTel: history?.defaultPaymentProvider
+      ? Boolean(history.defaultHasStoredPayerTel)
+      : Boolean(row.hasStoredPayerTel),
+    paymentProvider: history?.defaultPaymentProvider || row.paymentProvider || null,
     providerScheduleStatus: row.providerScheduleStatus || "none",
     requiresManualReview: row.billingReviewStatus === "manual_review",
     canCreateJobs: status === "active" && inCurrentPeriod,

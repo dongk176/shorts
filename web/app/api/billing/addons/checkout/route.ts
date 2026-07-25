@@ -12,6 +12,7 @@ import {
 } from "@/lib/billing-phone";
 import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { getDb } from "@/lib/db";
+import { getDefaultPaymentMethodId } from "@/lib/default-payment-method";
 import { apiError, HttpError } from "@/lib/http";
 import { isPricingV2EarlyBirdCode } from "@/lib/pricing-v2";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
@@ -67,13 +68,15 @@ export async function POST(request: Request) {
         throw new HttpError(409, "이 얼리버드 상품은 계정당 한 번만 구매할 수 있습니다.");
       }
     }
-    if (!subscription.paymentMethodId) {
+    const paymentMethodId = await getDefaultPaymentMethodId(db, session.userId)
+      || subscription.paymentMethodId;
+    if (!paymentMethodId) {
       throw new HttpError(409, "구독 결제수단을 확인할 수 없습니다.", "PAYMENT_METHOD_REQUIRED");
     }
     const methods = await db`
       select id,payer_tel_ciphertext,payer_tel_iv,payer_tel_tag
       from shorts_mvp.billing_payment_methods
-      where id=${subscription.paymentMethodId} and user_id=${session.userId}
+      where id=${paymentMethodId} and user_id=${session.userId}
       limit 1
     `;
     const method = methods[0];
@@ -111,11 +114,11 @@ export async function POST(request: Request) {
     const orderName = `Easy Cut ${product.displayName}`;
     const rows = await db`
       insert into shorts_mvp.billing_orders (
-        user_id,subscription_id,request_id,kind,product_code,amount_krw,
+        user_id,subscription_id,payment_method_id,request_id,kind,product_code,amount_krw,
         order_id,order_name,checkout_expires_at,provider,provider_track_id,
         provider_merchant_id,provider_terminal_id
       ) values (
-        ${session.userId},${subscription.id},${body.requestId},'addon',${product.code},${product.priceKrw},
+        ${session.userId},${subscription.id},${method.id},${body.requestId},'addon',${product.code},${product.priceKrw},
         ${orderId},${orderName},now()+interval '10 minutes','thepayone',${orderId},
         ${merchantId},${terminalId}
       ) on conflict (request_id) do nothing
