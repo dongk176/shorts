@@ -81,6 +81,12 @@ const cursorSchema = z.object({
 
 export type StoredSearchVideo = PopularVideo & { searchRank: number; pageNumber: number; isKorean: boolean };
 
+export type SearchVideoSource = {
+  query?: string;
+  videoCategoryId?: string;
+  publishedAfter?: Date | null;
+};
+
 export type FreeCollectionResult = {
   runId: string;
   snapshotDate: string;
@@ -138,21 +144,27 @@ function apiKey() {
 }
 
 async function requestFreeSearchPage(options: {
-  query: string;
+  source: SearchVideoSource;
+  videoLicense?: "creativeCommon" | "youtube";
   pageToken?: string;
-  now: Date;
   fetchImpl: typeof fetch;
 }) {
   const endpoint = new URL("https://www.googleapis.com/youtube/v3/search");
   endpoint.searchParams.set("key", apiKey());
   endpoint.searchParams.set("part", "snippet");
   endpoint.searchParams.set("type", "video");
-  endpoint.searchParams.set("q", options.query);
+  if (options.source.query) endpoint.searchParams.set("q", options.source.query);
+  if (options.source.videoCategoryId) {
+    endpoint.searchParams.set("videoCategoryId", options.source.videoCategoryId);
+  }
   endpoint.searchParams.set("order", "viewCount");
-  endpoint.searchParams.set("publishedAfter", new Date(options.now.getTime() - FREE_SEARCH_WINDOW_DAYS * 86_400_000).toISOString());
+  if (options.source.publishedAfter) {
+    endpoint.searchParams.set("publishedAfter", options.source.publishedAfter.toISOString());
+  }
   endpoint.searchParams.set("regionCode", "KR");
   endpoint.searchParams.set("relevanceLanguage", "ko");
   endpoint.searchParams.set("videoDuration", "any");
+  if (options.videoLicense) endpoint.searchParams.set("videoLicense", options.videoLicense);
   endpoint.searchParams.set("safeSearch", "moderate");
   endpoint.searchParams.set("maxResults", String(FREE_SEARCH_PAGE_SIZE));
   if (options.pageToken) endpoint.searchParams.set("pageToken", options.pageToken);
@@ -255,6 +267,8 @@ export async function collectSearchVideoPages(options: {
   fetchImpl?: typeof fetch;
   requestIntervalMs?: number;
   queries?: readonly string[];
+  sources?: readonly SearchVideoSource[];
+  videoLicense?: "creativeCommon" | "youtube";
 } = {}) {
   const maxPages = Math.max(1, options.maxPages || 1);
   const now = options.now || new Date();
@@ -263,8 +277,12 @@ export async function collectSearchVideoPages(options: {
     ?? (options.fetchImpl ? 0 : FREE_SEARCH_REQUEST_INTERVAL_MS);
   const videos = new Map<string, StoredSearchVideo>();
   const queries = options.queries?.length ? options.queries : FREE_SEARCH_QUERIES;
-  const queryStates = queries.map((query) => ({
-    query,
+  const defaultPublishedAfter = new Date(now.getTime() - FREE_SEARCH_WINDOW_DAYS * 86_400_000);
+  const sources = options.sources?.length
+    ? options.sources
+    : queries.map((query) => ({ query, publishedAfter: defaultPublishedAfter }));
+  const sourceStates = sources.map((source) => ({
+    source,
     pageToken: undefined as string | undefined,
     seenTokens: new Set<string>(),
     exhausted: false,
@@ -272,8 +290,8 @@ export async function collectSearchVideoPages(options: {
   let pageNumber = 0;
   let rankOffset = 0;
 
-  while (pageNumber < maxPages && queryStates.some((state) => !state.exhausted)) {
-    for (const state of queryStates) {
+  while (pageNumber < maxPages && sourceStates.some((state) => !state.exhausted)) {
+    for (const state of sourceStates) {
       if (pageNumber >= maxPages) break;
       if (state.exhausted) continue;
       if (pageNumber > 0 && requestIntervalMs > 0) {
@@ -281,9 +299,9 @@ export async function collectSearchVideoPages(options: {
       }
       pageNumber += 1;
       const search = await requestFreeSearchPage({
-        query: state.query,
+        source: state.source,
+        videoLicense: options.videoLicense,
         pageToken: state.pageToken,
-        now,
         fetchImpl,
       });
       const videoIds = search.items.map((item) => item.id.videoId);
@@ -302,7 +320,7 @@ export async function collectSearchVideoPages(options: {
     }
   }
 
-  const nextPageToken = queryStates.find((state) => state.pageToken)?.pageToken;
+  const nextPageToken = sourceStates.find((state) => state.pageToken)?.pageToken;
   return { pages: pageNumber, items: Array.from(videos.values()), nextPageToken };
 }
 

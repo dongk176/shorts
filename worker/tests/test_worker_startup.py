@@ -1,6 +1,27 @@
 from shorts_worker import worker_pipeline
 from shorts_worker.config import Settings
-from shorts_worker.worker_pipeline import BatchWorker
+from shorts_worker.worker_pipeline import (
+    BatchWorker,
+    _preset_comment_channel_below,
+    _preset_comment_channel_fixed,
+    _preset_fixed_channel_position,
+)
+
+
+def test_only_versioned_preset_snapshots_enable_the_new_channel_layouts() -> None:
+    assert _preset_comment_channel_below({"template_snapshot": {"presetVersion": 2}})
+    assert not _preset_comment_channel_below({"template_snapshot": {"presetVersion": 3}})
+    assert _preset_comment_channel_fixed({"template_snapshot": {"presetVersion": 3}})
+    assert _preset_fixed_channel_position({"template_snapshot": {"presetVersion": 3}})
+    assert not _preset_comment_channel_below({"template_snapshot": None})
+    assert not _preset_comment_channel_fixed({"template_snapshot": None})
+    assert not _preset_fixed_channel_position({"template_snapshot": None})
+    assert not _preset_comment_channel_below({"template_snapshot": {"presetVersion": 1}})
+    assert not _preset_comment_channel_fixed({"template_snapshot": {"presetVersion": 2}})
+    assert not _preset_fixed_channel_position({"template_snapshot": {"presetVersion": 2}})
+    assert not _preset_comment_channel_below({
+        "template_snapshot": {"config": {"video": {"aspectRatio": "16:9"}}},
+    })
 
 
 def test_render_worker_startup_does_not_require_ingestion_proxy_routes(

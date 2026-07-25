@@ -8,7 +8,13 @@ import { TemplateFavoriteToast } from "@/components/template-favorite-toast";
 import { COMMENT_CAPTURE_BODY_FONT_CQW } from "@/lib/comment-overlay";
 import type { CommentOverlay, TemplateId, VideoAspectRatio } from "@/lib/contracts";
 import { videoAspectRatioOptions } from "@/lib/contracts";
-import { COMMENT_BACKGROUND_COLOR, type CustomTemplate } from "@/lib/template-config";
+import {
+  COMMENT_BACKGROUND_COLOR,
+  COMMENT_CAPTURE_LANDSCAPE_LIFT_PX,
+  COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
+  PRESET_SQUARE_CHANNEL_CENTER_Y,
+  type CustomTemplate,
+} from "@/lib/template-config";
 import {
   customTemplateFavoriteKey,
   presetTemplateFavoriteKey,
@@ -110,8 +116,12 @@ function aspectLayout(value: VideoAspectRatio, reserveCommentSpace = false) {
   const option = videoAspectRatioOptions.find((item) => item.value === layoutValue)
     || videoAspectRatioOptions.find((item) => item.value === "1:1")!;
   const videoHeight = option.height / 19.2;
-  const videoTop = (100 - videoHeight) / 2;
-  return { option, videoHeight, videoTop, fullVertical: layoutValue === "9:16" };
+  const videoTop = (100 - videoHeight) / 2
+    - (reserveCommentSpace && layoutValue === "16:9"
+      ? COMMENT_CAPTURE_LANDSCAPE_LIFT_PX / 19.2
+      : 0);
+  const bottomHeight = 100 - videoTop - videoHeight;
+  return { option, videoHeight, videoTop, bottomHeight, fullVertical: layoutValue === "9:16" };
 }
 
 function ChannelAvatar({ foreground, background }: { foreground: string; background: string }) {
@@ -140,7 +150,7 @@ function formatCompactKoreanCount(value: number) {
 
 function CommentCaptureCard({ comment }: { comment: CommentOverlay }) {
   return (
-    <div className="h-full w-full pb-[0.6cqw] pl-[4.4cqw] pr-[2.8cqw] pt-[4.5cqw] text-left text-white" style={{ backgroundColor: COMMENT_BACKGROUND_COLOR }}>
+    <div className="w-full pb-[0.6cqw] pl-[4.4cqw] pr-[2.8cqw] pt-[4.5cqw] text-left text-white" style={{ backgroundColor: COMMENT_BACKGROUND_COLOR }}>
       <div className="flex items-start gap-[2.7cqw]">
         <div className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.65cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
         <div className="min-w-0 flex-1">
@@ -157,11 +167,29 @@ function CommentCaptureCard({ comment }: { comment: CommentOverlay }) {
   );
 }
 
+function FixedPresetChannel({ template }: { template: TemplateShowcase }) {
+  const commentTemplate = template.id === "comment-capture";
+  const centerY = commentTemplate
+    ? COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y
+    : PRESET_SQUARE_CHANNEL_CENTER_Y;
+  const foreground = commentTemplate ? "#FFFFFF" : template.channel;
+  const background = commentTemplate ? COMMENT_BACKGROUND_COLOR : template.background;
+  return (
+    <div
+      className="absolute inset-x-0 z-20 flex items-center justify-center gap-[2.4cqw] px-[4.9cqw] text-[4.2cqw] font-semibold"
+      style={{ top: `${centerY / 19.2}%`, color: foreground, transform: "translateY(-50%)" }}
+    >
+      <ChannelAvatar foreground={foreground} background={background} />
+      <span className="max-w-[70cqw] truncate">Easy Cut</span>
+    </div>
+  );
+}
+
 function TemplatePreview({ template }: { template: TemplateShowcase }) {
   const [firstLine, secondLine] = template.label.split("\n");
   const isLight = template.id === "white-yellow" || template.id === "paper";
   const foreground = isLight ? "text-black" : "text-white";
-  const layout = aspectLayout("5:4", template.id === "comment-capture");
+  const layout = aspectLayout(template.id === "comment-capture" ? "16:9" : "5:4");
   const previewLine = (line: string, index: number) => {
     const lineBackground = titleLineBackground(
       index,
@@ -205,11 +233,12 @@ function TemplatePreview({ template }: { template: TemplateShowcase }) {
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
         <div className={`h-[22cqw] w-[22cqw] rounded-full border-2 ${isLight ? "border-neutral-500" : "border-neutral-400"}`} aria-hidden="true" />
       </div>
-      <div className={`absolute inset-x-0 z-10 overflow-hidden text-[5.5cqw] font-semibold ${template.id === "paper" ? "text-neutral-700" : ""}`} style={{ top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.videoTop}%` }}>
+      <div className={`absolute inset-x-0 z-10 overflow-hidden text-[5.5cqw] font-semibold ${template.id === "paper" ? "text-neutral-700" : ""}`} style={{ top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.bottomHeight}%` }}>
         {template.id === "comment-capture"
-          ? <CommentCaptureCard comment={templateCommentSample} />
-          : <div className="flex items-start justify-center px-[4.9cqw] pt-[4.9cqw]"><div className="flex items-center justify-center gap-[2.4cqw] whitespace-nowrap"><ChannelAvatar foreground={template.channel} background={template.background} /><span className="max-w-[70cqw] truncate">Easy Cut</span></div></div>}
+          ? <div className="h-full bg-[#040404]"><CommentCaptureCard comment={templateCommentSample} /></div>
+          : null}
       </div>
+      <FixedPresetChannel template={template} />
     </div>
   );
 }

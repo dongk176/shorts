@@ -4,14 +4,22 @@ import { videoAspectRatioSelection } from "@/lib/video-aspect-ratio-selection";
 export function VideoAspectRatioPicker({
   value,
   lockedValue,
+  disabledValues = [],
+  disabledReason,
   onChange,
 }: {
   value: VideoAspectRatio;
   lockedValue?: VideoAspectRatio;
+  disabledValues?: VideoAspectRatio[];
+  disabledReason?: string;
   onChange: (value: VideoAspectRatio) => void;
 }) {
   const { locked, displayedValue } = videoAspectRatioSelection(value, lockedValue);
-  const descriptionId = locked ? "custom-template-aspect-ratio-lock" : undefined;
+  const descriptionId = locked
+    ? "custom-template-aspect-ratio-lock"
+    : disabledReason
+      ? "preset-template-aspect-ratio-restriction"
+      : undefined;
 
   return (
     <fieldset className="min-w-0" aria-describedby={descriptionId}>
@@ -24,11 +32,12 @@ export function VideoAspectRatioPicker({
       <div className="flex flex-wrap gap-1.5">
         {videoAspectRatioOptions.map((option) => {
           const selected = displayedValue === option.value;
+          const disabled = locked || disabledValues.includes(option.value);
           return (
             <button
               key={option.value}
               type="button"
-              disabled={locked}
+              disabled={disabled}
               aria-pressed={selected}
               onClick={() => onChange(option.value)}
               className={`rounded-lg border px-2.5 py-2 text-xs font-semibold transition ${selected ? "border-red-500 bg-red-500/15 text-white" : "border-white/10 bg-[#141416] text-neutral-400 hover:border-white/30"} disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/10`}
@@ -39,6 +48,7 @@ export function VideoAspectRatioPicker({
         })}
       </div>
       {locked && <p id={descriptionId} className="mt-2 text-[11px] leading-5 text-neutral-500">내 템플릿에 저장된 {lockedValue} 비율로 생성됩니다.</p>}
+      {!locked && disabledReason && <p id={descriptionId} className="mt-2 text-[11px] leading-5 text-neutral-500">{disabledReason}</p>}
     </fieldset>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { TitleTextStyle, VideoAspectRatio } from "@/lib/contracts";
+import { COMMENT_CAPTURE_LANDSCAPE_LIFT_PX } from "@/lib/template-config";
 import {
   fitPreviewTitleFont,
   titleLineCharacterIndices,
@@ -13,7 +14,7 @@ const CANVAS_WIDTH = 1080;
 const TITLE_LINE_GAP = 18;
 const TITLE_FONT_FAMILY = '"Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
 
-function titlePanelLayout(videoAspectRatio: VideoAspectRatio) {
+function titlePanelLayout(videoAspectRatio: VideoAspectRatio, liftLandscape: boolean) {
   if (videoAspectRatio === "9:16") {
     return { top: "5%", height: "18.75%", panelHeight: 360, overlay: true };
   }
@@ -23,7 +24,8 @@ function titlePanelLayout(videoAspectRatio: VideoAspectRatio) {
     "1:1": 1080,
     "4:5": 1350,
   };
-  const panelHeight = (1920 - videoHeights[videoAspectRatio]) / 2;
+  const panelHeight = (1920 - videoHeights[videoAspectRatio]) / 2
+    - (liftLandscape && videoAspectRatio === "16:9" ? COMMENT_CAPTURE_LANDSCAPE_LIFT_PX : 0);
   return { top: "0", height: `${(panelHeight / 1920) * 100}%`, panelHeight, overlay: false };
 }
 
@@ -57,6 +59,7 @@ export function TitleOverlayPreview({
   background,
   keepPrimaryFirstLine = false,
   textStyles = [],
+  liftLandscape = false,
 }: {
   title: string;
   fontScale: number;
@@ -66,11 +69,12 @@ export function TitleOverlayPreview({
   background: string;
   keepPrimaryFirstLine?: boolean;
   textStyles?: TitleTextStyle[];
+  liftLandscape?: boolean;
 }) {
   const lines = useMemo(() => wrapPreviewTitle(title), [title]);
   const lineIndices = useMemo(() => titleLineCharacterIndices(title, lines), [lines, title]);
   const [fittedFontSize, setFittedFontSize] = useState(() => fitPreviewTitleFont(lines));
-  const layout = titlePanelLayout(videoAspectRatio);
+  const layout = titlePanelLayout(videoAspectRatio, liftLandscape);
   const bottomMargin = layout.panelHeight === 285 && !layout.overlay
     ? 12
     : Math.min(44, Math.max(24, Math.round(layout.panelHeight * 0.105)));

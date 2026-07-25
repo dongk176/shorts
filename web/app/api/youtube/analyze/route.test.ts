@@ -32,7 +32,7 @@ const metadata = {
   channelName: "채널",
   channelThumbnailUrl: "https://yt3.ggpht.com/channel-avatar",
   thumbnailUrl: "https://example.com/thumb.jpg",
-  durationSeconds: 120,
+  durationSeconds: 180,
   expectedShortCount: 3,
   creationAllowed: true,
   creationBlockCode: null,

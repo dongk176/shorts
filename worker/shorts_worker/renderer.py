@@ -13,9 +13,12 @@ from .media import media_duration, probe_media, run_command, video_fps
 from .overlays import (
     TEMPLATE_STYLES,
     create_ass_subtitles,
+    create_channel_panel,
     create_comment_panel,
     create_custom_canvas_overlays,
     create_custom_comment_overlay,
+    create_fixed_comment_channel_overlay,
+    create_landscape_comment_overlay,
     create_panel_overlays,
 )
 from .schemas import (
@@ -31,6 +34,10 @@ from .schemas import (
 
 CANVAS_WIDTH = 1080
 CANVAS_HEIGHT = 1920
+COMMENT_CAPTURE_LANDSCAPE_LIFT_PX = 160
+PRESET_SQUARE_CHANNEL_CENTER_Y = 1580
+PRESET_CHANNEL_OVERLAY_HEIGHT = 180
+COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y = 1840
 VIDEO_HEIGHTS = {
     VideoAspectRatio.LANDSCAPE: 608,
     VideoAspectRatio.LANDSCAPE_FIVE_FOUR: 864,
@@ -150,6 +157,24 @@ def video_layout(video_aspect_ratio: VideoAspectRatio) -> VideoLayout:
         top_height=panel_height,
         top_y=0,
         bottom_height=panel_height,
+        bottom_y=video_bottom,
+        overlay_mode=False,
+        subtitle_margin_v=CANVAS_HEIGHT - (video_bottom - subtitle_inset),
+    )
+
+
+def lifted_comment_landscape_layout() -> VideoLayout:
+    video_height = VIDEO_HEIGHTS[VideoAspectRatio.LANDSCAPE]
+    centered_y = (CANVAS_HEIGHT - video_height) // 2
+    video_y = centered_y - COMMENT_CAPTURE_LANDSCAPE_LIFT_PX
+    video_bottom = video_y + video_height
+    subtitle_inset = max(64, round(video_height * 0.08))
+    return VideoLayout(
+        video_height=video_height,
+        video_y=video_y,
+        top_height=video_y,
+        top_y=0,
+        bottom_height=CANVAS_HEIGHT - video_bottom,
         bottom_y=video_bottom,
         overlay_mode=False,
         subtitle_margin_v=CANVAS_HEIGHT - (video_bottom - subtitle_inset),
@@ -290,6 +315,9 @@ class VideoRenderer:
         channel_thumbnail_path: Path | None = None,
         video_aspect_ratio: VideoAspectRatio = VideoAspectRatio.SQUARE,
         comment_overlays: list[CommentOverlay] | None = None,
+        comment_channel_below: bool = False,
+        comment_channel_fixed: bool = False,
+        fixed_preset_channel: bool = False,
         title_text_styles: list[TitleTextStyle] | None = None,
         custom_template_config: CustomTemplateConfig | None = None,
         metrics_callback: RenderMetricsCallback | None = None,
@@ -335,7 +363,13 @@ class VideoRenderer:
             and video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
             else video_aspect_ratio
         )
-        layout = video_layout(layout_ratio)
+        layout = (
+            lifted_comment_landscape_layout()
+            if template_id is TemplateId.COMMENT_CAPTURE
+            and (comment_channel_below or comment_channel_fixed)
+            and video_aspect_ratio is VideoAspectRatio.LANDSCAPE
+            else video_layout(layout_ratio)
+        )
         overlay_started_at = time.monotonic()
         top, bottom = create_panel_overlays(
             title=title,
@@ -350,6 +384,19 @@ class VideoRenderer:
             overlay_mode=layout.overlay_mode,
             title_text_styles=title_text_styles,
         )
+        channel_overlay_y = layout.bottom_y
+        if fixed_preset_channel and template_id is not TemplateId.COMMENT_CAPTURE:
+            create_channel_panel(
+                channel_name,
+                template_id,
+                bottom,
+                channel_thumbnail_path=channel_thumbnail_path,
+                panel_height=PRESET_CHANNEL_OVERLAY_HEIGHT,
+                overlay_mode=True,
+            )
+            channel_overlay_y = (
+                PRESET_SQUARE_CHANNEL_CENTER_Y - PRESET_CHANNEL_OVERLAY_HEIGHT // 2
+            )
         visible_comments = (
             sorted(comment_overlays or [], key=lambda item: item.start_seconds)
             if template_id is TemplateId.COMMENT_CAPTURE
@@ -357,11 +404,33 @@ class VideoRenderer:
         )
         comment_windows = continuous_comment_windows(visible_comments, duration)
         comment_panels = [
-            create_comment_panel(
-                comment,
-                work_dir / "overlays" / f"{prefix}_comment_{index}.png",
-                panel_height=layout.bottom_height,
-                overlay_mode=layout.overlay_mode,
+            (
+                create_fixed_comment_channel_overlay(
+                    comment,
+                    work_dir / "overlays" / f"{prefix}_comment_{index}.png",
+                    panel_height=layout.bottom_height,
+                    channel_name=channel_name,
+                    channel_thumbnail_path=channel_thumbnail_path,
+                    overlay_mode=layout.overlay_mode,
+                    channel_center_y=COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y
+                    - layout.bottom_y,
+                )
+                if comment_channel_fixed
+                else create_landscape_comment_overlay(
+                    comment,
+                    work_dir / "overlays" / f"{prefix}_comment_{index}.png",
+                    panel_height=layout.bottom_height,
+                    channel_name=channel_name,
+                    channel_thumbnail_path=channel_thumbnail_path,
+                    overlay_mode=layout.overlay_mode,
+                )
+                if comment_channel_below and video_aspect_ratio is VideoAspectRatio.LANDSCAPE
+                else create_comment_panel(
+                    comment,
+                    work_dir / "overlays" / f"{prefix}_comment_{index}.png",
+                    panel_height=layout.bottom_height,
+                    overlay_mode=layout.overlay_mode,
+                )
             )
             for index, (comment, _, _) in enumerate(comment_windows)
         ]
@@ -393,7 +462,7 @@ class VideoRenderer:
             ),
             f"[base][center]overlay=x=0:y={layout.video_y}:shortest=1[with_video]",
             f"[with_video][1:v]overlay=x=0:y={layout.top_y}:shortest=1[with_top]",
-            f"[with_top][2:v]overlay=x=0:y={layout.bottom_y}:shortest=1[composed]",
+            f"[with_top][2:v]overlay=x=0:y={channel_overlay_y}:shortest=1[composed]",
         ]
         video_label = "composed"
         if comment_manifest:
@@ -559,6 +628,7 @@ class VideoRenderer:
                 work_dir / "overlays" / f"{prefix}_custom_comment_{index}.png",
                 config=config,
                 channel_name=channel_name,
+                comment_y=comment_y,
                 channel_thumbnail_path=channel_thumbnail_path,
             )
             for index, (comment, _, _) in enumerate(comment_windows)

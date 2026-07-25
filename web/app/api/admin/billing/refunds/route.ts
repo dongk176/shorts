@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminUser } from "@/lib/admin";
+import { addKstMonths } from "@/lib/billing";
 import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
+import {
+  adminRefundReasonCodes,
+  adminRefundReasonLabel,
+  quoteCustomerEarlyTerminationRefund,
+} from "@/lib/refund-policy";
 import {
   assertThePayOneBillingEnabled,
   createPaymentTrackId,
@@ -20,7 +26,8 @@ const schema = z.object({
   requestId: z.string().uuid(),
   orderId: z.string().uuid(),
   amountKrw: z.number().int().positive().max(100_000_000),
-  reason: z.string().trim().min(2).max(500),
+  reasonCode: z.enum(adminRefundReasonCodes),
+  reason: z.string().trim().min(2).max(400),
 }).strict();
 
 function safeFailureMessage(error: unknown) {
@@ -57,9 +64,10 @@ export async function POST(request: Request) {
       if (existing[0]) return { refund: existing[0], order: null };
 
       const orders = await tx`
-        select o.*,u.email
+        select o.*,u.email,p.prepaid_months
         from shorts_mvp.billing_orders o
         join shorts_mvp.app_users u on u.id=o.user_id
+        left join shorts_mvp.plans p on p.code=o.product_code
         where o.id=${body.orderId}
         for update of o
       `;
@@ -87,13 +95,64 @@ export async function POST(request: Request) {
           ),0)
         )::integer as amount
       `;
-      const refundable = Number(order.amountKrw) - Number(reservedRows[0]?.amount || 0);
-      if (body.amountKrw > refundable) throw new HttpError(409, "남은 환불 가능 금액을 초과했습니다.");
-      if (order.kind === "addon" && body.amountKrw !== refundable) {
+      const reservedAmountKrw = Number(reservedRows[0]?.amount || 0);
+      const refundable = Number(order.amountKrw) - reservedAmountKrw;
+      const paidFeatureUsageRows = await tx`
+        select count(*)::integer as popular_filter_usage_count,
+          max(occurred_at) as popular_filter_last_used_at
+        from shorts_mvp.popular_filter_usage_events
+        where billing_order_id=${order.id}
+      `;
+      const popularFilterUsageCount = Number(
+        paidFeatureUsageRows[0]?.popularFilterUsageCount || 0,
+      );
+      if (
+        body.reasonCode === "statutory_withdrawal_unused"
+        && popularFilterUsageCount > 0
+      ) {
+        throw new HttpError(
+          409,
+          "유료 실시간 인기 필터 사용 이력이 있어 미사용 전액환불로 처리할 수 없습니다. 중도해지 기준을 확인해 주세요.",
+          "PAID_FEATURE_ALREADY_USED",
+        );
+      }
+      let amountKrw = body.amountKrw;
+      let policyQuote = null;
+      if (body.reasonCode === "customer_early_termination") {
+        if (order.kind === "addon") {
+          throw new HttpError(409, "추가 처리시간에는 기간형 중도해지 위약금을 적용할 수 없습니다.");
+        }
+        const contractStart = order.renewalPeriodStart instanceof Date
+          ? order.renewalPeriodStart
+          : order.approvedAt instanceof Date
+            ? order.approvedAt
+            : null;
+        if (!contractStart) {
+          throw new HttpError(409, "계약기간을 확인할 수 없어 중도해지 환불을 자동 계산하지 못했습니다.");
+        }
+        const contractMonths = order.billingCycle === "yearly"
+          ? Number(order.prepaidMonths || 12)
+          : 1;
+        policyQuote = quoteCustomerEarlyTerminationRefund({
+          actualPaymentKrw: Number(order.amountKrw),
+          refundedOrReservedKrw: reservedAmountKrw,
+          periodStart: contractStart,
+          periodEnd: addKstMonths(contractStart, contractMonths),
+          requestedAt: new Date(),
+        });
+        amountKrw = policyQuote.refundAmountKrw;
+        if (amountKrw < 1) {
+          throw new HttpError(409, "경과 이용대금과 중도해지 위약금을 공제하면 환불할 금액이 없습니다.");
+        }
+      } else if (body.reasonCode !== "goodwill") {
+        amountKrw = refundable;
+      }
+      if (amountKrw > refundable) throw new HttpError(409, "남은 환불 가능 금액을 초과했습니다.");
+      if (order.kind === "addon" && amountKrw !== refundable) {
         throw new HttpError(409, "추가 상품은 남은 결제금액 전액만 환불할 수 있습니다.");
       }
       if (
-        body.amountKrw < refundable
+        amountKrw < refundable
         && order.approvedAt instanceof Date
         && kstDay(order.approvedAt) === kstDay(new Date())
       ) throw new HttpError(409, "당일 승인 거래는 전액 환불만 가능합니다.");
@@ -115,13 +174,14 @@ export async function POST(request: Request) {
       }
 
       const trackId = createPaymentTrackId("REFUND");
+      const reason = `[${adminRefundReasonLabel(body.reasonCode)}] ${body.reason}`;
       const inserted = await tx`
         insert into shorts_mvp.admin_billing_refunds (
           request_id,billing_order_id,requested_by_user_id,provider,provider_track_id,
           root_provider_transaction_id,amount_krw,reason,status
         ) values (
           ${body.requestId},${order.id},${admin.id},'thepayone',${trackId},
-          ${order.providerTransactionId},${body.amountKrw},${body.reason},'pending'
+          ${order.providerTransactionId},${amountKrw},${reason},'pending'
         ) returning *
       `;
       await tx`
@@ -129,7 +189,16 @@ export async function POST(request: Request) {
           actor_user_id,action,entity_type,entity_id,metadata
         ) values (
           ${admin.id},'billing.refund_requested','billing_order',${order.id},
-          ${tx.json({ refundId: inserted[0].id, amountKrw: body.amountKrw, reason: body.reason })}
+          ${tx.json({
+            refundId: inserted[0].id,
+            amountKrw,
+            reasonCode: body.reasonCode,
+            reason: body.reason,
+            policyQuote,
+            popularFilterUsageCount,
+            popularFilterLastUsedAt:
+              paidFeatureUsageRows[0]?.popularFilterLastUsedAt || null,
+          })}
         )
       `;
       return { refund: inserted[0], order };

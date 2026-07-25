@@ -12,6 +12,8 @@ from shorts_worker.overlays import (
     create_comment_panel,
     create_custom_canvas_overlays,
     create_custom_comment_overlay,
+    create_fixed_comment_channel_overlay,
+    create_landscape_comment_overlay,
     create_title_panel,
     wrap_korean_title,
 )
@@ -284,6 +286,80 @@ def test_comment_panel_is_plain_black_with_crisp_comment_content(tmp_path: Path)
         assert min(x for x, _ in content_pixels) >= 28
 
 
+def test_landscape_comment_overlay_places_channel_below_comment(tmp_path: Path) -> None:
+    avatar = tmp_path / "landscape-channel.png"
+    Image.new("RGB", (100, 100), (33, 102, 209)).save(avatar)
+    output = create_landscape_comment_overlay(
+        CommentOverlay(
+            id="comment-landscape",
+            startSeconds=0,
+            endSeconds=5,
+            text="가로 댓글 레이아웃 확인",
+            initial="소",
+            avatarColor="#8B2CC4",
+            nickname="소담기록24",
+            likeCount=1312,
+            ageLabel="5개월 전",
+        ),
+        tmp_path / "landscape-comment.png",
+        panel_height=816,
+        channel_name="테스트 채널",
+        channel_thumbnail_path=avatar,
+    )
+
+    with Image.open(output).convert("RGB") as image:
+        assert image.size == (1080, 816)
+        blue_pixels = [
+            (x, y)
+            for y in range(500, image.height)
+            for x in range(image.width)
+            if image.getpixel((x, y)) == (33, 102, 209)
+        ]
+        assert blue_pixels
+        assert min(y for _, y in blue_pixels) > 600
+        assert max(y for _, y in blue_pixels) < 680
+
+
+def test_comment_overlay_uses_the_square_channel_position_for_all_allowed_ratios(
+    tmp_path: Path,
+) -> None:
+    avatar = tmp_path / "compact-channel.png"
+    Image.new("RGB", (100, 100), (33, 102, 209)).save(avatar)
+    comment = CommentOverlay(
+        id="comment-compact",
+        startSeconds=0,
+        endSeconds=5,
+        text="댓글 바로 아래 채널명 배치",
+        initial="소",
+        avatarColor="#8B2CC4",
+        nickname="소담기록24",
+        likeCount=1312,
+        ageLabel="5개월 전",
+    )
+
+    for panel_height, panel_y in ((420, 1500), (528, 1392), (816, 1104)):
+        output = create_fixed_comment_channel_overlay(
+            comment,
+            tmp_path / f"compact-comment-{panel_height}.png",
+            panel_height=panel_height,
+            channel_name="테스트 채널",
+            channel_thumbnail_path=avatar,
+            channel_center_y=1840 - panel_y,
+        )
+        with Image.open(output).convert("RGB") as image:
+            blue_pixels = [
+                (x, y)
+                for y in range(image.height)
+                for x in range(image.width)
+                if image.getpixel((x, y)) == (33, 102, 209)
+            ]
+            assert image.size == (1080, panel_height)
+            assert blue_pixels
+            assert min(y for _, y in blue_pixels) + panel_y == 1814
+            assert max(y for _, y in blue_pixels) + panel_y == 1865
+            assert max(y for _, y in blue_pixels) < panel_height
+
+
 def test_custom_comment_overlay_applies_saved_theme_size_and_channel_flow(tmp_path: Path) -> None:
     config = CustomTemplateConfig.model_validate(
         {
@@ -371,6 +447,91 @@ def test_custom_comment_overlay_applies_saved_theme_size_and_channel_flow(tmp_pa
     with Image.open(dark_output).convert("RGBA") as dark_image, Image.open(output) as light_image:
         assert dark_image.getpixel((0, 0)) == (4, 4, 4, 255)
         assert dark_image.height > light_image.height
+
+
+def test_current_custom_comment_overlay_honors_lower_channel_position(tmp_path: Path) -> None:
+    avatar = tmp_path / "custom-landscape-channel.png"
+    Image.new("RGB", (100, 100), (33, 102, 209)).save(avatar)
+    config = CustomTemplateConfig.model_validate(
+        {
+            "schemaVersion": 4,
+            "background": {"kind": "color", "color": "#040404"},
+            "video": {
+                "aspectRatio": "16:9",
+                "x": 0,
+                "y": 496,
+                "width": 1080,
+                "height": 608,
+                "fit": "cover",
+            },
+            "title": {
+                "visible": True,
+                "x": 540,
+                "y": 90,
+                "maxWidth": 920,
+                "fontSize": 72,
+                "primaryColor": "#FFFFFF",
+                "accentColor": "#35E6E3",
+                "primaryBackgroundColor": None,
+                "accentBackgroundColor": None,
+            },
+            "subtitle": {
+                "visible": True,
+                "x": 540,
+                "y": 1410,
+                "maxWidth": 900,
+                "fontSize": 48,
+                "color": "#FFFFFF",
+                "backgroundColor": "#000000",
+            },
+            "channel": {
+                "visible": True,
+                "x": 540,
+                "y": 1740,
+                "maxWidth": 800,
+                "fontSize": 42,
+                "color": "#FFFFFF",
+                "backgroundColor": None,
+            },
+            "comment": {
+                "visible": True,
+                "theme": "dark",
+                "size": "medium",
+                "y": 1104,
+                "dockedToVideo": True,
+            },
+        }
+    )
+    output = create_custom_comment_overlay(
+        CommentOverlay(
+            id="comment-custom-landscape",
+            startSeconds=0,
+            endSeconds=5,
+            text="댓글은 위에, 채널명은 훨씬 아래에 배치",
+            initial="소",
+            avatarColor="#D84572",
+            nickname="소담기록24",
+            likeCount=121,
+            ageLabel="2시간 전",
+        ),
+        tmp_path / "custom-landscape-comment.png",
+        config=config,
+        channel_name="테스트 채널",
+        comment_y=1104,
+        channel_thumbnail_path=avatar,
+    )
+
+    with Image.open(output).convert("RGB") as image:
+        blue_pixels = [
+            (x, y)
+            for y in range(500, image.height)
+            for x in range(image.width)
+            if image.getpixel((x, y)) == (33, 102, 209)
+        ]
+        assert image.size == (1080, 662)
+        assert blue_pixels
+        assert 610 <= min(y for _, y in blue_pixels)
+        assert max(y for _, y in blue_pixels) <= 665
 
 
 def test_full_vertical_panels_keep_transparent_canvas_and_box_both_title_lines(

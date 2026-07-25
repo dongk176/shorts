@@ -1,7 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { PopularFiltersPlanOverlay } from "@/components/popular-filters-plan-overlay";
 import type {
   PopularVideo,
   PopularVideoCategory,
@@ -16,6 +18,7 @@ import { useI18n } from "@/lib/i18n/provider";
 const dataTypeOptions: Array<{ value: PopularVideoType; label: string }> = [
   { value: "trending", label: "실시간 급상승" },
   { value: "views", label: "조회수 상위" },
+  { value: "reusable", label: "재사용 허용" },
 ];
 
 const categoryOptions: Array<{ value: PopularVideoCategory; label: string }> = [
@@ -28,6 +31,205 @@ const categoryOptions: Array<{ value: PopularVideoCategory; label: string }> = [
   { value: "science", label: "과학·기술" },
   { value: "howto", label: "요리·노하우" },
 ];
+
+const reusableGuideDismissedKey = "easycut:reusable-license-guide-dismissed:v1";
+
+function ReusableLicenseGuide({
+  open,
+  onConfirm,
+  onDismiss,
+}: {
+  open: boolean;
+  onConfirm: () => void;
+  onDismiss: () => void;
+}) {
+  const confirmButton = useRef<HTMLButtonElement>(null);
+  const creativeCommonsTrigger = useRef<HTMLButtonElement>(null);
+  const creativeCommonsExplainer = useRef<HTMLDivElement>(null);
+  const [creativeCommonsExplainerOpen, setCreativeCommonsExplainerOpen] = useState(false);
+  const [creativeCommonsExplainerPosition, setCreativeCommonsExplainerPosition] = useState({
+    left: 16,
+    top: 16,
+    width: 360,
+    above: false,
+  });
+
+  const positionCreativeCommonsExplainer = useCallback(() => {
+    const trigger = creativeCommonsTrigger.current;
+    if (!trigger) return;
+    const triggerRect = trigger.getBoundingClientRect();
+    const edgeGap = 16;
+    const popoverGap = 12;
+    const width = Math.min(360, window.innerWidth - edgeGap * 2);
+    const left = Math.min(
+      window.innerWidth - width - edgeGap,
+      Math.max(edgeGap, triggerRect.left + triggerRect.width / 2 - width / 2),
+    );
+    const spaceBelow = window.innerHeight - triggerRect.bottom;
+    const above = spaceBelow < 250 && triggerRect.top > spaceBelow;
+    setCreativeCommonsExplainerPosition({
+      left,
+      top: above ? triggerRect.top - popoverGap : triggerRect.bottom + popoverGap,
+      width,
+      above,
+    });
+  }, []);
+
+  const openCreativeCommonsExplainer = useCallback(() => {
+    positionCreativeCommonsExplainer();
+    setCreativeCommonsExplainerOpen(true);
+  }, [positionCreativeCommonsExplainer]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    confirmButton.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setCreativeCommonsExplainerOpen(false);
+        onConfirm();
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+      previousFocus?.focus();
+    };
+  }, [onConfirm, open]);
+
+  useEffect(() => {
+    if (!creativeCommonsExplainerOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node
+        && !creativeCommonsTrigger.current?.contains(event.target)
+        && !creativeCommonsExplainer.current?.contains(event.target)
+      ) {
+        setCreativeCommonsExplainerOpen(false);
+      }
+    };
+    window.addEventListener("resize", positionCreativeCommonsExplainer);
+    document.addEventListener("scroll", positionCreativeCommonsExplainer, true);
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    return () => {
+      window.removeEventListener("resize", positionCreativeCommonsExplainer);
+      document.removeEventListener("scroll", positionCreativeCommonsExplainer, true);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+    };
+  }, [creativeCommonsExplainerOpen, positionCreativeCommonsExplainer]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] grid place-items-center overflow-y-auto bg-black/75 px-4 py-8 backdrop-blur-sm" role="presentation">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reusable-guide-title"
+        aria-describedby="reusable-guide-description"
+        className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-white/10 bg-[#181a1b] shadow-[0_28px_100px_rgba(0,0,0,.65)]"
+      >
+        <div className="border-b border-white/[.07] px-6 py-6 sm:px-8">
+          <div className="flex items-start gap-4">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-violet-400/15 text-violet-200" aria-hidden="true">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 10v6M12 7h.01" />
+              </svg>
+            </span>
+            <div>
+              <p className="text-xs font-black uppercase tracking-[.14em] text-violet-300">필터 이용 전 확인</p>
+              <h2 id="reusable-guide-title" className="mt-1.5 text-xl font-black tracking-[-.035em] text-white sm:text-2xl">
+                영상의 라이선스를 직접 확인해 주세요
+              </h2>
+            </div>
+          </div>
+          <div className="mt-5">
+            <p id="reusable-guide-description" className="text-sm font-medium leading-6 text-neutral-300">
+              재사용 허용 필터는 YouTube에서{" "}
+              <button
+                ref={creativeCommonsTrigger}
+                type="button"
+                aria-expanded={creativeCommonsExplainerOpen}
+                aria-controls="creative-commons-explainer"
+                onMouseEnter={openCreativeCommonsExplainer}
+                onFocus={openCreativeCommonsExplainer}
+                onClick={openCreativeCommonsExplainer}
+                className="rounded-sm font-extrabold text-[#3ea6ff] underline decoration-[#3ea6ff]/45 underline-offset-2 transition hover:text-[#70bdff] hover:decoration-[#70bdff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#70bdff]"
+              >
+                크리에이티브 커먼즈
+              </button>
+              로 표시된 영상을 선별합니다. 게시자가 라이선스를 변경하거나 제3자 권리가 포함될 수 있으므로, 사용 직전에 원본 영상에서 최신 표시를 다시 확인하세요.
+            </p>
+          </div>
+        </div>
+
+        <div className="px-6 py-6 sm:px-8">
+          <ol className="space-y-3 text-sm font-semibold leading-6 text-neutral-200">
+            <li className="flex gap-3"><span className="text-violet-300">1.</span><span>원본 영상을 YouTube에서 엽니다.</span></li>
+            <li className="flex gap-3"><span className="text-violet-300">2.</span><span>영상 설명의 <strong className="font-black text-white">더보기</strong>를 선택합니다.</span></li>
+            <li className="flex gap-3"><span className="text-violet-300">3.</span><span>설명 최하단의 <strong className="font-black text-white">라이선스</strong> 항목을 확인합니다.</span></li>
+          </ol>
+
+          <div className="mt-5 overflow-hidden rounded-2xl border border-white/10 bg-[#242424]" aria-label="YouTube 라이선스 표시 예시">
+            <div className="flex items-center gap-4 px-4 py-4 sm:px-5">
+              <span className="w-20 shrink-0 text-xs font-semibold text-neutral-400">라이선스</span>
+              <span className="text-xs font-bold leading-5 text-[#3ea6ff] sm:text-sm">크리에이티브 커먼즈 저작자 표시 라이선스 (재사용 허용)</span>
+            </div>
+          </div>
+          <p className="mt-3 text-xs font-medium leading-5 text-neutral-500">
+            위 화면은 확인 위치를 설명하기 위해 재구성한 예시이며 실제 YouTube 화면이 아닙니다. 음악, 방송 화면, 인물·상표 등 별도 권리는 직접 확인해야 합니다.
+          </p>
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-white/[.07] bg-black/10 px-6 py-5 sm:flex-row sm:justify-end sm:px-8">
+          <button type="button" onClick={() => {
+            setCreativeCommonsExplainerOpen(false);
+            onDismiss();
+          }} className="min-h-11 rounded-xl border border-white/15 px-5 text-sm font-extrabold text-neutral-200 transition hover:border-white/30 hover:bg-white/[.06] hover:text-white">
+            다시 보지 않기
+          </button>
+          <button ref={confirmButton} type="button" onClick={() => {
+            setCreativeCommonsExplainerOpen(false);
+            onConfirm();
+          }} className="min-h-11 rounded-xl bg-[#ff715e] px-6 text-sm font-black text-white shadow-[0_10px_28px_rgba(255,85,64,.22)] transition hover:bg-[#ff806f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff9b8d]">
+            확인
+          </button>
+        </div>
+      </section>
+      {creativeCommonsExplainerOpen && createPortal(
+        <div
+          ref={creativeCommonsExplainer}
+          id="creative-commons-explainer"
+          role="tooltip"
+          style={{
+            left: creativeCommonsExplainerPosition.left,
+            top: creativeCommonsExplainerPosition.top,
+            width: creativeCommonsExplainerPosition.width,
+          }}
+          className={`fixed z-[120] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border border-[#3ea6ff]/35 bg-[#172431] p-4 text-left shadow-[0_24px_70px_rgba(0,0,0,.65)] sm:p-5 ${creativeCommonsExplainerPosition.above ? "-translate-y-full" : ""}`}
+        >
+          <strong className="block text-sm font-black text-white sm:text-base">
+            크리에이티브 커먼즈(CC BY) 영상이란?
+          </strong>
+          <div className="mt-3 space-y-3 text-xs font-semibold leading-5 text-neutral-200 sm:text-sm sm:leading-6">
+            <p>원작자가 다른 사람이 영상을 사용할 수 있도록 허용한 콘텐츠입니다.</p>
+            <p>
+              출처와 저작자를 표시하면
+              <br />
+              영상을 편집하거나 재사용할 수 있습니다.
+            </p>
+            <p>단, 영상 제목, 저작자, 원본 링크, 라이선스 정보를 반드시 표시해야 합니다.</p>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
 
 function formatDuration(seconds: number) {
   const hours = Math.floor(seconds / 3600);
@@ -85,6 +287,7 @@ function popularVideoParams(
   longForm: boolean,
   korean: boolean,
   cursor?: string,
+  interactionId?: string,
 ) {
   const params = new URLSearchParams({
     type,
@@ -94,32 +297,32 @@ function popularVideoParams(
     korean: String(korean),
   });
   if (cursor) params.set("cursor", cursor);
+  if (interactionId) params.set("interactionId", interactionId);
   return params;
 }
 
-function VideoCard({ video, rank, active, onOpen, onClose, onPrepare }: {
+function VideoCard({ video, rank, active, onOpen, onClose }: {
   video: PopularVideo;
   rank: number;
   active: boolean;
   onOpen: () => void;
   onClose: () => void;
-  onPrepare: () => Promise<void>;
 }) {
   const { locale } = useI18n();
   const youtubeUrl = `https://www.youtube.com/watch?v=${video.videoId}`;
-  const [preparing, setPreparing] = useState(false);
-  const [prepareError, setPrepareError] = useState<string | null>(null);
-  const canCreateShorts = video.durationSeconds <= 3600;
+  const [copying, setCopying] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
 
-  const prepareShorts = async () => {
-    if (!canCreateShorts || preparing) return;
-    setPreparing(true);
-    setPrepareError(null);
+  const copyLinkAndGoHome = async () => {
+    if (copying) return;
+    setCopying(true);
+    setCopyError(null);
     try {
-      await onPrepare();
+      await navigator.clipboard.writeText(youtubeUrl);
+      window.location.assign("/");
     } catch (cause) {
-      setPrepareError(cause instanceof Error ? cause.message : "쇼츠 제작 화면을 준비하지 못했습니다.");
-      setPreparing(false);
+      setCopyError(cause instanceof Error ? cause.message : "영상 링크를 복사하지 못했습니다.");
+      setCopying(false);
     }
   };
 
@@ -155,11 +358,10 @@ function VideoCard({ video, rank, active, onOpen, onClose, onPrepare }: {
             <a href={youtubeUrl} target="_blank" rel="noopener noreferrer" className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#f04435] px-4 text-sm font-extrabold text-white shadow-[0_10px_30px_rgba(240,68,53,.28)] transition hover:bg-[#ff5b4b]">
               유튜브로 <span aria-hidden="true">↗</span>
             </a>
-            <button type="button" disabled={!canCreateShorts || preparing} onClick={() => void prepareShorts()} className="min-h-12 rounded-xl border border-white/15 bg-white/[.08] px-4 text-sm font-extrabold text-white transition hover:border-violet-300/50 hover:bg-violet-400/15 disabled:cursor-not-allowed disabled:opacity-45" aria-describedby={!canCreateShorts ? `video-limit-${video.videoId}` : undefined}>
-              {preparing ? "준비 중..." : "쇼츠 만들기"}
+            <button type="button" disabled={copying} onClick={() => void copyLinkAndGoHome()} className="min-h-12 rounded-xl border border-white/15 bg-white/[.08] px-4 text-sm font-extrabold text-white transition hover:border-violet-300/50 hover:bg-violet-400/15 disabled:cursor-wait disabled:opacity-60">
+              {copying ? "복사 중..." : "링크 복사"}
             </button>
-            {!canCreateShorts && <p id={`video-limit-${video.videoId}`} className="text-center text-xs font-semibold text-amber-200/80">60분 이하 영상만 만들 수 있어요.</p>}
-            {prepareError && <p role="alert" className="text-center text-xs font-semibold leading-5 text-red-300">{prepareError}</p>}
+            {copyError && <p role="alert" className="text-center text-xs font-semibold leading-5 text-red-300">{copyError}</p>}
           </div>
         </div>
       )}
@@ -180,7 +382,13 @@ function LoadingSkeleton() {
   );
 }
 
-export function PopularVideosExplorer() {
+export function PopularVideosExplorer({
+  canUseFilters,
+  isAuthenticated,
+}: {
+  canUseFilters: boolean;
+  isAuthenticated: boolean;
+}) {
   const { locale } = useI18n();
   const [dataType, setDataType] = useState<PopularVideoType>("trending");
   const [koreanOnly, setKoreanOnly] = useState(false);
@@ -194,7 +402,13 @@ export function PopularVideosExplorer() {
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+  const [planOverlayOpen, setPlanOverlayOpen] = useState(false);
+  const [planOverlayFeature, setPlanOverlayFeature] = useState<"filters" | "more">("filters");
+  const [reusableGuideOpen, setReusableGuideOpen] = useState(false);
+  const [filterInteractionId, setFilterInteractionId] = useState<string | null>(null);
   const loadMoreController = useRef<AbortController | null>(null);
+  const pendingReusableAction = useRef<(() => void) | null>(null);
+  const closePlanOverlay = useCallback(() => setPlanOverlayOpen(false), []);
 
   useEffect(() => {
     if (!activeVideoId) return;
@@ -213,7 +427,7 @@ export function PopularVideosExplorer() {
     setLoadMoreError(null);
     setError(null);
     setResponse(null);
-    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly)}`;
+    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, undefined, filterInteractionId || undefined)}`;
     fetch(endpoint, { cache: "no-store", signal: controller.signal })
       .then(async (result) => {
         if (!result.ok) {
@@ -231,7 +445,7 @@ export function PopularVideosExplorer() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [category, dataType, koreanOnly, longFormOnly, reusableOnly, retryCount]);
+  }, [category, dataType, filterInteractionId, koreanOnly, longFormOnly, reusableOnly, retryCount]);
 
   const selectedType = dataTypeOptions.find((option) => option.value === dataType) || dataTypeOptions[0];
 
@@ -269,26 +483,54 @@ export function PopularVideosExplorer() {
     }
   };
 
-  const preparePopularVideo = async (video: PopularVideo) => {
-    const result = await fetch("/api/youtube/popular/prepare", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ videoId: video.videoId, source: "popular" }),
-    });
-    if (!result.ok) {
-      const body = await result.json().catch(() => ({})) as { detail?: string };
-      throw new Error(body.detail || "쇼츠 제작 화면을 준비하지 못했습니다.");
-    }
-    const analysis = await result.json() as { analysisId: string };
-    window.location.assign(`/?analysisId=${encodeURIComponent(analysis.analysisId)}`);
-  };
-
   const applyFilter = (update: () => void) => {
+    if (!canUseFilters) {
+      setPlanOverlayFeature("filters");
+      setPlanOverlayOpen(true);
+      return;
+    }
+    setFilterInteractionId(crypto.randomUUID());
     update();
     setActiveVideoId(null);
   };
 
+  const requestReusableFilter = (action: () => void) => {
+    if (!isAuthenticated) {
+      action();
+      return;
+    }
+    try {
+      if (window.localStorage.getItem(reusableGuideDismissedKey) === "1") {
+        action();
+        return;
+      }
+    } catch {
+      // Storage can be unavailable in privacy-focused browser modes.
+    }
+    pendingReusableAction.current = action;
+    setReusableGuideOpen(true);
+  };
+
+  const finishReusableGuide = useCallback((dismissPermanently: boolean) => {
+    if (dismissPermanently) {
+      try {
+        window.localStorage.setItem(reusableGuideDismissedKey, "1");
+      } catch {
+        // The current action should continue even when the preference cannot be stored.
+      }
+    }
+    setReusableGuideOpen(false);
+    const action = pendingReusableAction.current;
+    pendingReusableAction.current = null;
+    action?.();
+  }, []);
+
   const requestMore = () => {
+    if (!canUseFilters) {
+      setPlanOverlayFeature("more");
+      setPlanOverlayOpen(true);
+      return;
+    }
     void loadMore();
   };
 
@@ -300,30 +542,66 @@ export function PopularVideosExplorer() {
         <h1 className="hero-title"><span>실시간 인기</span></h1>
         <p className="mt-5 max-w-2xl text-sm leading-7 text-[#d5aaa4] sm:text-base">
           <span className="block">지금 떠오르는 영상을 놓치지 마세요.</span>
-          <strong className="block font-extrabold text-[#ff9b8d]">모든 사용자에게 같은 목록과 필터를 제공합니다.</strong>
+          <strong className="block font-extrabold text-[#ff9b8d]">활성 구독 또는 기간 패키지로 원하는 영상만 빠르게 찾아보세요.</strong>
         </p>
         <p className="mt-6 text-xs font-semibold text-neutral-500" aria-live="polite"><span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.7)]" aria-hidden="true" /><span className="text-neutral-400">마지막 업데이트</span> {formatUpdatedAt(response?.updatedAt || null, locale)}</p>
       </section>
 
       <section className="relative z-30 -mx-2 mt-2 rounded-2xl border border-white/10 bg-[#15191a]/90 p-4 shadow-[0_16px_50px_rgba(0,0,0,.22)] backdrop-blur-2xl md:mx-0 md:p-5" aria-label="인기 영상 필터">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-base font-black text-white">필터</h2>
+          {!canUseFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setPlanOverlayFeature("filters");
+                setPlanOverlayOpen(true);
+              }}
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-[#ff9b8d]/25 bg-[#ff715e]/10 px-3 text-[11px] font-black text-[#ffc4bb] transition hover:border-[#ff9b8d]/45 hover:bg-[#ff715e]/15"
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <rect x="5" y="10" width="14" height="10" rx="2" />
+                <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+              </svg>
+              활성 이용권 전용
+            </button>
+          )}
+        </div>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <fieldset className="min-w-0">
             <legend className="mb-2 text-sm font-black text-neutral-200">인기 기준</legend>
             <div className="flex flex-wrap gap-2 pb-1">
-              {dataTypeOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={dataType === option.value}
-                  onClick={() => {
-                    setDataType(option.value);
-                    setActiveVideoId(null);
-                  }}
-                  className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition ${dataType === option.value ? "border-[#ff715e] bg-[#ff715e]/15 text-[#ffd0c9] shadow-[0_0_18px_rgba(255,85,64,.1)]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
-                >
-                  {option.label}
-                </button>
-              ))}
+              {dataTypeOptions.map((option) => {
+                const reusable = option.value === "reusable";
+                return (
+                  <div key={option.value} className={reusable ? "group/reusable relative shrink-0" : "shrink-0"}>
+                    <button
+                      type="button"
+                      aria-pressed={dataType === option.value}
+                      aria-haspopup={canUseFilters ? undefined : "dialog"}
+                      aria-describedby={reusable ? "reusable-filter-help" : undefined}
+                      onClick={() => reusable
+                        ? requestReusableFilter(() => applyFilter(() => setDataType(option.value)))
+                        : applyFilter(() => setDataType(option.value))}
+                      className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition ${dataType === option.value ? "border-[#ff715e] bg-[#ff715e]/15 text-[#ffd0c9] shadow-[0_0_18px_rgba(255,85,64,.1)]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
+                    >
+                      {option.label}
+                    </button>
+                    {reusable && (
+                      <div
+                        id="reusable-filter-help"
+                        role="tooltip"
+                        className="pointer-events-none invisible absolute left-1/2 top-full z-50 mt-3 w-[min(24rem,calc(100vw-3rem))] -translate-x-1/2 rounded-xl border border-violet-300/25 bg-[#25212d] p-4 text-left text-xs font-semibold leading-5 text-violet-50 opacity-0 shadow-[0_20px_55px_rgba(0,0,0,.5)] transition group-hover/reusable:visible group-hover/reusable:opacity-100 group-focus-within/reusable:visible group-focus-within/reusable:opacity-100"
+                      >
+                        <strong className="block text-sm font-black text-white">YouTube의 CC BY 표시 영상</strong>
+                        <span className="mt-2 block">
+                          실제 의미는 “YouTube에서 CC BY로 표시됨”입니다. 이용자는 제목·저작자·URL·CC BY 라이선스를 표시해야 하며, 제3자 음악·방송 화면 등의 권리도 별도로 확인해야 합니다.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </fieldset>
 
@@ -332,10 +610,8 @@ export function PopularVideosExplorer() {
               type="button"
               role="switch"
               aria-checked={koreanOnly}
-              onClick={() => {
-                setKoreanOnly((current) => !current);
-                setActiveVideoId(null);
-              }}
+              aria-haspopup={canUseFilters ? undefined : "dialog"}
+              onClick={() => applyFilter(() => setKoreanOnly((current) => !current))}
               className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${koreanOnly ? "border-emerald-300/60 bg-emerald-400/15 text-emerald-50" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
             >
               <span className={`relative h-5 w-9 rounded-full transition ${koreanOnly ? "bg-emerald-400" : "bg-white/15"}`} aria-hidden="true">
@@ -348,6 +624,7 @@ export function PopularVideosExplorer() {
               role="switch"
               aria-label="롱폼만 보기"
               aria-checked={longFormOnly}
+              aria-haspopup={canUseFilters ? undefined : "dialog"}
               onClick={() => applyFilter(() => setLongFormOnly((current) => !current))}
               className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${longFormOnly ? "border-[#ff8b7c]/60 bg-[#ff715e]/15 text-[#ffd0c9]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
             >
@@ -356,19 +633,22 @@ export function PopularVideosExplorer() {
               </span>
               롱폼만
             </button>
-            <button
-              type="button"
-              role="switch"
-              aria-label="재사용 허용 영상만 보기"
-              aria-checked={reusableOnly}
-              onClick={() => applyFilter(() => setReusableOnly((current) => !current))}
-              className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${reusableOnly ? "border-violet-300/60 bg-violet-400/15 text-violet-50" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
-            >
-              <span className={`relative h-5 w-9 rounded-full transition ${reusableOnly ? "bg-violet-400" : "bg-white/15"}`} aria-hidden="true">
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${reusableOnly ? "left-[18px]" : "left-0.5"}`} />
-              </span>
-              재사용 허용만
-            </button>
+            {dataType !== "reusable" && (
+              <button
+                type="button"
+                role="switch"
+                aria-label="재사용 허용 영상만 보기"
+                aria-checked={reusableOnly}
+                aria-haspopup={canUseFilters ? undefined : "dialog"}
+                onClick={() => requestReusableFilter(() => applyFilter(() => setReusableOnly((current) => !current)))}
+                className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${reusableOnly ? "border-violet-300/60 bg-violet-400/15 text-violet-50" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
+              >
+                <span className={`relative h-5 w-9 rounded-full transition ${reusableOnly ? "bg-violet-400" : "bg-white/15"}`} aria-hidden="true">
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${reusableOnly ? "left-[18px]" : "left-0.5"}`} />
+                </span>
+                재사용 허용만
+              </button>
+            )}
           </div>
         </div>
 
@@ -381,6 +661,7 @@ export function PopularVideosExplorer() {
                 type="button"
                 aria-label={`${option.label} 카테고리`}
                 aria-pressed={category === option.value}
+                aria-haspopup={canUseFilters ? undefined : "dialog"}
                 onClick={() => applyFilter(() => setCategory(option.value))}
                 className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition ${category === option.value ? "border-violet-300/60 bg-violet-400/15 text-violet-50 shadow-[0_0_18px_rgba(160,120,255,.1)]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
               >
@@ -404,7 +685,7 @@ export function PopularVideosExplorer() {
         </section>
       ) : response?.items.length ? (
         <div>
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{response.items.map((video, index) => <VideoCard key={video.videoId} video={video} rank={index + 1} active={activeVideoId === video.videoId} onOpen={() => setActiveVideoId(video.videoId)} onClose={() => setActiveVideoId(null)} onPrepare={() => preparePopularVideo(video)} />)}</div>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{response.items.map((video, index) => <VideoCard key={video.videoId} video={video} rank={index + 1} active={activeVideoId === video.videoId} onOpen={() => setActiveVideoId(video.videoId)} onClose={() => setActiveVideoId(null)} />)}</div>
           {response.nextCursor && (
             <div className="mt-10 flex flex-col items-center gap-3">
               <button
@@ -434,6 +715,17 @@ export function PopularVideosExplorer() {
           </div>
         </section>
       )}
+      <PopularFiltersPlanOverlay
+        open={planOverlayOpen}
+        isAuthenticated={isAuthenticated}
+        feature={planOverlayFeature}
+        onClose={closePlanOverlay}
+      />
+      <ReusableLicenseGuide
+        open={reusableGuideOpen}
+        onConfirm={() => finishReusableGuide(false)}
+        onDismiss={() => finishReusableGuide(true)}
+      />
     </main>
   );
 }

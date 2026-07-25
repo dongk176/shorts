@@ -45,6 +45,16 @@ describe("YouTube analysis persistence", () => {
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
 
+  it("does not persist a source shorter than three minutes", async () => {
+    await expect(
+      createYoutubeAnalysis(session, { ...metadata, durationSeconds: 179 }),
+    ).rejects.toMatchObject({
+      status: 400,
+      code: "SOURCE_VIDEO_TOO_SHORT",
+    });
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
   it("loads only a valid session-scoped analysis", async () => {
     mocks.getDb.mockReturnValue(dbWithRows([{
       id: "6bce83c4-b12e-4d11-8f16-2fef8a96c541",

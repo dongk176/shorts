@@ -43,7 +43,7 @@ describe("YouTube duration validation", () => {
             channelId: "UC1234567890",
             thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
           },
-          contentDetails: { duration: "PT2M" },
+          contentDetails: { duration: "PT3M" },
           status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
         }],
       }), { status: 200 }))
@@ -78,7 +78,7 @@ describe("YouTube duration validation", () => {
           channelTitle: "😀".repeat(80),
           thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
         },
-        contentDetails: { duration: "PT2M" },
+        contentDetails: { duration: "PT3M" },
         status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
       }],
     }), { status: 200 })));
@@ -89,6 +89,32 @@ describe("YouTube duration validation", () => {
     expect(result.channelName.endsWith("😀")).toBe(true);
     expect(result).toMatchObject({ creationAllowed: true, creationBlockReason: null });
     expect(String((fetch as ReturnType<typeof vi.fn>).mock.calls[0][0])).toContain("status");
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("rejects videos shorter than three minutes with a clear long-form requirement", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{
+        id: "dQw4w9WgXcQ",
+        snippet: {
+          title: "짧은 영상",
+          channelTitle: "채널",
+          thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
+        },
+        contentDetails: { duration: "PT2M59S" },
+        status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
+      }],
+    }), { status: 200 })));
+
+    await expect(
+      analyzeYoutubeUrl("https://youtu.be/dQw4w9WgXcQ"),
+    ).rejects.toMatchObject({
+      status: 400,
+      code: "SOURCE_VIDEO_TOO_SHORT",
+      message: "롱폼 영상만 사용할 수 있어요. 쇼츠를 만들려면 3분 이상의 영상을 입력해 주세요.",
+    });
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
@@ -116,37 +142,37 @@ describe("YouTube duration validation", () => {
 
   it.each([
     {
-      contentDetails: { duration: "PT2M", regionRestriction: { allowed: ["KR"] } },
+      contentDetails: { duration: "PT3M", regionRestriction: { allowed: ["KR"] } },
       status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
       code: "region_restricted",
     },
     {
-      contentDetails: { duration: "PT2M", regionRestriction: { blocked: ["US"] } },
+      contentDetails: { duration: "PT3M", regionRestriction: { blocked: ["US"] } },
       status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
       code: "region_restricted",
     },
     {
-      contentDetails: { duration: "PT2M", contentRating: { ytRating: "ytAgeRestricted" } },
+      contentDetails: { duration: "PT3M", contentRating: { ytRating: "ytAgeRestricted" } },
       status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
       code: "age_restricted",
     },
     {
-      contentDetails: { duration: "PT2M" },
+      contentDetails: { duration: "PT3M" },
       status: { uploadStatus: "processed", privacyStatus: "unlisted", embeddable: true },
       code: "not_public",
     },
     {
-      contentDetails: { duration: "PT2M" },
+      contentDetails: { duration: "PT3M" },
       status: { uploadStatus: "uploaded", privacyStatus: "public", embeddable: true },
       code: "not_processed",
     },
     {
-      contentDetails: { duration: "PT2M" },
+      contentDetails: { duration: "PT3M" },
       status: { uploadStatus: "deleted", privacyStatus: "public", embeddable: true },
       code: "removed",
     },
     {
-      contentDetails: { duration: "PT2M" },
+      contentDetails: { duration: "PT3M" },
       status: {
         uploadStatus: "rejected",
         privacyStatus: "public",
@@ -156,7 +182,7 @@ describe("YouTube duration validation", () => {
       code: "copyright_restricted",
     },
     {
-      contentDetails: { duration: "PT2M" },
+      contentDetails: { duration: "PT3M" },
       status: {
         uploadStatus: "processed",
         privacyStatus: "private",
@@ -200,7 +226,7 @@ describe("YouTube duration validation", () => {
           channelTitle: "채널",
           thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
         },
-        contentDetails: { duration: "PT2M" },
+        contentDetails: { duration: "PT3M" },
         status: { uploadStatus: "processed", privacyStatus: "public", embeddable: false },
       }],
     }), { status: 200 })));
@@ -226,7 +252,7 @@ describe("YouTube duration validation", () => {
           channelTitle: "채널",
           thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
         },
-        contentDetails: { duration: "PT2M" },
+        contentDetails: { duration: "PT3M" },
       }],
     }), { status: 200 })));
 
@@ -266,7 +292,7 @@ describe("YouTube duration validation", () => {
           channelTitle: "채널",
           thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
         },
-        contentDetails: { duration: "PT2M" },
+        contentDetails: { duration: "PT3M" },
         status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
         liveStreamingDetails: { scheduledStartTime: "2026-07-18T00:00:00Z" },
       }],

@@ -51,6 +51,9 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
   if (!jobIds.length) return new Map<string, GeneratedShort[]>();
   const rows = await db`
     select id, job_id, clip_index, start_seconds, end_seconds, duration_seconds,
+      selection_raw_start_seconds, selection_raw_end_seconds,
+      selection_raw_duration_seconds, selection_candidate_index,
+      selection_length_adjustment, selection_repositioned,
       hook_title, highlight_reason, channel_display_name, subtitle_segments, subtitles_enabled,
       comment_overlays, template_id, custom_template_id, template_snapshot, video_aspect_ratio, title_font_scale, title_text_styles,
       title_text_styles_initialized, render_version,
@@ -68,6 +71,22 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       startSeconds: Number(row.startSeconds),
       endSeconds: Number(row.endSeconds),
       durationSeconds: Number(row.durationSeconds),
+      selectionRawStartSeconds: row.selectionRawStartSeconds == null
+        ? null
+        : Number(row.selectionRawStartSeconds),
+      selectionRawEndSeconds: row.selectionRawEndSeconds == null
+        ? null
+        : Number(row.selectionRawEndSeconds),
+      selectionRawDurationSeconds: row.selectionRawDurationSeconds == null
+        ? null
+        : Number(row.selectionRawDurationSeconds),
+      selectionCandidateIndex: row.selectionCandidateIndex == null
+        ? null
+        : Number(row.selectionCandidateIndex),
+      selectionLengthAdjustment: row.selectionLengthAdjustment || null,
+      selectionRepositioned: row.selectionRepositioned == null
+        ? null
+        : Boolean(row.selectionRepositioned),
       hookTitle: row.hookTitle,
       highlightReason: row.highlightReason || "",
       channelDisplayName: row.channelDisplayName,

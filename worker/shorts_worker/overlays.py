@@ -746,6 +746,111 @@ def create_comment_panel(
     return output_path
 
 
+def create_landscape_comment_overlay(
+    comment: CommentOverlay,
+    output_path: Path,
+    *,
+    panel_height: int,
+    channel_name: str,
+    channel_thumbnail_path: Path | None = None,
+    overlay_mode: bool = False,
+) -> Path:
+    """Render the 16:9 comment preset with its channel row near the lower edge."""
+    comment_height = min(330, max(285, panel_height - 128))
+    create_comment_panel(
+        comment,
+        output_path,
+        panel_height=comment_height,
+        overlay_mode=overlay_mode,
+    )
+    with Image.open(output_path) as source:
+        comment_panel = source.convert("RGBA")
+    combined = Image.new(
+        "RGBA",
+        (PANEL_WIDTH, panel_height),
+        (4, 4, 4, 244) if overlay_mode else (4, 4, 4, 255),
+    )
+    combined.alpha_composite(comment_panel, (0, 0))
+    channel_layer = TemplateTextLayer.model_validate(
+        {
+            "visible": True,
+            "x": PANEL_WIDTH // 2,
+            "y": 0,
+            "maxWidth": 800,
+            "fontSize": 42,
+            "color": "#FFFFFF",
+            "backgroundColor": None,
+        }
+    )
+    _draw_custom_channel(
+        combined,
+        channel_name=channel_name,
+        layer=channel_layer,
+        center_y=panel_height - 180,
+        center_x=PANEL_WIDTH / 2,
+        channel_thumbnail_path=channel_thumbnail_path,
+    )
+    output = combined if overlay_mode else combined.convert("RGB")
+    output.save(output_path, format="PNG", optimize=True)
+    return output_path
+
+
+def create_fixed_comment_channel_overlay(
+    comment: CommentOverlay,
+    output_path: Path,
+    *,
+    panel_height: int,
+    channel_name: str,
+    channel_thumbnail_path: Path | None = None,
+    overlay_mode: bool = False,
+    channel_center_y: float | None = None,
+) -> Path:
+    """Render a comment card with a separately positioned channel row."""
+    comment_height = min(330, max(285, panel_height - 128))
+    create_comment_panel(
+        comment,
+        output_path,
+        panel_height=comment_height,
+        overlay_mode=overlay_mode,
+    )
+    with Image.open(output_path) as source:
+        comment_panel = source.convert("RGBA")
+    combined = Image.new(
+        "RGBA",
+        (PANEL_WIDTH, panel_height),
+        (4, 4, 4, 244) if overlay_mode else (4, 4, 4, 255),
+    )
+    combined.alpha_composite(comment_panel, (0, 0))
+    channel_layer = TemplateTextLayer.model_validate(
+        {
+            "visible": True,
+            "x": PANEL_WIDTH // 2,
+            "y": 0,
+            "maxWidth": 800,
+            "fontSize": 42,
+            "color": "#FFFFFF",
+            "backgroundColor": None,
+        }
+    )
+    channel_height = max(36, round(channel_layer.font_size * 1.25))
+    resolved_channel_center_y = (
+        channel_center_y
+        if channel_center_y is not None
+        else comment_height + 22 + channel_height / 2
+    )
+    _draw_custom_channel(
+        combined,
+        channel_name=channel_name,
+        layer=channel_layer,
+        center_y=resolved_channel_center_y,
+        center_x=PANEL_WIDTH / 2,
+        channel_thumbnail_path=channel_thumbnail_path,
+    )
+    output = combined if overlay_mode else combined.convert("RGB")
+    output.save(output_path, format="PNG", optimize=True)
+    return output_path
+
+
 def _draw_custom_channel(
     image: Image.Image,
     *,
@@ -819,6 +924,7 @@ def create_custom_comment_overlay(
     *,
     config: CustomTemplateConfig,
     channel_name: str,
+    comment_y: int | None = None,
     channel_thumbnail_path: Path | None = None,
 ) -> Path:
     """Create one opaque full-width card with an optional channel row below it."""
@@ -833,13 +939,19 @@ def create_custom_comment_overlay(
         return output_path
     with Image.open(output_path) as source:
         panel = source.convert("RGBA")
-    gap = round(21.6 * COMMENT_SIZE_SCALES[config.comment.size])
     channel_height = max(36, round(config.channel.font_size * 1.25))
     if config.channel.background_color:
         channel_height += max(8, round(config.channel.font_size * 0.24)) * 2
+    gap = round(21.6 * COMMENT_SIZE_SCALES[config.comment.size])
+    channel_center_y = panel.height + gap + channel_height / 2
+    if config.schema_version >= 4 and comment_y is not None:
+        channel_center_y = max(channel_center_y, config.channel.y - comment_y)
+    combined_height = round(channel_center_y + channel_height / 2)
+    if comment_y is not None:
+        combined_height = min(1920 - comment_y, combined_height)
     combined = Image.new(
         "RGBA",
-        (PANEL_WIDTH, panel.height + gap + channel_height),
+        (PANEL_WIDTH, combined_height),
         (0, 0, 0, 0),
     )
     combined.alpha_composite(panel, (0, 0))
@@ -847,7 +959,7 @@ def create_custom_comment_overlay(
         combined,
         channel_name=channel_name,
         layer=config.channel,
-        center_y=panel.height + gap + channel_height / 2,
+        center_y=channel_center_y,
         center_x=PANEL_WIDTH / 2,
         channel_thumbnail_path=channel_thumbnail_path,
     )

@@ -23,6 +23,8 @@ export type AdminMember = {
   paymentProvider: string | null;
   cardIssuer: string | null;
   cardNumberMasked: string | null;
+  projectCount: number;
+  shortCount: number;
 };
 
 const statusLabels: Record<string, string> = {
@@ -78,10 +80,15 @@ function statusTone(status: string | null) {
 
 export function AdminMembersDashboard({
   members,
-  initialQuery,
+  initialFilters,
 }: {
   members: AdminMember[];
-  initialQuery: string;
+  initialFilters: {
+    query: string;
+    memberType: string;
+    memberPlan: string;
+    memberActivity: string;
+  };
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState<AdminMember | null>(null);
@@ -145,14 +152,48 @@ export function AdminMembersDashboard({
               <h2 className="text-lg font-black">회원</h2>
               <p className="mt-1 text-xs text-neutral-500">최근 활동 회원 100명 · 구독 상태와 자동결제 상태를 함께 관리합니다.</p>
             </div>
-            <form className="flex gap-2" method="get">
+            <form className="grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-[240px_160px_160px_160px_auto]" method="get">
               <input type="hidden" name="tab" value="members" />
               <input
                 name="q"
-                defaultValue={initialQuery}
+                defaultValue={initialFilters.query}
                 placeholder="이메일·이름·회원 ID"
-                className="h-10 w-64 rounded-xl border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]"
+                className="h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]"
               />
+              <select
+                name="memberType"
+                defaultValue={initialFilters.memberType}
+                aria-label="회원 결제 상태"
+                className="h-10 rounded-xl border border-white/10 bg-[#151819] px-3 text-sm outline-none focus:border-[#ff8c7c]"
+              >
+                <option value="all">전체 회원</option>
+                <option value="free">무료 회원</option>
+                <option value="paid_active">활성 유료</option>
+                <option value="paid_attention">결제 확인 필요</option>
+                <option value="paid_inactive">종료 유료</option>
+              </select>
+              <select
+                name="memberPlan"
+                defaultValue={initialFilters.memberPlan}
+                aria-label="회원 상품군"
+                className="h-10 rounded-xl border border-white/10 bg-[#151819] px-3 text-sm outline-none focus:border-[#ff8c7c]"
+              >
+                <option value="all">전체 상품</option>
+                <option value="monthly">월간 자동결제</option>
+                <option value="starter">스타터 패키지</option>
+                <option value="expert">전문가 패키지</option>
+              </select>
+              <select
+                name="memberActivity"
+                defaultValue={initialFilters.memberActivity}
+                aria-label="회원 생성 활동"
+                className="h-10 rounded-xl border border-white/10 bg-[#151819] px-3 text-sm outline-none focus:border-[#ff8c7c]"
+              >
+                <option value="all">전체 활동</option>
+                <option value="with_projects">프로젝트 생성</option>
+                <option value="with_shorts">쇼츠 생성</option>
+                <option value="no_projects">미생성 회원</option>
+              </select>
               <button className="h-10 rounded-xl bg-white px-4 text-sm font-black text-black transition hover:bg-neutral-200">조회</button>
             </form>
           </div>
@@ -160,12 +201,13 @@ export function AdminMembersDashboard({
 
         {message && <p role="status" className="border-b border-white/10 bg-[#ff8c7c]/10 px-5 py-3 text-sm font-bold text-[#ffb4a8]">{message}</p>}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1250px] text-left text-sm">
+          <table className="w-full min-w-[1370px] text-left text-sm">
             <thead className="bg-black/20 text-xs text-neutral-500">
               <tr>
                 <th className="px-5 py-3">회원</th>
                 <th className="px-4 py-3">가입 / 최근 로그인</th>
                 <th className="px-4 py-3">플랜</th>
+                <th className="px-4 py-3">생성 수</th>
                 <th className="px-4 py-3">구독 상태</th>
                 <th className="px-4 py-3">현재 이용기간</th>
                 <th className="px-4 py-3">결제수단</th>
@@ -188,6 +230,10 @@ export function AdminMembersDashboard({
                   <td className="px-4 py-4">
                     <p className="font-black">{planLabel(member.planCode)}</p>
                     <p className="mt-1 text-xs text-neutral-500">{cycleLabel(member.planCode, member.billingCycle)}</p>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-4">
+                    <p className="font-black text-neutral-100">프로젝트 {member.projectCount.toLocaleString("ko-KR")}개</p>
+                    <p className="mt-1 text-xs font-bold text-[#ff9b8d]">쇼츠 {member.shortCount.toLocaleString("ko-KR")}개</p>
                   </td>
                   <td className="px-4 py-4">
                     <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-black ${statusTone(member.subscriptionStatus)}`}>
@@ -227,7 +273,7 @@ export function AdminMembersDashboard({
                 </tr>
               ))}
               {!members.length && (
-                <tr><td colSpan={8} className="px-5 py-16 text-center text-neutral-500">조건에 맞는 회원이 없습니다.</td></tr>
+                <tr><td colSpan={9} className="px-5 py-16 text-center text-neutral-500">조건에 맞는 회원이 없습니다.</td></tr>
               )}
             </tbody>
           </table>

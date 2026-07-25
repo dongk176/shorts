@@ -4,6 +4,9 @@ import { templateIds, videoAspectRatios, type TemplateId, type VideoAspectRatio 
 export const TEMPLATE_CANVAS = { width: 1080, height: 1920 } as const;
 export const MAX_PERSONAL_TEMPLATES = 50;
 export const COMMENT_BACKGROUND_COLOR = "#040404" as const;
+export const COMMENT_CAPTURE_LANDSCAPE_LIFT_PX = 160;
+export const PRESET_SQUARE_CHANNEL_CENTER_Y = 1580;
+export const COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y = 1840;
 
 export const stockBackgrounds = [
   { id: "news-blue-geometric", label: "뉴스 블루", src: "/template-backgrounds/news-blue-geometric.png" },
@@ -111,6 +114,13 @@ const sharedTemplateLayers = {
 } as const;
 
 const currentTemplateConfigSchema = z.object({
+  schemaVersion: z.literal(4),
+  ...sharedTemplateLayers,
+  title: titleLayerSchema,
+  comment: commentLayerSchema,
+}).strict();
+
+const versionThreeTemplateConfigSchema = z.object({
   schemaVersion: z.literal(3),
   ...sharedTemplateLayers,
   title: titleLayerSchema,
@@ -147,6 +157,7 @@ const legacyTemplateConfigSchema = z.object({
 
 export const templateConfigSchema = z.union([
   currentTemplateConfigSchema,
+  versionThreeTemplateConfigSchema,
   previousTemplateConfigSchema,
   legacyTemplateConfigSchema,
 ]).superRefine((config, context) => {
@@ -213,12 +224,14 @@ function defaultCommentLayer(video: { y: number; height: number }) {
 export function createDefaultTemplateConfig(baseTemplateId: TemplateId = "dark-minimal"): TemplateConfig {
   const light = baseTemplateId === "white-yellow" || baseTemplateId === "paper";
   const accent = baseTemplateId === "comment-capture" ? "#35E6E3" : baseTemplateId === "white-yellow" ? "#FFD84D" : "#FF4D4F";
+  const video = videoFrameForAspect(baseTemplateId === "comment-capture" ? "16:9" : "5:4");
+  if (baseTemplateId === "comment-capture") video.y -= COMMENT_CAPTURE_LANDSCAPE_LIFT_PX;
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     background: { kind: "color", color: baseTemplateId === "comment-capture" ? COMMENT_BACKGROUND_COLOR : light ? "#F3F0E9" : "#111111" },
-    video: videoFrameForAspect("5:4"),
+    video,
     title: {
-      visible: true, x: 540, y: 250, maxWidth: 920, fontSize: 72,
+      visible: true, x: 540, y: baseTemplateId === "comment-capture" ? 90 : 250, maxWidth: 920, fontSize: 72,
       primaryColor: light ? "#111111" : "#FFFFFF", accentColor: accent,
       primaryBackgroundColor: null, accentBackgroundColor: null,
     },
@@ -227,11 +240,11 @@ export function createDefaultTemplateConfig(baseTemplateId: TemplateId = "dark-m
       color: "#FFFFFF", backgroundColor: "#000000",
     },
     channel: {
-      visible: baseTemplateId !== "comment-capture", x: 540, y: 1650, maxWidth: 800, fontSize: 42,
+      visible: true, x: 540, y: baseTemplateId === "comment-capture" ? 1740 : 1650, maxWidth: 800, fontSize: 42,
       color: light ? "#353438" : "#FFFFFF", backgroundColor: null,
     },
     comment: {
-      ...defaultCommentLayer(videoFrameForAspect("5:4")),
+      ...defaultCommentLayer(video),
       visible: baseTemplateId === "comment-capture",
     },
   };

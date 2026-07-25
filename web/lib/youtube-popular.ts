@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { parseIsoDuration } from "@/lib/youtube";
 import { isKoreanVideo } from "@/lib/youtube-language";
 
-export const popularVideoTypes = ["trending", "views"] as const;
+export const popularVideoTypes = ["trending", "views", "reusable"] as const;
 export const POPULAR_VIDEO_LONG_FORM_SECONDS = 4 * 60;
 export const POPULAR_VIDEO_CATEGORY_PAGE_LIMIT = 15;
 export const popularVideoCategories = [
@@ -473,9 +473,9 @@ export async function getPopularVideos(
       from historical_candidates
       where duplicate_rank=1
       order by
-        last_seen_at desc,
-        case when ${type}='trending' then category_rank end asc,
         case when ${type}='views' then view_count end desc,
+        case when ${type}='trending' then last_seen_at end desc,
+        case when ${type}='trending' then category_rank end asc,
         published_at desc,
         view_count desc,
         video_id asc
@@ -493,6 +493,7 @@ export async function getPopularVideos(
           ) as duplicate_rank
         from shorts_mvp.popular_video_items
         where run_id=${run.id}
+          and (${type}<>'views' or license <> 'creativeCommon')
           and (${category}='all' or category=${category})
           and (${longFormOnly}=false or duration_seconds >= ${POPULAR_VIDEO_LONG_FORM_SECONDS})
           and (${koreanOnly}=false or is_korean)

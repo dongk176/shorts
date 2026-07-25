@@ -57,6 +57,30 @@ def _custom_template_config(item: dict[str, object]) -> CustomTemplateConfig | N
     return CustomTemplateConfig.model_validate(config) if isinstance(config, dict) else None
 
 
+def _preset_comment_channel_below(item: dict[str, object]) -> bool:
+    snapshot = item.get("template_snapshot")
+    if not isinstance(snapshot, dict):
+        return False
+    version = snapshot.get("presetVersion")
+    return isinstance(version, int) and not isinstance(version, bool) and version == 2
+
+
+def _preset_comment_channel_fixed(item: dict[str, object]) -> bool:
+    snapshot = item.get("template_snapshot")
+    if not isinstance(snapshot, dict):
+        return False
+    version = snapshot.get("presetVersion")
+    return isinstance(version, int) and not isinstance(version, bool) and version >= 3
+
+
+def _preset_fixed_channel_position(item: dict[str, object]) -> bool:
+    snapshot = item.get("template_snapshot")
+    if not isinstance(snapshot, dict):
+        return False
+    version = snapshot.get("presetVersion")
+    return isinstance(version, int) and not isinstance(version, bool) and version >= 3
+
+
 def _log_event(event: str, **fields: object) -> None:
     print(json.dumps({"event": event, **fields}, separators=(",", ":"), default=str), flush=True)
 
@@ -1705,6 +1729,9 @@ class BatchWorker:
                 channel_thumbnail_path=channel_thumbnail_path,
                 video_aspect_ratio=VideoAspectRatio(str(item.get("video_aspect_ratio") or "1:1")),
                 comment_overlays=comments,
+                comment_channel_below=_preset_comment_channel_below(item),
+                comment_channel_fixed=_preset_comment_channel_fixed(item),
+                fixed_preset_channel=_preset_fixed_channel_position(item),
                 title_text_styles=title_text_styles,
                 custom_template_config=_custom_template_config(item),
                 metrics_callback=render_metrics.update,
@@ -1863,6 +1890,9 @@ class BatchWorker:
                 channel_thumbnail_path=channel_thumbnail_path,
                 video_aspect_ratio=VideoAspectRatio(str(item.get("video_aspect_ratio") or "1:1")),
                 comment_overlays=comments,
+                comment_channel_below=_preset_comment_channel_below(item),
+                comment_channel_fixed=_preset_comment_channel_fixed(item),
+                fixed_preset_channel=_preset_fixed_channel_position(item),
                 title_text_styles=title_text_styles,
                 custom_template_config=_custom_template_config(item),
             )

@@ -96,6 +96,12 @@ const phrases: readonly Phrase[] = [
 
   ["실시간 인기", "Trending now", "リアルタイム人気"],
   ["지금 떠오르는 영상을 놓치지 마세요.", "Don't miss the videos trending right now.", "今注目されている動画を見逃さないでください。"],
+  ["활성 구독 또는 기간 패키지로 원하는 영상만 빠르게 찾아보세요.", "Use an active subscription or term package to quickly find the right videos.", "有効なサブスクリプションまたは期間パッケージで、目的の動画をすばやく見つけましょう。"],
+  ["필터", "Filters", "フィルター"],
+  ["활성 이용권 전용", "Active plan only", "有効なプラン限定"],
+  ["실시간 인기 필터 이용 안내", "Trending filter access", "リアルタイム人気フィルターのご案内"],
+  ["해당 기능은 구독 또는 기간 패키지가 활성화되어 있을 때 사용할 수 있어요.", "This feature is available while a subscription or term package is active.", "この機能は、サブスクリプションまたは期間パッケージが有効な場合に利用できます。"],
+  ["해당 기능은 로그인 후 구독 또는 기간 패키지가 활성화되어 있을 때 사용할 수 있어요.", "Sign in and activate a subscription or term package to use this feature.", "ログイン後、サブスクリプションまたは期間パッケージが有効な場合に利用できます。"],
   ["인기 영상을 불러오는 중", "Loading trending videos", "人気動画を読み込み中"],
   ["인기 영상을 불러오지 못했습니다", "Could not load trending videos", "人気動画を読み込めませんでした"],
   ["인기 영상 필터", "Trending video filters", "人気動画フィルター"],

@@ -19,15 +19,33 @@ function previewBackground(template: CustomTemplate) {
   };
 }
 
-function PreviewChannel({ template, label, inCommentFlow = false }: { template: CustomTemplate; label: string; inCommentFlow?: boolean }) {
+function PreviewChannel({
+  template,
+  label,
+  inCommentFlow = false,
+  commentY = 0,
+}: {
+  template: CustomTemplate;
+  label: string;
+  inCommentFlow?: boolean;
+  commentY?: number;
+}) {
   const channel = template.config.channel;
   if (!channel.visible) return null;
-  const flowStyle = inCommentFlow
-    ? { width: customCanvasWidth(channel.maxWidth) }
+  const positionedBelow = inCommentFlow && template.config.schemaVersion >= 4;
+  const flowStyle = positionedBelow
+    ? {
+        left: "50%",
+        top: customCanvasWidth(channel.y - commentY),
+        transform: "translate(-50%, -50%)",
+        width: customCanvasWidth(channel.maxWidth),
+      }
+    : inCommentFlow
+      ? { width: customCanvasWidth(channel.maxWidth) }
     : customCenteredLayerStyle(channel);
   return (
     <div
-      className={`${inCommentFlow ? "relative mx-auto mt-[2cqw] block" : "absolute"} z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold`}
+      className={`${positionedBelow ? "absolute" : inCommentFlow ? "relative mx-auto mt-[2cqw] block" : "absolute"} z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold`}
       style={{ ...flowStyle, color: channel.color, backgroundColor: channel.backgroundColor || "transparent", fontSize: customCanvasWidth(channel.fontSize) }}
     >
       ● {label}
@@ -62,7 +80,7 @@ export function CustomTemplateCanvasPreview({
       {commentLayerEnabled
         ? <div className="absolute inset-x-0 z-40" style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>
             {config.comment.visible && <TemplateCommentPreview theme={config.comment.theme} size={config.comment.size} />}
-            <PreviewChannel template={template} label={channelLabel} inCommentFlow />
+            <PreviewChannel template={template} label={channelLabel} inCommentFlow commentY={commentY} />
           </div>
         : <PreviewChannel template={template} label={channelLabel} />}
     </div>

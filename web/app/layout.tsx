@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { StructuredData } from "@/components/structured-data";
+import { GoogleAnalytics } from "@/components/google-analytics";
 import { LanguageSelector } from "@/components/language-selector";
 import { UsageProvider, type UsageState } from "@/components/usage-provider";
 import { getDb } from "@/lib/db";
@@ -136,6 +137,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           <UsageProvider initialState={initialUsageState}>
             {children}
           </UsageProvider>
+          <GoogleAnalytics measurementId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID} />
           <LanguageSelector />
         </I18nProvider>
       </body>

@@ -193,6 +193,12 @@ export type GeneratedShort = {
   startSeconds: number;
   endSeconds: number;
   durationSeconds: number;
+  selectionRawStartSeconds?: number | null;
+  selectionRawEndSeconds?: number | null;
+  selectionRawDurationSeconds?: number | null;
+  selectionCandidateIndex?: number | null;
+  selectionLengthAdjustment?: "none" | "min_clamp" | "max_clamp" | null;
+  selectionRepositioned?: boolean | null;
   hookTitle: string;
   highlightReason: string;
   channelDisplayName: string;

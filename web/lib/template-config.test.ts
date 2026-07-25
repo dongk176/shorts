@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMMENT_BACKGROUND_COLOR, createDefaultTemplateConfig, templateConfigSchema, templatePresetColorOptions, templatePresetColors, videoFrameForAspect } from "@/lib/template-config";
+import { COMMENT_BACKGROUND_COLOR, COMMENT_CAPTURE_LANDSCAPE_LIFT_PX, createDefaultTemplateConfig, templateConfigSchema, templatePresetColorOptions, templatePresetColors, videoFrameForAspect } from "@/lib/template-config";
 
 describe("personal template config", () => {
   it("creates bounded frames for every supported aspect ratio", () => {
@@ -24,9 +24,16 @@ describe("personal template config", () => {
     expect(createDefaultTemplateConfig().subtitle.visible).toBe(false);
   });
 
-  it("starts comment capture templates with the channel layer hidden", () => {
+  it("starts new comment capture templates in 16:9 with the channel below comments", () => {
     const commentConfig = createDefaultTemplateConfig("comment-capture");
-    expect(commentConfig.channel.visible).toBe(false);
+    const centeredLandscape = videoFrameForAspect("16:9");
+    expect(commentConfig.video).toEqual({
+      ...centeredLandscape,
+      y: centeredLandscape.y - COMMENT_CAPTURE_LANDSCAPE_LIFT_PX,
+    });
+    expect(commentConfig.title.y).toBe(250 - COMMENT_CAPTURE_LANDSCAPE_LIFT_PX);
+    expect(commentConfig.channel.visible).toBe(true);
+    expect(commentConfig.channel.y).toBeGreaterThan(commentConfig.comment.y);
     expect(commentConfig.comment).toEqual({
       visible: true,
       theme: "dark",
@@ -78,6 +85,18 @@ describe("personal template config", () => {
       y: parsed.video.y + parsed.video.height,
       dockedToVideo: true,
     });
+  });
+
+  it("preserves saved legacy comment frame and channel visibility", () => {
+    const saved = createDefaultTemplateConfig("comment-capture");
+    saved.video = videoFrameForAspect("5:4");
+    saved.channel.visible = false;
+    saved.comment.y = saved.video.y + saved.video.height;
+    const parsed = templateConfigSchema.parse(saved);
+
+    expect(parsed.video).toEqual(videoFrameForAspect("5:4"));
+    expect(parsed.channel.visible).toBe(false);
+    expect(parsed.comment.y).toBe(parsed.video.y + parsed.video.height);
   });
 
   it("provides a display name for every selectable template color", () => {

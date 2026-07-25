@@ -27,6 +27,12 @@ describe("generated short details", () => {
         startSeconds: "12",
         endSeconds: "54",
         durationSeconds: "42",
+        selectionRawStartSeconds: "10",
+        selectionRawEndSeconds: "58",
+        selectionRawDurationSeconds: "48",
+        selectionCandidateIndex: 2,
+        selectionLengthAdjustment: "none",
+        selectionRepositioned: true,
         hookTitle: "후킹 제목",
         highlightReason: "반전이 드러나는 핵심 발언이 포함된 구간입니다.",
         channelDisplayName: "채널",
@@ -50,6 +56,14 @@ describe("generated short details", () => {
     expect(shorts.get("job-a")?.[0]?.titleTextStyles).toEqual([
       { start: 0, end: 2, color: "#00FF00" },
     ]);
+    expect(shorts.get("job-a")?.[0]).toMatchObject({
+      selectionRawStartSeconds: 10,
+      selectionRawEndSeconds: 58,
+      selectionRawDurationSeconds: 48,
+      selectionCandidateIndex: 2,
+      selectionLengthAdjustment: "none",
+      selectionRepositioned: true,
+    });
   });
 
   it("maps a permanent short without an expiry timestamp", async () => {

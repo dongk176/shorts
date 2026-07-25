@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { expectedShortCount, type YoutubeCreationBlockCode } from "@/lib/contracts";
+import { assertSupportedSourceVideoDuration } from "@/lib/source-video";
 
 const youtubeId = /^[A-Za-z0-9_-]{11}$/;
 const UNAVAILABLE_VIDEO_MESSAGE = "유효하지 않거나 현재 시청할 수 없는 영상입니다 (비공개, 삭제, 또는 멤버십 전용)";
@@ -159,7 +160,7 @@ export async function analyzeYoutubeUrl(input: string) {
     throw new Error(UNAVAILABLE_VIDEO_MESSAGE);
   }
   const durationSeconds = parseIsoDuration(item.contentDetails.duration);
-  if (durationSeconds <= 0 || durationSeconds > 3600) throw new Error("최대 60분 길이의 영상까지만 만들 수 있습니다.");
+  assertSupportedSourceVideoDuration(durationSeconds);
   const thumbnails = Object.values(item.snippet.thumbnails);
   const availability = getYoutubeCreationAvailability(item);
   const channelThumbnailUrl = await getChannelThumbnailUrl(item.snippet.channelId, apiKey);

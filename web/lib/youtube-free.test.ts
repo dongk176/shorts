@@ -99,6 +99,35 @@ describe("free YouTube search collection", () => {
     expect(result.items).toHaveLength(3);
   });
 
+  it("supports category-scoped Creative Commons discovery without a keyword", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        items: [{ id: { videoId: "creativeVid1" } }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        items: [detail("creativeVid1", {
+          status: { privacyStatus: "public", license: "creativeCommon", embeddable: true },
+        })],
+      }));
+
+    const result = await collectSearchVideoPages({
+      maxPages: 1,
+      now: new Date("2026-07-25T08:00:00.000Z"),
+      fetchImpl: fetchMock,
+      sources: [{ videoCategoryId: "20", publishedAfter: null }],
+      videoLicense: "creativeCommon",
+    });
+
+    const searchUrl = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(searchUrl.searchParams.get("q")).toBeNull();
+    expect(searchUrl.searchParams.get("videoCategoryId")).toBe("20");
+    expect(searchUrl.searchParams.get("videoLicense")).toBe("creativeCommon");
+    expect(searchUrl.searchParams.get("order")).toBe("viewCount");
+    expect(searchUrl.searchParams.get("publishedAfter")).toBeNull();
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].license).toBe("creativeCommon");
+  });
+
   it("excludes live, private, and incomplete details", async () => {
     const ids = ["liveVideo01", "privateVid1", "noEmbedVid1", "missingView1", "validVideo1"];
     const fetchMock = vi.fn<typeof fetch>()

@@ -10,6 +10,7 @@
 - `user_subscriptions`: 결제 주기, 현재 기간, 더페이원 일정, 변경·해지·수동검토 상태
 - `billing_orders`, `billing_attempts`: 서버 가격 스냅샷, 승인번호·PG 거래일, 할부개월·캠페인 조건 스냅샷, 패키지 상품별 계정당 1회 구매 제약과 승인 시도 기록
 - `billing_payment_events`: 더페이원 `trxId` 멱등성, 주문 대조 및 결과 통지 처리 기록
+- `popular_filter_usage_events`: 유료 실시간 인기 필터 결과를 서버가 정상 제공한 시각·조건·결과 수와 당시 권한을 제공한 구독·주문 원장
 - `admin_billing_refunds`, `admin_subscription_changes`, `admin_audit_logs`: 관리자 환불·회원 구독 상태 변경 멱등 원장과 관리자 작업 감사 기록
 - `subscription_upgrade_refunds`: 과거 판매 플랜의 수동 부분환불 기록 보존용 원장(신규 상품에서는 생성하지 않음)
 - `installment_campaigns`, `installment_campaign_terms`: 관리자 초안·게시형 월별 카드 할부 혜택

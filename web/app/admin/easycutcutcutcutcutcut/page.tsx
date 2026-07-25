@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireAdminUser } from "@/lib/admin";
+import { addKstMonths } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { createNoIndexMetadata } from "@/lib/seo";
@@ -50,6 +51,18 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     : "all";
   const provider = ["nicepay", "thepayone"].includes(requestedProvider) ? requestedProvider : "all";
   const query = first(params.q).trim().slice(0, 100);
+  const requestedMemberType = first(params.memberType);
+  const memberType = ["free", "paid_active", "paid_attention", "paid_inactive"].includes(requestedMemberType)
+    ? requestedMemberType
+    : "all";
+  const requestedMemberPlan = first(params.memberPlan);
+  const memberPlan = ["monthly", "starter", "expert"].includes(requestedMemberPlan)
+    ? requestedMemberPlan
+    : "all";
+  const requestedMemberActivity = first(params.memberActivity);
+  const memberActivity = ["with_projects", "with_shorts", "no_projects"].includes(requestedMemberActivity)
+    ? requestedMemberActivity
+    : "all";
   const db = getDb();
   const metricRows = await db`
       select
@@ -74,18 +87,26 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const orderRows = tab === "billing" ? await db`
       select o.id,o.order_id,o.kind,o.product_code,o.billing_cycle,o.amount_krw,
         o.refunded_amount_krw,o.refund_status,o.status,o.provider,o.provider_transaction_id,
-        o.provider_status,o.failure_code,o.approved_at,o.created_at,u.email,
-        s.status as subscription_status,
-        coalesce(ur.reserved_refund_krw,0)::integer as reserved_refund_krw
+        o.provider_status,o.failure_code,o.renewal_period_start,o.approved_at,o.created_at,u.email,
+        s.status as subscription_status,p.prepaid_months,
+        coalesce(ur.reserved_refund_krw,0)::integer as reserved_refund_krw,
+        coalesce(pfu.usage_count,0)::integer as popular_filter_usage_count,
+        pfu.last_used_at as popular_filter_last_used_at
       from shorts_mvp.billing_orders o
       join shorts_mvp.app_users u on u.id=o.user_id
       left join shorts_mvp.user_subscriptions s on s.id=o.subscription_id
+      left join shorts_mvp.plans p on p.code=o.product_code
       left join (
         select source_order_id, sum(refund_amount_krw)::integer as reserved_refund_krw
         from shorts_mvp.subscription_upgrade_refunds
         where status in ('pending','submitted','manual_review')
         group by source_order_id
       ) ur on ur.source_order_id=o.id
+      left join lateral (
+        select count(*)::integer as usage_count,max(occurred_at) as last_used_at
+        from shorts_mvp.popular_filter_usage_events
+        where billing_order_id=o.id
+      ) pfu on true
       where (${status}='all' or o.status=${status})
         and (${provider}='all' or o.provider=${provider})
         and (
@@ -114,7 +135,9 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         s.id as subscription_id,s.plan_code,s.billing_cycle,s.status as subscription_status,
         s.current_period_start,s.current_period_end,s.next_charge_at,
         s.provider_schedule_status,s.billing_review_status,s.billing_review_reason,
-        s.payment_provider,m.issuer_name,m.card_number_masked
+        s.payment_provider,m.issuer_name,m.card_number_masked,
+        coalesce(projects.project_count,0)::integer as project_count,
+        coalesce(shorts.short_count,0)::integer as short_count
       from shorts_mvp.app_users u
       left join lateral (
         select subscription.*
@@ -126,11 +149,40 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         limit 1
       ) s on true
       left join shorts_mvp.billing_payment_methods m on m.id=s.payment_method_id
+      left join lateral (
+        select count(*)::integer as project_count
+        from shorts_mvp.video_jobs project
+        where project.user_id=u.id
+      ) projects on true
+      left join lateral (
+        select count(*)::integer as short_count
+        from shorts_mvp.generated_shorts generated_short
+        where generated_short.user_id=u.id
+      ) shorts on true
       where (
         ${query}=''
         or lower(coalesce(u.email,'')) like ${`%${query.toLowerCase()}%`}
         or lower(coalesce(u.display_name,'')) like ${`%${query.toLowerCase()}%`}
         or u.id::text=${query}
+      )
+      and (
+        ${memberType}='all'
+        or (${memberType}='free' and s.id is null)
+        or (${memberType}='paid_active' and s.status in ('active','trialing') and coalesce(s.billing_review_status,'')<>'manual_review')
+        or (${memberType}='paid_attention' and (s.status='past_due' or s.billing_review_status='manual_review'))
+        or (${memberType}='paid_inactive' and s.status in ('canceled','expired','paused'))
+      )
+      and (
+        ${memberPlan}='all'
+        or (${memberPlan}='monthly' and s.billing_cycle='monthly')
+        or (${memberPlan}='starter' and s.plan_code like 'starter_%')
+        or (${memberPlan}='expert' and s.plan_code like 'expert_%')
+      )
+      and (
+        ${memberActivity}='all'
+        or (${memberActivity}='with_projects' and coalesce(projects.project_count,0)>0)
+        or (${memberActivity}='with_shorts' and coalesce(shorts.short_count,0)>0)
+        or (${memberActivity}='no_projects' and coalesce(projects.project_count,0)=0)
       )
       order by coalesce(u.last_sign_in_at,u.created_at) desc
       limit 100
@@ -138,26 +190,38 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
 
   const metrics = metricRows[0] || {};
   const subscriptions = subscriptionRows[0] || {};
-  const orders: AdminOrder[] = orderRows.map((row) => ({
-    id: row.id,
-    orderId: row.orderId,
-    kind: row.kind,
-    productCode: row.productCode,
-    billingCycle: row.billingCycle || null,
-    amountKrw: Number(row.amountKrw),
-    refundedAmountKrw: Number(row.refundedAmountKrw || 0),
-    reservedRefundKrw: Number(row.reservedRefundKrw || 0),
-    refundStatus: row.refundStatus,
-    status: row.status,
-    provider: row.provider,
-    providerTransactionId: row.providerTransactionId || null,
-    providerStatus: row.providerStatus || null,
-    failureCode: row.failureCode || null,
-    approvedAt: iso(row.approvedAt),
-    createdAt: iso(row.createdAt)!,
-    email: row.email || "-",
-    subscriptionStatus: row.subscriptionStatus || null,
-  }));
+  const orders: AdminOrder[] = orderRows.map((row) => {
+    const contractStart = row.renewalPeriodStart instanceof Date
+      ? row.renewalPeriodStart
+      : row.approvedAt instanceof Date
+        ? row.approvedAt
+        : null;
+    const contractMonths = row.billingCycle === "yearly" ? Number(row.prepaidMonths || 12) : 1;
+    return {
+      id: row.id,
+      orderId: row.orderId,
+      kind: row.kind,
+      productCode: row.productCode,
+      billingCycle: row.billingCycle || null,
+      amountKrw: Number(row.amountKrw),
+      refundedAmountKrw: Number(row.refundedAmountKrw || 0),
+      reservedRefundKrw: Number(row.reservedRefundKrw || 0),
+      refundStatus: row.refundStatus,
+      status: row.status,
+      provider: row.provider,
+      providerTransactionId: row.providerTransactionId || null,
+      providerStatus: row.providerStatus || null,
+      failureCode: row.failureCode || null,
+      approvedAt: iso(row.approvedAt),
+      createdAt: iso(row.createdAt)!,
+      email: row.email || "-",
+      subscriptionStatus: row.subscriptionStatus || null,
+      contractPeriodStart: iso(contractStart),
+      contractPeriodEnd: contractStart ? addKstMonths(contractStart, contractMonths).toISOString() : null,
+      popularFilterUsageCount: Number(row.popularFilterUsageCount || 0),
+      popularFilterLastUsedAt: iso(row.popularFilterLastUsedAt),
+    };
+  });
   const refunds: AdminRefund[] = refundRows.map((row) => ({
     id: row.id,
     billingOrderId: row.billingOrderId,
@@ -192,6 +256,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     paymentProvider: row.paymentProvider || null,
     cardIssuer: row.issuerName || null,
     cardNumberMasked: row.cardNumberMasked || null,
+    projectCount: Number(row.projectCount || 0),
+    shortCount: Number(row.shortCount || 0),
   }));
 
   return (
@@ -264,7 +330,10 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             initialFilters={{ status, provider, query }}
           />
         ) : tab === "members" ? (
-          <AdminMembersDashboard members={members} initialQuery={query} />
+          <AdminMembersDashboard
+            members={members}
+            initialFilters={{ query, memberType, memberPlan, memberActivity }}
+          />
         ) : (
           <AdminInstallmentsDashboard />
         )}

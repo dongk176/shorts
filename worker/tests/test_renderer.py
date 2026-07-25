@@ -10,10 +10,13 @@ from PIL import Image
 
 from shorts_worker.config import Settings
 from shorts_worker.renderer import (
+    COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
+    PRESET_SQUARE_CHANNEL_CENTER_Y,
     VideoRenderer,
     continuous_comment_windows,
     create_comment_timeline_manifest,
     custom_video_geometry_filters,
+    lifted_comment_landscape_layout,
     video_layout,
 )
 from shorts_worker.schemas import (
@@ -106,7 +109,11 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
         work_dir=tmp_path / "work",
         video_aspect_ratio=video_aspect_ratio,
     )
-    comment_template = video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+    comment_template = video_aspect_ratio in {
+        VideoAspectRatio.LANDSCAPE,
+        VideoAspectRatio.LANDSCAPE_FIVE_FOUR,
+        VideoAspectRatio.SQUARE,
+    }
     comments = (
         [CommentOverlay.model_validate(comment) for comment in default_comment_overlays(2.0)]
         if comment_template
@@ -133,6 +140,8 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
         channel_thumbnail_path=channel_thumbnail,
         video_aspect_ratio=video_aspect_ratio,
         comment_overlays=comments,
+        comment_channel_fixed=comment_template,
+        fixed_preset_channel=True,
         metrics_callback=render_metrics.update,
     )
     if comment_template:
@@ -179,6 +188,24 @@ def test_video_layout_centers_non_full_ratios_and_reserves_safe_overlays() -> No
     assert full.overlay_mode is True
     assert full.top_y == 96
     assert full.bottom_y == 1620
+
+
+def test_versioned_comment_landscape_layout_moves_the_whole_stack_up() -> None:
+    centered = video_layout(VideoAspectRatio.LANDSCAPE)
+    lifted = lifted_comment_landscape_layout()
+
+    assert lifted.video_y == centered.video_y - 160
+    assert lifted.top_height == centered.top_height - 160
+    assert lifted.bottom_y == centered.bottom_y - 160
+    assert lifted.bottom_height == centered.bottom_height + 160
+    assert lifted.subtitle_margin_v == centered.subtitle_margin_v + 160
+
+
+def test_preset_channel_positions_use_the_square_layout_reference() -> None:
+    square = video_layout(VideoAspectRatio.SQUARE)
+
+    assert PRESET_SQUARE_CHANNEL_CENTER_Y == square.bottom_y + 80
+    assert COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y == square.bottom_y + 340
 
 
 def test_comment_windows_cover_entire_clip_even_when_saved_ranges_have_gaps() -> None:

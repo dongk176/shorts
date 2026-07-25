@@ -1,6 +1,6 @@
 import type { Sql } from "postgres";
 import { describe, expect, it, vi } from "vitest";
-import { getPopularSearchVideos } from "./youtube-popular-search";
+import { getPopularSearchVideos, getReusablePopularVideos } from "./youtube-popular-search";
 import { getPopularVideos, getStoredPopularVideo } from "./youtube-popular";
 
 const run = {
@@ -51,7 +51,7 @@ describe("accumulated reusable popular videos", () => {
     expect(historyQuery).toContain("join shorts_mvp.popular_video_runs");
     expect(historyQuery).toContain("partition by i.video_id");
     expect(historyQuery).toContain("i.license='creativeCommon'");
-    expect(historyQuery).toContain("order by last_seen_at desc");
+    expect(historyQuery).toContain("then last_seen_at end desc");
   });
 
   it("keeps the unfiltered trending list scoped to the current snapshot", async () => {
@@ -74,6 +74,31 @@ describe("accumulated reusable popular videos", () => {
     expect(currentQuery).not.toContain("historical_candidates");
   });
 
+  it("excludes CC videos when the chart snapshot is used as the view-count fallback", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([run])
+      .mockResolvedValueOnce([{
+        ...reusableVideo,
+        videoId: "standardVid",
+        license: "youtube",
+      }]);
+
+    await getPopularVideos(
+      "views",
+      "all",
+      false,
+      false,
+      false,
+      undefined,
+      48,
+      query as unknown as Sql,
+    );
+
+    expect(sqlText(query.mock.calls[1]))
+      .toContain("or license <> 'creativeCommon'");
+    expect(query.mock.calls[1].slice(1)).toContain("views");
+  });
+
   it("allows a retained reusable trending video to open after its snapshot expires", async () => {
     const query = vi.fn().mockResolvedValueOnce([reusableVideo]);
     await expect(
@@ -84,7 +109,7 @@ describe("accumulated reusable popular videos", () => {
     expect(storedQuery).toContain("r.expires_at > now() or i.license='creativeCommon'");
   });
 
-  it("deduplicates every ready view-count snapshot and sorts by the latest sighting", async () => {
+  it("deduplicates every ready view-count snapshot and sorts by views across history", async () => {
     const query = vi.fn()
       .mockResolvedValueOnce([run])
       .mockResolvedValueOnce([reusableVideo]);
@@ -103,6 +128,59 @@ describe("accumulated reusable popular videos", () => {
     expect(historyQuery).toContain("join shorts_mvp.popular_search_runs");
     expect(historyQuery).toContain("partition by i.video_id");
     expect(historyQuery).toContain("i.license='creativeCommon'");
-    expect(historyQuery).toContain("order by last_seen_at desc");
+    expect(historyQuery).toContain("order by view_count desc, last_seen_at desc");
+  });
+
+  it("skips reusable-only snapshots and excludes CC videos from the general view list", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([run])
+      .mockResolvedValueOnce([{
+        ...reusableVideo,
+        videoId: "standardVid",
+        license: "youtube",
+      }]);
+
+    const result = await getPopularSearchVideos(
+      "all",
+      false,
+      false,
+      false,
+      undefined,
+      48,
+      query as unknown as Sql,
+    );
+
+    expect(result.items).toHaveLength(1);
+    const runQuery = sqlText(query.mock.calls[0]);
+    expect(runQuery).toContain("exists ( select 1 from shorts_mvp.popular_search_items");
+    expect(runQuery).toContain("i.license <> 'creativeCommon'");
+    expect(query.mock.calls[0].slice(1)).toContain(true);
+    const currentQuery = sqlText(query.mock.calls[1]);
+    expect(currentQuery).toContain("license <> 'creativeCommon'");
+  });
+
+  it("combines reusable videos from real-time and view-count snapshots", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([run])
+      .mockResolvedValueOnce([reusableVideo]);
+
+    const result = await getReusablePopularVideos(
+      "all",
+      false,
+      false,
+      undefined,
+      48,
+      query as unknown as Sql,
+    );
+
+    expect(result.items).toHaveLength(1);
+    const combinedQuery = sqlText(query.mock.calls[1]);
+    expect(combinedQuery).toContain("from shorts_mvp.popular_search_items");
+    expect(combinedQuery).toContain("join shorts_mvp.popular_search_runs");
+    expect(combinedQuery).toContain("union all");
+    expect(combinedQuery).toContain("from shorts_mvp.popular_video_items");
+    expect(combinedQuery).toContain("join shorts_mvp.popular_video_runs");
+    expect(combinedQuery).toContain("partition by video_id");
+    expect(combinedQuery).toContain("order by view_count desc, last_seen_at desc");
   });
 });

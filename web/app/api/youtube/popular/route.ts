@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getBillingSummary } from "@/lib/billing";
+import { getDb } from "@/lib/db";
+import { apiError, HttpError } from "@/lib/http";
+import { recordPopularFilterUsage } from "@/lib/popular-filter-usage";
+import { assertPopularFilterAccess } from "@/lib/popular-entitlements";
+import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
   getPopularVideos,
   PopularSnapshotUnavailableError,
@@ -8,6 +14,7 @@ import {
 } from "@/lib/youtube-popular";
 import {
   getPopularSearchVideos,
+  getReusablePopularVideos,
   PopularSearchSnapshotUnavailableError,
 } from "@/lib/youtube-popular-search";
 
@@ -20,6 +27,7 @@ const querySchema = z.object({
   longForm: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   korean: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   cursor: z.string().max(500).optional(),
+  interactionId: z.string().uuid().optional(),
 });
 
 export async function GET(request: Request) {
@@ -31,18 +39,33 @@ export async function GET(request: Request) {
     longForm: url.searchParams.get("longForm") || undefined,
     korean: url.searchParams.get("korean") || undefined,
     cursor: url.searchParams.get("cursor") || undefined,
+    interactionId: url.searchParams.get("interactionId") || undefined,
   });
   if (!query.success) {
     return NextResponse.json({ detail: "지원하지 않는 인기 영상 필터입니다." }, { status: 400 });
   }
   try {
+    const db = getDb();
+    let paidFilterUserId: string | null = null;
+    const usesPaidFeature = Boolean(query.data.cursor)
+      || query.data.type !== "trending"
+      || query.data.category !== "all"
+      || query.data.reusable
+      || query.data.longForm
+      || query.data.korean;
+    if (usesPaidFeature) {
+      const session = await requireAuthenticatedMvpSession();
+      assertPopularFilterAccess(await getBillingSummary(db, session.userId));
+      paidFilterUserId = session.userId;
+    }
     const limit = 48;
+    const reusableOnly = query.data.type === "reusable" || query.data.reusable;
+    const effectiveType = query.data.type === "reusable" ? "views" : query.data.type;
     let result;
-    if (query.data.type === "views") {
+    if (query.data.type === "reusable") {
       try {
-        result = await getPopularSearchVideos(
+        result = await getReusablePopularVideos(
           query.data.category,
-          query.data.reusable,
           query.data.longForm,
           query.data.korean,
           query.data.cursor,
@@ -51,9 +74,31 @@ export async function GET(request: Request) {
       } catch (error) {
         if (!(error instanceof PopularSearchSnapshotUnavailableError)) throw error;
         result = await getPopularVideos(
-          query.data.type,
+          "views",
           query.data.category,
-          query.data.reusable,
+          true,
+          query.data.longForm,
+          query.data.korean,
+          query.data.cursor,
+          limit,
+        );
+      }
+    } else if (effectiveType === "views") {
+      try {
+        result = await getPopularSearchVideos(
+          query.data.category,
+          reusableOnly,
+          query.data.longForm,
+          query.data.korean,
+          query.data.cursor,
+          limit,
+        );
+      } catch (error) {
+        if (!(error instanceof PopularSearchSnapshotUnavailableError)) throw error;
+        result = await getPopularVideos(
+          effectiveType,
+          query.data.category,
+          reusableOnly,
           query.data.longForm,
           query.data.korean,
           query.data.cursor,
@@ -62,19 +107,32 @@ export async function GET(request: Request) {
       }
     } else {
       result = await getPopularVideos(
-        query.data.type,
+        effectiveType,
         query.data.category,
-        query.data.reusable,
+        reusableOnly,
         query.data.longForm,
         query.data.korean,
         query.data.cursor,
         limit,
       );
     }
+    if (paidFilterUserId && !query.data.cursor) {
+      await recordPopularFilterUsage(db, {
+        interactionId: query.data.interactionId,
+        userId: paidFilterUserId,
+        type: query.data.type,
+        category: query.data.category,
+        reusableOnly,
+        longFormOnly: query.data.longForm,
+        koreanOnly: query.data.korean,
+        resultCount: result.items.length,
+      });
+    }
     const response = NextResponse.json(result);
     response.headers.set("Cache-Control", "private, no-store");
     return response;
   } catch (error) {
+    if (error instanceof HttpError) return apiError(error);
     const detail = error instanceof PopularSnapshotUnavailableError
       || error instanceof PopularSearchSnapshotUnavailableError
       ? error.message

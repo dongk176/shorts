@@ -1,6 +1,7 @@
 import { expectedShortCount, type YoutubeAnalysis } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import type { MvpSession } from "@/lib/session";
+import { assertSupportedSourceVideoDuration } from "@/lib/source-video";
 
 export type YoutubeAnalysisMetadata = Omit<YoutubeAnalysis, "analysisId" | "expectedShortCount">;
 
@@ -8,9 +9,7 @@ export async function createYoutubeAnalysis(
   session: MvpSession,
   metadata: YoutubeAnalysisMetadata,
 ): Promise<YoutubeAnalysis> {
-  if (!Number.isFinite(metadata.durationSeconds) || metadata.durationSeconds <= 0 || metadata.durationSeconds > 3600) {
-    throw new Error("최대 60분 길이의 영상까지만 만들 수 있습니다.");
-  }
+  assertSupportedSourceVideoDuration(metadata.durationSeconds);
   const rows = await getDb()`
     insert into shorts_mvp.youtube_analyses (
       mvp_session_id, user_id, youtube_url, youtube_video_id, video_title,

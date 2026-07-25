@@ -178,18 +178,33 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-red",
+      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d9",
     }));
     expect(response.status).toBe(401);
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
 
-  it("creates a job without a per-job rights confirmation", async () => {
+  it("keeps legacy web clients working without a per-job rights confirmation", async () => {
     mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
       analysisId,
       templateId: "dark-red",
+      rightsConfirmed: false,
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d0",
+    }));
+    expect(response.status).toBe(202);
+    expect(mocks.authenticatedSession).toHaveBeenCalledOnce();
+  });
+
+  it("creates a job after the per-job rights confirmation", async () => {
+    mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
+      analysisId,
+      templateId: "dark-red",
+      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d0",
     }));
     expect(response.status).toBe(202);
@@ -208,6 +223,7 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-red",
+      rightsConfirmed: true,
       requestId: "2d9e4ec7-459c-430f-ab0c-b3d9bb16883f",
     }));
 
@@ -244,6 +260,7 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-red",
+      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511e0",
     }));
 
@@ -267,6 +284,7 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-red",
+      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511e1",
     }));
 
@@ -280,6 +298,7 @@ describe("job API security and idempotency", () => {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
       analysisId,
       templateId: "dark-red",
+      rightsConfirmed: true,
       clipLengthOption: "sec_31_60",
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d0",
     }));
@@ -304,6 +323,7 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-red",
+      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d4",
     }));
 
@@ -315,12 +335,33 @@ describe("job API security and idempotency", () => {
     expect(mocks.submitInitial).not.toHaveBeenCalled();
   });
 
+  it("rejects job creation when persisted metadata is shorter than three minutes", async () => {
+    mocks.getDb.mockReturnValue(dbWithRows([], [{
+      ...analysisRow,
+      durationSeconds: 179,
+    }]));
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rightsConfirmed: true,
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d6",
+    }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      detail: "롱폼 영상만 사용할 수 있어요. 쇼츠를 만들려면 3분 이상의 영상을 입력해 주세요.",
+      code: "SOURCE_VIDEO_TOO_SHORT",
+    });
+    expect(mocks.wakeDispatcher).not.toHaveBeenCalled();
+  });
+
   it("ignores legacy range fields and creates a full-source job", async () => {
     mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
       analysisId,
       templateId: "dark-red",
+      rightsConfirmed: true,
       rangeStartSeconds: 100,
       rangeEndSeconds: 130,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d2",
@@ -338,6 +379,7 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-red",
+      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d5",
     }));
 
@@ -355,12 +397,90 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-red",
+      rightsConfirmed: true,
       videoAspectRatio: "5:4",
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d4",
     }));
 
     expect(response.status).toBe(202);
   });
+
+  it("versions every new supported comment preset job for the square-reference channel layout", async () => {
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows(
+      [],
+      [],
+      [{ active: 0 }],
+      [{ projectNumber: 7 }],
+      [{ id: "reservation-comment-v2" }],
+      [],
+      [],
+    );
+    Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "comment-capture",
+      videoAspectRatio: "16:9",
+      rightsConfirmed: true,
+      requestId: "a25dd669-6410-41d2-9f7e-6e01fe0bc19e",
+    }));
+
+    expect(response.status).toBe(202);
+    const insertCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes("insert into shorts_mvp.video_jobs"),
+    );
+    expect(insertCall?.slice(1)).toContainEqual({ presetVersion: 3 });
+    expect(insertCall?.slice(1)).toContain("16:9");
+  });
+
+  it("versions non-comment preset jobs for the square-reference channel position", async () => {
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows(
+      [],
+      [],
+      [{ active: 0 }],
+      [{ projectNumber: 8 }],
+      [{ id: "reservation-fixed-channel-v3" }],
+      [],
+      [],
+    );
+    Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      videoAspectRatio: "5:4",
+      rightsConfirmed: true,
+      requestId: "aa705073-af96-45fc-85cb-d13c60af45b1",
+    }));
+
+    expect(response.status).toBe(202);
+    const insertCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes("insert into shorts_mvp.video_jobs"),
+    );
+    expect(insertCall?.slice(1)).toContainEqual({ presetVersion: 3 });
+  });
+
+  it.each(["4:5", "9:16"] as const)(
+    "rejects the %s ratio for the default comment preset",
+    async (videoAspectRatio) => {
+      const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+        analysisId,
+        templateId: "comment-capture",
+        videoAspectRatio,
+        rightsConfirmed: true,
+        requestId: "788377cc-754b-4184-939a-bd8ed46ba9ba",
+      }));
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({
+        detail: expect.stringContaining("세로형과 세로 꽉참"),
+      });
+    },
+  );
 
   it("lets Plus use a saved custom-template ratio even when the client sends another ratio", async () => {
     const customTemplateId = "14f19366-89b7-4c54-8ec6-c0f2b75584c1";
@@ -391,6 +511,7 @@ describe("job API security and idempotency", () => {
       templateId: "dark-red",
       customTemplateId,
       videoAspectRatio: "16:9",
+      rightsConfirmed: true,
       requestId: "47b1209d-213b-4f56-9668-ed2511c595f7",
     }));
 
@@ -407,6 +528,7 @@ describe("job API security and idempotency", () => {
       analysisId,
       templateId: "dark-red",
       videoAspectRatio: "3:2",
+      rightsConfirmed: true,
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d3",
     }));
     expect(response.status).toBe(400);
@@ -723,7 +845,7 @@ describe("custom-template plan access", () => {
 
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toMatchObject({
-      template: { name: "플러스 템플릿", config: { schemaVersion: 3 } },
+      template: { name: "플러스 템플릿", config: { schemaVersion: 4 } },
     });
   });
 });

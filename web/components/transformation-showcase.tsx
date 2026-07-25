@@ -254,11 +254,6 @@ export function TransformationShowcase() {
   const [inView, setInView] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [messageVisible, setMessageVisible] = useState(false);
-  const [selectedExample, setSelectedExample] = useState<"first" | "second" | null>(null);
-
-  useEffect(() => {
-    setSelectedExample(Math.random() < 0.5 ? "first" : "second");
-  }, []);
 
   useEffect(() => {
     const section = sectionRef.current;
@@ -300,25 +295,11 @@ export function TransformationShowcase() {
       <div className="transformation-showcase-row">
         <div className="transformation-stage-glow transformation-stage-glow-left" aria-hidden="true" />
         <div className="transformation-stage-glow transformation-stage-glow-right" aria-hidden="true" />
-        {selectedExample === null && (
-          <div className="transformation-stage" aria-hidden="true" />
-        )}
         <TransformationExample
           horizontalSrc="/transformation-showcase/ditto-horizontal.mp4"
           verticalSrc="/transformation-showcase/ditto-vertical.mp4"
           label={localizedValue(locale, { ko: "첫 번째 변환 예시", en: "First transformation example", ja: "1つ目の変換例" })}
-          active={selectedExample === "first"}
-          inView={inView}
-          revealed={revealed}
-          showCopy
-          messageVisible={messageVisible}
-          onFirstPlay={beginReveal}
-        />
-        <TransformationExample
-          horizontalSrc="/transformation-showcase/urgency-horizontal.mp4"
-          verticalSrc="/transformation-showcase/urgency-vertical.mp4"
-          label={localizedValue(locale, { ko: "두 번째 변환 예시", en: "Second transformation example", ja: "2つ目の変換例" })}
-          active={selectedExample === "second"}
+          active
           inView={inView}
           revealed={revealed}
           showCopy

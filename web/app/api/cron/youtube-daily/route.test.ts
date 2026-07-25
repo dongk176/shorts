@@ -25,7 +25,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.CRON_SECRET = "cron-test-secret";
   mocks.collectPopularVideos.mockResolvedValue({ items: 100 });
-  mocks.collectPopularSearchVideos.mockResolvedValue({ pages: 40, items: 1800 });
+  mocks.collectPopularSearchVideos.mockResolvedValue({
+    pages: 50,
+    reusablePages: 10,
+    items: 2200,
+  });
   mocks.collectFreeVideos.mockResolvedValue({ pages: 30, items: 1300 });
 });
 
@@ -42,7 +46,7 @@ describe("daily YouTube collection cron", () => {
     expect(mocks.collectPopularVideos).not.toHaveBeenCalled();
   });
 
-  it("collects trending, 40 PRO search pages, and 30 FREE search pages sequentially", async () => {
+  it("collects trending, PRO plus reusable search, and FREE pages sequentially", async () => {
     const order: string[] = [];
     mocks.collectPopularVideos.mockImplementation(async () => { order.push("trending"); });
     mocks.collectPopularSearchVideos.mockImplementation(async () => { order.push("popularSearch"); });

@@ -123,7 +123,7 @@ class TemplateCommentLayer(BaseModel):
 class CustomTemplateConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    schema_version: int = Field(alias="schemaVersion", ge=1, le=3)
+    schema_version: int = Field(alias="schemaVersion", ge=1, le=4)
     background: TemplateBackground
     video: TemplateVideoLayer
     title: TemplateTitleLayer

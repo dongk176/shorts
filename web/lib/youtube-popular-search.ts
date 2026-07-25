@@ -7,6 +7,7 @@ import {
 } from "@/lib/youtube-free";
 import {
   POPULAR_VIDEO_LONG_FORM_SECONDS,
+  popularVideoSourceCategories,
   popularVideoSourceCategoryValues,
   type PopularVideo,
   type PopularVideoCategory,
@@ -14,6 +15,7 @@ import {
 } from "@/lib/youtube-popular";
 
 export const POPULAR_SEARCH_PAGE_LIMIT = 40;
+export const POPULAR_REUSABLE_SEARCH_PAGE_LIMIT = 10;
 const POPULAR_SEARCH_QUERIES = [
   "엔터테인먼트",
   "예능",
@@ -61,7 +63,17 @@ export type PopularSearchCollectionResult = {
   runId: string;
   snapshotDate: string;
   pages: number;
+  reusablePages: number;
   items: number;
+  hasMoreOnYoutube: boolean;
+};
+
+export type ReusablePopularSearchCollectionResult = {
+  runId: string;
+  snapshotDate: string;
+  pages: number;
+  items: number;
+  totalItems: number;
   hasMoreOnYoutube: boolean;
 };
 
@@ -114,11 +126,45 @@ function safeCollectionError(error: unknown) {
   return "조회수 상위 영상 수집 중 내부 오류가 발생했습니다.";
 }
 
+async function collectReusableSearchPages(options: {
+  now: Date;
+  fetchImpl?: typeof fetch;
+  maxPages?: number;
+  requestIntervalMs?: number;
+}) {
+  const kstDay = Math.floor((options.now.getTime() + 9 * 60 * 60_000) / 86_400_000);
+  const categoryOffset = kstDay % popularVideoSourceCategories.length;
+  const rotatedCategories = [
+    ...popularVideoSourceCategories.slice(categoryOffset),
+    ...popularVideoSourceCategories.slice(0, categoryOffset),
+  ];
+  const reusableSources = rotatedCategories.map((category) => ({
+    videoCategoryId: category.videoCategoryId,
+    publishedAfter: null,
+  }));
+  const collection = await collectSearchVideoPages({
+    maxPages: Math.min(
+      POPULAR_REUSABLE_SEARCH_PAGE_LIMIT,
+      Math.max(1, options.maxPages || POPULAR_REUSABLE_SEARCH_PAGE_LIMIT),
+    ),
+    now: options.now,
+    fetchImpl: options.fetchImpl,
+    requestIntervalMs: options.requestIntervalMs,
+    sources: reusableSources,
+    videoLicense: "creativeCommon",
+  });
+  return {
+    ...collection,
+    items: collection.items.filter((video) => video.license === "creativeCommon"),
+  };
+}
+
 export async function collectPopularSearchVideos(options: {
   db?: Sql;
   fetchImpl?: typeof fetch;
   now?: Date;
   maxPages?: number;
+  reusableMaxPages?: number;
   requestIntervalMs?: number;
 } = {}): Promise<PopularSearchCollectionResult> {
   const db = options.db || getDb();
@@ -132,9 +178,21 @@ export async function collectPopularSearchVideos(options: {
       requestIntervalMs: options.requestIntervalMs,
       queries: POPULAR_SEARCH_QUERIES,
     });
+    const reusableCollection = await collectReusableSearchPages({
+      now,
+      fetchImpl: options.fetchImpl,
+      maxPages: options.reusableMaxPages,
+      requestIntervalMs: options.requestIntervalMs,
+    });
+    const mergedItems = new Map(collection.items.map((video) => [video.videoId, video]));
+    for (const video of reusableCollection.items) {
+      mergedItems.set(video.videoId, video);
+    }
+    const items = Array.from(mergedItems.values());
+    const pages = collection.pages + reusableCollection.pages;
     await db.begin(async (tx) => {
-      for (let offset = 0; offset < collection.items.length; offset += 250) {
-        const rows = collection.items.slice(offset, offset + 250).map((video) => ({
+      for (let offset = 0; offset < items.length; offset += 250) {
+        const rows = items.slice(offset, offset + 250).map((video) => ({
           run_id: run.id,
           video_id: video.videoId,
           category: video.category,
@@ -173,8 +231,101 @@ export async function collectPopularSearchVideos(options: {
       }
       await tx`
         update shorts_mvp.popular_search_runs set
-          status='ready', page_count=${collection.pages}, item_count=${collection.items.length},
+          status='ready', page_count=${pages}, item_count=${items.length},
           completed_at=${now}, error_message=null
+        where id=${run.id}
+      `;
+    });
+    return {
+      runId: run.id,
+      snapshotDate: run.snapshotDate,
+      pages,
+      reusablePages: reusableCollection.pages,
+      items: items.length,
+      hasMoreOnYoutube: Boolean(collection.nextPageToken || reusableCollection.nextPageToken),
+    };
+  } catch (error) {
+    await db`
+      update shorts_mvp.popular_search_runs
+      set status='failed', completed_at=${new Date()}, error_message=${safeCollectionError(error)}
+      where id=${run.id}
+    `.catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function collectReusablePopularSearchVideos(options: {
+  db?: Sql;
+  fetchImpl?: typeof fetch;
+  now?: Date;
+  maxPages?: number;
+  requestIntervalMs?: number;
+} = {}): Promise<ReusablePopularSearchCollectionResult> {
+  const db = options.db || getDb();
+  const now = options.now || new Date();
+  const run = await startCollectionRun(db, now);
+  try {
+    const collection = await collectReusableSearchPages({
+      now,
+      fetchImpl: options.fetchImpl,
+      maxPages: options.maxPages,
+      requestIntervalMs: options.requestIntervalMs,
+    });
+    await db.begin(async (tx) => {
+      for (let offset = 0; offset < collection.items.length; offset += 250) {
+        const rows = collection.items.slice(offset, offset + 250).map((video) => ({
+          run_id: run.id,
+          video_id: video.videoId,
+          category: video.category,
+          search_rank: video.searchRank,
+          page_number: video.pageNumber,
+          title: video.title,
+          channel_name: video.channelName,
+          thumbnail_url: video.thumbnailUrl,
+          duration_seconds: video.durationSeconds,
+          view_count: video.viewCount,
+          published_at: video.publishedAt,
+          license: video.license,
+          is_korean: video.isKorean,
+          collected_at: now,
+        }));
+        await tx`
+          insert into shorts_mvp.popular_search_items ${tx(
+            rows,
+            "run_id",
+            "video_id",
+            "category",
+            "search_rank",
+            "page_number",
+            "title",
+            "channel_name",
+            "thumbnail_url",
+            "duration_seconds",
+            "view_count",
+            "published_at",
+            "license",
+            "is_korean",
+            "collected_at",
+          )}
+          on conflict (run_id, video_id) do update set
+            category=excluded.category,
+            search_rank=excluded.search_rank,
+            page_number=excluded.page_number,
+            title=excluded.title,
+            channel_name=excluded.channel_name,
+            thumbnail_url=excluded.thumbnail_url,
+            duration_seconds=excluded.duration_seconds,
+            view_count=excluded.view_count,
+            published_at=excluded.published_at,
+            license=excluded.license,
+            is_korean=excluded.is_korean,
+            collected_at=excluded.collected_at
+        `;
+      }
+      await tx`
+        update shorts_mvp.popular_search_runs set
+          status='ready', page_count=${collection.pages},
+          item_count=${collection.items.length}, completed_at=${now}, error_message=null
         where id=${run.id}
       `;
     });
@@ -183,6 +334,7 @@ export async function collectPopularSearchVideos(options: {
       snapshotDate: run.snapshotDate,
       pages: collection.pages,
       items: collection.items.length,
+      totalItems: collection.items.length,
       hasMoreOnYoutube: Boolean(collection.nextPageToken),
     };
   } catch (error) {
@@ -208,17 +360,33 @@ function decodeCursor(cursor: string | undefined) {
   }
 }
 
-async function resolveReadyRun(db: Sql, requestedRunId?: string) {
+async function resolveReadyRun(
+  db: Sql,
+  requestedRunId?: string,
+  standardVideosOnly = false,
+) {
   const rows = requestedRunId
     ? await db`
-      select id, completed_at from shorts_mvp.popular_search_runs
-      where id=${requestedRunId} and status='ready'
+      select r.id, r.completed_at
+      from shorts_mvp.popular_search_runs r
+      where r.id=${requestedRunId} and r.status='ready'
+        and (${standardVideosOnly}=false or exists (
+          select 1
+          from shorts_mvp.popular_search_items i
+          where i.run_id=r.id and i.license <> 'creativeCommon'
+        ))
       limit 1
     `
     : await db`
-      select id, completed_at from shorts_mvp.popular_search_runs
-      where status='ready'
-      order by completed_at desc
+      select r.id, r.completed_at
+      from shorts_mvp.popular_search_runs r
+      where r.status='ready'
+        and (${standardVideosOnly}=false or exists (
+          select 1
+          from shorts_mvp.popular_search_items i
+          where i.run_id=r.id and i.license <> 'creativeCommon'
+        ))
+      order by r.completed_at desc
       limit 1
     `;
   if (!rows[0]) throw new PopularSearchSnapshotUnavailableError();
@@ -249,7 +417,7 @@ export async function getPopularSearchVideos(
   db: Sql = getDb(),
 ): Promise<PopularVideoResponse> {
   const decodedCursor = decodeCursor(cursor);
-  const run = await resolveReadyRun(db, decodedCursor?.runId);
+  const run = await resolveReadyRun(db, decodedCursor?.runId, !reusableOnly);
   const offset = decodedCursor?.offset || 0;
   const rows = reusableOnly
     ? await db`
@@ -275,7 +443,7 @@ export async function getPopularSearchVideos(
         view_count, published_at, license, last_seen_at, count(*) over() as total_count
       from historical_candidates
       where duplicate_rank=1
-      order by last_seen_at desc, view_count desc, published_at desc, video_id asc
+      order by view_count desc, last_seen_at desc, published_at desc, video_id asc
       offset ${offset}
       limit ${limit + 1}
     `
@@ -284,6 +452,7 @@ export async function getPopularSearchVideos(
         view_count, published_at, license, count(*) over() as total_count
       from shorts_mvp.popular_search_items
       where run_id=${run.id}
+        and license <> 'creativeCommon'
         and (${category}='all' or category=${category})
         and (${longFormOnly}=false or duration_seconds >= ${POPULAR_VIDEO_LONG_FORM_SECONDS})
         and (${koreanOnly}=false or is_korean)
@@ -291,6 +460,65 @@ export async function getPopularSearchVideos(
       offset ${offset}
       limit ${limit + 1}
     `;
+  const hasNext = rows.length > limit;
+  return {
+    items: rows.slice(0, limit).map((row) => rowToPopularVideo(row as Record<string, unknown>)),
+    updatedAt: run.completedAt,
+    totalCount: rows[0] ? Number(rows[0].totalCount) : 0,
+    ...(hasNext ? { nextCursor: encodeCursor(run.id, offset + limit) } : {}),
+  };
+}
+
+export async function getReusablePopularVideos(
+  category: PopularVideoCategory,
+  longFormOnly: boolean,
+  koreanOnly: boolean,
+  cursor?: string,
+  limit = 48,
+  db: Sql = getDb(),
+): Promise<PopularVideoResponse> {
+  const decodedCursor = decodeCursor(cursor);
+  const run = await resolveReadyRun(db, decodedCursor?.runId);
+  const offset = decodedCursor?.offset || 0;
+  const rows = await db`
+    with all_reusable_candidates as (
+      select
+        i.video_id, i.category, i.title, i.channel_name, i.thumbnail_url,
+        i.duration_seconds, i.view_count, i.published_at, i.license, i.is_korean,
+        i.collected_at, r.completed_at as last_seen_at, 0 as source_priority
+      from shorts_mvp.popular_search_items i
+      join shorts_mvp.popular_search_runs r on r.id=i.run_id
+      where r.status='ready' and r.completed_at <= ${run.completedAt}
+        and i.license='creativeCommon'
+      union all
+      select
+        i.video_id, i.category, i.title, i.channel_name, i.thumbnail_url,
+        i.duration_seconds, i.view_count, i.published_at, i.license, i.is_korean,
+        i.collected_at, r.completed_at as last_seen_at, 1 as source_priority
+      from shorts_mvp.popular_video_items i
+      join shorts_mvp.popular_video_runs r on r.id=i.run_id
+      where r.status='ready' and r.completed_at <= ${run.completedAt}
+        and i.license='creativeCommon'
+    ),
+    deduplicated as (
+      select *,
+        row_number() over (
+          partition by video_id
+          order by last_seen_at desc, collected_at desc, view_count desc, source_priority asc
+        ) as duplicate_rank
+      from all_reusable_candidates
+      where (${category}='all' or category=${category})
+        and (${longFormOnly}=false or duration_seconds >= ${POPULAR_VIDEO_LONG_FORM_SECONDS})
+        and (${koreanOnly}=false or is_korean)
+    )
+    select video_id, category, title, channel_name, thumbnail_url, duration_seconds,
+      view_count, published_at, license, last_seen_at, count(*) over() as total_count
+    from deduplicated
+    where duplicate_rank=1
+    order by view_count desc, last_seen_at desc, published_at desc, video_id asc
+    offset ${offset}
+    limit ${limit + 1}
+  `;
   const hasNext = rows.length > limit;
   return {
     items: rows.slice(0, limit).map((row) => rowToPopularVideo(row as Record<string, unknown>)),

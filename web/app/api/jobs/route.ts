@@ -24,6 +24,7 @@ import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { billableSourceSeconds, getUsageSnapshot } from "@/lib/usage";
 import { templateSnapshotFromRow } from "@/lib/custom-templates";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
+import { assertSupportedSourceVideoDuration } from "@/lib/source-video";
 
 const schema = z.object({
   analysisId: z.string().uuid(),
@@ -32,12 +33,21 @@ const schema = z.object({
   customTemplateId: z.string().uuid().nullable().optional(),
   videoAspectRatio: z.enum(videoAspectRatios).default("1:1"),
   outputLanguage: z.enum(outputLanguages).default("ko"),
+  rightsConfirmed: z.boolean().optional(),
   requestId: z.string().uuid(),
 });
 
 export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
+    if (
+      !input.customTemplateId
+      && input.templateId === "comment-capture"
+      && (input.videoAspectRatio === "4:5" || input.videoAspectRatio === "9:16")
+    ) {
+      throw new HttpError(400, "기본 댓글 템플릿에서는 세로형과 세로 꽉참 비율을 사용할 수 없습니다.");
+    }
+    const rightsConfirmed = input.rightsConfirmed === true;
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const executionBackend = getInitialJobBackend();
@@ -84,6 +94,7 @@ export async function POST(request: Request) {
       durationSeconds: Number(analyses[0].durationSeconds),
     };
     const sourceDurationSeconds = metadata.durationSeconds;
+    assertSupportedSourceVideoDuration(sourceDurationSeconds);
     const usageSeconds = billableSourceSeconds(sourceDurationSeconds);
     const plannedShortCount = expectedShortCount(sourceDurationSeconds);
     const deadlineMinutes = jobDeadlineMinutes(sourceDurationSeconds);
@@ -106,7 +117,11 @@ export async function POST(request: Request) {
         };
       }
       let resolvedTemplateId = input.templateId;
-      let templateSnapshot: ReturnType<typeof templateSnapshotFromRow> | null = null;
+      let resolvedVideoAspectRatio = input.videoAspectRatio;
+      let templateSnapshot:
+        | ReturnType<typeof templateSnapshotFromRow>
+        | { presetVersion: 2 | 3 }
+        | null = null;
       const billing = await getBillingSummary(tx, session.userId);
       if (input.customTemplateId) {
         assertCustomTemplateAccess(billing);
@@ -119,6 +134,9 @@ export async function POST(request: Request) {
         if (!customTemplates[0]) throw new HttpError(404, "선택한 개인 템플릿을 찾을 수 없습니다.");
         templateSnapshot = templateSnapshotFromRow(customTemplates[0]);
         resolvedTemplateId = templateSnapshot.baseTemplateId;
+        resolvedVideoAspectRatio = templateSnapshot.config.video.aspectRatio;
+      } else {
+        templateSnapshot = { presetVersion: 3 };
       }
       const limits = await tx`
         with scoped_jobs as (
@@ -176,9 +194,9 @@ export async function POST(request: Request) {
         ) values (
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${sourceDurationSeconds}, 0,
-          ${sourceDurationSeconds}, ${resolvedTemplateId}, ${input.customTemplateId || null}, ${templateSnapshot ? tx.json(templateSnapshot) : null}, ${templateSnapshot?.config.video.aspectRatio || input.videoAspectRatio},
+          ${sourceDurationSeconds}, ${resolvedTemplateId}, ${input.customTemplateId || null}, ${templateSnapshot ? tx.json(templateSnapshot) : null}, ${resolvedVideoAspectRatio},
           'sec_31_60', ${input.outputLanguage}, ${plannedShortCount},
-          false, ${executionBackend}, 'queued', 'queued', ${SIMULATED_PROGRESS_START},
+          ${rightsConfirmed}, ${executionBackend}, 'queued', 'queued', ${SIMULATED_PROGRESS_START},
           now() + ${deadlineMinutes} * interval '1 minute', ${plannedShortCount},${billing.retentionDays},
           ${executionBackend === "aws_batch" ? 2 : 1}
         )

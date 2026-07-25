@@ -9,6 +9,7 @@ import { AuthControls } from "@/components/auth-controls";
 import { BackgroundShowcase } from "@/components/background-showcase";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
 import { EstimatedProcessingOverlay, ProjectCard } from "@/components/project-card";
+import { ProjectReveal } from "@/components/project-reveal";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { TitleOverlayPreview } from "@/components/title-overlay-preview";
@@ -33,7 +34,13 @@ import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-play
 import { stateRetryDelayMs } from "@/lib/state-loading";
 import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
-import { COMMENT_BACKGROUND_COLOR, type CustomTemplate } from "@/lib/template-config";
+import {
+  COMMENT_BACKGROUND_COLOR,
+  COMMENT_CAPTURE_LANDSCAPE_LIFT_PX,
+  COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
+  PRESET_SQUARE_CHANNEL_CENTER_Y,
+  type CustomTemplate,
+} from "@/lib/template-config";
 import {
   DEFAULT_FAVORITE_TEMPLATE_KEYS,
   favoriteCustomTemplateId,
@@ -134,21 +141,37 @@ const templateCommentSample: CommentOverlay = {
   ageLabel: "5개월 전",
 };
 
-function aspectLayout(value: VideoAspectRatio, reserveCommentSpace = false) {
+function aspectLayout(
+  value: VideoAspectRatio,
+  reserveCommentSpace = false,
+  liftLandscapeComment = false,
+) {
   const layoutValue = reserveCommentSpace && value === "9:16" ? "4:5" : value;
   const option = videoAspectRatioOptions.find((item) => item.value === layoutValue)
     || videoAspectRatioOptions.find((item) => item.value === "1:1")!;
   const videoHeight = option.height / 19.2;
-  const videoTop = (100 - videoHeight) / 2;
+  const liftPercent = liftLandscapeComment && layoutValue === "16:9"
+    ? COMMENT_CAPTURE_LANDSCAPE_LIFT_PX / 19.2
+    : 0;
+  const videoTop = (100 - videoHeight) / 2 - liftPercent;
+  const bottomHeight = 100 - videoTop - videoHeight;
   const fullVertical = layoutValue === "9:16";
   const subtitleMargin = fullVertical
     ? 445
     : 1920 - (Math.round(videoTop * 19.2) + option.height - Math.max(64, Math.round(option.height * 0.08)));
-  return { option, videoHeight, videoTop, fullVertical, subtitleBottom: subtitleMargin / 19.2 };
+  return {
+    option,
+    videoHeight,
+    videoTop,
+    bottomHeight,
+    fullVertical,
+    subtitleBottom: subtitleMargin / 19.2,
+  };
 }
 
 const terminalStatuses = new Set(["completed", "failed", "expired", "deleted"]);
 const LOGIN_OVERLAY_DELAY_MS = 1_000;
+const PROJECT_REVEAL_STORAGE_PREFIX = "easycut:project-reveal:v1:";
 
 function formatDuration(seconds: number) {
   const value = Math.max(0, Math.round(seconds));
@@ -218,12 +241,10 @@ const customerReviews = [
   { name: "David.K", rating: 4, role: "직장인 (부업)", review: "진짜 신세계고 편하긴 한데... 구독료가 살짝 부담스럽긴 하네요. ㅠㅠ 그래도 달에 10만원씩은 쓰고 있는데, 쇼츠로 100만 이상은 벌어요 감사합니다." },
   { name: "정성민", rating: 5, role: "영상 편집자", review: "진짜 혼자서 유튜브 채널 3개 거뜬하게 돌릴 수 있음. 영상 생성 속도만 쫌 더 빨라지면 평생 구독 갑니다." },
   { name: "Chris_Lee", rating: 5, role: "전업 크리에이터", review: "템플릿만봐도 대중이 뭐를 좋아하는지 딱 아시는 것 같아서 연간결제 박았습니다~ 숏폼 서비스 다 써봤는데, 알파컷, 피카클립이랑은 비교 불가." },
-  { name: "강태영", rating: 5, role: "전업 크리에이터", review: "솔직히 안 유명해졌음 좋겠다… 실시간 인기 영상에서 바로 따오는 건 반칙이잖아 ㅋㅋ" },
   { name: "user_8821", rating: 5, role: "영상 편집자", review: "알파컷 썼을 땐 하이라이트 포인트를 너무 못 잡아서 답답했는데, 이건 진짜 사람 편집자가 엑기스만 쏙쏙 뽑은 느낌임." },
   { name: "윤서준", rating: 5, role: "직장인 (부업)", review: "댓글 진짜 존나 웃기게 다네 ㅋㅋㅋㅋㅋ 수정이 좀 필요하긴 한데 좋아요." },
   { name: "edit_master", rating: 5, role: "영상 편집자", review: "영상 편집자 해고했습니다. 죄송합니다 ㅎ" },
   { name: "송지아", rating: 4, role: "마케터 / 대행사", review: "와 미쳤다 진짜 ㅋㅋㅋ 근데 자막 폰트 종류 좀 늘려주세요!" },
-  { name: "Kevin_Park", rating: 5, role: "전업 크리에이터", review: "댓글 때문에 저작권이 안 걸려서 진짜 개미친 것 같아요… 저만 쓸래요.." },
   { name: "조민재", rating: 4, role: "영상 편집자", review: "피카클립 쓸 바엔 무조건 이거 쓰셈. 근데 AI 댓글 중에 가끔 선 넘는 드립 치는 애들 있어서 업로드 전에 한 번씩 확인은 필수임 ㅋㅋㅋ 다른 템플릿 더 많이 만들어주세요!!! 댓글 템플릿은 좋음." },
   { name: "Jason12", rating: 5, role: "직장인 (부업)", review: "쇼츠 외주 주다가 이거 쓰고 돈 굳음요; 진짜 개꿀통." },
   { name: "한동훈", rating: 5, role: "전업 크리에이터", review: "조회수 복사기임 ㄹㅇ 안 쓸 이유가 없음." },
@@ -234,13 +255,7 @@ const customerReviews = [
   { name: "오지훈", rating: 5, role: "전업 크리에이터", review: "편집자 동생한테 미안하지만... 걔 월급 줄 돈으로 이거 돌리니까 효율 10배는 나옴요;; 미안하다 고맙다!!!" },
   { name: "Sarah_J", rating: 5, role: "마케터 / 대행사", review: "솔직히 요즘 실시간 트렌드 바로 반영해서 템플릿 짜주는 건 반칙 아닙니까? 다른 숏폼 서비스들 긴장 좀 해야 할 듯." },
   { name: "신영우", rating: 5, role: "전업 크리에이터", review: "와 댓글 창 보고 소름 돋았네;; 이거 AI가 쓴 거 맞음? 릴스에 올렸더니 애들 진짜 사람인 줄 알고 키보드 배틀 뜨고 있음 개웃김 ㅋㅋㅋㅋ" },
-  { name: "Mike_Shin", rating: 5, role: "영상 편집자", review: "실시간 인기 영상에서 하이라이트 바로 따오는 건 걍 조회수 복사하겠다는 거 아님? 개꿀통 진짜." },
-  { name: "권민석", rating: 5, role: "직장인 (부업)", review: "인기 영상 베껴 만드는 거 귀찮았는데, 이건 링크 복붙하면 알아서 엑기스 다 따줌 ㄷㄷ 개이득." },
-  { name: "vvd_edit", rating: 4, role: "영상 편집자", review: "실시간 인기 영상 링크 넣고 딸깍 돌리면 10분 만에 떡상용 쇼츠 나옴. 다만 트렌드 영상이라 그런지 사람 몰릴 땐 서버가 쫌 벅차하는 게 눈에 보임 ㅠ 그것만 고쳐주셈." },
-  { name: "장도연", rating: 4, role: "마케터 / 대행사", review: "인기 동영상 소스로 쇼츠 양산하기 개편함. 근데 가끔 AI 댓글이 트렌드 밈을 너무 과하게 써서 뇌절할 때가 있음 ㅋㅋㅋ 그거 한두 개만 지우고 올리면 피드백 완벽함." },
-  { name: "Daniel_Oh", rating: 5, role: "전업 크리에이터", review: "솔직히 이 기능은 안 유명해졌으면 좋겠음... 남들 유행 탑승하려고 대본 짜고 있을 때 난 인기 영상 주소 넣고 쇼츠 5개 뽑아서 올림 ㅋㅋㅋ 댓글 드립이 가끔 매워서 검수하긴 해야 하는데 시간 단축은 압도적." },
   { name: "황준호", rating: 5, role: "영상 편집자", review: "알파컷 피카클립 바로 유기함. 하이라이트 잡는 눈치가 다름." },
-  { name: "user_3114", rating: 5, role: "직장인 (부업)", review: "유튜브 인기 영상 링크 복붙하면 1분 만에 쇼츠 뚝딱임. 트렌드 날먹 치트키 ㅋㅋㅋ" },
   { name: "Emily_Park", rating: 5, role: "전업 크리에이터", review: "솔직히 다른 사람한테 추천 안 할 듯… 내가 다 해먹게..ㅋㅋㅋㅋㅋㅋ" },
 ] as const;
 
@@ -503,8 +518,8 @@ function ThreeStepProcess() {
         </ol>
 
         <div className="three-step-process-cta">
-          <a href="#workspace">{localizedValue(locale, { ko: "지금 시작하기", en: "Get started", ja: "今すぐ始める" })}</a>
-          <p><span aria-hidden="true">✓</span> {localizedValue(locale, { ko: "월 7,920원부터 시작 · 언제든 해지 가능", en: "From ₩7,920/month · Cancel anytime", ja: "月額₩7,920から・いつでも解約可能" })}</p>
+          <Link href="/pricing">{localizedValue(locale, { ko: "지금 시작하기", en: "Get started", ja: "今すぐ始める" })}</Link>
+          <p><span aria-hidden="true">✓</span> {localizedValue(locale, { ko: "월 9,900원부터 시작 · 언제든 해지 가능", en: "From ₩9,900/month · Cancel anytime", ja: "月額₩9,900から・いつでも解約可能" })}</p>
         </div>
       </div>
     </section>
@@ -556,7 +571,7 @@ function formatCompactKoreanCount(value: number) {
 
 function CommentCaptureCard({ comment }: { comment: CommentOverlay | null }) {
   return (
-    <div className="h-full w-full bg-[#040404] pb-[0.6cqw] pl-[4.4cqw] pr-[2.8cqw] pt-[4.5cqw] text-left text-white">
+    <div className="w-full bg-[#040404] pb-[0.6cqw] pl-[4.4cqw] pr-[2.8cqw] pt-[4.5cqw] text-left text-white">
       {comment ? <div className="flex items-start gap-[2.7cqw]">
         <div className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.65cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
         <div className="min-w-0 flex-1">
@@ -573,11 +588,71 @@ function CommentCaptureCard({ comment }: { comment: CommentOverlay | null }) {
   );
 }
 
+function CommentCaptureChannel({
+  channelName,
+  channelThumbnailUrl,
+  fixedCenterY,
+}: {
+  channelName: string;
+  channelThumbnailUrl: string | null;
+  fixedCenterY?: number;
+}) {
+  return (
+    <div
+      className="absolute inset-x-0 z-20 flex items-center justify-center gap-[2.4cqw] px-[4.9cqw] text-[4.2cqw] font-semibold text-white"
+      style={fixedCenterY === undefined
+        ? { bottom: "13.5cqw" }
+        : { top: `${fixedCenterY / 19.2}%`, transform: "translateY(-50%)" }}
+    >
+      <ChannelAvatar
+        url={channelThumbnailUrl}
+        className="h-[6.1cqw] w-[6.1cqw]"
+        fallbackForeground="#FFFFFF"
+        fallbackBackground={COMMENT_BACKGROUND_COLOR}
+        sizes="10px"
+      />
+      <span className="max-w-[70cqw] truncate">{channelName}</span>
+    </div>
+  );
+}
+
+function FixedPresetChannel({
+  channelName,
+  channelThumbnailUrl,
+  foreground,
+  background,
+}: {
+  channelName: string;
+  channelThumbnailUrl: string | null;
+  foreground: string;
+  background: string;
+}) {
+  return (
+    <div
+      className="absolute inset-x-0 z-20 flex items-center justify-center gap-[2.4cqw] px-[4.9cqw] text-[4.2cqw] font-semibold"
+      style={{ top: `${PRESET_SQUARE_CHANNEL_CENTER_Y / 19.2}%`, color: foreground, transform: "translateY(-50%)" }}
+    >
+      <ChannelAvatar
+        url={channelThumbnailUrl}
+        className="h-[6.1cqw] w-[6.1cqw]"
+        fallbackForeground={foreground}
+        fallbackBackground={background}
+        sizes="10px"
+      />
+      <span className="max-w-[70cqw] truncate">{channelName}</span>
+    </div>
+  );
+}
+
 function TemplatePreview({ template, videoAspectRatio, channelName, channelThumbnailUrl }: { template: (typeof templates)[number]; videoAspectRatio: VideoAspectRatio; channelName: string; channelThumbnailUrl: string | null }) {
   const [firstLine, secondLine] = template.label.split("\n");
   const isLight = template.id === "white-yellow" || template.id === "paper";
   const foreground = isLight ? "text-black" : "text-white";
-  const layout = aspectLayout(videoAspectRatio, template.id === "comment-capture");
+  const layout = aspectLayout(
+    videoAspectRatio,
+    template.id === "comment-capture",
+    template.id === "comment-capture",
+  );
   const previewLine = (line: string, index: number) => {
     const lineBackground = titleLineBackground(
       index,
@@ -619,11 +694,14 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
         <div className={`h-[22cqw] w-[22cqw] rounded-full border-2 ${isLight ? "border-neutral-500" : "border-neutral-400"}`} aria-hidden="true" />
       </div>
-      <div className={`absolute inset-x-0 z-10 overflow-hidden text-[5.5cqw] font-semibold ${template.id === "paper" ? "text-neutral-700" : ""}`} style={layout.fullVertical ? { bottom: "6.25%", height: "9.375%" } : { top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.videoTop}%` }}>
+      <div className={`absolute inset-x-0 z-10 overflow-hidden text-[5.5cqw] font-semibold ${template.id === "paper" ? "text-neutral-700" : ""}`} style={layout.fullVertical ? { bottom: "6.25%", height: "9.375%" } : { top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.bottomHeight}%` }}>
         {template.id === "comment-capture"
-          ? <CommentCaptureCard comment={templateCommentSample} />
-          : <div className="flex items-start justify-center px-[4.9cqw] pt-[4.9cqw]"><div className="flex items-center justify-center gap-[2.4cqw] whitespace-nowrap"><ChannelAvatar url={channelThumbnailUrl} className="h-[6.1cqw] w-[6.1cqw]" fallbackForeground={template.channel} fallbackBackground={template.background} sizes="10px" /><span className="max-w-[70cqw] truncate">{channelName}</span></div></div>}
+          ? <div className="h-full bg-[#040404]"><CommentCaptureCard comment={templateCommentSample} /></div>
+          : null}
       </div>
+      {template.id === "comment-capture"
+        ? <CommentCaptureChannel channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} fixedCenterY={COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y} />
+        : <FixedPresetChannel channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} foreground={template.channel} background={template.background} />}
     </div>
   );
 }
@@ -637,6 +715,9 @@ function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioC
   const selectedCustom = usablePersonalTemplates.find((template) => template.id === customTemplateId);
   const selectedTemplate = templates.find((template) => template.id === value) || templates[0];
   const effectiveAspectRatio = selectedCustom?.config.video.aspectRatio ?? videoAspectRatio;
+  const disabledPresetRatios: VideoAspectRatio[] = !selectedCustom && value === "comment-capture"
+    ? ["4:5", "9:16"]
+    : [];
   const favoriteCards = favoriteTemplateKeys.flatMap<FavoriteTemplateCard>((templateKey) => {
     const customId = favoriteCustomTemplateId(templateKey);
     if (customId) {
@@ -657,7 +738,13 @@ function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioC
           <h2 className="text-xl font-bold">템플릿</h2>
           <span className="text-xs font-semibold text-red-300">{selectedCustom?.name || selectedTemplate.name}</span>
         </div>
-        <VideoAspectRatioPicker value={effectiveAspectRatio} lockedValue={selectedCustom?.config.video.aspectRatio} onChange={onVideoAspectRatioChange} />
+        <VideoAspectRatioPicker
+          value={effectiveAspectRatio}
+          lockedValue={selectedCustom?.config.video.aspectRatio}
+          disabledValues={disabledPresetRatios}
+          disabledReason={disabledPresetRatios.length ? "기본 댓글 템플릿에서는 세로형과 세로 꽉참 비율을 사용할 수 없어요. 내 템플릿에서는 모든 비율을 사용할 수 있습니다." : undefined}
+          onChange={onVideoAspectRatioChange}
+        />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {favoriteCards.map((card) => {
@@ -849,7 +936,17 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const template = templates.find((value) => value.id === templateId) || templates[0];
   const originalAspectRatio = item.videoAspectRatio || "1:1";
   const commentNeedsVerticalFit = templateId === "comment-capture" && originalAspectRatio === "9:16";
-  const editorLayout = aspectLayout(originalAspectRatio, templateId === "comment-capture");
+  const presetCommentVersion = typeof item.templateSnapshot?.presetVersion === "number"
+    ? item.templateSnapshot.presetVersion
+    : 0;
+  const usesLiftedCommentLayout = templateId === "comment-capture"
+    && presetCommentVersion >= 2;
+  const usesFixedPresetChannel = presetCommentVersion >= 3;
+  const editorLayout = aspectLayout(
+    originalAspectRatio,
+    templateId === "comment-capture",
+    usesLiftedCommentLayout,
+  );
   const activeSubtitle = segments.find((segment) => segment.start <= previewTime && segment.end > previewTime)?.text;
   const orderedCommentsForPreview = [...comments].sort(
     (left, right) => left.startSeconds - right.startSeconds,
@@ -969,15 +1066,18 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       <div className={standalone ? "editor-page-body" : "grid max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-white/10 bg-[#151517] sm:grid-cols-[320px_1fr] sm:rounded-2xl"}>
         <section className={standalone ? "editor-preview-pane" : ""}>
         <div className={standalone ? "editor-video-frame" : "sticky top-0 mx-auto aspect-[9/16] w-full max-w-[320px] overflow-hidden"} style={{ background: template.background, containerType: "inline-size" }}>
-          <TitleOverlayPreview title={title} fontScale={titleFontScale} videoAspectRatio={commentNeedsVerticalFit ? "4:5" : originalAspectRatio} primary={template.primary} accent={template.accent} background={template.background} keepPrimaryFirstLine={template.id === "paper"} textStyles={titleTextStyles} />
+          <TitleOverlayPreview title={title} fontScale={titleFontScale} videoAspectRatio={commentNeedsVerticalFit ? "4:5" : originalAspectRatio} primary={template.primary} accent={template.accent} background={template.background} keepPrimaryFirstLine={template.id === "paper"} textStyles={titleTextStyles} liftLandscape={usesLiftedCommentLayout} />
           {cleanVideoUrl ? <video className={`absolute inset-x-0 w-full bg-black ${commentNeedsVerticalFit ? "object-contain" : "object-cover"}`} style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }} src={cleanVideoUrl} controls playsInline preload="metadata" onLoadedMetadata={() => setVideoLoadError(false)} onError={() => setVideoLoadError(true)} onTimeUpdate={(event) => setPreviewTime(event.currentTarget.currentTime)} /> : <div className="absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}>클린 영상 준비 중</div>}
           {videoLoadError && <div className="pointer-events-none absolute inset-x-3 z-30 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100" style={{ top: `${editorLayout.videoTop + 2}%` }}>편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>}
           {subtitlesEnabled && activeSubtitle && <div className="pointer-events-none absolute inset-x-5 z-20 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white" style={{ bottom: `${editorLayout.subtitleBottom}%` }}>{activeSubtitle}</div>}
-          <div className={`absolute inset-x-0 z-10 overflow-hidden text-sm font-bold ${templateId === "comment-capture" ? "" : editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.videoTop}%`, background: editorLayout.fullVertical && templateId !== "comment-capture" ? "transparent" : template.background, color: template.channel }}>
+          <div className={`absolute inset-x-0 z-10 overflow-hidden text-sm font-bold ${templateId === "comment-capture" ? "" : editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.bottomHeight}%`, background: editorLayout.fullVertical && templateId !== "comment-capture" ? "transparent" : template.background, color: template.channel }}>
             {templateId === "comment-capture"
-              ? <CommentCaptureCard comment={activeComment} />
-              : <div className="flex items-start justify-center gap-2"><ChannelAvatar url={channelThumbnailUrl} className="mt-0.5 h-5 w-5" fallbackForeground={template.channel} fallbackBackground={template.background} sizes="20px" /><span className="max-w-[72%] truncate">{channel}</span></div>}
+              ? <div className="h-full bg-[#040404]"><CommentCaptureCard comment={activeComment} />{usesLiftedCommentLayout && !usesFixedPresetChannel && <CommentCaptureChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} />}</div>
+              : !usesFixedPresetChannel && <div className="flex items-start justify-center gap-2"><ChannelAvatar url={channelThumbnailUrl} className="mt-0.5 h-5 w-5" fallbackForeground={template.channel} fallbackBackground={template.background} sizes="20px" /><span className="max-w-[72%] truncate">{channel}</span></div>}
           </div>
+          {usesFixedPresetChannel && (templateId === "comment-capture"
+            ? <CommentCaptureChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} fixedCenterY={COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y} />
+            : <FixedPresetChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} foreground={template.channel} background={template.background} />)}
         </div>
         </section>
         <section className={standalone ? "editor-controls-pane" : "p-5 sm:p-6"}>
@@ -1045,6 +1145,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
 function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }) {
   const [accessUrls, setAccessUrls] = useState<Record<string, string>>({});
+  const [revealDecision, setRevealDecision] = useState<{
+    jobId: string;
+    show: boolean;
+  } | null>(null);
+  const revealDecidedJobIds = useRef(new Set<string>());
   const requestedAccessVersions = useRef(new Set<string>());
   const mounted = useRef(true);
   const selected = job.shorts[0];
@@ -1053,6 +1158,20 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
+
+  useEffect(() => {
+    if (job.status !== "completed" || revealDecidedJobIds.current.has(job.id)) return;
+    revealDecidedJobIds.current.add(job.id);
+    const storageKey = `${PROJECT_REVEAL_STORAGE_PREFIX}${job.id}`;
+    let hasSeenReveal = false;
+    try {
+      hasSeenReveal = window.localStorage.getItem(storageKey) === "1";
+      if (!hasSeenReveal) window.localStorage.setItem(storageKey, "1");
+    } catch {
+      // Local storage is optional; the ref still prevents duplicate effect runs.
+    }
+    setRevealDecision({ jobId: job.id, show: !hasSeenReveal });
+  }, [job.id, job.status]);
 
   useEffect(() => {
     for (const item of job.shorts.filter(isPlaybackAvailable)) {
@@ -1073,6 +1192,12 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
   const playbackUrl = (item: GeneratedShort) => isPlaybackAvailable(item)
     ? accessUrls[shortPlaybackVersionKey(item)] || null
     : null;
+  const dismissReveal = useCallback(() => {
+    setRevealDecision({ jobId: job.id, show: false });
+  }, [job.id]);
+  const revealVideoUrls = Object.fromEntries(
+    job.shorts.map((item) => [item.id, playbackUrl(item)]),
+  );
 
   const download = async (item: GeneratedShort) => {
     if (job.isExample || item.status !== "ready") return;
@@ -1097,6 +1222,23 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
           ? "보관 기간이 끝나 이 프로젝트의 쇼츠를 볼 수 없습니다."
           : "아직 생성된 쇼츠가 없습니다.";
     return <div className="project-workspace"><button onClick={onBack}>← 프로젝트로 돌아가기</button><p className={`m-auto max-w-xl whitespace-pre-line px-6 text-center leading-7 ${job.status === "failed" ? "text-red-300" : "text-neutral-500"}`}>{message}</p></div>;
+  }
+  if (
+    job.status === "completed"
+    && (!revealDecision || revealDecision.jobId !== job.id)
+  ) {
+    return <div className="project-workspace" aria-label="프로젝트를 여는 중" />;
+  }
+  if (revealDecision?.jobId === job.id && revealDecision.show) {
+    return (
+      <div className="project-workspace">
+        <ProjectReveal
+          job={job}
+          videoUrls={revealVideoUrls}
+          onComplete={dismissReveal}
+        />
+      </div>
+    );
   }
   return (
     <div className="project-workspace">
@@ -1260,12 +1402,13 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [stateLoadError, setStateLoadError] = useState<string | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(null);
+  const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [outputLanguage, setOutputLanguage] = useState<OutputLanguage>("ko");
   const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
   const [customTemplateId, setCustomTemplateId] = useState<string | null>(null);
   const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
   const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState<TemplateFavoriteKey[]>([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);
-  const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>("5:4");
+  const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>("16:9");
   const [activeJob, setActiveJob] = useState<VideoJob | null>(() => initialActiveJob(initialState));
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginNext, setLoginNext] = useState("/");
@@ -1417,6 +1560,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       .then((value) => {
         setYoutubeUrl(value.normalizedUrl);
         setAnalysis(value);
+        setRightsConfirmed(false);
         setCreationRestrictionReason(
           value.creationAllowed ? null : value.creationBlockReason || "이 영상은 이용 제한이 확인된 영상입니다.",
         );
@@ -1503,6 +1647,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       const text = await navigator.clipboard.readText();
       if (!text.trim()) throw new Error("클립보드에 붙여넣을 텍스트가 없습니다.");
       setYoutubeUrl(text.trim());
+      setRightsConfirmed(false);
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "클립보드를 읽지 못했습니다.");
@@ -1512,6 +1657,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const analyze = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
+    setRightsConfirmed(false);
     setCreationRestrictionOpen(false);
     setCreationRestrictionReason(null);
     if (!state?.user) {
@@ -1556,6 +1702,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setCreationRestrictionOpen(true);
       return;
     }
+    if (!rightsConfirmed) {
+      setError("쇼츠를 만들려면 원본 영상의 권리 보유 또는 적법한 이용 허가를 확인해 주세요.");
+      return;
+    }
     const next = `/?analysisId=${encodeURIComponent(analysis.analysisId)}`;
     if (!state?.user) {
       openLoginAfterDelay(next);
@@ -1571,7 +1721,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     }
     setBusy(true); setError(null);
     try {
-      const value = await requestJson<{ jobId: string; projectNumber: number; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, requestId: crypto.randomUUID() }) });
+      const value = await requestJson<{ jobId: string; projectNumber: number; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID() }) });
       const pendingJob: VideoJob = { id: value.jobId, projectNumber: value.projectNumber, isExample: false, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: analysis.expectedShortCount, plannedShortCount: analysis.expectedShortCount, readyShortCount: 0, failedShortCount: 0, renderSuccessPercent: null, status: "queued", stage: "queued", progress: SIMULATED_PROGRESS_START, stageCompletedCount: 0, stageTotalCount: 0, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
       setState((current) => current ? { ...current, usage: value.usage, recentJobs: [pendingJob, ...current.recentJobs.filter((job) => job.id !== pendingJob.id)] } : current);
       publishUsageSnapshot(value.usage);
@@ -1580,6 +1730,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       pollStarted.current = Date.now();
       setYoutubeUrl("");
       setAnalysis(null);
+      setRightsConfirmed(false);
       setCreationRestrictionOpen(false);
       setCreationRestrictionReason(null);
       setScrollToAnalysis(false);
@@ -1638,11 +1789,12 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         <form id="workspace" onSubmit={analyze} className="url-console mt-10 w-full max-w-3xl">
           <div className="relative flex-1">
             <span className="absolute inset-y-0 left-4 flex items-center text-xl text-[#d7aaa4]" aria-hidden="true">↗</span>
-            <input type="url" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} placeholder={t("home.youtubePlaceholder")} className="url-input" aria-label={t("home.youtubeLabel")} />
+            <input type="url" value={youtubeUrl} onChange={(event) => { setYoutubeUrl(event.target.value); setRightsConfirmed(false); }} placeholder={t("home.youtubePlaceholder")} className="url-input" aria-label={t("home.youtubeLabel")} />
             <button type="button" onClick={() => void pasteYoutubeUrl()} className="paste-button" aria-label={t("home.pasteLabel")} title={t("home.paste")}><svg viewBox="0 0 24 24" width="19" height="19" fill="none" aria-hidden="true"><path d="M9 5.5h6M9.5 3h5a1 1 0 0 1 1 1v3h-7V4a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/><path d="M8 5H6.75A1.75 1.75 0 0 0 5 6.75v12.5C5 20.216 5.784 21 6.75 21h10.5A1.75 1.75 0 0 0 19 19.25V6.75A1.75 1.75 0 0 0 17.25 5H16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
           </div>
           <button disabled={busy} className="ai-button">{busy ? t("home.checking") : t("home.convert")}<span aria-hidden="true">✦</span></button>
         </form>
+        <p className="mt-3 text-xs font-medium text-neutral-500">{t("home.sourceDurationHint")}</p>
         {state?.user && planEnforcementEnabled && <div className="mt-6 flex flex-wrap items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[.035] px-5 py-3 text-xs text-neutral-400"><strong className="text-white">{state.billing.planCode.toUpperCase()}</strong><span>{t("home.baseMinutes", { minutes: Math.floor(state.usage.baseRemainingSeconds / 60) })}</span><span>{t("home.addonMinutes", { minutes: Math.floor(state.usage.addonRemainingSeconds / 60) })}</span><Link href="/pricing" className="font-bold text-[#ff9b8d]">{t("home.subscription")}</Link></div>}
       </section>
       {state?.user && state.recentJobs.length ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28">
@@ -1662,7 +1814,68 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}
       {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>{t("home.serviceLoadError")}</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">{t("common.retry")}</button></div>}
       {analysis && <section id="shorts-settings" ref={analysisSectionRef} className="scroll-mt-24 rounded-2xl border border-white/10 bg-[#141416] p-5 sm:scroll-mt-28"><label htmlFor="output-language" className="text-xl font-bold">{t("home.outputLanguage")}</label><p className="mt-1 text-sm text-neutral-500">{t("home.outputLanguageDescription")}</p><select id="output-language" value={outputLanguage} onChange={(event) => setOutputLanguage(event.target.value as OutputLanguage)} className="mt-3 h-12 w-full rounded-xl border border-white/10 bg-[#141416] px-4 text-sm text-neutral-100 outline-none focus:border-red-500 sm:max-w-xs">{outputLanguageOptions.map((option) => <option key={option.code} value={option.code}>{outputLanguageName(option.code, locale)}</option>)}</select></section>}
-      {analysis && <section className="scroll-mt-24 space-y-8 sm:scroll-mt-28"><div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex"><Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" /><div className="p-5"><h2 className="text-lg font-bold">{analysis.title}</h2><p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p><p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {analysis.expectedShortCount}개</p><p className="mt-1 text-xs text-neutral-500">{planEnforcementEnabled ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.` : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p></div></div><TemplatePicker value={templateId} onChange={setTemplateId} videoAspectRatio={effectiveVideoAspectRatio} onVideoAspectRatioChange={setVideoAspectRatio} channelName={analysis.channelName} channelThumbnailUrl={analysis.channelThumbnailUrl} personalTemplates={personalTemplates} favoriteTemplateKeys={favoriteTemplateKeys} customTemplateId={canUseCustomTemplates ? customTemplateId : null} canUseCustomTemplates={canUseCustomTemplates} onCustomTemplateChange={(template) => { setCustomTemplateId(template?.id || null); if (template) { setTemplateId(template.baseTemplateId); setVideoAspectRatio(template.config.video.aspectRatio); } }} />{analysisCreationBlocked && <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">생성 불가 사유 보기</button>}<button disabled={analysisCreationBlocked || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}><span className="inline-flex items-center justify-center gap-2">{loginPromptPending && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}{analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs ? t("home.create") : t("home.choosePlan")}</span></button></section>}
+      {analysis && (
+        <section className="scroll-mt-24 space-y-8 sm:scroll-mt-28">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex">
+            <Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" />
+            <div className="p-5">
+              <h2 className="text-lg font-bold">{analysis.title}</h2>
+              <p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p>
+              <p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {analysis.expectedShortCount}개</p>
+              <p className="mt-1 text-xs text-neutral-500">{planEnforcementEnabled ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.` : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p>
+            </div>
+          </div>
+          <TemplatePicker
+            value={templateId}
+            onChange={(nextTemplateId) => {
+              setTemplateId(nextTemplateId);
+              if (nextTemplateId === "comment-capture") setVideoAspectRatio("16:9");
+            }}
+            videoAspectRatio={effectiveVideoAspectRatio}
+            onVideoAspectRatioChange={setVideoAspectRatio}
+            channelName={analysis.channelName}
+            channelThumbnailUrl={analysis.channelThumbnailUrl}
+            personalTemplates={personalTemplates}
+            favoriteTemplateKeys={favoriteTemplateKeys}
+            customTemplateId={canUseCustomTemplates ? customTemplateId : null}
+            canUseCustomTemplates={canUseCustomTemplates}
+            onCustomTemplateChange={(template) => {
+              setCustomTemplateId(template?.id || null);
+              if (template) {
+                setTemplateId(template.baseTemplateId);
+                setVideoAspectRatio(template.config.video.aspectRatio);
+              }
+            }}
+          />
+          {analysisCreationBlocked && (
+            <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">
+              생성 불가 사유 보기
+            </button>
+          )}
+          <label className={`flex items-start gap-3 rounded-xl border p-4 transition ${rightsConfirmed ? "border-emerald-300/40 bg-emerald-400/[.08]" : "border-white/10 bg-white/[.025]"} ${analysisCreationBlocked || busy ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:border-white/20"}`}>
+            <input
+              type="checkbox"
+              checked={rightsConfirmed}
+              onChange={(event) => setRightsConfirmed(event.target.checked)}
+              disabled={analysisCreationBlocked || busy}
+              aria-describedby="rights-confirmation-description"
+              className="mt-1 h-5 w-5 shrink-0 accent-emerald-400"
+            />
+            <span>
+              <strong className="block text-sm font-extrabold text-white">원본 영상 권리 확인</strong>
+              <span id="rights-confirmation-description" className="mt-1 block text-xs font-medium leading-5 text-neutral-400">
+                이 영상은 내가 소유하고 있거나, 권리자로부터 쇼츠 제작·편집 및 이용에 필요한 허가를 받은 영상임을 확인합니다.
+              </span>
+            </span>
+          </label>
+          <button disabled={analysisCreationBlocked || !rightsConfirmed || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
+            <span className="inline-flex items-center justify-center gap-2">
+              {loginPromptPending && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
+              {analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs ? t("home.create") : t("home.choosePlan")}
+            </span>
+          </button>
+        </section>
+      )}
       <ThreeStepProcess />
       <CustomerReviews generatedShortCount={state?.generatedShortCount ?? null} />
     </main>

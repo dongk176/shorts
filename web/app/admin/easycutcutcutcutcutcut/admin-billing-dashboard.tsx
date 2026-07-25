@@ -2,6 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import {
+  adminRefundReasonCodes,
+  adminRefundReasonLabel,
+  quoteCustomerEarlyTerminationRefund,
+  type AdminRefundReasonCode,
+} from "@/lib/refund-policy";
 
 export type AdminOrder = {
   id: string;
@@ -22,6 +28,10 @@ export type AdminOrder = {
   createdAt: string;
   email: string;
   subscriptionStatus: string | null;
+  contractPeriodStart: string | null;
+  contractPeriodEnd: string | null;
+  popularFilterUsageCount: number;
+  popularFilterLastUsedAt: string | null;
 };
 
 export type AdminRefund = {
@@ -107,6 +117,7 @@ export function AdminBillingDashboard({
   const router = useRouter();
   const [refundOrder, setRefundOrder] = useState<AdminOrder | null>(null);
   const [refundAmount, setRefundAmount] = useState(0);
+  const [refundReasonCode, setRefundReasonCode] = useState<AdminRefundReasonCode>("customer_early_termination");
   const [refundReason, setRefundReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -114,13 +125,36 @@ export function AdminBillingDashboard({
   const openRefund = (order: AdminOrder) => {
     setRefundOrder(order);
     setRefundAmount(order.amountKrw - order.refundedAmountKrw - order.reservedRefundKrw);
+    setRefundReasonCode(order.kind === "addon"
+      ? "statutory_withdrawal_unused"
+      : "customer_early_termination");
     setRefundReason("");
     setMessage(null);
   };
 
+  const remainingRefundable = refundOrder
+    ? refundOrder.amountKrw - refundOrder.refundedAmountKrw - refundOrder.reservedRefundKrw
+    : 0;
+  const terminationQuote = refundOrder
+    && refundReasonCode === "customer_early_termination"
+    && refundOrder.contractPeriodStart
+    && refundOrder.contractPeriodEnd
+    ? quoteCustomerEarlyTerminationRefund({
+      actualPaymentKrw: refundOrder.amountKrw,
+      refundedOrReservedKrw: refundOrder.refundedAmountKrw + refundOrder.reservedRefundKrw,
+      periodStart: new Date(refundOrder.contractPeriodStart),
+      periodEnd: new Date(refundOrder.contractPeriodEnd),
+    })
+    : null;
+  const effectiveRefundAmount = refundReasonCode === "customer_early_termination"
+    ? terminationQuote?.refundAmountKrw || 0
+    : refundReasonCode === "goodwill"
+      ? refundAmount
+      : remainingRefundable;
+
   const submitRefund = async () => {
     if (!refundOrder || submitting) return;
-    if (!window.confirm(`${refundOrder.email}의 주문에서 ${money(refundAmount)}을 실제 카드 환불하시겠습니까?`)) return;
+    if (!window.confirm(`${refundOrder.email}의 주문에서 ${money(effectiveRefundAmount)}을 실제 카드 환불하시겠습니까?`)) return;
     setSubmitting(true);
     setMessage(null);
     try {
@@ -131,11 +165,12 @@ export function AdminBillingDashboard({
         body: JSON.stringify({
           requestId: crypto.randomUUID(),
           orderId: refundOrder.id,
-          amountKrw: refundAmount,
+          amountKrw: effectiveRefundAmount,
+          reasonCode: refundReasonCode,
           reason: refundReason,
         }),
       });
-      const result = await response.json() as { detail?: string; entitlementRequiresReview?: boolean };
+      const result = await response.json() as { detail?: string; entitlementRequiresReview?: boolean; amountKrw?: number };
       if (!response.ok) throw new Error(result.detail || "환불 요청에 실패했습니다.");
       setMessage(result.entitlementRequiresReview
         ? "환불이 승인되었습니다. 구독 권한 상태를 별도로 확인해 주세요."
@@ -188,7 +223,7 @@ export function AdminBillingDashboard({
                 return <tr key={order.id} className="align-top hover:bg-white/[.02]">
                   <td className="whitespace-nowrap px-5 py-4 text-neutral-400">{date(order.approvedAt || order.createdAt)}</td>
                   <td className="px-4 py-4"><p className="max-w-56 truncate font-bold text-neutral-200">{order.email}</p><p className="mt-1 text-xs text-neutral-600">구독 {label(order.subscriptionStatus)}</p></td>
-                  <td className="px-4 py-4"><p className="font-bold">{productLabel(order.productCode)}</p><p className="mt-1 text-xs text-neutral-500">{order.kind} · {order.productCode.startsWith("starter_") || order.productCode.startsWith("expert_") ? "단건 패키지" : order.billingCycle || "단건"}</p></td>
+                  <td className="px-4 py-4"><p className="font-bold">{productLabel(order.productCode)}</p><p className="mt-1 text-xs text-neutral-500">{order.kind} · {order.productCode.startsWith("starter_") || order.productCode.startsWith("expert_") ? "단건 패키지" : order.billingCycle || "단건"}</p>{order.popularFilterUsageCount > 0 && <p className="mt-1 text-xs font-bold text-amber-300">유료 인기 필터 {order.popularFilterUsageCount}회 사용</p>}</td>
                   <td className="px-4 py-4 font-bold">{order.provider === "thepayone" ? "더페이원" : "나이스페이"}</td>
                   <td className="px-4 py-4"><p className="font-black">{money(order.amountKrw)}</p><p className="mt-1 text-xs text-[#ff9b8d]">환불 {money(order.refundedAmountKrw)} · {label(order.refundStatus)}</p>{order.reservedRefundKrw > 0 && <p className="mt-1 text-xs text-amber-300">기존 환불 처리 중 {money(order.reservedRefundKrw)}</p>}</td>
                   <td className="px-4 py-4"><p className="font-bold">{label(order.status)}</p>{order.failureCode && <p className="mt-1 text-xs text-amber-300">{order.failureCode}</p>}</td>
@@ -226,11 +261,27 @@ export function AdminBillingDashboard({
       {refundOrder && <div className="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="refund-title">
         <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#191c1d] p-6 shadow-2xl">
           <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-[#ff9585]">Actual card refund</p><h3 id="refund-title" className="mt-2 text-xl font-black">실제 카드 환불</h3></div><button type="button" onClick={() => setRefundOrder(null)} className="rounded-lg px-3 py-2 text-neutral-400 hover:bg-white/[.06]">닫기</button></div>
-          <dl className="mt-5 grid grid-cols-[100px_1fr] gap-2 rounded-2xl bg-black/20 p-4 text-sm"><dt className="text-neutral-500">고객</dt><dd className="font-bold">{refundOrder.email}</dd><dt className="text-neutral-500">주문</dt><dd className="break-all font-mono text-xs">{refundOrder.orderId}</dd><dt className="text-neutral-500">잔여 가능액</dt><dd className="font-black">{money(refundOrder.amountKrw-refundOrder.refundedAmountKrw-refundOrder.reservedRefundKrw)}</dd></dl>
-          <label className="mt-5 block text-sm font-bold">환불 금액<input type="number" min={1} max={refundOrder.amountKrw-refundOrder.refundedAmountKrw-refundOrder.reservedRefundKrw} value={refundAmount} onChange={(event) => setRefundAmount(Number(event.target.value))} className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-lg font-black outline-none focus:border-[#ff8c7c]" /></label>
+          <dl className="mt-5 grid grid-cols-[100px_1fr] gap-2 rounded-2xl bg-black/20 p-4 text-sm"><dt className="text-neutral-500">고객</dt><dd className="font-bold">{refundOrder.email}</dd><dt className="text-neutral-500">주문</dt><dd className="break-all font-mono text-xs">{refundOrder.orderId}</dd><dt className="text-neutral-500">잔여 가능액</dt><dd className="font-black">{money(remainingRefundable)}</dd><dt className="text-neutral-500">유료 필터</dt><dd className={refundOrder.popularFilterUsageCount > 0 ? "font-black text-amber-300" : "font-bold text-emerald-300"}>{refundOrder.popularFilterUsageCount > 0 ? `${refundOrder.popularFilterUsageCount}회 · 최근 ${date(refundOrder.popularFilterLastUsedAt)}` : "사용 이력 없음"}</dd></dl>
+          {refundOrder.popularFilterUsageCount > 0 && refundReasonCode === "statutory_withdrawal_unused" && <p role="alert" className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/[.07] px-4 py-3 text-xs font-bold leading-5 text-amber-100">서버가 유료 필터 결과를 제공한 기록이 있어 ‘7일 이내 미사용 전액환불’로 처리할 수 없습니다. 고객 귀책 중도해지 또는 예외 환불 여부를 확인해 주세요.</p>}
+          <label className="mt-5 block text-sm font-bold">환불 유형
+            <select value={refundReasonCode} onChange={(event) => setRefundReasonCode(event.target.value as AdminRefundReasonCode)} className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-[#151819] px-4 outline-none focus:border-[#ff8c7c]">
+              {adminRefundReasonCodes
+                .filter((code) => refundOrder.kind !== "addon" || code !== "customer_early_termination")
+                .map((code) => <option key={code} value={code}>{adminRefundReasonLabel(code)}</option>)}
+            </select>
+          </label>
+          {terminationQuote && <dl className="mt-4 grid grid-cols-[130px_1fr] gap-2 rounded-2xl border border-[#ff8c7c]/20 bg-[#ff8c7c]/[.06] p-4 text-sm">
+            <dt className="text-neutral-400">경과 이용대금</dt><dd className="text-right font-bold">{money(terminationQuote.elapsedServiceKrw)}</dd>
+            <dt className="text-neutral-400">잔여기간 이용대금</dt><dd className="text-right font-bold">{money(terminationQuote.remainingServiceKrw)}</dd>
+            <dt className="text-neutral-400">중도해지 위약금</dt><dd className="text-right font-bold">{terminationQuote.withinSevenDays ? "7일 이내 면제" : money(terminationQuote.penaltyKrw)}</dd>
+            <dt className="text-white">정책 환불액</dt><dd className="text-right font-black text-[#ffb4a8]">{money(terminationQuote.refundAmountKrw)}</dd>
+          </dl>}
+          <label className="mt-4 block text-sm font-bold">환불 금액
+            <input type="number" min={1} max={remainingRefundable} readOnly={refundReasonCode !== "goodwill"} value={effectiveRefundAmount} onChange={(event) => setRefundAmount(Number(event.target.value))} className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-lg font-black outline-none read-only:cursor-not-allowed read-only:text-neutral-400 focus:border-[#ff8c7c]" />
+          </label>
           <label className="mt-4 block text-sm font-bold">환불 사유<textarea value={refundReason} onChange={(event) => setRefundReason(event.target.value)} maxLength={500} rows={4} placeholder="고객 요청, 중복 결제 등 구체적인 사유" className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-black/20 p-4 outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]" /></label>
-          <p className="mt-4 text-xs leading-5 text-amber-200/80">이 버튼은 더페이원 실제 환불 API를 호출합니다. 구독 결제 환불 후 권한과 자동결제 상태는 관리자 확인 대상으로 남습니다.</p>
-          <div className="mt-6 flex gap-3"><button type="button" onClick={() => setRefundOrder(null)} className="h-12 flex-1 rounded-xl border border-white/10 font-bold">취소</button><button type="button" disabled={submitting || refundAmount < 1 || refundAmount > refundOrder.amountKrw-refundOrder.refundedAmountKrw-refundOrder.reservedRefundKrw || refundReason.trim().length < 2} onClick={() => void submitRefund()} className="h-12 flex-1 rounded-xl bg-[#ff806f] font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{submitting ? "처리 중..." : "환불 실행"}</button></div>
+          <p className="mt-4 text-xs leading-5 text-amber-200/80">고객 귀책 중도해지는 서버가 환불 시점에 경과 이용대금과 잔여기간의 10%를 다시 계산합니다. 이 버튼은 더페이원 실제 환불 API를 호출하며, 구독 권한과 자동결제 상태는 관리자 확인 대상으로 남습니다.</p>
+          <div className="mt-6 flex gap-3"><button type="button" onClick={() => setRefundOrder(null)} className="h-12 flex-1 rounded-xl border border-white/10 font-bold">취소</button><button type="button" disabled={submitting || effectiveRefundAmount < 1 || effectiveRefundAmount > remainingRefundable || refundReason.trim().length < 2} onClick={() => void submitRefund()} className="h-12 flex-1 rounded-xl bg-[#ff806f] font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{submitting ? "처리 중..." : "환불 실행"}</button></div>
         </div>
       </div>}
     </div>

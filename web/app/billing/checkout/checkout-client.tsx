@@ -123,9 +123,8 @@ function MonthlySubscriptionConfirmation({
           월간 구독으로 진행하시겠습니까?
         </h2>
         <div id="monthly-subscription-confirmation-description" className="relative mt-4 text-sm leading-6 text-neutral-400">
-          <p>월간 구독에서는 아래 혜택을 이용할 수 없습니다.</p>
+          <p>월간 구독에는 아래 혜택이 포함되지 않습니다.</p>
           <ul className="mx-auto mt-4 grid max-w-[300px] gap-2 text-left text-neutral-200">
-            <li className="flex items-center gap-2 rounded-xl border border-white/8 bg-black/20 px-4 py-3"><span aria-hidden="true" className="text-amber-300">!</span><span className="font-bold">실시간 인기 필터</span></li>
             <li className="flex items-center gap-2 rounded-xl border border-white/8 bg-black/20 px-4 py-3"><span aria-hidden="true" className="text-amber-300">!</span><span className="font-bold">전자책</span></li>
           </ul>
         </div>

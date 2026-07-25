@@ -311,7 +311,7 @@ export function PricingClient({
           strong: `매월 ${priceFormatter.format(monthlyMinutes)}분`,
         },
         {
-          text: `쇼츠 약 ${priceFormatter.format(totalShorts)}개`,
+          text: `쇼츠 약 ${priceFormatter.format(totalShorts)}개 · ${packageMonths}개월`,
           strong: `쇼츠 약 ${priceFormatter.format(totalShorts)}개`,
         },
         ...plan.features.slice(2),
