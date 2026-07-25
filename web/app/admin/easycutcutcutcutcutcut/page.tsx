@@ -51,8 +51,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const provider = ["nicepay", "thepayone"].includes(requestedProvider) ? requestedProvider : "all";
   const query = first(params.q).trim().slice(0, 100);
   const db = getDb();
-  const [metricRows, subscriptionRows, orderRows, refundRows, memberRows] = await Promise.all([
-    db`
+  const metricRows = await db`
       select
         coalesce(sum(amount_krw) filter (where status='succeeded'),0)::bigint as gross_sales,
         coalesce(sum(refunded_amount_krw),0)::bigint as refunded_sales,
@@ -64,15 +63,15 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         count(*) filter (where status='succeeded')::integer as paid_orders,
         count(*) filter (where status in ('unknown','manual_review'))::integer as review_orders
       from shorts_mvp.billing_orders
-    `,
-    db`
+    `;
+  const subscriptionRows = await db`
       select
         count(*) filter (where status='active')::integer as active,
         count(*) filter (where status='past_due')::integer as past_due,
         count(*) filter (where billing_review_status='manual_review')::integer as manual_review
       from shorts_mvp.user_subscriptions
-    `,
-    tab === "billing" ? db`
+    `;
+  const orderRows = tab === "billing" ? await db`
       select o.id,o.order_id,o.kind,o.product_code,o.billing_cycle,o.amount_krw,
         o.refunded_amount_krw,o.refund_status,o.status,o.provider,o.provider_transaction_id,
         o.provider_status,o.failure_code,o.approved_at,o.created_at,u.email,
@@ -97,8 +96,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         )
       order by o.created_at desc
       limit 100
-    ` : Promise.resolve([]),
-    tab === "billing" ? db`
+    ` : [];
+  const refundRows = tab === "billing" ? await db`
       select r.id,r.billing_order_id,r.amount_krw,r.reason,r.status,
         r.entitlement_action_status,r.provider_refund_transaction_id,r.failure_message,
         r.requested_at,r.processed_at,o.order_id,u.email,a.email as admin_email
@@ -108,8 +107,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       join shorts_mvp.app_users a on a.id=r.requested_by_user_id
       order by r.requested_at desc
       limit 50
-    ` : Promise.resolve([]),
-    tab === "members" ? db`
+    ` : [];
+  const memberRows = tab === "members" ? await db`
       select
         u.id,u.email,u.display_name,u.created_at,u.last_sign_in_at,
         s.id as subscription_id,s.plan_code,s.billing_cycle,s.status as subscription_status,
@@ -135,8 +134,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       )
       order by coalesce(u.last_sign_in_at,u.created_at) desc
       limit 100
-    ` : Promise.resolve([]),
-  ]);
+    ` : [];
 
   const metrics = metricRows[0] || {};
   const subscriptions = subscriptionRows[0] || {};

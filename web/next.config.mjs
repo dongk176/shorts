@@ -2,6 +2,7 @@
 const nextConfig = {
   distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
   output: "standalone",
+  serverExternalPackages: ["postgres"],
   outputFileTracingIncludes: {
     "/api/ebooks/*/download": ["./private/ebooks/*.pdf"],
   },
