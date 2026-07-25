@@ -32,3 +32,8 @@ storage/*
 # Local generated artifacts
 supabase/.temp/
 tmp/
+
+# Local Cloudflare WARP tooling and credentials
+worker/wgcf
+worker/wgcf-account.toml
+worker/wgcf-profile.conf
