@@ -3,4 +3,4 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-node scripts/apply-supabase.mjs
+node scripts/apply-supabase.mjs "$@"

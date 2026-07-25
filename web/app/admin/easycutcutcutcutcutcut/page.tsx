@@ -77,14 +77,16 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         o.refunded_amount_krw,o.refund_status,o.status,o.provider,o.provider_transaction_id,
         o.provider_status,o.failure_code,o.approved_at,o.created_at,u.email,
         s.status as subscription_status,
-        coalesce((
-          select sum(ur.refund_amount_krw)
-          from shorts_mvp.subscription_upgrade_refunds ur
-          where ur.source_order_id=o.id and ur.status in ('pending','submitted','manual_review')
-        ),0)::integer as reserved_refund_krw
+        coalesce(ur.reserved_refund_krw,0)::integer as reserved_refund_krw
       from shorts_mvp.billing_orders o
       join shorts_mvp.app_users u on u.id=o.user_id
       left join shorts_mvp.user_subscriptions s on s.id=o.subscription_id
+      left join (
+        select source_order_id, sum(refund_amount_krw)::integer as reserved_refund_krw
+        from shorts_mvp.subscription_upgrade_refunds
+        where status in ('pending','submitted','manual_review')
+        group by source_order_id
+      ) ur on ur.source_order_id=o.id
       where (${status}='all' or o.status=${status})
         and (${provider}='all' or o.provider=${provider})
         and (

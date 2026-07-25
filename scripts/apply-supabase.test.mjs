@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
+test("forwards selected migration filenames to the migration runner", () => {
+  const wrapper = fs.readFileSync(
+    new URL("./apply-supabase.sh", import.meta.url),
+    "utf8",
+  );
+  assert.match(wrapper, /node scripts\/apply-supabase\.mjs "\$@"/);
+});
+
 function creationBlockCodes(file) {
   const migration = fs.readFileSync(
     new URL(`../supabase/migrations/${file}`, import.meta.url),
