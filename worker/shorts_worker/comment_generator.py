@@ -269,7 +269,7 @@ class CommentGenerator:
             (
                 "gemini",
                 self.settings.gemini_comment_model,
-                bool(self.settings.gemini_api_key),
+                self.settings.gemini_enabled,
                 self._generate_with_gemini,
             ),
             (

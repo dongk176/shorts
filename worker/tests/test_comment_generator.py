@@ -41,8 +41,7 @@ def _response(*clips: CommentClipInput) -> CommentGenerationResponse:
             GeneratedClipComments(
                 clipIndex=clip.clip_index,
                 comments=[
-                    _comment_text(clip.clip_index, index + 1)
-                    for index in range(clip.target_count)
+                    _comment_text(clip.clip_index, index + 1) for index in range(clip.target_count)
                 ],
             )
             for clip in clips
@@ -82,7 +81,11 @@ def test_ai_response_schema_contains_only_clip_index_and_comment_strings() -> No
 def test_gemini_success_uses_server_generated_random_bounded_comment_slots() -> None:
     clip = _clip()
     generator = CommentGenerator(
-        Settings(gemini_api_key="gemini-key", openai_api_key="openai-key")
+        Settings(
+            gemini_api_key="gemini-key",
+            gemini_paid_data_processing_confirmed=True,
+            openai_api_key="openai-key",
+        )
     )
     generator._generate_with_gemini = MagicMock(return_value=_response(clip))
     generator._generate_with_openai = MagicMock()
@@ -96,14 +99,8 @@ def test_gemini_success_uses_server_generated_random_bounded_comment_slots() -> 
         comments[index]["startSeconds"] == comments[index - 1]["endSeconds"]
         for index in range(1, len(comments))
     )
-    durations = [
-        comment["endSeconds"] - comment["startSeconds"]
-        for comment in comments
-    ]
-    assert all(
-        2.5 <= duration <= 5.5
-        for duration in durations
-    )
+    durations = [comment["endSeconds"] - comment["startSeconds"] for comment in comments]
+    assert all(2.5 <= duration <= 5.5 for duration in durations)
     assert any(duration != clip.duration_seconds / len(comments) for duration in durations)
     generator._generate_with_openai.assert_not_called()
 
@@ -120,7 +117,11 @@ def test_partial_gemini_response_preserves_valid_comments_and_fills_only_missing
         ]
     }
     generator = CommentGenerator(
-        Settings(gemini_api_key="gemini-key", openai_api_key="openai-key")
+        Settings(
+            gemini_api_key="gemini-key",
+            gemini_paid_data_processing_confirmed=True,
+            openai_api_key="openai-key",
+        )
     )
     generator._generate_with_gemini = MagicMock(return_value=response)
     generator._generate_with_openai = MagicMock()
@@ -137,7 +138,11 @@ def test_extra_comments_are_truncated_without_openai_retry() -> None:
     clip = _clip()
     extra_comments = [_comment_text(1, index + 1) for index in range(10)]
     generator = CommentGenerator(
-        Settings(gemini_api_key="gemini-key", openai_api_key="openai-key")
+        Settings(
+            gemini_api_key="gemini-key",
+            gemini_paid_data_processing_confirmed=True,
+            openai_api_key="openai-key",
+        )
     )
     generator._generate_with_gemini = MagicMock(
         return_value={"clips": [{"clipIndex": 1, "comments": extra_comments}]}
@@ -154,7 +159,11 @@ def test_missing_short_uses_existing_fallback_without_discarding_other_shorts() 
     first = _clip(clip_index=1)
     second = _clip(clip_index=2)
     generator = CommentGenerator(
-        Settings(gemini_api_key="gemini-key", openai_api_key="openai-key")
+        Settings(
+            gemini_api_key="gemini-key",
+            gemini_paid_data_processing_confirmed=True,
+            openai_api_key="openai-key",
+        )
     )
     generator._generate_with_gemini = MagicMock(return_value=_response(first))
     generator._generate_with_openai = MagicMock()
@@ -172,11 +181,13 @@ def test_missing_short_uses_existing_fallback_without_discarding_other_shorts() 
 def test_unusable_gemini_response_calls_openai_once(reason: str) -> None:
     clip = _clip()
     generator = CommentGenerator(
-        Settings(gemini_api_key="gemini-key", openai_api_key="openai-key")
+        Settings(
+            gemini_api_key="gemini-key",
+            gemini_paid_data_processing_confirmed=True,
+            openai_api_key="openai-key",
+        )
     )
-    generator._generate_with_gemini = MagicMock(
-        side_effect=CommentProviderResponseError(reason)
-    )
+    generator._generate_with_gemini = MagicMock(side_effect=CommentProviderResponseError(reason))
     generator._generate_with_openai = MagicMock(return_value=_response(clip))
 
     comments = generator.generate([clip])[1]
@@ -199,7 +210,11 @@ def test_raw_empty_or_invalid_json_response_is_unusable(content: str | None) -> 
 def test_both_ai_failures_fill_the_exact_target_from_attached_fallback_comments() -> None:
     clip = _clip(duration=60)
     generator = CommentGenerator(
-        Settings(gemini_api_key="gemini-key", openai_api_key="openai-key")
+        Settings(
+            gemini_api_key="gemini-key",
+            gemini_paid_data_processing_confirmed=True,
+            openai_api_key="openai-key",
+        )
     )
     generator._generate_with_gemini = MagicMock(side_effect=RuntimeError("gemini failed"))
     generator._generate_with_openai = MagicMock(side_effect=RuntimeError("openai failed"))
@@ -252,7 +267,11 @@ def test_project_107_shape_keeps_all_valid_comments_when_one_comment_is_bad() ->
     clip_eight_comments = response["clips"][7]["comments"]
     clip_eight_comments[-1] = clip_eight_comments[0]
     generator = CommentGenerator(
-        Settings(gemini_api_key="gemini-key", openai_api_key="openai-key")
+        Settings(
+            gemini_api_key="gemini-key",
+            gemini_paid_data_processing_confirmed=True,
+            openai_api_key="openai-key",
+        )
     )
     generator._generate_with_gemini = MagicMock(return_value=response)
     generator._generate_with_openai = MagicMock()

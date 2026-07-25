@@ -32,6 +32,13 @@ def _choice(name: str, default: str, choices: frozenset[str]) -> str:
     return value if value in choices else default
 
 
+def _enabled(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def normalize_database_url(value: str | None) -> str | None:
     if not value:
         return value
@@ -78,6 +85,9 @@ class Settings:
         default_factory=lambda: _positive_int("OPENAI_TRANSCRIBE_MAX_WORKERS", 4)
     )
     gemini_api_key: str | None = field(default_factory=lambda: os.getenv("GEMINI_API_KEY"))
+    gemini_paid_data_processing_confirmed: bool = field(
+        default_factory=lambda: _enabled("GEMINI_PAID_DATA_PROCESSING_CONFIRMED")
+    )
     gemini_text_model: str = field(
         default_factory=lambda: os.getenv("GEMINI_TEXT_MODEL")
         or "gemini-2.5-flash-lite"
@@ -127,6 +137,11 @@ class Settings:
     )
     def ensure_directories(self) -> None:
         self.temp_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def gemini_enabled(self) -> bool:
+        """Allow user content only after the paid Gemini data terms are verified."""
+        return bool(self.gemini_api_key and self.gemini_paid_data_processing_confirmed)
 
     def validate_runtime(self) -> None:
         missing = [

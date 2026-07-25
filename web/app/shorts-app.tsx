@@ -1868,6 +1868,15 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               </span>
             </span>
           </label>
+          <div className="rounded-xl border border-sky-300/20 bg-sky-300/[.06] p-4 text-xs font-medium leading-6 text-sky-50">
+            <strong className="block text-sm font-extrabold text-white">AI 처리 및 개인정보 국외이전 안내</strong>
+            <p className="mt-1 text-sky-100/80">
+              제작을 시작하면 영상 오디오가 OpenAI API로 전사되고, 전사문과 영상·클립 정보가 유료 Google Gemini API 또는 OpenAI API로 전송되어 하이라이트·제목·합성 댓글 문구를 생성합니다. 회사는 이 데이터를 AI 모델 학습용으로 제공하지 않으며, 공급자 안전 로그는 Google 최대 55일·OpenAI 텍스트 생성 최대 30일 보유될 수 있습니다.
+            </p>
+            <Link href="/privacy#international-transfers" target="_blank" className="mt-2 inline-flex font-extrabold text-[#8bd7ff] underline underline-offset-4">
+              이전 국가·항목·거부 방법과 AI 처리 상세 보기
+            </Link>
+          </div>
           <button disabled={analysisCreationBlocked || !rightsConfirmed || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
               {loginPromptPending && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}

@@ -238,6 +238,18 @@ def test_gemini_defaults_match_ai_talk(monkeypatch) -> None:
     assert settings.openai_transcribe_max_workers == 4
 
 
+def test_gemini_requires_paid_data_processing_confirmation(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_PAID_DATA_PROCESSING_CONFIRMED", raising=False)
+    unconfirmed = Settings(gemini_api_key="gemini-test-key")
+    confirmed = Settings(
+        gemini_api_key="gemini-test-key",
+        gemini_paid_data_processing_confirmed=True,
+    )
+
+    assert unconfirmed.gemini_enabled is False
+    assert confirmed.gemini_enabled is True
+
+
 def test_worker_database_url_removes_web_only_options() -> None:
     value = normalize_database_url(
         "postgresql://user:pass@example.com/db?pgbouncer=true&sslmode=require"
@@ -271,14 +283,13 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     class FakeOpenAI:
         def __init__(self, **kwargs) -> None:
             captured["client"] = kwargs
-            self.beta = SimpleNamespace(
-                chat=SimpleNamespace(completions=FakeCompletions())
-            )
+            self.beta = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
 
     monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
     settings = Settings(
         openai_api_key=None,
         gemini_api_key="gemini-test-key",
+        gemini_paid_data_processing_confirmed=True,
         gemini_text_model="gemini-2.5-flash-lite",
     )
     selector = TranscriptSelector(settings)
@@ -297,10 +308,7 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     assert isinstance(client_options, dict)
     assert isinstance(request, dict)
     assert client_options["api_key"] == "gemini-test-key"
-    assert (
-        client_options["base_url"]
-        == "https://generativelanguage.googleapis.com/v1beta/openai/"
-    )
+    assert client_options["base_url"] == "https://generativelanguage.googleapis.com/v1beta/openai/"
     assert request["model"] == "gemini-2.5-flash-lite"
     assert request["response_format"] is SelectionResponse
     assert "중요한 테스트 자막" in request["messages"][1]["content"]
@@ -313,10 +321,7 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
         "이해할 수 있도록 할 것. 단순히 30초에 맞춰 성급하게 자르는 것을 엄격히 금지함."
         in request["messages"][0]["content"]
     )
-    assert (
-        "군더더기 없이 직관적이고 타격감 있는 구어체 단어"
-        in request["messages"][0]["content"]
-    )
+    assert "군더더기 없이 직관적이고 타격감 있는 구어체 단어" in request["messages"][0]["content"]
     assert "자연스러운 일본어 구어체" in request["messages"][0]["content"]
     assert "공백 포함 5~18자" in request["messages"][0]["content"]
     assert "hook_title_line1" in request["messages"][0]["content"]
@@ -341,9 +346,7 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
 
 
 def test_missing_gemini_key_uses_openai_nano(monkeypatch) -> None:
-    selector = TranscriptSelector(
-        Settings(openai_api_key="openai-test-key", gemini_api_key=None)
-    )
+    selector = TranscriptSelector(Settings(openai_api_key="openai-test-key", gemini_api_key=None))
     nano_calls = 0
 
     def unexpected_call(**_kwargs):
@@ -379,7 +382,11 @@ def test_missing_gemini_key_uses_openai_nano(monkeypatch) -> None:
 
 def test_gemini_success_does_not_call_openai_nano(monkeypatch) -> None:
     selector = TranscriptSelector(
-        Settings(openai_api_key="openai-test-key", gemini_api_key="gemini-test-key")
+        Settings(
+            openai_api_key="openai-test-key",
+            gemini_api_key="gemini-test-key",
+            gemini_paid_data_processing_confirmed=True,
+        )
     )
 
     monkeypatch.setattr(
@@ -416,7 +423,11 @@ def test_gemini_success_does_not_call_openai_nano(monkeypatch) -> None:
 
 def test_gemini_error_uses_openai_nano(monkeypatch) -> None:
     selector = TranscriptSelector(
-        Settings(openai_api_key="openai-test-key", gemini_api_key="gemini-test-key")
+        Settings(
+            openai_api_key="openai-test-key",
+            gemini_api_key="gemini-test-key",
+            gemini_paid_data_processing_confirmed=True,
+        )
     )
     monkeypatch.setattr(
         selector,
@@ -448,7 +459,11 @@ def test_gemini_error_uses_openai_nano(monkeypatch) -> None:
 
 def test_insufficient_gemini_candidates_use_openai_nano(monkeypatch) -> None:
     selector = TranscriptSelector(
-        Settings(openai_api_key="openai-test-key", gemini_api_key="gemini-test-key")
+        Settings(
+            openai_api_key="openai-test-key",
+            gemini_api_key="gemini-test-key",
+            gemini_paid_data_processing_confirmed=True,
+        )
     )
     monkeypatch.setattr(
         selector,
@@ -497,9 +512,7 @@ def test_fallback_title_removes_subtitle_speaker_markers() -> None:
         video_title="원본 제목을 쓰면 안 됨",
         duration_seconds=120,
         required_count=1,
-        transcript=[
-            SubtitleSegment(start=0, end=80, text=">> 야, 지금 바로 가야지! >> 그래")
-        ],
+        transcript=[SubtitleSegment(start=0, end=80, text=">> 야, 지금 바로 가야지! >> 그래")],
     )
     assert ">>" not in clips[0].hook_title
     assert "원본 제목" not in clips[0].hook_title
@@ -551,7 +564,11 @@ def test_long_transcript_fallback_title_does_not_fail_generation() -> None:
 
 def test_selector_falls_back_when_gemini_fails(monkeypatch) -> None:
     selector = TranscriptSelector(
-        Settings(openai_api_key="openai-test-key", gemini_api_key="gemini-test-key")
+        Settings(
+            openai_api_key="openai-test-key",
+            gemini_api_key="gemini-test-key",
+            gemini_paid_data_processing_confirmed=True,
+        )
     )
 
     def failing_call(**_kwargs):

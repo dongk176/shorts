@@ -16,7 +16,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function PrivacyPage() {
   return (
-    <LegalDocument eyebrow="Privacy Policy" title="개인정보처리방침" description="아티룸(이하 “회사”라 한다)은 Easy Cut을 운영하며, 이용자의 개인정보를 필요한 범위에서만 처리하고 안전하게 보호하기 위해 다음과 같이 개인정보처리방침을 공개합니다." effectiveDate="2026년 7월 26일" translations={privacyTranslations}>
+    <LegalDocument eyebrow="Privacy Policy" title="개인정보처리방침" description="아티룸(이하 “회사”라 한다)은 Easy Cut을 운영하며, 이용자의 개인정보를 필요한 범위에서만 처리하고 안전하게 보호하기 위해 다음과 같이 개인정보처리방침을 공개합니다." effectiveDate="2026년 7월 26일" translations={privacyTranslations} sectionIds={{ 5: "international-transfers" }}>
       <LegalSection title="1. 개인정보의 처리 목적">
         <p>회사는 다음 목적을 위해 개인정보를 처리합니다.</p>
         <ul><li>• Google 등 소셜 로그인, 이용자 식별 및 계정 관리</li><li>• YouTube 영상 분석, 쇼츠 생성·편집·다운로드 및 프로젝트 관리</li><li>• 구독·추가 상품 결제, 정기결제, 결제 취소 및 거래 대사</li><li>• 서비스 이용량 산정, 요금제 한도 적용 및 부정 이용 방지</li><li>• 방문·이용 통계 분석 및 서비스 개선</li><li>• 오류 대응, 보안 유지, 서비스 품질 개선 및 이용자 문의 처리</li></ul>
@@ -37,35 +37,95 @@ export default function PrivacyPage() {
       <LegalSection title="4. 개인정보의 제3자 제공">
         <p>회사는 원칙적으로 이용자의 개인정보를 제3자에게 판매하거나 제공하지 않습니다. 법령에 근거가 있거나 이용자가 별도로 동의한 경우에는 예외로 합니다.</p>
       </LegalSection>
-      <LegalSection title="5. 처리업무의 위탁 및 외부 서비스 이용">
-        <p>서비스 제공을 위해 다음 외부 서비스를 이용할 수 있으며, 각 수탁자는 서비스 제공에 필요한 범위에서 정보를 처리합니다.</p>
-        <div className="overflow-x-auto"><table><thead><tr><th>수탁자</th><th>업무 내용</th><th>처리될 수 있는 정보</th></tr></thead><tbody>
-          <tr><td>Supabase</td><td>인증 및 데이터베이스 운영</td><td>계정 정보, 프로젝트·이용량 데이터</td></tr>
-          <tr><td>Vercel</td><td>웹 호스팅 및 요청 처리</td><td>접속·요청 기록 및 서비스 데이터</td></tr>
-          <tr><td>Amazon Web Services</td><td>영상 처리, 임시 작업 및 결과물 저장·전송</td><td>영상·오디오·자막·결과물 및 작업 식별자</td></tr>
-          <tr><td>Google</td><td>소셜 로그인, YouTube 정보 조회, AI 구간 분석 및 방문 통계 분석</td><td>로그인 정보, YouTube URL·메타데이터·전사 텍스트, 방문·기기·유입·이용 이벤트 정보</td></tr>
-          <tr><td>OpenAI</td><td>전체 영상 오디오 전사 및 Gemini 실패 시 하이라이트 구간·제목 선정</td><td>작업 대상 오디오, 전사 텍스트, 영상 메타데이터</td></tr>
-          <tr><td>더페이원</td><td>카드 등록, 구독·단건 결제, 정기결제 및 결제 결과 통지</td><td>구매자 이름·이메일·연락처, 카드 인증정보, 상품·금액·거래 식별자</td></tr>
+      <LegalSection title="5. 개인정보 처리업무의 위탁">
+        <p>회사는 서비스 제공에 필요한 업무를 아래 수탁자에게 위탁합니다. 수탁자는 맡은 업무에 필요한 범위에서만 개인정보를 처리하며, 회사는 계약과 공급자 관리 절차를 통해 안전성 확보조치, 목적 외 처리 금지, 재위탁 관리, 사고 통지 및 삭제 의무를 확인합니다.</p>
+        <div className="overflow-x-auto"><table><thead><tr><th>수탁자</th><th>위탁 업무</th><th>처리될 수 있는 정보</th><th>주 처리 위치</th></tr></thead><tbody>
+          <tr><td>Supabase, Inc.</td><td>소셜 인증 연계, 데이터베이스 운영 및 백업</td><td>계정 정보, 프로젝트·이용량·결제 상태 데이터</td><td>대한민국 서울 리전(주 저장·처리)</td></tr>
+          <tr><td>Vercel Inc.</td><td>웹 호스팅, 서버 요청 처리, 배포 및 보안 로그</td><td>접속·요청 기록과 요청에 포함된 서비스 데이터</td><td>미국 중심의 글로벌 인프라</td></tr>
+          <tr><td>Amazon Web Services, Inc. 및 AWS Korea</td><td>영상 처리, 작업 중 임시 저장, 결과물 저장·전송</td><td>영상·오디오·자막·결과물과 작업 식별자</td><td>대한민국 서울 리전</td></tr>
+          <tr><td>Google LLC</td><td>Google 로그인, YouTube 정보 조회, Gemini AI 분석 및 선택적 방문 통계</td><td>로그인 정보, YouTube URL·메타데이터, 전사 텍스트, 선택적 방문·기기·이용 이벤트</td><td>미국 등 글로벌 인프라</td></tr>
+          <tr><td>OpenAI OpCo, LLC</td><td>오디오 전사, 대체 하이라이트·제목 및 합성 댓글 문구 생성</td><td>작업 대상 오디오, 전사 텍스트, 영상·클립 메타데이터</td><td>미국 및 하위처리자 운영 국가</td></tr>
+          <tr><td>더페이원</td><td>카드 등록, 구독·단건·정기 결제 및 결제 결과 통지</td><td>구매자 이름·이메일·연락처, 카드 인증정보, 상품·금액·거래 식별자</td><td>대한민국</td></tr>
         </tbody></table></div>
-        <p>외부 서비스의 인프라 운영 과정에서 정보가 국외에서 처리될 수 있습니다. 회사는 서비스 제공에 필요한 범위로 전송을 제한하고 각 공급자의 보호조치와 계약 조건을 확인합니다.</p>
       </LegalSection>
-      <LegalSection title="6. AI를 이용한 데이터 처리">
-        <p>Easy Cut은 모든 작업 영상의 오디오를 OpenAI로 전사합니다. 생성된 전사 텍스트와 영상 메타데이터는 하이라이트 구간 선정 및 제목 생성을 위해 Gemini에 전달될 수 있으며, Gemini가 설정되지 않았거나 요청·응답 처리에 실패하면 OpenAI에 전달될 수 있습니다. 회사는 이용자의 콘텐츠를 자체 AI 모델 학습 데이터로 별도 활용하지 않습니다.</p>
-        <p>AI가 생성한 결과에는 오류나 부정확한 내용이 포함될 수 있으므로 이용자는 게시 또는 배포 전에 결과를 확인해야 합니다.</p>
+      <LegalSection id="international-transfers" title="6. 개인정보의 국외 이전">
+        <p>회사는 아래와 같이 개인정보를 국외로 이전합니다. 서비스 제공에 필수적인 처리위탁·보관은 「개인정보 보호법」 제28조의8 제1항 제3호에 따라 이용계약의 체결·이행에 필요한 범위에서 수행하고, 선택적인 Google Analytics 이전은 같은 항 제1호에 따라 별도 동의를 받은 경우에만 수행합니다.</p>
+        <div className="overflow-x-auto"><table><thead><tr><th>이전받는 자·연락처</th><th>이전 국가</th><th>이전 항목</th><th>시기·방법</th><th>목적</th><th>보유·이용 기간</th><th>거부 방법·효과</th></tr></thead><tbody>
+          <tr>
+            <td>Supabase, Inc.<br /><a href="mailto:privacy@supabase.com">privacy@supabase.com</a></td>
+            <td>미국(지원·보안·장애 대응 시). 데이터베이스는 대한민국 서울 리전에 주 저장·처리</td>
+            <td>계정 정보, 프로젝트·이용량·결제 상태 데이터</td>
+            <td>가입·로그인 및 서비스 요청 시 TLS 암호화 통신으로 수시 이전 또는 국외에서 제한적으로 조회</td>
+            <td>인증·데이터베이스 운영, 백업, 보안 및 장애 대응</td>
+            <td>회사의 해당 정보 보유기간까지. 계약 종료 시 반환기간 30일 후 삭제(법령상 보존 제외)</td>
+            <td>고객센터를 통해 이전을 거부할 수 있으나, 인증·프로젝트 기능을 제공할 수 없어 계정형 서비스 이용이 제한됩니다.</td>
+          </tr>
+          <tr>
+            <td>Vercel Inc.<br /><a href="mailto:privacy@vercel.com">privacy@vercel.com</a></td>
+            <td>미국(주요 처리) 및 <a href="https://security.vercel.com/" target="_blank" rel="noreferrer">하위처리자 운영 국가</a></td>
+            <td>IP 주소, 브라우저·기기 정보, 접속·요청·오류 기록 및 요청에 포함된 서비스 데이터</td>
+            <td>웹사이트 접속·API 요청 시 TLS 암호화 통신으로 수시 이전</td>
+            <td>웹 호스팅, 요청 처리, 배포, 보안 및 장애 대응</td>
+            <td>서비스 제공기간까지. 삭제·계약 종료 후 공급자 백업은 최대 30일(법령상 보존 제외)</td>
+            <td>고객센터를 통해 이전을 거부할 수 있으나, 웹사이트와 API를 제공할 수 없어 서비스 이용이 불가합니다.</td>
+          </tr>
+          <tr>
+            <td>Google LLC (Google 로그인·YouTube API)<br /><a href="https://support.google.com/policies/contact/general_privacy_form" target="_blank" rel="noreferrer">개인정보 문의</a></td>
+            <td>미국 및 <a href="https://www.google.com/about/datacenters/locations/" target="_blank" rel="noreferrer">Google 데이터센터 운영 국가</a></td>
+            <td>Google 계정 식별자·이메일·표시 이름·프로필 이미지, YouTube URL·영상 ID·제목·채널·길이·썸네일</td>
+            <td>Google 로그인 또는 YouTube 영상 확인 요청 시 TLS 암호화 통신으로 이전</td>
+            <td>로그인·계정 연결 및 YouTube 공개 영상 정보 확인</td>
+            <td>계정 연결 및 서비스 제공에 필요한 기간 또는 이용자가 Google 계정 권한을 철회하고 삭제가 완료될 때까지</td>
+            <td>Google 로그인을 진행하지 않거나 고객센터를 통해 연결 해제를 요청할 수 있으나, 로그인과 영상 확인이 필요한 기능은 이용할 수 없습니다.</td>
+          </tr>
+          <tr>
+            <td>Google LLC (유료 Gemini API)<br /><a href="https://support.google.com/cloud/contact/dpo" target="_blank" rel="noreferrer">Google Cloud 개인정보 문의</a></td>
+            <td>미국 및 Google 또는 그 대리인이 시설을 운영하는 국가</td>
+            <td>전사 텍스트, 영상·클립 제목과 메타데이터, 선택 구간 후보, 생성 요청·응답</td>
+            <td>쇼츠 생성 작업 중 TLS 암호화 API로 이전</td>
+            <td>하이라이트 구간·제목 및 댓글 캡처 템플릿의 합성 댓글 문구 생성, 안전·오남용 방지</td>
+            <td>요청·응답과 관련 로그 최대 55일(법령상 보존 제외)</td>
+            <td>작업을 제출하지 않는 방법으로 거부할 수 있습니다. 거부하면 AI 기반 쇼츠 생성 기능을 제공할 수 없습니다.</td>
+          </tr>
+          <tr>
+            <td>OpenAI OpCo, LLC<br /><a href="mailto:privacy@openai.com">privacy@openai.com</a></td>
+            <td>미국(주요 처리), 대한민국·일본·싱가포르 등 <a href="https://openai.com/policies/sub-processor-list/" target="_blank" rel="noreferrer">하위처리자 처리 국가</a></td>
+            <td>작업 영상의 오디오 청크, 전사 텍스트, 영상·클립 제목과 메타데이터, 생성 요청·응답</td>
+            <td>쇼츠 생성 작업 중 TLS 암호화 API로 이전</td>
+            <td>오디오 전사, Gemini 미사용·실패 시 하이라이트·제목·합성 댓글 문구 생성, 안전·오남용 방지</td>
+            <td>오디오 전사 API 입력·출력은 기본 콘텐츠 보유 없음. 텍스트 생성 API 안전 로그는 최대 30일(법령상 보존 또는 중대한 오남용 방지 필요 시 예외)</td>
+            <td>작업을 제출하지 않는 방법으로 거부할 수 있습니다. 거부하면 AI 기반 쇼츠 생성 기능을 제공할 수 없습니다.</td>
+          </tr>
+          <tr>
+            <td>Google LLC (Google Analytics, 선택)<br /><a href="https://support.google.com/policies/contact/general_privacy_form" target="_blank" rel="noreferrer">개인정보 문의</a></td>
+            <td>미국 및 Google 데이터센터 운영 국가</td>
+            <td>온라인 식별자, IP 주소, 브라우저·기기 정보, 방문 페이지, 유입 경로, 대략적 지역 및 이용 이벤트</td>
+            <td>분석 쿠키 배너에서 동의한 뒤 사이트 방문·이용 시 TLS 암호화 통신으로 수시 이전</td>
+            <td>방문자 수, 재방문 및 이용 흐름 분석</td>
+            <td>분석 쿠키의 설정 기간과 Google Analytics 속성에 설정된 이벤트 보유기간까지</td>
+            <td>배너에서 거부하거나 화면의 ‘분석 쿠키 설정’에서 동의를 철회할 수 있습니다. 거부해도 일반 서비스 이용에는 영향이 없습니다.</td>
+          </tr>
+        </tbody></table></div>
+        <p>국외이전 수탁자나 처리 국가가 변경되면 이 방침을 갱신하고, 중요한 변경은 시행 전에 알립니다. 회사는 전송 구간 암호화, 접근 통제, 최소 전송, 공급자 계약·보호조치 확인, 삭제 및 침해 대응 절차를 적용합니다.</p>
       </LegalSection>
-      <LegalSection title="7. 개인정보의 파기 절차 및 방법"><p>보유 기간이 끝나거나 처리 목적이 달성된 개인정보는 지체 없이 파기합니다. 전자적 파일은 복구하기 어려운 방식으로 삭제하고 영상 결과물은 애플리케이션 정리 작업과 저장소 수명주기 정책을 통해 삭제합니다.</p></LegalSection>
-      <LegalSection title="8. 쿠키의 사용"><p>Easy Cut은 로그인 상태와 프로젝트 소유권을 유지하기 위한 필수 세션 쿠키와 방문자 수, 재방문 및 이용 흐름을 측정하기 위한 Google Analytics 쿠키를 사용합니다. Google Analytics의 광고 저장, 광고 사용자 데이터, 광고 개인화 및 Google Signals 기능은 사용하지 않습니다. 이용자는 브라우저 설정에서 분석 쿠키를 삭제하거나 차단할 수 있으며, 이 경우 방문 통계 집계가 제한되지만 서비스의 일반 기능은 이용할 수 있습니다. 필수 쿠키를 차단하면 로그인이나 프로젝트 기능이 정상적으로 작동하지 않을 수 있습니다.</p></LegalSection>
-      <LegalSection title="9. 이용자의 권리와 행사 방법"><p>이용자는 자신의 개인정보에 대해 열람, 정정, 삭제, 처리정지 및 동의 철회를 요청할 수 있습니다. 서비스 내 고객 지원을 통해 요청하면 본인 확인 후 관련 법령이 정한 절차에 따라 처리합니다.</p></LegalSection>
-      <LegalSection title="10. 개인정보의 안전성 확보 조치"><p>회사는 전송 구간 암호화, 접근 권한 제한, 비밀정보의 서버 전용 관리, 비공개 저장소와 서명 URL, 세션 쿠키 보호, 접근 기록 및 정기적인 삭제 정책 등 합리적인 기술적·관리적 보호조치를 적용합니다.</p></LegalSection>
-      <LegalSection title="11. 만 14세 미만 아동"><p>Easy Cut은 만 14세 미만 아동을 대상으로 하지 않으며 법정대리인의 동의 없이 만 14세 미만 아동의 개인정보를 의도적으로 수집하지 않습니다.</p></LegalSection>
-      <LegalSection title="12. 개인정보 보호책임자 및 문의">
+      <LegalSection title="7. AI를 이용한 데이터 처리">
+        <p>Easy Cut은 작업 영상의 오디오를 청크로 나누어 OpenAI API로 전사합니다. 전사 텍스트와 영상·클립 메타데이터는 하이라이트 구간·제목을 만들고 댓글 캡처 템플릿에 표시할 합성 댓글 문구를 생성하기 위해 유료 Gemini API로 전송될 수 있습니다. 유료 데이터 처리 조건이 확인되지 않았거나 Gemini 요청이 실패하면 OpenAI API가 해당 텍스트 생성을 수행합니다.</p>
+        <p>회사는 AI 공급자의 학습·제품 개선을 위한 데이터 공유에 이용자 콘텐츠를 별도로 제공하거나 이를 자체 AI 모델 학습에 사용하지 않습니다. 운영 설정상 무료 Gemini API로 이용자 콘텐츠를 처리하지 않으며, OpenAI API 입력·출력은 기본적으로 모델 학습에 사용되지 않습니다. 공급자는 안전과 오남용 방지를 위해 제6조의 기간 동안 제한된 로그를 보유할 수 있습니다.</p>
+        <p>AI는 화자 생체식별이나 얼굴 인식을 수행하지 않으며, 이용자에게 법적 또는 그와 유사한 중대한 효과를 주는 완전 자동화된 결정을 내리지 않습니다. 생성 결과는 편집 보조 자료로서 오류·누락·부정확하거나 부적절할 수 있고, 합성 댓글은 실제 이용자의 댓글이 아닙니다. 이용자는 게시·배포 전에 결과의 정확성, 적법성 및 권리 관계를 직접 확인해야 합니다.</p>
+      </LegalSection>
+      <LegalSection title="8. 개인정보의 파기 절차 및 방법"><p>보유 기간이 끝나거나 처리 목적이 달성된 개인정보는 지체 없이 파기합니다. 전자적 파일은 복구하기 어려운 방식으로 삭제하고 영상 결과물은 애플리케이션 정리 작업과 저장소 수명주기 정책을 통해 삭제합니다.</p></LegalSection>
+      <LegalSection title="9. 쿠키의 사용"><p>Easy Cut은 로그인 상태와 프로젝트 소유권을 유지하기 위한 필수 세션 쿠키를 사용합니다. Google Analytics 쿠키는 이용자가 분석 쿠키 배너에서 별도로 동의한 경우에만 설정·전송하며, 화면의 ‘분석 쿠키 설정’에서 언제든지 거부하거나 동의를 철회할 수 있습니다. Google Analytics의 광고 저장, 광고 사용자 데이터, 광고 개인화 및 Google Signals 기능은 사용하지 않습니다. 분석 쿠키를 거부해도 일반 기능은 이용할 수 있으나 필수 쿠키를 차단하면 로그인이나 프로젝트 기능이 정상적으로 작동하지 않을 수 있습니다.</p></LegalSection>
+      <LegalSection title="10. 이용자의 권리와 행사 방법"><p>이용자는 자신의 개인정보에 대해 열람, 정정, 삭제, 처리정지, 동의 철회 및 국외이전 거부를 요청할 수 있습니다. 서비스 내 고객 지원을 통해 요청하면 본인 확인 후 관련 법령이 정한 절차에 따라 처리합니다. 필수 처리나 국외이전을 거부하면 해당 정보가 필요한 기능은 제한될 수 있으나, 선택 분석 쿠키의 거부는 일반 서비스 이용에 영향을 주지 않습니다.</p></LegalSection>
+      <LegalSection title="11. 개인정보의 안전성 확보 조치"><p>회사는 전송 구간 암호화, 접근 권한 제한, 비밀정보의 서버 전용 관리, 비공개 저장소와 서명 URL, 세션 쿠키 보호, 접근 기록, 공급자 유료·비학습 데이터 처리 조건 확인 및 정기적인 삭제 정책 등 합리적인 기술적·관리적 보호조치를 적용합니다.</p></LegalSection>
+      <LegalSection title="12. 만 14세 미만 아동"><p>Easy Cut은 만 14세 미만 아동을 대상으로 하지 않으며 법정대리인의 동의 없이 만 14세 미만 아동의 개인정보를 의도적으로 수집하지 않습니다.</p></LegalSection>
+      <LegalSection title="13. 개인정보 보호책임자 및 문의">
         <div className="overflow-x-auto"><table><tbody>
           <tr><th>개인정보처리자</th><td>아티룸</td></tr><tr><th>대표 및 개인정보 보호책임자</th><td>김동민</td></tr><tr><th>전화</th><td><a href="tel:010-4836-2874" className="text-[#ff8c7c] underline underline-offset-4">010-4836-2874</a> (평일 14:00 ~ 19:00)</td></tr><tr><th>이메일</th><td><a href="mailto:artiroom176@gmail.com" className="text-[#ff8c7c] underline underline-offset-4">artiroom176@gmail.com</a></td></tr><tr><th>주소</th><td>서울특별시 마포구 성산로8길 40</td></tr>
         </tbody></table></div>
         <p>개인정보 보호 관련 문의와 권리 행사는 위 고객센터를 통해 접수할 수 있습니다.</p>
         <ul><li>• 개인정보침해신고센터: 국번 없이 118</li><li>• 개인정보분쟁조정위원회: 1833-6972</li></ul>
       </LegalSection>
-      <LegalSection title="13. 처리방침의 변경"><p>법령, 서비스 또는 데이터 처리 방식이 변경되는 경우 이 처리방침을 수정할 수 있으며 중요한 변경은 시행 전에 서비스 화면을 통해 안내합니다.</p></LegalSection>
+      <LegalSection title="14. 처리방침의 변경"><p>법령, 서비스, 수탁자 또는 데이터 처리 방식이 변경되는 경우 이 처리방침을 수정할 수 있으며 중요한 변경은 시행 전에 서비스 화면을 통해 안내합니다. AI 공급자, 학습·보유 정책 또는 국외 처리 국가가 바뀌는 경우에도 실제 적용 전에 방침과 작업 화면의 안내를 갱신합니다.</p></LegalSection>
     </LegalDocument>
   );
 }
