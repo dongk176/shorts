@@ -26,7 +26,6 @@ export function PurchaseTermsConsent({
       <p className="min-w-0 text-xs font-medium leading-6 text-neutral-300">
         <label htmlFor={consentId} className="cursor-pointer">
           <strong className="text-[#ff9b8d]">[필수]</strong>{" "}
-          구매약관 및 취소·환불 규정을 확인했으며 이에 동의합니다.{" "}
         </label>
         <Link
           href="/purchase-terms"
@@ -34,17 +33,22 @@ export function PurchaseTermsConsent({
           rel="noopener noreferrer"
           className="font-black text-[#ff9b8d] underline decoration-[#ff9b8d]/45 underline-offset-2"
         >
-          구매약관 보기 ↗
+          구매약관
         </Link>
-        <span className="text-neutral-600"> · </span>
+        <label htmlFor={consentId} className="cursor-pointer">
+          {" "}및{" "}
+        </label>
         <Link
           href="/refund"
           target="_blank"
           rel="noopener noreferrer"
           className="font-black text-[#ff9b8d] underline decoration-[#ff9b8d]/45 underline-offset-2"
         >
-          취소·환불 규정 보기 ↗
+          취소·환불 규정
         </Link>
+        <label htmlFor={consentId} className="cursor-pointer">
+          을 확인했으며 이에 동의합니다.
+        </label>
       </p>
     </div>
   );
