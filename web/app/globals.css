@@ -309,6 +309,7 @@ video {
 .ebook-rail::-webkit-scrollbar { display: none; }
 .ebook-card { appearance: none; display: flex; min-width: 0; flex-direction: column; overflow: visible; border: 0; border-radius: 0; background: transparent; color: inherit; scroll-snap-align: start; text-align: left; box-shadow: none; transition: transform .24s; }
 .ebook-card:hover { border-color: transparent; box-shadow: none; transform: translateY(-5px); }
+.ebook-card:disabled { cursor: wait; opacity: .58; transform: none; }
 .ebook-card-cover { position: relative; display: block; aspect-ratio: 210 / 297; overflow: hidden; border-radius: 16px; background: #0c0e0f; }
 .ebook-card-image { object-fit: contain; object-position: center; }
 .ebook-card-title { display: block; padding: 0 2px 12px; color: #f2f3f3; font-size: 14px; font-weight: 800; line-height: 1.45; text-align: center; }

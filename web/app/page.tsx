@@ -10,9 +10,9 @@ export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale();
   return createPageMetadata({
     title: localizedValue(locale, {
-      ko: "이지컷 | AI 쇼츠 자동 제작",
-      en: "Easy Cut | AI Shorts Maker",
-      ja: "Easy Cut | AIショート動画自動作成",
+      ko: "이지컷",
+      en: "Easy Cut",
+      ja: "Easy Cut",
     }),
     description: localizedValue(locale, { ko: DEFAULT_DESCRIPTION, en: "Paste a YouTube link and let AI find highlights, create 30–60 second Shorts, hook titles, and captions automatically.", ja: "YouTubeリンクを貼り付けるだけで、AIがハイライトを見つけ、30〜60秒のショート動画、フックタイトル、字幕を自動作成します。" }),
     path: "/",

@@ -8,6 +8,7 @@ import {
   downloadableEbookSlugs,
   type DownloadableEbookSlug,
 } from "@/lib/ebook-entitlements";
+import { claimEbookDownload } from "@/lib/ebook-downloads";
 import { apiError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 
@@ -31,9 +32,11 @@ export async function GET(_request: Request, context: Context) {
   try {
     const { slug } = paramsSchema.parse(await context.params);
     const session = await requireAuthenticatedMvpSession();
-    const billing = await getBillingSummary(getDb(), session.userId);
+    const db = getDb();
+    const billing = await getBillingSummary(db, session.userId);
     assertEbookDownloadAccess(billing);
     const file = await readFile(path.join(process.cwd(), "private", "ebooks", `${slug}.pdf`));
+    const download = await claimEbookDownload(db, session.userId, slug);
     const encodedName = encodeURIComponent(downloadNames[slug]);
     return new Response(new Uint8Array(file), {
       headers: {
@@ -42,6 +45,8 @@ export async function GET(_request: Request, context: Context) {
         "Content-Length": String(file.byteLength),
         "Content-Type": "application/pdf",
         "X-Content-Type-Options": "nosniff",
+        "X-Ebook-Downloads-Limit": String(download.limit),
+        "X-Ebook-Downloads-Remaining": String(download.remaining),
       },
     });
   } catch (error) {

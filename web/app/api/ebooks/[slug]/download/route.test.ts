@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { downloadableEbookSlugs } from "@/lib/ebook-entitlements";
+
+const mocks = vi.hoisted(() => ({
+  db: vi.fn(),
+}));
 
 vi.mock("@/lib/billing", () => ({
   getBillingSummary: vi.fn(async () => ({
@@ -10,7 +14,7 @@ vi.mock("@/lib/billing", () => ({
 }));
 
 vi.mock("@/lib/db", () => ({
-  getDb: vi.fn(() => ({})),
+  getDb: vi.fn(() => mocks.db),
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -22,6 +26,11 @@ vi.mock("@/lib/session", () => ({
 import { GET } from "./route";
 
 describe("ebook download route", () => {
+  beforeEach(() => {
+    mocks.db.mockReset();
+    mocks.db.mockResolvedValue([{ downloadCount: 1 }]);
+  });
+
   it.each(downloadableEbookSlugs)("returns the original PDF for %s", async (slug) => {
     const response = await GET(
       new Request(`http://localhost/api/ebooks/${slug}/download`),
@@ -31,8 +40,36 @@ describe("ebook download route", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("application/pdf");
     expect(response.headers.get("content-disposition")).toContain("attachment;");
+    expect(response.headers.get("x-ebook-downloads-limit")).toBe("10");
+    expect(response.headers.get("x-ebook-downloads-remaining")).toBe("9");
 
     const signature = Buffer.from(await response.arrayBuffer()).subarray(0, 4).toString();
     expect(signature).toBe("%PDF");
+  });
+
+  it("rejects an eleventh download without returning the PDF", async () => {
+    mocks.db.mockResolvedValueOnce([]);
+
+    const response = await GET(
+      new Request("http://localhost/api/ebooks/viral-formula/download"),
+      { params: Promise.resolve({ slug: "viral-formula" }) },
+    );
+
+    expect(response.status).toBe(429);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "EBOOK_DOWNLOAD_LIMIT_REACHED",
+    });
+  });
+
+  it("allows the tenth download and reports zero remaining", async () => {
+    mocks.db.mockResolvedValueOnce([{ downloadCount: 10 }]);
+
+    const response = await GET(
+      new Request("http://localhost/api/ebooks/title-300/download"),
+      { params: Promise.resolve({ slug: "title-300" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-ebook-downloads-remaining")).toBe("0");
   });
 });

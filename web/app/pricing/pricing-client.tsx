@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { PurchaseTermsConsent } from "@/components/purchase-terms-consent";
 import { PaymentMessageOverlay } from "@/components/payment-message-overlay";
+import { ThePayOnePaymentOverlay } from "@/components/thepayone-payment-overlay";
 import { useUsageState } from "@/components/usage-provider";
 import { billingPostJson, purchaseAddonWithSavedCard } from "@/lib/billing-client";
-import { formatStoredCardLabel } from "@/lib/billing-card";
 import type { MvpState } from "@/lib/contracts";
 import { billingSupportsEbookDownloads } from "@/lib/ebook-entitlements";
 import {
@@ -143,6 +143,7 @@ type ResubscribeAuthState = {
   requestId: string;
   identityNumber: string;
   cardPassword: string;
+  consent: boolean;
 };
 
 type EarlyBirdSuccessState = {
@@ -264,7 +265,7 @@ export function PricingClient({
   }, [initialState]);
 
   useEffect(() => {
-    if (!earlyBirdConfirmation && !planCheckout && !cancelConfirmation && !resubscribeAuth) return;
+    if (!cancelConfirmation) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     document.body.classList.add("purchase-sheet-open");
@@ -272,7 +273,7 @@ export function PricingClient({
       document.body.style.overflow = previousOverflow;
       document.body.classList.remove("purchase-sheet-open");
     };
-  }, [cancelConfirmation, earlyBirdConfirmation, planCheckout, resubscribeAuth]);
+  }, [cancelConfirmation]);
 
   async function reloadState() {
     const response = await fetch("/api/mvp/state", {
@@ -315,6 +316,10 @@ export function PricingClient({
     : null;
   const activeProducts = state?.billing.activeProducts ?? [];
   const purchasedPackageCodes = new Set(state?.billing.purchasedPackageCodes ?? []);
+  const hasReusableStoredCard = Boolean(
+    state?.billing.paymentProvider === "thepayone"
+    && (state.billing.cardNumberMasked || state.billing.cardLast4)
+  );
   const hasActivePackage = activeProducts.some(
     (product) => getPricingV2Plan(product.planCode)?.kind === "package",
   ) || activePricingProduct?.kind === "package";
@@ -531,6 +536,10 @@ export function PricingClient({
       setError("카드 비밀번호 앞 2자리를 입력해 주세요.");
       return;
     }
+    if (!resubscribeAuth.consent) {
+      setError("구매약관 및 취소·환불 규정에 동의해 주세요.");
+      return;
+    }
     setBusy("resubscribe");
     setError(null);
     try {
@@ -617,10 +626,6 @@ export function PricingClient({
       </article>
     );
   }
-
-  const storedCardLabel = formatStoredCardLabel({
-    last4: state?.billing.cardLast4,
-  });
 
   if (!stateLoaded) {
     return (
@@ -710,6 +715,7 @@ export function PricingClient({
                             requestId: crypto.randomUUID(),
                             identityNumber: "",
                             cardPassword: "",
+                            consent: false,
                           });
                         } else {
                           setCancelConfirmation(true);
@@ -833,135 +839,90 @@ export function PricingClient({
           product={planCheckout.product}
           initialName={state?.user?.displayName}
           initialEmail={state?.user?.email}
+          savedPaymentMethod={hasReusableStoredCard ? {
+            hasStoredPayerTel: Boolean(state?.billing.hasStoredPayerTel),
+          } : null}
           onClose={() => setPlanCheckout(null)}
         />
       )}
 
       {earlyBirdConfirmation && (
-        <div
-          className="fixed inset-0 z-[120] flex items-end bg-black/75 pt-8 backdrop-blur-sm sm:grid sm:place-items-center sm:overflow-y-auto sm:px-5 sm:py-8"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="pricing-v2-addon-title"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !busy) {
-              setEarlyBirdConfirmation(null);
-              setCardAuth(emptyCardAuth);
-            }
+        <ThePayOnePaymentOverlay
+          title="카드 정보"
+          busy={Boolean(busy)}
+          primaryDisabled={
+            ![6, 10].includes(digits(cardAuth.identityNumber, 10).length)
+            || digits(cardAuth.cardPassword, 2).length !== 2
+            || (!state?.billing.hasStoredPayerTel
+              && !/^\d{10,11}$/.test(digits(cardAuth.payerTel, 11)))
+            || !cardAuth.consent
+          }
+          primaryLabel={busy ? "결제를 진행하고 있습니다..." : "확인"}
+          secondaryLabel="취소"
+          onClose={() => {
+            setEarlyBirdConfirmation(null);
+            setCardAuth(emptyCardAuth);
           }}
+          onSubmit={() => void confirmEarlyBirdPurchase()}
         >
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void confirmEarlyBirdPurchase();
-            }}
-            className="flex max-h-[calc(100dvh-0.5rem)] w-full max-w-md flex-col overflow-hidden rounded-t-[28px] border border-white/10 bg-[#191c1e] shadow-2xl sm:max-h-[calc(100dvh-4rem)] sm:rounded-3xl"
-          >
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-3 sm:px-7 sm:pt-7">
-              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20 sm:hidden" aria-hidden="true" />
-              <h2 id="pricing-v2-addon-title" className="text-2xl font-black text-white">
-                얼리버드 {priceFormatter.format(earlyBirdConfirmation.minutes)}분
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-neutral-400">
-                결제 완료 후 추가시간이 즉시 충전되며 구매일부터 90일 동안 사용할 수 있습니다.
-              </p>
-
-              <div className="mt-5 flex items-center justify-between gap-4 rounded-2xl border border-white/8 bg-black/20 p-4">
-                <span className="text-sm text-neutral-400">단건 결제금액</span>
-                <strong className="text-xl text-white">₩{priceFormatter.format(earlyBirdConfirmation.salePrice)}</strong>
-              </div>
-
-              <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.03] p-4">
-                <span className="block text-[11px] font-bold text-neutral-500">저장된 결제수단</span>
-                <strong className="mt-1 block text-sm text-white">
-                  {storedCardLabel || "사용 가능한 저장 카드 없음"}
-                </strong>
-                <button
-                  type="button"
-                  onClick={() => { window.location.href = "/billing/checkout?mode=replace_payment_method"; }}
-                  className="mt-2 text-xs font-bold text-[#ff9b8d]"
-                >
-                  다른 카드로 변경
-                </button>
-              </div>
-
-              <div className="mt-5 grid gap-4">
-                {!state?.billing.hasStoredPayerTel && (
-                  <label className="text-xs font-bold text-neutral-300">
-                    휴대전화 번호
-                    <input
-                      required
-                      inputMode="numeric"
-                      value={cardAuth.payerTel}
-                      onChange={(event) => setCardAuth((current) => ({
-                        ...current,
-                        payerTel: event.target.value.replace(/[^0-9]/g, "").slice(0, 11),
-                      }))}
-                      placeholder="01012345678"
-                      className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none focus:border-[#ff9b8d]/60"
-                    />
-                  </label>
-                )}
-                <label className="text-xs font-bold text-neutral-300">
-                  생년월일 또는 사업자번호
-                  <input
-                    required
-                    inputMode="numeric"
-                    value={cardAuth.identityNumber}
-                    onChange={(event) => setCardAuth((current) => ({
-                      ...current,
-                      identityNumber: event.target.value.replace(/[^0-9]/g, "").slice(0, 10),
-                    }))}
-                    placeholder="생년월일 6자리 또는 사업자번호 10자리"
-                    className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none focus:border-[#ff9b8d]/60"
-                  />
-                </label>
-                <label className="text-xs font-bold text-neutral-300">
-                  카드 비밀번호 앞 2자리
-                  <input
-                    required
-                    type="password"
-                    inputMode="numeric"
-                    value={cardAuth.cardPassword}
-                    onChange={(event) => setCardAuth((current) => ({
-                      ...current,
-                      cardPassword: event.target.value.replace(/[^0-9]/g, "").slice(0, 2),
-                    }))}
-                    placeholder="••"
-                    className="mt-2 min-h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none focus:border-[#ff9b8d]/60"
-                  />
-                </label>
-                <PurchaseTermsConsent
-                  checked={cardAuth.consent}
-                  onChange={(consent) => setCardAuth((current) => ({ ...current, consent }))}
+          <div className="mt-8 grid gap-5">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="min-w-0 text-xs font-bold text-neutral-300">
+                생년월일 또는 사업자번호
+                <input
+                  data-payment-autofocus
+                  required
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={cardAuth.identityNumber}
+                  onChange={(event) => setCardAuth((current) => ({
+                    ...current,
+                    identityNumber: digits(event.target.value, 10),
+                  }))}
+                  placeholder="6자리 또는 10자리"
+                  className="mt-2 min-h-14 w-full rounded-2xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8f80]/70 focus:ring-4 focus:ring-[#ff715e]/10"
                 />
-              </div>
+              </label>
+              <label className="min-w-0 text-xs font-bold text-neutral-300">
+                카드 비밀번호 앞 2자리
+                <input
+                  required
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={cardAuth.cardPassword}
+                  onChange={(event) => setCardAuth((current) => ({
+                    ...current,
+                    cardPassword: digits(event.target.value, 2),
+                  }))}
+                  placeholder="••"
+                  className="mt-2 min-h-14 w-full rounded-2xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8f80]/70 focus:ring-4 focus:ring-[#ff715e]/10"
+                />
+              </label>
             </div>
-
-            <div className="grid flex-none grid-cols-[auto_1fr] gap-3 border-t border-white/10 bg-[#191c1e] px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-7">
-              <button
-                type="button"
-                disabled={Boolean(busy)}
-                onClick={() => {
-                  setEarlyBirdConfirmation(null);
-                  setCardAuth(emptyCardAuth);
-                }}
-                className="min-h-12 rounded-xl border border-white/10 px-5 text-sm font-bold text-neutral-300 disabled:opacity-40"
-              >
-                취소
-              </button>
-              <button
-                type="submit"
-                disabled={Boolean(busy)}
-                className="min-h-12 rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white disabled:opacity-40"
-              >
-                {busy
-                  ? "결제 중..."
-                  : `₩${priceFormatter.format(earlyBirdConfirmation.salePrice)} 결제하기`}
-              </button>
-            </div>
-          </form>
-        </div>
+            {!state?.billing.hasStoredPayerTel && (
+              <label className="text-xs font-bold text-neutral-300">
+                휴대전화 번호
+                <input
+                  required
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  value={cardAuth.payerTel}
+                  onChange={(event) => setCardAuth((current) => ({
+                    ...current,
+                    payerTel: digits(event.target.value, 11),
+                  }))}
+                  placeholder="01012345678"
+                  className="mt-2 min-h-14 w-full rounded-2xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8f80]/70 focus:ring-4 focus:ring-[#ff715e]/10"
+                />
+              </label>
+            )}
+            <PurchaseTermsConsent
+              checked={cardAuth.consent}
+              onChange={(consent) => setCardAuth((current) => ({ ...current, consent }))}
+            />
+          </div>
+        </ThePayOnePaymentOverlay>
       )}
 
       {cancelConfirmation && (
@@ -1006,80 +967,62 @@ export function PricingClient({
       )}
 
       {resubscribeAuth && (
-        <div
-          className="fixed inset-0 z-[130] flex items-end bg-black/80 pt-8 backdrop-blur-md sm:grid sm:place-items-center sm:px-5 sm:py-8"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="resubscribe-title"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !busy) setResubscribeAuth(null);
-          }}
+        <ThePayOnePaymentOverlay
+          title="카드 정보"
+          busy={Boolean(busy)}
+          primaryDisabled={
+            ![6, 10].includes(digits(resubscribeAuth.identityNumber, 10).length)
+            || digits(resubscribeAuth.cardPassword, 2).length !== 2
+            || !resubscribeAuth.consent
+          }
+          primaryLabel={busy === "resubscribe" ? "결제를 진행하고 있습니다..." : "확인"}
+          secondaryLabel="취소"
+          onClose={() => setResubscribeAuth(null)}
+          onSubmit={() => void resubscribeMonthly()}
         >
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void resubscribeMonthly();
-            }}
-            className="flex w-full max-w-md flex-col overflow-hidden rounded-t-[28px] border border-white/10 bg-[#191c1e] shadow-2xl sm:rounded-3xl"
-          >
-            <div className="px-5 pb-7 pt-4 sm:px-7 sm:pt-7">
-              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20 sm:hidden" aria-hidden="true" />
-              <h2 id="resubscribe-title" className="text-2xl font-black text-white">다시 구독하기</h2>
-              <p className="mt-3 text-sm leading-6 text-neutral-400">
-                9,900원이 즉시 결제되고 월 처리시간 60분이 지급됩니다. 남아 있는 Pro 이용기간 뒤에 1개월이 추가됩니다.
-              </p>
-              <div className="mt-6 grid gap-4">
-                <label className="text-xs font-bold text-neutral-300">
-                  생년월일 또는 사업자번호
-                  <input
-                    required
-                    autoFocus
-                    inputMode="numeric"
-                    value={resubscribeAuth.identityNumber}
-                    onChange={(event) => setResubscribeAuth((current) => current ? {
-                      ...current,
-                      identityNumber: digits(event.target.value, 10),
-                    } : current)}
-                    placeholder="6자리 또는 10자리"
-                    className="mt-2 min-h-14 w-full rounded-2xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8f80]/70"
-                  />
-                </label>
-                <label className="text-xs font-bold text-neutral-300">
-                  비밀번호 앞 2자리
-                  <input
-                    required
-                    type="password"
-                    inputMode="numeric"
-                    value={resubscribeAuth.cardPassword}
-                    onChange={(event) => setResubscribeAuth((current) => current ? {
-                      ...current,
-                      cardPassword: digits(event.target.value, 2),
-                    } : current)}
-                    placeholder="••"
-                    className="mt-2 min-h-14 w-full rounded-2xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none placeholder:text-neutral-600 focus:border-[#ff8f80]/70"
-                  />
-                </label>
-              </div>
+          <div className="mt-8 grid gap-5">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="min-w-0 text-xs font-bold text-neutral-300">
+                생년월일 또는 사업자번호
+                <input
+                  data-payment-autofocus
+                  required
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={resubscribeAuth.identityNumber}
+                  onChange={(event) => setResubscribeAuth((current) => current ? {
+                    ...current,
+                    identityNumber: digits(event.target.value, 10),
+                  } : current)}
+                  placeholder="6자리 또는 10자리"
+                  className="mt-2 min-h-14 w-full rounded-2xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8f80]/70 focus:ring-4 focus:ring-[#ff715e]/10"
+                />
+              </label>
+              <label className="min-w-0 text-xs font-bold text-neutral-300">
+                카드 비밀번호 앞 2자리
+                <input
+                  required
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={resubscribeAuth.cardPassword}
+                  onChange={(event) => setResubscribeAuth((current) => current ? {
+                    ...current,
+                    cardPassword: digits(event.target.value, 2),
+                  } : current)}
+                  placeholder="••"
+                  className="mt-2 min-h-14 w-full rounded-2xl border border-white/10 bg-[#101315] px-4 text-base text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8f80]/70 focus:ring-4 focus:ring-[#ff715e]/10"
+                />
+              </label>
             </div>
-            <div className="grid grid-cols-[auto_1fr] gap-3 border-t border-white/10 bg-[#191c1e] px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-7">
-              <button
-                type="button"
-                disabled={Boolean(busy)}
-                onClick={() => setResubscribeAuth(null)}
-                className="min-h-12 rounded-xl border border-white/10 px-5 text-sm font-bold text-neutral-300 disabled:opacity-40"
-              >
-                취소
-              </button>
-              <button
-                type="submit"
-                disabled={Boolean(busy)}
-                className="min-h-12 rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white disabled:opacity-40"
-              >
-                {busy === "resubscribe" ? "결제 중..." : "확인"}
-              </button>
-            </div>
-          </form>
-        </div>
+            <PurchaseTermsConsent
+              checked={resubscribeAuth.consent}
+              onChange={(consent) => setResubscribeAuth((current) => current
+                ? { ...current, consent }
+                : current)}
+            />
+          </div>
+        </ThePayOnePaymentOverlay>
       )}
 
       <PaymentMessageOverlay

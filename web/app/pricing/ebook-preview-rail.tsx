@@ -2,6 +2,10 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import {
+  PaymentMessageOverlay,
+  type PaymentMessageTone,
+} from "@/components/payment-message-overlay";
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 
 type Ebook = {
@@ -10,6 +14,13 @@ type Ebook = {
   pageCount: number;
   pageHeight: number;
   monetizationRelated?: boolean;
+};
+
+type DownloadMessage = {
+  message: string;
+  remaining: number | null;
+  title: string;
+  tone: PaymentMessageTone;
 };
 
 const ebooks = [
@@ -33,6 +44,23 @@ function pageImage(slug: string, page: number) {
   return `/ebook-previews/${slug}/page-${String(page).padStart(2, "0")}${qualitySuffix}.jpg`;
 }
 
+function downloadName(contentDisposition: string | null, fallback: string) {
+  const encodedName = contentDisposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (!encodedName) return fallback;
+  try {
+    return decodeURIComponent(encodedName);
+  } catch {
+    return fallback;
+  }
+}
+
+async function downloadErrorMessage(response: Response) {
+  const body = await response.json().catch(() => null) as { detail?: unknown } | null;
+  return typeof body?.detail === "string"
+    ? body.detail
+    : "전자책을 다운로드하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+}
+
 export function EbookPreviewRail({
   canDownload,
   onChoosePackage,
@@ -41,10 +69,13 @@ export function EbookPreviewRail({
   onChoosePackage: () => void;
 }) {
   const [activeBook, setActiveBook] = useState<Ebook | null>(null);
+  const [downloadingSlug, setDownloadingSlug] = useState<string | null>(null);
+  const [downloadMessage, setDownloadMessage] = useState<DownloadMessage | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const yearlyCtaRef = useRef<HTMLButtonElement>(null);
   const activeTriggerRef = useRef<HTMLButtonElement>(null);
+  const downloadInProgressRef = useRef(false);
 
   useEffect(() => {
     if (!activeBook) return;
@@ -94,130 +125,209 @@ export function EbookPreviewRail({
     rail.scrollBy({ left: direction * Math.min(rail.clientWidth * 0.82, 720), behavior: "smooth" });
   };
 
-  return (
-    <section className="pricing-ebooks" aria-labelledby="ebook-preview-heading">
-      <div className="ebook-rail-heading">
-        <div>
-          <h2 id="ebook-preview-heading">숏폼 전략 가이드 전자책</h2>
-          <p>활성 기간 패키지 이용자는 모든 전자책 원본을 다운로드할 수 있습니다. 각 전자책은 3페이지까지 미리 볼 수 있습니다.</p>
-        </div>
-        <div className="ebook-rail-actions" aria-label="전자책 목록 이동">
-          <button type="button" onClick={() => scrollRail(-1)} aria-label="이전 전자책 보기">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
-          </button>
-          <button type="button" onClick={() => scrollRail(1)} aria-label="다음 전자책 보기">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
-          </button>
-        </div>
-      </div>
+  const downloadEbook = async (book: Ebook) => {
+    if (downloadInProgressRef.current) return;
+    downloadInProgressRef.current = true;
+    setDownloadingSlug(book.slug);
+    setDownloadMessage(null);
 
-      <div ref={railRef} className="ebook-rail" aria-label="전자책 미리보기 목록">
-        {visibleEbooks.map((book) => (
-          <button
-            key={book.slug}
-            type="button"
-            className="ebook-card"
-            aria-label={canDownload ? `${book.title} 다운로드` : `${book.title} 미리보기 열기`}
-            onClick={(event) => {
-              if (canDownload) {
-                window.location.assign(`/api/ebooks/${encodeURIComponent(book.slug)}/download`);
-                return;
-              }
-              activeTriggerRef.current = event.currentTarget;
-              setActiveBook(book);
+    try {
+      const response = await fetch(
+        `/api/ebooks/${encodeURIComponent(book.slug)}/download`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) {
+        throw new Error(await downloadErrorMessage(response));
+      }
+
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = downloadName(
+        response.headers.get("content-disposition"),
+        `Easy_Cut_${book.title}.pdf`,
+      );
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000);
+
+      const remainingHeader = response.headers.get("x-ebook-downloads-remaining");
+      const parsedRemaining = remainingHeader === null ? Number.NaN : Number(remainingHeader);
+      const remaining = Number.isInteger(parsedRemaining) && parsedRemaining >= 0
+        ? parsedRemaining
+        : null;
+      setDownloadMessage({
+        message: remaining === null
+          ? "원본 PDF 다운로드를 시작했습니다."
+          : remaining === 0
+            ? "이 전자책의 다운로드 가능 횟수를 모두 사용했습니다."
+            : `이 전자책을 ${remaining}번 더 다운로드할 수 있습니다.`,
+        remaining,
+        title: "전자책 다운로드 완료",
+        tone: "success",
+      });
+    } catch (error) {
+      setDownloadMessage({
+        message: error instanceof Error
+          ? error.message
+          : "전자책을 다운로드하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        remaining: null,
+        title: "다운로드할 수 없습니다",
+        tone: "error",
+      });
+    } finally {
+      downloadInProgressRef.current = false;
+      setDownloadingSlug(null);
+    }
+  };
+
+  return (
+    <>
+      <section className="pricing-ebooks" aria-labelledby="ebook-preview-heading">
+        <div className="ebook-rail-heading">
+          <div>
+            <h2 id="ebook-preview-heading">숏폼 전략 가이드 전자책</h2>
+            <p>활성 기간 패키지 이용자는 모든 전자책 원본을 다운로드할 수 있습니다. 각 전자책은 3페이지까지 미리 볼 수 있습니다.</p>
+          </div>
+          <div className="ebook-rail-actions" aria-label="전자책 목록 이동">
+            <button type="button" onClick={() => scrollRail(-1)} aria-label="이전 전자책 보기">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+            </button>
+            <button type="button" onClick={() => scrollRail(1)} aria-label="다음 전자책 보기">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+            </button>
+          </div>
+        </div>
+
+        <div ref={railRef} className="ebook-rail" aria-label="전자책 미리보기 목록">
+          {visibleEbooks.map((book) => (
+            <button
+              key={book.slug}
+              type="button"
+              className="ebook-card"
+              disabled={canDownload && downloadingSlug !== null}
+              aria-busy={downloadingSlug === book.slug}
+              aria-label={canDownload ? `${book.title} 다운로드` : `${book.title} 미리보기 열기`}
+              onClick={(event) => {
+                if (canDownload) {
+                  void downloadEbook(book);
+                  return;
+                }
+                activeTriggerRef.current = event.currentTarget;
+                setActiveBook(book);
+              }}
+            >
+              <span className="ebook-card-title">
+                {downloadingSlug === book.slug ? "다운로드 준비 중..." : book.title}
+              </span>
+              <span className="ebook-card-cover">
+                <Image
+                  src={pageImage(book.slug, 1)}
+                  alt={`${book.title} 표지`}
+                  fill
+                  sizes="(max-width: 520px) 168px, 206px"
+                  quality={88}
+                  className="ebook-card-image"
+                />
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {activeBook && (
+          <div
+            className="ebook-preview-backdrop"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) closePreview();
             }}
           >
-            <span className="ebook-card-title">{book.title}</span>
-            <span className="ebook-card-cover">
-              <Image
-                src={pageImage(book.slug, 1)}
-                alt={`${book.title} 표지`}
-                fill
-                sizes="(max-width: 520px) 168px, 206px"
-                quality={88}
-                className="ebook-card-image"
-              />
-            </span>
-          </button>
-        ))}
-      </div>
+            <div
+              className="ebook-preview-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="ebook-dialog-title"
+              aria-describedby="ebook-dialog-description"
+            >
+              <header className="ebook-preview-header">
+                <div>
+                  <h2 id="ebook-dialog-title">{activeBook.title}</h2>
+                  <p id="ebook-dialog-description">1~3페이지 미리보기 · 전체 {activeBook.pageCount}페이지</p>
+                </div>
+                <button ref={closeButtonRef} type="button" onClick={closePreview} aria-label="전자책 미리보기 닫기">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+                </button>
+              </header>
 
-      {activeBook && (
-        <div
-          className="ebook-preview-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closePreview();
-          }}
-        >
-          <div
-            className="ebook-preview-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="ebook-dialog-title"
-            aria-describedby="ebook-dialog-description"
-          >
-            <header className="ebook-preview-header">
-              <div>
-                <h2 id="ebook-dialog-title">{activeBook.title}</h2>
-                <p id="ebook-dialog-description">1~3페이지 미리보기 · 전체 {activeBook.pageCount}페이지</p>
-              </div>
-              <button ref={closeButtonRef} type="button" onClick={closePreview} aria-label="전자책 미리보기 닫기">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-              </button>
-            </header>
+              <div className="ebook-preview-scroll">
+                <ol className="ebook-preview-pages">
+                  {previewPages.map((page) => (
+                    <li key={page}>
+                      <div className="ebook-preview-page-meta"><strong>{page}</strong><span>/ 3 미리보기</span></div>
+                      <div className="ebook-preview-page-image">
+                        <Image
+                          src={pageImage(activeBook.slug, page)}
+                          alt={`${activeBook.title} ${page}페이지`}
+                          width={2000}
+                          height={activeBook.pageHeight}
+                          sizes="(max-width: 760px) calc(100vw - 32px), 720px"
+                          quality={92}
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ol>
 
-            <div className="ebook-preview-scroll">
-              <ol className="ebook-preview-pages">
-                {previewPages.map((page) => (
-                  <li key={page}>
-                    <div className="ebook-preview-page-meta"><strong>{page}</strong><span>/ 3 미리보기</span></div>
-                    <div className="ebook-preview-page-image">
-                      <Image
-                        src={pageImage(activeBook.slug, page)}
-                        alt={`${activeBook.title} ${page}페이지`}
-                        width={2000}
-                        height={activeBook.pageHeight}
-                        sizes="(max-width: 760px) calc(100vw - 32px), 720px"
-                        quality={92}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ol>
-
-              <div
-                className="ebook-preview-locked"
-                aria-label="4페이지부터 잠김"
-              >
-                <Image
-                  src={pageImage(activeBook.slug, 4)}
-                  alt=""
-                  width={2000}
-                  height={activeBook.pageHeight}
-                  sizes="(max-width: 760px) calc(100vw - 32px), 720px"
-                />
-                <div className="ebook-preview-lock-copy">
-                  <span aria-hidden="true">
-                    <svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="3" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
-                  </span>
-                  <strong>4페이지부터 잠겨 있어요</strong>
-                  <p>기간 패키지 구매 시 원본 PDF를 다운로드할 수 있습니다.</p>
-                  {!canDownload && (
-                    <button
-                      ref={yearlyCtaRef}
-                      type="button"
-                      className="ebook-preview-lock-cta"
-                      onClick={choosePackage}
-                    >
-                      기간 패키지 확인하기
-                    </button>
-                  )}
+                <div
+                  className="ebook-preview-locked"
+                  aria-label="4페이지부터 잠김"
+                >
+                  <Image
+                    src={pageImage(activeBook.slug, 4)}
+                    alt=""
+                    width={2000}
+                    height={activeBook.pageHeight}
+                    sizes="(max-width: 760px) calc(100vw - 32px), 720px"
+                  />
+                  <div className="ebook-preview-lock-copy">
+                    <span aria-hidden="true">
+                      <svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="3" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+                    </span>
+                    <strong>4페이지부터 잠겨 있어요</strong>
+                    <p>기간 패키지 구매 시 원본 PDF를 다운로드할 수 있습니다.</p>
+                    {!canDownload && (
+                      <button
+                        ref={yearlyCtaRef}
+                        type="button"
+                        className="ebook-preview-lock-cta"
+                        onClick={choosePackage}
+                      >
+                        기간 패키지 확인하기
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </section>
+        )}
+      </section>
+
+      <PaymentMessageOverlay
+        open={downloadMessage !== null}
+        tone={downloadMessage?.tone || "info"}
+        title={downloadMessage?.title || ""}
+        message={downloadMessage?.message || ""}
+        onClose={() => setDownloadMessage(null)}
+        highlight={downloadMessage?.remaining !== null && downloadMessage?.remaining !== undefined ? (
+          <div className="relative mt-5 rounded-2xl border border-white/10 bg-black/20 px-5 py-4">
+            <span className="block text-xs font-bold text-neutral-400">남은 다운로드</span>
+            <strong className="mt-1 block text-3xl font-black text-white">
+              {downloadMessage.remaining}회
+            </strong>
+          </div>
+        ) : undefined}
+      />
+    </>
   );
 }

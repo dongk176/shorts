@@ -75,6 +75,16 @@ const installmentFields = {
   installmentCampaignId: z.string().uuid().nullable().optional(),
 };
 
+const savedCardFields = {
+  expectedChargeAmountKrw: z.number().int().nonnegative(),
+  payerTel: z.string()
+    .transform((value) => value.replace(/[^0-9]/g, ""))
+    .refine((value) => /^\d{10,11}$/.test(value))
+    .optional(),
+  ...installmentFields,
+  ...cardAuthFields,
+};
+
 const schema = z.discriminatedUnion("mode", [
   z.object({
     mode: z.literal("subscribe"),
@@ -83,6 +93,13 @@ const schema = z.discriminatedUnion("mode", [
     billingCycle: z.enum(billingCycles),
     ...installmentFields,
     ...cardFields,
+  }).strict(),
+  z.object({
+    mode: z.literal("subscribe_saved"),
+    requestId: z.string().uuid(),
+    planCode: z.enum(paidPlanCodes),
+    billingCycle: z.enum(billingCycles),
+    ...savedCardFields,
   }).strict(),
   z.object({
     mode: z.literal("change_subscription"),
@@ -97,14 +114,8 @@ const schema = z.discriminatedUnion("mode", [
     requestId: z.string().uuid(),
     planCode: z.enum(paidPlanCodes),
     billingCycle: z.enum(billingCycles),
-    expectedChargeAmountKrw: z.number().int().nonnegative(),
     expectedRefundAmountKrw: z.number().int().nonnegative().optional(),
-    ...installmentFields,
-    payerTel: z.string()
-      .transform((value) => value.replace(/[^0-9]/g, ""))
-      .refine((value) => /^\d{10,11}$/.test(value))
-      .optional(),
-    ...cardAuthFields,
+    ...savedCardFields,
   }).strict(),
   z.object({
     mode: z.literal("replace_payment_method"),
@@ -181,7 +192,7 @@ function kstTransactionDay(date: Date) {
 }
 
 function orderKind(mode: z.infer<typeof schema>["mode"], current: CurrentSubscription | null) {
-  if (mode === "subscribe") return "subscription_initial" as const;
+  if (mode === "subscribe" || mode === "subscribe_saved") return "subscription_initial" as const;
   if (mode === "change_subscription" || mode === "change_subscription_saved") {
     return "subscription_change" as const;
   }
@@ -302,14 +313,18 @@ export async function POST(request: Request) {
     rejectRetiredAnnualRenewal(body.mode);
     if (
       (body.mode === "subscribe"
+        || body.mode === "subscribe_saved"
         || body.mode === "change_subscription"
         || body.mode === "change_subscription_saved")
       && !isPricingV2PlanCode(body.planCode)
     ) {
       throw new HttpError(410, "이 상품은 더 이상 판매하지 않습니다. 현재 요금제에서 상품을 다시 선택해 주세요.");
     }
-    const reuseStoredMethod = body.mode === "change_subscription_saved";
-    const subscriptionChange = body.mode === "change_subscription" || reuseStoredMethod;
+    const startsSubscription = body.mode === "subscribe" || body.mode === "subscribe_saved";
+    const reuseStoredMethod = body.mode === "subscribe_saved"
+      || body.mode === "change_subscription_saved";
+    const subscriptionChange = body.mode === "change_subscription"
+      || body.mode === "change_subscription_saved";
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     if ("planCode" in body) {
@@ -325,17 +340,17 @@ export async function POST(request: Request) {
       ? getPricingV2Plan(body.planCode)
       : null;
     const stackingPackage = Boolean(
-      body.mode === "subscribe"
+      startsSubscription
       && requestedPricingV2Plan?.kind === "package"
       && existingCurrent
       && canStackPricingV2Package(existingCurrent.planCode, body.planCode),
     );
     const current = stackingPackage ? null : existingCurrent;
 
-    if (body.mode === "subscribe" && existingCurrent && !stackingPackage) {
+    if (startsSubscription && existingCurrent && !stackingPackage) {
       throw new HttpError(409, "이미 구독이 있습니다. 플랜 변경 기능을 이용해 주세요.");
     }
-    if (body.mode !== "subscribe" && !current) {
+    if (!startsSubscription && !current) {
       throw new HttpError(409, "변경하거나 갱신할 구독을 찾을 수 없습니다.");
     }
     if (body.mode === "renew_annual" && current?.billingCycle !== "yearly") {
@@ -343,7 +358,7 @@ export async function POST(request: Request) {
     }
     let plan: PaidPlanProduct;
     let billingCycle: BillingCycle;
-    if (body.mode === "subscribe" || subscriptionChange) {
+    if (startsSubscription || subscriptionChange) {
       plan = await getPaidPlan(db, body.planCode);
       billingCycle = body.billingCycle;
     } else {
@@ -435,7 +450,7 @@ export async function POST(request: Request) {
       );
     }
     if (
-      reuseStoredMethod
+      body.mode === "change_subscription_saved"
       && body.expectedRefundAmountKrw !== undefined
       && body.expectedRefundAmountKrw !== (changeQuote?.refundAmountKrw || 0)
     ) {
@@ -445,7 +460,11 @@ export async function POST(request: Request) {
         "PAYMENT_QUOTE_CHANGED",
       );
     }
-    const existingMethod = await storedMethod(current?.paymentMethodId);
+    const existingMethod = await storedMethod(
+      reuseStoredMethod
+        ? existingCurrent?.paymentMethodId
+        : current?.paymentMethodId,
+    );
     const requestedCardVerificationId = "cardVerificationId" in body
       ? body.cardVerificationId
       : undefined;

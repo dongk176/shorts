@@ -26,4 +26,4 @@ verify: lint test build
 
 clean:
 	find worker -type d \( -name __pycache__ -o -name .pytest_cache -o -name .ruff_cache \) -prune -exec rm -rf {} +
-	rm -rf .ruff_cache web/.next web/out web/*.tsbuildinfo infra/aws/cdk.out
+	rm -rf .ruff_cache web/.next web/.next-dev web/out web/*.tsbuildinfo infra/aws/cdk.out

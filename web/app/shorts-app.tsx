@@ -1075,7 +1075,7 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
     : null;
 
   const download = async (item: GeneratedShort) => {
-    if (item.status !== "ready") return;
+    if (job.isExample || item.status !== "ready") return;
     const url = playbackUrl(item);
     if (!url) return;
     const response = await fetch(url);
@@ -1102,7 +1102,7 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
     <div className="project-workspace">
       <header className="workspace-header">
         <div className="min-w-0"><button onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 프로젝트 /{job.projectNumber}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
-        <button onClick={() => void Promise.all(job.shorts.map(download))} className="workspace-button workspace-button-primary shrink-0">↓ 모든 쇼츠 다운로드</button>
+        <button disabled={job.isExample} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={() => void Promise.all(job.shorts.map(download))} className="workspace-button workspace-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-40">↓ 모든 쇼츠 다운로드</button>
       </header>
       {job.status === "failed" && job.errorMessage && (
         <div role="alert" className="mx-4 mt-4 whitespace-pre-line rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm leading-6 text-red-200 sm:mx-6">
@@ -1124,7 +1124,7 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
                 <div className="short-result-layout">
                   <div className="short-video-column">
                     <div className="short-video-shell">
-                      {itemUrl ? <video key={shortPlaybackVersionKey(item)} src={itemUrl} controls={!itemIsRerendering} playsInline preload="metadata" className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
+                      {itemUrl ? <video key={shortPlaybackVersionKey(item)} src={itemUrl} controls={!itemIsRerendering} controlsList={job.isExample ? "nodownload" : undefined} playsInline preload="metadata" className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
                       <span className="short-duration-badge">{formatDuration(item.durationSeconds)}</span>
                       {itemIsRerendering && <EstimatedProcessingOverlay operationKey={`rerender:${item.id}:${item.renderVersion}`} durationSeconds={item.durationSeconds} rerender />}
                     </div>
@@ -1132,7 +1132,7 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
                       {job.isExample || itemIsRerendering
                         ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">✎ 편집하기</button>
                         : <Link href={`/${job.projectNumber}/edit/${item.id}`} target="_blank" rel="noopener noreferrer" className="tool-button short-edit-button flex items-center justify-center" aria-label={`${item.hookTitle} 새 탭에서 편집하기`}>✎ 편집하기</Link>}
-                      <button disabled={!itemUrl || itemIsRerendering} onClick={() => void download(item)} className="tool-button short-download-button disabled:opacity-40">↓ 다운로드</button>
+                      <button disabled={job.isExample || !itemUrl || itemIsRerendering} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={() => void download(item)} className="tool-button short-download-button disabled:cursor-not-allowed disabled:opacity-40">↓ 다운로드</button>
                     </div>
                   </div>
                   <div className="short-detail-column">
