@@ -9,13 +9,15 @@ export function PopularFiltersPlanOverlay({
   isAuthenticated,
   feature = "filters",
   onClose,
+  onRequireLogin,
 }: {
   open: boolean;
   isAuthenticated: boolean;
   feature?: "filters" | "more";
   onClose: () => void;
+  onRequireLogin: () => void;
 }) {
-  const confirmRef = useRef<HTMLAnchorElement>(null);
+  const confirmRef = useRef<HTMLAnchorElement | HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -47,9 +49,6 @@ export function PopularFiltersPlanOverlay({
     : isLoadMore
       ? "로그인하고 구독 또는 기간 패키지를 활성화하면 더 많은 인기 영상을 볼 수 있어요."
       : "로그인하고 구독 또는 기간 패키지를 활성화하면 해당 기능을 사용할 수 있어요.";
-  const actionHref = isAuthenticated
-    ? "/pricing"
-    : `/auth/sign-in?next=${encodeURIComponent("/popular")}`;
   const actionLabel = isAuthenticated ? "이용권 확인하기" : "로그인하기";
 
   return createPortal(
@@ -91,13 +90,31 @@ export function PopularFiltersPlanOverlay({
           {description}
         </p>
         <div className="relative mt-7 grid gap-2.5">
-          <Link
-            ref={confirmRef}
-            href={actionHref}
-            className="flex min-h-12 items-center justify-center rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white transition hover:bg-[#ff8a78] active:scale-[.99]"
-          >
-            {actionLabel}
-          </Link>
+          {isAuthenticated ? (
+            <Link
+              ref={(element) => {
+                confirmRef.current = element;
+              }}
+              href="/pricing"
+              className="flex min-h-12 items-center justify-center rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white transition hover:bg-[#ff8a78] active:scale-[.99]"
+            >
+              {actionLabel}
+            </Link>
+          ) : (
+            <button
+              ref={(element) => {
+                confirmRef.current = element;
+              }}
+              type="button"
+              onClick={() => {
+                onClose();
+                onRequireLogin();
+              }}
+              className="flex min-h-12 items-center justify-center rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white transition hover:bg-[#ff8a78] active:scale-[.99]"
+            >
+              {actionLabel}
+            </button>
+          )}
           <button
             ref={closeRef}
             type="button"

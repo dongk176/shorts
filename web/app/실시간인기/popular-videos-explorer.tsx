@@ -385,9 +385,11 @@ function LoadingSkeleton() {
 export function PopularVideosExplorer({
   canUseFilters,
   isAuthenticated,
+  onRequireLogin,
 }: {
   canUseFilters: boolean;
   isAuthenticated: boolean;
+  onRequireLogin: () => void;
 }) {
   const { locale } = useI18n();
   const [dataType, setDataType] = useState<PopularVideoType>("trending");
@@ -720,6 +722,7 @@ export function PopularVideosExplorer({
         isAuthenticated={isAuthenticated}
         feature={planOverlayFeature}
         onClose={closePlanOverlay}
+        onRequireLogin={onRequireLogin}
       />
       <ReusableLicenseGuide
         open={reusableGuideOpen}

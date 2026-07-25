@@ -1,14 +1,11 @@
 import type { Metadata } from "next";
-import { AuthControls } from "@/components/auth-controls";
-import { SiteFooter } from "@/components/site-footer";
-import { SiteHeader } from "@/components/site-header";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { billingSupportsPopularFilters } from "@/lib/popular-entitlements";
 import { authProfile } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { createPageMetadata } from "@/lib/seo";
-import { PopularVideosExplorer } from "./popular-videos-explorer";
+import { PopularPageShell } from "./popular-page-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -45,13 +42,9 @@ export default async function PopularVideosPage() {
     }
   }
   return (
-    <div className="app-shell site-chrome min-h-screen overflow-visible text-neutral-100">
-      <SiteHeader><AuthControls user={user ? authProfile(user) : null} next="/popular" /></SiteHeader>
-      <PopularVideosExplorer
-        canUseFilters={canUseFilters}
-        isAuthenticated={Boolean(user)}
-      />
-      <SiteFooter />
-    </div>
+    <PopularPageShell
+      user={user ? authProfile(user) : null}
+      canUseFilters={canUseFilters}
+    />
   );
 }
