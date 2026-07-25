@@ -246,6 +246,29 @@ def test_fargate_project_migration_keeps_ready_outputs_and_uses_half_threshold()
     assert "project_resume_count=1" in migration
 
 
+def test_selected_output_completion_policy_only_applies_to_new_jobs() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607260001_selected_output_completion_policy.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "completion_policy_version smallint default 1" in migration
+    assert "set completion_policy_version=1" in migration
+    assert "alter column completion_policy_version set default 2" in migration
+    assert (
+        "when current_job.completion_policy_version >= 2 then counted_selected"
+        in migration
+    )
+    assert "else current_job.planned_short_count" in migration
+    assert "and counted_ready * 2 >= completion_denominator" in migration
+    assert "where job_id=p_job_id and selected_at is not null" in migration
+    assert "selected_short_count=counted_selected" in migration
+    assert "unselected_short_count=counted_unselected" in migration
+    assert "public." not in migration
+
+
 def test_restricted_content_failure_message_migration_is_scoped() -> None:
     migration = (
         Path(__file__).parents[2]
