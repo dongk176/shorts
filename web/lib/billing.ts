@@ -7,6 +7,7 @@ import type {
   PlanCode,
   SubscriptionStatus,
 } from "@/lib/contracts";
+import { resolveStoredCardIssuer } from "@/lib/billing-card";
 import { HttpError } from "@/lib/http";
 import { isPricingV2PackageCode } from "@/lib/pricing-v2";
 
@@ -352,7 +353,10 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
     cancelAtPeriodEnd: Boolean(row.cancelAtPeriodEnd),
     scheduledPlanCode: row.scheduledPlanCode as PaidPlanCode | null,
     scheduledBillingCycle: row.scheduledBillingCycle as BillingCycle | null,
-    cardIssuer: row.issuerName || row.issuerCode || null,
+    cardIssuer: resolveStoredCardIssuer({
+      issuer: row.issuerName || row.issuerCode || null,
+      cardNumberMasked: row.cardNumberMasked || null,
+    }),
     cardNumberMasked: row.cardNumberMasked || null,
     cardLast4: row.cardLast4 || null,
     hasStoredPayerTel: Boolean(row.hasStoredPayerTel),

@@ -17,6 +17,7 @@ import {
   quoteSubscriptionChange,
   type SubscriptionChangeQuote,
 } from "@/lib/billing-change";
+import { resolveStoredCardIssuer } from "@/lib/billing-card";
 import {
   decryptBillingPhone,
   encryptBillingPhone,
@@ -772,7 +773,11 @@ export async function POST(request: Request) {
           ${cardTokenHash(registration.cardId)},${authTrackId},${registration.providerTransactionId},${registration.resultCode},
           ${merchantId},${expectedTerminalId},${billingCycle === "monthly" ? "active" : "none"},
           ${encryptedPhone.ciphertext},${encryptedPhone.iv},${encryptedPhone.tag},
-          ${registration.issuer},${masked},${registration.last4},${registration.cardType},'active'
+          ${resolveStoredCardIssuer({
+            issuer: registration.issuer,
+            acquirer: registration.acquirer,
+            cardNumberMasked: body.cardNumber,
+          })},${masked},${registration.last4},${registration.cardType},'active'
         )
       `;
     }

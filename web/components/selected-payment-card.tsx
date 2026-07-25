@@ -1,6 +1,9 @@
 "use client";
 
-import { formatStoredCardLabel } from "@/lib/billing-card";
+import {
+  formatStoredCardLabel,
+  resolveStoredCardIssuer,
+} from "@/lib/billing-card";
 
 export type SelectedPaymentCardInfo = {
   issuer: string | null;
@@ -17,6 +20,7 @@ export function SelectedPaymentCard({
   onUseDifferentCard: () => void;
 }) {
   const maskedNumber = formatStoredCardLabel({ last4: card.last4 }) || "등록 카드";
+  const issuer = resolveStoredCardIssuer({ issuer: card.issuer });
 
   return (
     <section
@@ -35,7 +39,7 @@ export function SelectedPaymentCard({
         </span>
         <div className="min-w-0 flex-1">
           <strong className="block truncate text-sm font-black text-white">
-            {card.issuer?.trim() || "등록 카드"}
+            {issuer || "등록 카드"}
           </strong>
           <span className="mt-0.5 block text-sm font-bold tracking-[.08em] text-neutral-400">
             {maskedNumber}

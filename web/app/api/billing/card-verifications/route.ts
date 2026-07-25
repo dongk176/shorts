@@ -6,6 +6,7 @@ import {
   BILLING_CARD_VERIFICATION_TTL_MINUTES,
   type BillingCardVerification,
 } from "@/lib/billing-card-verifications";
+import { resolveStoredCardIssuer } from "@/lib/billing-card";
 import { assertPricingV2PackagePurchaseAvailable } from "@/lib/billing";
 import { billingCycles, paidPlanCodes } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
@@ -256,7 +257,11 @@ export async function POST(request: Request) {
         billing_key_ciphertext=${encrypted.ciphertext},
         billing_key_iv=${encrypted.iv},billing_key_tag=${encrypted.tag},
         billing_key_hash=${cardTokenHash(issued.cardId)},
-        issuer_name=${issued.issuer},card_type=${issued.cardType},
+        issuer_name=${resolveStoredCardIssuer({
+          issuer: issued.issuer,
+          acquirer: issued.acquirer,
+          cardNumberMasked: input.cardNumber,
+        })},card_type=${issued.cardType},
         acquirer_name=${issued.acquirer},card_last4=${issued.last4}
       where id=${verificationId} and user_id=${session.userId} and status='pending'
       returning *
