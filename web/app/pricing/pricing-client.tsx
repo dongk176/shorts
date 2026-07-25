@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { PurchaseTermsConsent } from "@/components/purchase-terms-consent";
 import { PaymentMessageOverlay } from "@/components/payment-message-overlay";
+import { SelectedPaymentCard } from "@/components/selected-payment-card";
 import { ThePayOnePaymentOverlay } from "@/components/thepayone-payment-overlay";
 import { useUsageState } from "@/components/usage-provider";
 import { billingPostJson, purchaseAddonWithSavedCard } from "@/lib/billing-client";
@@ -19,6 +20,10 @@ import {
 } from "@/lib/pricing-v2";
 import { EbookPreviewRail } from "./ebook-preview-rail";
 import { PlanCheckoutOverlay } from "./plan-checkout-overlay";
+import {
+  ReplacementCardPaymentOverlay,
+  type ReplacementCardAuth,
+} from "./replacement-card-payment-overlay";
 import styles from "./pricing.module.css";
 
 const priceFormatter = new Intl.NumberFormat("ko-KR");
@@ -241,6 +246,8 @@ export function PricingClient({
   const [cancelConfirmation, setCancelConfirmation] = useState(false);
   const [resubscribeAuth, setResubscribeAuth] = useState<ResubscribeAuthState | null>(null);
   const [cardAuth, setCardAuth] = useState<CardAuthState>(emptyCardAuth);
+  const [earlyBirdUseDifferentCard, setEarlyBirdUseDifferentCard] = useState(false);
+  const [resubscribeUseDifferentCard, setResubscribeUseDifferentCard] = useState(false);
   const [packageMonths, setPackageMonths] = useState<PackageMonths>(6);
 
   useEffect(() => {
@@ -320,6 +327,10 @@ export function PricingClient({
     state?.billing.paymentProvider === "thepayone"
     && (state.billing.cardNumberMasked || state.billing.cardLast4)
   );
+  const selectedPaymentCard = hasReusableStoredCard ? {
+    issuer: state?.billing.cardIssuer || null,
+    last4: state?.billing.cardLast4 || state?.billing.cardNumberMasked || null,
+  } : null;
   const hasActivePackage = activeProducts.some(
     (product) => getPricingV2Plan(product.planCode)?.kind === "package",
   ) || activePricingProduct?.kind === "package";
@@ -449,7 +460,39 @@ export function PricingClient({
     }
     setError(null);
     setCardAuth(emptyCardAuth);
+    setEarlyBirdUseDifferentCard(false);
     setEarlyBirdConfirmation(product);
+  }
+
+  async function purchaseEarlyBird(
+    product: EarlyBirdProduct,
+    auth: ReplacementCardAuth,
+    payerTel?: string,
+  ) {
+    const result = await purchaseAddonWithSavedCard({
+      addonCode: product.code,
+      expectedChargeAmountKrw: product.salePrice,
+      identityNumber: auth.identityNumber,
+      cardPassword: auth.cardPassword,
+      ...(payerTel ? { payerTel } : {}),
+    });
+    const addedMinutes = result.addedMinutes || product.minutes;
+    setEarlyBirdConfirmation(null);
+    setEarlyBirdUseDifferentCard(false);
+    setCardAuth(emptyCardAuth);
+    setEarlyBirdSuccess({
+      minutes: addedMinutes,
+      chargedAmountKrw: result.chargedAmountKrw,
+      remainingMinutes: null,
+    });
+    const refreshedUsage = await refreshUsage().catch(() => null);
+    void reloadState().catch(() => undefined);
+    if (refreshedUsage) {
+      setEarlyBirdSuccess((current) => current ? {
+        ...current,
+        remainingMinutes: Math.max(0, Math.floor(refreshedUsage.remainingSeconds / 60)),
+      } : current);
+    }
   }
 
   async function confirmEarlyBirdPurchase() {
@@ -476,29 +519,11 @@ export function PricingClient({
     setBusy(earlyBirdConfirmation.code);
     setError(null);
     try {
-      const result = await purchaseAddonWithSavedCard({
-        addonCode: earlyBirdConfirmation.code,
-        expectedChargeAmountKrw: earlyBirdConfirmation.salePrice,
-        identityNumber,
-        cardPassword,
-        ...(state.billing.hasStoredPayerTel ? {} : { payerTel }),
-      });
-      const addedMinutes = result.addedMinutes || earlyBirdConfirmation.minutes;
-      setEarlyBirdConfirmation(null);
-      setCardAuth(emptyCardAuth);
-      setEarlyBirdSuccess({
-        minutes: addedMinutes,
-        chargedAmountKrw: result.chargedAmountKrw,
-        remainingMinutes: null,
-      });
-      const refreshedUsage = await refreshUsage().catch(() => null);
-      void reloadState().catch(() => undefined);
-      if (refreshedUsage) {
-        setEarlyBirdSuccess((current) => current ? {
-          ...current,
-          remainingMinutes: Math.max(0, Math.floor(refreshedUsage.remainingSeconds / 60)),
-        } : current);
-      }
+      await purchaseEarlyBird(
+        earlyBirdConfirmation,
+        { identityNumber, cardPassword },
+        state.billing.hasStoredPayerTel ? undefined : payerTel,
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "얼리버드 결제를 완료하지 못했습니다.");
     } finally {
@@ -543,29 +568,40 @@ export function PricingClient({
     setBusy("resubscribe");
     setError(null);
     try {
-      const result = await billingPostJson<{
-        addedMinutes?: number;
-        accessUntil?: string;
-      }>("/api/billing/subscription/resubscribe", {
-        requestId: resubscribeAuth.requestId,
-        expectedChargeAmountKrw: 9_900,
+      await completeResubscribe({
         identityNumber,
         cardPassword,
-        consent: true,
-      });
-      await reloadState();
-      setResubscribeAuth(null);
-      const accessUntil = result.accessUntil
-        ? dateFormatter.format(new Date(result.accessUntil))
-        : "연장된 이용기간";
-      setPreviewMessage(
-        `월간 구독을 다시 시작했습니다. ${priceFormatter.format(result.addedMinutes || 60)}분이 지급되고 Pro 이용기간이 ${accessUntil}까지 연장되었습니다.`,
-      );
+      }, resubscribeAuth.requestId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "월간 구독을 다시 시작하지 못했습니다.");
     } finally {
       setBusy(null);
     }
+  }
+
+  async function completeResubscribe(
+    auth: ReplacementCardAuth,
+    requestId = crypto.randomUUID(),
+  ) {
+    const result = await billingPostJson<{
+      addedMinutes?: number;
+      accessUntil?: string;
+    }>("/api/billing/subscription/resubscribe", {
+      requestId,
+      expectedChargeAmountKrw: 9_900,
+      identityNumber: auth.identityNumber,
+      cardPassword: auth.cardPassword,
+      consent: true,
+    });
+    await reloadState();
+    setResubscribeAuth(null);
+    setResubscribeUseDifferentCard(false);
+    const accessUntil = result.accessUntil
+      ? dateFormatter.format(new Date(result.accessUntil))
+      : "연장된 이용기간";
+    setPreviewMessage(
+      `월간 구독을 다시 시작했습니다. ${priceFormatter.format(result.addedMinutes || 60)}분이 지급되고 Pro 이용기간이 ${accessUntil}까지 연장되었습니다.`,
+    );
   }
 
   function renderPlanCard(plan: PlanCard) {
@@ -711,6 +747,7 @@ export function PricingClient({
                       className={styles.subscriptionAction}
                       onClick={() => {
                         if (product.cancelAtPeriodEnd) {
+                          setResubscribeUseDifferentCard(false);
                           setResubscribeAuth({
                             requestId: crypto.randomUUID(),
                             identityNumber: "",
@@ -841,12 +878,29 @@ export function PricingClient({
           initialEmail={state?.user?.email}
           savedPaymentMethod={hasReusableStoredCard ? {
             hasStoredPayerTel: Boolean(state?.billing.hasStoredPayerTel),
+            issuer: selectedPaymentCard?.issuer || null,
+            last4: selectedPaymentCard?.last4 || null,
           } : null}
           onClose={() => setPlanCheckout(null)}
         />
       )}
 
-      {earlyBirdConfirmation && (
+      {earlyBirdConfirmation && (earlyBirdUseDifferentCard ? (
+        <ReplacementCardPaymentOverlay
+          initialName={state?.user?.displayName}
+          initialEmail={state?.user?.email}
+          onClose={() => {
+            setEarlyBirdConfirmation(null);
+            setEarlyBirdUseDifferentCard(false);
+            setCardAuth(emptyCardAuth);
+          }}
+          onUseSavedCard={() => setEarlyBirdUseDifferentCard(false)}
+          onPaymentMethodReplaced={(auth) => purchaseEarlyBird(
+            earlyBirdConfirmation,
+            auth,
+          )}
+        />
+      ) : (
         <ThePayOnePaymentOverlay
           title="카드 정보"
           busy={Boolean(busy)}
@@ -861,11 +915,19 @@ export function PricingClient({
           secondaryLabel="취소"
           onClose={() => {
             setEarlyBirdConfirmation(null);
+            setEarlyBirdUseDifferentCard(false);
             setCardAuth(emptyCardAuth);
           }}
           onSubmit={() => void confirmEarlyBirdPurchase()}
         >
           <div className="mt-8 grid gap-5">
+            {selectedPaymentCard && (
+              <SelectedPaymentCard
+                card={selectedPaymentCard}
+                disabled={Boolean(busy)}
+                onUseDifferentCard={() => setEarlyBirdUseDifferentCard(true)}
+              />
+            )}
             <div className="grid grid-cols-2 gap-3">
               <label className="min-w-0 text-xs font-bold text-neutral-300">
                 생년월일 또는 사업자번호
@@ -923,7 +985,7 @@ export function PricingClient({
             />
           </div>
         </ThePayOnePaymentOverlay>
-      )}
+      ))}
 
       {cancelConfirmation && (
         <div
@@ -966,7 +1028,18 @@ export function PricingClient({
         </div>
       )}
 
-      {resubscribeAuth && (
+      {resubscribeAuth && (resubscribeUseDifferentCard ? (
+        <ReplacementCardPaymentOverlay
+          initialName={state?.user?.displayName}
+          initialEmail={state?.user?.email}
+          onClose={() => {
+            setResubscribeAuth(null);
+            setResubscribeUseDifferentCard(false);
+          }}
+          onUseSavedCard={() => setResubscribeUseDifferentCard(false)}
+          onPaymentMethodReplaced={(auth) => completeResubscribe(auth)}
+        />
+      ) : (
         <ThePayOnePaymentOverlay
           title="카드 정보"
           busy={Boolean(busy)}
@@ -977,10 +1050,20 @@ export function PricingClient({
           }
           primaryLabel={busy === "resubscribe" ? "결제를 진행하고 있습니다..." : "확인"}
           secondaryLabel="취소"
-          onClose={() => setResubscribeAuth(null)}
+          onClose={() => {
+            setResubscribeAuth(null);
+            setResubscribeUseDifferentCard(false);
+          }}
           onSubmit={() => void resubscribeMonthly()}
         >
           <div className="mt-8 grid gap-5">
+            {selectedPaymentCard && (
+              <SelectedPaymentCard
+                card={selectedPaymentCard}
+                disabled={Boolean(busy)}
+                onUseDifferentCard={() => setResubscribeUseDifferentCard(true)}
+              />
+            )}
             <div className="grid grid-cols-2 gap-3">
               <label className="min-w-0 text-xs font-bold text-neutral-300">
                 생년월일 또는 사업자번호
@@ -1023,7 +1106,7 @@ export function PricingClient({
             />
           </div>
         </ThePayOnePaymentOverlay>
-      )}
+      ))}
 
       <PaymentMessageOverlay
         open={Boolean(error)}

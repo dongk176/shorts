@@ -67,4 +67,36 @@ export async function purchasePlanWithSavedCard(input: {
   });
 }
 
+export async function replaceStoredPaymentMethod(input: {
+  requestId: string;
+  payerName: string;
+  payerEmail: string;
+  payerTel: string;
+  cardNumber: string;
+  expiryYear: string;
+  expiryMonth: string;
+  identityNumber: string;
+  cardPassword: string;
+}) {
+  return postJson<{
+    ok: true;
+    orderId: string;
+    paymentMethodUpdated: true;
+  }>("/api/billing/activate", {
+    mode: "replace_payment_method",
+    requestId: input.requestId,
+    payerName: input.payerName,
+    payerEmail: input.payerEmail,
+    payerTel: input.payerTel,
+    cardNumber: input.cardNumber,
+    expiryYear: input.expiryYear,
+    expiryMonth: input.expiryMonth,
+    identityNumber: input.identityNumber,
+    cardPassword: input.cardPassword,
+    consent: true,
+    installmentMonths: 0,
+    installmentCampaignId: null,
+  });
+}
+
 export { postJson as billingPostJson };

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   purchaseAddonWithSavedCard,
   purchasePlanWithSavedCard,
+  replaceStoredPaymentMethod,
 } from "./billing-client";
 
 afterEach(() => {
@@ -91,5 +92,47 @@ describe("saved-card billing client", () => {
     expect(body).not.toHaveProperty("cardNumber");
     expect(body).not.toHaveProperty("expiryMonth");
     expect(body).not.toHaveProperty("expiryYear");
+  });
+
+  it("replaces the stored card before continuing a purchase with another card", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      orderId: "EC-PMU-test",
+      paymentMethodUpdated: true,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await replaceStoredPaymentMethod({
+      requestId: "fe655ba8-c5c9-4fc3-ae77-ffcb1cc92c22",
+      payerName: "홍길동",
+      payerEmail: "buyer@example.com",
+      payerTel: "01012345678",
+      cardNumber: "4242424242424242",
+      expiryYear: "30",
+      expiryMonth: "12",
+      identityNumber: "900101",
+      cardPassword: "12",
+    });
+
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe("/api/billing/activate");
+    expect(JSON.parse(String(init.body))).toEqual({
+      mode: "replace_payment_method",
+      requestId: "fe655ba8-c5c9-4fc3-ae77-ffcb1cc92c22",
+      payerName: "홍길동",
+      payerEmail: "buyer@example.com",
+      payerTel: "01012345678",
+      cardNumber: "4242424242424242",
+      expiryYear: "30",
+      expiryMonth: "12",
+      identityNumber: "900101",
+      cardPassword: "12",
+      consent: true,
+      installmentMonths: 0,
+      installmentCampaignId: null,
+    });
   });
 });

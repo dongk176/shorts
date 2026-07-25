@@ -2,6 +2,7 @@
 
 import { PaymentMessageOverlay } from "@/components/payment-message-overlay";
 import { PurchaseTermsConsent } from "@/components/purchase-terms-consent";
+import { SelectedPaymentCard } from "@/components/selected-payment-card";
 import { ThePayOnePaymentOverlay } from "@/components/thepayone-payment-overlay";
 import {
   billingPostJson,
@@ -58,6 +59,8 @@ export function PlanCheckoutOverlay({
   initialEmail?: string | null;
   savedPaymentMethod?: {
     hasStoredPayerTel: boolean;
+    issuer: string | null;
+    last4: string | null;
   } | null;
   onClose: () => void;
 }) {
@@ -80,9 +83,12 @@ export function PlanCheckoutOverlay({
   const [changeQuote, setChangeQuote] = useState<ChangeQuote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(mode === "change_subscription");
   const [cardVerification, setCardVerification] = useState<CardVerification | null>(null);
+  const [useSavedPaymentMethod, setUseSavedPaymentMethod] = useState(
+    Boolean(savedPaymentMethod),
+  );
   const cardVerificationIdRef = useRef<string | null>(null);
   const operationInFlightRef = useRef(false);
-  const usesSavedPaymentMethod = Boolean(savedPaymentMethod);
+  const usesSavedPaymentMethod = Boolean(savedPaymentMethod && useSavedPaymentMethod);
 
   const chargeAmount = mode === "change_subscription"
     ? changeQuote?.chargeAmountKrw ?? null
@@ -327,6 +333,35 @@ export function PlanCheckoutOverlay({
     }
   }
 
+  function chooseDifferentCard() {
+    setUseSavedPaymentMethod(false);
+    setStep("card");
+    setError(null);
+    setForm((current) => ({
+      ...current,
+      cardNumberParts: ["", "", "", ""],
+      expiryMonth: "",
+      expiryYear: "",
+      cardPassword: "",
+      payerTel: "",
+    }));
+    window.requestAnimationFrame(() => cardPartRefs.current[0]?.focus());
+  }
+
+  function chooseSavedCard() {
+    setUseSavedPaymentMethod(true);
+    setStep("card");
+    setError(null);
+    setForm((current) => ({
+      ...current,
+      cardPassword: "",
+      payerTel: "",
+    }));
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLInputElement>("[data-saved-card-autofocus]")?.focus();
+    });
+  }
+
   return (
     <>
       <ThePayOnePaymentOverlay
@@ -346,9 +381,17 @@ export function PlanCheckoutOverlay({
             : step === "card"
               ? "다음"
               : chargeAmount === null ? "결제정보 확인 중..." : "확인"}
-        secondaryLabel={usesSavedPaymentMethod ? "취소" : step === "payer" ? "이전" : undefined}
+        secondaryLabel={usesSavedPaymentMethod
+          ? "취소"
+          : step === "payer"
+            ? "이전"
+            : savedPaymentMethod ? "등록 카드 사용" : undefined}
         onClose={onClose}
-        onSecondary={usesSavedPaymentMethod ? onClose : () => setStep("card")}
+        onSecondary={usesSavedPaymentMethod
+          ? onClose
+          : step === "payer"
+            ? () => setStep("card")
+            : savedPaymentMethod ? chooseSavedCard : undefined}
         onSubmit={() => {
           if (usesSavedPaymentMethod) {
             void completeSavedPayment();
@@ -361,11 +404,20 @@ export function PlanCheckoutOverlay({
       >
         {usesSavedPaymentMethod ? (
           <div className="mt-8 grid gap-5">
+            <SelectedPaymentCard
+              card={{
+                issuer: savedPaymentMethod?.issuer || null,
+                last4: savedPaymentMethod?.last4 || null,
+              }}
+              disabled={busy}
+              onUseDifferentCard={chooseDifferentCard}
+            />
             <div className="grid grid-cols-2 gap-3">
               <label className="min-w-0 text-xs font-bold text-neutral-300">
                 생년월일 또는 사업자번호
                 <input
                   data-payment-autofocus
+                  data-saved-card-autofocus
                   required
                   inputMode="numeric"
                   autoComplete="off"
