@@ -80,7 +80,6 @@ export class ShortsMvpFoundationStack extends cdk.Stack {
           SUPABASE_SERVICE_ROLE_KEY: "",
           OPENAI_API_KEY: "",
           GEMINI_API_KEY: "",
-          GEMINI_PAID_DATA_PROCESSING_CONFIRMED: "false",
           GEMINI_OPENAI_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/openai/",
           YOUTUBE_API_KEY: "",
           INGESTION_PROXY_ROUTES_JSON: "",
@@ -364,6 +363,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", value: "gpt-5-nano" },
         { name: "OPENAI_COMMENT_FALLBACK_MODEL", value: "gpt-5-nano" },
         { name: "GEMINI_COMMENT_MODEL", value: "gemini-2.5-flash-lite" },
+        { name: "GEMINI_PAID_DATA_PROCESSING_CONFIRMED", value: "false" },
         { name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", value: "30" },
         { name: "OPENAI_TRANSCRIBE_MAX_WORKERS", value: "4" },
         { name: "FFMPEG_THREADS", value: "2" },
@@ -374,7 +374,6 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         secret("DATABASE_URL"),
         secret("OPENAI_API_KEY"),
         secret("GEMINI_API_KEY"),
-        secret("GEMINI_PAID_DATA_PROCESSING_CONFIRMED"),
         secret("GEMINI_OPENAI_BASE_URL"),
       ],
     };
