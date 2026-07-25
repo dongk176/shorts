@@ -30,9 +30,10 @@ provider-hosted conversation state.
 
 ### Google Gemini API
 
-Keep `GEMINI_PAID_DATA_PROCESSING_CONFIRMED=false` unless an operator has
-verified all of the following on the exact Google Cloud project associated with
-the production API key:
+The AWS Batch job definition keeps
+`GEMINI_PAID_DATA_PROCESSING_CONFIRMED=false`. Do not change that environment
+value unless an operator has verified all of the following on the exact Google
+Cloud project associated with the production API key:
 
 - Cloud Billing is active and Google classifies API use as a Paid Service.
 - Prompt/response logging has not been opted into a shared dataset or feedback
