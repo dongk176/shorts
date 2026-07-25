@@ -24,6 +24,7 @@ EventBridge + Lambda
 ```
 
 상세 설계는 [architecture](docs/architecture.md), [Supabase schema](docs/supabase-schema.md), [AWS runbook](docs/aws-runbook.md)을 참고하세요.
+AI 공급자 데이터 처리 조건과 변경 전 점검 절차는 [AI data governance](docs/ai-data-governance.md)를 따릅니다.
 
 ## 제품 동작
 
@@ -95,7 +96,8 @@ Vercel에는 `AWS_ROLE_ARN`, region, S3 bucket, Dispatcher ARN, CloudFront signi
 | `THEPAYONE_WEBHOOK_BASE_URL`, `THEPAYONE_WEBHOOK_SECRET` | Vercel | 운영 HTTPS 통지 주소와 비밀 경로 |
 | `THEPAYONE_CARD_TOKEN_ENCRYPTION_KEY` | Vercel secret | 저장 cardId AES-256-GCM 암호화 |
 | `MVP_PLAN_ENFORCEMENT` | Vercel | 기본 `true`; `false`를 명시한 개발 환경에서만 유료 권한 강제를 해제 |
-| `GEMINI_API_KEY` | worker | 1차 구조화 하이라이트 선정(없거나 실패하면 OpenAI fallback) |
+| `GEMINI_API_KEY` | worker | 유료 데이터 처리 조건이 확인된 경우 1차 구조화 하이라이트 선정 |
+| `GEMINI_PAID_DATA_PROCESSING_CONFIRMED` | worker | Cloud Billing이 연결된 유료 Gemini API이고 입력·출력이 모델 개선에 사용되지 않는 조건임을 확인한 경우에만 `true`; 그 외에는 OpenAI fallback |
 | `OPENAI_API_KEY` | worker | 필수 전체 오디오 전사 및 Gemini 실패 시 하이라이트 선정 |
 | `OPENAI_TRANSCRIBE_MODEL` | worker | 기본 `gpt-4o-mini-transcribe` |
 | `OPENAI_HIGHLIGHT_FALLBACK_MODEL` | worker | 기본 `gpt-5-nano` |

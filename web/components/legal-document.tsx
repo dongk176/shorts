@@ -22,13 +22,14 @@ function localizedEffectiveDate(value: string, locale: "ko" | "en" | "ja") {
     .format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))));
 }
 
-export function LegalDocument({ eyebrow, title, description, effectiveDate, children, translations, showTranslationNotice = true }: {
+export function LegalDocument({ eyebrow, title, description, effectiveDate, children, translations, sectionIds, showTranslationNotice = true }: {
   eyebrow: string;
   title: string;
   description: string;
   effectiveDate: string;
   children: ReactNode;
   translations?: Partial<Record<SiteLocale, LegalTranslation>>;
+  sectionIds?: Partial<Record<number, string>>;
   showTranslationNotice?: boolean;
 }) {
   const { locale, t } = useI18n();
@@ -57,8 +58,8 @@ export function LegalDocument({ eyebrow, title, description, effectiveDate, chil
         </div>
         <article className="legal-document mt-10 space-y-10">
           {translated
-            ? translated.sections.map((section) => (
-                <LegalSection key={section.title} title={section.title}>
+            ? translated.sections.map((section, index) => (
+                <LegalSection key={section.title} id={sectionIds?.[index]} title={section.title}>
                   {section.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
                 </LegalSection>
               ))
@@ -70,6 +71,6 @@ export function LegalDocument({ eyebrow, title, description, effectiveDate, chil
   );
 }
 
-export function LegalSection({ title, children }: { title: string; children: ReactNode }) {
-  return <section><h2 className="text-xl font-black tracking-tight text-white">{title}</h2><div className="mt-4 space-y-3 text-sm leading-7 text-neutral-300">{children}</div></section>;
+export function LegalSection({ id, title, children }: { id?: string; title: string; children: ReactNode }) {
+  return <section id={id} className="scroll-mt-24"><h2 className="text-xl font-black tracking-tight text-white">{title}</h2><div className="mt-4 space-y-3 text-sm leading-7 text-neutral-300">{children}</div></section>;
 }

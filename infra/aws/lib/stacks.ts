@@ -80,6 +80,7 @@ export class ShortsMvpFoundationStack extends cdk.Stack {
           SUPABASE_SERVICE_ROLE_KEY: "",
           OPENAI_API_KEY: "",
           GEMINI_API_KEY: "",
+          GEMINI_PAID_DATA_PROCESSING_CONFIRMED: "false",
           GEMINI_OPENAI_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/openai/",
           YOUTUBE_API_KEY: "",
           INGESTION_PROXY_ROUTES_JSON: "",
@@ -373,6 +374,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         secret("DATABASE_URL"),
         secret("OPENAI_API_KEY"),
         secret("GEMINI_API_KEY"),
+        secret("GEMINI_PAID_DATA_PROCESSING_CONFIRMED"),
         secret("GEMINI_OPENAI_BASE_URL"),
       ],
     };

@@ -501,7 +501,7 @@ class TranscriptSelector:
             (
                 "gemini",
                 self.settings.gemini_text_model,
-                bool(self.settings.gemini_api_key),
+                self.settings.gemini_enabled,
                 self._select_with_gemini,
             ),
             (
