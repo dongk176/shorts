@@ -45,10 +45,10 @@ def clip_count_for_duration(duration_seconds: float, *, maximum_seconds: int = 3
 
 
 def minimum_clip_count(required_count: int) -> int:
-    """Require 80% of the planned outputs without ever exceeding the plan."""
+    """Require 65% of planned outputs, keeping three-clip jobs failure-tolerant."""
     if required_count < 1:
         return 0
-    return min(required_count, math.ceil(required_count * 0.8))
+    return min(required_count, max(3, math.ceil(required_count * 0.65)))
 
 
 def _expanded_short_clip_length(

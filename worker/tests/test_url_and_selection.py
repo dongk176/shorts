@@ -79,13 +79,13 @@ def test_clip_count_boundaries(duration: float, expected: int) -> None:
 
 @pytest.mark.parametrize(
     ("target", "minimum"),
-    [(3, 3), (5, 4), (8, 7), (10, 8), (12, 10), (15, 12)],
+    [(3, 3), (5, 4), (8, 6), (10, 7), (12, 8), (15, 10)],
 )
-def test_minimum_clip_count_is_eighty_percent_of_target(
+def test_minimum_clip_count_is_sixty_five_percent_with_small_job_buffer(
     target: int, minimum: int
 ) -> None:
     assert minimum_clip_count(target) == minimum
-    assert minimum >= (target + 1) // 2
+    assert minimum >= (target + 1) // 2 + 1
     assert minimum <= target
 
 
@@ -94,7 +94,7 @@ def test_minimum_clip_count_handles_non_positive_values() -> None:
     assert minimum_clip_count(-1) == 0
 
 
-def test_selection_prompt_uses_the_same_eighty_percent_minimum() -> None:
+def test_selection_prompt_uses_the_same_sixty_five_percent_minimum() -> None:
     selector = TranscriptSelector(Settings())
     messages = selector._selection_messages(
         video_title="최대 개수 프롬프트 검증",
@@ -103,8 +103,8 @@ def test_selection_prompt_uses_the_same_eighty_percent_minimum() -> None:
         required_count=15,
     )
 
-    assert "최종 쇼츠 개수는 12개부터 15개 사이" in messages[0]["content"]
-    assert "최소 쇼츠 수: 12" in messages[1]["content"]
+    assert "최종 쇼츠 개수는 10개부터 15개 사이" in messages[0]["content"]
+    assert "최소 쇼츠 수: 10" in messages[1]["content"]
     assert "최대 쇼츠 수: 15" in messages[1]["content"]
 
 
@@ -182,10 +182,10 @@ def test_overlapping_clips_are_repositioned_to_five_seconds_or_less() -> None:
     [
         (180, 3, 3),
         (240, 5, 4),
-        (600, 8, 7),
-        (1_200, 10, 8),
-        (1_800, 12, 10),
-        (2_700, 15, 12),
+        (600, 8, 6),
+        (1_200, 10, 7),
+        (1_800, 12, 8),
+        (2_700, 15, 10),
     ],
 )
 def test_heavily_overlapping_candidates_still_produce_a_safe_minimum(
@@ -233,9 +233,9 @@ def test_valid_ai_clips_are_backfilled_only_to_minimum() -> None:
         selection_model="gemini-2.5-flash-lite",
     )
 
-    assert len(clips) == 7
+    assert len(clips) == 6
     assert sum(clip.selection_provider == "gemini" for clip in clips) == 3
-    assert sum(clip.selection_provider == "deterministic" for clip in clips) == 4
+    assert sum(clip.selection_provider == "deterministic" for clip in clips) == 3
     assert all(
         overlap_seconds(left, right) <= 5.001
         for index, left in enumerate(clips)
@@ -766,7 +766,7 @@ def test_selector_fallback_guarantees_minimum_for_largest_project(monkeypatch) -
         required_count=15,
     )
 
-    assert len(clips) == 12
+    assert len(clips) == 10
     assert all(30 <= clip.end_seconds - clip.start_seconds <= 60 for clip in clips)
     assert all(
         overlap_seconds(left, right) <= 5.001
