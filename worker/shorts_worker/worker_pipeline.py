@@ -48,6 +48,26 @@ from .selector import TranscriptSelector
 from .storage import ObjectStorage
 from .subtitles import AudioTranscriber
 
+EDIT_TIMELINE_PADDING_SECONDS = 30.0
+
+
+def edit_timeline_clip(
+    clip: HighlightClip,
+    source_duration_seconds: float,
+    *,
+    padding_seconds: float = EDIT_TIMELINE_PADDING_SECONDS,
+) -> HighlightClip:
+    """Return the same selected scene with bounded editing handles around it."""
+    start_seconds = round(max(0.0, clip.start_seconds - max(0.0, padding_seconds)), 3)
+    end_seconds = round(
+        min(source_duration_seconds, clip.end_seconds + max(0.0, padding_seconds)),
+        3,
+    )
+    return clip.model_copy(update={
+        "start_seconds": start_seconds,
+        "end_seconds": end_seconds,
+    })
+
 
 def _custom_template_config(item: dict[str, object]) -> CustomTemplateConfig | None:
     snapshot = item.get("template_snapshot")
@@ -609,6 +629,14 @@ class BatchWorker:
                     index: self._relative_subtitles(transcript, clip)
                     for index, clip in enumerate(clips, start=1)
                 }
+                edit_timeline_clips = {
+                    index: edit_timeline_clip(clip, downloaded_duration_seconds)
+                    for index, clip in enumerate(clips, start=1)
+                } if getattr(self.settings, "edit_timeline_capture_enabled", False) else {}
+                edit_timeline_subtitles = {
+                    index: self._relative_subtitles(transcript, timeline_clip)
+                    for index, timeline_clip in edit_timeline_clips.items()
+                }
                 comments_by_clip: dict[int, list[dict[str, object]]] = {
                     index: [] for index in clip_subtitles
                 }
@@ -689,6 +717,8 @@ class BatchWorker:
                                 slot_index=index,
                                 clip=clip,
                                 subtitles=clip_subtitles[index],
+                                timeline_clip=edit_timeline_clips.get(index),
+                                timeline_subtitles=edit_timeline_subtitles.get(index, []),
                                 comments=comments_by_clip.get(index, []),
                             ): index
                             for index, clip in enumerate(clips, start=1)
@@ -824,6 +854,8 @@ class BatchWorker:
         slot_index: int,
         clip: HighlightClip,
         subtitles: list[SubtitleSegment],
+        timeline_clip: HighlightClip | None,
+        timeline_subtitles: list[SubtitleSegment],
         comments: list[dict[str, object]],
     ) -> tuple[str, Path, dict[str, object]] | None:
         started_at = time.monotonic()
@@ -831,7 +863,9 @@ class BatchWorker:
         clean_path = work_dir / "clean" / f"{short_id}.mp4"
         clean_path.parent.mkdir(parents=True, exist_ok=True)
         clean_key: str | None = None
+        timeline_key: str | None = None
         clean_metrics: dict[str, object] = {}
+        timeline_metrics: dict[str, object] = {}
         try:
             self.renderer.extract_clean_clip(
                 source_path=source,
@@ -849,6 +883,38 @@ class BatchWorker:
             clean_key = f"edit-sources/{prefix}.mp4"
             uploaded_size = self.storage.upload(clean_path, clean_key, "video/mp4")
             upload_seconds = time.monotonic() - upload_started_at
+            if timeline_clip is not None:
+                timeline_path = work_dir / "timelines" / f"{short_id}.mp4"
+                try:
+                    self.renderer.extract_clean_clip(
+                        source_path=source,
+                        output_path=timeline_path,
+                        clip=timeline_clip,
+                        work_dir=work_dir / "timeline-extract" / short_id,
+                        video_aspect_ratio=VideoAspectRatio(
+                            str(job.get("video_aspect_ratio") or "1:1")
+                        ),
+                        source_probe=source_probe,
+                        metrics_callback=timeline_metrics.update,
+                    )
+                    timeline_key = f"edit-sources/{prefix}/timeline-v1.mp4"
+                    timeline_size = self.storage.upload(
+                        timeline_path, timeline_key, "video/mp4"
+                    )
+                    timeline_metrics["fileBytes"] = timeline_size
+                except Exception as exc:
+                    if timeline_key:
+                        try:
+                            self.storage.delete(timeline_key)
+                        except Exception:
+                            pass
+                    timeline_key = None
+                    _log_event(
+                        "edit_timeline_capture_failed",
+                        job_id=job_id,
+                        short_id=short_id,
+                        error_type=type(exc).__name__,
+                    )
             inserted = self.repository.add_pending_short(
                 short_id=short_id,
                 job=job,
@@ -868,6 +934,13 @@ class BatchWorker:
                 subtitles=[item.model_dump() for item in subtitles],
                 comment_overlays=comments,
                 clean_key=clean_key,
+                timeline_key=timeline_key,
+                timeline_start_seconds=(timeline_clip.start_seconds if timeline_key else None),
+                timeline_end_seconds=(timeline_clip.end_seconds if timeline_key else None),
+                timeline_subtitles=(
+                    [item.model_dump() for item in timeline_subtitles]
+                    if timeline_key else None
+                ),
                 retention_days=int(job["retention_days"]),
                 shard_index=0,
             )
@@ -883,6 +956,7 @@ class BatchWorker:
                     "fileBytes": uploaded_size,
                     "totalSeconds": round(total_seconds, 3),
                 },
+                "editTimeline": timeline_metrics if timeline_key else None,
             }
             self.repository.merge_project_attempt_performance_metrics(
                 job_id,
@@ -908,11 +982,12 @@ class BatchWorker:
             )
             return short_id, clean_path, metrics
         except Exception as exc:
-            if clean_key:
-                try:
-                    self.storage.delete(clean_key)
-                except Exception:
-                    pass
+            for key in (clean_key, timeline_key):
+                if key:
+                    try:
+                        self.storage.delete(key)
+                    except Exception:
+                        pass
             self.repository.fail_project_attempt(
                 job_id,
                 slot_index,
@@ -1369,6 +1444,14 @@ class BatchWorker:
                     index: self._relative_subtitles(transcript, clip)
                     for index, clip in enumerate(clips, start=1)
                 }
+                edit_timeline_clips = {
+                    index: edit_timeline_clip(clip, downloaded_duration_seconds)
+                    for index, clip in enumerate(clips, start=1)
+                } if getattr(self.settings, "edit_timeline_capture_enabled", False) else {}
+                edit_timeline_subtitles = {
+                    index: self._relative_subtitles(transcript, timeline_clip)
+                    for index, timeline_clip in edit_timeline_clips.items()
+                }
                 comments_by_clip: dict[int, list[dict[str, object]]] = {
                     index: [] for index in clip_subtitles
                 }
@@ -1429,6 +1512,35 @@ class BatchWorker:
                     prefix = f"{job['mvp_session_id']}/{job_id}/{short_id}"
                     clean_key = f"edit-sources/{prefix}.mp4"
                     self.storage.upload(clean_path, clean_key, "video/mp4")
+                    timeline_clip = edit_timeline_clips.get(index)
+                    timeline_key: str | None = None
+                    if timeline_clip is not None:
+                        timeline_path = work_dir / "timelines" / f"{short_id}.mp4"
+                        try:
+                            self.renderer.extract_clean_clip(
+                                source_path=source,
+                                output_path=timeline_path,
+                                clip=timeline_clip,
+                                work_dir=work_dir / "timeline-extract" / short_id,
+                                video_aspect_ratio=VideoAspectRatio(
+                                    str(job.get("video_aspect_ratio") or "1:1")
+                                ),
+                            )
+                            timeline_key = f"edit-sources/{prefix}/timeline-v1.mp4"
+                            self.storage.upload(timeline_path, timeline_key, "video/mp4")
+                        except Exception as exc:
+                            if timeline_key:
+                                try:
+                                    self.storage.delete(timeline_key)
+                                except Exception:
+                                    pass
+                            timeline_key = None
+                            _log_event(
+                                "edit_timeline_capture_failed",
+                                job_id=job_id,
+                                short_id=short_id,
+                                error_type=type(exc).__name__,
+                            )
                     inserted = self.repository.add_pending_short(
                         short_id=short_id,
                         job=job,
@@ -1448,14 +1560,29 @@ class BatchWorker:
                         subtitles=[item.model_dump() for item in relative_subtitles],
                         comment_overlays=comments_by_clip[index],
                         clean_key=clean_key,
+                        timeline_key=timeline_key,
+                        timeline_start_seconds=(
+                            timeline_clip.start_seconds if timeline_key else None
+                        ),
+                        timeline_end_seconds=(
+                            timeline_clip.end_seconds if timeline_key else None
+                        ),
+                        timeline_subtitles=(
+                            [
+                                item.model_dump()
+                                for item in edit_timeline_subtitles.get(index, [])
+                            ] if timeline_key else None
+                        ),
                         retention_days=int(job["retention_days"]),
                         shard_index=(index - 1) // self.RENDER_SHARD_SIZE,
                     )
                     if not inserted:
-                        try:
-                            self.storage.delete(clean_key)
-                        except Exception:
-                            pass
+                        for key in (clean_key, timeline_key):
+                            if key:
+                                try:
+                                    self.storage.delete(key)
+                                except Exception:
+                                    pass
                         raise RuntimeError("작업 제한 시간이 종료되었습니다.")
                 if not self.repository.mark_render_queued(job_id, len(clips)):
                     raise RuntimeError("작업 제한 시간이 종료되었습니다.")
@@ -1850,25 +1977,79 @@ class BatchWorker:
             raise KeyError(short_id)
         work_dir = self.settings.temp_dir / f"rerender-{short_id}"
         attempt = max(1, int(os.getenv("AWS_BATCH_JOB_ATTEMPT", "1")))
-        uploaded_key: str | None = None
+        uploaded_keys: list[str] = []
         committed = False
         completion_started = False
         shutil.rmtree(work_dir, ignore_errors=True)
         work_dir.mkdir(parents=True)
         try:
+            snapshot = item.get("pending_edit_snapshot")
+            snapshot = snapshot if isinstance(snapshot, dict) else None
+            version = int(item["render_version"]) + 1
             self.repository.update_rerender_progress(short_id, 12)
-            clean_path = self.storage.download(item["clean_clip_s3_key"], work_dir / "clean.mp4")
+            clean_path = work_dir / "clean.mp4"
+            new_clean_key: str | None = None
+            render_item = dict(item)
+            if snapshot:
+                timeline_path = self.storage.download(
+                    str(item["edit_timeline_s3_key"]),
+                    work_dir / "timeline.mp4",
+                )
+                timeline_start = float(item["edit_timeline_start_seconds"])
+                relative_start = float(snapshot["startSeconds"]) - timeline_start
+                relative_end = float(snapshot["endSeconds"]) - timeline_start
+                selected_clip = HighlightClip(
+                    start_seconds=round(relative_start, 3),
+                    end_seconds=round(relative_end, 3),
+                    hook_title=str(snapshot["hookTitle"]),
+                )
+                self.renderer.extract_clean_clip(
+                    source_path=timeline_path,
+                    output_path=clean_path,
+                    clip=selected_clip,
+                    work_dir=work_dir / "range-extract",
+                    video_aspect_ratio=VideoAspectRatio(
+                        str(snapshot.get("videoAspectRatio") or "1:1")
+                    ),
+                )
+                new_clean_key = (
+                    f"edit-sources/{item['mvp_session_id']}/{item['job_id']}/"
+                    f"{short_id}/clean-v{version}.mp4"
+                )
+                self.storage.upload(clean_path, new_clean_key, "video/mp4")
+                uploaded_keys.append(new_clean_key)
+                render_item.update({
+                    "hook_title": snapshot["hookTitle"],
+                    "channel_display_name": snapshot["channelDisplayName"],
+                    "subtitles_enabled": snapshot["subtitlesEnabled"],
+                    "subtitle_segments": snapshot.get("subtitleSegments") or [],
+                    "comment_overlays": snapshot.get("commentOverlays") or [],
+                    "template_id": snapshot["templateId"],
+                    "custom_template_id": snapshot.get("customTemplateId"),
+                    "template_snapshot": snapshot.get("templateSnapshot"),
+                    "video_aspect_ratio": snapshot.get("videoAspectRatio") or "1:1",
+                    "title_font_scale": snapshot.get("titleFontScale") or 1,
+                    "title_text_styles": snapshot.get("titleTextStyles") or [],
+                    "title_text_styles_initialized": snapshot.get(
+                        "titleTextStylesInitialized", True
+                    ),
+                })
+            else:
+                clean_path = self.storage.download(
+                    str(item["clean_clip_s3_key"]), clean_path
+                )
             self.repository.update_rerender_progress(short_id, 28)
             output_path = work_dir / "output.mp4"
             subtitles = [
-                SubtitleSegment.model_validate(segment) for segment in item["subtitle_segments"]
+                SubtitleSegment.model_validate(segment)
+                for segment in render_item["subtitle_segments"]
             ]
             comments = [
                 CommentOverlay.model_validate(comment)
-                for comment in (item.get("comment_overlays") or [])
+                for comment in (render_item.get("comment_overlays") or [])
             ]
-            raw_title_text_styles = item.get("title_text_styles")
-            title_text_styles = None if not item.get("title_text_styles_initialized") else [
+            raw_title_text_styles = render_item.get("title_text_styles")
+            title_text_styles = None if not render_item.get("title_text_styles_initialized") else [
                 TitleTextStyle.model_validate(style)
                 for style in (raw_title_text_styles or [])
             ]
@@ -1879,49 +2060,73 @@ class BatchWorker:
             self.renderer.render_clean_clip(
                 clean_path=clean_path,
                 output_path=output_path,
-                title=item["hook_title"],
-                channel_name=item["channel_display_name"],
-                template_id=TemplateId(item["template_id"]),
+                title=str(render_item["hook_title"]),
+                channel_name=str(render_item["channel_display_name"]),
+                template_id=TemplateId(str(render_item["template_id"])),
                 transcript=subtitles,
-                subtitles_enabled=bool(item["subtitles_enabled"]),
+                subtitles_enabled=bool(render_item["subtitles_enabled"]),
                 work_dir=work_dir,
                 prefix="rerender",
-                title_font_scale=float(item["title_font_scale"]),
+                title_font_scale=float(render_item["title_font_scale"]),
                 channel_thumbnail_path=channel_thumbnail_path,
-                video_aspect_ratio=VideoAspectRatio(str(item.get("video_aspect_ratio") or "1:1")),
+                video_aspect_ratio=VideoAspectRatio(
+                    str(render_item.get("video_aspect_ratio") or "1:1")
+                ),
                 comment_overlays=comments,
-                comment_channel_below=_preset_comment_channel_below(item),
-                comment_channel_fixed=_preset_comment_channel_fixed(item),
-                fixed_preset_channel=_preset_fixed_channel_position(item),
+                comment_channel_below=_preset_comment_channel_below(render_item),
+                comment_channel_fixed=_preset_comment_channel_fixed(render_item),
+                fixed_preset_channel=_preset_fixed_channel_position(render_item),
                 title_text_styles=title_text_styles,
-                custom_template_config=_custom_template_config(item),
+                custom_template_config=_custom_template_config(render_item),
             )
             self.repository.update_rerender_progress(short_id, 82)
-            version = int(item["render_version"]) + 1
             new_key = f"outputs/{item['mvp_session_id']}/{item['job_id']}/{short_id}/v{version}.mp4"
             size = self.storage.upload(output_path, new_key, "video/mp4")
-            uploaded_key = new_key
+            uploaded_keys.append(new_key)
             self.repository.update_rerender_progress(short_id, 94)
             completion_started = True
-            old_key = self.repository.complete_rerender(short_id, new_key, size, version)
-            if old_key is None:
+            if snapshot and new_clean_key:
+                old_keys = self.repository.complete_snapshot_rerender(
+                    short_id,
+                    output_key=new_key,
+                    clean_key=new_clean_key,
+                    size=size,
+                    version=version,
+                )
+                if old_keys is None:
+                    for key in uploaded_keys:
+                        try:
+                            self.storage.delete(key)
+                        except Exception:
+                            pass
+                    return
+                committed = True
+                for old_key in old_keys.values():
+                    if old_key and old_key not in uploaded_keys:
+                        try:
+                            self.storage.delete(old_key)
+                        except Exception:
+                            pass
+            else:
+                old_key = self.repository.complete_rerender(short_id, new_key, size, version)
+                if old_key is None:
+                    try:
+                        self.storage.delete(new_key)
+                    except Exception:
+                        pass
+                    return
+                committed = True
                 try:
-                    self.storage.delete(new_key)
+                    self.storage.delete(old_key)
                 except Exception:
                     pass
-                uploaded_key = None
-                return
-            committed = True
-            try:
-                self.storage.delete(old_key)
-            except Exception:
-                pass
         except Exception:
-            if uploaded_key is not None and not committed and not completion_started:
-                try:
-                    self.storage.delete(uploaded_key)
-                except Exception:
-                    pass
+            if not committed and not completion_started:
+                for key in uploaded_keys:
+                    try:
+                        self.storage.delete(key)
+                    except Exception:
+                        pass
             if attempt >= 2:
                 self.repository.reset_rerender(short_id)
             raise

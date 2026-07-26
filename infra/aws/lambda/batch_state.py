@@ -405,6 +405,7 @@ def _handle_rerender_failure(
             "status": "ready",
             "rerender_progress": 0,
             "pending_render_hash": None,
+            "pending_edit_snapshot": None,
             "rerender_batch_job_id": None,
             "render_error_code": f"rerender_batch_{failure_category}",
             "render_error_message": reason[:1000],

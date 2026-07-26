@@ -38,8 +38,16 @@ export async function deleteShortObjects(keys: string[]) {
   if (!bucket) throw new Error("AWS_S3_OUTPUT_BUCKET이 설정되지 않았습니다.");
   const allowed = keys.filter((key) => /^(outputs|thumbnails|edit-sources)\/[A-Za-z0-9/_-]+\.(mp4|jpg)$/.test(key));
   const output = allowed.find((key) => key.startsWith("outputs/"));
+  const prefixes: string[] = [];
   if (output) {
-    const prefix = output.slice(0, output.lastIndexOf("/") + 1);
+    const outputPrefix = output.slice(0, output.lastIndexOf("/") + 1);
+    const relativeShortPrefix = outputPrefix.replace(/^outputs\//, "");
+    prefixes.push(outputPrefix, `edit-sources/${relativeShortPrefix}`);
+  } else {
+    const timeline = allowed.find((key) => key.startsWith("edit-sources/") && key.includes("/timeline-"));
+    if (timeline) prefixes.push(timeline.slice(0, timeline.lastIndexOf("/") + 1));
+  }
+  for (const prefix of prefixes) {
     let continuationToken: string | undefined;
     do {
       const listed = await s3Client().send(new ListObjectsV2Command({

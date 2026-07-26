@@ -31,6 +31,7 @@ import { outputLanguageOptions, videoAspectRatioOptions } from "@/lib/contracts"
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
+import { RANGE_EDIT_MIN_SECONDS, scaleTimedRanges } from "@/lib/range-editing";
 import { stateRetryDelayMs } from "@/lib/state-loading";
 import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
@@ -894,7 +895,19 @@ function NoticeDialog({
   );
 }
 
-function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string }) {
+type EditTimeline = {
+  url: string;
+  timelineStartSeconds: number;
+  timelineEndSeconds: number;
+  currentStartSeconds: number;
+  currentEndSeconds: number;
+  initialStartSeconds: number;
+  initialEndSeconds: number;
+  subtitleSegments: Array<{ start: number; end: number; text: string }>;
+  version: number;
+};
+
+function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, rangeEditingEnabled = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; rangeEditingEnabled?: boolean }) {
   const initialTemplate = templates.find((value) => value.id === item.templateId) || templates[0];
   const initialTitleAspectRatio = item.templateId === "comment-capture" && item.videoAspectRatio === "9:16"
     ? "4:5"
@@ -928,6 +941,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   });
   const [titleFontScale, setTitleFontScale] = useState(item.titleFontScale || 1);
   const [cleanVideoUrl, setCleanVideoUrl] = useState<string | null>(null);
+  const [editTimeline, setEditTimeline] = useState<EditTimeline | null>(null);
+  const [selectionStart, setSelectionStart] = useState(item.startSeconds);
+  const [selectionEnd, setSelectionEnd] = useState(item.endSeconds);
+  const [loopSelection, setLoopSelection] = useState(true);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [videoLoadError, setVideoLoadError] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -947,27 +965,59 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     templateId === "comment-capture",
     usesLiftedCommentLayout,
   );
-  const activeSubtitle = segments.find((segment) => segment.start <= previewTime && segment.end > previewTime)?.text;
-  const orderedCommentsForPreview = [...comments].sort(
+  const selectionDuration = Math.round((selectionEnd - selectionStart) * 1_000) / 1_000;
+  const timelineSelectionOffset = editTimeline
+    ? selectionStart - editTimeline.timelineStartSeconds
+    : 0;
+  const relativePreviewTime = editTimeline ? previewTime - timelineSelectionOffset : previewTime;
+  const previewSegments = editTimeline?.subtitleSegments || segments;
+  const activeSubtitle = previewSegments.find((segment) => (
+    editTimeline
+      ? segment.start <= previewTime && segment.end > previewTime
+      : segment.start <= relativePreviewTime && segment.end > relativePreviewTime
+  ))?.text;
+  const commentsForPreview = editTimeline
+    ? scaleTimedRanges(comments, item.durationSeconds, selectionDuration)
+    : comments;
+  const orderedCommentsForPreview = [...commentsForPreview].sort(
     (left, right) => left.startSeconds - right.startSeconds,
   );
   const activeComment = orderedCommentsForPreview.reduce<CommentOverlay | null>(
-    (active, comment) => comment.startSeconds <= previewTime ? comment : active,
-    orderedCommentsForPreview[0] || null,
+    (active, comment) => comment.startSeconds <= relativePreviewTime ? comment : active,
+    null,
   );
   const orderedComments = [...comments].sort((left, right) => left.startSeconds - right.startSeconds);
   const validComments = comments.length > 0
     && comments.every((comment) => Number.isFinite(comment.startSeconds) && Number.isFinite(comment.endSeconds) && comment.startSeconds >= 0 && comment.endSeconds > comment.startSeconds && comment.endSeconds <= item.durationSeconds + 0.001 && comment.text.trim().length > 0)
     && orderedComments.every((comment, index) => index === 0 || comment.startSeconds >= orderedComments[index - 1].endSeconds - 0.001);
-  const editorValid = validTitle && (templateId === "comment-capture" ? validComments : channel.trim().length > 0);
+  const validSelection = !editTimeline || selectionDuration >= RANGE_EDIT_MIN_SECONDS;
+  const editorValid = validTitle && validSelection && (templateId === "comment-capture" ? validComments : channel.trim().length > 0);
 
   useEffect(() => {
     let cancelled = false;
-    requestJson<{ url: string }>(`/api/shorts/${item.id}/edit-source`)
-      .then((value) => { if (!cancelled) setCleanVideoUrl(value.url); })
-      .catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "편집용 영상을 준비하지 못했습니다."); });
+    const load = async () => {
+      if (rangeEditingEnabled) {
+        try {
+          const value = await requestJson<EditTimeline>(`/api/shorts/${item.id}/edit-timeline`);
+          if (!cancelled) {
+            setEditTimeline(value);
+            setSelectionStart(value.currentStartSeconds);
+            setSelectionEnd(value.currentEndSeconds);
+            setCleanVideoUrl(value.url);
+          }
+          return;
+        } catch {
+          // Projects created before timeline capture keep the existing editor.
+        }
+      }
+      const value = await requestJson<{ url: string }>(`/api/shorts/${item.id}/edit-source`);
+      if (!cancelled) setCleanVideoUrl(value.url);
+    };
+    void load().catch((cause) => {
+      if (!cancelled) setError(cause instanceof Error ? cause.message : "편집용 영상을 준비하지 못했습니다.");
+    });
     return () => { cancelled = true; };
-  }, [item.id]);
+  }, [item.id, rangeEditingEnabled]);
 
   const selectTemplate = (value: TemplateId) => {
     setTemplateId(value);
@@ -1033,14 +1083,60 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     ));
   };
 
+  const seekTimeline = (absoluteSeconds: number) => {
+    if (!editTimeline || !videoRef.current) return;
+    const relativeSeconds = absoluteSeconds - editTimeline.timelineStartSeconds;
+    videoRef.current.currentTime = Math.max(0, relativeSeconds);
+    setPreviewTime(relativeSeconds);
+  };
+
+  const updateSelectionStart = (value: number) => {
+    if (!editTimeline) return;
+    const next = Math.min(
+      selectionEnd - RANGE_EDIT_MIN_SECONDS,
+      Math.max(editTimeline.timelineStartSeconds, value),
+    );
+    const rounded = Math.round(next * 10) / 10;
+    setSelectionStart(rounded);
+    seekTimeline(rounded);
+  };
+
+  const updateSelectionEnd = (value: number) => {
+    if (!editTimeline) return;
+    const next = Math.max(
+      selectionStart + RANGE_EDIT_MIN_SECONDS,
+      Math.min(editTimeline.timelineEndSeconds, value),
+    );
+    const rounded = Math.round(next * 10) / 10;
+    setSelectionEnd(rounded);
+    seekTimeline(rounded);
+  };
+
   const save = async () => {
     setSaving(true); setError(null);
     try {
-      await requestJson(`/api/shorts/${item.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hookTitle: title, channelDisplayName: channel, subtitlesEnabled, subtitleSegments: segments, commentOverlays: orderedComments, templateId, titleFontScale, titleTextStyles }),
-      });
-      await requestJson(`/api/shorts/${item.id}/rerender`, { method: "POST" });
+      if (editTimeline) {
+        await requestJson(`/api/shorts/${item.id}/apply-edit`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            startSeconds: selectionStart,
+            endSeconds: selectionEnd,
+            hookTitle: title,
+            channelDisplayName: channel,
+            subtitlesEnabled,
+            commentOverlays: orderedComments,
+            templateId,
+            titleFontScale,
+            titleTextStyles,
+          }),
+        });
+      } else {
+        await requestJson(`/api/shorts/${item.id}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hookTitle: title, channelDisplayName: channel, subtitlesEnabled, subtitleSegments: segments, commentOverlays: orderedComments, templateId, titleFontScale, titleTextStyles }),
+        });
+        await requestJson(`/api/shorts/${item.id}/rerender`, { method: "POST" });
+      }
       try {
         window.sessionStorage.setItem(
           `estimated-progress:rerender:${item.id}:${item.renderVersion}`,
@@ -1067,7 +1163,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         <section className={standalone ? "editor-preview-pane" : ""}>
         <div className={standalone ? "editor-video-frame" : "sticky top-0 mx-auto aspect-[9/16] w-full max-w-[320px] overflow-hidden"} style={{ background: template.background, containerType: "inline-size" }}>
           <TitleOverlayPreview title={title} fontScale={titleFontScale} videoAspectRatio={commentNeedsVerticalFit ? "4:5" : originalAspectRatio} primary={template.primary} accent={template.accent} background={template.background} keepPrimaryFirstLine={template.id === "paper"} textStyles={titleTextStyles} liftLandscape={usesLiftedCommentLayout} />
-          {cleanVideoUrl ? <video className={`absolute inset-x-0 w-full bg-black ${commentNeedsVerticalFit ? "object-contain" : "object-cover"}`} style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }} src={cleanVideoUrl} controls playsInline preload="metadata" onLoadedMetadata={() => setVideoLoadError(false)} onError={() => setVideoLoadError(true)} onTimeUpdate={(event) => setPreviewTime(event.currentTarget.currentTime)} /> : <div className="absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}>클린 영상 준비 중</div>}
+          {cleanVideoUrl ? <video ref={videoRef} className={`absolute inset-x-0 w-full bg-black ${commentNeedsVerticalFit ? "object-contain" : "object-cover"}`} style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }} src={cleanVideoUrl} controls playsInline preload="metadata" onLoadedMetadata={(event) => { setVideoLoadError(false); if (editTimeline) { const offset = selectionStart - editTimeline.timelineStartSeconds; event.currentTarget.currentTime = Math.max(0, offset); setPreviewTime(offset); } }} onError={() => setVideoLoadError(true)} onTimeUpdate={(event) => { const current = event.currentTarget.currentTime; setPreviewTime(current); if (editTimeline && loopSelection) { const start = selectionStart - editTimeline.timelineStartSeconds; const end = selectionEnd - editTimeline.timelineStartSeconds; if (current >= end - 0.03) { event.currentTarget.currentTime = Math.max(0, start); void event.currentTarget.play().catch(() => undefined); } } }} /> : <div className="absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}>클린 영상 준비 중</div>}
           {videoLoadError && <div className="pointer-events-none absolute inset-x-3 z-30 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100" style={{ top: `${editorLayout.videoTop + 2}%` }}>편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>}
           {subtitlesEnabled && activeSubtitle && <div className="pointer-events-none absolute inset-x-5 z-20 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white" style={{ bottom: `${editorLayout.subtitleBottom}%` }}>{activeSubtitle}</div>}
           <div className={`absolute inset-x-0 z-10 overflow-hidden text-sm font-bold ${templateId === "comment-capture" ? "" : editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.bottomHeight}%`, background: editorLayout.fullVertical && templateId !== "comment-capture" ? "transparent" : template.background, color: template.channel }}>
@@ -1082,6 +1178,53 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         </section>
         <section className={standalone ? "editor-controls-pane" : "p-5 sm:p-6"}>
           <div className="flex items-center justify-between"><div><h2 id="editor-title" className="text-xl font-bold">쇼츠 편집</h2><p className="mt-1 text-xs text-neutral-500">왼쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</p></div>{!standalone && <button onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-white/10">닫기</button>}</div>
+          {editTimeline && (() => {
+            const timelineDuration = Math.max(
+              RANGE_EDIT_MIN_SECONDS,
+              editTimeline.timelineEndSeconds - editTimeline.timelineStartSeconds,
+            );
+            const selectionLeft = Math.max(0, Math.min(
+              100,
+              (selectionStart - editTimeline.timelineStartSeconds) / timelineDuration * 100,
+            ));
+            const selectionWidth = Math.max(0, Math.min(
+              100 - selectionLeft,
+              selectionDuration / timelineDuration * 100,
+            ));
+            return <section className="editor-section" aria-labelledby="range-editor-title">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 id="range-editor-title" className="text-sm font-bold">영상 구간</h3>
+                  <p className="mt-1 text-xs leading-5 text-neutral-500">앞뒤 여유 구간을 탐색하고 최종 영상의 시작과 끝을 정하세요.</p>
+                </div>
+                <strong className="rounded-full bg-white/10 px-3 py-1 text-xs text-white">{selectionDuration.toFixed(1)}초</strong>
+              </div>
+              <div className="mt-4">
+                <div className="relative h-10 overflow-hidden rounded-lg border border-white/10 bg-black/60">
+                  <div className="absolute inset-y-0 bg-white/15" style={{ left: `${selectionLeft}%`, width: `${selectionWidth}%` }} />
+                  <div className="absolute inset-y-0 w-0.5 bg-[#ff715e]" style={{ left: `${selectionLeft}%` }} />
+                  <div className="absolute inset-y-0 w-0.5 bg-[#ff715e]" style={{ left: `${selectionLeft + selectionWidth}%` }} />
+                  <input aria-label="최종 영상 시작 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.1} value={selectionStart} onChange={(event) => updateSelectionStart(Number(event.target.value))} className="range-editor-handle absolute inset-0 z-10 h-full w-full" />
+                  <input aria-label="최종 영상 종료 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.1} value={selectionEnd} onChange={(event) => updateSelectionEnd(Number(event.target.value))} className="range-editor-handle absolute inset-0 z-20 h-full w-full" />
+                </div>
+                <div className="mt-1 flex justify-between text-[10px] font-medium text-neutral-500">
+                  <span>{formatTimestamp(editTimeline.timelineStartSeconds)}</span>
+                  <span>{formatTimestamp(editTimeline.timelineEndSeconds)}</span>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-4 text-xs font-semibold text-neutral-300">
+                <button type="button" onClick={() => seekTimeline(selectionStart)} className="flex justify-between gap-3 rounded-lg bg-white/[.04] px-3 py-2 text-left hover:bg-white/[.08]"><span>시작</span><strong className="text-[#ff9b8d]">{formatTimestamp(selectionStart)}</strong></button>
+                <button type="button" onClick={() => seekTimeline(selectionEnd)} className="flex justify-between gap-3 rounded-lg bg-white/[.04] px-3 py-2 text-left hover:bg-white/[.08]"><span>끝</span><strong className="text-[#ff9b8d]">{formatTimestamp(selectionEnd)}</strong></button>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => { seekTimeline(selectionStart); void videoRef.current?.play().catch(() => undefined); }} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-bold hover:bg-white/10">선택 구간 재생</button>
+                <button type="button" onClick={() => { setSelectionStart(editTimeline.initialStartSeconds); setSelectionEnd(editTimeline.initialEndSeconds); seekTimeline(editTimeline.initialStartSeconds); }} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-bold hover:bg-white/10">AI 선택으로 되돌리기</button>
+                <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-neutral-300"><input type="checkbox" checked={loopSelection} onChange={(event) => setLoopSelection(event.target.checked)} className="accent-[#ff715e]" />선택 구간 반복</label>
+              </div>
+              {selectionDuration > 180 && <p className="mt-3 rounded-lg border border-amber-300/15 bg-amber-300/[.06] px-3 py-2 text-xs leading-5 text-amber-100">3분을 넘는 영상은 YouTube에서 Shorts로 분류되지 않을 수 있지만 저장할 수 있습니다.</p>}
+              {!validSelection && <p className="mt-3 text-xs text-red-400">최종 영상은 1초 이상이어야 합니다.</p>}
+            </section>;
+          })()}
           <label className="editor-section editor-section-heading block font-semibold">후킹 제목<textarea ref={titleInputRef} value={title} onChange={(event) => { setTitle(event.target.value); setTitleTextStyles([]); setTitleSelection(null); }} onSelect={captureTitleSelection} onDoubleClick={captureTitleSelection} maxLength={80} rows={2} className="mt-2 w-full rounded-lg border border-white/15 bg-black/30 p-3 text-sm" /></label>
           <p className={`mt-1 text-xs ${validTitle ? "text-neutral-500" : "text-red-400"}`}>최대 2줄·80자 ({title.length}/80)</p>
           <div className="editor-section">
@@ -1295,7 +1438,7 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
   );
 }
 
-export function ShortEditorPage({ projectNumber, shortId }: { projectNumber: number; shortId: string }) {
+export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = false }: { projectNumber: number; shortId: string; rangeEditingEnabled?: boolean }) {
   const [project, setProject] = useState<VideoJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const loadProject = useCallback(async () => {
@@ -1319,7 +1462,7 @@ export function ShortEditorPage({ projectNumber, shortId }: { projectNumber: num
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">편집기를 준비하고 있습니다…</main>;
   if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
 
-  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={`프로젝트 /${project.projectNumber} · ${item.hookTitle}`} onClose={closeEditor} onChanged={loadProject} />;
+  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={`프로젝트 /${project.projectNumber} · ${item.hookTitle}`} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} />;
 }
 
 export function ProjectPage({ projectNumber }: { projectNumber: number }) {

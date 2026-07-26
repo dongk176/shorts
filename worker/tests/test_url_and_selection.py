@@ -24,6 +24,7 @@ from shorts_worker.selector import (
     overlap_seconds,
 )
 from shorts_worker.url_validation import validate_youtube_url
+from shorts_worker.worker_pipeline import edit_timeline_clip
 
 
 @pytest.mark.parametrize(
@@ -78,6 +79,34 @@ def test_clip_count_boundaries(duration: float, expected: int) -> None:
 def test_videos_over_sixty_minutes_are_rejected() -> None:
     with pytest.raises(ShortsMakerError, match="60분"):
         clip_count_for_duration(3_600.01)
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "source_duration", "expected_start", "expected_end"),
+    [
+        (40, 80, 200, 10, 110),
+        (10, 50, 200, 0, 80),
+        (150, 190, 200, 120, 200),
+    ],
+)
+def test_edit_timeline_adds_at_most_thirty_seconds_at_each_boundary(
+    start: float,
+    end: float,
+    source_duration: float,
+    expected_start: float,
+    expected_end: float,
+) -> None:
+    clip = HighlightClip(
+        start_seconds=start,
+        end_seconds=end,
+        hook_title="선택 구간",
+    )
+
+    timeline = edit_timeline_clip(clip, source_duration)
+
+    assert timeline.start_seconds == expected_start
+    assert timeline.end_seconds == expected_end
+    assert timeline.hook_title == clip.hook_title
 
 
 def test_invalid_clip_times_are_clamped_to_supported_range() -> None:

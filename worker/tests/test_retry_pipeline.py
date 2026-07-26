@@ -620,6 +620,114 @@ def test_rerender_deletes_new_output_if_short_was_deleted_before_commit(tmp_path
     worker.repository.reset_rerender.assert_not_called()
 
 
+def _range_rerender_worker(tmp_path, completion_result) -> BatchWorker:
+    worker = BatchWorker.__new__(BatchWorker)
+    worker.settings = SimpleNamespace(temp_dir=tmp_path)
+    worker.repository = MagicMock()
+    worker.repository.get_short.return_value = {
+        "id": "short-a",
+        "mvp_session_id": "session-a",
+        "job_id": "job-a",
+        "output_s3_key": "outputs/session-a/job-a/short-a/v1.mp4",
+        "clean_clip_s3_key": "edit-sources/session-a/job-a/short-a.mp4",
+        "edit_timeline_s3_key": "edit-sources/session-a/job-a/short-a/timeline-v1.mp4",
+        "edit_timeline_start_seconds": 90,
+        "render_version": 1,
+        "pending_edit_snapshot": {
+            "startSeconds": 105,
+            "endSeconds": 165,
+            "durationSeconds": 60,
+            "hookTitle": "새 제목",
+            "channelDisplayName": "채널",
+            "subtitlesEnabled": True,
+            "subtitleSegments": [],
+            "commentOverlays": [],
+            "templateId": "dark-red",
+            "customTemplateId": None,
+            "templateSnapshot": {"presetVersion": 3},
+            "videoAspectRatio": "1:1",
+            "titleFontScale": 1,
+            "titleTextStyles": [],
+            "titleTextStylesInitialized": True,
+        },
+    }
+    if isinstance(completion_result, Exception):
+        worker.repository.complete_snapshot_rerender.side_effect = completion_result
+    else:
+        worker.repository.complete_snapshot_rerender.return_value = completion_result
+    worker.storage = MagicMock()
+    worker.storage.download.return_value = tmp_path / "timeline.mp4"
+    worker.storage.upload.side_effect = [456, 789]
+    worker.renderer = MagicMock()
+    return worker
+
+
+def test_range_rerender_atomically_promotes_new_clean_and_output(tmp_path) -> None:
+    worker = _range_rerender_worker(tmp_path, {
+        "output_s3_key": "outputs/session-a/job-a/short-a/v1.mp4",
+        "clean_clip_s3_key": "edit-sources/session-a/job-a/short-a.mp4",
+    })
+
+    worker.rerender("short-a")
+
+    selected_clip = worker.renderer.extract_clean_clip.call_args.kwargs["clip"]
+    assert selected_clip.start_seconds == 15
+    assert selected_clip.end_seconds == 75
+    worker.repository.complete_snapshot_rerender.assert_called_once_with(
+        "short-a",
+        output_key="outputs/session-a/job-a/short-a/v2.mp4",
+        clean_key="edit-sources/session-a/job-a/short-a/clean-v2.mp4",
+        size=789,
+        version=2,
+    )
+    assert {call.args[0] for call in worker.storage.delete.call_args_list} == {
+        "outputs/session-a/job-a/short-a/v1.mp4",
+        "edit-sources/session-a/job-a/short-a.mp4",
+    }
+
+
+def test_range_rerender_failure_removes_only_uncommitted_versions(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AWS_BATCH_JOB_ATTEMPT", "2")
+    worker = _range_rerender_worker(tmp_path, None)
+    worker.renderer.render_clean_clip.side_effect = RuntimeError("render failed")
+
+    with pytest.raises(RuntimeError, match="render failed"):
+        worker.rerender("short-a")
+
+    worker.storage.delete.assert_called_once_with(
+        "edit-sources/session-a/job-a/short-a/clean-v2.mp4"
+    )
+    worker.repository.complete_snapshot_rerender.assert_not_called()
+    worker.repository.reset_rerender.assert_called_once_with("short-a")
+
+
+def test_range_rerender_deletes_new_versions_if_short_is_deleted_before_commit(
+    tmp_path,
+) -> None:
+    worker = _range_rerender_worker(tmp_path, None)
+
+    worker.rerender("short-a")
+
+    assert {call.args[0] for call in worker.storage.delete.call_args_list} == {
+        "outputs/session-a/job-a/short-a/v2.mp4",
+        "edit-sources/session-a/job-a/short-a/clean-v2.mp4",
+    }
+
+
+def test_range_rerender_preserves_versions_when_commit_response_is_ambiguous(
+    tmp_path,
+) -> None:
+    worker = _range_rerender_worker(tmp_path, ConnectionError("response lost"))
+
+    with pytest.raises(ConnectionError, match="response lost"):
+        worker.rerender("short-a")
+
+    worker.storage.delete.assert_not_called()
+
+
 def _initial_render_worker(tmp_path, completion_result) -> BatchWorker:
     worker = BatchWorker.__new__(BatchWorker)
     worker.settings = SimpleNamespace(temp_dir=tmp_path)

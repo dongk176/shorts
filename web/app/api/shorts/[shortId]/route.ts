@@ -116,10 +116,16 @@ export async function DELETE(_: Request, context: { params: Promise<{ shortId: s
         or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
       )
         and (s.status='deleted' or (s.deleted_at is null and s.status in ('ready','rerendering')))
-      returning s.id, s.output_s3_key, s.clean_clip_s3_key, s.thumbnail_s3_key
+      returning s.id, s.output_s3_key, s.clean_clip_s3_key,
+        s.edit_timeline_s3_key, s.thumbnail_s3_key
     `;
     if (!rows[0]) throw new Error("삭제할 쇼츠를 찾을 수 없습니다.");
-    await deleteShortObjects([rows[0].outputS3Key, rows[0].cleanClipS3Key, rows[0].thumbnailS3Key].filter(Boolean));
+    await deleteShortObjects([
+      rows[0].outputS3Key,
+      rows[0].cleanClipS3Key,
+      rows[0].editTimelineS3Key,
+      rows[0].thumbnailS3Key,
+    ].filter(Boolean));
     return NextResponse.json({ deleted: true });
   } catch (error) { return apiError(error); }
 }

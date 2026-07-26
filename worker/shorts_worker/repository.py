@@ -735,6 +735,10 @@ class WorkerRepository:
         subtitles: list[dict[str, Any]],
         comment_overlays: list[dict[str, Any]],
         clean_key: str,
+        timeline_key: str | None,
+        timeline_start_seconds: float | None,
+        timeline_end_seconds: float | None,
+        timeline_subtitles: list[dict[str, Any]] | None,
         retention_days: int,
         shard_index: int,
     ) -> bool:
@@ -768,18 +772,28 @@ class WorkerRepository:
                   channel_display_name,
                   subtitle_segments, subtitles_enabled, comment_overlays,
                   template_id, custom_template_id, template_snapshot, video_aspect_ratio,
-                  clean_clip_s3_key,
+                  clean_clip_s3_key, edit_timeline_s3_key,
+                  edit_timeline_start_seconds, edit_timeline_end_seconds,
+                  edit_timeline_subtitle_segments, edit_timeline_version,
+                  initial_start_seconds, initial_end_seconds,
                   output_s3_key, thumbnail_s3_key, file_size_bytes, created_at,
                   expires_at, status, render_shard_index, render_progress
                 ) values (
                   %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                  %s,%s,%s,%s,%s,%s,%s,null,null,null,
+                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,null,null,null,
                   now(),
                   now() + make_interval(days => least(greatest(%s::integer, 1), 30)),
                   'rendering',%s,0
                 )
                 on conflict (job_id, clip_index) do update set
                   clean_clip_s3_key=excluded.clean_clip_s3_key,
+                  edit_timeline_s3_key=excluded.edit_timeline_s3_key,
+                  edit_timeline_start_seconds=excluded.edit_timeline_start_seconds,
+                  edit_timeline_end_seconds=excluded.edit_timeline_end_seconds,
+                  edit_timeline_subtitle_segments=excluded.edit_timeline_subtitle_segments,
+                  edit_timeline_version=excluded.edit_timeline_version,
+                  initial_start_seconds=excluded.initial_start_seconds,
+                  initial_end_seconds=excluded.initial_end_seconds,
                   subtitle_segments=excluded.subtitle_segments,
                   comment_overlays=case
                     when generated_shorts.comment_overlays='[]'::jsonb
@@ -831,6 +845,13 @@ class WorkerRepository:
                     Jsonb(job["template_snapshot"]) if job.get("template_snapshot") else None,
                     job.get("video_aspect_ratio") or "1:1",
                     clean_key,
+                    timeline_key,
+                    timeline_start_seconds,
+                    timeline_end_seconds,
+                    Jsonb(timeline_subtitles) if timeline_subtitles is not None else None,
+                    1 if timeline_key else None,
+                    start_seconds,
+                    end_seconds,
                     retention_days,
                     shard_index,
                 ),
@@ -1155,13 +1176,93 @@ class WorkerRepository:
                 return None
             return str(row["output_s3_key"])
 
+    def complete_snapshot_rerender(
+        self,
+        short_id: str,
+        *,
+        output_key: str,
+        clean_key: str,
+        size: int,
+        version: int,
+    ) -> dict[str, str] | None:
+        with self.connect() as connection, connection.transaction():
+            row = connection.execute(
+                """
+                select output_s3_key,clean_clip_s3_key
+                from shorts_mvp.generated_shorts
+                where id=%s and status='rerendering' and deleted_at is null
+                  and expires_at > clock_timestamp()
+                  and pending_edit_snapshot is not null
+                for update
+                """,
+                (short_id,),
+            ).fetchone()
+            if not row:
+                return None
+            updated = connection.execute(
+                """
+                update shorts_mvp.generated_shorts
+                set output_s3_key=%s,clean_clip_s3_key=%s,file_size_bytes=%s,
+                  render_version=%s,status='ready',rerender_progress=100,
+                  start_seconds=(pending_edit_snapshot->>'startSeconds')::numeric,
+                  end_seconds=(pending_edit_snapshot->>'endSeconds')::numeric,
+                  duration_seconds=(pending_edit_snapshot->>'durationSeconds')::numeric,
+                  hook_title=pending_edit_snapshot->>'hookTitle',
+                  channel_display_name=pending_edit_snapshot->>'channelDisplayName',
+                  subtitles_enabled=(pending_edit_snapshot->>'subtitlesEnabled')::boolean,
+                  subtitle_segments=pending_edit_snapshot->'subtitleSegments',
+                  comment_overlays=pending_edit_snapshot->'commentOverlays',
+                  template_id=pending_edit_snapshot->>'templateId',
+                  custom_template_id=nullif(
+                    pending_edit_snapshot->>'customTemplateId',''
+                  )::uuid,
+                  template_snapshot=nullif(
+                    pending_edit_snapshot->'templateSnapshot','null'::jsonb
+                  ),
+                  video_aspect_ratio=pending_edit_snapshot->>'videoAspectRatio',
+                  title_font_scale=(pending_edit_snapshot->>'titleFontScale')::numeric,
+                  title_text_styles=pending_edit_snapshot->'titleTextStyles',
+                  title_text_styles_initialized=(
+                    pending_edit_snapshot->>'titleTextStylesInitialized'
+                  )::boolean,
+                  rendered_config_hash=null,
+                  pending_render_hash=null,pending_edit_snapshot=null,
+                  rerender_batch_job_id=null,render_error_code=null,render_error_message=null
+                where id=%s and status='rerendering' and deleted_at is null
+                  and expires_at > clock_timestamp()
+                  and pending_edit_snapshot is not null
+                returning id
+                """,
+                (output_key, clean_key, size, version, short_id),
+            ).fetchone()
+            if not updated:
+                return None
+            connection.execute(
+                """
+                update shorts_mvp.generated_shorts
+                set rendered_config_hash=md5(concat_ws('|', hook_title,
+                  channel_display_name, subtitles_enabled::text,
+                  subtitle_segments::text, comment_overlays::text, template_id,
+                  coalesce(template_snapshot::text,''), video_aspect_ratio,
+                  title_font_scale::text, title_text_styles::text,
+                  title_text_styles_initialized::text))
+                where id=%s
+                """,
+                (short_id,),
+            )
+            return {
+                "output_s3_key": str(row["output_s3_key"]),
+                "clean_clip_s3_key": str(row["clean_clip_s3_key"]),
+            }
+
     def reset_rerender(self, short_id: str) -> None:
         with self.connect() as connection:
             connection.execute(
                 """
                 update shorts_mvp.generated_shorts
                 set status='ready', rerender_progress=0,
-                  pending_render_hash=null, rerender_batch_job_id=null
+                  pending_render_hash=null, pending_edit_snapshot=null,
+                  rerender_batch_job_id=null
                 where id=%s and status='rerendering'
                 """,
                 (short_id,),
