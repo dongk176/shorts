@@ -372,6 +372,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { name: "FFMPEG_THREADS", value: "2" },
         { name: "CLEAN_CLIP_PRESET", value: "superfast" },
         { name: "CLEAN_CLIP_CRF", value: "20" },
+        { name: "EDIT_TIMELINE_CAPTURE_ENABLED", value: "true" },
       ],
       secrets: [
         secret("DATABASE_URL"),

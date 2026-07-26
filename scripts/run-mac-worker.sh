@@ -15,6 +15,7 @@ command -v aws >/dev/null 2>&1 || { echo "AWS CLI가 필요합니다." >&2; exit
 aws sts get-caller-identity >/dev/null
 
 export AWS_REGION="${AWS_REGION:-ap-northeast-2}"
+export EDIT_TIMELINE_CAPTURE_ENABLED="${EDIT_TIMELINE_CAPTURE_ENABLED:-true}"
 if [[ -z "${AWS_S3_OUTPUT_BUCKET:-}" ]]; then
   export AWS_S3_OUTPUT_BUCKET="$(bash scripts/stack-outputs.sh MediaBucketName Foundation)"
 fi
@@ -46,6 +47,7 @@ while true; do
     --env OPENAI_COMMENT_FALLBACK_MODEL \
     --env OPENAI_TRANSCRIBE_CHUNK_SECONDS \
     --env OPENAI_TRANSCRIBE_MAX_WORKERS \
+    --env EDIT_TIMELINE_CAPTURE_ENABLED \
     --env GEMINI_API_KEY \
     --env GEMINI_PAID_DATA_PROCESSING_CONFIRMED \
     --env GEMINI_TEXT_MODEL \

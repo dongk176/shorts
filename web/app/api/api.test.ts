@@ -60,6 +60,8 @@ import { POST as selectPlan } from "./mvp/plan/route";
 import { GET as getMvpState } from "./mvp/state/route";
 import { GET as accessShort } from "./shorts/[shortId]/access/route";
 import { GET as accessEditSource } from "./shorts/[shortId]/edit-source/route";
+import { POST as applyRangeEdit } from "./shorts/[shortId]/apply-edit/route";
+import { GET as accessEditTimeline } from "./shorts/[shortId]/edit-timeline/route";
 import { POST as rerenderShort } from "./shorts/[shortId]/rerender/route";
 import { PATCH as patchShort } from "./shorts/[shortId]/route";
 import { POST as createPersonalTemplate } from "./templates/route";
@@ -118,6 +120,7 @@ const analysisRow = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  delete process.env.RANGE_EDITING_ENABLED;
   mocks.session.mockResolvedValue({
     id: "session-a",
     selectedPlanCode: "plus",
@@ -138,6 +141,171 @@ beforeEach(() => {
     scheduledPlanCode: null, scheduledBillingCycle: null, cardIssuer: "11",
     cardNumberMasked: "12345678****1234", cardLast4: "1234",
     canCreateJobs: true, maxActiveJobs: 1, retentionDays: 7,
+  });
+});
+
+describe("range editing feature gate and snapshot", () => {
+  const shortId = "d3515e25-d12c-4c6a-95e3-2c3aafe813b4";
+  const input = {
+    startSeconds: 105,
+    endSeconds: 165,
+    hookTitle: "새 제목",
+    channelDisplayName: "채널",
+    subtitlesEnabled: true,
+    commentOverlays: [{
+      id: "c2b3653e-9692-4bf7-916a-f17bb8809fe5",
+      startSeconds: 0,
+      endSeconds: 40,
+      text: "댓글",
+      initial: "댓",
+      avatarColor: "#112233",
+      nickname: "닉네임",
+      likeCount: 100,
+      ageLabel: "1개월 전",
+    }],
+    templateId: "comment-capture",
+    titleFontScale: 1,
+    titleTextStyles: [],
+  };
+
+  it("hides both new APIs when the environment flag is disabled", async () => {
+    const timelineResponse = await accessEditTimeline(
+      new Request(`http://localhost/api/shorts/${shortId}/edit-timeline`),
+      { params: Promise.resolve({ shortId }) },
+    );
+    const applyResponse = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, input),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(timelineResponse.status).toBe(404);
+    expect(applyResponse.status).toBe(404);
+    expect(mocks.authenticatedSession).not.toHaveBeenCalled();
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
+  it("stores a full pending snapshot and proportionally retimes comments", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    const db = dbWithRows([{
+      id: shortId,
+      status: "ready",
+      durationSeconds: 40,
+      templateId: "comment-capture",
+      customTemplateId: null,
+      templateSnapshot: { presetVersion: 3 },
+      videoAspectRatio: "1:1",
+      editTimelineS3Key: "edit-sources/timeline.mp4",
+      editTimelineStartSeconds: 90,
+      editTimelineEndSeconds: 170,
+      editTimelineSubtitleSegments: [
+        { start: 15, end: 25, text: "선택 자막" },
+      ],
+    }]);
+    const tx = dbWithRows([{ id: shortId }], []);
+    Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, input),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(202);
+    const pendingSnapshot = tx.mock.calls[0].slice(1).find((value) => (
+      typeof value === "object" && value !== null && "durationSeconds" in value
+    ));
+    expect(pendingSnapshot).toMatchObject({
+      startSeconds: 105,
+      endSeconds: 165,
+      durationSeconds: 60,
+      subtitleSegments: [{ start: 0, end: 10, text: "선택 자막" }],
+      commentOverlays: [{ startSeconds: 0, endSeconds: 60, text: "댓글" }],
+    });
+    expect(tx).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects an edit outside the captured timeline", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    const db = dbWithRows([{
+      id: shortId,
+      status: "ready",
+      durationSeconds: 40,
+      templateId: "dark-red",
+      videoAspectRatio: "1:1",
+      editTimelineS3Key: "edit-sources/timeline.mp4",
+      editTimelineStartSeconds: 100,
+      editTimelineEndSeconds: 160,
+      editTimelineSubtitleSegments: [],
+    }]);
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, input),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("requires an owned, non-example, unexpired project with a timeline", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    const db = dbWithRows([]);
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, input),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(404);
+    const query = Array.from(db.mock.calls[0][0] as TemplateStringsArray).join("");
+    expect(query).toContain("not j.is_example");
+    expect(query).toContain("s.user_id=");
+    expect(query).toContain("s.expires_at > now()");
+    expect(query).toContain("s.edit_timeline_s3_key is not null");
+  });
+
+  it("rejects a final selection shorter than one second", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    mocks.getDb.mockReturnValue(dbWithRows([{
+      id: shortId,
+      status: "ready",
+      durationSeconds: 40,
+      templateId: "dark-red",
+      videoAspectRatio: "1:1",
+      editTimelineS3Key: "edit-sources/timeline.mp4",
+      editTimelineStartSeconds: 90,
+      editTimelineEndSeconds: 170,
+      editTimelineSubtitleSegments: [],
+    }]));
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        ...input,
+        startSeconds: 100,
+        endSeconds: 100.5,
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a duplicate request while the previous snapshot is rendering", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    mocks.getDb.mockReturnValue(dbWithRows([{
+      id: shortId,
+      status: "rerendering",
+      durationSeconds: 40,
+      editTimelineS3Key: "edit-sources/timeline.mp4",
+    }]));
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, input),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(409);
   });
 });
 

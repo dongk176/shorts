@@ -26,22 +26,29 @@ def _delete_keys(keys: list[str]) -> int:
     return len(unique)
 
 
-def _version_keys(item: dict[str, Any]) -> list[str]:
-    prefix = (
-        f"outputs/{item['mvp_session_id']}/{item['job_id']}/{item['id']}/"
-    )
+def _keys_under_prefixes(prefixes: list[str]) -> list[str]:
     paginator = s3.get_paginator("list_objects_v2")
     return [
         obj["Key"]
+        for prefix in prefixes
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix)
         for obj in page.get("Contents", [])
     ]
 
 
+def _version_keys(item: dict[str, Any]) -> list[str]:
+    base = f"{item['mvp_session_id']}/{item['job_id']}/{item['id']}"
+    return _keys_under_prefixes([
+        f"outputs/{base}/",
+        f"edit-sources/{base}/",
+    ])
+
+
 def expire_shorts() -> tuple[int, int]:
     now = urllib.parse.quote(iso_now(), safe="")
     query = (
-        "select=id,job_id,mvp_session_id,output_s3_key,clean_clip_s3_key,thumbnail_s3_key"
+        "select=id,job_id,mvp_session_id,output_s3_key,clean_clip_s3_key,"
+        "edit_timeline_s3_key,thumbnail_s3_key"
         f"&expires_at=lte.{now}&deleted_at=is.null&limit=200"
     )
     items = rest("generated_shorts", query=query) or []
@@ -50,6 +57,7 @@ def expire_shorts() -> tuple[int, int]:
         keys = [
             item.get("output_s3_key"),
             item.get("clean_clip_s3_key"),
+            item.get("edit_timeline_s3_key"),
             item.get("thumbnail_s3_key"),
             *_version_keys(item),
         ]
@@ -72,7 +80,7 @@ def cleanup_failed_shorts() -> tuple[int, int]:
         "generated_shorts",
         query=(
             "select=id,job_id,mvp_session_id,output_s3_key,clean_clip_s3_key,"
-            "thumbnail_s3_key&status=eq.failed&deleted_at=is.null&limit=200"
+            "edit_timeline_s3_key,thumbnail_s3_key&status=eq.failed&deleted_at=is.null&limit=200"
         ),
     ) or []
     deleted_objects = 0
@@ -83,6 +91,7 @@ def cleanup_failed_shorts() -> tuple[int, int]:
         keys = [
             item.get("output_s3_key"),
             item.get("clean_clip_s3_key"),
+            item.get("edit_timeline_s3_key"),
             item.get("thumbnail_s3_key"),
             predictable_thumbnail,
             *_version_keys(item),
@@ -194,7 +203,8 @@ def enforce_deadlines() -> int:
         elif batch_id:
             batch_ids.add(batch_id)
         shorts = rest("generated_shorts", query=(
-            "select=id,status,render_batch_job_id,output_s3_key,clean_clip_s3_key,thumbnail_s3_key"
+            "select=id,status,render_batch_job_id,output_s3_key,clean_clip_s3_key,"
+            "edit_timeline_s3_key,thumbnail_s3_key"
             f"&job_id=eq.{urllib.parse.quote(job['id'], safe='')}"
         )) or []
         batch_ids.update(
@@ -218,6 +228,7 @@ def enforce_deadlines() -> int:
             if item.get("status") == "failed"
             for key in (
                 item.get("output_s3_key"), item.get("clean_clip_s3_key"),
+                item.get("edit_timeline_s3_key"),
                 item.get("thumbnail_s3_key"),
             )
             if key
@@ -250,6 +261,7 @@ def reset_stale_rerenders() -> int:
                 "status": "ready",
                 "rerender_progress": 0,
                 "pending_render_hash": None,
+                "pending_edit_snapshot": None,
                 "rerender_batch_job_id": None,
             },
         )
