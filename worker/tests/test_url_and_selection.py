@@ -316,9 +316,10 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     assert "탑티어 숏폼 기획자" in request["messages"][0]["content"]
     assert "쇼츠용 킬러 구간" in request["messages"][0]["content"]
     assert (
-        "1. **길이 및 완결성**: 각 구간은 30~60초 사이로 구성하되, "
-        "**가급적 45~60초 분량을 우선적으로 확보**하여 시청자가 맥락을 깊이 있게 "
-        "이해할 수 있도록 할 것. 단순히 30초에 맞춰 성급하게 자르는 것을 엄격히 금지함."
+        "1. **길이 및 완결성**: 각 구간의 end_seconds - start_seconds를 계산한 값이 "
+        "30.000초 이상 60.000초 이하가 되도록 start_seconds와 end_seconds를 정할 것. "
+        "핵심 장면이 짧은 경우에는 해당 장면이 성립하는 앞의 상황과 직후의 반응 또는 "
+        "결과까지 함께 포함하여 하나의 완결된 연속 구간으로 구성할 것."
         in request["messages"][0]["content"]
     )
     assert "군더더기 없이 직관적이고 타격감 있는 구어체 단어" in request["messages"][0]["content"]
@@ -504,6 +505,51 @@ def test_insufficient_gemini_candidates_use_openai_nano(monkeypatch) -> None:
     )
 
     assert [clip.reason for clip in clips] == ["Nano one", "Nano two"]
+
+
+def test_invalid_gemini_times_use_openai_nano_without_failing_project(monkeypatch) -> None:
+    selector = TranscriptSelector(
+        Settings(
+            openai_api_key="openai-test-key",
+            gemini_api_key="gemini-test-key",
+            gemini_paid_data_processing_confirmed=True,
+        )
+    )
+    monkeypatch.setattr(
+        selector,
+        "_select_with_gemini",
+        lambda **_kwargs: [
+            HighlightClip(
+                start_seconds=50,
+                end_seconds=40,
+                hook_title="뒤집힌 시간\n잘못된 후보",
+                reason="Gemini invalid time",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        selector,
+        "_select_with_openai",
+        lambda **_kwargs: [
+            HighlightClip(
+                start_seconds=10,
+                end_seconds=50,
+                hook_title="Nano 대체\n정상 구간",
+                reason="Nano recovered",
+            )
+        ],
+    )
+
+    clips = selector.select(
+        video_title="시간 오류 복구 영상",
+        duration_seconds=120,
+        transcript=[SubtitleSegment(start=0, end=60, text="자막")],
+        required_count=1,
+    )
+
+    assert len(clips) == 1
+    assert clips[0].reason == "Nano recovered"
+    assert clips[0].selection_provider == "openai"
 
 
 def test_fallback_title_removes_subtitle_speaker_markers() -> None:
