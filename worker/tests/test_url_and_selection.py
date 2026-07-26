@@ -20,6 +20,7 @@ from shorts_worker.selector import (
     TranscriptSelector,
     clip_count_for_duration,
     deterministic_fallback,
+    minimum_clip_count,
     normalize_clips,
     overlap_seconds,
 )
@@ -75,6 +76,37 @@ def test_clip_count_boundaries(duration: float, expected: int) -> None:
     assert clip_count_for_duration(duration) == expected
 
 
+@pytest.mark.parametrize(
+    ("target", "minimum"),
+    [(3, 3), (5, 4), (8, 7), (10, 8), (12, 10), (15, 12)],
+)
+def test_minimum_clip_count_is_eighty_percent_of_target(
+    target: int, minimum: int
+) -> None:
+    assert minimum_clip_count(target) == minimum
+    assert minimum >= (target + 1) // 2
+    assert minimum <= target
+
+
+def test_minimum_clip_count_handles_non_positive_values() -> None:
+    assert minimum_clip_count(0) == 0
+    assert minimum_clip_count(-1) == 0
+
+
+def test_selection_prompt_uses_the_same_eighty_percent_minimum() -> None:
+    selector = TranscriptSelector(Settings())
+    messages = selector._selection_messages(
+        video_title="최대 개수 프롬프트 검증",
+        duration_seconds=3_600,
+        transcript=[SubtitleSegment(start=0, end=10, text="자막")],
+        required_count=15,
+    )
+
+    assert "최종 쇼츠 개수는 12개부터 15개 사이" in messages[0]["content"]
+    assert "최소 쇼츠 수: 12" in messages[1]["content"]
+    assert "최대 쇼츠 수: 15" in messages[1]["content"]
+
+
 def test_videos_over_sixty_minutes_are_rejected() -> None:
     with pytest.raises(ShortsMakerError, match="60분"):
         clip_count_for_duration(3_600.01)
@@ -116,7 +148,49 @@ def test_overlapping_clips_are_repositioned_to_five_seconds_or_less() -> None:
     assert clips[1].selection_repositioned is True
 
 
-def test_valid_ai_clip_count_is_not_filled_to_maximum() -> None:
+@pytest.mark.parametrize(
+    ("duration", "target", "minimum"),
+    [
+        (180, 3, 3),
+        (240, 5, 4),
+        (600, 8, 7),
+        (1_200, 10, 8),
+        (1_800, 12, 10),
+        (2_700, 15, 12),
+    ],
+)
+def test_heavily_overlapping_candidates_still_produce_a_safe_minimum(
+    duration: float, target: int, minimum: int
+) -> None:
+    clips = normalize_clips(
+        [
+            HighlightClip(
+                start_seconds=0,
+                end_seconds=60,
+                hook_title=f"겹치는 후보 {index + 1}",
+            )
+            for index in range(target)
+        ],
+        video_title="겹침 안전성 검증",
+        duration_seconds=duration,
+        required_count=target,
+    )
+
+    assert minimum <= len(clips) <= target
+    assert all(
+        AI_CLIP_MIN_SECONDS
+        <= clip.end_seconds - clip.start_seconds
+        <= AI_CLIP_MAX_SECONDS
+        for clip in clips
+    )
+    assert all(
+        overlap_seconds(left, right) <= 5.001
+        for index, left in enumerate(clips)
+        for right in clips[index + 1 :]
+    )
+
+
+def test_valid_ai_clips_are_backfilled_only_to_minimum() -> None:
     clips = normalize_clips(
         [
             HighlightClip(start_seconds=0, end_seconds=50, hook_title="첫 후보"),
@@ -126,9 +200,18 @@ def test_valid_ai_clip_count_is_not_filled_to_maximum() -> None:
         video_title="가변 개수 검증",
         duration_seconds=600,
         required_count=8,
+        selection_provider="gemini",
+        selection_model="gemini-2.5-flash-lite",
     )
 
-    assert len(clips) == 3
+    assert len(clips) == 7
+    assert sum(clip.selection_provider == "gemini" for clip in clips) == 3
+    assert sum(clip.selection_provider == "deterministic" for clip in clips) == 4
+    assert all(
+        overlap_seconds(left, right) <= 5.001
+        for index, left in enumerate(clips)
+        for right in clips[index + 1 :]
+    )
 
 
 def test_short_ai_clip_is_stably_expanded_between_thirty_and_forty_seconds() -> None:
@@ -631,3 +714,33 @@ def test_selector_falls_back_when_gemini_fails(monkeypatch) -> None:
 
     assert len(clips) == 2
     assert all("AI를 사용할 수 없어" in clip.reason for clip in clips)
+
+
+def test_selector_fallback_guarantees_minimum_for_largest_project(monkeypatch) -> None:
+    selector = TranscriptSelector(
+        Settings(
+            openai_api_key="openai-test-key",
+            gemini_api_key="gemini-test-key",
+            gemini_paid_data_processing_confirmed=True,
+        )
+    )
+
+    def failing_call(**_kwargs):
+        raise RuntimeError("simulated provider failure")
+
+    monkeypatch.setattr(selector, "_select_with_gemini", failing_call)
+    monkeypatch.setattr(selector, "_select_with_openai", failing_call)
+    clips = selector.select(
+        video_title="60분 fallback 영상",
+        duration_seconds=3_600,
+        transcript=[SubtitleSegment(start=0, end=10, text="자막")],
+        required_count=15,
+    )
+
+    assert len(clips) == 12
+    assert all(30 <= clip.end_seconds - clip.start_seconds <= 60 for clip in clips)
+    assert all(
+        overlap_seconds(left, right) <= 5.001
+        for index, left in enumerate(clips)
+        for right in clips[index + 1 :]
+    )
