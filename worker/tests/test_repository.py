@@ -186,6 +186,10 @@ def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> 
         subtitles=[],
         comment_overlays=[],
         clean_key="edit-sources/short-a.mp4",
+        timeline_key="edit-sources/short-a/timeline-v1.mp4",
+        timeline_start_seconds=0,
+        timeline_end_seconds=70,
+        timeline_subtitles=[],
         retention_days=30,
         shard_index=0,
     )
@@ -194,6 +198,7 @@ def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> 
     assert "created_at" in insert_call.args[0]
     assert "now() + make_interval" in insert_call.args[0]
     assert "selection_raw_start_seconds" in insert_call.args[0]
+    assert "edit_timeline_s3_key" in insert_call.args[0]
     assert "selection_length_adjustment=excluded.selection_length_adjustment" in insert_call.args[0]
     assert insert_call.args[0].count("%s") == len(insert_call.args[1])
     assert insert_call.args[1][20] is False

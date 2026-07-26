@@ -28,6 +28,7 @@ from shorts_worker.schemas import (
     VideoAspectRatio,
     default_comment_overlays,
 )
+from shorts_worker.worker_pipeline import edit_timeline_clip
 
 pytestmark = pytest.mark.render
 
@@ -176,6 +177,68 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
         stream for stream in clean_probe["streams"] if stream["codec_type"] == "video"
     )
     assert (clean_video["width"], clean_video["height"]) == expected_clean_size
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
+def test_edit_timeline_capture_keeps_exact_handles_media_shape_and_audio(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "long-source.mp4"
+    _run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "color=c=navy:size=160x90:rate=2",
+        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000",
+        "-t", "65", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-shortest", str(source),
+    ])
+    selected = HighlightClip(
+        start_seconds=31,
+        end_seconds=32,
+        hook_title="가운데 1초",
+    )
+    timeline = edit_timeline_clip(selected, 65)
+    assert timeline.start_seconds == 1
+    assert timeline.end_seconds == 62
+
+    renderer = VideoRenderer(Settings(
+        temp_dir=tmp_path / "temp",
+        ffmpeg_timeout_seconds=120,
+        clean_clip_preset="ultrafast",
+        clean_clip_crf=30,
+    ))
+    clean = renderer.extract_clean_clip(
+        source_path=source,
+        output_path=tmp_path / "clean.mp4",
+        clip=selected,
+        work_dir=tmp_path / "clean-work",
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+    padded = renderer.extract_clean_clip(
+        source_path=source,
+        output_path=tmp_path / "timeline.mp4",
+        clip=timeline,
+        work_dir=tmp_path / "timeline-work",
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+
+    probes = []
+    for path in (clean, padded):
+        result = _run([
+            "ffprobe", "-v", "error", "-show_streams", "-show_format",
+            "-of", "json", str(path),
+        ])
+        probes.append(json.loads(result.stdout))
+    for info in probes:
+        video = next(stream for stream in info["streams"] if stream["codec_type"] == "video")
+        audio = next(stream for stream in info["streams"] if stream["codec_type"] == "audio")
+        assert (video["width"], video["height"]) == (1080, 1080)
+        assert video["avg_frame_rate"] == "2/1"
+        assert audio["codec_name"] == "aac"
+    assert float(probes[0]["format"]["duration"]) == pytest.approx(1, abs=0.4)
+    assert float(probes[1]["format"]["duration"]) == pytest.approx(61, abs=0.4)
 
 
 def test_video_layout_centers_non_full_ratios_and_reserves_safe_overlays() -> None:
