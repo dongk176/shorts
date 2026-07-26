@@ -30,10 +30,25 @@ provider-hosted conversation state.
 
 ### Google Gemini API
 
-The AWS Batch job definition keeps
-`GEMINI_PAID_DATA_PROCESSING_CONFIRMED=false`. Do not change that environment
-value unless an operator has verified all of the following on the exact Google
-Cloud project associated with the production API key:
+The production AWS Batch job definition sets
+`GEMINI_PAID_DATA_PROCESSING_CONFIRMED=true`; every non-production environment
+keeps the flag false. On 2026-07-26 an operator verified the exact production
+key and project without exposing the key:
+
+- The runtime key's masked suffix matched the only key in Google AI Studio
+  project `gen-lang-client-0098273343` (`Default Gemini Project`).
+- The project was `Tier 1 · prepaid` and linked to `My Billing Account`.
+- Standard `GenerateContent API` request storage was disabled, and there were
+  no stored logs or shared datasets. The worker does not use the Interactions
+  API, whose separate stateful-storage setting was enabled.
+- The current paid-service terms state that paid prompts and responses are not
+  used to improve Google products.
+- The public privacy policy describes Google's current abuse-monitoring
+  retention period and processing locations.
+
+Revert the confirmation flag to false until an operator has reverified all of
+the following after any production key, project, billing, logging, retention,
+terms, or public-disclosure change:
 
 - Cloud Billing is active and Google classifies API use as a Paid Service.
 - Prompt/response logging has not been opted into a shared dataset or feedback

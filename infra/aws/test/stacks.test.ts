@@ -3,7 +3,7 @@ import { Match, Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { ShortsMvpComputeStack, ShortsMvpFoundationStack } from "../lib/stacks";
 
-function stacks() {
+function stacks(environment = "test") {
   const app = new cdk.App({ context: {
     vercelTeamSlug: "team",
     vercelProjectName: "shorts",
@@ -12,17 +12,29 @@ function stacks() {
   const env = { account: "123456789012", region: "ap-northeast-2" };
   const foundation = new ShortsMvpFoundationStack(app, "Foundation", {
     env,
-    environment: "test",
+    environment,
   });
   const compute = new ShortsMvpComputeStack(app, "Compute", {
     env,
-    environment: "test",
+    environment,
     foundation,
   });
   return { foundation: Template.fromStack(foundation), compute: Template.fromStack(compute) };
 }
 
 describe("shorts MVP infrastructure", () => {
+  it("enables verified paid Gemini processing only in production", () => {
+    const testTemplate = JSON.stringify(stacks().compute.toJSON());
+    const productionTemplate = JSON.stringify(stacks("production").compute.toJSON());
+
+    expect(testTemplate).toContain(
+      '"Name":"GEMINI_PAID_DATA_PROCESSING_CONFIRMED","Value":"false"',
+    );
+    expect(productionTemplate).toContain(
+      '"Name":"GEMINI_PAID_DATA_PROCESSING_CONFIRMED","Value":"true"',
+    );
+  });
+
   it("keeps S3 private, expires regular media, and retains example media", () => {
     const { foundation } = stacks();
     foundation.hasResourceProperties("AWS::S3::Bucket", {

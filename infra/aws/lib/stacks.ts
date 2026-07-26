@@ -363,7 +363,10 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", value: "gpt-5-nano" },
         { name: "OPENAI_COMMENT_FALLBACK_MODEL", value: "gpt-5-nano" },
         { name: "GEMINI_COMMENT_MODEL", value: "gemini-2.5-flash-lite" },
-        { name: "GEMINI_PAID_DATA_PROCESSING_CONFIRMED", value: "false" },
+        {
+          name: "GEMINI_PAID_DATA_PROCESSING_CONFIRMED",
+          value: props.environment === "production" ? "true" : "false",
+        },
         { name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", value: "30" },
         { name: "OPENAI_TRANSCRIBE_MAX_WORKERS", value: "4" },
         { name: "FFMPEG_THREADS", value: "2" },
