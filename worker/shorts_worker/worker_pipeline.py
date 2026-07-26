@@ -44,7 +44,7 @@ from .schemas import (
     VideoAspectRatio,
     fallback_comment_overlays,
 )
-from .selector import TranscriptSelector
+from .selector import TranscriptSelector, minimum_clip_count
 from .storage import ObjectStorage
 from .subtitles import AudioTranscriber
 
@@ -584,6 +584,7 @@ class BatchWorker:
                 )
                 self.repository.stage(job_id, "selecting", 42, "쇼츠로 만들 장면을 찾고 있습니다.")
                 target_count = int(job["planned_short_count"])
+                required_minimum_count = minimum_clip_count(target_count)
                 selection_started_at = time.monotonic()
                 with PhaseResourceMonitor(self.settings.task_vcpus) as selection_resources:
                     clips = self.selector.select(
@@ -602,6 +603,7 @@ class BatchWorker:
                             "seconds": round(selection_seconds, 3),
                             "selectedCount": len(clips),
                             "targetCount": target_count,
+                            "minimumCount": required_minimum_count,
                         }
                     },
                 )
