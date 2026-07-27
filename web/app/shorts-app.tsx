@@ -32,6 +32,7 @@ import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
 import { RANGE_EDIT_MIN_SECONDS, scaleTimedRanges } from "@/lib/range-editing";
+import { isIosDownloadDevice } from "@/lib/short-download";
 import { stateRetryDelayMs } from "@/lib/state-loading";
 import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
@@ -1288,6 +1289,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
 function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }) {
   const [accessUrls, setAccessUrls] = useState<Record<string, string>>({});
+  const [iosDownloadDevice, setIosDownloadDevice] = useState(false);
+  const [downloadNoticeOpen, setDownloadNoticeOpen] = useState(false);
   const [revealDecision, setRevealDecision] = useState<{
     jobId: string;
     show: boolean;
@@ -1299,6 +1302,10 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
 
   useEffect(() => {
     mounted.current = true;
+    setIosDownloadDevice(isIosDownloadDevice(
+      window.navigator.userAgent,
+      window.navigator.maxTouchPoints,
+    ));
     return () => { mounted.current = false; };
   }, []);
 
@@ -1342,17 +1349,22 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
     job.shorts.map((item) => [item.id, playbackUrl(item)]),
   );
 
-  const download = async (item: GeneratedShort) => {
-    if (job.isExample || item.status !== "ready") return;
-    const url = playbackUrl(item);
-    if (!url) return;
-    const response = await fetch(url);
-    const objectUrl = URL.createObjectURL(await response.blob());
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = `${item.hookTitle.replace(/[^0-9A-Za-z가-힣 _-]/g, "").trim() || "shorts"}.mp4`;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000);
+  const downloadableItems = job.shorts.filter((item) => item.status === "ready");
+  const downloadAll = () => {
+    if (job.isExample || !downloadableItems.length) return;
+    if (iosDownloadDevice) {
+      setDownloadNoticeOpen(true);
+      return;
+    }
+    for (const item of downloadableItems) {
+      const anchor = document.createElement("a");
+      anchor.href = `/api/shorts/${encodeURIComponent(item.id)}/download`;
+      anchor.download = "";
+      anchor.hidden = true;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    }
   };
 
   if (!selected) {
@@ -1387,8 +1399,16 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
     <div className="project-workspace">
       <header className="workspace-header">
         <div className="min-w-0"><button onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 프로젝트 /{job.projectNumber}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
-        <button disabled={job.isExample} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={() => void Promise.all(job.shorts.map(download))} className="workspace-button workspace-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-40">↓ 모든 쇼츠 다운로드</button>
+        <button disabled={job.isExample || !downloadableItems.length} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={downloadAll} className="workspace-button workspace-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-40">{iosDownloadDevice ? "↓ 쇼츠별 다운로드 안내" : "↓ 모든 쇼츠 다운로드"}</button>
       </header>
+      <NoticeDialog
+        open={downloadNoticeOpen}
+        dialogId="ios-download-notice"
+        title="쇼츠별로 바로 저장해 주세요"
+        description="iPhone과 iPad는 여러 파일의 자동 저장을 제한합니다. 아래 각 쇼츠의 다운로드 버튼을 누르면 파일 앱의 다운로드 폴더에 안전하게 저장됩니다."
+        variant="info"
+        onClose={() => setDownloadNoticeOpen(false)}
+      />
       {job.status === "failed" && job.errorMessage && (
         <div role="alert" className="mx-4 mt-4 whitespace-pre-line rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm leading-6 text-red-200 sm:mx-6">
           {job.errorMessage}
@@ -1417,7 +1437,9 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
                       {job.isExample || itemIsRerendering
                         ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">✎ 편집하기</button>
                         : <Link href={`/${job.projectNumber}/edit/${item.id}`} target="_blank" rel="noopener noreferrer" className="tool-button short-edit-button flex items-center justify-center" aria-label={`${item.hookTitle} 새 탭에서 편집하기`}>✎ 편집하기</Link>}
-                      <button disabled={job.isExample || !itemUrl || itemIsRerendering} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={() => void download(item)} className="tool-button short-download-button disabled:cursor-not-allowed disabled:opacity-40">↓ 다운로드</button>
+                      {job.isExample || itemIsRerendering || item.status !== "ready"
+                        ? <button disabled title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} className="tool-button short-download-button disabled:cursor-not-allowed disabled:opacity-40">↓ 다운로드</button>
+                        : <a href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download className="tool-button short-download-button flex items-center justify-center" aria-label={`${item.hookTitle} 다운로드`}>↓ 다운로드</a>}
                     </div>
                   </div>
                   <div className="short-detail-column">
