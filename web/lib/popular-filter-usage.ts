@@ -51,8 +51,17 @@ export async function recordPopularFilterUsage(
     limit 1
   `;
   const source = sources[0];
-  if (!source?.subscriptionId || !source?.billingOrderId) {
-    throw new Error("POPULAR_FILTER_ENTITLEMENT_SOURCE_MISSING");
+  if (!source?.billingOrderId) {
+    const directAccess = await db`
+      select 1
+      from shorts_mvp.app_users
+      where id=${input.userId}
+        and manual_service_access_until > clock_timestamp()
+      limit 1
+    `;
+    if (!directAccess[0]) {
+      throw new Error("POPULAR_FILTER_ENTITLEMENT_SOURCE_MISSING");
+    }
   }
 
   const interactionId = input.interactionId || randomUUID();
@@ -61,7 +70,8 @@ export async function recordPopularFilterUsage(
       interaction_id,user_id,subscription_id,billing_order_id,
       filter_type,category,reusable_only,long_form_only,korean_only,result_count
     ) values (
-      ${interactionId},${input.userId},${source.subscriptionId},${source.billingOrderId},
+      ${interactionId},${input.userId},${source?.subscriptionId || null},
+      ${source?.billingOrderId || null},
       ${input.type},${input.category},${input.reusableOnly},${input.longFormOnly},
       ${input.koreanOnly},${input.resultCount}
     )

@@ -1,3 +1,4 @@
+import type { Sql, TransactionSql } from "postgres";
 import type { BillingSummary } from "@/lib/contracts";
 import { HttpError } from "@/lib/http";
 
@@ -6,14 +7,30 @@ export const POPULAR_FILTER_PLAN_MESSAGE =
 
 export function billingSupportsPopularFilters(
   billing: Pick<BillingSummary, "activeProducts">,
+  hasDirectAccess = false,
 ) {
-  return billing.activeProducts.length > 0;
+  return hasDirectAccess || billing.activeProducts.length > 0;
 }
 
 export function assertPopularFilterAccess(
   billing: Pick<BillingSummary, "activeProducts">,
+  hasDirectAccess = false,
 ) {
-  if (!billingSupportsPopularFilters(billing)) {
+  if (!billingSupportsPopularFilters(billing, hasDirectAccess)) {
     throw new HttpError(402, POPULAR_FILTER_PLAN_MESSAGE, "POPULAR_FILTER_PLAN_REQUIRED");
   }
+}
+
+export async function hasDirectPopularFilterAccess(
+  db: Sql | TransactionSql,
+  userId: string,
+) {
+  const rows = await db`
+    select 1
+    from shorts_mvp.app_users
+    where id=${userId}
+      and manual_service_access_until > clock_timestamp()
+    limit 1
+  `;
+  return Boolean(rows[0]);
 }

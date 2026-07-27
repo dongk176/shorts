@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getBillingSummary: vi.fn(),
   getDb: vi.fn(),
   authenticatedSession: vi.fn(),
+  hasDirectPopularFilterAccess: vi.fn(),
   recordPopularFilterUsage: vi.fn(),
 }));
 
@@ -27,6 +28,10 @@ vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/popular-filter-usage", () => ({
   recordPopularFilterUsage: mocks.recordPopularFilterUsage,
 }));
+vi.mock("@/lib/popular-entitlements", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/popular-entitlements")>(),
+  hasDirectPopularFilterAccess: mocks.hasDirectPopularFilterAccess,
+}));
 vi.mock("@/lib/session", () => ({
   requireAuthenticatedMvpSession: mocks.authenticatedSession,
 }));
@@ -38,6 +43,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.getDb.mockReturnValue("database");
   mocks.authenticatedSession.mockResolvedValue({ userId: "user-a" });
+  mocks.hasDirectPopularFilterAccess.mockResolvedValue(false);
   mocks.recordPopularFilterUsage.mockResolvedValue({ id: "usage-a" });
   mocks.getBillingSummary.mockResolvedValue({
     activeProducts: [{ planCode: "easycut_pro_v2" }],
@@ -210,6 +216,22 @@ describe("popular YouTube API route", () => {
     expect(mocks.getPopularVideos).not.toHaveBeenCalled();
     expect(mocks.getPopularSearchVideos).not.toHaveBeenCalled();
     expect(mocks.recordPopularFilterUsage).not.toHaveBeenCalled();
+  });
+
+  it("allows advanced filters with direct time-limited access", async () => {
+    mocks.getBillingSummary.mockResolvedValue({ activeProducts: [] });
+    mocks.hasDirectPopularFilterAccess.mockResolvedValue(true);
+    mocks.getPopularSearchVideos.mockResolvedValue({
+      items: [],
+      updatedAt: "2026-07-28T00:00:00.000Z",
+    });
+
+    const response = await GET(new Request(
+      "http://localhost/api/youtube/popular?type=views&korean=true",
+    ));
+
+    expect(response.status).toBe(200);
+    expect(mocks.recordPopularFilterUsage).toHaveBeenCalledOnce();
   });
 
   it("records a client interaction id once the paid results are ready", async () => {

@@ -4,7 +4,10 @@ import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
 import { recordPopularFilterUsage } from "@/lib/popular-filter-usage";
-import { assertPopularFilterAccess } from "@/lib/popular-entitlements";
+import {
+  assertPopularFilterAccess,
+  hasDirectPopularFilterAccess,
+} from "@/lib/popular-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
   getPopularVideos,
@@ -55,7 +58,11 @@ export async function GET(request: Request) {
       || query.data.korean;
     if (usesPaidFeature) {
       const session = await requireAuthenticatedMvpSession();
-      assertPopularFilterAccess(await getBillingSummary(db, session.userId));
+      const [billing, hasDirectAccess] = await Promise.all([
+        getBillingSummary(db, session.userId),
+        hasDirectPopularFilterAccess(db, session.userId),
+      ]);
+      assertPopularFilterAccess(billing, hasDirectAccess);
       paidFilterUserId = session.userId;
     }
     const limit = 48;

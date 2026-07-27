@@ -22,7 +22,8 @@ export default async function PopularVideosPage() {
     try {
       const db = getDb();
       const appUserRows = await db`
-        select id
+        select id,manual_service_access_until > clock_timestamp()
+          as has_direct_popular_filter_access
         from shorts_mvp.app_users
         where auth_user_id=${user.id}
         limit 1
@@ -33,6 +34,7 @@ export default async function PopularVideosPage() {
       if (appUserId) {
         canUseFilters = billingSupportsPopularFilters(
           await getBillingSummary(db, appUserId),
+          Boolean(appUserRows[0]?.hasDirectPopularFilterAccess),
         );
       }
     } catch (error) {

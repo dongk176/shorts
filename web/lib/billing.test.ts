@@ -130,6 +130,29 @@ describe("billing summary", () => {
     });
   });
 
+  it("allows complimentary processing without inventing an active paid product", async () => {
+    const responses = [
+      [{
+        hasPaymentHistory: false,
+        purchasedPackageCodes: [],
+        hasManualServiceAccess: true,
+      }],
+      [],
+    ];
+    const db = (async () => responses.shift() || []) as unknown as BillingDb;
+
+    const summary = await getBillingSummary(db, "user-direct");
+
+    expect(summary).toMatchObject({
+      status: "none",
+      planCode: "free",
+      activeProducts: [],
+      canCreateJobs: true,
+      maxActiveJobs: 1,
+      retentionDays: 30,
+    });
+  });
+
   it("returns every currently active product and excludes overdue products", async () => {
     const activeStart = new Date("2026-01-01T00:00:00.000Z");
     const activeEnd = new Date("2099-01-01T00:00:00.000Z");

@@ -47,7 +47,7 @@ describe("popular filter usage evidence", () => {
   });
 
   it("fails closed when no paid order can be tied to the active entitlement", async () => {
-    const { db } = databaseWithResponses([]);
+    const { db } = databaseWithResponses([], []);
 
     await expect(recordPopularFilterUsage(db as never, {
       userId: "user-a",
@@ -58,5 +58,32 @@ describe("popular filter usage evidence", () => {
       koreanOnly: false,
       resultCount: 0,
     })).rejects.toThrow("POPULAR_FILTER_ENTITLEMENT_SOURCE_MISSING");
+  });
+
+  it("stores direct-access usage without inventing a payment order", async () => {
+    const { db, calls } = databaseWithResponses(
+      [],
+      [{ "?column?": 1 }],
+      [{ id: "event-direct", occurredAt: new Date("2026-07-28T00:00:00.000Z") }],
+    );
+
+    const result = await recordPopularFilterUsage(db as never, {
+      userId: "user-direct",
+      type: "reusable",
+      category: "all",
+      reusableOnly: true,
+      longFormOnly: false,
+      koreanOnly: true,
+      resultCount: 3,
+    });
+
+    expect(result).toMatchObject({ id: "event-direct" });
+    expect(calls).toHaveLength(3);
+    expect(calls[1].text).toContain("manual_service_access_until > clock_timestamp()");
+    expect(calls[2].values.slice(1, 4)).toEqual([
+      "user-direct",
+      null,
+      null,
+    ]);
   });
 });

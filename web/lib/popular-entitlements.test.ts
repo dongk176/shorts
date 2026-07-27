@@ -32,4 +32,11 @@ describe("popular filter entitlements", () => {
       POPULAR_FILTER_PLAN_MESSAGE,
     );
   });
+
+  it("allows an account with time-limited direct filter access", () => {
+    const billing = { activeProducts: [] };
+
+    expect(billingSupportsPopularFilters(billing, true)).toBe(true);
+    expect(() => assertPopularFilterAccess(billing, true)).not.toThrow();
+  });
 });

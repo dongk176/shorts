@@ -274,7 +274,9 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
         default_method.payer_tel_ciphertext is not null
         and default_method.payer_tel_iv is not null
         and default_method.payer_tel_tag is not null
-      ) as default_has_stored_payer_tel
+      ) as default_has_stored_payer_tel,
+      account.manual_service_access_until > clock_timestamp()
+        as has_manual_service_access
     from shorts_mvp.app_users account
     left join shorts_mvp.billing_payment_methods default_method
       on default_method.id=account.default_payment_method_id
@@ -331,6 +333,9 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       cardLast4: history?.defaultCardLast4 || null,
       hasStoredPayerTel: Boolean(history?.defaultHasStoredPayerTel),
       paymentProvider: history?.defaultPaymentProvider || null,
+      canCreateJobs: Boolean(history?.hasManualServiceAccess),
+      maxActiveJobs: history?.hasManualServiceAccess ? 1 : 0,
+      retentionDays: history?.hasManualServiceAccess ? 30 : 1,
     };
   }
   const status = row.status === "trialing" ? "active" : row.status as SubscriptionStatus;
