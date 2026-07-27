@@ -205,6 +205,36 @@ def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> 
     assert insert_call.args[1][-2] == 30
 
 
+def test_deferred_timeline_commit_only_updates_live_completed_project_output() -> None:
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+    connection.execute.return_value.fetchone.return_value = {"id": "short-a"}
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+
+    assert repository.complete_project_timeline(
+        short_id="short-a",
+        timeline_key="edit-sources/session-a/job-a/short-a/timeline-v1.mp4",
+        timeline_start_seconds=0,
+        timeline_end_seconds=70,
+        timeline_subtitles=[],
+    )
+
+    query, parameters = connection.execute.call_args.args
+    assert "s.status in ('ready','rerendering')" in query
+    assert "s.deleted_at is null" in query
+    assert "s.expires_at > clock_timestamp()" in query
+    assert "s.edit_timeline_s3_key is null" in query
+    assert "j.status='completed'" in query
+    assert parameters[0].endswith("/timeline-v1.mp4")
+    assert parameters[3].obj == []
+    assert parameters[4] == "short-a"
+
+
 def test_selection_observability_migration_stays_in_shorts_schema() -> None:
     migration = (
         Path(__file__).parents[2]

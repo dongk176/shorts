@@ -404,6 +404,59 @@ class WorkerRepository:
                 (job_id, error_code, error_message),
             ).fetchone()
 
+    def project_timeline_needed(self, short_id: str) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                select 1
+                from shorts_mvp.generated_shorts s
+                join shorts_mvp.video_jobs j on j.id=s.job_id
+                where s.id=%s and s.status in ('ready','rerendering')
+                  and s.deleted_at is null and s.expires_at > clock_timestamp()
+                  and s.edit_timeline_s3_key is null
+                  and j.status='completed'
+                """,
+                (short_id,),
+            ).fetchone()
+            return bool(row)
+
+    def complete_project_timeline(
+        self,
+        *,
+        short_id: str,
+        timeline_key: str,
+        timeline_start_seconds: float,
+        timeline_end_seconds: float,
+        timeline_subtitles: list[dict[str, Any]],
+    ) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                update shorts_mvp.generated_shorts s
+                set edit_timeline_s3_key=%s,
+                    edit_timeline_start_seconds=%s,
+                    edit_timeline_end_seconds=%s,
+                    edit_timeline_subtitle_segments=%s,
+                    edit_timeline_version=1
+                where s.id=%s and s.status in ('ready','rerendering')
+                  and s.deleted_at is null and s.expires_at > clock_timestamp()
+                  and s.edit_timeline_s3_key is null
+                  and exists (
+                    select 1 from shorts_mvp.video_jobs j
+                    where j.id=s.job_id and j.status='completed'
+                  )
+                returning id
+                """,
+                (
+                    timeline_key,
+                    timeline_start_seconds,
+                    timeline_end_seconds,
+                    Jsonb(timeline_subtitles),
+                    short_id,
+                ),
+            ).fetchone()
+            return bool(row)
+
     def begin_attempt(self, job_id: str, attempt: int) -> None:
         self.claim_prepare_attempt(job_id, attempt_override=attempt)
 

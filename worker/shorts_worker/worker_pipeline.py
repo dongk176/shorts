@@ -44,11 +44,19 @@ from .schemas import (
     VideoAspectRatio,
     fallback_comment_overlays,
 )
-from .selector import TranscriptSelector
+from .selector import TranscriptSelector, minimum_clip_count
 from .storage import ObjectStorage
 from .subtitles import AudioTranscriber
 
 EDIT_TIMELINE_PADDING_SECONDS = 30.0
+
+
+@dataclass(frozen=True)
+class ProjectTimelineTarget:
+    short_id: str
+    slot_index: int
+    clip: HighlightClip
+    subtitles: list[SubtitleSegment]
 
 
 def edit_timeline_clip(
@@ -236,6 +244,7 @@ class BatchWorker:
     MAX_INLINE_INGESTION_ROUTES = 10
     INGESTION_ROUTE_WAIT_SECONDS = 30.0
     INGESTION_ROUTE_POLL_SECONDS = 1.0
+    PROJECT_RENDER_ATTEMPTS = 2
     RENDER_SHARD_SIZE = 2
 
     def __init__(self, settings: Settings) -> None:
@@ -604,6 +613,7 @@ class BatchWorker:
                 )
                 self.repository.stage(job_id, "selecting", 42, "쇼츠로 만들 장면을 찾고 있습니다.")
                 target_count = int(job["planned_short_count"])
+                required_minimum_count = minimum_clip_count(target_count)
                 selection_started_at = time.monotonic()
                 with PhaseResourceMonitor(self.settings.task_vcpus) as selection_resources:
                     clips = self.selector.select(
@@ -622,6 +632,7 @@ class BatchWorker:
                             "seconds": round(selection_seconds, 3),
                             "selectedCount": len(clips),
                             "targetCount": target_count,
+                            "minimumCount": required_minimum_count,
                         }
                     },
                 )
@@ -694,12 +705,13 @@ class BatchWorker:
                     job_id,
                     "extracting",
                     45 + round(15 * completed_extractions / max(1, target_count)),
-                    f"편집용 영상을 준비하고 있습니다. ({completed_extractions}/{target_count})",
+                    f"쇼츠 영상을 준비하고 있습니다. ({completed_extractions}/{target_count})",
                     completed_count=completed_extractions,
                     total_count=target_count,
                 )
                 local_clean_paths: dict[str, Path] = {}
                 clean_results: list[dict[str, object]] = []
+                timeline_targets: list[ProjectTimelineTarget] = []
                 extraction_failures = 0
                 with PhaseResourceMonitor(self.settings.task_vcpus) as extraction_resources:
                     with ThreadPoolExecutor(
@@ -717,18 +729,24 @@ class BatchWorker:
                                 slot_index=index,
                                 clip=clip,
                                 subtitles=clip_subtitles[index],
-                                timeline_clip=edit_timeline_clips.get(index),
-                                timeline_subtitles=edit_timeline_subtitles.get(index, []),
                                 comments=comments_by_clip.get(index, []),
                             ): index
                             for index, clip in enumerate(clips, start=1)
                         }
                         for future in as_completed(futures):
+                            index = futures[future]
                             prepared = future.result()
                             if prepared:
                                 short_id, clean_path, clean_metrics = prepared
                                 local_clean_paths[short_id] = clean_path
                                 clean_results.append(clean_metrics)
+                                if timeline_clip := edit_timeline_clips.get(index):
+                                    timeline_targets.append(ProjectTimelineTarget(
+                                        short_id=short_id,
+                                        slot_index=index,
+                                        clip=timeline_clip,
+                                        subtitles=edit_timeline_subtitles.get(index, []),
+                                    ))
                             else:
                                 extraction_failures += 1
                             completed_extractions += 1
@@ -739,7 +757,7 @@ class BatchWorker:
                                     15 * completed_extractions / max(1, target_count)
                                 ),
                                 (
-                                    "편집용 영상을 준비하고 있습니다. "
+                                    "쇼츠 영상을 준비하고 있습니다. "
                                     f"({completed_extractions}/{target_count})"
                                 ),
                                 completed_count=completed_extractions,
@@ -802,6 +820,34 @@ class BatchWorker:
                     render_summary=render_summary,
                     result=result,
                 )
+                if (
+                    result
+                    and result.get("final_status") == "completed"
+                    and timeline_targets
+                ):
+                    timeline_summary = self._capture_project_timelines(
+                        job_id=job_id,
+                        job=job,
+                        source=source,
+                        source_probe=source_probe,
+                        work_dir=work_dir,
+                        targets=timeline_targets,
+                    )
+                    batch_total_seconds = time.monotonic() - started_at
+                    self.repository.merge_job_performance_metrics(
+                        job_id,
+                        {
+                            "timelinePostprocessing": timeline_summary,
+                            "batchTotalSeconds": round(batch_total_seconds, 3),
+                            "containerPeakMemoryBytes": _container_memory_peak_bytes(),
+                        },
+                    )
+                    _log_event(
+                        "project_timeline_postprocessing_finished",
+                        job_id=job_id,
+                        elapsed_seconds=round(batch_total_seconds, 3),
+                        **timeline_summary,
+                    )
         except Exception as exc:
             error_code = (
                 exc.code if isinstance(exc, IngestionError) else type(exc).__name__
@@ -854,8 +900,6 @@ class BatchWorker:
         slot_index: int,
         clip: HighlightClip,
         subtitles: list[SubtitleSegment],
-        timeline_clip: HighlightClip | None,
-        timeline_subtitles: list[SubtitleSegment],
         comments: list[dict[str, object]],
     ) -> tuple[str, Path, dict[str, object]] | None:
         started_at = time.monotonic()
@@ -863,9 +907,7 @@ class BatchWorker:
         clean_path = work_dir / "clean" / f"{short_id}.mp4"
         clean_path.parent.mkdir(parents=True, exist_ok=True)
         clean_key: str | None = None
-        timeline_key: str | None = None
         clean_metrics: dict[str, object] = {}
-        timeline_metrics: dict[str, object] = {}
         try:
             self.renderer.extract_clean_clip(
                 source_path=source,
@@ -883,38 +925,6 @@ class BatchWorker:
             clean_key = f"edit-sources/{prefix}.mp4"
             uploaded_size = self.storage.upload(clean_path, clean_key, "video/mp4")
             upload_seconds = time.monotonic() - upload_started_at
-            if timeline_clip is not None:
-                timeline_path = work_dir / "timelines" / f"{short_id}.mp4"
-                try:
-                    self.renderer.extract_clean_clip(
-                        source_path=source,
-                        output_path=timeline_path,
-                        clip=timeline_clip,
-                        work_dir=work_dir / "timeline-extract" / short_id,
-                        video_aspect_ratio=VideoAspectRatio(
-                            str(job.get("video_aspect_ratio") or "1:1")
-                        ),
-                        source_probe=source_probe,
-                        metrics_callback=timeline_metrics.update,
-                    )
-                    timeline_key = f"edit-sources/{prefix}/timeline-v1.mp4"
-                    timeline_size = self.storage.upload(
-                        timeline_path, timeline_key, "video/mp4"
-                    )
-                    timeline_metrics["fileBytes"] = timeline_size
-                except Exception as exc:
-                    if timeline_key:
-                        try:
-                            self.storage.delete(timeline_key)
-                        except Exception:
-                            pass
-                    timeline_key = None
-                    _log_event(
-                        "edit_timeline_capture_failed",
-                        job_id=job_id,
-                        short_id=short_id,
-                        error_type=type(exc).__name__,
-                    )
             inserted = self.repository.add_pending_short(
                 short_id=short_id,
                 job=job,
@@ -934,13 +944,10 @@ class BatchWorker:
                 subtitles=[item.model_dump() for item in subtitles],
                 comment_overlays=comments,
                 clean_key=clean_key,
-                timeline_key=timeline_key,
-                timeline_start_seconds=(timeline_clip.start_seconds if timeline_key else None),
-                timeline_end_seconds=(timeline_clip.end_seconds if timeline_key else None),
-                timeline_subtitles=(
-                    [item.model_dump() for item in timeline_subtitles]
-                    if timeline_key else None
-                ),
+                timeline_key=None,
+                timeline_start_seconds=None,
+                timeline_end_seconds=None,
+                timeline_subtitles=None,
                 retention_days=int(job["retention_days"]),
                 shard_index=0,
             )
@@ -956,7 +963,6 @@ class BatchWorker:
                     "fileBytes": uploaded_size,
                     "totalSeconds": round(total_seconds, 3),
                 },
-                "editTimeline": timeline_metrics if timeline_key else None,
             }
             self.repository.merge_project_attempt_performance_metrics(
                 job_id,
@@ -982,12 +988,11 @@ class BatchWorker:
             )
             return short_id, clean_path, metrics
         except Exception as exc:
-            for key in (clean_key, timeline_key):
-                if key:
-                    try:
-                        self.storage.delete(key)
-                    except Exception:
-                        pass
+            if clean_key:
+                try:
+                    self.storage.delete(clean_key)
+                except Exception:
+                    pass
             self.repository.fail_project_attempt(
                 job_id,
                 slot_index,
@@ -1016,6 +1021,235 @@ class BatchWorker:
                 error_type=type(exc).__name__,
             )
             return None
+
+    def _capture_project_timelines(
+        self,
+        *,
+        job_id: str,
+        job: dict[str, object],
+        source: Path,
+        source_probe: dict[str, object],
+        work_dir: Path,
+        targets: list[ProjectTimelineTarget],
+    ) -> dict[str, object]:
+        started_at = time.monotonic()
+        project_worker_count = self._project_worker_count()
+        results: list[dict[str, object]] = []
+        failed_count = 0
+        with PhaseResourceMonitor(self.settings.task_vcpus) as resources:
+            with ThreadPoolExecutor(
+                max_workers=project_worker_count,
+                thread_name_prefix="project-timeline",
+            ) as executor:
+                futures = [
+                    executor.submit(
+                        self._capture_project_timeline,
+                        job_id=job_id,
+                        job=job,
+                        source=source,
+                        source_probe=source_probe,
+                        work_dir=work_dir,
+                        target=target,
+                    )
+                    for target in targets
+                ]
+                for future in as_completed(futures):
+                    try:
+                        results.append(future.result())
+                    except Exception as exc:
+                        failed_count += 1
+                        _log_event(
+                            "edit_timeline_capture_failed",
+                            job_id=job_id,
+                            error_type=type(exc).__name__,
+                            failure_scope="unexpected_postprocessing",
+                        )
+        ready = [item for item in results if item.get("status") == "ready"]
+        return {
+            **resources.metrics,
+            "wallSeconds": round(time.monotonic() - started_at, 3),
+            "requestedCount": len(targets),
+            "succeededCount": len(ready),
+            "skippedCount": sum(
+                item.get("status") == "skipped" for item in results
+            ),
+            "failedCount": failed_count + sum(
+                item.get("status") == "failed" for item in results
+            ),
+            "workers": project_worker_count,
+            "ffmpegThreads": self.settings.ffmpeg_threads,
+            "ffmpegSeconds": round(sum(
+                float(item.get("ffmpegSeconds") or 0) for item in ready
+            ), 3),
+            "outputBytes": sum(
+                int(item.get("fileBytes") or 0) for item in ready
+            ),
+        }
+
+    def _capture_project_timeline(
+        self,
+        *,
+        job_id: str,
+        job: dict[str, object],
+        source: Path,
+        source_probe: dict[str, object],
+        work_dir: Path,
+        target: ProjectTimelineTarget,
+    ) -> dict[str, object]:
+        if not self.repository.project_timeline_needed(target.short_id):
+            return {"status": "skipped"}
+
+        timeline_path = work_dir / "timelines" / f"{target.short_id}.mp4"
+        timeline_path.parent.mkdir(parents=True, exist_ok=True)
+        timeline_key = (
+            f"edit-sources/{job['mvp_session_id']}/{job_id}/"
+            f"{target.short_id}/timeline-v1.mp4"
+        )
+        started_at = time.monotonic()
+        last_error: Exception | None = None
+        for attempt in range(1, 3):
+            timeline_metrics: dict[str, object] = {}
+            try:
+                self.renderer.extract_clean_clip(
+                    source_path=source,
+                    output_path=timeline_path,
+                    clip=target.clip,
+                    work_dir=(
+                        work_dir
+                        / "timeline-extract"
+                        / target.short_id
+                        / f"attempt-{attempt}"
+                    ),
+                    video_aspect_ratio=VideoAspectRatio(
+                        str(job.get("video_aspect_ratio") or "1:1")
+                    ),
+                    source_probe=source_probe,
+                    metrics_callback=timeline_metrics.update,
+                )
+                upload_started_at = time.monotonic()
+                timeline_size = self.storage.upload(
+                    timeline_path,
+                    timeline_key,
+                    "video/mp4",
+                )
+                upload_seconds = time.monotonic() - upload_started_at
+            except Exception as exc:
+                last_error = exc
+                _log_event(
+                    "edit_timeline_capture_retrying"
+                    if attempt == 1
+                    else "edit_timeline_capture_failed",
+                    job_id=job_id,
+                    short_id=target.short_id,
+                    slot_index=target.slot_index,
+                    attempt=attempt,
+                    error_type=type(exc).__name__,
+                )
+                continue
+
+            try:
+                committed = self.repository.complete_project_timeline(
+                    short_id=target.short_id,
+                    timeline_key=timeline_key,
+                    timeline_start_seconds=target.clip.start_seconds,
+                    timeline_end_seconds=target.clip.end_seconds,
+                    timeline_subtitles=[
+                        item.model_dump() for item in target.subtitles
+                    ],
+                )
+            except Exception as exc:
+                # The database may have committed before the connection failed.
+                # Preserve the deterministic object key rather than deleting
+                # media that a successful commit could now reference.
+                _log_event(
+                    "edit_timeline_commit_ambiguous",
+                    job_id=job_id,
+                    short_id=target.short_id,
+                    slot_index=target.slot_index,
+                    error_type=type(exc).__name__,
+                )
+                return {"status": "failed", "commitAmbiguous": True}
+
+            if not committed:
+                try:
+                    self.storage.delete(timeline_key)
+                except Exception:
+                    pass
+                return {"status": "skipped"}
+
+            elapsed_seconds = time.monotonic() - started_at
+            metrics = {
+                **timeline_metrics,
+                "fileBytes": timeline_size,
+                "uploadSeconds": round(upload_seconds, 3),
+                "totalSeconds": round(elapsed_seconds, 3),
+                "attempts": attempt,
+            }
+            self.repository.merge_project_attempt_performance_metrics(
+                job_id,
+                target.slot_index,
+                {"editTimeline": metrics},
+            )
+            _log_event(
+                "edit_timeline_capture_succeeded",
+                job_id=job_id,
+                short_id=target.short_id,
+                slot_index=target.slot_index,
+                elapsed_seconds=round(elapsed_seconds, 3),
+                ffmpeg_seconds=timeline_metrics.get("ffmpegSeconds"),
+                upload_seconds=round(upload_seconds, 3),
+                file_bytes=timeline_size,
+                attempts=attempt,
+            )
+            return {
+                "status": "ready",
+                "ffmpegSeconds": timeline_metrics.get("ffmpegSeconds"),
+                "fileBytes": timeline_size,
+            }
+
+        self.repository.merge_project_attempt_performance_metrics(
+            job_id,
+            target.slot_index,
+            {
+                "editTimeline": {
+                    "failed": True,
+                    "attempts": 2,
+                    "totalSeconds": round(time.monotonic() - started_at, 3),
+                    "errorType": (
+                        type(last_error).__name__ if last_error else "UnknownError"
+                    ),
+                }
+            },
+        )
+        return {"status": "failed"}
+
+    def _render_project_output_with_retry(
+        self,
+        item: dict[str, object],
+        local_clean_path: Path | None,
+    ) -> dict[str, object] | None:
+        last_error: Exception | None = None
+        for attempt in range(1, self.PROJECT_RENDER_ATTEMPTS + 1):
+            try:
+                return self._render_initial_short(
+                    item,
+                    local_clean_path if attempt == 1 else None,
+                )
+            except Exception as exc:
+                last_error = exc
+                if attempt < self.PROJECT_RENDER_ATTEMPTS:
+                    _log_event(
+                        "project_output_render_retrying",
+                        job_id=item.get("job_id"),
+                        short_id=item["id"],
+                        slot_index=item.get("slot_index"),
+                        attempt=attempt,
+                        next_attempt=attempt + 1,
+                        error_type=type(exc).__name__,
+                    )
+        if last_error:
+            raise last_error
+        return None
 
     def _render_project_outputs(
         self,
@@ -1059,7 +1293,7 @@ class BatchWorker:
                     self.repository.mark_project_attempt_rendering(short_id)
                     futures[
                         executor.submit(
-                            self._render_initial_short,
+                            self._render_project_output_with_retry,
                             item,
                             local_path,
                         )

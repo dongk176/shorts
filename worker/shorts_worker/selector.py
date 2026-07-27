@@ -44,8 +44,11 @@ def clip_count_for_duration(duration_seconds: float, *, maximum_seconds: int = 3
     return 15
 
 
-def minimum_clip_count_for_duration(duration_seconds: float) -> int:
-    return 1 if duration_seconds < 4 * 60 else 2
+def minimum_clip_count(required_count: int) -> int:
+    """Require 65% of planned outputs, keeping three-clip jobs failure-tolerant."""
+    if required_count < 1:
+        return 0
+    return min(required_count, max(3, math.ceil(required_count * 0.65)))
 
 
 def _expanded_short_clip_length(
@@ -251,7 +254,7 @@ def normalize_clips(
     minimum_length = min(AI_CLIP_MIN_SECONDS, duration_seconds)
     maximum_length = min(AI_CLIP_MAX_SECONDS, duration_seconds)
     accepted: list[HighlightClip] = []
-    minimum_count = minimum_clip_count_for_duration(duration_seconds)
+    minimum_count = minimum_clip_count(required_count)
 
     def accept(
         candidate: HighlightClip,
@@ -332,6 +335,8 @@ def normalize_clips(
             video_title, duration_seconds, minimum_count, transcript,
             output_language,
         ):
+            if len(accepted) >= minimum_count:
+                break
             accept(
                 candidate,
                 candidate_index=None,
@@ -368,7 +373,7 @@ class TranscriptSelector:
         output_language: OutputLanguage = OutputLanguage.KO,
     ) -> list[dict[str, str]]:
         language_name = OUTPUT_LANGUAGE_NAMES[output_language]
-        minimum_count = minimum_clip_count_for_duration(duration_seconds)
+        minimum_count = minimum_clip_count(required_count)
         system = (
             "너는 대한민국 상위 0.1% 조회수를 만들어내는 탑티어 숏폼 기획자이자 편집자야.\n\n"
             "아래 제공되는 유튜브 롱폼 대본을 분석해서, 대중의 시선을 사로잡을 쇼츠용 "
@@ -489,7 +494,7 @@ class TranscriptSelector:
         required_count: int,
         output_language: OutputLanguage = OutputLanguage.KO,
     ) -> list[HighlightClip]:
-        minimum_count = minimum_clip_count_for_duration(duration_seconds)
+        minimum_count = minimum_clip_count(required_count)
         messages = self._selection_messages(
             video_title=video_title,
             duration_seconds=duration_seconds,
@@ -536,6 +541,8 @@ class TranscriptSelector:
                 provider=provider,
                 model=model,
                 status="started",
+                target_clip_count=required_count,
+                minimum_clip_count=minimum_count,
             )
             try:
                 candidates = select_provider(messages=messages)
@@ -558,6 +565,8 @@ class TranscriptSelector:
                     status="failed",
                     reason="provider_error",
                     error_type=type(exc).__name__,
+                    target_clip_count=required_count,
+                    minimum_clip_count=minimum_count,
                 )
                 continue
             if len(normalized) < minimum_count:
@@ -569,6 +578,7 @@ class TranscriptSelector:
                     reason="insufficient_candidates",
                     clip_count=len(normalized),
                     minimum_clip_count=minimum_count,
+                    target_clip_count=required_count,
                 )
                 continue
             _log_selection_event(
@@ -577,12 +587,16 @@ class TranscriptSelector:
                 model=model,
                 status="succeeded",
                 clip_count=len(normalized),
+                target_clip_count=required_count,
+                minimum_clip_count=minimum_count,
             )
             _log_selection_event(
                 "highlight_selection_completed",
                 source=provider,
                 model=model,
                 clip_count=len(normalized),
+                target_clip_count=required_count,
+                minimum_clip_count=minimum_count,
             )
             return normalized
 
@@ -599,5 +613,7 @@ class TranscriptSelector:
             source="deterministic",
             model=None,
             clip_count=len(fallback),
+            target_clip_count=required_count,
+            minimum_clip_count=minimum_count,
         )
         return fallback

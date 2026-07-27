@@ -840,6 +840,11 @@ body:has(.editor-page) .language-selector-floating { display: none; }
   .editor-controls-pane { height: calc(100vh - 96px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -ms-overflow-style: none; }
   .editor-controls-pane::-webkit-scrollbar { display: none; width: 0; height: 0; }
 }
+.range-editor-handle { appearance: none; -webkit-appearance: none; background: transparent; pointer-events: none; }
+.range-editor-handle::-webkit-slider-runnable-track { height: 100%; background: transparent; }
+.range-editor-handle::-webkit-slider-thumb { width: 14px; height: 34px; margin-top: 2px; border: 2px solid #ffd0ca; border-radius: 5px; appearance: none; -webkit-appearance: none; background: #ff715e; box-shadow: 0 3px 12px rgba(0,0,0,.45); cursor: ew-resize; pointer-events: auto; }
+.range-editor-handle::-moz-range-track { height: 100%; background: transparent; }
+.range-editor-handle::-moz-range-thumb { width: 10px; height: 30px; border: 2px solid #ffd0ca; border-radius: 5px; background: #ff715e; box-shadow: 0 3px 12px rgba(0,0,0,.45); cursor: ew-resize; pointer-events: auto; }
 @media (max-width: 920px) {
   .editor-topbar-inner,.editor-page-body { width: min(100% - 32px,680px); }
   .editor-page-body { grid-template-columns: 1fr; gap: 28px; padding: 24px 0 44px; }
