@@ -17,7 +17,11 @@ from shorts_worker.errors import (
 )
 from shorts_worker.ingestion import DownloadedAssetBundle, VideoMetadata
 from shorts_worker.schemas import HighlightClip, SubtitleSegment
-from shorts_worker.worker_pipeline import BatchWorker, classify_full_source_download
+from shorts_worker.worker_pipeline import (
+    BatchWorker,
+    ProjectTimelineTarget,
+    classify_full_source_download,
+)
 
 
 @contextmanager
@@ -795,6 +799,137 @@ def test_project_render_isolates_one_failure_and_scales_workers_from_vcpus() -> 
     assert worker._project_worker_count() == 2
     source = inspect.getsource(BatchWorker._render_project_outputs)
     assert "max_workers=project_worker_count" in source
+
+
+def test_project_output_render_retries_before_it_can_fail_terminally() -> None:
+    worker = BatchWorker.__new__(BatchWorker)
+    worker._render_initial_short = MagicMock(side_effect=[
+        RuntimeError("transient render failure"),
+        {"ffmpegSeconds": 10.0},
+    ])
+    local_path = MagicMock()
+    item = {"id": "short-a", "job_id": "job-a", "slot_index": 1}
+
+    result = worker._render_project_output_with_retry(item, local_path)
+
+    assert result == {"ffmpegSeconds": 10.0}
+    assert worker._render_initial_short.call_count == 2
+    assert worker._render_initial_short.call_args_list[0].args == (item, local_path)
+    assert worker._render_initial_short.call_args_list[1].args == (item, None)
+
+
+def _timeline_target(short_id: str, slot_index: int) -> ProjectTimelineTarget:
+    return ProjectTimelineTarget(
+        short_id=short_id,
+        slot_index=slot_index,
+        clip=HighlightClip(
+            start_seconds=10,
+            end_seconds=80,
+            hook_title=f"timeline-{slot_index}",
+        ),
+        subtitles=[SubtitleSegment(start=0, end=3, text="자막")],
+    )
+
+
+def _timeline_worker(tmp_path) -> BatchWorker:
+    worker = BatchWorker.__new__(BatchWorker)
+    worker.settings = SimpleNamespace(
+        task_vcpus=4,
+        ffmpeg_threads=2,
+    )
+    worker.repository = MagicMock()
+    worker.repository.project_timeline_needed.return_value = True
+    worker.repository.complete_project_timeline.return_value = True
+    worker.storage = MagicMock()
+    worker.storage.upload.return_value = 42_000_000
+    worker.renderer = MagicMock()
+    return worker
+
+
+def test_project_finishes_user_outputs_before_timeline_postprocessing() -> None:
+    source = inspect.getsource(BatchWorker.project)
+    timeline_index = source.index(
+        "timeline_summary = self._capture_project_timelines"
+    )
+    render_index = source.rfind(
+        "render_summary = self._render_project_outputs",
+        0,
+        timeline_index,
+    )
+    finalize_index = source.rfind(
+        "result = self.repository.finalize_project_job",
+        0,
+        timeline_index,
+    )
+
+    assert 0 <= render_index < finalize_index < timeline_index
+
+
+def test_deferred_timeline_retries_once_and_commits_after_upload(tmp_path) -> None:
+    worker = _timeline_worker(tmp_path)
+    calls = 0
+
+    def extract_clean_clip(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("transient ffmpeg failure")
+        kwargs["metrics_callback"]({"ffmpegSeconds": 52.5})
+
+    worker.renderer.extract_clean_clip.side_effect = extract_clean_clip
+
+    result = worker._capture_project_timeline(
+        job_id="job-a",
+        job={"mvp_session_id": "session-a", "video_aspect_ratio": "1:1"},
+        source=tmp_path / "source.mp4",
+        source_probe={},
+        work_dir=tmp_path,
+        target=_timeline_target("short-a", 1),
+    )
+
+    assert result == {
+        "status": "ready",
+        "ffmpegSeconds": 52.5,
+        "fileBytes": 42_000_000,
+    }
+    assert calls == 2
+    worker.storage.upload.assert_called_once()
+    worker.repository.complete_project_timeline.assert_called_once()
+    metrics = worker.repository.merge_project_attempt_performance_metrics.call_args.args[2]
+    assert metrics["editTimeline"]["attempts"] == 2
+
+
+def test_deferred_timeline_failure_does_not_fail_other_outputs(tmp_path) -> None:
+    worker = _timeline_worker(tmp_path)
+
+    def extract_clean_clip(**kwargs):
+        if "short-a" in str(kwargs["output_path"]):
+            raise RuntimeError("broken timeline")
+        kwargs["metrics_callback"]({"ffmpegSeconds": 40.0})
+
+    worker.renderer.extract_clean_clip.side_effect = extract_clean_clip
+
+    summary = worker._capture_project_timelines(
+        job_id="job-a",
+        job={"mvp_session_id": "session-a", "video_aspect_ratio": "1:1"},
+        source=tmp_path / "source.mp4",
+        source_probe={},
+        work_dir=tmp_path,
+        targets=[
+            _timeline_target("short-a", 1),
+            _timeline_target("short-b", 2),
+        ],
+    )
+
+    assert summary["requestedCount"] == 2
+    assert summary["succeededCount"] == 1
+    assert summary["failedCount"] == 1
+    assert worker.renderer.extract_clean_clip.call_count == 3
+    completed_short_ids = {
+        call.kwargs["short_id"]
+        for call in worker.repository.complete_project_timeline.call_args_list
+    }
+    assert completed_short_ids == {"short-b"}
 
 
 def test_project_resume_renders_checkpoints_without_downloading_source() -> None:
