@@ -9,6 +9,7 @@ import { useUsageState } from "@/components/usage-provider";
 import { billingPostJson, purchaseAddonWithSavedCard } from "@/lib/billing-client";
 import type { MvpState } from "@/lib/contracts";
 import { billingSupportsEbookDownloads } from "@/lib/ebook-entitlements";
+import { userFacingErrorMessage } from "@/lib/public-error";
 import {
   getPricingV2Package,
   getPricingV2Plan,
@@ -243,7 +244,6 @@ export function PricingClient({
   const [earlyBirdConfirmation, setEarlyBirdConfirmation] = useState<EarlyBirdProduct | null>(null);
   const [earlyBirdSuccess, setEarlyBirdSuccess] = useState<EarlyBirdSuccessState | null>(null);
   const [planCheckout, setPlanCheckout] = useState<PlanCheckoutState | null>(null);
-  const [cancelConfirmation, setCancelConfirmation] = useState(false);
   const [resubscribeAuth, setResubscribeAuth] = useState<ResubscribeAuthState | null>(null);
   const [cardAuth, setCardAuth] = useState<CardAuthState>(emptyCardAuth);
   const [earlyBirdUseDifferentCard, setEarlyBirdUseDifferentCard] = useState(false);
@@ -270,17 +270,6 @@ export function PricingClient({
       });
     return () => controller.abort();
   }, [initialState]);
-
-  useEffect(() => {
-    if (!cancelConfirmation) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    document.body.classList.add("purchase-sheet-open");
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.body.classList.remove("purchase-sheet-open");
-    };
-  }, [cancelConfirmation]);
 
   async function reloadState() {
     const response = await fetch("/api/mvp/state", {
@@ -432,7 +421,7 @@ export function PricingClient({
           },
         } : current);
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "상품 변경을 예약하지 못했습니다.");
+        setError(userFacingErrorMessage(cause, "상품 변경을 예약하지 못했습니다."));
       } finally {
         setBusy(null);
       }
@@ -525,25 +514,7 @@ export function PricingClient({
         state.billing.hasStoredPayerTel ? undefined : payerTel,
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "얼리버드 결제를 완료하지 못했습니다.");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function cancelMonthlySubscription() {
-    if (!state || busy) return;
-    setBusy("cancel_subscription");
-    setError(null);
-    try {
-      await billingPostJson("/api/billing/subscription/cancel", {
-        cancelAtPeriodEnd: true,
-      });
-      await reloadState();
-      setCancelConfirmation(false);
-      setPreviewMessage("월간 구독 해지가 예약되었습니다. 현재 유료기간은 유지되고 다음 자동결제와 월 처리시간 지급은 중단됩니다.");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "월간 구독을 해지하지 못했습니다.");
+      setError(userFacingErrorMessage(cause, "얼리버드 결제를 완료하지 못했습니다."));
     } finally {
       setBusy(null);
     }
@@ -573,7 +544,7 @@ export function PricingClient({
         cardPassword,
       }, resubscribeAuth.requestId);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "월간 구독을 다시 시작하지 못했습니다.");
+      setError(userFacingErrorMessage(cause, "월간 구독을 다시 시작하지 못했습니다."));
     } finally {
       setBusy(null);
     }
@@ -740,26 +711,22 @@ export function PricingClient({
                     <span>원본 영상 처리</span>
                   </div>
                   <p>{scheduleLabel}</p>
-                  {!isPackage && (
+                  {!isPackage && product.cancelAtPeriodEnd && (
                     <button
                       type="button"
                       disabled={busy !== null}
                       className={styles.subscriptionAction}
                       onClick={() => {
-                        if (product.cancelAtPeriodEnd) {
-                          setResubscribeUseDifferentCard(false);
-                          setResubscribeAuth({
-                            requestId: crypto.randomUUID(),
-                            identityNumber: "",
-                            cardPassword: "",
-                            consent: false,
-                          });
-                        } else {
-                          setCancelConfirmation(true);
-                        }
+                        setResubscribeUseDifferentCard(false);
+                        setResubscribeAuth({
+                          requestId: crypto.randomUUID(),
+                          identityNumber: "",
+                          cardPassword: "",
+                          consent: false,
+                        });
                       }}
                     >
-                      {product.cancelAtPeriodEnd ? "다시 구독하기" : "구독 해지"}
+                      다시 구독하기
                     </button>
                   )}
                 </article>
@@ -986,47 +953,6 @@ export function PricingClient({
           </div>
         </ThePayOnePaymentOverlay>
       ))}
-
-      {cancelConfirmation && (
-        <div
-          className="fixed inset-0 z-[130] flex items-end bg-black/80 pt-8 backdrop-blur-md sm:grid sm:place-items-center sm:px-5 sm:py-8"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="cancel-subscription-title"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !busy) setCancelConfirmation(false);
-          }}
-        >
-          <div className="flex w-full max-w-md flex-col overflow-hidden rounded-t-[28px] border border-white/10 bg-[#191c1e] shadow-2xl sm:rounded-3xl">
-            <div className="px-5 pb-7 pt-4 sm:px-7 sm:pt-7">
-              <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20 sm:hidden" aria-hidden="true" />
-              <h2 id="cancel-subscription-title" className="text-2xl font-black text-white">월간 구독을 해지할까요?</h2>
-              <p className="mt-4 text-sm leading-7 text-neutral-400">
-                이미 결제한 Pro 이용기간과 남은 처리시간은 종료일까지 유지됩니다.
-                최종 해지하면 더페이원 자동결제 일정이 즉시 중지되고 다음 월 처리시간은 지급되지 않습니다.
-              </p>
-            </div>
-            <div className="grid grid-cols-[auto_1fr] gap-3 border-t border-white/10 bg-[#191c1e] px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-7">
-              <button
-                type="button"
-                disabled={Boolean(busy)}
-                onClick={() => setCancelConfirmation(false)}
-                className="min-h-12 rounded-xl border border-white/10 px-5 text-sm font-bold text-neutral-300 disabled:opacity-40"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                disabled={Boolean(busy)}
-                onClick={() => void cancelMonthlySubscription()}
-                className="min-h-12 rounded-xl bg-[#ff715e] px-5 text-sm font-black text-white disabled:opacity-40"
-              >
-                {busy === "cancel_subscription" ? "해지 처리 중..." : "최종 해지"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {resubscribeAuth && (resubscribeUseDifferentCard ? (
         <ReplacementCardPaymentOverlay

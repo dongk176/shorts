@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { StructuredData } from "@/components/structured-data";
 import { GoogleAnalytics } from "@/components/google-analytics";
 import { LanguageSelector } from "@/components/language-selector";
+import { ProjectFeedbackOverlay } from "@/components/project-feedback-overlay";
+import { UserOnboardingOverlay } from "@/components/user-onboarding-overlay";
 import { UsageProvider, type UsageState } from "@/components/usage-provider";
 import { getDb } from "@/lib/db";
 import { I18nProvider } from "@/lib/i18n/provider";
@@ -136,6 +138,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           <StructuredData data={websiteData} />
           <UsageProvider initialState={initialUsageState}>
             {children}
+            <UserOnboardingOverlay />
+            <ProjectFeedbackOverlay />
           </UsageProvider>
           <GoogleAnalytics measurementId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID} />
           <LanguageSelector />

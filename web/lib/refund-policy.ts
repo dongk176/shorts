@@ -19,11 +19,145 @@ export type CustomerEarlyTerminationQuote = {
   withinSevenDays: boolean;
 };
 
+export type PrepaidPackageMonthState = {
+  completedMonths: number;
+  currentMonthNumber: number | null;
+  currentMonthStart: Date | null;
+  currentMonthEnd: Date | null;
+};
+
+export type PrepaidPackageRefundQuote = {
+  monthlyUnitKrw: number;
+  completedMonths: number;
+  currentMonthNumber: number | null;
+  currentMonthUsed: boolean;
+  chargedMonths: number;
+  providedServiceKrw: number;
+  remainingServiceKrw: number;
+  policyRefundTotalKrw: number;
+  refundAmountKrw: number;
+  entitlementEndsAt: Date;
+  withinSevenDays: boolean;
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * DAY_MS;
 
 function validDate(value: Date) {
   return Number.isFinite(value.getTime());
+}
+
+function addKstMonths(date: Date, months: number) {
+  const offset = 9 * 60 * 60 * 1000;
+  const kst = new Date(date.getTime() + offset);
+  const year = kst.getUTCFullYear();
+  const month = kst.getUTCMonth() + months;
+  const day = kst.getUTCDate();
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const shifted = new Date(Date.UTC(
+    year,
+    month,
+    Math.min(day, lastDay),
+    kst.getUTCHours(),
+    kst.getUTCMinutes(),
+    kst.getUTCSeconds(),
+    kst.getUTCMilliseconds(),
+  ));
+  return new Date(shifted.getTime() - offset);
+}
+
+export function getPrepaidPackageMonthState(input: {
+  periodStart: Date;
+  prepaidMonths: number;
+  requestedAt?: Date;
+}): PrepaidPackageMonthState {
+  const { periodStart, prepaidMonths, requestedAt = new Date() } = input;
+  if (!validDate(periodStart) || !validDate(requestedAt)) {
+    throw new Error("패키지 이용기간이 올바르지 않습니다.");
+  }
+  if (!Number.isSafeInteger(prepaidMonths) || prepaidMonths < 1 || prepaidMonths > 120) {
+    throw new Error("패키지 개월 수가 올바르지 않습니다.");
+  }
+
+  let completedMonths = 0;
+  while (
+    completedMonths < prepaidMonths
+    && addKstMonths(periodStart, completedMonths + 1).getTime() <= requestedAt.getTime()
+  ) {
+    completedMonths += 1;
+  }
+  if (completedMonths >= prepaidMonths) {
+    return {
+      completedMonths: prepaidMonths,
+      currentMonthNumber: null,
+      currentMonthStart: null,
+      currentMonthEnd: null,
+    };
+  }
+
+  return {
+    completedMonths,
+    currentMonthNumber: completedMonths + 1,
+    currentMonthStart: addKstMonths(periodStart, completedMonths),
+    currentMonthEnd: addKstMonths(periodStart, completedMonths + 1),
+  };
+}
+
+export function quotePrepaidPackageRefund(input: {
+  actualPaymentKrw: number;
+  refundedOrReservedKrw?: number;
+  periodStart: Date;
+  prepaidMonths: number;
+  currentMonthUsed: boolean;
+  requestedAt?: Date;
+}): PrepaidPackageRefundQuote {
+  const {
+    actualPaymentKrw,
+    periodStart,
+    prepaidMonths,
+    currentMonthUsed,
+    requestedAt = new Date(),
+  } = input;
+  const refundedOrReservedKrw = input.refundedOrReservedKrw || 0;
+  if (!Number.isSafeInteger(actualPaymentKrw) || actualPaymentKrw < 0) {
+    throw new Error("실 결제금액이 올바르지 않습니다.");
+  }
+  if (!Number.isSafeInteger(refundedOrReservedKrw) || refundedOrReservedKrw < 0) {
+    throw new Error("기존 환불금액이 올바르지 않습니다.");
+  }
+
+  const monthState = getPrepaidPackageMonthState({
+    periodStart,
+    prepaidMonths,
+    requestedAt,
+  });
+  const chargeCurrentMonth = monthState.currentMonthNumber !== null && currentMonthUsed;
+  const chargedMonths = Math.min(
+    prepaidMonths,
+    monthState.completedMonths + (chargeCurrentMonth ? 1 : 0),
+  );
+  const providedServiceKrw = Math.floor(
+    actualPaymentKrw * (chargedMonths / prepaidMonths),
+  );
+  const remainingServiceKrw = Math.max(0, actualPaymentKrw - providedServiceKrw);
+  const entitlementEndsAt = chargeCurrentMonth && monthState.currentMonthEnd
+    ? monthState.currentMonthEnd
+    : requestedAt;
+  const withinSevenDays = requestedAt.getTime() <= periodStart.getTime() + SEVEN_DAYS_MS;
+
+  return {
+    monthlyUnitKrw: Math.floor(actualPaymentKrw / prepaidMonths),
+    completedMonths: monthState.completedMonths,
+    currentMonthNumber: monthState.currentMonthNumber,
+    currentMonthUsed: chargeCurrentMonth,
+    chargedMonths,
+    providedServiceKrw,
+    remainingServiceKrw,
+    policyRefundTotalKrw: remainingServiceKrw,
+    refundAmountKrw: Math.max(0, remainingServiceKrw - refundedOrReservedKrw),
+    entitlementEndsAt,
+    withinSevenDays,
+  };
 }
 
 export function quoteCustomerEarlyTerminationRefund(input: {

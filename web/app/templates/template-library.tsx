@@ -21,6 +21,7 @@ import {
   updateFavoriteTemplateKeys,
   type TemplateFavoriteKey,
 } from "@/lib/template-favorites";
+import { userFacingErrorMessage } from "@/lib/public-error";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
 
 type TemplateShowcase = {
@@ -321,7 +322,7 @@ export function TemplateLibrary({
         : "자주 쓰는 템플릿에서 해제되었습니다.");
     } catch (error) {
       setFavoriteTemplateKeys(previousTemplateKeys);
-      showToast(error instanceof Error ? error.message : "자주 쓰는 템플릿을 저장하지 못했습니다.");
+      showToast(userFacingErrorMessage(error, "자주 쓰는 템플릿을 저장하지 못했습니다."));
     } finally {
       setSavingTemplateKey(null);
     }

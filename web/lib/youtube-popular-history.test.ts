@@ -129,6 +129,11 @@ describe("accumulated reusable popular videos", () => {
     expect(historyQuery).toContain("partition by i.video_id");
     expect(historyQuery).toContain("i.license='creativeCommon'");
     expect(historyQuery).toContain("order by view_count desc, last_seen_at desc");
+    expect(historyQuery).toContain(
+      "select completed_at from shorts_mvp.popular_search_runs where id=",
+    );
+    expect(query.mock.calls[1].slice(1)).toContain(run.id);
+    expect(query.mock.calls[1].slice(1)).not.toContain(run.completedAt.toISOString());
   });
 
   it("skips reusable-only snapshots and excludes CC videos from the general view list", async () => {
@@ -182,5 +187,10 @@ describe("accumulated reusable popular videos", () => {
     expect(combinedQuery).toContain("join shorts_mvp.popular_video_runs");
     expect(combinedQuery).toContain("partition by video_id");
     expect(combinedQuery).toContain("order by view_count desc, last_seen_at desc");
+    expect(combinedQuery.match(
+      /select completed_at from shorts_mvp\.popular_search_runs where id=/g,
+    )).toHaveLength(2);
+    expect(query.mock.calls[1].slice(1).filter((value) => value === run.id)).toHaveLength(2);
+    expect(query.mock.calls[1].slice(1)).not.toContain(run.completedAt.toISOString());
   });
 });

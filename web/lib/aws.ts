@@ -1,6 +1,13 @@
-import { DeleteObjectsCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
+import { getSignedUrl as getS3SignedUrl } from "@aws-sdk/s3-request-presigner";
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
+import { shortDownloadContentDisposition } from "@/lib/short-download";
 
 const region = process.env.AWS_REGION || "ap-northeast-2";
 function credentials() {
@@ -16,6 +23,28 @@ function credentials() {
 
 function s3Client() { return new S3Client({ region, credentials: credentials() }); }
 function lambdaClient() { return new LambdaClient({ region, credentials: credentials() }); }
+
+export async function getShortDownloadUrl(
+  key: string,
+  filename: string,
+  expiresIn: number,
+) {
+  const bucket = process.env.AWS_S3_OUTPUT_BUCKET;
+  if (!bucket) throw new Error("AWS_S3_OUTPUT_BUCKET이 설정되지 않았습니다.");
+  if (!/^outputs\/[A-Za-z0-9/_-]+\.mp4$/.test(key)) {
+    throw new Error("다운로드할 수 없는 영상 경로입니다.");
+  }
+  return getS3SignedUrl(
+    s3Client(),
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      ResponseContentDisposition: shortDownloadContentDisposition(filename),
+      ResponseContentType: "video/mp4",
+    }),
+    { expiresIn: Math.max(1, Math.min(300, Math.floor(expiresIn))) },
+  );
+}
 
 export async function wakeOutboxDispatcher() {
   const functionArn = process.env.AWS_OUTBOX_DISPATCHER_FUNCTION_ARN;

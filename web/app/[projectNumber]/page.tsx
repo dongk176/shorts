@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import { ProjectPage } from "../shorts-app";
+import { notFound, permanentRedirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -27,5 +26,5 @@ export default async function ProjectNumberPage({
   const projectNumber = Number(rawProjectNumber);
   if (!Number.isSafeInteger(projectNumber)) notFound();
 
-  return <ProjectPage projectNumber={projectNumber} />;
+  permanentRedirect(`/projects/${projectNumber}`);
 }

@@ -9,6 +9,7 @@ import {
   purchasePlanWithSavedCard,
 } from "@/lib/billing-client";
 import type { PricingV2PlanProduct } from "@/lib/pricing-v2";
+import { userFacingErrorMessage } from "@/lib/public-error";
 import { useEffect, useRef, useState } from "react";
 
 type CheckoutMode = "subscribe" | "change_subscription";
@@ -93,6 +94,12 @@ export function PlanCheckoutOverlay({
   const chargeAmount = mode === "change_subscription"
     ? changeQuote?.chargeAmountKrw ?? null
     : product.totalPriceKrw;
+  const packageTerms = product.kind === "package"
+    ? {
+      months: product.durationMonths,
+      monthlyPriceKrw: product.monthlyPriceKrw,
+    }
+    : undefined;
   const cardNumber = form.cardNumberParts.join("");
   const cardStepValid = (
     cardNumber.length === 16
@@ -153,7 +160,7 @@ export function PlanCheckoutOverlay({
       })
       .catch((cause) => {
         if (!controller.signal.aborted) {
-          setError(cause instanceof Error ? cause.message : "결제금액을 불러오지 못했습니다.");
+          setError(userFacingErrorMessage(cause, "결제금액을 불러오지 못했습니다."));
         }
       })
       .finally(() => {
@@ -288,7 +295,7 @@ export function PlanCheckoutOverlay({
       if (result.checkoutId) success.searchParams.set("checkoutId", result.checkoutId);
       window.location.assign(success);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "결제를 완료하지 못했습니다.");
+      setError(userFacingErrorMessage(cause, "결제를 완료하지 못했습니다."));
     } finally {
       operationInFlightRef.current = false;
       setBusy(false);
@@ -326,7 +333,7 @@ export function PlanCheckoutOverlay({
       if (result.checkoutId) success.searchParams.set("checkoutId", result.checkoutId);
       window.location.assign(success);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "결제를 완료하지 못했습니다.");
+      setError(userFacingErrorMessage(cause, "결제를 완료하지 못했습니다."));
     } finally {
       operationInFlightRef.current = false;
       setBusy(false);
@@ -458,6 +465,7 @@ export function PlanCheckoutOverlay({
             <PurchaseTermsConsent
               checked={form.consent}
               onChange={(consent) => update("consent", consent)}
+              packageTerms={packageTerms}
             />
           </div>
         ) : step === "card" ? (
@@ -563,6 +571,7 @@ export function PlanCheckoutOverlay({
             <PurchaseTermsConsent
               checked={form.consent}
               onChange={(consent) => update("consent", consent)}
+              packageTerms={packageTerms}
             />
           </div>
         ) : (

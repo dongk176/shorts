@@ -154,7 +154,7 @@ export function ProjectCard({ job }: { job: VideoJob }) {
 
   return (
     <Link
-      href={`/${job.projectNumber}`}
+      href={`/projects/${job.projectNumber}`}
       target="_blank"
       rel="noopener noreferrer"
       aria-label={locale === "ko" ? `프로젝트 /${job.projectNumber}: ${job.videoTitle} 새 탭에서 열기` : locale === "en" ? `Open project /${job.projectNumber}: ${job.videoTitle} in a new tab` : `プロジェクト /${job.projectNumber}: ${job.videoTitle} を新しいタブで開く`}

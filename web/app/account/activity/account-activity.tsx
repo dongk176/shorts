@@ -26,9 +26,13 @@ function minutes(value: unknown) {
 }
 const eventLabel: Record<string, string> = {
   plan_grant: "플랜 시간 지급", addon_grant: "추가시간 지급",
+  feedback_reward: "피드백 보상",
   upgrade_grant: "업그레이드 새 플랜 지급", upgrade_carryover: "업그레이드 잔여시간 이월",
   annual_or_monthly_grant: "월별 플랜 지급", source_consumed: "작업 사용",
   reservation_released: "작업 시간 복구",
+};
+const productLabel: Record<string, string> = {
+  feedback_reward_30m: "원본 영상 처리시간 30분",
 };
 const paymentStatusLabel: Record<string, string> = {
   pending: "결제 대기",
@@ -109,7 +113,7 @@ export function AccountActivity() {
           <tbody className="divide-y divide-white/[.06]">{data.items.map((item) => <tr key={String(item.id)}>
             <td className="whitespace-nowrap px-5 py-4 text-neutral-400">{date(item.occurredAt)}</td>
             <td className="whitespace-nowrap px-4 py-4 font-bold">{eventLabel[String(item.eventType)] || String(item.eventType)}</td>
-            <td className="px-4 py-4"><p>{item.projectNumber ? `프로젝트 #${String(item.projectNumber)}` : String(item.productCode || "-")}</p>{Boolean(item.videoTitle) && <p className="mt-1 max-w-md truncate text-xs text-neutral-500">{String(item.videoTitle)}</p>}</td>
+            <td className="px-4 py-4"><p>{item.projectNumber ? `프로젝트 #${String(item.projectNumber)}` : productLabel[String(item.productCode)] || String(item.productCode || "-")}</p>{Boolean(item.videoTitle) && <p className="mt-1 max-w-md truncate text-xs text-neutral-500">{String(item.videoTitle)}</p>}</td>
             <td className={`whitespace-nowrap px-4 py-4 font-black ${Number(item.seconds || 0) < 0 ? "text-[#ff9b8d]" : "text-emerald-300"}`}>{minutes(item.seconds)}</td>
             <td className="whitespace-nowrap px-5 py-4 text-neutral-400">{String(item.result || "-")}</td>
           </tr>)}</tbody>

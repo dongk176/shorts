@@ -433,7 +433,11 @@ export async function getPopularSearchVideos(
           ) as duplicate_rank
         from shorts_mvp.popular_search_items i
         join shorts_mvp.popular_search_runs r on r.id=i.run_id
-        where r.status='ready' and r.completed_at <= ${run.completedAt}
+        where r.status='ready' and r.completed_at <= (
+          select completed_at
+          from shorts_mvp.popular_search_runs
+          where id=${run.id}
+        )
           and i.license='creativeCommon'
           and (${category}='all' or i.category=${category})
           and (${longFormOnly}=false or i.duration_seconds >= ${POPULAR_VIDEO_LONG_FORM_SECONDS})
@@ -488,7 +492,11 @@ export async function getReusablePopularVideos(
         i.collected_at, r.completed_at as last_seen_at, 0 as source_priority
       from shorts_mvp.popular_search_items i
       join shorts_mvp.popular_search_runs r on r.id=i.run_id
-      where r.status='ready' and r.completed_at <= ${run.completedAt}
+      where r.status='ready' and r.completed_at <= (
+        select completed_at
+        from shorts_mvp.popular_search_runs
+        where id=${run.id}
+      )
         and i.license='creativeCommon'
       union all
       select
@@ -497,7 +505,11 @@ export async function getReusablePopularVideos(
         i.collected_at, r.completed_at as last_seen_at, 1 as source_priority
       from shorts_mvp.popular_video_items i
       join shorts_mvp.popular_video_runs r on r.id=i.run_id
-      where r.status='ready' and r.completed_at <= ${run.completedAt}
+      where r.status='ready' and r.completed_at <= (
+        select completed_at
+        from shorts_mvp.popular_search_runs
+        where id=${run.id}
+      )
         and i.license='creativeCommon'
     ),
     deduplicated as (

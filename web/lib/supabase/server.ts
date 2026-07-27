@@ -20,7 +20,12 @@ function createConfiguredSupabaseServerClient(config: SupabaseAuthConfig, cookie
           // Server Components receive a read-only cookie store. Supabase may
           // still attempt a refresh while getUser() is reading the session;
           // Route Handlers keep using the writable path above.
-          if (error instanceof Error && error.message.includes("Cookies can only be modified")) return;
+          const message = error instanceof Error
+            ? error.message
+            : typeof error === "object" && error && "message" in error
+              ? String(error.message)
+              : String(error);
+          if (message.includes("Cookies can only be modified")) return;
           throw error;
         }
       },
@@ -45,7 +50,11 @@ export async function getAuthenticatedUser() {
   const config = getSupabaseAuthConfig();
   if (!config) return null;
   const supabase = createConfiguredSupabaseServerClient(config, cookieStore);
-  const { data, error } = await supabase.auth.getUser();
-  if (error) return null;
-  return data.user;
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) return null;
+    return data.user;
+  } catch {
+    return null;
+  }
 }

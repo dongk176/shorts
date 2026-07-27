@@ -50,6 +50,7 @@ export async function GET(request: Request) {
         with activity as (
           select g.id::text || ':credited' as id,g.created_at as occurred_at,
             case
+              when g.product_code='feedback_reward_30m' then 'feedback_reward'
               when g.kind='addon' then 'addon_grant'
               when s.billing_cycle='yearly'
                 and o.approved_at is not null

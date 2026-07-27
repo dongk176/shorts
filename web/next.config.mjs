@@ -11,6 +11,18 @@ const nextConfig = {
     minimumCacheTTL: 2_678_400,
   },
   async headers() {
+    const productionSecurityHeaders = [
+      {
+        key: "Content-Security-Policy",
+        value: "base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self' https://api.thepayone.com https://pay.nicepay.co.kr https://sandbox-pay.nicepay.co.kr",
+      },
+      { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
+      { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), browsing-topics=()" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "X-Frame-Options", value: "DENY" },
+      { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
+    ];
     const immutableShowcaseHeaders = [
       { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
     ];
@@ -26,8 +38,10 @@ const nextConfig = {
       { key: "X-Frame-Options", value: "DENY" },
     ];
     return [
+      { source: "/:path*", headers: productionSecurityHeaders },
       { source: "/transformation-showcase/:path*", headers: immutableShowcaseHeaders },
       { source: "/showcase-examples/:path*", headers: immutableShowcaseHeaders },
+      { source: "/home-showcase/:path*", headers: immutableShowcaseHeaders },
       { source: "/template-backgrounds/:path*", headers: revalidatingStaticMediaHeaders },
       { source: "/ebook-previews/:path*", headers: revalidatingStaticMediaHeaders },
       { source: "/east-cut-logo.png", headers: revalidatingStaticMediaHeaders },

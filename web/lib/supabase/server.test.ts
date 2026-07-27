@@ -72,4 +72,36 @@ describe("getAuthenticatedUser", () => {
 
     await expect(getAuthenticatedUser()).resolves.toBeNull();
   });
+
+  it("ignores read-only cookie writes requested while rendering a Server Component", async () => {
+    mocks.getConfig.mockReturnValue({ url: "https://project.supabase.co", key: "publishable" });
+    cookieStore.set.mockImplementation(() => {
+      throw {
+        message: "Cookies can only be modified in a Server Action or Route Handler.",
+      };
+    });
+    mocks.createServerClient.mockImplementation((_url, _key, options) => ({
+      auth: {
+        getUser: async () => {
+          options.cookies.setAll([{
+            name: "sb-project-auth-token",
+            value: "",
+            options: { maxAge: 0 },
+          }]);
+          return { data: { user: null }, error: new Error("expired") };
+        },
+      },
+    }));
+
+    await expect(getAuthenticatedUser()).resolves.toBeNull();
+  });
+
+  it("treats an auth transport failure as signed out", async () => {
+    mocks.getConfig.mockReturnValue({ url: "https://project.supabase.co", key: "publishable" });
+    mocks.createServerClient.mockReturnValue({
+      auth: { getUser: vi.fn().mockRejectedValue(new Error("network unavailable")) },
+    });
+
+    await expect(getAuthenticatedUser()).resolves.toBeNull();
+  });
 });

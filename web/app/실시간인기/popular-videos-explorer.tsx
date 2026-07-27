@@ -14,6 +14,7 @@ import type { SiteLocale } from "@/lib/i18n/config";
 import { formatLocale } from "@/lib/i18n/config";
 import { formatNumber } from "@/lib/i18n/format";
 import { useI18n } from "@/lib/i18n/provider";
+import { userFacingErrorMessage } from "@/lib/public-error";
 
 const dataTypeOptions: Array<{ value: PopularVideoType; label: string }> = [
   { value: "trending", label: "실시간 급상승" },
@@ -321,7 +322,7 @@ function VideoCard({ video, rank, active, onOpen, onClose }: {
       await navigator.clipboard.writeText(youtubeUrl);
       window.location.assign("/");
     } catch (cause) {
-      setCopyError(cause instanceof Error ? cause.message : "영상 링크를 복사하지 못했습니다.");
+      setCopyError(userFacingErrorMessage(cause, "영상 링크를 복사하지 못했습니다."));
       setCopying(false);
     }
   };
@@ -441,7 +442,7 @@ export function PopularVideosExplorer({
       .then((result) => setResponse(result))
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(cause instanceof Error ? cause.message : "인기 영상을 불러오지 못했습니다.");
+        setError(userFacingErrorMessage(cause, "인기 영상을 불러오지 못했습니다."));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -479,7 +480,7 @@ export function PopularVideosExplorer({
       });
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
-      setLoadMoreError(cause instanceof Error ? cause.message : "추가 영상을 불러오지 못했습니다.");
+      setLoadMoreError(userFacingErrorMessage(cause, "추가 영상을 불러오지 못했습니다."));
     } finally {
       if (!controller.signal.aborted) setLoadingMore(false);
     }

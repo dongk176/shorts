@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { siteLocales, type SiteLocale } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
+import { userFacingErrorMessage } from "@/lib/public-error";
 
 const languageLabels: Record<SiteLocale, string> = {
   ko: "한국어",
@@ -52,7 +53,7 @@ export function LanguageSelector() {
       router.refresh();
     } catch (cause) {
       setPendingLocale(null);
-      setError(cause instanceof Error ? cause.message : t("common.languageError"));
+      setError(userFacingErrorMessage(cause, t("common.languageError")));
     }
   }
 

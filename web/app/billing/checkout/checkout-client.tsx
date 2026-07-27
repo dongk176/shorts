@@ -8,6 +8,7 @@ import { paidPlanCodes, type PaidPlanCode } from "@/lib/contracts";
 import { billingPostJson } from "@/lib/billing-client";
 import { pricingPlans, yearlyCharge } from "@/lib/legacy-pricing";
 import { getPricingV2Plan } from "@/lib/pricing-v2";
+import { userFacingErrorMessage } from "@/lib/public-error";
 import { PurchaseTermsConsent } from "@/components/purchase-terms-consent";
 import { PaymentMessageOverlay } from "@/components/payment-message-overlay";
 
@@ -238,7 +239,7 @@ export function BillingCheckoutClient() {
       })
       .catch((cause) => {
         if (controller.signal.aborted) return;
-        setError(cause instanceof Error ? cause.message : "플랜 변경 금액을 불러오지 못했습니다.");
+        setError(userFacingErrorMessage(cause, "플랜 변경 금액을 불러오지 못했습니다."));
       })
       .finally(() => {
         if (!controller.signal.aborted) setQuoteLoading(false);
@@ -306,7 +307,7 @@ export function BillingCheckoutClient() {
       if (selectedPricingV2Plan) success.searchParams.set("source", "pricing");
       window.location.assign(success);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "정기결제를 완료하지 못했습니다.");
+      setError(userFacingErrorMessage(cause, "정기결제를 완료하지 못했습니다."));
     } finally {
       setBusy(false);
     }
@@ -375,6 +376,12 @@ export function BillingCheckoutClient() {
                       checked={form.consent}
                       onChange={(consent) => update("consent", consent)}
                       className="sm:col-span-2"
+                      packageTerms={selectedPricingV2Plan?.kind === "package"
+                        ? {
+                          months: selectedPricingV2Plan.durationMonths,
+                          monthlyPriceKrw: selectedPricingV2Plan.monthlyPriceKrw,
+                        }
+                        : undefined}
                     />
                   )}
                   <button type="submit" disabled={!valid || busy || quoteLoading} className="sm:col-span-2 min-h-13 rounded-xl bg-[#ff715e] px-5 py-3.5 text-sm font-black text-white shadow-[0_14px_32px_rgba(255,113,94,.18)] transition hover:bg-[#ff806f] disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none">{quoteLoading ? "변경 금액 계산 중..." : submitLabel}</button>

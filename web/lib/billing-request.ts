@@ -51,11 +51,22 @@ function verifiedBrowserOrigin(request: Request) {
 }
 
 export function assertBillingMutationRequest(request: Request) {
+  assertSameOriginJsonRequest(request, "결제 요청");
+}
+
+export function assertSameOriginJsonRequest(request: Request, label = "요청") {
   const contentType = request.headers.get("content-type") || "";
   if (!contentType.toLowerCase().startsWith("application/json")) {
-    throw new HttpError(415, "JSON 형식의 결제 요청만 허용됩니다.");
+    throw new HttpError(415, `JSON 형식의 ${label}만 허용됩니다.`);
   }
-  verifiedBrowserOrigin(request);
+  try {
+    verifiedBrowserOrigin(request);
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 403) {
+      throw new HttpError(403, `다른 출처에서 보낸 ${label}은 허용되지 않습니다.`);
+    }
+    throw error;
+  }
 }
 
 export function billingRequestOrigin(request: Request) {

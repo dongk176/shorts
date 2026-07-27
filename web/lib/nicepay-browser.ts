@@ -2,6 +2,8 @@
 
 import { nicepayLanguage } from "@/lib/i18n/config";
 import { currentClientLocale } from "@/lib/i18n/errors";
+import { messagesByLocale } from "@/lib/i18n/messages";
+import { userFacingErrorMessage } from "@/lib/public-error";
 
 export type NicepayCheckout = {
   clientId: string;
@@ -69,15 +71,16 @@ function loadNicepaySdk(url: string) {
 }
 
 function nicepaySdkError(value: unknown) {
+  const locale = currentClientLocale();
+  const fallback = locale === "ko"
+    ? "나이스페이 결제창에서 오류가 발생했습니다."
+    : messagesByLocale[locale]["common.genericError"];
   const rawMessage = typeof value === "object"
     && value !== null
     && "errorMsg" in value
     ? (value as NicepaySdkError).errorMsg
     : null;
-  const message = typeof rawMessage === "string"
-    ? rawMessage.trim()
-    : "나이스페이 결제창에서 오류가 발생했습니다.";
-  return new Error(message || "나이스페이 결제창에서 오류가 발생했습니다.");
+  return new Error(userFacingErrorMessage(rawMessage, fallback));
 }
 
 export async function requestNicepayOneTimePayment(checkout: NicepayCheckout) {

@@ -70,4 +70,13 @@ describe("refreshSupabaseSession", () => {
     expect(mocks.createServerClient).not.toHaveBeenCalled();
     expect(response.headers.get("x-middleware-next")).toBe("1");
   });
+
+  it("continues the request when session refresh has a transport failure", async () => {
+    mocks.getClaims.mockRejectedValue(new Error("network unavailable"));
+    const request = new NextRequest("https://www.easycut.co.kr/settings");
+
+    const response = await refreshSupabaseSession(request);
+
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+  });
 });

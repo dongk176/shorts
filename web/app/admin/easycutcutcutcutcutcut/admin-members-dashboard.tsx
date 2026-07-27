@@ -80,9 +80,11 @@ function statusTone(status: string | null) {
 
 export function AdminMembersDashboard({
   members,
+  totalCount,
   initialFilters,
 }: {
   members: AdminMember[];
+  totalCount: number;
   initialFilters: {
     query: string;
     memberType: string;
@@ -149,8 +151,13 @@ export function AdminMembersDashboard({
         <div className="border-b border-white/10 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-black">회원</h2>
-              <p className="mt-1 text-xs text-neutral-500">최근 활동 회원 100명 · 구독 상태와 자동결제 상태를 함께 관리합니다.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-black">회원</h2>
+                <span className="rounded-full border border-[#ff8c7c]/25 bg-[#ff8c7c]/10 px-2.5 py-1 text-xs font-black text-[#ffb4a8]">
+                  필터 결과 총 {totalCount.toLocaleString("ko-KR")}명
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-neutral-500">조건에 맞는 회원 전체 표시 · 구독 상태와 자동결제 상태를 함께 관리합니다.</p>
             </div>
             <form className="grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-[240px_160px_160px_160px_auto]" method="get">
               <input type="hidden" name="tab" value="members" />

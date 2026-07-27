@@ -8,10 +8,10 @@
 - `billing_payment_methods`: AES-256-GCM 암호화 더페이원 cardId·결제 연락처, 검색용 해시, 비민감 카드 요약과 자동결제 일정 상태
 - `billing_card_verifications`: 가격 페이지 1단계의 0원 카드 인증 결과를 15분 동안 보관하는 임시 암호화 cardId와 폐기·소비 상태
 - `user_subscriptions`: 결제 주기, 현재 기간, 더페이원 일정, 변경·해지·수동검토 상태
-- `billing_orders`, `billing_attempts`: 서버 가격 스냅샷, 승인번호·PG 거래일, 할부개월·캠페인 조건 스냅샷, 패키지 상품별 계정당 1회 구매 제약과 승인 시도 기록
+- `billing_orders`, `billing_attempts`: 서버 가격 스냅샷, 승인번호·PG 거래일, 할부개월·캠페인 조건 스냅샷, 패키지 상품별 계정당 1회 구매 제약, 주문별 `refund_policy_version`과 승인 시도 기록
 - `billing_payment_events`: 더페이원 `trxId` 멱등성, 주문 대조 및 결과 통지 처리 기록
 - `popular_filter_usage_events`: 유료 실시간 인기 필터 결과를 서버가 정상 제공한 시각·조건·결과 수와 당시 권한을 제공한 구독·주문 원장
-- `admin_billing_refunds`, `admin_subscription_changes`, `admin_audit_logs`: 관리자 환불·회원 구독 상태 변경 멱등 원장과 관리자 작업 감사 기록
+- `admin_billing_refunds`, `admin_subscription_changes`, `admin_audit_logs`: 관리자 환불·회원 구독 상태 변경 멱등 원장, 환불정책 버전·계산 스냅샷·권한 종료 방식과 관리자 작업 감사 기록
 - `subscription_upgrade_refunds`: 과거 판매 플랜의 수동 부분환불 기록 보존용 원장(신규 상품에서는 생성하지 않음)
 - `installment_campaigns`, `installment_campaign_terms`: 관리자 초안·게시형 월별 카드 할부 혜택
 - `payment_provider_installment_capabilities`: 더페이원 실제 승인 지원을 확인한 할부개월
@@ -33,6 +33,6 @@
 
 적용은 `npm run db:migrate`입니다. 서버와 Worker는 schema-qualified SQL만 사용합니다. Cleanup Lambda에서 PostgREST를 쓸 경우 Supabase API exposed schemas에 `shorts_mvp`를 추가하되, schema/table 권한은 service role에만 유지합니다.
 
-이지컷 프로는 최초 더페이원 승인 시각부터 유료기간을 시작하고, 자동 승인 결과 통지마다 기본시간 60분을 지급하면서 기존 Pro 이용기간 끝에 1개월을 추가합니다. 최종 해지 시 PG 일정을 즉시 중지하되 이미 결제한 이용기간은 유지합니다. 다시 구독하면 저장 카드를 확인해 즉시 결제하고 60분을 지급하며, 남은 이용기간 끝에 1개월을 추가한 뒤 기존 자동결제 일정을 재활성화합니다. 기간 패키지는 승인일부터 독립된 3·6·12개월 이용기간을 시작하고, 활성 상태인 동안 매월 상품별 시간을 지급하며 자동결제하지 않습니다. 스타터·전문가의 기간별 각 상품은 계정당 한 번만 구매할 수 있고, 서로 다른 상품을 구매한 경우 각 기간과 월 지급 일정을 독립적으로 보존합니다. 모든 시각은 DB에 UTC `timestamptz`로 저장합니다.
+이지컷 프로는 최초 더페이원 승인 시각부터 유료기간을 시작하고, 자동 승인 결과 통지마다 기본시간 60분을 지급하면서 기존 Pro 이용기간 끝에 1개월을 추가합니다. 최종 해지 시 PG 일정을 즉시 중지하되 이미 결제한 이용기간은 유지합니다. 다시 구독하면 저장 카드를 확인해 즉시 결제하고 60분을 지급하며, 남은 이용기간 끝에 1개월을 추가한 뒤 기존 자동결제 일정을 재활성화합니다. 기간 패키지는 승인일부터 독립된 3·6·12개월 이용기간을 시작하고, 활성 상태인 동안 매월 상품별 시간을 지급하며 자동결제하지 않습니다. 스타터·전문가의 기간별 각 상품은 계정당 한 번만 구매할 수 있고, 서로 다른 상품을 구매한 경우 각 기간과 월 지급 일정을 독립적으로 보존합니다. 기존 주문은 환불정책 v1, 신규 주문은 v2로 기록하여 계산 기준을 소급 변경하지 않습니다. v2 패키지는 완료 월과 현재 사용 월을 계약 월단가로 정산하고, 현재 사용 월을 공제한 경우 월말 예약 종료, 현재 월 미사용 환불은 즉시 종료로 기록합니다. 모든 시각은 DB에 UTC `timestamptz`로 저장합니다.
 
 로그인 사용자의 작업·쇼츠·사용량 조회는 `app_users.id` 소유권으로 묶여 여러 브라우저 세션에서도 같은 데이터를 봅니다. 익명 사용자는 기존처럼 현재 `mvp_session_id`만 볼 수 있으며, 로그인 순간 현재 익명 세션의 행들에 `user_id`를 원자적으로 연결합니다.

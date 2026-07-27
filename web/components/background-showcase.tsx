@@ -6,43 +6,55 @@ import type { KeyboardEvent, PointerEvent } from "react";
 import { localizedValue } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
 
-const SHOWCASE_ASSET_VERSION = "20260722";
+const SHOWCASE_ASSET_VERSION = "20260726-2";
 const showcaseImages = [
-  "/showcase-examples/example-01.png",
-  "/showcase-examples/example-02.png",
-  "/showcase-examples/example-03.png",
-  "/showcase-examples/example-04.png",
-  "/showcase-examples/example-05.png",
-  "/showcase-examples/example-06.png",
-  "/showcase-examples/example-07.png",
-  "/showcase-examples/example-08.png",
-  "/showcase-examples/example-09.png",
-  "/showcase-examples/example-10.png",
-  "/showcase-examples/example-11.png",
-  "/showcase-examples/example-12.png",
-  "/showcase-examples/example-13.png",
-  "/showcase-examples/example-14.png",
-  "/showcase-examples/example-15.png",
-  "/showcase-examples/example-16.png",
-  "/showcase-examples/example-17.png",
-  "/showcase-examples/example-18.png",
-].map((path) => `${path}?v=${SHOWCASE_ASSET_VERSION}`);
+  { path: "/home-showcase/showcase-02.png", channel: "chimchak" },
+  { path: "/home-showcase/showcase-01.png", channel: "malwang" },
+  { path: "/home-showcase/showcase-05.png", channel: "chimchak" },
+  { path: "/home-showcase/showcase-06.png", channel: "towmoo" },
+  { path: "/home-showcase/showcase-08.png", channel: "chimchak" },
+  { path: "/home-showcase/showcase-12.png", channel: "wildlife" },
+  { path: "/home-showcase/showcase-09.png", channel: "chimchak" },
+  { path: "/home-showcase/showcase-03.png", channel: "malwang" },
+  { path: "/home-showcase/showcase-10.png", channel: "chimchak" },
+  { path: "/home-showcase/showcase-07.png", channel: "towmoo" },
+  { path: "/home-showcase/showcase-13.png", channel: "wildlife" },
+  { path: "/home-showcase/showcase-04.png", channel: "malwang" },
+  { path: "/home-showcase/showcase-11.png", channel: "towmoo" },
+  { path: "/home-showcase/showcase-14.png", channel: "wildlife" },
+].map(({ path, channel }) => ({
+  src: `${path}?v=${SHOWCASE_ASSET_VERSION}`,
+  channel,
+}));
 
 const AUTO_SCROLL_PIXELS_PER_SECOND = 72;
 const MANUAL_RESUME_DELAY_MS = 1_200;
 const CLICK_DRAG_THRESHOLD_PX = 4;
+const MAX_SHUFFLE_ATTEMPTS = 512;
+
+function hasSeparatedChannels(images: typeof showcaseImages) {
+  return images.every((image, index) => (
+    image.channel !== images[(index + 1) % images.length]?.channel
+  ));
+}
 
 function shuffleShowcaseImages() {
-  const images = [...showcaseImages];
-  const randomValues = new Uint32Array(images.length);
-  window.crypto.getRandomValues(randomValues);
+  for (let attempt = 0; attempt < MAX_SHUFFLE_ATTEMPTS; attempt += 1) {
+    const images = [...showcaseImages];
+    const randomValues = new Uint32Array(images.length);
+    window.crypto.getRandomValues(randomValues);
 
-  for (let index = images.length - 1; index > 0; index -= 1) {
-    const swapIndex = randomValues[index] % (index + 1);
-    [images[index], images[swapIndex]] = [images[swapIndex], images[index]];
+    for (let index = images.length - 1; index > 0; index -= 1) {
+      const swapIndex = randomValues[index] % (index + 1);
+      [images[index], images[swapIndex]] = [images[swapIndex], images[index]];
+    }
+
+    if (hasSeparatedChannels(images)) {
+      return images;
+    }
   }
 
-  return images;
+  return showcaseImages;
 }
 
 export function BackgroundShowcase() {
@@ -56,7 +68,7 @@ export function BackgroundShowcase() {
   const desktopPausedRef = useRef(false);
   const resumeAtRef = useRef(0);
   const [dragging, setDragging] = useState(false);
-  const [imageOrder, setImageOrder] = useState<readonly string[]>(showcaseImages);
+  const [imageOrder, setImageOrder] = useState(showcaseImages);
 
   useEffect(() => {
     setImageOrder(shuffleShowcaseImages());
@@ -223,10 +235,10 @@ export function BackgroundShowcase() {
               className="background-showcase-copy"
               aria-hidden={copyIndex === 1 ? undefined : true}
             >
-              {imageOrder.map((src, imageIndex) => (
-                <figure className="background-showcase-item" key={`${copyIndex}-${src}`}>
+              {imageOrder.map((image, imageIndex) => (
+                <figure className="background-showcase-item" key={`${copyIndex}-${image.src}`}>
                   <Image
-                    src={src}
+                    src={image.src}
                     alt={copyIndex === 1 ? localizedValue(locale, { ko: `완성된 쇼츠 예시 ${imageIndex + 1}`, en: `Finished Shorts example ${imageIndex + 1}`, ja: `完成したショート動画の例 ${imageIndex + 1}` }) : ""}
                     fill
                     unoptimized

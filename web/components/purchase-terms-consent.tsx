@@ -7,10 +7,15 @@ export function PurchaseTermsConsent({
   checked,
   onChange,
   className = "",
+  packageTerms,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   className?: string;
+  packageTerms?: {
+    months: number;
+    monthlyPriceKrw: number;
+  };
 }) {
   const consentId = useId();
   return (
@@ -18,6 +23,11 @@ export function PurchaseTermsConsent({
       <p className="mb-3 rounded-xl border border-amber-300/15 bg-amber-300/[.06] px-3 py-2 text-xs font-bold leading-5 text-amber-100">
         3분 이상 60분 이하의 롱폼 원본 영상만 지원합니다. 유료 작업 제출·전자책 다운로드·유료 인기 필터 결과 열람 시 디지털 서비스 제공이 시작되고 이용 기록이 저장되어 청약철회·환불 판단에 사용될 수 있습니다.
       </p>
+      {packageTerms && (
+        <p className="mb-3 rounded-xl border border-[#ff8c7c]/20 bg-[#ff715e]/[.07] px-3 py-2 text-xs font-bold leading-5 text-[#ffd0ca]">
+          환불정책 v2: 이 패키지는 월별 이용권 {packageTerms.months}개를 선결제합니다. 완료된 월과 현재 사용한 월은 계약 월단가 {packageTerms.monthlyPriceKrw.toLocaleString("ko-KR")}원을 공제하고, 현재 미사용 월과 미래 월은 환불합니다. 현재 사용 월을 공제하면 그 월 말까지 이용할 수 있습니다.
+        </p>
+      )}
       <div className="flex items-start gap-3">
         <input
           id={consentId}

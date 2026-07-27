@@ -25,6 +25,12 @@ export async function refreshSupabaseSession(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getClaims();
+  try {
+    await supabase.auth.getClaims();
+  } catch (error) {
+    console.warn("supabase_session_refresh_failed", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+  }
   return response;
 }

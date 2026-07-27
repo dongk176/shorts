@@ -12,6 +12,7 @@ import { EstimatedProcessingOverlay, ProjectCard } from "@/components/project-ca
 import { ProjectReveal } from "@/components/project-reveal";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { SupportInquiryWidget } from "@/components/support-inquiry-widget";
 import { TitleOverlayPreview } from "@/components/title-overlay-preview";
 import { TransformationShowcase } from "@/components/transformation-showcase";
 import { VideoAspectRatioPicker } from "@/components/video-aspect-ratio-picker";
@@ -32,6 +33,8 @@ import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
 import { RANGE_EDIT_MIN_SECONDS, scaleTimedRanges } from "@/lib/range-editing";
+import { userFacingErrorMessage } from "@/lib/public-error";
+import { isIosDownloadDevice } from "@/lib/short-download";
 import { stateRetryDelayMs } from "@/lib/state-loading";
 import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
@@ -241,22 +244,17 @@ const customerReviews = [
   { name: "최유진", rating: 4, role: "전업 크리에이터", review: "영상 퀄리티는 진짜 미쳤는데, 가끔 맥락 못 잡고 헛소리하는 댓글 하나씩 껴있음 ㅋㅋㅋ 그건 제가 알아서 지우고 올립니다." },
   { name: "David.K", rating: 4, role: "직장인 (부업)", review: "진짜 신세계고 편하긴 한데... 구독료가 살짝 부담스럽긴 하네요. ㅠㅠ 그래도 달에 10만원씩은 쓰고 있는데, 쇼츠로 100만 이상은 벌어요 감사합니다." },
   { name: "정성민", rating: 5, role: "영상 편집자", review: "진짜 혼자서 유튜브 채널 3개 거뜬하게 돌릴 수 있음. 영상 생성 속도만 쫌 더 빨라지면 평생 구독 갑니다." },
-  { name: "Chris_Lee", rating: 5, role: "전업 크리에이터", review: "템플릿만봐도 대중이 뭐를 좋아하는지 딱 아시는 것 같아서 연간결제 박았습니다~ 숏폼 서비스 다 써봤는데, 알파컷, 피카클립이랑은 비교 불가." },
-  { name: "user_8821", rating: 5, role: "영상 편집자", review: "알파컷 썼을 땐 하이라이트 포인트를 너무 못 잡아서 답답했는데, 이건 진짜 사람 편집자가 엑기스만 쏙쏙 뽑은 느낌임." },
   { name: "윤서준", rating: 5, role: "직장인 (부업)", review: "댓글 진짜 존나 웃기게 다네 ㅋㅋㅋㅋㅋ 수정이 좀 필요하긴 한데 좋아요." },
   { name: "edit_master", rating: 5, role: "영상 편집자", review: "영상 편집자 해고했습니다. 죄송합니다 ㅎ" },
   { name: "송지아", rating: 4, role: "마케터 / 대행사", review: "와 미쳤다 진짜 ㅋㅋㅋ 근데 자막 폰트 종류 좀 늘려주세요!" },
-  { name: "조민재", rating: 4, role: "영상 편집자", review: "피카클립 쓸 바엔 무조건 이거 쓰셈. 근데 AI 댓글 중에 가끔 선 넘는 드립 치는 애들 있어서 업로드 전에 한 번씩 확인은 필수임 ㅋㅋㅋ 다른 템플릿 더 많이 만들어주세요!!! 댓글 템플릿은 좋음." },
   { name: "Jason12", rating: 5, role: "직장인 (부업)", review: "쇼츠 외주 주다가 이거 쓰고 돈 굳음요; 진짜 개꿀통." },
   { name: "한동훈", rating: 5, role: "전업 크리에이터", review: "조회수 복사기임 ㄹㅇ 안 쓸 이유가 없음." },
   { name: "임지수", rating: 5, role: "전업 크리에이터", review: "이거 쓰고 첫 쇼츠 50만 찍음 ㅋㅋ 연간 결제 박습니다." },
   { name: "Ryan_Kim", rating: 5, role: "직장인 (부업)", review: "부업으로 쇼츠 채널 2개 돌리는데 달에 150씩 꼬박꼬박 꽂힘. 구독료 뽕 뽑고도 남으니까 돈 안 아까워요." },
-  { name: "백승호", rating: 5, role: "직장인 (부업)", review: "알파컷 쓰다 답답해서 갈아탔는데 알고리즘 제대로 타네요. 이번 달 조회수 수익 보고 바로 직장 퇴사 마렵습니다 ㅋㅋㅋ" },
   { name: "user_9902", rating: 5, role: "마케터 / 대행사", review: "처음엔 반신반의하면서 한 달만 끊었는데, 영상 하나 터진 걸로 1년 치 구독료 한방에 회수함요. 감사해요 사장님." },
   { name: "오지훈", rating: 5, role: "전업 크리에이터", review: "편집자 동생한테 미안하지만... 걔 월급 줄 돈으로 이거 돌리니까 효율 10배는 나옴요;; 미안하다 고맙다!!!" },
   { name: "Sarah_J", rating: 5, role: "마케터 / 대행사", review: "솔직히 요즘 실시간 트렌드 바로 반영해서 템플릿 짜주는 건 반칙 아닙니까? 다른 숏폼 서비스들 긴장 좀 해야 할 듯." },
   { name: "신영우", rating: 5, role: "전업 크리에이터", review: "와 댓글 창 보고 소름 돋았네;; 이거 AI가 쓴 거 맞음? 릴스에 올렸더니 애들 진짜 사람인 줄 알고 키보드 배틀 뜨고 있음 개웃김 ㅋㅋㅋㅋ" },
-  { name: "황준호", rating: 5, role: "영상 편집자", review: "알파컷 피카클립 바로 유기함. 하이라이트 잡는 눈치가 다름." },
   { name: "Emily_Park", rating: 5, role: "전업 크리에이터", review: "솔직히 다른 사람한테 추천 안 할 듯… 내가 다 해먹게..ㅋㅋㅋㅋㅋㅋ" },
 ] as const;
 
@@ -806,13 +804,13 @@ async function requestJson<T>(url: string, init?: RequestInit, timeoutMs?: numbe
   try {
     response = await fetch(url, { cache: "no-store", ...init, signal: controller.signal });
   } catch (error) {
-    if (controller.signal.aborted && !externalSignal?.aborted) {
-      const locale = currentClientLocale();
-      throw new Error(locale === "ko"
+    if (externalSignal?.aborted) throw error;
+    const locale = currentClientLocale();
+    throw new Error(locale === "ko"
+      ? controller.signal.aborted
         ? "응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."
-        : messagesByLocale[locale]["error.HTTP_503"]);
-    }
-    throw error;
+        : "서버에 연결하지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요."
+      : messagesByLocale[locale]["error.HTTP_503"]);
   } finally {
     if (timeout !== undefined) window.clearTimeout(timeout);
     externalSignal?.removeEventListener("abort", abortFromExternal);
@@ -907,6 +905,61 @@ type EditTimeline = {
   version: number;
 };
 
+const TIMELINE_THUMBNAIL_COUNT = 12;
+
+function waitForVideoEvent(video: HTMLVideoElement, eventName: "loadedmetadata" | "seeked") {
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      video.removeEventListener(eventName, onReady);
+      video.removeEventListener("error", onError);
+    };
+    const onReady = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error("타임라인 미리보기를 만들지 못했습니다."));
+    };
+    video.addEventListener(eventName, onReady, { once: true });
+    video.addEventListener("error", onError, { once: true });
+  });
+}
+
+function drawTimelineFrame(
+  context: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  width: number,
+  height: number,
+) {
+  const sourceWidth = video.videoWidth;
+  const sourceHeight = video.videoHeight;
+  const sourceAspectRatio = sourceWidth / sourceHeight;
+  const targetAspectRatio = width / height;
+  let sourceX = 0;
+  let sourceY = 0;
+  let cropWidth = sourceWidth;
+  let cropHeight = sourceHeight;
+  if (sourceAspectRatio > targetAspectRatio) {
+    cropWidth = sourceHeight * targetAspectRatio;
+    sourceX = (sourceWidth - cropWidth) / 2;
+  } else {
+    cropHeight = sourceWidth / targetAspectRatio;
+    sourceY = (sourceHeight - cropHeight) / 2;
+  }
+  context.drawImage(
+    video,
+    sourceX,
+    sourceY,
+    cropWidth,
+    cropHeight,
+    0,
+    0,
+    width,
+    height,
+  );
+}
+
 function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, rangeEditingEnabled = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; rangeEditingEnabled?: boolean }) {
   const initialTemplate = templates.find((value) => value.id === item.templateId) || templates[0];
   const initialTitleAspectRatio = item.templateId === "comment-capture" && item.videoAspectRatio === "9:16"
@@ -944,12 +997,17 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [editTimeline, setEditTimeline] = useState<EditTimeline | null>(null);
   const [selectionStart, setSelectionStart] = useState(item.startSeconds);
   const [selectionEnd, setSelectionEnd] = useState(item.endSeconds);
-  const [loopSelection, setLoopSelection] = useState(true);
+  const [timelineThumbnails, setTimelineThumbnails] = useState<string[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const filmstripRef = useRef<HTMLDivElement>(null);
+  const activeRangeHandleRef = useRef<"start" | "end" | null>(null);
+  const timelineScrubbingRef = useRef(false);
   const [videoLoadError, setVideoLoadError] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const validTitle = title.trim().length > 0 && title.length <= 80 && title.split("\n").length <= 2;
   const template = templates.find((value) => value.id === templateId) || templates[0];
   const originalAspectRatio = item.videoAspectRatio || "1:1";
@@ -966,6 +1024,18 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     usesLiftedCommentLayout,
   );
   const selectionDuration = Math.round((selectionEnd - selectionStart) * 1_000) / 1_000;
+  const timelineDuration = editTimeline
+    ? Math.max(RANGE_EDIT_MIN_SECONDS, editTimeline.timelineEndSeconds - editTimeline.timelineStartSeconds)
+    : RANGE_EDIT_MIN_SECONDS;
+  const selectionLeft = editTimeline
+    ? Math.max(0, Math.min(100, (selectionStart - editTimeline.timelineStartSeconds) / timelineDuration * 100))
+    : 0;
+  const selectionWidth = editTimeline
+    ? Math.max(0, Math.min(100 - selectionLeft, selectionDuration / timelineDuration * 100))
+    : 0;
+  const playheadLeft = editTimeline
+    ? Math.max(0, Math.min(100, previewTime / timelineDuration * 100))
+    : 0;
   const timelineSelectionOffset = editTimeline
     ? selectionStart - editTimeline.timelineStartSeconds
     : 0;
@@ -1018,6 +1088,59 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     });
     return () => { cancelled = true; };
   }, [item.id, rangeEditingEnabled]);
+
+  useEffect(() => {
+    const timelineUrl = editTimeline?.url;
+    setTimelineThumbnails([]);
+    if (!timelineUrl) return;
+
+    let cancelled = false;
+    const thumbnailVideo = document.createElement("video");
+    thumbnailVideo.crossOrigin = "anonymous";
+    thumbnailVideo.muted = true;
+    thumbnailVideo.playsInline = true;
+    thumbnailVideo.preload = "auto";
+
+    const captureFrames = async () => {
+      const metadataReady = waitForVideoEvent(thumbnailVideo, "loadedmetadata");
+      thumbnailVideo.src = timelineUrl;
+      thumbnailVideo.load();
+      await metadataReady;
+      if (cancelled || !Number.isFinite(thumbnailVideo.duration) || thumbnailVideo.duration <= 0) return;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = 144;
+      canvas.height = 81;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+
+      const frames: string[] = [];
+      for (let index = 0; index < TIMELINE_THUMBNAIL_COUNT; index += 1) {
+        if (cancelled) return;
+        const targetTime = Math.min(
+          Math.max(0, thumbnailVideo.duration - 0.05),
+          thumbnailVideo.duration * ((index + 0.5) / TIMELINE_THUMBNAIL_COUNT),
+        );
+        const seeked = waitForVideoEvent(thumbnailVideo, "seeked");
+        thumbnailVideo.currentTime = targetTime;
+        await seeked;
+        if (cancelled) return;
+        drawTimelineFrame(context, thumbnailVideo, canvas.width, canvas.height);
+        frames.push(canvas.toDataURL("image/jpeg", 0.72));
+        setTimelineThumbnails([...frames]);
+      }
+    };
+
+    void captureFrames().catch(() => {
+      if (!cancelled) setTimelineThumbnails([]);
+    });
+    return () => {
+      cancelled = true;
+      thumbnailVideo.pause();
+      thumbnailVideo.removeAttribute("src");
+      thumbnailVideo.load();
+    };
+  }, [editTimeline?.url]);
 
   const selectTemplate = (value: TemplateId) => {
     setTemplateId(value);
@@ -1112,6 +1235,102 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     seekTimeline(rounded);
   };
 
+  const updateSelectionFromPointer = (handle: "start" | "end", clientX: number) => {
+    if (!editTimeline || !filmstripRef.current) return;
+    const bounds = filmstripRef.current.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
+    const value = editTimeline.timelineStartSeconds + ratio * timelineDuration;
+    if (handle === "start") updateSelectionStart(value);
+    else updateSelectionEnd(value);
+  };
+
+  const startRangeInteraction = (handle: "start" | "end", event: PointerEvent<HTMLSpanElement>) => {
+    if (event.button !== 0) return;
+    if (!filmstripRef.current) return;
+    videoRef.current?.pause();
+    timelineScrubbingRef.current = false;
+    activeRangeHandleRef.current = handle;
+    filmstripRef.current.setPointerCapture(event.pointerId);
+    updateSelectionFromPointer(handle, event.clientX);
+    event.stopPropagation();
+    event.preventDefault();
+  };
+
+  const updatePlayheadFromPointer = (clientX: number) => {
+    if (!editTimeline || !filmstripRef.current) return;
+    const bounds = filmstripRef.current.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
+    const requestedSeconds = editTimeline.timelineStartSeconds + ratio * timelineDuration;
+    const clampedSeconds = Math.max(selectionStart, Math.min(selectionEnd, requestedSeconds));
+    videoRef.current?.pause();
+    seekTimeline(clampedSeconds);
+  };
+
+  const startTimelineScrubbing = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    activeRangeHandleRef.current = null;
+    timelineScrubbingRef.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updatePlayheadFromPointer(event.clientX);
+    event.preventDefault();
+  };
+
+  const moveTimelineScrubbing = (event: PointerEvent<HTMLDivElement>) => {
+    const activeHandle = activeRangeHandleRef.current;
+    if (activeHandle) {
+      updateSelectionFromPointer(activeHandle, event.clientX);
+      event.preventDefault();
+      return;
+    }
+    if (!timelineScrubbingRef.current) return;
+    updatePlayheadFromPointer(event.clientX);
+    event.preventDefault();
+  };
+
+  const finishTimelineScrubbing = (event: PointerEvent<HTMLDivElement>) => {
+    activeRangeHandleRef.current = null;
+    timelineScrubbingRef.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const togglePreviewPlayback = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (!video.paused) {
+      video.pause();
+      return;
+    }
+    if (editTimeline) {
+      const selectionEndOffset = selectionEnd - editTimeline.timelineStartSeconds;
+      if (video.currentTime >= selectionEndOffset - 0.03) {
+        const selectionStartOffset = selectionStart - editTimeline.timelineStartSeconds;
+        video.currentTime = Math.max(0, selectionStartOffset);
+        setPreviewTime(Math.max(0, selectionStartOffset));
+      }
+    }
+    void video.play().catch(() => undefined);
+  }, [editTimeline, selectionEnd, selectionStart]);
+
+  useEffect(() => {
+    if (!standalone) return;
+    const handleDesktopPlaybackShortcut = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || event.repeat || !window.matchMedia("(min-width: 921px)").matches) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || target instanceof HTMLSelectElement
+        || (target instanceof HTMLElement && target.isContentEditable)
+      ) return;
+      event.preventDefault();
+      togglePreviewPlayback();
+    };
+    window.addEventListener("keydown", handleDesktopPlaybackShortcut);
+    return () => window.removeEventListener("keydown", handleDesktopPlaybackShortcut);
+  }, [standalone, togglePreviewPlayback]);
+
   const save = async () => {
     setSaving(true); setError(null);
     try {
@@ -1147,7 +1366,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       }
       await onChanged();
       onClose();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "저장하지 못했습니다."); }
+    } catch (cause) { setError(userFacingErrorMessage(cause, "저장하지 못했습니다.")); }
     finally { setSaving(false); }
   };
 
@@ -1155,15 +1374,21 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     <>
       {standalone && <header className="editor-topbar">
         <div className="editor-topbar-inner">
-          <div className="min-w-0"><span className="editor-eyebrow">EASY CUT EDITOR</span><h1 className="truncate">{projectLabel || "쇼츠 편집"}</h1></div>
-          <button type="button" onClick={onClose} className="editor-close-button" aria-label="편집기 닫기">✕ 닫기</button>
+          <div className="min-w-0"><h1 className="truncate">{projectLabel || "쇼츠 편집"}</h1></div>
+          <div className="editor-header-actions">
+            <button type="button" onClick={onClose} className="editor-close-button" aria-label="편집기 닫기">✕ 닫기</button>
+            <button type="button" disabled={!editorValid || saving} onClick={() => void save()} className="editor-apply-button">{saving ? "처리 중..." : "영상에 적용"}</button>
+          </div>
         </div>
       </header>}
       <div className={standalone ? "editor-page-body" : "grid max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-white/10 bg-[#151517] sm:grid-cols-[320px_1fr] sm:rounded-2xl"}>
-        <section className={standalone ? "editor-preview-pane" : ""}>
+        <section className={standalone ? `editor-preview-pane${editTimeline ? " has-range-editor" : ""}` : "editor-preview-stack"}>
         <div className={standalone ? "editor-video-frame" : "sticky top-0 mx-auto aspect-[9/16] w-full max-w-[320px] overflow-hidden"} style={{ background: template.background, containerType: "inline-size" }}>
           <TitleOverlayPreview title={title} fontScale={titleFontScale} videoAspectRatio={commentNeedsVerticalFit ? "4:5" : originalAspectRatio} primary={template.primary} accent={template.accent} background={template.background} keepPrimaryFirstLine={template.id === "paper"} textStyles={titleTextStyles} liftLandscape={usesLiftedCommentLayout} />
-          {cleanVideoUrl ? <video ref={videoRef} className={`absolute inset-x-0 w-full bg-black ${commentNeedsVerticalFit ? "object-contain" : "object-cover"}`} style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }} src={cleanVideoUrl} controls playsInline preload="metadata" onLoadedMetadata={(event) => { setVideoLoadError(false); if (editTimeline) { const offset = selectionStart - editTimeline.timelineStartSeconds; event.currentTarget.currentTime = Math.max(0, offset); setPreviewTime(offset); } }} onError={() => setVideoLoadError(true)} onTimeUpdate={(event) => { const current = event.currentTarget.currentTime; setPreviewTime(current); if (editTimeline && loopSelection) { const start = selectionStart - editTimeline.timelineStartSeconds; const end = selectionEnd - editTimeline.timelineStartSeconds; if (current >= end - 0.03) { event.currentTarget.currentTime = Math.max(0, start); void event.currentTarget.play().catch(() => undefined); } } }} /> : <div className="absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}>클린 영상 준비 중</div>}
+          {cleanVideoUrl ? <video ref={videoRef} className={`absolute inset-x-0 w-full bg-black ${commentNeedsVerticalFit ? "object-contain" : "object-cover"}`} style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }} src={cleanVideoUrl} playsInline disablePictureInPicture preload="metadata" onContextMenu={(event) => event.preventDefault()} onLoadedMetadata={(event) => { setVideoLoadError(false); if (editTimeline) { const offset = selectionStart - editTimeline.timelineStartSeconds; event.currentTarget.currentTime = Math.max(0, offset); setPreviewTime(offset); } }} onPlay={() => setIsPreviewPlaying(true)} onPause={() => setIsPreviewPlaying(false)} onEnded={() => setIsPreviewPlaying(false)} onError={() => setVideoLoadError(true)} onTimeUpdate={(event) => { const current = event.currentTarget.currentTime; setPreviewTime(current); if (editTimeline) { const start = selectionStart - editTimeline.timelineStartSeconds; const end = selectionEnd - editTimeline.timelineStartSeconds; if (!event.currentTarget.paused && current >= end - 0.03) { event.currentTarget.currentTime = Math.max(0, start); void event.currentTarget.play().catch(() => undefined); } } }} /> : <div className="absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}>클린 영상 준비 중</div>}
+          {cleanVideoUrl && <button type="button" className="editor-preview-play-toggle" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }} aria-label={isPreviewPlaying ? "미리보기 일시정지" : "미리보기 재생"} aria-pressed={isPreviewPlaying} onClick={togglePreviewPlayback}>
+            {!isPreviewPlaying && <span className="editor-preview-play-icon" aria-hidden="true"><span /></span>}
+          </button>}
           {videoLoadError && <div className="pointer-events-none absolute inset-x-3 z-30 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100" style={{ top: `${editorLayout.videoTop + 2}%` }}>편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>}
           {subtitlesEnabled && activeSubtitle && <div className="pointer-events-none absolute inset-x-5 z-20 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white" style={{ bottom: `${editorLayout.subtitleBottom}%` }}>{activeSubtitle}</div>}
           <div className={`absolute inset-x-0 z-10 overflow-hidden text-sm font-bold ${templateId === "comment-capture" ? "" : editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.bottomHeight}%`, background: editorLayout.fullVertical && templateId !== "comment-capture" ? "transparent" : template.background, color: template.channel }}>
@@ -1175,56 +1400,58 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             ? <CommentCaptureChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} fixedCenterY={COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y} />
             : <FixedPresetChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} foreground={template.channel} background={template.background} />)}
         </div>
+        {editTimeline && <section className="editor-range-panel" aria-label="영상 구간 선택">
+          <div className="editor-filmstrip-wrap">
+            <div ref={filmstripRef} className="editor-filmstrip" onPointerDown={startTimelineScrubbing} onPointerMove={moveTimelineScrubbing} onPointerUp={finishTimelineScrubbing} onPointerCancel={finishTimelineScrubbing}>
+              <div className="editor-filmstrip-images" aria-hidden="true">
+                {Array.from({ length: TIMELINE_THUMBNAIL_COUNT }, (_, index) => (
+                  timelineThumbnails[index]
+                    ? <span key={index} className="has-image" style={{ backgroundImage: `url(${timelineThumbnails[index]})` }} />
+                    : <span key={index} />
+                ))}
+              </div>
+              <div className="editor-filmstrip-shade editor-filmstrip-shade-left" style={{ width: `${selectionLeft}%` }} />
+              <div className="editor-filmstrip-shade editor-filmstrip-shade-right" style={{ left: `${selectionLeft + selectionWidth}%` }} />
+              <div className="editor-filmstrip-selection" style={{ left: `${selectionLeft}%`, width: `${selectionWidth}%` }} />
+              <span className="editor-timeline-playhead" style={{ left: `${playheadLeft}%` }} aria-hidden="true">
+                <span className="editor-timeline-playhead-time">{previewTime.toFixed(1)}초</span>
+              </span>
+              <span className="editor-range-marker editor-range-marker-start" style={{ left: `${selectionLeft}%` }} aria-hidden="true" onPointerDown={(event) => startRangeInteraction("start", event)}>
+                <span className="editor-range-marker-time">{formatTimestamp(selectionStart)}</span>
+                <span className="editor-range-marker-grip">•••</span>
+              </span>
+              <span className="editor-range-marker editor-range-marker-end" style={{ left: `${selectionLeft + selectionWidth}%` }} aria-hidden="true" onPointerDown={(event) => startRangeInteraction("end", event)}>
+                <span className="editor-range-marker-time">{formatTimestamp(selectionEnd)}</span>
+                <span className="editor-range-marker-grip">•••</span>
+              </span>
+              <input aria-label="최종 영상 시작 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.1} value={selectionStart} onChange={(event) => updateSelectionStart(Number(event.target.value))} className="sr-only" />
+              <input aria-label="최종 영상 종료 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.1} value={selectionEnd} onChange={(event) => updateSelectionEnd(Number(event.target.value))} className="sr-only" />
+            </div>
+            <div className="editor-filmstrip-bounds" aria-label="전체 편집 가능 범위">
+              <span>{formatTimestamp(editTimeline.timelineStartSeconds)}</span>
+              <span>{formatTimestamp(editTimeline.timelineEndSeconds)}</span>
+            </div>
+          </div>
+          <div className="editor-range-actions">
+            <button type="button" onClick={() => { setSelectionStart(editTimeline.initialStartSeconds); setSelectionEnd(editTimeline.initialEndSeconds); seekTimeline(editTimeline.initialStartSeconds); }}>↺ 원본으로 되돌리기</button>
+          </div>
+          {selectionDuration > 180 && <p className="editor-range-warning">3분을 넘는 영상은 YouTube에서 Shorts로 분류되지 않을 수 있지만 저장할 수 있습니다.</p>}
+          {!validSelection && <p className="editor-range-error">최종 영상은 1초 이상이어야 합니다.</p>}
+        </section>}
         </section>
-        <section className={standalone ? "editor-controls-pane" : "p-5 sm:p-6"}>
-          <div className="flex items-center justify-between"><div><h2 id="editor-title" className="text-xl font-bold">쇼츠 편집</h2><p className="mt-1 text-xs text-neutral-500">왼쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</p></div>{!standalone && <button onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-white/10">닫기</button>}</div>
-          {editTimeline && (() => {
-            const timelineDuration = Math.max(
-              RANGE_EDIT_MIN_SECONDS,
-              editTimeline.timelineEndSeconds - editTimeline.timelineStartSeconds,
-            );
-            const selectionLeft = Math.max(0, Math.min(
-              100,
-              (selectionStart - editTimeline.timelineStartSeconds) / timelineDuration * 100,
-            ));
-            const selectionWidth = Math.max(0, Math.min(
-              100 - selectionLeft,
-              selectionDuration / timelineDuration * 100,
-            ));
-            return <section className="editor-section" aria-labelledby="range-editor-title">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 id="range-editor-title" className="text-sm font-bold">영상 구간</h3>
-                  <p className="mt-1 text-xs leading-5 text-neutral-500">앞뒤 여유 구간을 탐색하고 최종 영상의 시작과 끝을 정하세요.</p>
-                </div>
-                <strong className="rounded-full bg-white/10 px-3 py-1 text-xs text-white">{selectionDuration.toFixed(1)}초</strong>
-              </div>
-              <div className="mt-4">
-                <div className="relative h-10 overflow-hidden rounded-lg border border-white/10 bg-black/60">
-                  <div className="absolute inset-y-0 bg-white/15" style={{ left: `${selectionLeft}%`, width: `${selectionWidth}%` }} />
-                  <div className="absolute inset-y-0 w-0.5 bg-[#ff715e]" style={{ left: `${selectionLeft}%` }} />
-                  <div className="absolute inset-y-0 w-0.5 bg-[#ff715e]" style={{ left: `${selectionLeft + selectionWidth}%` }} />
-                  <input aria-label="최종 영상 시작 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.1} value={selectionStart} onChange={(event) => updateSelectionStart(Number(event.target.value))} className="range-editor-handle absolute inset-0 z-10 h-full w-full" />
-                  <input aria-label="최종 영상 종료 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.1} value={selectionEnd} onChange={(event) => updateSelectionEnd(Number(event.target.value))} className="range-editor-handle absolute inset-0 z-20 h-full w-full" />
-                </div>
-                <div className="mt-1 flex justify-between text-[10px] font-medium text-neutral-500">
-                  <span>{formatTimestamp(editTimeline.timelineStartSeconds)}</span>
-                  <span>{formatTimestamp(editTimeline.timelineEndSeconds)}</span>
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-4 text-xs font-semibold text-neutral-300">
-                <button type="button" onClick={() => seekTimeline(selectionStart)} className="flex justify-between gap-3 rounded-lg bg-white/[.04] px-3 py-2 text-left hover:bg-white/[.08]"><span>시작</span><strong className="text-[#ff9b8d]">{formatTimestamp(selectionStart)}</strong></button>
-                <button type="button" onClick={() => seekTimeline(selectionEnd)} className="flex justify-between gap-3 rounded-lg bg-white/[.04] px-3 py-2 text-left hover:bg-white/[.08]"><span>끝</span><strong className="text-[#ff9b8d]">{formatTimestamp(selectionEnd)}</strong></button>
-              </div>
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <button type="button" onClick={() => { seekTimeline(selectionStart); void videoRef.current?.play().catch(() => undefined); }} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-bold hover:bg-white/10">선택 구간 재생</button>
-                <button type="button" onClick={() => { setSelectionStart(editTimeline.initialStartSeconds); setSelectionEnd(editTimeline.initialEndSeconds); seekTimeline(editTimeline.initialStartSeconds); }} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-bold hover:bg-white/10">AI 선택으로 되돌리기</button>
-                <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-neutral-300"><input type="checkbox" checked={loopSelection} onChange={(event) => setLoopSelection(event.target.checked)} className="accent-[#ff715e]" />선택 구간 반복</label>
-              </div>
-              {selectionDuration > 180 && <p className="mt-3 rounded-lg border border-amber-300/15 bg-amber-300/[.06] px-3 py-2 text-xs leading-5 text-amber-100">3분을 넘는 영상은 YouTube에서 Shorts로 분류되지 않을 수 있지만 저장할 수 있습니다.</p>}
-              {!validSelection && <p className="mt-3 text-xs text-red-400">최종 영상은 1초 이상이어야 합니다.</p>}
-            </section>;
-          })()}
+        <section className={standalone ? `editor-controls-pane${mobileControlsOpen ? " is-mobile-open" : ""}` : "p-5 sm:p-6"}>
+          <div className="editor-controls-sheet-header">
+            <button type="button" className="editor-controls-sheet-toggle" aria-expanded={mobileControlsOpen} aria-controls="editor-controls-scroll" onClick={() => { if (window.matchMedia("(max-width: 640px)").matches) setMobileControlsOpen((current) => !current); }}>
+              <span><span id="editor-title" className="editor-controls-title">쇼츠 편집</span><span className="editor-controls-description">왼쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</span></span>
+              <span className="editor-controls-chevron" aria-hidden="true">
+                <svg viewBox="0 0 20 20" fill="none">
+                  <path d="m5.5 12.25 4.5-4.5 4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            </button>
+            {!standalone && <button onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-white/10">닫기</button>}
+          </div>
+          <div id="editor-controls-scroll" className="editor-controls-scroll">
           <label className="editor-section editor-section-heading block font-semibold">후킹 제목<textarea ref={titleInputRef} value={title} onChange={(event) => { setTitle(event.target.value); setTitleTextStyles([]); setTitleSelection(null); }} onSelect={captureTitleSelection} onDoubleClick={captureTitleSelection} maxLength={80} rows={2} className="mt-2 w-full rounded-lg border border-white/15 bg-black/30 p-3 text-sm" /></label>
           <p className={`mt-1 text-xs ${validTitle ? "text-neutral-500" : "text-red-400"}`}>최대 2줄·80자 ({title.length}/80)</p>
           <div className="editor-section">
@@ -1276,7 +1503,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             {!validComments && <p className="mt-3 text-xs leading-5 text-red-400">댓글을 하나 이상 두고, 텍스트와 시간이 비어 있거나 서로 겹치지 않도록 조정해 주세요. 최대 길이는 {item.durationSeconds.toFixed(1)}초입니다.</p>}
           </section>}
           {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
-          <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={!editorValid || saving} onClick={() => void save()} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{saving ? "처리 중..." : "영상에 적용"}</button></div>
+          {!standalone && <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={!editorValid || saving} onClick={() => void save()} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{saving ? "처리 중..." : "영상에 적용"}</button></div>}
+          </div>
         </section>
       </div>
     </>
@@ -1288,17 +1516,24 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
 function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }) {
   const [accessUrls, setAccessUrls] = useState<Record<string, string>>({});
+  const [iosDownloadDevice, setIosDownloadDevice] = useState(false);
+  const [downloadNoticeOpen, setDownloadNoticeOpen] = useState(false);
   const [revealDecision, setRevealDecision] = useState<{
     jobId: string;
     show: boolean;
   } | null>(null);
   const revealDecidedJobIds = useRef(new Set<string>());
   const requestedAccessVersions = useRef(new Set<string>());
+  const playbackRefreshTimes = useRef(new Map<string, number>());
   const mounted = useRef(true);
   const selected = job.shorts[0];
 
   useEffect(() => {
     mounted.current = true;
+    setIosDownloadDevice(isIosDownloadDevice(
+      window.navigator.userAgent,
+      window.navigator.maxTouchPoints,
+    ));
     return () => { mounted.current = false; };
   }, []);
 
@@ -1332,6 +1567,20 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
     }
   }, [job.shorts]);
 
+  const refreshPlaybackAccess = (item: GeneratedShort) => {
+    const accessVersion = shortPlaybackVersionKey(item);
+    const now = Date.now();
+    const lastRefresh = playbackRefreshTimes.current.get(accessVersion) || 0;
+    if (now - lastRefresh < 30_000) return;
+    playbackRefreshTimes.current.set(accessVersion, now);
+    void requestJson<{ url: string }>(`/api/shorts/${item.id}/access`)
+      .then((value) => {
+        if (!mounted.current) return;
+        setAccessUrls((current) => ({ ...current, [accessVersion]: value.url }));
+      })
+      .catch(() => playbackRefreshTimes.current.delete(accessVersion));
+  };
+
   const playbackUrl = (item: GeneratedShort) => isPlaybackAvailable(item)
     ? accessUrls[shortPlaybackVersionKey(item)] || null
     : null;
@@ -1342,17 +1591,22 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
     job.shorts.map((item) => [item.id, playbackUrl(item)]),
   );
 
-  const download = async (item: GeneratedShort) => {
-    if (job.isExample || item.status !== "ready") return;
-    const url = playbackUrl(item);
-    if (!url) return;
-    const response = await fetch(url);
-    const objectUrl = URL.createObjectURL(await response.blob());
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = `${item.hookTitle.replace(/[^0-9A-Za-z가-힣 _-]/g, "").trim() || "shorts"}.mp4`;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000);
+  const downloadableItems = job.shorts.filter((item) => item.status === "ready");
+  const downloadAll = () => {
+    if (job.isExample || !downloadableItems.length) return;
+    if (iosDownloadDevice) {
+      setDownloadNoticeOpen(true);
+      return;
+    }
+    for (const item of downloadableItems) {
+      const anchor = document.createElement("a");
+      anchor.href = `/api/shorts/${encodeURIComponent(item.id)}/download`;
+      anchor.download = "";
+      anchor.hidden = true;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    }
   };
 
   if (!selected) {
@@ -1387,8 +1641,16 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
     <div className="project-workspace">
       <header className="workspace-header">
         <div className="min-w-0"><button onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 프로젝트 /{job.projectNumber}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
-        <button disabled={job.isExample} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={() => void Promise.all(job.shorts.map(download))} className="workspace-button workspace-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-40">↓ 모든 쇼츠 다운로드</button>
+        <button disabled={job.isExample || !downloadableItems.length} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={downloadAll} className="workspace-button workspace-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-40">{iosDownloadDevice ? "↓ 쇼츠별 다운로드 안내" : "↓ 모든 쇼츠 다운로드"}</button>
       </header>
+      <NoticeDialog
+        open={downloadNoticeOpen}
+        dialogId="ios-download-notice"
+        title="쇼츠별로 바로 저장해 주세요"
+        description="iPhone과 iPad는 여러 파일의 자동 저장을 제한합니다. 아래 각 쇼츠의 다운로드 버튼을 누르면 파일 앱의 다운로드 폴더에 안전하게 저장됩니다."
+        variant="info"
+        onClose={() => setDownloadNoticeOpen(false)}
+      />
       {job.status === "failed" && job.errorMessage && (
         <div role="alert" className="mx-4 mt-4 whitespace-pre-line rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm leading-6 text-red-200 sm:mx-6">
           {job.errorMessage}
@@ -1409,15 +1671,17 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
                 <div className="short-result-layout">
                   <div className="short-video-column">
                     <div className="short-video-shell">
-                      {itemUrl ? <video key={shortPlaybackVersionKey(item)} src={itemUrl} controls={!itemIsRerendering} controlsList={job.isExample ? "nodownload" : undefined} playsInline preload="metadata" className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
+                      {itemUrl ? <video key={shortPlaybackVersionKey(item)} src={itemUrl} controls={!itemIsRerendering} controlsList={job.isExample ? "nodownload" : undefined} playsInline preload="metadata" onError={() => refreshPlaybackAccess(item)} className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
                       <span className="short-duration-badge">{formatDuration(item.durationSeconds)}</span>
                       {itemIsRerendering && <EstimatedProcessingOverlay operationKey={`rerender:${item.id}:${item.renderVersion}`} durationSeconds={item.durationSeconds} rerender />}
                     </div>
                     <div className="short-result-actions">
                       {job.isExample || itemIsRerendering
                         ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">✎ 편집하기</button>
-                        : <Link href={`/${job.projectNumber}/edit/${item.id}`} target="_blank" rel="noopener noreferrer" className="tool-button short-edit-button flex items-center justify-center" aria-label={`${item.hookTitle} 새 탭에서 편집하기`}>✎ 편집하기</Link>}
-                      <button disabled={job.isExample || !itemUrl || itemIsRerendering} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={() => void download(item)} className="tool-button short-download-button disabled:cursor-not-allowed disabled:opacity-40">↓ 다운로드</button>
+                        : <Link href={`/projects/${job.projectNumber}/edit/${item.id}`} target="_blank" rel="noopener noreferrer" className="tool-button short-edit-button flex items-center justify-center" aria-label={`${item.hookTitle} 새 탭에서 편집하기`}>✎ 편집하기</Link>}
+                      {job.isExample || itemIsRerendering || item.status !== "ready"
+                        ? <button disabled title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} className="tool-button short-download-button disabled:cursor-not-allowed disabled:opacity-40">↓ 다운로드</button>
+                        : <a href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download className="tool-button short-download-button flex items-center justify-center" aria-label={`${item.hookTitle} 다운로드`}>↓ 다운로드</a>}
                     </div>
                   </div>
                   <div className="short-detail-column">
@@ -1447,7 +1711,7 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
       setProject(value.project);
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "편집할 쇼츠를 불러오지 못했습니다.");
+      setError(userFacingErrorMessage(cause, "편집할 쇼츠를 불러오지 못했습니다."));
     }
   }, [projectNumber]);
 
@@ -1455,12 +1719,12 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   const item = project?.shorts.find((value) => value.id === shortId);
   const closeEditor = () => {
     window.close();
-    window.setTimeout(() => { if (!window.closed) window.location.href = `/${projectNumber}`; }, 100);
+    window.setTimeout(() => { if (!window.closed) window.location.href = `/projects/${projectNumber}`; }, 100);
   };
 
-  if (error) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집기를 열 수 없습니다.</h1><p className="mt-3 text-sm text-red-300">{error}</p><Link href={`/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
+  if (error) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집기를 열 수 없습니다.</h1><p className="mt-3 text-sm text-red-300">{error}</p><Link href={`/projects/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">편집기를 준비하고 있습니다…</main>;
-  if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
+  if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/projects/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
 
   return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={`프로젝트 /${project.projectNumber} · ${item.hookTitle}`} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} />;
 }
@@ -1480,7 +1744,7 @@ export function ProjectPage({ projectNumber }: { projectNumber: number }) {
       setProject(value.project);
       setLoadError(null);
     } catch (cause) {
-      setLoadError(cause instanceof Error ? cause.message : "프로젝트를 불러오지 못했습니다.");
+      setLoadError(userFacingErrorMessage(cause, "프로젝트를 불러오지 못했습니다."));
     } finally {
       setLoading(false);
     }
@@ -1627,7 +1891,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     setStateLoadError(null);
     void loadState().catch((cause) => {
       setStateLoadStatus("error");
-      setStateLoadError(cause instanceof Error ? cause.message : "프로젝트를 불러오지 못했습니다.");
+      setStateLoadError(userFacingErrorMessage(cause, "프로젝트를 불러오지 못했습니다."));
     });
   };
 
@@ -1649,7 +1913,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       })
       .catch((cause) => {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(cause instanceof Error ? cause.message : "템플릿을 불러오지 못했습니다.");
+        setError(userFacingErrorMessage(cause, "템플릿을 불러오지 못했습니다."));
       });
     return () => controller.abort();
   }, [state?.user]);
@@ -1664,7 +1928,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       } catch (cause) {
         if (stopped) return;
         setStateLoadStatus("error");
-        setStateLoadError(cause instanceof Error ? cause.message : "프로젝트를 불러오지 못했습니다.");
+        setStateLoadError(userFacingErrorMessage(cause, "프로젝트를 불러오지 못했습니다."));
         timer = window.setTimeout(refresh, stateRetryDelayMs(attempt));
         attempt += 1;
       }
@@ -1710,7 +1974,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         setCreationRestrictionOpen(value.creationAllowed !== true);
         setScrollToAnalysis(true);
       })
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "인기 영상 정보를 불러오지 못했습니다."))
+      .catch((cause: unknown) => setError(userFacingErrorMessage(cause, "인기 영상 정보를 불러오지 못했습니다.")))
       .finally(() => setBusy(false));
   }, []);
 
@@ -1765,7 +2029,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         publishUsageSnapshot(value.usage);
         const hasRerendering = value.job.shorts.some((item) => item.status === "rerendering");
         if (terminalStatuses.has(value.job.status) && !hasRerendering) { pollStarted.current = 0; await loadState(); return; }
-      } catch (cause) { if (!stopped) setError(cause instanceof Error ? cause.message : "작업 상태 확인 실패"); }
+      } catch (cause) { if (!stopped) setError(userFacingErrorMessage(cause, "작업 상태를 확인하지 못했습니다.")); }
       const elapsed = Date.now() - pollStarted.current;
       if (!stopped) timer = window.setTimeout(poll, elapsed < 30_000 ? 3_000 : elapsed < 300_000 ? 6_000 : 10_000);
     };
@@ -1780,7 +2044,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   useEffect(() => {
     if (!hasBackgroundWork) return;
     const timer = window.setInterval(() => {
-      void loadState().catch((cause) => setError(cause instanceof Error ? cause.message : "작업 상태 확인 실패"));
+      void loadState().catch((cause) => setError(userFacingErrorMessage(cause, "작업 상태를 확인하지 못했습니다.")));
     }, 5_000);
     return () => window.clearInterval(timer);
   }, [hasBackgroundWork, loadState]);
@@ -1793,7 +2057,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setRightsConfirmed(false);
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "클립보드를 읽지 못했습니다.");
+      setError(userFacingErrorMessage(cause, "클립보드를 읽지 못했습니다."));
     }
   };
 
@@ -1819,7 +2083,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setScrollToAnalysis(true);
     }
     catch (cause) {
-      const message = cause instanceof Error ? cause.message : "영상 확인 실패";
+      const message = userFacingErrorMessage(cause, "영상을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
       if (cause instanceof HttpRequestError && cause.status === 400) {
         setAnalysis(null);
         setCreationRestrictionReason(message);
@@ -1899,7 +2163,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       } else if (cause instanceof HttpRequestError && cause.message.includes("현재 처리 중인 작업")) {
         setConcurrentJobNoticeOpen(true);
       } else {
-        setError(cause instanceof Error ? cause.message : "작업 생성 실패");
+        setError(userFacingErrorMessage(cause, "쇼츠 작업을 시작하지 못했습니다."));
       }
     }
     finally { setBusy(false); }
@@ -1913,7 +2177,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <NoticeDialog
         open={creationRestrictionOpen && Boolean(creationRestrictionReason)}
         dialogId="creation-restriction"
-        title="영상 이용 제한 안내"
+        title={analysis?.creationAllowed === false ? "영상 이용 제한 안내" : "영상을 확인해 주세요"}
         description={creationRestrictionReason || "이 영상은 이용 제한이 확인된 영상입니다."}
         onClose={closeCreationRestriction}
       />
@@ -2011,15 +2275,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               </span>
             </span>
           </label>
-          <div className="rounded-xl border border-sky-300/20 bg-sky-300/[.06] p-4 text-xs font-medium leading-6 text-sky-50">
-            <strong className="block text-sm font-extrabold text-white">AI 처리 및 개인정보 국외이전 안내</strong>
-            <p className="mt-1 text-sky-100/80">
-              제작을 시작하면 영상 오디오가 OpenAI API로 전사되고, 전사문과 영상·클립 정보가 유료 Google Gemini API 또는 OpenAI API로 전송되어 하이라이트·제목·합성 댓글 문구를 생성합니다. 회사는 이 데이터를 AI 모델 학습용으로 제공하지 않으며, 공급자 안전 로그는 Google 최대 55일·OpenAI 텍스트 생성 최대 30일 보유될 수 있습니다.
-            </p>
-            <Link href="/privacy#international-transfers" target="_blank" className="mt-2 inline-flex font-extrabold text-[#8bd7ff] underline underline-offset-4">
-              이전 국가·항목·거부 방법과 AI 처리 상세 보기
-            </Link>
-          </div>
           <button disabled={analysisCreationBlocked || !rightsConfirmed || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
               {loginPromptPending && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
@@ -2032,6 +2287,13 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <CustomerReviews generatedShortCount={state?.generatedShortCount ?? null} />
     </main>
     <SiteFooter />
+    <SupportInquiryWidget
+      user={state?.user || null}
+      onLoginRequest={() => {
+        setLoginNext("/");
+        setLoginOpen(true);
+      }}
+    />
     </div>
   );
 }

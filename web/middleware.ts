@@ -29,6 +29,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(destination, 308);
   }
 
+  const legacyProjectPath = pathname.match(/^\/([1-9]\d*)(\/edit\/[^/]+)?\/?$/);
+  if (legacyProjectPath) {
+    const destination = request.nextUrl.clone();
+    destination.pathname = `/projects/${legacyProjectPath[1]}${legacyProjectPath[2] || ""}`;
+    return NextResponse.redirect(destination, 308);
+  }
+
   return refreshSupabaseSession(request);
 }
 

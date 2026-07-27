@@ -1,5 +1,6 @@
 import { normalizeSiteLocale, type SiteLocale } from "./config";
 import { messagesByLocale, type MessageKey } from "./messages";
+import { safeUserFacingErrorMessage } from "@/lib/public-error";
 
 export type ApiErrorBody = {
   detail?: string;
@@ -18,10 +19,11 @@ export function localizeApiError(
   locale: SiteLocale,
   fallbackKey: MessageKey = "common.genericError",
 ) {
-  if (locale === "ko" && body.detail?.trim()) return body.detail.trim();
   const messages = messagesByLocale[locale];
   const explicitKey = errorMessageKey(body.code);
   if (explicitKey) return messages[explicitKey];
+  const detail = safeUserFacingErrorMessage(body.detail);
+  if (locale === "ko" && detail && /[가-힣]/.test(detail)) return detail;
   const statusKey = errorMessageKey(`HTTP_${status}`);
   return statusKey ? messages[statusKey] : messages[fallbackKey];
 }

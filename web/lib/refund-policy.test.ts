@@ -1,5 +1,73 @@
 import { describe, expect, it } from "vitest";
-import { quoteCustomerEarlyTerminationRefund } from "./refund-policy";
+import {
+  getPrepaidPackageMonthState,
+  quoteCustomerEarlyTerminationRefund,
+  quotePrepaidPackageRefund,
+} from "./refund-policy";
+
+describe("prepaid package monthly-unit refund policy", () => {
+  const periodStart = new Date("2026-07-25T03:00:00.000Z");
+
+  it("charges one contract month when the current monthly allowance was used", () => {
+    const quote = quotePrepaidPackageRefund({
+      actualPaymentKrw: 119_400,
+      periodStart,
+      prepaidMonths: 6,
+      currentMonthUsed: true,
+      requestedAt: new Date("2026-07-26T03:00:00.000Z"),
+    });
+
+    expect(quote.monthlyUnitKrw).toBe(19_900);
+    expect(quote.chargedMonths).toBe(1);
+    expect(quote.providedServiceKrw).toBe(19_900);
+    expect(quote.refundAmountKrw).toBe(99_500);
+    expect(quote.entitlementEndsAt.toISOString()).toBe("2026-08-25T03:00:00.000Z");
+  });
+
+  it("refunds the current and future monthly units when the current unit was not used", () => {
+    const requestedAt = new Date("2026-07-26T03:00:00.000Z");
+    const quote = quotePrepaidPackageRefund({
+      actualPaymentKrw: 119_400,
+      periodStart,
+      prepaidMonths: 6,
+      currentMonthUsed: false,
+      requestedAt,
+    });
+
+    expect(quote.chargedMonths).toBe(0);
+    expect(quote.refundAmountKrw).toBe(119_400);
+    expect(quote.entitlementEndsAt).toEqual(requestedAt);
+  });
+
+  it("keeps completed monthly units and the used current unit", () => {
+    const quote = quotePrepaidPackageRefund({
+      actualPaymentKrw: 119_400,
+      periodStart,
+      prepaidMonths: 6,
+      currentMonthUsed: true,
+      requestedAt: new Date("2026-08-30T03:00:00.000Z"),
+    });
+
+    expect(quote.completedMonths).toBe(1);
+    expect(quote.currentMonthNumber).toBe(2);
+    expect(quote.chargedMonths).toBe(2);
+    expect(quote.providedServiceKrw).toBe(39_800);
+    expect(quote.refundAmountKrw).toBe(79_600);
+    expect(quote.entitlementEndsAt.toISOString()).toBe("2026-09-25T03:00:00.000Z");
+  });
+
+  it("handles KST month-end anchors without spilling into the following month", () => {
+    const state = getPrepaidPackageMonthState({
+      periodStart: new Date("2026-01-31T01:00:00.000Z"),
+      prepaidMonths: 3,
+      requestedAt: new Date("2026-02-28T01:00:00.000Z"),
+    });
+
+    expect(state.completedMonths).toBe(1);
+    expect(state.currentMonthStart?.toISOString()).toBe("2026-02-28T01:00:00.000Z");
+    expect(state.currentMonthEnd?.toISOString()).toBe("2026-03-31T01:00:00.000Z");
+  });
+});
 
 describe("customer early-termination refund policy", () => {
   const periodStart = new Date("2026-01-01T00:00:00.000Z");

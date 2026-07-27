@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminUser } from "@/lib/admin";
-import { addKstMonths } from "@/lib/billing";
+import { addKstMonths, syncCachedPlan } from "@/lib/billing";
 import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
 import {
   adminRefundReasonCodes,
   adminRefundReasonLabel,
+  getPrepaidPackageMonthState,
   quoteCustomerEarlyTerminationRefund,
+  quotePrepaidPackageRefund,
 } from "@/lib/refund-policy";
+import { isPricingV2PackageCode } from "@/lib/pricing-v2";
 import {
   assertThePayOneBillingEnabled,
   createPaymentTrackId,
@@ -97,55 +100,142 @@ export async function POST(request: Request) {
       `;
       const reservedAmountKrw = Number(reservedRows[0]?.amount || 0);
       const refundable = Number(order.amountKrw) - reservedAmountKrw;
+      const requestedAt = new Date();
+      const contractStart = order.renewalPeriodStart instanceof Date
+        ? order.renewalPeriodStart
+        : order.approvedAt instanceof Date
+          ? order.approvedAt
+          : null;
+      const prepaidMonths = order.billingCycle === "yearly"
+        ? Number(order.prepaidMonths || 12)
+        : 1;
+      const usesMonthlyPackagePolicy = Number(order.refundPolicyVersion || 1) >= 2
+        && isPricingV2PackageCode(order.productCode);
+      const packageMonthState = usesMonthlyPackagePolicy && contractStart
+        ? getPrepaidPackageMonthState({
+          periodStart: contractStart,
+          prepaidMonths,
+          requestedAt,
+        })
+        : null;
       const paidFeatureUsageRows = await tx`
         select count(*)::integer as popular_filter_usage_count,
-          max(occurred_at) as popular_filter_last_used_at
+          max(occurred_at) as popular_filter_last_used_at,
+          count(*) filter (
+            where ${packageMonthState?.currentMonthStart || null}::timestamptz is not null
+              and occurred_at >= ${packageMonthState?.currentMonthStart || null}
+              and occurred_at < ${packageMonthState?.currentMonthEnd || null}
+          )::integer as current_month_popular_filter_usage_count
         from shorts_mvp.popular_filter_usage_events
         where billing_order_id=${order.id}
       `;
       const popularFilterUsageCount = Number(
         paidFeatureUsageRows[0]?.popularFilterUsageCount || 0,
       );
+      const currentMonthPopularFilterUsageCount = Number(
+        paidFeatureUsageRows[0]?.currentMonthPopularFilterUsageCount || 0,
+      );
+      const baseUsageRows = order.kind === "addon" ? [] : await tx`
+        select
+          coalesce(sum(consumed_seconds),0)::integer as consumed,
+          coalesce(sum(reserved_seconds),0)::integer as reserved
+        from shorts_mvp.usage_grants
+        where billing_order_id=${order.id} and kind='base'
+      `;
+      const baseConsumedSeconds = Number(baseUsageRows[0]?.consumed || 0);
+      const baseReservedSeconds = Number(baseUsageRows[0]?.reserved || 0);
+      const currentMonthBaseUsageRows = !packageMonthState ? [] : await tx`
+        select coalesce(sum(a.allocated_seconds),0)::integer as allocated
+        from shorts_mvp.usage_grant_allocations a
+        join shorts_mvp.usage_grants g on g.id=a.grant_id
+        where g.billing_order_id=${order.id} and g.kind='base'
+          and a.status in ('reserved','consumed')
+          and a.created_at >= ${packageMonthState.currentMonthStart}
+          and a.created_at < ${packageMonthState.currentMonthEnd}
+      `;
+      const currentMonthBaseAllocatedSeconds = Number(
+        currentMonthBaseUsageRows[0]?.allocated || 0,
+      );
+      const ebookUsageRows = !contractStart || order.kind === "addon" ? [] : await tx`
+        select count(*)::integer as ebook_usage_count,
+          count(*) filter (
+            where ${packageMonthState?.currentMonthStart || null}::timestamptz is not null
+              and last_downloaded_at >= ${packageMonthState?.currentMonthStart || null}
+              and last_downloaded_at < ${packageMonthState?.currentMonthEnd || null}
+          )::integer as current_month_ebook_usage_count
+        from shorts_mvp.ebook_download_counters
+        where user_id=${order.userId} and last_downloaded_at >= ${contractStart}
+      `;
+      const ebookUsageCount = Number(ebookUsageRows[0]?.ebookUsageCount || 0);
+      const currentMonthEbookUsageCount = Number(
+        ebookUsageRows[0]?.currentMonthEbookUsageCount || 0,
+      );
+      const hasPaidServiceUsage = popularFilterUsageCount > 0
+        || baseConsumedSeconds > 0
+        || baseReservedSeconds > 0
+        || ebookUsageCount > 0;
+      const currentPackageMonthUsed = currentMonthPopularFilterUsageCount > 0
+        || currentMonthBaseAllocatedSeconds > 0
+        || currentMonthEbookUsageCount > 0;
       if (
         body.reasonCode === "statutory_withdrawal_unused"
-        && popularFilterUsageCount > 0
+        && order.kind !== "addon"
+        && hasPaidServiceUsage
       ) {
         throw new HttpError(
           409,
-          "유료 실시간 인기 필터 사용 이력이 있어 미사용 전액환불로 처리할 수 없습니다. 중도해지 기준을 확인해 주세요.",
+          "쇼츠 생성·처리시간 또는 유료 기능 사용 이력이 있어 미사용 전액환불로 처리할 수 없습니다. 중도해지 기준을 확인해 주세요.",
           "PAID_FEATURE_ALREADY_USED",
         );
       }
       let amountKrw = body.amountKrw;
       let policyQuote = null;
+      let entitlementActionMode: "none" | "revoke_now" | "end_at" = "none";
+      let entitlementEffectiveAt: Date | null = null;
       if (body.reasonCode === "customer_early_termination") {
         if (order.kind === "addon") {
           throw new HttpError(409, "추가 처리시간에는 기간형 중도해지 위약금을 적용할 수 없습니다.");
         }
-        const contractStart = order.renewalPeriodStart instanceof Date
-          ? order.renewalPeriodStart
-          : order.approvedAt instanceof Date
-            ? order.approvedAt
-            : null;
         if (!contractStart) {
           throw new HttpError(409, "계약기간을 확인할 수 없어 중도해지 환불을 자동 계산하지 못했습니다.");
         }
-        const contractMonths = order.billingCycle === "yearly"
-          ? Number(order.prepaidMonths || 12)
-          : 1;
-        policyQuote = quoteCustomerEarlyTerminationRefund({
-          actualPaymentKrw: Number(order.amountKrw),
-          refundedOrReservedKrw: reservedAmountKrw,
-          periodStart: contractStart,
-          periodEnd: addKstMonths(contractStart, contractMonths),
-          requestedAt: new Date(),
-        });
+        policyQuote = usesMonthlyPackagePolicy
+          ? quotePrepaidPackageRefund({
+            actualPaymentKrw: Number(order.amountKrw),
+            refundedOrReservedKrw: reservedAmountKrw,
+            periodStart: contractStart,
+            prepaidMonths,
+            currentMonthUsed: currentPackageMonthUsed,
+            requestedAt,
+          })
+          : quoteCustomerEarlyTerminationRefund({
+            actualPaymentKrw: Number(order.amountKrw),
+            refundedOrReservedKrw: reservedAmountKrw,
+            periodStart: contractStart,
+            periodEnd: addKstMonths(contractStart, prepaidMonths),
+            requestedAt,
+          });
         amountKrw = policyQuote.refundAmountKrw;
         if (amountKrw < 1) {
-          throw new HttpError(409, "경과 이용대금과 중도해지 위약금을 공제하면 환불할 금액이 없습니다.");
+          throw new HttpError(409, usesMonthlyPackagePolicy
+            ? "이미 제공된 월별 이용권을 공제하면 환불할 금액이 없습니다."
+            : "경과 이용대금과 중도해지 위약금을 공제하면 환불할 금액이 없습니다.");
+        }
+        if (usesMonthlyPackagePolicy && "entitlementEndsAt" in policyQuote) {
+          entitlementEffectiveAt = policyQuote.entitlementEndsAt;
+          entitlementActionMode = entitlementEffectiveAt > requestedAt
+            ? "end_at"
+            : "revoke_now";
         }
       } else if (body.reasonCode !== "goodwill") {
         amountKrw = refundable;
+      }
+      if (
+        usesMonthlyPackagePolicy
+        && body.reasonCode === "statutory_withdrawal_unused"
+      ) {
+        entitlementActionMode = "revoke_now";
+        entitlementEffectiveAt = requestedAt;
       }
       if (amountKrw > refundable) throw new HttpError(409, "남은 환불 가능 금액을 초과했습니다.");
       if (order.kind === "addon" && amountKrw !== refundable) {
@@ -178,10 +268,14 @@ export async function POST(request: Request) {
       const inserted = await tx`
         insert into shorts_mvp.admin_billing_refunds (
           request_id,billing_order_id,requested_by_user_id,provider,provider_track_id,
-          root_provider_transaction_id,amount_krw,reason,status
+          root_provider_transaction_id,amount_krw,reason,status,refund_policy_version,
+          policy_quote,entitlement_action_mode,entitlement_effective_at
         ) values (
           ${body.requestId},${order.id},${admin.id},'thepayone',${trackId},
-          ${order.providerTransactionId},${amountKrw},${reason},'pending'
+          ${order.providerTransactionId},${amountKrw},${reason},'pending',
+          ${Number(order.refundPolicyVersion || 1)},
+          ${policyQuote ? tx.json(policyQuote) : null},${entitlementActionMode},
+          ${entitlementEffectiveAt}
         ) returning *
       `;
       await tx`
@@ -195,9 +289,17 @@ export async function POST(request: Request) {
             reasonCode: body.reasonCode,
             reason: body.reason,
             policyQuote,
+            refundPolicyVersion: Number(order.refundPolicyVersion || 1),
+            entitlementActionMode,
+            entitlementEffectiveAt,
             popularFilterUsageCount,
             popularFilterLastUsedAt:
               paidFeatureUsageRows[0]?.popularFilterLastUsedAt || null,
+            baseConsumedSeconds,
+            baseReservedSeconds,
+            ebookUsageCount,
+            currentMonthBaseAllocatedSeconds,
+            currentPackageMonthUsed,
           })}
         )
       `;
@@ -208,7 +310,12 @@ export async function POST(request: Request) {
     refundId = refund.id;
     billingOrderId = refund.billingOrderId;
     if (refund.status === "succeeded") {
-      return NextResponse.json({ ok: true, refundId: refund.id, alreadyProcessed: true });
+      return NextResponse.json({
+        ok: true,
+        refundId: refund.id,
+        alreadyProcessed: true,
+        entitlementActionStatus: refund.entitlementActionStatus,
+      });
     }
     if (refund.status !== "pending") {
       throw new HttpError(409, "이미 처리 중이거나 확인이 필요한 환불 요청입니다.");
@@ -247,7 +354,7 @@ export async function POST(request: Request) {
       );
     }
 
-    await db.begin(async (tx) => {
+    const reconciliation = await db.begin(async (tx) => {
       const locked = await tx`
         select * from shorts_mvp.admin_billing_refunds
         where id=${refund.id} for update
@@ -261,12 +368,81 @@ export async function POST(request: Request) {
       if (!lockedOrders[0]) throw new Error("REFUND_ORDER_MISSING");
       const newRefundedAmount = Number(lockedOrders[0].refundedAmountKrw || 0) + Number(refund.amountKrw);
       const fullyRefunded = newRefundedAmount === Number(order.amountKrw);
-      const entitlementStatus = order.kind === "addon" ? "revoked" : "manual_review";
+      let entitlementStatus = order.kind === "addon" ? "revoked" : "manual_review";
       if (order.kind === "addon") await tx`
         update shorts_mvp.usage_grants set status='revoked'
         where billing_order_id=${order.id} and kind='addon'
           and consumed_seconds=0 and reserved_seconds=0
       `;
+      if (
+        order.kind !== "addon"
+        && isPricingV2PackageCode(order.productCode)
+        && Number(order.refundPolicyVersion || 1) >= 2
+        && order.subscriptionId
+        && locked[0].entitlementActionMode !== "none"
+        && locked[0].entitlementEffectiveAt instanceof Date
+      ) {
+        const subscriptions = await tx`
+          select * from shorts_mvp.user_subscriptions
+          where id=${order.subscriptionId} for update
+        `;
+        const subscription = subscriptions[0];
+        if (!subscription) {
+          entitlementStatus = "manual_review";
+        } else if (locked[0].entitlementActionMode === "revoke_now") {
+          await tx`
+            update shorts_mvp.user_subscriptions
+            set status='expired',current_period_end=least(current_period_end,clock_timestamp()),
+              next_charge_at=null,next_quota_at=null,next_retry_at=null,grace_ends_at=null,
+              cancel_at_period_end=false,canceled_at=clock_timestamp(),ended_at=clock_timestamp()
+            where id=${subscription.id}
+          `;
+          await tx`
+            update shorts_mvp.usage_grants
+            set status='revoked',updated_at=clock_timestamp()
+            where subscription_id=${subscription.id} and kind='base' and status='active'
+          `;
+          const activeRows = await tx`
+            select s.plan_code
+            from shorts_mvp.user_subscriptions s
+            join shorts_mvp.plans p on p.code=s.plan_code
+            where s.user_id=${order.userId} and s.status='active'
+              and s.current_period_start <= clock_timestamp()
+              and s.current_period_end > clock_timestamp()
+            order by p.max_active_jobs desc,p.retention_days desc,s.created_at desc
+            limit 1
+          `;
+          await syncCachedPlan(tx, String(order.userId), activeRows[0]?.planCode || "free");
+          entitlementStatus = "revoked";
+        } else if (
+          locked[0].entitlementActionMode === "end_at"
+          && locked[0].entitlementEffectiveAt > new Date()
+        ) {
+          const entitlementEndsAt = locked[0].entitlementEffectiveAt;
+          await tx`
+            update shorts_mvp.user_subscriptions
+            set current_period_end=least(current_period_end,${entitlementEndsAt}),
+              next_charge_at=null,next_quota_at=null,next_retry_at=null,grace_ends_at=null,
+              cancel_at_period_end=true,canceled_at=clock_timestamp()
+            where id=${subscription.id} and status='active'
+          `;
+          await tx`
+            update shorts_mvp.usage_grants
+            set status='revoked',updated_at=clock_timestamp()
+            where subscription_id=${subscription.id} and kind='base' and status='active'
+              and valid_from >= ${entitlementEndsAt}
+          `;
+          await tx`
+            update shorts_mvp.usage_grants
+            set expires_at=${entitlementEndsAt},updated_at=clock_timestamp()
+            where subscription_id=${subscription.id} and kind='base' and status='active'
+              and valid_from < ${entitlementEndsAt} and expires_at > ${entitlementEndsAt}
+          `;
+          entitlementStatus = "scheduled_end";
+        } else {
+          entitlementStatus = "manual_review";
+        }
+      }
       await tx`
         update shorts_mvp.billing_orders
         set refunded_amount_krw=${newRefundedAmount},
@@ -293,15 +469,24 @@ export async function POST(request: Request) {
           actor_user_id,action,entity_type,entity_id,metadata
         ) values (
           ${admin.id},'billing.refund_succeeded','billing_refund',${refund.id},
-          ${tx.json({ orderId: order.id, amountKrw: Number(refund.amountKrw), fullyRefunded, entitlementStatus })}
+          ${tx.json({
+            orderId: order.id,
+            amountKrw: Number(refund.amountKrw),
+            fullyRefunded,
+            entitlementStatus,
+            entitlementActionMode: locked[0].entitlementActionMode,
+            entitlementEffectiveAt: locked[0].entitlementEffectiveAt,
+          })}
         )
       `;
+      return { entitlementStatus };
     });
     return NextResponse.json({
       ok: true,
       refundId: refund.id,
       amountKrw: Number(refund.amountKrw),
-      entitlementRequiresReview: order.kind !== "addon",
+      entitlementRequiresReview: reconciliation.entitlementStatus === "manual_review",
+      entitlementActionStatus: reconciliation.entitlementStatus,
     });
   } catch (error) {
     if (refundId && claimed) {

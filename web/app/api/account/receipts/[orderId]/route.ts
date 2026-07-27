@@ -34,6 +34,8 @@ export async function GET(
     const approvedAt = order.approvedAt instanceof Date
       ? new Intl.DateTimeFormat("ko-KR", { dateStyle: "long", timeStyle: "medium", timeZone: "Asia/Seoul" }).format(order.approvedAt)
       : "-";
+    const refundPolicyVersion = Number(order.refundPolicyVersion || 1);
+    const refundPolicyPath = refundPolicyVersion >= 2 ? "/refund" : "/refund/versions/1";
     const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>Easy Cut 결제확인서</title><style>
       body{font-family:system-ui,sans-serif;color:#181818;max-width:760px;margin:40px auto;padding:0 24px}
       h1{font-size:28px}table{width:100%;border-collapse:collapse;margin:28px 0}th,td{border:1px solid #ddd;padding:12px;text-align:left}th{width:180px;background:#f6f6f6}
@@ -46,6 +48,7 @@ export async function GET(
       <tr><th>상품</th><td>${escapeHtml(order.orderName)}</td></tr>
       <tr><th>결제금액</th><td>${money(order.amountKrw)}</td></tr>
       <tr><th>환불금액</th><td>${money(order.refundedAmountKrw)}</td></tr>
+      <tr><th>환불정책</th><td>v${refundPolicyVersion} · <a href="${refundPolicyPath}" target="_blank" rel="noopener noreferrer">적용 정책 보기</a></td></tr>
       <tr><th>결제 방식</th><td>${Number(order.installmentMonths || 0) > 0 ? `${Number(order.installmentMonths)}개월 할부` : "일시불"}</td></tr>
       <tr><th>PG 거래번호</th><td>${escapeHtml(order.providerTransactionId || "-")}</td></tr>
       <tr><th>사업자정보</th><td>아티룸 · 대표 김동민 · 사업자등록번호 638-04-03590 · 통신판매업 2025-서울마포-2971 · 서울특별시 마포구 성산로8길 40</td></tr>

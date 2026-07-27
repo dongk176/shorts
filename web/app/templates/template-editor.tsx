@@ -25,6 +25,7 @@ import {
   customVideoFrameStyle,
 } from "@/lib/custom-template-preview-layout";
 import { CENTER_SNAP_THRESHOLD_PX, snapAxisToCenter } from "@/lib/template-editor-snap";
+import { userFacingErrorMessage } from "@/lib/public-error";
 import { TemplateCommentPrototype } from "@/components/template-comment-prototype";
 
 type LayerId = "video" | "title" | "channel" | "comment";
@@ -323,7 +324,7 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
       setMessage("템플릿을 저장했습니다. 홈의 템플릿 선택에서도 바로 사용할 수 있습니다.");
       if (!initialTemplate) window.history.replaceState(null, "", `/templates/${payload.template.id}/edit`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "템플릿을 저장하지 못했습니다.");
+      setMessage(userFacingErrorMessage(error, "템플릿을 저장하지 못했습니다."));
     } finally {
       setSaving(false);
     }

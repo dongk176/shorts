@@ -1,5 +1,6 @@
 import type { Row, Sql } from "postgres";
 import type { GeneratedShort, Plan, VideoJob } from "@/lib/contracts";
+import { userFacingErrorMessage } from "@/lib/public-error";
 import type { MvpSession } from "@/lib/session";
 
 export async function getPlans(db: Sql): Promise<Plan[]> {
@@ -203,7 +204,12 @@ async function mapJobs(db: Sql, rows: Row[]): Promise<VideoJob[]> {
     progress: row.progress,
     stageCompletedCount: Number(row.stageCompletedCount ?? 0),
     stageTotalCount: Number(row.stageTotalCount ?? 0),
-    errorMessage: row.errorMessage,
+    errorMessage: row.errorMessage
+      ? userFacingErrorMessage(
+          row.errorMessage,
+          "쇼츠 제작 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+        )
+      : null,
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt?.toISOString() ?? null,
     shorts: shorts.get(row.id) || [],

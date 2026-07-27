@@ -44,6 +44,41 @@ describe("canonical URL middleware", () => {
     expect(mocks.refreshSession).toHaveBeenCalledOnce();
   });
 
+  it.each(["404", "500"])(
+    "redirects the reserved /%s project URL to the collision-free route",
+    async (projectNumber) => {
+      const response = await middleware(
+        new NextRequest(`https://example.com/${projectNumber}?from=legacy`),
+      );
+
+      expect(response.status).toBe(308);
+      expect(response.headers.get("location")).toBe(
+        `https://example.com/projects/${projectNumber}?from=legacy`,
+      );
+      expect(mocks.refreshSession).not.toHaveBeenCalled();
+    },
+  );
+
+  it("redirects a legacy project editor URL to the canonical project route", async () => {
+    const response = await middleware(
+      new NextRequest("https://example.com/500/edit/short-1"),
+    );
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe(
+      "https://example.com/projects/500/edit/short-1",
+    );
+  });
+
+  it("does not redirect an already canonical project URL", async () => {
+    const response = await middleware(
+      new NextRequest("https://example.com/projects/500"),
+    );
+
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(mocks.refreshSession).toHaveBeenCalledOnce();
+  });
+
   it("leaves unrelated routes unchanged", async () => {
     const response = await middleware(new NextRequest("https://example.com/pricing"));
 
