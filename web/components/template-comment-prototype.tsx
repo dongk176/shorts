@@ -1,4 +1,5 @@
 import type { CSSProperties, PointerEventHandler } from "react";
+import type { CommentOverlay } from "@/lib/contracts";
 import { COMMENT_BACKGROUND_COLOR } from "@/lib/template-config";
 
 export type TemplateCommentTheme = "dark" | "light";
@@ -9,6 +10,13 @@ const sizeScale: Record<TemplateCommentSize, number> = {
   medium: 1,
   large: 1.16,
 };
+
+function compactKoreanCount(value: number) {
+  const compact = (amount: number) => Number.isInteger(amount) ? String(amount) : amount.toFixed(1);
+  if (value >= 10_000) return `${compact(Math.floor(value / 1_000) / 10)}만`;
+  if (value >= 1_000) return `${compact(Math.floor(value / 100) / 10)}천`;
+  return value.toLocaleString("ko-KR");
+}
 
 function ReactionIcon({ kind, color }: { kind: "like" | "dislike"; color: string }) {
   return (
@@ -47,31 +55,37 @@ function TemplateCommentContents({
   foreground,
   muted,
   identityBlur,
-}: ReturnType<typeof commentAppearance>) {
+  comment,
+}: ReturnType<typeof commentAppearance> & { comment?: CommentOverlay }) {
+  const initial = comment?.initial || "소";
+  const nickname = comment?.nickname || "소담기록24";
+  const ageLabel = comment?.ageLabel || "2시간 전";
+  const text = comment?.text || "잠깐 보려고 눌렀는데 어느새 끝까지 다 봤네 ㅋㅋ";
+  const likeCount = comment?.likeCount ?? 121;
   return <span className="flex min-w-0 items-start" style={{ gap: canvasWidth(2.5) }}>
     <span
       aria-hidden="true"
       className="grid shrink-0 place-items-center rounded-full bg-[#d84572] font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.18)]"
-      style={{ width: canvasWidth(9.4), height: canvasWidth(9.4), fontSize: canvasWidth(3.6), filter: identityBlur }}
+      style={{ width: canvasWidth(9.4), height: canvasWidth(9.4), fontSize: canvasWidth(3.6), filter: identityBlur, backgroundColor: comment?.avatarColor || "#d84572" }}
     >
-      소
+      {initial}
     </span>
     <span className="min-w-0 flex-1">
       <span className="flex items-center font-semibold" style={{ gap: canvasWidth(1.5), fontSize: canvasWidth(3.15), color: foreground, filter: identityBlur }}>
-        <span>소담기록24</span>
+        <span>{nickname}</span>
         <span aria-hidden="true">·</span>
-        <span>2시간 전</span>
+        <span>{ageLabel}</span>
       </span>
       <span
         className="block break-keep font-medium leading-[1.42] tracking-[-.02em]"
         style={{ marginTop: canvasWidth(1.2), fontSize: canvasWidth(3.62), color: foreground }}
       >
-        잠깐 보려고 눌렀는데 어느새 끝까지 다 봤네 ㅋㅋ
+        {text}
       </span>
       <span className="flex items-center font-semibold" style={{ marginTop: canvasWidth(2.1), gap: canvasWidth(4.2), fontSize: canvasWidth(3.1), color: muted }}>
         <span className="flex items-center" style={{ gap: canvasWidth(1.35) }}>
           <span style={{ width: canvasWidth(4.1), height: canvasWidth(4.1) }}><ReactionIcon kind="like" color={foreground} /></span>
-          <span>121</span>
+          <span>{compactKoreanCount(likeCount)}</span>
         </span>
         <span style={{ width: canvasWidth(4.1), height: canvasWidth(4.1) }}><ReactionIcon kind="dislike" color={foreground} /></span>
         <span>답글</span>
@@ -80,7 +94,16 @@ function TemplateCommentContents({
   </span>;
 }
 
-export function TemplateCommentPreview({ theme, size }: { theme: TemplateCommentTheme; size: TemplateCommentSize }) {
+export function TemplateCommentPreview({
+  theme,
+  size,
+  comment,
+}: {
+  theme: TemplateCommentTheme;
+  size: TemplateCommentSize;
+  comment?: CommentOverlay | null;
+}) {
+  if (comment === null) return null;
   const appearance = commentAppearance(theme, size);
   return (
     <div
@@ -88,7 +111,7 @@ export function TemplateCommentPreview({ theme, size }: { theme: TemplateComment
       className="relative z-40 block w-full overflow-hidden rounded-none border-0 text-left shadow-none"
       style={appearance.style}
     >
-      <TemplateCommentContents {...appearance} />
+      <TemplateCommentContents {...appearance} comment={comment} />
     </div>
   );
 }

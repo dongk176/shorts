@@ -35,7 +35,12 @@ export function CustomTemplateTitlePreview({
     backgroundColor: (accent ? title.accentBackgroundColor : title.primaryBackgroundColor) || "transparent",
     padding: `${customCanvasWidth(Math.max(6, Math.round(fontSize * 0.14)))} ${customCanvasWidth(Math.max(10, Math.round(fontSize * 0.28)))}`,
   });
-  const lines = <><span className="whitespace-nowrap" style={lineStyle(false)}>{firstLine}</span><span className="whitespace-nowrap" style={lineStyle(true)}>{secondLine}</span></>;
+  const lines = <>
+    <span className="whitespace-nowrap" style={lineStyle(false)}>{firstLine}</span>
+    {secondLine
+      ? <span className="whitespace-nowrap" style={lineStyle(true)}>{secondLine}</span>
+      : null}
+  </>;
 
   if (onPointerDown) {
     return <button type="button" aria-label="제목 위치 이동" onPointerDown={onPointerDown} className={`absolute z-20 flex cursor-move flex-col items-center text-center font-bold ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`} style={wrapperStyle}>{lines}</button>;

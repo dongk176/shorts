@@ -3,7 +3,8 @@ import { z } from "zod";
 import { deleteShortObjects } from "@/lib/aws";
 import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
-import { apiError } from "@/lib/http";
+import { resolveEditedTemplateSelection } from "@/lib/edit-template-selection";
+import { apiError, HttpError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 
 const subtitle = z.object({ start: z.number().nonnegative(), end: z.number().positive(), text: z.string().max(200) }).refine((item) => item.end > item.start);
@@ -33,6 +34,7 @@ const patchSchema = z.object({
   subtitleSegments: z.array(subtitle).max(500),
   commentOverlays: z.array(commentOverlay).max(20).default([]),
   templateId: z.enum(templateIds),
+  customTemplateId: z.string().uuid().nullable().optional(),
   titleFontScale: z.number().min(0.8).max(1.2).default(1),
   titleTextStyles: z.array(titleTextStyle).max(80).default([]),
 }).superRefine((input, context) => {
@@ -52,7 +54,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const existing = await db`
-      select s.id, s.subtitle_segments, s.duration_seconds, s.template_id from shorts_mvp.generated_shorts s
+      select s.id, s.subtitle_segments, s.duration_seconds, s.template_id,
+        s.custom_template_id, s.template_snapshot
+      from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and not j.is_example and (
         (${session.userId}::uuid is not null and s.user_id=${session.userId})
@@ -88,13 +92,25 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
     if (orderedComments.some((comment, index) => index > 0 && comment.startSeconds < orderedComments[index - 1].endSeconds - 0.001)) {
       throw new Error("댓글 노출 시간이 서로 겹치지 않게 조정해 주세요.");
     }
+    const templateSelection = resolveEditedTemplateSelection({
+      existing: {
+        templateId: existing[0].templateId,
+        customTemplateId: existing[0].customTemplateId || null,
+        templateSnapshot: existing[0].templateSnapshot || null,
+      },
+      requestedTemplateId: input.templateId,
+      requestedCustomTemplateId: input.customTemplateId,
+    });
+    if (!templateSelection) {
+      throw new HttpError(400, "선택한 템플릿을 이 영상에 적용할 수 없습니다.");
+    }
     const rows = await db`
       update shorts_mvp.generated_shorts s set
         hook_title=${input.hookTitle}, channel_display_name=${input.channelDisplayName},
         subtitles_enabled=${input.subtitlesEnabled}, subtitle_segments=${db.json(input.subtitleSegments)},
         comment_overlays=${db.json(input.commentOverlays)},
-        custom_template_id=case when s.template_id=${input.templateId} then s.custom_template_id else null end,
-        template_snapshot=case when s.template_id=${input.templateId} then s.template_snapshot else null end,
+        custom_template_id=${templateSelection.customTemplateId},
+        template_snapshot=${templateSelection.templateSnapshot ? db.json(templateSelection.templateSnapshot) : null},
         template_id=${input.templateId}, title_font_scale=${input.titleFontScale},
         title_text_styles=${db.json(orderedTitleStyles)}, title_text_styles_initialized=true
       from shorts_mvp.video_jobs j

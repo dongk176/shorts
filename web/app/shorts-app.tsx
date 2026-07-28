@@ -8,11 +8,13 @@ import Link from "next/link";
 import { AuthControls } from "@/components/auth-controls";
 import { BackgroundShowcase } from "@/components/background-showcase";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
+import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
 import { EstimatedProcessingOverlay, ProjectCard } from "@/components/project-card";
 import { ProjectReveal } from "@/components/project-reveal";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SupportInquiryWidget } from "@/components/support-inquiry-widget";
+import { TemplateCommentPreview } from "@/components/template-comment-prototype";
 import { TitleOverlayPreview } from "@/components/title-overlay-preview";
 import { TransformationShowcase } from "@/components/transformation-showcase";
 import { VideoAspectRatioPicker } from "@/components/video-aspect-ratio-picker";
@@ -42,12 +44,21 @@ import { userFacingErrorMessage } from "@/lib/public-error";
 import { isIosDownloadDevice } from "@/lib/short-download";
 import { stateRetryDelayMs } from "@/lib/state-loading";
 import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
-import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
+import { titleLineBackground, titleLineColor, wrapPreviewTitle } from "@/lib/title-preview";
+import {
+  customCanvasWidth,
+  customCenteredLayerStyle,
+  customCommentLayerY,
+  customVideoFrameStyle,
+} from "@/lib/custom-template-preview-layout";
 import {
   COMMENT_BACKGROUND_COLOR,
   COMMENT_CAPTURE_LANDSCAPE_LIFT_PX,
   COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
   PRESET_SQUARE_CHANNEL_CENTER_Y,
+  stockBackgrounds,
+  templateConfigSchema,
+  TEMPLATE_CANVAS,
   type CustomTemplate,
 } from "@/lib/template-config";
 import {
@@ -86,6 +97,41 @@ const templates: Array<{ id: TemplateId; name: string; label: string; background
 type FavoriteTemplateCard =
   | { kind: "custom"; template: CustomTemplate }
   | { kind: "preset"; template: (typeof templates)[number] };
+
+function editableCustomTemplate(item: GeneratedShort): CustomTemplate | null {
+  const snapshot = item.templateSnapshot;
+  if (
+    !item.customTemplateId
+    || !snapshot
+    || snapshot.baseTemplateId !== item.templateId
+    || typeof snapshot.name !== "string"
+    || typeof snapshot.version !== "number"
+  ) {
+    return null;
+  }
+  const parsedConfig = templateConfigSchema.safeParse(snapshot.config);
+  if (!parsedConfig.success) return null;
+  return {
+    id: item.customTemplateId,
+    name: snapshot.name,
+    baseTemplateId: item.templateId,
+    config: parsedConfig.data,
+    version: snapshot.version,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+function customTemplateBackground(template: CustomTemplate) {
+  const background = template.config.background;
+  if (background.kind === "color") return { backgroundColor: background.color };
+  const asset = stockBackgrounds.find((item) => item.id === background.assetId);
+  return {
+    backgroundImage: `url(${asset?.src || ""})`,
+    backgroundPosition: "center",
+    backgroundSize: "cover",
+  };
+}
 
 const titleTextColorOptions = [
   { name: "화이트", color: "#FFFFFF" },
@@ -668,6 +714,54 @@ function FixedPresetChannel({
         sizes="10px"
       />
       <span className="max-w-[70cqw] truncate">{channelName}</span>
+    </div>
+  );
+}
+
+function CustomEditorChannel({
+  template,
+  channelName,
+  channelThumbnailUrl,
+  inCommentFlow = false,
+  commentY = 0,
+}: {
+  template: CustomTemplate;
+  channelName: string;
+  channelThumbnailUrl: string | null;
+  inCommentFlow?: boolean;
+  commentY?: number;
+}) {
+  const channel = template.config.channel;
+  if (!channel.visible) return null;
+  const positionedBelow = inCommentFlow && template.config.schemaVersion >= 4;
+  const flowStyle = positionedBelow
+    ? {
+        left: "50%",
+        top: customCanvasWidth(channel.y - commentY),
+        transform: "translate(-50%, -50%)",
+        width: customCanvasWidth(channel.maxWidth),
+      }
+    : inCommentFlow
+      ? { width: customCanvasWidth(channel.maxWidth) }
+      : customCenteredLayerStyle(channel);
+  return (
+    <div
+      className={`${positionedBelow ? "absolute" : inCommentFlow ? "relative mx-auto mt-[2cqw]" : "absolute"} z-30 flex items-center justify-center gap-[2cqw] truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold`}
+      style={{
+        ...flowStyle,
+        color: channel.color,
+        backgroundColor: channel.backgroundColor || "transparent",
+        fontSize: customCanvasWidth(channel.fontSize),
+      }}
+    >
+      <ChannelAvatar
+        url={channelThumbnailUrl}
+        className="h-[5.4cqw] w-[5.4cqw]"
+        fallbackForeground={channel.color}
+        fallbackBackground={channel.backgroundColor || "#111111"}
+        sizes="20px"
+      />
+      <span className="truncate">{channelName}</span>
     </div>
   );
 }
@@ -1328,6 +1422,7 @@ function CommentTimelineEditor({
 
 function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean }) {
   const initialTemplate = templates.find((value) => value.id === item.templateId) || templates[0];
+  const [availableCustomTemplate] = useState<CustomTemplate | null>(() => editableCustomTemplate(item));
   const initialTitleAspectRatio = item.templateId === "comment-capture" && item.videoAspectRatio === "9:16"
     ? "4:5"
     : item.videoAspectRatio || "1:1";
@@ -1351,6 +1446,15 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(item.subtitlesEnabled);
   const [segments, setSegments] = useState(item.subtitleSegments);
   const [templateId, setTemplateId] = useState(item.templateId);
+  const [activeCustomTemplate, setActiveCustomTemplate] = useState<CustomTemplate | null>(
+    availableCustomTemplate,
+  );
+  const [presetVersion, setPresetVersion] = useState(() => (
+    typeof item.templateSnapshot?.presetVersion === "number"
+      ? item.templateSnapshot.presetVersion
+      : 0
+  ));
+  const [templateSelectionTouched, setTemplateSelectionTouched] = useState(false);
   const [comments, setComments] = useState<CommentOverlay[]>(() => {
     if (item.commentOverlays?.length) return item.commentOverlays.map((comment) => ({
       ...comment,
@@ -1381,9 +1485,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const template = templates.find((value) => value.id === templateId) || templates[0];
   const originalAspectRatio = item.videoAspectRatio || "1:1";
   const commentNeedsVerticalFit = templateId === "comment-capture" && originalAspectRatio === "9:16";
-  const presetCommentVersion = typeof item.templateSnapshot?.presetVersion === "number"
-    ? item.templateSnapshot.presetVersion
-    : 0;
+  const presetCommentVersion = activeCustomTemplate ? 0 : presetVersion;
   const usesLiftedCommentLayout = templateId === "comment-capture"
     && presetCommentVersion >= 2;
   const usesFixedPresetChannel = presetCommentVersion >= 3;
@@ -1433,6 +1535,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     && orderedComments.every((comment, index) => index === 0 || comment.startSeconds >= orderedComments[index - 1].endSeconds - 0.001);
   const validSelection = !editTimeline || selectionDuration >= RANGE_EDIT_MIN_SECONDS;
   const editorValid = validTitle && validSelection && (templateId === "comment-capture" ? validComments : channel.trim().length > 0);
+  const customTitleLines = wrapPreviewTitle(title);
+  const customCommentY = activeCustomTemplate
+    ? customCommentLayerY(activeCustomTemplate.config)
+    : 0;
 
   useEffect(() => {
     const detectMobileEditor = () => {
@@ -1542,6 +1648,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
   const selectTemplate = (value: TemplateId) => {
     setTemplateId(value);
+    setActiveCustomTemplate(null);
+    setPresetVersion(3);
+    setTemplateSelectionTouched(true);
     const selectedTemplate = templates.find((template) => template.id === value) || templates[0];
     const selectedTitleAspectRatio = value === "comment-capture" && originalAspectRatio === "9:16"
       ? "4:5"
@@ -1556,6 +1665,18 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     const defaultBackground = defaultStyles.find((style) => style.backgroundColor)?.backgroundColor;
     if (defaultBackground) setTitleBackgroundColor(defaultBackground);
     if (value === "comment-capture") {
+      setComments((current) => (
+        current.length > 0 ? current : defaultComments(item.durationSeconds)
+      ));
+    }
+  };
+
+  const selectCurrentCustomTemplate = () => {
+    if (!availableCustomTemplate) return;
+    setTemplateId(availableCustomTemplate.baseTemplateId);
+    setActiveCustomTemplate(availableCustomTemplate);
+    setTemplateSelectionTouched(true);
+    if (availableCustomTemplate.baseTemplateId === "comment-capture") {
       setComments((current) => (
         current.length > 0 ? current : defaultComments(item.durationSeconds)
       ));
@@ -1774,6 +1895,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             subtitlesEnabled,
             commentOverlays: orderedComments,
             templateId,
+            ...(templateSelectionTouched
+              ? { customTemplateId: activeCustomTemplate?.id || null }
+              : {}),
             titleFontScale,
             titleTextStyles,
           }),
@@ -1781,7 +1905,19 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       } else {
         await requestJson(`/api/shorts/${item.id}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ hookTitle: title, channelDisplayName: channel, subtitlesEnabled, subtitleSegments: segments, commentOverlays: orderedComments, templateId, titleFontScale, titleTextStyles }),
+          body: JSON.stringify({
+            hookTitle: title,
+            channelDisplayName: channel,
+            subtitlesEnabled,
+            subtitleSegments: segments,
+            commentOverlays: orderedComments,
+            templateId,
+            ...(templateSelectionTouched
+              ? { customTemplateId: activeCustomTemplate?.id || null }
+              : {}),
+            titleFontScale,
+            titleTextStyles,
+          }),
         });
         await requestJson(`/api/shorts/${item.id}/rerender`, { method: "POST" });
       }
@@ -1883,19 +2019,108 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           </svg>
         </button>
         <section className={standalone ? `editor-preview-pane${editTimeline ? " has-range-editor" : ""}` : "editor-dialog-preview editor-preview-stack"}>
-        <div className={standalone ? "editor-video-frame" : "sticky top-0 mx-auto aspect-[9/16] w-full max-w-[320px] overflow-hidden"} style={{ background: template.background, containerType: "inline-size" }}>
-          <TitleOverlayPreview title={title} fontScale={titleFontScale} videoAspectRatio={commentNeedsVerticalFit ? "4:5" : originalAspectRatio} primary={template.primary} accent={template.accent} background={template.background} keepPrimaryFirstLine={template.id === "paper"} textStyles={titleTextStyles} liftLandscape={usesLiftedCommentLayout} />
-          {cleanVideoUrl ? <video ref={videoRef} className={`absolute inset-x-0 w-full bg-black ${commentNeedsVerticalFit ? "object-contain" : "object-cover"}`} style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }} src={cleanVideoUrl} playsInline disablePictureInPicture preload="metadata" onContextMenu={(event) => event.preventDefault()} onLoadedMetadata={(event) => { setVideoLoadError(false); if (editTimeline) { const offset = selectionStart - editTimeline.timelineStartSeconds; event.currentTarget.currentTime = Math.max(0, offset); setPreviewTime(offset); } }} onPlay={() => setIsPreviewPlaying(true)} onPause={() => setIsPreviewPlaying(false)} onEnded={() => setIsPreviewPlaying(false)} onError={() => setVideoLoadError(true)} onTimeUpdate={(event) => { const current = event.currentTarget.currentTime; setPreviewTime(current); if (editTimeline) { const start = selectionStart - editTimeline.timelineStartSeconds; const end = selectionEnd - editTimeline.timelineStartSeconds; if (!event.currentTarget.paused && current >= end - 0.03) { event.currentTarget.currentTime = Math.max(0, start); void event.currentTarget.play().catch(() => undefined); } } }} /> : <div className="absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}>클린 영상 준비 중</div>}
-          {videoLoadError && <div className="pointer-events-none absolute inset-x-3 z-30 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100" style={{ top: `${editorLayout.videoTop + 2}%` }}>편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>}
-          {subtitlesEnabled && activeSubtitle && <div className="pointer-events-none absolute inset-x-5 z-20 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white" style={{ bottom: `${editorLayout.subtitleBottom}%` }}>{activeSubtitle}</div>}
-          <div className={`absolute inset-x-0 z-10 overflow-hidden text-sm font-bold ${templateId === "comment-capture" ? "" : editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.bottomHeight}%`, background: editorLayout.fullVertical && templateId !== "comment-capture" ? "transparent" : template.background, color: template.channel }}>
-            {templateId === "comment-capture"
-              ? <div className="h-full bg-[#040404]"><CommentCaptureCard comment={activeComment} />{usesLiftedCommentLayout && !usesFixedPresetChannel && <CommentCaptureChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} />}</div>
-              : !usesFixedPresetChannel && <div className="flex items-start justify-center gap-2"><ChannelAvatar url={channelThumbnailUrl} className="mt-0.5 h-5 w-5" fallbackForeground={template.channel} fallbackBackground={template.background} sizes="20px" /><span className="max-w-[72%] truncate">{channel}</span></div>}
-          </div>
-          {usesFixedPresetChannel && (templateId === "comment-capture"
-            ? <CommentCaptureChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} fixedCenterY={COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y} />
-            : <FixedPresetChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} foreground={template.channel} background={template.background} />)}
+        <div
+          className={standalone ? "editor-video-frame" : "sticky top-0 mx-auto aspect-[9/16] w-full max-w-[320px] overflow-hidden"}
+          style={{
+            ...(activeCustomTemplate
+              ? customTemplateBackground(activeCustomTemplate)
+              : { background: template.background }),
+            containerType: "inline-size",
+          }}
+        >
+          {activeCustomTemplate
+            ? <CustomTemplateTitlePreview
+                title={activeCustomTemplate.config.title}
+                firstLine={customTitleLines[0] || ""}
+                secondLine={customTitleLines[1] || ""}
+              />
+            : <TitleOverlayPreview title={title} fontScale={titleFontScale} videoAspectRatio={commentNeedsVerticalFit ? "4:5" : originalAspectRatio} primary={template.primary} accent={template.accent} background={template.background} keepPrimaryFirstLine={template.id === "paper"} textStyles={titleTextStyles} liftLandscape={usesLiftedCommentLayout} />}
+          {cleanVideoUrl ? <video
+            ref={videoRef}
+            className={activeCustomTemplate
+              ? "absolute bg-black object-cover"
+              : `absolute inset-x-0 w-full bg-black ${commentNeedsVerticalFit ? "object-contain" : "object-cover"}`}
+            style={activeCustomTemplate
+              ? customVideoFrameStyle(activeCustomTemplate.config.video)
+              : { top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}
+            src={cleanVideoUrl}
+            playsInline
+            disablePictureInPicture
+            preload="metadata"
+            onContextMenu={(event) => event.preventDefault()}
+            onLoadedMetadata={(event) => {
+              setVideoLoadError(false);
+              if (editTimeline) {
+                const offset = selectionStart - editTimeline.timelineStartSeconds;
+                event.currentTarget.currentTime = Math.max(0, offset);
+                setPreviewTime(offset);
+              }
+            }}
+            onPlay={() => setIsPreviewPlaying(true)}
+            onPause={() => setIsPreviewPlaying(false)}
+            onEnded={() => setIsPreviewPlaying(false)}
+            onError={() => setVideoLoadError(true)}
+            onTimeUpdate={(event) => {
+              const current = event.currentTarget.currentTime;
+              setPreviewTime(current);
+              if (editTimeline) {
+                const start = selectionStart - editTimeline.timelineStartSeconds;
+                const end = selectionEnd - editTimeline.timelineStartSeconds;
+                if (!event.currentTarget.paused && current >= end - 0.03) {
+                  event.currentTarget.currentTime = Math.max(0, start);
+                  void event.currentTarget.play().catch(() => undefined);
+                }
+              }
+            }}
+          /> : <div
+            className={activeCustomTemplate
+              ? "absolute flex items-center justify-center bg-black/50 text-sm text-neutral-400"
+              : "absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400"}
+            style={activeCustomTemplate
+              ? customVideoFrameStyle(activeCustomTemplate.config.video)
+              : { top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}
+          >클린 영상 준비 중</div>}
+          {videoLoadError && <div className="pointer-events-none absolute inset-x-3 top-3 z-50 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100">편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>}
+          {subtitlesEnabled && activeSubtitle && <div className="pointer-events-none absolute inset-x-5 bottom-[23.2%] z-50 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white">{activeSubtitle}</div>}
+          {activeCustomTemplate
+            ? <>
+                {templateId === "comment-capture" && activeComment && activeCustomTemplate.config.comment.visible
+                  ? <div
+                      className="absolute inset-x-0 z-40"
+                      style={{ top: `${(customCommentY / TEMPLATE_CANVAS.height) * 100}%` }}
+                    >
+                      <TemplateCommentPreview
+                        theme={activeCustomTemplate.config.comment.theme}
+                        size={activeCustomTemplate.config.comment.size}
+                        comment={activeComment}
+                      />
+                      <CustomEditorChannel
+                        template={activeCustomTemplate}
+                        channelName={channel}
+                        channelThumbnailUrl={channelThumbnailUrl}
+                        inCommentFlow
+                        commentY={customCommentY}
+                      />
+                    </div>
+                  : null}
+                {templateId !== "comment-capture"
+                  ? <CustomEditorChannel
+                      template={activeCustomTemplate}
+                      channelName={channel}
+                      channelThumbnailUrl={channelThumbnailUrl}
+                    />
+                  : null}
+              </>
+            : <>
+                <div className={`absolute inset-x-0 z-10 overflow-hidden text-sm font-bold ${templateId === "comment-capture" ? "" : editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.bottomHeight}%`, background: editorLayout.fullVertical && templateId !== "comment-capture" ? "transparent" : template.background, color: template.channel }}>
+                  {templateId === "comment-capture"
+                    ? <div className="h-full bg-[#040404]"><CommentCaptureCard comment={activeComment} />{usesLiftedCommentLayout && !usesFixedPresetChannel && <CommentCaptureChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} />}</div>
+                    : !usesFixedPresetChannel && <div className="flex items-start justify-center gap-2"><ChannelAvatar url={channelThumbnailUrl} className="mt-0.5 h-5 w-5" fallbackForeground={template.channel} fallbackBackground={template.background} sizes="20px" /><span className="max-w-[72%] truncate">{channel}</span></div>}
+                </div>
+                {usesFixedPresetChannel && (templateId === "comment-capture"
+                  ? <CommentCaptureChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} fixedCenterY={COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y} />
+                  : <FixedPresetChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} foreground={template.channel} background={template.background} />)}
+              </>}
         </div>
         <div className="editor-preview-transport" aria-label="미리보기 재생 제어">
           <span>{formatPreciseTimestamp(displayedPreviewTime)}</span>
@@ -1954,6 +2179,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               </span>
             </summary>
             <div className="editor-accordion-panel">
+            {activeCustomTemplate
+              ? <p className="rounded-xl border border-cyan-300/15 bg-cyan-300/[.06] px-4 py-3 text-sm leading-6 text-cyan-100">
+                  제목 색상·크기·위치는 선택한 내 템플릿 설정을 그대로 사용합니다.
+                </p>
+              : <>
             <div className="rounded-xl border border-white/10 bg-black/20 p-3">
             <p className="text-xs leading-5 text-neutral-400">제목에서 원하는 글자를 더블클릭하거나 드래그해 선택한 뒤 색상을 변경하세요.</p>
             <p className={`mt-2 truncate rounded-lg px-2.5 py-2 text-xs ${titleSelection ? "bg-white/10 text-white" : "bg-white/[.04] text-neutral-500"}`}>
@@ -1983,6 +2213,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               <span className="flex items-center justify-between"><span>제목 글자 크기</span><strong className="text-sm text-red-300">{Math.round(titleFontScale * 100)}%</strong></span>
               <input aria-label="제목 글자 크기" type="range" min={0.8} max={1.2} step={0.05} value={titleFontScale} onChange={(event) => setTitleFontScale(Number(event.target.value))} className="mt-3 w-full accent-red-500" />
             </label>
+              </>}
             </div>
           </details>
           {templateId !== "comment-capture" && <label className="editor-section block text-sm font-semibold">채널명<input value={channel} onChange={(event) => setChannel(event.target.value)} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>}
@@ -1991,7 +2222,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           <details className="editor-accordion">
             <summary className="editor-accordion-summary">
               <span>템플릿</span>
-              <span className="editor-accordion-summary-meta">{template.name}</span>
+              <span className="editor-accordion-summary-meta">{activeCustomTemplate?.name || template.name}</span>
               <span className="editor-accordion-chevron" aria-hidden="true">
                 <svg viewBox="0 0 20 20" fill="none">
                   <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -2000,7 +2231,36 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             </summary>
             <div className="editor-accordion-panel">
               <p className="mb-3 text-xs text-neutral-500">최종 영상의 제목·영상·하단 구성을 미리 확인하세요.</p>
-              <div className="editor-template-grid">{templates.map((value) => <button key={value.id} type="button" aria-pressed={templateId === value.id} onClick={() => selectTemplate(value.id)} className={`min-w-0 rounded-xl border-2 p-2 transition ${templateId === value.id ? "border-red-500 bg-red-500/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}><TemplatePreview template={value} videoAspectRatio={item.videoAspectRatio || "1:1"} channelName={channel} channelThumbnailUrl={channelThumbnailUrl} /><span className="mt-2 block truncate text-center text-xs font-semibold">{value.name}</span></button>)}</div>
+              <div className="editor-template-grid">
+                {availableCustomTemplate && <button
+                  type="button"
+                  aria-pressed={activeCustomTemplate?.id === availableCustomTemplate.id}
+                  onClick={selectCurrentCustomTemplate}
+                  className={`min-w-0 rounded-xl border-2 p-2 transition ${activeCustomTemplate?.id === availableCustomTemplate.id ? "border-red-500 bg-red-500/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}
+                >
+                  <CustomTemplateCanvasPreview
+                    template={availableCustomTemplate}
+                    firstLine={customTitleLines[0] || ""}
+                    secondLine={customTitleLines[1] || ""}
+                    channelLabel={channel}
+                  />
+                  <span className="mt-2 block truncate text-center text-xs font-semibold">{availableCustomTemplate.name}</span>
+                  <span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">적용 중인 내 템플릿</span>
+                </button>}
+                {templates.map((value) => {
+                  const selected = !activeCustomTemplate && templateId === value.id;
+                  return <button
+                    key={value.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => selectTemplate(value.id)}
+                    className={`min-w-0 rounded-xl border-2 p-2 transition ${selected ? "border-red-500 bg-red-500/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}
+                  >
+                    <TemplatePreview template={value} videoAspectRatio={item.videoAspectRatio || "1:1"} channelName={channel} channelThumbnailUrl={channelThumbnailUrl} />
+                    <span className="mt-2 block truncate text-center text-xs font-semibold">{value.name}</span>
+                  </button>;
+                })}
+              </div>
             </div>
           </details>
           {error && <p className="mt-4 text-sm text-red-400">{error}</p>}

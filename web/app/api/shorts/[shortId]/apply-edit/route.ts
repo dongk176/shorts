@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
+import { resolveEditedTemplateSelection } from "@/lib/edit-template-selection";
 import { apiError, HttpError } from "@/lib/http";
 import {
   RANGE_EDIT_MIN_SECONDS,
@@ -40,6 +41,7 @@ const editSchema = z.object({
   subtitlesEnabled: z.boolean(),
   commentOverlays: z.array(commentOverlay).max(20).default([]),
   templateId: z.enum(templateIds),
+  customTemplateId: z.string().uuid().nullable().optional(),
   titleFontScale: z.number().min(0.8).max(1.2).default(1),
   titleTextStyles: z.array(titleTextStyle).max(80).default([]),
 }).superRefine((input, context) => {
@@ -126,6 +128,18 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
       input.startSeconds,
       input.endSeconds,
     );
+    const templateSelection = resolveEditedTemplateSelection({
+      existing: {
+        templateId: existing.templateId,
+        customTemplateId: existing.customTemplateId || null,
+        templateSnapshot: existing.templateSnapshot || null,
+      },
+      requestedTemplateId: input.templateId,
+      requestedCustomTemplateId: input.customTemplateId,
+    });
+    if (!templateSelection) {
+      throw new HttpError(400, "선택한 템플릿을 이 영상에 적용할 수 없습니다.");
+    }
     const snapshot = {
       startSeconds: Math.round(input.startSeconds * 1_000) / 1_000,
       endSeconds: Math.round(input.endSeconds * 1_000) / 1_000,
@@ -136,8 +150,8 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
       subtitleSegments,
       commentOverlays: comments,
       templateId: input.templateId,
-      customTemplateId: existing.templateId === input.templateId ? existing.customTemplateId || null : null,
-      templateSnapshot: existing.templateId === input.templateId ? existing.templateSnapshot || null : null,
+      customTemplateId: templateSelection.customTemplateId,
+      templateSnapshot: templateSelection.templateSnapshot,
       videoAspectRatio: existing.videoAspectRatio || "1:1",
       titleFontScale: input.titleFontScale,
       titleTextStyles: orderedTitleStyles,

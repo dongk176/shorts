@@ -325,9 +325,54 @@ describe("range editing feature gate and snapshot", () => {
       durationSeconds: 30,
       templateId: "comment-capture",
       customTemplateId: null,
-      templateSnapshot: null,
+      templateSnapshot: { presetVersion: 3 },
       subtitleSegments: [{ start: 0, end: 5, text: "현재 자막" }],
       commentOverlays: [{ startSeconds: 0, endSeconds: 30, text: "댓글" }],
+    });
+  });
+
+  it("replaces a custom snapshot when its base preset is explicitly selected", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    const customTemplateId = "8d5373bd-63c0-4697-94eb-44c8f5046bdc";
+    const db = dbWithRows([{
+      id: shortId,
+      status: "ready",
+      durationSeconds: 40,
+      templateId: "comment-capture",
+      customTemplateId,
+      templateSnapshot: {
+        id: customTemplateId,
+        name: "내 댓글 템플릿",
+        baseTemplateId: "comment-capture",
+        config: { schemaVersion: 4 },
+        version: 1,
+      },
+      videoAspectRatio: "1:1",
+      editTimelineS3Key: "edit-sources/timeline.mp4",
+      editTimelineStartSeconds: 90,
+      editTimelineEndSeconds: 170,
+      editTimelineSubtitleSegments: [],
+    }]);
+    const tx = dbWithRows([{ id: shortId }], []);
+    Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        ...input,
+        customTemplateId: null,
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(202);
+    const pendingSnapshot = tx.mock.calls[0].slice(1).find((value) => (
+      typeof value === "object" && value !== null && "durationSeconds" in value
+    ));
+    expect(pendingSnapshot).toMatchObject({
+      templateId: "comment-capture",
+      customTemplateId: null,
+      templateSnapshot: { presetVersion: 3 },
     });
   });
 
