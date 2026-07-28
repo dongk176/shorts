@@ -11,6 +11,7 @@ import {
   popularVideoSourceCategoryValues,
   type PopularVideo,
   type PopularVideoCategory,
+  type PopularReusablePeriod,
   type PopularVideoResponse,
 } from "@/lib/youtube-popular";
 
@@ -479,24 +480,34 @@ export async function getReusablePopularVideos(
   koreanOnly: boolean,
   cursor?: string,
   limit = 48,
+  reusablePeriod: PopularReusablePeriod = "all",
   db: Sql = getDb(),
 ): Promise<PopularVideoResponse> {
   const decodedCursor = decodeCursor(cursor);
   const run = await resolveReadyRun(db, decodedCursor?.runId);
   const offset = decodedCursor?.offset || 0;
   const rows = await db`
-    with all_reusable_candidates as (
+    with run_window as (
+      select
+        current_run.completed_at as current_completed_at,
+        coalesce((
+          select max(previous_run.completed_at)
+          from shorts_mvp.popular_search_runs previous_run
+          where previous_run.status='ready'
+            and previous_run.completed_at < current_run.completed_at
+        ), '-infinity'::timestamptz) as previous_completed_at
+      from shorts_mvp.popular_search_runs current_run
+      where current_run.id=${run.id}
+    ),
+    all_reusable_candidates as (
       select
         i.video_id, i.category, i.title, i.channel_name, i.thumbnail_url,
         i.duration_seconds, i.view_count, i.published_at, i.license, i.is_korean,
         i.collected_at, r.completed_at as last_seen_at, 0 as source_priority
       from shorts_mvp.popular_search_items i
       join shorts_mvp.popular_search_runs r on r.id=i.run_id
-      where r.status='ready' and r.completed_at <= (
-        select completed_at
-        from shorts_mvp.popular_search_runs
-        where id=${run.id}
-      )
+      where r.status='ready'
+        and r.completed_at <= (select current_completed_at from run_window)
         and i.license='creativeCommon'
       union all
       select
@@ -505,37 +516,94 @@ export async function getReusablePopularVideos(
         i.collected_at, r.completed_at as last_seen_at, 1 as source_priority
       from shorts_mvp.popular_video_items i
       join shorts_mvp.popular_video_runs r on r.id=i.run_id
-      where r.status='ready' and r.completed_at <= (
-        select completed_at
-        from shorts_mvp.popular_search_runs
-        where id=${run.id}
-      )
+      where r.status='ready'
+        and r.completed_at <= (select current_completed_at from run_window)
         and i.license='creativeCommon'
     ),
-    deduplicated as (
+    ranked as (
       select *,
+        min(last_seen_at) over (partition by video_id) as first_seen_at,
         row_number() over (
           partition by video_id
           order by last_seen_at desc, collected_at desc, view_count desc, source_priority asc
         ) as duplicate_rank
       from all_reusable_candidates
-      where (${category}='all' or category=${category})
+    ),
+    scoped as (
+      select *
+      from ranked
+      where duplicate_rank=1
+        and (${category}='all' or category=${category})
         and (${longFormOnly}=false or duration_seconds >= ${POPULAR_VIDEO_LONG_FORM_SECONDS})
         and (${koreanOnly}=false or is_korean)
+    ),
+    period_counts as (
+      select
+        count(*) filter (
+          where first_seen_at > run_window.previous_completed_at
+        ) as today_count,
+        count(*) filter (
+          where first_seen_at >= (
+            date_trunc('day', run_window.current_completed_at at time zone 'Asia/Seoul')
+            at time zone 'Asia/Seoul'
+          ) - interval '6 days'
+        ) as week_count,
+        count(*) as all_count
+      from scoped
+      cross join run_window
+    ),
+    paged as (
+      select
+        video_id, category, title, channel_name, thumbnail_url, duration_seconds,
+        view_count, published_at, license, last_seen_at, first_seen_at,
+        row_number() over (
+          order by
+            case when ${reusablePeriod}<>'all' then first_seen_at end desc,
+            view_count desc, last_seen_at desc, published_at desc, video_id asc
+        ) as page_rank
+      from scoped
+      cross join run_window
+      where (
+          ${reusablePeriod}='all'
+          or (
+            ${reusablePeriod}='today'
+            and first_seen_at > run_window.previous_completed_at
+          )
+          or (
+            ${reusablePeriod}='week'
+            and first_seen_at >= (
+              date_trunc('day', run_window.current_completed_at at time zone 'Asia/Seoul')
+              at time zone 'Asia/Seoul'
+            ) - interval '6 days'
+          )
+        )
+      order by
+        case when ${reusablePeriod}<>'all' then first_seen_at end desc,
+        view_count desc, last_seen_at desc, published_at desc, video_id asc
+      offset ${offset}
+      limit ${limit + 1}
     )
-    select video_id, category, title, channel_name, thumbnail_url, duration_seconds,
-      view_count, published_at, license, last_seen_at, count(*) over() as total_count
-    from deduplicated
-    where duplicate_rank=1
-    order by view_count desc, last_seen_at desc, published_at desc, video_id asc
-    offset ${offset}
-    limit ${limit + 1}
+    select
+      paged.video_id, paged.category, paged.title, paged.channel_name,
+      paged.thumbnail_url, paged.duration_seconds, paged.view_count,
+      paged.published_at, paged.license, paged.last_seen_at, paged.first_seen_at,
+      period_counts.today_count, period_counts.week_count, period_counts.all_count
+    from period_counts
+    left join paged on true
+    order by paged.page_rank asc nulls last
   `;
-  const hasNext = rows.length > limit;
+  const itemRows = rows.filter((row) => row.videoId !== null && row.videoId !== undefined);
+  const counts = {
+    today: Number(rows[0]?.todayCount || 0),
+    week: Number(rows[0]?.weekCount || 0),
+    all: Number(rows[0]?.allCount || 0),
+  };
+  const hasNext = itemRows.length > limit;
   return {
-    items: rows.slice(0, limit).map((row) => rowToPopularVideo(row as Record<string, unknown>)),
+    items: itemRows.slice(0, limit).map((row) => rowToPopularVideo(row as Record<string, unknown>)),
     updatedAt: run.completedAt,
-    totalCount: rows[0] ? Number(rows[0].totalCount) : 0,
+    totalCount: counts[reusablePeriod],
+    reusablePeriodCounts: counts,
     ...(hasNext ? { nextCursor: encodeCursor(run.id, offset + limit) } : {}),
   };
 }

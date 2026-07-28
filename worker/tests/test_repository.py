@@ -124,6 +124,35 @@ def test_webshare_migration_seeds_ten_central_slots_and_extends_deadline_on_admi
     assert "public." not in migration
 
 
+def test_webshare_pool_expansion_migration_adds_ten_more_central_slots() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607270002_expand_webshare_ingestion_slots.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "generate_series(11,20)" in migration
+    assert "'webshare-' || lpad(value::text,2,'0')" in migration
+    assert "'webshare_isp', false" in migration
+    assert "on conflict (route_id) do nothing" in migration
+    assert "public." not in migration
+
+
+def test_webshare_pool_activation_migration_enables_only_expanded_slots() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607270003_enable_expanded_webshare_ingestion_slots.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "set enabled=true" in migration
+    assert "route_id between 'webshare-11' and 'webshare-20'" in migration
+    assert "egress_class='webshare_isp'" in migration
+    assert "public." not in migration
+
+
 def test_inline_route_rotation_migration_locks_and_excludes_attempted_routes() -> None:
     migration = (
         Path(__file__).parents[2]

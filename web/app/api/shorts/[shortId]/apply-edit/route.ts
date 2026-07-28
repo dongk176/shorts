@@ -42,6 +42,14 @@ const editSchema = z.object({
   templateId: z.enum(templateIds),
   titleFontScale: z.number().min(0.8).max(1.2).default(1),
   titleTextStyles: z.array(titleTextStyle).max(80).default([]),
+}).superRefine((input, context) => {
+  if (input.templateId === "comment-capture" && input.commentOverlays.length === 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["commentOverlays"],
+      message: "댓글 템플릿에는 댓글을 한 개 이상 추가해 주세요.",
+    });
+  }
 });
 
 export async function POST(request: Request, context: { params: Promise<{ shortId: string }> }) {
@@ -53,25 +61,32 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
     const db = getDb();
     const existingRows = await db`
       select s.id, s.status, s.duration_seconds, s.template_id, s.custom_template_id,
-        s.template_snapshot, s.video_aspect_ratio, s.edit_timeline_s3_key,
-        s.edit_timeline_start_seconds, s.edit_timeline_end_seconds,
-        s.edit_timeline_subtitle_segments
+          s.template_snapshot, s.video_aspect_ratio, s.edit_timeline_s3_key,
+          s.edit_timeline_start_seconds, s.edit_timeline_end_seconds,
+          s.edit_timeline_subtitle_segments, s.clean_clip_s3_key,
+          s.start_seconds, s.end_seconds, s.subtitle_segments
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and not j.is_example and (
         (${session.userId}::uuid is not null and s.user_id=${session.userId})
         or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
       ) and s.deleted_at is null and s.expires_at > now()
-        and s.output_s3_key is not null and s.edit_timeline_s3_key is not null
+        and s.output_s3_key is not null
+        and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null
     `;
     const existing = existingRows[0];
-    if (!existing) throw new HttpError(404, "편집할 쇼츠 또는 여유 영상을 찾을 수 없습니다.");
+    if (!existing) throw new HttpError(404, "편집 가능한 쇼츠 영상을 찾을 수 없습니다.");
     if (existing.status !== "ready") {
       throw new HttpError(409, "이미 수정 반영 중이거나 편집할 수 없는 상태입니다.");
     }
 
-    const timelineStart = Number(existing.editTimelineStartSeconds);
-    const timelineEnd = Number(existing.editTimelineEndSeconds);
+    const hasCapturedTimeline = Boolean(existing.editTimelineS3Key);
+    const timelineStart = hasCapturedTimeline
+      ? Number(existing.editTimelineStartSeconds)
+      : Number(existing.startSeconds);
+    const timelineEnd = hasCapturedTimeline
+      ? Number(existing.editTimelineEndSeconds)
+      : Number(existing.endSeconds);
     const durationSeconds = Math.round((input.endSeconds - input.startSeconds) * 1_000) / 1_000;
     if (durationSeconds < RANGE_EDIT_MIN_SECONDS) {
       throw new HttpError(400, `최종 영상은 ${RANGE_EDIT_MIN_SECONDS}초 이상이어야 합니다.`);
@@ -102,7 +117,11 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
     }
 
     const subtitleSegments = subtitlesForTimelineSelection(
-      (existing.editTimelineSubtitleSegments || []) as TimelineSubtitle[],
+      (
+        hasCapturedTimeline
+          ? existing.editTimelineSubtitleSegments || []
+          : existing.subtitleSegments || []
+      ) as TimelineSubtitle[],
       timelineStart,
       input.startSeconds,
       input.endSeconds,
@@ -137,7 +156,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
           (${session.userId}::uuid is not null and s.user_id=${session.userId})
           or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
         ) and s.status='ready' and s.deleted_at is null and s.expires_at > now()
-          and s.edit_timeline_s3_key is not null
+          and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null
         returning s.id
       `;
       if (!updated[0]) throw new HttpError(409, "쇼츠 편집 상태가 변경되었습니다. 다시 열어 주세요.");

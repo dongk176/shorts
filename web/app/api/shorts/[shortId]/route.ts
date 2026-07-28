@@ -35,6 +35,14 @@ const patchSchema = z.object({
   templateId: z.enum(templateIds),
   titleFontScale: z.number().min(0.8).max(1.2).default(1),
   titleTextStyles: z.array(titleTextStyle).max(80).default([]),
+}).superRefine((input, context) => {
+  if (input.templateId === "comment-capture" && input.commentOverlays.length === 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["commentOverlays"],
+      message: "댓글 템플릿에는 댓글을 한 개 이상 추가해 주세요.",
+    });
+  }
 });
 
 export async function PATCH(request: Request, context: { params: Promise<{ shortId: string }> }) {

@@ -20,6 +20,12 @@ import {
 } from "./admin-inquiries-dashboard";
 import { AdminMembersDashboard, type AdminMember } from "./admin-members-dashboard";
 import { AdminInstallmentsDashboard } from "./admin-installments-dashboard";
+import { AdminReferralsSection } from "./admin-referrals-section";
+import {
+  AdminRefundsDashboard,
+  type AdminRefundCase,
+  type AdminRefundCaseMetrics,
+} from "./admin-refunds-dashboard";
 import {
   AdminOnboardingDashboard,
   type AdminUserOnboardingMetrics,
@@ -63,7 +69,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
 
   const params = await searchParams;
   const requestedTab = first(params.tab);
-  const tab = ["billing", "members", "inquiries", "feedback", "onboarding", "installments"].includes(requestedTab)
+  const tab = ["billing", "refunds", "members", "referrals", "inquiries", "feedback", "onboarding", "installments"].includes(requestedTab)
     ? requestedTab
     : "billing";
   const requestedStatus = first(params.status);
@@ -72,6 +78,10 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     ? requestedStatus
     : "all";
   const provider = ["nicepay", "thepayone"].includes(requestedProvider) ? requestedProvider : "all";
+  const requestedRefundStatus = first(params.refundStatus);
+  const refundCaseStatus = ["unprocessed", "in_progress", "completed", "manual_review", "closed"].includes(requestedRefundStatus)
+    ? requestedRefundStatus
+    : "all";
   const query = first(params.q).trim().slice(0, 100);
   const requestedMemberType = first(params.memberType);
   const memberType = ["free", "paid_active", "paid_attention", "paid_inactive"].includes(requestedMemberType)
@@ -85,6 +95,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const memberActivity = ["with_projects", "with_shorts", "no_projects"].includes(requestedMemberActivity)
     ? requestedMemberActivity
     : "all";
+  const memberReferrer = first(params.memberReferrer) || "all";
   const requestedInquiryStatus = first(params.inquiryStatus);
   const inquiryStatus = ["new", "in_progress", "waiting_on_customer", "resolved", "closed"].includes(requestedInquiryStatus)
     ? requestedInquiryStatus
@@ -128,7 +139,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         coalesce(pfu.usage_count,0)::integer as popular_filter_usage_count,
         pfu.last_used_at as popular_filter_last_used_at,
         bua.last_allocated_at as last_base_allocated_at,
-        ebook.last_downloaded_at as ebook_last_downloaded_at
+        ebook.last_downloaded_at as ebook_last_downloaded_at,
+        first_job.completed_at as first_completed_job_at
       from shorts_mvp.billing_orders o
       join shorts_mvp.app_users u on u.id=o.user_id
       left join shorts_mvp.user_subscriptions s on s.id=o.subscription_id
@@ -157,6 +169,19 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         where user_id=o.user_id
           and last_downloaded_at >= coalesce(o.renewal_period_start,o.approved_at)
       ) ebook on true
+      left join lateral (
+        select j.completed_at
+        from shorts_mvp.usage_grants g
+        join shorts_mvp.usage_grant_allocations a
+          on a.grant_id=g.id and a.status='consumed'
+        join shorts_mvp.usage_reservations ur
+          on ur.id=a.reservation_id and ur.status='consumed'
+        join shorts_mvp.video_jobs j
+          on j.id=ur.job_id and j.status='completed' and j.completed_at is not null
+        where g.billing_order_id=o.id
+        order by j.completed_at,j.created_at,j.id
+        limit 1
+      ) first_job on true
       where (${status}='all' or o.status=${status})
         and (${provider}='all' or o.provider=${provider})
         and (
@@ -178,9 +203,57 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       order by r.requested_at desc
       limit 50
     ` : [];
+  const refundCaseRows = tab === "refunds" ? await db`
+      select
+        c.*,o.order_id,o.product_code,o.order_name,o.amount_krw as order_amount_krw,
+        o.refunded_amount_krw as order_refunded_amount_krw,o.approved_at,o.provider,
+        o.provider_transaction_id,u.email,u.display_name,
+        coalesce(p.display_name,o.order_name) as product_name,
+        s.status as subscription_status,
+        assigned.email as assigned_admin_email
+      from shorts_mvp.admin_refund_cases c
+      join shorts_mvp.billing_orders o on o.id=c.billing_order_id
+      join shorts_mvp.app_users u on u.id=c.user_id
+      left join shorts_mvp.plans p on p.code=o.product_code
+      left join shorts_mvp.user_subscriptions s on s.id=o.subscription_id
+      left join shorts_mvp.app_users assigned on assigned.id=c.assigned_to_user_id
+      where (${refundCaseStatus}='all' or c.status=${refundCaseStatus})
+        and (
+          ${query}=''
+          or lower(coalesce(u.email,'')) like ${`%${query.toLowerCase()}%`}
+          or lower(coalesce(u.display_name,'')) like ${`%${query.toLowerCase()}%`}
+          or lower(o.order_id) like ${`%${query.toLowerCase()}%`}
+          or lower(coalesce(o.provider_transaction_id,'')) like ${`%${query.toLowerCase()}%`}
+          or c.id::text=${query}
+          or u.id::text=${query}
+        )
+      order by
+        case c.status
+          when 'manual_review' then 0
+          when 'unprocessed' then 1
+          when 'in_progress' then 2
+          when 'completed' then 3
+          else 4
+        end,
+        c.updated_at desc
+      limit 500
+    ` : [];
+  const refundCaseMetricRows = tab === "refunds" ? await db`
+      select
+        count(*) filter (where status='unprocessed')::integer as unprocessed,
+        count(*) filter (where status='in_progress')::integer as in_progress,
+        count(*) filter (where status='completed')::integer as completed,
+        count(*) filter (where status='manual_review')::integer as manual_review,
+        coalesce(sum(planned_refund_krw) filter (
+          where payment_status='completed'
+            and updated_at >= clock_timestamp()-interval '30 days'
+        ),0)::bigint as recent_refund_krw
+      from shorts_mvp.admin_refund_cases
+    ` : [];
   const memberRows = tab === "members" ? await db`
       select
         u.id,u.email,u.display_name,u.created_at,u.last_sign_in_at,
+        u.referral_partner_id,rp.creator_name as referral_creator_name,rp.slug as referral_slug,
         s.id as subscription_id,s.plan_code,s.billing_cycle,s.status as subscription_status,
         s.current_period_start,s.current_period_end,s.next_charge_at,
         s.provider_schedule_status,s.billing_review_status,s.billing_review_reason,
@@ -189,6 +262,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         coalesce(shorts.short_count,0)::integer as short_count,
         count(*) over()::integer as filtered_count
       from shorts_mvp.app_users u
+      left join shorts_mvp.referral_partners rp on rp.id=u.referral_partner_id
       left join lateral (
         select subscription.*
         from shorts_mvp.user_subscriptions subscription
@@ -234,7 +308,18 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         or (${memberActivity}='with_shorts' and coalesce(shorts.short_count,0)>0)
         or (${memberActivity}='no_projects' and coalesce(projects.project_count,0)=0)
       )
+      and (
+        ${memberReferrer}='all'
+        or (${memberReferrer}='none' and u.referral_partner_id is null)
+        or (${memberReferrer}='referred' and u.referral_partner_id is not null)
+        or u.referral_partner_id::text=${memberReferrer}
+      )
       order by coalesce(u.last_sign_in_at,u.created_at) desc
+    ` : [];
+  const memberReferralOptionRows = tab === "members" ? await db`
+      select id,creator_name,slug
+      from shorts_mvp.referral_partners
+      order by creator_name,slug
     ` : [];
   const feedbackRows = tab === "feedback" ? await db`
       select f.id,f.satisfaction_rating,f.disappointment_reason,f.improvement_text,
@@ -390,6 +475,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         isInCurrentPackageMonth(row.lastBaseAllocatedAt)
         || isInCurrentPackageMonth(row.popularFilterLastUsedAt)
         || isInCurrentPackageMonth(row.ebookLastDownloadedAt),
+      firstCompletedJobAt: iso(row.firstCompletedJobAt),
       popularFilterUsageCount: Number(row.popularFilterUsageCount || 0),
       popularFilterLastUsedAt: iso(row.popularFilterLastUsedAt),
     };
@@ -409,6 +495,49 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     requestedAt: iso(row.requestedAt)!,
     processedAt: iso(row.processedAt),
   }));
+  const refundCases: AdminRefundCase[] = refundCaseRows.map((row) => ({
+    id: row.id,
+    billingOrderId: row.billingOrderId,
+    orderId: row.orderId,
+    productCode: row.productCode,
+    productName: row.productName || row.orderName || row.productCode,
+    orderAmountKrw: Number(row.orderAmountKrw || 0),
+    orderRefundedAmountKrw: Number(row.orderRefundedAmountKrw || 0),
+    approvedAt: iso(row.approvedAt),
+    provider: row.provider,
+    providerTransactionId: row.providerTransactionId || null,
+    userId: row.userId,
+    email: row.email || "-",
+    displayName: row.displayName || null,
+    status: row.status,
+    reasonCode: row.reasonCode,
+    reasonDetail: row.reasonDetail,
+    firstJobCompleted: Boolean(row.firstJobCompleted),
+    firstCompletedJobAt: iso(row.firstCompletedJobAt),
+    prepaidMonths: Number(row.prepaidMonths || 1),
+    monthlyDeductionKrw: Number(row.monthlyDeductionKrw || 0),
+    calculatedRefundKrw: Number(row.calculatedRefundKrw || 0),
+    plannedRefundKrw: Number(row.plannedRefundKrw || 0),
+    refundAction: row.refundAction,
+    paymentStatus: row.paymentStatus,
+    billingAction: row.billingAction,
+    entitlementAction: row.entitlementAction,
+    entitlementEffectiveAt: iso(row.entitlementEffectiveAt),
+    serviceActionStatus: row.serviceActionStatus,
+    providerReference: row.providerReference || null,
+    adminNote: row.adminNote || null,
+    subscriptionStatus: row.subscriptionStatus || null,
+    assignedAdminEmail: row.assignedAdminEmail || null,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+  }));
+  const refundCaseMetrics: AdminRefundCaseMetrics = {
+    unprocessed: Number(refundCaseMetricRows[0]?.unprocessed || 0),
+    inProgress: Number(refundCaseMetricRows[0]?.inProgress || 0),
+    completed: Number(refundCaseMetricRows[0]?.completed || 0),
+    manualReview: Number(refundCaseMetricRows[0]?.manualReview || 0),
+    recentRefundKrw: Number(refundCaseMetricRows[0]?.recentRefundKrw || 0),
+  };
   const members: AdminMember[] = memberRows.map((row) => ({
     id: row.id,
     email: row.email || "-",
@@ -430,6 +559,9 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     cardNumberMasked: row.cardNumberMasked || null,
     projectCount: Number(row.projectCount || 0),
     shortCount: Number(row.shortCount || 0),
+    referralPartnerId: row.referralPartnerId || null,
+    referralCreatorName: row.referralCreatorName || null,
+    referralSlug: row.referralSlug || null,
   }));
   const filteredMemberCount = Number(memberRows[0]?.filteredCount || 0);
   const feedback: AdminProjectFeedback[] = feedbackRows.map((row) => ({
@@ -543,11 +675,25 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             결제
           </Link>
           <Link
+            href="/admin/easycutcutcutcutcutcut?tab=refunds"
+            aria-current={tab === "refunds" ? "page" : undefined}
+            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "refunds" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
+          >
+            환불
+          </Link>
+          <Link
             href="/admin/easycutcutcutcutcutcut?tab=members"
             aria-current={tab === "members" ? "page" : undefined}
             className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "members" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
           >
             회원
+          </Link>
+          <Link
+            href="/admin/easycutcutcutcutcutcut?tab=referrals"
+            aria-current={tab === "referrals" ? "page" : undefined}
+            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "referrals" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
+          >
+            레퍼럴
           </Link>
           <Link
             href="/admin/easycutcutcutcutcutcut?tab=inquiries"
@@ -608,12 +754,25 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             refunds={refunds}
             initialFilters={{ status, provider, query }}
           />
+        ) : tab === "refunds" ? (
+          <AdminRefundsDashboard
+            refundCases={refundCases}
+            metrics={refundCaseMetrics}
+            initialFilters={{ status: refundCaseStatus, query }}
+          />
         ) : tab === "members" ? (
           <AdminMembersDashboard
             members={members}
             totalCount={filteredMemberCount}
-            initialFilters={{ query, memberType, memberPlan, memberActivity }}
+            referralOptions={memberReferralOptionRows.map((row) => ({
+              id: row.id,
+              creatorName: row.creatorName,
+              slug: row.slug,
+            }))}
+            initialFilters={{ query, memberType, memberPlan, memberActivity, memberReferrer }}
           />
+        ) : tab === "referrals" ? (
+          <AdminReferralsSection />
         ) : tab === "inquiries" ? (
           <AdminInquiriesDashboard
             inquiries={inquiries}

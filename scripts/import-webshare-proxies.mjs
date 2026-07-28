@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const expectedProxyCount = 10;
+const expectedProxyCount = 20;
 
 function validIpv4(value) {
   const parts = value.split(".");

@@ -17,8 +17,12 @@ const mocks = vi.hoisted(() => ({
   wakeDispatcher: vi.fn(),
   deleteObjects: vi.fn(),
   billing: vi.fn(),
+  signedUrl: vi.fn(),
 }));
 
+vi.mock("@aws-sdk/cloudfront-signer", () => ({
+  getSignedUrl: mocks.signedUrl,
+}));
 vi.mock("@/lib/session", () => ({
   requireMvpSession: mocks.session,
   requireAuthenticatedMvpSession: mocks.authenticatedSession,
@@ -121,6 +125,9 @@ const analysisRow = {
 beforeEach(() => {
   vi.clearAllMocks();
   delete process.env.RANGE_EDITING_ENABLED;
+  delete process.env.CLOUDFRONT_DOMAIN;
+  delete process.env.CLOUDFRONT_KEY_PAIR_ID;
+  delete process.env.CLOUDFRONT_PRIVATE_KEY_B64;
   mocks.session.mockResolvedValue({
     id: "session-a",
     selectedPlanCode: "plus",
@@ -134,6 +141,7 @@ beforeEach(() => {
   mocks.authenticatedSession.mockImplementation(() => mocks.session());
   mocks.authenticatedUser.mockResolvedValue({ id: "auth-a" });
   mocks.wakeDispatcher.mockResolvedValue(undefined);
+  mocks.signedUrl.mockReturnValue("https://cdn.example.com/signed-edit-source.mp4");
   mocks.billing.mockResolvedValue({
     status: "active", planCode: "plus", billingCycle: "monthly",
     currentPeriodStart: "2026-07-01T00:00:00.000Z", currentPeriodEnd: "2026-08-01T00:00:00.000Z",
@@ -184,6 +192,60 @@ describe("range editing feature gate and snapshot", () => {
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
 
+  it("returns the current clean clip as a fallback timeline for older shorts", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    process.env.CLOUDFRONT_DOMAIN = "cdn.example.com";
+    process.env.CLOUDFRONT_KEY_PAIR_ID = "key-pair";
+    process.env.CLOUDFRONT_PRIVATE_KEY_B64 = Buffer.from("private-key").toString("base64");
+    mocks.getDb.mockReturnValue(dbWithRows([{
+      editTimelineS3Key: null,
+      cleanClipS3Key: "edit-sources/clean.mp4",
+      startSeconds: 100,
+      endSeconds: 140,
+      initialStartSeconds: 90,
+      initialEndSeconds: 150,
+      subtitleSegments: [{ start: 5, end: 10, text: "현재 자막" }],
+      expiresAt: new Date(Date.now() + 60_000),
+    }]));
+
+    const response = await accessEditTimeline(
+      new Request(`http://localhost/api/shorts/${shortId}/edit-timeline`),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      url: "https://cdn.example.com/signed-edit-source.mp4",
+      timelineStartSeconds: 100,
+      timelineEndSeconds: 140,
+      currentStartSeconds: 100,
+      currentEndSeconds: 140,
+      initialStartSeconds: 100,
+      initialEndSeconds: 140,
+      subtitleSegments: [{ start: 5, end: 10, text: "현재 자막" }],
+      version: 0,
+      canExtendSelection: false,
+    });
+    expect(mocks.signedUrl).toHaveBeenCalledWith(expect.objectContaining({
+      url: "https://cdn.example.com/edit-sources/clean.mp4",
+    }));
+  });
+
+  it("does not queue a comment template without at least one editable comment", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        ...input,
+        commentOverlays: [],
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
   it("stores a full pending snapshot and proportionally retimes comments", async () => {
     process.env.RANGE_EDITING_ENABLED = "true";
     const db = dbWithRows([{
@@ -224,6 +286,51 @@ describe("range editing feature gate and snapshot", () => {
     expect(tx).toHaveBeenCalledTimes(2);
   });
 
+  it("switches an older non-comment short to the comment template and queues its comments", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    const db = dbWithRows([{
+      id: shortId,
+      status: "ready",
+      startSeconds: 100,
+      endSeconds: 140,
+      durationSeconds: 40,
+      templateId: "dark-red",
+      customTemplateId: null,
+      templateSnapshot: { presetVersion: 3 },
+      videoAspectRatio: "1:1",
+      editTimelineS3Key: null,
+      cleanClipS3Key: "edit-sources/clean.mp4",
+      subtitleSegments: [{ start: 5, end: 10, text: "현재 자막" }],
+    }]);
+    const tx = dbWithRows([{ id: shortId }], []);
+    Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        ...input,
+        startSeconds: 105,
+        endSeconds: 135,
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(202);
+    const pendingSnapshot = tx.mock.calls[0].slice(1).find((value) => (
+      typeof value === "object" && value !== null && "durationSeconds" in value
+    ));
+    expect(pendingSnapshot).toMatchObject({
+      startSeconds: 105,
+      endSeconds: 135,
+      durationSeconds: 30,
+      templateId: "comment-capture",
+      customTemplateId: null,
+      templateSnapshot: null,
+      subtitleSegments: [{ start: 0, end: 5, text: "현재 자막" }],
+      commentOverlays: [{ startSeconds: 0, endSeconds: 30, text: "댓글" }],
+    });
+  });
+
   it("rejects an edit outside the captured timeline", async () => {
     process.env.RANGE_EDITING_ENABLED = "true";
     const db = dbWithRows([{
@@ -247,7 +354,7 @@ describe("range editing feature gate and snapshot", () => {
     expect(response.status).toBe(400);
   });
 
-  it("requires an owned, non-example, unexpired project with a timeline", async () => {
+  it("requires an owned, non-example, unexpired project with an editable source", async () => {
     process.env.RANGE_EDITING_ENABLED = "true";
     const db = dbWithRows([]);
     mocks.getDb.mockReturnValue(db);
@@ -262,7 +369,7 @@ describe("range editing feature gate and snapshot", () => {
     expect(query).toContain("not j.is_example");
     expect(query).toContain("s.user_id=");
     expect(query).toContain("s.expires_at > now()");
-    expect(query).toContain("s.edit_timeline_s3_key is not null");
+    expect(query).toContain("coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null");
   });
 
   it("rejects a final selection shorter than one second", async () => {

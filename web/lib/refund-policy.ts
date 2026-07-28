@@ -40,6 +40,16 @@ export type PrepaidPackageRefundQuote = {
   withinSevenDays: boolean;
 };
 
+export type FirstCompletedJobRefundQuote = {
+  actualPaymentKrw: number;
+  refundedOrReservedKrw: number;
+  prepaidMonths: number;
+  firstJobCompleted: boolean;
+  monthlyDeductionKrw: number;
+  policyRefundTotalKrw: number;
+  refundAmountKrw: number;
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SEVEN_DAYS_MS = 7 * DAY_MS;
 
@@ -157,6 +167,46 @@ export function quotePrepaidPackageRefund(input: {
     refundAmountKrw: Math.max(0, remainingServiceKrw - refundedOrReservedKrw),
     entitlementEndsAt,
     withinSevenDays,
+  };
+}
+
+export function quoteFirstCompletedJobRefund(input: {
+  actualPaymentKrw: number;
+  refundedOrReservedKrw?: number;
+  prepaidMonths: number;
+  firstJobCompleted: boolean;
+}): FirstCompletedJobRefundQuote {
+  const refundedOrReservedKrw = input.refundedOrReservedKrw || 0;
+  if (!Number.isSafeInteger(input.actualPaymentKrw) || input.actualPaymentKrw < 0) {
+    throw new Error("실 결제금액이 올바르지 않습니다.");
+  }
+  if (!Number.isSafeInteger(refundedOrReservedKrw) || refundedOrReservedKrw < 0) {
+    throw new Error("기존 환불금액이 올바르지 않습니다.");
+  }
+  if (
+    !Number.isSafeInteger(input.prepaidMonths)
+    || input.prepaidMonths < 1
+    || input.prepaidMonths > 120
+  ) {
+    throw new Error("상품 개월 수가 올바르지 않습니다.");
+  }
+
+  const monthlyDeductionKrw = input.firstJobCompleted
+    ? Math.floor(input.actualPaymentKrw / input.prepaidMonths)
+    : 0;
+  const policyRefundTotalKrw = Math.max(
+    0,
+    input.actualPaymentKrw - monthlyDeductionKrw,
+  );
+
+  return {
+    actualPaymentKrw: input.actualPaymentKrw,
+    refundedOrReservedKrw,
+    prepaidMonths: input.prepaidMonths,
+    firstJobCompleted: input.firstJobCompleted,
+    monthlyDeductionKrw,
+    policyRefundTotalKrw,
+    refundAmountKrw: Math.max(0, policyRefundTotalKrw - refundedOrReservedKrw),
   };
 }
 

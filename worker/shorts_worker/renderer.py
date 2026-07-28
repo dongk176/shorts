@@ -100,12 +100,15 @@ def create_comment_timeline_manifest(
     panels: list[Path],
     windows: list[tuple[CommentOverlay, float, float]],
     *,
+    duration: float,
     directory: Path,
     prefix: str,
 ) -> tuple[Path, int]:
-    """Normalize comment images and describe one timestamped concat stream."""
+    """Normalize comment images and preserve blank space between saved ranges."""
     if not panels or len(panels) != len(windows):
         raise ValueError("댓글 타임라인 입력이 올바르지 않습니다.")
+    if duration <= 0:
+        raise ValueError("댓글 타임라인 길이가 올바르지 않습니다.")
     directory.mkdir(parents=True, exist_ok=True)
     sizes: list[tuple[int, int]] = []
     for panel in panels:
@@ -113,24 +116,48 @@ def create_comment_timeline_manifest(
             sizes.append(source.size)
     width = max(item[0] for item in sizes)
     height = max(item[1] for item in sizes)
-    frame_names: list[str] = []
-    durations: list[float] = []
-    for index, (panel, (_comment, start, end)) in enumerate(zip(panels, windows, strict=True)):
+    comment_frame_names: list[str] = []
+    for index, panel in enumerate(panels):
         frame_name = f"{prefix}_comment_frame_{index:02d}.png"
         frame_path = directory / frame_name
         with Image.open(panel) as source:
             normalized = Image.new("RGBA", (width, height), (0, 0, 0, 0))
             normalized.alpha_composite(source.convert("RGBA"), (0, 0))
             normalized.save(frame_path, format="PNG", compress_level=1)
-        frame_names.append(frame_name)
-        durations.append(max(0.001, end - start))
+        comment_frame_names.append(frame_name)
+
+    gap_frame_name = f"{prefix}_comment_gap.png"
+    timeline_entries: list[tuple[str, float]] = []
+    cursor = 0.0
+    for frame_name, (_comment, start, end) in zip(
+        comment_frame_names,
+        windows,
+        strict=True,
+    ):
+        visible_start = min(duration, max(cursor, start))
+        visible_end = min(duration, max(visible_start, end))
+        if visible_start > cursor:
+            timeline_entries.append((gap_frame_name, visible_start - cursor))
+        if visible_end > visible_start:
+            timeline_entries.append((frame_name, visible_end - visible_start))
+        cursor = max(cursor, visible_end)
+    if duration > cursor:
+        timeline_entries.append((gap_frame_name, duration - cursor))
+    if not timeline_entries:
+        raise ValueError("표시할 댓글 타임라인이 없습니다.")
+    if any(frame_name == gap_frame_name for frame_name, _ in timeline_entries):
+        Image.new("RGBA", (width, height), (0, 0, 0, 0)).save(
+            directory / gap_frame_name,
+            format="PNG",
+            compress_level=1,
+        )
 
     manifest = directory / f"{prefix}_comments.ffconcat"
     lines = ["ffconcat version 1.0"]
-    for frame_name, duration in zip(frame_names, durations, strict=True):
-        lines.extend((f"file {frame_name}", f"duration {duration:.6f}"))
+    for frame_name, entry_duration in timeline_entries:
+        lines.extend((f"file {frame_name}", f"duration {entry_duration:.6f}"))
     # The concat demuxer ignores the final duration unless the last file is repeated.
-    lines.append(f"file {frame_names[-1]}")
+    lines.append(f"file {timeline_entries[-1][0]}")
     manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return manifest, height
 
@@ -181,21 +208,17 @@ def lifted_comment_landscape_layout() -> VideoLayout:
     )
 
 
-def continuous_comment_windows(
+def saved_comment_windows(
     comments: list[CommentOverlay], duration: float
 ) -> list[tuple[CommentOverlay, float, float]]:
-    """Hold each comment until the next starts, covering the complete clip without gaps."""
+    """Use the exact saved comment ranges so editor-created gaps remain blank."""
     if duration <= 0:
         return []
     ordered = sorted(comments, key=lambda item: item.start_seconds)
     windows: list[tuple[CommentOverlay, float, float]] = []
-    for index, comment in enumerate(ordered):
-        start = 0.0 if index == 0 else min(duration, max(0.0, comment.start_seconds))
-        end = (
-            duration
-            if index == len(ordered) - 1
-            else min(duration, max(start, ordered[index + 1].start_seconds))
-        )
+    for comment in ordered:
+        start = min(duration, max(0.0, comment.start_seconds))
+        end = min(duration, max(start, comment.end_seconds))
         if end > start:
             windows.append((comment, start, end))
     return windows
@@ -402,7 +425,7 @@ class VideoRenderer:
             if template_id is TemplateId.COMMENT_CAPTURE
             else []
         )
-        comment_windows = continuous_comment_windows(visible_comments, duration)
+        comment_windows = saved_comment_windows(visible_comments, duration)
         comment_panels = [
             (
                 create_fixed_comment_channel_overlay(
@@ -439,6 +462,7 @@ class VideoRenderer:
             comment_manifest, _ = create_comment_timeline_manifest(
                 comment_panels,
                 comment_windows,
+                duration=duration,
                 directory=work_dir / "overlays" / "comment-timeline",
                 prefix=prefix,
             )
@@ -604,7 +628,7 @@ class VideoRenderer:
             if template_id is TemplateId.COMMENT_CAPTURE and config.comment.visible
             else []
         )
-        comment_windows = continuous_comment_windows(visible_comments, duration)
+        comment_windows = saved_comment_windows(visible_comments, duration)
         include_static_channel = (
             template_id is not TemplateId.COMMENT_CAPTURE or not comment_windows
         )
@@ -638,6 +662,7 @@ class VideoRenderer:
             comment_manifest, _ = create_comment_timeline_manifest(
                 comment_panels,
                 comment_windows,
+                duration=duration,
                 directory=work_dir / "overlays" / "comment-timeline",
                 prefix=prefix,
             )

@@ -19,6 +19,9 @@ const reusableVideo = {
   publishedAt: new Date("2026-07-22T00:00:00.000Z"),
   license: "creativeCommon",
   totalCount: 1,
+  todayCount: 1,
+  weekCount: 1,
+  allCount: 1,
 };
 
 function sqlText(call: unknown[]) {
@@ -175,10 +178,12 @@ describe("accumulated reusable popular videos", () => {
       false,
       undefined,
       48,
+      "all",
       query as unknown as Sql,
     );
 
     expect(result.items).toHaveLength(1);
+    expect(result.reusablePeriodCounts).toEqual({ today: 1, week: 1, all: 1 });
     const combinedQuery = sqlText(query.mock.calls[1]);
     expect(combinedQuery).toContain("from shorts_mvp.popular_search_items");
     expect(combinedQuery).toContain("join shorts_mvp.popular_search_runs");
@@ -186,11 +191,48 @@ describe("accumulated reusable popular videos", () => {
     expect(combinedQuery).toContain("from shorts_mvp.popular_video_items");
     expect(combinedQuery).toContain("join shorts_mvp.popular_video_runs");
     expect(combinedQuery).toContain("partition by video_id");
-    expect(combinedQuery).toContain("order by view_count desc, last_seen_at desc");
-    expect(combinedQuery.match(
-      /select completed_at from shorts_mvp\.popular_search_runs where id=/g,
-    )).toHaveLength(2);
-    expect(query.mock.calls[1].slice(1).filter((value) => value === run.id)).toHaveLength(2);
+    expect(combinedQuery).toContain("min(last_seen_at) over (partition by video_id) as first_seen_at");
+    expect(combinedQuery).toContain("current_run.completed_at as current_completed_at");
+    expect(combinedQuery).toContain("previous_run.completed_at < current_run.completed_at");
+    expect(combinedQuery).toContain("first_seen_at > run_window.previous_completed_at");
+    expect(combinedQuery).toContain(
+      "date_trunc('day', run_window.current_completed_at at time zone 'Asia/Seoul')",
+    );
+    expect(combinedQuery).not.toContain("date_trunc('day', now()");
+    expect(combinedQuery).toContain("count(*) as all_count");
+    expect(combinedQuery).toContain("case when");
+    expect(combinedQuery).toContain("then first_seen_at end desc");
+    expect(query.mock.calls[1].slice(1).filter((value) => value === run.id)).toHaveLength(1);
     expect(query.mock.calls[1].slice(1)).not.toContain(run.completedAt.toISOString());
+  });
+
+  it("returns period counts even when the selected reusable period is empty", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([run])
+      .mockResolvedValueOnce([{
+        videoId: null,
+        todayCount: 0,
+        weekCount: 81,
+        allCount: 769,
+      }]);
+
+    const result = await getReusablePopularVideos(
+      "all",
+      false,
+      false,
+      undefined,
+      48,
+      "today",
+      query as unknown as Sql,
+    );
+
+    expect(result.items).toEqual([]);
+    expect(result.totalCount).toBe(0);
+    expect(result.reusablePeriodCounts).toEqual({
+      today: 0,
+      week: 81,
+      all: 769,
+    });
+    expect(result.nextCursor).toBeUndefined();
   });
 });

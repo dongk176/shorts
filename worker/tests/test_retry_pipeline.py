@@ -16,7 +16,7 @@ from shorts_worker.errors import (
     TranscriptionError,
 )
 from shorts_worker.ingestion import DownloadedAssetBundle, VideoMetadata
-from shorts_worker.schemas import HighlightClip, SubtitleSegment
+from shorts_worker.schemas import HighlightClip, SubtitleSegment, TemplateId
 from shorts_worker.worker_pipeline import (
     BatchWorker,
     ProjectTimelineTarget,
@@ -688,6 +688,52 @@ def test_range_rerender_atomically_promotes_new_clean_and_output(tmp_path) -> No
         "outputs/session-a/job-a/short-a/v1.mp4",
         "edit-sources/session-a/job-a/short-a.mp4",
     }
+
+
+def test_range_rerender_uses_clean_fallback_and_renders_added_comments(
+    tmp_path,
+) -> None:
+    worker = _range_rerender_worker(tmp_path, {
+        "output_s3_key": "outputs/session-a/job-a/short-a/v1.mp4",
+        "clean_clip_s3_key": "edit-sources/session-a/job-a/short-a.mp4",
+    })
+    item = worker.repository.get_short.return_value
+    item["edit_timeline_s3_key"] = None
+    item["edit_timeline_start_seconds"] = None
+    item["start_seconds"] = 100
+    item["pending_edit_snapshot"].update({
+        "startSeconds": 105,
+        "endSeconds": 135,
+        "durationSeconds": 30,
+        "commentOverlays": [{
+            "id": "comment-added",
+            "startSeconds": 0,
+            "endSeconds": 30,
+            "text": "편집기에서 추가한 댓글",
+            "initial": "편",
+            "avatarColor": "#2674C8",
+            "nickname": "편집테스트",
+            "likeCount": 100,
+            "ageLabel": "방금 전",
+        }],
+        "templateId": "comment-capture",
+        "templateSnapshot": None,
+    })
+
+    worker.rerender("short-a")
+
+    worker.storage.download.assert_called_once_with(
+        "edit-sources/session-a/job-a/short-a.mp4",
+        tmp_path / "rerender-short-a" / "timeline.mp4",
+    )
+    selected_clip = worker.renderer.extract_clean_clip.call_args.kwargs["clip"]
+    assert selected_clip.start_seconds == 5
+    assert selected_clip.end_seconds == 35
+    render_call = worker.renderer.render_clean_clip.call_args.kwargs
+    assert render_call["template_id"] is TemplateId.COMMENT_CAPTURE
+    assert [comment.text for comment in render_call["comment_overlays"]] == [
+        "편집기에서 추가한 댓글"
+    ]
 
 
 def test_range_rerender_failure_removes_only_uncommitted_versions(

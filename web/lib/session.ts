@@ -1,8 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { User } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import type { Sql, TransactionSql } from "postgres";
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
+import { REFERRAL_COOKIE } from "@/lib/referral-policy";
+import { referralTokenHash } from "@/lib/referral-security";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 export const MVP_SESSION_COOKIE = "shorts_mvp_session";
@@ -79,7 +82,7 @@ async function findStoredSession(
 }
 
 async function createStoredSession(
-  db: ReturnType<typeof getDb>,
+  db: Sql | TransactionSql,
   cookieStore: Awaited<ReturnType<typeof cookies>>,
   userId: string | null,
   selectedPlanCode = "free",
@@ -150,45 +153,87 @@ export async function requireAuthenticatedMvpSession(): Promise<MvpSession & { u
 export async function claimMvpSession(authenticatedUser: User): Promise<MvpSession> {
   const cookieStore = await cookies();
   const token = cookieStore.get(MVP_SESSION_COOKIE)?.value;
+  const referralToken = cookieStore.get(REFERRAL_COOKIE)?.value;
   const db = getDb();
   const existing = await findStoredSession(db, token);
   const profile = authProfile(authenticatedUser);
   const preferredPlan = "free";
   const provider = profileValue(authenticatedUser.app_metadata?.provider, 100) || "google";
-  const appUsers = await db`
-    insert into shorts_mvp.app_users (
-      auth_user_id, email, display_name, avatar_url, provider,
-      selected_plan_code, last_sign_in_at
-    ) values (
-      ${authenticatedUser.id}, ${profile.email}, ${profile.displayName}, ${profile.avatarUrl},
-      ${provider}, ${preferredPlan}, ${authenticatedUser.last_sign_in_at || new Date().toISOString()}
-    )
-    on conflict (auth_user_id) do update set
-      email=excluded.email,
-      display_name=excluded.display_name,
-      avatar_url=excluded.avatar_url,
-      provider=excluded.provider,
-      last_sign_in_at=excluded.last_sign_in_at
-    returning id, selected_plan_code
-  `;
-  const insertedUser = appUsers[0] as { id: string; selectedPlanCode: string };
-  const entitlementRows = await db`
-    select coalesce((
-      select s.plan_code from shorts_mvp.user_subscriptions s
-      join shorts_mvp.plans p on p.code=s.plan_code
-      where s.user_id=${insertedUser.id} and s.status in ('trialing','active','past_due')
-      order by p.max_active_jobs desc,p.retention_days desc,s.created_at desc limit 1
-    ),'free') as selected_plan_code
-  `;
-  const appUser = {
-    id: insertedUser.id,
-    selectedPlanCode: String(entitlementRows[0]?.selectedPlanCode || "free"),
-  };
-  const activeSession = !existing || (existing.userId && existing.userId !== appUser.id)
-    ? await createStoredSession(db, cookieStore, appUser.id, appUser.selectedPlanCode)
-    : existing;
+  const claimed = await db.begin(async (tx) => {
+    const insertedRows = await tx`
+      insert into shorts_mvp.app_users (
+        auth_user_id, email, display_name, avatar_url, provider,
+        selected_plan_code, last_sign_in_at
+      ) values (
+        ${authenticatedUser.id}, ${profile.email}, ${profile.displayName}, ${profile.avatarUrl},
+        ${provider}, ${preferredPlan}, ${authenticatedUser.last_sign_in_at || new Date().toISOString()}
+      )
+      on conflict (auth_user_id) do nothing
+      returning id, selected_plan_code
+    `;
+    const newlyCreated = Boolean(insertedRows[0]);
+    const appUserRows = newlyCreated ? insertedRows : await tx`
+      update shorts_mvp.app_users
+      set email=${profile.email},display_name=${profile.displayName},avatar_url=${profile.avatarUrl},
+        provider=${provider},
+        last_sign_in_at=${authenticatedUser.last_sign_in_at || new Date().toISOString()}
+      where auth_user_id=${authenticatedUser.id}
+      returning id,selected_plan_code
+    `;
+    const insertedUser = appUserRows[0] as { id: string; selectedPlanCode: string } | undefined;
+    if (!insertedUser) {
+      throw new Error("로그인 계정 연결이 완료되지 않았습니다. 다시 로그인해 주세요.");
+    }
 
-  await db.begin(async (tx) => {
+    if (newlyCreated && referralToken && authenticatedUser.created_at) {
+      const visitorRows = await tx`
+        select v.id,v.partner_id
+        from shorts_mvp.referral_visitors v
+        join shorts_mvp.referral_partners p on p.id=v.partner_id
+        where v.token_hash=${referralTokenHash(referralToken)}
+          and v.expires_at>now()
+          and v.first_seen_at<=${authenticatedUser.created_at}
+          and p.status='active'
+        limit 1
+        for update of v
+      `;
+      const visitor = visitorRows[0];
+      if (visitor) {
+        const attributed = await tx`
+          update shorts_mvp.app_users
+          set referral_partner_id=${visitor.partnerId},
+            referral_visitor_id=${visitor.id},referral_attributed_at=now()
+          where id=${insertedUser.id} and referral_partner_id is null
+          returning id
+        `;
+        if (attributed[0]) {
+          await tx`
+            insert into shorts_mvp.referral_attribution_audits (
+              user_id,new_partner_id,visitor_id,reason
+            ) values (
+              ${insertedUser.id},${visitor.partnerId},${visitor.id},'신규 회원 자동 귀속'
+            )
+          `;
+        }
+      }
+    }
+
+    const entitlementRows = await tx`
+      select coalesce((
+        select s.plan_code from shorts_mvp.user_subscriptions s
+        join shorts_mvp.plans p on p.code=s.plan_code
+        where s.user_id=${insertedUser.id} and s.status in ('trialing','active','past_due')
+        order by p.max_active_jobs desc,p.retention_days desc,s.created_at desc limit 1
+      ),'free') as selected_plan_code
+    `;
+    const appUser = {
+      id: insertedUser.id,
+      selectedPlanCode: String(entitlementRows[0]?.selectedPlanCode || "free"),
+    };
+    const activeSession = !existing || (existing.userId && existing.userId !== appUser.id)
+      ? await createStoredSession(tx, cookieStore, appUser.id, appUser.selectedPlanCode)
+      : existing;
+
     await tx`
       update shorts_mvp.mvp_sessions
       set user_id=${appUser.id}, selected_plan_code=${appUser.selectedPlanCode}
@@ -199,12 +244,15 @@ export async function claimMvpSession(authenticatedUser: User): Promise<MvpSessi
     await tx`update shorts_mvp.generated_shorts set user_id=${appUser.id} where mvp_session_id=${activeSession.id} and user_id is null`;
     await tx`update shorts_mvp.usage_reservations set user_id=${appUser.id} where mvp_session_id=${activeSession.id} and user_id is null`;
     await tx`update shorts_mvp.usage_events set user_id=${appUser.id} where mvp_session_id=${activeSession.id} and user_id is null`;
+
+    return { appUser, activeSession };
   });
+  cookieStore.delete(REFERRAL_COOKIE);
 
   return {
-    id: activeSession.id,
-    selectedPlanCode: appUser.selectedPlanCode,
-    userId: appUser.id,
+    id: claimed.activeSession.id,
+    selectedPlanCode: claimed.appUser.selectedPlanCode,
+    userId: claimed.appUser.id,
     user: profile,
   };
 }

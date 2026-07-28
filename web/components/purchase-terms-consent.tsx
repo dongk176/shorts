@@ -25,7 +25,7 @@ export function PurchaseTermsConsent({
       </p>
       {packageTerms && (
         <p className="mb-3 rounded-xl border border-[#ff8c7c]/20 bg-[#ff715e]/[.07] px-3 py-2 text-xs font-bold leading-5 text-[#ffd0ca]">
-          환불정책 v2: 이 패키지는 월별 이용권 {packageTerms.months}개를 선결제합니다. 완료된 월과 현재 사용한 월은 계약 월단가 {packageTerms.monthlyPriceKrw.toLocaleString("ko-KR")}원을 공제하고, 현재 미사용 월과 미래 월은 환불합니다. 현재 사용 월을 공제하면 그 월 말까지 이용할 수 있습니다.
+          환불정책 v3: 이 패키지는 월별 이용권 {packageTerms.months}개를 선결제합니다. 해당 주문의 첫 작업이 완료되면 계약 월단가 {packageTerms.monthlyPriceKrw.toLocaleString("ko-KR")}원 1개월분을 공제하고, 완료되지 않았다면 1개월분을 공제하지 않습니다.
         </p>
       )}
       <div className="flex items-start gap-3">

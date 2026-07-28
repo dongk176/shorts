@@ -52,9 +52,11 @@ describe("MVP session cookie", () => {
 
   it("saves the Google profile and claims the current anonymous session", async () => {
     const set = vi.fn();
+    const deleteCookie = vi.fn();
     mocks.cookies.mockResolvedValue({
       get: vi.fn().mockReturnValue({ value: "anonymous-token" }),
       set,
+      delete: deleteCookie,
     });
     mocks.getAuthenticatedUser.mockResolvedValue({
       id: "11111111-1111-4111-8111-111111111111",
@@ -63,11 +65,12 @@ describe("MVP session cookie", () => {
       user_metadata: { full_name: "Creator", avatar_url: "https://example.com/avatar.png" },
       last_sign_in_at: "2026-07-13T17:00:00.000Z",
     });
-    const transaction = vi.fn().mockResolvedValue([]);
-    const db = vi.fn()
-      .mockResolvedValueOnce([{ id: "session-anonymous", selectedPlanCode: "standard", userId: null, lastSeenAt: new Date() }])
+    const transaction = vi.fn()
       .mockResolvedValueOnce([{ id: "app-user", selectedPlanCode: "free" }])
-      .mockResolvedValueOnce([{ selectedPlanCode: "standard" }]);
+      .mockResolvedValueOnce([{ selectedPlanCode: "standard" }])
+      .mockResolvedValue([]);
+    const db = vi.fn()
+      .mockResolvedValueOnce([{ id: "session-anonymous", selectedPlanCode: "standard", userId: null, lastSeenAt: new Date() }]);
     Object.assign(db, { begin: vi.fn((callback: (tx: typeof transaction) => unknown) => callback(transaction)) });
     mocks.getDb.mockReturnValue(db);
 
@@ -89,8 +92,9 @@ describe("MVP session cookie", () => {
         avatarUrl: "https://example.com/avatar.png",
       },
     });
-    expect(transaction).toHaveBeenCalledTimes(6);
+    expect(transaction).toHaveBeenCalledTimes(8);
     expect(set).not.toHaveBeenCalled();
+    expect(deleteCookie).toHaveBeenCalledWith("easycut_referral");
   });
 
   it("reads an authenticated session without claiming resources again", async () => {
@@ -126,5 +130,49 @@ describe("MVP session cookie", () => {
     expect(db).toHaveBeenCalledTimes(2);
     expect(begin).not.toHaveBeenCalled();
     expect(set).not.toHaveBeenCalled();
+  });
+
+  it("attributes a valid first-click only when the application user is newly created", async () => {
+    const deleteCookie = vi.fn();
+    mocks.cookies.mockResolvedValue({
+      get: vi.fn((name: string) => (
+        name === "shorts_mvp_session"
+          ? { value: "anonymous-token" }
+          : name === "easycut_referral" ? { value: "referral-token" } : undefined
+      )),
+      set: vi.fn(),
+      delete: deleteCookie,
+    });
+    const transaction = vi.fn()
+      .mockResolvedValueOnce([{ id: "app-user", selectedPlanCode: "free" }])
+      .mockResolvedValueOnce([{ id: "visitor-1", partnerId: "partner-1" }])
+      .mockResolvedValueOnce([{ id: "app-user" }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ selectedPlanCode: "free" }])
+      .mockResolvedValue([]);
+    const db = vi.fn()
+      .mockResolvedValueOnce([{
+        id: "anonymous-session",
+        selectedPlanCode: "free",
+        userId: null,
+        lastSeenAt: new Date(),
+      }]);
+    Object.assign(db, {
+      begin: vi.fn((callback: (tx: typeof transaction) => unknown) => callback(transaction)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const { claimMvpSession } = await import("./session");
+    await claimMvpSession({
+      id: "11111111-1111-4111-8111-111111111111",
+      email: "new@example.com",
+      created_at: "2026-07-28T01:00:00.000Z",
+      app_metadata: { provider: "google" },
+      user_metadata: {},
+      last_sign_in_at: "2026-07-28T01:00:00.000Z",
+    } as never);
+
+    expect(transaction).toHaveBeenCalledTimes(11);
+    expect(deleteCookie).toHaveBeenCalledWith("easycut_referral");
   });
 });

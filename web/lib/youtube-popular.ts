@@ -5,6 +5,7 @@ import { parseIsoDuration } from "@/lib/youtube";
 import { isKoreanVideo } from "@/lib/youtube-language";
 
 export const popularVideoTypes = ["trending", "views", "reusable"] as const;
+export const popularReusablePeriods = ["today", "week", "all"] as const;
 export const POPULAR_VIDEO_LONG_FORM_SECONDS = 4 * 60;
 export const POPULAR_VIDEO_CATEGORY_PAGE_LIMIT = 15;
 export const popularVideoCategories = [
@@ -37,6 +38,7 @@ export const popularVideoSourceCategories = [
 ] as const;
 
 export type PopularVideoType = (typeof popularVideoTypes)[number];
+export type PopularReusablePeriod = (typeof popularReusablePeriods)[number];
 export type PopularVideoCategory = (typeof popularVideoCategories)[number];
 export type PopularVideoSourceCategory = (typeof popularVideoSourceCategoryValues)[number];
 export type PopularVideoLicense = "creativeCommon" | "youtube";
@@ -57,6 +59,7 @@ export type PopularVideoResponse = {
   items: PopularVideo[];
   updatedAt: string;
   totalCount?: number;
+  reusablePeriodCounts?: Record<PopularReusablePeriod, number>;
   nextCursor?: string;
 };
 

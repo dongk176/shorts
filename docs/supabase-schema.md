@@ -23,7 +23,7 @@
 - `job_outbox`, `dispatch_batches`, `dispatch_batch_items`: Prepare 제출과 Array child 매핑
 - `batch_submission_claims`: SQS 중복 전달과 Batch 제출 응답 유실 중복 방지
 - `short_outbox`: 재렌더 제출
-- `ingestion_route_slots`: `webshare-01`~`webshare-10` 중앙 다운로드 lease와 cooldown; endpoint/인증정보는 저장하지 않음
+- `ingestion_route_slots`: `webshare-01`~`webshare-20` 중앙 다운로드 lease와 cooldown; endpoint/인증정보는 저장하지 않음
 - `ingestion_attempts`, `ingestion_circuit`: route별 수집 결과와 1분 회로 차단
 - `usage_grants`: 월 기본 제공량과 90일 애드온의 예약·소진 잔량. `credited_seconds`와 `carried_seconds`로 신규 지급과 업그레이드 이월을 분리
 - `usage_grant_allocations`: 작업 예약이 어떤 grant에서 몇 초를 사용했는지 기록

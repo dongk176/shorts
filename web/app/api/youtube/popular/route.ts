@@ -12,6 +12,7 @@ import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
   getPopularVideos,
   PopularSnapshotUnavailableError,
+  popularReusablePeriods,
   popularVideoCategories,
   popularVideoTypes,
 } from "@/lib/youtube-popular";
@@ -29,6 +30,7 @@ const querySchema = z.object({
   reusable: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   longForm: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   korean: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  reusablePeriod: z.enum(popularReusablePeriods).default("all"),
   cursor: z.string().max(500).optional(),
   interactionId: z.string().uuid().optional(),
 });
@@ -41,6 +43,7 @@ export async function GET(request: Request) {
     reusable: url.searchParams.get("reusable") || undefined,
     longForm: url.searchParams.get("longForm") || undefined,
     korean: url.searchParams.get("korean") || undefined,
+    reusablePeriod: url.searchParams.get("reusablePeriod") || undefined,
     cursor: url.searchParams.get("cursor") || undefined,
     interactionId: url.searchParams.get("interactionId") || undefined,
   });
@@ -77,9 +80,11 @@ export async function GET(request: Request) {
           query.data.korean,
           query.data.cursor,
           limit,
+          query.data.reusablePeriod,
         );
       } catch (error) {
         if (!(error instanceof PopularSearchSnapshotUnavailableError)) throw error;
+        if (query.data.reusablePeriod !== "all") throw error;
         result = await getPopularVideos(
           "views",
           query.data.category,

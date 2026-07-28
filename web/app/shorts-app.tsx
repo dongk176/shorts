@@ -32,7 +32,12 @@ import { outputLanguageOptions, videoAspectRatioOptions } from "@/lib/contracts"
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
-import { RANGE_EDIT_MIN_SECONDS, scaleTimedRanges } from "@/lib/range-editing";
+import {
+  adjustTimedRange,
+  RANGE_EDIT_MIN_SECONDS,
+  scaleTimedRanges,
+  type TimedRangeAdjustment,
+} from "@/lib/range-editing";
 import { userFacingErrorMessage } from "@/lib/public-error";
 import { isIosDownloadDevice } from "@/lib/short-download";
 import { stateRetryDelayMs } from "@/lib/state-loading";
@@ -56,6 +61,12 @@ import {
   COMMENT_LIKE_COUNT_MIN,
   randomCommentLikeCount,
 } from "@/lib/comment-overlay";
+import { selectRandomFallbackCommentTexts } from "@/lib/fallback-comments";
+import {
+  createProjectEditRefreshSignal,
+  parseProjectEditRefreshSignal,
+  PROJECT_EDIT_REFRESH_STORAGE_KEY,
+} from "@/lib/project-edit-refresh";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 import { currentClientLocale, localizeApiError, localizeAuthError } from "@/lib/i18n/errors";
 import { messagesByLocale } from "@/lib/i18n/messages";
@@ -110,13 +121,17 @@ function randomItem<T>(values: T[]) {
   return values[Math.floor(Math.random() * values.length)];
 }
 
-function randomComment(startSeconds: number, endSeconds: number): CommentOverlay {
+function randomComment(
+  startSeconds: number,
+  endSeconds: number,
+  text = selectRandomFallbackCommentTexts(1)[0] || "아 진짜 ㅋㅋㅋㅋㅋㅋㅋㅋ",
+): CommentOverlay {
   const nickname = `${randomItem(commentNicknamePrefixes)}${randomItem(commentNicknameSuffixes)}${Math.floor(Math.random() * 90) + 10}`;
   return {
     id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
     startSeconds: Math.round(startSeconds * 1000) / 1000,
     endSeconds: Math.round(endSeconds * 1000) / 1000,
-    text: "아 진짜 ㅋㅋㅋㅋㅋㅋㅋㅋ",
+    text,
     initial: nickname.slice(0, 1),
     avatarColor: randomItem(commentAvatarColors),
     nickname,
@@ -127,9 +142,11 @@ function randomComment(startSeconds: number, endSeconds: number): CommentOverlay
 
 function defaultComments(durationSeconds: number) {
   const duration = Math.max(0.3, durationSeconds);
+  const commentTexts = selectRandomFallbackCommentTexts(3);
   return [0, 1, 2].map((index) => randomComment(
     duration * index / 3,
     duration * (index + 1) / 3,
+    commentTexts[index],
   ));
 }
 
@@ -190,6 +207,18 @@ function formatDuration(seconds: number) {
 function formatTimestamp(seconds: number) {
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+}
+
+function formatPreciseTimestamp(seconds: number) {
+  const value = Math.max(0, seconds);
+  const minutes = Math.floor(value / 60);
+  const rest = (value % 60).toFixed(1).padStart(4, "0");
+  return `${minutes}:${rest}`;
+}
+
+function formatTimelineOffset(seconds: number) {
+  const prefix = seconds < -0.05 ? "−" : seconds > 0.05 ? "+" : "";
+  return `${prefix}${formatPreciseTimestamp(Math.abs(seconds))}`;
 }
 
 function isProjectExpired(job: VideoJob) {
@@ -893,6 +922,79 @@ function NoticeDialog({
   );
 }
 
+function ApplyEditConfirmDialog({
+  open,
+  saving,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  saving: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !saving) onCancel();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onCancel, open, saving]);
+
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[5px] sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !saving) onCancel();
+      }}
+    >
+      <section
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="apply-edit-confirm-title"
+        aria-describedby="apply-edit-confirm-description"
+        className="relative w-full max-w-[480px] overflow-hidden rounded-[24px] border border-cyan-300/20 bg-[#202426] px-7 pb-8 pt-10 text-center shadow-[0_28px_90px_rgba(0,0,0,.7)] sm:px-9 sm:pb-9"
+      >
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-16 -top-24 h-40 rounded-full bg-cyan-400/15 blur-3xl" />
+        <div aria-hidden="true" className="relative mx-auto grid h-12 w-12 place-items-center rounded-full border border-cyan-200/20 bg-cyan-400/10 text-xl text-cyan-100">✓</div>
+        <h2 id="apply-edit-confirm-title" className="relative mt-5 text-2xl font-extrabold tracking-[-0.025em] text-white">
+          편집 내용을 영상에 적용할까요?
+        </h2>
+        <p id="apply-edit-confirm-description" className="relative mt-4 text-sm leading-6 text-cyan-50/75">
+          적용하면 영상 재렌더링이 시작됩니다. 완료될 때까지 프로젝트에서 편집과 다운로드가 잠시 제한됩니다.
+        </p>
+        <div className="relative mt-8 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            autoFocus
+            disabled={saving}
+            onClick={onCancel}
+            className="min-h-12 rounded-xl border border-white/15 bg-white/[.04] px-4 py-3 text-sm font-bold text-white transition hover:bg-white/[.08] disabled:opacity-50"
+          >
+            계속 편집
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={onConfirm}
+            className="min-h-12 rounded-xl bg-white px-4 py-3 text-sm font-extrabold text-black transition hover:bg-cyan-50 active:scale-[.99] disabled:opacity-50"
+          >
+            {saving ? "적용 중..." : "영상에 적용"}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 type EditTimeline = {
   url: string;
   timelineStartSeconds: number;
@@ -960,7 +1062,271 @@ function drawTimelineFrame(
   );
 }
 
-function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, rangeEditingEnabled = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; rangeEditingEnabled?: boolean }) {
+type CommentTimelineDrag = {
+  pointerId: number;
+  captureTarget: HTMLButtonElement;
+  commentId: string;
+  adjustment: TimedRangeAdjustment;
+  startClientX: number;
+  width: number;
+  initialRange: { startSeconds: number; endSeconds: number };
+  previousEndSeconds: number;
+  nextStartSeconds: number;
+  moved: boolean;
+};
+
+function CommentTimelineEditor({
+  comments,
+  durationSeconds,
+  currentSeconds,
+  onRangeChange,
+  onTextChange,
+  onSeek,
+  onDelete,
+  selectionLeftPercent = 0,
+  selectionWidthPercent = 100,
+}: {
+  comments: CommentOverlay[];
+  durationSeconds: number;
+  currentSeconds: number;
+  onRangeChange: (id: string, range: { startSeconds: number; endSeconds: number }) => void;
+  onTextChange: (id: string, text: string) => void;
+  onSeek: (seconds: number) => void;
+  onDelete: (id: string) => void;
+  selectionLeftPercent?: number;
+  selectionWidthPercent?: number;
+}) {
+  const orderedComments = [...comments].sort((left, right) => left.startSeconds - right.startSeconds);
+  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(
+    orderedComments[0]?.id || null,
+  );
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<CommentTimelineDrag | null>(null);
+  const safeDuration = Math.max(0.3, durationSeconds);
+  const editingComment = orderedComments.find((comment) => comment.id === editingCommentId) || null;
+  const editingIndex = editingComment
+    ? orderedComments.findIndex((comment) => comment.id === editingComment.id)
+    : -1;
+  const editingMidpoint = editingComment
+    ? (editingComment.startSeconds + editingComment.endSeconds) / 2
+    : safeDuration / 2;
+  const editingLeft = Math.max(25, Math.min(75, editingMidpoint / safeDuration * 100));
+
+  useEffect(() => {
+    if (selectedCommentId && !orderedComments.some((comment) => comment.id === selectedCommentId)) {
+      setSelectedCommentId(orderedComments[0]?.id || null);
+    }
+    if (editingCommentId && !orderedComments.some((comment) => comment.id === editingCommentId)) {
+      setEditingCommentId(null);
+    }
+  }, [editingCommentId, orderedComments, selectedCommentId]);
+
+  const neighborBounds = (commentId: string) => {
+    const index = orderedComments.findIndex((comment) => comment.id === commentId);
+    return {
+      previousEndSeconds: index > 0 ? orderedComments[index - 1].endSeconds : 0,
+      nextStartSeconds: index >= 0 && index < orderedComments.length - 1
+        ? orderedComments[index + 1].startSeconds
+        : safeDuration,
+    };
+  };
+
+  const updateRange = (
+    comment: CommentOverlay,
+    adjustment: TimedRangeAdjustment,
+    deltaSeconds: number,
+    bounds = neighborBounds(comment.id),
+  ) => {
+    const range = adjustTimedRange(
+      comment,
+      adjustment,
+      deltaSeconds,
+      safeDuration,
+      bounds.previousEndSeconds,
+      bounds.nextStartSeconds,
+    );
+    onRangeChange(comment.id, range);
+    onSeek(adjustment === "end" ? range.endSeconds : range.startSeconds);
+  };
+
+  const startDrag = (
+    comment: CommentOverlay,
+    adjustment: TimedRangeAdjustment,
+    event: PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.button !== 0 || !trackRef.current) return;
+    const bounds = neighborBounds(comment.id);
+    setSelectedCommentId(comment.id);
+    setEditingCommentId(null);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      captureTarget: event.currentTarget,
+      commentId: comment.id,
+      adjustment,
+      startClientX: event.clientX,
+      width: trackRef.current.getBoundingClientRect().width,
+      initialRange: {
+        startSeconds: comment.startSeconds,
+        endSeconds: comment.endSeconds,
+      },
+      previousEndSeconds: bounds.previousEndSeconds,
+      nextStartSeconds: bounds.nextStartSeconds,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.stopPropagation();
+  };
+
+  const moveDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const active = dragRef.current;
+    if (!active || active.pointerId !== event.pointerId || active.width <= 0) return;
+    const distance = event.clientX - active.startClientX;
+    if (!active.moved && Math.abs(distance) < 2) return;
+    active.moved = true;
+    const deltaSeconds = distance / active.width * safeDuration;
+    const range = adjustTimedRange(
+      active.initialRange,
+      active.adjustment,
+      deltaSeconds,
+      safeDuration,
+      active.previousEndSeconds,
+      active.nextStartSeconds,
+    );
+    onRangeChange(active.commentId, range);
+    onSeek(active.adjustment === "end" ? range.endSeconds : range.startSeconds);
+    event.preventDefault();
+  };
+
+  const finishDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const active = dragRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    if (!active.moved) onSeek(active.initialRange.startSeconds);
+    dragRef.current = null;
+    if (active.captureTarget.hasPointerCapture(event.pointerId)) {
+      active.captureTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  return <section className="editor-comment-timeline-panel" aria-label="댓글 노출 구간 편집">
+    <div
+      className="editor-comment-selection-lane"
+      style={{
+        left: `${selectionLeftPercent}%`,
+        width: `${selectionWidthPercent}%`,
+      }}
+    >
+      <div
+        ref={trackRef}
+        className="editor-comment-timeline"
+        onPointerMove={moveDrag}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+      >
+      <div className="editor-comment-track-grid" aria-hidden="true" />
+      {orderedComments.map((comment, index) => {
+        const selected = comment.id === selectedCommentId;
+        const previewActive = comment.startSeconds <= currentSeconds
+          && comment.endSeconds > currentSeconds;
+        const left = Math.max(0, Math.min(100, comment.startSeconds / safeDuration * 100));
+        const width = Math.max(0, Math.min(100 - left, (
+          comment.endSeconds - comment.startSeconds
+        ) / safeDuration * 100));
+        const label = `댓글 ${index + 1}`;
+        const bounds = neighborBounds(comment.id);
+        return <div
+          key={comment.id}
+          className={`editor-comment-range${selected ? " is-selected" : ""}${previewActive ? " is-preview-active" : ""}`}
+          style={{ left: `${left}%`, width: `${width}%` }}
+        >
+          <button
+            type="button"
+            className="editor-comment-range-body"
+            aria-label={`${label} 선택 및 이동`}
+            aria-pressed={selected}
+            title={`${label}: ${comment.text}`}
+            style={{ backgroundColor: comment.avatarColor }}
+            onPointerDown={(event) => startDrag(comment, "move", event)}
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              setSelectedCommentId(comment.id);
+              setEditingCommentId(comment.id);
+              onSeek(comment.startSeconds);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                setSelectedCommentId(comment.id);
+                setEditingCommentId(comment.id);
+                onSeek(comment.startSeconds);
+                event.preventDefault();
+              } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                setSelectedCommentId(comment.id);
+                updateRange(comment, "move", event.key === "ArrowLeft" ? -0.1 : 0.1, bounds);
+                event.preventDefault();
+              }
+            }}
+          >
+            <span>{label}</span>
+          </button>
+          {selected && <>
+            <button
+              type="button"
+              className="editor-comment-range-handle is-start"
+              aria-label={`${label} 시작점 조절`}
+              onPointerDown={(event) => startDrag(comment, "start", event)}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                updateRange(comment, "start", event.key === "ArrowLeft" ? -0.1 : 0.1, bounds);
+                event.preventDefault();
+              }}
+            />
+            <button
+              type="button"
+              className="editor-comment-range-handle is-end"
+              aria-label={`${label} 종료점 조절`}
+              onPointerDown={(event) => startDrag(comment, "end", event)}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                updateRange(comment, "end", event.key === "ArrowLeft" ? -0.1 : 0.1, bounds);
+                event.preventDefault();
+              }}
+            />
+          </>}
+        </div>;
+      })}
+      {editingComment && <div
+        className="editor-comment-popover"
+        style={{ left: `${editingLeft}%` }}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <div className="editor-comment-popover-arrow" aria-hidden="true" />
+        <label>
+          <span>댓글 {editingIndex + 1} 내용</span>
+          <textarea
+            autoFocus
+            value={editingComment.text}
+            maxLength={200}
+            rows={3}
+            onChange={(event) => onTextChange(editingComment.id, event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setEditingCommentId(null);
+            }}
+          />
+        </label>
+        <div className="editor-comment-popover-actions">
+          <button type="button" className="is-delete" onClick={() => {
+            setEditingCommentId(null);
+            onDelete(editingComment.id);
+          }}>삭제</button>
+          <button type="button" onClick={() => setEditingCommentId(null)}>완료</button>
+        </div>
+      </div>}
+      </div>
+    </div>
+  </section>;
+}
+
+function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean }) {
   const initialTemplate = templates.find((value) => value.id === item.templateId) || templates[0];
   const initialTitleAspectRatio = item.templateId === "comment-capture" && item.videoAspectRatio === "9:16"
     ? "4:5"
@@ -1006,8 +1372,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [previewTime, setPreviewTime] = useState(0);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [applyConfirmationOpen, setApplyConfirmationOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
+  const [mobileEditorBlocked, setMobileEditorBlocked] = useState(false);
   const validTitle = title.trim().length > 0 && title.length <= 80 && title.split("\n").length <= 2;
   const template = templates.find((value) => value.id === templateId) || templates[0];
   const originalAspectRatio = item.videoAspectRatio || "1:1";
@@ -1040,6 +1409,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     ? selectionStart - editTimeline.timelineStartSeconds
     : 0;
   const relativePreviewTime = editTimeline ? previewTime - timelineSelectionOffset : previewTime;
+  const previewDuration = editTimeline ? selectionDuration : item.durationSeconds;
+  const displayedPreviewTime = Math.max(0, Math.min(previewDuration, relativePreviewTime));
   const previewSegments = editTimeline?.subtitleSegments || segments;
   const activeSubtitle = previewSegments.find((segment) => (
     editTimeline
@@ -1052,16 +1423,43 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const orderedCommentsForPreview = [...commentsForPreview].sort(
     (left, right) => left.startSeconds - right.startSeconds,
   );
-  const activeComment = orderedCommentsForPreview.reduce<CommentOverlay | null>(
-    (active, comment) => comment.startSeconds <= relativePreviewTime ? comment : active,
-    null,
-  );
+  const activeComment = orderedCommentsForPreview.find((comment) => (
+    comment.startSeconds <= relativePreviewTime
+    && comment.endSeconds > relativePreviewTime
+  )) || null;
   const orderedComments = [...comments].sort((left, right) => left.startSeconds - right.startSeconds);
   const validComments = comments.length > 0
     && comments.every((comment) => Number.isFinite(comment.startSeconds) && Number.isFinite(comment.endSeconds) && comment.startSeconds >= 0 && comment.endSeconds > comment.startSeconds && comment.endSeconds <= item.durationSeconds + 0.001 && comment.text.trim().length > 0)
     && orderedComments.every((comment, index) => index === 0 || comment.startSeconds >= orderedComments[index - 1].endSeconds - 0.001);
   const validSelection = !editTimeline || selectionDuration >= RANGE_EDIT_MIN_SECONDS;
   const editorValid = validTitle && validSelection && (templateId === "comment-capture" ? validComments : channel.trim().length > 0);
+
+  useEffect(() => {
+    const detectMobileEditor = () => {
+      const mobileBrowser = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(
+        window.navigator.userAgent,
+      );
+      const iPadDesktopBrowser = window.navigator.platform === "MacIntel"
+        && window.navigator.maxTouchPoints > 1;
+      const compactTouchDevice = window.navigator.maxTouchPoints > 1
+        && window.matchMedia("(pointer: coarse)").matches
+        && window.matchMedia("(max-width: 1024px)").matches;
+      setMobileEditorBlocked(mobileBrowser || iPadDesktopBrowser || compactTouchDevice);
+    };
+
+    detectMobileEditor();
+    window.addEventListener("resize", detectMobileEditor);
+    return () => window.removeEventListener("resize", detectMobileEditor);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileEditorBlocked) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileEditorBlocked]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1157,8 +1555,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setTitleTextStyles(defaultStyles);
     const defaultBackground = defaultStyles.find((style) => style.backgroundColor)?.backgroundColor;
     if (defaultBackground) setTitleBackgroundColor(defaultBackground);
-    if (value === "comment-capture" && comments.length === 0) {
-      setComments(defaultComments(item.durationSeconds));
+    if (value === "comment-capture") {
+      setComments((current) => (
+        current.length > 0 ? current : defaultComments(item.durationSeconds)
+      ));
     }
   };
 
@@ -1166,10 +1566,39 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setComments((current) => current.map((comment) => comment.id === id ? { ...comment, ...values } : comment));
   };
 
+  const updateCommentRange = (
+    id: string,
+    range: { startSeconds: number; endSeconds: number },
+  ) => {
+    const storedRange = editTimeline
+      ? scaleTimedRanges([range], selectionDuration, item.durationSeconds)[0]
+      : range;
+    updateComment(id, storedRange);
+  };
+
+  const seekCommentTimeline = (seconds: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.pause();
+    if (editTimeline) {
+      seekTimeline(selectionStart + Math.max(0, Math.min(selectionDuration, seconds)));
+      return;
+    }
+    const next = Math.max(0, Math.min(item.durationSeconds, seconds));
+    video.currentTime = next;
+    setPreviewTime(next);
+  };
+
   const addComment = () => {
     setComments((current) => {
       if (current.length >= 20) return current;
-      if (current.length === 0) return [randomComment(0, item.durationSeconds)];
+      const nextCommentText = selectRandomFallbackCommentTexts(
+        1,
+        current.map((comment) => comment.text),
+      )[0];
+      if (current.length === 0) {
+        return [randomComment(0, item.durationSeconds, nextCommentText)];
+      }
       const longest = current.reduce((selected, comment) => (
         comment.endSeconds - comment.startSeconds > selected.endSeconds - selected.startSeconds ? comment : selected
       ));
@@ -1177,7 +1606,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       if (midpoint <= longest.startSeconds || midpoint >= longest.endSeconds) return current;
       return [
         ...current.map((comment) => comment.id === longest.id ? { ...comment, endSeconds: midpoint } : comment),
-        randomComment(midpoint, longest.endSeconds),
+        randomComment(midpoint, longest.endSeconds, nextCommentText),
       ];
     });
   };
@@ -1364,31 +1793,99 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       } catch {
         // Storage can be disabled; the overlay will start when rerendering is first observed.
       }
+      if (standalone && projectNumber) {
+        try {
+          window.localStorage.setItem(
+            PROJECT_EDIT_REFRESH_STORAGE_KEY,
+            createProjectEditRefreshSignal(projectNumber, item.id),
+          );
+        } catch {
+          // If cross-tab storage is disabled, the editor's close fallback still opens the project.
+        }
+        onClose();
+        return;
+      }
       await onChanged();
       onClose();
     } catch (cause) { setError(userFacingErrorMessage(cause, "저장하지 못했습니다.")); }
     finally { setSaving(false); }
   };
 
+  const commentTimeline = templateId === "comment-capture"
+    ? <>
+      <CommentTimelineEditor
+        comments={commentsForPreview}
+        durationSeconds={editTimeline ? selectionDuration : item.durationSeconds}
+        currentSeconds={relativePreviewTime}
+        onRangeChange={updateCommentRange}
+        onTextChange={(id, text) => updateComment(id, { text })}
+        onSeek={seekCommentTimeline}
+        onDelete={(id) => setComments((current) => current.filter((comment) => comment.id !== id))}
+        selectionLeftPercent={editTimeline ? selectionLeft : 0}
+        selectionWidthPercent={editTimeline ? selectionWidth : 100}
+      />
+      {!validComments && <p className="editor-comment-timeline-error">댓글을 하나 이상 두고, 내용과 노출 구간이 비어 있거나 서로 겹치지 않도록 조정해 주세요.</p>}
+    </>
+    : null;
+
   const editorContent = (
     <>
+      <ApplyEditConfirmDialog
+        open={applyConfirmationOpen}
+        saving={saving}
+        onCancel={() => setApplyConfirmationOpen(false)}
+        onConfirm={() => {
+          setApplyConfirmationOpen(false);
+          void save();
+        }}
+      />
+      {mobileEditorBlocked && <div
+        className="editor-mobile-blocker"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="editor-mobile-blocker-title"
+        aria-describedby="editor-mobile-blocker-description"
+      >
+        <section className="editor-mobile-blocker-card">
+          <span className="editor-mobile-blocker-label">PC 전용 편집 기능</span>
+          <h2 id="editor-mobile-blocker-title">데스크톱에서 편집해 주세요</h2>
+          <p id="editor-mobile-blocker-description">영상 구간과 댓글 타임라인을 정확하게 조정하려면 데스크톱 환경이 필요합니다.</p>
+          <button type="button" onClick={onClose}>프로젝트로 돌아가기</button>
+        </section>
+      </div>}
       {standalone && <header className="editor-topbar">
         <div className="editor-topbar-inner">
-          <div className="min-w-0"><h1 className="truncate">{projectLabel || "쇼츠 편집"}</h1></div>
+          <div className="editor-header-project">
+            <span className="editor-header-project-number">{projectNumber ? `프로젝트 #${projectNumber}` : "영상 편집"}</span>
+            <div className="editor-header-title-row">
+              <h1>{projectLabel || "제목 없는 영상"}</h1>
+            </div>
+          </div>
           <div className="editor-header-actions">
-            <button type="button" onClick={onClose} className="editor-close-button" aria-label="편집기 닫기">✕ 닫기</button>
-            <button type="button" disabled={!editorValid || saving} onClick={() => void save()} className="editor-apply-button">{saving ? "처리 중..." : "영상에 적용"}</button>
+            <button type="button" onClick={onClose} className="editor-close-button" aria-label="편집기에서 나가기">나가기</button>
+            <button type="button" disabled={!editorValid || saving} onClick={() => setApplyConfirmationOpen(true)} className="editor-apply-button">{saving ? "적용 중..." : "영상에 적용"}</button>
           </div>
         </div>
       </header>}
-      <div className={standalone ? "editor-page-body" : "grid max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-white/10 bg-[#151517] sm:grid-cols-[320px_1fr] sm:rounded-2xl"}>
-        <section className={standalone ? `editor-preview-pane${editTimeline ? " has-range-editor" : ""}` : "editor-preview-stack"}>
+      <div className={standalone
+        ? `editor-page-body${desktopSidebarOpen ? "" : " is-sidebar-collapsed"}`
+        : `editor-dialog-body grid max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-white/10 bg-[#151517] sm:rounded-2xl${desktopSidebarOpen ? "" : " is-sidebar-collapsed"}`}>
+        <button
+          type="button"
+          className="editor-sidebar-rail-toggle"
+          aria-label={desktopSidebarOpen ? "편집 사이드바 닫기" : "편집 사이드바 열기"}
+          aria-expanded={desktopSidebarOpen}
+          aria-controls="editor-controls-scroll"
+          onClick={() => setDesktopSidebarOpen((current) => !current)}
+        >
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d={desktopSidebarOpen ? "m12.25 5.5-4.5 4.5 4.5 4.5" : "m7.75 5.5 4.5 4.5-4.5 4.5"} stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <section className={standalone ? `editor-preview-pane${editTimeline ? " has-range-editor" : ""}` : "editor-dialog-preview editor-preview-stack"}>
         <div className={standalone ? "editor-video-frame" : "sticky top-0 mx-auto aspect-[9/16] w-full max-w-[320px] overflow-hidden"} style={{ background: template.background, containerType: "inline-size" }}>
           <TitleOverlayPreview title={title} fontScale={titleFontScale} videoAspectRatio={commentNeedsVerticalFit ? "4:5" : originalAspectRatio} primary={template.primary} accent={template.accent} background={template.background} keepPrimaryFirstLine={template.id === "paper"} textStyles={titleTextStyles} liftLandscape={usesLiftedCommentLayout} />
           {cleanVideoUrl ? <video ref={videoRef} className={`absolute inset-x-0 w-full bg-black ${commentNeedsVerticalFit ? "object-contain" : "object-cover"}`} style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }} src={cleanVideoUrl} playsInline disablePictureInPicture preload="metadata" onContextMenu={(event) => event.preventDefault()} onLoadedMetadata={(event) => { setVideoLoadError(false); if (editTimeline) { const offset = selectionStart - editTimeline.timelineStartSeconds; event.currentTarget.currentTime = Math.max(0, offset); setPreviewTime(offset); } }} onPlay={() => setIsPreviewPlaying(true)} onPause={() => setIsPreviewPlaying(false)} onEnded={() => setIsPreviewPlaying(false)} onError={() => setVideoLoadError(true)} onTimeUpdate={(event) => { const current = event.currentTarget.currentTime; setPreviewTime(current); if (editTimeline) { const start = selectionStart - editTimeline.timelineStartSeconds; const end = selectionEnd - editTimeline.timelineStartSeconds; if (!event.currentTarget.paused && current >= end - 0.03) { event.currentTarget.currentTime = Math.max(0, start); void event.currentTarget.play().catch(() => undefined); } } }} /> : <div className="absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}>클린 영상 준비 중</div>}
-          {cleanVideoUrl && <button type="button" className="editor-preview-play-toggle" style={{ top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }} aria-label={isPreviewPlaying ? "미리보기 일시정지" : "미리보기 재생"} aria-pressed={isPreviewPlaying} onClick={togglePreviewPlayback}>
-            {!isPreviewPlaying && <span className="editor-preview-play-icon" aria-hidden="true"><span /></span>}
-          </button>}
           {videoLoadError && <div className="pointer-events-none absolute inset-x-3 z-30 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100" style={{ top: `${editorLayout.videoTop + 2}%` }}>편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>}
           {subtitlesEnabled && activeSubtitle && <div className="pointer-events-none absolute inset-x-5 z-20 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white" style={{ bottom: `${editorLayout.subtitleBottom}%` }}>{activeSubtitle}</div>}
           <div className={`absolute inset-x-0 z-10 overflow-hidden text-sm font-bold ${templateId === "comment-capture" ? "" : editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.bottomHeight}%`, background: editorLayout.fullVertical && templateId !== "comment-capture" ? "transparent" : template.background, color: template.channel }}>
@@ -1400,7 +1897,117 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             ? <CommentCaptureChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} fixedCenterY={COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y} />
             : <FixedPresetChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} foreground={template.channel} background={template.background} />)}
         </div>
-        {editTimeline && <section className="editor-range-panel" aria-label="영상 구간 선택">
+        <div className="editor-preview-transport" aria-label="미리보기 재생 제어">
+          <span>{formatPreciseTimestamp(displayedPreviewTime)}</span>
+          <button
+            type="button"
+            disabled={!cleanVideoUrl}
+            aria-label={isPreviewPlaying ? "미리보기 일시정지" : "미리보기 재생"}
+            aria-pressed={isPreviewPlaying}
+            onClick={togglePreviewPlayback}
+          >
+            {isPreviewPlaying
+              ? <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M7 5.5v9M13 5.5v9" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>
+              : <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7.5 5.4 7 4.6-7 4.6V5.4Z" fill="currentColor" /></svg>}
+          </button>
+          <span>{formatPreciseTimestamp(previewDuration)}</span>
+        </div>
+        </section>
+        <section className={standalone ? `editor-controls-pane${mobileControlsOpen ? " is-mobile-open" : ""}` : "editor-dialog-controls"}>
+          <div className="editor-controls-sheet-header">
+            <span id="editor-title" className="sr-only">편집 설정</span>
+            <button type="button" className="editor-controls-sheet-toggle" aria-expanded={mobileControlsOpen} aria-controls="editor-controls-scroll" onClick={() => setMobileControlsOpen((current) => !current)}>
+              <span className="editor-controls-title">편집 설정</span>
+              <span className="editor-controls-chevron" aria-hidden="true">
+                <svg viewBox="0 0 20 20" fill="none">
+                  <path d="m5.5 12.25 4.5-4.5 4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            </button>
+            {!standalone && <button onClick={onClose} className="editor-dialog-close-button rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-white/10">닫기</button>}
+          </div>
+          <div id="editor-controls-scroll" className="editor-controls-scroll">
+          <details className="editor-accordion">
+            <summary className="editor-accordion-summary">
+              <span>후킹 제목</span>
+              <span className="editor-accordion-chevron" aria-hidden="true">
+                <svg viewBox="0 0 20 20" fill="none">
+                  <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            </summary>
+            <div className="editor-accordion-panel">
+              <label className="block">
+                <span className="sr-only">후킹 제목</span>
+                <textarea ref={titleInputRef} value={title} onChange={(event) => { setTitle(event.target.value); setTitleTextStyles([]); setTitleSelection(null); }} onSelect={captureTitleSelection} onDoubleClick={captureTitleSelection} maxLength={80} rows={2} className="w-full rounded-lg border border-white/15 bg-black/30 p-3 text-sm" />
+              </label>
+              <p className={`mt-1 text-xs ${validTitle ? "text-neutral-500" : "text-red-400"}`}>최대 2줄·80자 ({title.length}/80)</p>
+            </div>
+          </details>
+          <details className="editor-accordion">
+            <summary className="editor-accordion-summary">
+              <span>제목 스타일</span>
+              <span className="editor-accordion-chevron" aria-hidden="true">
+                <svg viewBox="0 0 20 20" fill="none">
+                  <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            </summary>
+            <div className="editor-accordion-panel">
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-xs leading-5 text-neutral-400">제목에서 원하는 글자를 더블클릭하거나 드래그해 선택한 뒤 색상을 변경하세요.</p>
+            <p className={`mt-2 truncate rounded-lg px-2.5 py-2 text-xs ${titleSelection ? "bg-white/10 text-white" : "bg-white/[.04] text-neutral-500"}`}>
+              {titleSelection ? `선택: ${Array.from(title).slice(titleSelection.start, titleSelection.end).join("")}` : "선택된 글자가 없습니다."}
+            </p>
+            <div className="mt-3 grid grid-cols-2 items-start gap-5">
+              <fieldset disabled={!titleSelection}>
+                <legend className="sr-only">글자색</legend>
+                <div className="flex items-center justify-between gap-3"><span className={`text-xs font-semibold ${titleSelection ? "text-neutral-200" : "text-neutral-600"}`}>글자색</span></div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(showAllTextColors ? titleTextColorOptions : titleTextColorOptions.slice(0, 3)).map((option) => <button key={option.color} type="button" aria-label={`글자색 ${option.name}`} title={option.name} aria-pressed={titleTextColor === option.color} onClick={() => { setTitleTextColor(option.color); updateSelectedTitleStyle({ color: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleTextColor === option.color ? "outline outline-2 outline-offset-2 outline-[#ff715e]" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
+                  <button type="button" aria-label={showAllTextColors ? "글자색 접기" : "글자색 전체 보기"} title={showAllTextColors ? "접기" : "전체 보기"} aria-expanded={showAllTextColors} onClick={() => setShowAllTextColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-neutral-200 transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllTextColors ? "−" : "+"}</button>
+                </div>
+              </fieldset>
+              <fieldset disabled={!titleSelection}>
+                <legend className="sr-only">텍스트 배경색</legend>
+                <div className="flex items-center justify-between gap-3"><span className={`text-xs font-semibold ${titleSelection ? "text-neutral-200" : "text-neutral-600"}`}>텍스트 배경색</span></div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button type="button" aria-label="텍스트 배경색 없음" title="없음" onClick={() => updateSelectedTitleStyle({ backgroundColor: null })} className="flex h-8 w-8 items-center justify-center rounded-full border border-dashed border-white/35 bg-white/[.03] text-[8px] font-bold text-neutral-400 transition hover:border-white/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-30">없음</button>
+                  {(showAllBackgroundColors ? titleBackgroundColorOptions : titleBackgroundColorOptions.slice(0, 2)).map((option) => <button key={option.color} type="button" aria-label={`텍스트 배경색 ${option.name}`} title={option.name} aria-pressed={titleBackgroundColor === option.color} onClick={() => { setTitleBackgroundColor(option.color); updateSelectedTitleStyle({ backgroundColor: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleBackgroundColor === option.color ? "outline outline-2 outline-offset-2 outline-[#ff715e]" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
+                  <button type="button" aria-label={showAllBackgroundColors ? "텍스트 배경색 접기" : "텍스트 배경색 전체 보기"} title={showAllBackgroundColors ? "접기" : "전체 보기"} aria-expanded={showAllBackgroundColors} onClick={() => setShowAllBackgroundColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-neutral-200 transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllBackgroundColors ? "−" : "+"}</button>
+                </div>
+              </fieldset>
+            </div>
+            </div>
+            <label className="mt-5 block font-semibold">
+              <span className="flex items-center justify-between"><span>제목 글자 크기</span><strong className="text-sm text-red-300">{Math.round(titleFontScale * 100)}%</strong></span>
+              <input aria-label="제목 글자 크기" type="range" min={0.8} max={1.2} step={0.05} value={titleFontScale} onChange={(event) => setTitleFontScale(Number(event.target.value))} className="mt-3 w-full accent-red-500" />
+            </label>
+            </div>
+          </details>
+          {templateId !== "comment-capture" && <label className="editor-section block text-sm font-semibold">채널명<input value={channel} onChange={(event) => setChannel(event.target.value)} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>}
+          <label className="hidden"><input type="checkbox" checked={subtitlesEnabled} onChange={(event) => setSubtitlesEnabled(event.target.checked)} />자동 자막 표시</label>
+          {subtitlesEnabled && <div className="hidden">{segments.map((segment, index) => <label key={`${segment.start}-${index}`}><span>{formatTimestamp(segment.start)}</span><input value={segment.text} onChange={(event) => setSegments((current) => current.map((value, position) => position === index ? { ...value, text: event.target.value } : value))} /></label>)}</div>}
+          <details className="editor-accordion">
+            <summary className="editor-accordion-summary">
+              <span>템플릿</span>
+              <span className="editor-accordion-summary-meta">{template.name}</span>
+              <span className="editor-accordion-chevron" aria-hidden="true">
+                <svg viewBox="0 0 20 20" fill="none">
+                  <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            </summary>
+            <div className="editor-accordion-panel">
+              <p className="mb-3 text-xs text-neutral-500">최종 영상의 제목·영상·하단 구성을 미리 확인하세요.</p>
+              <div className="editor-template-grid">{templates.map((value) => <button key={value.id} type="button" aria-pressed={templateId === value.id} onClick={() => selectTemplate(value.id)} className={`min-w-0 rounded-xl border-2 p-2 transition ${templateId === value.id ? "border-red-500 bg-red-500/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}><TemplatePreview template={value} videoAspectRatio={item.videoAspectRatio || "1:1"} channelName={channel} channelThumbnailUrl={channelThumbnailUrl} /><span className="mt-2 block truncate text-center text-xs font-semibold">{value.name}</span></button>)}</div>
+            </div>
+          </details>
+          {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
+          {!standalone && <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={!editorValid || saving} onClick={() => setApplyConfirmationOpen(true)} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{saving ? "처리 중..." : "영상에 적용"}</button></div>}
+          </div>
+        </section>
+        {editTimeline && <section className="editor-range-panel editor-workspace-timeline" aria-label="영상 및 댓글 구간 선택">
           <div className="editor-filmstrip-wrap">
             <div ref={filmstripRef} className="editor-filmstrip" onPointerDown={startTimelineScrubbing} onPointerMove={moveTimelineScrubbing} onPointerUp={finishTimelineScrubbing} onPointerCancel={finishTimelineScrubbing}>
               <div className="editor-filmstrip-images" aria-hidden="true">
@@ -1413,99 +2020,37 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               <div className="editor-filmstrip-shade editor-filmstrip-shade-left" style={{ width: `${selectionLeft}%` }} />
               <div className="editor-filmstrip-shade editor-filmstrip-shade-right" style={{ left: `${selectionLeft + selectionWidth}%` }} />
               <div className="editor-filmstrip-selection" style={{ left: `${selectionLeft}%`, width: `${selectionWidth}%` }} />
-              <span className="editor-timeline-playhead" style={{ left: `${playheadLeft}%` }} aria-hidden="true">
-                <span className="editor-timeline-playhead-time">{previewTime.toFixed(1)}초</span>
-              </span>
+              <span className="editor-timeline-playhead" style={{ left: `${playheadLeft}%` }} aria-hidden="true" />
               <span className="editor-range-marker editor-range-marker-start" style={{ left: `${selectionLeft}%` }} aria-hidden="true" onPointerDown={(event) => startRangeInteraction("start", event)}>
-                <span className="editor-range-marker-time">{formatTimestamp(selectionStart)}</span>
+                <span className="editor-range-marker-time">{formatPreciseTimestamp(0)}</span>
                 <span className="editor-range-marker-grip">•••</span>
               </span>
               <span className="editor-range-marker editor-range-marker-end" style={{ left: `${selectionLeft + selectionWidth}%` }} aria-hidden="true" onPointerDown={(event) => startRangeInteraction("end", event)}>
-                <span className="editor-range-marker-time">{formatTimestamp(selectionEnd)}</span>
+                <span className="editor-range-marker-time">{formatPreciseTimestamp(selectionDuration)}</span>
                 <span className="editor-range-marker-grip">•••</span>
               </span>
               <input aria-label="최종 영상 시작 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.1} value={selectionStart} onChange={(event) => updateSelectionStart(Number(event.target.value))} className="sr-only" />
               <input aria-label="최종 영상 종료 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.1} value={selectionEnd} onChange={(event) => updateSelectionEnd(Number(event.target.value))} className="sr-only" />
             </div>
             <div className="editor-filmstrip-bounds" aria-label="전체 편집 가능 범위">
-              <span>{formatTimestamp(editTimeline.timelineStartSeconds)}</span>
-              <span>{formatTimestamp(editTimeline.timelineEndSeconds)}</span>
+              <span>{formatTimelineOffset(editTimeline.timelineStartSeconds - selectionStart)}</span>
+              <span>{formatTimelineOffset(editTimeline.timelineEndSeconds - selectionStart)}</span>
             </div>
           </div>
+          {commentTimeline}
           <div className="editor-range-actions">
             <button type="button" onClick={() => { setSelectionStart(editTimeline.initialStartSeconds); setSelectionEnd(editTimeline.initialEndSeconds); seekTimeline(editTimeline.initialStartSeconds); }}>↺ 원본으로 되돌리기</button>
+            {templateId === "comment-capture" && <button type="button" disabled={comments.length >= 20} onClick={addComment}>+ 댓글</button>}
           </div>
           {selectionDuration > 180 && <p className="editor-range-warning">3분을 넘는 영상은 YouTube에서 Shorts로 분류되지 않을 수 있지만 저장할 수 있습니다.</p>}
           {!validSelection && <p className="editor-range-error">최종 영상은 1초 이상이어야 합니다.</p>}
         </section>}
-        </section>
-        <section className={standalone ? `editor-controls-pane${mobileControlsOpen ? " is-mobile-open" : ""}` : "p-5 sm:p-6"}>
-          <div className="editor-controls-sheet-header">
-            <button type="button" className="editor-controls-sheet-toggle" aria-expanded={mobileControlsOpen} aria-controls="editor-controls-scroll" onClick={() => { if (window.matchMedia("(max-width: 640px)").matches) setMobileControlsOpen((current) => !current); }}>
-              <span><span id="editor-title" className="editor-controls-title">쇼츠 편집</span><span className="editor-controls-description">왼쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</span></span>
-              <span className="editor-controls-chevron" aria-hidden="true">
-                <svg viewBox="0 0 20 20" fill="none">
-                  <path d="m5.5 12.25 4.5-4.5 4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </span>
-            </button>
-            {!standalone && <button onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-white/10">닫기</button>}
+        {!editTimeline && commentTimeline && <section className="editor-range-panel editor-workspace-timeline editor-comment-only-panel">
+          {commentTimeline}
+          <div className="editor-range-actions">
+            <button type="button" disabled={comments.length >= 20} onClick={addComment}>+ 댓글</button>
           </div>
-          <div id="editor-controls-scroll" className="editor-controls-scroll">
-          <label className="editor-section editor-section-heading block font-semibold">후킹 제목<textarea ref={titleInputRef} value={title} onChange={(event) => { setTitle(event.target.value); setTitleTextStyles([]); setTitleSelection(null); }} onSelect={captureTitleSelection} onDoubleClick={captureTitleSelection} maxLength={80} rows={2} className="mt-2 w-full rounded-lg border border-white/15 bg-black/30 p-3 text-sm" /></label>
-          <p className={`mt-1 text-xs ${validTitle ? "text-neutral-500" : "text-red-400"}`}>최대 2줄·80자 ({title.length}/80)</p>
-          <div className="editor-section">
-            <h3 className="text-sm font-semibold">제목 스타일</h3>
-            <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
-            <p className="text-xs leading-5 text-neutral-400">제목에서 원하는 글자를 더블클릭하거나 드래그해 선택한 뒤 색상을 변경하세요.</p>
-            <p className={`mt-2 truncate rounded-lg px-2.5 py-2 text-xs ${titleSelection ? "bg-white/10 text-white" : "bg-white/[.04] text-neutral-500"}`}>
-              {titleSelection ? `선택: ${Array.from(title).slice(titleSelection.start, titleSelection.end).join("")}` : "선택된 글자가 없습니다."}
-            </p>
-            <div className="mt-3 grid grid-cols-2 items-start gap-5">
-              <fieldset disabled={!titleSelection}>
-                <legend className="sr-only">글자색</legend>
-                <div className="flex items-center justify-between gap-3"><span className={`text-xs font-semibold ${titleSelection ? "text-neutral-200" : "text-neutral-600"}`}>글자색</span></div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(showAllTextColors ? titleTextColorOptions : titleTextColorOptions.slice(0, 3)).map((option) => <button key={option.color} type="button" aria-label={`글자색 ${option.name}`} title={option.name} aria-pressed={titleTextColor === option.color} onClick={() => { setTitleTextColor(option.color); updateSelectedTitleStyle({ color: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleTextColor === option.color ? "ring-2 ring-[#ff715e] ring-offset-2 ring-offset-[#111113]" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
-                  <button type="button" aria-label={showAllTextColors ? "글자색 접기" : "글자색 전체 보기"} title={showAllTextColors ? "접기" : "전체 보기"} aria-expanded={showAllTextColors} onClick={() => setShowAllTextColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-neutral-200 transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllTextColors ? "−" : "+"}</button>
-                </div>
-              </fieldset>
-              <fieldset disabled={!titleSelection}>
-                <legend className="sr-only">텍스트 배경색</legend>
-                <div className="flex items-center justify-between gap-3"><span className={`text-xs font-semibold ${titleSelection ? "text-neutral-200" : "text-neutral-600"}`}>텍스트 배경색</span></div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button type="button" aria-label="텍스트 배경색 없음" title="없음" onClick={() => updateSelectedTitleStyle({ backgroundColor: null })} className="flex h-8 w-8 items-center justify-center rounded-full border border-dashed border-white/35 bg-white/[.03] text-[8px] font-bold text-neutral-400 transition hover:border-white/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-30">없음</button>
-                  {(showAllBackgroundColors ? titleBackgroundColorOptions : titleBackgroundColorOptions.slice(0, 2)).map((option) => <button key={option.color} type="button" aria-label={`텍스트 배경색 ${option.name}`} title={option.name} aria-pressed={titleBackgroundColor === option.color} onClick={() => { setTitleBackgroundColor(option.color); updateSelectedTitleStyle({ backgroundColor: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleBackgroundColor === option.color ? "ring-2 ring-[#ff715e] ring-offset-2 ring-offset-[#111113]" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
-                  <button type="button" aria-label={showAllBackgroundColors ? "텍스트 배경색 접기" : "텍스트 배경색 전체 보기"} title={showAllBackgroundColors ? "접기" : "전체 보기"} aria-expanded={showAllBackgroundColors} onClick={() => setShowAllBackgroundColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-neutral-200 transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllBackgroundColors ? "−" : "+"}</button>
-                </div>
-              </fieldset>
-            </div>
-            </div>
-          </div>
-          <label className="editor-section editor-section-heading block font-semibold"><span className="flex items-center justify-between"><span>제목 글자 크기</span><strong className="text-sm text-red-300">{Math.round(titleFontScale * 100)}%</strong></span><input aria-label="제목 글자 크기" type="range" min={0.8} max={1.2} step={0.05} value={titleFontScale} onChange={(event) => setTitleFontScale(Number(event.target.value))} className="mt-3 w-full accent-red-500" /></label>
-          {templateId !== "comment-capture" && <label className="editor-section block text-sm font-semibold">채널명<input value={channel} onChange={(event) => setChannel(event.target.value)} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>}
-          <label className="hidden"><input type="checkbox" checked={subtitlesEnabled} onChange={(event) => setSubtitlesEnabled(event.target.checked)} />자동 자막 표시</label>
-          {subtitlesEnabled && <div className="hidden">{segments.map((segment, index) => <label key={`${segment.start}-${index}`}><span>{formatTimestamp(segment.start)}</span><input value={segment.text} onChange={(event) => setSegments((current) => current.map((value, position) => position === index ? { ...value, text: event.target.value } : value))} /></label>)}</div>}
-          <div className="editor-section"><div className="mb-3 flex items-end justify-between"><div><h3 className="text-sm font-semibold">템플릿</h3><p className="mt-1 text-xs text-neutral-500">최종 영상의 제목·영상·하단 구성을 미리 확인하세요.</p></div><span className="text-xs font-semibold text-red-300">{template.name}</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-5">{templates.map((value) => <button key={value.id} type="button" aria-pressed={templateId === value.id} onClick={() => selectTemplate(value.id)} className={`rounded-xl border-2 p-2 transition ${templateId === value.id ? "border-red-500 bg-red-500/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}><TemplatePreview template={value} videoAspectRatio={item.videoAspectRatio || "1:1"} channelName={channel} channelThumbnailUrl={channelThumbnailUrl} /><span className="mt-2 block text-center text-xs font-semibold">{value.name}</span></button>)}</div></div>
-          {templateId === "comment-capture" && <section className="editor-section">
-            <div className="flex items-start justify-between gap-4"><div><h3 className="text-sm font-bold">시간별 댓글</h3><p className="mt-1 text-xs leading-5 text-neutral-500">각 구간에는 댓글 하나만 표시됩니다. 새 댓글의 랜덤 정보는 저장 후에도 유지됩니다.</p></div><button type="button" disabled={comments.length >= 20} onClick={addComment} className="shrink-0 rounded-lg border border-white/15 px-3 py-2 text-xs font-bold disabled:opacity-40">+ 댓글 추가</button></div>
-            <div className="mt-4 space-y-3">
-              {orderedComments.map((comment, index) => <article key={comment.id} className="rounded-lg border border-white/10 bg-[#101012] p-3">
-                <div className="flex items-center justify-between gap-3"><strong className="text-xs text-neutral-300">댓글 {index + 1}</strong><button type="button" onClick={() => setComments((current) => current.filter((value) => value.id !== comment.id))} className="text-xs font-semibold text-red-300 hover:text-red-200">삭제</button></div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <label className="text-xs text-neutral-400">시작(초)<input aria-label={`댓글 ${index + 1} 시작 시간`} type="number" min={0} max={item.durationSeconds} step={0.1} value={comment.startSeconds} onChange={(event) => updateComment(comment.id, { startSeconds: Number(event.target.value) })} className="mt-1 h-9 w-full rounded border border-white/10 bg-black/30 px-2 text-sm text-white" /></label>
-                  <label className="text-xs text-neutral-400">종료(초)<input aria-label={`댓글 ${index + 1} 종료 시간`} type="number" min={0} max={item.durationSeconds} step={0.1} value={comment.endSeconds} onChange={(event) => updateComment(comment.id, { endSeconds: Number(event.target.value) })} className="mt-1 h-9 w-full rounded border border-white/10 bg-black/30 px-2 text-sm text-white" /></label>
-                </div>
-                <label className="mt-3 block text-xs text-neutral-400">댓글 내용<textarea aria-label={`댓글 ${index + 1} 내용`} value={comment.text} maxLength={200} rows={2} onChange={(event) => updateComment(comment.id, { text: event.target.value })} className="mt-1 w-full rounded border border-white/10 bg-black/30 p-2 text-sm text-white" /></label>
-                <div className="mt-3 aspect-[5/1] overflow-hidden border border-white/5" style={{ containerType: "inline-size" }}><CommentCaptureCard comment={comment} /></div>
-              </article>)}
-            </div>
-            {!validComments && <p className="mt-3 text-xs leading-5 text-red-400">댓글을 하나 이상 두고, 텍스트와 시간이 비어 있거나 서로 겹치지 않도록 조정해 주세요. 최대 길이는 {item.durationSeconds.toFixed(1)}초입니다.</p>}
-          </section>}
-          {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
-          {!standalone && <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={!editorValid || saving} onClick={() => void save()} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{saving ? "처리 중..." : "영상에 적용"}</button></div>}
-          </div>
-        </section>
+        </section>}
       </div>
     </>
   );
@@ -1726,7 +2271,7 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">편집기를 준비하고 있습니다…</main>;
   if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/projects/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
 
-  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={`프로젝트 /${project.projectNumber} · ${item.hookTitle}`} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} />;
+  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} />;
 }
 
 export function ProjectPage({ projectNumber }: { projectNumber: number }) {
@@ -1753,6 +2298,17 @@ export function ProjectPage({ projectNumber }: { projectNumber: number }) {
   useEffect(() => {
     void loadProject();
   }, [loadProject]);
+
+  useEffect(() => {
+    const refreshAfterAppliedEdit = (event: StorageEvent) => {
+      if (event.key !== PROJECT_EDIT_REFRESH_STORAGE_KEY) return;
+      const signal = parseProjectEditRefreshSignal(event.newValue);
+      if (signal?.projectNumber !== projectNumber) return;
+      window.location.reload();
+    };
+    window.addEventListener("storage", refreshAfterAppliedEdit);
+    return () => window.removeEventListener("storage", refreshAfterAppliedEdit);
+  }, [projectNumber]);
 
   const projectHasBackgroundWork = Boolean(
     project

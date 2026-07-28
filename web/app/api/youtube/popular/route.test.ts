@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/youtube-popular", () => ({
   getPopularVideos: mocks.getPopularVideos,
   popularVideoTypes: ["trending", "views", "reusable"],
+  popularReusablePeriods: ["today", "week", "all"],
   popularVideoCategories: ["all", "entertainment", "gaming", "sports", "music", "news", "science", "howto"],
   PopularSnapshotUnavailableError: class PopularSnapshotUnavailableError extends Error {},
 }));
@@ -79,6 +80,12 @@ describe("popular YouTube API route", () => {
     expect(mocks.getPopularSearchVideos).not.toHaveBeenCalled();
   });
 
+  it("rejects an unsupported reusable discovery period", async () => {
+    const response = await GET(new Request("http://localhost/api/youtube/popular?type=reusable&reusablePeriod=month"));
+    expect(response.status).toBe(400);
+    expect(mocks.getReusablePopularVideos).not.toHaveBeenCalled();
+  });
+
   it("reads a filtered page from the stored snapshot", async () => {
     mocks.getPopularSearchVideos.mockResolvedValue({ items: [], updatedAt: "2026-07-14T00:00:00.000Z" });
     const response = await GET(new Request("http://localhost/api/youtube/popular?type=views&category=gaming&reusable=true&longForm=true&korean=true"));
@@ -114,10 +121,32 @@ describe("popular YouTube API route", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.getReusablePopularVideos).toHaveBeenCalledWith(
-      "all", false, false, undefined, 48,
+      "all", false, false, undefined, 48, "all",
     );
     expect(mocks.getPopularSearchVideos).not.toHaveBeenCalled();
     expect(mocks.getPopularVideos).not.toHaveBeenCalled();
+  });
+
+  it("passes the selected discovery period to the reusable list", async () => {
+    mocks.getReusablePopularVideos.mockResolvedValue({
+      items: [],
+      updatedAt: "2026-07-28T08:00:00.000Z",
+      totalCount: 81,
+      reusablePeriodCounts: { today: 23, week: 81, all: 769 },
+    });
+
+    const response = await GET(new Request(
+      "http://localhost/api/youtube/popular?type=reusable&reusablePeriod=week",
+    ));
+
+    expect(response.status).toBe(200);
+    expect(mocks.getReusablePopularVideos).toHaveBeenCalledWith(
+      "all", false, false, undefined, 48, "week",
+    );
+    await expect(response.json()).resolves.toMatchObject({
+      totalCount: 81,
+      reusablePeriodCounts: { today: 23, week: 81, all: 769 },
+    });
   });
 
   it("passes only the opaque database cursor when an entitled user loads more", async () => {

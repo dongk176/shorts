@@ -13,10 +13,10 @@ from shorts_worker.renderer import (
     COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
     PRESET_SQUARE_CHANNEL_CENTER_Y,
     VideoRenderer,
-    continuous_comment_windows,
     create_comment_timeline_manifest,
     custom_video_geometry_filters,
     lifted_comment_landscape_layout,
+    saved_comment_windows,
     video_layout,
 )
 from shorts_worker.schemas import (
@@ -271,7 +271,7 @@ def test_preset_channel_positions_use_the_square_layout_reference() -> None:
     assert COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y == square.bottom_y + 340
 
 
-def test_comment_windows_cover_entire_clip_even_when_saved_ranges_have_gaps() -> None:
+def test_comment_windows_preserve_editor_created_gaps() -> None:
     comments = [
         CommentOverlay.model_validate(
             {
@@ -289,9 +289,13 @@ def test_comment_windows_cover_entire_clip_even_when_saved_ranges_have_gaps() ->
         for index, (start, end) in enumerate(((1.2, 2.0), (4.8, 5.4), (8.0, 9.0)), start=1)
     ]
 
-    windows = continuous_comment_windows(comments, 12.0)
+    windows = saved_comment_windows(comments, 12.0)
 
-    assert [(start, end) for _, start, end in windows] == [(0.0, 4.8), (4.8, 8.0), (8.0, 12.0)]
+    assert [(start, end) for _, start, end in windows] == [
+        (1.2, 2.0),
+        (4.8, 5.4),
+        (8.0, 9.0),
+    ]
 
 
 def test_comment_timeline_normalizes_rgba_frames_and_uses_safe_relative_paths(
@@ -321,6 +325,7 @@ def test_comment_timeline_normalizes_rgba_frames_and_uses_safe_relative_paths(
     manifest, height = create_comment_timeline_manifest(
         panels,
         windows,
+        duration=5.0,
         directory=tmp_path / "timeline",
         prefix="safe",
     )
@@ -340,6 +345,58 @@ def test_comment_timeline_normalizes_rgba_frames_and_uses_safe_relative_paths(
     assert len(file_lines) == 4
     assert all("/" not in line and "\\" not in line for line in file_lines)
     assert file_lines[-1] == file_lines[-2]
+
+
+def test_comment_timeline_inserts_transparent_frames_for_saved_gaps(
+    tmp_path: Path,
+) -> None:
+    panels = []
+    for index in range(2):
+        panel = tmp_path / f"panel-gap-{index}.png"
+        Image.new("RGBA", (320, 90), (20 * index, 40, 180, 255)).save(panel)
+        panels.append(panel)
+    comments = [
+        CommentOverlay.model_validate({
+            "id": f"comment-gap-{index}",
+            "startSeconds": start,
+            "endSeconds": end,
+            "text": f"댓글 {index}",
+            "initial": "댓",
+            "avatarColor": "#2674C8",
+            "nickname": "테스트",
+            "likeCount": 10,
+            "ageLabel": "방금 전",
+        })
+        for index, (start, end) in enumerate(((1.0, 2.0), (3.5, 4.0)))
+    ]
+    windows = saved_comment_windows(comments, 5.0)
+
+    manifest, _ = create_comment_timeline_manifest(
+        panels,
+        windows,
+        duration=5.0,
+        directory=tmp_path / "timeline-gap",
+        prefix="gapped",
+    )
+
+    gap_frame = tmp_path / "timeline-gap" / "gapped_comment_gap.png"
+    assert gap_frame.exists()
+    with Image.open(gap_frame) as image:
+        assert image.getbbox() is None
+    lines = manifest.read_text(encoding="utf-8").splitlines()
+    assert [line for line in lines if line.startswith("duration ")] == [
+        "duration 1.000000",
+        "duration 1.000000",
+        "duration 1.500000",
+        "duration 0.500000",
+        "duration 1.000000",
+    ]
+    assert [line for line in lines if line == "file gapped_comment_gap.png"] == [
+        "file gapped_comment_gap.png",
+        "file gapped_comment_gap.png",
+        "file gapped_comment_gap.png",
+        "file gapped_comment_gap.png",
+    ]
 
 
 def test_custom_template_config_rejects_video_outside_canvas() -> None:

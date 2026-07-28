@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PopularFiltersPlanOverlay } from "@/components/popular-filters-plan-overlay";
 import type {
+  PopularReusablePeriod,
   PopularVideo,
   PopularVideoCategory,
   PopularVideoResponse,
@@ -20,6 +21,12 @@ const dataTypeOptions: Array<{ value: PopularVideoType; label: string }> = [
   { value: "trending", label: "실시간 급상승" },
   { value: "views", label: "조회수 상위" },
   { value: "reusable", label: "재사용 허용" },
+];
+
+const reusablePeriodOptions: Array<{ value: PopularReusablePeriod; labels: Record<SiteLocale, string> }> = [
+  { value: "today", labels: { ko: "오늘 발견", en: "Found today", ja: "今日発見" } },
+  { value: "week", labels: { ko: "최근 7일", en: "Last 7 days", ja: "直近7日" } },
+  { value: "all", labels: { ko: "전체 인기", en: "All popular", ja: "全期間の人気" } },
 ];
 
 const categoryOptions: Array<{ value: PopularVideoCategory; label: string }> = [
@@ -281,12 +288,23 @@ function formatUpdatedAt(value: string | null, locale: SiteLocale) {
   }).format(new Date(value));
 }
 
+function reusablePeriodOptionLabel(
+  period: (typeof reusablePeriodOptions)[number],
+  count: number | undefined,
+  locale: SiteLocale,
+) {
+  if (count === undefined) return period.labels[locale];
+  const formattedCount = formatNumber(count, locale);
+  return `${period.labels[locale]} ${formattedCount}${locale === "ko" ? "개" : locale === "ja" ? "件" : ""}`;
+}
+
 function popularVideoParams(
   type: PopularVideoType,
   category: PopularVideoCategory,
   reusable: boolean,
   longForm: boolean,
   korean: boolean,
+  reusablePeriod: PopularReusablePeriod,
   cursor?: string,
   interactionId?: string,
 ) {
@@ -297,6 +315,7 @@ function popularVideoParams(
     longForm: String(longForm),
     korean: String(korean),
   });
+  if (type === "reusable") params.set("reusablePeriod", reusablePeriod);
   if (cursor) params.set("cursor", cursor);
   if (interactionId) params.set("interactionId", interactionId);
   return params;
@@ -397,6 +416,7 @@ export function PopularVideosExplorer({
   const [koreanOnly, setKoreanOnly] = useState(false);
   const [longFormOnly, setLongFormOnly] = useState(false);
   const [reusableOnly, setReusableOnly] = useState(false);
+  const [reusablePeriod, setReusablePeriod] = useState<PopularReusablePeriod>("today");
   const [category, setCategory] = useState<PopularVideoCategory>("all");
   const [response, setResponse] = useState<PopularVideoResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -430,7 +450,7 @@ export function PopularVideosExplorer({
     setLoadMoreError(null);
     setError(null);
     setResponse(null);
-    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, undefined, filterInteractionId || undefined)}`;
+    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, reusablePeriod, undefined, filterInteractionId || undefined)}`;
     fetch(endpoint, { cache: "no-store", signal: controller.signal })
       .then(async (result) => {
         if (!result.ok) {
@@ -448,7 +468,7 @@ export function PopularVideosExplorer({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [category, dataType, filterInteractionId, koreanOnly, longFormOnly, reusableOnly, retryCount]);
+  }, [category, dataType, filterInteractionId, koreanOnly, longFormOnly, reusableOnly, reusablePeriod, retryCount]);
 
   const selectedType = dataTypeOptions.find((option) => option.value === dataType) || dataTypeOptions[0];
 
@@ -460,7 +480,7 @@ export function PopularVideosExplorer({
     setLoadingMore(true);
     setLoadMoreError(null);
     try {
-      const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, response.nextCursor)}`;
+      const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, reusablePeriod, response.nextCursor)}`;
       const result = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
       if (!result.ok) {
         const body = await result.json().catch(() => ({})) as { detail?: string };
@@ -475,6 +495,7 @@ export function PopularVideosExplorer({
           items: Array.from(videos.values()),
           updatedAt: current.updatedAt,
           totalCount: next.totalCount ?? current.totalCount,
+          reusablePeriodCounts: next.reusablePeriodCounts ?? current.reusablePeriodCounts,
           nextCursor: next.nextCursor,
         };
       });
@@ -536,6 +557,11 @@ export function PopularVideosExplorer({
     }
     void loadMore();
   };
+
+  const reusableCounts = response?.reusablePeriodCounts;
+  const displayedTotalCount = dataType === "reusable"
+    ? reusableCounts?.all ?? response?.totalCount
+    : response?.totalCount ?? response?.items.length;
 
   return (
     <main className="relative mx-auto w-full max-w-6xl px-5 pb-24 pt-7 sm:px-8 sm:pt-10">
@@ -678,8 +704,28 @@ export function PopularVideosExplorer({
       <div className="mb-5 mt-8 flex items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-black tracking-[-.025em] text-white">{selectedType.label}</h2>
-          <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{!loading && response ? (locale === "ko" ? `${formatNumber(response.totalCount ?? response.items.length, locale)}개` : locale === "en" ? formatNumber(response.totalCount ?? response.items.length, locale) : `${formatNumber(response.totalCount ?? response.items.length, locale)}件`) : "개수 확인 중"}</p>
+          <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? formatNumber(displayedTotalCount, locale) : `${formatNumber(displayedTotalCount, locale)}件`) : "개수 확인 중"}</p>
         </div>
+        {dataType === "reusable" && (
+          <label className="relative block shrink-0">
+            <span className="sr-only">{locale === "ko" ? "재사용 허용 영상 발견 기간" : locale === "en" ? "Reusable video discovery period" : "再利用可能な動画の発見期間"}</span>
+            <select
+              value={reusablePeriod}
+              disabled={loading}
+              onChange={(event) => applyFilter(() => setReusablePeriod(event.target.value as PopularReusablePeriod))}
+              className="min-h-11 appearance-none rounded-xl border border-violet-300/30 bg-[#1d2022] py-2.5 pl-4 pr-10 text-sm font-extrabold text-violet-50 shadow-[0_10px_30px_rgba(0,0,0,.16)] outline-none transition hover:border-violet-300/55 focus:border-violet-300/70 focus:ring-2 focus:ring-violet-300/20 disabled:cursor-wait disabled:opacity-60"
+            >
+              {reusablePeriodOptions.map((period) => (
+                <option key={period.value} value={period.value} className="bg-[#1d2022] text-white">
+                  {reusablePeriodOptionLabel(period, reusableCounts?.[period.value], locale)}
+                </option>
+              ))}
+            </select>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-violet-200" aria-hidden="true">
+              <path d="m6 8 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </label>
+        )}
       </div>
 
       {loading ? <LoadingSkeleton /> : error ? (

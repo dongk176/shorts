@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminUser } from "@/lib/admin";
-import { addKstMonths, syncCachedPlan } from "@/lib/billing";
+import { syncCachedPlan } from "@/lib/billing";
 import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
@@ -9,10 +9,8 @@ import {
   adminRefundReasonCodes,
   adminRefundReasonLabel,
   getPrepaidPackageMonthState,
-  quoteCustomerEarlyTerminationRefund,
-  quotePrepaidPackageRefund,
+  quoteFirstCompletedJobRefund,
 } from "@/lib/refund-policy";
-import { isPricingV2PackageCode } from "@/lib/pricing-v2";
 import {
   assertThePayOneBillingEnabled,
   createPaymentTrackId,
@@ -109,15 +107,27 @@ export async function POST(request: Request) {
       const prepaidMonths = order.billingCycle === "yearly"
         ? Number(order.prepaidMonths || 12)
         : 1;
-      const usesMonthlyPackagePolicy = Number(order.refundPolicyVersion || 1) >= 2
-        && isPricingV2PackageCode(order.productCode);
-      const packageMonthState = usesMonthlyPackagePolicy && contractStart
+      const packageMonthState = contractStart
         ? getPrepaidPackageMonthState({
           periodStart: contractStart,
           prepaidMonths,
           requestedAt,
         })
         : null;
+      const firstCompletedJobRows = await tx`
+        select j.id,j.completed_at
+        from shorts_mvp.usage_grants g
+        join shorts_mvp.usage_grant_allocations a
+          on a.grant_id=g.id and a.status='consumed'
+        join shorts_mvp.usage_reservations ur
+          on ur.id=a.reservation_id and ur.status='consumed'
+        join shorts_mvp.video_jobs j
+          on j.id=ur.job_id and j.status='completed' and j.completed_at is not null
+        where g.billing_order_id=${order.id}
+        order by j.completed_at,j.created_at,j.id
+        limit 1
+      `;
+      const firstCompletedJob = firstCompletedJobRows[0] || null;
       const paidFeatureUsageRows = await tx`
         select count(*)::integer as popular_filter_usage_count,
           max(occurred_at) as popular_filter_last_used_at,
@@ -194,35 +204,22 @@ export async function POST(request: Request) {
       let entitlementEffectiveAt: Date | null = null;
       if (body.reasonCode === "customer_early_termination") {
         if (order.kind === "addon") {
-          throw new HttpError(409, "추가 처리시간에는 기간형 중도해지 위약금을 적용할 수 없습니다.");
+          throw new HttpError(409, "추가 처리시간에는 구독·패키지 환불 기준을 적용할 수 없습니다.");
         }
-        if (!contractStart) {
-          throw new HttpError(409, "계약기간을 확인할 수 없어 중도해지 환불을 자동 계산하지 못했습니다.");
-        }
-        policyQuote = usesMonthlyPackagePolicy
-          ? quotePrepaidPackageRefund({
-            actualPaymentKrw: Number(order.amountKrw),
-            refundedOrReservedKrw: reservedAmountKrw,
-            periodStart: contractStart,
-            prepaidMonths,
-            currentMonthUsed: currentPackageMonthUsed,
-            requestedAt,
-          })
-          : quoteCustomerEarlyTerminationRefund({
-            actualPaymentKrw: Number(order.amountKrw),
-            refundedOrReservedKrw: reservedAmountKrw,
-            periodStart: contractStart,
-            periodEnd: addKstMonths(contractStart, prepaidMonths),
-            requestedAt,
-          });
+        policyQuote = quoteFirstCompletedJobRefund({
+          actualPaymentKrw: Number(order.amountKrw),
+          refundedOrReservedKrw: reservedAmountKrw,
+          prepaidMonths,
+          firstJobCompleted: Boolean(firstCompletedJob),
+        });
         amountKrw = policyQuote.refundAmountKrw;
         if (amountKrw < 1) {
-          throw new HttpError(409, usesMonthlyPackagePolicy
-            ? "이미 제공된 월별 이용권을 공제하면 환불할 금액이 없습니다."
-            : "경과 이용대금과 중도해지 위약금을 공제하면 환불할 금액이 없습니다.");
+          throw new HttpError(409, "첫 작업 완료에 따른 1개월분을 공제하면 환불할 금액이 없습니다.");
         }
-        if (usesMonthlyPackagePolicy && "entitlementEndsAt" in policyQuote) {
-          entitlementEffectiveAt = policyQuote.entitlementEndsAt;
+        if (order.subscriptionId) {
+          entitlementEffectiveAt = firstCompletedJob
+            ? packageMonthState?.currentMonthEnd || requestedAt
+            : requestedAt;
           entitlementActionMode = entitlementEffectiveAt > requestedAt
             ? "end_at"
             : "revoke_now";
@@ -231,8 +228,8 @@ export async function POST(request: Request) {
         amountKrw = refundable;
       }
       if (
-        usesMonthlyPackagePolicy
-        && body.reasonCode === "statutory_withdrawal_unused"
+        body.reasonCode === "statutory_withdrawal_unused"
+        && order.subscriptionId
       ) {
         entitlementActionMode = "revoke_now";
         entitlementEffectiveAt = requestedAt;
@@ -273,7 +270,7 @@ export async function POST(request: Request) {
         ) values (
           ${body.requestId},${order.id},${admin.id},'thepayone',${trackId},
           ${order.providerTransactionId},${amountKrw},${reason},'pending',
-          ${Number(order.refundPolicyVersion || 1)},
+          ${3},
           ${policyQuote ? tx.json(policyQuote) : null},${entitlementActionMode},
           ${entitlementEffectiveAt}
         ) returning *
@@ -289,7 +286,9 @@ export async function POST(request: Request) {
             reasonCode: body.reasonCode,
             reason: body.reason,
             policyQuote,
-            refundPolicyVersion: Number(order.refundPolicyVersion || 1),
+            refundPolicyVersion: 3,
+            firstCompletedJobId: firstCompletedJob?.id || null,
+            firstCompletedJobAt: firstCompletedJob?.completedAt || null,
             entitlementActionMode,
             entitlementEffectiveAt,
             popularFilterUsageCount,
@@ -376,8 +375,6 @@ export async function POST(request: Request) {
       `;
       if (
         order.kind !== "addon"
-        && isPricingV2PackageCode(order.productCode)
-        && Number(order.refundPolicyVersion || 1) >= 2
         && order.subscriptionId
         && locked[0].entitlementActionMode !== "none"
         && locked[0].entitlementEffectiveAt instanceof Date

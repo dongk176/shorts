@@ -4,7 +4,7 @@
 
 `web/`은 Vercel Pro의 Next.js App Router 한 페이지 앱입니다. Route Handler만 Supabase와 AWS를 호출하며 브라우저는 DB/service-role/CloudFront private key에 직접 접근하지 않습니다. 첫 요청에서 256-bit random token을 HttpOnly cookie로 발급하고 DB에는 SHA-256 hash만 저장합니다. Google OAuth는 서버 Route Handler에서 Supabase Auth PKCE 흐름으로 처리합니다. 로그인하면 `auth.users`와 연결된 `shorts_mvp.app_users`가 생성·갱신되고 현재 익명 세션의 분석, 작업, 쇼츠, 사용량이 해당 사용자에게 귀속됩니다. 로그아웃하면 계정에 연결된 MVP 쿠키를 폐기해 익명 상태에서 계정 데이터를 다시 열 수 없게 합니다.
 
-`POST /api/jobs`는 사전 발급한 `analysisId`와 권리 확인, 60분 제한, idempotency, 세션 동시 제한, plan enforcement를 검사합니다. `video_jobs`, `usage_reservations`, `job_outbox`를 한 transaction에서 만든 뒤 즉시 202를 반환합니다. Dispatcher는 사용 가능한 Dedicated ISP 슬롯만큼만 Outbox 작업을 원자적으로 예약해 SQS와 AWS Batch Array Job으로 전달합니다. 10개 슬롯이 모두 사용 중이면 작업은 DB에서 대기하고 Fargate task를 미리 띄우지 않습니다. 상태 API는 실제 DB stage, 완료된 shorts, 최신 usage를 한 응답에 포함합니다.
+`POST /api/jobs`는 사전 발급한 `analysisId`와 권리 확인, 60분 제한, idempotency, 세션 동시 제한, plan enforcement를 검사합니다. `video_jobs`, `usage_reservations`, `job_outbox`를 한 transaction에서 만든 뒤 즉시 202를 반환합니다. Dispatcher는 사용 가능한 Dedicated ISP 슬롯만큼만 Outbox 작업을 원자적으로 예약해 SQS와 AWS Batch Array Job으로 전달합니다. 20개 슬롯이 모두 사용 중이면 작업은 DB에서 대기하고 Fargate task를 미리 띄우지 않습니다. 상태 API는 실제 DB stage, 완료된 shorts, 최신 usage를 한 응답에 포함합니다.
 
 ## Data plane
 

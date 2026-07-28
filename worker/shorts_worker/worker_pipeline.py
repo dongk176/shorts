@@ -2225,11 +2225,21 @@ class BatchWorker:
             new_clean_key: str | None = None
             render_item = dict(item)
             if snapshot:
+                captured_timeline_key = item.get("edit_timeline_s3_key")
+                edit_source_key = (
+                    str(captured_timeline_key)
+                    if captured_timeline_key
+                    else str(item["clean_clip_s3_key"])
+                )
                 timeline_path = self.storage.download(
-                    str(item["edit_timeline_s3_key"]),
+                    edit_source_key,
                     work_dir / "timeline.mp4",
                 )
-                timeline_start = float(item["edit_timeline_start_seconds"])
+                timeline_start = (
+                    float(item["edit_timeline_start_seconds"])
+                    if captured_timeline_key
+                    else float(item["start_seconds"])
+                )
                 relative_start = float(snapshot["startSeconds"]) - timeline_start
                 relative_end = float(snapshot["endSeconds"]) - timeline_start
                 selected_clip = HighlightClip(

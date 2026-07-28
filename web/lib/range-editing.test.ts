@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { scaleTimedRanges, subtitlesForTimelineSelection } from "./range-editing";
+import {
+  adjustTimedRange,
+  scaleTimedRanges,
+  subtitlesForTimelineSelection,
+} from "./range-editing";
 
 describe("range editing helpers", () => {
   it("rebases timeline subtitles to the selected clip", () => {
@@ -19,5 +23,35 @@ describe("range editing helpers", () => {
       { startSeconds: 0, endSeconds: 15, text: "첫 댓글" },
       { startSeconds: 15, endSeconds: 30, text: "둘째 댓글" },
     ]);
+  });
+
+  it("moves a comment range without crossing adjacent comments", () => {
+    expect(adjustTimedRange(
+      { startSeconds: 5, endSeconds: 10 },
+      "move",
+      8,
+      20,
+      3,
+      14,
+    )).toEqual({ startSeconds: 9, endSeconds: 14 });
+  });
+
+  it("resizes either edge while preserving a minimum comment duration", () => {
+    expect(adjustTimedRange(
+      { startSeconds: 5, endSeconds: 10 },
+      "start",
+      8,
+      20,
+      0,
+      20,
+    )).toEqual({ startSeconds: 9.7, endSeconds: 10 });
+    expect(adjustTimedRange(
+      { startSeconds: 5, endSeconds: 10 },
+      "end",
+      -8,
+      20,
+      0,
+      20,
+    )).toEqual({ startSeconds: 5, endSeconds: 5.3 });
   });
 });

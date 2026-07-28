@@ -25,6 +25,9 @@ export type AdminMember = {
   cardNumberMasked: string | null;
   projectCount: number;
   shortCount: number;
+  referralPartnerId: string | null;
+  referralCreatorName: string | null;
+  referralSlug: string | null;
 };
 
 const statusLabels: Record<string, string> = {
@@ -81,15 +84,18 @@ function statusTone(status: string | null) {
 export function AdminMembersDashboard({
   members,
   totalCount,
+  referralOptions,
   initialFilters,
 }: {
   members: AdminMember[];
   totalCount: number;
+  referralOptions: Array<{ id: string; creatorName: string; slug: string }>;
   initialFilters: {
     query: string;
     memberType: string;
     memberPlan: string;
     memberActivity: string;
+    memberReferrer: string;
   };
 }) {
   const router = useRouter();
@@ -98,6 +104,9 @@ export function AdminMembersDashboard({
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [referralEditing, setReferralEditing] = useState<AdminMember | null>(null);
+  const [targetReferralPartnerId, setTargetReferralPartnerId] = useState("");
+  const [referralReason, setReferralReason] = useState("");
 
   const openEditor = (member: AdminMember) => {
     setEditing(member);
@@ -145,6 +154,41 @@ export function AdminMembersDashboard({
     }
   };
 
+  const openReferralEditor = (member: AdminMember) => {
+    setReferralEditing(member);
+    setTargetReferralPartnerId(member.referralPartnerId || "");
+    setReferralReason("");
+    setMessage(null);
+  };
+
+  const submitReferralChange = async () => {
+    if (!referralEditing || submitting) return;
+    setSubmitting(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/admin/referrals/attributions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          requestId: crypto.randomUUID(),
+          userId: referralEditing.id,
+          partnerId: targetReferralPartnerId || null,
+          reason: referralReason,
+        }),
+      });
+      const result = await response.json() as { detail?: string };
+      if (!response.ok) throw new Error(result.detail || "추천인을 변경하지 못했습니다.");
+      setReferralEditing(null);
+      setMessage(`${referralEditing.email} 회원의 추천인을 변경했습니다. 과거 수익은 소급 변경되지 않습니다.`);
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "추천인을 변경하지 못했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="mt-7">
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#151819]">
@@ -159,7 +203,7 @@ export function AdminMembersDashboard({
               </div>
               <p className="mt-1 text-xs text-neutral-500">조건에 맞는 회원 전체 표시 · 구독 상태와 자동결제 상태를 함께 관리합니다.</p>
             </div>
-            <form className="grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-[240px_160px_160px_160px_auto]" method="get">
+            <form className="grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-[220px_150px_150px_150px_180px_auto]" method="get">
               <input type="hidden" name="tab" value="members" />
               <input
                 name="q"
@@ -201,6 +245,19 @@ export function AdminMembersDashboard({
                 <option value="with_shorts">쇼츠 생성</option>
                 <option value="no_projects">미생성 회원</option>
               </select>
+              <select
+                name="memberReferrer"
+                defaultValue={initialFilters.memberReferrer}
+                aria-label="추천인"
+                className="h-10 rounded-xl border border-white/10 bg-[#151819] px-3 text-sm outline-none focus:border-[#ff8c7c]"
+              >
+                <option value="all">전체 추천인</option>
+                <option value="referred">추천인 있음</option>
+                <option value="none">추천인 없음</option>
+                {referralOptions.map((partner) => (
+                  <option key={partner.id} value={partner.id}>{partner.creatorName} · {partner.slug}</option>
+                ))}
+              </select>
               <button className="h-10 rounded-xl bg-white px-4 text-sm font-black text-black transition hover:bg-neutral-200">조회</button>
             </form>
           </div>
@@ -208,13 +265,14 @@ export function AdminMembersDashboard({
 
         {message && <p role="status" className="border-b border-white/10 bg-[#ff8c7c]/10 px-5 py-3 text-sm font-bold text-[#ffb4a8]">{message}</p>}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1370px] text-left text-sm">
+          <table className="w-full min-w-[1500px] text-left text-sm">
             <thead className="bg-black/20 text-xs text-neutral-500">
               <tr>
                 <th className="px-5 py-3">회원</th>
                 <th className="px-4 py-3">가입 / 최근 로그인</th>
                 <th className="px-4 py-3">플랜</th>
                 <th className="px-4 py-3">생성 수</th>
+                <th className="px-4 py-3">추천인</th>
                 <th className="px-4 py-3">구독 상태</th>
                 <th className="px-4 py-3">현재 이용기간</th>
                 <th className="px-4 py-3">결제수단</th>
@@ -241,6 +299,17 @@ export function AdminMembersDashboard({
                   <td className="whitespace-nowrap px-4 py-4">
                     <p className="font-black text-neutral-100">프로젝트 {member.projectCount.toLocaleString("ko-KR")}개</p>
                     <p className="mt-1 text-xs font-bold text-[#ff9b8d]">쇼츠 {member.shortCount.toLocaleString("ko-KR")}개</p>
+                  </td>
+                  <td className="px-4 py-4">
+                    <p className="font-bold">{member.referralCreatorName || "없음"}</p>
+                    <p className="mt-1 text-xs text-neutral-500">{member.referralSlug ? `/${member.referralSlug}` : "자동 귀속 없음"}</p>
+                    <button
+                      type="button"
+                      onClick={() => openReferralEditor(member)}
+                      className="mt-2 rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] font-black"
+                    >
+                      추천인 변경
+                    </button>
                   </td>
                   <td className="px-4 py-4">
                     <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-black ${statusTone(member.subscriptionStatus)}`}>
@@ -280,7 +349,7 @@ export function AdminMembersDashboard({
                 </tr>
               ))}
               {!members.length && (
-                <tr><td colSpan={9} className="px-5 py-16 text-center text-neutral-500">조건에 맞는 회원이 없습니다.</td></tr>
+                <tr><td colSpan={10} className="px-5 py-16 text-center text-neutral-500">조건에 맞는 회원이 없습니다.</td></tr>
               )}
             </tbody>
           </table>
@@ -354,6 +423,54 @@ export function AdminMembersDashboard({
                 {submitting ? "변경 중..." : "상태 변경"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {referralEditing && (
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="member-referral-title">
+          <div className="w-full max-w-xl rounded-3xl border border-white/10 bg-[#191c1d] p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[.18em] text-[#ff9585]">Referral attribution</p>
+                <h3 id="member-referral-title" className="mt-2 text-xl font-black">추천인 예외 변경</h3>
+              </div>
+              <button type="button" onClick={() => setReferralEditing(null)} className="rounded-lg px-3 py-2 text-neutral-400 hover:bg-white/[.06]">닫기</button>
+            </div>
+            <p className="mt-4 text-sm text-neutral-400">{referralEditing.email}</p>
+            <label className="mt-5 block text-xs font-bold text-neutral-400">
+              추천인
+              <select
+                value={targetReferralPartnerId}
+                onChange={(event) => setTargetReferralPartnerId(event.target.value)}
+                className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3 outline-none"
+              >
+                <option value="">추천인 없음</option>
+                {referralOptions.map((partner) => (
+                  <option key={partner.id} value={partner.id}>{partner.creatorName} · {partner.slug}</option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-4 block text-xs font-bold text-neutral-400">
+              변경 사유
+              <textarea
+                required
+                minLength={2}
+                maxLength={500}
+                value={referralReason}
+                onChange={(event) => setReferralReason(event.target.value)}
+                className="mt-2 min-h-24 w-full rounded-xl border border-white/10 bg-black/20 p-3 outline-none"
+              />
+            </label>
+            <p className="mt-3 text-xs leading-5 text-amber-200">변경 시점 이후 결제에만 새 추천인이 적용되며 과거 수익 원장은 변경되지 않습니다.</p>
+            <button
+              type="button"
+              disabled={submitting || referralReason.trim().length < 2}
+              onClick={submitReferralChange}
+              className="mt-5 h-11 rounded-xl bg-white px-5 text-sm font-black text-black disabled:opacity-50"
+            >
+              추천인 변경
+            </button>
           </div>
         </div>
       )}
