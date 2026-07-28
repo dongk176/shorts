@@ -106,7 +106,7 @@ export class ShortsMvpFoundationStack extends cdk.Stack {
     const keyGroup = new cloudfront.KeyGroup(this, "SigningKeyGroup", { items: [publicKey] });
     const outputOnly = new cloudfront.Function(this, "OutputPrefixGuard", {
       code: cloudfront.FunctionCode.fromInline(
-        "function handler(event){var r=event.request;if(!r.uri.startsWith('/outputs/')&&!r.uri.startsWith('/examples/')&&!r.uri.startsWith('/edit-sources/'))return {statusCode:403,statusDescription:'Forbidden'};return r;}"
+        "function handler(event){var r=event.request;if(!r.uri.startsWith('/outputs/')&&!r.uri.startsWith('/thumbnails/')&&!r.uri.startsWith('/examples/')&&!r.uri.startsWith('/edit-sources/'))return {statusCode:403,statusDescription:'Forbidden'};return r;}"
       ),
     });
     const mediaHeaders = new cloudfront.ResponseHeadersPolicy(this, "MediaResponseHeaders", {

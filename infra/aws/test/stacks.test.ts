@@ -57,6 +57,9 @@ describe("shorts MVP infrastructure", () => {
       FunctionCode: Match.stringLikeRegexp("/outputs/"),
     });
     foundation.hasResourceProperties("AWS::CloudFront::Function", {
+      FunctionCode: Match.stringLikeRegexp("/thumbnails/"),
+    });
+    foundation.hasResourceProperties("AWS::CloudFront::Function", {
       FunctionCode: Match.stringLikeRegexp("/examples/"),
     });
     foundation.hasResourceProperties("AWS::CloudFront::Function", {
