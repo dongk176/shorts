@@ -11,13 +11,15 @@ export function planSupportsCustomTemplates(
 }
 
 export function billingSupportsCustomTemplates(
-  billing: Pick<BillingSummary, "canCreateJobs" | "planCode">,
+  billing: Pick<BillingSummary, "activeProducts">,
 ) {
-  return billing.canCreateJobs && planSupportsCustomTemplates(billing.planCode);
+  return billing.activeProducts.some((product) =>
+    planSupportsCustomTemplates(product.planCode)
+  );
 }
 
 export function assertCustomTemplateAccess(
-  billing: Pick<BillingSummary, "canCreateJobs" | "planCode">,
+  billing: Pick<BillingSummary, "activeProducts">,
 ) {
   if (!billingSupportsCustomTemplates(billing)) {
     throw new HttpError(402, CUSTOM_TEMPLATE_PLAN_MESSAGE);

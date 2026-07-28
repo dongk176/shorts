@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getBillingSummary } from "@/lib/billing";
 import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import { resolveEditedTemplateSelection } from "@/lib/edit-template-selection";
@@ -11,6 +12,12 @@ import {
   subtitlesForTimelineSelection,
   type TimelineSubtitle,
 } from "@/lib/range-editing";
+import {
+  ONBOARDING_WELCOME_MAX_RERENDERS,
+  ONBOARDING_WELCOME_PRODUCT_CODE,
+  onboardingWelcomeRerenderAllowed,
+} from "@/lib/onboarding-welcome";
+import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 
 const hexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
@@ -61,12 +68,35 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
     const input = editSchema.parse(await request.json());
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    const billing = await getBillingSummary(db, session.userId);
+    assertPaidProjectActionAccess(billing, "edit");
     const existingRows = await db`
-      select s.id, s.status, s.duration_seconds, s.template_id, s.custom_template_id,
+      select s.id,s.status,s.render_version,s.duration_seconds,
+          s.template_id,s.custom_template_id,
           s.template_snapshot, s.video_aspect_ratio, s.edit_timeline_s3_key,
           s.edit_timeline_start_seconds, s.edit_timeline_end_seconds,
           s.edit_timeline_subtitle_segments, s.clean_clip_s3_key,
-          s.start_seconds, s.end_seconds, s.subtitle_segments
+          s.start_seconds,s.end_seconds,s.subtitle_segments,
+          exists (
+            select 1
+            from shorts_mvp.usage_reservations reservation
+            join shorts_mvp.usage_grant_allocations allocation
+              on allocation.reservation_id=reservation.id
+            join shorts_mvp.usage_grants grant_row
+              on grant_row.id=allocation.grant_id
+            where reservation.job_id=j.id
+              and grant_row.product_code=${ONBOARDING_WELCOME_PRODUCT_CODE}
+          )
+          and not exists (
+            select 1
+            from shorts_mvp.usage_reservations reservation
+            join shorts_mvp.usage_grant_allocations allocation
+              on allocation.reservation_id=reservation.id
+            join shorts_mvp.usage_grants grant_row
+              on grant_row.id=allocation.grant_id
+            where reservation.job_id=j.id
+              and grant_row.product_code<>${ONBOARDING_WELCOME_PRODUCT_CODE}
+          ) as onboarding_welcome_funded
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and not j.is_example and (
@@ -80,6 +110,16 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
     if (!existing) throw new HttpError(404, "편집 가능한 쇼츠 영상을 찾을 수 없습니다.");
     if (existing.status !== "ready") {
       throw new HttpError(409, "이미 수정 반영 중이거나 편집할 수 없는 상태입니다.");
+    }
+    if (!onboardingWelcomeRerenderAllowed(
+      Boolean(existing.onboardingWelcomeFunded),
+      Number(existing.renderVersion),
+    )) {
+      throw new HttpError(
+        402,
+        `무료 체험 프로젝트는 수정 반영을 ${ONBOARDING_WELCOME_MAX_RERENDERS}회까지 할 수 있습니다.`,
+        "ONBOARDING_WELCOME_RERENDER_LIMIT",
+      );
     }
 
     const hasCapturedTimeline = Boolean(existing.editTimelineS3Key);
@@ -171,6 +211,31 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
           or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
         ) and s.status='ready' and s.deleted_at is null and s.expires_at > now()
           and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null
+          and (
+            not (
+              exists (
+                select 1
+                from shorts_mvp.usage_reservations reservation
+                join shorts_mvp.usage_grant_allocations allocation
+                  on allocation.reservation_id=reservation.id
+                join shorts_mvp.usage_grants grant_row
+                  on grant_row.id=allocation.grant_id
+                where reservation.job_id=j.id
+                  and grant_row.product_code=${ONBOARDING_WELCOME_PRODUCT_CODE}
+              )
+              and not exists (
+                select 1
+                from shorts_mvp.usage_reservations reservation
+                join shorts_mvp.usage_grant_allocations allocation
+                  on allocation.reservation_id=reservation.id
+                join shorts_mvp.usage_grants grant_row
+                  on grant_row.id=allocation.grant_id
+                where reservation.job_id=j.id
+                  and grant_row.product_code<>${ONBOARDING_WELCOME_PRODUCT_CODE}
+              )
+            )
+            or s.render_version<${1 + ONBOARDING_WELCOME_MAX_RERENDERS}
+          )
         returning s.id
       `;
       if (!updated[0]) throw new HttpError(409, "쇼츠 편집 상태가 변경되었습니다. 다시 열어 주세요.");

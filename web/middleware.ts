@@ -36,6 +36,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(destination, 308);
   }
 
+  if (pathname === "/auth/sign-out") {
+    return NextResponse.next({ request });
+  }
+
   return refreshSupabaseSession(request);
 }
 

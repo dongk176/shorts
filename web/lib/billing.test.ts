@@ -153,6 +153,30 @@ describe("billing summary", () => {
     });
   });
 
+  it("allows only one active job with one-day retention for a free welcome grant", async () => {
+    const responses = [
+      [{
+        hasPaymentHistory: false,
+        purchasedPackageCodes: [],
+        hasManualServiceAccess: false,
+        hasOnboardingWelcomeAccess: true,
+      }],
+      [],
+    ];
+    const db = (async () => responses.shift() || []) as unknown as BillingDb;
+
+    const summary = await getBillingSummary(db, "user-welcome");
+
+    expect(summary).toMatchObject({
+      status: "none",
+      planCode: "free",
+      activeProducts: [],
+      canCreateJobs: true,
+      maxActiveJobs: 1,
+      retentionDays: 1,
+    });
+  });
+
   it("returns every currently active product and excludes overdue products", async () => {
     const activeStart = new Date("2026-01-01T00:00:00.000Z");
     const activeEnd = new Date("2099-01-01T00:00:00.000Z");

@@ -1,5 +1,6 @@
 import type { Sql, TransactionSql } from "postgres";
 import type { UsageSnapshot } from "@/lib/contracts";
+import { ONBOARDING_WELCOME_PRODUCT_CODE } from "@/lib/onboarding-welcome";
 import type { MvpSession } from "@/lib/session";
 
 export function isPlanEnforcementEnabled() {
@@ -49,7 +50,24 @@ export async function getUsageSnapshot(
     };
   }
   const rows = await db`
-    with current_base as (
+    with full_service_access as (
+      select (
+        exists (
+          select 1
+          from shorts_mvp.user_subscriptions subscription
+          where subscription.user_id=${session.userId}
+            and subscription.status='active'
+            and subscription.current_period_start<=clock_timestamp()
+            and subscription.current_period_end>clock_timestamp()
+        )
+        or exists (
+          select 1
+          from shorts_mvp.app_users account
+          where account.id=${session.userId}
+            and account.manual_service_access_until>clock_timestamp()
+        )
+      ) as enabled
+    ), current_base as (
       select
         coalesce(sum(g.total_seconds),0)::int as total_seconds,
         coalesce(sum(g.consumed_seconds),0)::int as consumed_seconds,
@@ -63,12 +81,19 @@ export async function getUsageSnapshot(
         and s.status='active' and s.current_period_start <= clock_timestamp()
         and s.current_period_end > clock_timestamp()
     ), active_addons as (
-      select coalesce(sum(total_seconds),0)::int as total_seconds,
-        coalesce(sum(consumed_seconds),0)::int as consumed_seconds,
-        coalesce(sum(reserved_seconds),0)::int as reserved_seconds
-      from shorts_mvp.usage_grants
-      where user_id=${session.userId} and kind='addon' and status='active'
-        and valid_from <= clock_timestamp() and expires_at > clock_timestamp()
+      select coalesce(sum(grant_row.total_seconds),0)::int as total_seconds,
+        coalesce(sum(grant_row.consumed_seconds),0)::int as consumed_seconds,
+        coalesce(sum(grant_row.reserved_seconds),0)::int as reserved_seconds
+      from shorts_mvp.usage_grants grant_row
+      cross join full_service_access service_access
+      where grant_row.user_id=${session.userId}
+        and grant_row.kind='addon' and grant_row.status='active'
+        and grant_row.valid_from <= clock_timestamp()
+        and grant_row.expires_at > clock_timestamp()
+        and (
+          service_access.enabled
+          or grant_row.product_code=${ONBOARDING_WELCOME_PRODUCT_CODE}
+        )
     )
     select
       coalesce(b.total_seconds,0)::int as base_limit_seconds,

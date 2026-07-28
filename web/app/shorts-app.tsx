@@ -12,6 +12,7 @@ import { CustomTemplateTitlePreview } from "@/components/custom-template-title-p
 import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
 import { EstimatedProcessingOverlay, ProjectCard } from "@/components/project-card";
 import { ProjectReveal } from "@/components/project-reveal";
+import { PaidProjectFeatureOverlay } from "@/components/paid-project-feature-overlay";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SupportInquiryWidget } from "@/components/support-inquiry-widget";
@@ -98,6 +99,11 @@ const templates: Array<{ id: TemplateId; name: string; label: string; background
 type FavoriteTemplateCard =
   | { kind: "custom"; template: CustomTemplate }
   | { kind: "preset"; template: (typeof templates)[number] };
+
+type ProjectActionAccess = {
+  canEdit: boolean;
+  canDownload: boolean;
+};
 
 function editableCustomTemplate(item: GeneratedShort): CustomTemplate | null {
   const snapshot = item.templateSnapshot;
@@ -1422,7 +1428,7 @@ function CommentTimelineEditor({
   </section>;
 }
 
-function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean }) {
+function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; paidAccessBlocked?: boolean }) {
   const initialTemplate = templates.find((value) => value.id === item.templateId) || templates[0];
   const [availableCustomTemplate] = useState<CustomTemplate | null>(() => editableCustomTemplate(item));
   const initialTitleAspectRatio = item.templateId === "comment-capture" && item.videoAspectRatio === "9:16"
@@ -1482,7 +1488,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [error, setError] = useState<string | null>(null);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
-  const [mobileEditorBlocked, setMobileEditorBlocked] = useState(false);
+  const [mobileEditorBlocked, setMobileEditorBlocked] = useState<boolean | null>(
+    standalone ? null : false,
+  );
   const [editorGuideReady, setEditorGuideReady] = useState(false);
   const validTitle = title.trim().length > 0 && title.length <= 80 && title.split("\n").length <= 2;
   const template = templates.find((value) => value.id === templateId) || templates[0];
@@ -1562,7 +1570,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   }, []);
 
   useEffect(() => {
-    if (!mobileEditorBlocked) return;
+    if (mobileEditorBlocked !== true) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
@@ -1571,6 +1579,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   }, [mobileEditorBlocked]);
 
   useEffect(() => {
+    if (paidAccessBlocked) {
+      setEditorGuideReady(true);
+      return;
+    }
     let cancelled = false;
     setEditorGuideReady(false);
     const load = async () => {
@@ -1599,7 +1611,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         if (!cancelled) setEditorGuideReady(true);
       });
     return () => { cancelled = true; };
-  }, [item.id, rangeEditingEnabled]);
+  }, [item.id, paidAccessBlocked, rangeEditingEnabled]);
 
   useEffect(() => {
     const timelineUrl = editTimeline?.url;
@@ -1985,13 +1997,14 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       />
       <DesktopEditorGuide
         enabled={standalone
-          && !mobileEditorBlocked
+          && mobileEditorBlocked === false
+          && !paidAccessBlocked
           && editorGuideReady
           && (Boolean(editTimeline) || templateId === "comment-capture")}
         rangeControlsAvailable={Boolean(editTimeline)}
         commentControlsAvailable={templateId === "comment-capture"}
       />
-      {mobileEditorBlocked && <div
+      {mobileEditorBlocked === true && <div
         className="editor-mobile-blocker"
         role="dialog"
         aria-modal="true"
@@ -2005,6 +2018,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           <button type="button" onClick={onClose}>프로젝트로 돌아가기</button>
         </section>
       </div>}
+      <PaidProjectFeatureOverlay
+        action="edit"
+        open={standalone && paidAccessBlocked && mobileEditorBlocked === false}
+      />
       {standalone && <header className="editor-topbar">
         <div className="editor-topbar-inner">
           <div className="editor-header-project">
@@ -2335,13 +2352,14 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="editor-title">{editorContent}</div>;
 }
 
-function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }) {
+function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: ProjectActionAccess; onBack: () => void }) {
   const [playbackAssets, setPlaybackAssets] = useState<Record<string, {
     url: string;
     posterUrl: string | null;
   }>>({});
   const [iosDownloadDevice, setIosDownloadDevice] = useState(false);
   const [downloadNoticeOpen, setDownloadNoticeOpen] = useState(false);
+  const [downloadPaywallOpen, setDownloadPaywallOpen] = useState(false);
   const [revealDecision, setRevealDecision] = useState<{
     jobId: string;
     show: boolean;
@@ -2424,6 +2442,10 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
   const downloadableItems = job.shorts.filter((item) => item.status === "ready");
   const downloadAll = () => {
     if (job.isExample || !downloadableItems.length) return;
+    if (!access.canDownload) {
+      setDownloadPaywallOpen(true);
+      return;
+    }
     if (iosDownloadDevice) {
       setDownloadNoticeOpen(true);
       return;
@@ -2473,6 +2495,11 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
         <div className="min-w-0"><button onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 프로젝트 /{job.projectNumber}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
         <button disabled={job.isExample || !downloadableItems.length} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={downloadAll} className="workspace-button workspace-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-40">{iosDownloadDevice ? "↓ 쇼츠별 다운로드 안내" : "↓ 모든 쇼츠 다운로드"}</button>
       </header>
+      <PaidProjectFeatureOverlay
+        action="download"
+        open={downloadPaywallOpen}
+        onClose={() => setDownloadPaywallOpen(false)}
+      />
       <NoticeDialog
         open={downloadNoticeOpen}
         dialogId="ios-download-notice"
@@ -2512,7 +2539,9 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
                         : <Link href={`/projects/${job.projectNumber}/edit/${item.id}`} target="_blank" rel="noopener noreferrer" className="tool-button short-edit-button flex items-center justify-center" aria-label={`${item.hookTitle} 새 탭에서 편집하기`}>✎ 편집하기</Link>}
                       {job.isExample || itemIsRerendering || item.status !== "ready"
                         ? <button disabled title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} className="tool-button short-download-button disabled:cursor-not-allowed disabled:opacity-40">↓ 다운로드</button>
-                        : <a href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download className="tool-button short-download-button flex items-center justify-center" aria-label={`${item.hookTitle} 다운로드`}>↓ 다운로드</a>}
+                        : access.canDownload
+                          ? <a href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download className="tool-button short-download-button flex items-center justify-center" aria-label={`${item.hookTitle} 다운로드`}>↓ 다운로드</a>
+                          : <button type="button" onClick={() => setDownloadPaywallOpen(true)} className="tool-button short-download-button">↓ 다운로드</button>}
                     </div>
                   </div>
                   <div className="short-detail-column">
@@ -2535,11 +2564,13 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
 
 export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = false }: { projectNumber: number; shortId: string; rangeEditingEnabled?: boolean }) {
   const [project, setProject] = useState<VideoJob | null>(null);
+  const [access, setAccess] = useState<ProjectActionAccess | null>(null);
   const [error, setError] = useState<string | null>(null);
   const loadProject = useCallback(async () => {
     try {
-      const value = await requestJson<{ project: VideoJob }>(`/api/projects/${projectNumber}`, undefined, 12_000);
+      const value = await requestJson<{ project: VideoJob; access: ProjectActionAccess }>(`/api/projects/${projectNumber}`, undefined, 12_000);
       setProject(value.project);
+      setAccess(value.access);
       setError(null);
     } catch (cause) {
       setError(userFacingErrorMessage(cause, "편집할 쇼츠를 불러오지 못했습니다."));
@@ -2557,22 +2588,24 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">편집기를 준비하고 있습니다…</main>;
   if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/projects/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
 
-  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} />;
+  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} paidAccessBlocked={!access?.canEdit} />;
 }
 
 export function ProjectPage({ projectNumber }: { projectNumber: number }) {
   const [project, setProject] = useState<VideoJob | null>(null);
+  const [access, setAccess] = useState<ProjectActionAccess>({ canEdit: false, canDownload: false });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadProject = useCallback(async () => {
     try {
-      const value = await requestJson<{ project: VideoJob }>(
+      const value = await requestJson<{ project: VideoJob; access: ProjectActionAccess }>(
         `/api/projects/${projectNumber}`,
         undefined,
         12_000,
       );
       setProject(value.project);
+      setAccess(value.access);
       setLoadError(null);
     } catch (cause) {
       setLoadError(userFacingErrorMessage(cause, "프로젝트를 불러오지 못했습니다."));
@@ -2630,7 +2663,7 @@ export function ProjectPage({ projectNumber }: { projectNumber: number }) {
     );
   }
 
-  return <ProjectWorkspace job={project} onBack={returnToProjects} />;
+  return <ProjectWorkspace job={project} access={access} onBack={returnToProjects} />;
 }
 
 function initialActiveJob(state: MvpState | null) {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { AuthControls } from "@/components/auth-controls";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
@@ -247,6 +247,7 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
   const [cancelSubscriptionOpen, setCancelSubscriptionOpen] = useState(false);
   const [billing, setBilling] = useState<BillingSummary | null>(null);
   const [subscriptionMessage, setSubscriptionMessage] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
   const accountLabel = user?.displayName || user?.email || t("auth.myAccount");
   const accountInitial = useMemo(() => [...accountLabel.trim()][0]?.toUpperCase() || "E", [accountLabel]);
 
@@ -263,6 +264,29 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
   const activeMonthlySubscription = billing?.activeProducts.find((product) =>
     !product.planCode.startsWith("starter_") && !product.planCode.startsWith("expert_")
   );
+
+  async function signOut(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (signingOut) return;
+    setSigningOut(true);
+    const form = event.currentTarget;
+    try {
+      const response = await fetch("/auth/sign-out", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-EasyCut-Client-Navigation": "1",
+        },
+        body: new URLSearchParams({ next: "/" }),
+      });
+      if (!response.ok) throw new Error(`LOGOUT_FAILED_${response.status}`);
+      window.location.replace("/");
+    } catch {
+      form.submit();
+    }
+  }
 
   return (
     <div className="app-shell site-chrome min-h-screen text-neutral-100">
@@ -347,9 +371,14 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
                   <strong className="text-sm font-extrabold text-neutral-100">{t("auth.logout")}</strong>
                   <p className="mt-1 text-xs leading-5 text-neutral-500">{t("settings.logoutDescription")}</p>
                 </div>
-                <form action="/auth/sign-out" method="post">
+                <form action="/auth/sign-out" method="post" onSubmit={signOut}>
                   <input type="hidden" name="next" value="/" />
-                  <button type="submit" className="min-h-10 rounded-xl border border-white/10 px-4 text-xs font-extrabold text-neutral-300 transition hover:border-white/20 hover:bg-white/[.05] hover:text-white">
+                  <button
+                    type="submit"
+                    disabled={signingOut}
+                    aria-busy={signingOut}
+                    className="min-h-10 rounded-xl border border-white/10 px-4 text-xs font-extrabold text-neutral-300 transition hover:border-white/20 hover:bg-white/[.05] hover:text-white disabled:cursor-wait disabled:opacity-60"
+                  >
                     {t("auth.logout")}
                   </button>
                 </form>

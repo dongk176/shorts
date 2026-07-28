@@ -23,49 +23,17 @@ function ensureGtag() {
   return window.gtag;
 }
 
-function clearLegacyAnalyticsState() {
-  try {
-    window.localStorage.removeItem("easycut:analytics-consent:2026-07-26");
-  } catch {
-    // Storage can be unavailable in privacy-focused browser modes.
-  }
-
-  const analyticsCookieNames = document.cookie
-    .split(";")
-    .map((cookie) => cookie.split("=", 1)[0]?.trim())
-    .filter((name): name is string => Boolean(name && (name === "_ga" || name.startsWith("_ga_"))));
-  if (analyticsCookieNames.length === 0) return;
-
-  const hostnameParts = window.location.hostname.split(".");
-  const domainCandidates = hostnameParts.length > 1
-    ? hostnameParts
-        .slice(0, -1)
-        .map((_, index) => hostnameParts.slice(index).join("."))
-    : [];
-
-  for (const name of analyticsCookieNames) {
-    document.cookie = `${name}=; Max-Age=0; Path=/; SameSite=Lax`;
-    for (const domain of domainCandidates) {
-      document.cookie = `${name}=; Max-Age=0; Path=/; Domain=${domain}; SameSite=Lax`;
-    }
-  }
-}
-
 export function GoogleAnalytics({ measurementId }: { measurementId?: string }) {
   const pathname = usePathname();
   const enabled = isGoogleAnalyticsMeasurementId(measurementId);
   const initializedMeasurementId = useRef<string | null>(null);
 
   useEffect(() => {
-    clearLegacyAnalyticsState();
-  }, []);
-
-  useEffect(() => {
     if (!enabled) return;
     const gtag = ensureGtag();
     if (initializedMeasurementId.current !== measurementId) {
       gtag("consent", "default", {
-        analytics_storage: "denied",
+        analytics_storage: "granted",
         ad_storage: "denied",
         ad_user_data: "denied",
         ad_personalization: "denied",

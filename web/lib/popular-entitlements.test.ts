@@ -33,6 +33,15 @@ describe("popular filter entitlements", () => {
     );
   });
 
+  it("does not treat free welcome creation time as popular-filter access", () => {
+    const welcomeBilling = { activeProducts: [], canCreateJobs: true };
+
+    expect(billingSupportsPopularFilters(welcomeBilling)).toBe(false);
+    expect(() => assertPopularFilterAccess(welcomeBilling)).toThrowError(
+      POPULAR_FILTER_PLAN_MESSAGE,
+    );
+  });
+
   it("allows an account with time-limited direct filter access", () => {
     const billing = { activeProducts: [] };
 

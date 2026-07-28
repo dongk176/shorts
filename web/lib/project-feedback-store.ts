@@ -3,6 +3,7 @@ import {
   resolveProjectFeedbackPromptStatus,
   type ProjectFeedbackPromptStatus,
 } from "@/lib/project-feedback";
+import { ONBOARDING_WELCOME_PRODUCT_CODE } from "@/lib/onboarding-welcome";
 
 export async function getProjectFeedbackPromptStatus(
   db: Sql | TransactionSql,
@@ -36,10 +37,23 @@ export async function getProjectFeedbackPromptStatus(
         where user_id=${userId}
         order by created_at desc
         limit 1
-      ) as completed_project_count_at_last_deferral
+      ) as completed_project_count_at_last_deferral,
+      exists (
+        select 1
+        from shorts_mvp.usage_grants welcome_grant
+        where welcome_grant.user_id=${userId}
+          and welcome_grant.product_code=${ONBOARDING_WELCOME_PRODUCT_CODE}
+      ) as has_onboarding_welcome_grant,
+      exists (
+        select 1
+        from shorts_mvp.billing_orders paid_order
+        where paid_order.user_id=${userId}
+          and paid_order.status='succeeded'
+          and paid_order.amount_krw>0
+      ) as has_payment_history
   `;
   const row = rows[0];
-  return resolveProjectFeedbackPromptStatus({
+  const status = resolveProjectFeedbackPromptStatus({
     completedProjectCount: Number(row?.completedProjectCount || 0),
     lastDeferredPromptCompletionCount: row?.lastDeferredPromptCompletionCount == null
       ? null
@@ -49,4 +63,12 @@ export async function getProjectFeedbackPromptStatus(
       : Number(row.completedProjectCountAtLastDeferral),
     submitted: Boolean(row?.submitted),
   });
+  if (Boolean(row?.hasOnboardingWelcomeGrant) && !Boolean(row?.hasPaymentHistory)) {
+    return {
+      ...status,
+      eligible: false,
+      promptCompletionCount: null,
+    };
+  }
+  return status;
 }

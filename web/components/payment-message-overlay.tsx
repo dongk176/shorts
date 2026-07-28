@@ -19,6 +19,7 @@ type PaymentMessageOverlayProps = {
   secondaryHref?: string;
   secondaryLabel?: string;
   highlight?: ReactNode;
+  showStatus?: boolean;
 };
 
 const toneStyles: Record<PaymentMessageTone, {
@@ -61,6 +62,7 @@ export function PaymentMessageOverlay({
   secondaryHref,
   secondaryLabel,
   highlight,
+  showStatus = true,
 }: PaymentMessageOverlayProps) {
   const titleId = useId();
   const descriptionId = useId();
@@ -132,28 +134,34 @@ export function PaymentMessageOverlay({
         role={tone === "error" ? "alertdialog" : "dialog"}
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={descriptionId}
+        aria-describedby={message ? descriptionId : undefined}
         aria-busy={actionPending}
         tabIndex={-1}
         className="relative w-full max-w-md overflow-hidden rounded-[28px] border border-white/10 bg-[#202124] p-7 text-center text-neutral-100 shadow-[0_32px_100px_rgba(0,0,0,.72),0_0_54px_rgba(255,113,94,.08)] outline-none sm:p-9"
       >
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-14 -top-24 h-40 rounded-full bg-[#ff715e]/10 blur-3xl" />
-        <div
-          aria-hidden="true"
-          className={`relative mx-auto grid h-12 w-12 place-items-center rounded-full border text-xl font-black ${styles.iconClassName}`}
-        >
-          {styles.icon}
-        </div>
-        <p className={`relative mt-5 text-[11px] font-black uppercase tracking-[.18em] ${styles.eyebrowClassName}`}>
-          {styles.eyebrow}
-        </p>
-        <h1 id={titleId} className="relative mt-2 text-2xl font-black tracking-[-.04em] text-white">
+        {showStatus ? (
+          <>
+            <div
+              aria-hidden="true"
+              className={`relative mx-auto grid h-12 w-12 place-items-center rounded-full border text-xl font-black ${styles.iconClassName}`}
+            >
+              {styles.icon}
+            </div>
+            <p className={`relative mt-5 text-[11px] font-black uppercase tracking-[.18em] ${styles.eyebrowClassName}`}>
+              {styles.eyebrow}
+            </p>
+          </>
+        ) : null}
+        <h1 id={titleId} className={`relative whitespace-pre-line text-2xl font-black tracking-[-.04em] text-white ${showStatus ? "mt-2" : ""}`}>
           {title}
         </h1>
         {highlight}
-        <p id={descriptionId} className="relative mt-4 whitespace-pre-line text-sm leading-6 text-neutral-300">
-          {message}
-        </p>
+        {message ? (
+          <p id={descriptionId} className="relative mt-4 whitespace-pre-line text-sm leading-6 text-neutral-300">
+            {message}
+          </p>
+        ) : null}
         <div className="relative mt-7 grid gap-2.5">
           {actionPending ? (
             <span
@@ -190,6 +198,15 @@ export function PaymentMessageOverlay({
             >
               {secondaryLabel}
             </Link>
+          )}
+          {!actionPending && actionHref && actionLabel && onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="min-h-11 rounded-xl border border-white/10 px-5 text-xs font-bold text-neutral-300 transition hover:border-white/25 hover:text-white"
+            >
+              {closeLabel}
+            </button>
           )}
         </div>
       </section>

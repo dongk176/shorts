@@ -46,8 +46,22 @@ describe("user onboarding API", () => {
     await expect(response.json()).resolves.toEqual({ required: false, version: 1 });
   });
 
-  it("stores a valid response once per account", async () => {
-    const db = dbWithRows([]);
+  it("stores a valid response and atomically issues the free welcome grant", async () => {
+    const completedAt = new Date("2026-07-28T06:00:00.000Z");
+    const expiresAt = new Date("2026-08-27T06:00:00.000Z");
+    const tx = dbWithRows(
+      [],
+      [],
+      [{ requestId, completedAt }],
+      [{ "?column?": 1 }],
+      [],
+      [{ totalSeconds: 1_200, expiresAt }],
+      [],
+    );
+    const db = dbWithRows();
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
     mocks.getDb.mockReturnValue(db);
 
     const response = await POST(new Request("http://localhost/api/onboarding", {
@@ -64,7 +78,36 @@ describe("user onboarding API", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ completed: true });
-    expect(db).toHaveBeenCalledTimes(1);
+    expect(tx).toHaveBeenCalledTimes(7);
+  });
+
+  it("does not issue a welcome grant to a paid account", async () => {
+    const tx = dbWithRows(
+      [],
+      [],
+      [{ requestId, completedAt: new Date("2026-07-28T06:00:00.000Z") }],
+      [],
+    );
+    const db = dbWithRows();
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await POST(new Request("http://localhost/api/onboarding", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requestId,
+        occupation: "creator",
+        occupationOther: null,
+        usagePurposes: ["youtube_shorts"],
+        usagePurposeOther: null,
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(tx).toHaveBeenCalledTimes(4);
   });
 
   it("rejects other without a direct answer", async () => {

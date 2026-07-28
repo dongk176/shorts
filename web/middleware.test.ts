@@ -79,6 +79,17 @@ describe("canonical URL middleware", () => {
     expect(mocks.refreshSession).toHaveBeenCalledOnce();
   });
 
+  it("does not refresh the Supabase session during sign-out", async () => {
+    const request = new NextRequest("https://www.easycut.co.kr/auth/sign-out", {
+      method: "POST",
+    });
+
+    const response = await middleware(request);
+
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(mocks.refreshSession).not.toHaveBeenCalled();
+  });
+
   it("leaves unrelated routes unchanged", async () => {
     const response = await middleware(new NextRequest("https://example.com/pricing"));
 

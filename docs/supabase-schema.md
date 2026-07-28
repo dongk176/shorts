@@ -29,6 +29,7 @@
 - `usage_grant_allocations`: 작업 예약이 어떤 grant에서 몇 초를 사용했는지 기록
 - `usage_reservations`: queued/running 원본 초와 grant allocation 전이 기준
 - `usage_events`: 성공한 원본 초, `(job_id,event_type)` idempotency
+- `user_onboarding_profiles`, `member_campaign_announcements`: 최초 온보딩 멱등 응답과 비유료 회원 20분 체험 grant의 계정당 1회 안내 이력
 - `job_events`: stage 변경 이벤트
 
 적용은 `npm run db:migrate`입니다. 서버와 Worker는 schema-qualified SQL만 사용합니다. Cleanup Lambda에서 PostgREST를 쓸 경우 Supabase API exposed schemas에 `shorts_mvp`를 추가하되, schema/table 권한은 service role에만 유지합니다.
@@ -36,3 +37,5 @@
 이지컷 프로는 최초 더페이원 승인 시각부터 유료기간을 시작하고, 자동 승인 결과 통지마다 기본시간 60분을 지급하면서 기존 Pro 이용기간 끝에 1개월을 추가합니다. 최종 해지 시 PG 일정을 즉시 중지하되 이미 결제한 이용기간은 유지합니다. 다시 구독하면 저장 카드를 확인해 즉시 결제하고 60분을 지급하며, 남은 이용기간 끝에 1개월을 추가한 뒤 기존 자동결제 일정을 재활성화합니다. 기간 패키지는 승인일부터 독립된 3·6·12개월 이용기간을 시작하고, 활성 상태인 동안 매월 상품별 시간을 지급하며 자동결제하지 않습니다. 스타터·전문가의 기간별 각 상품은 계정당 한 번만 구매할 수 있고, 서로 다른 상품을 구매한 경우 각 기간과 월 지급 일정을 독립적으로 보존합니다. 기존 주문은 환불정책 v1, 신규 주문은 v2로 기록하여 계산 기준을 소급 변경하지 않습니다. v2 패키지는 완료 월과 현재 사용 월을 계약 월단가로 정산하고, 현재 사용 월을 공제한 경우 월말 예약 종료, 현재 월 미사용 환불은 즉시 종료로 기록합니다. 모든 시각은 DB에 UTC `timestamptz`로 저장합니다.
 
 로그인 사용자의 작업·쇼츠·사용량 조회는 `app_users.id` 소유권으로 묶여 여러 브라우저 세션에서도 같은 데이터를 봅니다. 익명 사용자는 기존처럼 현재 `mvp_session_id`만 볼 수 있으며, 로그인 순간 현재 익명 세션의 행들에 `user_id`를 원자적으로 연결합니다.
+
+결제 이력이 없고 현재 유료·체험·연체·수동 권한이 없는 계정은 온보딩 완료 시 `onboarding_welcome_20min_v1` grant를 한 번 받습니다. 부분 고유 인덱스가 재로그인·재전송·동시 요청의 중복 지급을 막고, 예약 함수는 유료 권한이 없는 동안 해당 grant만 소비하도록 제한합니다. 이 grant는 `manual_service_access_until`을 설정하지 않으므로 실시간 인기 필터 권한과 분리됩니다.

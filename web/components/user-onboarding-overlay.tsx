@@ -1,7 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { claimOnboardingWelcomeAnnouncement } from "@/app/actions/onboarding-welcome";
 import { useUsageState } from "@/components/usage-provider";
+import type { OnboardingWelcomeAnnouncement } from "@/lib/onboarding-welcome";
 import { userFacingErrorMessage } from "@/lib/public-error";
 import {
   userOccupationOptions,
@@ -18,11 +21,13 @@ async function responseBody<T>(response: Response): Promise<T> {
 }
 
 export function UserOnboardingOverlay() {
-  const { authenticated } = useUsageState();
+  const router = useRouter();
+  const { authenticated, refreshUsage } = useUsageState();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [visible, setVisible] = useState(false);
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2 | "welcome">(1);
+  const [welcome, setWelcome] = useState<OnboardingWelcomeAnnouncement | null>(null);
   const [occupation, setOccupation] = useState<UserOccupation | null>(null);
   const [occupationOther, setOccupationOther] = useState("");
   const [purposes, setPurposes] = useState<UserUsagePurpose[]>([]);
@@ -33,6 +38,7 @@ export function UserOnboardingOverlay() {
   useEffect(() => {
     if (!authenticated) {
       setVisible(false);
+      setWelcome(null);
       return;
     }
     let cancelled = false;
@@ -45,8 +51,21 @@ export function UserOnboardingOverlay() {
         if (response.status === 401) return;
         const status = await responseBody<UserOnboardingStatus>(response);
         if (cancelled) return;
-        setVisible(status.required);
-        if (status.required) setStep(1);
+        if (status.required) {
+          setWelcome(null);
+          setStep(1);
+          setVisible(true);
+          return;
+        }
+        const announcement = await claimOnboardingWelcomeAnnouncement();
+        if (cancelled || !announcement) {
+          setVisible(false);
+          return;
+        }
+        setWelcome(announcement);
+        setStep("welcome");
+        setVisible(true);
+        void refreshUsage();
       } catch {
         // 온보딩 상태 오류로 핵심 서비스 사용을 막지 않는다.
       }
@@ -54,7 +73,7 @@ export function UserOnboardingOverlay() {
     return () => {
       cancelled = true;
     };
-  }, [authenticated]);
+  }, [authenticated, refreshUsage]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -98,7 +117,14 @@ export function UserOnboardingOverlay() {
         }),
       });
       await responseBody<{ completed: true }>(response);
-      setVisible(false);
+      const announcement = await claimOnboardingWelcomeAnnouncement();
+      void refreshUsage();
+      if (announcement) {
+        setWelcome(announcement);
+        setStep("welcome");
+      } else {
+        setVisible(false);
+      }
     } catch (cause) {
       setError(userFacingErrorMessage(cause, "응답을 저장하지 못했습니다."));
     } finally {
@@ -108,39 +134,82 @@ export function UserOnboardingOverlay() {
 
   if (!visible) return null;
 
+  const welcomeMinutes = welcome ? Math.floor(welcome.grantedSeconds / 60) : 0;
+  const closeWelcome = () => {
+    setVisible(false);
+    setWelcome(null);
+    router.push("/");
+  };
+
   return (
     <dialog
       ref={dialogRef}
       aria-labelledby="user-onboarding-title"
-      onCancel={(event) => event.preventDefault()}
-      className="m-auto max-h-[calc(100dvh-24px)] w-[calc(100%-24px)] max-w-[560px] overflow-y-auto rounded-[22px] border border-white/10 bg-[#17181b] p-0 text-white shadow-[0_30px_100px_rgba(0,0,0,.7)] backdrop:bg-black/80 backdrop:backdrop-blur-sm"
+      onCancel={(event) => {
+        if (step !== "welcome") {
+          event.preventDefault();
+          return;
+        }
+        closeWelcome();
+      }}
+      className={`m-auto max-h-[calc(100dvh-24px)] w-[calc(100%-24px)] overflow-y-auto rounded-[22px] border border-white/10 bg-[#17181b] p-0 text-white shadow-[0_30px_100px_rgba(0,0,0,.7)] backdrop:bg-black/80 backdrop:backdrop-blur-sm ${
+        step === "welcome" ? "max-w-[440px]" : "max-w-[560px]"
+      }`}
     >
       <form onSubmit={submit}>
-        <header className="border-b border-white/10 px-5 pb-5 pt-6 sm:px-7 sm:pt-7">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex flex-1 gap-2" aria-label={`온보딩 ${step}단계 중 2단계`}>
-              {[1, 2].map((item) => (
-                <span
-                  key={item}
-                  className={`h-1.5 flex-1 rounded-full ${
-                    item <= step ? "bg-[#ff8c7c]" : "bg-white/10"
-                  }`}
-                />
-              ))}
+        <header className={step === "welcome"
+          ? "px-6 pb-0 pt-8 text-center sm:px-8 sm:pt-9"
+          : "border-b border-white/10 px-5 pb-5 pt-6 sm:px-7 sm:pt-7"}
+        >
+          {step !== "welcome" && (
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-1 gap-2" aria-label={`온보딩 ${step}단계 중 2단계`}>
+                {[1, 2].map((item) => (
+                  <span
+                    key={item}
+                    className={`h-1.5 flex-1 rounded-full ${
+                      item <= step ? "bg-[#ff8c7c]" : "bg-white/10"
+                    }`}
+                  />
+                ))}
+              </div>
+              <span className="text-xs font-bold text-neutral-500">{step} / 2</span>
             </div>
-            <span className="text-xs font-bold text-neutral-500">{step} / 2</span>
-          </div>
+          )}
           <h2
             ref={headingRef}
             id="user-onboarding-title"
             tabIndex={-1}
-            className="mt-4 text-xl font-black tracking-[-0.04em] outline-none focus-visible:!outline-none sm:text-2xl"
+            className={`font-black tracking-[-0.04em] outline-none focus-visible:!outline-none ${
+              step === "welcome"
+                ? "text-xl sm:text-2xl"
+                : "mt-4 text-xl sm:text-2xl"
+            }`}
           >
-            {step === 1 ? "어떤 일을 하고 계신가요?" : "이지컷을 어떤 목적으로 사용하시나요?"}
+            {step === "welcome"
+              ? "무료 체험시간이 충전됐어요"
+              : step === 1
+                ? "어떤 일을 하고 계신가요?"
+                : "이지컷을 어떤 목적으로 사용하시나요?"}
           </h2>
         </header>
 
-        <div className="space-y-6 px-5 py-5 sm:px-7">
+        <div className={step === "welcome"
+          ? "px-6 pb-6 pt-5 text-center sm:px-8"
+          : "space-y-6 px-5 py-5 sm:px-7"}
+        >
+          {step === "welcome" && welcome && (
+            <div>
+              <p className="text-5xl font-black tracking-[-0.06em] sm:text-6xl">
+                <span className="inline-block bg-gradient-to-r from-[#ff715e] via-[#ffb4a8] to-[#a078ff] bg-clip-text text-transparent">
+                  {welcomeMinutes}<span className="ml-1 text-2xl tracking-[-0.04em] sm:text-3xl">분</span>
+                </span>
+              </p>
+              <p className="mt-3 text-sm text-neutral-400">
+                지금 바로 쇼츠를 만들어보세요!
+              </p>
+            </div>
+          )}
           {step === 1 && <fieldset disabled={submitting}>
             <legend className="sr-only">직업 선택</legend>
             <p className="text-xs text-neutral-500">하나만 선택해 주세요.</p>
@@ -224,8 +293,19 @@ export function UserOnboardingOverlay() {
           )}
         </div>
 
-        <footer className="border-t border-white/10 px-5 py-4 sm:px-7">
-          {step === 1 ? (
+        <footer className={step === "welcome"
+          ? "px-6 pb-8 sm:px-8 sm:pb-9"
+          : "border-t border-white/10 px-5 py-4 sm:px-7"}
+        >
+          {step === "welcome" ? (
+            <button
+              type="button"
+              onClick={closeWelcome}
+              className="min-h-11 w-full rounded-lg bg-white px-5 text-[13px] font-black text-black transition hover:bg-neutral-200"
+            >
+              쇼츠 만들러 가기
+            </button>
+          ) : step === 1 ? (
             <button
               type="button"
               disabled={!occupationReady || submitting}

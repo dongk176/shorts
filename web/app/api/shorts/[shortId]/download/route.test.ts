@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   session: vi.fn(),
   getDb: vi.fn(),
+  billing: vi.fn(),
   downloadUrl: vi.fn(),
 }));
 
-vi.mock("@/lib/session", () => ({ requireMvpSession: mocks.session }));
+vi.mock("@/lib/session", () => ({ requireAuthenticatedMvpSession: mocks.session }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
+vi.mock("@/lib/billing", () => ({ getBillingSummary: mocks.billing }));
 vi.mock("@/lib/aws", () => ({ getShortDownloadUrl: mocks.downloadUrl }));
 
 import { GET } from "./route";
@@ -18,6 +20,9 @@ describe("short download route", () => {
     mocks.session.mockResolvedValue({
       id: "session-a",
       userId: "user-a",
+    });
+    mocks.billing.mockResolvedValue({
+      activeProducts: [{ planCode: "plus" }],
     });
     mocks.downloadUrl.mockResolvedValue(
       "https://bucket.s3.ap-northeast-2.amazonaws.com/outputs/short.mp4?signature=test",

@@ -79,6 +79,7 @@ const plans: PlanCard[] = [
     features: [
       { text: "월 60분 · 원본 영상 처리", strong: "월 60분" },
       { text: "쇼츠 약 48개 · 10분 영상 기준", strong: "쇼츠 약 48개" },
+      { text: "동시 작업 1개", strong: "동시 작업 1개" },
       { text: "프로젝트 30일 보관" },
       { text: "실시간 인기 필터 제공" },
       { text: "숏폼 전략 가이드 PDF 미제공", unavailable: true },
@@ -100,6 +101,7 @@ const plans: PlanCard[] = [
     features: [
       { text: "매월 200분 × 6개월", strong: "매월 200분" },
       { text: "쇼츠 약 960개", strong: "쇼츠 약 960개" },
+      { text: "동시 작업 2개", strong: "동시 작업 2개" },
       { text: "프로젝트 30일 보관" },
       { text: "실시간 인기 필터 제공" },
       { text: "숏폼 전략 가이드 PDF 다운로드" },
@@ -121,6 +123,7 @@ const plans: PlanCard[] = [
     features: [
       { text: "매월 600분 × 12개월", strong: "매월 600분" },
       { text: "쇼츠 약 480개 · 10분 영상 기준", strong: "쇼츠 약 480개" },
+      { text: "동시 작업 3개", strong: "동시 작업 3개" },
       { text: "프로젝트 30일 보관" },
       { text: "실시간 인기 필터 제공" },
       { text: "숏폼 전략 가이드 PDF 다운로드" },
@@ -333,6 +336,7 @@ export function PricingClient({
         `약 ${priceFormatter.format(480 * packageMonths)}개/${packageMonths}개월`,
       ],
     },
+    { label: "동시 작업", values: ["1개", "2개", "3개"] },
     { label: "프로젝트 보관", values: ["30일", "30일", "30일"] },
     { label: "실시간 인기 필터", values: ["제공", "제공", "제공"] },
     { label: "전략 가이드 PDF", values: ["미제공", "제공", "제공"] },

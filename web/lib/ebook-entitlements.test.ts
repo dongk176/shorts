@@ -19,24 +19,30 @@ describe("ebook download entitlements", () => {
   });
 
   it.each([
-    ["free", null, false, false],
-    ["free", "yearly", true, false],
-    ["plus", "monthly", true, false],
-    ["plus", "yearly", true, false],
-    ["standard", "monthly", true, false],
-    ["pro", "monthly", true, false],
-    ["standard", "yearly", true, false],
-    ["pro", "yearly", true, false],
-    ["starter_3m", "yearly", true, true],
-    ["starter_6m", "yearly", true, true],
-    ["expert_12m", "yearly", true, true],
-    ["standard", "yearly", false, false],
-  ] as const)("maps %s %s active=%s to %s", (planCode, billingCycle, canCreateJobs, expected) => {
-    expect(billingSupportsEbookDownloads({ planCode, billingCycle, canCreateJobs })).toBe(expected);
+    ["plus", "monthly", false],
+    ["plus", "yearly", false],
+    ["standard", "monthly", false],
+    ["pro", "monthly", false],
+    ["starter_3m", "yearly", true],
+    ["starter_6m", "yearly", true],
+    ["expert_12m", "yearly", true],
+  ] as const)("maps an active %s %s product to %s", (planCode, billingCycle, expected) => {
+    expect(billingSupportsEbookDownloads({
+      activeProducts: [{
+        planCode,
+        displayName: planCode,
+        billingCycle,
+        currentPeriodStart: "2026-07-01T00:00:00.000Z",
+        currentPeriodEnd: "2026-08-01T00:00:00.000Z",
+        nextChargeAt: null,
+        cancelAtPeriodEnd: false,
+        monthlySourceSeconds: 3_600,
+      }],
+    })).toBe(expected);
   });
 
   it("rejects non-entitled plans at the server boundary", () => {
-    expect(() => assertEbookDownloadAccess({ planCode: "standard", billingCycle: "monthly", canCreateJobs: true }))
+    expect(() => assertEbookDownloadAccess({ activeProducts: [] }))
       .toThrow("기간 패키지");
   });
 });

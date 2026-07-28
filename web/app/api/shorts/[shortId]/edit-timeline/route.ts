@@ -2,8 +2,10 @@ import { getSignedUrl } from "@aws-sdk/cloudfront-signer";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
+import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { rangeEditingEnabled } from "@/lib/range-editing";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 
@@ -15,6 +17,8 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
     const { shortId } = await context.params;
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    const billing = await getBillingSummary(db, session.userId);
+    assertPaidProjectActionAccess(billing, "edit");
     const rows = await db`
       select s.edit_timeline_s3_key, s.clean_clip_s3_key,
         s.edit_timeline_start_seconds,

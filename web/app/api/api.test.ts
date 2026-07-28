@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   deleteObjects: vi.fn(),
   billing: vi.fn(),
   signedUrl: vi.fn(),
+  shortDownloadUrl: vi.fn(),
 }));
 
 vi.mock("@aws-sdk/cloudfront-signer", () => ({
@@ -54,6 +55,7 @@ vi.mock("@/lib/aws", () => ({
   submitRerender: mocks.submitRerender,
   wakeOutboxDispatcher: mocks.wakeDispatcher,
   deleteShortObjects: mocks.deleteObjects,
+  getShortDownloadUrl: mocks.shortDownloadUrl,
 }));
 
 import { GET as getJob } from "./jobs/[jobId]/route";
@@ -66,6 +68,7 @@ import { GET as accessShort } from "./shorts/[shortId]/access/route";
 import { GET as accessEditSource } from "./shorts/[shortId]/edit-source/route";
 import { POST as applyRangeEdit } from "./shorts/[shortId]/apply-edit/route";
 import { GET as accessEditTimeline } from "./shorts/[shortId]/edit-timeline/route";
+import { GET as downloadShort } from "./shorts/[shortId]/download/route";
 import { POST as rerenderShort } from "./shorts/[shortId]/rerender/route";
 import { PATCH as patchShort } from "./shorts/[shortId]/route";
 import { POST as createPersonalTemplate } from "./templates/route";
@@ -142,7 +145,18 @@ beforeEach(() => {
   mocks.authenticatedUser.mockResolvedValue({ id: "auth-a" });
   mocks.wakeDispatcher.mockResolvedValue(undefined);
   mocks.signedUrl.mockReturnValue("https://cdn.example.com/signed-edit-source.mp4");
+  mocks.shortDownloadUrl.mockResolvedValue("https://cdn.example.com/signed-download.mp4");
   mocks.billing.mockResolvedValue({
+    activeProducts: [{
+      planCode: "plus",
+      displayName: "Plus",
+      billingCycle: "monthly",
+      currentPeriodStart: "2026-07-01T00:00:00.000Z",
+      currentPeriodEnd: "2026-08-01T00:00:00.000Z",
+      nextChargeAt: "2026-08-01T00:00:00.000Z",
+      cancelAtPeriodEnd: false,
+      monthlySourceSeconds: 6000,
+    }],
     status: "active", planCode: "plus", billingCycle: "monthly",
     currentPeriodStart: "2026-07-01T00:00:00.000Z", currentPeriodEnd: "2026-08-01T00:00:00.000Z",
     nextChargeAt: "2026-08-01T00:00:00.000Z", cancelAtPeriodEnd: false,
@@ -881,6 +895,7 @@ describe("job API security and idempotency", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       project: { id: "job-a", projectNumber: 12 },
+      access: { canEdit: true, canDownload: true },
     });
     expect(mocks.projectByNumber).toHaveBeenCalledWith(
       expect.anything(),
@@ -906,6 +921,7 @@ describe("job API security and idempotency", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       project: { id: "example-job", projectNumber: 12, isExample: true },
+      access: { canEdit: false, canDownload: false },
     });
     expect(mocks.authenticatedSession).not.toHaveBeenCalled();
     expect(mocks.projectByNumber).not.toHaveBeenCalled();
@@ -945,6 +961,23 @@ describe("job API security and idempotency", () => {
     expect(response.status).toBe(401);
     expect(mocks.projectByNumber).not.toHaveBeenCalled();
   });
+
+  it("returns blocked project actions without an active paid product", async () => {
+    mocks.getDb.mockReturnValue(vi.fn());
+    mocks.projectByNumber.mockResolvedValue({ id: "job-free", projectNumber: 14 });
+    mocks.billing.mockResolvedValue({ activeProducts: [] });
+
+    const response = await getProject(
+      new Request("http://localhost/api/projects/14"),
+      { params: Promise.resolve({ projectNumber: "14" }) },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      project: { id: "job-free", projectNumber: 14 },
+      access: { canEdit: false, canDownload: false },
+    });
+  });
 });
 
 describe("plan API", () => {
@@ -956,6 +989,38 @@ describe("plan API", () => {
 });
 
 describe("short ownership, expiry, and edit validation", () => {
+  it("does not issue a download URL without an active paid product", async () => {
+    mocks.billing.mockResolvedValue({ activeProducts: [] });
+    mocks.getDb.mockReturnValue(vi.fn());
+
+    const response = await downloadShort(
+      new Request("http://localhost/api/shorts/short-free/download"),
+      { params: Promise.resolve({ shortId: "short-free" }) },
+    );
+
+    expect(response.status).toBe(402);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "PAID_PROJECT_ACTION_REQUIRED",
+    });
+    expect(mocks.shortDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it("does not issue an edit source URL without an active paid product", async () => {
+    mocks.billing.mockResolvedValue({ activeProducts: [] });
+    mocks.getDb.mockReturnValue(vi.fn());
+
+    const response = await accessEditSource(
+      new Request("http://localhost/api/shorts/short-free/edit-source"),
+      { params: Promise.resolve({ shortId: "short-free" }) },
+    );
+
+    expect(response.status).toBe(402);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "PAID_PROJECT_ACTION_REQUIRED",
+    });
+    expect(mocks.signedUrl).not.toHaveBeenCalled();
+  });
+
   it("rejects a title longer than two lines before touching the database", async () => {
     const request = jsonRequest("http://localhost/api/shorts/short-a", {
       hookTitle: "첫 줄\n둘째 줄\n셋째 줄",
@@ -1116,6 +1181,29 @@ describe("short ownership, expiry, and edit validation", () => {
     expect(begin).toHaveBeenCalledOnce();
     expect(tx).toHaveBeenCalledTimes(2);
     expect(mocks.submitRerender).not.toHaveBeenCalled();
+  });
+
+  it("blocks repeated compute-heavy rerenders for a free welcome project", async () => {
+    const db = dbWithRows([{
+      id: "short-free",
+      status: "ready",
+      renderVersion: 2,
+      onboardingWelcomeFunded: true,
+      renderedConfigHash: "old-hash",
+      currentConfigHash: "new-hash",
+    }]);
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await rerenderShort(
+      new Request("http://localhost/api/shorts/short-free/rerender", { method: "POST" }),
+      { params: Promise.resolve({ shortId: "short-free" }) },
+    );
+
+    expect(response.status).toBe(402);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "ONBOARDING_WELCOME_RERENDER_LIMIT",
+    });
+    expect(db).toHaveBeenCalledTimes(1);
   });
 
   it("does not issue a Signed URL for missing or expired shorts", async () => {
