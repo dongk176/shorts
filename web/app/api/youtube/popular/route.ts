@@ -12,7 +12,7 @@ import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
   getPopularVideos,
   PopularSnapshotUnavailableError,
-  popularReusablePeriods,
+  popularDiscoveryPeriods,
   popularVideoCategories,
   popularVideoTypes,
 } from "@/lib/youtube-popular";
@@ -30,7 +30,7 @@ const querySchema = z.object({
   reusable: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   longForm: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   korean: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
-  reusablePeriod: z.enum(popularReusablePeriods).default("all"),
+  period: z.enum(popularDiscoveryPeriods).default("all"),
   cursor: z.string().max(500).optional(),
   interactionId: z.string().uuid().optional(),
 });
@@ -43,7 +43,9 @@ export async function GET(request: Request) {
     reusable: url.searchParams.get("reusable") || undefined,
     longForm: url.searchParams.get("longForm") || undefined,
     korean: url.searchParams.get("korean") || undefined,
-    reusablePeriod: url.searchParams.get("reusablePeriod") || undefined,
+    period: url.searchParams.get("period")
+      || url.searchParams.get("reusablePeriod")
+      || undefined,
     cursor: url.searchParams.get("cursor") || undefined,
     interactionId: url.searchParams.get("interactionId") || undefined,
   });
@@ -58,7 +60,8 @@ export async function GET(request: Request) {
       || query.data.category !== "all"
       || query.data.reusable
       || query.data.longForm
-      || query.data.korean;
+      || query.data.korean
+      || query.data.period !== "all";
     if (usesPaidFeature) {
       const session = await requireAuthenticatedMvpSession();
       const [billing, hasDirectAccess] = await Promise.all([
@@ -80,11 +83,11 @@ export async function GET(request: Request) {
           query.data.korean,
           query.data.cursor,
           limit,
-          query.data.reusablePeriod,
+          query.data.period,
         );
       } catch (error) {
         if (!(error instanceof PopularSearchSnapshotUnavailableError)) throw error;
-        if (query.data.reusablePeriod !== "all") throw error;
+        if (query.data.period !== "all") throw error;
         result = await getPopularVideos(
           "views",
           query.data.category,
@@ -93,6 +96,7 @@ export async function GET(request: Request) {
           query.data.korean,
           query.data.cursor,
           limit,
+          query.data.period,
         );
       }
     } else if (effectiveType === "views") {
@@ -104,6 +108,7 @@ export async function GET(request: Request) {
           query.data.korean,
           query.data.cursor,
           limit,
+          query.data.period,
         );
       } catch (error) {
         if (!(error instanceof PopularSearchSnapshotUnavailableError)) throw error;
@@ -115,6 +120,7 @@ export async function GET(request: Request) {
           query.data.korean,
           query.data.cursor,
           limit,
+          query.data.period,
         );
       }
     } else {
@@ -126,6 +132,7 @@ export async function GET(request: Request) {
         query.data.korean,
         query.data.cursor,
         limit,
+        query.data.period,
       );
     }
     if (paidFilterUserId && !query.data.cursor) {
@@ -137,6 +144,7 @@ export async function GET(request: Request) {
         reusableOnly,
         longFormOnly: query.data.longForm,
         koreanOnly: query.data.korean,
+        discoveryPeriod: query.data.period,
         resultCount: result.items.length,
       });
     }

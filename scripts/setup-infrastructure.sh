@@ -54,16 +54,13 @@ github_oidc_arn="${GITHUB_OIDC_PROVIDER_ARN:-$(aws iam list-open-id-connect-prov
 if [[ -n "$github_oidc_arn" && "$github_oidc_arn" != "None" ]]; then
   context_args+=("-c" "githubOidcProviderArn=$github_oidc_arn")
 fi
-vercel_oidc_arn="${VERCEL_OIDC_PROVIDER_ARN:-$(aws iam list-open-id-connect-providers \
-  --query "OpenIDConnectProviderList[?contains(Arn, 'oidc.vercel.com/${VERCEL_TEAM_SLUG}')].Arn | [0]" \
-  --output text)}"
-if [[ -n "$vercel_oidc_arn" && "$vercel_oidc_arn" != "None" ]]; then
+if [[ -n "${VERCEL_OIDC_PROVIDER_ARN:-}" ]]; then
   for client_id in "https://vercel.com/$VERCEL_TEAM_SLUG" "sts.amazonaws.com"; do
     aws iam add-client-id-to-open-id-connect-provider \
-      --open-id-connect-provider-arn "$vercel_oidc_arn" \
+      --open-id-connect-provider-arn "$VERCEL_OIDC_PROVIDER_ARN" \
       --client-id "$client_id" >/dev/null
   done
-  context_args+=("-c" "vercelOidcProviderArn=$vercel_oidc_arn")
+  context_args+=("-c" "vercelOidcProviderArn=$VERCEL_OIDC_PROVIDER_ARN")
 fi
 deploy_args=(
   -c "environment=$ENVIRONMENT"

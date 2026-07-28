@@ -2323,16 +2323,25 @@ class BatchWorker:
                 title_text_styles=title_text_styles,
                 custom_template_config=_custom_template_config(render_item),
             )
+            thumbnail_path = work_dir / "thumbnail.jpg"
+            self._thumbnail(output_path, thumbnail_path, work_dir)
             self.repository.update_rerender_progress(short_id, 82)
             new_key = f"outputs/{item['mvp_session_id']}/{item['job_id']}/{short_id}/v{version}.mp4"
+            thumbnail_key = (
+                f"thumbnails/{item['mvp_session_id']}/{item['job_id']}/"
+                f"{short_id}/v{version}.jpg"
+            )
             size = self.storage.upload(output_path, new_key, "video/mp4")
             uploaded_keys.append(new_key)
+            self.storage.upload(thumbnail_path, thumbnail_key, "image/jpeg")
+            uploaded_keys.append(thumbnail_key)
             self.repository.update_rerender_progress(short_id, 94)
             completion_started = True
             if snapshot and new_clean_key:
                 old_keys = self.repository.complete_snapshot_rerender(
                     short_id,
                     output_key=new_key,
+                    thumbnail_key=thumbnail_key,
                     clean_key=new_clean_key,
                     size=size,
                     version=version,
@@ -2352,18 +2361,27 @@ class BatchWorker:
                         except Exception:
                             pass
             else:
-                old_key = self.repository.complete_rerender(short_id, new_key, size, version)
-                if old_key is None:
-                    try:
-                        self.storage.delete(new_key)
-                    except Exception:
-                        pass
+                old_keys = self.repository.complete_rerender(
+                    short_id,
+                    new_key,
+                    thumbnail_key,
+                    size,
+                    version,
+                )
+                if old_keys is None:
+                    for key in uploaded_keys:
+                        try:
+                            self.storage.delete(key)
+                        except Exception:
+                            pass
                     return
                 committed = True
-                try:
-                    self.storage.delete(old_key)
-                except Exception:
-                    pass
+                for old_key in old_keys.values():
+                    if old_key and old_key not in uploaded_keys:
+                        try:
+                            self.storage.delete(old_key)
+                        except Exception:
+                            pass
         except Exception:
             if not committed and not completion_started:
                 for key in uploaded_keys:

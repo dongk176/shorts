@@ -28,3 +28,26 @@ test("replayed availability migration accepts every current playback block code"
     assert.ok(replayedCodes.has(code), `${code} is missing from the replayed constraint`);
   }
 });
+
+test("direct service access can reserve only explicitly granted processing time", () => {
+  const migration = fs.readFileSync(
+    new URL(
+      "../supabase/migrations/202607280005_direct_service_usage_reservations.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(
+    migration,
+    /manual_service_access_until\s*>\s*clock_timestamp\(\)/,
+  );
+  assert.match(
+    migration,
+    /g\.user_id=p_user_id and g\.status='active'/,
+  );
+  assert.match(
+    migration,
+    /g\.total_seconds\s*>\s*g\.reserved_seconds\+g\.consumed_seconds/,
+  );
+});

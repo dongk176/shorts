@@ -240,7 +240,6 @@ describe("shorts MVP infrastructure", () => {
           RENDER_JOB_DEFINITION: "shorts-mvp-render-test",
           PROJECT_JOB_DEFINITION: "shorts-mvp-project-fargate-test",
           PROJECT_HEAVY_JOB_DEFINITION: "shorts-mvp-project-heavy-fargate-test",
-          PROJECT_HEAVY_THRESHOLD_SECONDS: "480",
           RERENDER_JOB_DEFINITION: "shorts-mvp-rerender-fargate-test",
         }),
       },

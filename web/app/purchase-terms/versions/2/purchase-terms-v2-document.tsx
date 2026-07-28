@@ -45,7 +45,6 @@ export function PurchaseTermsV2Document({
             <p className="mt-2 text-xs leading-6 text-neutral-400">일반결제로 구매하며 승인일부터 90일 동안 사용할 수 있습니다.</p>
           </div>
         </div>
-        <p className="mt-5 text-xs leading-6 text-neutral-400">관계 법령이 본 약관보다 이용자에게 유리하게 적용되는 경우에는 해당 법령이 우선합니다.</p>
       </section>
 
       <LegalSection title="제1조 목적 및 적용 범위">

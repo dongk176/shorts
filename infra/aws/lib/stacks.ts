@@ -391,6 +391,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     };
     const prepareDefinitionName = `shorts-mvp-prepare-${props.environment}`;
     const renderDefinitionName = `shorts-mvp-render-${props.environment}`;
+    // Retained for in-flight project resumes created before all new projects moved to 8 vCPU.
     const projectDefinitionName = `shorts-mvp-project-fargate-${props.environment}`;
     const projectHeavyDefinitionName = `shorts-mvp-project-heavy-fargate-${props.environment}`;
     const rerenderDefinitionName = `shorts-mvp-rerender-fargate-${props.environment}`;
@@ -585,7 +586,6 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       PROJECT_BATCH_QUEUE: projectQueue.ref,
       PROJECT_JOB_DEFINITION: projectDefinitionName,
       PROJECT_HEAVY_JOB_DEFINITION: projectHeavyDefinitionName,
-      PROJECT_HEAVY_THRESHOLD_SECONDS: "480",
       RERENDER_JOB_DEFINITION: rerenderDefinitionName,
       STATE_EVENT_QUEUE_URL: stateQueue.queueUrl,
     };

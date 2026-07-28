@@ -3,6 +3,7 @@ import type {
   SupportInquiryCategory,
   SupportInquiryRefundReason,
 } from "@/lib/support-inquiry";
+import { resolveAdminInquiry } from "./inquiry-actions";
 
 export type AdminInquiryStatus =
   | "new"
@@ -53,7 +54,7 @@ const statusLabels: Record<AdminInquiryStatus, string> = {
   new: "신규",
   in_progress: "처리 중",
   waiting_on_customer: "고객 답변 대기",
-  resolved: "해결",
+  resolved: "처리 완료",
   closed: "종료",
 };
 
@@ -145,12 +146,12 @@ export function AdminInquiriesDashboard({
                 aria-label="문의 상태"
                 className="h-10 rounded-xl border border-white/10 bg-[#191c1d] px-3 text-sm"
               >
-                <option value="all">모든 상태</option>
+                <option value="open">미처리 전체</option>
                 <option value="new">신규</option>
                 <option value="in_progress">처리 중</option>
                 <option value="waiting_on_customer">고객 답변 대기</option>
-                <option value="resolved">해결</option>
-                <option value="closed">종료</option>
+                <option value="resolved">처리 완료 이력</option>
+                <option value="closed">종료 이력</option>
               </select>
               <select
                 name="inquiryCategory"
@@ -203,9 +204,21 @@ export function AdminInquiriesDashboard({
                     {date(inquiry.createdAt)} · 접수번호 {referenceCode(inquiry.id)}
                   </p>
                 </div>
-                <p className="text-xs text-neutral-600">
-                  최근 갱신 {date(inquiry.updatedAt)}
-                </p>
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  <p className="text-xs text-neutral-600">
+                    최근 갱신 {date(inquiry.updatedAt)}
+                  </p>
+                  {inquiry.status !== "resolved" && inquiry.status !== "closed" && (
+                    <form action={resolveAdminInquiry.bind(null, inquiry.id)}>
+                      <button
+                        type="submit"
+                        className="h-9 rounded-xl border border-emerald-300/25 bg-emerald-300/10 px-3 text-xs font-black text-emerald-200 transition hover:border-emerald-200/40 hover:bg-emerald-300/20"
+                      >
+                        처리 완료
+                      </button>
+                    </form>
+                  )}
+                </div>
               </div>
 
               <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">

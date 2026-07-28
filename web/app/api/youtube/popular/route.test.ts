@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/youtube-popular", () => ({
   getPopularVideos: mocks.getPopularVideos,
   popularVideoTypes: ["trending", "views", "reusable"],
-  popularReusablePeriods: ["today", "week", "all"],
+  popularDiscoveryPeriods: ["today", "week", "all"],
   popularVideoCategories: ["all", "entertainment", "gaming", "sports", "music", "news", "science", "howto"],
   PopularSnapshotUnavailableError: class PopularSnapshotUnavailableError extends Error {},
 }));
@@ -80,8 +80,8 @@ describe("popular YouTube API route", () => {
     expect(mocks.getPopularSearchVideos).not.toHaveBeenCalled();
   });
 
-  it("rejects an unsupported reusable discovery period", async () => {
-    const response = await GET(new Request("http://localhost/api/youtube/popular?type=reusable&reusablePeriod=month"));
+  it("rejects an unsupported discovery period", async () => {
+    const response = await GET(new Request("http://localhost/api/youtube/popular?type=trending&period=month"));
     expect(response.status).toBe(400);
     expect(mocks.getReusablePopularVideos).not.toHaveBeenCalled();
   });
@@ -94,7 +94,7 @@ describe("popular YouTube API route", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(mocks.authenticatedSession).toHaveBeenCalledOnce();
     expect(mocks.getBillingSummary).toHaveBeenCalledWith("database", "user-a");
-    expect(mocks.getPopularSearchVideos).toHaveBeenCalledWith("gaming", true, true, true, undefined, 48);
+    expect(mocks.getPopularSearchVideos).toHaveBeenCalledWith("gaming", true, true, true, undefined, 48, "all");
     expect(mocks.getPopularVideos).not.toHaveBeenCalled();
     expect(mocks.recordPopularFilterUsage).toHaveBeenCalledWith("database", {
       interactionId: undefined,
@@ -104,6 +104,7 @@ describe("popular YouTube API route", () => {
       reusableOnly: true,
       longFormOnly: true,
       koreanOnly: true,
+      discoveryPeriod: "all",
       resultCount: 0,
     });
     await expect(response.json()).resolves.toEqual({ items: [], updatedAt: "2026-07-14T00:00:00.000Z" });
@@ -132,11 +133,11 @@ describe("popular YouTube API route", () => {
       items: [],
       updatedAt: "2026-07-28T08:00:00.000Z",
       totalCount: 81,
-      reusablePeriodCounts: { today: 23, week: 81, all: 769 },
+      periodCounts: { today: 23, week: 81, all: 769 },
     });
 
     const response = await GET(new Request(
-      "http://localhost/api/youtube/popular?type=reusable&reusablePeriod=week",
+      "http://localhost/api/youtube/popular?type=reusable&period=week",
     ));
 
     expect(response.status).toBe(200);
@@ -145,8 +146,52 @@ describe("popular YouTube API route", () => {
     );
     await expect(response.json()).resolves.toMatchObject({
       totalCount: 81,
-      reusablePeriodCounts: { today: 23, week: 81, all: 769 },
+      periodCounts: { today: 23, week: 81, all: 769 },
     });
+  });
+
+  it("passes the selected discovery period to the real-time trending list", async () => {
+    mocks.getPopularVideos.mockResolvedValue({
+      items: [],
+      updatedAt: "2026-07-28T08:00:00.000Z",
+      totalCount: 14,
+      periodCounts: { today: 14, week: 72, all: 310 },
+    });
+
+    const response = await GET(new Request(
+      "http://localhost/api/youtube/popular?type=trending&period=today",
+    ));
+
+    expect(response.status).toBe(200);
+    expect(mocks.getPopularVideos).toHaveBeenCalledWith(
+      "trending", "all", false, false, false, undefined, 48, "today",
+    );
+    expect(mocks.recordPopularFilterUsage).toHaveBeenCalledWith(
+      "database",
+      expect.objectContaining({ type: "trending", discoveryPeriod: "today" }),
+    );
+  });
+
+  it("passes the selected discovery period to the most-viewed list", async () => {
+    mocks.getPopularSearchVideos.mockResolvedValue({
+      items: [],
+      updatedAt: "2026-07-28T08:00:00.000Z",
+      totalCount: 72,
+      periodCounts: { today: 14, week: 72, all: 310 },
+    });
+
+    const response = await GET(new Request(
+      "http://localhost/api/youtube/popular?type=views&period=week",
+    ));
+
+    expect(response.status).toBe(200);
+    expect(mocks.getPopularSearchVideos).toHaveBeenCalledWith(
+      "all", false, false, false, undefined, 48, "week",
+    );
+    expect(mocks.recordPopularFilterUsage).toHaveBeenCalledWith(
+      "database",
+      expect.objectContaining({ type: "views", discoveryPeriod: "week" }),
+    );
   });
 
   it("passes only the opaque database cursor when an entitled user loads more", async () => {
@@ -156,7 +201,7 @@ describe("popular YouTube API route", () => {
     expect(response.status).toBe(200);
     expect(mocks.authenticatedSession).toHaveBeenCalledOnce();
     expect(mocks.getBillingSummary).toHaveBeenCalledWith("database", "user-a");
-    expect(mocks.getPopularVideos).toHaveBeenCalledWith("trending", "all", false, false, false, "stored-page-2", 48);
+    expect(mocks.getPopularVideos).toHaveBeenCalledWith("trending", "all", false, false, false, "stored-page-2", 48, "all");
     expect(mocks.getPopularSearchVideos).not.toHaveBeenCalled();
     expect(mocks.recordPopularFilterUsage).not.toHaveBeenCalled();
   });
@@ -169,7 +214,7 @@ describe("popular YouTube API route", () => {
     const response = await GET(new Request("http://localhost/api/youtube/popular?type=views&category=all"));
 
     expect(response.status).toBe(200);
-    expect(mocks.getPopularVideos).toHaveBeenCalledWith("views", "all", false, false, false, undefined, 48);
+    expect(mocks.getPopularVideos).toHaveBeenCalledWith("views", "all", false, false, false, undefined, 48, "all");
   });
 
   it("returns a safe service error", async () => {
@@ -190,7 +235,7 @@ describe("popular YouTube API route", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(mocks.getPopularVideos).toHaveBeenCalledWith("trending", "all", false, false, false, undefined, 48);
+    expect(mocks.getPopularVideos).toHaveBeenCalledWith("trending", "all", false, false, false, undefined, 48, "all");
     expect(mocks.getPopularSearchVideos).not.toHaveBeenCalled();
   });
 
@@ -247,6 +292,18 @@ describe("popular YouTube API route", () => {
     expect(mocks.recordPopularFilterUsage).not.toHaveBeenCalled();
   });
 
+  it("requires an active subscription or package for a discovery-period filter", async () => {
+    mocks.getBillingSummary.mockResolvedValue({ activeProducts: [] });
+
+    const response = await GET(new Request(
+      "http://localhost/api/youtube/popular?type=trending&period=today",
+    ));
+
+    expect(response.status).toBe(402);
+    expect(mocks.getPopularVideos).not.toHaveBeenCalled();
+    expect(mocks.recordPopularFilterUsage).not.toHaveBeenCalled();
+  });
+
   it("allows advanced filters with direct time-limited access", async () => {
     mocks.getBillingSummary.mockResolvedValue({ activeProducts: [] });
     mocks.hasDirectPopularFilterAccess.mockResolvedValue(true);
@@ -283,6 +340,7 @@ describe("popular YouTube API route", () => {
       reusableOnly: false,
       longFormOnly: false,
       koreanOnly: false,
+      discoveryPeriod: "all",
       resultCount: 2,
     });
   });

@@ -19,7 +19,7 @@ _NOMINAL_CLIP_SECONDS = {
 }
 
 
-def _project_resource_tier(job: dict[str, Any]) -> tuple[str, int]:
+def _estimated_output_seconds(job: dict[str, Any]) -> int:
     try:
         planned_count = max(1, int(job.get("planned_short_count") or 1))
     except (TypeError, ValueError):
@@ -28,13 +28,7 @@ def _project_resource_tier(job: dict[str, Any]) -> tuple[str, int]:
         str(job.get("clip_length_option") or "sec_31_60"),
         _NOMINAL_CLIP_SECONDS["sec_31_60"],
     )
-    try:
-        threshold_seconds = int(os.environ.get("PROJECT_HEAVY_THRESHOLD_SECONDS", "480"))
-    except ValueError:
-        threshold_seconds = 480
-    threshold_seconds = max(1, threshold_seconds)
-    estimated_seconds = planned_count * nominal_seconds
-    return ("heavy" if estimated_seconds >= threshold_seconds else "standard"), estimated_seconds
+    return planned_count * nominal_seconds
 
 
 def _project_job_definition(
@@ -42,7 +36,7 @@ def _project_job_definition(
 ) -> tuple[str, str, int]:
     standard_definition = os.environ["PROJECT_JOB_DEFINITION"]
     heavy_definition = os.environ["PROJECT_HEAVY_JOB_DEFINITION"]
-    tier, estimated_seconds = _project_resource_tier(job)
+    estimated_seconds = _estimated_output_seconds(job)
     stored_definition = str(job.get("batch_job_definition") or "").strip()
     if resume and stored_definition in {standard_definition, heavy_definition}:
         return (
@@ -50,11 +44,7 @@ def _project_job_definition(
             "heavy" if stored_definition == heavy_definition else "standard",
             estimated_seconds,
         )
-    return (
-        heavy_definition if tier == "heavy" else standard_definition,
-        tier,
-        estimated_seconds,
-    )
+    return heavy_definition, "heavy", estimated_seconds
 
 
 def _share_identifier(*values: object) -> str:

@@ -9,6 +9,7 @@ import { AuthControls } from "@/components/auth-controls";
 import { BackgroundShowcase } from "@/components/background-showcase";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
+import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
 import { EstimatedProcessingOverlay, ProjectCard } from "@/components/project-card";
 import { ProjectReveal } from "@/components/project-reveal";
 import { SiteHeader } from "@/components/site-header";
@@ -1336,6 +1337,7 @@ function CommentTimelineEditor({
           <button
             type="button"
             className="editor-comment-range-body"
+            data-editor-guide={index === 0 ? "comment-item" : undefined}
             aria-label={`${label} 선택 및 이동`}
             aria-pressed={selected}
             title={`${label}: ${comment.text}`}
@@ -1481,6 +1483,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [mobileEditorBlocked, setMobileEditorBlocked] = useState(false);
+  const [editorGuideReady, setEditorGuideReady] = useState(false);
   const validTitle = title.trim().length > 0 && title.length <= 80 && title.split("\n").length <= 2;
   const template = templates.find((value) => value.id === templateId) || templates[0];
   const originalAspectRatio = item.videoAspectRatio || "1:1";
@@ -1569,6 +1572,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
   useEffect(() => {
     let cancelled = false;
+    setEditorGuideReady(false);
     const load = async () => {
       if (rangeEditingEnabled) {
         try {
@@ -1587,9 +1591,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       const value = await requestJson<{ url: string }>(`/api/shorts/${item.id}/edit-source`);
       if (!cancelled) setCleanVideoUrl(value.url);
     };
-    void load().catch((cause) => {
-      if (!cancelled) setError(cause instanceof Error ? cause.message : "편집용 영상을 준비하지 못했습니다.");
-    });
+    void load()
+      .catch((cause) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "편집용 영상을 준비하지 못했습니다.");
+      })
+      .finally(() => {
+        if (!cancelled) setEditorGuideReady(true);
+      });
     return () => { cancelled = true; };
   }, [item.id, rangeEditingEnabled]);
 
@@ -1975,6 +1983,14 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           void save();
         }}
       />
+      <DesktopEditorGuide
+        enabled={standalone
+          && !mobileEditorBlocked
+          && editorGuideReady
+          && (Boolean(editTimeline) || templateId === "comment-capture")}
+        rangeControlsAvailable={Boolean(editTimeline)}
+        commentControlsAvailable={templateId === "comment-capture"}
+      />
       {mobileEditorBlocked && <div
         className="editor-mobile-blocker"
         role="dialog"
@@ -2269,7 +2285,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         </section>
         {editTimeline && <section className="editor-range-panel editor-workspace-timeline" aria-label="영상 및 댓글 구간 선택">
           <div className="editor-filmstrip-wrap">
-            <div ref={filmstripRef} className="editor-filmstrip" onPointerDown={startTimelineScrubbing} onPointerMove={moveTimelineScrubbing} onPointerUp={finishTimelineScrubbing} onPointerCancel={finishTimelineScrubbing}>
+            <div ref={filmstripRef} className="editor-filmstrip" data-editor-guide="range-handles" onPointerDown={startTimelineScrubbing} onPointerMove={moveTimelineScrubbing} onPointerUp={finishTimelineScrubbing} onPointerCancel={finishTimelineScrubbing}>
               <div className="editor-filmstrip-images" aria-hidden="true">
                 {Array.from({ length: TIMELINE_THUMBNAIL_COUNT }, (_, index) => (
                   timelineThumbnails[index]
@@ -2299,8 +2315,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           </div>
           {commentTimeline}
           <div className="editor-range-actions">
-            <button type="button" onClick={() => { setSelectionStart(editTimeline.initialStartSeconds); setSelectionEnd(editTimeline.initialEndSeconds); seekTimeline(editTimeline.initialStartSeconds); }}>↺ 원본으로 되돌리기</button>
-            {templateId === "comment-capture" && <button type="button" disabled={comments.length >= 20} onClick={addComment}>+ 댓글</button>}
+            <button type="button" data-editor-guide="reset-range" onClick={() => { setSelectionStart(editTimeline.initialStartSeconds); setSelectionEnd(editTimeline.initialEndSeconds); seekTimeline(editTimeline.initialStartSeconds); }}>↺ 원본으로 되돌리기</button>
+            {templateId === "comment-capture" && <button type="button" data-editor-guide="add-comment" disabled={comments.length >= 20} onClick={addComment}>+ 댓글</button>}
           </div>
           {selectionDuration > 180 && <p className="editor-range-warning">3분을 넘는 영상은 YouTube에서 Shorts로 분류되지 않을 수 있지만 저장할 수 있습니다.</p>}
           {!validSelection && <p className="editor-range-error">최종 영상은 1초 이상이어야 합니다.</p>}
@@ -2308,7 +2324,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         {!editTimeline && commentTimeline && <section className="editor-range-panel editor-workspace-timeline editor-comment-only-panel">
           {commentTimeline}
           <div className="editor-range-actions">
-            <button type="button" disabled={comments.length >= 20} onClick={addComment}>+ 댓글</button>
+            <button type="button" data-editor-guide="add-comment" disabled={comments.length >= 20} onClick={addComment}>+ 댓글</button>
           </div>
         </section>}
       </div>
@@ -2320,7 +2336,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 }
 
 function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }) {
-  const [accessUrls, setAccessUrls] = useState<Record<string, string>>({});
+  const [playbackAssets, setPlaybackAssets] = useState<Record<string, {
+    url: string;
+    posterUrl: string | null;
+  }>>({});
   const [iosDownloadDevice, setIosDownloadDevice] = useState(false);
   const [downloadNoticeOpen, setDownloadNoticeOpen] = useState(false);
   const [revealDecision, setRevealDecision] = useState<{
@@ -2361,12 +2380,12 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
       const accessVersion = shortPlaybackVersionKey(item);
       if (requestedAccessVersions.current.has(accessVersion)) continue;
       requestedAccessVersions.current.add(accessVersion);
-      void requestJson<{ url: string }>(`/api/shorts/${item.id}/access`)
+      void requestJson<{ url: string; posterUrl: string | null }>(`/api/shorts/${item.id}/access`)
         .then((value) => {
           if (!mounted.current) return;
-          setAccessUrls((current) => current[accessVersion]
+          setPlaybackAssets((current) => current[accessVersion]
             ? current
-            : { ...current, [accessVersion]: value.url });
+            : { ...current, [accessVersion]: value });
         })
         .catch(() => requestedAccessVersions.current.delete(accessVersion));
     }
@@ -2378,22 +2397,28 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
     const lastRefresh = playbackRefreshTimes.current.get(accessVersion) || 0;
     if (now - lastRefresh < 30_000) return;
     playbackRefreshTimes.current.set(accessVersion, now);
-    void requestJson<{ url: string }>(`/api/shorts/${item.id}/access`)
+    void requestJson<{ url: string; posterUrl: string | null }>(`/api/shorts/${item.id}/access`)
       .then((value) => {
         if (!mounted.current) return;
-        setAccessUrls((current) => ({ ...current, [accessVersion]: value.url }));
+        setPlaybackAssets((current) => ({ ...current, [accessVersion]: value }));
       })
       .catch(() => playbackRefreshTimes.current.delete(accessVersion));
   };
 
-  const playbackUrl = (item: GeneratedShort) => isPlaybackAvailable(item)
-    ? accessUrls[shortPlaybackVersionKey(item)] || null
+  const playbackAsset = (item: GeneratedShort) => isPlaybackAvailable(item)
+    ? playbackAssets[shortPlaybackVersionKey(item)] || null
     : null;
   const dismissReveal = useCallback(() => {
     setRevealDecision({ jobId: job.id, show: false });
   }, [job.id]);
-  const revealVideoUrls = Object.fromEntries(
-    job.shorts.map((item) => [item.id, playbackUrl(item)]),
+  const revealPlaybackAssets = Object.fromEntries(
+    job.shorts.map((item) => {
+      const asset = playbackAsset(item);
+      return [item.id, {
+        url: asset?.url || null,
+        posterUrl: asset?.posterUrl || null,
+      }];
+    }),
   );
 
   const downloadableItems = job.shorts.filter((item) => item.status === "ready");
@@ -2436,7 +2461,7 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
       <div className="project-workspace">
         <ProjectReveal
           job={job}
-          videoUrls={revealVideoUrls}
+          playbackAssets={revealPlaybackAssets}
           onComplete={dismissReveal}
         />
       </div>
@@ -2464,7 +2489,8 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
       <main className="short-results-workspace">
         <div className="short-results-list">
           {job.shorts.map((item, index) => {
-            const itemUrl = playbackUrl(item);
+            const itemAsset = playbackAsset(item);
+            const itemUrl = itemAsset?.url || null;
             const itemIsRerendering = item.status === "rerendering";
             const script = item.subtitleSegments.map((segment) => segment.text).join(" ") || "추출된 스크립트가 없습니다.";
             return (
@@ -2476,7 +2502,7 @@ function ProjectWorkspace({ job, onBack }: { job: VideoJob; onBack: () => void }
                 <div className="short-result-layout">
                   <div className="short-video-column">
                     <div className="short-video-shell">
-                      {itemUrl ? <video key={shortPlaybackVersionKey(item)} src={itemUrl} controls={!itemIsRerendering} controlsList={job.isExample ? "nodownload" : undefined} playsInline preload="metadata" onError={() => refreshPlaybackAccess(item)} className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
+                      {itemUrl ? <video key={shortPlaybackVersionKey(item)} src={itemUrl} poster={itemAsset?.posterUrl || undefined} controls={!itemIsRerendering} controlsList={job.isExample ? "nodownload" : undefined} playsInline preload="metadata" onError={() => refreshPlaybackAccess(item)} className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
                       <span className="short-duration-badge">{formatDuration(item.durationSeconds)}</span>
                       {itemIsRerendering && <EstimatedProcessingOverlay operationKey={`rerender:${item.id}:${item.renderVersion}`} durationSeconds={item.durationSeconds} rerender />}
                     </div>

@@ -1,10 +1,12 @@
 # Fargate project pipeline runbook
 
 New AWS jobs use pipeline version 2 and run as one AWS Batch Fargate On-Demand
-job. The project definition is 4 vCPU, 30,720 MiB memory, 30 GiB ephemeral
-storage, a 120-minute Batch timeout, and one Batch attempt. Initial rendering is
-limited to two concurrent outputs inside the task. Edit rerenders use the same
-Fargate queue with a separate 2 vCPU / 16,384 MiB definition.
+job. All newly submitted projects use 8 vCPU, 16,384 MiB memory, 30 GiB
+ephemeral storage, a 120-minute Batch timeout, and one Batch attempt. Initial
+rendering is limited to four concurrent outputs inside the task. The legacy
+4-vCPU / 30,720-MiB project definition remains registered only so an in-flight
+project can resume with the same resources it started with. Edit rerenders use
+the same Fargate queue with a separate 2-vCPU / 16,384-MiB definition.
 
 ## Deployment order
 
@@ -18,20 +20,22 @@ render job is active. After those jobs drain, remove the Spot and On-Demand EC2
 compute environments, legacy render queue, and legacy render job definition in a
 separate infrastructure deployment.
 
-At the current 30-vCPU regional Fargate On-Demand quota, at most seven 4-vCPU
-project tasks can run concurrently (rerenders and other Fargate work consume the
-same quota). The Batch compute environment is already configured above the
-requested 400-vCPU service quota, so approval increases usable concurrency
-without another stack change.
+The regional Fargate On-Demand quota is 400 vCPU, allowing at most fifty 8-vCPU
+project tasks to run concurrently when no other Fargate work is active.
+Rerenders and other Fargate work consume the same quota. The Batch compute
+environment is configured for 4,000 vCPU, so the regional service quota is the
+effective limit.
 
 ## Production load gate
 
-Run the load command inside the published 4-vCPU / 30-GB image:
+Run the load command inside the published worker image:
 
 ```sh
 python fargate_render_load.py
 ```
 
 It renders two 60-second comment-template outputs with 15 comments each in
-parallel and fails if the cgroup peak reaches 27 GiB. Do not enable the Web
-switch in production unless this gate passes on the actual Fargate definition.
+parallel. Production telemetry for the 8-vCPU definition must remain below its
+16-GiB task limit; the observed peak is checked during rollout. Do not enable a
+new worker image in production unless the load gate passes on the target
+Fargate definition.

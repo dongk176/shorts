@@ -14,7 +14,7 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
     const session = await requireMvpSession();
     const db = getDb();
     const rows = await db`
-      select s.output_s3_key, s.expires_at, s.render_version
+      select s.output_s3_key, s.thumbnail_s3_key, s.expires_at, s.render_version
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and (
@@ -49,6 +49,19 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
       privateKey,
       dateLessThan: signedUntil.toISOString(),
     });
-    return NextResponse.json({ url, expiresAt: signedUntil.toISOString(), renderVersion: rows[0].renderVersion });
+    const posterUrl = rows[0].thumbnailS3Key
+      ? getSignedUrl({
+          url: `https://${domain}/${rows[0].thumbnailS3Key}`,
+          keyPairId,
+          privateKey,
+          dateLessThan: signedUntil.toISOString(),
+        })
+      : null;
+    return NextResponse.json({
+      url,
+      posterUrl,
+      expiresAt: signedUntil.toISOString(),
+      renderVersion: rows[0].renderVersion,
+    });
   } catch (error) { return apiError(error); }
 }

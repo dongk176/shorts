@@ -1199,11 +1199,19 @@ class WorkerRepository:
                 (job_id,),
             )
 
-    def complete_rerender(self, short_id: str, new_key: str, size: int, version: int) -> str | None:
+    def complete_rerender(
+        self,
+        short_id: str,
+        new_key: str,
+        thumbnail_key: str,
+        size: int,
+        version: int,
+    ) -> dict[str, str] | None:
         with self.connect() as connection, connection.transaction():
             row = connection.execute(
                 """
-                select output_s3_key from shorts_mvp.generated_shorts
+                select output_s3_key,thumbnail_s3_key
+                from shorts_mvp.generated_shorts
                 where id=%s and status='rerendering' and deleted_at is null
                   and expires_at > clock_timestamp()
                 for update
@@ -1215,7 +1223,8 @@ class WorkerRepository:
             updated = connection.execute(
                 """
                 update shorts_mvp.generated_shorts
-                set output_s3_key=%s, file_size_bytes=%s, render_version=%s, status='ready',
+                set output_s3_key=%s, thumbnail_s3_key=%s, file_size_bytes=%s,
+                  render_version=%s, status='ready',
                   rerender_progress=100,
                   rendered_config_hash=pending_render_hash, pending_render_hash=null,
                   rerender_batch_job_id=null,render_error_code=null,render_error_message=null
@@ -1223,17 +1232,22 @@ class WorkerRepository:
                   and expires_at > clock_timestamp()
                 returning id
                 """,
-                (new_key, size, version, short_id),
+                (new_key, thumbnail_key, size, version, short_id),
             ).fetchone()
             if not updated:
                 return None
-            return str(row["output_s3_key"])
+            return {
+                key: str(row[key])
+                for key in ("output_s3_key", "thumbnail_s3_key")
+                if row.get(key)
+            }
 
     def complete_snapshot_rerender(
         self,
         short_id: str,
         *,
         output_key: str,
+        thumbnail_key: str,
         clean_key: str,
         size: int,
         version: int,
@@ -1241,7 +1255,7 @@ class WorkerRepository:
         with self.connect() as connection, connection.transaction():
             row = connection.execute(
                 """
-                select output_s3_key,clean_clip_s3_key
+                select output_s3_key,thumbnail_s3_key,clean_clip_s3_key
                 from shorts_mvp.generated_shorts
                 where id=%s and status='rerendering' and deleted_at is null
                   and expires_at > clock_timestamp()
@@ -1255,7 +1269,7 @@ class WorkerRepository:
             updated = connection.execute(
                 """
                 update shorts_mvp.generated_shorts
-                set output_s3_key=%s,clean_clip_s3_key=%s,file_size_bytes=%s,
+                set output_s3_key=%s,thumbnail_s3_key=%s,clean_clip_s3_key=%s,file_size_bytes=%s,
                   render_version=%s,status='ready',rerender_progress=100,
                   start_seconds=(pending_edit_snapshot->>'startSeconds')::numeric,
                   end_seconds=(pending_edit_snapshot->>'endSeconds')::numeric,
@@ -1286,7 +1300,7 @@ class WorkerRepository:
                   and pending_edit_snapshot is not null
                 returning id
                 """,
-                (output_key, clean_key, size, version, short_id),
+                (output_key, thumbnail_key, clean_key, size, version, short_id),
             ).fetchone()
             if not updated:
                 return None
@@ -1304,8 +1318,9 @@ class WorkerRepository:
                 (short_id,),
             )
             return {
-                "output_s3_key": str(row["output_s3_key"]),
-                "clean_clip_s3_key": str(row["clean_clip_s3_key"]),
+                key: str(row[key])
+                for key in ("output_s3_key", "thumbnail_s3_key", "clean_clip_s3_key")
+                if row.get(key)
             }
 
     def reset_rerender(self, short_id: str) -> None:

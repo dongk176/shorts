@@ -97,9 +97,9 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     : "all";
   const memberReferrer = first(params.memberReferrer) || "all";
   const requestedInquiryStatus = first(params.inquiryStatus);
-  const inquiryStatus = ["new", "in_progress", "waiting_on_customer", "resolved", "closed"].includes(requestedInquiryStatus)
+  const inquiryStatus = ["open", "new", "in_progress", "waiting_on_customer", "resolved", "closed"].includes(requestedInquiryStatus)
     ? requestedInquiryStatus
-    : "all";
+    : "open";
   const requestedInquiryCategory = first(params.inquiryCategory);
   const inquiryCategory = ["service_usage", "billing_refund", "technical_issue", "other"].includes(requestedInquiryCategory)
     ? requestedInquiryCategory
@@ -366,7 +366,10 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       from shorts_mvp.customer_inquiries i
       left join shorts_mvp.app_users u on u.id=i.user_id
       left join shorts_mvp.billing_orders o on o.id=i.billing_order_id
-      where (${inquiryStatus}='all' or i.status=${inquiryStatus})
+      where (
+        (${inquiryStatus}='open' and i.status in ('new','in_progress','waiting_on_customer'))
+        or (${inquiryStatus}<>'open' and i.status=${inquiryStatus})
+      )
         and (${inquiryCategory}='all' or i.category=${inquiryCategory})
         and (${inquiryKind}='all' or i.inquiry_kind=${inquiryKind})
         and (

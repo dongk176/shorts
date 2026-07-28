@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PopularFiltersPlanOverlay } from "@/components/popular-filters-plan-overlay";
 import type {
-  PopularReusablePeriod,
+  PopularDiscoveryPeriod,
   PopularVideo,
   PopularVideoCategory,
   PopularVideoResponse,
@@ -23,7 +23,7 @@ const dataTypeOptions: Array<{ value: PopularVideoType; label: string }> = [
   { value: "reusable", label: "재사용 허용" },
 ];
 
-const reusablePeriodOptions: Array<{ value: PopularReusablePeriod; labels: Record<SiteLocale, string> }> = [
+const discoveryPeriodOptions: Array<{ value: PopularDiscoveryPeriod; labels: Record<SiteLocale, string> }> = [
   { value: "today", labels: { ko: "오늘 발견", en: "Found today", ja: "今日発見" } },
   { value: "week", labels: { ko: "최근 7일", en: "Last 7 days", ja: "直近7日" } },
   { value: "all", labels: { ko: "전체 인기", en: "All popular", ja: "全期間の人気" } },
@@ -171,6 +171,7 @@ function ReusableLicenseGuide({
                 크리에이티브 커먼즈
               </button>
               로 표시된 영상을 선별합니다. 게시자가 라이선스를 변경하거나 제3자 권리가 포함될 수 있으므로, 사용 직전에 원본 영상에서 최신 표시를 다시 확인하세요.
+              정확한 라이선스 확인은 데스크톱에서 진행해 주세요.
             </p>
           </div>
         </div>
@@ -288,8 +289,8 @@ function formatUpdatedAt(value: string | null, locale: SiteLocale) {
   }).format(new Date(value));
 }
 
-function reusablePeriodOptionLabel(
-  period: (typeof reusablePeriodOptions)[number],
+function discoveryPeriodOptionLabel(
+  period: (typeof discoveryPeriodOptions)[number],
   count: number | undefined,
   locale: SiteLocale,
 ) {
@@ -298,13 +299,160 @@ function reusablePeriodOptionLabel(
   return `${period.labels[locale]} ${formattedCount}${locale === "ko" ? "개" : locale === "ja" ? "件" : ""}`;
 }
 
+function DiscoveryPeriodDropdown({
+  value,
+  counts,
+  locale,
+  disabled,
+  onChange,
+}: {
+  value: PopularDiscoveryPeriod;
+  counts: PopularVideoResponse["periodCounts"];
+  locale: SiteLocale;
+  disabled: boolean;
+  onChange: (value: PopularDiscoveryPeriod) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const selectedIndex = Math.max(
+    0,
+    discoveryPeriodOptions.findIndex((option) => option.value === value),
+  );
+  const selected = discoveryPeriodOptions[selectedIndex];
+  const listboxId = "popular-discovery-period-listbox";
+
+  const focusOption = useCallback((index: number) => {
+    const itemCount = discoveryPeriodOptions.length;
+    const nextIndex = (index + itemCount) % itemCount;
+    optionRefs.current[nextIndex]?.focus();
+  }, []);
+
+  const openAndFocus = (index: number) => {
+    if (disabled) return;
+    setOpen(true);
+    window.requestAnimationFrame(() => focusOption(index));
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listboxId : undefined}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            openAndFocus(selectedIndex + 1);
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            openAndFocus(selectedIndex - 1);
+          }
+        }}
+        className="group flex min-h-11 min-w-36 items-center justify-between gap-3 rounded-xl border border-violet-300/30 bg-[#1d2022] py-2.5 pl-3.5 pr-3 text-left text-sm font-extrabold text-violet-50 shadow-[0_10px_30px_rgba(0,0,0,.16)] outline-none transition hover:border-violet-300/55 focus-visible:border-violet-300/70 focus-visible:ring-2 focus-visible:ring-violet-300/20 disabled:cursor-wait disabled:opacity-60"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-4 w-4 shrink-0 text-violet-200" aria-hidden="true">
+            <circle cx="10" cy="10" r="7" />
+            <path d="M10 6v4l2.5 1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="truncate">
+            {discoveryPeriodOptionLabel(selected, counts?.[selected.value], locale)}
+          </span>
+        </span>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className={`h-4 w-4 shrink-0 text-violet-200 transition ${open ? "rotate-180" : ""}`} aria-hidden="true">
+          <path d="m6 8 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label={locale === "ko" ? "영상 발견 기간" : locale === "en" ? "Video discovery period" : "動画の発見期間"}
+          className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-violet-300/25 bg-[#202326] p-1.5 shadow-[0_22px_60px_rgba(0,0,0,.55)]"
+        >
+          {discoveryPeriodOptions.map((period, index) => {
+            const selectedOption = period.value === value;
+            return (
+              <button
+                key={period.value}
+                ref={(element) => {
+                  optionRefs.current[index] = element;
+                }}
+                type="button"
+                role="option"
+                aria-selected={selectedOption}
+                onClick={() => {
+                  setOpen(false);
+                  triggerRef.current?.focus();
+                  if (!selectedOption) onChange(period.value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    focusOption(index + 1);
+                  } else if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    focusOption(index - 1);
+                  } else if (event.key === "Home") {
+                    event.preventDefault();
+                    focusOption(0);
+                  } else if (event.key === "End") {
+                    event.preventDefault();
+                    focusOption(discoveryPeriodOptions.length - 1);
+                  }
+                }}
+                className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 text-left text-sm font-bold outline-none transition focus-visible:ring-2 focus-visible:ring-violet-300/40 ${selectedOption ? "bg-violet-400/15 text-violet-50" : "text-neutral-200 hover:bg-white/[.07] hover:text-white"}`}
+              >
+                <span>{discoveryPeriodOptionLabel(period, counts?.[period.value], locale)}</span>
+                {selectedOption && (
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 shrink-0 text-violet-200" aria-hidden="true">
+                    <path d="m5.5 10 3 3 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function popularVideoParams(
   type: PopularVideoType,
   category: PopularVideoCategory,
   reusable: boolean,
   longForm: boolean,
   korean: boolean,
-  reusablePeriod: PopularReusablePeriod,
+  discoveryPeriod: PopularDiscoveryPeriod,
   cursor?: string,
   interactionId?: string,
 ) {
@@ -315,7 +463,7 @@ function popularVideoParams(
     longForm: String(longForm),
     korean: String(korean),
   });
-  if (type === "reusable") params.set("reusablePeriod", reusablePeriod);
+  params.set("period", discoveryPeriod);
   if (cursor) params.set("cursor", cursor);
   if (interactionId) params.set("interactionId", interactionId);
   return params;
@@ -416,7 +564,7 @@ export function PopularVideosExplorer({
   const [koreanOnly, setKoreanOnly] = useState(false);
   const [longFormOnly, setLongFormOnly] = useState(false);
   const [reusableOnly, setReusableOnly] = useState(false);
-  const [reusablePeriod, setReusablePeriod] = useState<PopularReusablePeriod>("today");
+  const [discoveryPeriod, setDiscoveryPeriod] = useState<PopularDiscoveryPeriod>("all");
   const [category, setCategory] = useState<PopularVideoCategory>("all");
   const [response, setResponse] = useState<PopularVideoResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -450,7 +598,7 @@ export function PopularVideosExplorer({
     setLoadMoreError(null);
     setError(null);
     setResponse(null);
-    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, reusablePeriod, undefined, filterInteractionId || undefined)}`;
+    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, undefined, filterInteractionId || undefined)}`;
     fetch(endpoint, { cache: "no-store", signal: controller.signal })
       .then(async (result) => {
         if (!result.ok) {
@@ -468,7 +616,7 @@ export function PopularVideosExplorer({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [category, dataType, filterInteractionId, koreanOnly, longFormOnly, reusableOnly, reusablePeriod, retryCount]);
+  }, [category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, longFormOnly, reusableOnly, retryCount]);
 
   const selectedType = dataTypeOptions.find((option) => option.value === dataType) || dataTypeOptions[0];
 
@@ -480,7 +628,7 @@ export function PopularVideosExplorer({
     setLoadingMore(true);
     setLoadMoreError(null);
     try {
-      const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, reusablePeriod, response.nextCursor)}`;
+      const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, response.nextCursor)}`;
       const result = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
       if (!result.ok) {
         const body = await result.json().catch(() => ({})) as { detail?: string };
@@ -495,6 +643,7 @@ export function PopularVideosExplorer({
           items: Array.from(videos.values()),
           updatedAt: current.updatedAt,
           totalCount: next.totalCount ?? current.totalCount,
+          periodCounts: next.periodCounts ?? current.periodCounts,
           reusablePeriodCounts: next.reusablePeriodCounts ?? current.reusablePeriodCounts,
           nextCursor: next.nextCursor,
         };
@@ -558,10 +707,8 @@ export function PopularVideosExplorer({
     void loadMore();
   };
 
-  const reusableCounts = response?.reusablePeriodCounts;
-  const displayedTotalCount = dataType === "reusable"
-    ? reusableCounts?.all ?? response?.totalCount
-    : response?.totalCount ?? response?.items.length;
+  const periodCounts = response?.periodCounts ?? response?.reusablePeriodCounts;
+  const displayedTotalCount = response?.totalCount ?? response?.items.length;
 
   return (
     <main className="relative mx-auto w-full max-w-6xl px-5 pb-24 pt-7 sm:px-8 sm:pt-10">
@@ -706,26 +853,13 @@ export function PopularVideosExplorer({
           <h2 className="text-xl font-black tracking-[-.025em] text-white">{selectedType.label}</h2>
           <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? formatNumber(displayedTotalCount, locale) : `${formatNumber(displayedTotalCount, locale)}件`) : "개수 확인 중"}</p>
         </div>
-        {dataType === "reusable" && (
-          <label className="relative block shrink-0">
-            <span className="sr-only">{locale === "ko" ? "재사용 허용 영상 발견 기간" : locale === "en" ? "Reusable video discovery period" : "再利用可能な動画の発見期間"}</span>
-            <select
-              value={reusablePeriod}
-              disabled={loading}
-              onChange={(event) => applyFilter(() => setReusablePeriod(event.target.value as PopularReusablePeriod))}
-              className="min-h-11 appearance-none rounded-xl border border-violet-300/30 bg-[#1d2022] py-2.5 pl-4 pr-10 text-sm font-extrabold text-violet-50 shadow-[0_10px_30px_rgba(0,0,0,.16)] outline-none transition hover:border-violet-300/55 focus:border-violet-300/70 focus:ring-2 focus:ring-violet-300/20 disabled:cursor-wait disabled:opacity-60"
-            >
-              {reusablePeriodOptions.map((period) => (
-                <option key={period.value} value={period.value} className="bg-[#1d2022] text-white">
-                  {reusablePeriodOptionLabel(period, reusableCounts?.[period.value], locale)}
-                </option>
-              ))}
-            </select>
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-violet-200" aria-hidden="true">
-              <path d="m6 8 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </label>
-        )}
+        <DiscoveryPeriodDropdown
+          value={discoveryPeriod}
+          counts={periodCounts}
+          locale={locale}
+          disabled={loading}
+          onChange={(period) => applyFilter(() => setDiscoveryPeriod(period))}
+        />
       </div>
 
       {loading ? <LoadingSkeleton /> : error ? (

@@ -10,6 +10,7 @@ const CARDS_END_MS = 3_400;
 const FINISH_HOLD_MS = 550;
 
 type AssemblyStep = "title" | "reason" | "subtitle" | "comment" | "template" | "complete";
+type PlaybackAsset = { url: string | null; posterUrl: string | null };
 
 const templateLooks: Record<TemplateId, {
   name: string;
@@ -101,11 +102,11 @@ function typedText(text: string, progress: number) {
 function Timeline({
   job,
   elapsed,
-  videoUrls,
+  playbackAssets,
 }: {
   job: VideoJob;
   elapsed: number;
-  videoUrls: Record<string, string | null>;
+  playbackAssets: Record<string, PlaybackAsset>;
 }) {
   const duration = Math.max(1, job.sourceDurationSeconds);
   const shorts = job.shorts;
@@ -139,7 +140,7 @@ function Timeline({
           />
         ))}
       </div>
-      <ShortCardRail job={job} visibleCount={visibleCount} videoUrls={videoUrls} />
+      <ShortCardRail job={job} visibleCount={visibleCount} playbackAssets={playbackAssets} />
       <div className="project-reveal-timeline-status">
         {elapsed < SOURCE_END_MS && "원본 영상 구조를 펼치고 있습니다"}
         {elapsed >= SOURCE_END_MS && elapsed < DISCOVERY_END_MS && (
@@ -156,11 +157,11 @@ function Timeline({
 function ShortCardRail({
   job,
   visibleCount,
-  videoUrls,
+  playbackAssets,
 }: {
   job: VideoJob;
   visibleCount: number;
-  videoUrls: Record<string, string | null>;
+  playbackAssets: Record<string, PlaybackAsset>;
 }) {
   return (
     <div className="project-reveal-card-rail" aria-label="발견된 쇼츠">
@@ -173,10 +174,11 @@ function ShortCardRail({
             className={`project-reveal-mini-card ${visible ? "is-visible" : ""} ${latest ? "is-latest" : ""}`}
           >
             <div className="project-reveal-mini-image">
-              {videoUrls[item.id]
+              {playbackAssets[item.id]?.url
                 ? (
                   <video
-                    src={videoUrls[item.id] || undefined}
+                    src={playbackAssets[item.id].url || undefined}
+                    poster={playbackAssets[item.id].posterUrl || undefined}
                     muted
                     autoPlay
                     loop
@@ -201,10 +203,12 @@ function AssemblyPreview({
   item,
   step,
   videoUrl,
+  posterUrl,
 }: {
   item: GeneratedShort;
   step: AssemblyStep;
   videoUrl: string | null;
+  posterUrl: string | null;
 }) {
   const look = templateLooks[item.templateId];
   const usesCommentOverlay = item.templateId === "comment-capture";
@@ -223,6 +227,7 @@ function AssemblyPreview({
           <video
             key={`${item.id}:${videoUrl}`}
             src={videoUrl}
+            poster={posterUrl || undefined}
             muted
             autoPlay
             loop
@@ -380,11 +385,11 @@ function AssemblyDetails({
 
 export function ProjectReveal({
   job,
-  videoUrls,
+  playbackAssets,
   onComplete,
 }: {
   job: VideoJob;
-  videoUrls: Record<string, string | null>;
+  playbackAssets: Record<string, PlaybackAsset>;
   onComplete: () => void;
 }) {
   const shorts = job.shorts;
@@ -495,7 +500,7 @@ export function ProjectReveal({
               </div>
             </section>
 
-            <Timeline job={job} elapsed={elapsed} videoUrls={videoUrls} />
+            <Timeline job={job} elapsed={elapsed} playbackAssets={playbackAssets} />
           </>
         )}
 
@@ -504,7 +509,8 @@ export function ProjectReveal({
             <AssemblyPreview
               item={activeItem}
               step={activeStep}
-              videoUrl={videoUrls[activeItem.id] || null}
+              videoUrl={playbackAssets[activeItem.id]?.url || null}
+              posterUrl={playbackAssets[activeItem.id]?.posterUrl || null}
             />
             <AssemblyDetails
               item={activeItem}

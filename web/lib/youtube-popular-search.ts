@@ -9,6 +9,7 @@ import {
   POPULAR_VIDEO_LONG_FORM_SECONDS,
   popularVideoSourceCategories,
   popularVideoSourceCategoryValues,
+  type PopularDiscoveryPeriod,
   type PopularVideo,
   type PopularVideoCategory,
   type PopularReusablePeriod,
@@ -415,11 +416,137 @@ export async function getPopularSearchVideos(
   koreanOnly: boolean,
   cursor?: string,
   limit = 48,
+  discoveryPeriod: PopularDiscoveryPeriod = "all",
   db: Sql = getDb(),
 ): Promise<PopularVideoResponse> {
   const decodedCursor = decodeCursor(cursor);
   const run = await resolveReadyRun(db, decodedCursor?.runId, !reusableOnly);
   const offset = decodedCursor?.offset || 0;
+  if (discoveryPeriod !== "all" || !cursor) {
+    const rows = await db`
+      with run_window as (
+        select
+          current_run.completed_at as current_completed_at,
+          coalesce((
+            select max(previous_run.completed_at)
+            from shorts_mvp.popular_search_runs previous_run
+            where previous_run.status='ready'
+              and previous_run.completed_at < current_run.completed_at
+          ), '-infinity'::timestamptz) as previous_completed_at
+        from shorts_mvp.popular_search_runs current_run
+        where current_run.id=${run.id}
+      ),
+      historical_candidates as (
+        select
+          i.video_id, i.category, i.title, i.channel_name, i.thumbnail_url,
+          i.duration_seconds, i.view_count, i.published_at, i.license,
+          r.completed_at as last_seen_at,
+          min(r.completed_at) over (partition by i.video_id) as first_seen_at,
+          row_number() over (
+            partition by i.video_id
+            order by r.completed_at desc, i.collected_at desc,
+              i.search_rank asc, i.view_count desc
+          ) as duplicate_rank
+        from shorts_mvp.popular_search_items i
+        join shorts_mvp.popular_search_runs r on r.id=i.run_id
+        where r.status='ready'
+          and r.completed_at <= (select current_completed_at from run_window)
+          and (
+            (${reusableOnly}=true and i.license='creativeCommon')
+            or (${reusableOnly}=false and i.license <> 'creativeCommon')
+          )
+          and (${category}='all' or i.category=${category})
+          and (${longFormOnly}=false or i.duration_seconds >= ${POPULAR_VIDEO_LONG_FORM_SECONDS})
+          and (${koreanOnly}=false or i.is_korean)
+      ),
+      scoped as (
+        select *
+        from historical_candidates
+        where duplicate_rank=1
+          and (
+            ${reusableOnly}=true
+            or exists (
+              select 1
+              from shorts_mvp.popular_search_items current_item
+              where current_item.run_id=${run.id}
+                and current_item.video_id=historical_candidates.video_id
+                and current_item.license <> 'creativeCommon'
+                and (${category}='all' or current_item.category=${category})
+                and (${longFormOnly}=false or current_item.duration_seconds >= ${POPULAR_VIDEO_LONG_FORM_SECONDS})
+                and (${koreanOnly}=false or current_item.is_korean)
+            )
+          )
+      ),
+      period_counts as (
+        select
+          count(*) filter (
+            where first_seen_at > run_window.previous_completed_at
+          ) as today_count,
+          count(*) filter (
+            where first_seen_at >= (
+              date_trunc('day', run_window.current_completed_at at time zone 'Asia/Seoul')
+              at time zone 'Asia/Seoul'
+            ) - interval '6 days'
+          ) as week_count,
+          count(*) as all_count
+        from scoped
+        cross join run_window
+      ),
+      paged as (
+        select
+          video_id, category, title, channel_name, thumbnail_url, duration_seconds,
+          view_count, published_at, license, last_seen_at, first_seen_at,
+          row_number() over (
+            order by
+              case when ${discoveryPeriod}<>'all' then first_seen_at end desc,
+              view_count desc, last_seen_at desc,
+              published_at desc, video_id asc
+          ) as page_rank
+        from scoped
+        cross join run_window
+        where (
+          ${discoveryPeriod}='all'
+          or (${discoveryPeriod}='today' and first_seen_at > run_window.previous_completed_at)
+          or (
+            ${discoveryPeriod}='week'
+            and first_seen_at >= (
+              date_trunc('day', run_window.current_completed_at at time zone 'Asia/Seoul')
+              at time zone 'Asia/Seoul'
+            ) - interval '6 days'
+          )
+        )
+        order by
+          case when ${discoveryPeriod}<>'all' then first_seen_at end desc,
+          view_count desc, last_seen_at desc,
+          published_at desc, video_id asc
+        offset ${offset}
+        limit ${limit + 1}
+      )
+      select
+        paged.video_id, paged.category, paged.title, paged.channel_name,
+        paged.thumbnail_url, paged.duration_seconds, paged.view_count,
+        paged.published_at, paged.license, paged.last_seen_at, paged.first_seen_at,
+        period_counts.today_count, period_counts.week_count, period_counts.all_count
+      from period_counts
+      left join paged on true
+      order by paged.page_rank asc nulls last
+    `;
+    const itemRows = rows.filter((row) => row.videoId !== null && row.videoId !== undefined);
+    const periodCounts = {
+      today: Number(rows[0]?.todayCount || 0),
+      week: Number(rows[0]?.weekCount || 0),
+      all: Number(rows[0]?.allCount || 0),
+    };
+    const hasNext = itemRows.length > limit;
+    return {
+      items: itemRows.slice(0, limit).map((row) => rowToPopularVideo(row as Record<string, unknown>)),
+      updatedAt: run.completedAt,
+      totalCount: periodCounts[discoveryPeriod],
+      periodCounts,
+      ...(hasNext ? { nextCursor: encodeCursor(run.id, offset + limit) } : {}),
+    };
+  }
+
   const rows = reusableOnly
     ? await db`
       with historical_candidates as (
@@ -480,7 +607,7 @@ export async function getReusablePopularVideos(
   koreanOnly: boolean,
   cursor?: string,
   limit = 48,
-  reusablePeriod: PopularReusablePeriod = "all",
+  discoveryPeriod: PopularReusablePeriod = "all",
   db: Sql = getDb(),
 ): Promise<PopularVideoResponse> {
   const decodedCursor = decodeCursor(cursor);
@@ -558,19 +685,19 @@ export async function getReusablePopularVideos(
         view_count, published_at, license, last_seen_at, first_seen_at,
         row_number() over (
           order by
-            case when ${reusablePeriod}<>'all' then first_seen_at end desc,
+            case when ${discoveryPeriod}<>'all' then first_seen_at end desc,
             view_count desc, last_seen_at desc, published_at desc, video_id asc
         ) as page_rank
       from scoped
       cross join run_window
       where (
-          ${reusablePeriod}='all'
+          ${discoveryPeriod}='all'
           or (
-            ${reusablePeriod}='today'
+            ${discoveryPeriod}='today'
             and first_seen_at > run_window.previous_completed_at
           )
           or (
-            ${reusablePeriod}='week'
+            ${discoveryPeriod}='week'
             and first_seen_at >= (
               date_trunc('day', run_window.current_completed_at at time zone 'Asia/Seoul')
               at time zone 'Asia/Seoul'
@@ -578,7 +705,7 @@ export async function getReusablePopularVideos(
           )
         )
       order by
-        case when ${reusablePeriod}<>'all' then first_seen_at end desc,
+        case when ${discoveryPeriod}<>'all' then first_seen_at end desc,
         view_count desc, last_seen_at desc, published_at desc, video_id asc
       offset ${offset}
       limit ${limit + 1}
@@ -602,7 +729,8 @@ export async function getReusablePopularVideos(
   return {
     items: itemRows.slice(0, limit).map((row) => rowToPopularVideo(row as Record<string, unknown>)),
     updatedAt: run.completedAt,
-    totalCount: counts[reusablePeriod],
+    totalCount: counts[discoveryPeriod],
+    periodCounts: counts,
     reusablePeriodCounts: counts,
     ...(hasNext ? { nextCursor: encodeCursor(run.id, offset + limit) } : {}),
   };

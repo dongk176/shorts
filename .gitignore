@@ -32,6 +32,7 @@ storage/*
 # Local generated artifacts
 supabase/.temp/
 tmp/
+outputs/
 
 # Local Cloudflare WARP tooling and credentials
 worker/wgcf

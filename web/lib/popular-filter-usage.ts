@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Sql, TransactionSql } from "postgres";
 import type {
+  PopularDiscoveryPeriod,
   PopularVideoCategory,
   PopularVideoType,
 } from "@/lib/youtube-popular";
@@ -15,6 +16,7 @@ export type PopularFilterUsageInput = {
   reusableOnly: boolean;
   longFormOnly: boolean;
   koreanOnly: boolean;
+  discoveryPeriod: PopularDiscoveryPeriod;
   resultCount: number;
 };
 
@@ -68,12 +70,13 @@ export async function recordPopularFilterUsage(
   const inserted = await db`
     insert into shorts_mvp.popular_filter_usage_events (
       interaction_id,user_id,subscription_id,billing_order_id,
-      filter_type,category,reusable_only,long_form_only,korean_only,result_count
+      filter_type,category,reusable_only,long_form_only,korean_only,
+      discovery_period,result_count
     ) values (
       ${interactionId},${input.userId},${source?.subscriptionId || null},
       ${source?.billingOrderId || null},
       ${input.type},${input.category},${input.reusableOnly},${input.longFormOnly},
-      ${input.koreanOnly},${input.resultCount}
+      ${input.koreanOnly},${input.discoveryPeriod},${input.resultCount}
     )
     on conflict (user_id,interaction_id) do nothing
     returning id,occurred_at

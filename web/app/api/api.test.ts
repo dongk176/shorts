@@ -1127,6 +1127,32 @@ describe("short ownership, expiry, and edit validation", () => {
     expect(response.status).toBe(404);
   });
 
+  it("returns signed playback and poster URLs for a completed short", async () => {
+    process.env.CLOUDFRONT_DOMAIN = "cdn.example.com";
+    process.env.CLOUDFRONT_KEY_PAIR_ID = "key-pair";
+    process.env.CLOUDFRONT_PRIVATE_KEY_B64 = Buffer.from("private-key").toString("base64");
+    mocks.getDb.mockReturnValue(dbWithRows([{
+      outputS3Key: "outputs/session-a/job-a/short-a/v2.mp4",
+      thumbnailS3Key: "thumbnails/session-a/job-a/short-a/v2.jpg",
+      expiresAt: null,
+      renderVersion: 2,
+    }]));
+    mocks.signedUrl.mockImplementation(({ url }: { url: string }) => `${url}?signed=1`);
+
+    const response = await accessShort(
+      new Request("http://localhost/api/shorts/short-a/access"),
+      { params: Promise.resolve({ shortId: "short-a" }) },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      url: "https://cdn.example.com/outputs/session-a/job-a/short-a/v2.mp4?signed=1",
+      posterUrl: "https://cdn.example.com/thumbnails/session-a/job-a/short-a/v2.jpg?signed=1",
+      renderVersion: 2,
+    });
+    expect(mocks.signedUrl).toHaveBeenCalledTimes(2);
+  });
+
   it("does not expose another session's clean edit source", async () => {
     mocks.getDb.mockReturnValue(dbWithRows([]));
     const response = await accessEditSource(

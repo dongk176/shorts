@@ -39,7 +39,6 @@ export default function RefundPolicyVersionOnePage() {
             <p className="mt-2 text-xs leading-6 text-neutral-400">고객 귀책의 즉시 중도해지는 경과 이용대금과 잔여기간 이용대금의 10%를 공제합니다.</p>
           </div>
         </div>
-        <p className="mt-5 text-xs leading-6 text-neutral-400">관계 법령이 본 정책보다 이용자에게 유리하게 적용되는 경우에는 해당 법령이 우선합니다.</p>
       </section>
 
       <LegalSection title="제1조 목적 및 적용 범위">
@@ -123,7 +122,6 @@ export default function RefundPolicyVersionOnePage() {
           <li>• 계약체결일 또는 서비스 이용 가능일부터 7일 이내에 중도 해지를 요구하는 경우에는 중도해지 위약금을 적용하지 않고 경과 이용대금만 공제합니다. 제6조의 전액 환불 요건을 모두 충족하면 전액 환불합니다.</li>
           <li>• 다음 결제일부터 월간 구독을 종료하는 구독 해지 예약에는 중도해지 위약금이 없으며, 현재 결제기간의 이용권이 유지되는 대신 자동 환불은 발생하지 않습니다.</li>
           <li>• 경과 이용대금과 포함 처리시간의 실제 사용량을 같은 기간에 이중으로 공제하지 않으며, 카드·PG 수수료나 별도 환불 처리비를 중도해지 위약금에 중복하여 공제하지 않습니다.</li>
-          <li>• 원 미만 금액은 버리며, 관계 법령 또는 소비자분쟁해결기준이 이용자에게 더 유리한 산식을 정하면 그 기준을 적용합니다.</li>
         </ul>
       </LegalSection>
 

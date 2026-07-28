@@ -35,7 +35,6 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
     os.environ["PROJECT_BATCH_QUEUE"] = "project-queue"
     os.environ["PROJECT_JOB_DEFINITION"] = "project-definition:1"
     os.environ["PROJECT_HEAVY_JOB_DEFINITION"] = "project-heavy-definition:1"
-    os.environ["PROJECT_HEAVY_THRESHOLD_SECONDS"] = "480"
     os.environ["RERENDER_JOB_DEFINITION"] = "rerender-definition:1"
     os.environ["BATCH_SUBMITTER_FUNCTION_NAME"] = "batch-submitter"
     spec = importlib.util.spec_from_file_location(
@@ -389,7 +388,7 @@ def test_prepare_retry_returns_to_the_centrally_scheduled_outbox() -> None:
     module.batch.submit_job.assert_not_called()
 
 
-def test_project_submission_is_one_fargate_job_with_idempotent_key() -> None:
+def test_project_submission_uses_eight_vcpu_definition_with_idempotent_key() -> None:
     module, _ = _load_lambda("batch_submitter")
     module.rest = MagicMock(return_value=[{
         "id": "job-a",
@@ -413,7 +412,7 @@ def test_project_submission_is_one_fargate_job_with_idempotent_key() -> None:
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-a:0"
     assert request["jobQueue"] == "project-queue"
-    assert request["jobDefinition"] == "project-definition:1"
+    assert request["jobDefinition"] == "project-heavy-definition:1"
     assert request["retryStrategy"] == {"attempts": 1}
     assert request["timeout"] == {"attemptDurationSeconds": 7200}
     assert request["containerOverrides"]["command"] == [
@@ -422,21 +421,21 @@ def test_project_submission_is_one_fargate_job_with_idempotent_key() -> None:
     assert "arrayProperties" not in request
 
 
-def test_project_resource_tier_uses_estimated_output_seconds() -> None:
+def test_project_submission_metrics_estimate_output_seconds() -> None:
     module, _ = _load_lambda("batch_submitter")
 
-    assert module._project_resource_tier({
+    assert module._estimated_output_seconds({
         "planned_short_count": 10, "clip_length_option": "sec_31_60",
-    }) == ("standard", 450)
-    assert module._project_resource_tier({
+    }) == 450
+    assert module._estimated_output_seconds({
         "planned_short_count": 11, "clip_length_option": "sec_31_60",
-    }) == ("heavy", 495)
-    assert module._project_resource_tier({
+    }) == 495
+    assert module._estimated_output_seconds({
         "planned_short_count": 15, "clip_length_option": "sec_30",
-    }) == ("standard", 450)
-    assert module._project_resource_tier({
+    }) == 450
+    assert module._estimated_output_seconds({
         "planned_short_count": 6, "clip_length_option": "sec_61_180",
-    }) == ("heavy", 540)
+    }) == 540
 
 
 def test_heavy_project_submission_records_selected_definition() -> None:
@@ -497,6 +496,33 @@ def test_project_resume_preserves_original_heavy_definition() -> None:
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-heavy:resume:1"
     assert request["jobDefinition"] == "project-heavy-definition:1"
+    assert request["containerOverrides"]["command"][-1] == "--resume"
+
+
+def test_project_resume_preserves_original_standard_definition() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module.rest = MagicMock(return_value=[{
+        "id": "job-standard",
+        "status": "rendering",
+        "pipeline_version": 2,
+        "project_resume_count": 1,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "user-a",
+        "preparation_finished_at": "2026-07-22T00:00:00+00:00",
+        "planned_short_count": 10,
+        "clip_length_option": "sec_31_60",
+        "batch_job_definition": "project-definition:1",
+    }])
+    module._submit_once = MagicMock(return_value="project-standard-resume")
+    module.patch = MagicMock()
+
+    result = module._submit({"kind": "project_resume", "jobId": "job-standard"})
+
+    assert result == "project-standard-resume"
+    request, submission_key = module._submit_once.call_args.args
+    assert submission_key == "project:job-standard:resume:1"
+    assert request["jobDefinition"] == "project-definition:1"
     assert request["containerOverrides"]["command"][-1] == "--resume"
 
 

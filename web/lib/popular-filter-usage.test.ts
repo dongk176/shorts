@@ -25,6 +25,7 @@ describe("popular filter usage evidence", () => {
       reusableOnly: true,
       longFormOnly: true,
       koreanOnly: true,
+      discoveryPeriod: "week",
       resultCount: 12,
     });
 
@@ -42,6 +43,7 @@ describe("popular filter usage evidence", () => {
       true,
       true,
       true,
+      "week",
       12,
     ]);
   });
@@ -56,6 +58,7 @@ describe("popular filter usage evidence", () => {
       reusableOnly: false,
       longFormOnly: false,
       koreanOnly: false,
+      discoveryPeriod: "all",
       resultCount: 0,
     })).rejects.toThrow("POPULAR_FILTER_ENTITLEMENT_SOURCE_MISSING");
   });
@@ -74,6 +77,7 @@ describe("popular filter usage evidence", () => {
       reusableOnly: true,
       longFormOnly: false,
       koreanOnly: true,
+      discoveryPeriod: "today",
       resultCount: 3,
     });
 

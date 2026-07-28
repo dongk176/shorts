@@ -47,13 +47,11 @@ export function RefundPolicyV2Document({
             <p className="mt-2 text-xs leading-6 text-neutral-400">유료 작업·처리시간·필터·전자책 등 유료 기능을 전혀 사용하지 않았다면 전액 환불합니다.</p>
           </div>
         </div>
-        <p className="mt-5 text-xs leading-6 text-neutral-400">관계 법령이나 소비자분쟁해결기준이 이용자에게 더 유리한 경우 해당 기준이 우선합니다.</p>
       </section>
 
       <LegalSection title="제1조 목적 및 적용 범위">
         <p>본 정책은 아티룸(이하 “회사”)이 Easy Cut에서 판매하는 이지컷 프로 월간 구독, 스타터·전문가 기간 패키지, 추가 처리시간 및 그 밖의 유료 디지털 서비스에 적용됩니다.</p>
         <p>결제 화면에 표시된 상품명, 기간, 월별 제공량, 계약 월단가, 총 결제금액, 환불정책 버전과 개별 조건이 해당 주문의 구체적인 계약 내용이 됩니다.</p>
-        <p>강행 법령 또는 소비자분쟁해결기준이 본 정책보다 이용자에게 유리한 권리를 정한 경우 그 기준을 우선 적용합니다.</p>
       </LegalSection>
 
       <LegalSection title="제2조 용어의 뜻">
@@ -130,48 +128,50 @@ export function RefundPolicyV2Document({
         </ul>}
       </LegalSection>
 
-      <LegalSection title="제8조 이전 환불정책이 적용되는 주문">
-        <p>{usesFirstCompletedJobPolicy ? "환불정책 v3 적용일 이후 회사가 환불액을 산정할 때는 첫 작업 완료 기준을 사용합니다. 관계 법령이나 소비자분쟁해결기준이 이용자에게 더 유리한 경우에는 그 기준을 우선 적용합니다." : "결제 당시 환불정책 v1이 표시·기록된 주문에는 당시 정책의 경과일수 기준과 중도해지 위약금 기준을 적용합니다. 정책 변경을 기존 주문에 소급하여 불리하게 적용하지 않습니다."}</p>
-        <p><Link href="/refund/versions/1" className={accentLink}>환불정책 v1</Link>{usesFirstCompletedJobPolicy ? <> · <Link href="/refund/versions/2" className={accentLink}>환불정책 v2</Link></> : null}</p>
-      </LegalSection>
+      {!usesFirstCompletedJobPolicy && (
+        <LegalSection title="제8조 이전 환불정책이 적용되는 주문">
+          <p>결제 당시 환불정책 v1이 표시·기록된 주문에는 당시 정책의 경과일수 기준과 중도해지 위약금 기준을 적용합니다. 정책 변경을 기존 주문에 소급하여 불리하게 적용하지 않습니다.</p>
+          <p><Link href="/refund/versions/1" className={accentLink}>환불정책 v1</Link></p>
+        </LegalSection>
+      )}
 
-      <LegalSection title="제9조 추가 처리시간의 환불">
+      <LegalSection title={`${usesFirstCompletedJobPolicy ? "제8조" : "제9조"} 추가 처리시간의 환불`}>
         <p>추가 처리시간은 승인일부터 90일간 유효합니다. 결제일부터 7일 이내이고 예약·사용·소비된 시간이 없다면 전액 환불할 수 있습니다.</p>
         <p>일부라도 사용하거나 처리 중인 추가시간은 자동 환불할 수 없습니다. 관계 법령상 반환이 필요한 경우 사용대금과 허용된 비용을 확인하여 수동 처리합니다.</p>
       </LegalSection>
 
-      <LegalSection title="제10조 회사 귀책·서비스 하자">
+      <LegalSection title={`${usesFirstCompletedJobPolicy ? "제9조" : "제10조"} 회사 귀책·서비스 하자`}>
         <p>회사의 시스템 오류로 작업이 정상 완료되지 않은 경우 사용량 반환, 재처리, 대체 제공 또는 이용기간 연장을 우선 제공할 수 있습니다. 정상 제공이 불가능하거나 법령상 환불 사유가 성립하면 전부 또는 제공되지 않은 부분을 환불합니다.</p>
         <p>중복 결제·과오금 등 회사의 책임 있는 사유가 확인되면 수수료 없이 해당 금액을 환불합니다.</p>
       </LegalSection>
 
-      <LegalSection title="제11조 환불 제한 및 부정 이용">
+      <LegalSection title={`${usesFirstCompletedJobPolicy ? "제10조" : "제11조"} 환불 제한 및 부정 이용`}>
         <p>기술적으로 정상 완료된 결과에 대한 단순한 취향·조회수 기대·편집 선호 차이, 이용자의 잘못된 URL·설정·권리 확인, 지원하지 않는 입력, 약관 위반 또는 부정 이용은 회사 귀책에 해당하지 않습니다.</p>
         <p>허위 자료, 결과물 이용 후 사용사실 은폐, 반복적인 결제 취소 또는 카드사 이의제기와 회사 환불의 중복 진행은 금지됩니다.</p>
       </LegalSection>
 
-      <LegalSection title="제12조 환불 신청 방법">
+      <LegalSection title={`${usesFirstCompletedJobPolicy ? "제11조" : "제12조"} 환불 신청 방법`}>
         <p>환불은 <a href="mailto:artiroom176@gmail.com" className={accentLink}>artiroom176@gmail.com</a>으로 신청해야 하며, 구독 해지 또는 패키지 종료 예약만으로 환불 신청이 접수되지는 않습니다.</p>
         <p>계정 이메일, 결제일·금액, 상품명, 주문번호와 환불 사유를 보내야 합니다. 회사는 본인·결제·사용 내역 확인에 필요한 최소한의 자료를 요청할 수 있습니다.</p>
       </LegalSection>
 
-      <LegalSection title="제13조 환불 방법과 권한 처리">
+      <LegalSection title={`${usesFirstCompletedJobPolicy ? "제12조" : "제13조"} 환불 방법과 권한 처리`}>
         <p>환불액 확정 후 법정 기한 안에 원 결제수단으로 승인 취소 또는 환급을 요청합니다. 카드사 반영 시점은 카드사와 결제일에 따라 달라질 수 있습니다.</p>
         <p>{usesFirstCompletedJobPolicy ? "전액환불 또는 즉시 종료 대상이면 유료 권한과 기본 처리시간을 회수합니다. 첫 작업 완료로 1개월분을 공제한 주문은 안내된 현재 이용 월 종료일까지 권한을 유지한 뒤 종료할 수 있습니다." : "전액환불 또는 즉시 종료 대상이면 유료 권한과 기본 처리시간을 회수합니다. 현재 월 이용대금을 공제한 패키지는 해당 월 종료일까지 권한을 유지한 뒤 자동 종료합니다."}</p>
       </LegalSection>
 
-      <LegalSection title="제14조 기록 및 입증">
+      <LegalSection title={`${usesFirstCompletedJobPolicy ? "제13조" : "제14조"} 기록 및 입증`}>
         <p>회사는 결제, 환불정책 버전, 월별 처리시간 지급, 사용량 예약·확정·반환, 작업 결과, 유료 필터·다운로드 제공, 환불 계산 및 권한 종료 기록을 관련 법령과 개인정보처리방침이 정한 기간 동안 보관할 수 있습니다.</p>
         <p>계약 체결, 정책 고지, 콘텐츠·용역 제공과 사용 여부에 다툼이 있는 경우 관계 법령에 따른 입증책임을 부담합니다.</p>
       </LegalSection>
 
-      <LegalSection title="제15조 정책 변경 및 분쟁 해결">
-        <p>{usesFirstCompletedJobPolicy ? "환불정책 v3 적용일 이후 회사가 산정하는 환불액에는 제7조의 첫 작업 완료 기준을 적용하되, 강행 법령 또는 소비자분쟁해결기준이 더 유리하면 그 기준을 우선합니다." : "각 주문에는 결제 당시의 환불정책 버전을 기록하며 해당 거래에는 그 버전을 적용합니다. 이용자에게 불리한 변경은 기존 결제에 소급하지 않습니다."}</p>
+      <LegalSection title={`${usesFirstCompletedJobPolicy ? "제14조" : "제15조"} 정책 변경 및 분쟁 해결`}>
+        {!usesFirstCompletedJobPolicy && <p>각 주문에는 결제 당시의 환불정책 버전을 기록하며 해당 거래에는 그 버전을 적용합니다. 이용자에게 불리한 변경은 기존 결제에 소급하지 않습니다.</p>}
         <p>본 정책에서 정하지 않은 사항은 서비스 이용약관, 구매약관, 결제 화면의 개별 조건, 대한민국 관계 법령 및 소비자분쟁해결기준에 따릅니다.</p>
         <p>분쟁이 해결되지 않는 경우 1372 소비자상담센터, 한국소비자원 또는 콘텐츠분쟁조정위원회에 상담·조정을 신청할 수 있습니다.</p>
       </LegalSection>
 
-      <LegalSection title="제16조 사업자 및 환불 담당자 정보">
+      <LegalSection title={`${usesFirstCompletedJobPolicy ? "제15조" : "제16조"} 사업자 및 환불 담당자 정보`}>
         <div className="overflow-x-auto">
           <table><tbody>
             <tr><th>상호</th><td>아티룸</td></tr>
