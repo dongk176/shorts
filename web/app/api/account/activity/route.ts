@@ -51,6 +51,7 @@ export async function GET(request: Request) {
           select g.id::text || ':credited' as id,g.created_at as occurred_at,
             case
               when g.product_code='feedback_reward_30m' then 'feedback_reward'
+              when g.product_code='editor_launch_bonus_20260728' then 'update_event_bonus'
               when g.kind='addon' then 'addon_grant'
               when s.billing_cycle='yearly'
                 and o.approved_at is not null

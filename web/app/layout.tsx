@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { EditorLaunchAnnouncementOverlay } from "@/components/editor-launch-announcement-overlay";
 import { StructuredData } from "@/components/structured-data";
 import { GoogleAnalytics } from "@/components/google-analytics";
 import { LanguageSelector } from "@/components/language-selector";
@@ -138,6 +139,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           <StructuredData data={websiteData} />
           <UsageProvider initialState={initialUsageState}>
             {children}
+            <EditorLaunchAnnouncementOverlay />
             <UserOnboardingOverlay />
             <ProjectFeedbackOverlay />
           </UsageProvider>
