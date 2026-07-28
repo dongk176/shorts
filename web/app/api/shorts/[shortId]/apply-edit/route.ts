@@ -6,6 +6,8 @@ import { getDb } from "@/lib/db";
 import { resolveEditedTemplateSelection } from "@/lib/edit-template-selection";
 import { apiError, HttpError } from "@/lib/http";
 import {
+  clampTimelineSeconds,
+  RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS,
   RANGE_EDIT_MIN_SECONDS,
   rangeEditingEnabled,
   scaleTimedRanges,
@@ -39,6 +41,7 @@ const commentOverlay = z.object({
   likeCount: z.number().int().min(10).max(999_999),
   ageLabel: z.string().trim().min(1).max(20),
 }).refine((item) => item.endSeconds > item.startSeconds);
+const activeCommentOverlays = z.array(commentOverlay).max(20);
 const editSchema = z.object({
   startSeconds: z.number().finite().nonnegative(),
   endSeconds: z.number().finite().positive(),
@@ -46,20 +49,33 @@ const editSchema = z.object({
     .refine((value) => value.split("\n").length <= 2),
   channelDisplayName: z.string().trim().min(1).max(50),
   subtitlesEnabled: z.boolean(),
-  commentOverlays: z.array(commentOverlay).max(20).default([]),
+  commentOverlays: z.array(z.unknown()).max(20).default([]),
   templateId: z.enum(templateIds),
   customTemplateId: z.string().uuid().nullable().optional(),
   titleFontScale: z.number().min(0.8).max(1.2).default(1),
   titleTextStyles: z.array(titleTextStyle).max(80).default([]),
 }).superRefine((input, context) => {
-  if (input.templateId === "comment-capture" && input.commentOverlays.length === 0) {
+  if (input.templateId !== "comment-capture") return;
+  const comments = activeCommentOverlays.safeParse(input.commentOverlays);
+  if (!comments.success) {
+    context.addIssue({
+      code: "custom",
+      path: ["commentOverlays"],
+      message: "댓글 내용과 노출 구간을 다시 확인해 주세요.",
+    });
+  } else if (comments.data.length === 0) {
     context.addIssue({
       code: "custom",
       path: ["commentOverlays"],
       message: "댓글 템플릿에는 댓글을 한 개 이상 추가해 주세요.",
     });
   }
-});
+}).transform((input) => ({
+  ...input,
+  commentOverlays: input.templateId === "comment-capture"
+    ? activeCommentOverlays.parse(input.commentOverlays)
+    : [],
+}));
 
 export async function POST(request: Request, context: { params: Promise<{ shortId: string }> }) {
   try {
@@ -129,12 +145,36 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
     const timelineEnd = hasCapturedTimeline
       ? Number(existing.editTimelineEndSeconds)
       : Number(existing.endSeconds);
-    const durationSeconds = Math.round((input.endSeconds - input.startSeconds) * 1_000) / 1_000;
+    if (
+      input.startSeconds < timelineStart - RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS
+      || input.endSeconds > timelineEnd + RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS
+    ) {
+      console.warn(JSON.stringify({
+        level: "warning",
+        msg: "apply_edit_range_outside_timeline",
+        shortId,
+        requestedStartSeconds: input.startSeconds,
+        requestedEndSeconds: input.endSeconds,
+        timelineStartSeconds: timelineStart,
+        timelineEndSeconds: timelineEnd,
+      }));
+      throw new HttpError(400, "편집용 영상의 범위 안에서 구간을 선택해 주세요.");
+    }
+    const selectionStartSeconds = clampTimelineSeconds(
+      input.startSeconds,
+      timelineStart,
+      timelineEnd,
+    );
+    const selectionEndSeconds = clampTimelineSeconds(
+      input.endSeconds,
+      timelineStart,
+      timelineEnd,
+    );
+    const durationSeconds = Math.round(
+      (selectionEndSeconds - selectionStartSeconds) * 1_000,
+    ) / 1_000;
     if (durationSeconds < RANGE_EDIT_MIN_SECONDS) {
       throw new HttpError(400, `최종 영상은 ${RANGE_EDIT_MIN_SECONDS}초 이상이어야 합니다.`);
-    }
-    if (input.startSeconds < timelineStart - 0.001 || input.endSeconds > timelineEnd + 0.001) {
-      throw new HttpError(400, "편집용 영상의 범위 안에서 구간을 선택해 주세요.");
     }
 
     const titleLength = Array.from(input.hookTitle).length;
@@ -165,8 +205,8 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
           : existing.subtitleSegments || []
       ) as TimelineSubtitle[],
       timelineStart,
-      input.startSeconds,
-      input.endSeconds,
+      selectionStartSeconds,
+      selectionEndSeconds,
     );
     const templateSelection = resolveEditedTemplateSelection({
       existing: {
@@ -181,8 +221,8 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
       throw new HttpError(400, "선택한 템플릿을 이 영상에 적용할 수 없습니다.");
     }
     const snapshot = {
-      startSeconds: Math.round(input.startSeconds * 1_000) / 1_000,
-      endSeconds: Math.round(input.endSeconds * 1_000) / 1_000,
+      startSeconds: selectionStartSeconds,
+      endSeconds: selectionEndSeconds,
       durationSeconds,
       hookTitle: input.hookTitle,
       channelDisplayName: input.channelDisplayName,

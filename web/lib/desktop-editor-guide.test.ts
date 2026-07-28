@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampDesktopEditorGuideStepIndex,
   desktopEditorGuideStepsFor,
   desktopEditorGuideSteps,
   shouldShowDesktopEditorGuide,
@@ -57,5 +58,11 @@ describe("desktop editor guide", () => {
       "reset-range",
       "complete",
     ]);
+  });
+
+  it("clamps the active step when a template change removes guide steps", () => {
+    expect(clampDesktopEditorGuideStepIndex(3, 5)).toBe(3);
+    expect(clampDesktopEditorGuideStepIndex(3, 3)).toBe(2);
+    expect(clampDesktopEditorGuideStepIndex(4, 1)).toBe(0);
   });
 });

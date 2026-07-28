@@ -38,7 +38,9 @@ import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
 import {
   adjustTimedRange,
+  clampTimelineSeconds,
   RANGE_EDIT_MIN_SECONDS,
+  roundTimelineHandleSeconds,
   scaleTimedRanges,
   type TimedRangeAdjustment,
 } from "@/lib/range-editing";
@@ -1785,22 +1787,22 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
   const updateSelectionStart = (value: number) => {
     if (!editTimeline) return;
-    const next = Math.min(
+    const rounded = roundTimelineHandleSeconds(
+      value,
+      editTimeline.timelineStartSeconds,
       selectionEnd - RANGE_EDIT_MIN_SECONDS,
-      Math.max(editTimeline.timelineStartSeconds, value),
     );
-    const rounded = Math.round(next * 10) / 10;
     setSelectionStart(rounded);
     seekTimeline(rounded);
   };
 
   const updateSelectionEnd = (value: number) => {
     if (!editTimeline) return;
-    const next = Math.max(
+    const rounded = roundTimelineHandleSeconds(
+      value,
       selectionStart + RANGE_EDIT_MIN_SECONDS,
-      Math.min(editTimeline.timelineEndSeconds, value),
+      editTimeline.timelineEndSeconds,
     );
-    const rounded = Math.round(next * 10) / 10;
     setSelectionEnd(rounded);
     seekTimeline(rounded);
   };
@@ -1904,16 +1906,27 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const save = async () => {
     setSaving(true); setError(null);
     try {
+      const commentOverlays = templateId === "comment-capture" ? orderedComments : [];
       if (editTimeline) {
+        const startSeconds = clampTimelineSeconds(
+          selectionStart,
+          editTimeline.timelineStartSeconds,
+          editTimeline.timelineEndSeconds,
+        );
+        const endSeconds = clampTimelineSeconds(
+          selectionEnd,
+          editTimeline.timelineStartSeconds,
+          editTimeline.timelineEndSeconds,
+        );
         await requestJson(`/api/shorts/${item.id}/apply-edit`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            startSeconds: selectionStart,
-            endSeconds: selectionEnd,
+            startSeconds,
+            endSeconds,
             hookTitle: title,
             channelDisplayName: channel,
             subtitlesEnabled,
-            commentOverlays: orderedComments,
+            commentOverlays,
             templateId,
             ...(templateSelectionTouched
               ? { customTemplateId: activeCustomTemplate?.id || null }
@@ -1930,7 +1943,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             channelDisplayName: channel,
             subtitlesEnabled,
             subtitleSegments: segments,
-            commentOverlays: orderedComments,
+            commentOverlays,
             templateId,
             ...(templateSelectionTouched
               ? { customTemplateId: activeCustomTemplate?.id || null }
@@ -2322,8 +2335,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 <span className="editor-range-marker-time">{formatPreciseTimestamp(selectionDuration)}</span>
                 <span className="editor-range-marker-grip">•••</span>
               </span>
-              <input aria-label="최종 영상 시작 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.1} value={selectionStart} onChange={(event) => updateSelectionStart(Number(event.target.value))} className="sr-only" />
-              <input aria-label="최종 영상 종료 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.1} value={selectionEnd} onChange={(event) => updateSelectionEnd(Number(event.target.value))} className="sr-only" />
+              <input aria-label="최종 영상 시작 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.001} value={selectionStart} onChange={(event) => updateSelectionStart(Number(event.target.value))} className="sr-only" />
+              <input aria-label="최종 영상 종료 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.001} value={selectionEnd} onChange={(event) => updateSelectionEnd(Number(event.target.value))} className="sr-only" />
             </div>
             <div className="editor-filmstrip-bounds" aria-label="전체 편집 가능 범위">
               <span>{formatTimelineOffset(editTimeline.timelineStartSeconds - selectionStart)}</span>

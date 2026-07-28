@@ -124,6 +124,7 @@ export async function POST(request: Request) {
         join shorts_mvp.video_jobs j
           on j.id=ur.job_id and j.status='completed' and j.completed_at is not null
         where g.billing_order_id=${order.id}
+          and g.funding_source='paid'
         order by j.completed_at,j.created_at,j.id
         limit 1
       `;
@@ -151,6 +152,7 @@ export async function POST(request: Request) {
           coalesce(sum(reserved_seconds),0)::integer as reserved
         from shorts_mvp.usage_grants
         where billing_order_id=${order.id} and kind='base'
+          and funding_source='paid'
       `;
       const baseConsumedSeconds = Number(baseUsageRows[0]?.consumed || 0);
       const baseReservedSeconds = Number(baseUsageRows[0]?.reserved || 0);
@@ -159,6 +161,7 @@ export async function POST(request: Request) {
         from shorts_mvp.usage_grant_allocations a
         join shorts_mvp.usage_grants g on g.id=a.grant_id
         where g.billing_order_id=${order.id} and g.kind='base'
+          and g.funding_source='paid'
           and a.status in ('reserved','consumed')
           and a.created_at >= ${packageMonthState.currentMonthStart}
           and a.created_at < ${packageMonthState.currentMonthEnd}
@@ -251,6 +254,7 @@ export async function POST(request: Request) {
             coalesce(sum(reserved_seconds),0)::integer as reserved
           from shorts_mvp.usage_grants
           where billing_order_id=${order.id} and kind='addon'
+            and funding_source='paid'
         `;
         if (Number(grants[0]?.grantCount || 0) !== 1) {
           throw new HttpError(409, "추가 상품 권한 원장을 확인할 수 없어 자동 환불을 중단했습니다.");

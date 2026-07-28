@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   adjustTimedRange,
+  clampTimelineSeconds,
+  roundTimelineHandleSeconds,
   scaleTimedRanges,
   subtitlesForTimelineSelection,
 } from "./range-editing";
@@ -53,5 +55,11 @@ describe("range editing helpers", () => {
       0,
       20,
     )).toEqual({ startSeconds: 5, endSeconds: 5.3 });
+  });
+
+  it("keeps rounded range handles inside fractional timeline boundaries", () => {
+    expect(roundTimelineHandleSeconds(870.03, 870.03, 990)).toBe(870.03);
+    expect(roundTimelineHandleSeconds(989.97, 870.03, 989.97)).toBe(989.97);
+    expect(clampTimelineSeconds(990.03, 870.03, 990)).toBe(990);
   });
 });

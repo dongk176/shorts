@@ -1,5 +1,6 @@
 export const RANGE_EDIT_MIN_SECONDS = 1;
 export const RANGE_EDIT_HANDLE_SECONDS = 30;
+export const RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS = 0.051;
 export const COMMENT_RANGE_MIN_SECONDS = 0.3;
 
 export function rangeEditingEnabled() {
@@ -7,6 +8,14 @@ export function rangeEditingEnabled() {
 }
 
 export type TimelineSubtitle = { start: number; end: number; text: string };
+
+export function clampTimelineSeconds(value: number, minimum: number, maximum: number) {
+  return Math.round(Math.max(minimum, Math.min(maximum, value)) * 1_000) / 1_000;
+}
+
+export function roundTimelineHandleSeconds(value: number, minimum: number, maximum: number) {
+  return clampTimelineSeconds(Math.round(value * 10) / 10, minimum, maximum);
+}
 
 export function subtitlesForTimelineSelection(
   timelineSegments: TimelineSubtitle[],

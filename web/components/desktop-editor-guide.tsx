@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  clampDesktopEditorGuideStepIndex,
   DESKTOP_EDITOR_GUIDE_MEDIA_QUERY,
   DESKTOP_EDITOR_GUIDE_STORAGE_KEY,
   desktopEditorGuideStepsFor,
@@ -55,8 +56,10 @@ export function DesktopEditorGuide({
     rangeControlsAvailable,
     commentControlsAvailable,
   }), [commentControlsAvailable, rangeControlsAvailable]);
-  const step = guideSteps[stepIndex];
-  const isLastStep = stepIndex === guideSteps.length - 1;
+  const activeStepIndex = clampDesktopEditorGuideStepIndex(stepIndex, guideSteps.length);
+  const step = guideSteps[activeStepIndex];
+  const targetSelector = step?.targetSelector ?? null;
+  const isLastStep = activeStepIndex === guideSteps.length - 1;
 
   useEffect(() => setMounted(true), []);
 
@@ -123,7 +126,7 @@ export function DesktopEditorGuide({
   }, [open, stepIndex]);
 
   useEffect(() => {
-    if (!open || !step.targetSelector) {
+    if (!open || !targetSelector) {
       setTargetRect(null);
       return;
     }
@@ -134,12 +137,12 @@ export function DesktopEditorGuide({
     const measure = () => {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
-        activeTarget = document.querySelector(step.targetSelector || "");
+        activeTarget = document.querySelector(targetSelector);
         setTargetRect(elementRect(activeTarget));
       });
     };
 
-    activeTarget = document.querySelector(step.targetSelector);
+    activeTarget = document.querySelector(targetSelector);
     activeTarget?.scrollIntoView({
       block: "nearest",
       inline: "nearest",
@@ -158,7 +161,7 @@ export function DesktopEditorGuide({
       window.removeEventListener("resize", measure);
       document.removeEventListener("scroll", measure, true);
     };
-  }, [open, step.targetSelector]);
+  }, [open, targetSelector]);
 
   const spotlightStyle = useMemo(() => {
     if (!targetRect || !mounted) return undefined;
@@ -195,7 +198,7 @@ export function DesktopEditorGuide({
     return { left, top, width, transform: "none" };
   }, [mounted, targetRect]);
 
-  if (!mounted || !open) return null;
+  if (!mounted || !open || !step) return null;
 
   return createPortal(
     <div
@@ -237,7 +240,7 @@ export function DesktopEditorGuide({
                 {step.eyebrow}
               </span>
               <p className="mt-1 text-xs font-semibold text-neutral-500">
-                {stepIndex + 1} / {guideSteps.length}
+                {activeStepIndex + 1} / {guideSteps.length}
               </p>
             </div>
             <button
@@ -280,17 +283,17 @@ export function DesktopEditorGuide({
                 <button
                   type="button"
                   className="h-10 rounded-lg px-3 text-sm font-bold text-neutral-400 transition hover:bg-white/5 hover:text-white disabled:invisible"
-                  disabled={stepIndex === 0}
-                  onClick={() => setStepIndex((current) => Math.max(0, current - 1))}
+                  disabled={activeStepIndex === 0}
+                  onClick={() => setStepIndex(Math.max(0, activeStepIndex - 1))}
                 >
                   이전
                 </button>
                 <button
                   type="button"
                   className="h-10 min-w-24 rounded-lg bg-white px-4 text-sm font-extrabold text-black transition hover:bg-neutral-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-                  onClick={() => setStepIndex((current) => Math.min(
+                  onClick={() => setStepIndex(Math.min(
                     guideSteps.length - 1,
-                    current + 1,
+                    activeStepIndex + 1,
                   ))}
                 >
                   다음

@@ -25,7 +25,7 @@
 - `short_outbox`: 재렌더 제출
 - `ingestion_route_slots`: `webshare-01`~`webshare-20` 중앙 다운로드 lease와 cooldown; endpoint/인증정보는 저장하지 않음
 - `ingestion_attempts`, `ingestion_circuit`: route별 수집 결과와 1분 회로 차단
-- `usage_grants`: 월 기본 제공량과 90일 애드온의 예약·소진 잔량. `credited_seconds`와 `carried_seconds`로 신규 지급과 업그레이드 이월을 분리
+- `usage_grants`: 월 기본 제공량과 90일 애드온, 무료·보너스 사용량의 예약·소진 잔량. `credited_seconds`와 `carried_seconds`로 신규 지급과 업그레이드 이월을 분리하고, 생성 열 `funding_source`로 결제 주문이 연결된 `paid`와 그 외 `complimentary`를 명시
 - `usage_grant_allocations`: 작업 예약이 어떤 grant에서 몇 초를 사용했는지 기록
 - `usage_reservations`: queued/running 원본 초와 grant allocation 전이 기준
 - `usage_events`: 성공한 원본 초, `(job_id,event_type)` idempotency
@@ -39,3 +39,4 @@
 로그인 사용자의 작업·쇼츠·사용량 조회는 `app_users.id` 소유권으로 묶여 여러 브라우저 세션에서도 같은 데이터를 봅니다. 익명 사용자는 기존처럼 현재 `mvp_session_id`만 볼 수 있으며, 로그인 순간 현재 익명 세션의 행들에 `user_id`를 원자적으로 연결합니다.
 
 결제 이력이 없고 현재 유료·체험·연체·수동 권한이 없는 계정은 온보딩 완료 시 `onboarding_welcome_20min_v1` grant를 한 번 받습니다. 부분 고유 인덱스가 재로그인·재전송·동시 요청의 중복 지급을 막고, 예약 함수는 유료 권한이 없는 동안 해당 grant만 소비하도록 제한합니다. 이 grant는 `manual_service_access_until`을 설정하지 않으므로 실시간 인기 필터 권한과 분리됩니다.
+유료 권한이 있는 계정의 예약 함수는 `funding_source='paid'`인 grant를 항상 먼저 배정하고, 유료 잔액이 부족할 때만 `complimentary` grant를 배정합니다. 환불 조회는 결제 주문과 `paid` 출처가 모두 일치하는 allocation만 유료 사용으로 취급합니다.

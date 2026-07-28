@@ -300,6 +300,46 @@ describe("range editing feature gate and snapshot", () => {
     expect(tx).toHaveBeenCalledTimes(2);
   });
 
+  it("drops hidden malformed comments when applying a non-comment template", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    const db = dbWithRows([{
+      id: shortId,
+      status: "ready",
+      renderVersion: 1,
+      durationSeconds: 40,
+      templateId: "comment-capture",
+      customTemplateId: null,
+      templateSnapshot: { presetVersion: 3 },
+      videoAspectRatio: "1:1",
+      editTimelineS3Key: "edit-sources/timeline.mp4",
+      editTimelineStartSeconds: 90,
+      editTimelineEndSeconds: 170,
+      editTimelineSubtitleSegments: [],
+      onboardingWelcomeFunded: false,
+    }]);
+    const tx = dbWithRows([{ id: shortId }], []);
+    Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        ...input,
+        templateId: "dark-red",
+        commentOverlays: [{ id: "legacy-comment", text: "" }],
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(202);
+    const pendingSnapshot = tx.mock.calls[0].slice(1).find((value) => (
+      typeof value === "object" && value !== null && "durationSeconds" in value
+    ));
+    expect(pendingSnapshot).toMatchObject({
+      templateId: "dark-red",
+      commentOverlays: [],
+    });
+  });
+
   it("switches an older non-comment short to the comment template and queues its comments", async () => {
     process.env.RANGE_EDITING_ENABLED = "true";
     const db = dbWithRows([{
@@ -411,6 +451,47 @@ describe("range editing feature gate and snapshot", () => {
     );
 
     expect(response.status).toBe(400);
+  });
+
+  it("snaps sub-step browser drift back to fractional timeline boundaries", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    const db = dbWithRows([{
+      id: shortId,
+      status: "ready",
+      durationSeconds: 40,
+      templateId: "dark-red",
+      customTemplateId: null,
+      templateSnapshot: { presetVersion: 3 },
+      videoAspectRatio: "1:1",
+      editTimelineS3Key: "edit-sources/timeline.mp4",
+      editTimelineStartSeconds: 870.03,
+      editTimelineEndSeconds: 990,
+      editTimelineSubtitleSegments: [],
+    }]);
+    const tx = dbWithRows([{ id: shortId }], []);
+    Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        ...input,
+        startSeconds: 870,
+        endSeconds: 990.03,
+        templateId: "dark-red",
+        commentOverlays: [],
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(202);
+    const pendingSnapshot = tx.mock.calls[0].slice(1).find((value) => (
+      typeof value === "object" && value !== null && "durationSeconds" in value
+    ));
+    expect(pendingSnapshot).toMatchObject({
+      startSeconds: 870.03,
+      endSeconds: 990,
+      durationSeconds: 119.97,
+    });
   });
 
   it("requires an owned, non-example, unexpired project with an editable source", async () => {
@@ -1071,6 +1152,27 @@ describe("short ownership, expiry, and edit validation", () => {
         ageLabel: "5개월 전",
       }],
       templateId: "comment-capture",
+      titleFontScale: 1,
+    }), { params: Promise.resolve({ shortId: "short-a" }) });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ saved: true });
+    expect(db).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops hidden malformed comments when saving a non-comment template", async () => {
+    const db = dbWithRows(
+      [{ id: "short-a", subtitleSegments: [], durationSeconds: "30", templateId: "comment-capture" }],
+      [{ id: "short-a", renderVersion: 1 }],
+    );
+    mocks.getDb.mockReturnValue(db);
+    const response = await patchShort(jsonRequest("http://localhost/api/shorts/short-a", {
+      hookTitle: "유효한 제목",
+      channelDisplayName: "기존 채널",
+      subtitlesEnabled: false,
+      subtitleSegments: [],
+      commentOverlays: [{ id: "legacy-comment", text: "" }],
+      templateId: "paper",
       titleFontScale: 1,
     }), { params: Promise.resolve({ shortId: "short-a" }) });
 

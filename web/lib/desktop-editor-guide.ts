@@ -72,6 +72,10 @@ export function desktopEditorGuideStepsFor({
   ));
 }
 
+export function clampDesktopEditorGuideStepIndex(stepIndex: number, stepCount: number) {
+  return Math.max(0, Math.min(stepIndex, Math.max(0, stepCount - 1)));
+}
+
 export function shouldShowDesktopEditorGuide({
   enabled,
   desktopMediaMatches,

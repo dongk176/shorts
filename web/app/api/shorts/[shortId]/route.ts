@@ -29,25 +29,39 @@ const commentOverlay = z.object({
   likeCount: z.number().int().min(10).max(999_999),
   ageLabel: z.string().trim().min(1).max(20),
 }).refine((item) => item.endSeconds > item.startSeconds, "댓글 종료 시간은 시작 시간보다 뒤여야 합니다.");
+const activeCommentOverlays = z.array(commentOverlay).max(20);
 const patchSchema = z.object({
   hookTitle: z.string().trim().min(1).max(80).refine((value) => value.split("\n").length <= 2, "제목은 최대 2줄입니다."),
   channelDisplayName: z.string().trim().min(1).max(50),
   subtitlesEnabled: z.boolean(),
   subtitleSegments: z.array(subtitle).max(500),
-  commentOverlays: z.array(commentOverlay).max(20).default([]),
+  commentOverlays: z.array(z.unknown()).max(20).default([]),
   templateId: z.enum(templateIds),
   customTemplateId: z.string().uuid().nullable().optional(),
   titleFontScale: z.number().min(0.8).max(1.2).default(1),
   titleTextStyles: z.array(titleTextStyle).max(80).default([]),
 }).superRefine((input, context) => {
-  if (input.templateId === "comment-capture" && input.commentOverlays.length === 0) {
+  if (input.templateId !== "comment-capture") return;
+  const comments = activeCommentOverlays.safeParse(input.commentOverlays);
+  if (!comments.success) {
+    context.addIssue({
+      code: "custom",
+      path: ["commentOverlays"],
+      message: "댓글 내용과 노출 구간을 다시 확인해 주세요.",
+    });
+  } else if (comments.data.length === 0) {
     context.addIssue({
       code: "custom",
       path: ["commentOverlays"],
       message: "댓글 템플릿에는 댓글을 한 개 이상 추가해 주세요.",
     });
   }
-});
+}).transform((input) => ({
+  ...input,
+  commentOverlays: input.templateId === "comment-capture"
+    ? activeCommentOverlays.parse(input.commentOverlays)
+    : [],
+}));
 
 export async function PATCH(request: Request, context: { params: Promise<{ shortId: string }> }) {
   try {

@@ -19,4 +19,13 @@ describe("localizeApiError", () => {
       localizeApiError({ detail: "올바른 YouTube 링크를 입력해 주세요." }, 400, "ko"),
     ).toBe("올바른 YouTube 링크를 입력해 주세요.");
   });
+
+  it("keeps a deliberate Korean explanation for a generic HTTP error code", () => {
+    expect(
+      localizeApiError({
+        detail: "댓글 노출 시간이 서로 겹치지 않게 조정해 주세요.",
+        code: "HTTP_400",
+      }, 400, "ko"),
+    ).toBe("댓글 노출 시간이 서로 겹치지 않게 조정해 주세요.");
+  });
 });

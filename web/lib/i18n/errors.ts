@@ -20,9 +20,17 @@ export function localizeApiError(
   fallbackKey: MessageKey = "common.genericError",
 ) {
   const messages = messagesByLocale[locale];
+  const detail = safeUserFacingErrorMessage(body.detail);
+  if (
+    locale === "ko"
+    && detail
+    && /[가-힣]/.test(detail)
+    && (!body.code || body.code === `HTTP_${status}`)
+  ) {
+    return detail;
+  }
   const explicitKey = errorMessageKey(body.code);
   if (explicitKey) return messages[explicitKey];
-  const detail = safeUserFacingErrorMessage(body.detail);
   if (locale === "ko" && detail && /[가-힣]/.test(detail)) return detail;
   const statusKey = errorMessageKey(`HTTP_${status}`);
   return statusKey ? messages[statusKey] : messages[fallbackKey];
