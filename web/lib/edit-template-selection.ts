@@ -1,5 +1,15 @@
 import type { TemplateId } from "@/lib/contracts";
 
+type JsonValue =
+  | null
+  | string
+  | number
+  | boolean
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue | undefined };
+
+type JsonObject = { readonly [key: string]: JsonValue | undefined };
+
 export const CURRENT_PRESET_TEMPLATE_SNAPSHOT = Object.freeze({
   presetVersion: 3,
 });
@@ -7,7 +17,7 @@ export const CURRENT_PRESET_TEMPLATE_SNAPSHOT = Object.freeze({
 type ExistingTemplateSelection = {
   templateId: TemplateId;
   customTemplateId: string | null;
-  templateSnapshot: Record<string, unknown> | null;
+  templateSnapshot: JsonObject | null;
 };
 
 type ResolveEditedTemplateSelectionInput = {
@@ -18,7 +28,7 @@ type ResolveEditedTemplateSelectionInput = {
 
 export type EditedTemplateSelection = {
   customTemplateId: string | null;
-  templateSnapshot: Record<string, unknown> | null;
+  templateSnapshot: JsonObject | null;
 };
 
 export function resolveEditedTemplateSelection({
