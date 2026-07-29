@@ -1,6 +1,6 @@
 begin;
 
-create table shorts_mvp.referral_partners (
+create table if not exists shorts_mvp.referral_partners (
   id uuid primary key default gen_random_uuid(),
   create_request_id uuid not null unique,
   creator_name text not null check (char_length(creator_name) between 1 and 100),
@@ -35,7 +35,7 @@ create table shorts_mvp.referral_partners (
   unique (slug)
 );
 
-create table shorts_mvp.referral_partner_credentials (
+create table if not exists shorts_mvp.referral_partner_credentials (
   partner_id uuid primary key references shorts_mvp.referral_partners(id) on delete cascade,
   login_id text not null unique check (
     char_length(login_id) between 3 and 32
@@ -51,7 +51,7 @@ create table shorts_mvp.referral_partner_credentials (
   updated_at timestamptz not null default now()
 );
 
-create table shorts_mvp.referral_partner_sessions (
+create table if not exists shorts_mvp.referral_partner_sessions (
   id uuid primary key default gen_random_uuid(),
   partner_id uuid not null references shorts_mvp.referral_partners(id) on delete cascade,
   token_hash text not null unique check (length(token_hash) = 64),
@@ -60,22 +60,22 @@ create table shorts_mvp.referral_partner_sessions (
   revoked_at timestamptz,
   created_at timestamptz not null default now()
 );
-create index referral_partner_sessions_active_idx
+create index if not exists referral_partner_sessions_active_idx
   on shorts_mvp.referral_partner_sessions (partner_id,expires_at)
   where revoked_at is null;
 
-create table shorts_mvp.referral_partner_login_attempts (
+create table if not exists shorts_mvp.referral_partner_login_attempts (
   id bigint generated always as identity primary key,
   login_id_hash text not null check (length(login_id_hash) = 64),
   ip_hash text not null check (length(ip_hash) = 64),
   succeeded boolean not null,
   attempted_at timestamptz not null default now()
 );
-create index referral_partner_login_attempts_limit_idx
+create index if not exists referral_partner_login_attempts_limit_idx
   on shorts_mvp.referral_partner_login_attempts
   (login_id_hash,ip_hash,attempted_at desc);
 
-create table shorts_mvp.referral_visitors (
+create table if not exists shorts_mvp.referral_visitors (
   id uuid primary key default gen_random_uuid(),
   token_hash text not null unique check (length(token_hash) = 64),
   partner_id uuid not null references shorts_mvp.referral_partners(id) on delete restrict,
@@ -84,12 +84,12 @@ create table shorts_mvp.referral_visitors (
   last_seen_at timestamptz not null default now(),
   expires_at timestamptz not null check (expires_at > first_seen_at)
 );
-create index referral_visitors_partner_seen_idx
+create index if not exists referral_visitors_partner_seen_idx
   on shorts_mvp.referral_visitors (partner_id,first_seen_at desc);
-create index referral_visitors_expiry_idx
+create index if not exists referral_visitors_expiry_idx
   on shorts_mvp.referral_visitors (expires_at);
 
-create table shorts_mvp.referral_clicks (
+create table if not exists shorts_mvp.referral_clicks (
   id bigint generated always as identity primary key,
   clicked_partner_id uuid not null references shorts_mvp.referral_partners(id) on delete restrict,
   visitor_id uuid references shorts_mvp.referral_visitors(id) on delete set null,
@@ -103,16 +103,18 @@ create table shorts_mvp.referral_clicks (
   ),
   occurred_at timestamptz not null default now()
 );
-create index referral_clicks_partner_occurred_idx
+create index if not exists referral_clicks_partner_occurred_idx
   on shorts_mvp.referral_clicks (clicked_partner_id,occurred_at desc);
-create index referral_clicks_visitor_occurred_idx
+create index if not exists referral_clicks_visitor_occurred_idx
   on shorts_mvp.referral_clicks (visitor_id,occurred_at desc)
   where visitor_id is not null;
 
 alter table shorts_mvp.app_users
-  add column referral_partner_id uuid references shorts_mvp.referral_partners(id) on delete set null,
-  add column referral_visitor_id uuid references shorts_mvp.referral_visitors(id) on delete set null,
-  add column referral_attributed_at timestamptz;
+  add column if not exists referral_partner_id uuid references shorts_mvp.referral_partners(id) on delete set null,
+  add column if not exists referral_visitor_id uuid references shorts_mvp.referral_visitors(id) on delete set null,
+  add column if not exists referral_attributed_at timestamptz;
+alter table shorts_mvp.app_users
+  drop constraint if exists app_users_referral_attribution_check;
 alter table shorts_mvp.app_users
   add constraint app_users_referral_attribution_check check (
     (
@@ -125,11 +127,11 @@ alter table shorts_mvp.app_users
       and referral_attributed_at is not null
     )
   );
-create index app_users_referral_partner_created_idx
+create index if not exists app_users_referral_partner_created_idx
   on shorts_mvp.app_users (referral_partner_id,created_at desc)
   where referral_partner_id is not null;
 
-create table shorts_mvp.referral_attribution_audits (
+create table if not exists shorts_mvp.referral_attribution_audits (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references shorts_mvp.app_users(id) on delete cascade,
   previous_partner_id uuid references shorts_mvp.referral_partners(id) on delete set null,
@@ -139,10 +141,10 @@ create table shorts_mvp.referral_attribution_audits (
   reason text not null check (char_length(reason) between 2 and 500),
   created_at timestamptz not null default now()
 );
-create index referral_attribution_audits_user_created_idx
+create index if not exists referral_attribution_audits_user_created_idx
   on shorts_mvp.referral_attribution_audits (user_id,created_at desc);
 
-create table shorts_mvp.referral_commissions (
+create table if not exists shorts_mvp.referral_commissions (
   id uuid primary key default gen_random_uuid(),
   billing_order_id uuid not null unique
     references shorts_mvp.billing_orders(id) on delete cascade,
@@ -158,10 +160,10 @@ create table shorts_mvp.referral_commissions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-create index referral_commissions_partner_available_idx
+create index if not exists referral_commissions_partner_available_idx
   on shorts_mvp.referral_commissions (partner_id,available_at,created_at);
 
-create table shorts_mvp.referral_commission_events (
+create table if not exists shorts_mvp.referral_commission_events (
   id bigint generated always as identity primary key,
   commission_id uuid not null references shorts_mvp.referral_commissions(id) on delete cascade,
   event_kind text not null check (
@@ -173,10 +175,10 @@ create table shorts_mvp.referral_commission_events (
   created_at timestamptz not null default now(),
   unique (commission_id,target_commission_krw,source_refunded_amount_krw)
 );
-create index referral_commission_events_commission_created_idx
+create index if not exists referral_commission_events_commission_created_idx
   on shorts_mvp.referral_commission_events (commission_id,created_at);
 
-create table shorts_mvp.referral_payouts (
+create table if not exists shorts_mvp.referral_payouts (
   id uuid primary key default gen_random_uuid(),
   request_id uuid not null unique,
   partner_id uuid not null references shorts_mvp.referral_partners(id) on delete restrict,
@@ -200,13 +202,13 @@ create table shorts_mvp.referral_payouts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-create index referral_payouts_partner_created_idx
+create index if not exists referral_payouts_partner_created_idx
   on shorts_mvp.referral_payouts (partner_id,created_at desc);
-create unique index referral_payouts_active_period_idx
+create unique index if not exists referral_payouts_active_period_idx
   on shorts_mvp.referral_payouts (partner_id,period_start,period_end)
   where status in ('draft','paid');
 
-create table shorts_mvp.referral_partner_audit_logs (
+create table if not exists shorts_mvp.referral_partner_audit_logs (
   id uuid primary key default gen_random_uuid(),
   request_id uuid unique,
   partner_id uuid references shorts_mvp.referral_partners(id) on delete set null,
@@ -218,7 +220,7 @@ create table shorts_mvp.referral_partner_audit_logs (
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
-create index referral_partner_audit_logs_partner_created_idx
+create index if not exists referral_partner_audit_logs_partner_created_idx
   on shorts_mvp.referral_partner_audit_logs (partner_id,created_at desc);
 
 create or replace function shorts_mvp.sync_referral_commission()

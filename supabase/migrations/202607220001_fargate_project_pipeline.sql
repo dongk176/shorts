@@ -98,6 +98,20 @@ begin
 end;
 $$;
 
+-- A later migration adds dispatch_priority_class to both the table and this
+-- function's return shape. During a full replay on an upgraded database, keep
+-- that newer function until its migration is reached instead of attempting an
+-- incompatible CREATE OR REPLACE.
+do $migration$
+begin
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema='shorts_mvp'
+      and table_name='video_jobs'
+      and column_name='dispatch_priority_class'
+  ) then
+    execute $function$
 create or replace function shorts_mvp.claim_project_job_outbox(p_limit integer default 100)
 returns table (
   outbox_id uuid,
@@ -109,7 +123,7 @@ returns table (
 language plpgsql
 security definer
 set search_path = shorts_mvp, pg_temp
-as $$
+as $body$
 declare
   free_route_count integer;
   claim_limit integer;
@@ -200,7 +214,11 @@ begin
   select d.id,d.job_id,j.ingestion_route_id,j.mvp_session_id,j.user_id
   from dispatched d join assigned j on j.id=d.job_id;
 end;
-$$;
+$body$;
+$function$;
+  end if;
+end
+$migration$;
 
 create or replace function shorts_mvp.finalize_project_job(
   p_job_id uuid,

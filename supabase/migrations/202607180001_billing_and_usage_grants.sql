@@ -141,9 +141,18 @@ alter table shorts_mvp.user_subscriptions
   drop constraint if exists user_subscriptions_billing_anchor_day_check;
 alter table shorts_mvp.user_subscriptions add constraint user_subscriptions_billing_anchor_day_check
   check (billing_anchor_day is null or billing_anchor_day between 1 and 31);
-create unique index if not exists user_subscriptions_one_current_idx
-  on shorts_mvp.user_subscriptions (user_id)
-  where status in ('pending','trialing','active','past_due');
+-- A later migration replaces this legacy constraint with a monthly-only
+-- constraint so prepaid packages can stack. On full migration replays, keep
+-- the newer constraint instead of trying to recreate the obsolete one.
+do $$
+begin
+  if to_regclass('shorts_mvp.user_subscriptions_one_current_monthly_idx') is null then
+    create unique index if not exists user_subscriptions_one_current_idx
+      on shorts_mvp.user_subscriptions (user_id)
+      where status in ('pending','trialing','active','past_due');
+  end if;
+end
+$$;
 create index if not exists user_subscriptions_charge_due_idx
   on shorts_mvp.user_subscriptions (coalesce(next_retry_at,next_charge_at))
   where status in ('active','past_due');
