@@ -731,33 +731,18 @@ function CustomEditorChannel({
   template,
   channelName,
   channelThumbnailUrl,
-  inCommentFlow = false,
-  commentY = 0,
 }: {
   template: CustomTemplate;
   channelName: string;
   channelThumbnailUrl: string | null;
-  inCommentFlow?: boolean;
-  commentY?: number;
 }) {
   const channel = template.config.channel;
   if (!channel.visible) return null;
-  const positionedBelow = inCommentFlow && template.config.schemaVersion >= 4;
-  const flowStyle = positionedBelow
-    ? {
-        left: "50%",
-        top: customCanvasWidth(channel.y - commentY),
-        transform: "translate(-50%, -50%)",
-        width: customCanvasWidth(channel.maxWidth),
-      }
-    : inCommentFlow
-      ? { width: customCanvasWidth(channel.maxWidth) }
-      : customCenteredLayerStyle(channel);
   return (
     <div
-      className={`${positionedBelow ? "absolute" : inCommentFlow ? "relative mx-auto mt-[2cqw]" : "absolute"} z-30 flex items-center justify-center gap-[2cqw] truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold`}
+      className="absolute z-30 flex items-center justify-center gap-[2cqw] truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold"
       style={{
-        ...flowStyle,
+        ...customCenteredLayerStyle(channel),
         color: channel.color,
         backgroundColor: channel.backgroundColor || "transparent",
         fontSize: customCanvasWidth(channel.fontSize),
@@ -2140,22 +2125,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                         size={activeCustomTemplate.config.comment.size}
                         comment={activeComment}
                       />
-                      <CustomEditorChannel
-                        template={activeCustomTemplate}
-                        channelName={channel}
-                        channelThumbnailUrl={channelThumbnailUrl}
-                        inCommentFlow
-                        commentY={customCommentY}
-                      />
                     </div>
                   : null}
-                {templateId !== "comment-capture"
-                  ? <CustomEditorChannel
-                      template={activeCustomTemplate}
-                      channelName={channel}
-                      channelThumbnailUrl={channelThumbnailUrl}
-                    />
-                  : null}
+                <CustomEditorChannel
+                  template={activeCustomTemplate}
+                  channelName={channel}
+                  channelThumbnailUrl={channelThumbnailUrl}
+                />
               </>
             : <>
                 <div className={`absolute inset-x-0 z-10 overflow-hidden text-sm font-bold ${templateId === "comment-capture" ? "" : editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.bottomHeight}%`, background: editorLayout.fullVertical && templateId !== "comment-capture" ? "transparent" : template.background, color: template.channel }}>

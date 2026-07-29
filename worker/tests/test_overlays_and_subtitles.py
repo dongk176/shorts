@@ -435,6 +435,16 @@ def test_custom_comment_overlay_applies_saved_theme_size_and_channel_flow(tmp_pa
         assert image.getpixel((0, 0)) == (255, 255, 255, 255)
         assert image.getpixel((0, image.height - 1))[3] == 0
 
+    comment_only_output = create_custom_comment_overlay(
+        comment,
+        tmp_path / "custom-comment-only.png",
+        config=config,
+        channel_name="테스트 채널",
+        include_channel=False,
+    )
+    with Image.open(comment_only_output) as comment_only, Image.open(output) as combined:
+        assert comment_only.height < combined.height
+
     dark_config = config.model_copy(
         update={"comment": config.comment.model_copy(update={"theme": "dark", "size": "large"})}
     )

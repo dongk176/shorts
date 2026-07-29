@@ -121,6 +121,15 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
         else []
     )
     if comment_template:
+        comments = [
+            comment.model_copy(update={
+                "end_seconds": round(
+                    max(comment.start_seconds + 0.2, comment.end_seconds - 0.08),
+                    3,
+                ),
+            })
+            for comment in comments
+        ]
         assert len(comments) == 5
         assert all(10 <= comment.like_count <= 8_000 for comment in comments)
         assert all(
@@ -149,6 +158,18 @@ def test_synthetic_video_renders_as_browser_playable_vertical_mp4(
         assert render_metrics["commentInputCount"] == 1
         assert render_metrics["commentCount"] == len(comments)
         assert float(render_metrics["ffmpegSeconds"]) > 0
+        static_channel = tmp_path / "work" / "overlays" / "fixture_bottom.png"
+        gap_frame = (
+            tmp_path
+            / "work"
+            / "overlays"
+            / "comment-timeline"
+            / "fixture_comment_gap.png"
+        )
+        with Image.open(static_channel).convert("RGB") as channel_image:
+            assert (33, 102, 209) in channel_image.getdata()
+        with Image.open(gap_frame).convert("RGBA") as gap_image:
+            assert gap_image.getbbox() is None
 
     probe = _run(
         [
@@ -543,7 +564,7 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
     )
     config = CustomTemplateConfig.model_validate(
         {
-            "schemaVersion": 3,
+            "schemaVersion": 4,
             "background": {"kind": "color", "color": "#16A34A"},
             "video": {
                 "aspectRatio": "16:9",
@@ -574,12 +595,12 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
                 "backgroundColor": "#000000",
             },
             "channel": {
-                "visible": False,
+                "visible": True,
                 "x": 540,
                 "y": 1700,
                 "maxWidth": 800,
                 "fontSize": 42,
-                "color": "#FFFFFF",
+                "color": "#3B82F6",
                 "backgroundColor": None,
             },
             "comment": {
@@ -610,7 +631,7 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
             CommentOverlay(
                 id="render-comment",
                 startSeconds=0,
-                endSeconds=1,
+                endSeconds=0.4,
                 text="렌더링 댓글 레이아웃 확인",
                 initial="확",
                 avatarColor="#D84572",
@@ -623,6 +644,18 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
         metrics_callback=render_metrics.update,
     )
     assert render_metrics["commentInputCount"] == 1
+    with Image.open(
+        tmp_path / "work" / "overlays" / "custom_custom_channel.png"
+    ).convert("RGBA") as channel_layer:
+        assert channel_layer.getbbox() is not None
+    with Image.open(
+        tmp_path
+        / "work"
+        / "overlays"
+        / "comment-timeline"
+        / "custom_comment_gap.png"
+    ).convert("RGBA") as gap_layer:
+        assert gap_layer.getbbox() is None
 
     probe = json.loads(
         _run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(output)]).stdout
@@ -662,6 +695,30 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
         assert is_video(image.getpixel((540, 1049)))
         assert not is_video(image.getpixel((540, 1050)))
         assert all(channel >= 245 for channel in image.getpixel((10, 1060)))
+
+    rendered_gap_frame = tmp_path / "custom-gap-frame.png"
+    _run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-ss",
+            "0.7",
+            "-i",
+            str(output),
+            "-frames:v",
+            "1",
+            str(rendered_gap_frame),
+        ]
+    )
+    with Image.open(rendered_gap_frame).convert("RGB") as image:
+        channel_crop = image.crop((200, 1640, 880, 1760))
+        assert any(
+            blue > red * 1.35 and blue > green * 1.05
+            for red, green, blue in channel_crop.getdata()
+        )
 
 
 def test_bundled_custom_backgrounds_are_full_vertical_rgb_images() -> None:

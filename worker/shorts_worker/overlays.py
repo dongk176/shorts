@@ -918,6 +918,41 @@ def _draw_custom_channel(
     return group_height + pad * 2
 
 
+def add_comment_channel_to_panel(
+    panel_path: Path,
+    *,
+    channel_name: str,
+    channel_center_y: float,
+    channel_thumbnail_path: Path | None = None,
+    overlay_mode: bool = False,
+) -> Path:
+    """Add the persistent comment-template channel row to a static panel."""
+    with Image.open(panel_path) as source:
+        panel = source.convert("RGBA")
+    channel_layer = TemplateTextLayer.model_validate(
+        {
+            "visible": True,
+            "x": PANEL_WIDTH // 2,
+            "y": 0,
+            "maxWidth": 800,
+            "fontSize": 42,
+            "color": "#FFFFFF",
+            "backgroundColor": None,
+        }
+    )
+    _draw_custom_channel(
+        panel,
+        channel_name=channel_name,
+        layer=channel_layer,
+        center_y=channel_center_y,
+        center_x=PANEL_WIDTH / 2,
+        channel_thumbnail_path=channel_thumbnail_path,
+    )
+    output = panel if overlay_mode else panel.convert("RGB")
+    output.save(panel_path, format="PNG", optimize=True)
+    return panel_path
+
+
 def create_custom_comment_overlay(
     comment: CommentOverlay,
     output_path: Path,
@@ -926,6 +961,7 @@ def create_custom_comment_overlay(
     channel_name: str,
     comment_y: int | None = None,
     channel_thumbnail_path: Path | None = None,
+    include_channel: bool = True,
 ) -> Path:
     """Create one opaque full-width card with an optional channel row below it."""
     create_comment_panel(
@@ -935,7 +971,7 @@ def create_custom_comment_overlay(
         theme=config.comment.theme,
         size=config.comment.size,
     )
-    if not config.channel.visible:
+    if not include_channel or not config.channel.visible:
         return output_path
     with Image.open(output_path) as source:
         panel = source.convert("RGBA")
