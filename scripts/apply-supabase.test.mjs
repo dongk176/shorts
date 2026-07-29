@@ -67,3 +67,21 @@ test("managed password accounts keep passwords in Supabase Auth and private tabl
   assert.match(migration, /revoke all on shorts_mvp\.managed_login_accounts from anon, authenticated/);
   assert.match(migration, /popular_filter_enabled boolean not null default false/);
 });
+
+test("retired public examples stay unpublished after a full migration replay", () => {
+  const retiredMigrationName = "202607290006_retire_public_examples.sql";
+  const retiredMigration = fs.readFileSync(
+    new URL(`../supabase/migrations/${retiredMigrationName}`, import.meta.url),
+    "utf8",
+  );
+
+  assert.ok(retiredMigrationName > "202607210001_retain_example_projects.sql");
+  assert.match(retiredMigration, /set is_example = false/);
+  for (const projectId of [
+    "aa9f0409-4dfd-47fa-8014-a0091cb8d08d",
+    "a8e6ea45-89e1-4a3e-a2b7-4b297ce439dc",
+    "cf3211c5-8cc2-45f4-af99-cab3c7b98d13",
+  ]) {
+    assert.match(retiredMigration, new RegExp(projectId));
+  }
+});
