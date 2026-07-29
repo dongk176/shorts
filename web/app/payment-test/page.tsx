@@ -31,6 +31,7 @@ function profileFromUser(user: Awaited<ReturnType<typeof getAuthenticatedUser>>)
   return {
     id: user.id,
     email: user.email || null,
+    loginId: null,
     displayName: typeof metadata.full_name === "string"
       ? metadata.full_name
       : typeof metadata.name === "string" ? metadata.name : null,

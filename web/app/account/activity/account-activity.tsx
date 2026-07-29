@@ -28,7 +28,7 @@ const eventLabel: Record<string, string> = {
   plan_grant: "플랜 시간 지급", addon_grant: "추가시간 지급",
   feedback_reward: "피드백 보상",
   update_event_bonus: "업데이트 이벤트 지급",
-  welcome_grant: "가입 무료 체험 지급",
+  welcome_grant: "로그인 무료 체험 지급",
   upgrade_grant: "업그레이드 새 플랜 지급", upgrade_carryover: "업그레이드 잔여시간 이월",
   annual_or_monthly_grant: "월별 플랜 지급", source_consumed: "작업 사용",
   reservation_released: "작업 시간 복구",
@@ -36,7 +36,7 @@ const eventLabel: Record<string, string> = {
 const productLabel: Record<string, string> = {
   feedback_reward_30m: "원본 영상 처리시간 30분",
   editor_launch_bonus_20260728: "편집 기능 업데이트 월 사용량 100% 보너스",
-  onboarding_welcome_20min_v1: "가입 무료 체험 원본 영상 처리시간 20분",
+  onboarding_welcome_20min_v1: "무료 체험 원본 영상 처리시간 20분",
 };
 const paymentStatusLabel: Record<string, string> = {
   pending: "결제 대기",

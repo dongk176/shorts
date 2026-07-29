@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { getDb } from "@/lib/db";
 import { getSupabaseAuthConfig } from "@/lib/supabase/config";
 
 export { getSupabaseAuthConfig } from "@/lib/supabase/config";
@@ -53,7 +54,17 @@ export async function getAuthenticatedUser() {
   try {
     const { data, error } = await supabase.auth.getUser();
     if (error) return null;
-    return data.user;
+    const user = data.user;
+    if (user?.app_metadata?.login_type === "managed") {
+      const rows = await getDb()`
+        select 1
+        from shorts_mvp.managed_login_accounts
+        where auth_user_id=${user.id} and is_active=true
+        limit 1
+      `;
+      if (!rows[0]) return null;
+    }
+    return user;
   } catch {
     return null;
   }

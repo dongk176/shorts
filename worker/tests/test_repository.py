@@ -347,6 +347,21 @@ def test_restricted_content_failure_message_migration_is_scoped() -> None:
     assert "video_jobs_restricted_content_failure_message" in migration
 
 
+def test_transcription_failure_message_migration_is_scoped() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607290005_transcription_failure_message.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "shorts_mvp.apply_transcription_failure_message" in migration
+    assert "new.error_code='TranscriptionError'" in migration
+    assert "영상에서 사람의 목소리를 찾지 못해 쇼츠를 생성할 수 없습니다." in migration
+    assert "사용량은 다시 복구되었습니다." in migration
+    assert "public." not in migration
+
+
 def test_render_performance_migration_adds_atomic_stage_counts_and_internal_metrics() -> None:
     migration = (
         Path(__file__).parents[2]

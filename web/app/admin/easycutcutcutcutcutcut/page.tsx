@@ -19,7 +19,9 @@ import {
   type AdminInquiryMetrics,
 } from "./admin-inquiries-dashboard";
 import { AdminMembersDashboard, type AdminMember } from "./admin-members-dashboard";
+import { AdminManagedAccountsSection } from "./admin-managed-accounts-section";
 import { AdminInstallmentsDashboard } from "./admin-installments-dashboard";
+import { AdminRuntimeSettings } from "./admin-runtime-settings";
 import { AdminReferralsSection } from "./admin-referrals-section";
 import {
   AdminRefundsDashboard,
@@ -31,6 +33,11 @@ import {
   type AdminUserOnboardingMetrics,
   type AdminUserOnboardingResponse,
 } from "./admin-onboarding-dashboard";
+import {
+  LOGIN_WELCOME_GRANT_FLAG_KEY,
+  ONBOARDING_WELCOME_PRODUCT_CODE,
+  onboardingWelcomeGrantEnabled,
+} from "@/lib/onboarding-welcome";
 import {
   userOccupationValues,
   userUsagePurposeValues,
@@ -69,7 +76,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
 
   const params = await searchParams;
   const requestedTab = first(params.tab);
-  const tab = ["billing", "refunds", "members", "referrals", "inquiries", "feedback", "onboarding", "installments"].includes(requestedTab)
+  const tab = ["billing", "refunds", "members", "managed-accounts", "referrals", "inquiries", "feedback", "onboarding", "settings", "installments"].includes(requestedTab)
     ? requestedTab
     : "billing";
   const requestedStatus = first(params.status);
@@ -109,7 +116,16 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     ? requestedInquiryKind
     : "all";
   const db = getDb();
-  const metricRows = await db`
+  const [runtimeSettingRows, metricRows, subscriptionRows] = await Promise.all([
+    tab === "settings" ? db`
+        select feature_flag.enabled,feature_flag.updated_at,administrator.email as updated_by_email
+        from shorts_mvp.runtime_feature_flags feature_flag
+        left join shorts_mvp.app_users administrator
+          on administrator.id=feature_flag.updated_by_user_id
+        where feature_flag.flag_key=${LOGIN_WELCOME_GRANT_FLAG_KEY}
+        limit 1
+      ` : Promise.resolve([]),
+    db`
       select
         coalesce(sum(amount_krw) filter (where status='succeeded'),0)::bigint as gross_sales,
         coalesce(sum(refunded_amount_krw),0)::bigint as refunded_sales,
@@ -121,14 +137,15 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         count(*) filter (where status='succeeded')::integer as paid_orders,
         count(*) filter (where status in ('unknown','manual_review'))::integer as review_orders
       from shorts_mvp.billing_orders
-    `;
-  const subscriptionRows = await db`
+    `,
+    db`
       select
         count(*) filter (where status='active')::integer as active,
         count(*) filter (where status='past_due')::integer as past_due,
         count(*) filter (where billing_review_status='manual_review')::integer as manual_review
       from shorts_mvp.user_subscriptions
-    `;
+    `,
+  ]);
   const orderRows = tab === "billing" ? await db`
       select o.id,o.order_id,o.kind,o.product_code,o.billing_cycle,o.amount_krw,
         o.refunded_amount_krw,o.refund_status,o.status,o.provider,o.provider_transaction_id,
@@ -260,6 +277,9 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         s.payment_provider,m.issuer_name,m.card_number_masked,
         coalesce(projects.project_count,0)::integer as project_count,
         coalesce(shorts.short_count,0)::integer as short_count,
+        coalesce(current_usage.limit_seconds,0)::bigint as usage_limit_seconds,
+        coalesce(current_usage.consumed_seconds,0)::bigint as usage_consumed_seconds,
+        coalesce(current_usage.reserved_seconds,0)::bigint as usage_reserved_seconds,
         count(*) over()::integer as filtered_count
       from shorts_mvp.app_users u
       left join shorts_mvp.referral_partners rp on rp.id=u.referral_partner_id
@@ -283,6 +303,45 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         from shorts_mvp.generated_shorts generated_short
         where generated_short.user_id=u.id
       ) shorts on true
+      left join lateral (
+        select
+          coalesce(sum(grant_row.total_seconds),0)::bigint as limit_seconds,
+          coalesce(sum(grant_row.consumed_seconds),0)::bigint as consumed_seconds,
+          coalesce(sum(grant_row.reserved_seconds),0)::bigint as reserved_seconds
+        from shorts_mvp.usage_grants grant_row
+        where grant_row.user_id=u.id
+          and grant_row.status='active'
+          and grant_row.valid_from<=clock_timestamp()
+          and grant_row.expires_at>clock_timestamp()
+          and (
+            (
+              grant_row.kind='base'
+              and exists (
+                select 1
+                from shorts_mvp.user_subscriptions active_subscription
+                where active_subscription.id=grant_row.subscription_id
+                  and active_subscription.status='active'
+                  and active_subscription.current_period_start<=clock_timestamp()
+                  and active_subscription.current_period_end>clock_timestamp()
+              )
+            )
+            or (
+              grant_row.kind='addon'
+              and (
+                grant_row.product_code=${ONBOARDING_WELCOME_PRODUCT_CODE}
+                or u.manual_service_access_until>clock_timestamp()
+                or exists (
+                  select 1
+                  from shorts_mvp.user_subscriptions active_subscription
+                  where active_subscription.user_id=u.id
+                    and active_subscription.status='active'
+                    and active_subscription.current_period_start<=clock_timestamp()
+                    and active_subscription.current_period_end>clock_timestamp()
+                )
+              )
+            )
+          )
+      ) current_usage on true
       where (
         ${query}=''
         or lower(coalesce(u.email,'')) like ${`%${query.toLowerCase()}%`}
@@ -562,6 +621,15 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     cardNumberMasked: row.cardNumberMasked || null,
     projectCount: Number(row.projectCount || 0),
     shortCount: Number(row.shortCount || 0),
+    usageLimitSeconds: Number(row.usageLimitSeconds || 0),
+    usageConsumedSeconds: Number(row.usageConsumedSeconds || 0),
+    usageReservedSeconds: Number(row.usageReservedSeconds || 0),
+    usageRemainingSeconds: Math.max(
+      0,
+      Number(row.usageLimitSeconds || 0)
+        - Number(row.usageConsumedSeconds || 0)
+        - Number(row.usageReservedSeconds || 0),
+    ),
     referralPartnerId: row.referralPartnerId || null,
     referralCreatorName: row.referralCreatorName || null,
     referralSlug: row.referralSlug || null,
@@ -692,6 +760,13 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             회원
           </Link>
           <Link
+            href="/admin/easycutcutcutcutcutcut?tab=managed-accounts"
+            aria-current={tab === "managed-accounts" ? "page" : undefined}
+            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "managed-accounts" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
+          >
+            발급 계정
+          </Link>
+          <Link
             href="/admin/easycutcutcutcutcutcut?tab=referrals"
             aria-current={tab === "referrals" ? "page" : undefined}
             className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "referrals" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
@@ -718,6 +793,13 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "onboarding" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
           >
             온보딩
+          </Link>
+          <Link
+            href="/admin/easycutcutcutcutcutcut?tab=settings"
+            aria-current={tab === "settings" ? "page" : undefined}
+            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "settings" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
+          >
+            운영 설정
           </Link>
           <Link
             href="/admin/easycutcutcutcutcutcut?tab=installments"
@@ -774,6 +856,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             }))}
             initialFilters={{ query, memberType, memberPlan, memberActivity, memberReferrer }}
           />
+        ) : tab === "managed-accounts" ? (
+          <AdminManagedAccountsSection />
         ) : tab === "referrals" ? (
           <AdminReferralsSection />
         ) : tab === "inquiries" ? (
@@ -804,6 +888,13 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             occupationCounts={onboardingOccupationCounts}
             usagePurposeCounts={onboardingUsagePurposeCounts}
             query={query}
+          />
+        ) : tab === "settings" ? (
+          <AdminRuntimeSettings
+            initialEnabled={Boolean(runtimeSettingRows[0]?.enabled)}
+            environmentEnabled={onboardingWelcomeGrantEnabled()}
+            initialUpdatedAt={iso(runtimeSettingRows[0]?.updatedAt)}
+            initialUpdatedBy={runtimeSettingRows[0]?.updatedByEmail || null}
           />
         ) : (
           <AdminInstallmentsDashboard />

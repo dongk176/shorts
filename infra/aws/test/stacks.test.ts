@@ -86,6 +86,10 @@ describe("shorts MVP infrastructure", () => {
       FairsharePolicy: {
         ComputeReservation: 10,
         ShareDecaySeconds: 600,
+        ShareDistribution: [
+          { ShareIdentifier: "paid*", WeightFactor: 0.25 },
+          { ShareIdentifier: "free*", WeightFactor: 1 },
+        ],
       },
     });
     compute.hasResourceProperties("AWS::Batch::JobQueue", {

@@ -1,5 +1,23 @@
-import { describe, expect, it } from "vitest";
-import { onboardingWelcomeRerenderAllowed } from "./onboarding-welcome";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  onboardingWelcomeGrantEnabled,
+  onboardingWelcomeRerenderAllowed,
+} from "./onboarding-welcome";
+
+afterEach(() => {
+  delete process.env.ONBOARDING_WELCOME_GRANT_ENABLED;
+});
+
+describe("onboarding welcome grant switch", () => {
+  it("enables login grants by default", () => {
+    expect(onboardingWelcomeGrantEnabled()).toBe(true);
+  });
+
+  it("pauses grants only with an explicit false value", () => {
+    process.env.ONBOARDING_WELCOME_GRANT_ENABLED = " FALSE ";
+    expect(onboardingWelcomeGrantEnabled()).toBe(false);
+  });
+});
 
 describe("onboarding welcome rerender budget", () => {
   it("allows one correction after the initial free render", () => {

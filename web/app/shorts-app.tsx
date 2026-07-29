@@ -2807,9 +2807,21 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   useEffect(() => {
     const url = new URL(window.location.href);
     const authError = url.searchParams.get("auth_error");
-    if (!authError) return;
-    setError(localizeAuthError(authError, locale));
+    const loginRequested = url.searchParams.get("login") === "1";
+    if (!authError && !loginRequested) return;
+    if (authError) setError(localizeAuthError(authError, locale));
+    if (loginRequested) {
+      const requestedNext = url.searchParams.get("next");
+      setLoginNext(
+        requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
+          ? requestedNext
+          : "/",
+      );
+      setLoginOpen(true);
+    }
     url.searchParams.delete("auth_error");
+    url.searchParams.delete("login");
+    url.searchParams.delete("next");
     window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
   }, [locale]);
 

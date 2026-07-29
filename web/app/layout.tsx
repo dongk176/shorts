@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { EditorLaunchAnnouncementOverlay } from "@/components/editor-launch-announcement-overlay";
+import { FirebaseAnalytics } from "@/components/google-analytics";
 import { StructuredData } from "@/components/structured-data";
-import { GoogleAnalytics } from "@/components/google-analytics";
 import { LanguageSelector } from "@/components/language-selector";
 import { ProjectFeedbackOverlay } from "@/components/project-feedback-overlay";
 import { UserOnboardingOverlay } from "@/components/user-onboarding-overlay";
@@ -143,7 +143,17 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             <UserOnboardingOverlay />
             <ProjectFeedbackOverlay />
           </UsageProvider>
-          <GoogleAnalytics measurementId={process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID} />
+          <FirebaseAnalytics
+            config={{
+              apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+              authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+              projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+              storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+              messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+              appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+              measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
+            }}
+          />
           <LanguageSelector />
         </I18nProvider>
       </body>

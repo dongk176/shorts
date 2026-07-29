@@ -4,11 +4,15 @@ const mocks = vi.hoisted(() => ({
   cookies: vi.fn(),
   getDb: vi.fn(),
   getAuthenticatedUser: vi.fn(),
+  issueLoginWelcomeGrantIfEligible: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/supabase/server", () => ({ getAuthenticatedUser: mocks.getAuthenticatedUser }));
+vi.mock("@/lib/onboarding-welcome-grant", () => ({
+  issueLoginWelcomeGrantIfEligible: mocks.issueLoginWelcomeGrantIfEligible,
+}));
 
 describe("MVP session cookie", () => {
   beforeEach(() => {
@@ -16,6 +20,7 @@ describe("MVP session cookie", () => {
     vi.clearAllMocks();
     vi.stubEnv("NODE_ENV", "production");
     mocks.getAuthenticatedUser.mockResolvedValue(null);
+    mocks.issueLoginWelcomeGrantIfEligible.mockResolvedValue(false);
   });
 
   it("stores only a SHA-256 hash and issues a secure HttpOnly cookie", async () => {
@@ -73,6 +78,10 @@ describe("MVP session cookie", () => {
       .mockResolvedValueOnce([{ id: "session-anonymous", selectedPlanCode: "standard", userId: null, lastSeenAt: new Date() }]);
     Object.assign(db, { begin: vi.fn((callback: (tx: typeof transaction) => unknown) => callback(transaction)) });
     mocks.getDb.mockReturnValue(db);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.issueLoginWelcomeGrantIfEligible.mockRejectedValueOnce(
+      new Error("temporary grant failure"),
+    );
 
     const { claimMvpSession } = await import("./session");
     await expect(claimMvpSession({
@@ -88,13 +97,20 @@ describe("MVP session cookie", () => {
       user: {
         id: "11111111-1111-4111-8111-111111111111",
         email: "creator@example.com",
+        loginId: null,
         displayName: "Creator",
         avatarUrl: "https://example.com/avatar.png",
       },
     });
     expect(transaction).toHaveBeenCalledTimes(8);
+    expect(mocks.issueLoginWelcomeGrantIfEligible)
+      .toHaveBeenCalledWith(db, "app-user");
+    expect(errorSpy).toHaveBeenCalledWith("login_welcome_grant_failed", {
+      errorName: "Error",
+    });
     expect(set).not.toHaveBeenCalled();
     expect(deleteCookie).toHaveBeenCalledWith("easycut_referral");
+    errorSpy.mockRestore();
   });
 
   it("reads an authenticated session without claiming resources again", async () => {
@@ -173,6 +189,8 @@ describe("MVP session cookie", () => {
     } as never);
 
     expect(transaction).toHaveBeenCalledTimes(11);
+    expect(mocks.issueLoginWelcomeGrantIfEligible)
+      .toHaveBeenCalledWith(db, "app-user");
     expect(deleteCookie).toHaveBeenCalledWith("easycut_referral");
   });
 });

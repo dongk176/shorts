@@ -7,6 +7,7 @@ import { recordPopularFilterUsage } from "@/lib/popular-filter-usage";
 import {
   assertPopularFilterAccess,
   hasDirectPopularFilterAccess,
+  managedPopularFilterOverride,
 } from "@/lib/popular-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
@@ -64,11 +65,12 @@ export async function GET(request: Request) {
       || query.data.period !== "all";
     if (usesPaidFeature) {
       const session = await requireAuthenticatedMvpSession();
-      const [billing, hasDirectAccess] = await Promise.all([
+      const [billing, hasDirectAccess, managedOverride] = await Promise.all([
         getBillingSummary(db, session.userId),
         hasDirectPopularFilterAccess(db, session.userId),
+        managedPopularFilterOverride(db, session.userId),
       ]);
-      assertPopularFilterAccess(billing, hasDirectAccess);
+      assertPopularFilterAccess(billing, hasDirectAccess, managedOverride);
       paidFilterUserId = session.userId;
     }
     const limit = 48;

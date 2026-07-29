@@ -89,7 +89,7 @@ def test_missing_openai_key_fails_before_youtube_download(tmp_path) -> None:
     worker.ingestion.download_bundle.assert_not_called()
     worker.repository.stage.assert_not_called()
     worker.repository.fail_job.assert_called_once_with(
-        "job-a", "TranscriptionError", worker.FINAL_PROCESSING_MESSAGE
+        "job-a", "TranscriptionError", worker.FINAL_TRANSCRIPTION_MESSAGE
     )
 
 
@@ -1028,6 +1028,16 @@ def test_project_preserves_restricted_content_codes_and_user_message() -> None:
     assert BatchWorker.FINAL_RESTRICTED_CONTENT_MESSAGE == (
         "멤버십 전용 여부, 구매·대여 콘텐츠는 사용할 수 없습니다.\n"
         "사용량은 다시 복구되었습니다. 영상 확인 후 다시 시도해주세요."
+    )
+
+
+def test_transcription_failure_explains_that_human_voice_is_required() -> None:
+    source = inspect.getsource(BatchWorker.project)
+
+    assert "isinstance(exc, TranscriptionError)" in source
+    assert BatchWorker.FINAL_TRANSCRIPTION_MESSAGE == (
+        "영상에서 사람의 목소리를 찾지 못해 쇼츠를 생성할 수 없습니다.\n"
+        "사용량은 다시 복구되었습니다."
     )
 
 

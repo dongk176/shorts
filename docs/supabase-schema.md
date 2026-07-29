@@ -12,6 +12,7 @@
 - `billing_payment_events`: 더페이원 `trxId` 멱등성, 주문 대조 및 결과 통지 처리 기록
 - `popular_filter_usage_events`: 유료 실시간 인기 필터 결과를 서버가 정상 제공한 시각·조건·결과 수와 당시 권한을 제공한 구독·주문 원장
 - `admin_billing_refunds`, `admin_subscription_changes`, `admin_audit_logs`: 관리자 환불·회원 구독 상태 변경 멱등 원장, 환불정책 버전·계산 스냅샷·권한 종료 방식과 관리자 작업 감사 기록
+- `runtime_feature_flags`: 재배포 없이 바꾸는 관리자 운영 스위치와 마지막 변경 관리자·시각
 - `subscription_upgrade_refunds`: 과거 판매 플랜의 수동 부분환불 기록 보존용 원장(신규 상품에서는 생성하지 않음)
 - `installment_campaigns`, `installment_campaign_terms`: 관리자 초안·게시형 월별 카드 할부 혜택
 - `payment_provider_installment_capabilities`: 더페이원 실제 승인 지원을 확인한 할부개월
@@ -29,7 +30,7 @@
 - `usage_grant_allocations`: 작업 예약이 어떤 grant에서 몇 초를 사용했는지 기록
 - `usage_reservations`: queued/running 원본 초와 grant allocation 전이 기준
 - `usage_events`: 성공한 원본 초, `(job_id,event_type)` idempotency
-- `user_onboarding_profiles`, `member_campaign_announcements`: 최초 온보딩 멱등 응답과 비유료 회원 20분 체험 grant의 계정당 1회 안내 이력
+- `user_onboarding_profiles`, `member_campaign_announcements`: 최초 온보딩 멱등 응답과 로그인 시 비유료 회원에게 지급한 20분 체험 grant의 계정당 1회 안내 이력
 - `job_events`: stage 변경 이벤트
 
 적용은 `npm run db:migrate`입니다. 서버와 Worker는 schema-qualified SQL만 사용합니다. Cleanup Lambda에서 PostgREST를 쓸 경우 Supabase API exposed schemas에 `shorts_mvp`를 추가하되, schema/table 권한은 service role에만 유지합니다.
@@ -38,5 +39,5 @@
 
 로그인 사용자의 작업·쇼츠·사용량 조회는 `app_users.id` 소유권으로 묶여 여러 브라우저 세션에서도 같은 데이터를 봅니다. 익명 사용자는 기존처럼 현재 `mvp_session_id`만 볼 수 있으며, 로그인 순간 현재 익명 세션의 행들에 `user_id`를 원자적으로 연결합니다.
 
-결제 이력이 없고 현재 유료·체험·연체·수동 권한이 없는 계정은 온보딩 완료 시 `onboarding_welcome_20min_v1` grant를 한 번 받습니다. 부분 고유 인덱스가 재로그인·재전송·동시 요청의 중복 지급을 막고, 예약 함수는 유료 권한이 없는 동안 해당 grant만 소비하도록 제한합니다. 이 grant는 `manual_service_access_until`을 설정하지 않으므로 실시간 인기 필터 권한과 분리됩니다.
+`onboarding_welcome_20min_v1` grant는 기본적으로 활성화되어 있으며, 결제 이력이 없고 현재 유료·체험·연체·수동 권한이 없는 계정이 로그인 완료 시 온보딩 여부와 무관하게 한 번 받습니다. `runtime_feature_flags.login_welcome_grant`를 관리자 화면에서 ON/OFF하면 재배포 없이 이후 로그인 신규 지급만 제어하고 기존 지급분은 유지합니다. `ONBOARDING_WELCOME_GRANT_ENABLED=false`는 DB 설정보다 우선하는 배포 환경의 긴급 강제 중지입니다. 부분 고유 인덱스가 재로그인·동시 로그인의 중복 지급을 막고, 예약 함수는 유료 권한이 없는 동안 해당 grant만 소비하도록 제한합니다. 이 grant는 `manual_service_access_until`을 설정하지 않으므로 실시간 인기 필터 권한과 분리됩니다.
 유료 권한이 있는 계정의 예약 함수는 `funding_source='paid'`인 grant를 항상 먼저 배정하고, 유료 잔액이 부족할 때만 `complimentary` grant를 배정합니다. 환불 조회는 결제 주문과 `paid` 출처가 모두 일치하는 allocation만 유료 사용으로 취급합니다.

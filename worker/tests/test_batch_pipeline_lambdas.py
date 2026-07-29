@@ -402,6 +402,7 @@ def test_project_submission_uses_eight_vcpu_definition_with_idempotent_key() -> 
         "planned_short_count": 10,
         "clip_length_option": "sec_31_60",
         "batch_job_definition": None,
+        "dispatch_priority_class": "paid",
     }])
     module._submit_once = MagicMock(return_value="project-batch-a")
     module.patch = MagicMock()
@@ -415,6 +416,9 @@ def test_project_submission_uses_eight_vcpu_definition_with_idempotent_key() -> 
     assert request["jobDefinition"] == "project-heavy-definition:1"
     assert request["retryStrategy"] == {"attempts": 1}
     assert request["timeout"] == {"attemptDurationSeconds": 7200}
+    assert request["shareIdentifier"].startswith("paiduser")
+    assert request["shareIdentifier"].isalnum()
+    assert request["schedulingPriorityOverride"] == 1000
     assert request["containerOverrides"]["command"] == [
         "python", "-m", "shorts_worker", "project", "--job-id", "job-a",
     ]
@@ -563,13 +567,27 @@ def test_project_failure_after_checkpoint_submits_one_resume() -> None:
 
 def test_rerender_uses_fargate_and_batch_never_retries_itself() -> None:
     module, _ = _load_lambda("batch_submitter")
-    module.rest = MagicMock(return_value=[{
-        "id": "short-a",
-        "status": "rerendering",
-        "render_version": 3,
-        "rerender_batch_job_id": None,
-        "mvp_session_id": "session-a",
-    }])
+
+    def rest(table: str, **_kwargs):
+        if table == "generated_shorts":
+            return [{
+                "id": "short-a",
+                "job_id": "job-a",
+                "status": "rerendering",
+                "render_version": 3,
+                "rerender_batch_job_id": None,
+                "mvp_session_id": "session-a",
+            }]
+        if table == "video_jobs":
+            return [{
+                "id": "job-a",
+                "mvp_session_id": "session-a",
+                "user_id": "user-a",
+                "dispatch_priority_class": "paid",
+            }]
+        return []
+
+    module.rest = rest
     module._submit_once = MagicMock(return_value="rerender-batch-a")
     module.patch = MagicMock()
 
@@ -582,6 +600,8 @@ def test_rerender_uses_fargate_and_batch_never_retries_itself() -> None:
     assert request["jobDefinition"] == "rerender-definition:1"
     assert request["retryStrategy"] == {"attempts": 1}
     assert request["parameters"] == {"rerenderAttempt": "0"}
+    assert request["shareIdentifier"].startswith("paiduser")
+    assert request["schedulingPriorityOverride"] == 1000
 
 
 def test_batch_submission_claim_reuses_an_already_recorded_job() -> None:
@@ -639,6 +659,7 @@ def test_render_submission_uses_fair_share_and_one_batch_attempt() -> None:
                 "deadline_at": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
                 "mvp_session_id": "session-a",
                 "user_id": "user-a",
+                "dispatch_priority_class": "free",
             }]
         return []
 
@@ -659,7 +680,7 @@ def test_render_submission_uses_fair_share_and_one_batch_attempt() -> None:
     assert request["retryStrategy"] == {"attempts": 1}
     assert request["schedulingPriorityOverride"] == 0
     assert request["parameters"] == {"renderRetryCount": "0"}
-    assert request["shareIdentifier"].startswith("user")
+    assert request["shareIdentifier"].startswith("freeuser")
     assert request["shareIdentifier"].isalnum()
     assert request["containerOverrides"]["environment"][0]["name"] == (
         "RENDER_SUBMITTED_AT"
@@ -679,6 +700,7 @@ def test_render_retry_preserves_share_and_increments_retry_parameter() -> None:
                 "deadline_at": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
                 "mvp_session_id": "session-a",
                 "user_id": "user-a",
+                "dispatch_priority_class": "paid",
             }]
         return []
 
@@ -698,8 +720,40 @@ def test_render_retry_preserves_share_and_increments_retry_parameter() -> None:
     request, _ = module._submit_once.call_args.args
     assert request["parameters"] == {"renderRetryCount": "1"}
     assert request["retryStrategy"] == {"attempts": 1}
-    assert request["schedulingPriorityOverride"] == 0
+    assert request["schedulingPriorityOverride"] == 1000
+    assert request["shareIdentifier"].startswith("paiduser")
     assert request["jobName"].endswith("-2-1")
+
+
+def test_outbox_dispatcher_forwards_paid_priority_snapshot() -> None:
+    module, aws_client = _load_lambda("outbox_dispatcher")
+    aws_client.invoke.return_value = {
+        "Payload": io.BytesIO(b'{"batchJobId":"project-batch-a"}')
+    }
+
+    def rest(table: str, **_kwargs):
+        if table == "rpc/claim_project_job_outbox":
+            return [{
+                "outbox_id": "outbox-a",
+                "job_id": "job-a",
+                "route_id": "route-a",
+                "priority_class": "paid",
+            }]
+        if table in {"rpc/claim_job_outbox", "rpc/claim_short_outbox"}:
+            return []
+        return []
+
+    module.rest = rest
+
+    result = module.handler({}, None)
+
+    assert result["dispatchedProjects"] == 1
+    invocation = aws_client.invoke.call_args.kwargs
+    assert json.loads(invocation["Payload"]) == {
+        "kind": "project",
+        "jobId": "job-a",
+        "priorityClass": "paid",
+    }
 
 
 def test_outbox_dispatcher_submits_prepare_directly_without_sqs() -> None:
@@ -734,6 +788,23 @@ def test_outbox_dispatcher_submits_prepare_directly_without_sqs() -> None:
         "itemCount": 1,
     }
     aws_client.send_message.assert_not_called()
+
+
+def test_paid_job_priority_migration_is_aged_and_non_preemptive() -> None:
+    sql = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607290003_paid_job_priority.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "dispatch_priority_class in ('paid','free')" in sql
+    assert "subscription.status in ('active','trialing')" in sql
+    assert "subscription.billing_cycle in ('monthly','yearly')" in sql
+    assert "interval '15 minutes'" in sql
+    assert "for update of o skip locked" in sql
+    assert "status not in ('completed','failed','expired','deleted')" in sql
+    assert "set status='failed'" not in sql
 
 
 def test_completion_migration_never_revives_terminal_or_late_jobs() -> None:

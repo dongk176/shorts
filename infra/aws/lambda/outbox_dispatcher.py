@@ -33,12 +33,14 @@ def _submit_prepare_batch(dispatch_batch_id: str, item_count: int) -> str:
     return batch_job_id
 
 
-def _submit_project(job_id: str) -> str:
+def _submit_project(job_id: str, priority_class: str) -> str:
     response = lambda_client.invoke(
         FunctionName=batch_submitter_function,
         InvocationType="RequestResponse",
         Payload=json.dumps({
-            "kind": "project", "jobId": job_id,
+            "kind": "project",
+            "jobId": job_id,
+            "priorityClass": priority_class,
         }, separators=(",", ":")).encode(),
     )
     payload = json.loads(response["Payload"].read() or b"{}")
@@ -79,12 +81,17 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
     project_jobs = 0
     for item in projects:
         job_id = str(item["job_id"])
+        priority_class = (
+            "paid" if str(item.get("priority_class") or "").casefold() == "paid"
+            else "free"
+        )
         try:
-            batch_job_id = _submit_project(job_id)
+            batch_job_id = _submit_project(job_id, priority_class)
             log_event(
                 "project_outbox_submitted",
                 job_id=job_id,
                 batch_job_id=batch_job_id,
+                priority_class=priority_class,
             )
             project_jobs += 1
         except Exception as exc:

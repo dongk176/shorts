@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import type { Sql, TransactionSql } from "postgres";
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
+import { issueLoginWelcomeGrantIfEligible } from "@/lib/onboarding-welcome-grant";
 import { REFERRAL_COOKIE } from "@/lib/referral-policy";
 import { referralTokenHash } from "@/lib/referral-security";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
@@ -13,6 +14,7 @@ export const MVP_SESSION_COOKIE = "shorts_mvp_session";
 export type AuthProfile = {
   id: string;
   email: string | null;
+  loginId?: string | null;
   displayName: string | null;
   avatarUrl: string | null;
 };
@@ -37,6 +39,7 @@ export function authProfile(user: User): AuthProfile {
   return {
     id: user.id,
     email: profileValue(user.email, 320),
+    loginId: profileValue(user.app_metadata?.login_id, 32),
     displayName: profileValue(metadata.full_name || metadata.name, 200),
     avatarUrl: profileValue(metadata.avatar_url || metadata.picture, 2048),
   };
@@ -158,7 +161,9 @@ export async function claimMvpSession(authenticatedUser: User): Promise<MvpSessi
   const existing = await findStoredSession(db, token);
   const profile = authProfile(authenticatedUser);
   const preferredPlan = "free";
-  const provider = profileValue(authenticatedUser.app_metadata?.provider, 100) || "google";
+  const provider = authenticatedUser.app_metadata?.login_type === "managed"
+    ? "managed_password"
+    : profileValue(authenticatedUser.app_metadata?.provider, 100) || "google";
   const claimed = await db.begin(async (tx) => {
     const insertedRows = await tx`
       insert into shorts_mvp.app_users (
@@ -247,6 +252,13 @@ export async function claimMvpSession(authenticatedUser: User): Promise<MvpSessi
 
     return { appUser, activeSession };
   });
+  try {
+    await issueLoginWelcomeGrantIfEligible(db, claimed.appUser.id);
+  } catch (error) {
+    console.error("login_welcome_grant_failed", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+  }
   cookieStore.delete(REFERRAL_COOKIE);
 
   return {

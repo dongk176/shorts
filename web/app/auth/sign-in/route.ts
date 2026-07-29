@@ -5,7 +5,13 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 export async function GET(request: NextRequest) {
   try {
     const next = safeNextPath(request.nextUrl.searchParams.get("next"));
-    const provider = request.nextUrl.searchParams.get("provider") || "google";
+    const provider = request.nextUrl.searchParams.get("provider");
+    if (!provider) {
+      const target = new URL("/", requestAppOrigin(request));
+      target.searchParams.set("login", "1");
+      target.searchParams.set("next", next);
+      return NextResponse.redirect(target, { status: 303 });
+    }
     if (provider !== "google" && provider !== "kakao") throw new Error("AUTH_UNSUPPORTED_PROVIDER");
     const callback = new URL("/auth/callback", requestAppOrigin(request));
     const supabase = await createSupabaseServerClient();

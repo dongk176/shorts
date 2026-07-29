@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
   authenticatedSession: vi.fn(),
   hasDirectPopularFilterAccess: vi.fn(),
+  managedPopularFilterOverride: vi.fn(),
   recordPopularFilterUsage: vi.fn(),
 }));
 
@@ -32,6 +33,7 @@ vi.mock("@/lib/popular-filter-usage", () => ({
 vi.mock("@/lib/popular-entitlements", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/popular-entitlements")>(),
   hasDirectPopularFilterAccess: mocks.hasDirectPopularFilterAccess,
+  managedPopularFilterOverride: mocks.managedPopularFilterOverride,
 }));
 vi.mock("@/lib/session", () => ({
   requireAuthenticatedMvpSession: mocks.authenticatedSession,
@@ -45,6 +47,7 @@ beforeEach(() => {
   mocks.getDb.mockReturnValue("database");
   mocks.authenticatedSession.mockResolvedValue({ userId: "user-a" });
   mocks.hasDirectPopularFilterAccess.mockResolvedValue(false);
+  mocks.managedPopularFilterOverride.mockResolvedValue(null);
   mocks.recordPopularFilterUsage.mockResolvedValue({ id: "usage-a" });
   mocks.getBillingSummary.mockResolvedValue({
     activeProducts: [{ planCode: "easycut_pro_v2" }],

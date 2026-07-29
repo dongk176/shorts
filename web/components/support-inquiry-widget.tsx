@@ -151,7 +151,7 @@ export function SupportInquiryWidget({
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<WidgetView>("menu");
   const [category, setCategory] = useState<SupportInquiryCategory | null>(null);
-  const [contactEmail, setContactEmail] = useState(user?.email || "");
+  const [contactEmail, setContactEmail] = useState(user?.loginId ? "" : user?.email || "");
   const [message, setMessage] = useState("");
   const [billingOrders, setBillingOrders] = useState<RefundableOrder[]>([]);
   const [billingOrdersStatus, setBillingOrdersStatus] =
@@ -170,8 +170,10 @@ export function SupportInquiryWidget({
   const successOverlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (user?.email) setContactEmail((current) => current || user.email || "");
-  }, [user?.email]);
+    if (user?.email && !user.loginId) {
+      setContactEmail((current) => current || user.email || "");
+    }
+  }, [user?.email, user?.loginId]);
 
   useEffect(() => {
     if (!open) return;

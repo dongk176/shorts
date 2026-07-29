@@ -51,3 +51,19 @@ test("direct service access can reserve only explicitly granted processing time"
     /g\.total_seconds\s*>\s*g\.reserved_seconds\+g\.consumed_seconds/,
   );
 });
+
+test("managed password accounts keep passwords in Supabase Auth and private tables", () => {
+  const migration = fs.readFileSync(
+    new URL(
+      "../supabase/migrations/202607290004_managed_password_accounts.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.doesNotMatch(migration, /password_(?:hash|salt)|\bpassword text\b/i);
+  assert.match(migration, /references auth\.users\(id\) on delete cascade/);
+  assert.match(migration, /managed_login_accounts enable row level security/);
+  assert.match(migration, /revoke all on shorts_mvp\.managed_login_accounts from anon, authenticated/);
+  assert.match(migration, /popular_filter_enabled boolean not null default false/);
+});

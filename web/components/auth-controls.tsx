@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import type { AuthProfile } from "@/lib/session";
@@ -56,6 +56,11 @@ export function AuthControls({
 }) {
   const { t } = useI18n();
   const [internalLoginOpen, setInternalLoginOpen] = useState(false);
+  const [loginMethod, setLoginMethod] = useState<"social" | "password">("social");
+  const [loginId, setLoginId] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordLoginPending, setPasswordLoginPending] = useState(false);
+  const [passwordLoginError, setPasswordLoginError] = useState("");
   const loginOpen = controlledLoginOpen ?? internalLoginOpen;
   const setLoginOpen = useCallback((open: boolean) => {
     if (controlledLoginOpen === undefined) setInternalLoginOpen(open);
@@ -75,6 +80,33 @@ export function AuthControls({
       document.body.style.overflow = previousOverflow;
     };
   }, [loginOpen, setLoginOpen, user]);
+
+  async function submitPasswordLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (passwordLoginPending) return;
+    setPasswordLoginPending(true);
+    setPasswordLoginError("");
+    try {
+      const response = await fetch("/auth/password/sign-in", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loginId, password, next }),
+      });
+      const payload = await response.json().catch(() => ({})) as {
+        detail?: string;
+        next?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.detail || t("auth.passwordError"));
+      }
+      window.location.assign(payload.next || "/");
+    } catch (error) {
+      setPasswordLoginError(
+        error instanceof Error ? error.message : t("auth.passwordError"),
+      );
+      setPasswordLoginPending(false);
+    }
+  }
 
   if (!user) {
     return (
@@ -116,18 +148,95 @@ export function AuthControls({
                 <p id="login-dialog-description" className="sr-only">
                   {t("auth.dialogDescription")}
                 </p>
-                <div className="mt-8 space-y-4">
-                  {loginProviders.map((provider) => (
-                    <a
-                      key={provider.id}
-                      href={`/auth/sign-in?provider=${provider.id}&next=${encodeURIComponent(next)}`}
-                      className={`flex min-h-14 w-full items-center justify-center gap-3 rounded-xl px-5 text-[15px] font-bold shadow-[0_6px_18px_rgba(0,0,0,.16)] transition duration-200 active:scale-[.98] ${provider.className}`}
+                {loginMethod === "social" ? (
+                  <div className="mt-8 space-y-4">
+                    {loginProviders.map((provider) => (
+                      <a
+                        key={provider.id}
+                        href={`/auth/sign-in?provider=${provider.id}&next=${encodeURIComponent(next)}`}
+                        className={`flex min-h-14 w-full items-center justify-center gap-3 rounded-xl px-5 text-[15px] font-bold shadow-[0_6px_18px_rgba(0,0,0,.16)] transition duration-200 active:scale-[.98] ${provider.className}`}
+                      >
+                        <provider.Icon />
+                        {t(provider.labelKey)}
+                      </a>
+                    ))}
+                    <div className="flex items-center gap-3 py-1 text-[11px] font-bold text-neutral-500">
+                      <span className="h-px flex-1 bg-white/10" />
+                      {t("auth.or")}
+                      <span className="h-px flex-1 bg-white/10" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPasswordLoginError("");
+                        setLoginMethod("password");
+                      }}
+                      className="flex min-h-14 w-full items-center justify-center gap-3 rounded-xl border border-white/15 bg-white/[.04] px-5 text-[15px] font-bold text-white transition hover:border-white/25 hover:bg-white/[.07] active:scale-[.98]"
                     >
-                      <provider.Icon />
-                      {t(provider.labelKey)}
-                    </a>
-                  ))}
-                </div>
+                      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                        <circle cx="12" cy="8" r="3.5" />
+                        <path d="M5 20c.4-4 2.8-6 7-6s6.6 2 7 6" strokeLinecap="round" />
+                      </svg>
+                      {t("auth.passwordLogin")}
+                    </button>
+                  </div>
+                ) : (
+                  <form className="mt-8 text-left" onSubmit={submitPasswordLogin}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPasswordLoginError("");
+                        setLoginMethod("social");
+                      }}
+                      className="mb-5 inline-flex items-center gap-1 text-xs font-bold text-neutral-400 transition hover:text-white"
+                    >
+                      <span aria-hidden="true">←</span> {t("auth.back")}
+                    </button>
+                    <label className="block text-xs font-bold text-neutral-300">
+                      {t("auth.loginId")}
+                      <input
+                        value={loginId}
+                        onChange={(event) => setLoginId(event.target.value)}
+                        minLength={3}
+                        maxLength={32}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        autoComplete="username"
+                        required
+                        className="mt-2 h-[52px] w-full rounded-xl border border-white/10 bg-black/20 px-4 text-[15px] text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8c7c]/60 focus:ring-2 focus:ring-[#ff715e]/10"
+                        placeholder={t("auth.loginIdPlaceholder")}
+                      />
+                    </label>
+                    <label className="mt-4 block text-xs font-bold text-neutral-300">
+                      {t("auth.password")}
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        maxLength={128}
+                        autoComplete="current-password"
+                        required
+                        className="mt-2 h-[52px] w-full rounded-xl border border-white/10 bg-black/20 px-4 text-[15px] text-white outline-none transition placeholder:text-neutral-600 focus:border-[#ff8c7c]/60 focus:ring-2 focus:ring-[#ff715e]/10"
+                        placeholder={t("auth.passwordPlaceholder")}
+                      />
+                    </label>
+                    {passwordLoginError ? (
+                      <p className="mt-4 rounded-xl border border-red-300/15 bg-red-300/[.06] px-3 py-2.5 text-xs leading-5 text-red-100" role="alert">
+                        {passwordLoginError}
+                      </p>
+                    ) : null}
+                    <button
+                      type="submit"
+                      disabled={passwordLoginPending || loginId.trim().length < 3 || !password}
+                      className="mt-5 flex min-h-14 w-full items-center justify-center rounded-xl bg-[#ff715e] px-5 text-[15px] font-black text-white shadow-[0_8px_24px_rgba(255,113,94,.18)] transition hover:bg-[#ff806f] active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {passwordLoginPending ? t("auth.passwordSubmitting") : t("auth.passwordSubmit")}
+                    </button>
+                    <p className="mt-4 text-center text-xs leading-5 text-neutral-500">
+                      {t("auth.passwordInviteOnly")}
+                    </p>
+                  </form>
+                )}
                 <p className="mt-7 text-center text-[11px] leading-5 text-[#b19a96]">
                   {t("auth.consentPrefix")} <Link href="/terms" className="underline underline-offset-2 hover:text-white">{t("auth.terms")}</Link> {t("auth.consentAnd")} <Link href="/privacy" className="underline underline-offset-2 hover:text-white">{t("auth.privacy")}</Link>{t("auth.consentSuffix")}
                 </p>
@@ -139,13 +248,13 @@ export function AuthControls({
       </>
     );
   }
-  const label = user.displayName || user.email || t("auth.myAccount");
+  const label = user.displayName || user.loginId || user.email || t("auth.myAccount");
   return (
     <div className="flex items-center gap-2">
       <Link
         href="/account/activity"
         className="hidden max-w-40 truncate rounded-md px-1.5 py-1 text-xs font-semibold text-neutral-300 transition hover:bg-white/[.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff8c7c]/70 sm:block"
-        title={user.email || label}
+        title={user.loginId || user.email || label}
         aria-label={`${label} 사용내역 보기`}
       >
         {label}

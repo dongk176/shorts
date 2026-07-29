@@ -249,6 +249,7 @@ export type MvpState = {
   user: {
     id: string;
     email: string | null;
+    loginId?: string | null;
     displayName: string | null;
     avatarUrl: string | null;
   } | null;

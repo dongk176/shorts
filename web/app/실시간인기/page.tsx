@@ -22,10 +22,31 @@ export default async function PopularVideosPage() {
     try {
       const db = getDb();
       const appUserRows = await db`
-        select id,manual_service_access_until > clock_timestamp()
-          as has_direct_popular_filter_access
-        from shorts_mvp.app_users
-        where auth_user_id=${user.id}
+        select account.id,(
+          (
+            account.manual_service_access_until > clock_timestamp()
+            and not exists (
+              select 1
+              from shorts_mvp.managed_login_accounts managed
+              where managed.app_user_id=account.id
+            )
+          )
+          or exists (
+            select 1
+            from shorts_mvp.managed_login_accounts managed
+            where managed.app_user_id=account.id
+              and managed.is_active=true
+              and managed.popular_filter_enabled=true
+          )
+        ) as has_direct_popular_filter_access,
+        (
+          select managed.popular_filter_enabled
+          from shorts_mvp.managed_login_accounts managed
+          where managed.app_user_id=account.id and managed.is_active=true
+          limit 1
+        ) as managed_popular_filter_override
+        from shorts_mvp.app_users account
+        where account.auth_user_id=${user.id}
         limit 1
       `;
       const appUserId = typeof appUserRows[0]?.id === "string"
@@ -35,6 +56,10 @@ export default async function PopularVideosPage() {
         canUseFilters = billingSupportsPopularFilters(
           await getBillingSummary(db, appUserId),
           Boolean(appUserRows[0]?.hasDirectPopularFilterAccess),
+          appUserRows[0]?.managedPopularFilterOverride === null
+            || appUserRows[0]?.managedPopularFilterOverride === undefined
+            ? null
+            : Boolean(appUserRows[0].managedPopularFilterOverride),
         );
       }
     } catch (error) {

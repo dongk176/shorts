@@ -53,6 +53,18 @@ def _share_identifier(*values: object) -> str:
     return f"user{digest}"
 
 
+def _priority_class(value: object) -> str:
+    return "paid" if str(value or "").casefold() == "paid" else "free"
+
+
+def _priority_share_identifier(priority_class: object, *values: object) -> str:
+    return f"{_priority_class(priority_class)}{_share_identifier(*values)}"
+
+
+def _scheduling_priority(priority_class: object) -> int:
+    return 1000 if _priority_class(priority_class) == "paid" else 0
+
+
 def _render_container_overrides(command: list[str]) -> dict[str, object]:
     return {
         "command": command,
@@ -111,7 +123,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
         jobs = rest("video_jobs", query=(
             "select=id,status,pipeline_version,project_resume_count,aws_batch_job_id,"
             "mvp_session_id,user_id,preparation_finished_at,planned_short_count,"
-            "clip_length_option,batch_job_definition"
+            "clip_length_option,batch_job_definition,dispatch_priority_class"
             f"&id=eq.{encoded_job_id}&limit=1"
         )) or []
         if not jobs or int(jobs[0].get("pipeline_version") or 1) != 2:
@@ -135,6 +147,9 @@ def _submit(payload: dict[str, Any]) -> str | None:
             job,
             resume=resume,
         )
+        priority_class = _priority_class(
+            job.get("dispatch_priority_class") or payload.get("priorityClass")
+        )
         log_event(
             "project_resource_tier_selected",
             job_id=job_id,
@@ -142,15 +157,17 @@ def _submit(payload: dict[str, Any]) -> str | None:
             estimated_output_seconds=estimated_seconds,
             job_definition=job_definition,
             resume=resume,
+            priority_class=priority_class,
         )
         request = dict(
             jobName=f"shorts-project-{job_id}-{suffix}",
             jobQueue=os.environ["PROJECT_BATCH_QUEUE"],
             jobDefinition=job_definition,
-            shareIdentifier=_share_identifier(
+            shareIdentifier=_priority_share_identifier(
+                priority_class,
                 job.get("user_id"), job.get("mvp_session_id"), job_id
             ),
-            schedulingPriorityOverride=0,
+            schedulingPriorityOverride=_scheduling_priority(priority_class),
             containerOverrides=_render_container_overrides(command),
             retryStrategy={"attempts": 1},
             timeout={"attemptDurationSeconds": 7200},
@@ -243,7 +260,8 @@ def _submit(payload: dict[str, Any]) -> str | None:
         if recorded_ids:
             return sorted(recorded_ids)[0]
         jobs = rest("video_jobs", query=(
-            "select=id,status,deadline_at,mvp_session_id,user_id"
+            "select=id,status,deadline_at,mvp_session_id,user_id,"
+            "dispatch_priority_class"
             f"&id=eq.{encoded_job_id}&limit=1"
         )) or []
         if not jobs or jobs[0]["status"] != "rendering":
@@ -251,14 +269,16 @@ def _submit(payload: dict[str, Any]) -> str | None:
         deadline = datetime.fromisoformat(jobs[0]["deadline_at"].replace("Z", "+00:00"))
         if deadline <= datetime.now(UTC):
             return None
+        priority_class = _priority_class(jobs[0].get("dispatch_priority_class"))
         request = {
             "jobName": f"shorts-render-{job_id}",
             "jobQueue": os.environ["RENDER_BATCH_QUEUE"],
             "jobDefinition": os.environ["RENDER_JOB_DEFINITION"],
-            "shareIdentifier": _share_identifier(
+            "shareIdentifier": _priority_share_identifier(
+                priority_class,
                 jobs[0].get("user_id"), jobs[0].get("mvp_session_id"), job_id
             ),
-            "schedulingPriorityOverride": 0,
+            "schedulingPriorityOverride": _scheduling_priority(priority_class),
             "parameters": {"renderRetryCount": "0"},
             "containerOverrides": _render_container_overrides([
                 "python", "-m", "shorts_worker", "render-shard", "--job-id", job_id,
@@ -289,7 +309,8 @@ def _submit(payload: dict[str, Any]) -> str | None:
             "&status=eq.rendering&limit=1"
         )) or []
         jobs = rest("video_jobs", query=(
-            "select=id,status,deadline_at,mvp_session_id,user_id"
+            "select=id,status,deadline_at,mvp_session_id,user_id,"
+            "dispatch_priority_class"
             f"&id=eq.{encoded_job_id}&limit=1"
         )) or []
         if not pending or not jobs or jobs[0]["status"] != "rendering":
@@ -300,14 +321,16 @@ def _submit(payload: dict[str, Any]) -> str | None:
         retry_name = (
             f"shorts-render-retry-{job_id}-{shard_index}-{retry_count}"
         )
+        priority_class = _priority_class(jobs[0].get("dispatch_priority_class"))
         request = dict(
             jobName=retry_name,
             jobQueue=os.environ["RENDER_BATCH_QUEUE"],
             jobDefinition=os.environ["RENDER_JOB_DEFINITION"],
-            shareIdentifier=_share_identifier(
+            shareIdentifier=_priority_share_identifier(
+                priority_class,
                 jobs[0].get("user_id"), jobs[0].get("mvp_session_id"), job_id
             ),
-            schedulingPriorityOverride=0,
+            schedulingPriorityOverride=_scheduling_priority(priority_class),
             parameters={"renderRetryCount": str(retry_count)},
             containerOverrides=_render_container_overrides([
                 "python", "-m", "shorts_worker", "render-shard", "--job-id", job_id,
@@ -333,22 +356,35 @@ def _submit(payload: dict[str, Any]) -> str | None:
         rerender_attempt = max(0, min(1, int(payload.get("attempt") or 0)))
         encoded_short_id = urllib.parse.quote(short_id, safe="")
         shorts = rest("generated_shorts", query=(
-            "select=id,status,render_version,rerender_batch_job_id,mvp_session_id"
+            "select=id,status,render_version,rerender_batch_job_id,mvp_session_id,"
+            "job_id"
             f"&id=eq.{encoded_short_id}&status=eq.rerendering&limit=1"
         )) or []
         if not shorts:
             return None
         if shorts[0].get("rerender_batch_job_id"):
             return str(shorts[0]["rerender_batch_job_id"])
+        parent_jobs = rest("video_jobs", query=(
+            "select=id,user_id,mvp_session_id,dispatch_priority_class"
+            f"&id=eq.{urllib.parse.quote(str(shorts[0]['job_id']), safe='')}&limit=1"
+        )) or []
+        parent_job = parent_jobs[0] if parent_jobs else {}
+        priority_class = _priority_class(
+            parent_job.get("dispatch_priority_class")
+        )
         version = int(shorts[0]["render_version"]) + 1
         request = dict(
             jobName=f"shorts-rerender-{short_id}-v{version}-a{rerender_attempt}",
             jobQueue=os.environ["PROJECT_BATCH_QUEUE"],
             jobDefinition=os.environ["RERENDER_JOB_DEFINITION"],
-            shareIdentifier=_share_identifier(
-                shorts[0].get("mvp_session_id"), short_id
+            shareIdentifier=_priority_share_identifier(
+                priority_class,
+                parent_job.get("user_id"),
+                parent_job.get("mvp_session_id"),
+                shorts[0].get("mvp_session_id"),
+                short_id,
             ),
-            schedulingPriorityOverride=0,
+            schedulingPriorityOverride=_scheduling_priority(priority_class),
             containerOverrides=_render_container_overrides([
                 "python", "-m", "shorts_worker", "rerender", "--short-id", short_id,
             ]),

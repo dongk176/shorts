@@ -48,4 +48,14 @@ describe("popular filter entitlements", () => {
     expect(billingSupportsPopularFilters(billing, true)).toBe(true);
     expect(() => assertPopularFilterAccess(billing, true)).not.toThrow();
   });
+
+  it("uses the administrator toggle as the final policy for issued accounts", () => {
+    const paidBilling = { activeProducts: [{ planCode: "pro" }] };
+
+    expect(billingSupportsPopularFilters(paidBilling as never, true, false)).toBe(false);
+    expect(() => assertPopularFilterAccess(paidBilling as never, true, false)).toThrowError(
+      POPULAR_FILTER_PLAN_MESSAGE,
+    );
+    expect(billingSupportsPopularFilters({ activeProducts: [] }, false, true)).toBe(true);
+  });
 });

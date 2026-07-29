@@ -56,9 +56,25 @@ export async function recordPopularFilterUsage(
   if (!source?.billingOrderId) {
     const directAccess = await db`
       select 1
-      from shorts_mvp.app_users
-      where id=${input.userId}
-        and manual_service_access_until > clock_timestamp()
+      from shorts_mvp.app_users account
+      where account.id=${input.userId}
+        and (
+          (
+            account.manual_service_access_until > clock_timestamp()
+            and not exists (
+              select 1
+              from shorts_mvp.managed_login_accounts managed
+              where managed.app_user_id=account.id
+            )
+          )
+          or exists (
+            select 1
+            from shorts_mvp.managed_login_accounts managed
+            where managed.app_user_id=account.id
+              and managed.is_active=true
+              and managed.popular_filter_enabled=true
+          )
+        )
       limit 1
     `;
     if (!directAccess[0]) {

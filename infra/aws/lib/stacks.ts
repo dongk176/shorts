@@ -267,7 +267,14 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       "ProjectFargateFairSharePolicy",
       {
         name: `shorts-mvp-project-fargate-fair-share-${props.environment}`,
-        fairsharePolicy: { computeReservation: 10, shareDecaySeconds: 600 },
+        fairsharePolicy: {
+          computeReservation: 10,
+          shareDecaySeconds: 600,
+          shareDistribution: [
+            { shareIdentifier: "paid*", weightFactor: 0.25 },
+            { shareIdentifier: "free*", weightFactor: 1 },
+          ],
+        },
       },
     );
     const projectQueue = new batch.CfnJobQueue(this, "ProjectFargateJobQueue", {
@@ -323,6 +330,10 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         fairsharePolicy: {
           computeReservation: 10,
           shareDecaySeconds: 600,
+          shareDistribution: [
+            { shareIdentifier: "paid*", weightFactor: 0.25 },
+            { shareIdentifier: "free*", weightFactor: 1 },
+          ],
         },
       },
     );

@@ -308,7 +308,11 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
               <span className="min-w-0">
                 <span className="block text-xs font-semibold text-neutral-500">{t("settings.signedInAs")}</span>
                 <strong className="mt-1 block truncate text-sm font-extrabold text-neutral-100">{accountLabel}</strong>
-                {user?.displayName && user.email ? <span className="mt-1 block truncate text-xs text-neutral-500">{user.email}</span> : null}
+                {user?.displayName && (user.loginId || user.email) ? (
+                  <span className="mt-1 block truncate text-xs text-neutral-500">
+                    {user.loginId ? `아이디 ${user.loginId}` : user.email}
+                  </span>
+                ) : null}
               </span>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">

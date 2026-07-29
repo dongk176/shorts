@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   createServerClient: vi.fn(),
   getConfig: vi.fn(),
   getUser: vi.fn(),
+  getDb: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({
@@ -17,6 +18,10 @@ vi.mock("@supabase/ssr", () => ({
 
 vi.mock("@/lib/supabase/config", () => ({
   getSupabaseAuthConfig: mocks.getConfig,
+}));
+
+vi.mock("@/lib/db", () => ({
+  getDb: mocks.getDb,
 }));
 
 import { getAuthenticatedUser } from "./server";
@@ -32,6 +37,7 @@ describe("getAuthenticatedUser", () => {
     mocks.createServerClient.mockReset();
     mocks.getConfig.mockReset();
     mocks.getUser.mockReset();
+    mocks.getDb.mockReset();
     cookieStore.getAll.mockClear();
     cookieStore.set.mockClear();
     mocks.cookies.mockResolvedValue(cookieStore);
@@ -103,5 +109,31 @@ describe("getAuthenticatedUser", () => {
     });
 
     await expect(getAuthenticatedUser()).resolves.toBeNull();
+  });
+
+  it("fails closed when an administrator-issued account is disabled", async () => {
+    const user = {
+      id: "managed-auth-user",
+      app_metadata: { login_type: "managed", login_id: "creator01" },
+    };
+    mocks.getConfig.mockReturnValue({ url: "https://project.supabase.co", key: "publishable" });
+    mocks.getUser.mockResolvedValue({ data: { user }, error: null });
+    mocks.createServerClient.mockReturnValue({ auth: { getUser: mocks.getUser } });
+    mocks.getDb.mockReturnValue(vi.fn().mockResolvedValue([]));
+
+    await expect(getAuthenticatedUser()).resolves.toBeNull();
+  });
+
+  it("accepts an active administrator-issued account", async () => {
+    const user = {
+      id: "managed-auth-user",
+      app_metadata: { login_type: "managed", login_id: "creator01" },
+    };
+    mocks.getConfig.mockReturnValue({ url: "https://project.supabase.co", key: "publishable" });
+    mocks.getUser.mockResolvedValue({ data: { user }, error: null });
+    mocks.createServerClient.mockReturnValue({ auth: { getUser: mocks.getUser } });
+    mocks.getDb.mockReturnValue(vi.fn().mockResolvedValue([{ "?column?": 1 }]));
+
+    await expect(getAuthenticatedUser()).resolves.toBe(user);
   });
 });

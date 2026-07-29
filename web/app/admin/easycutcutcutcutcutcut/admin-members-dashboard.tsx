@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { usageMinutes } from "@/lib/admin-member-usage";
 import type { AdminSubscriptionStatus } from "@/lib/admin-subscription";
 
 export type AdminMember = {
@@ -25,6 +26,10 @@ export type AdminMember = {
   cardNumberMasked: string | null;
   projectCount: number;
   shortCount: number;
+  usageLimitSeconds: number;
+  usageConsumedSeconds: number;
+  usageReservedSeconds: number;
+  usageRemainingSeconds: number;
   referralPartnerId: string | null;
   referralCreatorName: string | null;
   referralSlug: string | null;
@@ -265,10 +270,11 @@ export function AdminMembersDashboard({
 
         {message && <p role="status" className="border-b border-white/10 bg-[#ff8c7c]/10 px-5 py-3 text-sm font-bold text-[#ffb4a8]">{message}</p>}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1500px] text-left text-sm">
+          <table className="w-full min-w-[1660px] text-left text-sm">
             <thead className="bg-black/20 text-xs text-neutral-500">
               <tr>
                 <th className="px-5 py-3">회원</th>
+                <th className="px-4 py-3">사용량</th>
                 <th className="px-4 py-3">가입 / 최근 로그인</th>
                 <th className="px-4 py-3">플랜</th>
                 <th className="px-4 py-3">생성 수</th>
@@ -287,6 +293,21 @@ export function AdminMembersDashboard({
                     <p className="max-w-64 truncate font-bold text-neutral-100">{member.email}</p>
                     <p className="mt-1 text-xs text-neutral-500">{member.displayName || "이름 없음"}</p>
                     <p className="mt-1 font-mono text-[10px] text-neutral-700">{member.id}</p>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-4 tabular-nums">
+                    <p className={`font-black ${
+                      member.usageRemainingSeconds > 0 ? "text-emerald-200" : "text-neutral-500"
+                    }`}>
+                      잔여 {usageMinutes(member.usageRemainingSeconds)}분
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-400">
+                      사용 {usageMinutes(member.usageConsumedSeconds)}분
+                      {" · "}
+                      예약 {usageMinutes(member.usageReservedSeconds)}분
+                    </p>
+                    <p className="mt-1 text-[11px] text-neutral-600">
+                      총 {usageMinutes(member.usageLimitSeconds)}분
+                    </p>
                   </td>
                   <td className="whitespace-nowrap px-4 py-4 text-xs text-neutral-400">
                     <p>가입 {date(member.createdAt)}</p>
@@ -349,7 +370,7 @@ export function AdminMembersDashboard({
                 </tr>
               ))}
               {!members.length && (
-                <tr><td colSpan={10} className="px-5 py-16 text-center text-neutral-500">조건에 맞는 회원이 없습니다.</td></tr>
+                <tr><td colSpan={11} className="px-5 py-16 text-center text-neutral-500">조건에 맞는 회원이 없습니다.</td></tr>
               )}
             </tbody>
           </table>

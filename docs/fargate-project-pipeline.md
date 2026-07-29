@@ -26,6 +26,23 @@ Rerenders and other Fargate work consume the same quota. The Batch compute
 environment is configured for 4,000 vCPU, so the regional service quota is the
 effective limit.
 
+## Paid-job scheduling
+
+Before its first Batch submission, each non-terminal job receives an immutable
+`dispatch_priority_class` snapshot. Only a subscription with an active or
+trialing status, a monthly or yearly billing cycle, and a current entitlement
+period is classified as `paid`; complimentary usage and manual usage grants
+remain `free`.
+
+The project Outbox normally leases ingestion routes to paid jobs first. A free
+job waiting at least 15 minutes joins the same FIFO tier as paid work so a
+continuous paid workload cannot starve it forever. AWS Batch then gives
+`paid*` fair-share identifiers a `0.25` weight factor and `free*` identifiers a
+`1.0` factor. This is a four-to-one compute preference, not preemption: running
+jobs are never stopped, and the existing compute reservation remains enabled.
+Project resumes, legacy render retries, and editor rerenders reuse the stored
+snapshot.
+
 ## Production load gate
 
 Run the load command inside the published worker image:

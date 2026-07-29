@@ -1,60 +1,13 @@
 begin;
 
--- Free onboarding trial:
---   * authenticated account with a completed onboarding profile;
+-- Free login welcome trial:
+--   * issued by the application after an authenticated login;
 --   * no successful paid order, current paid/trial entitlement, or manual access;
 --   * one immutable 20-minute grant per account, valid for 30 days;
 --   * no real-time-popular-filter entitlement.
 create unique index if not exists usage_grants_one_onboarding_welcome_per_user_idx
   on shorts_mvp.usage_grants (user_id,product_code)
   where product_code='onboarding_welcome_20min_v1';
-
-with eligible_accounts as (
-  select profile.user_id
-  from shorts_mvp.user_onboarding_profiles profile
-  join shorts_mvp.app_users account on account.id=profile.user_id
-  where account.withdrawn_at is null
-    and not (
-      account.manual_service_access_until is not null
-      and account.manual_service_access_until>clock_timestamp()
-    )
-    and not exists (
-      select 1
-      from shorts_mvp.billing_orders paid_order
-      where paid_order.user_id=account.id
-        and paid_order.status='succeeded'
-        and paid_order.amount_krw>0
-    )
-    and not exists (
-      select 1
-      from shorts_mvp.user_subscriptions subscription
-      where subscription.user_id=account.id
-        and subscription.status in ('pending','trialing','active','past_due')
-    )
-)
-insert into shorts_mvp.usage_grants (
-  user_id,subscription_id,billing_order_id,kind,product_code,
-  total_seconds,credited_seconds,carried_seconds,
-  reserved_seconds,consumed_seconds,valid_from,expires_at,status
-)
-select
-  eligible.user_id,null,null,'addon','onboarding_welcome_20min_v1',
-  1200,1200,0,0,0,statement_timestamp(),
-  statement_timestamp()+interval '30 days','active'
-from eligible_accounts eligible
-on conflict do nothing;
-
-insert into shorts_mvp.member_campaign_announcements (
-  user_id,campaign_code,granted_seconds,valid_until
-)
-select
-  grant_row.user_id,'onboarding_welcome_v1',
-  grant_row.total_seconds,grant_row.expires_at
-from shorts_mvp.usage_grants grant_row
-where grant_row.product_code='onboarding_welcome_20min_v1'
-  and grant_row.status='active'
-  and grant_row.expires_at>clock_timestamp()
-on conflict (user_id,campaign_code) do nothing;
 
 -- A welcome account may reserve only its welcome grant. It never receives the
 -- broader direct-service entitlement used by operator-issued complimentary
@@ -175,6 +128,6 @@ grant execute on function shorts_mvp.reserve_usage_grants(uuid,uuid,integer)
   to service_role;
 
 comment on index shorts_mvp.usage_grants_one_onboarding_welcome_per_user_idx is
-  'Database-level one-account-one-grant guard for the free onboarding trial.';
+  'Database-level one-account-one-grant guard for the free login welcome trial.';
 
 commit;
