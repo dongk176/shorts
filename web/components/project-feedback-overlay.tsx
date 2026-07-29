@@ -97,26 +97,6 @@ export function ProjectFeedbackOverlay() {
     };
   }, [open]);
 
-  const deferFeedback = async () => {
-    if (submitting) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/project-feedback/dismiss", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ requestId: crypto.randomUUID() }),
-      });
-      setStatus(await responseBody<ProjectFeedbackPromptStatus>(response));
-      setOpen(false);
-    } catch (cause) {
-      setError(userFacingErrorMessage(cause, "피드백을 미루지 못했습니다."));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const submitFeedback = async (event: FormEvent) => {
     event.preventDefault();
     if (submitting || satisfactionRating === null || disappointmentReason === null) return;
@@ -275,19 +255,11 @@ export function ProjectFeedbackOverlay() {
               )}
             </div>
 
-            <footer className="flex flex-col-reverse gap-2 border-t border-white/10 px-6 py-5 sm:flex-row sm:justify-end sm:px-9">
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={() => void deferFeedback()}
-                className="min-h-12 rounded-xl border border-white/10 px-5 text-sm font-bold text-neutral-400 transition hover:bg-white/[.05] hover:text-white disabled:opacity-50"
-              >
-                나중에 할게요
-              </button>
+            <footer className="border-t border-white/10 px-6 py-5 sm:px-9">
               <button
                 type="submit"
                 disabled={submitting || satisfactionRating === null || disappointmentReason === null}
-                className="min-h-12 rounded-xl bg-white px-6 text-sm font-black text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+                className="min-h-12 w-full rounded-xl bg-white px-6 text-sm font-black text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {submitting ? "보내는 중..." : "피드백 보내고 30분 받기"}
               </button>
