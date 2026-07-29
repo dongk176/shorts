@@ -81,6 +81,7 @@ test("retired public examples stay unpublished after a full migration replay", (
     "aa9f0409-4dfd-47fa-8014-a0091cb8d08d",
     "a8e6ea45-89e1-4a3e-a2b7-4b297ce439dc",
     "cf3211c5-8cc2-45f4-af99-cab3c7b98d13",
+    "ddf33f5f-03d1-43e6-abd4-50cf163445d0",
   ]) {
     assert.match(retiredMigration, new RegExp(projectId));
   }
