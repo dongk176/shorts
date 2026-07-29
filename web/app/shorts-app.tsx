@@ -13,6 +13,7 @@ import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
 import { EstimatedProcessingOverlay, ProjectCard } from "@/components/project-card";
 import { ProjectReveal } from "@/components/project-reveal";
 import { PaidProjectFeatureOverlay } from "@/components/paid-project-feature-overlay";
+import { ProjectActionGuide } from "@/components/project-action-guide";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SupportInquiryWidget } from "@/components/support-inquiry-widget";
@@ -45,7 +46,7 @@ import {
   type TimedRangeAdjustment,
 } from "@/lib/range-editing";
 import { userFacingErrorMessage } from "@/lib/public-error";
-import { isIosDownloadDevice } from "@/lib/short-download";
+import { isIosDownloadDevice, shortDownloadFilename } from "@/lib/short-download";
 import { stateRetryDelayMs } from "@/lib/state-loading";
 import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
 import { titleLineBackground, titleLineColor, wrapPreviewTitle } from "@/lib/title-preview";
@@ -2429,6 +2430,12 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
   );
 
   const downloadableItems = job.shorts.filter((item) => item.status === "ready");
+  const guideEditShortId = job.shorts.find((item) => (
+    !job.isExample && item.status !== "rerendering"
+  ))?.id;
+  const guideDownloadShortId = job.shorts.find((item) => (
+    !job.isExample && item.status === "ready"
+  ))?.id;
   const downloadAll = () => {
     if (job.isExample || !downloadableItems.length) return;
     if (!access.canDownload) {
@@ -2442,7 +2449,7 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
     for (const item of downloadableItems) {
       const anchor = document.createElement("a");
       anchor.href = `/api/shorts/${encodeURIComponent(item.id)}/download`;
-      anchor.download = "";
+      anchor.download = shortDownloadFilename(item.hookTitle);
       anchor.hidden = true;
       document.body.appendChild(anchor);
       anchor.click();
@@ -2481,9 +2488,15 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
   return (
     <div className="project-workspace">
       <header className="workspace-header">
-        <div className="min-w-0"><button onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 프로젝트 /{job.projectNumber}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
-        <button disabled={job.isExample || !downloadableItems.length} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={downloadAll} className="workspace-button workspace-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-40">{iosDownloadDevice ? "↓ 쇼츠별 다운로드 안내" : "↓ 모든 쇼츠 다운로드"}</button>
+        <div className="min-w-0"><button data-project-guide="back" onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 프로젝트 /{job.projectNumber}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
+        <button data-project-guide="bulk-download" disabled={job.isExample || !downloadableItems.length} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={downloadAll} className="workspace-button workspace-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-40">{iosDownloadDevice ? "↓ 쇼츠별 다운로드 안내" : "↓ 모든 쇼츠 다운로드"}</button>
       </header>
+      <ProjectActionGuide
+        enabled={!job.isExample && job.status === "completed"}
+        editAvailable={Boolean(guideEditShortId)}
+        downloadAvailable={Boolean(guideDownloadShortId)}
+        bulkDownloadAvailable={downloadableItems.length > 0}
+      />
       <PaidProjectFeatureOverlay
         action="download"
         open={downloadPaywallOpen}
@@ -2525,12 +2538,12 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
                     <div className="short-result-actions">
                       {job.isExample || itemIsRerendering
                         ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">✎ 편집하기</button>
-                        : <Link href={`/projects/${job.projectNumber}/edit/${item.id}`} target="_blank" rel="noopener noreferrer" className="tool-button short-edit-button flex items-center justify-center" aria-label={`${item.hookTitle} 새 탭에서 편집하기`}>✎ 편집하기</Link>}
+                        : <Link data-project-guide={item.id === guideEditShortId ? "edit" : undefined} href={`/projects/${job.projectNumber}/edit/${item.id}`} target="_blank" rel="noopener noreferrer" className="tool-button short-edit-button flex items-center justify-center" aria-label={`${item.hookTitle} 새 탭에서 편집하기`}>✎ 편집하기</Link>}
                       {job.isExample || itemIsRerendering || item.status !== "ready"
                         ? <button disabled title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} className="tool-button short-download-button disabled:cursor-not-allowed disabled:opacity-40">↓ 다운로드</button>
                         : access.canDownload
-                          ? <a href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download className="tool-button short-download-button flex items-center justify-center" aria-label={`${item.hookTitle} 다운로드`}>↓ 다운로드</a>
-                          : <button type="button" onClick={() => setDownloadPaywallOpen(true)} className="tool-button short-download-button">↓ 다운로드</button>}
+                          ? <a data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download={shortDownloadFilename(item.hookTitle)} className="tool-button short-download-button flex items-center justify-center" aria-label={`${item.hookTitle} 다운로드`}>↓ 다운로드</a>
+                          : <button data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} type="button" onClick={() => setDownloadPaywallOpen(true)} className="tool-button short-download-button">↓ 다운로드</button>}
                     </div>
                   </div>
                   <div className="short-detail-column">

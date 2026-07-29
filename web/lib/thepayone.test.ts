@@ -9,6 +9,8 @@ import {
   refundThePayOnePayment,
   registerThePayOneCard,
   revokeThePayOneCard,
+  thePayOneCredentialScopeForPackage,
+  thePayOneCredentialScopeForMerchantTerminal,
   thePayOneRefundMismatchFields,
   thePayOneTaxBreakdown,
   ThePayOneError,
@@ -18,6 +20,11 @@ const encryptionKey = Buffer.alloc(32, 7).toString("base64");
 
 beforeEach(() => {
   vi.stubEnv("THEPAYONE_PAY_KEY", "pay-key-test");
+  vi.stubEnv("THEPAYONE_MID", "merchant-default");
+  vi.stubEnv("THEPAYONE_TERMINAL_ID", "recurring01");
+  vi.stubEnv("THEPAYONE_PACKAGE_MID", "merchant-default");
+  vi.stubEnv("THEPAYONE_PACKAGE_TERMINAL_ID", "arti02");
+  vi.stubEnv("THEPAYONE_PACKAGE_PAY_KEY", "package-pay-key-test");
   vi.stubEnv("THEPAYONE_API_BASE_URL", "https://api.thepayone.com");
   vi.stubEnv("THEPAYONE_CARD_TOKEN_ENCRYPTION_KEY", encryptionKey);
 });
@@ -65,6 +72,43 @@ describe("ThePayOne client", () => {
         prodAmt: "0",
       },
     });
+  });
+
+  it("uses the package key for package-scoped manual card registration", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: { resultCd: "0000", resultMsg: "정상" },
+      auth: {
+        trxId: "A260729000001",
+        card: { cardId: "package_card_token", last4: "4242" },
+      },
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await registerThePayOneCard({
+      trackId: "EC-AUTH-PACKAGE",
+      payerName: "테스트",
+      payerEmail: "tester@example.com",
+      payerTel: "01012345678",
+      cardNumber: "4242424242424242",
+      expiry: "2910",
+      authDob: "900101",
+      authPw: "12",
+    }, "package");
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(new Headers(init.headers).get("Authorization")).toBe("package-pay-key-test");
+    expect(thePayOneCredentialScopeForMerchantTerminal(
+      "merchant-default",
+      "arti02",
+    )).toBe("package");
+  });
+
+  it("keeps package payments on the existing credentials until explicitly enabled", () => {
+    vi.stubEnv("THEPAYONE_PACKAGE_BILLING_ENABLED", "false");
+    expect(thePayOneCredentialScopeForPackage(true)).toBe("default");
+    vi.stubEnv("THEPAYONE_PACKAGE_BILLING_ENABLED", "true");
+    expect(thePayOneCredentialScopeForPackage(true)).toBe("package");
+    expect(thePayOneCredentialScopeForPackage(false)).toBe("default");
   });
 
   it("uses the documented Korean 폐기 status", async () => {

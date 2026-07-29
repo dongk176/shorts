@@ -26,6 +26,7 @@ import {
   normalizeCardNumber,
   PaymentConfigurationError,
   registerThePayOneCard,
+  thePayOneCredentialScopeForPackage,
   ThePayOneError,
 } from "@/lib/thepayone";
 
@@ -220,7 +221,7 @@ export async function POST(request: Request) {
         authPw: input.cardPassword,
         billingDay,
         productName: `${product.displayName} 카드 확인`,
-      });
+      }, thePayOneCredentialScopeForPackage(product.kind === "package"));
     } catch (error) {
       await db`
         update shorts_mvp.billing_card_verifications

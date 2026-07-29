@@ -13,9 +13,8 @@ import { getDb } from "@/lib/db";
 import { setDefaultPaymentMethod } from "@/lib/default-payment-method";
 import {
   cardTokenHash,
+  isKnownThePayOneMerchantTerminal,
   parseThePayOneWebhook,
-  thePayOneMerchantId,
-  thePayOneTerminalId,
   thePayOneWebhookSecret,
   type ThePayOneWebhookNotification,
 } from "@/lib/thepayone";
@@ -538,7 +537,7 @@ export async function POST(
   if (!inserted[0]) return ack();
 
   try {
-    if (event.merchantId !== thePayOneMerchantId() || event.terminalId !== thePayOneTerminalId()) {
+    if (!isKnownThePayOneMerchantTerminal(event.merchantId, event.terminalId)) {
       await setManualReview(eventId, "MERCHANT_OR_TERMINAL_MISMATCH");
       return ack();
     }

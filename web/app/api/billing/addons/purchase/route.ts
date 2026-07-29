@@ -23,6 +23,7 @@ import {
   cardTokenHash,
   chargeThePayOneCard,
   decryptCardToken,
+  thePayOneCredentialScopeForMerchantTerminal,
   thePayOneMerchantId,
   thePayOneTerminalId,
   ThePayOneError,
@@ -63,6 +64,8 @@ type StoredMethod = Record<string, unknown> & {
   payerTelCiphertext: string | null;
   payerTelIv: string | null;
   payerTelTag: string | null;
+  providerMerchantId: string;
+  providerTerminalId: string;
 };
 
 function safeFailureMessage(error: unknown) {
@@ -164,8 +167,12 @@ export async function POST(request: Request) {
       `;
     }
 
-    const merchantId = thePayOneMerchantId();
-    const terminalId = thePayOneTerminalId();
+    const credentialScope = thePayOneCredentialScopeForMerchantTerminal(
+      method.providerMerchantId,
+      method.providerTerminalId,
+    );
+    const merchantId = thePayOneMerchantId(credentialScope);
+    const terminalId = thePayOneTerminalId(credentialScope);
     const orderId = createBillingOrderId("ADD");
     const orderName = `Easy Cut ${product.displayName}`;
     const inserted = await db`
@@ -226,7 +233,7 @@ export async function POST(request: Request) {
       productName: orderName,
       description: "추가 처리시간 90일 이용권",
       referenceId: order.id,
-    });
+    }, credentialScope);
     providerPaymentCompleted = true;
     if (
       payment.trackId !== order.orderId
@@ -288,7 +295,9 @@ export async function POST(request: Request) {
         where provider='thepayone' and provider_transaction_id=${payment.providerTransactionId}
           and validation_status in ('received','validated')
       `;
-      await setDefaultPaymentMethod(tx, session.userId, method.id);
+      if (credentialScope === "default") {
+        await setDefaultPaymentMethod(tx, session.userId, method.id);
+      }
     });
 
     return NextResponse.json({

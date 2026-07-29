@@ -2,9 +2,18 @@
 
 import Link from "next/link";
 import { useI18n } from "@/lib/i18n/provider";
+import {
+  SITE_FOOTER_VISIBLE,
+  TEAM_PAGE_VISIBLE,
+} from "@/lib/site-visibility";
 
 export function SiteFooter() {
   const { t } = useI18n();
+
+  if (!SITE_FOOTER_VISIBLE) {
+    return null;
+  }
+
   return (
     <footer className="site-footer">
       <div className="site-footer-inner">
@@ -21,6 +30,9 @@ export function SiteFooter() {
         </ul>
         <nav className="site-footer-links" aria-label={t("footer.links")}>
           <Link href="/pricing">{t("nav.pricing")}</Link>
+          {TEAM_PAGE_VISIBLE ? (
+            <Link href="/team">{t("footer.team")}</Link>
+          ) : null}
           <Link href="/faq">{t("footer.faq")}</Link>
           <Link href="/terms">{t("footer.terms")}</Link>
           <Link href="/purchase-terms">{t("footer.purchaseTerms")}</Link>

@@ -187,7 +187,7 @@ export function UserOnboardingOverlay() {
             }`}
           >
             {step === "welcome"
-              ? "무료 체험시간이 충전됐어요"
+              ? "원본 영상 처리시간이 충전됐어요"
               : step === 1
                 ? "어떤 일을 하고 계신가요?"
                 : "이지컷을 어떤 목적으로 사용하시나요?"}
@@ -206,7 +206,7 @@ export function UserOnboardingOverlay() {
                 </span>
               </p>
               <p className="mt-3 text-sm text-neutral-400">
-                지금 바로 쇼츠를 만들어보세요!
+                원본 영상 길이 합계 {welcomeMinutes}분까지 쇼츠로 만들 수 있어요.
               </p>
             </div>
           )}

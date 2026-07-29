@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
@@ -53,6 +53,7 @@ function request(requestId: string) {
 describe("billing card verification", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("THEPAYONE_PACKAGE_BILLING_ENABLED", "true");
     mocks.session.mockResolvedValue({
       userId: "11111111-1111-4111-8111-111111111111",
       user: { email: "owner@example.com", displayName: "홍길동" },
@@ -75,6 +76,10 @@ describe("billing card verification", () => {
       amount: 0,
       billingDay: "00",
     });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("returns only a short-lived opaque verification after zero-won card authentication", async () => {
@@ -142,7 +147,7 @@ describe("billing card verification", () => {
     expect(mocks.register).toHaveBeenCalledOnce();
     expect(mocks.register).toHaveBeenCalledWith(expect.objectContaining({
       billingDay: "00",
-    }));
+    }), "package");
   });
 
   it("reuses an unexpired idempotent result without registering the card twice", async () => {

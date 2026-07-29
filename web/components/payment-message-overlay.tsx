@@ -14,6 +14,7 @@ type PaymentMessageOverlayProps = {
   closeLabel?: string;
   actionHref?: string;
   actionLabel?: string;
+  onAction?: () => void;
   actionPending?: boolean;
   pendingLabel?: string;
   secondaryHref?: string;
@@ -57,6 +58,7 @@ export function PaymentMessageOverlay({
   closeLabel = "확인",
   actionHref,
   actionLabel,
+  onAction,
   actionPending = false,
   pendingLabel = "처리 중...",
   secondaryHref,
@@ -180,6 +182,15 @@ export function PaymentMessageOverlay({
             >
               {actionLabel}
             </Link>
+          ) : onAction && actionLabel ? (
+            <button
+              data-overlay-autofocus
+              type="button"
+              onClick={onAction}
+              className="min-h-12 rounded-xl bg-[#ff715e] px-5 text-sm font-extrabold text-white transition hover:bg-[#ff806f]"
+            >
+              {actionLabel}
+            </button>
           ) : onClose ? (
             <button
               data-overlay-autofocus
@@ -199,7 +210,7 @@ export function PaymentMessageOverlay({
               {secondaryLabel}
             </Link>
           )}
-          {!actionPending && actionHref && actionLabel && onClose && (
+          {!actionPending && (actionHref || onAction) && actionLabel && onClose && (
             <button
               type="button"
               onClick={onClose}

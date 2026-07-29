@@ -25,7 +25,7 @@ describe("short download route", () => {
       activeProducts: [{ planCode: "plus" }],
     });
     mocks.downloadUrl.mockResolvedValue(
-      "https://bucket.s3.ap-northeast-2.amazonaws.com/outputs/short.mp4?signature=test",
+      "https://cdn.example.com/outputs/short.mp4?download=1&signature=test",
     );
   });
 
@@ -43,7 +43,7 @@ describe("short download route", () => {
     );
 
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toContain("bucket.s3.");
+    expect(response.headers.get("location")).toContain("cdn.example.com");
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(mocks.downloadUrl).toHaveBeenCalledWith(

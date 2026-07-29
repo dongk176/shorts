@@ -33,6 +33,7 @@ const dateFormatter = new Intl.DateTimeFormat("ko-KR", {
   timeZone: "Asia/Seoul",
 });
 const packageMonthOptions = pricingV2PackageMonths;
+const resubscribeChargeAmountKrw = 9_900;
 export type PricingState = Pick<MvpState, "user" | "billing">;
 
 type PackageMonths = PricingV2PackageMonths;
@@ -99,7 +100,7 @@ const plans: PlanCard[] = [
     buttonClass: "pricing-cta-primary",
     cta: "스타터 패키지 선택",
     features: [
-      { text: "매월 200분 × 6개월", strong: "매월 200분" },
+      { text: "원본 영상 처리시간 · 매월 200분 × 6개월", strong: "매월 200분" },
       { text: "쇼츠 약 960개", strong: "쇼츠 약 960개" },
       { text: "동시 작업 2개", strong: "동시 작업 2개" },
       { text: "프로젝트 30일 보관" },
@@ -121,7 +122,7 @@ const plans: PlanCard[] = [
     buttonClass: "",
     cta: "전문가 패키지 선택",
     features: [
-      { text: "매월 600분 × 12개월", strong: "매월 600분" },
+      { text: "원본 영상 처리시간 · 매월 600분 × 12개월", strong: "매월 600분" },
       { text: "쇼츠 약 480개 · 10분 영상 기준", strong: "쇼츠 약 480개" },
       { text: "동시 작업 3개", strong: "동시 작업 3개" },
       { text: "프로젝트 30일 보관" },
@@ -247,6 +248,7 @@ export function PricingClient({
   const [earlyBirdConfirmation, setEarlyBirdConfirmation] = useState<EarlyBirdProduct | null>(null);
   const [earlyBirdSuccess, setEarlyBirdSuccess] = useState<EarlyBirdSuccessState | null>(null);
   const [planCheckout, setPlanCheckout] = useState<PlanCheckoutState | null>(null);
+  const [resubscribeConfirmationOpen, setResubscribeConfirmationOpen] = useState(false);
   const [resubscribeAuth, setResubscribeAuth] = useState<ResubscribeAuthState | null>(null);
   const [cardAuth, setCardAuth] = useState<CardAuthState>(emptyCardAuth);
   const [earlyBirdUseDifferentCard, setEarlyBirdUseDifferentCard] = useState(false);
@@ -299,7 +301,7 @@ export function PricingClient({
       cta: `${plan.name} ${packageMonths}개월 선택`,
       features: [
         {
-          text: `매월 ${priceFormatter.format(monthlyMinutes)}분 × ${packageMonths}개월`,
+          text: `원본 영상 처리시간 · 매월 ${priceFormatter.format(monthlyMinutes)}분 × ${packageMonths}개월`,
           strong: `매월 ${priceFormatter.format(monthlyMinutes)}분`,
         },
         {
@@ -327,7 +329,7 @@ export function PricingClient({
     (product) => getPricingV2Plan(product.planCode)?.kind === "package",
   ) || activePricingProduct?.kind === "package";
   const comparisonRows = [
-    { label: "월 제공시간", values: ["60분", "200분", "600분"] },
+    { label: "월 원본 영상 처리시간", values: ["60분", "200분", "600분"] },
     {
       label: "예상 쇼츠 제작량",
       values: [
@@ -563,7 +565,7 @@ export function PricingClient({
       accessUntil?: string;
     }>("/api/billing/subscription/resubscribe", {
       requestId,
-      expectedChargeAmountKrw: 9_900,
+      expectedChargeAmountKrw: resubscribeChargeAmountKrw,
       identityNumber: auth.identityNumber,
       cardPassword: auth.cardPassword,
       consent: true,
@@ -721,13 +723,8 @@ export function PricingClient({
                       disabled={busy !== null}
                       className={styles.subscriptionAction}
                       onClick={() => {
+                        setResubscribeConfirmationOpen(true);
                         setResubscribeUseDifferentCard(false);
-                        setResubscribeAuth({
-                          requestId: crypto.randomUUID(),
-                          identityNumber: "",
-                          cardPassword: "",
-                          consent: false,
-                        });
                       }}
                     >
                       다시 구독하기
@@ -957,6 +954,30 @@ export function PricingClient({
           </div>
         </ThePayOnePaymentOverlay>
       ))}
+
+      <PaymentMessageOverlay
+        open={resubscribeConfirmationOpen}
+        tone="info"
+        title={`${priceFormatter.format(resubscribeChargeAmountKrw)}원이 즉시 결제됩니다`}
+        message={[
+          "다시 구독하기는 해지 예약을 취소하는 절차가 아니라 새로운 유료 결제입니다.",
+          `계속하면 이지컷 프로 월 이용료 ${priceFormatter.format(resubscribeChargeAmountKrw)}원이 저장 카드로 바로 결제됩니다.`,
+          "승인 즉시 60분이 지급되고, 남아 있는 Pro 이용기간 끝에 1개월이 추가됩니다.",
+        ].join("\n")}
+        actionLabel="결제 정보 확인하기"
+        onAction={() => {
+          setResubscribeConfirmationOpen(false);
+          setResubscribeAuth({
+            requestId: crypto.randomUUID(),
+            identityNumber: "",
+            cardPassword: "",
+            consent: false,
+          });
+        }}
+        closeLabel="취소"
+        onClose={() => setResubscribeConfirmationOpen(false)}
+        showStatus={false}
+      />
 
       {resubscribeAuth && (resubscribeUseDifferentCard ? (
         <ReplacementCardPaymentOverlay

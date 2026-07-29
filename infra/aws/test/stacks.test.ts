@@ -53,6 +53,7 @@ describe("shorts MVP infrastructure", () => {
       },
     });
     foundation.resourceCountIs("AWS::CloudFront::OriginAccessControl", 1);
+    foundation.resourceCountIs("AWS::CloudFront::Function", 2);
     foundation.hasResourceProperties("AWS::CloudFront::Function", {
       FunctionCode: Match.stringLikeRegexp("/outputs/"),
     });
@@ -64,6 +65,22 @@ describe("shorts MVP infrastructure", () => {
     });
     foundation.hasResourceProperties("AWS::CloudFront::Function", {
       FunctionCode: Match.stringLikeRegexp("/edit-sources/"),
+    });
+    foundation.hasResourceProperties("AWS::CloudFront::Function", {
+      FunctionCode: Match.stringLikeRegexp("content-disposition"),
+    });
+    foundation.hasResourceProperties("AWS::CloudFront::Function", {
+      FunctionCode: Match.stringLikeRegexp("filename\\*=UTF-8"),
+    });
+    foundation.hasResourceProperties("AWS::CloudFront::Distribution", {
+      DistributionConfig: {
+        DefaultCacheBehavior: Match.objectLike({
+          FunctionAssociations: Match.arrayWith([
+            Match.objectLike({ EventType: "viewer-request" }),
+            Match.objectLike({ EventType: "viewer-response" }),
+          ]),
+        }),
+      },
     });
   });
 

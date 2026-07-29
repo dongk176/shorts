@@ -38,6 +38,8 @@ type ThePayOneConfig = {
   encryptionKey: Buffer;
 };
 
+export type ThePayOneCredentialScope = "default" | "package";
+
 export type CardRegistrationRequest = {
   trackId: string;
   payerName: string;
@@ -226,16 +228,63 @@ export function assertThePayOneBillingEnabled() {
   }
 }
 
-export function thePayOneMerchantId() {
-  return requiredEnv("THEPAYONE_MID");
+export function thePayOnePackageBillingEnabled() {
+  return process.env.THEPAYONE_PACKAGE_BILLING_ENABLED?.trim().toLowerCase() === "true";
 }
 
-export function thePayOneTerminalId() {
-  return requiredEnv("THEPAYONE_TERMINAL_ID");
+export function thePayOneCredentialScopeForPackage(isPackage: boolean) {
+  return isPackage && thePayOnePackageBillingEnabled()
+    ? "package" as const
+    : "default" as const;
 }
 
-export function thePayOnePublicKey() {
-  return requiredEnv("THEPAYONE_PAY_KEY");
+function credentialEnvName(
+  scope: ThePayOneCredentialScope,
+  suffix: "MID" | "TERMINAL_ID" | "PAY_KEY",
+) {
+  return scope === "package"
+    ? `THEPAYONE_PACKAGE_${suffix}`
+    : `THEPAYONE_${suffix}`;
+}
+
+export function thePayOneMerchantId(scope: ThePayOneCredentialScope = "default") {
+  if (scope === "package") {
+    return process.env.THEPAYONE_PACKAGE_MID?.trim() || requiredEnv("THEPAYONE_MID");
+  }
+  return requiredEnv(credentialEnvName(scope, "MID"));
+}
+
+export function thePayOneTerminalId(scope: ThePayOneCredentialScope = "default") {
+  return requiredEnv(credentialEnvName(scope, "TERMINAL_ID"));
+}
+
+export function thePayOnePublicKey(scope: ThePayOneCredentialScope = "default") {
+  return requiredEnv(credentialEnvName(scope, "PAY_KEY"));
+}
+
+export function thePayOneCredentialScopeForMerchantTerminal(
+  merchantId: string,
+  terminalId: string,
+): ThePayOneCredentialScope {
+  const defaultMatches = merchantId === thePayOneMerchantId()
+    && terminalId === thePayOneTerminalId();
+  if (defaultMatches) return "default";
+  const packageMatches = merchantId === thePayOneMerchantId("package")
+    && terminalId === thePayOneTerminalId("package");
+  if (packageMatches) return "package";
+  throw new PaymentConfigurationError("등록되지 않은 더페이원 가맹점 또는 터미널입니다.");
+}
+
+export function isKnownThePayOneMerchantTerminal(
+  merchantId: string,
+  terminalId: string,
+) {
+  try {
+    thePayOneCredentialScopeForMerchantTerminal(merchantId, terminalId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function thePayOneWebhookSecret() {
@@ -272,7 +321,9 @@ function encryptionKey() {
   return decoded;
 }
 
-export function getThePayOneConfig(): ThePayOneConfig {
+export function getThePayOneConfig(
+  scope: ThePayOneCredentialScope = "default",
+): ThePayOneConfig {
   const apiBaseUrl = process.env.THEPAYONE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL;
   let parsed: URL;
   try {
@@ -285,7 +336,7 @@ export function getThePayOneConfig(): ThePayOneConfig {
   }
   return {
     apiBaseUrl: parsed.origin,
-    payKey: requiredEnv("THEPAYONE_PAY_KEY"),
+    payKey: thePayOnePublicKey(scope),
     encryptionKey: encryptionKey(),
   };
 }
@@ -411,8 +462,12 @@ async function parseResponse(response: Response) {
   return { root, resultCode };
 }
 
-async function thePayOnePost(path: "/api/auth" | "/api/audt" | "/api/pay" | "/api/refund", payload: unknown) {
-  const config = getThePayOneConfig();
+async function thePayOnePost(
+  path: "/api/auth" | "/api/audt" | "/api/pay" | "/api/refund",
+  payload: unknown,
+  scope: ThePayOneCredentialScope,
+) {
+  const config = getThePayOneConfig(scope);
   let response: Response;
   try {
     response = await fetch(new URL(path, config.apiBaseUrl), {
@@ -434,7 +489,10 @@ async function thePayOnePost(path: "/api/auth" | "/api/audt" | "/api/pay" | "/ap
   return parseResponse(response);
 }
 
-export async function registerThePayOneCard(input: CardRegistrationRequest): Promise<CardRegistrationResult> {
+export async function registerThePayOneCard(
+  input: CardRegistrationRequest,
+  scope: ThePayOneCredentialScope = "default",
+): Promise<CardRegistrationResult> {
   const amount = 0;
   const billingDay = input.billingDay ?? "00";
   if (!validBillingDay(billingDay)) {
@@ -468,7 +526,7 @@ export async function registerThePayOneCard(input: CardRegistrationRequest): Pro
         authPw: input.authPw,
       },
     },
-  });
+  }, scope);
   const auth = objectValue(root.auth);
   const card = objectValue(auth?.card);
   const cardId = stringValue(card?.cardId, 256);
@@ -509,6 +567,7 @@ export async function changeThePayOneCardStatus(
   cardId: string,
   status: ThePayOneScheduleStatus,
   trackId: string,
+  scope: ThePayOneCredentialScope = "default",
 ): Promise<CardRevocationResult> {
   const { root, resultCode } = await thePayOnePost("/api/audt", {
     audt: {
@@ -516,7 +575,7 @@ export async function changeThePayOneCardStatus(
       status,
       trackId,
     },
-  });
+  }, scope);
   const audit = objectValue(root.audt);
   return {
     resultCode,
@@ -524,8 +583,12 @@ export async function changeThePayOneCardStatus(
   };
 }
 
-export function revokeThePayOneCard(cardId: string, trackId: string) {
-  return changeThePayOneCardStatus(cardId, "폐기", trackId);
+export function revokeThePayOneCard(
+  cardId: string,
+  trackId: string,
+  scope: ThePayOneCredentialScope = "default",
+) {
+  return changeThePayOneCardStatus(cardId, "폐기", trackId, scope);
 }
 
 function validateChargeRequest(amount: number, installmentMonths: number) {
@@ -589,6 +652,7 @@ function parseCardChargeResult(
 
 export async function chargeThePayOneCard(
   input: ThePayOneCardChargeRequest,
+  scope: ThePayOneCredentialScope = "default",
 ): Promise<ThePayOneCardChargeResult> {
   const installmentMonths = input.installmentMonths ?? 0;
   validateChargeRequest(input.amount, installmentMonths);
@@ -623,12 +687,13 @@ export async function chargeThePayOneCard(
         authPw: input.authPw,
       },
     },
-  });
+  }, scope);
   return parseCardChargeResult(root, resultCode, installmentMonths);
 }
 
 export async function refundThePayOnePayment(
   input: ThePayOneRefundRequest,
+  scope: ThePayOneCredentialScope = "default",
 ): Promise<ThePayOneRefundResult> {
   if (
     !input.trackId
@@ -652,7 +717,7 @@ export async function refundThePayOnePayment(
       udf1: input.referenceId || input.trackId,
       metadata: { reason },
     },
-  });
+  }, scope);
   const result = objectValue(root.result);
   const refund = objectValue(root.refund);
   const providerTransactionId = stringValue(refund?.trxId, 128);

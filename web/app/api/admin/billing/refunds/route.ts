@@ -15,8 +15,8 @@ import {
   assertThePayOneBillingEnabled,
   createPaymentTrackId,
   refundThePayOnePayment,
+  thePayOneCredentialScopeForMerchantTerminal,
   thePayOneRefundMismatchFields,
-  thePayOneTerminalId,
   ThePayOneError,
 } from "@/lib/thepayone";
 
@@ -327,6 +327,10 @@ export async function POST(request: Request) {
       select * from shorts_mvp.billing_orders where id=${refund.billingOrderId} limit 1
     `)[0];
     if (!order) throw new HttpError(404, "환불할 원주문을 찾을 수 없습니다.");
+    const credentialScope = thePayOneCredentialScopeForMerchantTerminal(
+      order.providerMerchantId,
+      order.providerTerminalId,
+    );
 
     const claim = await db`
       update shorts_mvp.admin_billing_refunds set status='processing'
@@ -341,12 +345,12 @@ export async function POST(request: Request) {
       amount: Number(refund.amountKrw),
       referenceId: refund.id,
       reason: refund.reason,
-    });
+    }, credentialScope);
     const refundMismatchFields = thePayOneRefundMismatchFields(providerRefund, {
       trackId: refund.providerTrackId,
       rootTransactionId: refund.rootProviderTransactionId,
       amount: Number(refund.amountKrw),
-      terminalId: thePayOneTerminalId(),
+      terminalId: order.providerTerminalId,
     });
     if (refundMismatchFields.length > 0) {
       throw new ThePayOneError(

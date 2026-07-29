@@ -1,7 +1,11 @@
 import type { Sql } from "postgres";
 import { describe, expect, it, vi } from "vitest";
 import { getPopularSearchVideos, getReusablePopularVideos } from "./youtube-popular-search";
-import { getPopularVideos, getStoredPopularVideo } from "./youtube-popular";
+import {
+  getPopularVideos,
+  getStoredPopularVideo,
+  POPULAR_REUSABLE_MIN_VIEW_COUNT,
+} from "./youtube-popular";
 
 const run = {
   id: "c6963d6a-270b-4ac6-a934-9eddf670c0dd",
@@ -136,9 +140,31 @@ describe("accumulated reusable popular videos", () => {
       query as unknown as Sql,
     );
 
-    expect(sqlText(query.mock.calls[1]))
-      .toContain("or i.license <> 'creativeCommon'");
+    const fallbackQuery = sqlText(query.mock.calls[1]);
+    expect(fallbackQuery).toContain("or i.license <> 'creativeCommon'");
     expect(query.mock.calls[1].slice(1)).toContain("views");
+  });
+
+  it("excludes reusable fallback videos with 10,000 views or fewer", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce([run])
+      .mockResolvedValueOnce([reusableVideo]);
+
+    await getPopularVideos(
+      "views",
+      "all",
+      true,
+      false,
+      false,
+      undefined,
+      48,
+      "all",
+      query as unknown as Sql,
+    );
+
+    const fallbackQuery = sqlText(query.mock.calls[1]);
+    expect(fallbackQuery).toContain("or view_count >");
+    expect(query.mock.calls[1].slice(1)).toContain(POPULAR_REUSABLE_MIN_VIEW_COUNT);
   });
 
   it("allows a retained reusable trending video to open after its snapshot expires", async () => {
@@ -273,8 +299,10 @@ describe("accumulated reusable popular videos", () => {
     );
     expect(combinedQuery).not.toContain("date_trunc('day', now()");
     expect(combinedQuery).toContain("count(*) as all_count");
+    expect(combinedQuery).toContain("and view_count >");
     expect(combinedQuery).toContain("case when");
     expect(combinedQuery).toContain("then first_seen_at end desc");
+    expect(query.mock.calls[1].slice(1)).toContain(POPULAR_REUSABLE_MIN_VIEW_COUNT);
     expect(query.mock.calls[1].slice(1).filter((value) => value === run.id)).toHaveLength(1);
     expect(query.mock.calls[1].slice(1)).not.toContain(run.completedAt.toISOString());
   });

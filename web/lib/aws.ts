@@ -1,13 +1,13 @@
 import {
   DeleteObjectsCommand,
-  GetObjectCommand,
   ListObjectsV2Command,
   S3Client,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl as getCloudFrontSignedUrl } from "@aws-sdk/cloudfront-signer";
 import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
-import { getSignedUrl as getS3SignedUrl } from "@aws-sdk/s3-request-presigner";
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
-import { shortDownloadContentDisposition } from "@/lib/short-download";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 const region = process.env.AWS_REGION || "ap-northeast-2";
 function credentials() {
@@ -24,26 +24,38 @@ function credentials() {
 function s3Client() { return new S3Client({ region, credentials: credentials() }); }
 function lambdaClient() { return new LambdaClient({ region, credentials: credentials() }); }
 
+async function cloudFrontPrivateKey() {
+  const privateKeyB64 = process.env.CLOUDFRONT_PRIVATE_KEY_B64;
+  if (privateKeyB64) return Buffer.from(privateKeyB64, "base64").toString("utf8");
+  const privateKeyPath = process.env.CLOUDFRONT_PRIVATE_KEY_PATH;
+  if (!privateKeyPath) return "";
+  return readFile(path.resolve(process.cwd(), privateKeyPath), "utf8");
+}
+
 export async function getShortDownloadUrl(
   key: string,
   filename: string,
   expiresIn: number,
 ) {
-  const bucket = process.env.AWS_S3_OUTPUT_BUCKET;
-  if (!bucket) throw new Error("AWS_S3_OUTPUT_BUCKET이 설정되지 않았습니다.");
   if (!/^outputs\/[A-Za-z0-9/_-]+\.mp4$/.test(key)) {
     throw new Error("다운로드할 수 없는 영상 경로입니다.");
   }
-  return getS3SignedUrl(
-    s3Client(),
-    new GetObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      ResponseContentDisposition: shortDownloadContentDisposition(filename),
-      ResponseContentType: "video/mp4",
-    }),
-    { expiresIn: Math.max(1, Math.min(300, Math.floor(expiresIn))) },
-  );
+  if (!/^[0-9A-Za-z가-힣 _-]{1,80}\.mp4$/.test(filename)) {
+    throw new Error("다운로드 파일명이 올바르지 않습니다.");
+  }
+  const domain = process.env.CLOUDFRONT_DOMAIN;
+  const keyPairId = process.env.CLOUDFRONT_KEY_PAIR_ID;
+  const privateKey = await cloudFrontPrivateKey();
+  if (!domain || !keyPairId || !privateKey) {
+    throw new Error("CloudFront Signed URL 설정이 완료되지 않았습니다.");
+  }
+  const lifetimeSeconds = Math.max(1, Math.min(300, Math.floor(expiresIn)));
+  return getCloudFrontSignedUrl({
+    url: `https://${domain}/${key}?download=1&filename=${encodeURIComponent(filename)}`,
+    keyPairId,
+    privateKey,
+    dateLessThan: new Date(Date.now() + lifetimeSeconds * 1_000).toISOString(),
+  });
 }
 
 export async function wakeOutboxDispatcher() {

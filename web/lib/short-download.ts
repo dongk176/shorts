@@ -1,17 +1,9 @@
-const fallbackDownloadName = "easy-cut-shorts.mp4";
-
 export function shortDownloadFilename(hookTitle: string) {
   const safeTitle = hookTitle
     .replace(/[^0-9A-Za-z가-힣 _-]/g, "")
     .trim()
     .slice(0, 80);
   return `${safeTitle || "shorts"}.mp4`;
-}
-
-export function shortDownloadContentDisposition(filename: string) {
-  const encoded = encodeURIComponent(filename)
-    .replace(/['()*]/g, (value) => `%${value.charCodeAt(0).toString(16).toUpperCase()}`);
-  return `attachment; filename="${fallbackDownloadName}"; filename*=UTF-8''${encoded}`;
 }
 
 export function shortDownloadExpirySeconds(

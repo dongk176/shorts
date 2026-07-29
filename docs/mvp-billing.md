@@ -62,7 +62,7 @@
 
 ## 운영 설정
 
-필수 환경변수는 `.env.example`의 `THEPAYONE_*`, `DATABASE_URL`, `CRON_SECRET`입니다. `THEPAYONE_BILLING_ENABLED=false` 상태에서 먼저 DB 마이그레이션, 통지 URL 등록, Vercel Firewall 규칙, 실제 소액 승인·취소를 검증한 뒤 운영에서만 `true`로 전환합니다.
+필수 환경변수는 `.env.example`의 `THEPAYONE_*`, `DATABASE_URL`, `CRON_SECRET`입니다. 월간 구독은 기본 `THEPAYONE_MID`, `THEPAYONE_TERMINAL_ID`, `THEPAYONE_PAY_KEY`를 사용합니다. `THEPAYONE_PACKAGE_BILLING_ENABLED`가 `false`이거나 설정되지 않은 동안 기간 패키지도 기존 기본 자격증명을 계속 사용합니다. 패키지 수기결제 전환 시에는 `THEPAYONE_PACKAGE_MID`, `THEPAYONE_PACKAGE_TERMINAL_ID`, `THEPAYONE_PACKAGE_PAY_KEY`를 먼저 설정하고 소액 승인·취소를 확인한 뒤에만 `THEPAYONE_PACKAGE_BILLING_ENABLED=true`로 전환합니다. 패키지 MID를 비우면 기본 `THEPAYONE_MID`를 재사용합니다. 전환 뒤 패키지 카드 확인·최종 등록·승인·환불·결과 통지는 같은 패키지 터미널 조합으로 대조합니다. `THEPAYONE_BILLING_ENABLED=false` 상태에서 먼저 DB 마이그레이션, 통지 URL 등록, Vercel Firewall 규칙, 실제 소액 승인·취소를 검증한 뒤 운영에서만 `true`로 전환합니다.
 
 더페이원에는 별도 테스트 서버가 없으므로 `/api/pay` 성공은 실제 승인입니다. 로컬 3분/5회 테스트는 [더페이원 로컬 정기결제 테스트](thepayone-local-card-test.md)를 따릅니다.
 

@@ -17,6 +17,7 @@ import {
   createPaymentTrackId,
   decryptCardToken,
   revokeThePayOneCard,
+  thePayOneCredentialScopeForMerchantTerminal,
 } from "@/lib/thepayone";
 
 export const runtime = "nodejs";
@@ -38,6 +39,8 @@ type StoredPaymentMethod = {
   billingKeyCiphertext: string;
   billingKeyIv: string;
   billingKeyTag: string;
+  providerMerchantId: string;
+  providerTerminalId: string;
 };
 
 export async function POST(request: Request) {
@@ -122,7 +125,8 @@ export async function POST(request: Request) {
     }
 
     const paymentMethodRows = await db`
-      select id,provider,status,billing_key_ciphertext,billing_key_iv,billing_key_tag
+      select id,provider,status,billing_key_ciphertext,billing_key_iv,billing_key_tag,
+        provider_merchant_id,provider_terminal_id
       from shorts_mvp.billing_payment_methods
       where user_id=${session.userId}
         and status not in ('disposed','replaced','revoked')
@@ -136,7 +140,15 @@ export async function POST(request: Request) {
           iv: method.billingKeyIv,
           tag: method.billingKeyTag,
         }, method.id);
-        await revokeThePayOneCard(cardId, createPaymentTrackId("AUDT"));
+        const credentialScope = thePayOneCredentialScopeForMerchantTerminal(
+          method.providerMerchantId,
+          method.providerTerminalId,
+        );
+        await revokeThePayOneCard(
+          cardId,
+          createPaymentTrackId("AUDT"),
+          credentialScope,
+        );
       } catch (error) {
         console.error("account_withdrawal_payment_method_revoke_failed", {
           errorName: error instanceof Error ? error.name : "UnknownError",

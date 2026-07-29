@@ -6,6 +6,7 @@ import {
   YoutubeFreeApiError,
 } from "@/lib/youtube-free";
 import {
+  POPULAR_REUSABLE_MIN_VIEW_COUNT,
   POPULAR_VIDEO_LONG_FORM_SECONDS,
   popularVideoSourceCategories,
   popularVideoSourceCategoryValues,
@@ -660,6 +661,7 @@ export async function getReusablePopularVideos(
       select *
       from ranked
       where duplicate_rank=1
+        and view_count > ${POPULAR_REUSABLE_MIN_VIEW_COUNT}
         and (${category}='all' or category=${category})
         and (${longFormOnly}=false or duration_seconds >= ${POPULAR_VIDEO_LONG_FORM_SECONDS})
         and (${koreanOnly}=false or is_korean)

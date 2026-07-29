@@ -109,6 +109,11 @@ export class ShortsMvpFoundationStack extends cdk.Stack {
         "function handler(event){var r=event.request;if(!r.uri.startsWith('/outputs/')&&!r.uri.startsWith('/thumbnails/')&&!r.uri.startsWith('/examples/')&&!r.uri.startsWith('/edit-sources/'))return {statusCode:403,statusDescription:'Forbidden'};return r;}"
       ),
     });
+    const downloadHeaders = new cloudfront.Function(this, "DownloadResponseHeaders", {
+      code: cloudfront.FunctionCode.fromInline(
+        `function handler(event){var qs=event.request.querystring;var r=event.response;if(qs.download&&qs.download.value==='1'){var p=event.request.uri.split('/');var id=p.length>4?p[4].slice(0,8):'shorts';if(!/^[A-Za-z0-9_-]+$/.test(id))id='shorts';var cd='attachment; filename="easy-cut-'+id+'.mp4"';var name=qs.filename&&qs.filename.value;if(name&&/^[0-9A-Za-z가-힣 _-]{1,80}\\.mp4$/.test(name))cd+="; filename*=UTF-8''"+encodeURIComponent(name);r.headers['content-disposition']={value:cd};r.headers['cache-control']={value:'private, no-store, max-age=0'};r.headers['x-content-type-options']={value:'nosniff'};}return r;}`
+      ),
+    });
     const mediaHeaders = new cloudfront.ResponseHeadersPolicy(this, "MediaResponseHeaders", {
       corsBehavior: {
         accessControlAllowCredentials: false,
@@ -131,6 +136,9 @@ export class ShortsMvpFoundationStack extends cdk.Stack {
         functionAssociations: [{
           function: outputOnly,
           eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+        }, {
+          function: downloadHeaders,
+          eventType: cloudfront.FunctionEventType.VIEWER_RESPONSE,
         }],
       },
       minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,

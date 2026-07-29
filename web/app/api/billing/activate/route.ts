@@ -50,8 +50,10 @@ import {
   registerThePayOneCard,
   revokeThePayOneCard,
   thePayOneRefundMismatchFields,
+  thePayOneCredentialScopeForPackage,
   thePayOneMerchantId,
   thePayOneTerminalId,
+  type ThePayOneCredentialScope,
   ThePayOneError,
 } from "@/lib/thepayone";
 
@@ -311,11 +313,10 @@ export async function POST(request: Request) {
   let claimedOrder = false;
   let providerPaymentCompleted = false;
   let changeQuote: SubscriptionChangeQuote | null = null;
+  let paymentCredentialScope: ThePayOneCredentialScope = "default";
   try {
     assertBillingMutationRequest(request);
     assertThePayOneBillingEnabled();
-    const merchantId = thePayOneMerchantId();
-    const expectedTerminalId = thePayOneTerminalId();
     const body = schema.parse(await request.json());
     rejectRetiredAnnualRenewal(body.mode);
     if (
@@ -382,6 +383,18 @@ export async function POST(request: Request) {
         "INVALID_BILLING_CYCLE",
       );
     }
+    paymentCredentialScope = thePayOneCredentialScopeForPackage(
+      pricingV2Plan?.kind === "package",
+    );
+    const merchantId = thePayOneMerchantId(paymentCredentialScope);
+    const expectedTerminalId = thePayOneTerminalId(paymentCredentialScope);
+    if (paymentCredentialScope === "package" && reuseStoredMethod) {
+      throw new HttpError(
+        409,
+        "패키지는 수기결제 카드 정보를 새로 입력해 주세요.",
+        "PACKAGE_MANUAL_CARD_REQUIRED",
+      );
+    }
     const calculationTime = new Date();
     let currentPaymentToRefund: RefundableCurrentPaymentOrder | null = null;
     if (subscriptionChange) {
@@ -439,8 +452,8 @@ export async function POST(request: Request) {
         || currentPaymentToRefund.refundStatus !== "none"
         || currentPaymentToRefund.prorationRefundStatus !== "none"
         || currentPaymentToRefund.hasReservedRefund
-        || currentPaymentToRefund.providerMerchantId !== merchantId
-        || currentPaymentToRefund.providerTerminalId !== expectedTerminalId
+        || currentPaymentToRefund.providerMerchantId !== thePayOneMerchantId()
+        || currentPaymentToRefund.providerTerminalId !== thePayOneTerminalId()
       ) {
         throw new HttpError(
           409,
@@ -716,7 +729,11 @@ export async function POST(request: Request) {
         }, verifiedCard.id);
         const revocationOrderId = createPaymentTrackId("AUDT");
         try {
-          const revocation = await revokeThePayOneCard(verificationCardId, revocationOrderId);
+          const revocation = await revokeThePayOneCard(
+            verificationCardId,
+            revocationOrderId,
+            paymentCredentialScope,
+          );
           await db`
             update shorts_mvp.billing_card_verifications
             set status='revoked',consumed_billing_order_id=${order.id},
@@ -752,7 +769,7 @@ export async function POST(request: Request) {
         authPw: body.cardPassword,
         billingDay,
         productName: orderName,
-      });
+      }, paymentCredentialScope);
       issuedCardId = registration.cardId;
       registrationTransactionId = registration.providerTransactionId;
       chargeCardId = registration.cardId;
@@ -800,7 +817,12 @@ export async function POST(request: Request) {
     if (!chargeNow) {
       const oldPaused = await pauseOldSchedule(oldMethod);
       if (!oldPaused) {
-        await changeThePayOneCardStatus(chargeCardId, "중지", createPaymentTrackId("AUDT")).catch(() => undefined);
+        await changeThePayOneCardStatus(
+          chargeCardId,
+          "중지",
+          createPaymentTrackId("AUDT"),
+          paymentCredentialScope,
+        ).catch(() => undefined);
         await db`
           update shorts_mvp.billing_payment_methods
           set status='manual_review',provider_schedule_status='manual_review'
@@ -861,7 +883,7 @@ export async function POST(request: Request) {
       productName: orderName,
       description: paymentDescription,
       referenceId: order.id,
-    });
+    }, paymentCredentialScope);
     providerPaymentCompleted = true;
     if (
       payment.trackId !== order.orderId
@@ -938,6 +960,7 @@ export async function POST(request: Request) {
           chargeCardId,
           "중지",
           createPaymentTrackId("AUDT"),
+          paymentCredentialScope,
         ).catch(() => undefined);
         await db`
           update shorts_mvp.billing_orders
@@ -962,6 +985,7 @@ export async function POST(request: Request) {
           chargeCardId,
           "사용",
           createPaymentTrackId("AUDT"),
+          paymentCredentialScope,
         ).then(() => true).catch(() => false);
         scheduleReview = !resumed;
         reusedMethodScheduleStatus = resumed ? "active" : "manual_review";
@@ -970,6 +994,7 @@ export async function POST(request: Request) {
           chargeCardId,
           "중지",
           createPaymentTrackId("AUDT"),
+          paymentCredentialScope,
         ).then(() => true).catch(() => false);
         scheduleReview = !paused;
         reusedMethodScheduleStatus = paused ? "paused" : "manual_review";
@@ -982,6 +1007,7 @@ export async function POST(request: Request) {
           chargeCardId,
           "중지",
           createPaymentTrackId("AUDT"),
+          paymentCredentialScope,
         ).then(() => true).catch(() => false);
         scheduleReview = true;
         if (newPaused) {
@@ -1269,11 +1295,13 @@ export async function POST(request: Request) {
           payer_tel_ciphertext=null,payer_tel_iv=null,payer_tel_tag=null,revoked_at=now()
         where id=${oldMethod.id}
       `;
-      await setDefaultPaymentMethod(
-        tx,
-        session.userId,
-        paymentMethodId!,
-      );
+      if (paymentCredentialScope === "default") {
+        await setDefaultPaymentMethod(
+          tx,
+          session.userId,
+          paymentMethodId!,
+        );
+      }
       await syncCachedPlan(tx, session.userId, plan.code);
     });
     return NextResponse.json({
@@ -1334,7 +1362,11 @@ export async function POST(request: Request) {
     }
     if (issuedCardId && paymentMethodId && !unknown) {
       try {
-        await revokeThePayOneCard(issuedCardId, createPaymentTrackId("AUDT"));
+        await revokeThePayOneCard(
+          issuedCardId,
+          createPaymentTrackId("AUDT"),
+          paymentCredentialScope,
+        );
         await getDb().begin(async (tx) => {
           await tx`
             update shorts_mvp.billing_payment_methods

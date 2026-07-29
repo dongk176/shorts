@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { absoluteUrl } from "@/lib/seo";
+import { TEAM_PAGE_VISIBLE } from "@/lib/site-visibility";
 
 const publicRoutes = [
   { path: "/", changeFrequency: "weekly", priority: 1 },
@@ -8,6 +9,7 @@ const publicRoutes = [
   { path: "/pricing", changeFrequency: "monthly", priority: 0.8 },
   { path: "/popular", changeFrequency: "daily", priority: 0.8 },
   { path: "/compare/ai-shorts-tools", changeFrequency: "monthly", priority: 0.8 },
+  { path: "/team", changeFrequency: "monthly", priority: 0.6 },
   { path: "/faq", changeFrequency: "monthly", priority: 0.6 },
   { path: "/support", changeFrequency: "monthly", priority: 0.4 },
   { path: "/terms", changeFrequency: "yearly", priority: 0.2 },
@@ -17,9 +19,11 @@ const publicRoutes = [
 ] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return publicRoutes.map(({ path, changeFrequency, priority }) => ({
-    url: absoluteUrl(path),
-    changeFrequency,
-    priority,
-  }));
+  return publicRoutes
+    .filter(({ path }) => TEAM_PAGE_VISIBLE || path !== "/team")
+    .map(({ path, changeFrequency, priority }) => ({
+      url: absoluteUrl(path),
+      changeFrequency,
+      priority,
+    }));
 }

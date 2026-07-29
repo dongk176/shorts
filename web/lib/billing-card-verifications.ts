@@ -1,9 +1,12 @@
 import type { Sql } from "postgres";
 import { HttpError } from "@/lib/http";
+import { isPricingV2PackageCode } from "@/lib/pricing-v2";
 import {
   createPaymentTrackId,
   decryptCardToken,
   revokeThePayOneCard,
+  thePayOneCredentialScopeForPackage,
+  type ThePayOneCredentialScope,
   ThePayOneError,
 } from "@/lib/thepayone";
 
@@ -36,6 +39,7 @@ export type BillingCardVerification = {
 
 type RevocationClaim = {
   id: string;
+  planCode: string;
   billingKeyCiphertext: string;
   billingKeyIv: string;
   billingKeyTag: string;
@@ -63,8 +67,11 @@ async function revokeClaimedVerification(
     tag: claimed.billingKeyTag,
   }, claimed.id);
   const orderId = createPaymentTrackId("AUDT");
+  const credentialScope: ThePayOneCredentialScope = thePayOneCredentialScopeForPackage(
+    isPricingV2PackageCode(claimed.planCode),
+  );
   try {
-    const result = await revokeThePayOneCard(cardId, orderId);
+    const result = await revokeThePayOneCard(cardId, orderId, credentialScope);
     await db`
       update shorts_mvp.billing_card_verifications
       set status=${finalStatus},revocation_order_id=${orderId},
@@ -96,7 +103,7 @@ export async function revokeOwnedBillingCardVerification(
     set status='revoking'
     where id=${verificationId} and user_id=${userId}
       and status in ('active','revoke_failed')
-    returning id,billing_key_ciphertext,billing_key_iv,billing_key_tag
+    returning id,plan_code,billing_key_ciphertext,billing_key_iv,billing_key_tag
   ` as unknown as RevocationClaim[];
   const claimed = claimedRows[0];
   if (claimed && hasEncryptedCard(claimed)) {
@@ -139,7 +146,7 @@ export async function cleanupExpiredBillingCardVerifications(
       where id=${candidate.id}
         and expires_at <= clock_timestamp()
         and status in ('active','revoke_failed')
-      returning id,billing_key_ciphertext,billing_key_iv,billing_key_tag
+      returning id,plan_code,billing_key_ciphertext,billing_key_iv,billing_key_tag
     ` as unknown as RevocationClaim[];
     const claimed = claimedRows[0];
     if (!claimed || !hasEncryptedCard(claimed)) continue;
