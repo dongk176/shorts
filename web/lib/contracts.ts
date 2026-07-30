@@ -213,6 +213,7 @@ export type GeneratedShort = {
   titleTextStyles: TitleTextStyle[];
   titleTextStylesInitialized: boolean;
   renderVersion: number;
+  editorDocument?: import("./editor-document-snapshot").EditorDocumentSnapshot | null;
   rerenderProgress: number;
   status: string;
   expiresAt: string | null;

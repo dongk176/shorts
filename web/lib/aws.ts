@@ -1,12 +1,14 @@
 import {
   DeleteObjectsCommand,
   ListObjectsV2Command,
+  PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl as getCloudFrontSignedUrl } from "@aws-sdk/cloudfront-signer";
 import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 const region = process.env.AWS_REGION || "ap-northeast-2";
@@ -23,6 +25,64 @@ function credentials() {
 
 function s3Client() { return new S3Client({ region, credentials: credentials() }); }
 function lambdaClient() { return new LambdaClient({ region, credentials: credentials() }); }
+
+const EDITOR_CHANNEL_ASSET_MAX_BYTES = 300_000;
+
+export function parseEditorChannelImageDataUrl(value: string) {
+  const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=\r\n]+)$/i.exec(value);
+  if (!match) throw new Error("채널 이미지는 PNG, JPG 또는 WebP만 사용할 수 있습니다.");
+  const mimeSubtype = match[1].toLowerCase();
+  const body = Buffer.from(match[2], "base64");
+  if (body.length < 32 || body.length > EDITOR_CHANNEL_ASSET_MAX_BYTES) {
+    throw new Error("채널 이미지 용량을 다시 확인해 주세요.");
+  }
+  const signatureIsValid = mimeSubtype === "png"
+    ? body.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"))
+    : mimeSubtype === "jpeg"
+      ? body[0] === 0xff && body[1] === 0xd8 && body[2] === 0xff
+      : body.subarray(0, 4).toString("ascii") === "RIFF"
+        && body.subarray(8, 12).toString("ascii") === "WEBP";
+  if (!signatureIsValid) throw new Error("채널 이미지 파일 형식이 올바르지 않습니다.");
+  return {
+    body,
+    contentType: mimeSubtype === "jpeg" ? "image/jpeg" : `image/${mimeSubtype}`,
+    extension: mimeSubtype === "jpeg" ? "jpg" : mimeSubtype,
+  };
+}
+
+export async function putEditorChannelAsset({
+  sessionId,
+  jobId,
+  shortId,
+  dataUrl,
+}: {
+  sessionId: string;
+  jobId: string;
+  shortId: string;
+  dataUrl: string;
+}) {
+  const bucket = process.env.AWS_S3_OUTPUT_BUCKET;
+  if (!bucket) throw new Error("AWS_S3_OUTPUT_BUCKET이 설정되지 않았습니다.");
+  for (const id of [sessionId, jobId, shortId]) {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+      throw new Error("채널 이미지 저장 경로가 올바르지 않습니다.");
+    }
+  }
+  const parsed = parseEditorChannelImageDataUrl(dataUrl);
+  const digest = createHash("sha256").update(parsed.body).digest("hex");
+  const key = (
+    `edit-sources/${sessionId}/${jobId}/${shortId}/`
+    + `editor-assets/${digest}.${parsed.extension}`
+  );
+  await s3Client().send(new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    Body: parsed.body,
+    ContentType: parsed.contentType,
+    CacheControl: "private, max-age=2592000, immutable",
+  }));
+  return key;
+}
 
 async function cloudFrontPrivateKey() {
   const privateKeyB64 = process.env.CLOUDFRONT_PRIVATE_KEY_B64;

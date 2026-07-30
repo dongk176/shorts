@@ -949,6 +949,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     bucket.grantDelete(vercelRole, "outputs/*");
     bucket.grantDelete(vercelRole, "thumbnails/*");
     bucket.grantDelete(vercelRole, "edit-sources/*");
+    bucket.grantWrite(vercelRole, "edit-sources/*");
     bucket.grantRead(vercelRole, "outputs/*");
     outboxDispatcher.grantInvoke(vercelRole);
 

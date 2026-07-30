@@ -1,0 +1,1056 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+
+from .config import Settings
+from .errors import RenderError
+from .media import media_duration, probe_media, run_command, video_fps
+from .overlays import (
+    CUSTOM_BACKGROUND_ASSETS,
+    TEMPLATE_STYLES,
+    _title_line_character_indices,
+    _title_style_runs,
+    create_ass_subtitles,
+    create_comment_panel,
+    wrap_korean_title,
+)
+from .schemas import (
+    CustomTemplateConfig,
+    EditorDocument,
+    EditorFontId,
+    EditorTextOverlay,
+    SubtitleSegment,
+    TemplateId,
+    VideoAspectRatio,
+)
+
+CANVAS_WIDTH = 1080
+CANVAS_HEIGHT = 1920
+TITLE_MAX_WIDTH = 930
+TITLE_LINE_GAP = 18
+COMMENT_CAPTURE_LANDSCAPE_LIFT_PX = 160
+PRESET_SQUARE_CHANNEL_CENTER_Y = 1580
+COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y = 1840
+VIDEO_HEIGHTS = {
+    VideoAspectRatio.LANDSCAPE: 608,
+    VideoAspectRatio.LANDSCAPE_FIVE_FOUR: 864,
+    VideoAspectRatio.SQUARE: 1080,
+    VideoAspectRatio.PORTRAIT: 1350,
+    VideoAspectRatio.FULL_VERTICAL: 1920,
+}
+EDITOR_FONT_FILES = {
+    EditorFontId.PRETENDARD: "Pretendard-Bold.woff2",
+    EditorFontId.BLACK_HAN_SANS: "BlackHanSans-Regular.ttf",
+    EditorFontId.GMARKET_SANS: "GmarketSans-Bold.ttf",
+    EditorFontId.DO_HYEON: "DoHyeon-Regular.ttf",
+    EditorFontId.NOTO_SERIF_KR: "NotoSerifKR-Variable.ttf",
+    EditorFontId.NANUM_MYEONGJO: "NanumMyeongjo-Bold.ttf",
+    EditorFontId.SUIT: "SUIT-Bold.woff2",
+    EditorFontId.SPOQA_HAN_SANS_NEO: "SpoqaHanSansNeo-Bold.woff2",
+}
+EDITOR_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
+
+
+@dataclass(frozen=True, slots=True)
+class EditorVideoFrame:
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+@dataclass(frozen=True, slots=True)
+class EditorLayerAsset:
+    path: Path
+    start_seconds: float | None = None
+    end_seconds: float | None = None
+
+
+def editor_font_path(font_id: EditorFontId) -> Path:
+    path = EDITOR_FONT_DIRECTORY / EDITOR_FONT_FILES[font_id]
+    if not path.is_file():
+        raise RenderError(f"편집기 폰트 파일을 찾지 못했습니다: {font_id.value}")
+    return path
+
+
+def load_editor_font(font_id: EditorFontId, size: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(
+        str(editor_font_path(font_id)),
+        size=max(1, round(size)),
+    )
+
+
+def verify_editor_fonts() -> None:
+    for font_id in EditorFontId:
+        font = load_editor_font(font_id, 48)
+        box = font.getbbox("한글 Aa 123")
+        if box[2] <= box[0] or box[3] <= box[1]:
+            raise RenderError(f"편집기 폰트 글리프를 읽지 못했습니다: {font_id.value}")
+
+
+def _custom_template_config(document: EditorDocument) -> CustomTemplateConfig | None:
+    snapshot = document.template.snapshot
+    if not isinstance(snapshot, dict):
+        return None
+    config = snapshot.get("config")
+    return CustomTemplateConfig.model_validate(config) if isinstance(config, dict) else None
+
+
+def editor_video_frame(document: EditorDocument) -> EditorVideoFrame:
+    config = _custom_template_config(document)
+    if config is not None:
+        base_x = config.video.x
+        base_y = config.video.y
+        base_width = config.video.width
+        base_height = config.video.height
+    else:
+        aspect_ratio = document.video.aspect_ratio
+        if (
+            document.template.id is TemplateId.COMMENT_CAPTURE
+            and aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+        ):
+            aspect_ratio = VideoAspectRatio.PORTRAIT
+        base_width = CANVAS_WIDTH
+        base_height = VIDEO_HEIGHTS[aspect_ratio]
+        base_x = 0
+        base_y = round((CANVAS_HEIGHT - base_height) / 2)
+        if (
+            document.template.id is TemplateId.COMMENT_CAPTURE
+            and document.template.preset_version >= 2
+            and aspect_ratio is VideoAspectRatio.LANDSCAPE
+        ):
+            base_y -= COMMENT_CAPTURE_LANDSCAPE_LIFT_PX
+    scale = document.overlays.scales["video"]
+    offset = document.overlays.offsets["video"]
+    width = max(1, round(base_width * scale))
+    height = max(1, round(base_height * scale))
+    x = round(base_x + offset.x - base_width * (scale - 1) / 2)
+    y = round(base_y + offset.y - base_height * (scale - 1) / 2)
+    # The browser intentionally allows an enlarged video to extend beyond the
+    # canvas. FFmpeg's overlay filter clips the overflow in the same way CSS
+    # overflow-hidden clips the preview.
+    return EditorVideoFrame(x=x, y=y, width=width, height=height)
+
+
+def retime_editor_subtitles(document: EditorDocument) -> list[SubtitleSegment]:
+    retimed: list[SubtitleSegment] = []
+    output_cursor = 0.0
+    for clip in document.video.clips:
+        for segment in document.subtitles.segments:
+            start = max(segment.start, clip.source_start_seconds)
+            end = min(segment.end, clip.source_end_seconds)
+            if end <= start:
+                continue
+            retimed.append(SubtitleSegment(
+                start=round(output_cursor + start - clip.source_start_seconds, 3),
+                end=round(output_cursor + end - clip.source_start_seconds, 3),
+                text=segment.text,
+            ))
+        output_cursor += clip.source_end_seconds - clip.source_start_seconds
+    return retimed
+
+
+def _text_size(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+) -> tuple[int, int, tuple[int, int, int, int]]:
+    box = draw.textbbox((0, 0), text, font=font)
+    return box[2] - box[0], box[3] - box[1], box
+
+
+def _fit_title_font(
+    lines: list[str],
+    font_id: EditorFontId,
+    maximum_width: int,
+    preferred_size: int = 84,
+) -> ImageFont.FreeTypeFont:
+    image = Image.new("L", (1, 1))
+    draw = ImageDraw.Draw(image)
+    for size in range(preferred_size, 21, -2):
+        font = load_editor_font(font_id, size)
+        if max(_text_size(draw, line, font)[0] for line in lines) <= maximum_width:
+            return font
+    return load_editor_font(font_id, 22)
+
+
+def _scale_layer(image: Image.Image, scale: float) -> Image.Image:
+    if abs(scale - 1) < 0.0005:
+        return image
+    return image.resize(
+        (
+            max(1, round(image.width * scale)),
+            max(1, round(image.height * scale)),
+        ),
+        Image.Resampling.LANCZOS,
+    )
+
+
+def _paste_center(
+    canvas: Image.Image,
+    layer: Image.Image,
+    center_x: float,
+    center_y: float,
+) -> None:
+    left = round(center_x - layer.width / 2)
+    top = round(center_y - layer.height / 2)
+    canvas.paste(layer, (left, top), layer)
+
+
+def _draw_styled_title_content(
+    document: EditorDocument,
+    *,
+    font_id: EditorFontId,
+    font_size: int,
+    custom_config: CustomTemplateConfig | None,
+) -> Image.Image:
+    lines = wrap_korean_title(document.title.text)
+    font = load_editor_font(font_id, font_size)
+    probe = Image.new("RGBA", (CANVAS_WIDTH, 500), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(probe)
+    if custom_config is not None:
+        while (
+            font_size > 20
+            and max(_text_size(draw, line, font)[0] for line in lines)
+            > custom_config.title.max_width
+        ):
+            font_size -= 2
+            font = load_editor_font(font_id, font_size)
+    indices = _title_line_character_indices(document.title.text, lines)
+    metrics = [_text_size(draw, line, font) for line in lines]
+    if custom_config is not None:
+        gap = max(6, round(font_size * 0.18))
+        line_padding_x = max(10, round(font_size * 0.28))
+        line_padding_y = max(6, round(font_size * 0.14))
+    else:
+        gap = TITLE_LINE_GAP
+        line_padding_x = 24
+        line_padding_y = 10
+    maximum_width = max(width for width, _height, _box in metrics)
+    content_width = maximum_width + line_padding_x * 2 + 16
+    line_heights: list[int] = []
+    for index, (_width, height, _box) in enumerate(metrics):
+        has_background = custom_config is not None and (
+            (
+                custom_config.title.accent_background_color
+                if index > 0
+                else custom_config.title.primary_background_color
+            )
+            is not None
+        ) or any(
+            run_background
+            for _, _, _, run_background in _title_style_runs(
+                lines[index],
+                indices[index],
+                document.title.text_styles,
+            )
+        )
+        line_heights.append(height + (line_padding_y * 2 if has_background else 0))
+    content_height = sum(line_heights) + gap * max(0, len(lines) - 1) + 16
+    content = Image.new(
+        "RGBA",
+        (max(1, content_width), max(1, content_height)),
+        (0, 0, 0, 0),
+    )
+    draw = ImageDraw.Draw(content)
+    cursor_y = 8
+    style = TEMPLATE_STYLES[document.template.id]
+    for index, line in enumerate(lines):
+        width, height, box = metrics[index]
+        left = (content.width - width) / 2
+        custom_background = None
+        if custom_config is not None:
+            custom_background = (
+                custom_config.title.accent_background_color
+                if index > 0
+                else custom_config.title.primary_background_color
+            )
+        runs = _title_style_runs(line, indices[index], document.title.text_styles)
+        has_background = custom_background is not None or any(
+            run_background for _, _, _, run_background in runs
+        )
+        visible_y = cursor_y + (line_padding_y if has_background else 0)
+        if custom_background:
+            draw.rounded_rectangle(
+                (
+                    left - line_padding_x,
+                    cursor_y,
+                    left + width + line_padding_x,
+                    cursor_y + height + line_padding_y * 2,
+                ),
+                radius=max(6, round(font_size * 0.14)),
+                fill=custom_background,
+            )
+        for start, end, _run_color, run_background in runs:
+            if not run_background:
+                continue
+            run_left = draw.textlength(line[:start], font=font)
+            run_right = draw.textlength(line[:end], font=font)
+            draw.rounded_rectangle(
+                (
+                    left + run_left - line_padding_x,
+                    cursor_y,
+                    left + run_right + line_padding_x,
+                    cursor_y + height + line_padding_y * 2,
+                ),
+                radius=max(6, round(font_size * 0.14)),
+                fill=run_background,
+            )
+        if custom_config is not None:
+            default_color = (
+                custom_config.title.accent_color
+                if index > 0
+                else custom_config.title.primary_color
+            )
+        else:
+            overlay_mode = document.video.aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+            default_color = (
+                style.accent
+                if index > 0
+                or (overlay_mode and document.template.id is not TemplateId.PAPER)
+                else style.primary
+            )
+        for start, end, run_color, _run_background in runs:
+            run_left = draw.textlength(line[:start], font=font)
+            draw.text(
+                (
+                    left + run_left - box[0],
+                    visible_y - box[1],
+                ),
+                line[start:end],
+                font=font,
+                fill=run_color or default_color,
+            )
+        cursor_y += line_heights[index] + gap
+    return content
+
+
+def create_editor_title_layer(
+    document: EditorDocument,
+    output_path: Path,
+) -> Path:
+    canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
+    if not document.overlays.visible["title"]:
+        canvas.save(output_path)
+        return output_path
+    config = _custom_template_config(document)
+    font_id = document.overlays.fonts["title"]
+    if config is not None:
+        base_font_size = max(1, round(config.title.font_size * document.title.font_scale))
+        center_x = config.title.x
+        center_y = config.title.y
+    else:
+        fitted = _fit_title_font(
+            wrap_korean_title(document.title.text),
+            font_id,
+            TITLE_MAX_WIDTH,
+        )
+        base_font_size = max(
+            18,
+            min(100, round(fitted.size * document.title.font_scale)),
+        )
+        aspect_ratio = document.video.aspect_ratio
+        if (
+            document.template.id is TemplateId.COMMENT_CAPTURE
+            and aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+        ):
+            aspect_ratio = VideoAspectRatio.PORTRAIT
+        if aspect_ratio is VideoAspectRatio.FULL_VERTICAL:
+            panel_height = 360
+            panel_top = 96
+        else:
+            panel_height = round((CANVAS_HEIGHT - VIDEO_HEIGHTS[aspect_ratio]) / 2)
+            if (
+                document.template.id is TemplateId.COMMENT_CAPTURE
+                and document.template.preset_version >= 2
+                and aspect_ratio is VideoAspectRatio.LANDSCAPE
+            ):
+                panel_height -= COMMENT_CAPTURE_LANDSCAPE_LIFT_PX
+            panel_top = 0
+        bottom_margin = (
+            12
+            if panel_height == 285
+            else min(44, max(24, round(panel_height * 0.105)))
+        )
+        center_x = CANVAS_WIDTH / 2
+        center_y = panel_top + panel_height - bottom_margin
+    content = _draw_styled_title_content(
+        document,
+        font_id=font_id,
+        font_size=base_font_size,
+        custom_config=config,
+    )
+    if config is None:
+        center_y -= content.height / 2
+    content = _scale_layer(content, document.overlays.scales["title"])
+    offset = document.overlays.offsets["title"]
+    _paste_center(canvas, content, center_x + offset.x, center_y + offset.y)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(output_path, format="PNG", compress_level=1)
+    return output_path
+
+
+def _trim_text_to_width(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    maximum_width: int,
+) -> str:
+    result = text
+    while result and draw.textlength(result, font=font) > maximum_width:
+        result = result[:-1]
+    return result
+
+
+def create_editor_channel_layer(
+    document: EditorDocument,
+    output_path: Path,
+    thumbnail_path: Path | None,
+) -> Path:
+    canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
+    if not document.overlays.visible["channel"]:
+        canvas.save(output_path)
+        return output_path
+    config = _custom_template_config(document)
+    font_id = document.overlays.fonts["channel"]
+    if config is not None:
+        base_font_size = config.channel.font_size
+        center_x = config.channel.x
+        center_y = config.channel.y
+        foreground = config.channel.color
+        background = config.channel.background_color
+        maximum_width = config.channel.max_width
+        avatar_size = 58
+        gap = 22
+        padding_x = 16
+        padding_y = 8
+    else:
+        base_font_size = 45
+        center_x = CANVAS_WIDTH / 2
+        center_y = (
+            COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y
+            if document.template.id is TemplateId.COMMENT_CAPTURE
+            else PRESET_SQUARE_CHANNEL_CENTER_Y
+        )
+        foreground = TEMPLATE_STYLES[document.template.id].channel
+        background = None
+        maximum_width = 760
+        avatar_size = 66
+        gap = 26
+        padding_x = 53
+        padding_y = 8
+    font = load_editor_font(font_id, base_font_size)
+    probe = Image.new("RGBA", (1, 1))
+    probe_draw = ImageDraw.Draw(probe)
+    name = _trim_text_to_width(
+        probe_draw,
+        " ".join(document.channel.display_name.split()),
+        font,
+        maximum_width - avatar_size - gap,
+    ) or "채널"
+    text_width, text_height, text_box = _text_size(probe_draw, name, font)
+    content_width = (
+        maximum_width
+        if config is not None
+        else avatar_size + gap + text_width + padding_x * 2
+    )
+    content_height = max(avatar_size, text_height) + padding_y * 2
+    content = Image.new(
+        "RGBA",
+        (content_width, content_height),
+        (0, 0, 0, 0),
+    )
+    draw = ImageDraw.Draw(content)
+    if background:
+        draw.rounded_rectangle(
+            (0, 0, content_width - 1, content_height - 1),
+            radius=max(6, round(base_font_size * 0.18)),
+            fill=background,
+        )
+    avatar_left = (
+        round((content_width - avatar_size - gap - text_width) / 2)
+        if config is not None
+        else padding_x
+    )
+    avatar_top = round((content_height - avatar_size) / 2)
+    rendered_avatar = False
+    if thumbnail_path and thumbnail_path.is_file():
+        try:
+            with Image.open(thumbnail_path) as source:
+                avatar = ImageOps.fit(
+                    source.convert("RGB"),
+                    (avatar_size, avatar_size),
+                    method=Image.Resampling.LANCZOS,
+                )
+            mask = Image.new("L", (avatar_size, avatar_size), 0)
+            ImageDraw.Draw(mask).ellipse(
+                (0, 0, avatar_size - 1, avatar_size - 1),
+                fill=255,
+            )
+            content.paste(avatar, (avatar_left, avatar_top), mask)
+            rendered_avatar = True
+        except (OSError, ValueError):
+            rendered_avatar = False
+    if not rendered_avatar:
+        draw.ellipse(
+            (
+                avatar_left,
+                avatar_top,
+                avatar_left + avatar_size,
+                avatar_top + avatar_size,
+            ),
+            fill=foreground,
+        )
+        fallback = background or TEMPLATE_STYLES[document.template.id].background
+        draw.ellipse(
+            (
+                avatar_left + avatar_size * 0.325,
+                avatar_top + avatar_size * 0.2,
+                avatar_left + avatar_size * 0.675,
+                avatar_top + avatar_size * 0.55,
+            ),
+            fill=fallback,
+        )
+        draw.rounded_rectangle(
+            (
+                avatar_left + avatar_size * 0.19,
+                avatar_top + avatar_size * 0.57,
+                avatar_left + avatar_size * 0.81,
+                avatar_top + avatar_size * 0.92,
+            ),
+            radius=round(avatar_size * 0.2),
+            fill=fallback,
+        )
+    draw.text(
+        (
+            avatar_left + avatar_size + gap - text_box[0],
+            (content_height - text_height) / 2 - text_box[1],
+        ),
+        name,
+        font=font,
+        fill=foreground,
+    )
+    content = _scale_layer(content, document.overlays.scales["channel"])
+    offset = document.overlays.offsets["channel"]
+    _paste_center(canvas, content, center_x + offset.x, center_y + offset.y)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(output_path, format="PNG", compress_level=1)
+    return output_path
+
+
+def _wrap_overlay_text(
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    maximum_width: int,
+) -> list[str]:
+    probe = Image.new("L", (1, 1))
+    draw = ImageDraw.Draw(probe)
+    lines: list[str] = []
+    for paragraph in (text or "텍스트").splitlines() or [""]:
+        current = ""
+        for character in paragraph:
+            candidate = current + character
+            if current and draw.textlength(candidate, font=font) > maximum_width:
+                lines.append(current.rstrip())
+                current = character.lstrip()
+            else:
+                current = candidate
+        lines.append(current or " ")
+    return lines[:20]
+
+
+def create_editor_text_layer(
+    overlay: EditorTextOverlay,
+    output_path: Path,
+) -> Path:
+    canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
+    font = load_editor_font(overlay.font_id, 72)
+    padding_x = 22
+    padding_y = 11
+    layout_width = max(1, round(overlay.width))
+    lines = _wrap_overlay_text(
+        overlay.text,
+        font,
+        max(1, layout_width - padding_x * 2),
+    )
+    probe = Image.new("RGBA", (1, 1))
+    draw = ImageDraw.Draw(probe)
+    boxes = [draw.textbbox((0, 0), line, font=font, stroke_width=10) for line in lines]
+    widths = [box[2] - box[0] for box in boxes]
+    heights = [box[3] - box[1] for box in boxes]
+    line_height = round(72 * 1.2)
+    # CSS lets glyphs overflow the technical 1px width while still using that
+    # width to decide line breaks. Keep the same narrow wrapping without
+    # clipping every glyph out of the rendered video.
+    content_width = max(
+        layout_width,
+        max(widths, default=1) + padding_x * 2,
+    )
+    content = Image.new(
+        "RGBA",
+        (
+            content_width,
+            max(1, line_height * len(lines) + padding_y * 2),
+        ),
+        (0, 0, 0, 0),
+    )
+    foreground = Image.new("RGBA", content.size, (0, 0, 0, 0))
+    foreground_draw = ImageDraw.Draw(foreground)
+    cursor_y = padding_y
+    for line, box, width, height in zip(lines, boxes, widths, heights, strict=True):
+        x = (content.width - width) / 2 - box[0]
+        y = cursor_y + (line_height - height) / 2 - box[1]
+        foreground_draw.text(
+            (x, y),
+            line,
+            font=font,
+            fill=overlay.color,
+            stroke_width=10 if overlay.effect == "outline" else 0,
+            stroke_fill="#000000",
+        )
+        cursor_y += line_height
+    if overlay.effect == "shadow":
+        alpha = foreground.getchannel("A")
+        shadow = Image.new("RGBA", content.size, (0, 0, 0, 0))
+        shadow.putalpha(alpha.filter(ImageFilter.GaussianBlur(radius=13)))
+        shadow_color = Image.new("RGBA", content.size, (0, 0, 0, 220))
+        shadow_color.putalpha(shadow.getchannel("A"))
+        content.paste(shadow_color, (0, 7), shadow_color)
+    content.alpha_composite(foreground)
+    content = _scale_layer(content, overlay.scale)
+    _paste_center(
+        canvas,
+        content,
+        CANVAS_WIDTH / 2 + overlay.offset.x,
+        CANVAS_HEIGHT / 2 + overlay.offset.y,
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(output_path, format="PNG", compress_level=1)
+    return output_path
+
+
+def _base_comment_y(document: EditorDocument) -> int:
+    config = _custom_template_config(document)
+    if config is not None:
+        video_bottom = config.video.y + config.video.height
+        if config.comment.docked_to_video and 720 <= video_bottom <= 1480:
+            return video_bottom
+        return config.comment.y
+    if document.template.id is not TemplateId.COMMENT_CAPTURE:
+        return round(CANVAS_HEIGHT * 0.62)
+    aspect_ratio = document.video.aspect_ratio
+    if aspect_ratio is VideoAspectRatio.FULL_VERTICAL:
+        aspect_ratio = VideoAspectRatio.PORTRAIT
+    height = VIDEO_HEIGHTS[aspect_ratio]
+    y = round((CANVAS_HEIGHT - height) / 2)
+    if (
+        document.template.preset_version >= 2
+        and aspect_ratio is VideoAspectRatio.LANDSCAPE
+    ):
+        y -= COMMENT_CAPTURE_LANDSCAPE_LIFT_PX
+    return y + height
+
+
+def create_editor_comment_layers(
+    document: EditorDocument,
+    directory: Path,
+) -> list[EditorLayerAsset]:
+    if not document.overlays.visible["comment"]:
+        return []
+    config = _custom_template_config(document)
+    theme = (
+        document.overlays.comment_theme
+        or (config.comment.theme if config is not None else "dark")
+    )
+    size = config.comment.size if config is not None else "medium"
+    base_y = _base_comment_y(document)
+    assets: list[EditorLayerAsset] = []
+    for index, comment in enumerate(
+        sorted(document.comments, key=lambda item: item.start_seconds)
+    ):
+        panel_path = directory / f"comment-panel-{index:02d}.png"
+        create_comment_panel(
+            comment,
+            panel_path,
+            overlay_mode=True,
+            theme=theme,
+            size=size,
+        )
+        with Image.open(panel_path) as source:
+            panel = source.convert("RGBA")
+        layer = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
+        offset = document.overlays.comment_offsets.get(
+            comment.id,
+            document.overlays.offsets["comment"],
+        )
+        y = round(base_y + offset.y)
+        layer.paste(panel, (0, y), panel)
+        layer_path = directory / f"comment-layer-{index:02d}.png"
+        layer.save(layer_path, format="PNG", compress_level=1)
+        assets.append(EditorLayerAsset(
+            path=layer_path,
+            start_seconds=comment.start_seconds,
+            end_seconds=comment.end_seconds,
+        ))
+    return assets
+
+
+def create_editor_background(document: EditorDocument, output_path: Path) -> Path:
+    background = document.overlays.background
+    config = _custom_template_config(document)
+    if background is None and config is not None:
+        background = config.background
+    if background is not None and background.kind == "image":
+        asset_id = background.asset_id or ""
+        asset_path = CUSTOM_BACKGROUND_ASSETS.get(asset_id)
+        if not asset_path or not asset_path.is_file():
+            raise RenderError("편집기 배경 이미지를 찾지 못했습니다.")
+        with Image.open(asset_path) as source:
+            image = ImageOps.fit(
+                source.convert("RGB"),
+                (CANVAS_WIDTH, CANVAS_HEIGHT),
+                method=Image.Resampling.LANCZOS,
+            )
+    else:
+        color = (
+            background.color
+            if background is not None
+            else TEMPLATE_STYLES[document.template.id].background
+        )
+        image = Image.new("RGB", (CANVAS_WIDTH, CANVAS_HEIGHT), color)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output_path, format="PNG", compress_level=1)
+    return output_path
+
+
+def _escape_filter_path(path: Path) -> str:
+    return str(path).replace("\\", "\\\\").replace(":", "\\:").replace("'", r"\'")
+
+
+class EditorDocumentRenderer:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def extract_sequence(
+        self,
+        *,
+        timeline_path: Path,
+        output_path: Path,
+        document: EditorDocument,
+        work_dir: Path,
+    ) -> Path:
+        work_dir.mkdir(parents=True, exist_ok=True)
+        probe = probe_media(
+            timeline_path,
+            timeout=min(30, self.settings.ffmpeg_timeout_seconds),
+        )
+        timeline_duration = media_duration(probe)
+        expected_duration = (
+            document.video.timeline_end_seconds
+            - document.video.timeline_start_seconds
+        )
+        if abs(timeline_duration - expected_duration) > max(0.2, expected_duration * 0.01):
+            raise RenderError("편집 타임라인 길이가 저장된 문서와 일치하지 않습니다.")
+        has_audio = any(
+            stream.get("codec_type") == "audio"
+            for stream in probe.get("streams", [])
+        )
+        filters: list[str] = []
+        concat_inputs: list[str] = []
+        for index, clip in enumerate(document.video.clips):
+            filters.append(
+                f"[0:v]trim=start={clip.source_start_seconds:.6f}:"
+                f"end={clip.source_end_seconds:.6f},setpts=PTS-STARTPTS[v{index}]"
+            )
+            concat_inputs.append(f"[v{index}]")
+            if has_audio:
+                filters.append(
+                    f"[0:a]atrim=start={clip.source_start_seconds:.6f}:"
+                    f"end={clip.source_end_seconds:.6f},asetpts=PTS-STARTPTS[a{index}]"
+                )
+                concat_inputs.append(f"[a{index}]")
+        filters.append(
+            "".join(concat_inputs)
+            + f"concat=n={len(document.video.clips)}:v=1:a={1 if has_audio else 0}"
+            + ("[sequence_video][sequence_audio]" if has_audio else "[sequence_video]")
+        )
+        command = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-y",
+            "-i",
+            str(timeline_path),
+            "-filter_complex_threads",
+            str(self.settings.ffmpeg_threads),
+            "-filter_complex",
+            ";".join(filters),
+            "-map",
+            "[sequence_video]",
+        ]
+        if has_audio:
+            command.extend(["-map", "[sequence_audio]"])
+        command.extend([
+            "-c:v",
+            "libx264",
+            "-threads:v",
+            str(self.settings.ffmpeg_threads),
+            "-preset",
+            self.settings.clean_clip_preset,
+            "-crf",
+            str(self.settings.clean_clip_crf),
+            "-pix_fmt",
+            "yuv420p",
+        ])
+        if has_audio:
+            command.extend(["-c:a", "aac", "-b:a", "128k"])
+        command.extend(["-movflags", "+faststart", str(output_path)])
+        result = run_command(
+            command,
+            timeout=self.settings.ffmpeg_timeout_seconds,
+            cwd=work_dir,
+        )
+        if (
+            result.returncode != 0
+            or not output_path.is_file()
+            or output_path.stat().st_size == 0
+        ):
+            raise RenderError("영상 조각을 이어 붙이지 못했습니다.")
+        rendered_duration = media_duration(probe_media(output_path, timeout=30))
+        if abs(rendered_duration - document.video.output_duration_seconds) > 0.12:
+            output_path.unlink(missing_ok=True)
+            raise RenderError("편집한 영상 조각의 길이를 검증하지 못했습니다.")
+        return output_path
+
+    def render(
+        self,
+        *,
+        clean_path: Path,
+        output_path: Path,
+        document: EditorDocument,
+        work_dir: Path,
+        channel_thumbnail_path: Path | None,
+    ) -> Path:
+        work_dir.mkdir(parents=True, exist_ok=True)
+        assets_dir = work_dir / "editor-assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        probe = probe_media(
+            clean_path,
+            timeout=min(30, self.settings.ffmpeg_timeout_seconds),
+        )
+        duration = media_duration(probe)
+        if abs(duration - document.video.output_duration_seconds) > 0.12:
+            raise RenderError("편집 영상 길이가 렌더링 문서와 일치하지 않습니다.")
+        fps = min(30.0, video_fps(probe))
+        has_audio = any(
+            stream.get("codec_type") == "audio"
+            for stream in probe.get("streams", [])
+        )
+        frame = editor_video_frame(document)
+        background_path = create_editor_background(
+            document,
+            assets_dir / "background.png",
+        )
+        title_path = create_editor_title_layer(
+            document,
+            assets_dir / "title.png",
+        )
+        channel_path = create_editor_channel_layer(
+            document,
+            assets_dir / "channel.png",
+            channel_thumbnail_path,
+        )
+        comment_assets = create_editor_comment_layers(document, assets_dir)
+        text_assets = {
+            f"text:{overlay.id}": [
+                EditorLayerAsset(
+                    path=create_editor_text_layer(
+                        overlay,
+                        assets_dir / f"text-{index:02d}.png",
+                    ),
+                    start_seconds=overlay.start_seconds,
+                    end_seconds=overlay.end_seconds,
+                )
+            ]
+            for index, overlay in enumerate(document.overlays.text_overlays)
+        }
+        layer_assets: dict[str, list[EditorLayerAsset]] = {
+            "title": [EditorLayerAsset(title_path)]
+            if document.overlays.visible["title"]
+            else [],
+            "comment": comment_assets,
+            "channel": [EditorLayerAsset(channel_path)]
+            if document.overlays.visible["channel"]
+            else [],
+            **text_assets,
+        }
+
+        image_inputs: list[Path] = [background_path]
+        ordered_assets: list[tuple[str, EditorLayerAsset]] = []
+        for layer_name in document.overlays.layer_order:
+            if layer_name == "video":
+                continue
+            for asset in layer_assets.get(layer_name, []):
+                image_inputs.append(asset.path)
+                ordered_assets.append((layer_name, asset))
+        command = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-y",
+            "-i",
+            str(clean_path),
+        ]
+        for image_path in image_inputs:
+            command.extend([
+                "-loop",
+                "1",
+                "-framerate",
+                f"{fps:.3f}",
+                "-i",
+                str(image_path),
+            ])
+        filters = [
+            f"[1:v]setpts=PTS-STARTPTS,scale={CANVAS_WIDTH}:{CANVAS_HEIGHT},"
+            "format=rgba[scene0]",
+            (
+                f"[0:v]setpts=PTS-STARTPTS,fps={fps:.3f},"
+                f"scale={frame.width}:{frame.height}:force_original_aspect_ratio=increase,"
+                f"crop={frame.width}:{frame.height},format=rgba[video_layer]"
+            ),
+        ]
+        current_label = "scene0"
+        next_image_index = 2
+        subtitle_path = (
+            create_ass_subtitles(
+                retime_editor_subtitles(document),
+                clip_start=0,
+                clip_end=duration,
+                output_path=assets_dir / "subtitles.ass",
+                margin_v=445,
+            )
+            if document.subtitles.enabled
+            else None
+        )
+        subtitles_applied = False
+
+        def apply_subtitles() -> None:
+            nonlocal current_label, subtitles_applied
+            if not subtitle_path or subtitles_applied:
+                return
+            next_label = f"captioned{len(filters)}"
+            filters.append(
+                f"[{current_label}]subtitles=filename="
+                f"'{_escape_filter_path(subtitle_path)}'[{next_label}]"
+            )
+            current_label = next_label
+            subtitles_applied = True
+
+        # The browser uses z-index 50 for subtitles. Editor layers receive
+        # 10, 20, ... from their order, so the fifth and later layers cover
+        # subtitles while the first four stay behind them.
+        for layer_index, layer_name in enumerate(document.overlays.layer_order):
+            if layer_index == 4:
+                apply_subtitles()
+            if layer_name == "video":
+                next_label = f"scene{len(filters)}"
+                filters.append(
+                    f"[{current_label}][video_layer]overlay=x={frame.x}:y={frame.y}:"
+                    f"shortest=1[{next_label}]"
+                )
+                current_label = next_label
+                continue
+            for _asset_name, asset in (
+                item for item in ordered_assets if item[0] == layer_name
+            ):
+                prepared_label = f"asset{next_image_index}"
+                filters.append(
+                    f"[{next_image_index}:v]setpts=PTS-STARTPTS,format=rgba"
+                    f"[{prepared_label}]"
+                )
+                next_label = f"scene{len(filters)}"
+                enable = ""
+                if asset.start_seconds is not None and asset.end_seconds is not None:
+                    enable = (
+                        ":enable='between(t,"
+                        f"{asset.start_seconds:.6f},{asset.end_seconds:.6f})'"
+                    )
+                filters.append(
+                    f"[{current_label}][{prepared_label}]overlay=x=0:y=0:"
+                    f"eof_action=repeat:repeatlast=1{enable}[{next_label}]"
+                )
+                current_label = next_label
+                next_image_index += 1
+        apply_subtitles()
+        audio_label = None
+        if has_audio:
+            filters.append(
+                "[0:a]asetpts=PTS-STARTPTS,"
+                "loudnorm=I=-16:TP=-1.5:LRA=11[audio]"
+            )
+            audio_label = "audio"
+        command.extend([
+            "-filter_complex_threads",
+            str(self.settings.ffmpeg_threads),
+            "-filter_complex",
+            ";".join(filters),
+            "-map",
+            f"[{current_label}]",
+        ])
+        if audio_label:
+            command.extend(["-map", f"[{audio_label}]"])
+        command.extend([
+            "-t",
+            f"{duration:.3f}",
+            "-c:v",
+            "libx264",
+            "-threads:v",
+            str(self.settings.ffmpeg_threads),
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-r",
+            f"{fps:.3f}",
+        ])
+        if audio_label:
+            command.extend(["-c:a", "aac", "-b:a", "128k"])
+        command.extend(["-movflags", "+faststart", str(output_path)])
+        result = run_command(
+            command,
+            timeout=self.settings.ffmpeg_timeout_seconds,
+            cwd=work_dir,
+        )
+        if (
+            result.returncode != 0
+            or not output_path.is_file()
+            or output_path.stat().st_size == 0
+        ):
+            raise RenderError("통합 편집 문서를 영상으로 렌더링하지 못했습니다.")
+        output_probe = probe_media(output_path, timeout=30)
+        video = next(
+            (
+                stream
+                for stream in output_probe.get("streams", [])
+                if stream.get("codec_type") == "video"
+            ),
+            {},
+        )
+        if (
+            int(video.get("width", 0)) != CANVAS_WIDTH
+            or int(video.get("height", 0)) != CANVAS_HEIGHT
+        ):
+            output_path.unlink(missing_ok=True)
+            raise RenderError("통합 편집 영상 해상도를 검증하지 못했습니다.")
+        output_duration = media_duration(output_probe)
+        if abs(output_duration - duration) > 0.12:
+            output_path.unlink(missing_ok=True)
+            raise RenderError("통합 편집 영상 길이를 검증하지 못했습니다.")
+        return output_path

@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { TitleTextStyle, VideoAspectRatio } from "@/lib/contracts";
+import type { CSSProperties, PointerEventHandler } from "react";
 import { COMMENT_CAPTURE_LANDSCAPE_LIFT_PX } from "@/lib/template-config";
+import type { TitleTextStyle, VideoAspectRatio } from "@/lib/contracts";
 import {
   fitPreviewTitleFont,
+  styledTitleLineRuns,
   titleLineCharacterIndices,
   titleLineColor,
   wrapPreviewTitle,
@@ -12,7 +14,7 @@ import {
 
 const CANVAS_WIDTH = 1080;
 const TITLE_LINE_GAP = 18;
-const TITLE_FONT_FAMILY = '"Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
+const DEFAULT_TITLE_FONT_FAMILY = '"Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
 
 function titlePanelLayout(videoAspectRatio: VideoAspectRatio, liftLandscape: boolean) {
   if (videoAspectRatio === "9:16") {
@@ -33,23 +35,6 @@ function canvasWidth(value: number) {
   return `${value / (CANVAS_WIDTH / 100)}cqw`;
 }
 
-function styledLineRuns(line: string, indices: Array<number | null>, styles: TitleTextStyle[]) {
-  const runs: Array<{ text: string; color?: string; backgroundColor?: string }> = [];
-  Array.from(line).forEach((character, characterIndex) => {
-    const titleIndex = indices[characterIndex];
-    const style = titleIndex === null
-      ? undefined
-      : styles.find((item) => item.start <= titleIndex && item.end > titleIndex);
-    const previous = runs.at(-1);
-    if (previous && previous.color === style?.color && previous.backgroundColor === style?.backgroundColor) {
-      previous.text += character;
-    } else {
-      runs.push({ text: character, color: style?.color, backgroundColor: style?.backgroundColor });
-    }
-  });
-  return runs;
-}
-
 export function TitleOverlayPreview({
   title,
   fontScale,
@@ -57,9 +42,17 @@ export function TitleOverlayPreview({
   primary,
   accent,
   background,
+  fontFamily = DEFAULT_TITLE_FONT_FAMILY,
   keepPrimaryFirstLine = false,
   textStyles = [],
   liftLandscape = false,
+  selected = false,
+  editing = false,
+  movementStyle,
+  onPointerDown,
+  onEditStart,
+  onEditValueChange,
+  onEditEnd,
 }: {
   title: string;
   fontScale: number;
@@ -67,9 +60,17 @@ export function TitleOverlayPreview({
   primary: string;
   accent: string;
   background: string;
+  fontFamily?: string;
   keepPrimaryFirstLine?: boolean;
   textStyles?: TitleTextStyle[];
   liftLandscape?: boolean;
+  selected?: boolean;
+  editing?: boolean;
+  movementStyle?: CSSProperties;
+  onPointerDown?: PointerEventHandler<HTMLButtonElement>;
+  onEditStart?: () => void;
+  onEditValueChange?: (value: string) => void;
+  onEditEnd?: () => void;
 }) {
   const lines = useMemo(() => wrapPreviewTitle(title), [title]);
   const lineIndices = useMemo(() => titleLineCharacterIndices(title, lines), [lines, title]);
@@ -86,7 +87,7 @@ export function TitleOverlayPreview({
       const context = document.createElement("canvas").getContext("2d");
       if (!context || cancelled) return;
       const fitted = fitPreviewTitleFont(lines, (line, fontSize) => {
-        context.font = `700 ${fontSize}px ${TITLE_FONT_FAMILY}`;
+        context.font = `700 ${fontSize}px ${fontFamily}`;
         return context.measureText(line).width;
       });
       if (!cancelled) setFittedFontSize(fitted);
@@ -94,53 +95,101 @@ export function TitleOverlayPreview({
     fitUsingBrowserFont();
     void document.fonts?.ready.then(fitUsingBrowserFont);
     return () => { cancelled = true; };
-  }, [lines]);
+  }, [fontFamily, lines]);
+
+  const panelStyle: CSSProperties = {
+    top: layout.top,
+    height: layout.height,
+    paddingBottom: canvasWidth(bottomMargin),
+    background: layout.overlay ? "transparent" : background,
+    fontFamily,
+    fontSize: canvasWidth(scaledFontSize),
+    lineHeight: 1,
+  };
+  const content = lines.map((line, index) => (
+    <span
+      key={`${line}-${index}`}
+      className="max-w-full shrink-0 whitespace-nowrap"
+      style={{
+        color: titleLineColor(index, layout.overlay, primary, accent, keepPrimaryFirstLine),
+        background: "transparent",
+      }}
+    >
+      {styledTitleLineRuns(line, lineIndices[index], textStyles).map((run, runIndex) => (
+        <span
+          key={`${run.text}-${runIndex}`}
+          style={{
+            color: run.color || "inherit",
+            background: run.backgroundColor || "transparent",
+            borderRadius: run.backgroundColor ? "0.12em" : 0,
+            boxDecorationBreak: "clone",
+            display: run.backgroundColor ? "inline-block" : "inline",
+            padding: run.backgroundColor ? "0.14em 0.34em" : 0,
+            WebkitBoxDecorationBreak: "clone",
+          }}
+        >
+          {run.text}
+        </span>
+      ))}
+    </span>
+  ));
+  const titleClassName = "absolute inset-x-0 flex flex-col items-center justify-end text-center font-bold";
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden" style={{ containerType: "inline-size" }}>
-      <div
-        className="absolute inset-x-0 flex flex-col items-center justify-end overflow-hidden text-center font-bold"
-        style={{
-          top: layout.top,
-          height: layout.height,
-          gap: canvasWidth(TITLE_LINE_GAP),
-          paddingBottom: canvasWidth(bottomMargin),
-          background: layout.overlay ? "transparent" : background,
-          fontFamily: TITLE_FONT_FAMILY,
-          fontSize: canvasWidth(scaledFontSize),
-          lineHeight: 1,
-        }}
-      >
-        {lines.map((line, index) => {
-          return (
-            <span
-              key={`${line}-${index}`}
-              className="max-w-full shrink-0 whitespace-nowrap"
-              style={{
-                color: titleLineColor(index, layout.overlay, primary, accent, keepPrimaryFirstLine),
-                background: "transparent",
-              }}
-            >
-              {styledLineRuns(line, lineIndices[index], textStyles).map((run, runIndex) => (
-                <span
-                  key={`${run.text}-${runIndex}`}
+    <div className="pointer-events-none absolute inset-0 z-10 overflow-visible" style={{ containerType: "inline-size" }}>
+      {onPointerDown
+        ? <div className={`${titleClassName} overflow-visible`} style={panelStyle}>
+            {editing && onEditValueChange && onEditEnd
+              ? <textarea
+                  autoFocus
+                  data-editor-overlay-layer="title"
+                  aria-label="제목 직접 편집"
+                  value={title}
+                  maxLength={80}
+                  rows={2}
+                  spellCheck={false}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onChange={(event) => onEditValueChange(event.target.value)}
+                  onBlur={onEditEnd}
+                  onKeyDown={(event) => {
+                    if (event.nativeEvent.isComposing) return;
+                    if (
+                      event.key === "Escape"
+                      || (event.key === "Enter" && (event.metaKey || event.ctrlKey))
+                    ) {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  className="pointer-events-auto w-[88cqw] resize-none overflow-hidden border-0 bg-black/45 px-[2cqw] py-[1cqw] text-center font-bold outline outline-2 outline-[#ff715e]"
                   style={{
-                    color: run.color || "inherit",
-                    background: run.backgroundColor || "transparent",
-                    borderRadius: run.backgroundColor ? "0.12em" : 0,
-                    boxDecorationBreak: "clone",
-                    display: run.backgroundColor ? "inline-block" : "inline",
-                    padding: run.backgroundColor ? "0.14em 0.34em" : 0,
-                    WebkitBoxDecorationBreak: "clone",
+                    minHeight: "2.25em",
+                    color: primary,
+                    ...movementStyle,
+                  }}
+                />
+              : <button
+                  type="button"
+                  data-editor-overlay-layer="title"
+                  aria-label="제목 오버레이 선택 및 이동"
+                  aria-pressed={selected}
+                  onPointerDown={onPointerDown}
+                  onDoubleClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onEditStart?.();
+                  }}
+                  title="더블클릭해서 제목 수정"
+                  className={`pointer-events-auto flex cursor-move appearance-none flex-col items-center border-0 bg-transparent p-0 ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
+                  style={{
+                    gap: canvasWidth(TITLE_LINE_GAP),
+                    ...movementStyle,
                   }}
                 >
-                  {run.text}
-                </span>
-              ))}
-            </span>
-          );
-        })}
-      </div>
+                  {content}
+                </button>}
+          </div>
+        : <div className={`${titleClassName} overflow-hidden`} style={{ ...panelStyle, gap: canvasWidth(TITLE_LINE_GAP) }}>{content}</div>}
     </div>
   );
 }

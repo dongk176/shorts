@@ -2,6 +2,7 @@ export const RANGE_EDIT_MIN_SECONDS = 1;
 export const RANGE_EDIT_HANDLE_SECONDS = 30;
 export const RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS = 0.051;
 export const COMMENT_RANGE_MIN_SECONDS = 0.3;
+export const TIMED_RANGE_SNAP_THRESHOLD_PX = 6;
 
 export function rangeEditingEnabled() {
   return process.env.RANGE_EDITING_ENABLED?.trim().toLowerCase() === "true";
@@ -101,4 +102,57 @@ export function adjustTimedRange(
     startSeconds,
     endSeconds: Math.min(nextStart, startSeconds + rangeDuration),
   };
+}
+
+export function snapTimedRangeHandle(
+  range: { startSeconds: number; endSeconds: number },
+  adjustment: TimedRangeAdjustment,
+  snapPointsSeconds: number[],
+  thresholdSeconds: number,
+  previousEndSeconds = 0,
+  nextStartSeconds = Number.POSITIVE_INFINITY,
+  minimumDurationSeconds = COMMENT_RANGE_MIN_SECONDS,
+) {
+  if (
+    adjustment === "move"
+    || snapPointsSeconds.length === 0
+    || !Number.isFinite(thresholdSeconds)
+    || thresholdSeconds <= 0
+  ) {
+    return range;
+  }
+  const handleSeconds = adjustment === "start"
+    ? range.startSeconds
+    : range.endSeconds;
+  const minimum = adjustment === "start"
+    ? previousEndSeconds
+    : range.startSeconds + minimumDurationSeconds;
+  const maximum = adjustment === "start"
+    ? range.endSeconds - minimumDurationSeconds
+    : nextStartSeconds;
+  const nearestPoint = snapPointsSeconds.reduce<number | null>(
+    (nearest, point) => {
+      if (
+        !Number.isFinite(point)
+        || point < minimum
+        || point > maximum
+        || Math.abs(point - handleSeconds) > thresholdSeconds
+      ) {
+        return nearest;
+      }
+      if (
+        nearest === null
+        || Math.abs(point - handleSeconds) < Math.abs(nearest - handleSeconds)
+      ) {
+        return point;
+      }
+      return nearest;
+    },
+    null,
+  );
+  if (nearestPoint === null) return range;
+  const snappedSeconds = Math.round(nearestPoint * 1_000) / 1_000;
+  return adjustment === "start"
+    ? { ...range, startSeconds: snappedSeconds }
+    : { ...range, endSeconds: snappedSeconds };
 }

@@ -21,6 +21,7 @@ from uuid import uuid4
 from .channel_thumbnail import download_channel_thumbnail
 from .comment_generator import CommentClipInput, CommentGenerator
 from .config import Settings
+from .editor_renderer import EditorDocumentRenderer, retime_editor_subtitles
 from .errors import (
     BotCheckError,
     IngestionError,
@@ -36,6 +37,7 @@ from .repository import WorkerRepository
 from .schemas import (
     CommentOverlay,
     CustomTemplateConfig,
+    EditorDocument,
     HighlightClip,
     OutputLanguage,
     SubtitleSegment,
@@ -257,6 +259,7 @@ class BatchWorker:
         self.selector = TranscriptSelector(settings)
         self.comment_generator = CommentGenerator(settings)
         self.renderer = VideoRenderer(settings)
+        self.editor_renderer = EditorDocumentRenderer(settings)
         self.queue = WorkQueue(settings.aws_region)
 
     def _project_worker_count(self) -> int:
@@ -2214,10 +2217,160 @@ class BatchWorker:
             if local_clean_path is not None:
                 local_clean_path.unlink(missing_ok=True)
 
+    def _rerender_editor_document(
+        self,
+        short_id: str,
+        item: dict[str, object],
+        snapshot: dict[str, object],
+    ) -> None:
+        work_dir = self.settings.temp_dir / f"rerender-{short_id}"
+        attempt = max(1, int(os.getenv("AWS_BATCH_JOB_ATTEMPT", "1")))
+        uploaded_keys: list[str] = []
+        committed = False
+        completion_started = False
+        shutil.rmtree(work_dir, ignore_errors=True)
+        work_dir.mkdir(parents=True)
+        try:
+            document = EditorDocument.model_validate(snapshot)
+            if document.source_short_id != short_id:
+                raise ValueError("편집 문서의 영상 식별자가 일치하지 않습니다.")
+            if document.base_render_version != int(item["render_version"]):
+                raise ValueError("편집 문서의 기준 렌더 버전이 일치하지 않습니다.")
+            captured_timeline_key = item.get("edit_timeline_s3_key")
+            edit_source_key = (
+                str(captured_timeline_key)
+                if captured_timeline_key
+                else str(item["clean_clip_s3_key"])
+            )
+            timeline_start = (
+                float(item["edit_timeline_start_seconds"])
+                if captured_timeline_key
+                else float(item["start_seconds"])
+            )
+            timeline_end = (
+                float(item["edit_timeline_end_seconds"])
+                if captured_timeline_key
+                else float(item["end_seconds"])
+            )
+            if (
+                abs(document.video.timeline_start_seconds - timeline_start) > 0.051
+                or abs(document.video.timeline_end_seconds - timeline_end) > 0.051
+            ):
+                raise ValueError("편집 문서의 타임라인 범위가 일치하지 않습니다.")
+
+            self.repository.mark_editor_render_request_rendering(short_id)
+            version = int(item["render_version"]) + 1
+            self.repository.update_rerender_progress(short_id, 12)
+            timeline_path = self.storage.download(
+                edit_source_key,
+                work_dir / "timeline.mp4",
+            )
+            clean_path = self.editor_renderer.extract_sequence(
+                timeline_path=timeline_path,
+                output_path=work_dir / "clean.mp4",
+                document=document,
+                work_dir=work_dir / "sequence",
+            )
+            new_clean_key = (
+                f"edit-sources/{item['mvp_session_id']}/{item['job_id']}/"
+                f"{short_id}/clean-v{version}.mp4"
+            )
+            self.storage.upload(clean_path, new_clean_key, "video/mp4")
+            uploaded_keys.append(new_clean_key)
+            self.repository.update_rerender_progress(short_id, 28)
+
+            if document.channel.thumbnail_asset_key:
+                channel_thumbnail_path = self.storage.download(
+                    document.channel.thumbnail_asset_key,
+                    work_dir / "channel-thumbnail",
+                )
+            else:
+                channel_thumbnail_path = download_channel_thumbnail(
+                    document.channel.thumbnail_url
+                    or str(item.get("channel_thumbnail_url") or "")
+                    or None,
+                    work_dir / "channel-thumbnail.png",
+                )
+            output_path = self.editor_renderer.render(
+                clean_path=clean_path,
+                output_path=work_dir / "output.mp4",
+                document=document,
+                work_dir=work_dir,
+                channel_thumbnail_path=channel_thumbnail_path,
+            )
+            thumbnail_path = work_dir / "thumbnail.jpg"
+            self._thumbnail(output_path, thumbnail_path, work_dir)
+            self.repository.update_rerender_progress(short_id, 82)
+            output_key = (
+                f"outputs/{item['mvp_session_id']}/{item['job_id']}/"
+                f"{short_id}/v{version}.mp4"
+            )
+            thumbnail_key = (
+                f"thumbnails/{item['mvp_session_id']}/{item['job_id']}/"
+                f"{short_id}/v{version}.jpg"
+            )
+            size = self.storage.upload(output_path, output_key, "video/mp4")
+            uploaded_keys.append(output_key)
+            self.storage.upload(thumbnail_path, thumbnail_key, "image/jpeg")
+            uploaded_keys.append(thumbnail_key)
+            self.repository.update_rerender_progress(short_id, 94)
+            completion_started = True
+            old_keys = self.repository.complete_editor_document_rerender(
+                short_id,
+                output_key=output_key,
+                thumbnail_key=thumbnail_key,
+                clean_key=new_clean_key,
+                size=size,
+                version=version,
+                start_seconds=round(
+                    document.video.timeline_start_seconds
+                    + document.video.clips[0].source_start_seconds,
+                    3,
+                ),
+                duration_seconds=document.video.output_duration_seconds,
+                subtitle_segments=[
+                    segment.model_dump(by_alias=True)
+                    for segment in retime_editor_subtitles(document)
+                ],
+            )
+            if old_keys is None:
+                for key in uploaded_keys:
+                    try:
+                        self.storage.delete(key)
+                    except Exception:
+                        pass
+                return
+            committed = True
+            for old_key in old_keys.values():
+                if old_key and old_key not in uploaded_keys:
+                    try:
+                        self.storage.delete(old_key)
+                    except Exception:
+                        pass
+        except Exception:
+            if not committed and not completion_started:
+                for key in uploaded_keys:
+                    try:
+                        self.storage.delete(key)
+                    except Exception:
+                        pass
+            if attempt >= 2:
+                self.repository.reset_rerender(short_id)
+            raise
+        finally:
+            shutil.rmtree(work_dir, ignore_errors=True)
+
     def rerender(self, short_id: str) -> None:
         item = self.repository.get_short(short_id)
         if not item:
             raise KeyError(short_id)
+        pending_snapshot = item.get("pending_edit_snapshot")
+        if (
+            isinstance(pending_snapshot, dict)
+            and pending_snapshot.get("version") == 2
+        ):
+            self._rerender_editor_document(short_id, item, pending_snapshot)
+            return
         work_dir = self.settings.temp_dir / f"rerender-{short_id}"
         attempt = max(1, int(os.getenv("AWS_BATCH_JOB_ATTEMPT", "1")))
         uploaded_keys: list[str] = []

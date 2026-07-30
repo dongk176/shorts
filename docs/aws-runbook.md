@@ -11,6 +11,11 @@
 
 CloudFront private key는 `.secrets/cloudfront-private.pem`과 Vercel secret에만 둡니다. 분실 시 새 key pair/public key/key group을 배포하고 Vercel env를 교체합니다.
 
+통합 편집 렌더러는 일반 배포보다 순서가 엄격합니다. 마이그레이션,
+불변 Worker 이미지, CDK, 비활성 Web 배포, 허용 사용자 카나리, 전체
+활성화 순서는 [editor rendering v2 rollout](editor-rendering-v2-rollout.md)을
+따릅니다.
+
 ## Failed/stale jobs
 
 - CloudWatch `/shorts-mvp/<env>/worker`에서 job UUID stage를 확인합니다. 비밀값이나 full signed URL은 로그에 남지 않습니다.

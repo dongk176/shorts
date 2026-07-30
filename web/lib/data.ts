@@ -1,5 +1,7 @@
 import type { Row, Sql } from "postgres";
 import type { GeneratedShort, Plan, VideoJob } from "@/lib/contracts";
+import { editorDocumentSnapshotSchema } from "@/lib/editor-document-contract";
+import type { EditorDocumentSnapshot } from "@/lib/editor-document-snapshot";
 import { userFacingErrorMessage } from "@/lib/public-error";
 import type { MvpSession } from "@/lib/session";
 
@@ -58,6 +60,7 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       hook_title, highlight_reason, channel_display_name, subtitle_segments, subtitles_enabled,
       comment_overlays, template_id, custom_template_id, template_snapshot, video_aspect_ratio, title_font_scale, title_text_styles,
       title_text_styles_initialized, render_version,
+      editor_document,
       rerender_progress, status, expires_at
     from shorts_mvp.generated_shorts
     where job_id in ${db(jobIds)} and deleted_at is null
@@ -66,6 +69,9 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
   `;
   const result = new Map<string, GeneratedShort[]>();
   for (const row of rows) {
+    const editorDocument = editorDocumentSnapshotSchema.safeParse(
+      row.editorDocument,
+    );
     const item: GeneratedShort = {
       id: row.id,
       clipIndex: row.clipIndex,
@@ -102,6 +108,9 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       titleTextStyles: row.titleTextStyles || [],
       titleTextStylesInitialized: Boolean(row.titleTextStylesInitialized),
       renderVersion: row.renderVersion,
+      editorDocument: editorDocument.success
+        ? editorDocument.data as EditorDocumentSnapshot
+        : null,
       rerenderProgress: row.rerenderProgress,
       status: row.status,
       expiresAt: row.expiresAt?.toISOString() ?? null,

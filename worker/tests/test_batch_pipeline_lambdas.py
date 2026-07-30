@@ -315,6 +315,52 @@ def test_render_retry_budget_is_capped_after_one_external_retry() -> None:
     sqs.send_message.assert_not_called()
 
 
+def test_final_rerender_failure_releases_v2_request_atomically_enough() -> None:
+    module, _ = _load_lambda("batch_state")
+    patches: list[tuple[str, str, dict[str, object]]] = []
+    module.rest = MagicMock(return_value=[{
+        "id": "short-a",
+        "status": "rerendering",
+        "render_version": 3,
+        "pending_edit_request_id": "request-a",
+    }])
+    module.patch = lambda table, query, body: patches.append((table, query, body))
+
+    result = module._handle_rerender_failure(
+        "rerender-a",
+        "renderer failed",
+        {"parameters": {"rerenderAttempt": "1"}},
+    )
+
+    assert result == {
+        "resetShortId": "short-a",
+        "failureCategory": "application",
+    }
+    assert patches[0][0] == "editor_render_requests"
+    assert patches[0][2]["status"] == "failed"
+    assert patches[1][0] == "generated_shorts"
+    assert patches[1][2]["pending_edit_snapshot"] is None
+    assert patches[1][2]["pending_edit_request_id"] is None
+
+
+def test_stale_rerender_cleanup_releases_v2_request_and_snapshot() -> None:
+    module, _ = _load_lambda("cleanup")
+    patches: list[tuple[str, str, dict[str, object]]] = []
+    module.rest = MagicMock(return_value=[{
+        "id": "short-a",
+        "rerender_batch_job_id": None,
+        "pending_edit_request_id": "request-a",
+    }])
+    module.patch = lambda table, query, body: patches.append((table, query, body))
+
+    assert module.reset_stale_rerenders() == 1
+    assert patches[0][0] == "editor_render_requests"
+    assert patches[0][2]["failure_code"] == "rerender_stale_timeout"
+    assert patches[1][0] == "generated_shorts"
+    assert patches[1][2]["pending_edit_snapshot"] is None
+    assert patches[1][2]["pending_edit_request_id"] is None
+
+
 def test_failed_short_cleanup_deletes_versions_before_marking_deleted() -> None:
     module, _ = _load_lambda("cleanup")
     item = {

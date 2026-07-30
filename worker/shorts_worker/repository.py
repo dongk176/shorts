@@ -1323,14 +1323,162 @@ class WorkerRepository:
                 if row.get(key)
             }
 
-    def reset_rerender(self, short_id: str) -> None:
+    def complete_editor_document_rerender(
+        self,
+        short_id: str,
+        *,
+        output_key: str,
+        thumbnail_key: str,
+        clean_key: str,
+        size: int,
+        version: int,
+        start_seconds: float,
+        duration_seconds: float,
+        subtitle_segments: list[dict[str, object]],
+    ) -> dict[str, str] | None:
+        with self.connect() as connection, connection.transaction():
+            row = connection.execute(
+                """
+                select output_s3_key,thumbnail_s3_key,clean_clip_s3_key,
+                  edit_timeline_s3_key,pending_edit_request_id
+                from shorts_mvp.generated_shorts
+                where id=%s and status='rerendering' and deleted_at is null
+                  and expires_at > clock_timestamp()
+                  and pending_edit_snapshot->'version'='2'::jsonb
+                  and pending_edit_request_id is not null
+                for update
+                """,
+                (short_id,),
+            ).fetchone()
+            if not row:
+                return None
+            updated = connection.execute(
+                """
+                update shorts_mvp.generated_shorts
+                set output_s3_key=%s,thumbnail_s3_key=%s,clean_clip_s3_key=%s,
+                  file_size_bytes=%s,render_version=%s,status='ready',
+                  rerender_progress=100,
+                  start_seconds=%s,end_seconds=%s,duration_seconds=%s,
+                  hook_title=pending_edit_snapshot->'title'->>'text',
+                  channel_display_name=pending_edit_snapshot->'channel'->>'displayName',
+                  subtitles_enabled=(
+                    pending_edit_snapshot->'subtitles'->>'enabled'
+                  )::boolean,
+                  subtitle_segments=%s,
+                  comment_overlays=pending_edit_snapshot->'comments',
+                  template_id=pending_edit_snapshot->'template'->>'id',
+                  custom_template_id=nullif(
+                    pending_edit_snapshot->'template'->>'customTemplateId',''
+                  )::uuid,
+                  template_snapshot=nullif(
+                    pending_edit_snapshot->'template'->'snapshot','null'::jsonb
+                  ),
+                  video_aspect_ratio=pending_edit_snapshot->'video'->>'aspectRatio',
+                  title_font_scale=(
+                    pending_edit_snapshot->'title'->>'fontScale'
+                  )::numeric,
+                  title_text_styles=pending_edit_snapshot->'title'->'textStyles',
+                  title_text_styles_initialized=true,
+                  edit_timeline_s3_key=coalesce(
+                    edit_timeline_s3_key,clean_clip_s3_key
+                  ),
+                  edit_timeline_start_seconds=coalesce(
+                    edit_timeline_start_seconds,start_seconds
+                  ),
+                  edit_timeline_end_seconds=coalesce(
+                    edit_timeline_end_seconds,end_seconds
+                  ),
+                  edit_timeline_subtitle_segments=coalesce(
+                    edit_timeline_subtitle_segments,
+                    pending_edit_snapshot->'subtitles'->'segments'
+                  ),
+                  edit_timeline_version=coalesce(edit_timeline_version,1),
+                  editor_document=pending_edit_snapshot,
+                  editor_document_version=2,
+                  rendered_config_hash=pending_render_hash,
+                  pending_render_hash=null,pending_edit_snapshot=null,
+                  pending_edit_request_id=null,
+                  rerender_batch_job_id=null,
+                  render_error_code=null,render_error_message=null
+                where id=%s and status='rerendering' and deleted_at is null
+                  and expires_at > clock_timestamp()
+                  and pending_edit_snapshot->'version'='2'::jsonb
+                  and pending_edit_request_id=%s
+                returning id
+                """,
+                (
+                    output_key,
+                    thumbnail_key,
+                    clean_key,
+                    size,
+                    version,
+                    start_seconds,
+                    start_seconds + duration_seconds,
+                    duration_seconds,
+                    Jsonb(subtitle_segments),
+                    short_id,
+                    row["pending_edit_request_id"],
+                ),
+            ).fetchone()
+            if not updated:
+                return None
+            connection.execute(
+                """
+                update shorts_mvp.editor_render_requests
+                set status='succeeded',output_render_version=%s,
+                  failure_code=null,updated_at=now(),completed_at=now()
+                where id=%s and short_id=%s and status in ('queued','rendering')
+                """,
+                (version, row["pending_edit_request_id"], short_id),
+            )
+            old_keys = {
+                key: str(row[key])
+                for key in ("output_s3_key", "thumbnail_s3_key", "clean_clip_s3_key")
+                if row.get(key)
+            }
+            if not row.get("edit_timeline_s3_key"):
+                # The first v2 edit of a legacy row promotes its current clean
+                # clip to the immutable edit timeline. It must remain in S3.
+                old_keys.pop("clean_clip_s3_key", None)
+            return old_keys
+
+    def mark_editor_render_request_rendering(self, short_id: str) -> None:
         with self.connect() as connection:
+            connection.execute(
+                """
+                update shorts_mvp.editor_render_requests request
+                set status='rendering',updated_at=now()
+                from shorts_mvp.generated_shorts short
+                where short.id=%s
+                  and request.id=short.pending_edit_request_id
+                  and request.short_id=short.id
+                  and request.status='queued'
+                """,
+                (short_id,),
+            )
+
+    def reset_rerender(self, short_id: str) -> None:
+        with self.connect() as connection, connection.transaction():
+            connection.execute(
+                """
+                update shorts_mvp.editor_render_requests request
+                set status='failed',
+                  failure_code=coalesce(request.failure_code,'worker_render_failed'),
+                  updated_at=now(),completed_at=now()
+                from shorts_mvp.generated_shorts short
+                where short.id=%s
+                  and request.id=short.pending_edit_request_id
+                  and request.short_id=short.id
+                  and request.status in ('queued','rendering')
+                """,
+                (short_id,),
+            )
             connection.execute(
                 """
                 update shorts_mvp.generated_shorts
                 set status='ready', rerender_progress=0,
                   pending_render_hash=null, pending_edit_snapshot=null,
-                  rerender_batch_job_id=null
+                  pending_edit_request_id=null,rerender_batch_job_id=null
                 where id=%s and status='rerendering'
                 """,
                 (short_id,),

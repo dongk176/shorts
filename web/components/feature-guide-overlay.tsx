@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  type GuideTargetRect,
+  resolveGuideSpotlightGeometry,
+} from "@/lib/feature-guide-geometry";
 
 export type FeatureGuideStep = {
   id: string;
@@ -9,18 +13,11 @@ export type FeatureGuideStep = {
   title: string;
   description: string;
   targetSelector: string | null;
-};
-
-type TargetRect = {
-  top: number;
-  right: number;
-  bottom: number;
-  left: number;
-  width: number;
-  height: number;
+  placement?: "auto" | "right" | "left" | "above" | "below";
 };
 
 const SPOTLIGHT_PADDING = 9;
+const SPOTLIGHT_VIEWPORT_MARGIN = 2;
 const CARD_GAP = 18;
 const ESTIMATED_CARD_HEIGHT = 290;
 const GUIDE_SCROLL_LISTENER_OPTIONS = { capture: true, passive: true } as const;
@@ -47,10 +44,17 @@ const GUIDE_TONE_STYLES = {
 
 export type FeatureGuideTone = keyof typeof GUIDE_TONE_STYLES;
 
-function elementRect(element: Element | null): TargetRect | null {
+function elementRect(element: Element | null): GuideTargetRect | null {
   if (!element) return null;
   const rect = element.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return null;
+  const style = window.getComputedStyle(element);
+  const borderRadius = Math.max(
+    Number.parseFloat(style.borderTopLeftRadius) || 0,
+    Number.parseFloat(style.borderTopRightRadius) || 0,
+    Number.parseFloat(style.borderBottomRightRadius) || 0,
+    Number.parseFloat(style.borderBottomLeftRadius) || 0,
+  );
   return {
     top: rect.top,
     right: rect.right,
@@ -58,6 +62,7 @@ function elementRect(element: Element | null): TargetRect | null {
     left: rect.left,
     width: rect.width,
     height: rect.height,
+    borderRadius,
   };
 }
 
@@ -79,7 +84,7 @@ export function FeatureGuideOverlay({
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
-  const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
+  const [targetRect, setTargetRect] = useState<GuideTargetRect | null>(null);
   const sessionClosedRef = useRef(false);
   const cardRef = useRef<HTMLElement>(null);
   const activeStepIndex = Math.max(0, Math.min(stepIndex, Math.max(0, steps.length - 1)));
@@ -172,18 +177,21 @@ export function FeatureGuideOverlay({
     activeTarget?.scrollIntoView({
       block: "nearest",
       inline: "nearest",
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      behavior: "auto",
     });
     measure();
 
     const observer = new MutationObserver(measure);
     observer.observe(document.body, { childList: true, subtree: true });
+    const resizeObserver = new ResizeObserver(measure);
+    if (activeTarget) resizeObserver.observe(activeTarget);
     window.addEventListener("resize", measure);
     document.addEventListener("scroll", measure, GUIDE_SCROLL_LISTENER_OPTIONS);
 
     return () => {
       window.cancelAnimationFrame(frame);
       observer.disconnect();
+      resizeObserver.disconnect();
       window.removeEventListener("resize", measure);
       document.removeEventListener("scroll", measure, GUIDE_SCROLL_LISTENER_OPTIONS);
     };
@@ -191,20 +199,18 @@ export function FeatureGuideOverlay({
 
   const spotlightStyle = useMemo(() => {
     if (!targetRect || !mounted) return undefined;
-    const left = Math.max(8, targetRect.left - SPOTLIGHT_PADDING);
-    const top = Math.max(8, targetRect.top - SPOTLIGHT_PADDING);
-    const right = Math.min(window.innerWidth - 8, targetRect.right + SPOTLIGHT_PADDING);
-    const bottom = Math.min(window.innerHeight - 8, targetRect.bottom + SPOTLIGHT_PADDING);
-    return {
-      left,
-      top,
-      width: Math.max(0, right - left),
-      height: Math.max(0, bottom - top),
-    };
+    return resolveGuideSpotlightGeometry({
+      target: targetRect,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      requestedPadding: SPOTLIGHT_PADDING,
+      viewportMargin: SPOTLIGHT_VIEWPORT_MARGIN,
+      devicePixelRatio: window.devicePixelRatio,
+    });
   }, [mounted, targetRect]);
 
   const cardStyle = useMemo(() => {
-    if (!targetRect || !mounted) {
+    if (!mounted) {
       return {
         left: "50%",
         top: "50%",
@@ -212,17 +218,86 @@ export function FeatureGuideOverlay({
       };
     }
 
-    const width = Math.min(400, window.innerWidth - 32);
-    const left = Math.max(16, Math.min(
+    const width = Math.min(isLastStep ? 340 : 400, window.innerWidth - 32);
+    if (!targetRect) {
+      return {
+        left: "50%",
+        top: "50%",
+        transform: "translate(-50%, -50%)",
+      };
+    }
+
+    const centeredLeft = Math.max(16, Math.min(
       targetRect.left + targetRect.width / 2 - width / 2,
       window.innerWidth - width - 16,
     ));
+    const targetGap = SPOTLIGHT_PADDING + CARD_GAP;
+    const placement = step.placement || "auto";
+    if (placement === "right" || placement === "left") {
+      const rightSideLeft = targetRect.right + targetGap;
+      const leftSideLeft = targetRect.left - targetGap - width;
+      const preferredLeft = placement === "right"
+        ? rightSideLeft
+        : leftSideLeft;
+      const fallbackLeft = placement === "right"
+        ? leftSideLeft
+        : rightSideLeft;
+      const horizontalLeft = preferredLeft >= 16
+        && preferredLeft + width <= window.innerWidth - 16
+        ? preferredLeft
+        : fallbackLeft >= 16
+          && fallbackLeft + width <= window.innerWidth - 16
+          ? fallbackLeft
+          : centeredLeft;
+      const top = Math.max(16, Math.min(
+        targetRect.top,
+        window.innerHeight - ESTIMATED_CARD_HEIGHT - 16,
+      ));
+      return {
+        left: horizontalLeft,
+        top,
+        width,
+        transform: "none",
+      };
+    }
+    if (placement === "above" || placement === "below") {
+      const aboveTop = targetRect.top - targetGap - ESTIMATED_CARD_HEIGHT;
+      const belowTop = targetRect.bottom + targetGap;
+      const preferredTop = placement === "above" ? aboveTop : belowTop;
+      const fallbackTop = placement === "above" ? belowTop : aboveTop;
+      const verticalTop = preferredTop >= 16
+        && preferredTop + ESTIMATED_CARD_HEIGHT <= window.innerHeight - 16
+        ? preferredTop
+        : fallbackTop >= 16
+          && fallbackTop + ESTIMATED_CARD_HEIGHT <= window.innerHeight - 16
+          ? fallbackTop
+          : Math.max(16, Math.min(
+              preferredTop,
+              window.innerHeight - ESTIMATED_CARD_HEIGHT - 16,
+            ));
+      return {
+        left: centeredLeft,
+        top: verticalTop,
+        width,
+        transform: "none",
+      };
+    }
     const fitsBelow = targetRect.bottom + CARD_GAP + ESTIMATED_CARD_HEIGHT <= window.innerHeight - 16;
     const top = fitsBelow
       ? targetRect.bottom + CARD_GAP
       : Math.max(16, targetRect.top - CARD_GAP - ESTIMATED_CARD_HEIGHT);
-    return { left, top, width, transform: "none" };
-  }, [mounted, targetRect]);
+    return {
+      left: centeredLeft,
+      top,
+      width,
+      transform: "none",
+    };
+  }, [
+    isLastStep,
+    mounted,
+    step.placement,
+    targetRect,
+  ]);
 
   if (!mounted || !open || !step) return null;
 
@@ -240,7 +315,7 @@ export function FeatureGuideOverlay({
     >
       {spotlightStyle
         ? <div
-            className={`pointer-events-none fixed rounded-2xl border-2 transition-all duration-300 ${toneStyles.spotlightClassName}`}
+            className={`pointer-events-none fixed border-2 ${toneStyles.spotlightClassName}`}
             style={{
               ...spotlightStyle,
               boxShadow: toneStyles.spotlightShadow,

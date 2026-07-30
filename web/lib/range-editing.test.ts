@@ -4,6 +4,7 @@ import {
   clampTimelineSeconds,
   roundTimelineHandleSeconds,
   scaleTimedRanges,
+  snapTimedRangeHandle,
   subtitlesForTimelineSelection,
 } from "./range-editing";
 
@@ -61,5 +62,43 @@ describe("range editing helpers", () => {
     expect(roundTimelineHandleSeconds(870.03, 870.03, 990)).toBe(870.03);
     expect(roundTimelineHandleSeconds(989.97, 870.03, 989.97)).toBe(989.97);
     expect(clampTimelineSeconds(990.03, 870.03, 990)).toBe(990);
+  });
+
+  it("snaps a resized overlay edge only inside the narrow threshold", () => {
+    expect(snapTimedRangeHandle(
+      { startSeconds: 2, endSeconds: 9.96 },
+      "end",
+      [5, 10, 15],
+      0.05,
+      0,
+      20,
+    )).toEqual({ startSeconds: 2, endSeconds: 10 });
+    expect(snapTimedRangeHandle(
+      { startSeconds: 2, endSeconds: 9.9 },
+      "end",
+      [5, 10, 15],
+      0.05,
+      0,
+      20,
+    )).toEqual({ startSeconds: 2, endSeconds: 9.9 });
+  });
+
+  it("does not snap through an adjacent overlay or minimum duration", () => {
+    expect(snapTimedRangeHandle(
+      { startSeconds: 4.8, endSeconds: 5.1 },
+      "start",
+      [5],
+      0.3,
+      0,
+      20,
+    )).toEqual({ startSeconds: 4.8, endSeconds: 5.1 });
+    expect(snapTimedRangeHandle(
+      { startSeconds: 4, endSeconds: 10.1 },
+      "end",
+      [10.2],
+      0.2,
+      0,
+      10,
+    )).toEqual({ startSeconds: 4, endSeconds: 10.1 });
   });
 });

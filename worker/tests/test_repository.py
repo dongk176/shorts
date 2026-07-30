@@ -264,6 +264,108 @@ def test_deferred_timeline_commit_only_updates_live_completed_project_output() -
     assert parameters[4] == "short-a"
 
 
+def test_first_editor_document_rerender_preserves_legacy_clean_as_timeline() -> None:
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+    selected = MagicMock()
+    selected.fetchone.return_value = {
+        "output_s3_key": "outputs/v1.mp4",
+        "thumbnail_s3_key": "thumbnails/v1.jpg",
+        "clean_clip_s3_key": "edit-sources/original-clean.mp4",
+        "edit_timeline_s3_key": None,
+        "pending_edit_request_id": "request-a",
+    }
+    updated = MagicMock()
+    updated.fetchone.return_value = {"id": "short-a"}
+    connection.execute.side_effect = [selected, updated, MagicMock()]
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+
+    old_keys = repository.complete_editor_document_rerender(
+        "short-a",
+        output_key="outputs/v2.mp4",
+        thumbnail_key="thumbnails/v2.jpg",
+        clean_key="edit-sources/clean-v2.mp4",
+        size=123,
+        version=2,
+        start_seconds=11,
+        duration_seconds=3.5,
+        subtitle_segments=[],
+    )
+
+    assert old_keys == {
+        "output_s3_key": "outputs/v1.mp4",
+        "thumbnail_s3_key": "thumbnails/v1.jpg",
+    }
+    promotion_query = connection.execute.call_args_list[1].args[0]
+    assert "edit_timeline_s3_key=coalesce(" in promotion_query
+    assert "edit_timeline_s3_key,clean_clip_s3_key" in promotion_query
+    assert "pending_edit_snapshot->'subtitles'->'segments'" in promotion_query
+
+
+def test_editor_document_rerender_can_delete_clean_when_timeline_already_exists() -> None:
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+    selected = MagicMock()
+    selected.fetchone.return_value = {
+        "output_s3_key": "outputs/v1.mp4",
+        "thumbnail_s3_key": "thumbnails/v1.jpg",
+        "clean_clip_s3_key": "edit-sources/old-clean.mp4",
+        "edit_timeline_s3_key": "edit-sources/timeline-v1.mp4",
+        "pending_edit_request_id": "request-a",
+    }
+    updated = MagicMock()
+    updated.fetchone.return_value = {"id": "short-a"}
+    connection.execute.side_effect = [selected, updated, MagicMock()]
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+
+    old_keys = repository.complete_editor_document_rerender(
+        "short-a",
+        output_key="outputs/v2.mp4",
+        thumbnail_key="thumbnails/v2.jpg",
+        clean_key="edit-sources/clean-v2.mp4",
+        size=123,
+        version=2,
+        start_seconds=11,
+        duration_seconds=3.5,
+        subtitle_segments=[],
+    )
+
+    assert old_keys and old_keys["clean_clip_s3_key"] == (
+        "edit-sources/old-clean.mp4"
+    )
+
+
+def test_editor_document_migration_is_additive_private_and_disabled() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202607310002_editor_document_v2.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "alter table shorts_mvp.generated_shorts" in migration
+    assert "create table if not exists shorts_mvp.editor_render_requests" in migration
+    assert "editor_document->'version'='2'::jsonb" in migration
+    assert "editor_document is not null" in migration
+    assert "editor_document_version is not null" in migration
+    assert "pending_edit_snapshot->'version'='2'::jsonb" in migration
+    assert "pending_edit_request_id is not null" in migration
+    assert "'editor_rendering_v2'," in migration
+    assert "'editor_rendering_v2',\n  false," in migration
+    assert "revoke all on shorts_mvp.editor_render_requests" in migration
+    assert "public." not in migration
+
+
 def test_selection_observability_migration_stays_in_shorts_schema() -> None:
     migration = (
         Path(__file__).parents[2]

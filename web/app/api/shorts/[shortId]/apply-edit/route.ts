@@ -1,8 +1,17 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { putEditorChannelAsset } from "@/lib/aws";
 import { getBillingSummary } from "@/lib/billing";
 import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
+import {
+  editorDocumentOutputDuration,
+  editorDocumentSnapshotSchema,
+  type ValidatedEditorDocumentSnapshot,
+} from "@/lib/editor-document-contract";
+import type { EditorDocumentJsonObject } from "@/lib/editor-document-snapshot";
+import { editorRenderingV2Enabled } from "@/lib/editor-rendering-release";
 import { resolveEditedTemplateSelection } from "@/lib/edit-template-selection";
 import { apiError, HttpError } from "@/lib/http";
 import {
@@ -42,7 +51,7 @@ const commentOverlay = z.object({
   ageLabel: z.string().trim().min(1).max(20),
 }).refine((item) => item.endSeconds > item.startSeconds);
 const activeCommentOverlays = z.array(commentOverlay).max(20);
-const editSchema = z.object({
+const legacyEditSchema = z.object({
   startSeconds: z.number().finite().nonnegative(),
   endSeconds: z.number().finite().positive(),
   hookTitle: z.string().trim().min(1).max(80)
@@ -77,11 +86,340 @@ const editSchema = z.object({
     : [],
 }));
 
+const editorDocumentRequestSchema = z.object({
+  requestId: z.string().uuid(),
+  document: editorDocumentSnapshotSchema,
+}).strict();
+
+type EditorExistingRow = {
+  id: string;
+  jobId: string;
+  mvpSessionId: string;
+  status: string;
+  renderVersion: number;
+  durationSeconds: number;
+  templateId: (typeof templateIds)[number];
+  customTemplateId: string | null;
+  templateSnapshot: EditorDocumentJsonObject | null;
+  videoAspectRatio: string;
+  editTimelineS3Key: string | null;
+  editTimelineStartSeconds: number | null;
+  editTimelineEndSeconds: number | null;
+  cleanClipS3Key: string | null;
+  startSeconds: number;
+  endSeconds: number;
+  channelThumbnailUrl: string | null;
+  editorDocument: ValidatedEditorDocumentSnapshot | null;
+  onboardingWelcomeFunded: boolean;
+};
+
+function editorSnapshotHash(document: ValidatedEditorDocumentSnapshot) {
+  return createHash("md5").update(JSON.stringify(document)).digest("hex");
+}
+
+function sameTimelineSecond(left: number, right: number) {
+  return Math.abs(left - right) <= RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS;
+}
+
+async function applyEditorDocumentV2({
+  shortId,
+  requestId,
+  document: requestedDocument,
+}: {
+  shortId: string;
+  requestId: string;
+  document: ValidatedEditorDocumentSnapshot;
+}) {
+  const session = await requireAuthenticatedMvpSession();
+  const db = getDb();
+  if (!await editorRenderingV2Enabled(db, session.userId)) {
+    throw new HttpError(404, "새 편집 저장 기능을 찾을 수 없습니다.");
+  }
+  const billing = await getBillingSummary(db, session.userId);
+  assertPaidProjectActionAccess(billing, "edit");
+  const existingRows = await db`
+    select s.id,s.job_id,s.mvp_session_id,s.status,s.render_version,
+      s.duration_seconds,s.template_id,s.custom_template_id,s.template_snapshot,
+      s.video_aspect_ratio,s.edit_timeline_s3_key,
+      s.edit_timeline_start_seconds,s.edit_timeline_end_seconds,
+      s.clean_clip_s3_key,s.start_seconds,s.end_seconds,
+      s.editor_document,j.channel_thumbnail_url,
+      exists (
+        select 1
+        from shorts_mvp.usage_reservations reservation
+        join shorts_mvp.usage_grant_allocations allocation
+          on allocation.reservation_id=reservation.id
+        join shorts_mvp.usage_grants grant_row
+          on grant_row.id=allocation.grant_id
+        where reservation.job_id=j.id
+          and grant_row.product_code=${ONBOARDING_WELCOME_PRODUCT_CODE}
+      )
+      and not exists (
+        select 1
+        from shorts_mvp.usage_reservations reservation
+        join shorts_mvp.usage_grant_allocations allocation
+          on allocation.reservation_id=reservation.id
+        join shorts_mvp.usage_grants grant_row
+          on grant_row.id=allocation.grant_id
+        where reservation.job_id=j.id
+          and grant_row.product_code<>${ONBOARDING_WELCOME_PRODUCT_CODE}
+      ) as onboarding_welcome_funded
+    from shorts_mvp.generated_shorts s
+    join shorts_mvp.video_jobs j on j.id=s.job_id
+    where s.id=${shortId} and not j.is_example
+      and s.user_id=${session.userId}
+      and s.deleted_at is null and s.expires_at>clock_timestamp()
+      and s.output_s3_key is not null
+      and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null
+    limit 1
+  `;
+  const existing = existingRows[0] as EditorExistingRow | undefined;
+  if (!existing) {
+    throw new HttpError(404, "편집 가능한 쇼츠 영상을 찾을 수 없습니다.");
+  }
+  // Keep the idempotency fingerprint tied to the request the browser sent.
+  // The trusted render document is normalized below (for example, an inline
+  // channel image becomes an S3 asset key), so hashing the normalized document
+  // would make a byte-for-byte retry look like a different request.
+  const requestSnapshotHash = editorSnapshotHash(requestedDocument);
+
+  const priorRequestRows = await db`
+    select status,base_render_version,snapshot_hash,output_render_version
+    from shorts_mvp.editor_render_requests
+    where id=${requestId} and short_id=${shortId} and user_id=${session.userId}
+    limit 1
+  `;
+  const priorRequest = priorRequestRows[0] as {
+    status: string;
+    baseRenderVersion: number;
+    snapshotHash: string;
+    outputRenderVersion: number | null;
+  } | undefined;
+  if (priorRequest) {
+    if (
+      Number(priorRequest.baseRenderVersion) !== requestedDocument.baseRenderVersion
+      || priorRequest.snapshotHash !== requestSnapshotHash
+    ) {
+      throw new HttpError(
+        409,
+        "같은 저장 요청 번호를 다른 편집 내용에 사용할 수 없습니다.",
+        "EDITOR_REQUEST_CONFLICT",
+      );
+    }
+    if (priorRequest.status === "failed") {
+      throw new HttpError(
+        409,
+        "이 저장 요청은 실패했습니다. 편집 화면을 새로 연 뒤 다시 시도해 주세요.",
+        "EDITOR_REQUEST_FAILED",
+      );
+    }
+    return NextResponse.json({
+      status: priorRequest.status === "succeeded" ? "ready" : "rerendering",
+      renderVersion: priorRequest.outputRenderVersion,
+      requestId,
+    }, { status: priorRequest.status === "succeeded" ? 200 : 202 });
+  }
+
+  if (existing.status !== "ready") {
+    throw new HttpError(409, "이미 수정 반영 중이거나 편집할 수 없는 상태입니다.");
+  }
+  if (requestedDocument.sourceShortId !== shortId) {
+    throw new HttpError(400, "편집 문서의 영상 식별자가 일치하지 않습니다.");
+  }
+  if (requestedDocument.baseRenderVersion !== Number(existing.renderVersion)) {
+    throw new HttpError(
+      409,
+      "다른 편집 내용이 먼저 반영되었습니다. 편집 화면을 다시 열어 주세요.",
+      "EDITOR_RENDER_VERSION_CONFLICT",
+    );
+  }
+  if (!onboardingWelcomeRerenderAllowed(
+    Boolean(existing.onboardingWelcomeFunded),
+    Number(existing.renderVersion),
+  )) {
+    throw new HttpError(
+      402,
+      `무료 체험 프로젝트는 수정 반영을 ${ONBOARDING_WELCOME_MAX_RERENDERS}회까지 할 수 있습니다.`,
+      "ONBOARDING_WELCOME_RERENDER_LIMIT",
+    );
+  }
+
+  const timelineStart = existing.editTimelineS3Key
+    ? Number(existing.editTimelineStartSeconds)
+    : Number(existing.startSeconds);
+  const timelineEnd = existing.editTimelineS3Key
+    ? Number(existing.editTimelineEndSeconds)
+    : Number(existing.endSeconds);
+  if (
+    !sameTimelineSecond(requestedDocument.video.timelineStartSeconds, timelineStart)
+    || !sameTimelineSecond(requestedDocument.video.timelineEndSeconds, timelineEnd)
+  ) {
+    throw new HttpError(
+      409,
+      "편집용 영상 범위가 변경되었습니다. 편집 화면을 다시 열어 주세요.",
+      "EDITOR_TIMELINE_CONFLICT",
+    );
+  }
+  if (requestedDocument.video.aspectRatio !== existing.videoAspectRatio) {
+    throw new HttpError(400, "편집용 영상의 화면 비율이 일치하지 않습니다.");
+  }
+  const durationSeconds = editorDocumentOutputDuration(requestedDocument);
+  if (requestedDocument.comments.some(
+    (comment) => comment.endSeconds > durationSeconds + 0.001,
+  )) {
+    throw new HttpError(400, "댓글 노출 시간이 최종 영상 길이를 넘을 수 없습니다.");
+  }
+  if (requestedDocument.overlays.textOverlays.some(
+    (overlay) => overlay.endSeconds > durationSeconds + 0.001,
+  )) {
+    throw new HttpError(400, "텍스트 노출 시간이 최종 영상 길이를 넘을 수 없습니다.");
+  }
+
+  const templateSelection = resolveEditedTemplateSelection({
+    existing: {
+      templateId: existing.templateId,
+      customTemplateId: existing.customTemplateId,
+      templateSnapshot: existing.templateSnapshot,
+    },
+    requestedTemplateId: requestedDocument.template.id,
+    requestedCustomTemplateId: requestedDocument.template.customTemplateId,
+  });
+  if (!templateSelection) {
+    throw new HttpError(400, "선택한 템플릿을 이 영상에 적용할 수 없습니다.");
+  }
+  const document: ValidatedEditorDocumentSnapshot = structuredClone(
+    requestedDocument,
+  );
+  document.template.customTemplateId = templateSelection.customTemplateId;
+  document.template.snapshot = templateSelection.templateSnapshot
+    ? structuredClone(templateSelection.templateSnapshot) as EditorDocumentJsonObject
+    : null;
+  if (
+    templateSelection.customTemplateId === null
+    && typeof templateSelection.templateSnapshot?.presetVersion === "number"
+  ) {
+    document.template.presetVersion =
+      templateSelection.templateSnapshot.presetVersion;
+  }
+  const thumbnailUrl = document.channel.thumbnailUrl;
+  if (
+    document.channel.thumbnailAssetKey
+    && document.channel.thumbnailAssetKey
+      !== existing.editorDocument?.channel.thumbnailAssetKey
+  ) {
+    throw new HttpError(
+      400,
+      "저장된 채널 이미지를 다시 선택해 주세요.",
+      "EDITOR_CHANNEL_ASSET_NOT_TRUSTED",
+    );
+  }
+  if (thumbnailUrl?.startsWith("data:image/")) {
+    try {
+      document.channel.thumbnailAssetKey = await putEditorChannelAsset({
+        sessionId: existing.mvpSessionId,
+        jobId: existing.jobId,
+        shortId,
+        dataUrl: thumbnailUrl,
+      });
+      document.channel.thumbnailUrl = null;
+    } catch (error) {
+      throw new HttpError(
+        400,
+        error instanceof Error ? error.message : "채널 이미지를 저장하지 못했습니다.",
+        "EDITOR_CHANNEL_IMAGE_INVALID",
+      );
+    }
+  } else if (thumbnailUrl) {
+    const previousUrl = existing.editorDocument?.channel.thumbnailUrl;
+    if (
+      !thumbnailUrl.startsWith("https://")
+      || (
+        thumbnailUrl !== existing.channelThumbnailUrl
+        && thumbnailUrl !== previousUrl
+      )
+    ) {
+      throw new HttpError(
+        400,
+        "직접 추가한 채널 이미지는 다시 선택해 주세요.",
+        "EDITOR_CHANNEL_IMAGE_NOT_TRUSTED",
+      );
+    }
+  }
+  const snapshotHash = editorSnapshotHash(document);
+  await db.begin(async (tx) => {
+    const insertedRequest = await tx`
+      insert into shorts_mvp.editor_render_requests (
+        id,short_id,user_id,base_render_version,snapshot_hash,status
+      ) values (
+        ${requestId},${shortId},${session.userId},
+        ${document.baseRenderVersion},${requestSnapshotHash},'queued'
+      )
+      on conflict (id) do nothing
+      returning id
+    `;
+    if (!insertedRequest[0]) {
+      throw new HttpError(
+        409,
+        "같은 저장 요청이 이미 처리되었습니다.",
+        "EDITOR_REQUEST_CONFLICT",
+      );
+    }
+    const updated = await tx`
+      update shorts_mvp.generated_shorts s
+      set status='rerendering',rerender_progress=5,
+        pending_edit_snapshot=${tx.json(document)},
+        pending_render_hash=${snapshotHash},
+        pending_edit_request_id=${requestId},
+        rerender_batch_job_id=null,
+        render_error_code=null,render_error_message=null
+      from shorts_mvp.video_jobs j
+      where s.id=${shortId} and j.id=s.job_id and not j.is_example
+        and s.user_id=${session.userId}
+        and s.status='ready'
+        and s.render_version=${document.baseRenderVersion}
+        and s.deleted_at is null and s.expires_at>clock_timestamp()
+        and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null
+      returning s.id
+    `;
+    if (!updated[0]) {
+      throw new HttpError(
+        409,
+        "쇼츠 편집 상태가 변경되었습니다. 다시 열어 주세요.",
+        "EDITOR_RENDER_VERSION_CONFLICT",
+      );
+    }
+    await tx`
+      insert into shorts_mvp.short_outbox (short_id)
+      values (${shortId})
+      on conflict (short_id) do update
+      set status='pending',available_at=now(),
+        dispatched_at=null,last_error=null
+    `;
+  });
+  return NextResponse.json({
+    status: "rerendering",
+    requestId,
+  }, { status: 202 });
+}
+
 export async function POST(request: Request, context: { params: Promise<{ shortId: string }> }) {
   try {
-    if (!rangeEditingEnabled()) throw new HttpError(404, "구간 편집 기능을 찾을 수 없습니다.");
     const { shortId } = await context.params;
-    const input = editSchema.parse(await request.json());
+    const requestBody = await request.json();
+    if (
+      requestBody
+      && typeof requestBody === "object"
+      && "document" in requestBody
+    ) {
+      const input = editorDocumentRequestSchema.parse(requestBody);
+      return await applyEditorDocumentV2({
+        shortId,
+        requestId: input.requestId,
+        document: input.document,
+      });
+    }
+    if (!rangeEditingEnabled()) throw new HttpError(404, "구간 편집 기능을 찾을 수 없습니다.");
+    const input = legacyEditSchema.parse(requestBody);
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const billing = await getBillingSummary(db, session.userId);

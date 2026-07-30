@@ -30,34 +30,84 @@ describe("desktop editor guide", () => {
     })).toBe(false);
   });
 
-  it("ends with the completion step after all four editing hints", () => {
+  it("groups the overlay editor into concise editing hints", () => {
     expect(desktopEditorGuideSteps.map((step) => step.id)).toEqual([
-      "range-handles",
-      "reset-range",
-      "add-comment",
-      "edit-comment",
+      "sidebar-tools",
+      "overlay-actions",
+      "preview-canvas",
+      "editor-timeline",
+      "video-split",
+      "editor-history",
+      "editor-save",
       "complete",
     ]);
     expect(desktopEditorGuideSteps.at(-1)?.targetSelector).toBeNull();
+    expect(
+      desktopEditorGuideSteps.find((step) => step.id === "sidebar-tools")
+        ?.placement,
+    ).toBe("right");
+    expect(
+      desktopEditorGuideSteps.find((step) => step.id === "overlay-actions")
+        ?.placement,
+    ).toBe("above");
+    expect(
+      desktopEditorGuideSteps.find((step) => step.id === "video-split")
+        ?.placement,
+    ).toBe("above");
+    expect(desktopEditorGuideSteps.at(-1)?.placement).toBeUndefined();
   });
 
-  it("skips controls that are unavailable for the current editor", () => {
+  it("explains the left sidebar once and skips only an unavailable timeline", () => {
     expect(desktopEditorGuideStepsFor({
       rangeControlsAvailable: false,
       commentControlsAvailable: true,
     }).map((step) => step.id)).toEqual([
-      "add-comment",
-      "edit-comment",
+      "sidebar-tools",
+      "overlay-actions",
+      "preview-canvas",
+      "editor-timeline",
+      "editor-history",
+      "editor-save",
       "complete",
     ]);
     expect(desktopEditorGuideStepsFor({
-      rangeControlsAvailable: true,
+      rangeControlsAvailable: false,
       commentControlsAvailable: false,
     }).map((step) => step.id)).toEqual([
-      "range-handles",
-      "reset-range",
+      "sidebar-tools",
+      "overlay-actions",
+      "preview-canvas",
+      "editor-history",
+      "editor-save",
       "complete",
     ]);
+  });
+
+  it("preserves the production editor guide while the overlay preview is off", () => {
+    expect(desktopEditorGuideStepsFor({
+      rangeControlsAvailable: true,
+      commentControlsAvailable: false,
+      overlayPreviewEnabled: false,
+    }).map((step) => step.id)).toEqual([
+      "range-handles",
+      "complete",
+    ]);
+  });
+
+  it("explains real rendering only when saving is enabled", () => {
+    const enabledSave = desktopEditorGuideStepsFor({
+      rangeControlsAvailable: true,
+      commentControlsAvailable: true,
+      editorSaveEnabled: true,
+    }).find((step) => step.feature === "save");
+    const lockedSave = desktopEditorGuideStepsFor({
+      rangeControlsAvailable: true,
+      commentControlsAvailable: true,
+      editorSaveEnabled: false,
+    }).find((step) => step.feature === "save");
+
+    expect(enabledSave?.description).toContain("재렌더링이 시작");
+    expect(lockedSave?.description).toContain("저장이 잠겨");
   });
 
   it("clamps the active step when a template change removes guide steps", () => {
