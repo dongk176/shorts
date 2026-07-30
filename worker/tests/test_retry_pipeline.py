@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import inspect
+import json
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -22,6 +24,13 @@ from shorts_worker.worker_pipeline import (
     ProjectTimelineTarget,
     classify_full_source_download,
 )
+
+EDITOR_DOCUMENT_FIXTURE = (
+    Path(__file__).resolve().parents[2]
+    / "test-fixtures"
+    / "editor-document-v2.json"
+)
+EDITOR_DOCUMENT_SHORT_ID = "11111111-1111-4111-8111-111111111111"
 
 
 @contextmanager
@@ -1130,3 +1139,115 @@ def test_rerender_preserves_output_when_commit_response_is_ambiguous(tmp_path) -
         worker.rerender("short-a")
 
     worker.storage.delete.assert_not_called()
+
+
+def _editor_document_rerender_worker(tmp_path, completion_result) -> BatchWorker:
+    snapshot = json.loads(EDITOR_DOCUMENT_FIXTURE.read_text())
+    snapshot.update({
+        "sourceShortId": EDITOR_DOCUMENT_SHORT_ID,
+        "baseRenderVersion": 1,
+    })
+    snapshot["channel"].update({
+        "thumbnailUrl": None,
+        "thumbnailAssetKey": (
+            "edit-sources/session-a/job-a/short-a/editor-assets/"
+            "0123456789abcdef0123456789abcdef.png"
+        ),
+    })
+    worker = BatchWorker.__new__(BatchWorker)
+    worker.settings = SimpleNamespace(temp_dir=tmp_path)
+    worker.repository = MagicMock()
+    worker.repository.get_short.return_value = {
+        "id": EDITOR_DOCUMENT_SHORT_ID,
+        "mvp_session_id": "session-a",
+        "job_id": "job-a",
+        "clean_clip_s3_key": "edit-sources/clean.mp4",
+        "edit_timeline_s3_key": "edit-sources/timeline.mp4",
+        "edit_timeline_start_seconds": 10,
+        "edit_timeline_end_seconds": 20,
+        "start_seconds": 11,
+        "end_seconds": 14.5,
+        "render_version": 1,
+        "pending_edit_snapshot": snapshot,
+        "channel_thumbnail_url": None,
+    }
+    if isinstance(completion_result, Exception):
+        worker.repository.complete_editor_document_rerender.side_effect = (
+            completion_result
+        )
+    else:
+        worker.repository.complete_editor_document_rerender.return_value = (
+            completion_result
+        )
+    worker.storage = MagicMock()
+    worker.storage.download.side_effect = [
+        tmp_path / "timeline.mp4",
+        tmp_path / "channel.png",
+    ]
+    worker.storage.upload.side_effect = [111, 222, 333]
+    worker.editor_renderer = MagicMock()
+    worker.editor_renderer.extract_sequence.return_value = tmp_path / "clean.mp4"
+    worker.editor_renderer.render.return_value = tmp_path / "output.mp4"
+    worker._thumbnail = MagicMock()
+    return worker
+
+
+def test_editor_document_rerender_promotes_one_atomic_snapshot(tmp_path) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {
+        "output_s3_key": "outputs/session-a/job-a/short-a/v1.mp4",
+        "thumbnail_s3_key": "thumbnails/session-a/job-a/short-a.jpg",
+        "clean_clip_s3_key": "edit-sources/clean.mp4",
+    })
+
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    worker.repository.mark_editor_render_request_rendering.assert_called_once_with(
+        EDITOR_DOCUMENT_SHORT_ID
+    )
+    worker.repository.complete_editor_document_rerender.assert_called_once_with(
+        EDITOR_DOCUMENT_SHORT_ID,
+        output_key=(
+            f"outputs/session-a/job-a/{EDITOR_DOCUMENT_SHORT_ID}/v2.mp4"
+        ),
+        thumbnail_key=(
+            f"thumbnails/session-a/job-a/{EDITOR_DOCUMENT_SHORT_ID}/v2.jpg"
+        ),
+        clean_key=(
+            f"edit-sources/session-a/job-a/{EDITOR_DOCUMENT_SHORT_ID}/"
+            "clean-v2.mp4"
+        ),
+        size=222,
+        version=2,
+        start_seconds=11,
+        duration_seconds=3.5,
+        subtitle_segments=[{
+            "start": 0.0,
+            "end": 1.5,
+            "text": "공통 계약 자막",
+        }],
+    )
+    assert {call.args[0] for call in worker.storage.delete.call_args_list} == {
+        "outputs/session-a/job-a/short-a/v1.mp4",
+        "thumbnails/session-a/job-a/short-a.jpg",
+        "edit-sources/clean.mp4",
+    }
+
+
+def test_editor_document_failure_releases_lock_after_final_attempt(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AWS_BATCH_JOB_ATTEMPT", "2")
+    worker = _editor_document_rerender_worker(tmp_path, None)
+    worker.editor_renderer.render.side_effect = RuntimeError("render failed")
+
+    with pytest.raises(RuntimeError, match="render failed"):
+        worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    worker.storage.delete.assert_called_once_with(
+        f"edit-sources/session-a/job-a/{EDITOR_DOCUMENT_SHORT_ID}/clean-v2.mp4"
+    )
+    worker.repository.complete_editor_document_rerender.assert_not_called()
+    worker.repository.reset_rerender.assert_called_once_with(
+        EDITOR_DOCUMENT_SHORT_ID
+    )

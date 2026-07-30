@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   fitPreviewTitleFont,
+  styledTitleLineRuns,
+  titleLineCharacterIndices,
   titleLineBackground,
   titleLineColor,
   wrapPreviewTitle,
@@ -45,5 +47,19 @@ describe("render-matched title preview", () => {
   it("keeps the first paper line primary-colored in full-vertical mode", () => {
     expect(titleLineColor(0, true, "#111111", "#D52B2B", true)).toBe("#111111");
     expect(titleLineColor(1, true, "#111111", "#D52B2B", true)).toBe("#D52B2B");
+  });
+
+  it("groups selected title characters into styled preview runs", () => {
+    const title = "첫째 줄\n둘째 줄";
+    const lines = ["첫째 줄", "둘째 줄"];
+    const indices = titleLineCharacterIndices(title, lines);
+    expect(styledTitleLineRuns(lines[0], indices[0], [{
+      start: 0,
+      end: 2,
+      color: "#FF0000",
+    }])).toEqual([
+      { text: "첫째", color: "#FF0000", backgroundColor: undefined },
+      { text: " 줄", color: undefined, backgroundColor: undefined },
+    ]);
   });
 });

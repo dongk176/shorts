@@ -1,6 +1,6 @@
 # AI data governance
 
-Last reviewed: 2026-07-26
+Last reviewed: 2026-07-31
 
 This runbook keeps Easy Cut's public AI and international-transfer disclosures
 aligned with the worker's actual data flow. Review it before changing an AI
@@ -21,6 +21,12 @@ setting.
 5. The comment-capture template uses the same paid-Gemini-first,
    OpenAI-fallback rule. Its comments are synthetic copy, not collected social
    media comments.
+6. The gated production editor can send a ready short's title, highlight
+   reason, and stored transcript text to the same paid Gemini comment model
+   only when a user explicitly confirms AI comment regeneration. This editor
+   action has no provider fallback: if the paid-Gemini gate is unavailable or
+   the response cannot supply exactly the current number of comment overlays,
+   it fails closed and releases the reserved 60 seconds of usage.
 
 The worker does not use face recognition, speaker biometric identification,
 fine-tuning, provider feedback sharing, grounding, provider File APIs, or
@@ -32,8 +38,11 @@ provider-hosted conversation state.
 
 The production AWS Batch job definition sets
 `GEMINI_PAID_DATA_PROCESSING_CONFIRMED=true`; every non-production environment
-keeps the flag false. On 2026-07-26 an operator verified the exact production
-key and project without exposing the key:
+keeps the flag false by default. An operator may temporarily enable it in an
+isolated non-production environment only after verifying that environment's
+exact key against the checklist below and confirming that the test content is
+authorized for the same transfer. On 2026-07-26 an operator verified the exact
+production key and project without exposing the key:
 
 - The runtime key's masked suffix matched the only key in Google AI Studio
   project `gen-lang-client-0098273343` (`Default Gemini Project`).

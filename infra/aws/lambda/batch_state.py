@@ -365,7 +365,7 @@ def _handle_rerender_failure(
     shorts = rest(
         "generated_shorts",
         query=(
-            "select=id,status,render_version"
+            "select=id,status,render_version,pending_edit_request_id"
             f"&rerender_batch_job_id=eq.{_encoded(batch_job_id)}&limit=1"
         ),
     ) or []
@@ -398,6 +398,22 @@ def _handle_rerender_failure(
             "failureCategory": failure_category,
             "retryCount": 1,
         }
+    pending_request_id = shorts[0].get("pending_edit_request_id")
+    if pending_request_id:
+        patch(
+            "editor_render_requests",
+            (
+                f"id=eq.{_encoded(pending_request_id)}"
+                f"&short_id=eq.{_encoded(shorts[0]['id'])}"
+                "&status=in.(queued,rendering)"
+            ),
+            {
+                "status": "failed",
+                "failure_code": f"rerender_batch_{failure_category}",
+                "updated_at": iso_now(),
+                "completed_at": iso_now(),
+            },
+        )
     patch(
         "generated_shorts",
         f"id=eq.{_encoded(shorts[0]['id'])}&status=eq.rerendering",
@@ -406,6 +422,7 @@ def _handle_rerender_failure(
             "rerender_progress": 0,
             "pending_render_hash": None,
             "pending_edit_snapshot": None,
+            "pending_edit_request_id": None,
             "rerender_batch_job_id": None,
             "render_error_code": f"rerender_batch_{failure_category}",
             "render_error_message": reason[:1000],

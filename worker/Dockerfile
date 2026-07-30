@@ -28,7 +28,8 @@ FROM worker-base AS render
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends fonts-noto-cjk \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && python -c "from shorts_worker.editor_renderer import verify_editor_fonts; verify_editor_fonts()"
 
 ENTRYPOINT ["./entrypoint.sh"]
 CMD ["python", "-m", "shorts_worker"]

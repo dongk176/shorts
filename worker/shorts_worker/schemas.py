@@ -200,7 +200,7 @@ class SubtitleSegment(BaseModel):
 class CommentOverlay(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    id: str
+    id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9:_-]+$")
     start_seconds: float = Field(alias="startSeconds", ge=0)
     end_seconds: float = Field(alias="endSeconds", gt=0)
     text: str = Field(min_length=1, max_length=200)
@@ -243,6 +243,353 @@ class TitleTextStyle(BaseModel):
         if start is not None and value <= start:
             raise ValueError("title style end must be after start")
         return value
+
+
+EDITOR_DOCUMENT_VERSION = 2
+EDITOR_CANVAS_WIDTH = 1080
+EDITOR_CANVAS_HEIGHT = 1920
+EDITOR_PRESET_COLORS = {
+    "#040404",
+    "#000000",
+    "#111111",
+    "#1B1B1E",
+    "#353438",
+    "#64748B",
+    "#FFFFFF",
+    "#F3F0E9",
+    "#E32626",
+    "#FF4D4F",
+    "#FF715E",
+    "#FFB4A8",
+    "#F97316",
+    "#FFD84D",
+    "#8BFF5A",
+    "#16A34A",
+    "#35E6E3",
+    "#3B82F6",
+    "#2563EB",
+    "#A78BFA",
+    "#DB2777",
+}
+EDITOR_STOCK_BACKGROUND_IDS = {
+    "news-blue-geometric",
+    "news-blue-diagonal",
+    "news-red-globe",
+    "trust-network",
+    "trust-circuit",
+    "white-vinyl",
+    "white-grid",
+    "white-hanji",
+}
+
+
+class EditorFontId(str, Enum):
+    PRETENDARD = "pretendard"
+    BLACK_HAN_SANS = "black-han-sans"
+    GMARKET_SANS = "gmarket-sans"
+    DO_HYEON = "do-hyeon"
+    NOTO_SERIF_KR = "noto-serif-kr"
+    NANUM_MYEONGJO = "nanum-myeongjo"
+    SUIT = "suit"
+    SPOQA_HAN_SANS_NEO = "spoqa-han-sans-neo"
+
+
+class EditorCanvasPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x: float = Field(ge=-EDITOR_CANVAS_WIDTH, le=EDITOR_CANVAS_WIDTH)
+    y: float = Field(ge=-EDITOR_CANVAS_HEIGHT, le=EDITOR_CANVAS_HEIGHT)
+
+
+class EditorCanvasBackground(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    kind: str = Field(pattern=r"^(color|image)$")
+    color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    asset_id: str | None = Field(default=None, alias="assetId")
+
+    @model_validator(mode="after")
+    def validate_value(self) -> EditorCanvasBackground:
+        if self.kind == "color":
+            if self.color not in EDITOR_PRESET_COLORS:
+                raise ValueError("unsupported editor background color")
+            if self.asset_id is not None:
+                raise ValueError("color background cannot contain assetId")
+        else:
+            if self.asset_id not in EDITOR_STOCK_BACKGROUND_IDS:
+                raise ValueError("unsupported editor background asset")
+            if self.color is not None:
+                raise ValueError("image background cannot contain color")
+        return self
+
+
+class EditorTextOverlay(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9:_-]+$")
+    text: str = Field(max_length=120)
+    font_id: EditorFontId = Field(alias="fontId")
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    effect: str = Field(pattern=r"^(none|outline|shadow)$")
+    offset: EditorCanvasPoint
+    width: float = Field(ge=1, le=1000)
+    scale: float = Field(ge=0.25, le=3)
+    start_seconds: float = Field(alias="startSeconds", ge=0)
+    end_seconds: float = Field(alias="endSeconds", gt=0)
+
+    @model_validator(mode="after")
+    def validate_text_overlay(self) -> EditorTextOverlay:
+        if self.color not in EDITOR_PRESET_COLORS:
+            raise ValueError("unsupported editor text color")
+        if self.end_seconds <= self.start_seconds:
+            raise ValueError("text overlay end must be after start")
+        return self
+
+
+class EditorOverlayLayout(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    offsets: dict[str, EditorCanvasPoint]
+    comment_offsets: dict[str, EditorCanvasPoint] = Field(alias="commentOffsets")
+    scales: dict[str, float]
+    fonts: dict[str, EditorFontId]
+    visible: dict[str, bool]
+    comment_theme: str | None = Field(alias="commentTheme", pattern=r"^(dark|light)$")
+    text_overlays: list[EditorTextOverlay] = Field(
+        alias="textOverlays",
+        max_length=20,
+    )
+    layer_order: list[str] = Field(alias="layerOrder", min_length=1, max_length=24)
+    background: EditorCanvasBackground | None
+
+    @model_validator(mode="after")
+    def validate_layout(self) -> EditorOverlayLayout:
+        base_layers = {"video", "title", "comment", "channel"}
+        if set(self.offsets) != base_layers:
+            raise ValueError("editor offsets must contain every base layer")
+        if self.offsets["comment"].x != 0 or any(
+            offset.x != 0 for offset in self.comment_offsets.values()
+        ):
+            raise ValueError("comment offsets must remain vertically constrained")
+        if set(self.scales) != {"video", "title", "channel"}:
+            raise ValueError("editor scales are invalid")
+        if not 0.1 <= self.scales["video"] <= 5:
+            raise ValueError("video scale is invalid")
+        if any(not 0.5 <= self.scales[layer] <= 2 for layer in ("title", "channel")):
+            raise ValueError("text scale is invalid")
+        if set(self.fonts) != {"title", "channel"}:
+            raise ValueError("editor fonts are invalid")
+        if set(self.visible) != base_layers or self.visible["video"] is not True:
+            raise ValueError("video layer must remain visible")
+        text_ids = {overlay.id for overlay in self.text_overlays}
+        if len(text_ids) != len(self.text_overlays):
+            raise ValueError("text overlay ids must be unique")
+        expected_layers = base_layers | {f"text:{text_id}" for text_id in text_ids}
+        if len(self.layer_order) != len(set(self.layer_order)):
+            raise ValueError("layer order cannot contain duplicates")
+        if set(self.layer_order) != expected_layers:
+            raise ValueError("layer order does not match editor overlays")
+        return self
+
+
+class EditorVideoClip(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9:_-]+$")
+    source_start_seconds: float = Field(alias="sourceStartSeconds", ge=0)
+    source_end_seconds: float = Field(alias="sourceEndSeconds", gt=0)
+
+    @model_validator(mode="after")
+    def validate_clip(self) -> EditorVideoClip:
+        if self.source_end_seconds - self.source_start_seconds < 0.149:
+            raise ValueError("editor video clip is too short")
+        return self
+
+
+class EditorDocumentTemplate(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    id: TemplateId
+    custom_template_id: str | None = Field(
+        default=None,
+        alias="customTemplateId",
+        pattern=(
+            r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[1-5][0-9A-Fa-f]{3}-"
+            r"[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$"
+        ),
+    )
+    preset_version: int = Field(alias="presetVersion", ge=0, le=100)
+    snapshot: dict[str, object] | None
+
+
+class EditorDocumentTitle(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    text: str = Field(min_length=1, max_length=80)
+    text_styles: list[TitleTextStyle] = Field(alias="textStyles", max_length=80)
+    font_scale: float = Field(alias="fontScale", ge=0.5, le=2)
+
+    @model_validator(mode="after")
+    def validate_title(self) -> EditorDocumentTitle:
+        if len(self.text.splitlines()) > 2:
+            raise ValueError("editor title can contain at most two lines")
+        text_length = len(self.text)
+        ordered = sorted(self.text_styles, key=lambda style: style.start)
+        if any(style.end > text_length for style in ordered):
+            raise ValueError("title style exceeds title length")
+        if any(
+            style.start < ordered[index - 1].end
+            for index, style in enumerate(ordered)
+            if index > 0
+        ):
+            raise ValueError("title styles cannot overlap")
+        return self
+
+
+class EditorDocumentChannel(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    display_name: str = Field(alias="displayName", min_length=1, max_length=50)
+    thumbnail_url: str | None = Field(default=None, alias="thumbnailUrl", max_length=400_000)
+    thumbnail_asset_key: str | None = Field(
+        default=None,
+        alias="thumbnailAssetKey",
+        pattern=(
+            r"^edit-sources/[A-Za-z0-9/_-]+/editor-assets/"
+            r"[A-Za-z0-9_-]+\.(png|jpg|webp)$"
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_thumbnail_source(self) -> EditorDocumentChannel:
+        if self.thumbnail_url and self.thumbnail_asset_key:
+            raise ValueError("channel thumbnail must use one source")
+        return self
+
+
+class EditorDocumentSubtitles(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    segments: list[SubtitleSegment] = Field(max_length=2000)
+
+
+class EditorDocumentVideo(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    clips: list[EditorVideoClip] = Field(min_length=1, max_length=120)
+    aspect_ratio: VideoAspectRatio = Field(alias="aspectRatio")
+    timeline_start_seconds: float = Field(alias="timelineStartSeconds", ge=0)
+    timeline_end_seconds: float = Field(alias="timelineEndSeconds", gt=0)
+    selection_start_seconds: float = Field(alias="selectionStartSeconds", ge=0)
+    selection_end_seconds: float = Field(alias="selectionEndSeconds", gt=0)
+
+    @model_validator(mode="after")
+    def validate_video(self) -> EditorDocumentVideo:
+        timeline_duration = self.timeline_end_seconds - self.timeline_start_seconds
+        if timeline_duration <= 0:
+            raise ValueError("editor timeline is invalid")
+        for index, clip in enumerate(self.clips):
+            if clip.source_end_seconds > timeline_duration + 0.001:
+                raise ValueError("editor clip exceeds timeline")
+            if (
+                index > 0
+                and clip.source_start_seconds
+                < self.clips[index - 1].source_end_seconds - 0.001
+            ):
+                raise ValueError("editor clips cannot overlap")
+        first_clip = self.clips[0]
+        last_clip = self.clips[-1]
+        if (
+            self.selection_end_seconds <= self.selection_start_seconds
+            or self.selection_start_seconds < self.timeline_start_seconds - 0.001
+            or self.selection_end_seconds > self.timeline_end_seconds + 0.001
+            or abs(
+                self.selection_start_seconds
+                - self.timeline_start_seconds
+                - first_clip.source_start_seconds
+            )
+            > 0.051
+            or abs(
+                self.selection_end_seconds
+                - self.timeline_start_seconds
+                - last_clip.source_end_seconds
+            )
+            > 0.051
+        ):
+            raise ValueError("editor selection does not match clips")
+        return self
+
+    @property
+    def output_duration_seconds(self) -> float:
+        return round(
+            sum(
+                clip.source_end_seconds - clip.source_start_seconds
+                for clip in self.clips
+            ),
+            3,
+        )
+
+
+class EditorDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    version: int = Field(ge=EDITOR_DOCUMENT_VERSION, le=EDITOR_DOCUMENT_VERSION)
+    source_short_id: str = Field(
+        alias="sourceShortId",
+        pattern=(
+            r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[1-5][0-9A-Fa-f]{3}-"
+            r"[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$"
+        ),
+    )
+    base_render_version: int = Field(alias="baseRenderVersion", ge=0)
+    template: EditorDocumentTemplate
+    title: EditorDocumentTitle
+    channel: EditorDocumentChannel
+    comments: list[CommentOverlay] = Field(max_length=20)
+    subtitles: EditorDocumentSubtitles
+    overlays: EditorOverlayLayout
+    video: EditorDocumentVideo
+
+    @model_validator(mode="after")
+    def validate_document(self) -> EditorDocument:
+        duration = self.video.output_duration_seconds
+        if duration < 0.999:
+            raise ValueError("editor output must be at least one second")
+        ordered_comments = sorted(self.comments, key=lambda comment: comment.start_seconds)
+        if len({comment.id for comment in self.comments}) != len(self.comments):
+            raise ValueError("comment ids must be unique")
+        for index, comment in enumerate(ordered_comments):
+            if comment.end_seconds > duration + 0.001:
+                raise ValueError("comment exceeds editor output")
+            if (
+                index > 0
+                and comment.start_seconds
+                < ordered_comments[index - 1].end_seconds - 0.001
+            ):
+                raise ValueError("comments cannot overlap")
+        if any(
+            overlay.end_seconds > duration + 0.001
+            for overlay in self.overlays.text_overlays
+        ):
+            raise ValueError("text overlay exceeds editor output")
+        if any(
+            segment.end
+            > (
+                self.video.timeline_end_seconds
+                - self.video.timeline_start_seconds
+                + 0.001
+            )
+            for segment in self.subtitles.segments
+        ):
+            raise ValueError("subtitle exceeds editor timeline")
+        comment_ids = {comment.id for comment in self.comments}
+        if any(
+            comment_id not in comment_ids
+            for comment_id in self.overlays.comment_offsets
+        ):
+            raise ValueError("comment offset references a deleted comment")
+        return self
 
 
 _COMMENT_COLORS = ("#8B2CC4", "#D84572", "#2674C8", "#257A5A", "#C76624", "#6655C7")

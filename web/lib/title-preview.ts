@@ -1,3 +1,5 @@
+import type { TitleTextStyle } from "@/lib/contracts";
+
 const TITLE_MAX_CHARS = 20;
 const TITLE_MAX_LINES = 2;
 export const TITLE_MAX_WIDTH = 930;
@@ -123,6 +125,39 @@ export function titleLineCharacterIndices(title: string, lines: string[]) {
     if (syntheticEllipsis) indices.push(null);
     return indices;
   });
+}
+
+export function styledTitleLineRuns(
+  line: string,
+  indices: Array<number | null>,
+  styles: TitleTextStyle[],
+) {
+  const runs: Array<{
+    text: string;
+    color?: string;
+    backgroundColor?: string;
+  }> = [];
+  Array.from(line).forEach((character, characterIndex) => {
+    const titleIndex = indices[characterIndex];
+    const style = titleIndex === null
+      ? undefined
+      : styles.find((item) => item.start <= titleIndex && item.end > titleIndex);
+    const previous = runs.at(-1);
+    if (
+      previous
+      && previous.color === style?.color
+      && previous.backgroundColor === style?.backgroundColor
+    ) {
+      previous.text += character;
+    } else {
+      runs.push({
+        text: character,
+        color: style?.color,
+        backgroundColor: style?.backgroundColor,
+      });
+    }
+  });
+  return runs;
 }
 
 function estimatedCharacterWidth(character: string) {

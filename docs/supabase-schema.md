@@ -19,7 +19,8 @@
 - `payment_method_registrations`, `payment_test_one_time_orders`, `payment_test_recurring_runs`: 로컬 결제 테스트의 BID·단건·회차 상태
 - `mvp_sessions`: hashed browser token, 호환성용 plan 캐시, 로그인 사용자 연결
 - `video_jobs`: 원본 metadata, 생성 시점 보관기간 스냅샷, queue/processing deadline, ISP route lease, retry/Batch/stage/heartbeat/expiry
-- `generated_shorts`: 구간, render shard/progress, private object keys, render version/hash
+- `generated_shorts`: 구간, render shard/progress, private object keys, render version/hash, 마지막 성공 `editor_document`와 승격 대기 편집 문서
+- `editor_render_requests`: 통합 편집 문서 저장의 UUID 멱등성, 기준 렌더 버전, 문서 해시, 성공·실패 감사 상태
 - `youtube_analyses`: 짧게 유지되는 YouTube 사전 분석 결과와 사용자 소유권
 - `job_outbox`, `dispatch_batches`, `dispatch_batch_items`: Prepare 제출과 Array child 매핑
 - `batch_submission_claims`: SQS 중복 전달과 Batch 제출 응답 유실 중복 방지
@@ -30,6 +31,7 @@
 - `usage_grant_allocations`: 작업 예약이 어떤 grant에서 몇 초를 사용했는지 기록
 - `usage_reservations`: queued/running 원본 초와 grant allocation 전이 기준
 - `usage_events`: 성공한 원본 초, `(job_id,event_type)` idempotency
+- `ai_comment_regeneration_requests`, `ai_comment_regeneration_allocations`: 편집기 AI 댓글 재생성 요청의 UUID 멱등성, 정확히 60초 사용량 예약·성공 소진·실패 반환, 생성 댓글 수 검증 원장
 - `user_onboarding_profiles`, `member_campaign_announcements`: 최초 온보딩 멱등 응답과 로그인 시 비유료 회원에게 지급한 20분 체험 grant의 계정당 1회 안내 이력
 - `job_events`: stage 변경 이벤트
 

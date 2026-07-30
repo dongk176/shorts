@@ -241,7 +241,8 @@ def reset_stale_rerenders() -> int:
     items = rest(
         "generated_shorts",
         query=(
-            "select=id,rerender_batch_job_id&status=eq.rerendering"
+            "select=id,rerender_batch_job_id,pending_edit_request_id"
+            "&status=eq.rerendering"
             f"&updated_at=lt.{cutoff}&limit=100"
         ),
     ) or []
@@ -254,6 +255,22 @@ def reset_stale_rerenders() -> int:
                 "SUBMITTED", "PENDING", "RUNNABLE", "STARTING", "RUNNING"
             }:
                 continue
+        pending_request_id = item.get("pending_edit_request_id")
+        if pending_request_id:
+            patch(
+                "editor_render_requests",
+                (
+                    f"id=eq.{pending_request_id}"
+                    f"&short_id=eq.{item['id']}"
+                    "&status=in.(queued,rendering)"
+                ),
+                {
+                    "status": "failed",
+                    "failure_code": "rerender_stale_timeout",
+                    "updated_at": iso_now(),
+                    "completed_at": iso_now(),
+                },
+            )
         patch(
             "generated_shorts",
             f"id=eq.{item['id']}&status=eq.rerendering",
@@ -262,6 +279,7 @@ def reset_stale_rerenders() -> int:
                 "rerender_progress": 0,
                 "pending_render_hash": None,
                 "pending_edit_snapshot": None,
+                "pending_edit_request_id": None,
                 "rerender_batch_job_id": None,
             },
         )

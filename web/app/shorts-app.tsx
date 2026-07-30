@@ -1,7 +1,12 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import type { PointerEvent } from "react";
+import { FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import type {
+  ChangeEvent,
+  CSSProperties,
+  PointerEvent,
+  PointerEventHandler,
+} from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
@@ -10,6 +15,10 @@ import { BackgroundShowcase } from "@/components/background-showcase";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
 import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
+import {
+  EditorTextOverlayPreview,
+  EditorTextTimeline,
+} from "@/components/editor-text-overlay-preview";
 import { EstimatedProcessingOverlay, ProjectCard } from "@/components/project-card";
 import { ProjectReveal } from "@/components/project-reveal";
 import { PaidProjectFeatureOverlay } from "@/components/paid-project-feature-overlay";
@@ -43,6 +52,8 @@ import {
   RANGE_EDIT_MIN_SECONDS,
   roundTimelineHandleSeconds,
   scaleTimedRanges,
+  snapTimedRangeHandle,
+  TIMED_RANGE_SNAP_THRESHOLD_PX,
   type TimedRangeAdjustment,
 } from "@/lib/range-editing";
 import { userFacingErrorMessage } from "@/lib/public-error";
@@ -63,6 +74,7 @@ import {
   PRESET_SQUARE_CHANNEL_CENTER_Y,
   stockBackgrounds,
   templateConfigSchema,
+  templatePresetColorOptions,
   TEMPLATE_CANVAS,
   type CustomTemplate,
 } from "@/lib/template-config";
@@ -83,6 +95,74 @@ import {
   parseProjectEditRefreshSignal,
   PROJECT_EDIT_REFRESH_STORAGE_KEY,
 } from "@/lib/project-edit-refresh";
+import {
+  EDITOR_TEXT_DEFAULT_WIDTH,
+  EMPTY_EDITOR_OVERLAY_GUIDES,
+  canvasOffsetTranslate,
+  clampCanvasDelta,
+  clientDeltaToCanvas,
+  clientDistanceToCanvas,
+  clientRectToCanvas,
+  cloneEditorOverlayLayout,
+  createEditorTextOverlay,
+  createInitialEditorOverlayLayout,
+  moveEditorOverlayOrderItem,
+  recordEditorOverlayHistory,
+  redoEditorOverlayHistory,
+  resizeCanvasRectFromCorner,
+  resizeEditorTextOverlayWidth,
+  snapCommentToVideoBottom,
+  snapRectCenterToCanvas,
+  snapRectToOverlayRects,
+  snapResizedCanvasRectToCanvas,
+  undoEditorOverlayHistory,
+  type CanvasPoint,
+  type CanvasRect,
+  type EditorCanvasBackground,
+  type EditorCommentTheme,
+  type EditorOverlayGuides,
+  type EditorOverlayHistory,
+  type EditorOverlayLayoutSnapshot,
+  type EditorOverlayLayer,
+  type EditorOverlayOrderItem,
+  type EditorTextOverlay,
+  type EditorTextResizeEdge,
+  type EditorVideoResizeHandle,
+} from "@/lib/editor-overlay-preview";
+import {
+  DEFAULT_EDITOR_FONT_ID,
+  editorFontFamily,
+  editorFontOptions,
+  type EditorFontId,
+} from "@/lib/editor-fonts";
+import {
+  EDITOR_CHANNEL_PRESET_IMAGE_MAX_LENGTH,
+  EDITOR_CHANNEL_PRESET_LIMIT,
+  EDITOR_CHANNEL_PRESET_STORAGE_KEY,
+  parseEditorChannelPresets,
+  serializeEditorChannelPresets,
+  type EditorChannelPreset,
+} from "@/lib/editor-channel-presets";
+import { resolveEditorHistoryShortcut } from "@/lib/editor-history-shortcuts";
+import {
+  cloneEditorDocumentSnapshot,
+  createEditorDocumentSnapshot,
+} from "@/lib/editor-document-snapshot";
+import { editorDocumentOutputDuration } from "@/lib/editor-document-contract";
+import { CURRENT_PRESET_TEMPLATE_SNAPSHOT } from "@/lib/edit-template-selection";
+import {
+  EDITOR_VIDEO_MIN_CLIP_SECONDS,
+  canSplitEditorVideoAtTime,
+  createEditorVideoClips,
+  deleteEditorVideoClip,
+  editorVideoClipDuration,
+  editorVideoDuration,
+  editorVideoOutputTimeForSource,
+  locateEditorVideoTime,
+  splitEditorVideoAtTime,
+  type EditorVideoClip,
+} from "@/lib/editor-video-cuts";
+import { CENTER_SNAP_THRESHOLD_PX } from "@/lib/template-editor-snap";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 import { currentClientLocale, localizeApiError, localizeAuthError } from "@/lib/i18n/errors";
 import { messagesByLocale } from "@/lib/i18n/messages";
@@ -137,6 +217,19 @@ function customTemplateBackground(template: CustomTemplate) {
   if (background.kind === "color") return { backgroundColor: background.color };
   const asset = stockBackgrounds.find((item) => item.id === background.assetId);
   return {
+    backgroundImage: `url(${asset?.src || ""})`,
+    backgroundPosition: "center",
+    backgroundSize: "cover",
+  };
+}
+
+function editorCanvasBackgroundStyle(background: EditorCanvasBackground) {
+  if (background.kind === "color") {
+    return { backgroundColor: background.color };
+  }
+  const asset = stockBackgrounds.find((item) => item.id === background.assetId);
+  return {
+    backgroundColor: "#111111",
     backgroundImage: `url(${asset?.src || ""})`,
     backgroundPosition: "center",
     backgroundSize: "cover",
@@ -204,6 +297,62 @@ function defaultComments(durationSeconds: number) {
     duration * (index + 1) / 3,
     commentTexts[index],
   ));
+}
+
+const EDITOR_CHANNEL_PRESET_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const EDITOR_CHANNEL_PRESET_IMAGE_SIZE = 256;
+
+async function createEditorChannelPresetImageDataUrl(file: File) {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("이미지 파일을 선택해 주세요.");
+  }
+  if (file.size > EDITOR_CHANNEL_PRESET_MAX_UPLOAD_BYTES) {
+    throw new Error("10MB 이하 이미지를 선택해 주세요.");
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = document.createElement("img");
+    image.decoding = "async";
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("이미지를 불러오지 못했습니다."));
+      image.src = objectUrl;
+    });
+    if (!image.naturalWidth || !image.naturalHeight) {
+      throw new Error("이미지 크기를 확인하지 못했습니다.");
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = EDITOR_CHANNEL_PRESET_IMAGE_SIZE;
+    canvas.height = EDITOR_CHANNEL_PRESET_IMAGE_SIZE;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("이미지를 처리하지 못했습니다.");
+
+    const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
+    const sourceX = (image.naturalWidth - sourceSize) / 2;
+    const sourceY = (image.naturalHeight - sourceSize) / 2;
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(
+      image,
+      sourceX,
+      sourceY,
+      sourceSize,
+      sourceSize,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
+    const dataUrl = canvas.toDataURL("image/webp", 0.84);
+    if (dataUrl.length > EDITOR_CHANNEL_PRESET_IMAGE_MAX_LENGTH) {
+      throw new Error("저장하기에는 이미지 용량이 너무 큽니다.");
+    }
+    return dataUrl;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 const templateCommentSample: CommentOverlay = {
@@ -653,18 +802,30 @@ function formatCompactKoreanCount(value: number) {
   return value.toLocaleString("ko-KR");
 }
 
-function CommentCaptureCard({ comment }: { comment: CommentOverlay | null }) {
+function CommentCaptureCard({
+  comment,
+  theme = "dark",
+}: {
+  comment: CommentOverlay | null;
+  theme?: EditorCommentTheme;
+}) {
+  const dark = theme === "dark";
+  const foreground = dark ? "#f5f5f6" : "#18181b";
+  const muted = dark ? "#a3a3aa" : "#6b6b73";
   return (
-    <div className="w-full bg-[#040404] pb-[0.6cqw] pl-[4.4cqw] pr-[2.8cqw] pt-[4.5cqw] text-left text-white">
+    <div
+      className="w-full pb-[0.6cqw] pl-[4.4cqw] pr-[2.8cqw] pt-[4.5cqw] text-left"
+      style={{ backgroundColor: dark ? "#040404" : "#ffffff", color: foreground }}
+    >
       {comment ? <div className="flex items-start gap-[2.7cqw]">
         <div className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.65cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
         <div className="min-w-0 flex-1">
-          <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight text-neutral-100 blur-[0.52cqw]">@{comment.nickname} <span className="font-normal text-neutral-400">{comment.ageLabel}</span></div>
-          <p className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap font-normal leading-[1.28] text-white/95 blur-[0.05cqw]" style={{ fontSize: `${COMMENT_CAPTURE_BODY_FONT_CQW}cqw` }}>{comment.text}</p>
-          <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] text-neutral-300/80 blur-[0.035cqw]">
+          <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight blur-[0.52cqw]" style={{ color: foreground }}>@{comment.nickname} <span className="font-normal" style={{ color: muted }}>{comment.ageLabel}</span></div>
+          <p className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap font-normal leading-[1.28] blur-[0.05cqw]" style={{ color: foreground, fontSize: `${COMMENT_CAPTURE_BODY_FONT_CQW}cqw` }}>{comment.text}</p>
+          <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] blur-[0.035cqw]" style={{ color: muted }}>
             <ReactionIcon /><span>{formatCompactKoreanCount(comment.likeCount)}</span>
             <span className="ml-[2.2cqw]"><ReactionIcon down /></span>
-            <span className="ml-[3cqw] text-[3.25cqw] text-neutral-200">답글</span>
+            <span className="ml-[3cqw] text-[3.25cqw]">답글</span>
           </div>
         </div>
       </div> : null}
@@ -676,26 +837,54 @@ function CommentCaptureChannel({
   channelName,
   channelThumbnailUrl,
   fixedCenterY,
+  fontFamily,
+  selected = false,
+  movementStyle,
+  onPointerDown,
 }: {
   channelName: string;
   channelThumbnailUrl: string | null;
   fixedCenterY?: number;
+  fontFamily?: string;
+  selected?: boolean;
+  movementStyle?: CSSProperties;
+  onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
+  const content = <>
+    <ChannelAvatar
+      url={channelThumbnailUrl}
+      className="h-[6.1cqw] w-[6.1cqw]"
+      fallbackForeground="#FFFFFF"
+      fallbackBackground={COMMENT_BACKGROUND_COLOR}
+      sizes="10px"
+    />
+    <span className="max-w-[70cqw] truncate">{channelName}</span>
+  </>;
   return (
     <div
-      className="absolute inset-x-0 z-20 flex items-center justify-center gap-[2.4cqw] px-[4.9cqw] text-[4.2cqw] font-semibold text-white"
+      className="pointer-events-none absolute inset-x-0 z-20 flex items-center justify-center text-[4.2cqw] font-semibold text-white"
       style={fixedCenterY === undefined
-        ? { bottom: "13.5cqw" }
-        : { top: `${fixedCenterY / 19.2}%`, transform: "translateY(-50%)" }}
+        ? { bottom: "13.5cqw", fontFamily, zIndex: movementStyle?.zIndex }
+        : {
+            top: `${fixedCenterY / 19.2}%`,
+            fontFamily,
+            transform: "translateY(-50%)",
+            zIndex: movementStyle?.zIndex,
+          }}
     >
-      <ChannelAvatar
-        url={channelThumbnailUrl}
-        className="h-[6.1cqw] w-[6.1cqw]"
-        fallbackForeground="#FFFFFF"
-        fallbackBackground={COMMENT_BACKGROUND_COLOR}
-        sizes="10px"
-      />
-      <span className="max-w-[70cqw] truncate">{channelName}</span>
+      {onPointerDown
+        ? <button
+            type="button"
+            data-editor-overlay-layer="channel"
+            aria-label="채널명 오버레이 선택 및 이동"
+            aria-pressed={selected}
+            onPointerDown={onPointerDown}
+            className={`pointer-events-auto flex cursor-move touch-none appearance-none items-center justify-center gap-[2.4cqw] border-0 bg-transparent px-[4.9cqw] text-inherit ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
+            style={movementStyle}
+          >
+            {content}
+          </button>
+        : <div className="flex items-center justify-center gap-[2.4cqw] px-[4.9cqw]">{content}</div>}
     </div>
   );
 }
@@ -705,25 +894,54 @@ function FixedPresetChannel({
   channelThumbnailUrl,
   foreground,
   background,
+  fontFamily,
+  selected = false,
+  movementStyle,
+  onPointerDown,
 }: {
   channelName: string;
   channelThumbnailUrl: string | null;
   foreground: string;
   background: string;
+  fontFamily?: string;
+  selected?: boolean;
+  movementStyle?: CSSProperties;
+  onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
+  const content = <>
+    <ChannelAvatar
+      url={channelThumbnailUrl}
+      className="h-[6.1cqw] w-[6.1cqw]"
+      fallbackForeground={foreground}
+      fallbackBackground={background}
+      sizes="10px"
+    />
+    <span className="max-w-[70cqw] truncate">{channelName}</span>
+  </>;
   return (
     <div
-      className="absolute inset-x-0 z-20 flex items-center justify-center gap-[2.4cqw] px-[4.9cqw] text-[4.2cqw] font-semibold"
-      style={{ top: `${PRESET_SQUARE_CHANNEL_CENTER_Y / 19.2}%`, color: foreground, transform: "translateY(-50%)" }}
+      className="pointer-events-none absolute inset-x-0 z-20 flex items-center justify-center text-[4.2cqw] font-semibold"
+      style={{
+        top: `${PRESET_SQUARE_CHANNEL_CENTER_Y / 19.2}%`,
+        color: foreground,
+        fontFamily,
+        transform: "translateY(-50%)",
+        zIndex: movementStyle?.zIndex,
+      }}
     >
-      <ChannelAvatar
-        url={channelThumbnailUrl}
-        className="h-[6.1cqw] w-[6.1cqw]"
-        fallbackForeground={foreground}
-        fallbackBackground={background}
-        sizes="10px"
-      />
-      <span className="max-w-[70cqw] truncate">{channelName}</span>
+      {onPointerDown
+        ? <button
+            type="button"
+            data-editor-overlay-layer="channel"
+            aria-label="채널명 오버레이 선택 및 이동"
+            aria-pressed={selected}
+            onPointerDown={onPointerDown}
+            className={`pointer-events-auto flex cursor-move touch-none appearance-none items-center justify-center gap-[2.4cqw] border-0 bg-transparent px-[4.9cqw] text-inherit ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
+            style={movementStyle}
+          >
+            {content}
+          </button>
+        : <div className="flex items-center justify-center gap-[2.4cqw] px-[4.9cqw]">{content}</div>}
     </div>
   );
 }
@@ -732,31 +950,284 @@ function CustomEditorChannel({
   template,
   channelName,
   channelThumbnailUrl,
+  fontFamily,
+  selected = false,
+  movementStyle,
+  onPointerDown,
 }: {
   template: CustomTemplate;
   channelName: string;
   channelThumbnailUrl: string | null;
+  fontFamily?: string;
+  selected?: boolean;
+  movementStyle?: CSSProperties;
+  onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
   const channel = template.config.channel;
   if (!channel.visible) return null;
+  const style = {
+    ...customCenteredLayerStyle(channel),
+    color: channel.color,
+    backgroundColor: channel.backgroundColor || "transparent",
+    fontFamily,
+    fontSize: customCanvasWidth(channel.fontSize),
+    ...movementStyle,
+  };
+  const content = <>
+    <ChannelAvatar
+      url={channelThumbnailUrl}
+      className="h-[5.4cqw] w-[5.4cqw]"
+      fallbackForeground={channel.color}
+      fallbackBackground={channel.backgroundColor || "#111111"}
+      sizes="20px"
+    />
+    <span className="truncate">{channelName}</span>
+  </>;
+  if (onPointerDown) {
+    return (
+      <button
+        type="button"
+        data-editor-overlay-layer="channel"
+        aria-label="채널명 오버레이 선택 및 이동"
+        aria-pressed={selected}
+        onPointerDown={onPointerDown}
+        className={`absolute z-30 flex cursor-move touch-none appearance-none items-center justify-center gap-[2cqw] truncate rounded border-0 px-[1.5cqw] py-[.7cqw] text-center font-bold ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
+        style={style}
+      >
+        {content}
+      </button>
+    );
+  }
   return (
     <div
       className="absolute z-30 flex items-center justify-center gap-[2cqw] truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold"
-      style={{
-        ...customCenteredLayerStyle(channel),
-        color: channel.color,
-        backgroundColor: channel.backgroundColor || "transparent",
-        fontSize: customCanvasWidth(channel.fontSize),
-      }}
+      style={style}
     >
-      <ChannelAvatar
-        url={channelThumbnailUrl}
-        className="h-[5.4cqw] w-[5.4cqw]"
-        fallbackForeground={channel.color}
-        fallbackBackground={channel.backgroundColor || "#111111"}
-        sizes="20px"
-      />
-      <span className="truncate">{channelName}</span>
+      {content}
+    </div>
+  );
+}
+
+function PresetInlineEditorChannel({
+  channelName,
+  channelThumbnailUrl,
+  foreground,
+  background,
+  fontFamily,
+  selected = false,
+  movementStyle,
+  onPointerDown,
+}: {
+  channelName: string;
+  channelThumbnailUrl: string | null;
+  foreground: string;
+  background: string;
+  fontFamily?: string;
+  selected?: boolean;
+  movementStyle?: CSSProperties;
+  onPointerDown?: PointerEventHandler<HTMLButtonElement>;
+}) {
+  const content = <>
+    <ChannelAvatar
+      url={channelThumbnailUrl}
+      className="mt-0.5 h-5 w-5"
+      fallbackForeground={foreground}
+      fallbackBackground={background}
+      sizes="20px"
+    />
+    <span className="max-w-[72%] truncate">{channelName}</span>
+  </>;
+  if (!onPointerDown) {
+    return <div className="flex items-start justify-center gap-2" style={{ fontFamily }}>{content}</div>;
+  }
+  return (
+    <button
+      type="button"
+      data-editor-overlay-layer="channel"
+      aria-label="채널명 오버레이 선택 및 이동"
+      aria-pressed={selected}
+      onPointerDown={onPointerDown}
+      className={`relative mx-auto flex w-fit cursor-move touch-none appearance-none items-start justify-center gap-2 border-0 bg-transparent p-0 text-inherit ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
+      style={{ ...movementStyle, fontFamily }}
+    >
+      {content}
+    </button>
+  );
+}
+
+function EditorFontPicker({
+  value,
+  onChange,
+}: {
+  value: EditorFontId;
+  onChange: (fontId: EditorFontId) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(() => Math.max(
+    0,
+    editorFontOptions.findIndex((font) => font.id === value),
+  ));
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const pickerId = useId();
+  const labelId = `${pickerId}-label`;
+  const listboxId = `${pickerId}-listbox`;
+  const selectedFont = editorFontOptions.find((font) => font.id === value)
+    || editorFontOptions[0];
+
+  const closePicker = (restoreTriggerFocus = false) => {
+    setOpen(false);
+    if (restoreTriggerFocus) {
+      window.requestAnimationFrame(() => triggerRef.current?.focus());
+    }
+  };
+
+  const focusOption = (index: number) => {
+    const nextIndex = (
+      index + editorFontOptions.length
+    ) % editorFontOptions.length;
+    setActiveIndex(nextIndex);
+    window.requestAnimationFrame(() => optionRefs.current[nextIndex]?.focus());
+  };
+
+  const openPicker = (index = editorFontOptions.findIndex(
+    (font) => font.id === value,
+  )) => {
+    const nextIndex = (
+      index + editorFontOptions.length
+    ) % editorFontOptions.length;
+    setOpen(true);
+    focusOption(nextIndex);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (event: globalThis.PointerEvent) => {
+      if (
+        event.target instanceof Node
+        && !rootRef.current?.contains(event.target)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener(
+      "pointerdown",
+      closeOnOutsidePointer,
+    );
+  }, [open]);
+
+  return (
+    <div className="editor-font-setting">
+      <span id={labelId}>폰트</span>
+      <div
+        ref={rootRef}
+        onBlur={(event) => {
+          if (
+            event.relatedTarget instanceof Node
+            && event.currentTarget.contains(event.relatedTarget)
+          ) {
+            return;
+          }
+          setOpen(false);
+        }}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Escape" && open) {
+            event.preventDefault();
+            closePicker(true);
+          }
+        }}
+      >
+        <button
+          ref={triggerRef}
+          type="button"
+          className="editor-font-picker-trigger"
+          aria-labelledby={labelId}
+          aria-haspopup="listbox"
+          aria-controls={listboxId}
+          aria-expanded={open}
+          onClick={() => {
+            if (open) {
+              closePicker();
+              return;
+            }
+            openPicker();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              const selectedIndex = editorFontOptions.findIndex(
+                (font) => font.id === value,
+              );
+              openPicker(selectedIndex + (event.key === "ArrowDown" ? 1 : -1));
+            }
+          }}
+          style={{ fontFamily: selectedFont.family }}
+        >
+          <span>{selectedFont.label}</span>
+          <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+            <path
+              d="m6 8 4 4 4-4"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+        {open && <div
+          id={listboxId}
+          role="listbox"
+          aria-labelledby={labelId}
+          className="editor-font-picker-menu"
+        >
+          {editorFontOptions.map((font, index) => (
+            <button
+              key={font.id}
+              ref={(element) => {
+                optionRefs.current[index] = element;
+              }}
+              type="button"
+              role="option"
+              aria-selected={font.id === value}
+              tabIndex={index === activeIndex ? 0 : -1}
+              onClick={() => {
+                onChange(font.id);
+                closePicker(true);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  focusOption(activeIndex + (
+                    event.key === "ArrowDown" ? 1 : -1
+                  ));
+                  return;
+                }
+                if (event.key === "Home" || event.key === "End") {
+                  event.preventDefault();
+                  focusOption(event.key === "Home"
+                    ? 0
+                    : editorFontOptions.length - 1);
+                }
+              }}
+              style={{ fontFamily: font.family }}
+            >
+              <span>{font.label}</span>
+              <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                <path
+                  d="m5 10 3 3 7-7"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          ))}
+        </div>}
+      </div>
     </div>
   );
 }
@@ -1084,6 +1555,156 @@ function ApplyEditConfirmDialog({
   );
 }
 
+function ResetTimelineConfirmDialog({
+  open,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onCancel, open]);
+
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[5px] sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <section
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="reset-timeline-confirm-title"
+        aria-describedby="reset-timeline-confirm-description"
+        className="relative w-full max-w-[440px] overflow-hidden rounded-[24px] border border-white/15 bg-[#202024] px-7 pb-8 pt-9 text-center shadow-[0_28px_90px_rgba(0,0,0,.7)] sm:px-9"
+      >
+        <div aria-hidden="true" className="relative mx-auto grid h-12 w-12 place-items-center rounded-full border border-white/15 bg-white/[.06] text-2xl text-white">↺</div>
+        <h2 id="reset-timeline-confirm-title" className="relative mt-5 text-2xl font-extrabold tracking-[-0.025em] text-white">
+          영상 구간을 초기화할까요?
+        </h2>
+        <p id="reset-timeline-confirm-description" className="relative mt-4 text-sm leading-6 text-white/65">
+          영상의 시작점과 종료점이 처음 편집기에 들어왔을 때의 구간으로 돌아갑니다. 오버레이 배치는 유지됩니다.
+        </p>
+        <div className="relative mt-8 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            autoFocus
+            onClick={onCancel}
+            className="min-h-12 rounded-xl border border-white/15 bg-white/[.04] px-4 py-3 text-sm font-bold text-white transition hover:bg-white/[.08]"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="min-h-12 rounded-xl bg-white px-4 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-100 active:scale-[.99]"
+          >
+            초기화
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function CommentRegenerationConfirmDialog({
+  open,
+  generating,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  generating: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !generating) onCancel();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [generating, onCancel, open]);
+
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[5px] sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !generating) onCancel();
+      }}
+    >
+      <section
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="comment-regeneration-confirm-title"
+        aria-describedby="comment-regeneration-confirm-description"
+        className="relative w-full max-w-[440px] overflow-hidden rounded-[24px] border border-white/15 bg-[#202024] px-7 pb-8 pt-9 text-center shadow-[0_28px_90px_rgba(0,0,0,.7)] sm:px-9"
+      >
+        <div aria-hidden="true" className="relative mx-auto grid h-12 w-12 place-items-center rounded-full border border-white/15 bg-white/[.06] text-white">
+          <svg viewBox="0 0 24 24" fill="none" className="h-7 w-7">
+            <path d="m12 3 1.25 4.2L17.5 8.5l-4.25 1.3L12 14l-1.25-4.2L6.5 8.5l4.25-1.3L12 3Z" fill="currentColor" />
+            <path d="m18.5 14 .7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3Z" fill="currentColor" opacity=".7" />
+          </svg>
+        </div>
+        <h2 id="comment-regeneration-confirm-title" className="relative mt-5 text-2xl font-extrabold tracking-[-0.025em] text-white">
+          AI로 댓글을 재생성할까요?
+        </h2>
+        <p id="comment-regeneration-confirm-description" className="relative mt-4 text-sm leading-6 text-white/70">
+          댓글 재생성은 사용량 1분을 소모합니다.
+        </p>
+        {error && <p role="alert" className="relative mt-3 rounded-xl border border-red-300/20 bg-red-400/[.07] px-4 py-3 text-sm leading-5 text-red-100">
+          {error}
+        </p>}
+        <div className="relative mt-8 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            autoFocus
+            disabled={generating}
+            onClick={onCancel}
+            className="min-h-12 rounded-xl border border-white/15 bg-white/[.04] px-4 py-3 text-sm font-bold text-white transition hover:bg-white/[.08] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            disabled={generating}
+            onClick={onConfirm}
+            className="min-h-12 rounded-xl bg-white px-4 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-100 active:scale-[.99] disabled:cursor-wait disabled:opacity-60"
+          >
+            {generating ? "댓글 생성 중..." : "확인"}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 type EditTimeline = {
   url: string;
   timelineStartSeconds: number;
@@ -1096,7 +1717,218 @@ type EditTimeline = {
   version: number;
 };
 
+type EditorHistoryAction =
+  | "overlay"
+  | "video"
+  | "comment-delete"
+  | "comment-replace"
+  | "copy";
+type EditorVideoCutHistory = {
+  past: EditorVideoClip[][];
+  future: EditorVideoClip[][];
+};
+type EditorCommentDeleteHistoryEntry = {
+  comment: CommentOverlay;
+  index: number;
+};
+type EditorCommentDeleteHistory = {
+  past: EditorCommentDeleteHistoryEntry[];
+  future: EditorCommentDeleteHistoryEntry[];
+};
+type EditorCommentReplaceHistoryEntry = {
+  before: CommentOverlay[];
+  after: CommentOverlay[];
+};
+type EditorCommentReplaceHistory = {
+  past: EditorCommentReplaceHistoryEntry[];
+  future: EditorCommentReplaceHistoryEntry[];
+};
+type EditorCopySnapshot = {
+  title: string;
+  titleTextStyles: TitleTextStyle[];
+  titleFontScale: number;
+  channel: string;
+  channelThumbnailUrl: string | null;
+  channelThumbnailAssetKey: string | null;
+};
+type EditorCopyHistoryEntry = {
+  before: EditorCopySnapshot;
+  after: EditorCopySnapshot;
+};
+type EditorCopyHistory = {
+  past: EditorCopyHistoryEntry[];
+  future: EditorCopyHistoryEntry[];
+};
+
+const cloneEditorVideoClips = (clips: EditorVideoClip[]) => (
+  clips.map((clip) => ({ ...clip }))
+);
+const cloneEditorCommentDeleteHistoryEntry = (
+  entry: EditorCommentDeleteHistoryEntry,
+) => ({
+  comment: { ...entry.comment },
+  index: entry.index,
+});
+const cloneEditorComments = (comments: CommentOverlay[]) => (
+  comments.map((comment) => ({ ...comment }))
+);
+const editorCommentsChanged = (
+  before: CommentOverlay[],
+  after: CommentOverlay[],
+) => (
+  before.length !== after.length
+  || before.some((comment, index) => {
+    const next = after[index];
+    return !next
+      || comment.id !== next.id
+      || comment.startSeconds !== next.startSeconds
+      || comment.endSeconds !== next.endSeconds
+      || comment.text !== next.text
+      || comment.initial !== next.initial
+      || comment.avatarColor !== next.avatarColor
+      || comment.nickname !== next.nickname
+      || comment.likeCount !== next.likeCount
+      || comment.ageLabel !== next.ageLabel;
+  })
+);
+const cloneEditorCommentReplaceHistoryEntry = (
+  entry: EditorCommentReplaceHistoryEntry,
+) => ({
+  before: cloneEditorComments(entry.before),
+  after: cloneEditorComments(entry.after),
+});
+const cloneEditorCopySnapshot = (
+  snapshot: EditorCopySnapshot,
+): EditorCopySnapshot => ({
+  title: snapshot.title,
+  titleTextStyles: snapshot.titleTextStyles.map((style) => ({ ...style })),
+  titleFontScale: snapshot.titleFontScale,
+  channel: snapshot.channel,
+  channelThumbnailUrl: snapshot.channelThumbnailUrl,
+  channelThumbnailAssetKey: snapshot.channelThumbnailAssetKey,
+});
+const cloneEditorCopyHistoryEntry = (
+  entry: EditorCopyHistoryEntry,
+): EditorCopyHistoryEntry => ({
+  before: cloneEditorCopySnapshot(entry.before),
+  after: cloneEditorCopySnapshot(entry.after),
+});
+const editorCopySnapshotsEqual = (
+  left: EditorCopySnapshot,
+  right: EditorCopySnapshot,
+) => (
+  left.title === right.title
+  && left.titleFontScale === right.titleFontScale
+  && left.channel === right.channel
+  && left.channelThumbnailUrl === right.channelThumbnailUrl
+  && left.channelThumbnailAssetKey === right.channelThumbnailAssetKey
+  && JSON.stringify(left.titleTextStyles) === JSON.stringify(right.titleTextStyles)
+);
+const editorCopyTitleChanged = (entry: EditorCopyHistoryEntry) => (
+  entry.before.title !== entry.after.title
+  || entry.before.titleFontScale !== entry.after.titleFontScale
+  || JSON.stringify(entry.before.titleTextStyles)
+    !== JSON.stringify(entry.after.titleTextStyles)
+);
+
 const TIMELINE_THUMBNAIL_COUNT = 12;
+const EDITOR_COMMENT_SNAP_THRESHOLD_PX = 3;
+const EDITOR_OVERLAY_SNAP_THRESHOLD_PX = 3;
+const EDITOR_VIDEO_SIZE_SNAP_THRESHOLD_PX = 12;
+const EDITOR_VIDEO_MIN_SCALE = 0.25;
+const EDITOR_VIDEO_MAX_SCALE = 2;
+const EDITOR_TEXT_LAYER_MIN_SCALE = 0.5;
+const EDITOR_TEXT_LAYER_MAX_SCALE = 2;
+const EDITOR_TEXT_OVERLAY_LIMIT = 20;
+type EditorOverlaySelection = EditorOverlayOrderItem | null;
+const EDITOR_OVERLAY_LABELS: Record<EditorOverlayLayer, string> = {
+  video: "영상",
+  title: "제목",
+  comment: "댓글",
+  channel: "채널명",
+};
+const editorTextSelection = (id: string): `text:${string}` => `text:${id}`;
+const isEditorTextSelection = (
+  selection: EditorOverlaySelection,
+): selection is `text:${string}` => selection?.startsWith("text:") === true;
+const selectedEditorTextId = (selection: EditorOverlaySelection) => (
+  isEditorTextSelection(selection) ? selection.slice("text:".length) : null
+);
+
+function EditorSidebarSectionIcon({
+  section,
+}: {
+  section: "title" | "comment" | "channel" | "background" | "template";
+}) {
+  if (section === "title") {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M4 5h12M10 5v10M7.3 15h5.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>;
+  }
+  if (section === "comment") {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M4.25 4.25h11.5v8.5H9l-3.75 3v-3h-1Z" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7 7.25h6M7 9.75h4" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" />
+    </svg>;
+  }
+  if (section === "channel") {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="10" cy="7" r="3" stroke="currentColor" strokeWidth="1.55" />
+      <path d="M4.5 16c.55-3 2.35-4.5 5.5-4.5s4.95 1.5 5.5 4.5" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" />
+    </svg>;
+  }
+  if (section === "background") {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="3" y="3.5" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.55" />
+      <circle cx="7" cy="7.5" r="1.35" fill="currentColor" />
+      <path d="m4.5 14 3.7-3.7 2.35 2.3 1.7-1.7 3.25 3.1" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>;
+  }
+  return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <rect x="3.25" y="3.25" width="13.5" height="13.5" rx="2" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M3.8 8h12.4M9 8v8.2" stroke="currentColor" strokeWidth="1.5" />
+  </svg>;
+}
+
+const EDITOR_SIDEBAR_TOOLS = [
+  { id: "title", label: "후킹 제목" },
+  { id: "comment", label: "댓글" },
+  { id: "channel", label: "채널명" },
+  { id: "background", label: "배경" },
+  { id: "template", label: "템플릿" },
+] as const;
+
+const EDITOR_VIDEO_RESIZE_HANDLES: ReadonlyArray<{
+  handle: EditorVideoResizeHandle;
+  label: string;
+  positionClassName: string;
+  cursorClassName: string;
+}> = [
+  {
+    handle: "top-left",
+    label: "영상 왼쪽 위 크기 조절",
+    positionClassName: "-left-1.5 -top-1.5",
+    cursorClassName: "cursor-nwse-resize",
+  },
+  {
+    handle: "top-right",
+    label: "영상 오른쪽 위 크기 조절",
+    positionClassName: "-right-1.5 -top-1.5",
+    cursorClassName: "cursor-nesw-resize",
+  },
+  {
+    handle: "bottom-left",
+    label: "영상 왼쪽 아래 크기 조절",
+    positionClassName: "-bottom-1.5 -left-1.5",
+    cursorClassName: "cursor-nesw-resize",
+  },
+  {
+    handle: "bottom-right",
+    label: "영상 오른쪽 아래 크기 조절",
+    positionClassName: "-bottom-1.5 -right-1.5",
+    cursorClassName: "cursor-nwse-resize",
+  },
+];
 
 function waitForVideoEvent(video: HTMLVideoElement, eventName: "loadedmetadata" | "seeked") {
   return new Promise<void>((resolve, reject) => {
@@ -1172,6 +2004,14 @@ function CommentTimelineEditor({
   onTextChange,
   onSeek,
   onDelete,
+  onSelect,
+  onDeselect,
+  onTextEditStart,
+  onTextEditEnd,
+  onRangeEditStart,
+  onRangeEditEnd,
+  active,
+  snapPointsSeconds = [],
   selectionLeftPercent = 0,
   selectionWidthPercent = 100,
 }: {
@@ -1182,13 +2022,19 @@ function CommentTimelineEditor({
   onTextChange: (id: string, text: string) => void;
   onSeek: (seconds: number) => void;
   onDelete: (id: string) => void;
+  onSelect: (id: string) => void;
+  onDeselect: () => void;
+  onTextEditStart: () => void;
+  onTextEditEnd: () => void;
+  onRangeEditStart: () => void;
+  onRangeEditEnd: () => void;
+  active: boolean;
+  snapPointsSeconds?: number[];
   selectionLeftPercent?: number;
   selectionWidthPercent?: number;
 }) {
   const orderedComments = [...comments].sort((left, right) => left.startSeconds - right.startSeconds);
-  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(
-    orderedComments[0]?.id || null,
-  );
+  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<CommentTimelineDrag | null>(null);
@@ -1203,13 +2049,24 @@ function CommentTimelineEditor({
   const editingLeft = Math.max(25, Math.min(75, editingMidpoint / safeDuration * 100));
 
   useEffect(() => {
+    if (!active) {
+      setSelectedCommentId(null);
+      setEditingCommentId(null);
+      return;
+    }
     if (selectedCommentId && !orderedComments.some((comment) => comment.id === selectedCommentId)) {
-      setSelectedCommentId(orderedComments[0]?.id || null);
+      setSelectedCommentId(null);
     }
     if (editingCommentId && !orderedComments.some((comment) => comment.id === editingCommentId)) {
       setEditingCommentId(null);
     }
-  }, [editingCommentId, orderedComments, selectedCommentId]);
+  }, [active, editingCommentId, orderedComments, selectedCommentId]);
+
+  const deselectComment = () => {
+    setSelectedCommentId(null);
+    setEditingCommentId(null);
+    onDeselect();
+  };
 
   const neighborBounds = (commentId: string) => {
     const index = orderedComments.findIndex((comment) => comment.id === commentId);
@@ -1226,12 +2083,20 @@ function CommentTimelineEditor({
     adjustment: TimedRangeAdjustment,
     deltaSeconds: number,
     bounds = neighborBounds(comment.id),
+    snapThresholdSeconds = 0,
   ) => {
-    const range = adjustTimedRange(
-      comment,
+    const range = snapTimedRangeHandle(
+      adjustTimedRange(
+        comment,
+        adjustment,
+        deltaSeconds,
+        safeDuration,
+        bounds.previousEndSeconds,
+        bounds.nextStartSeconds,
+      ),
       adjustment,
-      deltaSeconds,
-      safeDuration,
+      snapPointsSeconds,
+      snapThresholdSeconds,
       bounds.previousEndSeconds,
       bounds.nextStartSeconds,
     );
@@ -1246,6 +2111,8 @@ function CommentTimelineEditor({
   ) => {
     if (event.button !== 0 || !trackRef.current) return;
     const bounds = neighborBounds(comment.id);
+    onRangeEditStart();
+    onSelect(comment.id);
     setSelectedCommentId(comment.id);
     setEditingCommentId(null);
     dragRef.current = {
@@ -1274,11 +2141,18 @@ function CommentTimelineEditor({
     if (!active.moved && Math.abs(distance) < 2) return;
     active.moved = true;
     const deltaSeconds = distance / active.width * safeDuration;
-    const range = adjustTimedRange(
-      active.initialRange,
+    const range = snapTimedRangeHandle(
+      adjustTimedRange(
+        active.initialRange,
+        active.adjustment,
+        deltaSeconds,
+        safeDuration,
+        active.previousEndSeconds,
+        active.nextStartSeconds,
+      ),
       active.adjustment,
-      deltaSeconds,
-      safeDuration,
+      snapPointsSeconds,
+      safeDuration * TIMED_RANGE_SNAP_THRESHOLD_PX / active.width,
       active.previousEndSeconds,
       active.nextStartSeconds,
     );
@@ -1295,9 +2169,16 @@ function CommentTimelineEditor({
     if (active.captureTarget.hasPointerCapture(event.pointerId)) {
       active.captureTarget.releasePointerCapture(event.pointerId);
     }
+    onRangeEditEnd();
   };
 
-  return <section className="editor-comment-timeline-panel" aria-label="댓글 노출 구간 편집">
+  return <section
+    className="editor-comment-timeline-panel"
+    aria-label="댓글 노출 구간 편집"
+    onPointerDown={(event) => {
+      if (event.target === event.currentTarget) deselectComment();
+    }}
+  >
     <div
       className="editor-comment-selection-lane"
       style={{
@@ -1308,13 +2189,16 @@ function CommentTimelineEditor({
       <div
         ref={trackRef}
         className="editor-comment-timeline"
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) deselectComment();
+        }}
         onPointerMove={moveDrag}
         onPointerUp={finishDrag}
         onPointerCancel={finishDrag}
       >
       <div className="editor-comment-track-grid" aria-hidden="true" />
       {orderedComments.map((comment, index) => {
-        const selected = comment.id === selectedCommentId;
+        const selected = active && comment.id === selectedCommentId;
         const previewActive = comment.startSeconds <= currentSeconds
           && comment.endSeconds > currentSeconds;
         const left = Math.max(0, Math.min(100, comment.startSeconds / safeDuration * 100));
@@ -1325,6 +2209,7 @@ function CommentTimelineEditor({
         const bounds = neighborBounds(comment.id);
         return <div
           key={comment.id}
+          data-editor-comment-id={comment.id}
           className={`editor-comment-range${selected ? " is-selected" : ""}${previewActive ? " is-preview-active" : ""}`}
           style={{ left: `${left}%`, width: `${width}%` }}
         >
@@ -1339,20 +2224,29 @@ function CommentTimelineEditor({
             onPointerDown={(event) => startDrag(comment, "move", event)}
             onDoubleClick={(event) => {
               event.stopPropagation();
+              onTextEditStart();
+              onSelect(comment.id);
               setSelectedCommentId(comment.id);
               setEditingCommentId(comment.id);
               onSeek(comment.startSeconds);
             }}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
+                onTextEditStart();
+                onSelect(comment.id);
                 setSelectedCommentId(comment.id);
                 setEditingCommentId(comment.id);
                 onSeek(comment.startSeconds);
                 event.preventDefault();
+                event.stopPropagation();
               } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                onRangeEditStart();
+                onSelect(comment.id);
                 setSelectedCommentId(comment.id);
                 updateRange(comment, "move", event.key === "ArrowLeft" ? -0.1 : 0.1, bounds);
+                onRangeEditEnd();
                 event.preventDefault();
+                event.stopPropagation();
               }
             }}
           >
@@ -1366,8 +2260,12 @@ function CommentTimelineEditor({
               onPointerDown={(event) => startDrag(comment, "start", event)}
               onKeyDown={(event) => {
                 if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                onRangeEditStart();
+                onSelect(comment.id);
                 updateRange(comment, "start", event.key === "ArrowLeft" ? -0.1 : 0.1, bounds);
+                onRangeEditEnd();
                 event.preventDefault();
+                event.stopPropagation();
               }}
             />
             <button
@@ -1377,8 +2275,12 @@ function CommentTimelineEditor({
               onPointerDown={(event) => startDrag(comment, "end", event)}
               onKeyDown={(event) => {
                 if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                onRangeEditStart();
+                onSelect(comment.id);
                 updateRange(comment, "end", event.key === "ArrowLeft" ? -0.1 : 0.1, bounds);
+                onRangeEditEnd();
                 event.preventDefault();
+                event.stopPropagation();
               }}
             />
           </>}
@@ -1398,17 +2300,26 @@ function CommentTimelineEditor({
             maxLength={200}
             rows={3}
             onChange={(event) => onTextChange(editingComment.id, event.target.value)}
+            onBlur={onTextEditEnd}
             onKeyDown={(event) => {
-              if (event.key === "Escape") setEditingCommentId(null);
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === "Escape") {
+                onTextEditEnd();
+                setEditingCommentId(null);
+              }
             }}
           />
         </label>
         <div className="editor-comment-popover-actions">
           <button type="button" className="is-delete" onClick={() => {
+            onTextEditEnd();
             setEditingCommentId(null);
             onDelete(editingComment.id);
           }}>삭제</button>
-          <button type="button" onClick={() => setEditingCommentId(null)}>완료</button>
+          <button type="button" onClick={() => {
+            onTextEditEnd();
+            setEditingCommentId(null);
+          }}>완료</button>
         </div>
       </div>}
       </div>
@@ -1416,72 +2327,382 @@ function CommentTimelineEditor({
   </section>;
 }
 
-function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; paidAccessBlocked?: boolean }) {
-  const initialTemplate = templates.find((value) => value.id === item.templateId) || templates[0];
+function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; paidAccessBlocked?: boolean }) {
+  const savedEditorDocument = overlayPreviewEnabled
+    && item.editorDocument?.version === 2
+    ? item.editorDocument
+    : null;
+  const initialTemplateId = savedEditorDocument?.template.id || item.templateId;
+  const initialTemplate = templates.find(
+    (value) => value.id === initialTemplateId,
+  ) || templates[0];
   const [availableCustomTemplate] = useState<CustomTemplate | null>(() => editableCustomTemplate(item));
-  const initialTitleAspectRatio = item.templateId === "comment-capture" && item.videoAspectRatio === "9:16"
+  const initialVideoAspectRatio = savedEditorDocument?.video.aspectRatio
+    || item.videoAspectRatio;
+  const initialTitle = savedEditorDocument?.title.text || item.hookTitle;
+  const initialTitleAspectRatio = initialTemplateId === "comment-capture" && initialVideoAspectRatio === "9:16"
     ? "4:5"
-    : item.videoAspectRatio || "1:1";
-  const initialTitleTextStyles = item.titleTextStylesInitialized
-    ? item.titleTextStyles
+    : initialVideoAspectRatio || "1:1";
+  const initialTitleTextStyles = savedEditorDocument
+    ? savedEditorDocument.title.textStyles
+    : item.titleTextStylesInitialized
+      ? item.titleTextStyles
     : defaultTemplateTitleTextStyles(
-      item.hookTitle,
+      initialTitle,
       initialTitleAspectRatio,
       initialTemplate.background,
       initialTemplate.accentBackground,
-    );
-  const [title, setTitle] = useState(item.hookTitle);
+  );
+  const [title, setTitle] = useState(initialTitle);
   const [titleTextStyles, setTitleTextStyles] = useState<TitleTextStyle[]>(initialTitleTextStyles);
+  const titleRef = useRef(title);
+  const titleTextStylesRef = useRef(titleTextStyles);
   const [titleSelection, setTitleSelection] = useState<{ start: number; end: number } | null>(null);
   const [titleTextColor, setTitleTextColor] = useState(initialTitleTextStyles.find((style) => style.color)?.color || "#FFFFFF");
   const [titleBackgroundColor, setTitleBackgroundColor] = useState(initialTitleTextStyles.find((style) => style.backgroundColor)?.backgroundColor || "#E32626");
   const [showAllTextColors, setShowAllTextColors] = useState(false);
   const [showAllBackgroundColors, setShowAllBackgroundColors] = useState(false);
   const titleInputRef = useRef<HTMLTextAreaElement>(null);
-  const [channel, setChannel] = useState(item.channelDisplayName);
-  const [subtitlesEnabled, setSubtitlesEnabled] = useState(item.subtitlesEnabled);
-  const [segments, setSegments] = useState(item.subtitleSegments);
-  const [templateId, setTemplateId] = useState(item.templateId);
+  const [channel, setChannel] = useState(
+    savedEditorDocument?.channel.displayName || item.channelDisplayName,
+  );
+  const channelRef = useRef(channel);
+  const initialChannelThumbnailAssetKey = savedEditorDocument
+    ?.channel.thumbnailAssetKey || null;
+  const [editorChannelThumbnailUrl, setEditorChannelThumbnailUrl] = useState(
+    savedEditorDocument?.channel.thumbnailUrl
+      || (initialChannelThumbnailAssetKey
+        ? `/api/shorts/${item.id}/editor-channel-asset`
+        : channelThumbnailUrl),
+  );
+  const editorChannelThumbnailUrlRef = useRef(editorChannelThumbnailUrl);
+  const [
+    editorChannelThumbnailAssetKey,
+    setEditorChannelThumbnailAssetKey,
+  ] = useState<string | null>(initialChannelThumbnailAssetKey);
+  const editorChannelThumbnailAssetKeyRef = useRef(
+    editorChannelThumbnailAssetKey,
+  );
+  const editorChannelThumbnailObjectUrlsRef = useRef<Set<string>>(new Set());
+  const [editorChannelPresets, setEditorChannelPresets] = useState<
+    EditorChannelPreset[]
+  >([]);
+  const [channelPresetComposerOpen, setChannelPresetComposerOpen] = useState(false);
+  const [channelPresetDraftName, setChannelPresetDraftName] = useState("");
+  const [
+    channelPresetDraftImageDataUrl,
+    setChannelPresetDraftImageDataUrl,
+  ] = useState<string | null>(null);
+  const [channelPresetImageBusy, setChannelPresetImageBusy] = useState(false);
+  const [channelPresetError, setChannelPresetError] = useState<string | null>(null);
+  const [subtitlesEnabled, setSubtitlesEnabled] = useState(
+    savedEditorDocument?.subtitles.enabled ?? item.subtitlesEnabled,
+  );
+  const [segments, setSegments] = useState(
+    savedEditorDocument?.subtitles.segments || item.subtitleSegments,
+  );
+  const [templateId, setTemplateId] = useState(initialTemplateId);
   const [activeCustomTemplate, setActiveCustomTemplate] = useState<CustomTemplate | null>(
     availableCustomTemplate,
   );
   const [presetVersion, setPresetVersion] = useState(() => (
-    typeof item.templateSnapshot?.presetVersion === "number"
-      ? item.templateSnapshot.presetVersion
-      : 0
+    typeof savedEditorDocument?.template.presetVersion === "number"
+      ? savedEditorDocument.template.presetVersion
+      : typeof item.templateSnapshot?.presetVersion === "number"
+        ? item.templateSnapshot.presetVersion
+        : overlayPreviewEnabled
+          ? CURRENT_PRESET_TEMPLATE_SNAPSHOT.presetVersion
+          : 0
   ));
   const [templateSelectionTouched, setTemplateSelectionTouched] = useState(false);
+  const initialTemplateProvidesComments = initialTemplateId === "comment-capture"
+    && (!availableCustomTemplate || availableCustomTemplate.config.comment.visible);
   const [comments, setComments] = useState<CommentOverlay[]>(() => {
+    if (savedEditorDocument) {
+      return savedEditorDocument.comments.map((comment) => ({
+        ...comment,
+        likeCount: Math.max(COMMENT_LIKE_COUNT_MIN, comment.likeCount),
+      }));
+    }
+    if (!initialTemplateProvidesComments) return [];
     if (item.commentOverlays?.length) return item.commentOverlays.map((comment) => ({
       ...comment,
       likeCount: Math.max(COMMENT_LIKE_COUNT_MIN, comment.likeCount),
     }));
-    return item.templateId === "comment-capture" ? defaultComments(item.durationSeconds) : [];
+    return defaultComments(item.durationSeconds);
   });
-  const [titleFontScale, setTitleFontScale] = useState(item.titleFontScale || 1);
+  const commentsRef = useRef(comments);
+  const [titleFontScale, setTitleFontScale] = useState(
+    savedEditorDocument?.title.fontScale || item.titleFontScale || 1,
+  );
+  const titleFontScaleRef = useRef(titleFontScale);
   const [cleanVideoUrl, setCleanVideoUrl] = useState<string | null>(null);
   const [editTimeline, setEditTimeline] = useState<EditTimeline | null>(null);
-  const [selectionStart, setSelectionStart] = useState(item.startSeconds);
-  const [selectionEnd, setSelectionEnd] = useState(item.endSeconds);
+  const [selectionStart, setSelectionStart] = useState(
+    savedEditorDocument?.video.selectionStartSeconds ?? item.startSeconds,
+  );
+  const [selectionEnd, setSelectionEnd] = useState(
+    savedEditorDocument?.video.selectionEndSeconds ?? item.endSeconds,
+  );
   const [timelineThumbnails, setTimelineThumbnails] = useState<string[]>([]);
+  const [videoClips, setVideoClips] = useState<EditorVideoClip[]>([]);
+  const videoClipsRef = useRef<EditorVideoClip[]>([]);
+  const [videoSequenceTime, setVideoSequenceTime] = useState(0);
+  const videoSequenceTimeRef = useRef(0);
+  const activeVideoClipIndexRef = useRef(0);
+  const [selectedVideoClipId, setSelectedVideoClipId] = useState<string | null>(null);
+  const [videoRippleRevision, setVideoRippleRevision] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const editorPreviewPaneRef = useRef<HTMLElement>(null);
+  const editorCanvasRef = useRef<HTMLDivElement>(null);
   const filmstripRef = useRef<HTMLDivElement>(null);
   const activeRangeHandleRef = useRef<"start" | "end" | null>(null);
   const timelineScrubbingRef = useRef(false);
+  const overlayDragCleanupRef = useRef<(() => void) | null>(null);
+  const videoClipTrimCleanupRef = useRef<(() => void) | null>(null);
+  const [overlayLayout, setOverlayLayout] = useState(() => (
+    savedEditorDocument
+      ? cloneEditorOverlayLayout(savedEditorDocument.overlays)
+      : createInitialEditorOverlayLayout()
+  ));
+  const overlayLayoutRef = useRef(overlayLayout);
+  const overlayHistoryRef = useRef<EditorOverlayHistory>({
+    past: [],
+    future: [],
+  });
+  const videoCutHistoryRef = useRef<EditorVideoCutHistory>({
+    past: [],
+    future: [],
+  });
+  const commentDeleteHistoryRef = useRef<EditorCommentDeleteHistory>({
+    past: [],
+    future: [],
+  });
+  const commentReplaceHistoryRef = useRef<EditorCommentReplaceHistory>({
+    past: [],
+    future: [],
+  });
+  const copyHistoryRef = useRef<EditorCopyHistory>({
+    past: [],
+    future: [],
+  });
+  const editorHistoryOrderRef = useRef<{
+    past: EditorHistoryAction[];
+    future: EditorHistoryAction[];
+  }>({
+    past: [],
+    future: [],
+  });
+  const overlayInteractionStartRef = useRef<EditorOverlayLayoutSnapshot | null>(null);
+  const commentTextInteractionStartRef = useRef<CommentOverlay[] | null>(null);
+  const copyInteractionStartRef = useRef<EditorCopySnapshot | null>(null);
+  const [, setOverlayHistoryRevision] = useState(0);
+  const [selectedOverlay, setSelectedOverlay] = useState<EditorOverlaySelection>(
+    overlayPreviewEnabled ? null : "video",
+  );
+  const [inlineEditingOverlay, setInlineEditingOverlay] = useState<
+    "title" | `text:${string}` | null
+  >(null);
+  const [overlayGuides, setOverlayGuides] = useState<EditorOverlayGuides>(
+    EMPTY_EDITOR_OVERLAY_GUIDES,
+  );
   const [videoLoadError, setVideoLoadError] = useState(false);
   const [previewTime, setPreviewTime] = useState(0);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const editorSaveRequestIdRef = useRef<string | null>(null);
   const [applyConfirmationOpen, setApplyConfirmationOpen] = useState(false);
+  const [resetConfirmationOpen, setResetConfirmationOpen] = useState(false);
+  const [
+    commentRegenerationConfirmationOpen,
+    setCommentRegenerationConfirmationOpen,
+  ] = useState(false);
+  const [regeneratingComments, setRegeneratingComments] = useState(false);
+  const [commentRegenerationError, setCommentRegenerationError] = useState<
+    string | null
+  >(null);
+  const commentRegenerationRequestIdRef = useRef<string | null>(null);
+  const commentRegenerationInFlightRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(
+    () => !overlayPreviewEnabled,
+  );
+  const [activeEditorSidebarTool, setActiveEditorSidebarTool] = useState<
+    "title" | "comment" | "channel" | "background" | "template"
+  >("title");
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [mobileEditorBlocked, setMobileEditorBlocked] = useState<boolean | null>(
     standalone ? null : false,
   );
   const [editorGuideReady, setEditorGuideReady] = useState(false);
+  useEffect(() => {
+    commentsRef.current = comments;
+  }, [comments]);
+  useEffect(() => {
+    titleRef.current = title;
+  }, [title]);
+  useEffect(() => {
+    titleTextStylesRef.current = titleTextStyles;
+  }, [titleTextStyles]);
+  useEffect(() => {
+    channelRef.current = channel;
+  }, [channel]);
+  useEffect(() => {
+    editorChannelThumbnailUrlRef.current = editorChannelThumbnailUrl;
+  }, [editorChannelThumbnailUrl]);
+  useEffect(() => {
+    editorChannelThumbnailAssetKeyRef.current = editorChannelThumbnailAssetKey;
+  }, [editorChannelThumbnailAssetKey]);
+  useEffect(() => {
+    titleFontScaleRef.current = titleFontScale;
+  }, [titleFontScale]);
+  useEffect(() => {
+    if (selectedOverlay !== null) setSelectedVideoClipId(null);
+  }, [selectedOverlay]);
+  useEffect(() => {
+    if (!overlayPreviewEnabled || selectedOverlay !== "channel") return;
+    setActiveEditorSidebarTool("channel");
+    setDesktopSidebarOpen(true);
+  }, [overlayPreviewEnabled, selectedOverlay]);
+  useEffect(() => {
+    if (!overlayPreviewEnabled) return;
+    try {
+      setEditorChannelPresets(parseEditorChannelPresets(
+        window.localStorage.getItem(EDITOR_CHANNEL_PRESET_STORAGE_KEY),
+      ));
+    } catch {
+      setEditorChannelPresets([]);
+    }
+  }, [overlayPreviewEnabled]);
+  const toggleEditorSidebarTool = (
+    tool: "title" | "comment" | "channel" | "background" | "template",
+  ) => {
+    if (tool === "channel" && overlayLayoutRef.current.visible.channel) {
+      setInlineEditingOverlay(null);
+      setSelectedOverlay("channel");
+    }
+    if (activeEditorSidebarTool === tool) {
+      setDesktopSidebarOpen((current) => !current);
+      return;
+    }
+    setActiveEditorSidebarTool(tool);
+    setDesktopSidebarOpen(true);
+  };
+  const editorDocumentSnapshot = useMemo(() => createEditorDocumentSnapshot({
+    sourceShortId: item.id,
+    baseRenderVersion: item.renderVersion,
+    template: {
+      id: templateId,
+      customTemplateId: activeCustomTemplate?.id || null,
+      presetVersion,
+      snapshot: activeCustomTemplate
+        ? {
+            id: activeCustomTemplate.id,
+            name: activeCustomTemplate.name,
+            baseTemplateId: activeCustomTemplate.baseTemplateId,
+            config: activeCustomTemplate.config,
+            version: activeCustomTemplate.version,
+          }
+        : { presetVersion },
+    },
+    title: {
+      text: title,
+      textStyles: titleTextStyles,
+      fontScale: titleFontScale,
+    },
+    channel: {
+      displayName: channel,
+      thumbnailUrl: editorChannelThumbnailAssetKey
+        ? null
+        : editorChannelThumbnailUrl,
+      thumbnailAssetKey: editorChannelThumbnailAssetKey,
+    },
+    comments,
+    subtitles: {
+      enabled: subtitlesEnabled,
+      segments: (editTimeline?.subtitleSegments || segments).map(
+        (segment) => ({ ...segment }),
+      ),
+    },
+    overlays: overlayLayout,
+    video: {
+      clips: videoClips,
+      aspectRatio: item.videoAspectRatio || "1:1",
+      timelineStartSeconds: editTimeline?.timelineStartSeconds
+        ?? item.startSeconds,
+      timelineEndSeconds: editTimeline?.timelineEndSeconds
+        ?? item.endSeconds,
+      selectionStartSeconds: selectionStart,
+      selectionEndSeconds: selectionEnd,
+    },
+  }), [
+    activeCustomTemplate,
+    channel,
+    comments,
+    editorChannelThumbnailUrl,
+    editorChannelThumbnailAssetKey,
+    item.id,
+    item.endSeconds,
+    item.renderVersion,
+    item.startSeconds,
+    item.videoAspectRatio,
+    overlayLayout,
+    presetVersion,
+    selectionEnd,
+    selectionStart,
+    segments,
+    subtitlesEnabled,
+    templateId,
+    title,
+    titleFontScale,
+    titleTextStyles,
+    videoClips,
+    editTimeline?.subtitleSegments,
+    editTimeline?.timelineEndSeconds,
+    editTimeline?.timelineStartSeconds,
+  ]);
+  const renderOverlayLayout = editorDocumentSnapshot.overlays;
+  const renderComments = editorDocumentSnapshot.comments;
+  const renderTitle = editorDocumentSnapshot.title.text;
+  const renderTitleTextStyles = editorDocumentSnapshot.title.textStyles;
+  const renderTitleFontScale = editorDocumentSnapshot.title.fontScale;
+  const renderChannel = editorDocumentSnapshot.channel.displayName;
+  const renderChannelThumbnailUrl = editorDocumentSnapshot.channel.thumbnailUrl;
+  const renderVideoClips = editorDocumentSnapshot.video.clips;
+  const overlayOffsets = renderOverlayLayout.offsets;
+  const videoScale = renderOverlayLayout.scales.video;
+  const titleScale = renderOverlayLayout.scales.title;
+  const channelScale = renderOverlayLayout.scales.channel;
+  const titleFontId = renderOverlayLayout.fonts?.title || DEFAULT_EDITOR_FONT_ID;
+  const channelFontId = renderOverlayLayout.fonts?.channel || DEFAULT_EDITOR_FONT_ID;
+  const titleFontFamily = overlayPreviewEnabled
+    ? editorFontFamily(titleFontId)
+    : undefined;
+  const channelFontFamily = overlayPreviewEnabled
+    ? editorFontFamily(channelFontId)
+    : undefined;
+  const editorCommentTheme: EditorCommentTheme = renderOverlayLayout.commentTheme
+    || activeCustomTemplate?.config.comment.theme
+    || "dark";
+  const textOverlays = renderOverlayLayout.textOverlays;
+  const selectedTextOverlayId = selectedEditorTextId(selectedOverlay);
+  const selectedTextOverlay = selectedTextOverlayId
+    ? textOverlays.find((textOverlay) => textOverlay.id === selectedTextOverlayId) || null
+    : null;
   const validTitle = title.trim().length > 0 && title.length <= 80 && title.split("\n").length <= 2;
   const template = templates.find((value) => value.id === templateId) || templates[0];
+  const editorCanvasBackground = renderOverlayLayout.background;
+  const resolvedEditorCanvasBackground = editorCanvasBackground
+    ? editorCanvasBackgroundStyle(editorCanvasBackground)
+    : activeCustomTemplate
+      ? customTemplateBackground(activeCustomTemplate)
+      : { background: template.background };
+  const editorTemplateSurfaceBackground = editorCanvasBackground
+    ? editorCanvasBackground.kind === "color"
+      ? editorCanvasBackground.color
+      : "transparent"
+    : template.background;
   const originalAspectRatio = item.videoAspectRatio || "1:1";
   const commentNeedsVerticalFit = templateId === "comment-capture" && originalAspectRatio === "9:16";
   const presetCommentVersion = activeCustomTemplate ? 0 : presetVersion;
@@ -1494,23 +2715,77 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     usesLiftedCommentLayout,
   );
   const selectionDuration = Math.round((selectionEnd - selectionStart) * 1_000) / 1_000;
+  const videoCuttingEnabled = overlayPreviewEnabled
+    && Boolean(editTimeline)
+    && renderVideoClips.length > 0;
+  const videoSequenceDuration = editorVideoDuration(renderVideoClips);
   const timelineDuration = editTimeline
     ? Math.max(RANGE_EDIT_MIN_SECONDS, editTimeline.timelineEndSeconds - editTimeline.timelineStartSeconds)
     : RANGE_EDIT_MIN_SECONDS;
-  const selectionLeft = editTimeline
+  const sourceSelectionLeft = editTimeline
     ? Math.max(0, Math.min(100, (selectionStart - editTimeline.timelineStartSeconds) / timelineDuration * 100))
     : 0;
-  const selectionWidth = editTimeline
-    ? Math.max(0, Math.min(100 - selectionLeft, selectionDuration / timelineDuration * 100))
+  const sourceSelectionWidth = editTimeline
+    ? Math.max(0, Math.min(100 - sourceSelectionLeft, selectionDuration / timelineDuration * 100))
     : 0;
-  const playheadLeft = editTimeline
+  const videoOutputWidthPercent = videoCuttingEnabled
+    ? Math.max(
+        0,
+        Math.min(
+          100 - sourceSelectionLeft,
+          videoSequenceDuration / timelineDuration * 100,
+        ),
+      )
+    : sourceSelectionWidth;
+  const selectionLeft = sourceSelectionLeft;
+  const selectionWidth = videoCuttingEnabled
+    ? videoOutputWidthPercent
+    : sourceSelectionWidth;
+  const playheadLeft = videoCuttingEnabled
+    ? Math.max(
+        sourceSelectionLeft,
+        Math.min(
+          sourceSelectionLeft + videoOutputWidthPercent,
+          sourceSelectionLeft + videoSequenceTime / timelineDuration * 100,
+        ),
+      )
+    : editTimeline
     ? Math.max(0, Math.min(100, previewTime / timelineDuration * 100))
     : 0;
   const timelineSelectionOffset = editTimeline
     ? selectionStart - editTimeline.timelineStartSeconds
     : 0;
-  const relativePreviewTime = editTimeline ? previewTime - timelineSelectionOffset : previewTime;
-  const previewDuration = editTimeline ? selectionDuration : item.durationSeconds;
+  const relativePreviewTime = videoCuttingEnabled
+    ? videoSequenceTime
+    : editTimeline
+      ? previewTime - timelineSelectionOffset
+      : previewTime;
+  const previewDuration = videoCuttingEnabled
+    ? videoSequenceDuration
+    : editTimeline
+      ? selectionDuration
+      : item.durationSeconds;
+  const videoSplitSnapPoints = videoCuttingEnabled
+    ? renderVideoClips.slice(0, -1).map((_, clipIndex) => (
+        editorVideoDuration(renderVideoClips.slice(0, clipIndex + 1))
+      ))
+    : [];
+  const canSplitCurrentVideoClip = videoCuttingEnabled
+    && canSplitEditorVideoAtTime(renderVideoClips, videoSequenceTime);
+  const selectedVideoClipIndex = selectedVideoClipId
+    ? renderVideoClips.findIndex((clip) => clip.id === selectedVideoClipId)
+    : -1;
+  const selectedVideoClipOutputStart = selectedVideoClipIndex >= 0
+    ? renderVideoClips
+        .slice(0, selectedVideoClipIndex)
+        .reduce(
+          (duration, clip) => duration + editorVideoClipDuration(clip),
+          0,
+        )
+    : 0;
+  const selectedVideoClip = selectedVideoClipIndex >= 0
+    ? renderVideoClips[selectedVideoClipIndex]
+    : null;
   const displayedPreviewTime = Math.max(0, Math.min(previewDuration, relativePreviewTime));
   const previewSegments = editTimeline?.subtitleSegments || segments;
   const activeSubtitle = previewSegments.find((segment) => (
@@ -1519,8 +2794,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       : segment.start <= relativePreviewTime && segment.end > relativePreviewTime
   ))?.text;
   const commentsForPreview = editTimeline
-    ? scaleTimedRanges(comments, item.durationSeconds, selectionDuration)
-    : comments;
+    ? scaleTimedRanges(renderComments, item.durationSeconds, previewDuration)
+    : renderComments;
   const orderedCommentsForPreview = [...commentsForPreview].sort(
     (left, right) => left.startSeconds - right.startSeconds,
   );
@@ -1528,16 +2803,2161 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     comment.startSeconds <= relativePreviewTime
     && comment.endSeconds > relativePreviewTime
   )) || null;
+  const layoutPreviewComment = activeComment;
+  const commentOffsets = renderOverlayLayout.commentOffsets || {};
+  const activeCommentOffset = layoutPreviewComment
+    ? commentOffsets[layoutPreviewComment.id] || overlayOffsets.comment
+    : overlayOffsets.comment;
+  const canApplyActiveCommentPositionToAll = Boolean(
+    layoutPreviewComment
+    && renderComments.length > 1
+    && renderComments.some((comment) => {
+      const offset = commentOffsets[comment.id] || overlayOffsets.comment;
+      return offset.x !== activeCommentOffset.x || offset.y !== activeCommentOffset.y;
+    }),
+  );
   const orderedComments = [...comments].sort((left, right) => left.startSeconds - right.startSeconds);
-  const validComments = comments.length > 0
-    && comments.every((comment) => Number.isFinite(comment.startSeconds) && Number.isFinite(comment.endSeconds) && comment.startSeconds >= 0 && comment.endSeconds > comment.startSeconds && comment.endSeconds <= item.durationSeconds + 0.001 && comment.text.trim().length > 0)
+  const commentsAreValid = comments.every((comment) => Number.isFinite(comment.startSeconds) && Number.isFinite(comment.endSeconds) && comment.startSeconds >= 0 && comment.endSeconds > comment.startSeconds && comment.endSeconds <= item.durationSeconds + 0.001 && comment.text.trim().length > 0)
     && orderedComments.every((comment, index) => index === 0 || comment.startSeconds >= orderedComments[index - 1].endSeconds - 0.001);
-  const validSelection = !editTimeline || selectionDuration >= RANGE_EDIT_MIN_SECONDS;
-  const editorValid = validTitle && validSelection && (templateId === "comment-capture" ? validComments : channel.trim().length > 0);
-  const customTitleLines = wrapPreviewTitle(title);
+  const validComments = comments.length > 0 && commentsAreValid;
+  const validSelection = !editTimeline || previewDuration >= RANGE_EDIT_MIN_SECONDS;
+  const editorValid = overlayPreviewEnabled
+    ? validTitle
+      && validSelection
+      && channel.trim().length > 0
+      && commentsAreValid
+    : validTitle
+      && validSelection
+      && (templateId === "comment-capture"
+        ? validComments
+        : channel.trim().length > 0);
+  const customTitleLines = wrapPreviewTitle(renderTitle);
   const customCommentY = activeCustomTemplate
     ? customCommentLayerY(activeCustomTemplate.config)
     : 0;
+  const templateProvidesComments = templateId === "comment-capture"
+    && (!activeCustomTemplate || activeCustomTemplate.config.comment.visible);
+  const editorCommentOverlayEnabled = templateProvidesComments
+    || (overlayPreviewEnabled && comments.length > 0);
+  const commentOverlayMovable = editorCommentOverlayEnabled;
+  const channelOverlayMovable = !activeCustomTemplate
+    || activeCustomTemplate.config.channel.visible;
+  const titleOverlayMovable = !activeCustomTemplate
+    || activeCustomTemplate.config.title.visible;
+  const availableOverlayLayers = useMemo<EditorOverlayLayer[]>(() => [
+    "video",
+    ...(titleOverlayMovable ? ["title" as const] : []),
+    ...(commentOverlayMovable ? ["comment" as const] : []),
+    ...(channelOverlayMovable ? ["channel" as const] : []),
+  ], [
+    channelOverlayMovable,
+    commentOverlayMovable,
+    titleOverlayMovable,
+  ]);
+  const visibleEditorLayerOrder = renderOverlayLayout.layerOrder.filter((item) => {
+    if (isEditorTextSelection(item)) {
+      const textId = selectedEditorTextId(item);
+      return textOverlays.some((textOverlay) => textOverlay.id === textId);
+    }
+    return renderOverlayLayout.visible[item] && availableOverlayLayers.includes(item);
+  });
+  const selectedLayerOrderIndex = selectedOverlay === null
+    ? -1
+    : visibleEditorLayerOrder.indexOf(selectedOverlay);
+  const selectedLayerOrderLabel = selectedOverlay === null
+    ? null
+    : isEditorTextSelection(selectedOverlay)
+      ? "텍스트"
+      : EDITOR_OVERLAY_LABELS[selectedOverlay];
+  const canMoveSelectedLayerBackward = selectedLayerOrderIndex > 0;
+  const canMoveSelectedLayerForward = selectedLayerOrderIndex >= 0
+    && selectedLayerOrderIndex < visibleEditorLayerOrder.length - 1;
+  const scalableBaseOverlaySelection = selectedOverlay === "title"
+    || selectedOverlay === "channel"
+    ? selectedOverlay
+    : null;
+  const scalableOverlayScale = scalableBaseOverlaySelection === "title"
+    ? titleScale
+    : scalableBaseOverlaySelection === "channel"
+      ? channelScale
+      : selectedTextOverlay?.scale ?? null;
+  const scalableOverlayLabel = scalableBaseOverlaySelection
+    ? EDITOR_OVERLAY_LABELS[scalableBaseOverlaySelection]
+    : selectedTextOverlay
+      ? "텍스트"
+      : null;
+  const scalableOverlaySelection = scalableBaseOverlaySelection
+    || (selectedTextOverlay ? editorTextSelection(selectedTextOverlay.id) : null);
+  const activeTextOverlays = textOverlays.filter((textOverlay) => (
+    textOverlay.startSeconds <= displayedPreviewTime
+    && textOverlay.endSeconds > displayedPreviewTime
+  ));
+  const editorVideoBaseRect: CanvasRect = activeCustomTemplate
+    ? {
+        x: activeCustomTemplate.config.video.x,
+        y: activeCustomTemplate.config.video.y,
+        width: activeCustomTemplate.config.video.width,
+        height: activeCustomTemplate.config.video.height,
+      }
+    : {
+        x: 0,
+        y: editorLayout.videoTop * 19.2,
+        width: TEMPLATE_CANVAS.width,
+        height: editorLayout.videoHeight * 19.2,
+      };
+  const editorVideoRect: CanvasRect = {
+    x: editorVideoBaseRect.x
+      + overlayOffsets.video.x
+      - editorVideoBaseRect.width * (videoScale - 1) / 2,
+    y: editorVideoBaseRect.y
+      + overlayOffsets.video.y
+      - editorVideoBaseRect.height * (videoScale - 1) / 2,
+    width: editorVideoBaseRect.width * videoScale,
+    height: editorVideoBaseRect.height * videoScale,
+  };
+  const editorVideoBottom = editorVideoRect.y + editorVideoRect.height;
+  const editorOverlayZIndex = (item: EditorOverlayOrderItem) => {
+    const index = overlayLayout.layerOrder.indexOf(item);
+    return 10 + Math.max(0, index) * 10;
+  };
+  const overlayMovementStyle = (
+    layer: EditorOverlayLayer,
+    commentId?: string,
+  ): CSSProperties | undefined => {
+    if (!overlayPreviewEnabled) return undefined;
+    const offset = layer === "comment" && commentId
+      ? commentOffsets[commentId] || overlayOffsets.comment
+      : overlayOffsets[layer];
+    const scale = layer === "title"
+      ? titleScale
+      : layer === "channel"
+        ? channelScale
+        : null;
+    return {
+      zIndex: editorOverlayZIndex(layer),
+      translate: canvasOffsetTranslate(offset),
+      ...(scale === null
+        ? {}
+        : {
+            scale: String(scale),
+            transformOrigin: "center",
+          }),
+    };
+  };
+  const videoMovementStyle: CSSProperties | undefined = overlayPreviewEnabled
+    ? {
+        ...overlayMovementStyle("video"),
+        scale: String(videoScale),
+        transformOrigin: "center",
+      }
+    : undefined;
+
+  const updateEditorOverlayLayout = useCallback((
+    updater: (current: EditorOverlayLayoutSnapshot) => EditorOverlayLayoutSnapshot,
+  ) => {
+    const next = updater(overlayLayoutRef.current);
+    overlayLayoutRef.current = next;
+    setOverlayLayout(next);
+  }, []);
+
+  const applyEditorOverlayLayout = useCallback((
+    layout: EditorOverlayLayoutSnapshot,
+  ) => {
+    const next = cloneEditorOverlayLayout(layout);
+    overlayLayoutRef.current = next;
+    setOverlayLayout(next);
+    setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
+  }, []);
+
+  const recordEditorOverlayStep = useCallback((
+    before: EditorOverlayLayoutSnapshot,
+    after: EditorOverlayLayoutSnapshot,
+  ) => {
+    const nextHistory = recordEditorOverlayHistory(
+      overlayHistoryRef.current,
+      before,
+      after,
+    );
+    if (nextHistory === overlayHistoryRef.current) return;
+    overlayHistoryRef.current = nextHistory;
+    videoCutHistoryRef.current = {
+      ...videoCutHistoryRef.current,
+      future: [],
+    };
+    commentDeleteHistoryRef.current = {
+      ...commentDeleteHistoryRef.current,
+      future: [],
+    };
+    commentReplaceHistoryRef.current = {
+      ...commentReplaceHistoryRef.current,
+      future: [],
+    };
+    copyHistoryRef.current = {
+      ...copyHistoryRef.current,
+      future: [],
+    };
+    editorHistoryOrderRef.current = {
+      past: [
+        ...editorHistoryOrderRef.current.past,
+        "overlay" as const,
+      ].slice(-100),
+      future: [],
+    };
+    setOverlayHistoryRevision((current) => current + 1);
+  }, []);
+
+  const recordEditorVideoStep = useCallback((
+    before: EditorVideoClip[],
+    after: EditorVideoClip[],
+  ) => {
+    const clipsEqual = before.length === after.length
+      && before.every((clip, index) => {
+        const other = after[index];
+        return Boolean(
+          other
+          && clip.id === other.id
+          && clip.sourceStartSeconds === other.sourceStartSeconds
+          && clip.sourceEndSeconds === other.sourceEndSeconds,
+        );
+      });
+    if (clipsEqual) return;
+    videoCutHistoryRef.current = {
+      past: [
+        ...videoCutHistoryRef.current.past,
+        cloneEditorVideoClips(before),
+      ].slice(-100),
+      future: [],
+    };
+    overlayHistoryRef.current = {
+      ...overlayHistoryRef.current,
+      future: [],
+    };
+    commentDeleteHistoryRef.current = {
+      ...commentDeleteHistoryRef.current,
+      future: [],
+    };
+    commentReplaceHistoryRef.current = {
+      ...commentReplaceHistoryRef.current,
+      future: [],
+    };
+    copyHistoryRef.current = {
+      ...copyHistoryRef.current,
+      future: [],
+    };
+    editorHistoryOrderRef.current = {
+      past: [
+        ...editorHistoryOrderRef.current.past,
+        "video" as const,
+      ].slice(-100),
+      future: [],
+    };
+    setOverlayHistoryRevision((current) => current + 1);
+  }, []);
+
+  const recordEditorCommentDeletion = useCallback((
+    entry: EditorCommentDeleteHistoryEntry,
+  ) => {
+    commentDeleteHistoryRef.current = {
+      past: [
+        ...commentDeleteHistoryRef.current.past,
+        cloneEditorCommentDeleteHistoryEntry(entry),
+      ].slice(-100),
+      future: [],
+    };
+    overlayHistoryRef.current = {
+      ...overlayHistoryRef.current,
+      future: [],
+    };
+    videoCutHistoryRef.current = {
+      ...videoCutHistoryRef.current,
+      future: [],
+    };
+    commentReplaceHistoryRef.current = {
+      ...commentReplaceHistoryRef.current,
+      future: [],
+    };
+    copyHistoryRef.current = {
+      ...copyHistoryRef.current,
+      future: [],
+    };
+    editorHistoryOrderRef.current = {
+      past: [
+        ...editorHistoryOrderRef.current.past,
+        "comment-delete" as const,
+      ].slice(-100),
+      future: [],
+    };
+    setOverlayHistoryRevision((current) => current + 1);
+  }, []);
+
+  const recordEditorCommentReplacement = useCallback((
+    before: CommentOverlay[],
+    after: CommentOverlay[],
+  ) => {
+    if (!editorCommentsChanged(before, after)) return;
+    commentReplaceHistoryRef.current = {
+      past: [
+        ...commentReplaceHistoryRef.current.past,
+        cloneEditorCommentReplaceHistoryEntry({ before, after }),
+      ].slice(-100),
+      future: [],
+    };
+    overlayHistoryRef.current = {
+      ...overlayHistoryRef.current,
+      future: [],
+    };
+    videoCutHistoryRef.current = {
+      ...videoCutHistoryRef.current,
+      future: [],
+    };
+    commentDeleteHistoryRef.current = {
+      ...commentDeleteHistoryRef.current,
+      future: [],
+    };
+    copyHistoryRef.current = {
+      ...copyHistoryRef.current,
+      future: [],
+    };
+    editorHistoryOrderRef.current = {
+      past: [
+        ...editorHistoryOrderRef.current.past,
+        "comment-replace" as const,
+      ].slice(-100),
+      future: [],
+    };
+    setOverlayHistoryRevision((current) => current + 1);
+  }, []);
+
+  const currentEditorCopySnapshot = useCallback((): EditorCopySnapshot => ({
+    title: titleRef.current,
+    titleTextStyles: titleTextStylesRef.current.map((style) => ({ ...style })),
+    titleFontScale: titleFontScaleRef.current,
+    channel: channelRef.current,
+    channelThumbnailUrl: editorChannelThumbnailUrlRef.current,
+    channelThumbnailAssetKey: editorChannelThumbnailAssetKeyRef.current,
+  }), []);
+
+  const applyEditorCopySnapshot = useCallback((snapshot: EditorCopySnapshot) => {
+    const next = cloneEditorCopySnapshot(snapshot);
+    titleRef.current = next.title;
+    titleTextStylesRef.current = next.titleTextStyles;
+    titleFontScaleRef.current = next.titleFontScale;
+    channelRef.current = next.channel;
+    editorChannelThumbnailUrlRef.current = next.channelThumbnailUrl;
+    editorChannelThumbnailAssetKeyRef.current = next.channelThumbnailAssetKey;
+    setTitle(next.title);
+    setTitleTextStyles(next.titleTextStyles);
+    setTitleFontScale(next.titleFontScale);
+    setTitleTextColor(
+      next.titleTextStyles.find((style) => style.color)?.color || "#FFFFFF",
+    );
+    setTitleBackgroundColor(
+      next.titleTextStyles.find((style) => style.backgroundColor)
+        ?.backgroundColor || "#E32626",
+    );
+    setChannel(next.channel);
+    setEditorChannelThumbnailUrl(next.channelThumbnailUrl);
+    setEditorChannelThumbnailAssetKey(next.channelThumbnailAssetKey);
+    setTitleSelection(null);
+  }, []);
+
+  const recordEditorCopyChange = useCallback((
+    before: EditorCopySnapshot,
+    after: EditorCopySnapshot,
+  ) => {
+    if (editorCopySnapshotsEqual(before, after)) return;
+    copyHistoryRef.current = {
+      past: [
+        ...copyHistoryRef.current.past,
+        cloneEditorCopyHistoryEntry({ before, after }),
+      ].slice(-100),
+      future: [],
+    };
+    overlayHistoryRef.current = {
+      ...overlayHistoryRef.current,
+      future: [],
+    };
+    videoCutHistoryRef.current = {
+      ...videoCutHistoryRef.current,
+      future: [],
+    };
+    commentDeleteHistoryRef.current = {
+      ...commentDeleteHistoryRef.current,
+      future: [],
+    };
+    commentReplaceHistoryRef.current = {
+      ...commentReplaceHistoryRef.current,
+      future: [],
+    };
+    editorHistoryOrderRef.current = {
+      past: [
+        ...editorHistoryOrderRef.current.past,
+        "copy" as const,
+      ].slice(-100),
+      future: [],
+    };
+    setOverlayHistoryRevision((current) => current + 1);
+  }, []);
+
+  const beginEditorCommentTextInteraction = useCallback(() => {
+    if (!overlayPreviewEnabled || commentTextInteractionStartRef.current) return;
+    commentTextInteractionStartRef.current = cloneEditorComments(commentsRef.current);
+  }, [overlayPreviewEnabled]);
+
+  const finishEditorCommentTextInteraction = useCallback(() => {
+    const before = commentTextInteractionStartRef.current;
+    commentTextInteractionStartRef.current = null;
+    if (!before) return;
+    recordEditorCommentReplacement(before, commentsRef.current);
+  }, [recordEditorCommentReplacement]);
+
+  const beginEditorCopyInteraction = useCallback(() => {
+    if (!overlayPreviewEnabled || copyInteractionStartRef.current) return;
+    copyInteractionStartRef.current = currentEditorCopySnapshot();
+  }, [currentEditorCopySnapshot, overlayPreviewEnabled]);
+
+  const finishEditorCopyInteraction = useCallback(() => {
+    const before = copyInteractionStartRef.current;
+    copyInteractionStartRef.current = null;
+    if (!before) return;
+    recordEditorCopyChange(before, currentEditorCopySnapshot());
+  }, [currentEditorCopySnapshot, recordEditorCopyChange]);
+
+  const regenerateEditorComments = useCallback(async () => {
+    if (!overlayPreviewEnabled || commentRegenerationInFlightRef.current) return;
+    const before = cloneEditorComments(commentsRef.current);
+    if (before.length === 0) {
+      setCommentRegenerationError("재생성할 댓글을 먼저 추가해 주세요.");
+      return;
+    }
+
+    const requestId = commentRegenerationRequestIdRef.current
+      || globalThis.crypto.randomUUID();
+    commentRegenerationRequestIdRef.current = requestId;
+    commentRegenerationInFlightRef.current = true;
+    setRegeneratingComments(true);
+    setCommentRegenerationError(null);
+    try {
+      const result = await requestJson<{
+        comments: string[];
+        usage: UsageSnapshot;
+      }>(
+        `/api/shorts/${item.id}/regenerate-comments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            requestId,
+            commentCount: before.length,
+          }),
+        },
+        75_000,
+      );
+      if (
+        !Array.isArray(result.comments)
+        || result.comments.length !== before.length
+        || result.comments.some((comment) => (
+          typeof comment !== "string" || !comment.trim()
+        ))
+      ) {
+        throw new Error("생성된 댓글 개수가 현재 댓글 오버레이와 맞지 않습니다.");
+      }
+      const after = before.map((comment, index) => ({
+        ...comment,
+        text: result.comments[index].trim(),
+      }));
+      commentsRef.current = after;
+      setComments(after);
+      recordEditorCommentReplacement(before, after);
+      publishUsageSnapshot(result.usage);
+      setSelectedOverlay("comment");
+      setInlineEditingOverlay(null);
+      commentRegenerationRequestIdRef.current = null;
+      setCommentRegenerationConfirmationOpen(false);
+    } catch (cause) {
+      if (
+        cause instanceof HttpRequestError
+        && cause.code === "COMMENT_REGENERATION_FAILED"
+      ) {
+        commentRegenerationRequestIdRef.current = null;
+      }
+      setCommentRegenerationError(userFacingErrorMessage(
+        cause,
+        "댓글을 재생성하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      ));
+    } finally {
+      commentRegenerationInFlightRef.current = false;
+      setRegeneratingComments(false);
+    }
+  }, [
+    item.id,
+    overlayPreviewEnabled,
+    recordEditorCommentReplacement,
+  ]);
+
+  const beginEditorOverlayHistoryInteraction = useCallback(() => {
+    if (overlayInteractionStartRef.current) return;
+    overlayInteractionStartRef.current = cloneEditorOverlayLayout(
+      overlayLayoutRef.current,
+    );
+  }, []);
+
+  const finishEditorOverlayHistoryInteraction = useCallback(() => {
+    const before = overlayInteractionStartRef.current;
+    overlayInteractionStartRef.current = null;
+    if (!before) return;
+    recordEditorOverlayStep(before, overlayLayoutRef.current);
+  }, [recordEditorOverlayStep]);
+
+  const commitEditorOverlayLayoutChange = useCallback((
+    updater: (current: EditorOverlayLayoutSnapshot) => EditorOverlayLayoutSnapshot,
+  ) => {
+    const before = cloneEditorOverlayLayout(overlayLayoutRef.current);
+    const after = updater(before);
+    applyEditorOverlayLayout(after);
+    recordEditorOverlayStep(before, after);
+  }, [applyEditorOverlayLayout, recordEditorOverlayStep]);
+
+  const applyActiveCommentPositionToAll = useCallback(() => {
+    if (!layoutPreviewComment || commentsRef.current.length < 2) return;
+    const activeCommentId = layoutPreviewComment.id;
+    commitEditorOverlayLayoutChange((current) => {
+      const position = current.commentOffsets?.[activeCommentId]
+        || current.offsets.comment;
+      const nextCommentOffsets = {
+        ...(current.commentOffsets || {}),
+      };
+      commentsRef.current.forEach((comment) => {
+        nextCommentOffsets[comment.id] = { ...position };
+      });
+      return {
+        ...current,
+        offsets: {
+          ...current.offsets,
+          comment: { ...position },
+        },
+        commentOffsets: nextCommentOffsets,
+      };
+    });
+    setSelectedOverlay("comment");
+  }, [
+    commitEditorOverlayLayoutChange,
+    layoutPreviewComment,
+  ]);
+
+  const persistEditorChannelPresets = useCallback((
+    presets: EditorChannelPreset[],
+  ) => {
+    try {
+      window.localStorage.setItem(
+        EDITOR_CHANNEL_PRESET_STORAGE_KEY,
+        serializeEditorChannelPresets(presets),
+      );
+      setEditorChannelPresets(presets);
+      return true;
+    } catch {
+      setChannelPresetError(
+        "이 브라우저에 채널명을 저장하지 못했습니다. 저장 공간을 확인해 주세요.",
+      );
+      return false;
+    }
+  }, []);
+
+  const applyEditorChannelPreset = useCallback((
+    preset: EditorChannelPreset,
+  ) => {
+    const before = currentEditorCopySnapshot();
+    channelRef.current = preset.name;
+    editorChannelThumbnailUrlRef.current = preset.imageDataUrl;
+    editorChannelThumbnailAssetKeyRef.current = null;
+    setChannel(preset.name);
+    setEditorChannelThumbnailUrl(preset.imageDataUrl);
+    setEditorChannelThumbnailAssetKey(null);
+    recordEditorCopyChange(before, currentEditorCopySnapshot());
+    if (!overlayLayoutRef.current.visible.channel) {
+      commitEditorOverlayLayoutChange((current) => ({
+        ...current,
+        visible: {
+          ...current.visible,
+          channel: true,
+        },
+      }));
+    }
+    setInlineEditingOverlay(null);
+    setSelectedOverlay("channel");
+  }, [
+    commitEditorOverlayLayoutChange,
+    currentEditorCopySnapshot,
+    recordEditorCopyChange,
+  ]);
+
+  const updateChannelPresetDraftImage = useCallback(async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    setChannelPresetImageBusy(true);
+    setChannelPresetError(null);
+    try {
+      setChannelPresetDraftImageDataUrl(
+        await createEditorChannelPresetImageDataUrl(file),
+      );
+    } catch (cause) {
+      setChannelPresetError(userFacingErrorMessage(
+        cause,
+        "채널 이미지를 처리하지 못했습니다.",
+      ));
+    } finally {
+      setChannelPresetImageBusy(false);
+    }
+  }, []);
+
+  const saveEditorChannelPreset = useCallback(() => {
+    const name = channelPresetDraftName.trim();
+    if (!name) {
+      setChannelPresetError("채널명을 입력해 주세요.");
+      return;
+    }
+    if (!channelPresetDraftImageDataUrl) {
+      setChannelPresetError("채널 이미지를 선택해 주세요.");
+      return;
+    }
+    if (editorChannelPresets.length >= EDITOR_CHANNEL_PRESET_LIMIT) {
+      setChannelPresetError(`내 채널명은 최대 ${EDITOR_CHANNEL_PRESET_LIMIT}개까지 저장할 수 있습니다.`);
+      return;
+    }
+    const preset: EditorChannelPreset = {
+      id: globalThis.crypto.randomUUID(),
+      name,
+      imageDataUrl: channelPresetDraftImageDataUrl,
+    };
+    const nextPresets = [preset, ...editorChannelPresets];
+    if (!persistEditorChannelPresets(nextPresets)) return;
+    applyEditorChannelPreset(preset);
+    setChannelPresetDraftName("");
+    setChannelPresetDraftImageDataUrl(null);
+    setChannelPresetError(null);
+    setChannelPresetComposerOpen(false);
+  }, [
+    applyEditorChannelPreset,
+    channelPresetDraftImageDataUrl,
+    channelPresetDraftName,
+    editorChannelPresets,
+    persistEditorChannelPresets,
+  ]);
+
+  const deleteEditorChannelPreset = useCallback((presetId: string) => {
+    const nextPresets = editorChannelPresets.filter(
+      (preset) => preset.id !== presetId,
+    );
+    persistEditorChannelPresets(nextPresets);
+  }, [editorChannelPresets, persistEditorChannelPresets]);
+
+  const updateEditorChannelThumbnail = useCallback(async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || !file.type.startsWith("image/")) return;
+    const before = currentEditorCopySnapshot();
+    setChannelPresetImageBusy(true);
+    setChannelPresetError(null);
+    try {
+      const dataUrl = await createEditorChannelPresetImageDataUrl(file);
+      editorChannelThumbnailUrlRef.current = dataUrl;
+      editorChannelThumbnailAssetKeyRef.current = null;
+      setEditorChannelThumbnailUrl(dataUrl);
+      setEditorChannelThumbnailAssetKey(null);
+      recordEditorCopyChange(before, currentEditorCopySnapshot());
+    } catch (cause) {
+      setChannelPresetError(userFacingErrorMessage(
+        cause,
+        "채널 이미지를 처리하지 못했습니다.",
+      ));
+    } finally {
+      setChannelPresetImageBusy(false);
+    }
+  }, [currentEditorCopySnapshot, recordEditorCopyChange]);
+
+  useEffect(() => () => {
+    editorChannelThumbnailObjectUrlsRef.current.forEach((objectUrl) => {
+      URL.revokeObjectURL(objectUrl);
+    });
+    editorChannelThumbnailObjectUrlsRef.current.clear();
+  }, []);
+
+  const updateEditorTextOverlay = useCallback((
+    id: string,
+    updater: (current: EditorTextOverlay) => EditorTextOverlay,
+  ) => {
+    updateEditorOverlayLayout((current) => ({
+      ...current,
+      textOverlays: current.textOverlays.map((textOverlay) => (
+        textOverlay.id === id ? updater(textOverlay) : textOverlay
+      )),
+    }));
+  }, [updateEditorOverlayLayout]);
+
+  const beginEditorTitleInlineEdit = useCallback(() => {
+    if (!overlayPreviewEnabled) return;
+    overlayDragCleanupRef.current?.();
+    beginEditorCopyInteraction();
+    setSelectedOverlay("title");
+    setInlineEditingOverlay("title");
+  }, [beginEditorCopyInteraction, overlayPreviewEnabled]);
+
+  const updateEditorTitleInlineValue = useCallback((value: string) => {
+    const twoLines = value.split("\n").slice(0, 2).join("\n");
+    const nextTitle = Array.from(twoLines).slice(0, 80).join("");
+    titleRef.current = nextTitle;
+    titleTextStylesRef.current = [];
+    setTitle(nextTitle);
+    setTitleTextStyles(titleTextStylesRef.current);
+    setTitleSelection(null);
+  }, []);
+
+  const beginEditorTextInlineEdit = useCallback((id: string) => {
+    if (!overlayPreviewEnabled) return;
+    overlayDragCleanupRef.current?.();
+    beginEditorOverlayHistoryInteraction();
+    const selection = editorTextSelection(id);
+    setSelectedOverlay(selection);
+    setInlineEditingOverlay(selection);
+  }, [beginEditorOverlayHistoryInteraction, overlayPreviewEnabled]);
+
+  const updateEditorTextInlineValue = useCallback((
+    id: string,
+    value: string,
+  ) => {
+    updateEditorTextOverlay(id, (textOverlay) => ({
+      ...textOverlay,
+      text: value,
+    }));
+  }, [updateEditorTextOverlay]);
+
+  const finishEditorInlineEdit = useCallback(() => {
+    if (inlineEditingOverlay === "title") {
+      finishEditorCopyInteraction();
+    } else if (isEditorTextSelection(inlineEditingOverlay)) {
+      finishEditorOverlayHistoryInteraction();
+    }
+    setInlineEditingOverlay(null);
+  }, [
+    finishEditorCopyInteraction,
+    finishEditorOverlayHistoryInteraction,
+    inlineEditingOverlay,
+  ]);
+
+  const finishPendingEditorInteractions = useCallback(() => {
+    finishEditorCommentTextInteraction();
+    if (inlineEditingOverlay !== null) finishEditorInlineEdit();
+    finishEditorOverlayHistoryInteraction();
+    finishEditorCopyInteraction();
+  }, [
+    finishEditorCommentTextInteraction,
+    finishEditorCopyInteraction,
+    finishEditorInlineEdit,
+    finishEditorOverlayHistoryInteraction,
+    inlineEditingOverlay,
+  ]);
+
+  const clearEditorOverlaySelection = useCallback(() => {
+    finishPendingEditorInteractions();
+    setSelectedOverlay(null);
+    setSelectedVideoClipId(null);
+    setInlineEditingOverlay(null);
+    setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
+  }, [finishPendingEditorInteractions]);
+
+  const addEditorTextOverlay = useCallback(() => {
+    if (!overlayPreviewEnabled || overlayLayoutRef.current.textOverlays.length >= EDITOR_TEXT_OVERLAY_LIMIT) {
+      return;
+    }
+    const id = typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID()
+      : `local-${Date.now()}`;
+    const before = cloneEditorOverlayLayout(overlayLayoutRef.current);
+    const after = cloneEditorOverlayLayout(before);
+    const selection = editorTextSelection(id);
+    after.textOverlays.push(createEditorTextOverlay(id, previewDuration));
+    after.layerOrder.push(selection);
+    applyEditorOverlayLayout(after);
+    recordEditorOverlayStep(before, after);
+    setSelectedOverlay(selection);
+  }, [
+    applyEditorOverlayLayout,
+    overlayPreviewEnabled,
+    previewDuration,
+    recordEditorOverlayStep,
+  ]);
+
+  const deleteSelectedEditorOverlay = useCallback(() => {
+    if (
+      !overlayPreviewEnabled
+      || selectedOverlay === null
+      || selectedOverlay === "video"
+    ) {
+      return;
+    }
+    const before = cloneEditorOverlayLayout(overlayLayoutRef.current);
+    const after = cloneEditorOverlayLayout(before);
+    setInlineEditingOverlay(null);
+    if (isEditorTextSelection(selectedOverlay)) {
+      const textId = selectedEditorTextId(selectedOverlay);
+      after.textOverlays = after.textOverlays.filter(
+        (textOverlay) => textOverlay.id !== textId,
+      );
+      after.layerOrder = after.layerOrder.filter(
+        (item) => item !== selectedOverlay,
+      );
+    } else {
+      after.visible[selectedOverlay] = false;
+    }
+    applyEditorOverlayLayout(after);
+    recordEditorOverlayStep(before, after);
+    setSelectedOverlay(null);
+  }, [
+    applyEditorOverlayLayout,
+    overlayPreviewEnabled,
+    recordEditorOverlayStep,
+    selectedOverlay,
+  ]);
+
+  const deleteEditorComment = useCallback((id: string) => {
+    const current = commentsRef.current;
+    const commentIndex = current.findIndex((comment) => comment.id === id);
+    if (commentIndex < 0) return;
+    recordEditorCommentDeletion({
+      comment: current[commentIndex],
+      index: commentIndex,
+    });
+    const next = current.filter((comment) => comment.id !== id);
+    commentsRef.current = next;
+    setComments(next);
+    setSelectedOverlay(null);
+    setInlineEditingOverlay(null);
+  }, [recordEditorCommentDeletion]);
+
+  const seekEditorVideoSequence = useCallback((
+    outputSeconds: number,
+    pauseBeforeSeek = true,
+  ) => {
+    const clips = videoClipsRef.current;
+    const located = locateEditorVideoTime(clips, outputSeconds);
+    if (!located) return;
+    const video = videoRef.current;
+    if (pauseBeforeSeek) video?.pause();
+    activeVideoClipIndexRef.current = located.clipIndex;
+    videoSequenceTimeRef.current = located.outputSeconds;
+    setVideoSequenceTime(located.outputSeconds);
+    setPreviewTime(located.sourceSeconds);
+    if (video) video.currentTime = located.sourceSeconds;
+  }, []);
+
+  const applyEditorVideoClipsSnapshot = useCallback((
+    snapshot: EditorVideoClip[],
+  ) => {
+    if (!editTimeline || snapshot.length === 0) return;
+    const nextClips = cloneEditorVideoClips(snapshot);
+    const nextDuration = editorVideoDuration(nextClips);
+    const currentSelectedClipId = selectedVideoClipId;
+    const nextSelectedClipId = nextClips.some(
+      (clip) => clip.id === currentSelectedClipId,
+    )
+      ? currentSelectedClipId
+      : nextClips[0]?.id || null;
+    videoRef.current?.pause();
+    videoClipsRef.current = nextClips;
+    setVideoClips(nextClips);
+    setSelectionStart(
+      editTimeline.timelineStartSeconds + nextClips[0].sourceStartSeconds,
+    );
+    setSelectionEnd(
+      editTimeline.timelineStartSeconds
+        + nextClips[nextClips.length - 1].sourceEndSeconds,
+    );
+    setSelectedVideoClipId(nextSelectedClipId);
+    setSelectedOverlay(null);
+    setInlineEditingOverlay(null);
+    setVideoRippleRevision((current) => current + 1);
+    seekEditorVideoSequence(Math.min(
+      videoSequenceTimeRef.current,
+      Math.max(0, nextDuration - 0.001),
+    ));
+  }, [
+    editTimeline,
+    seekEditorVideoSequence,
+    selectedVideoClipId,
+  ]);
+
+  const splitCurrentEditorVideo = useCallback(() => {
+    if (!overlayPreviewEnabled || !editTimeline) return;
+    const clips = cloneEditorVideoClips(videoClipsRef.current);
+    const rightClipId = globalThis.crypto?.randomUUID
+      ? `video-clip-${globalThis.crypto.randomUUID()}`
+      : `video-clip-${Date.now()}`;
+    const result = splitEditorVideoAtTime(
+      clips,
+      videoSequenceTimeRef.current,
+      rightClipId,
+    );
+    if (!result) return;
+    videoRef.current?.pause();
+    recordEditorVideoStep(clips, result.clips);
+    videoClipsRef.current = result.clips;
+    setVideoClips(result.clips);
+    setSelectedVideoClipId(result.selectedClipId);
+    setSelectedOverlay(null);
+    setInlineEditingOverlay(null);
+  }, [
+    editTimeline,
+    overlayPreviewEnabled,
+    recordEditorVideoStep,
+  ]);
+
+  const beginEditorVideoClipTrim = useCallback((
+    clipId: string,
+    edge: "start" | "end",
+    event: PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (
+      !overlayPreviewEnabled
+      || !editTimeline
+      || event.button !== 0
+      || !filmstripRef.current
+    ) {
+      return;
+    }
+    const clips = cloneEditorVideoClips(videoClipsRef.current);
+    const clipIndex = clips.findIndex((clip) => clip.id === clipId);
+    const clip = clips[clipIndex];
+    if (!clip) return;
+    event.preventDefault();
+    event.stopPropagation();
+    videoClipTrimCleanupRef.current?.();
+    videoRef.current?.pause();
+    setSelectedVideoClipId(clipId);
+    setSelectedOverlay(null);
+    setInlineEditingOverlay(null);
+
+    const captureTarget = event.currentTarget;
+    const pointerId = event.pointerId;
+    const startClientX = event.clientX;
+    const trackWidth = filmstripRef.current.getBoundingClientRect().width;
+    const initialDuration = editorVideoDuration(clips);
+    const minimumSourceSeconds = clips[clipIndex - 1]?.sourceEndSeconds ?? 0;
+    const maximumSourceSeconds = clips[clipIndex + 1]?.sourceStartSeconds
+      ?? editTimeline.timelineEndSeconds - editTimeline.timelineStartSeconds;
+    captureTarget.setPointerCapture(pointerId);
+
+    const updateTrim = (clientX: number) => {
+      const deltaSeconds = (clientX - startClientX)
+        / Math.max(1, trackWidth)
+        * initialDuration;
+      const nextClip = edge === "start"
+        ? {
+            ...clip,
+            sourceStartSeconds: Math.max(
+              minimumSourceSeconds,
+              Math.min(
+                clip.sourceEndSeconds - EDITOR_VIDEO_MIN_CLIP_SECONDS,
+                clip.sourceStartSeconds + deltaSeconds,
+              ),
+            ),
+          }
+        : {
+            ...clip,
+            sourceEndSeconds: Math.max(
+              clip.sourceStartSeconds + EDITOR_VIDEO_MIN_CLIP_SECONDS,
+              Math.min(
+                maximumSourceSeconds,
+                clip.sourceEndSeconds + deltaSeconds,
+              ),
+            ),
+          };
+      const nextClips = clips.map((value, index) => (
+        index === clipIndex ? nextClip : value
+      ));
+      videoClipsRef.current = nextClips;
+      setVideoClips(nextClips);
+      if (clipIndex === 0) {
+        setSelectionStart(
+          editTimeline.timelineStartSeconds + nextClip.sourceStartSeconds,
+        );
+      }
+      if (clipIndex === nextClips.length - 1) {
+        setSelectionEnd(
+          editTimeline.timelineStartSeconds + nextClip.sourceEndSeconds,
+        );
+      }
+      const outputStartSeconds = nextClips
+        .slice(0, clipIndex)
+        .reduce(
+          (duration, value) => duration + editorVideoClipDuration(value),
+          0,
+        );
+      seekEditorVideoSequence(
+        edge === "start"
+          ? outputStartSeconds
+          : outputStartSeconds
+            + editorVideoClipDuration(nextClip)
+            - 0.001,
+      );
+    };
+    const move = (moveEvent: globalThis.PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      updateTrim(moveEvent.clientX);
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      videoClipTrimCleanupRef.current = null;
+    };
+    const finish = (finishEvent: globalThis.PointerEvent) => {
+      if (finishEvent.pointerId !== pointerId) return;
+      if (captureTarget.hasPointerCapture(pointerId)) {
+        captureTarget.releasePointerCapture(pointerId);
+      }
+      recordEditorVideoStep(clips, videoClipsRef.current);
+      cleanup();
+    };
+    videoClipTrimCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  }, [
+    editTimeline,
+    overlayPreviewEnabled,
+    recordEditorVideoStep,
+    seekEditorVideoSequence,
+  ]);
+
+  const deleteSelectedEditorVideoClip = useCallback(() => {
+    if (!overlayPreviewEnabled || !selectedVideoClipId) return;
+    const clipsBeforeDelete = cloneEditorVideoClips(videoClipsRef.current);
+    const result = deleteEditorVideoClip(
+      clipsBeforeDelete,
+      selectedVideoClipId,
+      RANGE_EDIT_MIN_SECONDS,
+    );
+    if (!result) return;
+    videoRef.current?.pause();
+    recordEditorVideoStep(clipsBeforeDelete, result.clips);
+    videoClipsRef.current = result.clips;
+    setVideoClips(result.clips);
+    setSelectedVideoClipId(result.selectedClipId);
+    setVideoRippleRevision((current) => current + 1);
+    const nextDuration = editorVideoDuration(result.clips);
+    seekEditorVideoSequence(Math.min(
+      result.removedOutputStartSeconds,
+      Math.max(0, nextDuration - 0.001),
+    ));
+  }, [
+    overlayPreviewEnabled,
+    recordEditorVideoStep,
+    seekEditorVideoSequence,
+    selectedVideoClipId,
+  ]);
+
+  const resetEditorVideoCuts = useCallback(() => {
+    if (!editTimeline) return;
+    const clipsBeforeReset = cloneEditorVideoClips(videoClipsRef.current);
+    const initialClips = createEditorVideoClips(
+      editTimeline.initialStartSeconds - editTimeline.timelineStartSeconds,
+      editTimeline.initialEndSeconds - editTimeline.timelineStartSeconds,
+    );
+    recordEditorVideoStep(clipsBeforeReset, initialClips);
+    setSelectionStart(editTimeline.initialStartSeconds);
+    setSelectionEnd(editTimeline.initialEndSeconds);
+    videoClipsRef.current = initialClips;
+    setVideoClips(initialClips);
+    setSelectedVideoClipId(initialClips[0]?.id || null);
+    setSelectedOverlay(null);
+    setVideoRippleRevision((current) => current + 1);
+    seekEditorVideoSequence(0);
+  }, [
+    editTimeline,
+    recordEditorVideoStep,
+    seekEditorVideoSequence,
+  ]);
+
+  const undoEditorEdit = useCallback(() => {
+    const historyOrder = editorHistoryOrderRef.current;
+    const action = historyOrder.past.at(-1);
+    if (!action) return;
+    if (action === "overlay") {
+      const result = undoEditorOverlayHistory(
+        overlayHistoryRef.current,
+        overlayLayoutRef.current,
+      );
+      if (!result.layout) return;
+      overlayHistoryRef.current = result.history;
+      applyEditorOverlayLayout(result.layout);
+    } else if (action === "video") {
+      const previousClips = videoCutHistoryRef.current.past.at(-1);
+      if (!previousClips) return;
+      videoCutHistoryRef.current = {
+        past: videoCutHistoryRef.current.past.slice(0, -1),
+        future: [
+          cloneEditorVideoClips(videoClipsRef.current),
+          ...videoCutHistoryRef.current.future,
+        ],
+      };
+      applyEditorVideoClipsSnapshot(previousClips);
+    } else if (action === "comment-delete") {
+      const deletedComment = commentDeleteHistoryRef.current.past.at(-1);
+      if (!deletedComment) return;
+      const nextComments = [...commentsRef.current];
+      if (!nextComments.some(
+        (comment) => comment.id === deletedComment.comment.id,
+      )) {
+        nextComments.splice(
+          Math.min(deletedComment.index, nextComments.length),
+          0,
+          { ...deletedComment.comment },
+        );
+      }
+      commentsRef.current = nextComments;
+      setComments(nextComments);
+      commentDeleteHistoryRef.current = {
+        past: commentDeleteHistoryRef.current.past.slice(0, -1),
+        future: [
+          cloneEditorCommentDeleteHistoryEntry(deletedComment),
+          ...commentDeleteHistoryRef.current.future,
+        ],
+      };
+      setSelectedOverlay("comment");
+      setInlineEditingOverlay(null);
+    } else if (action === "comment-replace") {
+      const replacement = commentReplaceHistoryRef.current.past.at(-1);
+      if (!replacement) return;
+      const previousComments = cloneEditorComments(replacement.before);
+      commentsRef.current = previousComments;
+      setComments(previousComments);
+      commentReplaceHistoryRef.current = {
+        past: commentReplaceHistoryRef.current.past.slice(0, -1),
+        future: [
+          cloneEditorCommentReplaceHistoryEntry(replacement),
+          ...commentReplaceHistoryRef.current.future,
+        ],
+      };
+      setSelectedOverlay("comment");
+      setInlineEditingOverlay(null);
+    } else {
+      const copyChange = copyHistoryRef.current.past.at(-1);
+      if (!copyChange) return;
+      applyEditorCopySnapshot(copyChange.before);
+      copyHistoryRef.current = {
+        past: copyHistoryRef.current.past.slice(0, -1),
+        future: [
+          cloneEditorCopyHistoryEntry(copyChange),
+          ...copyHistoryRef.current.future,
+        ],
+      };
+      setSelectedOverlay(
+        editorCopyTitleChanged(copyChange) ? "title" : "channel",
+      );
+      setInlineEditingOverlay(null);
+    }
+    editorHistoryOrderRef.current = {
+      past: historyOrder.past.slice(0, -1),
+      future: [action, ...historyOrder.future],
+    };
+    setOverlayHistoryRevision((current) => current + 1);
+  }, [
+    applyEditorCopySnapshot,
+    applyEditorOverlayLayout,
+    applyEditorVideoClipsSnapshot,
+  ]);
+
+  const redoEditorEdit = useCallback(() => {
+    const historyOrder = editorHistoryOrderRef.current;
+    const [action, ...futureActions] = historyOrder.future;
+    if (!action) return;
+    if (action === "overlay") {
+      const result = redoEditorOverlayHistory(
+        overlayHistoryRef.current,
+        overlayLayoutRef.current,
+      );
+      if (!result.layout) return;
+      overlayHistoryRef.current = result.history;
+      applyEditorOverlayLayout(result.layout);
+    } else if (action === "video") {
+      const [nextClips, ...futureClips] = videoCutHistoryRef.current.future;
+      if (!nextClips) return;
+      videoCutHistoryRef.current = {
+        past: [
+          ...videoCutHistoryRef.current.past,
+          cloneEditorVideoClips(videoClipsRef.current),
+        ],
+        future: futureClips,
+      };
+      applyEditorVideoClipsSnapshot(nextClips);
+    } else if (action === "comment-delete") {
+      const [deletedComment, ...futureComments] = commentDeleteHistoryRef.current.future;
+      if (!deletedComment) return;
+      const nextComments = commentsRef.current.filter(
+        (comment) => comment.id !== deletedComment.comment.id,
+      );
+      commentsRef.current = nextComments;
+      setComments(nextComments);
+      commentDeleteHistoryRef.current = {
+        past: [
+          ...commentDeleteHistoryRef.current.past,
+          cloneEditorCommentDeleteHistoryEntry(deletedComment),
+        ],
+        future: futureComments,
+      };
+      setSelectedOverlay(null);
+      setInlineEditingOverlay(null);
+    } else if (action === "comment-replace") {
+      const [replacement, ...futureReplacements] = commentReplaceHistoryRef.current.future;
+      if (!replacement) return;
+      const nextComments = cloneEditorComments(replacement.after);
+      commentsRef.current = nextComments;
+      setComments(nextComments);
+      commentReplaceHistoryRef.current = {
+        past: [
+          ...commentReplaceHistoryRef.current.past,
+          cloneEditorCommentReplaceHistoryEntry(replacement),
+        ],
+        future: futureReplacements,
+      };
+      setSelectedOverlay("comment");
+      setInlineEditingOverlay(null);
+    } else {
+      const [copyChange, ...futureCopyChanges] = copyHistoryRef.current.future;
+      if (!copyChange) return;
+      applyEditorCopySnapshot(copyChange.after);
+      copyHistoryRef.current = {
+        past: [
+          ...copyHistoryRef.current.past,
+          cloneEditorCopyHistoryEntry(copyChange),
+        ],
+        future: futureCopyChanges,
+      };
+      setSelectedOverlay(
+        editorCopyTitleChanged(copyChange) ? "title" : "channel",
+      );
+      setInlineEditingOverlay(null);
+    }
+    editorHistoryOrderRef.current = {
+      past: [...historyOrder.past, action],
+      future: futureActions,
+    };
+    setOverlayHistoryRevision((current) => current + 1);
+  }, [
+    applyEditorCopySnapshot,
+    applyEditorOverlayLayout,
+    applyEditorVideoClipsSnapshot,
+  ]);
+
+  const hasPendingOverlayHistoryChange = overlayInteractionStartRef.current !== null
+    && recordEditorOverlayHistory(
+      { past: [], future: [] },
+      overlayInteractionStartRef.current,
+      overlayLayoutRef.current,
+      1,
+    ).past.length > 0;
+  const hasPendingCommentTextChange = commentTextInteractionStartRef.current !== null
+    && editorCommentsChanged(
+      commentTextInteractionStartRef.current,
+      commentsRef.current,
+    );
+  const hasPendingCopyChange = copyInteractionStartRef.current !== null
+    && !editorCopySnapshotsEqual(
+      copyInteractionStartRef.current,
+      currentEditorCopySnapshot(),
+    );
+  const canUndoEditorEdit = editorHistoryOrderRef.current.past.length > 0
+    || hasPendingOverlayHistoryChange
+    || hasPendingCommentTextChange
+    || hasPendingCopyChange;
+  const canRedoEditorEdit = editorHistoryOrderRef.current.future.length > 0
+    && !hasPendingOverlayHistoryChange
+    && !hasPendingCommentTextChange
+    && !hasPendingCopyChange;
+
+  const resetEditorOverlayPositions = useCallback((
+    nextSelection: EditorOverlayLayer = "video",
+    historyMode: "record" | "clear" = "record",
+  ) => {
+    const before = cloneEditorOverlayLayout(overlayLayoutRef.current);
+    const initial = createInitialEditorOverlayLayout();
+    applyEditorOverlayLayout(initial);
+    if (historyMode === "record") {
+      recordEditorOverlayStep(before, initial);
+    } else {
+      overlayHistoryRef.current = { past: [], future: [] };
+      videoCutHistoryRef.current = {
+        ...videoCutHistoryRef.current,
+        future: [],
+      };
+      commentDeleteHistoryRef.current = {
+        past: [],
+        future: [],
+      };
+      commentReplaceHistoryRef.current = {
+        past: [],
+        future: [],
+      };
+      copyHistoryRef.current = {
+        past: [],
+        future: [],
+      };
+      editorHistoryOrderRef.current = {
+        past: editorHistoryOrderRef.current.past.filter(
+          (action) => action !== "overlay"
+            && action !== "comment-delete"
+            && action !== "comment-replace"
+            && action !== "copy",
+        ),
+        future: [],
+      };
+      setOverlayHistoryRevision((current) => current + 1);
+    }
+    setSelectedOverlay(nextSelection);
+  }, [applyEditorOverlayLayout, recordEditorOverlayStep]);
+
+  const setEditorCommentTheme = useCallback((theme: EditorCommentTheme) => {
+    setSelectedOverlay("comment");
+    commitEditorOverlayLayoutChange((current) => ({
+      ...current,
+      commentTheme: theme,
+    }));
+  }, [commitEditorOverlayLayoutChange]);
+
+  const moveSelectedEditorLayer = useCallback((
+    direction: "forward" | "backward",
+  ) => {
+    if (!overlayPreviewEnabled || selectedOverlay === null) return;
+    commitEditorOverlayLayoutChange((current) => ({
+      ...current,
+      layerOrder: moveEditorOverlayOrderItem(
+        current.layerOrder,
+        selectedOverlay,
+        direction,
+        visibleEditorLayerOrder,
+      ),
+    }));
+  }, [
+    commitEditorOverlayLayoutChange,
+    overlayPreviewEnabled,
+    selectedOverlay,
+    visibleEditorLayerOrder,
+  ]);
+
+  const setEditorCanvasBackground = useCallback((
+    background: EditorCanvasBackground | null,
+  ) => {
+    if (!overlayPreviewEnabled) return;
+    commitEditorOverlayLayoutChange((current) => ({
+      ...current,
+      background,
+    }));
+  }, [commitEditorOverlayLayoutChange, overlayPreviewEnabled]);
+
+  const setEditorOverlayScale = useCallback((
+    selection: "title" | "channel" | `text:${string}`,
+    scale: number,
+  ) => {
+    const nextScale = Math.min(
+      EDITOR_TEXT_LAYER_MAX_SCALE,
+      Math.max(EDITOR_TEXT_LAYER_MIN_SCALE, scale),
+    );
+    const textId = selectedEditorTextId(selection);
+    if (textId) {
+      updateEditorTextOverlay(textId, (textOverlay) => ({
+        ...textOverlay,
+        scale: nextScale,
+      }));
+      return;
+    }
+    updateEditorOverlayLayout((current) => ({
+      ...current,
+      scales: {
+        ...current.scales,
+        [selection]: nextScale,
+      },
+    }));
+  }, [updateEditorOverlayLayout, updateEditorTextOverlay]);
+
+  const beginEditorOverlayScaleDrag = useCallback((
+    selection: "title" | "channel" | `text:${string}`,
+    event: PointerEvent<HTMLInputElement>,
+  ) => {
+    if (!overlayPreviewEnabled || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    overlayDragCleanupRef.current?.();
+    finishPendingEditorInteractions();
+    beginEditorOverlayHistoryInteraction();
+
+    const captureTarget = event.currentTarget;
+    const pointerId = event.pointerId;
+    const bounds = captureTarget.getBoundingClientRect();
+    captureTarget.setPointerCapture(pointerId);
+    const updateScale = (clientY: number) => {
+      const ratio = Math.max(0, Math.min(
+        1,
+        1 - (clientY - bounds.top) / bounds.height,
+      ));
+      const minimumPercentage = EDITOR_TEXT_LAYER_MIN_SCALE * 100;
+      const percentageRange = (
+        EDITOR_TEXT_LAYER_MAX_SCALE - EDITOR_TEXT_LAYER_MIN_SCALE
+      ) * 100;
+      const percentage = Math.round((
+        minimumPercentage + ratio * percentageRange
+      ) / 5) * 5;
+      setEditorOverlayScale(selection, percentage / 100);
+    };
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      if (captureTarget.hasPointerCapture(pointerId)) {
+        captureTarget.releasePointerCapture(pointerId);
+      }
+      if (overlayDragCleanupRef.current === cleanup) {
+        overlayDragCleanupRef.current = null;
+      }
+    };
+    const move = (moveEvent: globalThis.PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      updateScale(moveEvent.clientY);
+    };
+    const finish = (finishEvent: globalThis.PointerEvent) => {
+      if (finishEvent.pointerId !== pointerId) return;
+      updateScale(finishEvent.clientY);
+      cleanup();
+      finishEditorOverlayHistoryInteraction();
+    };
+    updateScale(event.clientY);
+    overlayDragCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  }, [
+    beginEditorOverlayHistoryInteraction,
+    finishEditorOverlayHistoryInteraction,
+    finishPendingEditorInteractions,
+    overlayPreviewEnabled,
+    setEditorOverlayScale,
+  ]);
+
+  const resolveEditorOverlayDelta = useCallback(({
+    layer,
+    layerRect,
+    rawDelta,
+    canvasRect,
+    videoBottom,
+    snapTargetRects = [],
+  }: {
+    layer: EditorOverlayLayer;
+    layerRect: CanvasRect;
+    rawDelta: CanvasPoint;
+    canvasRect: CanvasRect;
+    videoBottom?: number;
+    snapTargetRects?: CanvasRect[];
+  }): { delta: CanvasPoint; guides: EditorOverlayGuides } => {
+    if (layer === "comment") {
+      const clamped = clampCanvasDelta(layerRect, rawDelta, "vertical");
+      const snapped = snapCommentToVideoBottom(
+        layerRect,
+        clamped.y,
+        videoBottom ?? -1,
+        clientDistanceToCanvas(
+          EDITOR_COMMENT_SNAP_THRESHOLD_PX,
+          canvasRect.width,
+        ),
+      );
+      return {
+        delta: clampCanvasDelta(
+          layerRect,
+          { x: 0, y: snapped.deltaY },
+          "vertical",
+        ),
+        guides: {
+          ...EMPTY_EDITOR_OVERLAY_GUIDES,
+          commentDocked: snapped.snapped,
+        },
+      };
+    }
+
+    const clamped = clampCanvasDelta(layerRect, rawDelta);
+    const centerSnapped = layer === "video"
+      ? {
+          delta: clamped,
+          guides: { x: false, y: false },
+        }
+      : snapRectCenterToCanvas(
+          layerRect,
+          clamped,
+          clientDistanceToCanvas(CENTER_SNAP_THRESHOLD_PX, canvasRect.width),
+        );
+    const overlaySnapped = layer === "video"
+      ? snapRectToOverlayRects(
+          layerRect,
+          clamped,
+          snapTargetRects,
+          clientDistanceToCanvas(
+            EDITOR_OVERLAY_SNAP_THRESHOLD_PX,
+            canvasRect.width,
+          ),
+        )
+      : {
+          delta: clamped,
+          guides: { overlayX: null, overlayY: null },
+        };
+    const snappedDelta = {
+      x: overlaySnapped.guides.overlayX === null
+        ? centerSnapped.delta.x
+        : overlaySnapped.delta.x,
+      y: overlaySnapped.guides.overlayY === null
+        ? centerSnapped.delta.y
+        : overlaySnapped.delta.y,
+    };
+    return {
+      delta: clampCanvasDelta(layerRect, snappedDelta),
+      guides: {
+        ...EMPTY_EDITOR_OVERLAY_GUIDES,
+        x: overlaySnapped.guides.overlayX === null && centerSnapped.guides.x,
+        y: overlaySnapped.guides.overlayY === null && centerSnapped.guides.y,
+        ...overlaySnapped.guides,
+      },
+    };
+  }, []);
+
+  const beginEditorOverlayDrag = useCallback((
+    layer: EditorOverlayLayer,
+    event: PointerEvent<HTMLElement>,
+    commentId?: string,
+  ) => {
+    if (!overlayPreviewEnabled || event.button !== 0) return;
+    const canvas = editorCanvasRef.current;
+    if (!canvas) return;
+    event.preventDefault();
+    event.stopPropagation();
+    overlayDragCleanupRef.current?.();
+    finishPendingEditorInteractions();
+    beginEditorOverlayHistoryInteraction();
+    setSelectedOverlay(layer);
+    setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
+    if (layer === "comment") videoRef.current?.pause();
+
+    const captureTarget = event.currentTarget;
+    const pointerId = event.pointerId;
+    captureTarget.setPointerCapture(pointerId);
+    const canvasClientRect = canvas.getBoundingClientRect();
+    const layerClientRect = captureTarget.getBoundingClientRect();
+    const canvasRect: CanvasRect = {
+      x: canvasClientRect.x,
+      y: canvasClientRect.y,
+      width: canvasClientRect.width,
+      height: canvasClientRect.height,
+    };
+    const layerRect = clientRectToCanvas({
+      x: layerClientRect.x,
+      y: layerClientRect.y,
+      width: layerClientRect.width,
+      height: layerClientRect.height,
+    }, canvasRect);
+    const videoElement = canvas.querySelector<HTMLElement>(
+      '[data-editor-overlay-layer="video"]',
+    );
+    const videoClientRect = videoElement?.getBoundingClientRect();
+    const videoRect = videoClientRect
+      ? clientRectToCanvas({
+          x: videoClientRect.x,
+          y: videoClientRect.y,
+          width: videoClientRect.width,
+          height: videoClientRect.height,
+        }, canvasRect)
+      : null;
+    const videoBottom = videoRect ? videoRect.y + videoRect.height : undefined;
+    const snapTargetRects = layer === "video"
+      ? Array.from(canvas.querySelectorAll<HTMLElement>(
+          '[data-editor-overlay-layer="comment"]',
+        )).flatMap((targetElement) => {
+          const targetClientRect = targetElement.getBoundingClientRect();
+          if (targetClientRect.width <= 0 || targetClientRect.height <= 0) {
+            return [];
+          }
+          return [clientRectToCanvas({
+            x: targetClientRect.x,
+            y: targetClientRect.y,
+            width: targetClientRect.width,
+            height: targetClientRect.height,
+          }, canvasRect)];
+        })
+      : [];
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
+    const startOffset = layer === "comment" && commentId
+      ? overlayLayoutRef.current.commentOffsets?.[commentId]
+        || overlayLayoutRef.current.offsets.comment
+      : overlayLayoutRef.current.offsets[layer];
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      if (captureTarget.hasPointerCapture(pointerId)) {
+        captureTarget.releasePointerCapture(pointerId);
+      }
+      if (overlayDragCleanupRef.current === cleanup) {
+        overlayDragCleanupRef.current = null;
+      }
+    };
+    const move = (moveEvent: globalThis.PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const rawDelta = clientDeltaToCanvas({
+        x: moveEvent.clientX - startClientX,
+        y: moveEvent.clientY - startClientY,
+      }, canvasRect);
+      const resolved = resolveEditorOverlayDelta({
+        layer,
+        layerRect,
+        rawDelta,
+        canvasRect,
+        videoBottom,
+        snapTargetRects,
+      });
+      updateEditorOverlayLayout((current) => {
+        const nextOffset = {
+          x: layer === "comment" ? 0 : startOffset.x + resolved.delta.x,
+          y: startOffset.y + resolved.delta.y,
+        };
+        if (layer === "comment" && commentId) {
+          return {
+            ...current,
+            commentOffsets: {
+              ...(current.commentOffsets || {}),
+              [commentId]: nextOffset,
+            },
+          };
+        }
+        return {
+          ...current,
+          offsets: {
+            ...current.offsets,
+            [layer]: nextOffset,
+          },
+        };
+      });
+      setOverlayGuides(resolved.guides);
+    };
+    const finish = (finishEvent: globalThis.PointerEvent) => {
+      if (finishEvent.pointerId !== pointerId) return;
+      cleanup();
+      setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
+      finishEditorOverlayHistoryInteraction();
+    };
+    overlayDragCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  }, [
+    beginEditorOverlayHistoryInteraction,
+    finishEditorOverlayHistoryInteraction,
+    finishPendingEditorInteractions,
+    overlayPreviewEnabled,
+    resolveEditorOverlayDelta,
+    updateEditorOverlayLayout,
+  ]);
+
+  const beginEditorTextOverlayDrag = useCallback((
+    id: string,
+    event: PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (!overlayPreviewEnabled || event.button !== 0) return;
+    const canvas = editorCanvasRef.current;
+    const textOverlay = overlayLayoutRef.current.textOverlays.find(
+      (value) => value.id === id,
+    );
+    if (!canvas || !textOverlay) return;
+    event.preventDefault();
+    event.stopPropagation();
+    overlayDragCleanupRef.current?.();
+    beginEditorOverlayHistoryInteraction();
+    setSelectedOverlay(editorTextSelection(id));
+    setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
+
+    const captureTarget = event.currentTarget;
+    const pointerId = event.pointerId;
+    captureTarget.setPointerCapture(pointerId);
+    const canvasClientRect = canvas.getBoundingClientRect();
+    const layerClientRect = captureTarget.getBoundingClientRect();
+    const canvasRect: CanvasRect = {
+      x: canvasClientRect.x,
+      y: canvasClientRect.y,
+      width: canvasClientRect.width,
+      height: canvasClientRect.height,
+    };
+    const layerRect = clientRectToCanvas({
+      x: layerClientRect.x,
+      y: layerClientRect.y,
+      width: layerClientRect.width,
+      height: layerClientRect.height,
+    }, canvasRect);
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
+    const startOffset = textOverlay.offset;
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      if (captureTarget.hasPointerCapture(pointerId)) {
+        captureTarget.releasePointerCapture(pointerId);
+      }
+      if (overlayDragCleanupRef.current === cleanup) {
+        overlayDragCleanupRef.current = null;
+      }
+    };
+    const move = (moveEvent: globalThis.PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const rawDelta = clientDeltaToCanvas({
+        x: moveEvent.clientX - startClientX,
+        y: moveEvent.clientY - startClientY,
+      }, canvasRect);
+      const resolved = resolveEditorOverlayDelta({
+        layer: "title",
+        layerRect,
+        rawDelta,
+        canvasRect,
+      });
+      updateEditorTextOverlay(id, (current) => ({
+        ...current,
+        offset: {
+          x: startOffset.x + resolved.delta.x,
+          y: startOffset.y + resolved.delta.y,
+        },
+      }));
+      setOverlayGuides(resolved.guides);
+    };
+    const finish = (finishEvent: globalThis.PointerEvent) => {
+      if (finishEvent.pointerId !== pointerId) return;
+      cleanup();
+      setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
+      finishEditorOverlayHistoryInteraction();
+    };
+    overlayDragCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  }, [
+    beginEditorOverlayHistoryInteraction,
+    finishEditorOverlayHistoryInteraction,
+    overlayPreviewEnabled,
+    resolveEditorOverlayDelta,
+    updateEditorTextOverlay,
+  ]);
+
+  const beginEditorTextOverlayResize = useCallback((
+    id: string,
+    edge: EditorTextResizeEdge,
+    event: PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (!overlayPreviewEnabled || event.button !== 0) return;
+    const canvas = editorCanvasRef.current;
+    const textOverlay = overlayLayoutRef.current.textOverlays.find(
+      (value) => value.id === id,
+    );
+    if (!canvas || !textOverlay) return;
+    event.preventDefault();
+    event.stopPropagation();
+    overlayDragCleanupRef.current?.();
+    beginEditorOverlayHistoryInteraction();
+    setSelectedOverlay(editorTextSelection(id));
+    setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
+
+    const captureTarget = event.currentTarget;
+    const pointerId = event.pointerId;
+    const startClientX = event.clientX;
+    const startWidth = textOverlay.width ?? EDITOR_TEXT_DEFAULT_WIDTH;
+    const startOffsetX = textOverlay.offset.x;
+    const startScale = Math.max(0.01, textOverlay.scale);
+    const canvasClientRect = canvas.getBoundingClientRect();
+    const canvasRect = {
+      width: canvasClientRect.width,
+      height: canvasClientRect.height,
+    };
+    captureTarget.setPointerCapture(pointerId);
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      if (captureTarget.hasPointerCapture(pointerId)) {
+        captureTarget.releasePointerCapture(pointerId);
+      }
+      if (overlayDragCleanupRef.current === cleanup) {
+        overlayDragCleanupRef.current = null;
+      }
+    };
+    const updateWidth = (clientX: number) => {
+      const deltaX = clientDeltaToCanvas({
+        x: clientX - startClientX,
+        y: 0,
+      }, canvasRect).x / startScale;
+      const resized = resizeEditorTextOverlayWidth({
+        width: startWidth,
+        offsetX: startOffsetX,
+        deltaX,
+        edge,
+      });
+      updateEditorTextOverlay(id, (current) => ({
+        ...current,
+        width: resized.width,
+        offset: {
+          ...current.offset,
+          x: resized.offsetX,
+        },
+      }));
+    };
+    const move = (moveEvent: globalThis.PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      moveEvent.preventDefault();
+      updateWidth(moveEvent.clientX);
+    };
+    const finish = (finishEvent: globalThis.PointerEvent) => {
+      if (finishEvent.pointerId !== pointerId) return;
+      updateWidth(finishEvent.clientX);
+      cleanup();
+      finishEditorOverlayHistoryInteraction();
+    };
+    overlayDragCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  }, [
+    beginEditorOverlayHistoryInteraction,
+    finishEditorOverlayHistoryInteraction,
+    overlayPreviewEnabled,
+    updateEditorTextOverlay,
+  ]);
+
+  const beginEditorVideoResize = useCallback((
+    handle: EditorVideoResizeHandle,
+    event: PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (!overlayPreviewEnabled || event.button !== 0) return;
+    const canvas = editorCanvasRef.current;
+    const videoElement = canvas?.querySelector<HTMLElement>(
+      '[data-editor-overlay-layer="video"]',
+    );
+    if (!canvas || !videoElement) return;
+    event.preventDefault();
+    event.stopPropagation();
+    overlayDragCleanupRef.current?.();
+    beginEditorOverlayHistoryInteraction();
+    setSelectedOverlay("video");
+    setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
+
+    const captureTarget = event.currentTarget;
+    const pointerId = event.pointerId;
+    captureTarget.setPointerCapture(pointerId);
+    const canvasClientRect = canvas.getBoundingClientRect();
+    const videoClientRect = videoElement.getBoundingClientRect();
+    const canvasRect: CanvasRect = {
+      x: canvasClientRect.x,
+      y: canvasClientRect.y,
+      width: canvasClientRect.width,
+      height: canvasClientRect.height,
+    };
+    const startRect = clientRectToCanvas({
+      x: videoClientRect.x,
+      y: videoClientRect.y,
+      width: videoClientRect.width,
+      height: videoClientRect.height,
+    }, canvasRect);
+    const startOffset = overlayOffsets.video;
+    const startScale = videoScale;
+    const startCenter = {
+      x: startRect.x + startRect.width / 2,
+      y: startRect.y + startRect.height / 2,
+    };
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      if (captureTarget.hasPointerCapture(pointerId)) {
+        captureTarget.releasePointerCapture(pointerId);
+      }
+      if (overlayDragCleanupRef.current === cleanup) {
+        overlayDragCleanupRef.current = null;
+      }
+    };
+    const move = (moveEvent: globalThis.PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const delta = clientDeltaToCanvas({
+        x: moveEvent.clientX - startClientX,
+        y: moveEvent.clientY - startClientY,
+      }, canvasRect);
+      const resized = resizeCanvasRectFromCorner({
+        rect: startRect,
+        delta,
+        handle,
+        minimumWidth: editorVideoBaseRect.width * EDITOR_VIDEO_MIN_SCALE,
+        minimumHeight: editorVideoBaseRect.height * EDITOR_VIDEO_MIN_SCALE,
+        allowOverflow: true,
+        maximumScaleFactor: EDITOR_VIDEO_MAX_SCALE / startScale,
+      });
+      const snapped = snapResizedCanvasRectToCanvas({
+        initialRect: startRect,
+        resized,
+        handle,
+        threshold: clientDistanceToCanvas(
+          EDITOR_VIDEO_SIZE_SNAP_THRESHOLD_PX,
+          canvasRect.width,
+        ),
+        minimumScaleFactor: Math.max(
+          editorVideoBaseRect.width * EDITOR_VIDEO_MIN_SCALE / startRect.width,
+          editorVideoBaseRect.height * EDITOR_VIDEO_MIN_SCALE / startRect.height,
+        ),
+        maximumScaleFactor: EDITOR_VIDEO_MAX_SCALE / startScale,
+      });
+      const nextCenter = {
+        x: snapped.rect.x + snapped.rect.width / 2,
+        y: snapped.rect.y + snapped.rect.height / 2,
+      };
+      updateEditorOverlayLayout((current) => ({
+        ...current,
+        offsets: {
+          ...current.offsets,
+          video: {
+            x: startOffset.x + nextCenter.x - startCenter.x,
+            y: startOffset.y + nextCenter.y - startCenter.y,
+          },
+        },
+        scales: {
+          ...current.scales,
+          video: startScale * snapped.scaleFactor,
+        },
+      }));
+      setOverlayGuides({
+        ...EMPTY_EDITOR_OVERLAY_GUIDES,
+        videoWidthFitted: snapped.snapped.width,
+        videoHeightFitted: snapped.snapped.height,
+      });
+    };
+    const finish = (finishEvent: globalThis.PointerEvent) => {
+      if (finishEvent.pointerId !== pointerId) return;
+      cleanup();
+      setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
+      finishEditorOverlayHistoryInteraction();
+    };
+    overlayDragCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  }, [
+    beginEditorOverlayHistoryInteraction,
+    editorVideoBaseRect.height,
+    editorVideoBaseRect.width,
+    finishEditorOverlayHistoryInteraction,
+    overlayOffsets.video,
+    overlayPreviewEnabled,
+    updateEditorOverlayLayout,
+    videoScale,
+  ]);
+
+  const nudgeSelectedEditorOverlay = useCallback((delta: CanvasPoint) => {
+    if (!overlayPreviewEnabled || selectedOverlay === null) return;
+    const canvas = editorCanvasRef.current;
+    const textId = selectedEditorTextId(selectedOverlay);
+    const layerElement = canvas?.querySelector<HTMLElement>(
+      textId
+        ? `[data-editor-text-overlay-id="${textId}"]`
+        : `[data-editor-overlay-layer="${selectedOverlay}"]`,
+    );
+    if (!canvas || !layerElement) return;
+    const canvasClientRect = canvas.getBoundingClientRect();
+    const layerClientRect = layerElement.getBoundingClientRect();
+    const canvasRect: CanvasRect = {
+      x: canvasClientRect.x,
+      y: canvasClientRect.y,
+      width: canvasClientRect.width,
+      height: canvasClientRect.height,
+    };
+    const layerRect = clientRectToCanvas({
+      x: layerClientRect.x,
+      y: layerClientRect.y,
+      width: layerClientRect.width,
+      height: layerClientRect.height,
+    }, canvasRect);
+    if (isEditorTextSelection(selectedOverlay)) {
+      const selectedTextId = selectedOverlay.slice("text:".length);
+      const movement = clampCanvasDelta(layerRect, delta);
+      commitEditorOverlayLayoutChange((current) => ({
+        ...current,
+        textOverlays: current.textOverlays.map((textOverlay) => (
+          textOverlay.id === selectedTextId
+            ? {
+                ...textOverlay,
+                offset: {
+                  x: textOverlay.offset.x + movement.x,
+                  y: textOverlay.offset.y + movement.y,
+                },
+              }
+            : textOverlay
+        )),
+      }));
+      return;
+    }
+    const baseLayer = selectedOverlay;
+    const movement = clampCanvasDelta(
+      layerRect,
+      baseLayer === "comment" ? { x: 0, y: delta.y } : delta,
+      baseLayer === "comment" ? "vertical" : "both",
+    );
+    if (baseLayer === "comment" && layoutPreviewComment) {
+      const commentId = layoutPreviewComment.id;
+      commitEditorOverlayLayoutChange((current) => {
+        const currentOffset = current.commentOffsets?.[commentId]
+          || current.offsets.comment;
+        return {
+          ...current,
+          commentOffsets: {
+            ...(current.commentOffsets || {}),
+            [commentId]: {
+              x: 0,
+              y: currentOffset.y + movement.y,
+            },
+          },
+        };
+      });
+      return;
+    }
+    commitEditorOverlayLayoutChange((current) => ({
+      ...current,
+      offsets: {
+        ...current.offsets,
+        [baseLayer]: {
+          x: baseLayer === "comment"
+            ? 0
+            : current.offsets[baseLayer].x + movement.x,
+          y: current.offsets[baseLayer].y + movement.y,
+        },
+      },
+    }));
+  }, [
+    commitEditorOverlayLayoutChange,
+    layoutPreviewComment,
+    overlayPreviewEnabled,
+    selectedOverlay,
+  ]);
+
+  useEffect(() => () => {
+    overlayDragCleanupRef.current?.();
+    videoClipTrimCleanupRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    if (!overlayPreviewEnabled) return;
+    const handleOverlayKeyboard = (event: KeyboardEvent) => {
+      if (commentRegenerationConfirmationOpen) return;
+      const target = event.target;
+      const historyShortcut = resolveEditorHistoryShortcut(event);
+      if (historyShortcut) {
+        const textInputTarget = target instanceof HTMLTextAreaElement
+          || (
+            target instanceof HTMLInputElement
+            && ["text", "search", "email", "url", "tel", "password"].includes(
+              target.type,
+            )
+          )
+          || (target instanceof HTMLElement && target.isContentEditable);
+        const editorTextInteractionActive = copyInteractionStartRef.current !== null
+          || commentTextInteractionStartRef.current !== null
+          || overlayInteractionStartRef.current !== null
+          || inlineEditingOverlay !== null;
+        if (textInputTarget && !editorTextInteractionActive) return;
+        event.preventDefault();
+        event.stopPropagation();
+        finishPendingEditorInteractions();
+        if (historyShortcut === "undo") {
+          undoEditorEdit();
+        } else {
+          redoEditorEdit();
+        }
+        return;
+      }
+      if (
+        target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || target instanceof HTMLSelectElement
+        || (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+      if (event.key === "Escape") {
+        if (selectedOverlay === null && selectedVideoClipId === null) return;
+        event.preventDefault();
+        clearEditorOverlaySelection();
+        return;
+      }
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (selectedVideoClipId && selectedOverlay === null) {
+          event.preventDefault();
+          deleteSelectedEditorVideoClip();
+          return;
+        }
+        const selectedCommentId = target instanceof HTMLElement
+          ? target.closest<HTMLElement>("[data-editor-comment-id]")
+            ?.dataset.editorCommentId
+          : null;
+        if (selectedCommentId) {
+          event.preventDefault();
+          deleteEditorComment(selectedCommentId);
+          return;
+        }
+        if (selectedOverlay === "comment" && layoutPreviewComment) {
+          event.preventDefault();
+          deleteEditorComment(layoutPreviewComment.id);
+          return;
+        }
+        if (selectedOverlay === null) return;
+        event.preventDefault();
+        deleteSelectedEditorOverlay();
+        return;
+      }
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+        return;
+      }
+      const distance = event.shiftKey ? 10 : 1;
+      const delta = {
+        x: event.key === "ArrowLeft" ? -distance : event.key === "ArrowRight" ? distance : 0,
+        y: event.key === "ArrowUp" ? -distance : event.key === "ArrowDown" ? distance : 0,
+      };
+      event.preventDefault();
+      nudgeSelectedEditorOverlay(delta);
+    };
+    window.addEventListener("keydown", handleOverlayKeyboard);
+    return () => window.removeEventListener("keydown", handleOverlayKeyboard);
+  }, [
+    clearEditorOverlaySelection,
+    commentRegenerationConfirmationOpen,
+    deleteEditorComment,
+    deleteSelectedEditorVideoClip,
+    deleteSelectedEditorOverlay,
+    finishPendingEditorInteractions,
+    inlineEditingOverlay,
+    layoutPreviewComment,
+    nudgeSelectedEditorOverlay,
+    overlayPreviewEnabled,
+    redoEditorEdit,
+    selectedOverlay,
+    selectedVideoClipId,
+    undoEditorEdit,
+  ]);
 
   useEffect(() => {
     const detectMobileEditor = () => {
@@ -1578,9 +4998,39 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         try {
           const value = await requestJson<EditTimeline>(`/api/shorts/${item.id}/edit-timeline`);
           if (!cancelled) {
+            const savedTimelineMatches = Boolean(
+              savedEditorDocument
+              && Math.abs(
+                savedEditorDocument.video.timelineStartSeconds
+                - value.timelineStartSeconds,
+              ) <= 0.051
+              && Math.abs(
+                savedEditorDocument.video.timelineEndSeconds
+                - value.timelineEndSeconds,
+              ) <= 0.051,
+            );
+            const initialVideoClips = savedTimelineMatches
+              ? cloneEditorVideoClips(savedEditorDocument!.video.clips)
+              : createEditorVideoClips(
+                value.currentStartSeconds - value.timelineStartSeconds,
+                value.currentEndSeconds - value.timelineStartSeconds,
+              );
+            const restoredSelectionStart = savedTimelineMatches
+              ? savedEditorDocument!.video.selectionStartSeconds
+              : value.currentStartSeconds;
+            const restoredSelectionEnd = savedTimelineMatches
+              ? savedEditorDocument!.video.selectionEndSeconds
+              : value.currentEndSeconds;
             setEditTimeline(value);
-            setSelectionStart(value.currentStartSeconds);
-            setSelectionEnd(value.currentEndSeconds);
+            setSelectionStart(restoredSelectionStart);
+            setSelectionEnd(restoredSelectionEnd);
+            videoClipsRef.current = initialVideoClips;
+            setVideoClips(initialVideoClips);
+            videoSequenceTimeRef.current = 0;
+            setVideoSequenceTime(0);
+            activeVideoClipIndexRef.current = 0;
+            setSelectedVideoClipId(initialVideoClips[0]?.id || null);
+            setSelectedOverlay(null);
             setCleanVideoUrl(value.url);
           }
           return;
@@ -1599,7 +5049,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         if (!cancelled) setEditorGuideReady(true);
       });
     return () => { cancelled = true; };
-  }, [item.id, paidAccessBlocked, rangeEditingEnabled]);
+  }, [
+    item.id,
+    paidAccessBlocked,
+    rangeEditingEnabled,
+    savedEditorDocument,
+  ]);
 
   useEffect(() => {
     const timelineUrl = editTimeline?.url;
@@ -1655,6 +5110,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   }, [editTimeline?.url]);
 
   const selectTemplate = (value: TemplateId) => {
+    resetEditorOverlayPositions("video", "clear");
     setTemplateId(value);
     setActiveCustomTemplate(null);
     setPresetVersion(3);
@@ -1672,27 +5128,31 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setTitleTextStyles(defaultStyles);
     const defaultBackground = defaultStyles.find((style) => style.backgroundColor)?.backgroundColor;
     if (defaultBackground) setTitleBackgroundColor(defaultBackground);
-    if (value === "comment-capture") {
-      setComments((current) => (
-        current.length > 0 ? current : defaultComments(item.durationSeconds)
-      ));
-    }
+    setComments(value === "comment-capture"
+      ? defaultComments(item.durationSeconds)
+      : []);
   };
 
   const selectCurrentCustomTemplate = () => {
     if (!availableCustomTemplate) return;
+    resetEditorOverlayPositions("video", "clear");
     setTemplateId(availableCustomTemplate.baseTemplateId);
     setActiveCustomTemplate(availableCustomTemplate);
     setTemplateSelectionTouched(true);
-    if (availableCustomTemplate.baseTemplateId === "comment-capture") {
-      setComments((current) => (
-        current.length > 0 ? current : defaultComments(item.durationSeconds)
-      ));
-    }
+    setComments(
+      availableCustomTemplate.baseTemplateId === "comment-capture"
+        && availableCustomTemplate.config.comment.visible
+        ? defaultComments(item.durationSeconds)
+        : [],
+    );
   };
 
   const updateComment = (id: string, values: Partial<CommentOverlay>) => {
-    setComments((current) => current.map((comment) => comment.id === id ? { ...comment, ...values } : comment));
+    const next = commentsRef.current.map((comment) => (
+      comment.id === id ? { ...comment, ...values } : comment
+    ));
+    commentsRef.current = next;
+    setComments(next);
   };
 
   const updateCommentRange = (
@@ -1700,7 +5160,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     range: { startSeconds: number; endSeconds: number },
   ) => {
     const storedRange = editTimeline
-      ? scaleTimedRanges([range], selectionDuration, item.durationSeconds)[0]
+      ? scaleTimedRanges([range], previewDuration, item.durationSeconds)[0]
       : range;
     updateComment(id, storedRange);
   };
@@ -1710,6 +5170,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     if (!video) return;
     video.pause();
     if (editTimeline) {
+      if (videoCuttingEnabled) {
+        seekEditorVideoSequence(seconds);
+        return;
+      }
       seekTimeline(selectionStart + Math.max(0, Math.min(selectionDuration, seconds)));
       return;
     }
@@ -1719,25 +5183,44 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   };
 
   const addComment = () => {
-    setComments((current) => {
-      if (current.length >= 20) return current;
-      const nextCommentText = selectRandomFallbackCommentTexts(
-        1,
-        current.map((comment) => comment.text),
-      )[0];
-      if (current.length === 0) {
-        return [randomComment(0, item.durationSeconds, nextCommentText)];
+    if (overlayPreviewEnabled) {
+      if (!overlayLayoutRef.current.visible.comment) {
+        updateEditorOverlayLayout((current) => ({
+          ...current,
+          visible: {
+            ...current.visible,
+            comment: true,
+          },
+        }));
       }
-      const longest = current.reduce((selected, comment) => (
+      setInlineEditingOverlay(null);
+      setSelectedOverlay("comment");
+    }
+    const before = cloneEditorComments(commentsRef.current);
+    if (before.length >= 20) return;
+    const nextCommentText = selectRandomFallbackCommentTexts(
+      1,
+      before.map((comment) => comment.text),
+    )[0];
+    let after: CommentOverlay[];
+    if (before.length === 0) {
+      after = [randomComment(0, item.durationSeconds, nextCommentText)];
+    } else {
+      const longest = before.reduce((selected, comment) => (
         comment.endSeconds - comment.startSeconds > selected.endSeconds - selected.startSeconds ? comment : selected
       ));
       const midpoint = Math.round(((longest.startSeconds + longest.endSeconds) / 2) * 1000) / 1000;
-      if (midpoint <= longest.startSeconds || midpoint >= longest.endSeconds) return current;
-      return [
-        ...current.map((comment) => comment.id === longest.id ? { ...comment, endSeconds: midpoint } : comment),
+      if (midpoint <= longest.startSeconds || midpoint >= longest.endSeconds) return;
+      after = [
+        ...before.map((comment) => (
+          comment.id === longest.id ? { ...comment, endSeconds: midpoint } : comment
+        )),
         randomComment(midpoint, longest.endSeconds, nextCommentText),
       ];
-    });
+    }
+    commentsRef.current = after;
+    setComments(after);
+    recordEditorCommentReplacement(before, after);
   };
 
   const captureTitleSelection = () => {
@@ -1754,14 +5237,50 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   };
 
   const updateSelectedTitleStyle = (patch: { color?: string | null; backgroundColor?: string | null }) => {
-    if (!titleSelection) return;
-    setTitleTextStyles((current) => applyTitleTextStyle(
-      current,
-      Array.from(title).length,
-      titleSelection.start,
-      titleSelection.end,
+    const codePointLength = Array.from(title).length;
+    if (codePointLength === 0) return;
+    const before = currentEditorCopySnapshot();
+    const selection = titleSelection || {
+      start: 0,
+      end: codePointLength,
+    };
+    const nextStyles = applyTitleTextStyle(
+      titleTextStylesRef.current,
+      codePointLength,
+      selection.start,
+      selection.end,
       patch,
-    ));
+    );
+    titleTextStylesRef.current = nextStyles;
+    setTitleTextStyles(nextStyles);
+    recordEditorCopyChange(before, currentEditorCopySnapshot());
+  };
+
+  const updateEditorTitleFontScale = (value: number) => {
+    titleFontScaleRef.current = value;
+    setTitleFontScale(value);
+  };
+
+  const updateSelectedEditorText = (
+    patch: Partial<Pick<EditorTextOverlay, "text" | "fontId" | "color" | "effect">>,
+    historyMode: "continuous" | "record" = "record",
+  ) => {
+    if (!selectedTextOverlayId) return;
+    if (historyMode === "continuous") {
+      updateEditorTextOverlay(selectedTextOverlayId, (textOverlay) => ({
+        ...textOverlay,
+        ...patch,
+      }));
+      return;
+    }
+    commitEditorOverlayLayoutChange((current) => ({
+      ...current,
+      textOverlays: current.textOverlays.map((textOverlay) => (
+        textOverlay.id === selectedTextOverlayId
+          ? { ...textOverlay, ...patch }
+          : textOverlay
+      )),
+    }));
   };
 
   const seekTimeline = (absoluteSeconds: number) => {
@@ -1773,23 +5292,66 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
   const updateSelectionStart = (value: number) => {
     if (!editTimeline) return;
+    const firstClip = videoClipsRef.current[0];
+    const maximum = videoCuttingEnabled && firstClip
+      ? editTimeline.timelineStartSeconds
+        + firstClip.sourceEndSeconds
+        - EDITOR_VIDEO_MIN_CLIP_SECONDS
+      : selectionEnd - RANGE_EDIT_MIN_SECONDS;
     const rounded = roundTimelineHandleSeconds(
       value,
       editTimeline.timelineStartSeconds,
-      selectionEnd - RANGE_EDIT_MIN_SECONDS,
+      maximum,
     );
     setSelectionStart(rounded);
+    if (videoCuttingEnabled && firstClip) {
+      const nextClips = videoClipsRef.current.map((clip, index) => (
+        index === 0
+          ? {
+              ...clip,
+              sourceStartSeconds: rounded - editTimeline.timelineStartSeconds,
+            }
+          : clip
+      ));
+      videoClipsRef.current = nextClips;
+      setVideoClips(nextClips);
+      seekEditorVideoSequence(0);
+      return;
+    }
     seekTimeline(rounded);
   };
 
   const updateSelectionEnd = (value: number) => {
     if (!editTimeline) return;
+    const lastClip = videoClipsRef.current[videoClipsRef.current.length - 1];
+    const minimum = videoCuttingEnabled && lastClip
+      ? editTimeline.timelineStartSeconds
+        + lastClip.sourceStartSeconds
+        + EDITOR_VIDEO_MIN_CLIP_SECONDS
+      : selectionStart + RANGE_EDIT_MIN_SECONDS;
     const rounded = roundTimelineHandleSeconds(
       value,
-      selectionStart + RANGE_EDIT_MIN_SECONDS,
+      minimum,
       editTimeline.timelineEndSeconds,
     );
     setSelectionEnd(rounded);
+    if (videoCuttingEnabled && lastClip) {
+      const nextClips = videoClipsRef.current.map((clip, index, clips) => (
+        index === clips.length - 1
+          ? {
+              ...clip,
+              sourceEndSeconds: rounded - editTimeline.timelineStartSeconds,
+            }
+          : clip
+      ));
+      videoClipsRef.current = nextClips;
+      setVideoClips(nextClips);
+      seekEditorVideoSequence(Math.max(
+        0,
+        editorVideoDuration(nextClips) - 0.001,
+      ));
+      return;
+    }
     seekTimeline(rounded);
   };
 
@@ -1818,6 +5380,16 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     if (!editTimeline || !filmstripRef.current) return;
     const bounds = filmstripRef.current.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
+    if (videoCuttingEnabled) {
+      const outputSeconds = (
+        ratio - sourceSelectionLeft / 100
+      ) * timelineDuration;
+      seekEditorVideoSequence(Math.max(
+        0,
+        Math.min(videoSequenceDuration, outputSeconds),
+      ));
+      return;
+    }
     const requestedSeconds = editTimeline.timelineStartSeconds + ratio * timelineDuration;
     const clampedSeconds = Math.max(selectionStart, Math.min(selectionEnd, requestedSeconds));
     videoRef.current?.pause();
@@ -1826,6 +5398,16 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
   const startTimelineScrubbing = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
+    if (videoCuttingEnabled) {
+      const target = event.target;
+      const clipId = target instanceof HTMLElement
+        ? target.closest<HTMLElement>("[data-editor-video-clip-id]")
+          ?.dataset.editorVideoClipId
+        : null;
+      setSelectedVideoClipId(clipId || null);
+      setSelectedOverlay(null);
+      setInlineEditingOverlay(null);
+    }
     activeRangeHandleRef.current = null;
     timelineScrubbingRef.current = true;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -1860,6 +5442,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       video.pause();
       return;
     }
+    if (videoCuttingEnabled) {
+      if (videoSequenceTimeRef.current >= videoSequenceDuration - 0.03) {
+        seekEditorVideoSequence(0, false);
+      }
+      void video.play().catch(() => undefined);
+      return;
+    }
     if (editTimeline) {
       const selectionEndOffset = selectionEnd - editTimeline.timelineStartSeconds;
       if (video.currentTime >= selectionEndOffset - 0.03) {
@@ -1869,11 +5458,48 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       }
     }
     void video.play().catch(() => undefined);
-  }, [editTimeline, selectionEnd, selectionStart]);
+  }, [
+    editTimeline,
+    seekEditorVideoSequence,
+    selectionEnd,
+    selectionStart,
+    videoCuttingEnabled,
+    videoSequenceDuration,
+  ]);
+
+  const togglePreviewFullscreen = useCallback(async () => {
+    const previewPane = editorPreviewPaneRef.current;
+    if (!previewPane || typeof previewPane.requestFullscreen !== "function") return;
+    try {
+      if (document.fullscreenElement === previewPane) {
+        await document.exitFullscreen();
+        return;
+      }
+      clearEditorOverlaySelection();
+      if (document.fullscreenElement) await document.exitFullscreen();
+      await previewPane.requestFullscreen();
+    } catch {
+      // Fullscreen can be blocked by browser or OS policy. Keep the editor usable.
+    }
+  }, [clearEditorOverlaySelection]);
+
+  useEffect(() => {
+    const syncPreviewFullscreen = () => {
+      setIsPreviewFullscreen(
+        document.fullscreenElement === editorPreviewPaneRef.current,
+      );
+    };
+    document.addEventListener("fullscreenchange", syncPreviewFullscreen);
+    syncPreviewFullscreen();
+    return () => {
+      document.removeEventListener("fullscreenchange", syncPreviewFullscreen);
+    };
+  }, []);
 
   useEffect(() => {
     if (!standalone) return;
     const handleDesktopPlaybackShortcut = (event: KeyboardEvent) => {
+      if (commentRegenerationConfirmationOpen) return;
       if (event.code !== "Space" || event.repeat || !window.matchMedia("(min-width: 921px)").matches) return;
       const target = event.target;
       if (
@@ -1887,20 +5513,75 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     };
     window.addEventListener("keydown", handleDesktopPlaybackShortcut);
     return () => window.removeEventListener("keydown", handleDesktopPlaybackShortcut);
-  }, [standalone, togglePreviewPlayback]);
+  }, [
+    commentRegenerationConfirmationOpen,
+    standalone,
+    togglePreviewPlayback,
+  ]);
 
   const save = async () => {
+    if (overlayPreviewEnabled && !editorSaveEnabled) {
+      setError("로컬 오버레이 미리보기에서는 영상 저장 요청을 보내지 않습니다.");
+      return;
+    }
     setSaving(true); setError(null);
     try {
-      const commentOverlays = templateId === "comment-capture" ? orderedComments : [];
+      if (overlayPreviewEnabled && editorSaveEnabled) {
+        if (!editTimeline || editorDocumentSnapshot.video.clips.length === 0) {
+          throw new Error("편집용 영상이 준비된 뒤 다시 시도해 주세요.");
+        }
+        const document = cloneEditorDocumentSnapshot(editorDocumentSnapshot);
+        const outputDuration = editorDocumentOutputDuration(document);
+        document.comments = scaleTimedRanges(
+          document.comments,
+          item.durationSeconds,
+          outputDuration,
+        );
+        document.overlays.commentOffsets = Object.fromEntries(
+          Object.entries(document.overlays.commentOffsets).filter(([id]) => (
+            document.comments.some((comment) => comment.id === id)
+          )),
+        );
+        document.overlays.textOverlays = document.overlays.textOverlays.map(
+          (textOverlay) => {
+            const startSeconds = Math.max(
+              0,
+              Math.min(outputDuration - 0.001, textOverlay.startSeconds),
+            );
+            const endSeconds = Math.max(
+              startSeconds + 0.001,
+              Math.min(outputDuration, textOverlay.endSeconds),
+            );
+            return {
+              ...textOverlay,
+              startSeconds,
+              endSeconds,
+            };
+          },
+        );
+        const requestId = editorSaveRequestIdRef.current
+          || globalThis.crypto.randomUUID();
+        editorSaveRequestIdRef.current = requestId;
+        await requestJson(`/api/shorts/${item.id}/apply-edit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ requestId, document }),
+        });
+        editorSaveRequestIdRef.current = null;
+      } else {
+      const commentOverlays = editorDocumentSnapshot.template.id === "comment-capture"
+        ? [...editorDocumentSnapshot.comments].sort(
+            (left, right) => left.startSeconds - right.startSeconds,
+          )
+        : [];
       if (editTimeline) {
         const startSeconds = clampTimelineSeconds(
-          selectionStart,
+          editorDocumentSnapshot.video.selectionStartSeconds,
           editTimeline.timelineStartSeconds,
           editTimeline.timelineEndSeconds,
         );
         const endSeconds = clampTimelineSeconds(
-          selectionEnd,
+          editorDocumentSnapshot.video.selectionEndSeconds,
           editTimeline.timelineStartSeconds,
           editTimeline.timelineEndSeconds,
         );
@@ -1909,36 +5590,43 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           body: JSON.stringify({
             startSeconds,
             endSeconds,
-            hookTitle: title,
-            channelDisplayName: channel,
+            hookTitle: editorDocumentSnapshot.title.text,
+            channelDisplayName: editorDocumentSnapshot.channel.displayName,
             subtitlesEnabled,
             commentOverlays,
-            templateId,
+            templateId: editorDocumentSnapshot.template.id,
             ...(templateSelectionTouched
-              ? { customTemplateId: activeCustomTemplate?.id || null }
+              ? {
+                  customTemplateId:
+                    editorDocumentSnapshot.template.customTemplateId,
+                }
               : {}),
-            titleFontScale,
-            titleTextStyles,
+            titleFontScale: editorDocumentSnapshot.title.fontScale,
+            titleTextStyles: editorDocumentSnapshot.title.textStyles,
           }),
         });
       } else {
         await requestJson(`/api/shorts/${item.id}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            hookTitle: title,
-            channelDisplayName: channel,
+            hookTitle: editorDocumentSnapshot.title.text,
+            channelDisplayName: editorDocumentSnapshot.channel.displayName,
             subtitlesEnabled,
             subtitleSegments: segments,
             commentOverlays,
-            templateId,
+            templateId: editorDocumentSnapshot.template.id,
             ...(templateSelectionTouched
-              ? { customTemplateId: activeCustomTemplate?.id || null }
+              ? {
+                  customTemplateId:
+                    editorDocumentSnapshot.template.customTemplateId,
+                }
               : {}),
-            titleFontScale,
-            titleTextStyles,
+            titleFontScale: editorDocumentSnapshot.title.fontScale,
+            titleTextStyles: editorDocumentSnapshot.title.textStyles,
           }),
         });
         await requestJson(`/api/shorts/${item.id}/rerender`, { method: "POST" });
+      }
       }
       try {
         window.sessionStorage.setItem(
@@ -1966,27 +5654,70 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     finally { setSaving(false); }
   };
 
-  const commentTimeline = templateId === "comment-capture"
+  const commentTimeline = editorCommentOverlayEnabled
+    && renderOverlayLayout.visible.comment
     ? <>
       <CommentTimelineEditor
         comments={commentsForPreview}
-        durationSeconds={editTimeline ? selectionDuration : item.durationSeconds}
+        durationSeconds={editTimeline ? previewDuration : item.durationSeconds}
         currentSeconds={relativePreviewTime}
         onRangeChange={updateCommentRange}
         onTextChange={(id, text) => updateComment(id, { text })}
         onSeek={seekCommentTimeline}
-        onDelete={(id) => setComments((current) => current.filter((comment) => comment.id !== id))}
+        onDelete={deleteEditorComment}
+        onSelect={() => {
+          setInlineEditingOverlay(null);
+          setSelectedOverlay("comment");
+        }}
+        onDeselect={clearEditorOverlaySelection}
+        onTextEditStart={beginEditorCommentTextInteraction}
+        onTextEditEnd={finishEditorCommentTextInteraction}
+        onRangeEditStart={beginEditorCommentTextInteraction}
+        onRangeEditEnd={finishEditorCommentTextInteraction}
+        active={selectedOverlay === "comment"}
+        snapPointsSeconds={videoSplitSnapPoints}
         selectionLeftPercent={editTimeline ? selectionLeft : 0}
         selectionWidthPercent={editTimeline ? selectionWidth : 100}
       />
-      {!validComments && <p className="editor-comment-timeline-error">댓글을 하나 이상 두고, 내용과 노출 구간이 비어 있거나 서로 겹치지 않도록 조정해 주세요.</p>}
+      {!commentsAreValid && <p className="editor-comment-timeline-error">댓글 내용과 노출 구간이 비어 있거나 서로 겹치지 않도록 조정해 주세요.</p>}
     </>
+    : null;
+  const textTimelines = overlayPreviewEnabled && textOverlays.length > 0
+    ? <div className="editor-text-timeline-stack" aria-label="추가한 텍스트 타임라인">
+        {textOverlays.map((textOverlay) => {
+          const selection = editorTextSelection(textOverlay.id);
+          return <EditorTextTimeline
+            key={textOverlay.id}
+            textOverlay={textOverlay}
+            selected={selectedOverlay === selection}
+            durationSeconds={previewDuration}
+            currentSeconds={displayedPreviewTime}
+            onRangeChange={(range) => updateEditorTextOverlay(
+              textOverlay.id,
+              (current) => ({
+                ...current,
+                ...range,
+              }),
+            )}
+            onSeek={seekCommentTimeline}
+            onSelect={() => {
+              if (inlineEditingOverlay !== null) finishEditorInlineEdit();
+              setSelectedOverlay(selection);
+            }}
+            onInteractionStart={beginEditorOverlayHistoryInteraction}
+            onInteractionEnd={finishEditorOverlayHistoryInteraction}
+            snapPointsSeconds={videoSplitSnapPoints}
+            selectionLeftPercent={editTimeline ? selectionLeft : 0}
+            selectionWidthPercent={editTimeline ? selectionWidth : 100}
+          />;
+        })}
+      </div>
     : null;
 
   const editorContent = (
     <>
       <ApplyEditConfirmDialog
-        open={applyConfirmationOpen}
+        open={applyConfirmationOpen && (!overlayPreviewEnabled || editorSaveEnabled)}
         saving={saving}
         onCancel={() => setApplyConfirmationOpen(false)}
         onConfirm={() => {
@@ -1994,14 +5725,49 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           void save();
         }}
       />
+      <ResetTimelineConfirmDialog
+        open={resetConfirmationOpen && overlayPreviewEnabled && Boolean(editTimeline)}
+        onCancel={() => setResetConfirmationOpen(false)}
+        onConfirm={() => {
+          setResetConfirmationOpen(false);
+          if (!editTimeline) return;
+          if (videoCuttingEnabled) {
+            resetEditorVideoCuts();
+            return;
+          }
+          setSelectionStart(editTimeline.initialStartSeconds);
+          setSelectionEnd(editTimeline.initialEndSeconds);
+          seekTimeline(editTimeline.initialStartSeconds);
+        }}
+      />
+      <CommentRegenerationConfirmDialog
+        open={commentRegenerationConfirmationOpen && overlayPreviewEnabled}
+        generating={regeneratingComments}
+        error={commentRegenerationError}
+        onCancel={() => {
+          if (regeneratingComments) return;
+          commentRegenerationRequestIdRef.current = null;
+          setCommentRegenerationError(null);
+          setCommentRegenerationConfirmationOpen(false);
+        }}
+        onConfirm={() => {
+          void regenerateEditorComments();
+        }}
+      />
       <DesktopEditorGuide
         enabled={standalone
           && mobileEditorBlocked === false
           && !paidAccessBlocked
           && editorGuideReady
-          && (Boolean(editTimeline) || templateId === "comment-capture")}
+          && (
+            overlayPreviewEnabled
+            || Boolean(editTimeline)
+            || editorCommentOverlayEnabled
+          )}
         rangeControlsAvailable={Boolean(editTimeline)}
-        commentControlsAvailable={templateId === "comment-capture"}
+        commentControlsAvailable={editorCommentOverlayEnabled}
+        overlayPreviewEnabled={overlayPreviewEnabled}
+        editorSaveEnabled={editorSaveEnabled}
       />
       {mobileEditorBlocked === true && <div
         className="editor-mobile-blocker"
@@ -2031,58 +5797,177 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           </div>
           <div className="editor-header-actions">
             <button type="button" onClick={onClose} className="editor-close-button" aria-label="편집기에서 나가기">나가기</button>
-            <button type="button" disabled={!editorValid || saving} onClick={() => setApplyConfirmationOpen(true)} className="editor-apply-button">{saving ? "적용 중..." : "영상에 적용"}</button>
+            <button
+              type="button"
+              data-editor-guide={overlayPreviewEnabled ? "editor-save" : undefined}
+              disabled={(overlayPreviewEnabled && !editorSaveEnabled) || !editorValid || saving}
+              onClick={() => setApplyConfirmationOpen(true)}
+              className="editor-apply-button"
+            >
+              {overlayPreviewEnabled && !editorSaveEnabled
+                ? "저장 잠금"
+                : saving
+                  ? "적용 중..."
+                  : "영상에 적용"}
+            </button>
           </div>
         </div>
       </header>}
       <div className={standalone
-        ? `editor-page-body${desktopSidebarOpen ? "" : " is-sidebar-collapsed"}`
-        : `editor-dialog-body grid max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-white/10 bg-[#151517] sm:rounded-2xl${desktopSidebarOpen ? "" : " is-sidebar-collapsed"}`}>
+        ? `editor-page-body${overlayPreviewEnabled ? " has-editor-tool-sidebar" : ""}${desktopSidebarOpen ? "" : overlayPreviewEnabled ? " is-tool-panel-closed" : " is-sidebar-collapsed"}`
+        : `editor-dialog-body grid max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-t-2xl border border-white/10 bg-[#151517] sm:rounded-2xl${overlayPreviewEnabled ? " has-editor-tool-sidebar" : ""}${desktopSidebarOpen ? "" : overlayPreviewEnabled ? " is-tool-panel-closed" : " is-sidebar-collapsed"}`}
+        aria-busy={!paidAccessBlocked && !editorGuideReady}
+      >
+        {!paidAccessBlocked && !editorGuideReady && <section
+          className="editor-initial-loading"
+          role="status"
+          aria-live="polite"
+          aria-label="편집기 준비 중"
+        >
+          <div>
+            <span className="editor-initial-loading-spinner" aria-hidden="true" />
+            <strong>편집기를 준비하고 있어요</strong>
+            <p>영상과 타임라인을 불러오는 중입니다.</p>
+          </div>
+        </section>}
+        {standalone && overlayPreviewEnabled && <div
+          className="editor-history-controls"
+          aria-label="편집 기록"
+          data-editor-guide="editor-history"
+        >
+          <button
+            type="button"
+            aria-label="되돌리기"
+            title="되돌리기 (Ctrl/⌘ + Z)"
+            disabled={!canUndoEditorEdit}
+            onPointerDown={finishPendingEditorInteractions}
+            onClick={undoEditorEdit}
+          >
+            <span aria-hidden="true">↶</span>
+            되돌리기
+          </button>
+          <button
+            type="button"
+            aria-label="앞으로 가기"
+            title="앞으로 가기 (Ctrl/⌘ + Shift + Z)"
+            disabled={!canRedoEditorEdit}
+            onPointerDown={finishPendingEditorInteractions}
+            onClick={redoEditorEdit}
+          >
+            <span aria-hidden="true">↷</span>
+            앞으로 가기
+          </button>
+        </div>}
         <button
           type="button"
-          className="editor-sidebar-rail-toggle"
+          className={`editor-sidebar-rail-toggle${overlayPreviewEnabled ? " editor-overlay-panel-toggle" : ""}`}
           aria-label={desktopSidebarOpen ? "편집 사이드바 닫기" : "편집 사이드바 열기"}
           aria-expanded={desktopSidebarOpen}
-          aria-controls="editor-controls-scroll"
+          aria-controls={overlayPreviewEnabled ? "editor-tool-detail" : "editor-controls-scroll"}
           onClick={() => setDesktopSidebarOpen((current) => !current)}
         >
           <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
             <path d={desktopSidebarOpen ? "m12.25 5.5-4.5 4.5 4.5 4.5" : "m7.75 5.5 4.5 4.5-4.5 4.5"} stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
-        <section className={standalone ? `editor-preview-pane${editTimeline ? " has-range-editor" : ""}` : "editor-dialog-preview editor-preview-stack"}>
+        <section
+          ref={editorPreviewPaneRef}
+          className={standalone ? `editor-preview-pane${editTimeline ? " has-range-editor" : ""}` : "editor-dialog-preview editor-preview-stack"}
+          onPointerDown={overlayPreviewEnabled
+            ? clearEditorOverlaySelection
+            : undefined}
+        >
         <div
-          className={standalone ? "editor-video-frame" : "sticky top-0 mx-auto aspect-[9/16] w-full max-w-[320px] overflow-hidden"}
+          data-editor-preview-canvas-wrap=""
+          className={standalone ? "editor-preview-canvas-wrap" : "sticky top-0 mx-auto w-full max-w-[320px]"}
+        >
+        <div
+          ref={editorCanvasRef}
+          data-editor-preview-canvas=""
+          data-editor-overlay-canvas={overlayPreviewEnabled ? "" : undefined}
+          data-editor-guide={overlayPreviewEnabled ? "preview-canvas" : undefined}
+          className={standalone ? "editor-video-frame" : "aspect-[9/16] w-full overflow-hidden"}
           style={{
-            ...(activeCustomTemplate
-              ? customTemplateBackground(activeCustomTemplate)
-              : { background: template.background }),
+            ...resolvedEditorCanvasBackground,
             containerType: "inline-size",
           }}
         >
-          {activeCustomTemplate
+          {renderOverlayLayout.visible.title && (activeCustomTemplate
             ? <CustomTemplateTitlePreview
                 title={activeCustomTemplate.config.title}
+                sourceTitle={renderTitle}
                 firstLine={customTitleLines[0] || ""}
                 secondLine={customTitleLines[1] || ""}
+                fontScale={renderTitleFontScale}
+                fontFamily={titleFontFamily}
+                textStyles={renderTitleTextStyles}
+                selected={overlayPreviewEnabled && selectedOverlay === "title"}
+                editing={inlineEditingOverlay === "title"}
+                editValue={renderTitle}
+                movementStyle={overlayMovementStyle("title")}
+                onPointerDown={overlayPreviewEnabled
+                  ? (event) => beginEditorOverlayDrag("title", event)
+                  : undefined}
+                onEditStart={beginEditorTitleInlineEdit}
+                onEditValueChange={updateEditorTitleInlineValue}
+                onEditEnd={finishEditorInlineEdit}
               />
-            : <TitleOverlayPreview title={title} fontScale={titleFontScale} videoAspectRatio={commentNeedsVerticalFit ? "4:5" : originalAspectRatio} primary={template.primary} accent={template.accent} background={template.background} keepPrimaryFirstLine={template.id === "paper"} textStyles={titleTextStyles} liftLandscape={usesLiftedCommentLayout} />}
-          {cleanVideoUrl ? <video
+            : <TitleOverlayPreview
+                title={renderTitle}
+                fontScale={renderTitleFontScale}
+                videoAspectRatio={commentNeedsVerticalFit ? "4:5" : originalAspectRatio}
+                primary={template.primary}
+                accent={template.accent}
+                background={editorTemplateSurfaceBackground}
+                fontFamily={titleFontFamily}
+                keepPrimaryFirstLine={template.id === "paper"}
+                textStyles={renderTitleTextStyles}
+                liftLandscape={usesLiftedCommentLayout}
+                selected={overlayPreviewEnabled && selectedOverlay === "title"}
+                editing={inlineEditingOverlay === "title"}
+                movementStyle={overlayMovementStyle("title")}
+                onPointerDown={overlayPreviewEnabled
+                  ? (event) => beginEditorOverlayDrag("title", event)
+                  : undefined}
+                onEditStart={beginEditorTitleInlineEdit}
+                onEditValueChange={updateEditorTitleInlineValue}
+                onEditEnd={finishEditorInlineEdit}
+              />)}
+          {renderOverlayLayout.visible.video && (cleanVideoUrl ? <video
             ref={videoRef}
-            className={activeCustomTemplate
+            data-editor-overlay-layer={overlayPreviewEnabled ? "video" : undefined}
+            className={`${activeCustomTemplate
               ? "absolute bg-black object-cover"
-              : `absolute inset-x-0 w-full bg-black ${commentNeedsVerticalFit ? "object-contain" : "object-cover"}`}
-            style={activeCustomTemplate
-              ? customVideoFrameStyle(activeCustomTemplate.config.video)
-              : { top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}
+              : `absolute inset-x-0 w-full bg-black ${commentNeedsVerticalFit ? "object-contain" : "object-cover"}`}${overlayPreviewEnabled ? " cursor-move touch-none" : ""}${overlayPreviewEnabled && selectedOverlay === "video" ? " outline outline-2 outline-[#ff715e] outline-offset-[-2px]" : ""}`}
+            style={{
+              ...(activeCustomTemplate
+                ? customVideoFrameStyle(activeCustomTemplate.config.video)
+                : { top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }),
+              ...(videoMovementStyle || {}),
+            }}
             src={cleanVideoUrl}
             playsInline
             disablePictureInPicture
             preload="metadata"
+            onPointerDown={overlayPreviewEnabled
+              ? (event) => beginEditorOverlayDrag("video", event)
+              : undefined}
             onContextMenu={(event) => event.preventDefault()}
             onLoadedMetadata={(event) => {
               setVideoLoadError(false);
               if (editTimeline) {
+                if (videoCuttingEnabled) {
+                  const located = locateEditorVideoTime(
+                    videoClipsRef.current,
+                    videoSequenceTimeRef.current,
+                  );
+                  if (located) {
+                    activeVideoClipIndexRef.current = located.clipIndex;
+                    event.currentTarget.currentTime = located.sourceSeconds;
+                    setPreviewTime(located.sourceSeconds);
+                  }
+                  return;
+                }
                 const offset = selectionStart - editTimeline.timelineStartSeconds;
                 event.currentTarget.currentTime = Math.max(0, offset);
                 setPreviewTime(offset);
@@ -2095,6 +5980,50 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             onTimeUpdate={(event) => {
               const current = event.currentTarget.currentTime;
               setPreviewTime(current);
+              if (videoCuttingEnabled) {
+                const clips = videoClipsRef.current;
+                const clipIndex = Math.min(
+                  activeVideoClipIndexRef.current,
+                  Math.max(0, clips.length - 1),
+                );
+                const clip = clips[clipIndex];
+                if (!clip) return;
+                const outputTime = editorVideoOutputTimeForSource(
+                  clips,
+                  clipIndex,
+                  current,
+                );
+                videoSequenceTimeRef.current = outputTime;
+                setVideoSequenceTime(outputTime);
+                if (
+                  !event.currentTarget.paused
+                  && current >= clip.sourceEndSeconds - 0.03
+                ) {
+                  const nextClip = clips[clipIndex + 1];
+                  if (nextClip) {
+                    activeVideoClipIndexRef.current = clipIndex + 1;
+                    const nextOutputTime = editorVideoOutputTimeForSource(
+                      clips,
+                      clipIndex + 1,
+                      nextClip.sourceStartSeconds,
+                    );
+                    videoSequenceTimeRef.current = nextOutputTime;
+                    setVideoSequenceTime(nextOutputTime);
+                    event.currentTarget.currentTime = nextClip.sourceStartSeconds;
+                    void event.currentTarget.play().catch(() => undefined);
+                    return;
+                  }
+                  const firstClip = clips[0];
+                  if (firstClip) {
+                    activeVideoClipIndexRef.current = 0;
+                    videoSequenceTimeRef.current = 0;
+                    setVideoSequenceTime(0);
+                    event.currentTarget.currentTime = firstClip.sourceStartSeconds;
+                    void event.currentTarget.play().catch(() => undefined);
+                  }
+                }
+                return;
+              }
               if (editTimeline) {
                 const start = selectionStart - editTimeline.timelineStartSeconds;
                 const end = selectionEnd - editTimeline.timelineStartSeconds;
@@ -2105,47 +6034,327 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               }
             }}
           /> : <div
-            className={activeCustomTemplate
+            data-editor-overlay-layer={overlayPreviewEnabled ? "video" : undefined}
+            className={`${activeCustomTemplate
               ? "absolute flex items-center justify-center bg-black/50 text-sm text-neutral-400"
-              : "absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400"}
-            style={activeCustomTemplate
-              ? customVideoFrameStyle(activeCustomTemplate.config.video)
-              : { top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }}
-          >클린 영상 준비 중</div>}
+              : "absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400"}${overlayPreviewEnabled ? " cursor-move touch-none" : ""}${overlayPreviewEnabled && selectedOverlay === "video" ? " outline outline-2 outline-[#ff715e] outline-offset-[-2px]" : ""}`}
+            style={{
+              ...(activeCustomTemplate
+                ? customVideoFrameStyle(activeCustomTemplate.config.video)
+                : { top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }),
+              ...(videoMovementStyle || {}),
+            }}
+            onPointerDown={overlayPreviewEnabled
+              ? (event) => beginEditorOverlayDrag("video", event)
+              : undefined}
+          >클린 영상 준비 중</div>)}
+          {overlayPreviewEnabled && renderOverlayLayout.visible.video && selectedOverlay === "video" && <div
+            data-editor-video-resize-frame
+            className="pointer-events-none absolute z-[65] border border-[#ff715e]"
+            style={{
+              left: `${editorVideoRect.x / (TEMPLATE_CANVAS.width / 100)}%`,
+              top: `${editorVideoRect.y / (TEMPLATE_CANVAS.height / 100)}%`,
+              width: `${editorVideoRect.width / (TEMPLATE_CANVAS.width / 100)}%`,
+              height: `${editorVideoRect.height / (TEMPLATE_CANVAS.height / 100)}%`,
+            }}
+          >
+            {EDITOR_VIDEO_RESIZE_HANDLES.map((resizeHandle) => <button
+              key={resizeHandle.handle}
+              type="button"
+              data-editor-video-resize-handle={resizeHandle.handle}
+              aria-label={resizeHandle.label}
+              onPointerDown={(event) => beginEditorVideoResize(resizeHandle.handle, event)}
+              className={`pointer-events-auto absolute h-3 w-3 touch-none rounded-sm border border-white bg-[#ff715e] shadow-[0_0_0_1px_rgba(0,0,0,.45)] ${resizeHandle.positionClassName} ${resizeHandle.cursorClassName}`}
+            />)}
+          </div>}
           {videoLoadError && <div className="pointer-events-none absolute inset-x-3 top-3 z-50 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100">편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>}
           {subtitlesEnabled && activeSubtitle && <div className="pointer-events-none absolute inset-x-5 bottom-[23.2%] z-50 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white">{activeSubtitle}</div>}
           {activeCustomTemplate
             ? <>
-                {templateId === "comment-capture" && activeComment && activeCustomTemplate.config.comment.visible
+                {renderOverlayLayout.visible.comment && templateId === "comment-capture" && layoutPreviewComment && activeCustomTemplate.config.comment.visible
                   ? <div
-                      className="absolute inset-x-0 z-40"
-                      style={{ top: `${(customCommentY / TEMPLATE_CANVAS.height) * 100}%` }}
+                      data-editor-overlay-layer={overlayPreviewEnabled ? "comment" : undefined}
+                      className={`absolute inset-x-0 z-40${overlayPreviewEnabled ? " cursor-ns-resize touch-none" : ""}${overlayPreviewEnabled && selectedOverlay === "comment" ? " outline outline-2 outline-[#ff715e] outline-offset-[-2px]" : ""}`}
+                      style={{
+                        top: `${(customCommentY / TEMPLATE_CANVAS.height) * 100}%`,
+                        ...(overlayMovementStyle("comment", layoutPreviewComment.id) || {}),
+                      }}
+                      onPointerDown={overlayPreviewEnabled
+                        ? (event) => beginEditorOverlayDrag(
+                            "comment",
+                            event,
+                            layoutPreviewComment.id,
+                          )
+                        : undefined}
                     >
                       <TemplateCommentPreview
-                        theme={activeCustomTemplate.config.comment.theme}
+                        theme={editorCommentTheme}
                         size={activeCustomTemplate.config.comment.size}
-                        comment={activeComment}
+                        comment={layoutPreviewComment}
                       />
                     </div>
                   : null}
-                <CustomEditorChannel
-                  template={activeCustomTemplate}
-                  channelName={channel}
-                  channelThumbnailUrl={channelThumbnailUrl}
-                />
+                {renderOverlayLayout.visible.channel && <CustomEditorChannel
+                    template={activeCustomTemplate}
+                    channelName={renderChannel}
+                    channelThumbnailUrl={renderChannelThumbnailUrl}
+                    fontFamily={channelFontFamily}
+                    selected={overlayPreviewEnabled && selectedOverlay === "channel"}
+                    movementStyle={overlayMovementStyle("channel")}
+                    onPointerDown={overlayPreviewEnabled
+                      ? (event) => beginEditorOverlayDrag("channel", event)
+                      : undefined}
+                  />}
               </>
             : <>
-                <div className={`absolute inset-x-0 z-10 overflow-hidden text-sm font-bold ${templateId === "comment-capture" ? "" : editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.bottomHeight}%`, background: editorLayout.fullVertical && templateId !== "comment-capture" ? "transparent" : template.background, color: template.channel }}>
+                <div className={`absolute inset-x-0 ${overlayPreviewEnabled ? "overflow-visible" : "z-10 overflow-hidden"} text-sm font-bold ${templateId === "comment-capture" ? "" : editorLayout.fullVertical ? "pt-5" : "pt-[4.4%]"}`} style={{ top: editorLayout.fullVertical ? "84.375%" : `${editorLayout.videoTop + editorLayout.videoHeight}%`, height: editorLayout.fullVertical ? "9.375%" : `${editorLayout.bottomHeight}%`, background: editorLayout.fullVertical && templateId !== "comment-capture" ? "transparent" : editorTemplateSurfaceBackground, color: template.channel }}>
                   {templateId === "comment-capture"
-                    ? <div className="h-full bg-[#040404]"><CommentCaptureCard comment={activeComment} />{usesLiftedCommentLayout && !usesFixedPresetChannel && <CommentCaptureChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} />}</div>
-                    : !usesFixedPresetChannel && <div className="flex items-start justify-center gap-2"><ChannelAvatar url={channelThumbnailUrl} className="mt-0.5 h-5 w-5" fallbackForeground={template.channel} fallbackBackground={template.background} sizes="20px" /><span className="max-w-[72%] truncate">{channel}</span></div>}
+                    ? <div
+                        className="h-full"
+                        style={{
+                          backgroundColor: editorCommentTheme === "dark"
+                            ? "#040404"
+                            : "#ffffff",
+                        }}
+                      >
+                        {renderOverlayLayout.visible.comment && <div
+                          data-editor-overlay-layer={overlayPreviewEnabled ? "comment" : undefined}
+                          className={`${overlayPreviewEnabled ? "relative cursor-ns-resize touch-none" : ""}${overlayPreviewEnabled && selectedOverlay === "comment" ? " outline outline-2 outline-[#ff715e] outline-offset-[-2px]" : ""}`}
+                          style={layoutPreviewComment
+                            ? overlayMovementStyle("comment", layoutPreviewComment.id)
+                            : undefined}
+                          onPointerDown={overlayPreviewEnabled
+                            ? (event) => layoutPreviewComment
+                              && beginEditorOverlayDrag(
+                                "comment",
+                                event,
+                                layoutPreviewComment.id,
+                              )
+                            : undefined}
+                        >
+                          <CommentCaptureCard
+                            comment={layoutPreviewComment}
+                            theme={editorCommentTheme}
+                          />
+                        </div>}
+                        {renderOverlayLayout.visible.channel && usesLiftedCommentLayout && !usesFixedPresetChannel && <CommentCaptureChannel
+                          channelName={renderChannel}
+                          channelThumbnailUrl={renderChannelThumbnailUrl}
+                          fontFamily={channelFontFamily}
+                          selected={overlayPreviewEnabled && selectedOverlay === "channel"}
+                          movementStyle={overlayMovementStyle("channel")}
+                          onPointerDown={overlayPreviewEnabled
+                            ? (event) => beginEditorOverlayDrag("channel", event)
+                            : undefined}
+                        />}
+                      </div>
+                    : renderOverlayLayout.visible.channel && !usesFixedPresetChannel && <PresetInlineEditorChannel
+                        channelName={renderChannel}
+                        channelThumbnailUrl={renderChannelThumbnailUrl}
+                        foreground={template.channel}
+                        background={template.background}
+                        fontFamily={channelFontFamily}
+                        selected={overlayPreviewEnabled && selectedOverlay === "channel"}
+                        movementStyle={overlayMovementStyle("channel")}
+                        onPointerDown={overlayPreviewEnabled
+                          ? (event) => beginEditorOverlayDrag("channel", event)
+                          : undefined}
+                      />}
                 </div>
-                {usesFixedPresetChannel && (templateId === "comment-capture"
-                  ? <CommentCaptureChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} fixedCenterY={COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y} />
-                  : <FixedPresetChannel channelName={channel} channelThumbnailUrl={channelThumbnailUrl} foreground={template.channel} background={template.background} />)}
+                {renderOverlayLayout.visible.channel && usesFixedPresetChannel && (templateId === "comment-capture"
+                  ? <CommentCaptureChannel
+                      channelName={renderChannel}
+                      channelThumbnailUrl={renderChannelThumbnailUrl}
+                      fixedCenterY={COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y}
+                      fontFamily={channelFontFamily}
+                      selected={overlayPreviewEnabled && selectedOverlay === "channel"}
+                      movementStyle={overlayMovementStyle("channel")}
+                      onPointerDown={overlayPreviewEnabled
+                        ? (event) => beginEditorOverlayDrag("channel", event)
+                        : undefined}
+                    />
+                  : <FixedPresetChannel
+                      channelName={renderChannel}
+                      channelThumbnailUrl={renderChannelThumbnailUrl}
+                      foreground={template.channel}
+                      background={template.background}
+                      fontFamily={channelFontFamily}
+                      selected={overlayPreviewEnabled && selectedOverlay === "channel"}
+                      movementStyle={overlayMovementStyle("channel")}
+                      onPointerDown={overlayPreviewEnabled
+                        ? (event) => beginEditorOverlayDrag("channel", event)
+                        : undefined}
+                    />)}
               </>}
+          {overlayPreviewEnabled
+            && !templateProvidesComments
+            && renderOverlayLayout.visible.comment
+            && layoutPreviewComment
+            && <div
+              data-editor-overlay-layer="comment"
+              className={`absolute inset-x-0 z-40 cursor-ns-resize touch-none${selectedOverlay === "comment" ? " outline outline-2 outline-[#ff715e] outline-offset-[-2px]" : ""}`}
+              style={{
+                top: "62%",
+                ...(overlayMovementStyle("comment", layoutPreviewComment.id) || {}),
+              }}
+              onPointerDown={(event) => beginEditorOverlayDrag(
+                "comment",
+                event,
+                layoutPreviewComment.id,
+              )}
+            >
+              <TemplateCommentPreview
+                theme={editorCommentTheme}
+                size="medium"
+                comment={layoutPreviewComment}
+              />
+            </div>}
+          {overlayPreviewEnabled && activeTextOverlays.map((textOverlay) => (
+            <EditorTextOverlayPreview
+              key={textOverlay.id}
+              textOverlay={textOverlay}
+              selected={selectedTextOverlayId === textOverlay.id}
+              editing={inlineEditingOverlay === editorTextSelection(textOverlay.id)}
+              zIndex={editorOverlayZIndex(editorTextSelection(textOverlay.id))}
+              onPointerDown={(event) => beginEditorTextOverlayDrag(
+                textOverlay.id,
+                event,
+              )}
+              onResizePointerDown={(edge, event) => beginEditorTextOverlayResize(
+                textOverlay.id,
+                edge,
+                event,
+              )}
+              onDelete={() => deleteSelectedEditorOverlay()}
+              onEditStart={beginEditorTextInlineEdit}
+              onEditValueChange={updateEditorTextInlineValue}
+              onEditEnd={finishEditorInlineEdit}
+            />
+          ))}
+          {overlayPreviewEnabled && overlayGuides.x && <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-1/2 z-[70] w-px -translate-x-1/2 bg-[#ff2bd6] shadow-[0_0_5px_rgba(255,43,214,.95)]" />}
+          {overlayPreviewEnabled && overlayGuides.y && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-1/2 z-[70] h-px -translate-y-1/2 bg-[#ff2bd6] shadow-[0_0_5px_rgba(255,43,214,.95)]" />}
+          {overlayPreviewEnabled && overlayGuides.overlayX !== null && <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 z-[70] w-px -translate-x-1/2 bg-[#35e6e3] shadow-[0_0_6px_rgba(53,230,227,.95)]"
+            style={{ left: `${overlayGuides.overlayX / (TEMPLATE_CANVAS.width / 100)}%` }}
+          />}
+          {overlayPreviewEnabled && overlayGuides.overlayY !== null && <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 z-[70] h-px -translate-y-1/2 bg-[#35e6e3] shadow-[0_0_6px_rgba(53,230,227,.95)]"
+            style={{ top: `${overlayGuides.overlayY / (TEMPLATE_CANVAS.height / 100)}%` }}
+          />}
+          {overlayPreviewEnabled && overlayGuides.commentDocked && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 z-[70] h-px bg-[#35e6e3] shadow-[0_0_7px_rgba(53,230,227,.9)]" style={{ top: `${editorVideoBottom / 19.2}%` }} />}
+          {overlayPreviewEnabled && overlayGuides.videoWidthFitted && <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 inset-x-0 z-[70] border-x-2 border-white/90 shadow-[inset_2px_0_0_rgba(0,0,0,.35),inset_-2px_0_0_rgba(0,0,0,.35)]" />}
+          {overlayPreviewEnabled && overlayGuides.videoHeightFitted && <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 inset-x-0 z-[70] border-y-2 border-white/90 shadow-[inset_0_2px_0_rgba(0,0,0,.35),inset_0_-2px_0_rgba(0,0,0,.35)]" />}
         </div>
-        <div className="editor-preview-transport" aria-label="미리보기 재생 제어">
+        {overlayPreviewEnabled && scalableOverlaySelection && scalableOverlayScale !== null && scalableOverlayLabel && <aside
+          className="editor-overlay-size-control"
+          aria-label={`${scalableOverlayLabel} 크기 조절`}
+          data-editor-overlay-size-control={scalableOverlaySelection}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <strong>{scalableOverlayLabel}</strong>
+          <div className="editor-overlay-size-slider-track">
+            <input
+              type="range"
+              min={EDITOR_TEXT_LAYER_MIN_SCALE * 100}
+              max={EDITOR_TEXT_LAYER_MAX_SCALE * 100}
+              step={5}
+              value={Math.round(scalableOverlayScale * 100)}
+              aria-label={`${scalableOverlayLabel} 크기`}
+              onPointerDown={(event) => beginEditorOverlayScaleDrag(
+                scalableOverlaySelection,
+                event,
+              )}
+              onKeyDown={(event) => {
+                const scaleDelta = event.key === "ArrowUp" || event.key === "ArrowRight"
+                  ? 0.05
+                  : event.key === "ArrowDown" || event.key === "ArrowLeft"
+                    ? -0.05
+                    : event.key === "PageUp"
+                      ? 0.1
+                      : event.key === "PageDown"
+                        ? -0.1
+                        : null;
+                const nextScale = event.key === "Home"
+                  ? EDITOR_TEXT_LAYER_MIN_SCALE
+                  : event.key === "End"
+                    ? EDITOR_TEXT_LAYER_MAX_SCALE
+                    : scaleDelta === null
+                      ? null
+                      : Math.min(
+                          EDITOR_TEXT_LAYER_MAX_SCALE,
+                          Math.max(
+                            EDITOR_TEXT_LAYER_MIN_SCALE,
+                            scalableOverlayScale + scaleDelta,
+                          ),
+                        );
+                if (nextScale === null) return;
+                event.preventDefault();
+                beginEditorOverlayHistoryInteraction();
+                setEditorOverlayScale(scalableOverlaySelection, nextScale);
+              }}
+              onKeyUp={finishEditorOverlayHistoryInteraction}
+              onBlur={finishEditorOverlayHistoryInteraction}
+              onChange={(event) => setEditorOverlayScale(
+                scalableOverlaySelection,
+                Number(event.target.value) / 100,
+              )}
+            />
+          </div>
+          <output aria-label={`${scalableOverlayLabel} 현재 크기`}>
+            {Math.round(scalableOverlayScale * 100)}%
+          </output>
+        </aside>}
+        {overlayPreviewEnabled
+          && selectedOverlay === "comment"
+          && layoutPreviewComment
+          && canApplyActiveCommentPositionToAll
+          && <aside
+            className="editor-comment-position-apply"
+            aria-label="댓글 위치 일괄 적용"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={applyActiveCommentPositionToAll}
+            >
+              모든 댓글에 위치 적용
+            </button>
+          </aside>}
+        {overlayPreviewEnabled && selectedOverlay !== null && selectedLayerOrderLabel && <aside
+          className="editor-layer-order-control"
+          aria-label={`${selectedLayerOrderLabel} 레이어 순서`}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <strong>레이어 순서</strong>
+          <div>
+            <button
+              type="button"
+              disabled={!canMoveSelectedLayerForward}
+              onClick={() => moveSelectedEditorLayer("forward")}
+            >
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="m5.5 11.5 4.5-4.5 4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M5.5 15h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              앞으로
+            </button>
+            <button
+              type="button"
+              disabled={!canMoveSelectedLayerBackward}
+              onClick={() => moveSelectedEditorLayer("backward")}
+            >
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="m5.5 8.5 4.5 4.5 4.5-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M5.5 5h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              뒤로
+            </button>
+          </div>
+        </aside>}
+        </div>
+        <div className="editor-preview-transport" aria-label="미리보기 재생 및 화면 제어">
           <span>{formatPreciseTimestamp(displayedPreviewTime)}</span>
           <button
             type="button"
@@ -2159,9 +6368,108 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               : <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7.5 5.4 7 4.6-7 4.6V5.4Z" fill="currentColor" /></svg>}
           </button>
           <span>{formatPreciseTimestamp(previewDuration)}</span>
+          <button
+            type="button"
+            disabled={!cleanVideoUrl}
+            aria-label={isPreviewFullscreen ? "전체보기 종료" : "전체보기"}
+            aria-pressed={isPreviewFullscreen}
+            title={isPreviewFullscreen ? "전체보기 종료" : "전체보기"}
+            onClick={() => void togglePreviewFullscreen()}
+          >
+            {isPreviewFullscreen
+              ? <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path d="M8 3.5V8H3.5M12 3.5V8h4.5M8 16.5V12H3.5M12 16.5V12h4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              : <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path d="M8 3.5H3.5V8M12 3.5h4.5V8M8 16.5H3.5V12M12 16.5h4.5V12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>}
+          </button>
         </div>
+        {overlayPreviewEnabled && <div
+          className="editor-range-actions editor-preview-quick-actions"
+          aria-label="미리보기 빠른 편집"
+          data-editor-guide="overlay-actions"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            data-editor-guide="add-comment"
+            disabled={comments.length >= 20}
+            onClick={addComment}
+          >
+            + 댓글
+          </button>
+          <button
+            type="button"
+            disabled={textOverlays.length >= EDITOR_TEXT_OVERLAY_LIMIT}
+            onClick={addEditorTextOverlay}
+          >
+            + 텍스트
+          </button>
+        </div>}
+        {videoCuttingEnabled && <div
+          className="editor-preview-cut-actions"
+          aria-label="영상 자르기"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {selectedOverlay === null
+            && selectedVideoClipId
+            && renderVideoClips.length > 1
+            && <button
+            type="button"
+            className="is-delete"
+            onClick={deleteSelectedEditorVideoClip}
+          >
+            구간 삭제
+          </button>}
+          <button
+            type="button"
+            data-editor-guide="video-split"
+            disabled={!canSplitCurrentVideoClip}
+            onClick={splitCurrentEditorVideo}
+          >
+            <span aria-hidden="true">✂</span>
+            분할
+          </button>
+        </div>}
         </section>
-        <section className={standalone ? `editor-controls-pane${mobileControlsOpen ? " is-mobile-open" : ""}` : "editor-dialog-controls"}>
+        <section className={standalone
+          ? `editor-controls-pane${mobileControlsOpen ? " is-mobile-open" : ""}${overlayPreviewEnabled ? " has-editor-tool-rail" : ""}`
+          : `editor-dialog-controls${overlayPreviewEnabled ? " has-editor-tool-rail" : ""}`}
+        >
+          {overlayPreviewEnabled && <nav
+            className="editor-tool-rail"
+            aria-label="편집 도구"
+          >
+            <div
+              className="editor-tool-rail-buttons"
+              data-editor-guide="sidebar-tools"
+            >
+            {EDITOR_SIDEBAR_TOOLS.map((tool) => {
+              const active = activeEditorSidebarTool === tool.id
+                && desktopSidebarOpen;
+              return (
+                <button
+                  key={tool.id}
+                  type="button"
+                  aria-pressed={active}
+                  aria-expanded={active}
+                  aria-controls="editor-tool-detail"
+                  onClick={() => toggleEditorSidebarTool(tool.id)}
+                >
+                  <span>
+                    <EditorSidebarSectionIcon section={tool.id} />
+                  </span>
+                  {tool.label}
+                </button>
+              );
+            })}
+            </div>
+          </nav>}
+          <div
+            id={overlayPreviewEnabled ? "editor-tool-detail" : undefined}
+            className="editor-controls-detail"
+          >
           <div className="editor-controls-sheet-header">
             <span id="editor-title" className="sr-only">편집 설정</span>
             <button type="button" className="editor-controls-sheet-toggle" aria-expanded={mobileControlsOpen} aria-controls="editor-controls-scroll" onClick={() => setMobileControlsOpen((current) => !current)}>
@@ -2172,11 +6480,312 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 </svg>
               </span>
             </button>
-            {!standalone && <button onClick={onClose} className="editor-dialog-close-button rounded-lg px-3 py-2 text-sm text-neutral-400 hover:bg-white/10">닫기</button>}
+            {!standalone && <button onClick={onClose} className="editor-dialog-close-button rounded-lg px-3 py-2 text-sm text-white hover:bg-white/10">닫기</button>}
           </div>
           <div id="editor-controls-scroll" className="editor-controls-scroll">
-          <details className="editor-accordion">
+          {overlayPreviewEnabled
+            && selectedTextOverlay
+            && <section className="editor-elements-panel" aria-label="오버레이 요소">
+            {selectedTextOverlay && <div className="editor-element-settings">
+              <label className="editor-text-content-setting">
+                <span>내용</span>
+                <textarea
+                  value={selectedTextOverlay.text}
+                  maxLength={120}
+                  rows={2}
+                  onFocus={beginEditorOverlayHistoryInteraction}
+                  onBlur={finishEditorOverlayHistoryInteraction}
+                  onChange={(event) => updateSelectedEditorText(
+                    { text: event.target.value },
+                    "continuous",
+                  )}
+                />
+              </label>
+              <EditorFontPicker
+                value={selectedTextOverlay.fontId || DEFAULT_EDITOR_FONT_ID}
+                onChange={(fontId) => updateSelectedEditorText({ fontId })}
+              />
+              <fieldset className="editor-text-color-setting">
+                <legend>색상</legend>
+                <div>
+                  {templatePresetColorOptions.map((option) => <button
+                    key={option.color}
+                    type="button"
+                    aria-label={`텍스트 색상 ${option.name}`}
+                    title={option.name}
+                    aria-pressed={selectedTextOverlay.color === option.color}
+                    onClick={() => updateSelectedEditorText({
+                      color: option.color,
+                    })}
+                    style={{ backgroundColor: option.color }}
+                  />)}
+                </div>
+              </fieldset>
+              <fieldset className="editor-text-effect-setting">
+                <legend>효과</legend>
+                <div>
+                  <button
+                    type="button"
+                    aria-pressed={selectedTextOverlay.effect === "none"}
+                    onClick={() => updateSelectedEditorText({
+                      effect: "none",
+                    })}
+                  >
+                    없음
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={(selectedTextOverlay.effect || "outline") === "outline"}
+                    onClick={() => updateSelectedEditorText({
+                      effect: "outline",
+                    })}
+                  >
+                    테두리
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={selectedTextOverlay.effect === "shadow"}
+                    onClick={() => updateSelectedEditorText({
+                      effect: "shadow",
+                    })}
+                  >
+                    그림자
+                  </button>
+                </div>
+              </fieldset>
+            </div>}
+          </section>}
+          {overlayPreviewEnabled && <section
+            className={`editor-sidebar-tool-panel${activeEditorSidebarTool === "channel" ? " is-active" : ""}`}
+            aria-label="채널명 설정"
+          >
+            <header className="editor-tool-panel-header">
+              <strong>채널명</strong>
+            </header>
+            <div className="editor-channel-preset-library">
+              <button
+                type="button"
+                className="editor-channel-preset-add"
+                disabled={editorChannelPresets.length >= EDITOR_CHANNEL_PRESET_LIMIT}
+                onClick={() => {
+                  setChannelPresetComposerOpen((current) => !current);
+                  setChannelPresetError(null);
+                }}
+              >
+                <span aria-hidden="true">+</span>
+                내 채널명 추가하기
+              </button>
+              {channelPresetComposerOpen && <div
+                className="editor-channel-preset-composer"
+                aria-label="내 채널명 추가"
+              >
+                <div className="editor-channel-preset-image-input">
+                  <ChannelAvatar
+                    url={channelPresetDraftImageDataUrl}
+                    className="h-12 w-12"
+                    fallbackForeground="#ffffff"
+                    fallbackBackground="#202024"
+                    sizes="48px"
+                  />
+                  <label>
+                    {channelPresetImageBusy
+                      ? "이미지 준비 중..."
+                      : channelPresetDraftImageDataUrl
+                        ? "이미지 바꾸기"
+                        : "이미지 선택"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={channelPresetImageBusy}
+                      onChange={(event) => {
+                        void updateChannelPresetDraftImage(event);
+                      }}
+                    />
+                  </label>
+                </div>
+                <label className="editor-channel-preset-name-input">
+                  <span>채널명</span>
+                  <input
+                    type="text"
+                    value={channelPresetDraftName}
+                    maxLength={50}
+                    placeholder="채널명을 입력하세요"
+                    onChange={(event) => setChannelPresetDraftName(
+                      event.target.value,
+                    )}
+                  />
+                </label>
+                {channelPresetError && <p role="alert">
+                  {channelPresetError}
+                </p>}
+                <div className="editor-channel-preset-composer-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChannelPresetComposerOpen(false);
+                      setChannelPresetDraftName("");
+                      setChannelPresetDraftImageDataUrl(null);
+                      setChannelPresetError(null);
+                    }}
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    disabled={channelPresetImageBusy}
+                    onClick={saveEditorChannelPreset}
+                  >
+                    저장
+                  </button>
+                </div>
+              </div>}
+              {editorChannelPresets.length > 0 && <div
+                className="editor-channel-preset-list"
+                aria-label="저장한 내 채널명"
+              >
+                {editorChannelPresets.map((preset) => {
+                  const selected = channel === preset.name
+                    && editorChannelThumbnailUrl === preset.imageDataUrl;
+                  return <div
+                    key={preset.id}
+                    className="editor-channel-preset-item"
+                  >
+                    <button
+                      type="button"
+                      className="editor-channel-preset-select"
+                      aria-pressed={selected}
+                      onClick={() => applyEditorChannelPreset(preset)}
+                    >
+                      <ChannelAvatar
+                        url={preset.imageDataUrl}
+                        className="h-10 w-10"
+                        fallbackForeground="#ffffff"
+                        fallbackBackground="#202024"
+                        sizes="40px"
+                      />
+                      <span>{preset.name}</span>
+                      {selected && <svg
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <path d="m5 10 3 3 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>}
+                    </button>
+                    <button
+                      type="button"
+                      className="editor-channel-preset-delete"
+                      aria-label={`${preset.name} 삭제`}
+                      onClick={() => deleteEditorChannelPreset(preset.id)}
+                    >
+                      ×
+                    </button>
+                  </div>;
+                })}
+              </div>}
+            </div>
+            <div className="editor-element-settings editor-channel-settings">
+              <strong className="editor-channel-current-title">현재 채널명</strong>
+              <div className="editor-channel-image-setting">
+                <ChannelAvatar
+                  url={editorChannelThumbnailUrl}
+                  className="h-11 w-11"
+                  fallbackForeground="#ffffff"
+                  fallbackBackground="#202024"
+                  sizes="44px"
+                />
+                <label>
+                  사진 바꾸기
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={updateEditorChannelThumbnail}
+                  />
+                </label>
+              </div>
+              <label className="editor-channel-name-setting">
+                <span>채널명</span>
+                <input
+                  type="text"
+                  value={channel}
+                  maxLength={50}
+                  onFocus={beginEditorCopyInteraction}
+                  onBlur={finishEditorCopyInteraction}
+                  onChange={(event) => {
+                    channelRef.current = event.target.value;
+                    setChannel(event.target.value);
+                  }}
+                />
+              </label>
+              <EditorFontPicker
+                value={channelFontId}
+                onChange={(fontId) => commitEditorOverlayLayoutChange((current) => ({
+                  ...current,
+                  fonts: {
+                    ...(current.fonts || {
+                      title: DEFAULT_EDITOR_FONT_ID,
+                      channel: DEFAULT_EDITOR_FONT_ID,
+                    }),
+                    channel: fontId,
+                  },
+                }))}
+              />
+            </div>
+          </section>}
+          {overlayPreviewEnabled && <section
+            className={`editor-sidebar-tool-panel${activeEditorSidebarTool === "comment" ? " is-active" : ""}`}
+            aria-label="댓글 설정"
+          >
+            <header className="editor-tool-panel-header">
+              <strong>댓글</strong>
+            </header>
+            <fieldset className="editor-comment-theme-setting">
+              <legend>댓글 모드</legend>
+              <div>
+                <button
+                  type="button"
+                  aria-pressed={editorCommentTheme === "dark"}
+                  onClick={() => setEditorCommentTheme("dark")}
+                >
+                  다크
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={editorCommentTheme === "light"}
+                  onClick={() => setEditorCommentTheme("light")}
+                >
+                  화이트
+                </button>
+              </div>
+            </fieldset>
+            <button
+              type="button"
+              className="editor-comment-regenerate-button"
+              disabled={regeneratingComments || comments.length === 0}
+              onClick={() => {
+                commentRegenerationRequestIdRef.current = globalThis.crypto.randomUUID();
+                setCommentRegenerationError(null);
+                setCommentRegenerationConfirmationOpen(true);
+              }}
+            >
+              <span aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="m12 3 1.25 4.2L17.5 8.5l-4.25 1.3L12 14l-1.25-4.2L6.5 8.5l4.25-1.3L12 3Z" fill="currentColor" />
+                  <path d="m18.5 14 .7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3Z" fill="currentColor" opacity=".7" />
+                </svg>
+              </span>
+              {regeneratingComments ? "댓글 생성 중..." : "AI로 댓글 재생성"}
+            </button>
+            {comments.length === 0 && <p className="editor-comment-regenerate-hint">
+              댓글을 먼저 추가해 주세요.
+            </p>}
+          </section>}
+          <details
+            className={`editor-accordion editor-sidebar-tool-panel${activeEditorSidebarTool === "title" ? " is-active" : ""}`}
+            open={overlayPreviewEnabled ? true : undefined}
+          >
             <summary className="editor-accordion-summary">
+              <span className="editor-accordion-summary-icon"><EditorSidebarSectionIcon section="title" /></span>
               <span>후킹 제목</span>
               <span className="editor-accordion-chevron" aria-hidden="true">
                 <svg viewBox="0 0 20 20" fill="none">
@@ -2185,65 +6794,173 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               </span>
             </summary>
             <div className="editor-accordion-panel">
+              {overlayPreviewEnabled && <header className="editor-tool-panel-header">
+                <strong>후킹 제목</strong>
+              </header>}
               <label className="block">
                 <span className="sr-only">후킹 제목</span>
-                <textarea ref={titleInputRef} value={title} onChange={(event) => { setTitle(event.target.value); setTitleTextStyles([]); setTitleSelection(null); }} onSelect={captureTitleSelection} onDoubleClick={captureTitleSelection} maxLength={80} rows={2} className="w-full rounded-lg border border-white/15 bg-black/30 p-3 text-sm" />
+                <textarea
+                  ref={titleInputRef}
+                  value={title}
+                  onFocus={beginEditorCopyInteraction}
+                  onBlur={finishEditorCopyInteraction}
+                  onChange={(event) => updateEditorTitleInlineValue(event.target.value)}
+                  onSelect={captureTitleSelection}
+                  onDoubleClick={captureTitleSelection}
+                  maxLength={80}
+                  rows={2}
+                  className="w-full rounded-lg border border-white/15 bg-black/30 p-3 text-sm"
+                />
               </label>
-              <p className={`mt-1 text-xs ${validTitle ? "text-neutral-500" : "text-red-400"}`}>최대 2줄·80자 ({title.length}/80)</p>
+              <p className={`mt-1 text-xs text-white ${validTitle ? "opacity-60" : "opacity-100"}`}>최대 2줄·80자 ({title.length}/80)</p>
+            {overlayPreviewEnabled && <EditorFontPicker
+              value={titleFontId}
+              onChange={(fontId) => commitEditorOverlayLayoutChange((current) => ({
+                ...current,
+                fonts: {
+                  ...(current.fonts || {
+                    title: DEFAULT_EDITOR_FONT_ID,
+                    channel: DEFAULT_EDITOR_FONT_ID,
+                  }),
+                  title: fontId,
+                },
+              }))}
+            />}
+            <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+            <p className="text-xs leading-5 text-white/70">글자를 선택하면 선택한 부분만, 선택하지 않으면 제목 전체의 색상이 바뀝니다.</p>
+            <p className={`mt-2 truncate rounded-lg px-2.5 py-2 text-xs text-white ${titleSelection ? "bg-white/10" : "bg-white/[.04] opacity-50"}`}>
+              {titleSelection ? `선택: ${Array.from(title).slice(titleSelection.start, titleSelection.end).join("")}` : "제목 전체에 적용"}
+            </p>
+            <div className="mt-3 grid grid-cols-2 items-start gap-5">
+              <fieldset>
+                <legend className="sr-only">글자색</legend>
+                <div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-white">글자색</span></div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(showAllTextColors ? titleTextColorOptions : titleTextColorOptions.slice(0, 3)).map((option) => <button key={option.color} type="button" aria-label={`글자색 ${option.name}`} title={option.name} aria-pressed={titleTextColor === option.color} onClick={() => { setTitleTextColor(option.color); updateSelectedTitleStyle({ color: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleTextColor === option.color ? "outline outline-2 outline-offset-2 outline-white" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
+                  <button type="button" aria-label={showAllTextColors ? "글자색 접기" : "글자색 전체 보기"} title={showAllTextColors ? "접기" : "전체 보기"} aria-expanded={showAllTextColors} onClick={() => setShowAllTextColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-white transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllTextColors ? "−" : "+"}</button>
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend className="sr-only">텍스트 배경색</legend>
+                <div className="flex items-center justify-between gap-3"><span className="text-xs font-semibold text-white">텍스트 배경색</span></div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button type="button" aria-label="텍스트 배경색 없음" title="없음" onClick={() => updateSelectedTitleStyle({ backgroundColor: null })} className="flex h-8 w-8 items-center justify-center rounded-full border border-dashed border-white/35 bg-white/[.03] text-[8px] font-bold text-white transition hover:border-white/60 disabled:cursor-not-allowed disabled:opacity-30">없음</button>
+                  {(showAllBackgroundColors ? titleBackgroundColorOptions : titleBackgroundColorOptions.slice(0, 2)).map((option) => <button key={option.color} type="button" aria-label={`텍스트 배경색 ${option.name}`} title={option.name} aria-pressed={titleBackgroundColor === option.color} onClick={() => { setTitleBackgroundColor(option.color); updateSelectedTitleStyle({ backgroundColor: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleBackgroundColor === option.color ? "outline outline-2 outline-offset-2 outline-white" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
+                  <button type="button" aria-label={showAllBackgroundColors ? "텍스트 배경색 접기" : "텍스트 배경색 전체 보기"} title={showAllBackgroundColors ? "접기" : "전체 보기"} aria-expanded={showAllBackgroundColors} onClick={() => setShowAllBackgroundColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-white transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllBackgroundColors ? "−" : "+"}</button>
+                </div>
+              </fieldset>
+            </div>
+            </div>
+            <label className="mt-5 block font-semibold">
+              <span className="flex items-center justify-between text-white"><span>제목 글자 크기</span><strong className="text-sm">{Math.round(titleFontScale * 100)}%</strong></span>
+              <input
+                aria-label="제목 글자 크기"
+                type="range"
+                min={0.8}
+                max={1.2}
+                step={0.05}
+                value={titleFontScale}
+                onPointerDown={beginEditorCopyInteraction}
+                onPointerUp={finishEditorCopyInteraction}
+                onPointerCancel={finishEditorCopyInteraction}
+                onKeyDown={beginEditorCopyInteraction}
+                onKeyUp={finishEditorCopyInteraction}
+                onBlur={finishEditorCopyInteraction}
+                onChange={(event) => updateEditorTitleFontScale(
+                  Number(event.target.value),
+                )}
+                className="mt-3 w-full accent-white"
+              />
+            </label>
             </div>
           </details>
-          <details className="editor-accordion">
+          {overlayPreviewEnabled && <details
+            className={`editor-accordion editor-sidebar-tool-panel${activeEditorSidebarTool === "background" ? " is-active" : ""}`}
+            open
+          >
             <summary className="editor-accordion-summary">
-              <span>제목 스타일</span>
+              <span className="editor-accordion-summary-icon"><EditorSidebarSectionIcon section="background" /></span>
+              <span>배경</span>
+              <span className="editor-accordion-summary-meta">
+                {editorCanvasBackground?.kind === "image"
+                  ? stockBackgrounds.find((item) => item.id === editorCanvasBackground.assetId)?.label
+                  : editorCanvasBackground?.kind === "color"
+                    ? templatePresetColorOptions.find((item) => item.color === editorCanvasBackground.color)?.name
+                    : "템플릿 기본"}
+              </span>
               <span className="editor-accordion-chevron" aria-hidden="true">
                 <svg viewBox="0 0 20 20" fill="none">
                   <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </span>
             </summary>
-            <div className="editor-accordion-panel">
-            {activeCustomTemplate
-              ? <p className="rounded-xl border border-cyan-300/15 bg-cyan-300/[.06] px-4 py-3 text-sm leading-6 text-cyan-100">
-                  제목 색상·크기·위치는 선택한 내 템플릿 설정을 그대로 사용합니다.
-                </p>
-              : <>
-            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-            <p className="text-xs leading-5 text-neutral-400">제목에서 원하는 글자를 더블클릭하거나 드래그해 선택한 뒤 색상을 변경하세요.</p>
-            <p className={`mt-2 truncate rounded-lg px-2.5 py-2 text-xs ${titleSelection ? "bg-white/10 text-white" : "bg-white/[.04] text-neutral-500"}`}>
-              {titleSelection ? `선택: ${Array.from(title).slice(titleSelection.start, titleSelection.end).join("")}` : "선택된 글자가 없습니다."}
-            </p>
-            <div className="mt-3 grid grid-cols-2 items-start gap-5">
-              <fieldset disabled={!titleSelection}>
-                <legend className="sr-only">글자색</legend>
-                <div className="flex items-center justify-between gap-3"><span className={`text-xs font-semibold ${titleSelection ? "text-neutral-200" : "text-neutral-600"}`}>글자색</span></div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(showAllTextColors ? titleTextColorOptions : titleTextColorOptions.slice(0, 3)).map((option) => <button key={option.color} type="button" aria-label={`글자색 ${option.name}`} title={option.name} aria-pressed={titleTextColor === option.color} onClick={() => { setTitleTextColor(option.color); updateSelectedTitleStyle({ color: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleTextColor === option.color ? "outline outline-2 outline-offset-2 outline-[#ff715e]" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
-                  <button type="button" aria-label={showAllTextColors ? "글자색 접기" : "글자색 전체 보기"} title={showAllTextColors ? "접기" : "전체 보기"} aria-expanded={showAllTextColors} onClick={() => setShowAllTextColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-neutral-200 transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllTextColors ? "−" : "+"}</button>
+            <div className="editor-accordion-panel editor-background-panel">
+              <header className="editor-tool-panel-header">
+                <strong>배경</strong>
+              </header>
+              <button
+                type="button"
+                className="editor-background-default"
+                aria-pressed={editorCanvasBackground === null}
+                onClick={() => setEditorCanvasBackground(null)}
+              >
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path d="M4.5 6.5h7a4 4 0 1 1-3.25 6.32" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" />
+                  <path d="m4.5 6.5 2.2-2.2M4.5 6.5l2.2 2.2" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                템플릿 기본 배경
+              </button>
+              <fieldset className="editor-background-color-setting">
+                <legend>색상 배경</legend>
+                <div>
+                  {templatePresetColorOptions.map((option) => <button
+                    key={option.color}
+                    type="button"
+                    aria-label={`배경 색상 ${option.name}`}
+                    title={option.name}
+                    aria-pressed={editorCanvasBackground?.kind === "color"
+                      && editorCanvasBackground.color === option.color}
+                    onClick={() => setEditorCanvasBackground({
+                      kind: "color",
+                      color: option.color,
+                    })}
+                    style={{ backgroundColor: option.color }}
+                  />)}
                 </div>
               </fieldset>
-              <fieldset disabled={!titleSelection}>
-                <legend className="sr-only">텍스트 배경색</legend>
-                <div className="flex items-center justify-between gap-3"><span className={`text-xs font-semibold ${titleSelection ? "text-neutral-200" : "text-neutral-600"}`}>텍스트 배경색</span></div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button type="button" aria-label="텍스트 배경색 없음" title="없음" onClick={() => updateSelectedTitleStyle({ backgroundColor: null })} className="flex h-8 w-8 items-center justify-center rounded-full border border-dashed border-white/35 bg-white/[.03] text-[8px] font-bold text-neutral-400 transition hover:border-white/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-30">없음</button>
-                  {(showAllBackgroundColors ? titleBackgroundColorOptions : titleBackgroundColorOptions.slice(0, 2)).map((option) => <button key={option.color} type="button" aria-label={`텍스트 배경색 ${option.name}`} title={option.name} aria-pressed={titleBackgroundColor === option.color} onClick={() => { setTitleBackgroundColor(option.color); updateSelectedTitleStyle({ backgroundColor: option.color }); }} className={`h-8 w-8 rounded-full border border-white/20 transition disabled:cursor-not-allowed disabled:opacity-30 ${titleBackgroundColor === option.color ? "outline outline-2 outline-offset-2 outline-[#ff715e]" : "hover:scale-105 hover:border-white/50"}`} style={{ background: option.color }} />)}
-                  <button type="button" aria-label={showAllBackgroundColors ? "텍스트 배경색 접기" : "텍스트 배경색 전체 보기"} title={showAllBackgroundColors ? "접기" : "전체 보기"} aria-expanded={showAllBackgroundColors} onClick={() => setShowAllBackgroundColors((current) => !current)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-[#353438] text-base font-medium text-neutral-200 transition hover:border-white/40 hover:bg-[#454449] disabled:cursor-not-allowed disabled:opacity-30">{showAllBackgroundColors ? "−" : "+"}</button>
+              <fieldset className="editor-background-image-setting">
+                <legend>이미지 배경</legend>
+                <div>
+                  {stockBackgrounds.map((asset) => <button
+                    key={asset.id}
+                    type="button"
+                    aria-label={`이미지 배경 ${asset.label}`}
+                    aria-pressed={editorCanvasBackground?.kind === "image"
+                      && editorCanvasBackground.assetId === asset.id}
+                    onClick={() => setEditorCanvasBackground({
+                      kind: "image",
+                      assetId: asset.id,
+                    })}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{ backgroundImage: `url(${asset.src})` }}
+                    />
+                    <strong>{asset.label}</strong>
+                  </button>)}
                 </div>
               </fieldset>
             </div>
-            </div>
-            <label className="mt-5 block font-semibold">
-              <span className="flex items-center justify-between"><span>제목 글자 크기</span><strong className="text-sm text-red-300">{Math.round(titleFontScale * 100)}%</strong></span>
-              <input aria-label="제목 글자 크기" type="range" min={0.8} max={1.2} step={0.05} value={titleFontScale} onChange={(event) => setTitleFontScale(Number(event.target.value))} className="mt-3 w-full accent-red-500" />
-            </label>
-              </>}
-            </div>
-          </details>
-          {templateId !== "comment-capture" && <label className="editor-section block text-sm font-semibold">채널명<input value={channel} onChange={(event) => setChannel(event.target.value)} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>}
+          </details>}
+          {templateId !== "comment-capture" && <label className="editor-section block text-sm font-semibold">채널명<input value={channel} onFocus={beginEditorCopyInteraction} onBlur={finishEditorCopyInteraction} onChange={(event) => { channelRef.current = event.target.value; setChannel(event.target.value); }} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>}
           <label className="hidden"><input type="checkbox" checked={subtitlesEnabled} onChange={(event) => setSubtitlesEnabled(event.target.checked)} />자동 자막 표시</label>
           {subtitlesEnabled && <div className="hidden">{segments.map((segment, index) => <label key={`${segment.start}-${index}`}><span>{formatTimestamp(segment.start)}</span><input value={segment.text} onChange={(event) => setSegments((current) => current.map((value, position) => position === index ? { ...value, text: event.target.value } : value))} /></label>)}</div>}
-          <details className="editor-accordion">
+          <details
+            className={`editor-accordion editor-sidebar-tool-panel${activeEditorSidebarTool === "template" ? " is-active" : ""}`}
+            open={overlayPreviewEnabled ? true : undefined}
+          >
             <summary className="editor-accordion-summary">
+              <span className="editor-accordion-summary-icon"><EditorSidebarSectionIcon section="template" /></span>
               <span>템플릿</span>
               <span className="editor-accordion-summary-meta">{activeCustomTemplate?.name || template.name}</span>
               <span className="editor-accordion-chevron" aria-hidden="true">
@@ -2253,13 +6970,16 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               </span>
             </summary>
             <div className="editor-accordion-panel">
-              <p className="mb-3 text-xs text-neutral-500">최종 영상의 제목·영상·하단 구성을 미리 확인하세요.</p>
+              {overlayPreviewEnabled && <header className="editor-tool-panel-header">
+                <strong>템플릿</strong>
+              </header>}
+              <p className="mb-3 text-xs text-white/65">최종 영상의 제목·영상·하단 구성을 미리 확인하세요.</p>
               <div className="editor-template-grid">
                 {availableCustomTemplate && <button
                   type="button"
                   aria-pressed={activeCustomTemplate?.id === availableCustomTemplate.id}
                   onClick={selectCurrentCustomTemplate}
-                  className={`min-w-0 rounded-xl border-2 p-2 transition ${activeCustomTemplate?.id === availableCustomTemplate.id ? "border-red-500 bg-red-500/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}
+                  className={`min-w-0 rounded-xl border-2 p-2 transition ${activeCustomTemplate?.id === availableCustomTemplate.id ? "border-white/75 bg-white/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}
                 >
                   <CustomTemplateCanvasPreview
                     template={availableCustomTemplate}
@@ -2268,7 +6988,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                     channelLabel={channel}
                   />
                   <span className="mt-2 block truncate text-center text-xs font-semibold">{availableCustomTemplate.name}</span>
-                  <span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">적용 중인 내 템플릿</span>
+                  <span className="mt-1 block text-center text-[10px] font-bold text-white/80">적용 중인 내 템플릿</span>
                 </button>}
                 {templates.map((value) => {
                   const selected = !activeCustomTemplate && templateId === value.id;
@@ -2277,62 +6997,212 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                     type="button"
                     aria-pressed={selected}
                     onClick={() => selectTemplate(value.id)}
-                    className={`min-w-0 rounded-xl border-2 p-2 transition ${selected ? "border-red-500 bg-red-500/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}
+                    className={`min-w-0 rounded-xl border-2 p-2 transition ${selected ? "border-white/75 bg-white/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}
                   >
-                    <TemplatePreview template={value} videoAspectRatio={item.videoAspectRatio || "1:1"} channelName={channel} channelThumbnailUrl={channelThumbnailUrl} />
+                    <TemplatePreview template={value} videoAspectRatio={item.videoAspectRatio || "1:1"} channelName={channel} channelThumbnailUrl={editorChannelThumbnailUrl} />
                     <span className="mt-2 block truncate text-center text-xs font-semibold">{value.name}</span>
                   </button>;
                 })}
               </div>
             </div>
           </details>
-          {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
-          {!standalone && <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={!editorValid || saving} onClick={() => setApplyConfirmationOpen(true)} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{saving ? "처리 중..." : "영상에 적용"}</button></div>}
+          {error && <p className="mt-4 text-sm font-semibold text-white">{error}</p>}
+          {!standalone && <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={(overlayPreviewEnabled && !editorSaveEnabled) || !editorValid || saving} onClick={() => setApplyConfirmationOpen(true)} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{overlayPreviewEnabled && !editorSaveEnabled ? "저장 잠금" : saving ? "처리 중..." : "영상에 적용"}</button></div>}
+          </div>
           </div>
         </section>
-        {editTimeline && <section className="editor-range-panel editor-workspace-timeline" aria-label="영상 및 댓글 구간 선택">
+        {editTimeline && <section
+          className="editor-range-panel editor-workspace-timeline"
+          aria-label="영상 및 댓글 구간 선택"
+          data-editor-guide={overlayPreviewEnabled ? "editor-timeline" : undefined}
+        >
           <div className="editor-filmstrip-wrap">
-            <div ref={filmstripRef} className="editor-filmstrip" data-editor-guide="range-handles" onPointerDown={startTimelineScrubbing} onPointerMove={moveTimelineScrubbing} onPointerUp={finishTimelineScrubbing} onPointerCancel={finishTimelineScrubbing}>
-              <div className="editor-filmstrip-images" aria-hidden="true">
-                {Array.from({ length: TIMELINE_THUMBNAIL_COUNT }, (_, index) => (
-                  timelineThumbnails[index]
-                    ? <span key={index} className="has-image" style={{ backgroundImage: `url(${timelineThumbnails[index]})` }} />
-                    : <span key={index} />
-                ))}
-              </div>
-              <div className="editor-filmstrip-shade editor-filmstrip-shade-left" style={{ width: `${selectionLeft}%` }} />
-              <div className="editor-filmstrip-shade editor-filmstrip-shade-right" style={{ left: `${selectionLeft + selectionWidth}%` }} />
-              <div className="editor-filmstrip-selection" style={{ left: `${selectionLeft}%`, width: `${selectionWidth}%` }} />
+            <div
+              ref={filmstripRef}
+              className="editor-filmstrip"
+              data-editor-guide="range-handles"
+              onPointerDown={startTimelineScrubbing}
+              onPointerMove={moveTimelineScrubbing}
+              onPointerUp={finishTimelineScrubbing}
+              onPointerCancel={finishTimelineScrubbing}
+            >
+              {videoCuttingEnabled
+                ? <>
+                    <div className="editor-filmstrip-images" aria-hidden="true">
+                      {Array.from({ length: TIMELINE_THUMBNAIL_COUNT }, (_, index) => (
+                        timelineThumbnails[index]
+                          ? <span key={index} className="has-image" style={{ backgroundImage: `url(${timelineThumbnails[index]})` }} />
+                          : <span key={index} />
+                      ))}
+                    </div>
+                    <div className="editor-filmstrip-shade editor-filmstrip-shade-left" style={{ width: `${sourceSelectionLeft}%` }} />
+                    <div className="editor-filmstrip-shade editor-filmstrip-shade-right" style={{ left: `${sourceSelectionLeft + videoOutputWidthPercent}%` }} />
+                    <div
+                      key={`video-ripple-${videoRippleRevision}`}
+                      className={`editor-video-clip-strip${videoRippleRevision > 0 ? " is-rippling" : ""}`}
+                      aria-label="영상 조각 타임라인"
+                      style={{
+                        left: `${sourceSelectionLeft}%`,
+                        width: `${videoOutputWidthPercent}%`,
+                      }}
+                    >
+                    {renderVideoClips.map((clip, clipIndex) => {
+                      const clipDuration = editorVideoClipDuration(clip);
+                      const thumbnailCount = Math.max(
+                        1,
+                        Math.round(
+                          clipDuration
+                          / Math.max(videoSequenceDuration, 0.001)
+                          * TIMELINE_THUMBNAIL_COUNT,
+                        ),
+                      );
+                      return <button
+                        key={clip.id}
+                        type="button"
+                        data-editor-video-clip-id={clip.id}
+                        aria-label={`영상 조각 ${clipIndex + 1} 선택`}
+                        aria-pressed={selectedVideoClipId === clip.id}
+                        className={selectedVideoClipId === clip.id ? "is-selected" : ""}
+                        style={{
+                          flexBasis: `${clipDuration / Math.max(videoSequenceDuration, 0.001) * 100}%`,
+                        }}
+                        onClick={() => {
+                          setSelectedVideoClipId(clip.id);
+                          setSelectedOverlay(null);
+                          setInlineEditingOverlay(null);
+                        }}
+                      >
+                        <span className="editor-video-clip-thumbnails" aria-hidden="true">
+                          {Array.from({ length: thumbnailCount }, (_, frameIndex) => {
+                            const sourceSeconds = clip.sourceStartSeconds
+                              + clipDuration * ((frameIndex + 0.5) / thumbnailCount);
+                            const thumbnailIndex = Math.max(
+                              0,
+                              Math.min(
+                                TIMELINE_THUMBNAIL_COUNT - 1,
+                                Math.floor(sourceSeconds / timelineDuration * TIMELINE_THUMBNAIL_COUNT),
+                              ),
+                            );
+                            const thumbnail = timelineThumbnails[thumbnailIndex];
+                            return <span
+                              key={`${clip.id}-${frameIndex}`}
+                              className={thumbnail ? "has-image" : ""}
+                              style={thumbnail ? { backgroundImage: `url(${thumbnail})` } : undefined}
+                            />;
+                          })}
+                        </span>
+                        {renderVideoClips.length > 1 && <span className="editor-video-clip-label">
+                          조각 {clipIndex + 1}
+                        </span>}
+                      </button>;
+                    })}
+                    {renderVideoClips.slice(0, -1).map((clip, clipIndex) => {
+                      const boundarySeconds = renderVideoClips
+                        .slice(0, clipIndex + 1)
+                        .reduce(
+                          (duration, value) => duration + editorVideoClipDuration(value),
+                          0,
+                        );
+                      return <span
+                        key={`cut-${clip.id}`}
+                        className="editor-video-cut-marker"
+                        style={{
+                          left: `${boundarySeconds / Math.max(videoSequenceDuration, 0.001) * 100}%`,
+                        }}
+                        aria-hidden="true"
+                      />;
+                    })}
+                    {selectedVideoClip && <>
+                      <button
+                        type="button"
+                        className="editor-video-clip-trim-handle is-start"
+                        aria-label="선택한 영상 조각 앞부분 조절"
+                        style={{
+                          left: `${selectedVideoClipOutputStart / Math.max(videoSequenceDuration, 0.001) * 100}%`,
+                        }}
+                        onPointerDown={(event) => beginEditorVideoClipTrim(
+                          selectedVideoClip.id,
+                          "start",
+                          event,
+                        )}
+                      />
+                      <button
+                        type="button"
+                        className="editor-video-clip-trim-handle is-end"
+                        aria-label="선택한 영상 조각 뒷부분 조절"
+                        style={{
+                          left: `${(
+                            selectedVideoClipOutputStart
+                            + editorVideoClipDuration(selectedVideoClip)
+                          ) / Math.max(videoSequenceDuration, 0.001) * 100}%`,
+                        }}
+                        onPointerDown={(event) => beginEditorVideoClipTrim(
+                          selectedVideoClip.id,
+                          "end",
+                          event,
+                        )}
+                      />
+                    </>}
+                    </div>
+                  </>
+                : <>
+                    <div className="editor-filmstrip-images" aria-hidden="true">
+                      {Array.from({ length: TIMELINE_THUMBNAIL_COUNT }, (_, index) => (
+                        timelineThumbnails[index]
+                          ? <span key={index} className="has-image" style={{ backgroundImage: `url(${timelineThumbnails[index]})` }} />
+                          : <span key={index} />
+                      ))}
+                    </div>
+                    <div className="editor-filmstrip-shade editor-filmstrip-shade-left" style={{ width: `${selectionLeft}%` }} />
+                    <div className="editor-filmstrip-shade editor-filmstrip-shade-right" style={{ left: `${selectionLeft + selectionWidth}%` }} />
+                    <div className="editor-filmstrip-selection" style={{ left: `${selectionLeft}%`, width: `${selectionWidth}%` }} />
+                    <span className="editor-range-marker editor-range-marker-start" style={{ left: `${selectionLeft}%` }} aria-hidden="true" onPointerDown={(event) => startRangeInteraction("start", event)}>
+                      <span className="editor-range-marker-time">{formatPreciseTimestamp(0)}</span>
+                      <span className="editor-range-marker-grip">•••</span>
+                    </span>
+                    <span className="editor-range-marker editor-range-marker-end" style={{ left: `${selectionLeft + selectionWidth}%` }} aria-hidden="true" onPointerDown={(event) => startRangeInteraction("end", event)}>
+                      <span className="editor-range-marker-time">{formatPreciseTimestamp(selectionDuration)}</span>
+                      <span className="editor-range-marker-grip">•••</span>
+                    </span>
+                    <input aria-label="최종 영상 시작 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.001} value={selectionStart} onChange={(event) => updateSelectionStart(Number(event.target.value))} className="sr-only" />
+                    <input aria-label="최종 영상 종료 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.001} value={selectionEnd} onChange={(event) => updateSelectionEnd(Number(event.target.value))} className="sr-only" />
+                  </>}
               <span className="editor-timeline-playhead" style={{ left: `${playheadLeft}%` }} aria-hidden="true" />
-              <span className="editor-range-marker editor-range-marker-start" style={{ left: `${selectionLeft}%` }} aria-hidden="true" onPointerDown={(event) => startRangeInteraction("start", event)}>
-                <span className="editor-range-marker-time">{formatPreciseTimestamp(0)}</span>
-                <span className="editor-range-marker-grip">•••</span>
-              </span>
-              <span className="editor-range-marker editor-range-marker-end" style={{ left: `${selectionLeft + selectionWidth}%` }} aria-hidden="true" onPointerDown={(event) => startRangeInteraction("end", event)}>
-                <span className="editor-range-marker-time">{formatPreciseTimestamp(selectionDuration)}</span>
-                <span className="editor-range-marker-grip">•••</span>
-              </span>
-              <input aria-label="최종 영상 시작 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.001} value={selectionStart} onChange={(event) => updateSelectionStart(Number(event.target.value))} className="sr-only" />
-              <input aria-label="최종 영상 종료 시간" type="range" min={editTimeline.timelineStartSeconds} max={editTimeline.timelineEndSeconds} step={0.001} value={selectionEnd} onChange={(event) => updateSelectionEnd(Number(event.target.value))} className="sr-only" />
             </div>
             <div className="editor-filmstrip-bounds" aria-label="전체 편집 가능 범위">
-              <span>{formatTimelineOffset(editTimeline.timelineStartSeconds - selectionStart)}</span>
-              <span>{formatTimelineOffset(editTimeline.timelineEndSeconds - selectionStart)}</span>
+              {videoCuttingEnabled
+                ? <>
+                    <span>{formatTimelineOffset(editTimeline.timelineStartSeconds - selectionStart)}</span>
+                    <span>{formatTimelineOffset(editTimeline.timelineEndSeconds - selectionEnd)}</span>
+                  </>
+                : <>
+                    <span>{formatTimelineOffset(editTimeline.timelineStartSeconds - selectionStart)}</span>
+                    <span>{formatTimelineOffset(editTimeline.timelineEndSeconds - selectionStart)}</span>
+                  </>}
             </div>
           </div>
-          {commentTimeline}
-          <div className="editor-range-actions">
+          {(commentTimeline || textTimelines) && <div className="editor-overlay-timeline-lanes">
+            {commentTimeline}
+            {textTimelines}
+          </div>}
+          {!overlayPreviewEnabled && <div className="editor-range-actions">
             <button type="button" data-editor-guide="reset-range" onClick={() => { setSelectionStart(editTimeline.initialStartSeconds); setSelectionEnd(editTimeline.initialEndSeconds); seekTimeline(editTimeline.initialStartSeconds); }}>↺ 원본으로 되돌리기</button>
             {templateId === "comment-capture" && <button type="button" data-editor-guide="add-comment" disabled={comments.length >= 20} onClick={addComment}>+ 댓글</button>}
-          </div>
-          {selectionDuration > 180 && <p className="editor-range-warning">3분을 넘는 영상은 YouTube에서 Shorts로 분류되지 않을 수 있지만 저장할 수 있습니다.</p>}
+          </div>}
+          {previewDuration > 180 && <p className="editor-range-warning">3분을 넘는 영상은 YouTube에서 Shorts로 분류되지 않을 수 있지만 저장할 수 있습니다.</p>}
           {!validSelection && <p className="editor-range-error">최종 영상은 1초 이상이어야 합니다.</p>}
         </section>}
-        {!editTimeline && commentTimeline && <section className="editor-range-panel editor-workspace-timeline editor-comment-only-panel">
-          {commentTimeline}
-          <div className="editor-range-actions">
-            <button type="button" data-editor-guide="add-comment" disabled={comments.length >= 20} onClick={addComment}>+ 댓글</button>
+        {!editTimeline && (commentTimeline || textTimelines) && <section
+          className="editor-range-panel editor-workspace-timeline editor-comment-only-panel"
+          data-editor-guide={overlayPreviewEnabled ? "editor-timeline" : undefined}
+        >
+          <div className="editor-overlay-timeline-lanes">
+            {commentTimeline}
+            {textTimelines}
           </div>
+          {!overlayPreviewEnabled && <div className="editor-range-actions">
+            {commentTimeline && <button type="button" data-editor-guide="add-comment" disabled={comments.length >= 20} onClick={addComment}>+ 댓글</button>}
+          </div>}
         </section>}
       </div>
     </>
@@ -2564,7 +7434,7 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
   );
 }
 
-export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = false }: { projectNumber: number; shortId: string; rangeEditingEnabled?: boolean }) {
+export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false }: { projectNumber: number; shortId: string; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean }) {
   const [project, setProject] = useState<VideoJob | null>(null);
   const [access, setAccess] = useState<ProjectActionAccess | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -2590,7 +7460,7 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">편집기를 준비하고 있습니다…</main>;
   if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/projects/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
 
-  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} paidAccessBlocked={!access?.canEdit} />;
+  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} paidAccessBlocked={!access?.canEdit} />;
 }
 
 export function ProjectPage({ projectNumber }: { projectNumber: number }) {
