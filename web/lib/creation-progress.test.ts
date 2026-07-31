@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   estimatedCreationMinutes,
   estimatedProgress,
+  estimatedProgressWithFloor,
   estimatedRemainingLabel,
   estimatedRemainingMinutes,
   estimatedRerenderMinutes,
@@ -30,6 +31,13 @@ describe("estimated creation progress", () => {
     expect(estimatedProgress(startedAt, startedAt + 4 * 60_000, 8)).toBe(50);
     expect(estimatedProgress(startedAt, startedAt + 8 * 60_000, 8)).toBe(99);
     expect(estimatedProgress(startedAt, startedAt + 20 * 60_000, 8)).toBe(99);
+  });
+
+  it("never displays less than the persisted rerender progress", () => {
+    expect(estimatedProgressWithFloor(1, 28)).toBe(28);
+    expect(estimatedProgressWithFloor(47, 28)).toBe(47);
+    expect(estimatedProgressWithFloor(1, Number.NaN)).toBe(1);
+    expect(estimatedProgressWithFloor(120, 100)).toBe(99);
   });
 
   it("derives the remaining time from elapsed time", () => {

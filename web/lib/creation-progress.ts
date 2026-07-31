@@ -40,6 +40,23 @@ export function estimatedProgress(
   return SIMULATED_PROGRESS_START + (MAX_IN_PROGRESS - SIMULATED_PROGRESS_START) * ratio;
 }
 
+export function estimatedProgressWithFloor(
+  estimatedValue: number,
+  persistedValue?: number,
+) {
+  const safeEstimatedValue = Number.isFinite(estimatedValue)
+    ? estimatedValue
+    : SIMULATED_PROGRESS_START;
+  const safePersistedValue = Number.isFinite(persistedValue)
+    ? Number(persistedValue)
+    : SIMULATED_PROGRESS_START;
+  return clamp(
+    Math.max(safeEstimatedValue, safePersistedValue),
+    SIMULATED_PROGRESS_START,
+    MAX_IN_PROGRESS,
+  );
+}
+
 export function estimatedRemainingMinutes(
   startedAtMs: number,
   nowMs: number,

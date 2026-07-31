@@ -7,6 +7,7 @@ import type { VideoJob } from "@/lib/contracts";
 import {
   estimatedCreationMinutes,
   estimatedProgress,
+  estimatedProgressWithFloor,
   estimatedRemainingLabel,
   estimatedRemainingMinutes,
   estimatedRerenderMinutes,
@@ -84,12 +85,14 @@ export function EstimatedProcessingOverlay({
   durationSeconds,
   createdAt,
   rerender = false,
+  minimumProgress,
   job,
 }: {
   operationKey: string;
   durationSeconds: number;
   createdAt?: string;
   rerender?: boolean;
+  minimumProgress?: number;
   job?: VideoJob;
 }) {
   const { locale } = useI18n();
@@ -101,19 +104,33 @@ export function EstimatedProcessingOverlay({
   useEffect(() => {
     const storageKey = `estimated-progress:${operationKey}`;
     const parsedCreatedAt = createdAt ? Date.parse(createdAt) : Number.NaN;
-    let storedStartedAt = Number.NaN;
+    let sharedStartedAt = Number.NaN;
+    let sessionStartedAt = Number.NaN;
     try {
-      storedStartedAt = Number(window.sessionStorage.getItem(storageKey));
+      sharedStartedAt = Number(window.localStorage.getItem(storageKey));
+    } catch {
+      // Local storage is optional; the server progress still prevents a reset.
+    }
+    try {
+      sessionStartedAt = Number(window.sessionStorage.getItem(storageKey));
     } catch {
       // Session storage is optional; timing still works for the current mount.
     }
+    const storedStartedAt = [sharedStartedAt, sessionStartedAt]
+      .filter((value) => Number.isFinite(value) && value > 0)
+      .reduce((earliest, value) => Math.min(earliest, value), Number.POSITIVE_INFINITY);
     const startedAtMs = Number.isFinite(parsedCreatedAt)
       ? parsedCreatedAt
-      : Number.isFinite(storedStartedAt) && storedStartedAt > 0
+      : Number.isFinite(storedStartedAt)
         ? storedStartedAt
         : Date.now();
 
-    if (!Number.isFinite(parsedCreatedAt) && !(Number.isFinite(storedStartedAt) && storedStartedAt > 0)) {
+    if (!Number.isFinite(parsedCreatedAt)) {
+      try {
+        window.localStorage.setItem(storageKey, String(startedAtMs));
+      } catch {
+        // Local storage is optional; the server progress still prevents a reset.
+      }
       try {
         window.sessionStorage.setItem(storageKey, String(startedAtMs));
       } catch {
@@ -127,9 +144,12 @@ export function EstimatedProcessingOverlay({
     return () => window.clearInterval(timer);
   }, [createdAt, operationKey]);
 
-  const progress = clock
-    ? estimatedProgress(clock.startedAtMs, clock.nowMs, estimatedMinutes)
-    : SIMULATED_PROGRESS_START;
+  const progress = estimatedProgressWithFloor(
+    clock
+      ? estimatedProgress(clock.startedAtMs, clock.nowMs, estimatedMinutes)
+      : SIMULATED_PROGRESS_START,
+    minimumProgress,
+  );
   const remainingMinutes = clock
     ? estimatedRemainingMinutes(clock.startedAtMs, clock.nowMs, estimatedMinutes)
     : estimatedMinutes;
@@ -167,7 +187,7 @@ export function ProjectCard({ job }: { job: VideoJob }) {
         {!isProcessing && <span className="absolute bottom-2 right-2 rounded bg-black/75 px-2 py-1 text-[11px] font-semibold">{formatDuration(job.sourceDurationSeconds, locale)}</span>}
         <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
         {isProcessing && readyCount === 0 && (rerenderingShort
-          ? <EstimatedProcessingOverlay operationKey={`rerender:${rerenderingShort.id}:${rerenderingShort.renderVersion}`} durationSeconds={rerenderingShort.durationSeconds} rerender />
+          ? <EstimatedProcessingOverlay operationKey={`rerender:${rerenderingShort.id}:${rerenderingShort.renderVersion}`} durationSeconds={rerenderingShort.durationSeconds} rerender minimumProgress={rerenderingShort.rerenderProgress} />
           : <EstimatedProcessingOverlay operationKey={`create:${job.id}`} durationSeconds={job.sourceDurationSeconds} createdAt={job.createdAt} job={job} />)}
       </div>
       <div className="p-4">

@@ -5957,10 +5957,19 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         await requestJson(`/api/shorts/${item.id}/rerender`, { method: "POST" });
       }
       }
+      const rerenderStartedAt = String(Date.now());
+      try {
+        window.localStorage.setItem(
+          `estimated-progress:rerender:${item.id}:${item.renderVersion}`,
+          rerenderStartedAt,
+        );
+      } catch {
+        // Shared storage can be disabled; keep the current tab timer below.
+      }
       try {
         window.sessionStorage.setItem(
           `estimated-progress:rerender:${item.id}:${item.renderVersion}`,
-          String(Date.now()),
+          rerenderStartedAt,
         );
       } catch {
         // Storage can be disabled; the overlay will start when rerendering is first observed.
@@ -7802,7 +7811,7 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
                     <div className="short-video-shell">
                       {itemUrl ? <video key={shortPlaybackVersionKey(item)} src={itemUrl} poster={itemAsset?.posterUrl || undefined} controls={!itemIsRerendering} controlsList={job.isExample ? "nodownload" : undefined} playsInline preload="metadata" onError={() => refreshPlaybackAccess(item)} className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
                       <span className="short-duration-badge">{formatDuration(item.durationSeconds)}</span>
-                      {itemIsRerendering && <EstimatedProcessingOverlay operationKey={`rerender:${item.id}:${item.renderVersion}`} durationSeconds={item.durationSeconds} rerender />}
+                      {itemIsRerendering && <EstimatedProcessingOverlay operationKey={`rerender:${item.id}:${item.renderVersion}`} durationSeconds={item.durationSeconds} rerender minimumProgress={item.rerenderProgress} />}
                     </div>
                     <div className="short-result-actions">
                       {job.isExample || itemIsRerendering
