@@ -214,8 +214,16 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const orderRows = tab === "billing" ? await db`
       select o.id,o.order_id,o.kind,o.product_code,o.billing_cycle,o.amount_krw,
         o.refunded_amount_krw,o.refund_status,o.status,o.provider,o.provider_transaction_id,
-        o.provider_status,o.failure_code,o.renewal_period_start,o.approved_at,o.created_at,
-        o.refund_policy_version,u.email,
+        o.provider_status,o.failure_code,o.provider_terminal_id,o.installment_months,
+        (o.payment_method_id is not null) as has_payment_method,
+        nullif(o.installment_terms_snapshot->>'credentialScope','') as credential_scope,
+        coalesce(
+          nullif(o.installment_terms_snapshot->>'issuerName',''),
+          nullif(pm.issuer_name,'')
+        ) as card_issuer_name,
+        nullif(o.installment_terms_snapshot->>'benefitType','') as installment_benefit_type,
+        nullif(o.installment_terms_snapshot->>'declaredCardKind','') as declared_card_kind,
+        o.renewal_period_start,o.approved_at,o.created_at,o.refund_policy_version,u.email,
         s.status as subscription_status,p.prepaid_months,
         coalesce(ur.reserved_refund_krw,0)::integer as reserved_refund_krw,
         coalesce(pfu.usage_count,0)::integer as popular_filter_usage_count,
@@ -227,6 +235,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       join shorts_mvp.app_users u on u.id=o.user_id
       left join shorts_mvp.user_subscriptions s on s.id=o.subscription_id
       left join shorts_mvp.plans p on p.code=o.product_code
+      left join shorts_mvp.billing_payment_methods pm on pm.id=o.payment_method_id
       left join (
         select source_order_id, sum(refund_amount_krw)::integer as reserved_refund_krw
         from shorts_mvp.subscription_upgrade_refunds
@@ -591,6 +600,13 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       provider: row.provider,
       providerTransactionId: row.providerTransactionId || null,
       providerStatus: row.providerStatus || null,
+      providerTerminalId: row.providerTerminalId || null,
+      hasPaymentMethod: Boolean(row.hasPaymentMethod),
+      credentialScope: row.credentialScope || null,
+      installmentMonths: Number(row.installmentMonths || 0),
+      cardIssuerName: row.cardIssuerName || null,
+      installmentBenefitType: row.installmentBenefitType || null,
+      declaredCardKind: row.declaredCardKind || null,
       failureCode: row.failureCode || null,
       approvedAt: iso(row.approvedAt),
       createdAt: iso(row.createdAt)!,

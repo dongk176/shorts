@@ -18,6 +18,7 @@ import { getUsageSnapshot } from "@/lib/usage";
 import "./globals.css";
 import "./site-sidebar.css";
 import "./editor-v2.css";
+import "./payment-checkout.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
