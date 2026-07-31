@@ -26,6 +26,10 @@ def main() -> None:
     render.add_argument("--shard-index", type=int)
     rerender = subparsers.add_parser("rerender")
     rerender.add_argument("--short-id", required=True)
+    subparsers.add_parser(
+        "editor-release-probe",
+        help="render and upload synthetic evidence for an immutable editor release",
+    )
     pull = subparsers.add_parser("pull")
     pull.add_argument("--worker-id", default=socket.gethostname())
     pull.add_argument("--poll-seconds", type=float, default=5.0)
@@ -33,6 +37,11 @@ def main() -> None:
     pull.add_argument("--max-jobs", type=int, default=0)
     pull.add_argument("--idle-timeout", type=float, default=0)
     args = parser.parse_args()
+    if args.command == "editor-release-probe":
+        from .editor_release_probe import run_editor_release_probe
+
+        run_editor_release_probe()
+        return
     worker = BatchWorker(Settings())
     if args.command == "initial":
         worker.initial(args.job_id)

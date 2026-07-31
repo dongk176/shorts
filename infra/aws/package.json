@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "tsc --noEmit",
-    "synth": "npm run build && cdk synth --quiet -c workerImageTag=local-synth",
+    "synth": "npm run build && cdk synth --quiet -c workerImageTag=local-synth -c legacyRerenderImageTag=legacy-local-synth",
     "deploy": "cdk deploy --all --require-approval never",
     "test": "vitest run"
   },

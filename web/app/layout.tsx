@@ -14,6 +14,7 @@ import { DEFAULT_DESCRIPTION, OG_IMAGE_PATH, SITE_NAME, SITE_URL } from "@/lib/s
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { getUsageSnapshot } from "@/lib/usage";
 import "./globals.css";
+import "./editor-v2.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

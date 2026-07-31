@@ -7,6 +7,7 @@ dev:
 	cd web && npm run dev
 
 test:
+	node --test scripts/*.test.mjs
 	cd worker && $(WORKER_PYTHON) -m pytest -q
 	cd web && npm run test
 	cd web && npm run typecheck

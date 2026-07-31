@@ -1,13 +1,18 @@
 import * as cdk from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
-import { ShortsMvpComputeStack, ShortsMvpFoundationStack } from "../lib/stacks";
+import {
+  ShortsMvpComputeStack,
+  ShortsMvpEditorTestStack,
+  ShortsMvpFoundationStack,
+} from "../lib/stacks";
 
 function stacks(environment = "test") {
   const app = new cdk.App({ context: {
     vercelTeamSlug: "team",
     vercelProjectName: "shorts",
     workerImageTag: "test-worker-image",
+    legacyRerenderImageTag: "legacy-worker-image",
   } });
   const env = { account: "123456789012", region: "ap-northeast-2" };
   const foundation = new ShortsMvpFoundationStack(app, "Foundation", {
@@ -22,7 +27,51 @@ function stacks(environment = "test") {
   return { foundation: Template.fromStack(foundation), compute: Template.fromStack(compute) };
 }
 
+function editorTestStack() {
+  const app = new cdk.App({ context: {
+    workerImageTag: "test-worker-image",
+  } });
+  const env = { account: "123456789012", region: "ap-northeast-2" };
+  const foundationStack = new ShortsMvpFoundationStack(app, "Foundation", {
+    env,
+    environment: "production",
+  });
+  const editorTest = new ShortsMvpEditorTestStack(app, "EditorTest", {
+    env,
+    environment: "editor-test",
+    foundation: foundationStack,
+  });
+  return Template.fromStack(editorTest);
+}
+
 describe("shorts MVP infrastructure", () => {
+  it("keeps immutable editor releases outside the rolling worker image policy", () => {
+    const { foundation } = stacks();
+    const repositories = foundation.findResources("AWS::ECR::Repository");
+    const editorReleaseRepository = Object.values(repositories).find(
+      (resource) => (
+        resource.Properties?.RepositoryName
+        === "shorts-mvp-editor-releases-test"
+      ),
+    );
+
+    expect(editorReleaseRepository).toBeDefined();
+    expect(editorReleaseRepository?.Properties?.LifecyclePolicy).toBeUndefined();
+    const workerRepository = Object.values(repositories).find(
+      (resource) => resource.Properties?.RepositoryName === "shorts-mvp-worker-test",
+    );
+    const lifecycle = JSON.parse(
+      workerRepository?.Properties?.LifecyclePolicy?.LifecyclePolicyText || "{}",
+    );
+    expect(lifecycle.rules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        selection: expect.objectContaining({
+          tagPrefixList: ["legacy-rerender-"],
+        }),
+      }),
+    ]));
+  });
+
   it("enables verified paid Gemini processing only in production", () => {
     const testTemplate = JSON.stringify(stacks().compute.toJSON());
     const productionTemplate = JSON.stringify(stacks("production").compute.toJSON());
@@ -178,6 +227,8 @@ describe("shorts MVP infrastructure", () => {
     );
     expect(JSON.stringify(rerenderJobDefinition)).toContain('"Type":"VCPU","Value":"2"');
     expect(JSON.stringify(rerenderJobDefinition)).toContain('"Type":"MEMORY","Value":"16384"');
+    expect(JSON.stringify(rerenderJobDefinition)).toContain("legacy-worker-image");
+    expect(JSON.stringify(rerenderJobDefinition)).not.toContain("test-worker-image");
     expect(JSON.stringify(compute.toJSON())).not.toContain(":latest");
     compute.hasResourceProperties("AWS::Batch::JobDefinition", {
       ContainerProperties: Match.objectLike({
@@ -206,6 +257,72 @@ describe("shorts MVP infrastructure", () => {
         ToPort: 9999,
       })]),
     });
+  });
+
+  it("keeps editor canary work on a separate four-vCPU production queue", () => {
+    const { compute } = stacks();
+
+    compute.hasResourceProperties("AWS::Batch::ComputeEnvironment", {
+      ComputeResources: Match.objectLike({
+        MaxvCpus: 4,
+        Type: "FARGATE",
+      }),
+    });
+    compute.hasResourceProperties("AWS::Batch::JobQueue", {
+      JobQueueName: "shorts-mvp-editor-canary-test",
+      Priority: 1,
+    });
+    compute.hasResourceProperties("AWS::Lambda::Function", {
+      Handler: "batch_submitter.handler",
+      Environment: {
+        Variables: Match.objectLike({
+          EDITOR_STABLE_BATCH_QUEUE: Match.anyValue(),
+          EDITOR_CANARY_BATCH_QUEUE: Match.anyValue(),
+          EDITOR_TEST_TEMPLATE_JOB_DEFINITION:
+            "shorts-mvp-editor-test-template",
+          RERENDER_JOB_DEFINITION: "shorts-mvp-rerender-fargate-test",
+        }),
+      },
+    });
+  });
+
+  it("provisions isolated editor tests with separate ephemeral storage and max 4 vCPU", () => {
+    const editorTest = editorTestStack();
+
+    editorTest.hasResourceProperties("AWS::Batch::ComputeEnvironment", {
+      ComputeResources: Match.objectLike({
+        MaxvCpus: 4,
+        Type: "FARGATE",
+      }),
+    });
+    editorTest.hasResourceProperties("AWS::Batch::JobQueue", {
+      JobQueueName: "shorts-mvp-editor-test",
+      Priority: 1,
+    });
+    editorTest.hasResourceProperties("AWS::S3::Bucket", {
+      LifecycleConfiguration: {
+        Rules: Match.arrayWith([
+          Match.objectLike({ ExpirationInDays: 3, Status: "Enabled" }),
+        ]),
+      },
+      PublicAccessBlockConfiguration: Match.objectLike({
+        RestrictPublicBuckets: true,
+      }),
+    });
+    editorTest.hasResourceProperties("AWS::Batch::JobDefinition", {
+      JobDefinitionName: "shorts-mvp-editor-test-template",
+      ContainerProperties: Match.objectLike({
+        Image: Match.anyValue(),
+        ResourceRequirements: Match.arrayWith([
+          { Type: "VCPU", Value: "2" },
+          { Type: "MEMORY", Value: "16384" },
+        ]),
+      }),
+    });
+    expect(JSON.stringify(editorTest.toJSON())).toContain("test-worker-image");
+    expect(JSON.stringify(editorTest.toJSON())).not.toContain(
+      "shorts-mvp/production/worker-runtime",
+    );
   });
 
   it("uses bounded Prepare and Render attempts with a one-minute SQS retry", () => {

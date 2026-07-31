@@ -151,6 +151,7 @@ import {
   createEditorDocumentSnapshot,
 } from "@/lib/editor-document-snapshot";
 import { editorDocumentOutputDuration } from "@/lib/editor-document-contract";
+import type { EditorReleaseAssignment } from "@/lib/editor-rendering-release";
 import { CURRENT_PRESET_TEMPLATE_SNAPSHOT } from "@/lib/edit-template-selection";
 import {
   EDITOR_VIDEO_MIN_CLIP_SECONDS,
@@ -2482,7 +2483,7 @@ function CommentTimelineEditor({
   </section>;
 }
 
-function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; paidAccessBlocked?: boolean }) {
+function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; paidAccessBlocked?: boolean }) {
   const savedEditorDocument = overlayPreviewEnabled
     && item.editorDocument?.version === 2
     ? item.editorDocument
@@ -5893,7 +5894,16 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         await requestJson(`/api/shorts/${item.id}/apply-edit`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ requestId, document }),
+          body: JSON.stringify({
+            requestId,
+            release: {
+              releaseId: editorRelease.releaseId,
+              channel: editorRelease.channel,
+              uiVersion: editorRelease.uiVersion,
+              documentVersion: editorRelease.documentVersion,
+            },
+            document,
+          }),
         });
         editorSaveRequestIdRef.current = null;
       } else {
@@ -7616,7 +7626,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     </>
   );
 
-  if (standalone) return <main className="editor-page" aria-labelledby="editor-title">{editorContent}</main>;
+  if (standalone) return <main
+    className={`editor-page${overlayPreviewEnabled ? " editor-v2-root" : ""}`}
+    data-editor-release-channel={
+      overlayPreviewEnabled ? editorRelease.channel : undefined
+    }
+    aria-labelledby="editor-title"
+  >{editorContent}</main>;
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="editor-title">{editorContent}</div>;
 }
 
@@ -7842,7 +7858,7 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
   );
 }
 
-export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false }: { projectNumber: number; shortId: string; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean }) {
+export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease }: { projectNumber: number; shortId: string; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment }) {
   const [project, setProject] = useState<VideoJob | null>(null);
   const [access, setAccess] = useState<ProjectActionAccess | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -7868,7 +7884,7 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">편집기를 준비하고 있습니다…</main>;
   if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/projects/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
 
-  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} paidAccessBlocked={!access?.canEdit} />;
+  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} paidAccessBlocked={!access?.canEdit} />;
 }
 
 export function ProjectPage({ projectNumber }: { projectNumber: number }) {

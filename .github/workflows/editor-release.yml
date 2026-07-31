@@ -1,0 +1,254 @@
+name: Verify editor release candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: editor-release-candidate
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-2
+  AWS_WORKER_BUILD_ROLE_ARN: ${{ vars.AWS_WORKER_BUILD_ROLE_ARN }}
+  EDITOR_RELEASE_ECR_REPOSITORY_URI: ${{ vars.EDITOR_RELEASE_ECR_REPOSITORY_URI }}
+  EDITOR_TEST_JOB_QUEUE: ${{ vars.EDITOR_TEST_JOB_QUEUE || 'shorts-mvp-editor-test' }}
+  EDITOR_TEST_TEMPLATE_JOB_DEFINITION: ${{ vars.EDITOR_TEST_TEMPLATE_JOB_DEFINITION || 'shorts-mvp-editor-test-template' }}
+  EDITOR_PRODUCTION_TEMPLATE_JOB_DEFINITION: ${{ vars.EDITOR_PRODUCTION_TEMPLATE_JOB_DEFINITION || 'shorts-mvp-rerender-fargate-production' }}
+  EDITOR_RELEASE_REGISTRAR_FUNCTION: ${{ vars.EDITOR_RELEASE_REGISTRAR_FUNCTION || 'shorts-mvp-editor-release-registrar-production' }}
+  EDITOR_TEST_SUPABASE_PROJECT_REF: ${{ vars.EDITOR_TEST_SUPABASE_PROJECT_REF }}
+  PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
+
+jobs:
+  verify-and-register:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            infra/aws/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            worker/requirements.txt
+            worker/requirements-dev.txt
+
+      - name: Install verification dependencies
+        run: |
+          python -m pip install -r worker/requirements-dev.txt
+          npm ci --prefix web
+          npm ci --prefix infra/aws
+
+      - name: Run the complete repository gate
+        env:
+          WORKER_PYTHON: python
+          WORKER_RUFF: ruff
+        run: make verify
+
+      - name: Validate release configuration
+        run: |
+          test -n "$AWS_WORKER_BUILD_ROLE_ARN"
+          test -n "$EDITOR_RELEASE_ECR_REPOSITORY_URI"
+          test -n "$EDITOR_TEST_JOB_QUEUE"
+          test -n "$EDITOR_TEST_TEMPLATE_JOB_DEFINITION"
+          test -n "$EDITOR_PRODUCTION_TEMPLATE_JOB_DEFINITION"
+          test -n "$EDITOR_RELEASE_REGISTRAR_FUNCTION"
+          test -n "$EDITOR_TEST_SUPABASE_PROJECT_REF"
+          test -n "$PRODUCTION_SUPABASE_PROJECT_REF"
+          test "$EDITOR_TEST_SUPABASE_PROJECT_REF" != "$PRODUCTION_SUPABASE_PROJECT_REF"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_WORKER_BUILD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and publish the immutable render image once
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: worker
+          target: render
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.EDITOR_RELEASE_ECR_REPOSITORY_URI }}:editor-release-${{ github.sha }}
+          cache-from: type=gha,scope=editor-release-render
+          cache-to: type=gha,mode=max,scope=editor-release-render
+
+      - name: Verify ECR scan and resolve isolated resources
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          test -n "$IMAGE_DIGEST"
+          repository_name="${EDITOR_RELEASE_ECR_REPOSITORY_URI#*/}"
+          aws ecr wait image-scan-complete \
+            --repository-name "$repository_name" \
+            --image-id imageDigest="$IMAGE_DIGEST"
+          critical="$(
+            aws ecr describe-image-scan-findings \
+              --repository-name "$repository_name" \
+              --image-id imageDigest="$IMAGE_DIGEST" \
+              --query 'imageScanFindings.findingSeverityCounts.CRITICAL' \
+              --output text
+          )"
+          test "$critical" = "0" || test "$critical" = "None"
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          echo "EDITOR_TEST_BUCKET_NAME=shorts-mvp-editor-test-${account_id}-${AWS_REGION}" >> "$GITHUB_ENV"
+
+      - name: Apply additive migrations only to the isolated Supabase project
+        env:
+          DATABASE_URL: ${{ secrets.EDITOR_TEST_DATABASE_URL }}
+        run: |
+          test -n "$DATABASE_URL"
+          node -e '
+            const value = process.env.DATABASE_URL || "";
+            const testRef = process.env.EDITOR_TEST_SUPABASE_PROJECT_REF || "";
+            const productionRef = process.env.PRODUCTION_SUPABASE_PROJECT_REF || "";
+            if (!value.includes(testRef) || value.includes(productionRef)) {
+              throw new Error("isolated Supabase identity check failed");
+            }
+          '
+          node scripts/apply-supabase.mjs
+
+      - name: Register the isolated job definition at the tested digest
+        id: isolated-definition
+        env:
+          EDITOR_RELEASE_GIT_SHA: ${{ github.sha }}
+          EDITOR_RELEASE_IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          output="$(
+            scripts/register-editor-release-job.sh \
+              isolated \
+              "$EDITOR_TEST_TEMPLATE_JOB_DEFINITION"
+          )"
+          echo "$output"
+          echo "$output" >> "$GITHUB_OUTPUT"
+
+      - name: Run the isolated synthetic render probe
+        id: isolated-probe
+        env:
+          EDITOR_RELEASE_GIT_SHA: ${{ github.sha }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          ISOLATED_JOB_DEFINITION: ${{ steps.isolated-definition.outputs.job_definition_arn }}
+        run: |
+          overrides="$(
+            jq -cn \
+              --arg sha "$EDITOR_RELEASE_GIT_SHA" \
+              '{
+                command:["python","-m","shorts_worker","editor-release-probe"],
+                environment:[
+                  {name:"EDITOR_RELEASE_GIT_SHA",value:$sha},
+                  {name:"EDITOR_RELEASE_SUITE_VERIFIED",value:"true"}
+                ]
+              }'
+          )"
+          job_id="$(
+            aws batch submit-job \
+              --job-name "editor-release-${EDITOR_RELEASE_GIT_SHA:0:12}" \
+              --job-queue "$EDITOR_TEST_JOB_QUEUE" \
+              --job-definition "$ISOLATED_JOB_DEFINITION" \
+              --container-overrides "$overrides" \
+              --retry-strategy attempts=1 \
+              --timeout attemptDurationSeconds=1200 \
+              --query jobId \
+              --output text
+          )"
+          test -n "$job_id"
+          echo "job_id=$job_id" >> "$GITHUB_OUTPUT"
+          for attempt in $(seq 1 100); do
+            status="$(
+              aws batch describe-jobs \
+                --jobs "$job_id" \
+                --query 'jobs[0].status' \
+                --output text
+            )"
+            case "$status" in
+              SUCCEEDED)
+                break
+                ;;
+              FAILED)
+                aws batch describe-jobs --jobs "$job_id"
+                exit 1
+                ;;
+            esac
+            if test "$attempt" = "100"; then
+              aws batch describe-jobs --jobs "$job_id"
+              exit 1
+            fi
+            sleep 12
+          done
+          digest_hex="${IMAGE_DIGEST#sha256:}"
+          artifact_uri="s3://${EDITOR_TEST_BUCKET_NAME}/editor-release-probes/${EDITOR_RELEASE_GIT_SHA}/${digest_hex:0:12}/manifest.json"
+          echo "artifact_uri=$artifact_uri" >> "$GITHUB_OUTPUT"
+
+      - name: Register the production canary definition without rebuilding
+        id: production-definition
+        env:
+          EDITOR_RELEASE_GIT_SHA: ${{ github.sha }}
+          EDITOR_RELEASE_IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          output="$(
+            scripts/register-editor-release-job.sh \
+              production \
+              "$EDITOR_PRODUCTION_TEMPLATE_JOB_DEFINITION"
+          )"
+          echo "$output"
+          echo "$output" >> "$GITHUB_OUTPUT"
+
+      - name: Register the verified candidate for administrator approval
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          ISOLATED_JOB_DEFINITION: ${{ steps.isolated-definition.outputs.job_definition_arn }}
+          ISOLATED_JOB_ID: ${{ steps.isolated-probe.outputs.job_id }}
+          ARTIFACT_URI: ${{ steps.isolated-probe.outputs.artifact_uri }}
+          PRODUCTION_JOB_DEFINITION: ${{ steps.production-definition.outputs.job_definition_arn }}
+        run: |
+          payload="$(
+            jq -cn \
+              --arg gitSha "$GITHUB_SHA" \
+              --arg imageDigest "$IMAGE_DIGEST" \
+              --arg productionJobDefinitionArn "$PRODUCTION_JOB_DEFINITION" \
+              --arg isolatedJobDefinitionArn "$ISOLATED_JOB_DEFINITION" \
+              --arg isolatedBatchJobId "$ISOLATED_JOB_ID" \
+              --arg artifactUri "$ARTIFACT_URI" \
+              --arg workflowRunUrl "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+              '{
+                gitSha:$gitSha,
+                uiVersion:2,
+                documentVersion:2,
+                imageDigest:$imageDigest,
+                productionJobDefinitionArn:$productionJobDefinitionArn,
+                isolatedJobDefinitionArn:$isolatedJobDefinitionArn,
+                isolatedBatchJobId:$isolatedBatchJobId,
+                artifactUri:$artifactUri,
+                workflowRunUrl:$workflowRunUrl
+              }'
+          )"
+          metadata="$(
+            aws lambda invoke \
+              --function-name "$EDITOR_RELEASE_REGISTRAR_FUNCTION" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "$payload" \
+              response.json
+          )"
+          echo "$metadata"
+          jq -e 'has("FunctionError") | not' <<< "$metadata"
+          jq -e '.status == "canary_ready" and (.releaseId | length > 0)' response.json

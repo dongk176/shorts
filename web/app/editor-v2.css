@@ -1,0 +1,5 @@
+/*
+ * Candidate editor styles belong in this file and must start with
+ * `.editor-v2-root`. The release guard intentionally prevents selectors here
+ * from reaching the legacy editor or any other product surface.
+ */

@@ -11,6 +11,15 @@ if [[ -z "${WORKER_IMAGE_TAG:-}" ]] \
   exit 2
 fi
 WORKER_IMAGE_TAG="${WORKER_IMAGE_TAG:-$(git rev-parse HEAD)}"
+if [[ "$ENVIRONMENT" == "production" ]]; then
+  LEGACY_RERENDER_IMAGE_TAG="${LEGACY_RERENDER_IMAGE_TAG:?Set LEGACY_RERENDER_IMAGE_TAG to the currently deployed known-good rerender image tag}"
+else
+  LEGACY_RERENDER_IMAGE_TAG="${LEGACY_RERENDER_IMAGE_TAG:-$WORKER_IMAGE_TAG}"
+fi
+if [[ "$LEGACY_RERENDER_IMAGE_TAG" == "latest" || "$LEGACY_RERENDER_IMAGE_TAG" == "latest-prepare" ]]; then
+  echo "레거시 재렌더 이미지는 불변 태그로 고정해야 합니다." >&2
+  exit 2
+fi
 
 echo "생성 예정: private S3, CloudFront, ECR, NAT 없는 VPC, Prepare Fargate, Render EC2 Spot/On-Demand, SQS, IAM/OIDC, EventBridge/Lambda"
 
@@ -35,6 +44,44 @@ if aws ecr describe-repositories --region "$REGION" \
       exit 2
     fi
   done
+  if ! aws ecr describe-images --region "$REGION" --repository-name "$repository_name" \
+    --image-ids "imageTag=$LEGACY_RERENDER_IMAGE_TAG" >/dev/null 2>&1; then
+    echo "ECR에 레거시 재렌더 이미지 $LEGACY_RERENDER_IMAGE_TAG 가 없습니다." >&2
+    exit 2
+  fi
+  legacy_rerender_digest="$(
+    aws ecr describe-images --region "$REGION" \
+      --repository-name "$repository_name" \
+      --image-ids "imageTag=$LEGACY_RERENDER_IMAGE_TAG" \
+      --query "imageDetails[0].imageDigest" --output text
+  )"
+  if [[ ! "$legacy_rerender_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "레거시 재렌더 이미지 digest를 확인할 수 없습니다." >&2
+    exit 2
+  fi
+  protected_legacy_tag="legacy-rerender-${legacy_rerender_digest:7:40}"
+  if ! aws ecr describe-images --region "$REGION" \
+    --repository-name "$repository_name" \
+    --image-ids "imageTag=$protected_legacy_tag" >/dev/null 2>&1; then
+    legacy_rerender_manifest="$(
+      aws ecr batch-get-image --region "$REGION" \
+        --repository-name "$repository_name" \
+        --image-ids "imageDigest=$legacy_rerender_digest" \
+        --query "images[0].imageManifest" --output text
+    )"
+    if [[ -z "$legacy_rerender_manifest" || "$legacy_rerender_manifest" == "None" ]]; then
+      echo "레거시 재렌더 이미지 manifest를 확인할 수 없습니다." >&2
+      exit 2
+    fi
+    aws ecr put-image --region "$REGION" \
+      --repository-name "$repository_name" \
+      --image-tag "$protected_legacy_tag" \
+      --image-manifest "$legacy_rerender_manifest" >/dev/null
+  fi
+  LEGACY_RERENDER_IMAGE_TAG="$protected_legacy_tag"
+elif [[ "$ENVIRONMENT" == "production" ]]; then
+  echo "운영 레거시 재렌더 ECR 저장소를 찾을 수 없습니다." >&2
+  exit 2
 fi
 
 mkdir -p .secrets
@@ -65,6 +112,7 @@ fi
 deploy_args=(
   -c "environment=$ENVIRONMENT"
   -c "workerImageTag=$WORKER_IMAGE_TAG"
+  -c "legacyRerenderImageTag=$LEGACY_RERENDER_IMAGE_TAG"
   -c "vercelTeamSlug=$VERCEL_TEAM_SLUG"
   -c "vercelProjectName=$VERCEL_PROJECT_NAME"
   -c "githubOrg=${GITHUB_ORG:-dongk176}"
@@ -82,5 +130,22 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     --body "$(bash scripts/stack-outputs.sh GithubWorkerBuildRoleArn Compute)"
   gh variable set AWS_ECR_REPOSITORY_URI --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
     --body "$(bash scripts/stack-outputs.sh WorkerRepositoryUri Foundation)"
+  gh variable set EDITOR_RELEASE_ECR_REPOSITORY_URI \
+    --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
+    --body "$(bash scripts/stack-outputs.sh EditorReleaseRepositoryUri Foundation)"
+  gh variable set EDITOR_PRODUCTION_TEMPLATE_JOB_DEFINITION \
+    --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
+    --body "$(bash scripts/stack-outputs.sh RerenderFargateBatchJobDefinition Compute)"
+  gh variable set EDITOR_RELEASE_REGISTRAR_FUNCTION \
+    --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
+    --body "$(bash scripts/stack-outputs.sh EditorReleaseRegistrarFunctionArn Compute)"
+  if [[ "${INCLUDE_EDITOR_TEST:-false}" == "true" ]]; then
+    gh variable set EDITOR_TEST_JOB_QUEUE \
+      --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
+      --body "$(bash scripts/stack-outputs.sh EditorTestBatchJobQueue EditorTest)"
+    gh variable set EDITOR_TEST_TEMPLATE_JOB_DEFINITION \
+      --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
+      --body "$(bash scripts/stack-outputs.sh EditorTestTemplateJobDefinitionArn EditorTest)"
+  fi
 fi
 echo "AWS 인프라 구성이 완료되었습니다. GitHub Actions에서 worker image를 게시하세요."

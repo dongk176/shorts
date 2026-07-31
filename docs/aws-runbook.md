@@ -6,15 +6,20 @@
 2. `VERCEL_TEAM_SLUG`, `VERCEL_PROJECT_NAME`, `AWS_REGION=ap-northeast-2`를 설정합니다.
 3. 변경을 main에 커밋하고 `Build and publish worker` workflow가 해당 커밋 SHA 이미지를 게시할 때까지 기다립니다.
 4. `npm run infra:setup`으로 그 SHA에 고정된 Job Definition과 server secrets를 적용합니다.
-5. 최초 환경이라면 CDK 출력의 `GithubWorkerBuildRoleArn`, `WorkerRepositoryUri`를 GitHub Actions variables `AWS_WORKER_BUILD_ROLE_ARN`, `AWS_ECR_REPOSITORY_URI`로 등록한 뒤 workflow를 한 번 수동 실행합니다.
+5. 최초 환경이라면 CDK 출력의 `GithubWorkerBuildRoleArn`,
+   `WorkerRepositoryUri`, `EditorReleaseRepositoryUri`를 각각 GitHub
+   Actions variables `AWS_WORKER_BUILD_ROLE_ARN`,
+   `AWS_ECR_REPOSITORY_URI`, `EDITOR_RELEASE_ECR_REPOSITORY_URI`로
+   등록한 뒤 해당 workflow를 한 번 수동 실행합니다.
 6. `vercel deploy --prod` 후 `scripts/verify-production.sh <url>`을 실행합니다.
 
 CloudFront private key는 `.secrets/cloudfront-private.pem`과 Vercel secret에만 둡니다. 분실 시 새 key pair/public key/key group을 배포하고 Vercel env를 교체합니다.
 
-통합 편집 렌더러는 일반 배포보다 순서가 엄격합니다. 마이그레이션,
-불변 Worker 이미지, CDK, 비활성 Web 배포, 허용 사용자 카나리, 전체
-활성화 순서는 [editor rendering v2 rollout](editor-rendering-v2-rollout.md)을
-따릅니다.
+통합 편집 렌더러는 일반 배포보다 순서가 엄격합니다. 레거시 재렌더
+이미지를 `LEGACY_RERENDER_IMAGE_TAG`로 별도 고정하고, 격리 AWS/Supabase,
+불변 digest, 운영 내부 카나리, 관리자 승격 순서는
+[편집기 v2 안전 테스트·승격](editor-rendering-v2-rollout.md)을 따릅니다.
+후보 workflow는 Vercel·CDK·운영 DB를 자동 배포하지 않습니다.
 
 ## Failed/stale jobs
 

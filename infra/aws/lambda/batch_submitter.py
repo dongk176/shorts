@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import urllib.parse
 from datetime import UTC, datetime
 from typing import Any
@@ -17,6 +18,10 @@ _NOMINAL_CLIP_SECONDS = {
     "sec_31_60": 45,
     "sec_61_180": 90,
 }
+_EDITOR_RELEASE_JOB_DEFINITION = re.compile(
+    r"^arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-definition/"
+    r"shorts-mvp-editor-release-[a-z0-9-]+:[1-9][0-9]*$"
+)
 
 
 def _estimated_output_seconds(job: dict[str, Any]) -> int:
@@ -70,6 +75,51 @@ def _render_container_overrides(command: list[str]) -> dict[str, object]:
         "command": command,
         "environment": [{"name": "RENDER_SUBMITTED_AT", "value": iso_now()}],
     }
+
+
+def _editor_release_target(
+    pending_request_id: str | None,
+) -> tuple[str, str, str, str] | None:
+    if not pending_request_id:
+        return None
+    encoded_request_id = urllib.parse.quote(pending_request_id, safe="")
+    requests = rest("editor_render_requests", query=(
+        "select=release_id,release_channel"
+        f"&id=eq.{encoded_request_id}&limit=1"
+    )) or []
+    if not requests or not requests[0].get("release_id"):
+        # Requests queued before release routing was installed retain the
+        # known-good legacy definition instead of being moved implicitly.
+        return None
+    release_id = str(requests[0]["release_id"])
+    channel = str(requests[0].get("release_channel") or "")
+    if channel not in {"stable", "canary"}:
+        raise RuntimeError("Editor render request has an invalid release channel")
+    encoded_release_id = urllib.parse.quote(release_id, safe="")
+    releases = rest("editor_releases", query=(
+        "select=id,worker_image_digest,production_job_definition_arn"
+        f"&id=eq.{encoded_release_id}&limit=1"
+    )) or []
+    if not releases:
+        raise RuntimeError("Editor release does not exist")
+    job_definition = str(
+        releases[0].get("production_job_definition_arn") or ""
+    )
+    if not _EDITOR_RELEASE_JOB_DEFINITION.fullmatch(job_definition):
+        raise RuntimeError("Editor release job definition is not trusted")
+    worker_image_digest = str(releases[0].get("worker_image_digest") or "")
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", worker_image_digest):
+        raise RuntimeError("Editor release image digest is invalid")
+    if channel == "canary":
+        job_queue = os.environ.get("EDITOR_CANARY_BATCH_QUEUE", "").strip()
+        if not job_queue:
+            raise RuntimeError("Editor canary queue is not configured")
+    else:
+        job_queue = (
+            os.environ.get("EDITOR_STABLE_BATCH_QUEUE")
+            or os.environ["PROJECT_BATCH_QUEUE"]
+        )
+    return job_queue, job_definition, worker_image_digest, release_id
 
 
 def _existing_batch_job(job_queue: str, job_name: str) -> str | None:
@@ -375,6 +425,9 @@ def _submit(payload: dict[str, Any]) -> str | None:
         )
         version = int(shorts[0]["render_version"]) + 1
         pending_request_id = shorts[0].get("pending_edit_request_id")
+        release_target = _editor_release_target(
+            str(pending_request_id) if pending_request_id else None
+        )
         legacy_save_identity = None
         if not pending_request_id:
             identity_source = ":".join((
@@ -390,13 +443,23 @@ def _submit(payload: dict[str, Any]) -> str | None:
             if pending_request_id
             else f"-l{legacy_save_identity}" if legacy_save_identity else ""
         )
+        rerender_queue = (
+            release_target[0]
+            if release_target
+            else os.environ["PROJECT_BATCH_QUEUE"]
+        )
+        rerender_definition = (
+            release_target[1]
+            if release_target
+            else os.environ["RERENDER_JOB_DEFINITION"]
+        )
         request = dict(
             jobName=(
                 f"shorts-rerender-{short_id}-v{version}-a{rerender_attempt}"
                 f"{request_suffix}"
             ),
-            jobQueue=os.environ["PROJECT_BATCH_QUEUE"],
-            jobDefinition=os.environ["RERENDER_JOB_DEFINITION"],
+            jobQueue=rerender_queue,
+            jobDefinition=rerender_definition,
             shareIdentifier=_priority_share_identifier(
                 priority_class,
                 parent_job.get("user_id"),
@@ -415,6 +478,8 @@ def _submit(payload: dict[str, Any]) -> str | None:
         submission_key = f"rerender:{short_id}:{version}:{rerender_attempt}"
         if pending_request_id:
             submission_key = f"{submission_key}:{pending_request_id}"
+            if release_target:
+                submission_key = f"{submission_key}:release:{release_target[3]}"
         elif legacy_save_identity:
             submission_key = f"{submission_key}:legacy:{legacy_save_identity}"
         rerender_batch_id = _submit_once(
@@ -432,6 +497,21 @@ def _submit(payload: dict[str, Any]) -> str | None:
             patch_filter,
             {"rerender_batch_job_id": rerender_batch_id},
         )
+        if pending_request_id and release_target:
+            patch(
+                "editor_render_requests",
+                (
+                    f"id=eq.{urllib.parse.quote(str(pending_request_id), safe='')}"
+                    f"&short_id=eq.{encoded_short_id}"
+                    "&status=in.(queued,rendering)"
+                ),
+                {
+                    "status": "rendering",
+                    "worker_image_digest": release_target[2],
+                    "batch_job_id": rerender_batch_id,
+                    "updated_at": iso_now(),
+                },
+            )
         return rerender_batch_id
     raise ValueError(f"Unsupported work kind: {kind}")
 

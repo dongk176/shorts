@@ -22,6 +22,13 @@ import { AdminMembersDashboard, type AdminMember } from "./admin-members-dashboa
 import { AdminManagedAccountsSection } from "./admin-managed-accounts-section";
 import { AdminInstallmentsDashboard } from "./admin-installments-dashboard";
 import { AdminRuntimeSettings } from "./admin-runtime-settings";
+import {
+  AdminEditorReleases,
+  type AdminEditorRelease,
+  type AdminEditorReleaseCheck,
+  type AdminEditorReleaseRenderStats,
+  type AdminEditorReleaseTester,
+} from "./admin-editor-releases";
 import { AdminReferralsSection } from "./admin-referrals-section";
 import {
   AdminRefundsDashboard,
@@ -33,6 +40,10 @@ import {
   type AdminUserOnboardingMetrics,
   type AdminUserOnboardingResponse,
 } from "./admin-onboarding-dashboard";
+import {
+  editorRenderingV2GlobalEnabled,
+  editorRenderingV2MasterEnabled,
+} from "@/lib/editor-rendering-release";
 import {
   LOGIN_WELCOME_GRANT_FLAG_KEY,
   ONBOARDING_WELCOME_PRODUCT_CODE,
@@ -76,7 +87,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
 
   const params = await searchParams;
   const requestedTab = first(params.tab);
-  const tab = ["billing", "refunds", "members", "managed-accounts", "referrals", "inquiries", "feedback", "onboarding", "settings", "installments"].includes(requestedTab)
+  const tab = ["billing", "refunds", "members", "managed-accounts", "referrals", "inquiries", "feedback", "onboarding", "settings", "installments", "editor-releases"].includes(requestedTab)
     ? requestedTab
     : "billing";
   const requestedStatus = first(params.status);
@@ -146,6 +157,60 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       from shorts_mvp.user_subscriptions
     `,
   ]);
+  const [
+    editorReleaseStateRows,
+    editorReleaseRows,
+    editorReleaseCheckRows,
+    editorReleaseTesterRows,
+    editorReleaseRenderStatsRows,
+  ] = tab === "editor-releases"
+    ? await Promise.all([
+        db`
+          select stable_release_id,previous_stable_release_id,
+            candidate_release_id,public_enabled,canary_enabled
+          from shorts_mvp.editor_release_state
+          where singleton=true
+          limit 1
+        `,
+        db`
+          select id,git_sha,ui_version,document_version,
+            worker_image_digest,production_job_definition_arn,status,
+            created_at,staging_verified_at,canary_started_at,promoted_at
+          from shorts_mvp.editor_releases
+          order by created_at desc
+          limit 30
+        `,
+        db`
+          select release_id,environment,check_name,status,updated_at
+          from shorts_mvp.editor_release_checks
+          where release_id in (
+            select id
+            from shorts_mvp.editor_releases
+            order by created_at desc
+            limit 30
+          )
+          order by updated_at desc
+        `,
+        db`
+          select tester.user_id,user.email,user.display_name,
+            tester.enabled,tester.updated_at
+          from shorts_mvp.editor_release_testers tester
+          join shorts_mvp.app_users user on user.id=tester.user_id
+          order by tester.enabled desc,tester.updated_at desc
+        `,
+        db`
+          select release_id,
+            count(*) filter (
+              where status in ('queued','rendering')
+            )::integer as active,
+            count(*) filter (where status='failed')::integer as failed,
+            count(*) filter (where status='succeeded')::integer as succeeded
+          from shorts_mvp.editor_render_requests
+          where release_id is not null
+          group by release_id
+        `,
+      ])
+    : [[], [], [], [], []];
   const orderRows = tab === "billing" ? await db`
       select o.id,o.order_id,o.kind,o.product_code,o.billing_cycle,o.amount_krw,
         o.refunded_amount_krw,o.refund_status,o.status,o.provider,o.provider_transaction_id,
@@ -720,6 +785,41 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       purpose: row.purpose as UserUsagePurpose,
       count: Number(row.count || 0),
     }));
+  const editorReleaseState = editorReleaseStateRows[0];
+  const editorReleases: AdminEditorRelease[] = editorReleaseRows.map((row) => ({
+    id: String(row.id),
+    gitSha: String(row.gitSha),
+    uiVersion: Number(row.uiVersion),
+    documentVersion: Number(row.documentVersion),
+    workerImageDigest: String(row.workerImageDigest),
+    productionJobDefinitionArn: String(row.productionJobDefinitionArn),
+    status: String(row.status),
+    createdAt: iso(row.createdAt)!,
+    stagingVerifiedAt: iso(row.stagingVerifiedAt),
+    canaryStartedAt: iso(row.canaryStartedAt),
+    promotedAt: iso(row.promotedAt),
+  }));
+  const editorReleaseChecks: AdminEditorReleaseCheck[] = editorReleaseCheckRows.map((row) => ({
+    releaseId: String(row.releaseId),
+    environment: row.environment as AdminEditorReleaseCheck["environment"],
+    checkName: String(row.checkName),
+    status: row.status as AdminEditorReleaseCheck["status"],
+    updatedAt: iso(row.updatedAt)!,
+  }));
+  const editorReleaseTesters: AdminEditorReleaseTester[] = editorReleaseTesterRows.map((row) => ({
+    userId: String(row.userId),
+    email: String(row.email),
+    displayName: row.displayName ? String(row.displayName) : null,
+    enabled: Boolean(row.enabled),
+    updatedAt: iso(row.updatedAt)!,
+  }));
+  const editorReleaseRenderStats: AdminEditorReleaseRenderStats[] =
+    editorReleaseRenderStatsRows.map((row) => ({
+      releaseId: String(row.releaseId),
+      active: Number(row.active || 0),
+      failed: Number(row.failed || 0),
+      succeeded: Number(row.succeeded || 0),
+    }));
 
   return (
     <main className="min-h-screen bg-[#0d0f10] text-neutral-100">
@@ -800,6 +900,13 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "settings" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
           >
             운영 설정
+          </Link>
+          <Link
+            href="/admin/easycutcutcutcutcutcut?tab=editor-releases"
+            aria-current={tab === "editor-releases" ? "page" : undefined}
+            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "editor-releases" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
+          >
+            편집기 릴리스
           </Link>
           <Link
             href="/admin/easycutcutcutcutcutcut?tab=installments"
@@ -888,6 +995,26 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             occupationCounts={onboardingOccupationCounts}
             usagePurposeCounts={onboardingUsagePurposeCounts}
             query={query}
+          />
+        ) : tab === "editor-releases" ? (
+          <AdminEditorReleases
+            masterEnvironmentEnabled={editorRenderingV2MasterEnabled()}
+            globalEnvironmentEnabled={editorRenderingV2GlobalEnabled()}
+            publicEnabled={Boolean(editorReleaseState?.publicEnabled)}
+            canaryEnabled={Boolean(editorReleaseState?.canaryEnabled)}
+            stableReleaseId={editorReleaseState?.stableReleaseId
+              ? String(editorReleaseState.stableReleaseId)
+              : null}
+            previousStableReleaseId={editorReleaseState?.previousStableReleaseId
+              ? String(editorReleaseState.previousStableReleaseId)
+              : null}
+            candidateReleaseId={editorReleaseState?.candidateReleaseId
+              ? String(editorReleaseState.candidateReleaseId)
+              : null}
+            releases={editorReleases}
+            checks={editorReleaseChecks}
+            testers={editorReleaseTesters}
+            renderStats={editorReleaseRenderStats}
           />
         ) : tab === "settings" ? (
           <AdminRuntimeSettings

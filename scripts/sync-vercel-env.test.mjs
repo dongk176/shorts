@@ -13,3 +13,8 @@ test("syncs default and package ThePayOne credentials to Vercel", () => {
   assert.match(script, /THEPAYONE_PACKAGE_BILLING_ENABLED THEPAYONE_PACKAGE_MID/);
   assert.match(script, /THEPAYONE_PACKAGE_TERMINAL_ID THEPAYONE_PACKAGE_PAY_KEY/);
 });
+
+test("syncs both server-side editor release master switches", () => {
+  assert.match(script, /EDITOR_RENDERING_V2_ENABLED/);
+  assert.match(script, /EDITOR_RENDERING_V2_GLOBAL_ENABLED/);
+});

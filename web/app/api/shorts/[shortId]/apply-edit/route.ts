@@ -11,7 +11,11 @@ import {
   type ValidatedEditorDocumentSnapshot,
 } from "@/lib/editor-document-contract";
 import type { EditorDocumentJsonObject } from "@/lib/editor-document-snapshot";
-import { editorRenderingV2Enabled } from "@/lib/editor-rendering-release";
+import {
+  resolveRequestedEditorRelease,
+  type EditorReleaseAssignment,
+  type RequestedEditorRelease,
+} from "@/lib/editor-rendering-release";
 import { resolveEditedTemplateSelection } from "@/lib/edit-template-selection";
 import { apiError, HttpError } from "@/lib/http";
 import {
@@ -94,6 +98,12 @@ const legacyEditSchema = z.object({
 
 const editorDocumentRequestSchema = z.object({
   requestId: z.string().uuid(),
+  release: z.object({
+    releaseId: z.string().uuid(),
+    channel: z.enum(["stable", "canary"]),
+    uiVersion: z.number().int().min(2),
+    documentVersion: z.number().int().min(2),
+  }).strict(),
   document: editorDocumentSnapshotSchema,
 }).strict();
 
@@ -130,16 +140,30 @@ function sameTimelineSecond(left: number, right: number) {
 async function applyEditorDocumentV2({
   shortId,
   requestId,
+  requestedRelease,
   document: requestedDocument,
 }: {
   shortId: string;
   requestId: string;
+  requestedRelease: RequestedEditorRelease;
   document: ValidatedEditorDocumentSnapshot;
 }) {
   const session = await requireAuthenticatedMvpSession();
   const db = getDb();
-  if (!await editorRenderingV2Enabled(db, session.userId)) {
+  const release = await resolveRequestedEditorRelease(
+    db,
+    session.userId,
+    requestedRelease,
+  );
+  if (release.channel === "legacy" || !release.releaseId) {
     throw new HttpError(404, "새 편집 저장 기능을 찾을 수 없습니다.");
+  }
+  if (release.documentVersion !== requestedDocument.version) {
+    throw new HttpError(
+      409,
+      "편집기가 업데이트되었습니다. 화면을 새로 연 뒤 다시 저장해 주세요.",
+      "EDITOR_RELEASE_VERSION_CONFLICT",
+    );
   }
   const billing = await getBillingSummary(db, session.userId);
   assertPaidProjectActionAccess(billing, "edit");
@@ -190,7 +214,8 @@ async function applyEditorDocumentV2({
   const requestSnapshotHash = editorSnapshotHash(requestedDocument);
 
   const priorRequestRows = await db`
-    select status,base_render_version,snapshot_hash,output_render_version
+    select status,base_render_version,snapshot_hash,output_render_version,
+      release_id,release_channel
     from shorts_mvp.editor_render_requests
     where id=${requestId} and short_id=${shortId} and user_id=${session.userId}
     limit 1
@@ -200,11 +225,14 @@ async function applyEditorDocumentV2({
     baseRenderVersion: number;
     snapshotHash: string;
     outputRenderVersion: number | null;
+    releaseId: string | null;
+    releaseChannel: "stable" | "canary" | null;
   } | undefined;
   if (priorRequest) {
     if (
       Number(priorRequest.baseRenderVersion) !== requestedDocument.baseRenderVersion
       || priorRequest.snapshotHash !== requestSnapshotHash
+      || priorRequest.releaseId !== release.releaseId
     ) {
       throw new HttpError(
         409,
@@ -223,6 +251,8 @@ async function applyEditorDocumentV2({
       status: priorRequest.status === "succeeded" ? "ready" : "rerendering",
       renderVersion: priorRequest.outputRenderVersion,
       requestId,
+      releaseId: priorRequest.releaseId,
+      releaseChannel: priorRequest.releaseChannel,
     }, { status: priorRequest.status === "succeeded" ? 200 : 202 });
   }
 
@@ -352,13 +382,34 @@ async function applyEditorDocumentV2({
     }
   }
   const snapshotHash = editorSnapshotHash(document);
+  let persistedRelease = release;
   await db.begin(async (tx) => {
+    const lockedRelease: EditorReleaseAssignment =
+      await resolveRequestedEditorRelease(
+        tx,
+        session.userId,
+        requestedRelease,
+      );
+    if (
+      lockedRelease.channel === "legacy"
+      || !lockedRelease.releaseId
+      || lockedRelease.releaseId !== release.releaseId
+    ) {
+      throw new HttpError(
+        409,
+        "편집기 릴리스가 변경되었습니다. 화면을 다시 열어 주세요.",
+        "EDITOR_RELEASE_CHANGED",
+      );
+    }
+    persistedRelease = lockedRelease;
     const insertedRequest = await tx`
       insert into shorts_mvp.editor_render_requests (
-        id,short_id,user_id,base_render_version,snapshot_hash,status
+        id,short_id,user_id,base_render_version,snapshot_hash,status,
+        release_id,release_channel
       ) values (
         ${requestId},${shortId},${session.userId},
-        ${document.baseRenderVersion},${requestSnapshotHash},'queued'
+        ${document.baseRenderVersion},${requestSnapshotHash},'queued',
+        ${lockedRelease.releaseId},${lockedRelease.channel}
       )
       on conflict (id) do nothing
       returning id
@@ -405,6 +456,8 @@ async function applyEditorDocumentV2({
   return NextResponse.json({
     status: "rerendering",
     requestId,
+    releaseId: persistedRelease.releaseId,
+    releaseChannel: persistedRelease.channel,
   }, { status: 202 });
 }
 
@@ -421,6 +474,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
       return await applyEditorDocumentV2({
         shortId,
         requestId: input.requestId,
+        requestedRelease: input.release,
         document: input.document,
       });
     }

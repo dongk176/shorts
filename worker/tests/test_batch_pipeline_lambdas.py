@@ -5,6 +5,7 @@ import io
 import json
 import os
 import sys
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -36,6 +37,8 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
     os.environ["PROJECT_JOB_DEFINITION"] = "project-definition:1"
     os.environ["PROJECT_HEAVY_JOB_DEFINITION"] = "project-heavy-definition:1"
     os.environ["RERENDER_JOB_DEFINITION"] = "rerender-definition:1"
+    os.environ["EDITOR_STABLE_BATCH_QUEUE"] = "editor-stable-queue"
+    os.environ["EDITOR_CANARY_BATCH_QUEUE"] = "editor-canary-queue"
     os.environ["BATCH_SUBMITTER_FUNCTION_NAME"] = "batch-submitter"
     spec = importlib.util.spec_from_file_location(
         f"test_{name}_{id(fake_sqs)}", LAMBDA_DIR / f"{name}.py"
@@ -697,6 +700,413 @@ def test_v2_rerender_request_gets_a_fresh_batch_identity() -> None:
     assert module.patch.call_args.args[1] == (
         "id=eq.short-a&status=eq.rerendering"
         f"&pending_edit_request_id=eq.{request_id}"
+    )
+
+
+def test_canary_rerender_uses_the_release_digest_and_isolated_queue() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    request_id = "a4f71dc3-1ffd-4670-b6d2-d4704461edc0"
+    release_id = "f0c49c16-3efd-4478-9e69-b0c41f2f3eb0"
+    digest = f"sha256:{'a' * 64}"
+    definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-editor-release-abcdef123456:7"
+    )
+
+    def rest(table: str, **_kwargs):
+        if table == "generated_shorts":
+            return [{
+                "id": "short-a",
+                "job_id": "job-a",
+                "status": "rerendering",
+                "render_version": 3,
+                "rerender_batch_job_id": None,
+                "pending_edit_request_id": request_id,
+                "mvp_session_id": "session-a",
+            }]
+        if table == "video_jobs":
+            return [{
+                "id": "job-a",
+                "mvp_session_id": "session-a",
+                "user_id": "user-a",
+                "dispatch_priority_class": "paid",
+            }]
+        if table == "editor_render_requests":
+            return [{"release_id": release_id, "release_channel": "canary"}]
+        if table == "editor_releases":
+            return [{
+                "id": release_id,
+                "worker_image_digest": digest,
+                "production_job_definition_arn": definition,
+            }]
+        return []
+
+    module.rest = rest
+    module._submit_once = MagicMock(return_value="canary-batch-a")
+    module.patch = MagicMock()
+
+    assert module._submit({"kind": "rerender", "shortId": "short-a"}) == (
+        "canary-batch-a"
+    )
+
+    request, submission_key = module._submit_once.call_args.args
+    assert request["jobQueue"] == "editor-canary-queue"
+    assert request["jobDefinition"] == definition
+    assert submission_key.endswith(f":release:{release_id}")
+    request_patch = next(
+        call for call in module.patch.call_args_list
+        if call.args[0] == "editor_render_requests"
+    )
+    assert request_patch.args[2] == {
+        "status": "rendering",
+        "worker_image_digest": digest,
+        "batch_job_id": "canary-batch-a",
+        "updated_at": "2026-07-13T12:00:00+00:00",
+    }
+
+
+def test_stable_rerender_reuses_the_promoted_canary_job_definition() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    release_id = "f0c49c16-3efd-4478-9e69-b0c41f2f3eb0"
+    definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-editor-release-abcdef123456:7"
+    )
+
+    def rest(table: str, **_kwargs):
+        if table == "editor_render_requests":
+            return [{"release_id": release_id, "release_channel": "stable"}]
+        if table == "editor_releases":
+            return [{
+                "id": release_id,
+                "worker_image_digest": f"sha256:{'b' * 64}",
+                "production_job_definition_arn": definition,
+            }]
+        return []
+
+    module.rest = rest
+
+    assert module._editor_release_target("request-a") == (
+        "editor-stable-queue",
+        definition,
+        f"sha256:{'b' * 64}",
+        release_id,
+    )
+
+
+def test_editor_release_infrastructure_retry_keeps_release_and_uses_new_batch_job() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    request_id = "a4f71dc3-1ffd-4670-b6d2-d4704461edc0"
+    release_id = "f0c49c16-3efd-4478-9e69-b0c41f2f3eb0"
+    digest = f"sha256:{'d' * 64}"
+    definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-editor-release-abcdef123456:7"
+    )
+
+    def rest(table: str, **_kwargs):
+        if table == "generated_shorts":
+            return [{
+                "id": "short-a",
+                "job_id": "job-a",
+                "status": "rerendering",
+                "render_version": 3,
+                "rerender_batch_job_id": None,
+                "pending_edit_request_id": request_id,
+                "mvp_session_id": "session-a",
+            }]
+        if table == "video_jobs":
+            return [{
+                "id": "job-a",
+                "mvp_session_id": "session-a",
+                "user_id": "user-a",
+                "dispatch_priority_class": "paid",
+            }]
+        return []
+
+    module.rest = rest
+    module._editor_release_target = MagicMock(return_value=(
+        "editor-canary-queue",
+        definition,
+        digest,
+        release_id,
+    ))
+    module._submit_once = MagicMock(return_value="retry-batch-new")
+    module.patch = MagicMock()
+
+    result = module._submit({
+        "kind": "rerender",
+        "shortId": "short-a",
+        "attempt": 1,
+    })
+
+    assert result == "retry-batch-new"
+    request, submission_key = module._submit_once.call_args.args
+    assert request["jobName"].startswith("shorts-rerender-short-a-v4-a1-")
+    assert request["jobQueue"] == "editor-canary-queue"
+    assert request["jobDefinition"] == definition
+    assert request["parameters"] == {"rerenderAttempt": "1"}
+    assert submission_key == (
+        f"rerender:short-a:4:1:{request_id}:release:{release_id}"
+    )
+    request_patch = next(
+        call for call in module.patch.call_args_list
+        if call.args[0] == "editor_render_requests"
+    )
+    assert request_patch.args[2]["worker_image_digest"] == digest
+    assert request_patch.args[2]["batch_job_id"] == "retry-batch-new"
+
+
+def test_editor_release_target_rejects_an_untrusted_job_definition() -> None:
+    module, _ = _load_lambda("batch_submitter")
+
+    def rest(table: str, **_kwargs):
+        if table == "editor_render_requests":
+            return [{"release_id": "release-a", "release_channel": "canary"}]
+        if table == "editor_releases":
+            return [{
+                "id": "release-a",
+                "worker_image_digest": f"sha256:{'c' * 64}",
+                "production_job_definition_arn": "rerender-definition:99",
+            }]
+        return []
+
+    module.rest = rest
+
+    try:
+        module._editor_release_target("request-a")
+    except RuntimeError as error:
+        assert str(error) == "Editor release job definition is not trusted"
+    else:
+        raise AssertionError("untrusted release definition was accepted")
+
+
+def _editor_release_registration_event() -> dict[str, object]:
+    return {
+        "gitSha": "a" * 40,
+        "uiVersion": 2,
+        "documentVersion": 2,
+        "imageDigest": f"sha256:{'b' * 64}",
+        "productionJobDefinitionArn": (
+            "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+            "shorts-mvp-editor-release-aaaaaaaaaaaa:3"
+        ),
+        "isolatedJobDefinitionArn": (
+            "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+            "shorts-mvp-editor-test-release-aaaaaaaaaaaa:2"
+        ),
+        "isolatedBatchJobId": "isolated-job-a",
+        "artifactUri": (
+            "s3://isolated-editor-test/editor-release-probes/"
+            f"{'a' * 40}/{'b' * 12}/manifest.json"
+        ),
+        "workflowRunUrl": "https://github.example/actions/runs/1",
+    }
+
+
+def _editor_release_manifest() -> dict[str, object]:
+    return {
+        "schemaVersion": 1,
+        "gitSha": "a" * 40,
+        "workerImageDigest": f"sha256:{'b' * 64}",
+        "documentVersion": 2,
+        "checks": {
+            "worker-image": True,
+            "legacy-no-timeline": True,
+            "captured-timeline": True,
+            "editor-v2": True,
+            "ffprobe": True,
+            "frame-parity": True,
+        },
+        "checkSources": {},
+        "media": {
+            "width": 1080,
+            "height": 1920,
+            "videoCodec": "h264",
+            "audioCodec": "aac",
+        },
+        "geometry": {"maximumErrorPixels": 2},
+        "fonts": [
+            "pretendard",
+            "black-han-sans",
+            "gmarket-sans",
+            "do-hyeon",
+            "noto-serif-kr",
+            "nanum-myeongjo",
+            "suit",
+            "spoqa-han-sans-neo",
+        ],
+    }
+
+
+def test_editor_release_registrar_verifies_evidence_before_creating_candidate() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    event = _editor_release_registration_event()
+    digest = event["imageDigest"]
+    image = f"123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/shorts@{digest}"
+    module.batch = MagicMock()
+    module.batch.describe_jobs.return_value = {"jobs": [{
+        "status": "SUCCEEDED",
+        "jobDefinition": event["isolatedJobDefinitionArn"],
+        "stoppedAt": int(datetime.now(UTC).timestamp() * 1000),
+    }]}
+    module.batch.describe_job_definitions.side_effect = [
+        {"jobDefinitions": [{
+            "status": "ACTIVE",
+            "containerProperties": {"image": image},
+        }]},
+        {"jobDefinitions": [{
+            "status": "ACTIVE",
+            "containerProperties": {"image": image},
+        }]},
+        {"jobDefinitions": [{
+            "status": "ACTIVE",
+            "revision": 1,
+            "containerProperties": {},
+        }]},
+        {"jobDefinitions": [{
+            "status": "ACTIVE",
+            "revision": 1,
+            "containerProperties": {},
+        }]},
+    ]
+    module.ecr = MagicMock()
+    module.ecr.describe_image_scan_findings.return_value = {
+        "imageScanStatus": {"status": "COMPLETE"},
+        "imageScanFindings": {"findingSeverityCounts": {"CRITICAL": 0}},
+    }
+    module.s3 = MagicMock()
+    module.s3.get_object.return_value = {
+        "Body": io.BytesIO(json.dumps(_editor_release_manifest()).encode())
+    }
+    os.environ["EDITOR_TEST_BUCKET_NAME"] = "isolated-editor-test"
+    os.environ["RERENDER_JOB_DEFINITION"] = "trusted-production-template"
+    os.environ["EDITOR_TEST_TEMPLATE_JOB_DEFINITION"] = "trusted-isolated-template"
+    release_id = "7fd1c249-6cef-40f1-97d4-e4e6c837f60a"
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def rest(table: str, **kwargs):
+        calls.append((table, kwargs))
+        if table == "editor_releases" and kwargs.get("method") is None:
+            return []
+        if table == "editor_releases" and kwargs.get("method") == "POST":
+            return [{"id": release_id}]
+        if table == "editor_release_state" and kwargs.get("method") is None:
+            return [{"candidate_release_id": None, "canary_enabled": False}]
+        return None
+
+    module.rest = rest
+
+    result = module.handler(event, None)
+
+    assert result == {"releaseId": release_id, "status": "canary_ready"}
+    check_calls = [
+        kwargs for table, kwargs in calls
+        if table == "editor_release_checks" and kwargs.get("method") == "POST"
+    ]
+    assert {call["body"]["check_name"] for call in check_calls} == {
+        "worker-image",
+        "legacy-no-timeline",
+        "captured-timeline",
+        "editor-v2",
+        "ffprobe",
+        "frame-parity",
+    }
+    state_patch = next(
+        kwargs for table, kwargs in calls
+        if table == "editor_release_state" and kwargs.get("method") == "PATCH"
+    )
+    assert state_patch["body"] == {
+        "candidate_release_id": release_id,
+        "canary_enabled": False,
+    }
+
+
+def test_editor_release_registrar_rejects_critical_ecr_findings() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    module.ecr = MagicMock()
+    module.ecr.describe_image_scan_findings.return_value = {
+        "imageScanStatus": {"status": "COMPLETE"},
+        "imageScanFindings": {"findingSeverityCounts": {"CRITICAL": 1}},
+    }
+
+    try:
+        module._verify_ecr_scan(
+            "registry.example/shorts@" + f"sha256:{'b' * 64}",
+            f"sha256:{'b' * 64}",
+        )
+    except RuntimeError as error:
+        assert str(error) == "ECR image has a critical vulnerability"
+    else:
+        raise AssertionError("critical image was accepted")
+
+
+def test_editor_release_registrar_rejects_definition_contract_drift() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    trusted = {
+        "type": "container",
+        "containerProperties": {
+            "jobRoleArn": "arn:aws:iam::123456789012:role/trusted",
+            "command": ["python", "-m", "shorts_worker", "rerender"],
+            "environment": [{"name": "TASK_VCPUS", "value": "2"}],
+        },
+        "platformCapabilities": ["FARGATE"],
+    }
+    candidate = deepcopy(trusted)
+    candidate["containerProperties"]["jobRoleArn"] = (
+        "arn:aws:iam::123456789012:role/untrusted"
+    )
+
+    try:
+        module._verify_definition_contract(candidate, trusted)
+    except RuntimeError as error:
+        assert str(error) == (
+            "Editor release job definition differs from its trusted template"
+        )
+    else:
+        raise AssertionError("definition role drift was accepted")
+
+
+def test_editor_release_registration_retry_never_pauses_an_active_canary() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    event = _editor_release_registration_event()
+    release_id = "7fd1c249-6cef-40f1-97d4-e4e6c837f60a"
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def rest(table: str, **kwargs):
+        calls.append((table, kwargs))
+        if table == "editor_releases" and kwargs.get("method") is None:
+            return [{
+                "id": release_id,
+                "status": "canary_ready",
+                "ui_version": 2,
+                "document_version": 2,
+                "production_job_definition_arn": (
+                    event["productionJobDefinitionArn"]
+                ),
+            }]
+        if table == "editor_release_state" and kwargs.get("method") is None:
+            return [{
+                "candidate_release_id": release_id,
+                "canary_enabled": True,
+            }]
+        return None
+
+    module.rest = rest
+
+    result = module._record_release(
+        event,
+        git_sha=str(event["gitSha"]),
+        digest=str(event["imageDigest"]),
+        production_definition_arn=str(event["productionJobDefinitionArn"]),
+        artifact_uri=str(event["artifactUri"]),
+        manifest=_editor_release_manifest(),
+    )
+
+    assert result == release_id
+    assert not any(
+        table == "editor_release_state" and kwargs.get("method") == "PATCH"
+        for table, kwargs in calls
     )
 
 
