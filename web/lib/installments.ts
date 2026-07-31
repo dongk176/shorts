@@ -6,7 +6,7 @@ type BillingDb = Sql | TransactionSql;
 
 export const ONE_TIME_INSTALLMENT_MIN_AMOUNT_KRW = 50_000;
 export const PACKAGE_INSTALLMENT_MIN_AMOUNT_KRW = ONE_TIME_INSTALLMENT_MIN_AMOUNT_KRW;
-export const MANUAL_INSTALLMENT_MAX_MONTHS = 12;
+export const MANUAL_INSTALLMENT_MAX_MONTHS = 6;
 
 function isoDate(value: Date | string) {
   return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
@@ -170,7 +170,12 @@ export async function getActiveInstallmentOffer(
         { length: MANUAL_INSTALLMENT_MAX_MONTHS - 1 },
         (_, index) => index + 2,
       )
-      : capabilityRows.map((row) => Number(row.installmentMonths)),
+      : capabilityRows
+        .map((row) => Number(row.installmentMonths))
+        .filter((months) => (
+          credentialScope !== "manual"
+          || months <= MANUAL_INSTALLMENT_MAX_MONTHS
+        )),
   );
   const terms: InstallmentTerm[] = rows.map((row) => {
     const installmentMonths = Number(row.installmentMonths);

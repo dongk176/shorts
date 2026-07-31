@@ -51,7 +51,7 @@ describe("installment campaigns", () => {
     });
   });
 
-  it("separates general 2-12 month capability from exact campaign benefits", async () => {
+  it("limits manual-card capability to the verified 2-6 month terminal range", async () => {
     const offer = await getActiveInstallmentOffer(fakeDb([
       [campaign],
       capabilities(2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
@@ -81,40 +81,41 @@ describe("installment campaigns", () => {
       credentialScope: "manual",
     });
     expect(offer.terms).toHaveLength(3);
-    expect(offer.selectableMonths).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(offer.selectableMonths).toEqual([2, 3, 4, 5, 6]);
     expect(offer.selectableOptions.find((option) => option.installmentMonths === 3))
       .toMatchObject({ benefitType: "interest_free", campaignTermId: "term-3" });
     expect(offer.selectableOptions.find((option) => option.installmentMonths === 6))
       .toMatchObject({ benefitType: "standard_interest", campaignTermId: null });
     expect(offer.selectableOptions.find((option) => option.installmentMonths === 10))
-      .toMatchObject({
-        benefitType: "partial_interest_free",
-        customerPaidInstallments: 5,
-      });
+      .toBeUndefined();
+    expect(offer.terms.find((term) => term.installmentMonths === 10)).toMatchObject({
+      providerSupported: false,
+      selectable: false,
+    });
     expect(offer.terms.find((term) => term.installmentMonths === 18)).toMatchObject({
       providerSupported: false,
       selectable: false,
     });
-    expect(MANUAL_INSTALLMENT_MAX_MONTHS).toBe(12);
+    expect(MANUAL_INSTALLMENT_MAX_MONTHS).toBe(6);
   });
 
-  it("uses campaign terms up to 12 months during an explicitly gated local checkout", async () => {
-    const unverifiedTwelveMonthTerm = {
+  it("keeps an explicitly gated local checkout within the same verified 6-month limit", async () => {
+    const verifiedSixMonthTerm = {
       ...kbThreeMonthTerm(),
-      id: "term-local-12",
+      id: "term-local-6",
       benefitType: "partial_interest_free",
-      installmentMonths: 12,
-      customerPaidInstallments: 5,
+      installmentMonths: 6,
+      customerPaidInstallments: 3,
     };
     const offer = await getActiveInstallmentOffer(fakeDb([
       [campaign],
       [],
       [
-        unverifiedTwelveMonthTerm,
+        verifiedSixMonthTerm,
         {
-          ...unverifiedTwelveMonthTerm,
-          id: "term-local-18",
-          installmentMonths: 18,
+          ...verifiedSixMonthTerm,
+          id: "term-local-12",
+          installmentMonths: 12,
         },
       ],
     ]), {
@@ -122,18 +123,18 @@ describe("installment campaigns", () => {
       credentialScope: "manual",
       localManualCheckout: true,
     });
-    expect(offer.selectableMonths).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-    expect(offer.terms.find((term) => term.installmentMonths === 18))
+    expect(offer.selectableMonths).toEqual([2, 3, 4, 5, 6]);
+    expect(offer.terms.find((term) => term.installmentMonths === 12))
       .toMatchObject({ providerSupported: false, selectable: false });
 
     await expect(validateInstallmentSelection(fakeDb([
       [campaign],
       [],
-      [unverifiedTwelveMonthTerm],
+      [verifiedSixMonthTerm],
     ]), {
       billingCycle: "yearly",
       amountKrw: 288_000,
-      installmentMonths: 12,
+      installmentMonths: 6,
       campaignId: campaign.id,
       issuer: "국민카드",
       productKind: "package",
@@ -142,7 +143,7 @@ describe("installment campaigns", () => {
     })).resolves.toMatchObject({
       snapshot: {
         issuerCode: "kb",
-        installmentMonths: 12,
+        installmentMonths: 6,
       },
     });
   });
@@ -207,22 +208,22 @@ describe("installment campaigns", () => {
     });
   });
 
-  it("allows an exact mapped 12-month term but rejects longer manual installments", async () => {
-    const twelveMonthTerm = {
+  it("allows an exact mapped 6-month term but rejects longer manual installments", async () => {
+    const sixMonthTerm = {
       ...kbThreeMonthTerm(),
-      id: "term-12",
+      id: "term-6",
       benefitType: "partial_interest_free",
-      installmentMonths: 12,
-      customerPaidInstallments: 5,
+      installmentMonths: 6,
+      customerPaidInstallments: 3,
     };
     await expect(validateInstallmentSelection(fakeDb([
       [campaign],
-      capabilities(12),
-      [twelveMonthTerm],
+      capabilities(6),
+      [sixMonthTerm],
     ]), {
       billingCycle: "yearly",
       amountKrw: 191_040,
-      installmentMonths: 12,
+      installmentMonths: 6,
       campaignId: campaign.id,
       issuer: "국민카드",
       productKind: "package",
@@ -230,14 +231,14 @@ describe("installment campaigns", () => {
     })).resolves.toMatchObject({
       snapshot: {
         issuerCode: "kb",
-        installmentMonths: 12,
-        customerPaidInstallments: 5,
+        installmentMonths: 6,
+        customerPaidInstallments: 3,
       },
     });
     await expect(validateInstallmentSelection(fakeDb([]), {
       billingCycle: "yearly",
       amountKrw: 191_040,
-      installmentMonths: 13,
+      installmentMonths: 7,
       campaignId: campaign.id,
       issuer: "국민카드",
       productKind: "package",
@@ -288,7 +289,7 @@ describe("installment campaigns", () => {
     ]), input)).rejects.toMatchObject({ code: "INSTALLMENT_NOT_SUPPORTED" });
   });
 
-  it("allows Hyundai 6-month general interest and keeps its 12-month campaign benefit", async () => {
+  it("allows Hyundai 6-month general interest and blocks its 12-month campaign benefit", async () => {
     const hyundaiTwelveMonthTerm = {
       id: "hyundai-12",
       issuerCode: "hyundai",
@@ -321,11 +322,7 @@ describe("installment campaigns", () => {
         campaignTermId: null,
       },
     });
-    await expect(validateInstallmentSelection(fakeDb([
-      [campaign],
-      capabilities(6, 12),
-      [hyundaiTwelveMonthTerm],
-    ]), {
+    await expect(validateInstallmentSelection(fakeDb([]), {
       billingCycle: "yearly",
       amountKrw: 288_000,
       installmentMonths: 12,
@@ -333,14 +330,7 @@ describe("installment campaigns", () => {
       issuer: "현대카드",
       productKind: "package",
       credentialScope: "manual",
-    })).resolves.toMatchObject({
-      snapshot: {
-        installmentMonths: 12,
-        benefitType: "partial_interest_free",
-        customerPaidInstallments: 6,
-        campaignTermId: "hyundai-12",
-      },
-    });
+    })).rejects.toMatchObject({ code: "INSTALLMENT_MONTHS_EXCEEDED" });
   });
 
   it("allows general installments even when there is no active campaign", async () => {

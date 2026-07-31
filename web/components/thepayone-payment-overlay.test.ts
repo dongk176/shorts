@@ -5,8 +5,8 @@ const source = readFileSync(
   new URL("./thepayone-payment-overlay.tsx", import.meta.url),
   "utf8",
 );
-const globalStyles = readFileSync(
-  new URL("../app/globals.css", import.meta.url),
+const checkoutStyles = readFileSync(
+  new URL("../app/payment-checkout.css", import.meta.url),
   "utf8",
 );
 
@@ -28,10 +28,10 @@ describe("ThePayOne payment overlay", () => {
     expect(source).toContain("sm:flex-auto");
     expect(source).toContain("thepayone-payment-dialog");
     expect(source).toContain("thepayone-payment-content");
-    expect(globalStyles).toContain(
+    expect(checkoutStyles).toContain(
       '.thepayone-payment-dialog:has([data-card-issuer-trigger][aria-expanded="true"])',
     );
-    expect(globalStyles).toContain("min-height: min(36rem,calc(100dvh - 4rem))");
-    expect(globalStyles).toContain("padding-top: 4.5rem");
+    expect(checkoutStyles).toContain("min-height: min(36rem,calc(100dvh - 4rem))");
+    expect(checkoutStyles).toContain("padding-top: 4.5rem");
   });
 });
