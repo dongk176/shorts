@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import zlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,10 @@ SENTENCE_RE = re.compile(r"(?<=[.!?。！？])\s+|\n+")
 MIN_TRANSCRIBE_CHUNK_SECONDS = 1.0
 TRANSCRIBE_CHUNK_MAX_ATTEMPTS = 2
 TRANSCRIBE_CHUNK_RETRY_DELAY_SECONDS = 1.0
+TRANSCRIPT_QUALITY_MIN_RATE_CHARS = 600
+TRANSCRIPT_QUALITY_MAX_CHARS_PER_SECOND = 24.0
+TRANSCRIPT_QUALITY_MIN_COMPRESSION_CHARS = 400
+TRANSCRIPT_QUALITY_MIN_COMPRESSION_RATIO = 0.12
 
 
 def _log_event(event: str, **fields: object) -> None:
@@ -34,6 +39,7 @@ class TranscriptionResult:
     failed_chunk_count: int = 0
     skipped_chunk_count: int = 0
     failed_audio_seconds: float = 0.0
+    quality_rejected_chunk_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +50,51 @@ class _ChunkTranscriptionResult:
     input_tokens: int
     output_tokens: int
     skipped: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _TranscriptQualityIssue:
+    reason: str
+    character_count: int
+    characters_per_second: float
+    compression_ratio: float
+
+
+class _TranscriptQualityError(RuntimeError):
+    def __init__(self, issue: _TranscriptQualityIssue) -> None:
+        super().__init__(issue.reason)
+        self.issue = issue
+
+
+def _transcript_quality_issue(
+    text: str,
+    duration: float,
+) -> _TranscriptQualityIssue | None:
+    compact_text = "".join(text.split())
+    character_count = len(compact_text)
+    if character_count < TRANSCRIPT_QUALITY_MIN_COMPRESSION_CHARS:
+        return None
+
+    encoded = compact_text.encode("utf-8")
+    compression_ratio = len(zlib.compress(encoded)) / max(1, len(encoded))
+    characters_per_second = character_count / max(0.1, duration)
+
+    reason: str | None = None
+    if (
+        character_count >= TRANSCRIPT_QUALITY_MIN_RATE_CHARS
+        and characters_per_second > TRANSCRIPT_QUALITY_MAX_CHARS_PER_SECOND
+    ):
+        reason = "impossible_text_rate"
+    elif compression_ratio < TRANSCRIPT_QUALITY_MIN_COMPRESSION_RATIO:
+        reason = "excessive_repetition"
+    if reason is None:
+        return None
+    return _TranscriptQualityIssue(
+        reason=reason,
+        character_count=character_count,
+        characters_per_second=round(characters_per_second, 3),
+        compression_ratio=round(compression_ratio, 4),
+    )
 
 
 def _plain_text_segments(text: str, duration: float, offset: float) -> list[SubtitleSegment]:
@@ -159,24 +210,55 @@ class AudioTranscriber:
                     response_format="json",
                 )
 
+        def parse_response(response: Any) -> tuple[
+            list[SubtitleSegment], int, int, _TranscriptQualityIssue | None
+        ]:
+            data = self._response_dict(response)
+            text = " ".join(str(data.get("text") or "").split())
+            issue = _transcript_quality_issue(text, duration)
+            segments = [] if issue else _plain_text_segments(text, duration, offset)
+            input_tokens, output_tokens = self._usage_tokens(data)
+            return segments, input_tokens, output_tokens, issue
+
         try:
             response = request(chunk)
-        except Exception:
-            retry_chunk = self._normalize_retry_chunk(chunk)
-            _log_event(
-                "transcription_chunk_retrying",
-                chunk_index=index,
-                duration_seconds=round(duration, 3),
-                media_bytes=chunk.stat().st_size,
-                attempt=TRANSCRIBE_CHUNK_MAX_ATTEMPTS,
-                retry_format=retry_chunk.suffix.lstrip("."),
-            )
-            time.sleep(TRANSCRIBE_CHUNK_RETRY_DELAY_SECONDS)
-            response = request(retry_chunk)
-        data = self._response_dict(response)
-        text = " ".join(str(data.get("text") or "").split())
-        segments = _plain_text_segments(text, duration, offset)
-        input_tokens, output_tokens = self._usage_tokens(data)
+        except Exception as exc:
+            retry_reason = "provider_error"
+            retry_fields: dict[str, object] = {"error_type": type(exc).__name__}
+        else:
+            segments, input_tokens, output_tokens, issue = parse_response(response)
+            if issue is None:
+                return _ChunkTranscriptionResult(
+                    index=index,
+                    segments=segments,
+                    silent=not segments,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
+            retry_reason = "quality_rejected"
+            retry_fields = {
+                "quality_reason": issue.reason,
+                "character_count": issue.character_count,
+                "characters_per_second": issue.characters_per_second,
+                "compression_ratio": issue.compression_ratio,
+            }
+
+        retry_chunk = self._normalize_retry_chunk(chunk)
+        _log_event(
+            "transcription_chunk_retrying",
+            chunk_index=index,
+            duration_seconds=round(duration, 3),
+            media_bytes=chunk.stat().st_size,
+            attempt=TRANSCRIBE_CHUNK_MAX_ATTEMPTS,
+            retry_format=retry_chunk.suffix.lstrip("."),
+            reason=retry_reason,
+            **retry_fields,
+        )
+        time.sleep(TRANSCRIBE_CHUNK_RETRY_DELAY_SECONDS)
+        response = request(retry_chunk)
+        segments, input_tokens, output_tokens, issue = parse_response(response)
+        if issue is not None:
+            raise _TranscriptQualityError(issue)
         return _ChunkTranscriptionResult(
             index=index,
             segments=segments,
@@ -266,6 +348,7 @@ class AudioTranscriber:
 
         failed_chunk_count = 0
         failed_audio_seconds = 0.0
+        quality_rejected_chunk_count = 0
         if transcribable_specs:
             max_workers = max(
                 1,
@@ -294,14 +377,33 @@ class AudioTranscriber:
                         _chunk_index, chunk, duration, _offset = chunk_specs[index]
                         failed_chunk_count += 1
                         failed_audio_seconds += duration
+                        quality_issue = (
+                            exc.issue if isinstance(exc, _TranscriptQualityError) else None
+                        )
+                        if quality_issue is not None:
+                            quality_rejected_chunk_count += 1
                         _log_event(
                             "transcription_chunk_skipped",
                             chunk_index=index,
                             duration_seconds=round(duration, 3),
                             media_bytes=chunk.stat().st_size,
-                            reason="attempts_exhausted",
+                            reason=(
+                                "quality_rejected"
+                                if quality_issue is not None
+                                else "attempts_exhausted"
+                            ),
                             attempt_count=TRANSCRIBE_CHUNK_MAX_ATTEMPTS,
                             error_type=type(exc).__name__,
+                            **(
+                                {
+                                    "quality_reason": quality_issue.reason,
+                                    "character_count": quality_issue.character_count,
+                                    "characters_per_second": quality_issue.characters_per_second,
+                                    "compression_ratio": quality_issue.compression_ratio,
+                                }
+                                if quality_issue is not None
+                                else {}
+                            ),
                         )
                         continue
                     results[result.index] = result
@@ -320,4 +422,5 @@ class AudioTranscriber:
             failed_chunk_count=failed_chunk_count,
             skipped_chunk_count=skipped_chunk_count,
             failed_audio_seconds=round(failed_audio_seconds, 3),
+            quality_rejected_chunk_count=quality_rejected_chunk_count,
         )

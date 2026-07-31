@@ -10,7 +10,7 @@ import pytest
 
 from shorts_worker.config import Settings
 from shorts_worker.errors import TranscriptionError
-from shorts_worker.subtitles import AudioTranscriber
+from shorts_worker.subtitles import AudioTranscriber, _transcript_quality_issue
 
 
 def _install_openai(
@@ -153,6 +153,112 @@ def test_one_chunk_api_failure_is_retried_once_then_uses_partial_transcript(
     assert result.chunk_count == 2
     assert result.failed_chunk_count == 1
     assert result.failed_audio_seconds == 30
+
+
+def test_transcript_quality_guard_rejects_impossible_repetition_but_allows_normal_text() -> None:
+    repeated = "일로와 " * 500
+
+    issue = _transcript_quality_issue(repeated, 30)
+
+    assert issue is not None
+    assert issue.reason in {"impossible_text_rate", "excessive_repetition"}
+    assert _transcript_quality_issue(
+        "게임 초반에는 시야를 확보하고 팀원과 함께 움직이는 것이 중요합니다.",
+        30,
+    ) is None
+
+
+def test_degenerate_transcript_is_retried_once_and_clean_retry_is_used(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    chunk = tmp_path / "audio_0000.m4a"
+    chunk.write_bytes(b"audio")
+    responses = iter([{"text": "어어 " * 500}, {"text": "정상적인 재시도 결과"}])
+    call_count = 0
+
+    def create(**_kwargs):
+        nonlocal call_count
+        call_count += 1
+        return next(responses)
+
+    _install_openai(monkeypatch, create)
+    transcriber = AudioTranscriber(_settings())
+    monkeypatch.setattr(transcriber, "_extract_chunks", lambda *_args: [chunk])
+    monkeypatch.setattr(transcriber, "_normalize_retry_chunk", lambda path: path)
+    monkeypatch.setattr("shorts_worker.subtitles.time.sleep", lambda *_args: None)
+    monkeypatch.setattr(
+        "shorts_worker.subtitles.probe_media",
+        lambda *_args, **_kwargs: {"format": {"duration": "30"}},
+    )
+
+    result = transcriber.transcribe(tmp_path / "source.mp4", tmp_path / "work")
+
+    assert call_count == 2
+    assert [segment.text for segment in result.segments] == ["정상적인 재시도 결과"]
+    assert result.failed_chunk_count == 0
+    assert result.quality_rejected_chunk_count == 0
+
+
+def test_repeated_retry_is_rejected_and_other_chunks_remain_usable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    chunks = [tmp_path / f"audio_{index:04d}.m4a" for index in range(2)]
+    for chunk in chunks:
+        chunk.write_bytes(b"audio")
+    call_counts = {chunk.name: 0 for chunk in chunks}
+
+    def create(**kwargs):
+        name = Path(kwargs["file"].name).name
+        call_counts[name] += 1
+        if name == "audio_0001.m4a":
+            return {"text": "일로와 " * 500}
+        return {"text": "사용 가능한 청크"}
+
+    _install_openai(monkeypatch, create)
+    transcriber = AudioTranscriber(_settings())
+    monkeypatch.setattr(transcriber, "_extract_chunks", lambda *_args: chunks)
+    monkeypatch.setattr(transcriber, "_normalize_retry_chunk", lambda path: path)
+    monkeypatch.setattr("shorts_worker.subtitles.time.sleep", lambda *_args: None)
+    monkeypatch.setattr(
+        "shorts_worker.subtitles.probe_media",
+        lambda *_args, **_kwargs: {"format": {"duration": "30"}},
+    )
+
+    result = transcriber.transcribe(tmp_path / "source.mp4", tmp_path / "work")
+
+    assert [segment.text for segment in result.segments] == ["사용 가능한 청크"]
+    assert call_counts == {"audio_0000.m4a": 1, "audio_0001.m4a": 2}
+    assert result.failed_chunk_count == 1
+    assert result.quality_rejected_chunk_count == 1
+    assert result.failed_audio_seconds == 30
+
+
+def test_all_degenerate_chunks_fail_when_no_transcript_is_usable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    chunk = tmp_path / "audio_0000.m4a"
+    chunk.write_bytes(b"audio")
+    call_count = 0
+
+    def create(**_kwargs):
+        nonlocal call_count
+        call_count += 1
+        return {"text": "어어 " * 500}
+
+    _install_openai(monkeypatch, create)
+    transcriber = AudioTranscriber(_settings())
+    monkeypatch.setattr(transcriber, "_extract_chunks", lambda *_args: [chunk])
+    monkeypatch.setattr(transcriber, "_normalize_retry_chunk", lambda path: path)
+    monkeypatch.setattr("shorts_worker.subtitles.time.sleep", lambda *_args: None)
+    monkeypatch.setattr(
+        "shorts_worker.subtitles.probe_media",
+        lambda *_args, **_kwargs: {"format": {"duration": "30"}},
+    )
+
+    with pytest.raises(TranscriptionError, match="비어"):
+        transcriber.transcribe(tmp_path / "source.mp4", tmp_path / "work")
+
+    assert call_count == 2
 
 
 def test_tiny_tail_chunk_is_skipped_without_an_api_request(

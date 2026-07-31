@@ -418,6 +418,7 @@ class BatchWorker:
             silent_chunk_count=result.silent_chunk_count,
             skipped_chunk_count=result.skipped_chunk_count,
             failed_chunk_count=result.failed_chunk_count,
+            quality_rejected_chunk_count=result.quality_rejected_chunk_count,
             failed_audio_seconds=result.failed_audio_seconds,
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,

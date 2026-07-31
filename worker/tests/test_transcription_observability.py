@@ -57,6 +57,7 @@ def test_transcription_observability_records_usage_without_source_text(
         "silent_chunk_count": 1,
         "skipped_chunk_count": 0,
         "failed_chunk_count": 0,
+        "quality_rejected_chunk_count": 0,
         "failed_audio_seconds": 0.0,
         "input_tokens": 120,
         "output_tokens": 45,
@@ -77,6 +78,7 @@ def test_partial_transcription_is_observed_without_failing_the_pipeline(
         input_tokens=100,
         output_tokens=30,
         failed_chunk_count=1,
+        quality_rejected_chunk_count=1,
         skipped_chunk_count=1,
         failed_audio_seconds=30,
     )
@@ -92,6 +94,7 @@ def test_partial_transcription_is_observed_without_failing_the_pipeline(
     assert transcript[0].text == "usable transcript"
     assert event["status"] == "partial"
     assert event["failed_chunk_count"] == 1
+    assert event["quality_rejected_chunk_count"] == 1
     assert event["skipped_chunk_count"] == 1
     assert event["failed_audio_seconds"] == 30
 

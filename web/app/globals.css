@@ -1053,9 +1053,9 @@ body:has(.editor-page) .language-selector-floating { display: none; }
 .short-source-range { display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 13px 16px; background: #191c1e; font-size: 12px; }
 .short-source-range span { color: #8e9294; }
 .short-source-range strong { color: #e0e3e5; font-variant-numeric: tabular-nums; }
-.short-script-panel { min-height: 0; flex: 1; overflow: hidden; border: 1px solid rgba(255,255,255,.08); border-radius: 13px; background: #191c1e; }
+.short-script-panel { display: flex; min-height: 0; max-height: 320px; flex: 1; flex-direction: column; overflow: hidden; border: 1px solid rgba(255,255,255,.08); border-radius: 13px; background: #191c1e; }
 .short-script-panel h3 { border-bottom: 1px solid rgba(255,255,255,.07); padding: 13px 17px; color: white; font-size: 13px; font-weight: 750; }
-.short-script-panel p { overflow: visible; padding: 17px; color: #b8bbbd; font-size: 14px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; text-overflow: clip; }
+.short-script-panel p { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 17px; color: #b8bbbd; font-size: 14px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-gutter: stable; }
 @media (max-width: 760px) {
   body:has(.project-workspace) .language-selector-floating { display: none; }
   .workspace-header { height: auto; min-height: 68px; gap: 12px; padding: 10px 14px; }
