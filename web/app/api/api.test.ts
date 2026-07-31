@@ -300,6 +300,90 @@ describe("range editing feature gate and snapshot", () => {
     expect(tx).toHaveBeenCalledTimes(2);
   });
 
+  it("stores edited subtitle text while preserving captured timeline timestamps", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    const db = dbWithRows([{
+      id: shortId,
+      status: "ready",
+      durationSeconds: 40,
+      templateId: "comment-capture",
+      customTemplateId: null,
+      templateSnapshot: { presetVersion: 3 },
+      videoAspectRatio: "1:1",
+      editTimelineS3Key: "edit-sources/timeline.mp4",
+      editTimelineStartSeconds: 90,
+      editTimelineEndSeconds: 170,
+      editTimelineSubtitleSegments: [
+        { start: 15, end: 25, text: "선택 자막" },
+      ],
+    }]);
+    const tx = dbWithRows([{ id: shortId }], []);
+    Object.assign(db, {
+      begin: vi.fn(
+        (callback: (transaction: typeof tx) => unknown) => callback(tx),
+      ),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        ...input,
+        subtitleSegments: [
+          { start: 15, end: 25, text: "사용자가 수정한 자막" },
+        ],
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(202);
+    const pendingSnapshot = tx.mock.calls[0].slice(1).find((value) => (
+      typeof value === "object" && value !== null && "durationSeconds" in value
+    ));
+    expect(pendingSnapshot).toMatchObject({
+      subtitleSegments: [{
+        start: 0,
+        end: 10,
+        text: "사용자가 수정한 자막",
+      }],
+      timelineSubtitleSegments: [{
+        start: 15,
+        end: 25,
+        text: "사용자가 수정한 자막",
+      }],
+    });
+  });
+
+  it("rejects edited subtitle timestamps in the range editor", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    mocks.getDb.mockReturnValue(dbWithRows([{
+      id: shortId,
+      status: "ready",
+      durationSeconds: 40,
+      templateId: "comment-capture",
+      customTemplateId: null,
+      templateSnapshot: { presetVersion: 3 },
+      videoAspectRatio: "1:1",
+      editTimelineS3Key: "edit-sources/timeline.mp4",
+      editTimelineStartSeconds: 90,
+      editTimelineEndSeconds: 170,
+      editTimelineSubtitleSegments: [
+        { start: 15, end: 25, text: "선택 자막" },
+      ],
+    }]));
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        ...input,
+        subtitleSegments: [
+          { start: 15.1, end: 25, text: "시간까지 바꾼 자막" },
+        ],
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(400);
+  });
+
   it("drops hidden malformed comments when applying a non-comment template", async () => {
     process.env.RANGE_EDITING_ENABLED = "true";
     const db = dbWithRows([{

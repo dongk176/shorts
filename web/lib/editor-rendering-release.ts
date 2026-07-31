@@ -5,6 +5,7 @@ export const EDITOR_RENDERING_V2_FLAG_KEY = "editor_rendering_v2";
 type EditorRenderingEnvironment = {
   NODE_ENV?: string;
   EDITOR_RENDERING_V2_ENABLED?: string;
+  EDITOR_RENDERING_V2_GLOBAL_ENABLED?: string;
   EDITOR_RENDERING_V2_TEST_USER_IDS?: string;
 };
 
@@ -25,6 +26,14 @@ export function editorRenderingV2TestUserIds(
   );
 }
 
+export function editorRenderingV2GlobalEnabled(
+  environment: EditorRenderingEnvironment = process.env,
+) {
+  return environment.EDITOR_RENDERING_V2_GLOBAL_ENABLED
+    ?.trim()
+    .toLowerCase() === "true";
+}
+
 export async function editorRenderingV2Enabled(
   db: Sql | TransactionSql,
   userId: string | null,
@@ -35,6 +44,7 @@ export async function editorRenderingV2Enabled(
   if (editorRenderingV2TestUserIds(environment).has(userId)) {
     return true;
   }
+  if (!editorRenderingV2GlobalEnabled(environment)) return false;
   const rows = await db`
     select enabled
     from shorts_mvp.runtime_feature_flags

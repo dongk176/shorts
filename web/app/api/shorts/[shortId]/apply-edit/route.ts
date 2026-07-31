@@ -51,6 +51,11 @@ const commentOverlay = z.object({
   ageLabel: z.string().trim().min(1).max(20),
 }).refine((item) => item.endSeconds > item.startSeconds);
 const activeCommentOverlays = z.array(commentOverlay).max(20);
+const subtitle = z.object({
+  start: z.number().finite().nonnegative(),
+  end: z.number().finite().positive(),
+  text: z.string().max(200),
+}).refine((item) => item.end > item.start);
 const legacyEditSchema = z.object({
   startSeconds: z.number().finite().nonnegative(),
   endSeconds: z.number().finite().positive(),
@@ -58,6 +63,7 @@ const legacyEditSchema = z.object({
     .refine((value) => value.split("\n").length <= 2),
   channelDisplayName: z.string().trim().min(1).max(50),
   subtitlesEnabled: z.boolean(),
+  subtitleSegments: z.array(subtitle).max(500).optional(),
   commentOverlays: z.array(z.unknown()).max(20).default([]),
   templateId: z.enum(templateIds),
   customTemplateId: z.string().uuid().nullable().optional(),
@@ -536,12 +542,30 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
       throw new HttpError(400, "댓글 노출 시간이 서로 겹치지 않게 조정해 주세요.");
     }
 
+    const storedTimelineSubtitles = (
+      hasCapturedTimeline
+        ? existing.editTimelineSubtitleSegments || []
+        : existing.subtitleSegments || []
+    ) as TimelineSubtitle[];
+    const requestedTimelineSubtitles = input.subtitleSegments
+      || storedTimelineSubtitles;
+    if (
+      requestedTimelineSubtitles.length !== storedTimelineSubtitles.length
+      || storedTimelineSubtitles.some((segment, index) => (
+        Math.abs(
+          Number(segment.start)
+          - requestedTimelineSubtitles[index].start,
+        ) > 0.001
+        || Math.abs(
+          Number(segment.end)
+          - requestedTimelineSubtitles[index].end,
+        ) > 0.001
+      ))
+    ) {
+      throw new HttpError(400, "자막 시간은 변경할 수 없습니다.");
+    }
     const subtitleSegments = subtitlesForTimelineSelection(
-      (
-        hasCapturedTimeline
-          ? existing.editTimelineSubtitleSegments || []
-          : existing.subtitleSegments || []
-      ) as TimelineSubtitle[],
+      requestedTimelineSubtitles,
       timelineStart,
       selectionStartSeconds,
       selectionEndSeconds,
@@ -566,6 +590,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
       channelDisplayName: input.channelDisplayName,
       subtitlesEnabled: input.subtitlesEnabled,
       subtitleSegments,
+      timelineSubtitleSegments: requestedTimelineSubtitles,
       commentOverlays: comments,
       templateId: input.templateId,
       customTemplateId: templateSelection.customTemplateId,

@@ -1707,6 +1707,12 @@ function CommentRegenerationConfirmDialog({
   );
 }
 
+type EditorSubtitleSegment = {
+  start: number;
+  end: number;
+  text: string;
+};
+
 type EditTimeline = {
   url: string;
   timelineStartSeconds: number;
@@ -1715,7 +1721,7 @@ type EditTimeline = {
   currentEndSeconds: number;
   initialStartSeconds: number;
   initialEndSeconds: number;
-  subtitleSegments: Array<{ start: number; end: number; text: string }>;
+  subtitleSegments: EditorSubtitleSegment[];
   version: number;
 };
 
@@ -1753,6 +1759,7 @@ type EditorCopySnapshot = {
   channel: string;
   channelThumbnailUrl: string | null;
   channelThumbnailAssetKey: string | null;
+  subtitleSegments: EditorSubtitleSegment[];
 };
 type EditorCopyHistoryEntry = {
   before: EditorCopySnapshot;
@@ -1790,6 +1797,9 @@ const cloneEditorCommentDeleteHistoryEntry = (
 const cloneEditorComments = (comments: CommentOverlay[]) => (
   comments.map((comment) => ({ ...comment }))
 );
+const cloneEditorSubtitleSegments = (segments: EditorSubtitleSegment[]) => (
+  segments.map((segment) => ({ ...segment }))
+);
 const editorCommentsChanged = (
   before: CommentOverlay[],
   after: CommentOverlay[],
@@ -1824,6 +1834,7 @@ const cloneEditorCopySnapshot = (
   channel: snapshot.channel,
   channelThumbnailUrl: snapshot.channelThumbnailUrl,
   channelThumbnailAssetKey: snapshot.channelThumbnailAssetKey,
+  subtitleSegments: cloneEditorSubtitleSegments(snapshot.subtitleSegments),
 });
 const cloneEditorCopyHistoryEntry = (
   entry: EditorCopyHistoryEntry,
@@ -1840,6 +1851,7 @@ const editorCopySnapshotsEqual = (
   && left.channel === right.channel
   && left.channelThumbnailUrl === right.channelThumbnailUrl
   && left.channelThumbnailAssetKey === right.channelThumbnailAssetKey
+  && JSON.stringify(left.subtitleSegments) === JSON.stringify(right.subtitleSegments)
   && JSON.stringify(left.titleTextStyles) === JSON.stringify(right.titleTextStyles)
 );
 const editorCopyTitleChanged = (entry: EditorCopyHistoryEntry) => (
@@ -1847,6 +1859,10 @@ const editorCopyTitleChanged = (entry: EditorCopyHistoryEntry) => (
   || entry.before.titleFontScale !== entry.after.titleFontScale
   || JSON.stringify(entry.before.titleTextStyles)
     !== JSON.stringify(entry.after.titleTextStyles)
+);
+const editorCopySubtitleChanged = (entry: EditorCopyHistoryEntry) => (
+  JSON.stringify(entry.before.subtitleSegments)
+  !== JSON.stringify(entry.after.subtitleSegments)
 );
 const cloneEditorTemplateSnapshot = (
   snapshot: EditorTemplateSnapshot,
@@ -2055,6 +2071,7 @@ function CommentTimelineEditor({
   onRangeEditStart,
   onRangeEditEnd,
   active,
+  editRequest,
   snapPointsSeconds = [],
   selectionLeftPercent = 0,
   selectionWidthPercent = 100,
@@ -2073,6 +2090,7 @@ function CommentTimelineEditor({
   onRangeEditStart: () => void;
   onRangeEditEnd: () => void;
   active: boolean;
+  editRequest?: { commentId: string; revision: number } | null;
   snapPointsSeconds?: number[];
   selectionLeftPercent?: number;
   selectionWidthPercent?: number;
@@ -2082,15 +2100,22 @@ function CommentTimelineEditor({
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<CommentTimelineDrag | null>(null);
+  const commentButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const editingCommentAnchorRef = useRef<HTMLButtonElement | null>(null);
+  const [editingCommentAnchor, setEditingCommentAnchor] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+  const lastCommentActivationRef = useRef<{
+    commentId: string;
+    timestamp: number;
+  } | null>(null);
+  const handledEditRequestRevisionRef = useRef(0);
   const safeDuration = Math.max(0.3, durationSeconds);
   const editingComment = orderedComments.find((comment) => comment.id === editingCommentId) || null;
   const editingIndex = editingComment
     ? orderedComments.findIndex((comment) => comment.id === editingComment.id)
     : -1;
-  const editingMidpoint = editingComment
-    ? (editingComment.startSeconds + editingComment.endSeconds) / 2
-    : safeDuration / 2;
-  const editingLeft = Math.max(25, Math.min(75, editingMidpoint / safeDuration * 100));
 
   useEffect(() => {
     if (!active) {
@@ -2109,8 +2134,76 @@ function CommentTimelineEditor({
   const deselectComment = () => {
     setSelectedCommentId(null);
     setEditingCommentId(null);
+    editingCommentAnchorRef.current = null;
+    setEditingCommentAnchor(null);
     onDeselect();
   };
+
+  const updateCommentEditorAnchor = useCallback((
+    anchor: HTMLButtonElement | null,
+  ) => {
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    setEditingCommentAnchor({
+      left: Math.max(
+        162,
+        Math.min(window.innerWidth - 162, rect.left + rect.width / 2),
+      ),
+      top: rect.top - 10,
+    });
+  }, []);
+
+  const openCommentTextEditor = useCallback((
+    comment: CommentOverlay,
+    anchor = commentButtonRefs.current.get(comment.id) || null,
+  ) => {
+    editingCommentAnchorRef.current = anchor;
+    updateCommentEditorAnchor(anchor);
+    onTextEditStart();
+    onSelect(comment.id);
+    setSelectedCommentId(comment.id);
+    setEditingCommentId(comment.id);
+    onSeek(comment.startSeconds);
+  }, [
+    onSeek,
+    onSelect,
+    onTextEditStart,
+    updateCommentEditorAnchor,
+  ]);
+
+  useEffect(() => {
+    if (
+      !active
+      || !editRequest
+      || handledEditRequestRevisionRef.current === editRequest.revision
+    ) {
+      return;
+    }
+    const comment = orderedComments.find(
+      (value) => value.id === editRequest.commentId,
+    );
+    if (!comment) return;
+    handledEditRequestRevisionRef.current = editRequest.revision;
+    openCommentTextEditor(comment);
+  }, [
+    active,
+    editRequest,
+    openCommentTextEditor,
+    orderedComments,
+  ]);
+
+  useEffect(() => {
+    if (!editingCommentId) return;
+    const update = () => updateCommentEditorAnchor(
+      editingCommentAnchorRef.current,
+    );
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [editingCommentId, updateCommentEditorAnchor]);
 
   const neighborBounds = (commentId: string) => {
     const index = orderedComments.findIndex((comment) => comment.id === commentId);
@@ -2174,7 +2267,6 @@ function CommentTimelineEditor({
       nextStartSeconds: bounds.nextStartSeconds,
       moved: false,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
     event.stopPropagation();
   };
 
@@ -2182,8 +2274,13 @@ function CommentTimelineEditor({
     const active = dragRef.current;
     if (!active || active.pointerId !== event.pointerId || active.width <= 0) return;
     const distance = event.clientX - active.startClientX;
-    if (!active.moved && Math.abs(distance) < 2) return;
-    active.moved = true;
+    if (!active.moved) {
+      if (Math.abs(distance) < 2) return;
+      active.moved = true;
+      if (!active.captureTarget.hasPointerCapture(active.pointerId)) {
+        active.captureTarget.setPointerCapture(active.pointerId);
+      }
+    }
     const deltaSeconds = distance / active.width * safeDuration;
     const range = snapTimedRangeHandle(
       adjustTimedRange(
@@ -2208,12 +2305,28 @@ function CommentTimelineEditor({
   const finishDrag = (event: PointerEvent<HTMLDivElement>) => {
     const active = dragRef.current;
     if (!active || active.pointerId !== event.pointerId) return;
-    if (!active.moved) onSeek(active.initialRange.startSeconds);
     dragRef.current = null;
     if (active.captureTarget.hasPointerCapture(event.pointerId)) {
       active.captureTarget.releasePointerCapture(event.pointerId);
     }
     onRangeEditEnd();
+    if (active.moved || event.type !== "pointerup") return;
+    const previousActivation = lastCommentActivationRef.current;
+    const isDoubleActivation = previousActivation?.commentId === active.commentId
+      && event.timeStamp - previousActivation.timestamp <= 450;
+    if (isDoubleActivation) {
+      lastCommentActivationRef.current = null;
+      const comment = orderedComments.find(
+        (value) => value.id === active.commentId,
+      );
+      if (comment) openCommentTextEditor(comment, active.captureTarget);
+      return;
+    }
+    lastCommentActivationRef.current = {
+      commentId: active.commentId,
+      timestamp: event.timeStamp,
+    };
+    onSeek(active.initialRange.startSeconds);
   };
 
   return <section
@@ -2258,29 +2371,21 @@ function CommentTimelineEditor({
           style={{ left: `${left}%`, width: `${width}%` }}
         >
           <button
+            ref={(element) => {
+              if (element) commentButtonRefs.current.set(comment.id, element);
+              else commentButtonRefs.current.delete(comment.id);
+            }}
             type="button"
             className="editor-comment-range-body"
             data-editor-guide={index === 0 ? "comment-item" : undefined}
             aria-label={`${label} 선택 및 이동`}
             aria-pressed={selected}
-            title={`${label}: ${comment.text}`}
+            title={`${label}: 더블클릭해서 댓글 수정 · 드래그해서 구간 이동`}
             style={{ backgroundColor: comment.avatarColor }}
             onPointerDown={(event) => startDrag(comment, "move", event)}
-            onDoubleClick={(event) => {
-              event.stopPropagation();
-              onTextEditStart();
-              onSelect(comment.id);
-              setSelectedCommentId(comment.id);
-              setEditingCommentId(comment.id);
-              onSeek(comment.startSeconds);
-            }}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
-                onTextEditStart();
-                onSelect(comment.id);
-                setSelectedCommentId(comment.id);
-                setEditingCommentId(comment.id);
-                onSeek(comment.startSeconds);
+                openCommentTextEditor(comment, event.currentTarget);
                 event.preventDefault();
                 event.stopPropagation();
               } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
@@ -2330,9 +2435,15 @@ function CommentTimelineEditor({
           </>}
         </div>;
       })}
-      {editingComment && <div
+      </div>
+    </div>
+    {editingComment && editingCommentAnchor && createPortal(
+      <div
         className="editor-comment-popover"
-        style={{ left: `${editingLeft}%` }}
+        style={{
+          left: editingCommentAnchor.left,
+          top: editingCommentAnchor.top,
+        }}
         onPointerDown={(event) => event.stopPropagation()}
       >
         <div className="editor-comment-popover-arrow" aria-hidden="true" />
@@ -2365,9 +2476,9 @@ function CommentTimelineEditor({
             setEditingCommentId(null);
           }}>완료</button>
         </div>
-      </div>}
-      </div>
-    </div>
+      </div>,
+      document.body,
+    )}
   </section>;
 }
 
@@ -2443,6 +2554,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     savedEditorDocument?.subtitles.enabled ?? item.subtitlesEnabled,
   );
   const [segments, setSegments] = useState(
+    savedEditorDocument?.subtitles.segments || item.subtitleSegments,
+  );
+  const subtitleSegmentsRef = useRef<EditorSubtitleSegment[]>(
     savedEditorDocument?.subtitles.segments || item.subtitleSegments,
   );
   const [templateId, setTemplateId] = useState(initialTemplateId);
@@ -2555,6 +2669,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [inlineEditingOverlay, setInlineEditingOverlay] = useState<
     "title" | `text:${string}` | null
   >(null);
+  const [editingSubtitleIndex, setEditingSubtitleIndex] = useState<number | null>(
+    null,
+  );
+  const [commentEditRequest, setCommentEditRequest] = useState<{
+    commentId: string;
+    revision: number;
+  } | null>(null);
   const [overlayGuides, setOverlayGuides] = useState<EditorOverlayGuides>(
     EMPTY_EDITOR_OVERLAY_GUIDES,
   );
@@ -2705,9 +2826,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     comments,
     subtitles: {
       enabled: subtitlesEnabled,
-      segments: (editTimeline?.subtitleSegments || segments).map(
-        (segment) => ({ ...segment }),
-      ),
+      segments: cloneEditorSubtitleSegments(segments),
     },
     overlays: overlayLayout,
     video: {
@@ -2742,7 +2861,6 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     titleFontScale,
     titleTextStyles,
     videoClips,
-    editTimeline?.subtitleSegments,
     editTimeline?.timelineEndSeconds,
     editTimeline?.timelineStartSeconds,
   ]);
@@ -2871,12 +2989,15 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     ? renderVideoClips[selectedVideoClipIndex]
     : null;
   const displayedPreviewTime = Math.max(0, Math.min(previewDuration, relativePreviewTime));
-  const previewSegments = editTimeline?.subtitleSegments || segments;
-  const activeSubtitle = previewSegments.find((segment) => (
+  const previewSegments = segments;
+  const activeSubtitleIndex = previewSegments.findIndex((segment) => (
     editTimeline
       ? segment.start <= previewTime && segment.end > previewTime
       : segment.start <= relativePreviewTime && segment.end > relativePreviewTime
-  ))?.text;
+  ));
+  const activeSubtitle = activeSubtitleIndex >= 0
+    ? previewSegments[activeSubtitleIndex]
+    : null;
   const commentsForPreview = editTimeline
     ? scaleTimedRanges(renderComments, item.durationSeconds, previewDuration)
     : renderComments;
@@ -3235,6 +3356,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     channel: channelRef.current,
     channelThumbnailUrl: editorChannelThumbnailUrlRef.current,
     channelThumbnailAssetKey: editorChannelThumbnailAssetKeyRef.current,
+    subtitleSegments: cloneEditorSubtitleSegments(
+      subtitleSegmentsRef.current,
+    ),
   }), []);
 
   const applyEditorCopySnapshot = useCallback((snapshot: EditorCopySnapshot) => {
@@ -3245,6 +3369,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     channelRef.current = next.channel;
     editorChannelThumbnailUrlRef.current = next.channelThumbnailUrl;
     editorChannelThumbnailAssetKeyRef.current = next.channelThumbnailAssetKey;
+    subtitleSegmentsRef.current = next.subtitleSegments;
     setTitle(next.title);
     setTitleTextStyles(next.titleTextStyles);
     setTitleFontScale(next.titleFontScale);
@@ -3258,6 +3383,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setChannel(next.channel);
     setEditorChannelThumbnailUrl(next.channelThumbnailUrl);
     setEditorChannelThumbnailAssetKey(next.channelThumbnailAssetKey);
+    setSegments(next.subtitleSegments);
+    setEditingSubtitleIndex(null);
     setTitleSelection(null);
   }, []);
 
@@ -4129,7 +4256,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         ],
       };
       setSelectedOverlay(
-        editorCopyTitleChanged(copyChange) ? "title" : "channel",
+        editorCopyTitleChanged(copyChange)
+          ? "title"
+          : editorCopySubtitleChanged(copyChange)
+            ? null
+            : "channel",
       );
       setInlineEditingOverlay(null);
     } else {
@@ -4225,7 +4356,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         future: futureCopyChanges,
       };
       setSelectedOverlay(
-        editorCopyTitleChanged(copyChange) ? "title" : "channel",
+        editorCopyTitleChanged(copyChange)
+          ? "title"
+          : editorCopySubtitleChanged(copyChange)
+            ? null
+            : "channel",
       );
       setInlineEditingOverlay(null);
     } else {
@@ -5181,9 +5316,16 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             const restoredSelectionEnd = savedTimelineMatches
               ? savedEditorDocument!.video.selectionEndSeconds
               : value.currentEndSeconds;
+            const restoredSubtitleSegments = cloneEditorSubtitleSegments(
+              savedTimelineMatches
+                ? savedEditorDocument!.subtitles.segments
+                : value.subtitleSegments,
+            );
             setEditTimeline(value);
             setSelectionStart(restoredSelectionStart);
             setSelectionEnd(restoredSelectionEnd);
+            subtitleSegmentsRef.current = restoredSubtitleSegments;
+            setSegments(restoredSubtitleSegments);
             videoClipsRef.current = initialVideoClips;
             setVideoClips(initialVideoClips);
             videoSequenceTimeRef.current = 0;
@@ -5322,6 +5464,23 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     ));
     commentsRef.current = next;
     setComments(next);
+  };
+
+  const updateSubtitleText = (index: number, text: string) => {
+    const next = subtitleSegmentsRef.current.map((segment, position) => (
+      position === index ? { ...segment, text } : segment
+    ));
+    subtitleSegmentsRef.current = next;
+    setSegments(next);
+  };
+
+  const requestCommentTextEdit = (commentId: string) => {
+    setInlineEditingOverlay(null);
+    setSelectedOverlay("comment");
+    setCommentEditRequest((current) => ({
+      commentId,
+      revision: (current?.revision || 0) + 1,
+    }));
   };
 
   const updateCommentRange = (
@@ -5762,6 +5921,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             hookTitle: editorDocumentSnapshot.title.text,
             channelDisplayName: editorDocumentSnapshot.channel.displayName,
             subtitlesEnabled,
+            subtitleSegments: segments,
             commentOverlays,
             templateId: editorDocumentSnapshot.template.id,
             ...(templateSelectionTouched
@@ -5844,6 +6004,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         onRangeEditStart={beginEditorCommentTextInteraction}
         onRangeEditEnd={finishEditorCommentTextInteraction}
         active={selectedOverlay === "comment"}
+        editRequest={commentEditRequest}
         snapPointsSeconds={videoSplitSnapPoints}
         selectionLeftPercent={editTimeline ? selectionLeft : 0}
         selectionWidthPercent={editTimeline ? selectionWidth : 100}
@@ -6237,7 +6398,51 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             />)}
           </div>}
           {videoLoadError && <div className="pointer-events-none absolute inset-x-3 top-3 z-50 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100">편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>}
-          {subtitlesEnabled && activeSubtitle && <div className="pointer-events-none absolute inset-x-5 bottom-[23.2%] z-50 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white">{activeSubtitle}</div>}
+          {subtitlesEnabled && activeSubtitle && <div
+            className="absolute inset-x-5 bottom-[23.2%] z-50 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            {editingSubtitleIndex === activeSubtitleIndex
+              ? <textarea
+                  autoFocus
+                  aria-label="현재 자막 수정"
+                  value={activeSubtitle.text}
+                  maxLength={200}
+                  rows={2}
+                  onFocus={beginEditorCopyInteraction}
+                  onChange={(event) => updateSubtitleText(
+                    activeSubtitleIndex,
+                    event.target.value,
+                  )}
+                  onBlur={() => {
+                    finishEditorCopyInteraction();
+                    setEditingSubtitleIndex(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.nativeEvent.isComposing) return;
+                    if (
+                      event.key === "Escape"
+                      || (event.key === "Enter" && !event.shiftKey)
+                    ) {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  className="block w-full resize-none rounded border border-white/35 bg-black/90 px-2 py-1 text-center text-xs font-bold leading-5 text-white outline-none focus:border-white"
+                />
+              : <button
+                  type="button"
+                  className="block w-full cursor-text text-center"
+                  title="더블클릭해서 자막 수정"
+                  onDoubleClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setEditingSubtitleIndex(activeSubtitleIndex);
+                  }}
+                >
+                  {activeSubtitle.text}
+                </button>}
+          </div>}
           {activeCustomTemplate
             ? <>
                 {renderOverlayLayout.visible.comment && templateId === "comment-capture" && layoutPreviewComment && activeCustomTemplate.config.comment.visible
@@ -6255,6 +6460,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                             layoutPreviewComment.id,
                           )
                         : undefined}
+                      onDoubleClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        requestCommentTextEdit(layoutPreviewComment.id);
+                      }}
+                      title="더블클릭해서 댓글 수정"
                     >
                       <TemplateCommentPreview
                         theme={editorCommentTheme}
@@ -6299,6 +6510,18 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                                 event,
                                 layoutPreviewComment.id,
                               )
+                            : undefined}
+                          onDoubleClick={layoutPreviewComment
+                            ? (event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                requestCommentTextEdit(
+                                  layoutPreviewComment.id,
+                                );
+                              }
+                            : undefined}
+                          title={layoutPreviewComment
+                            ? "더블클릭해서 댓글 수정"
                             : undefined}
                         >
                           <CommentCaptureCard
@@ -6371,6 +6594,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 event,
                 layoutPreviewComment.id,
               )}
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                requestCommentTextEdit(layoutPreviewComment.id);
+              }}
+              title="더블클릭해서 댓글 수정"
             >
               <TemplateCommentPreview
                 theme={editorCommentTheme}
@@ -7124,7 +7353,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           </details>}
           {templateId !== "comment-capture" && <label className="editor-section block text-sm font-semibold">채널명<input value={channel} onFocus={beginEditorCopyInteraction} onBlur={finishEditorCopyInteraction} onChange={(event) => { channelRef.current = event.target.value; setChannel(event.target.value); }} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>}
           <label className="hidden"><input type="checkbox" checked={subtitlesEnabled} onChange={(event) => setSubtitlesEnabled(event.target.checked)} />자동 자막 표시</label>
-          {subtitlesEnabled && <div className="hidden">{segments.map((segment, index) => <label key={`${segment.start}-${index}`}><span>{formatTimestamp(segment.start)}</span><input value={segment.text} onChange={(event) => setSegments((current) => current.map((value, position) => position === index ? { ...value, text: event.target.value } : value))} /></label>)}</div>}
+          {subtitlesEnabled && <div className="hidden">{segments.map((segment, index) => <label key={`${segment.start}-${index}`}><span>{formatTimestamp(segment.start)}</span><input value={segment.text} onChange={(event) => updateSubtitleText(index, event.target.value)} /></label>)}</div>}
           <details
             className={`editor-accordion editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "template" ? " is-active" : ""}`}
             open={overlayPreviewEnabled ? true : undefined}

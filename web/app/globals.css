@@ -901,7 +901,7 @@ body:has(.editor-page) .language-selector-floating { display: none; }
 .editor-comment-range-handle:focus-visible { outline: 2px solid #35e6e3; outline-offset: 2px; }
 .editor-comment-range-handle.is-start { left: -5px; }
 .editor-comment-range-handle.is-end { right: -5px; }
-.editor-comment-popover { position: absolute; z-index: 90; bottom: calc(100% + 13px); width: min(300px,calc(100vw - 40px)); border: 1px solid rgba(255,255,255,.16); border-radius: 13px; padding: 13px; background: #1f1e23; box-shadow: none; transform: translateX(-50%); user-select: text; backdrop-filter: none; }
+.editor-comment-popover { position: fixed; z-index: 1000; width: min(300px,calc(100vw - 24px)); border: 1px solid rgba(255,255,255,.16); border-radius: 13px; padding: 13px; background: #1f1e23; box-shadow: 0 14px 34px rgba(0,0,0,.38); transform: translate(-50%,-100%); user-select: text; backdrop-filter: none; }
 .editor-comment-popover-arrow { position: absolute; top: 100%; left: 50%; width: 10px; height: 10px; border-right: 1px solid rgba(255,255,255,.16); border-bottom: 1px solid rgba(255,255,255,.16); background: #1f1e23; transform: translate(-50%,-50%) rotate(45deg); }
 .editor-comment-popover label > span { display: block; margin-bottom: 7px; color: #d8d5dc; font-size: 11px; font-weight: 850; }
 .editor-comment-popover textarea { display: block; width: 100%; resize: vertical; border: 1px solid rgba(255,255,255,.14); border-radius: 9px; padding: 9px 10px; background: rgba(0,0,0,.28); color: #fff; font-size: 12px; line-height: 1.5; outline: none; }
@@ -1027,7 +1027,7 @@ body:has(.editor-page) .language-selector-floating { display: none; }
   .editor-preview-pane.has-range-editor .editor-preview-canvas-wrap .editor-video-frame { width: 100%; }
   .editor-range-panel { width: 100%; padding: 0 4px 16px; }
   .editor-filmstrip-wrap { margin-top: 25px; }
-  .editor-comment-popover { left: 50% !important; width: min(300px,calc(100vw - 40px)); }
+  .editor-comment-popover { width: auto; }
   .editor-controls-pane { position: fixed; z-index: 60; right: 0; bottom: 0; left: 0; display: flex; height: min(76dvh,640px); min-height: 88px; flex-direction: column; overflow: hidden; border: 1px solid rgba(255,255,255,.13); border-bottom: 0; border-radius: 22px 22px 0 0; padding: 0; background: #161619; box-shadow: none; transform: translateY(calc(100% - 88px - env(safe-area-inset-bottom,0px))); transition: transform .28s cubic-bezier(.2,.8,.2,1); backdrop-filter: none; }
   .editor-controls-pane.is-mobile-open { transform: translateY(0); }
   .editor-controls-sheet-header { min-height: 88px; flex: none; padding: 12px 16px calc(12px + env(safe-area-inset-bottom,0px)); }
