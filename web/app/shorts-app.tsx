@@ -2587,6 +2587,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const toggleEditorSidebarTool = (
     tool: "title" | "comment" | "channel" | "background" | "template",
   ) => {
+    if (isEditorTextSelection(selectedOverlay)) {
+      setSelectedOverlay(null);
+    }
     if (tool === "channel" && overlayLayoutRef.current.visible.channel) {
       setInlineEditingOverlay(null);
       setSelectedOverlay("channel");
@@ -6455,7 +6458,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               data-editor-guide="sidebar-tools"
             >
             {EDITOR_SIDEBAR_TOOLS.map((tool) => {
-              const active = activeEditorSidebarTool === tool.id
+              const active = !selectedTextOverlay
+                && activeEditorSidebarTool === tool.id
                 && desktopSidebarOpen;
               return (
                 <button
@@ -6565,7 +6569,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             </div>}
           </section>}
           {overlayPreviewEnabled && <section
-            className={`editor-sidebar-tool-panel${activeEditorSidebarTool === "channel" ? " is-active" : ""}`}
+            className={`editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "channel" ? " is-active" : ""}`}
             aria-label="채널명 설정"
           >
             <header className="editor-tool-panel-header">
@@ -6742,7 +6746,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             </div>
           </section>}
           {overlayPreviewEnabled && <section
-            className={`editor-sidebar-tool-panel${activeEditorSidebarTool === "comment" ? " is-active" : ""}`}
+            className={`editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "comment" ? " is-active" : ""}`}
             aria-label="댓글 설정"
           >
             <header className="editor-tool-panel-header">
@@ -6790,7 +6794,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             </p>}
           </section>}
           <details
-            className={`editor-accordion editor-sidebar-tool-panel${activeEditorSidebarTool === "title" ? " is-active" : ""}`}
+            className={`editor-accordion editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "title" ? " is-active" : ""}`}
             open={overlayPreviewEnabled ? true : undefined}
           >
             <summary className="editor-accordion-summary">
@@ -6884,7 +6888,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             </div>
           </details>
           {overlayPreviewEnabled && <details
-            className={`editor-accordion editor-sidebar-tool-panel${activeEditorSidebarTool === "background" ? " is-active" : ""}`}
+            className={`editor-accordion editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "background" ? " is-active" : ""}`}
             open
           >
             <summary className="editor-accordion-summary">
@@ -6965,7 +6969,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           <label className="hidden"><input type="checkbox" checked={subtitlesEnabled} onChange={(event) => setSubtitlesEnabled(event.target.checked)} />자동 자막 표시</label>
           {subtitlesEnabled && <div className="hidden">{segments.map((segment, index) => <label key={`${segment.start}-${index}`}><span>{formatTimestamp(segment.start)}</span><input value={segment.text} onChange={(event) => setSegments((current) => current.map((value, position) => position === index ? { ...value, text: event.target.value } : value))} /></label>)}</div>}
           <details
-            className={`editor-accordion editor-sidebar-tool-panel${activeEditorSidebarTool === "template" ? " is-active" : ""}`}
+            className={`editor-accordion editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "template" ? " is-active" : ""}`}
             open={overlayPreviewEnabled ? true : undefined}
           >
             <summary className="editor-accordion-summary">
