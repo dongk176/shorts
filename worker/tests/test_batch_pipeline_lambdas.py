@@ -622,6 +622,8 @@ def test_rerender_uses_fargate_and_batch_never_retries_itself() -> None:
                 "status": "rerendering",
                 "render_version": 3,
                 "rerender_batch_job_id": None,
+                "pending_render_hash": "legacy-snapshot-a",
+                "updated_at": "2026-07-31T05:00:00+00:00",
                 "mvp_session_id": "session-a",
             }]
         if table == "video_jobs":
@@ -641,7 +643,13 @@ def test_rerender_uses_fargate_and_batch_never_retries_itself() -> None:
 
     assert result == "rerender-batch-a"
     request, submission_key = module._submit_once.call_args.args
-    assert submission_key == "rerender:short-a:4:0"
+    legacy_identity = module.hashlib.sha256(
+        b"legacy-snapshot-a:2026-07-31T05:00:00+00:00"
+    ).hexdigest()[:12]
+    assert submission_key == f"rerender:short-a:4:0:legacy:{legacy_identity}"
+    assert request["jobName"] == (
+        f"shorts-rerender-short-a-v4-a0-l{legacy_identity}"
+    )
     assert request["jobQueue"] == "project-queue"
     assert request["jobDefinition"] == "rerender-definition:1"
     assert request["retryStrategy"] == {"attempts": 1}
@@ -690,6 +698,50 @@ def test_v2_rerender_request_gets_a_fresh_batch_identity() -> None:
         "id=eq.short-a&status=eq.rerendering"
         f"&pending_edit_request_id=eq.{request_id}"
     )
+
+
+def test_legacy_rerender_new_save_never_reuses_a_failed_batch_identity() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    short = {
+        "id": "short-a",
+        "job_id": "job-a",
+        "status": "rerendering",
+        "render_version": 3,
+        "rerender_batch_job_id": None,
+        "pending_render_hash": "same-edited-content",
+        "updated_at": "2026-07-31T05:00:00+00:00",
+        "mvp_session_id": "session-a",
+    }
+
+    def rest(table: str, **_kwargs):
+        if table == "generated_shorts":
+            return [short]
+        if table == "video_jobs":
+            return [{
+                "id": "job-a",
+                "mvp_session_id": "session-a",
+                "user_id": "user-a",
+                "dispatch_priority_class": "paid",
+            }]
+        return []
+
+    module.rest = rest
+    module._submit_once = MagicMock(side_effect=["batch-first", "batch-second"])
+    module.patch = MagicMock()
+
+    assert module._submit({
+        "kind": "rerender", "shortId": "short-a",
+    }) == "batch-first"
+    first_request, first_key = module._submit_once.call_args.args
+
+    short["updated_at"] = "2026-07-31T05:01:00+00:00"
+    assert module._submit({
+        "kind": "rerender", "shortId": "short-a",
+    }) == "batch-second"
+    second_request, second_key = module._submit_once.call_args.args
+
+    assert first_key != second_key
+    assert first_request["jobName"] != second_request["jobName"]
 
 
 def test_batch_submission_claim_reuses_an_already_recorded_job() -> None:

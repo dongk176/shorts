@@ -357,7 +357,8 @@ def _submit(payload: dict[str, Any]) -> str | None:
         encoded_short_id = urllib.parse.quote(short_id, safe="")
         shorts = rest("generated_shorts", query=(
             "select=id,status,render_version,rerender_batch_job_id,"
-            "pending_edit_request_id,mvp_session_id,job_id"
+            "pending_edit_request_id,pending_render_hash,updated_at,"
+            "mvp_session_id,job_id"
             f"&id=eq.{encoded_short_id}&status=eq.rerendering&limit=1"
         )) or []
         if not shorts:
@@ -374,10 +375,20 @@ def _submit(payload: dict[str, Any]) -> str | None:
         )
         version = int(shorts[0]["render_version"]) + 1
         pending_request_id = shorts[0].get("pending_edit_request_id")
+        legacy_save_identity = None
+        if not pending_request_id:
+            identity_source = ":".join((
+                str(shorts[0].get("pending_render_hash") or ""),
+                str(shorts[0].get("updated_at") or ""),
+            ))
+            if identity_source != ":":
+                legacy_save_identity = hashlib.sha256(
+                    identity_source.encode("utf-8")
+                ).hexdigest()[:12]
         request_suffix = (
             f"-r{str(pending_request_id).replace('-', '')[:12]}"
             if pending_request_id
-            else ""
+            else f"-l{legacy_save_identity}" if legacy_save_identity else ""
         )
         request = dict(
             jobName=(
@@ -404,6 +415,8 @@ def _submit(payload: dict[str, Any]) -> str | None:
         submission_key = f"rerender:{short_id}:{version}:{rerender_attempt}"
         if pending_request_id:
             submission_key = f"{submission_key}:{pending_request_id}"
+        elif legacy_save_identity:
+            submission_key = f"{submission_key}:legacy:{legacy_save_identity}"
         rerender_batch_id = _submit_once(
             request,
             submission_key,

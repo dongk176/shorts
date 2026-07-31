@@ -293,7 +293,9 @@ def test_legacy_snapshot_rerender_promotes_edited_timeline_subtitles() -> None:
     )
 
     promotion_query = connection.execute.call_args_list[1].args[0]
-    assert "edit_timeline_subtitle_segments=coalesce(" in promotion_query
+    assert "edit_timeline_subtitle_segments=case" in promotion_query
+    assert "when edit_timeline_s3_key is null then null" in promotion_query
+    assert "else coalesce(" in promotion_query
     assert "pending_edit_snapshot->'timelineSubtitleSegments'" in promotion_query
     assert (
         promotion_query.index("pending_edit_snapshot->'timelineSubtitleSegments'")
