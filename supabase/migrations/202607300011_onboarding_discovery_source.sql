@@ -5,7 +5,11 @@ alter table shorts_mvp.user_onboarding_profiles
   add column if not exists discovery_source_other text;
 
 alter table shorts_mvp.user_onboarding_profiles
-  drop constraint if exists user_onboarding_profiles_onboarding_version_check;
+  drop constraint if exists user_onboarding_profiles_onboarding_version_check,
+  drop constraint if exists user_onboarding_profiles_discovery_source_check,
+  drop constraint if exists user_onboarding_profiles_discovery_source_other_length_check,
+  drop constraint if exists user_onboarding_profiles_discovery_source_pair_check,
+  drop constraint if exists user_onboarding_profiles_discovery_source_version_check;
 
 alter table shorts_mvp.user_onboarding_profiles
   alter column onboarding_version set default 2,

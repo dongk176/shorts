@@ -67,6 +67,12 @@ describe("user onboarding API", () => {
     expect(migration).not.toContain(
       "onboarding_version=2 and discovery_source is not null",
     );
+    expect(migration).toContain(
+      "drop constraint if exists user_onboarding_profiles_discovery_source_check",
+    );
+    expect(migration).toContain(
+      "drop constraint if exists user_onboarding_profiles_discovery_source_version_check",
+    );
   });
 
   it("stores a valid response without coupling onboarding to the login grant", async () => {
