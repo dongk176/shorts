@@ -650,6 +650,48 @@ def test_rerender_uses_fargate_and_batch_never_retries_itself() -> None:
     assert request["schedulingPriorityOverride"] == 1000
 
 
+def test_v2_rerender_request_gets_a_fresh_batch_identity() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    request_id = "a4f71dc3-1ffd-4670-b6d2-d4704461edc0"
+
+    def rest(table: str, **_kwargs):
+        if table == "generated_shorts":
+            return [{
+                "id": "short-a",
+                "job_id": "job-a",
+                "status": "rerendering",
+                "render_version": 3,
+                "rerender_batch_job_id": None,
+                "pending_edit_request_id": request_id,
+                "mvp_session_id": "session-a",
+            }]
+        if table == "video_jobs":
+            return [{
+                "id": "job-a",
+                "mvp_session_id": "session-a",
+                "user_id": "user-a",
+                "dispatch_priority_class": "paid",
+            }]
+        return []
+
+    module.rest = rest
+    module._submit_once = MagicMock(return_value="rerender-batch-v2")
+    module.patch = MagicMock()
+
+    result = module._submit({"kind": "rerender", "shortId": "short-a"})
+
+    assert result == "rerender-batch-v2"
+    request, submission_key = module._submit_once.call_args.args
+    assert submission_key == f"rerender:short-a:4:0:{request_id}"
+    assert request["jobName"] == (
+        "shorts-rerender-short-a-v4-a0-ra4f71dc31ffd"
+    )
+    assert module.patch.call_args.args[1] == (
+        "id=eq.short-a&status=eq.rerendering"
+        f"&pending_edit_request_id=eq.{request_id}"
+    )
+
+
 def test_batch_submission_claim_reuses_an_already_recorded_job() -> None:
     module, _ = _load_lambda("batch_submitter")
     module.rest = MagicMock(return_value=[{

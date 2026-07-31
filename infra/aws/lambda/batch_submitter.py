@@ -356,8 +356,8 @@ def _submit(payload: dict[str, Any]) -> str | None:
         rerender_attempt = max(0, min(1, int(payload.get("attempt") or 0)))
         encoded_short_id = urllib.parse.quote(short_id, safe="")
         shorts = rest("generated_shorts", query=(
-            "select=id,status,render_version,rerender_batch_job_id,mvp_session_id,"
-            "job_id"
+            "select=id,status,render_version,rerender_batch_job_id,"
+            "pending_edit_request_id,mvp_session_id,job_id"
             f"&id=eq.{encoded_short_id}&status=eq.rerendering&limit=1"
         )) or []
         if not shorts:
@@ -373,8 +373,17 @@ def _submit(payload: dict[str, Any]) -> str | None:
             parent_job.get("dispatch_priority_class")
         )
         version = int(shorts[0]["render_version"]) + 1
+        pending_request_id = shorts[0].get("pending_edit_request_id")
+        request_suffix = (
+            f"-r{str(pending_request_id).replace('-', '')[:12]}"
+            if pending_request_id
+            else ""
+        )
         request = dict(
-            jobName=f"shorts-rerender-{short_id}-v{version}-a{rerender_attempt}",
+            jobName=(
+                f"shorts-rerender-{short_id}-v{version}-a{rerender_attempt}"
+                f"{request_suffix}"
+            ),
             jobQueue=os.environ["PROJECT_BATCH_QUEUE"],
             jobDefinition=os.environ["RERENDER_JOB_DEFINITION"],
             shareIdentifier=_priority_share_identifier(
@@ -392,12 +401,22 @@ def _submit(payload: dict[str, Any]) -> str | None:
             retryStrategy={"attempts": 1},
             timeout={"attemptDurationSeconds": 1200},
         )
+        submission_key = f"rerender:{short_id}:{version}:{rerender_attempt}"
+        if pending_request_id:
+            submission_key = f"{submission_key}:{pending_request_id}"
         rerender_batch_id = _submit_once(
-            request, f"rerender:{short_id}:{version}:{rerender_attempt}"
+            request,
+            submission_key,
         )
+        patch_filter = f"id=eq.{encoded_short_id}&status=eq.rerendering"
+        if pending_request_id:
+            patch_filter += (
+                "&pending_edit_request_id=eq."
+                f"{urllib.parse.quote(str(pending_request_id), safe='')}"
+            )
         patch(
             "generated_shorts",
-            f"id=eq.{encoded_short_id}&status=eq.rerendering",
+            patch_filter,
             {"rerender_batch_job_id": rerender_batch_id},
         )
         return rerender_batch_id
