@@ -2566,6 +2566,15 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setDesktopSidebarOpen(true);
   }, [overlayPreviewEnabled, selectedOverlay]);
   useEffect(() => {
+    if (
+      !overlayPreviewEnabled
+      || !isEditorTextSelection(selectedOverlay)
+    ) {
+      return;
+    }
+    setDesktopSidebarOpen(true);
+  }, [overlayPreviewEnabled, selectedOverlay]);
+  useEffect(() => {
     if (!overlayPreviewEnabled) return;
     try {
       setEditorChannelPresets(parseEditorChannelPresets(
