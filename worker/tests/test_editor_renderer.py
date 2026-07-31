@@ -11,7 +11,10 @@ from PIL import Image
 from shorts_worker.config import Settings
 from shorts_worker.editor_renderer import (
     EditorDocumentRenderer,
+    EditorLayerAsset,
+    _prepare_editor_layer_asset,
     create_editor_text_layer,
+    editor_render_timeout_seconds,
     editor_video_frame,
     retime_editor_subtitles,
     verify_editor_fonts,
@@ -55,6 +58,37 @@ def test_editor_video_frame_matches_browser_geometry_and_allows_crop() -> None:
     assert frame.height == 730
     assert frame.x == -78
     assert frame.y == 575
+
+
+def test_prepared_editor_layer_is_cropped_without_losing_canvas_position(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "layer.png"
+    source = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
+    source.paste((255, 77, 79, 255), (140, 320, 460, 520))
+    source.save(source_path)
+
+    prepared = _prepare_editor_layer_asset(
+        EditorLayerAsset(
+            path=source_path,
+            start_seconds=1.25,
+            end_seconds=3.5,
+        ),
+        tmp_path / "prepared.png",
+    )
+
+    assert prepared is not None
+    assert (prepared.x, prepared.y) == (140, 320)
+    assert (prepared.start_seconds, prepared.end_seconds) == (1.25, 3.5)
+    with Image.open(prepared.path) as cropped:
+        assert cropped.size == (320, 200)
+
+
+def test_editor_render_timeout_scales_for_complex_longer_outputs() -> None:
+    assert editor_render_timeout_seconds(300, 3.5) == 300
+    assert editor_render_timeout_seconds(300, 30) == 570
+    assert editor_render_timeout_seconds(300, 120) == 1_200
+    assert editor_render_timeout_seconds(1_500, 30) == 1_500
 
 
 def test_editor_subtitles_are_retimed_across_deleted_video_gaps() -> None:

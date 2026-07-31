@@ -67,6 +67,37 @@ class EditorLayerAsset:
     path: Path
     start_seconds: float | None = None
     end_seconds: float | None = None
+    x: int = 0
+    y: int = 0
+
+
+def _prepare_editor_layer_asset(
+    asset: EditorLayerAsset,
+    output_path: Path,
+) -> EditorLayerAsset | None:
+    with Image.open(asset.path) as source:
+        image = source.convert("RGBA")
+        bounds = image.getchannel("A").getbbox()
+        if bounds is None:
+            return None
+        left, top, right, bottom = bounds
+        cropped = image.crop(bounds)
+        cropped.save(output_path, format="PNG", compress_level=1)
+    return EditorLayerAsset(
+        path=output_path,
+        start_seconds=asset.start_seconds,
+        end_seconds=asset.end_seconds,
+        x=left,
+        y=top,
+    )
+
+
+def editor_render_timeout_seconds(
+    configured_timeout_seconds: float,
+    duration_seconds: float,
+) -> float:
+    duration_budget = min(1_200.0, 120.0 + duration_seconds * 15.0)
+    return max(configured_timeout_seconds, duration_budget)
 
 
 def editor_font_path(font_id: EditorFontId) -> Path:
@@ -895,8 +926,14 @@ class EditorDocumentRenderer:
             if layer_name == "video":
                 continue
             for asset in layer_assets.get(layer_name, []):
-                image_inputs.append(asset.path)
-                ordered_assets.append((layer_name, asset))
+                prepared_asset = _prepare_editor_layer_asset(
+                    asset,
+                    assets_dir / f"prepared-layer-{len(ordered_assets):02d}.png",
+                )
+                if prepared_asset is None:
+                    continue
+                image_inputs.append(prepared_asset.path)
+                ordered_assets.append((layer_name, prepared_asset))
         command = [
             "ffmpeg",
             "-hide_banner",
@@ -911,12 +948,13 @@ class EditorDocumentRenderer:
                 "-loop",
                 "1",
                 "-framerate",
-                f"{fps:.3f}",
+                "1",
                 "-i",
                 str(image_path),
             ])
         filters = [
             f"[1:v]setpts=PTS-STARTPTS,scale={CANVAS_WIDTH}:{CANVAS_HEIGHT},"
+            f"fps={fps:.3f},"
             "format=rgba[scene0]",
             (
                 f"[0:v]setpts=PTS-STARTPTS,fps={fps:.3f},"
@@ -981,7 +1019,8 @@ class EditorDocumentRenderer:
                         f"{asset.start_seconds:.6f},{asset.end_seconds:.6f})'"
                     )
                 filters.append(
-                    f"[{current_label}][{prepared_label}]overlay=x=0:y=0:"
+                    f"[{current_label}][{prepared_label}]"
+                    f"overlay=x={asset.x}:y={asset.y}:"
                     f"eof_action=repeat:repeatlast=1{enable}[{next_label}]"
                 )
                 current_label = next_label
@@ -1025,7 +1064,10 @@ class EditorDocumentRenderer:
         command.extend(["-movflags", "+faststart", str(output_path)])
         result = run_command(
             command,
-            timeout=self.settings.ffmpeg_timeout_seconds,
+            timeout=editor_render_timeout_seconds(
+                self.settings.ffmpeg_timeout_seconds,
+                duration,
+            ),
             cwd=work_dir,
         )
         if (
