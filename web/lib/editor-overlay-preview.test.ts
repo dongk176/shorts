@@ -9,6 +9,7 @@ import {
   moveEditorOverlayOrderItem,
   recordEditorOverlayHistory,
   redoEditorOverlayHistory,
+  resetEditorOverlayGeometry,
   resizeEditorTextOverlayWidth,
   resizeCanvasRectFromCorner,
   snapCommentToVideoBottom,
@@ -345,6 +346,49 @@ describe("editor overlay preview geometry", () => {
       text: "나중에 바뀐 값",
     });
     expect(redone.layout?.layerOrder.at(-1)).toBe("text:local-text");
+  });
+
+  it("resets template-dependent geometry without deleting editor content or styles", () => {
+    const edited = createInitialEditorOverlayLayout();
+    edited.offsets.video = { x: 80, y: -120 };
+    edited.offsets.title = { x: -40, y: 60 };
+    edited.offsets.comment = { x: 0, y: 180 };
+    edited.offsets.channel = { x: 20, y: -30 };
+    edited.commentOffsets = {
+      "comment-1": { x: 0, y: 180 },
+    };
+    edited.scales = {
+      video: 1.4,
+      title: 1.2,
+      channel: 0.9,
+    };
+    edited.fonts = {
+      title: "black-han-sans",
+      channel: "spoqa-han-sans-neo",
+    };
+    edited.visible.comment = false;
+    edited.commentTheme = "light";
+    edited.background = {
+      kind: "image",
+      assetId: "news-red-globe",
+    };
+    edited.textOverlays = [createEditorTextOverlay("local-text", 12)];
+    edited.textOverlays[0].offset = { x: 45, y: 70 };
+    edited.textOverlays[0].scale = 1.35;
+    edited.layerOrder.push("text:local-text");
+
+    const reset = resetEditorOverlayGeometry(edited);
+
+    expect(reset.offsets).toEqual(createInitialEditorOverlayLayout().offsets);
+    expect(reset.commentOffsets).toEqual({});
+    expect(reset.scales).toEqual(createInitialEditorOverlayLayout().scales);
+    expect(reset.fonts).toEqual(edited.fonts);
+    expect(reset.visible).toEqual(edited.visible);
+    expect(reset.commentTheme).toBe("light");
+    expect(reset.background).toEqual(edited.background);
+    expect(reset.layerOrder).toEqual(edited.layerOrder);
+    expect(reset.textOverlays).toEqual(edited.textOverlays);
+    expect(reset.textOverlays[0]).not.toBe(edited.textOverlays[0]);
   });
 
   it("keeps a locally selected canvas background in undo and redo history", () => {

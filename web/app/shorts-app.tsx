@@ -106,9 +106,11 @@ import {
   cloneEditorOverlayLayout,
   createEditorTextOverlay,
   createInitialEditorOverlayLayout,
+  editorOverlayLayoutsEqual,
   moveEditorOverlayOrderItem,
   recordEditorOverlayHistory,
   redoEditorOverlayHistory,
+  resetEditorOverlayGeometry,
   resizeCanvasRectFromCorner,
   resizeEditorTextOverlayWidth,
   snapCommentToVideoBottom,
@@ -1722,7 +1724,8 @@ type EditorHistoryAction =
   | "video"
   | "comment-delete"
   | "comment-replace"
-  | "copy";
+  | "copy"
+  | "template";
 type EditorVideoCutHistory = {
   past: EditorVideoClip[][];
   future: EditorVideoClip[][];
@@ -1758,6 +1761,21 @@ type EditorCopyHistoryEntry = {
 type EditorCopyHistory = {
   past: EditorCopyHistoryEntry[];
   future: EditorCopyHistoryEntry[];
+};
+type EditorTemplateSnapshot = {
+  templateId: TemplateId;
+  activeCustomTemplate: CustomTemplate | null;
+  presetVersion: number;
+  templateSelectionTouched: boolean;
+  overlayLayout: EditorOverlayLayoutSnapshot;
+};
+type EditorTemplateHistoryEntry = {
+  before: EditorTemplateSnapshot;
+  after: EditorTemplateSnapshot;
+};
+type EditorTemplateHistory = {
+  past: EditorTemplateHistoryEntry[];
+  future: EditorTemplateHistoryEntry[];
 };
 
 const cloneEditorVideoClips = (clips: EditorVideoClip[]) => (
@@ -1829,6 +1847,32 @@ const editorCopyTitleChanged = (entry: EditorCopyHistoryEntry) => (
   || entry.before.titleFontScale !== entry.after.titleFontScale
   || JSON.stringify(entry.before.titleTextStyles)
     !== JSON.stringify(entry.after.titleTextStyles)
+);
+const cloneEditorTemplateSnapshot = (
+  snapshot: EditorTemplateSnapshot,
+): EditorTemplateSnapshot => ({
+  templateId: snapshot.templateId,
+  activeCustomTemplate: snapshot.activeCustomTemplate,
+  presetVersion: snapshot.presetVersion,
+  templateSelectionTouched: snapshot.templateSelectionTouched,
+  overlayLayout: cloneEditorOverlayLayout(snapshot.overlayLayout),
+});
+const cloneEditorTemplateHistoryEntry = (
+  entry: EditorTemplateHistoryEntry,
+): EditorTemplateHistoryEntry => ({
+  before: cloneEditorTemplateSnapshot(entry.before),
+  after: cloneEditorTemplateSnapshot(entry.after),
+});
+const editorTemplateSnapshotsEqual = (
+  left: EditorTemplateSnapshot,
+  right: EditorTemplateSnapshot,
+) => (
+  left.templateId === right.templateId
+  && left.activeCustomTemplate?.id === right.activeCustomTemplate?.id
+  && left.activeCustomTemplate?.version === right.activeCustomTemplate?.version
+  && left.presetVersion === right.presetVersion
+  && left.templateSelectionTouched === right.templateSelectionTouched
+  && editorOverlayLayoutsEqual(left.overlayLayout, right.overlayLayout)
 );
 
 const TIMELINE_THUMBNAIL_COUNT = 12;
@@ -2415,6 +2459,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           : 0
   ));
   const [templateSelectionTouched, setTemplateSelectionTouched] = useState(false);
+  const templateIdRef = useRef(templateId);
+  const activeCustomTemplateRef = useRef(activeCustomTemplate);
+  const presetVersionRef = useRef(presetVersion);
+  const templateSelectionTouchedRef = useRef(templateSelectionTouched);
   const initialTemplateProvidesComments = initialTemplateId === "comment-capture"
     && (!availableCustomTemplate || availableCustomTemplate.config.comment.visible);
   const [comments, setComments] = useState<CommentOverlay[]>(() => {
@@ -2486,6 +2534,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     past: [],
     future: [],
   });
+  const templateHistoryRef = useRef<EditorTemplateHistory>({
+    past: [],
+    future: [],
+  });
   const editorHistoryOrderRef = useRef<{
     past: EditorHistoryAction[];
     future: EditorHistoryAction[];
@@ -2539,6 +2591,18 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   useEffect(() => {
     commentsRef.current = comments;
   }, [comments]);
+  useEffect(() => {
+    templateIdRef.current = templateId;
+  }, [templateId]);
+  useEffect(() => {
+    activeCustomTemplateRef.current = activeCustomTemplate;
+  }, [activeCustomTemplate]);
+  useEffect(() => {
+    presetVersionRef.current = presetVersion;
+  }, [presetVersion]);
+  useEffect(() => {
+    templateSelectionTouchedRef.current = templateSelectionTouched;
+  }, [templateSelectionTouched]);
   useEffect(() => {
     titleRef.current = title;
   }, [title]);
@@ -3016,6 +3080,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       ...copyHistoryRef.current,
       future: [],
     };
+    templateHistoryRef.current = {
+      ...templateHistoryRef.current,
+      future: [],
+    };
     editorHistoryOrderRef.current = {
       past: [
         ...editorHistoryOrderRef.current.past,
@@ -3064,6 +3132,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       ...copyHistoryRef.current,
       future: [],
     };
+    templateHistoryRef.current = {
+      ...templateHistoryRef.current,
+      future: [],
+    };
     editorHistoryOrderRef.current = {
       past: [
         ...editorHistoryOrderRef.current.past,
@@ -3098,6 +3170,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     };
     copyHistoryRef.current = {
       ...copyHistoryRef.current,
+      future: [],
+    };
+    templateHistoryRef.current = {
+      ...templateHistoryRef.current,
       future: [],
     };
     editorHistoryOrderRef.current = {
@@ -3136,6 +3212,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     };
     copyHistoryRef.current = {
       ...copyHistoryRef.current,
+      future: [],
+    };
+    templateHistoryRef.current = {
+      ...templateHistoryRef.current,
       future: [],
     };
     editorHistoryOrderRef.current = {
@@ -3209,10 +3289,82 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       ...commentReplaceHistoryRef.current,
       future: [],
     };
+    templateHistoryRef.current = {
+      ...templateHistoryRef.current,
+      future: [],
+    };
     editorHistoryOrderRef.current = {
       past: [
         ...editorHistoryOrderRef.current.past,
         "copy" as const,
+      ].slice(-100),
+      future: [],
+    };
+    setOverlayHistoryRevision((current) => current + 1);
+  }, []);
+
+  const currentEditorTemplateSnapshot = useCallback(
+    (): EditorTemplateSnapshot => ({
+      templateId: templateIdRef.current,
+      activeCustomTemplate: activeCustomTemplateRef.current,
+      presetVersion: presetVersionRef.current,
+      templateSelectionTouched: templateSelectionTouchedRef.current,
+      overlayLayout: cloneEditorOverlayLayout(overlayLayoutRef.current),
+    }),
+    [],
+  );
+
+  const applyEditorTemplateSnapshot = useCallback((
+    snapshot: EditorTemplateSnapshot,
+  ) => {
+    const next = cloneEditorTemplateSnapshot(snapshot);
+    templateIdRef.current = next.templateId;
+    activeCustomTemplateRef.current = next.activeCustomTemplate;
+    presetVersionRef.current = next.presetVersion;
+    templateSelectionTouchedRef.current = next.templateSelectionTouched;
+    setTemplateId(next.templateId);
+    setActiveCustomTemplate(next.activeCustomTemplate);
+    setPresetVersion(next.presetVersion);
+    setTemplateSelectionTouched(next.templateSelectionTouched);
+    applyEditorOverlayLayout(next.overlayLayout);
+  }, [applyEditorOverlayLayout]);
+
+  const recordEditorTemplateChange = useCallback((
+    before: EditorTemplateSnapshot,
+    after: EditorTemplateSnapshot,
+  ) => {
+    if (editorTemplateSnapshotsEqual(before, after)) return;
+    templateHistoryRef.current = {
+      past: [
+        ...templateHistoryRef.current.past,
+        cloneEditorTemplateHistoryEntry({ before, after }),
+      ].slice(-100),
+      future: [],
+    };
+    overlayHistoryRef.current = {
+      ...overlayHistoryRef.current,
+      future: [],
+    };
+    videoCutHistoryRef.current = {
+      ...videoCutHistoryRef.current,
+      future: [],
+    };
+    commentDeleteHistoryRef.current = {
+      ...commentDeleteHistoryRef.current,
+      future: [],
+    };
+    commentReplaceHistoryRef.current = {
+      ...commentReplaceHistoryRef.current,
+      future: [],
+    };
+    copyHistoryRef.current = {
+      ...copyHistoryRef.current,
+      future: [],
+    };
+    editorHistoryOrderRef.current = {
+      past: [
+        ...editorHistoryOrderRef.current.past,
+        "template" as const,
       ].slice(-100),
       future: [],
     };
@@ -3965,7 +4117,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       };
       setSelectedOverlay("comment");
       setInlineEditingOverlay(null);
-    } else {
+    } else if (action === "copy") {
       const copyChange = copyHistoryRef.current.past.at(-1);
       if (!copyChange) return;
       applyEditorCopySnapshot(copyChange.before);
@@ -3980,6 +4132,19 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         editorCopyTitleChanged(copyChange) ? "title" : "channel",
       );
       setInlineEditingOverlay(null);
+    } else {
+      const templateChange = templateHistoryRef.current.past.at(-1);
+      if (!templateChange) return;
+      applyEditorTemplateSnapshot(templateChange.before);
+      templateHistoryRef.current = {
+        past: templateHistoryRef.current.past.slice(0, -1),
+        future: [
+          cloneEditorTemplateHistoryEntry(templateChange),
+          ...templateHistoryRef.current.future,
+        ],
+      };
+      setSelectedOverlay("video");
+      setInlineEditingOverlay(null);
     }
     editorHistoryOrderRef.current = {
       past: historyOrder.past.slice(0, -1),
@@ -3989,6 +4154,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   }, [
     applyEditorCopySnapshot,
     applyEditorOverlayLayout,
+    applyEditorTemplateSnapshot,
     applyEditorVideoClipsSnapshot,
   ]);
 
@@ -4047,7 +4213,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       };
       setSelectedOverlay("comment");
       setInlineEditingOverlay(null);
-    } else {
+    } else if (action === "copy") {
       const [copyChange, ...futureCopyChanges] = copyHistoryRef.current.future;
       if (!copyChange) return;
       applyEditorCopySnapshot(copyChange.after);
@@ -4062,6 +4228,20 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         editorCopyTitleChanged(copyChange) ? "title" : "channel",
       );
       setInlineEditingOverlay(null);
+    } else {
+      const [templateChange, ...futureTemplateChanges] =
+        templateHistoryRef.current.future;
+      if (!templateChange) return;
+      applyEditorTemplateSnapshot(templateChange.after);
+      templateHistoryRef.current = {
+        past: [
+          ...templateHistoryRef.current.past,
+          cloneEditorTemplateHistoryEntry(templateChange),
+        ],
+        future: futureTemplateChanges,
+      };
+      setSelectedOverlay("video");
+      setInlineEditingOverlay(null);
     }
     editorHistoryOrderRef.current = {
       past: [...historyOrder.past, action],
@@ -4071,6 +4251,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   }, [
     applyEditorCopySnapshot,
     applyEditorOverlayLayout,
+    applyEditorTemplateSnapshot,
     applyEditorVideoClipsSnapshot,
   ]);
 
@@ -4099,47 +4280,6 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     && !hasPendingOverlayHistoryChange
     && !hasPendingCommentTextChange
     && !hasPendingCopyChange;
-
-  const resetEditorOverlayPositions = useCallback((
-    nextSelection: EditorOverlayLayer = "video",
-    historyMode: "record" | "clear" = "record",
-  ) => {
-    const before = cloneEditorOverlayLayout(overlayLayoutRef.current);
-    const initial = createInitialEditorOverlayLayout();
-    applyEditorOverlayLayout(initial);
-    if (historyMode === "record") {
-      recordEditorOverlayStep(before, initial);
-    } else {
-      overlayHistoryRef.current = { past: [], future: [] };
-      videoCutHistoryRef.current = {
-        ...videoCutHistoryRef.current,
-        future: [],
-      };
-      commentDeleteHistoryRef.current = {
-        past: [],
-        future: [],
-      };
-      commentReplaceHistoryRef.current = {
-        past: [],
-        future: [],
-      };
-      copyHistoryRef.current = {
-        past: [],
-        future: [],
-      };
-      editorHistoryOrderRef.current = {
-        past: editorHistoryOrderRef.current.past.filter(
-          (action) => action !== "overlay"
-            && action !== "comment-delete"
-            && action !== "comment-replace"
-            && action !== "copy",
-        ),
-        future: [],
-      };
-      setOverlayHistoryRevision((current) => current + 1);
-    }
-    setSelectedOverlay(nextSelection);
-  }, [applyEditorOverlayLayout, recordEditorOverlayStep]);
 
   const setEditorCommentTheme = useCallback((theme: EditorCommentTheme) => {
     setSelectedOverlay("comment");
@@ -5130,41 +5270,50 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   }, [editTimeline?.url]);
 
   const selectTemplate = (value: TemplateId) => {
-    resetEditorOverlayPositions("video", "clear");
-    setTemplateId(value);
-    setActiveCustomTemplate(null);
-    setPresetVersion(3);
-    setTemplateSelectionTouched(true);
-    const selectedTemplate = templates.find((template) => template.id === value) || templates[0];
-    const selectedTitleAspectRatio = value === "comment-capture" && originalAspectRatio === "9:16"
-      ? "4:5"
-      : originalAspectRatio;
-    const defaultStyles = defaultTemplateTitleTextStyles(
-      title,
-      selectedTitleAspectRatio,
-      selectedTemplate.background,
-      selectedTemplate.accentBackground,
-    );
-    setTitleTextStyles(defaultStyles);
-    const defaultBackground = defaultStyles.find((style) => style.backgroundColor)?.backgroundColor;
-    if (defaultBackground) setTitleBackgroundColor(defaultBackground);
-    setComments(value === "comment-capture"
-      ? defaultComments(item.durationSeconds)
-      : []);
+    if (
+      templateIdRef.current === value
+      && activeCustomTemplateRef.current === null
+    ) {
+      return;
+    }
+    finishPendingEditorInteractions();
+    const before = currentEditorTemplateSnapshot();
+    const after: EditorTemplateSnapshot = {
+      ...before,
+      templateId: value,
+      activeCustomTemplate: null,
+      presetVersion: 3,
+      templateSelectionTouched: true,
+      overlayLayout: resetEditorOverlayGeometry(before.overlayLayout),
+    };
+    applyEditorTemplateSnapshot(after);
+    recordEditorTemplateChange(before, after);
+    setSelectedOverlay("video");
+    setInlineEditingOverlay(null);
   };
 
   const selectCurrentCustomTemplate = () => {
     if (!availableCustomTemplate) return;
-    resetEditorOverlayPositions("video", "clear");
-    setTemplateId(availableCustomTemplate.baseTemplateId);
-    setActiveCustomTemplate(availableCustomTemplate);
-    setTemplateSelectionTouched(true);
-    setComments(
-      availableCustomTemplate.baseTemplateId === "comment-capture"
-        && availableCustomTemplate.config.comment.visible
-        ? defaultComments(item.durationSeconds)
-        : [],
-    );
+    if (
+      templateIdRef.current === availableCustomTemplate.baseTemplateId
+      && activeCustomTemplateRef.current?.id === availableCustomTemplate.id
+      && activeCustomTemplateRef.current.version === availableCustomTemplate.version
+    ) {
+      return;
+    }
+    finishPendingEditorInteractions();
+    const before = currentEditorTemplateSnapshot();
+    const after: EditorTemplateSnapshot = {
+      ...before,
+      templateId: availableCustomTemplate.baseTemplateId,
+      activeCustomTemplate: availableCustomTemplate,
+      templateSelectionTouched: true,
+      overlayLayout: resetEditorOverlayGeometry(before.overlayLayout),
+    };
+    applyEditorTemplateSnapshot(after);
+    recordEditorTemplateChange(before, after);
+    setSelectedOverlay("video");
+    setInlineEditingOverlay(null);
   };
 
   const updateComment = (id: string, values: Partial<CommentOverlay>) => {

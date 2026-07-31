@@ -184,6 +184,17 @@ export function cloneEditorOverlayLayout(
   };
 }
 
+export function resetEditorOverlayGeometry(
+  layout: EditorOverlayLayoutSnapshot,
+): EditorOverlayLayoutSnapshot {
+  const initial = createInitialEditorOverlayLayout();
+  const next = cloneEditorOverlayLayout(layout);
+  next.offsets = initial.offsets;
+  next.commentOffsets = initial.commentOffsets;
+  next.scales = initial.scales;
+  return next;
+}
+
 export function editorOverlayLayoutsEqual(
   left: EditorOverlayLayoutSnapshot,
   right: EditorOverlayLayoutSnapshot,
