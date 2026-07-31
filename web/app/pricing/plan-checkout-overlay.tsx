@@ -17,6 +17,7 @@ import {
   purchaseAddonWithManualCard,
   purchasePlanWithSavedCard,
 } from "@/lib/billing-client";
+import { MANUAL_INSTALLMENT_MAX_MONTHS } from "@/lib/installment-policy";
 import type { InstallmentOffer } from "@/lib/installments";
 import type { PricingV2PlanProduct } from "@/lib/pricing-v2";
 import { userFacingErrorMessage } from "@/lib/public-error";
@@ -1084,6 +1085,35 @@ export function PlanCheckoutOverlay({
           </div>
         ) : step === "card" ? (
           <div className="mt-8 grid gap-5">
+            {isManualOneTime && product.kind === "package" && (
+              <section
+                className="rounded-2xl border border-[#ff9b8d]/25 bg-[#ff715e]/[.07] p-4"
+                aria-label="패키지 이용기간과 할부 안내"
+              >
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="block text-[11px] font-bold text-neutral-500">
+                      이용기간
+                    </span>
+                    <strong className="mt-1 block text-base font-black text-white">
+                      {product.durationMonths}개월
+                    </strong>
+                  </div>
+                  <div className="border-l border-white/10 pl-3">
+                    <span className="block text-[11px] font-bold text-neutral-500">
+                      결제 할부
+                    </span>
+                    <strong className="mt-1 block text-base font-black text-[#ffad9f]">
+                      최대 {MANUAL_INSTALLMENT_MAX_MONTHS}개월
+                    </strong>
+                  </div>
+                </div>
+                <p className="mt-3 text-xs font-medium leading-5 text-neutral-400">
+                  일시불 또는 2~{MANUAL_INSTALLMENT_MAX_MONTHS}개월 중 선택할 수 있으며,
+                  카드사 정책에 따라 제한될 수 있습니다.
+                </p>
+              </section>
+            )}
             {isManualOneTime && (
               <div className="text-xs font-bold text-neutral-300">
                 <span className="block">카드 종류</span>

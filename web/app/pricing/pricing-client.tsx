@@ -330,6 +330,10 @@ export function PricingClient({
     const monthlyShorts = plan.code === "starter" ? 160 : 480;
     const totalShorts = monthlyShorts * packageMonths;
     const installmentOffer = packageInstallmentOffers.get(packagePrice.code);
+    const maximumInstallmentMonths = Math.max(
+      0,
+      ...(installmentOffer?.selectableMonths || []),
+    );
     const supportsMatchingInstallments = (
       installmentOffer?.paymentFlow === "manual_direct"
       && installmentOffer.selectableMonths.includes(packageMonths)
@@ -339,7 +343,10 @@ export function PricingClient({
       eyebrow: `${packagePrice.discountPercent}% 할인`,
       checkoutPlanCode: packagePrice.code,
       price: `₩${priceFormatter.format(packagePrice.monthlyPriceKrw)}`,
-      billing: `${packageMonths}개월 총 ₩${priceFormatter.format(packagePrice.totalPriceKrw)}`,
+      billing: installmentOffer?.paymentFlow === "manual_direct"
+        && maximumInstallmentMonths > 0
+        ? `이용기간 ${packageMonths}개월 · 총 ₩${priceFormatter.format(packagePrice.totalPriceKrw)} · 할부 최대 ${maximumInstallmentMonths}개월`
+        : `${packageMonths}개월 총 ₩${priceFormatter.format(packagePrice.totalPriceKrw)}`,
       cta: supportsMatchingInstallments
         ? `${plan.name} ${packageMonths}개월 할부결제`
         : `${plan.name} ${packageMonths}개월 선택`,

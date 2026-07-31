@@ -39,6 +39,7 @@ describe("package installment UI", () => {
   it("advertises and preselects the matching package installment only when supported", () => {
     expect(pricingSource).toContain("paymentFlow === \"manual_direct\"");
     expect(pricingSource).toContain("${plan.name} ${packageMonths}개월 할부결제");
+    expect(pricingSource).toContain("할부 최대 ${maximumInstallmentMonths}개월");
     expect(pricingSource).toContain("preferredInstallmentMonths");
     expect(checkoutSource).toContain("preferredInstallmentMonths");
     expect(checkoutSource).toContain(
@@ -51,6 +52,17 @@ describe("package installment UI", () => {
     expect(checkoutSource).toContain(
       "preferredInstallmentPendingRef.current = preferredMonths > 0",
     );
+  });
+
+  it("separates package duration from the maximum payment installments up front", () => {
+    expect(checkoutSource).toContain("패키지 이용기간과 할부 안내");
+    expect(checkoutSource).toContain("이용기간");
+    expect(checkoutSource).toContain("결제 할부");
+    expect(checkoutSource).toContain("최대 {MANUAL_INSTALLMENT_MAX_MONTHS}개월");
+    expect(checkoutSource).toContain(
+      "일시불 또는 2~{MANUAL_INSTALLMENT_MAX_MONTHS}개월 중 선택할 수 있으며",
+    );
+    expect(checkoutSource).toContain("카드사 정책에 따라 제한될 수 있습니다.");
   });
 
   it("selects card kind, then credit-card issuer, before showing installments", () => {

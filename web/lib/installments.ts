@@ -1,12 +1,13 @@
 import type { Sql, TransactionSql } from "postgres";
 import { HttpError } from "@/lib/http";
+import { MANUAL_INSTALLMENT_MAX_MONTHS } from "@/lib/installment-policy";
 import type { ThePayOneCredentialScope } from "@/lib/thepayone";
 
 type BillingDb = Sql | TransactionSql;
 
 export const ONE_TIME_INSTALLMENT_MIN_AMOUNT_KRW = 50_000;
 export const PACKAGE_INSTALLMENT_MIN_AMOUNT_KRW = ONE_TIME_INSTALLMENT_MIN_AMOUNT_KRW;
-export const MANUAL_INSTALLMENT_MAX_MONTHS = 6;
+export { MANUAL_INSTALLMENT_MAX_MONTHS } from "@/lib/installment-policy";
 
 function isoDate(value: Date | string) {
   return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
