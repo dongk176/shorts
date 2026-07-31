@@ -12,7 +12,7 @@ import { PaymentTestClient } from "./payment-test-client";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "더페이원 정기결제 테스트 | Easy Cut",
+  title: "더페이원 카드·패키지 결제 테스트 | Easy Cut",
   robots: { index: false, follow: false },
 };
 
@@ -65,7 +65,7 @@ export default async function PaymentTestPage() {
           <section className="mx-auto max-w-xl rounded-[24px] border border-white/10 bg-[#191c1e]/90 p-8 text-center shadow-2xl">
             <p className="text-xs font-extrabold uppercase tracking-[.2em] text-[#ff9b8d]">Local payment test</p>
             <h1 className="mt-4 text-[28px] font-black tracking-[-.04em]">먼저 로그인해 주세요</h1>
-            <p className="mt-4 text-sm leading-7 text-neutral-400">허용된 테스트 계정으로 로그인한 뒤 더페이원 0원 카드 등록과 3분 간격 반복결제 테스트를 사용할 수 있습니다.</p>
+            <p className="mt-4 text-sm leading-7 text-neutral-400">허용된 테스트 계정으로 로그인한 뒤 arti01 정기결제의 0원 카드 등록·반복 승인과 arti02 수기결제의 일시불·3개월 할부 직접 승인·전액환불을 분리해 사용할 수 있습니다.</p>
           </section>
         ) : !allowed ? (
           <section className="mx-auto max-w-xl rounded-[24px] border border-amber-400/20 bg-[#191c1e]/90 p-8 text-center shadow-2xl">

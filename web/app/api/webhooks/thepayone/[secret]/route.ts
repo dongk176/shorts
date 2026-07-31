@@ -15,6 +15,8 @@ import {
   cardTokenHash,
   isKnownThePayOneMerchantTerminal,
   parseThePayOneWebhook,
+  thePayOneCardTypeAllowsInstallment,
+  thePayOneCredentialScopeForMerchantTerminal,
   thePayOneWebhookSecret,
   type ThePayOneWebhookNotification,
 } from "@/lib/thepayone";
@@ -45,9 +47,12 @@ function secureEqual(expected: string, actual: string) {
   return expectedBytes.length === actualBytes.length && timingSafeEqual(expectedBytes, actualBytes);
 }
 
-function eventSummary(event: ThePayOneWebhookNotification) {
+function eventSummary(
+  event: ThePayOneWebhookNotification,
+  includeStoredCardReference: boolean,
+) {
   return {
-    last4: event.last4,
+    ...(includeStoredCardReference ? { last4: event.last4 } : {}),
     issuer: event.issuer,
     acquirer: event.acquirer,
     cardType: event.cardType,
@@ -66,6 +71,7 @@ async function setManualReview(
   reason: string,
   orderId?: string | null,
   subscriptionId?: string | null,
+  forceOrderReview = false,
 ) {
   const db = getDb();
   await db.begin(async (tx) => {
@@ -77,7 +83,8 @@ async function setManualReview(
     if (orderId) await tx`
       update shorts_mvp.billing_orders
       set status='manual_review',failure_code=${reason}
-      where id=${orderId} and status not in ('succeeded','canceled')
+      where id=${orderId}
+        and (${forceOrderReview} or status not in ('succeeded','canceled'))
     `;
     if (subscriptionId) await tx`
       update shorts_mvp.user_subscriptions
@@ -165,7 +172,8 @@ async function processAddon(
     await tx`
       update shorts_mvp.billing_orders
       set status='succeeded',provider_transaction_id=${event.transactionId},provider_status='paid',
-        provider_card_id_hash=${cardTokenHash(event.cardId)},approved_at=now(),failure_code=null,failure_message=null
+        provider_card_id_hash=${paymentMethodId ? cardTokenHash(event.cardId) : null},
+        approved_at=now(),failure_code=null,failure_message=null
       where id=${order.id as string}
     `;
     await tx`
@@ -524,14 +532,25 @@ export async function POST(
 
   const db = getDb();
   const eventId = randomUUID();
+  let eventCredentialScope: "default" | "manual" | "package" | null = null;
+  try {
+    eventCredentialScope = thePayOneCredentialScopeForMerchantTerminal(
+      event.merchantId,
+      event.terminalId,
+    );
+  } catch {
+    // The event is still recorded for fraud/reconciliation review without a card reference.
+  }
+  const includeStoredCardReference = eventCredentialScope === "default";
   const inserted = await db`
     insert into shorts_mvp.billing_payment_events (
       id,provider,provider_transaction_id,merchant_id,terminal_id,track_id,card_id_hash,
       transaction_type,amount_krw,event_summary
     ) values (
       ${eventId},'thepayone',${event.transactionId},${event.merchantId},${event.terminalId},
-      ${event.trackId},${cardTokenHash(event.cardId)},${event.transactionType},${event.amount},
-      ${JSON.stringify(eventSummary(event))}::jsonb
+      ${event.trackId},${includeStoredCardReference ? cardTokenHash(event.cardId) : null},
+      ${event.transactionType},${event.amount},
+      ${JSON.stringify(eventSummary(event, includeStoredCardReference))}::jsonb
     ) on conflict (provider,provider_transaction_id) do nothing returning id
   `;
   if (!inserted[0]) return ack();
@@ -559,9 +578,19 @@ export async function POST(
         || order.providerTerminalId !== event.terminalId
         || (expectedCardHash && expectedCardHash !== cardTokenHash(event.cardId))
         || (order.providerTransactionId && order.providerTransactionId !== event.transactionId)
-        || Number(order.installmentMonths || 0) !== event.installmentMonths;
+        || Number(order.installmentMonths || 0) !== event.installmentMonths
+        || !thePayOneCardTypeAllowsInstallment(
+          event.cardType,
+          Number(order.installmentMonths || 0),
+        );
       if (mismatch) {
-        await setManualReview(eventId, "ORDER_PAYMENT_MISMATCH", order.id, order.subscriptionId);
+        await setManualReview(
+          eventId,
+          "ORDER_PAYMENT_MISMATCH",
+          order.id,
+          order.subscriptionId,
+          true,
+        );
         return ack();
       }
       await db`

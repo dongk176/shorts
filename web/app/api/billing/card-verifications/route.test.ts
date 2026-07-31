@@ -28,15 +28,18 @@ function dbWithRows(...responses: unknown[][]) {
   return db;
 }
 
-function request(requestId: string) {
+function request(
+  requestId: string,
+  planCode: "easycut_pro_v2" | "starter_6m" = "easycut_pro_v2",
+) {
   return new Request("http://localhost/api/billing/card-verifications", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       requestId,
       mode: "subscribe",
-      planCode: "starter_6m",
-      billingCycle: "yearly",
+      planCode,
+      billingCycle: planCode === "easycut_pro_v2" ? "monthly" : "yearly",
       payerName: "홍길동",
       payerEmail: "owner@example.com",
       payerTel: "01012345678",
@@ -54,6 +57,9 @@ describe("billing card verification", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("THEPAYONE_PACKAGE_BILLING_ENABLED", "true");
+    vi.stubEnv("THEPAYONE_MID", "test-merchant");
+    vi.stubEnv("THEPAYONE_TERMINAL_ID", "test-default-terminal");
+    vi.stubEnv("THEPAYONE_PACKAGE_TERMINAL_ID", "test-package-terminal");
     mocks.session.mockResolvedValue({
       userId: "11111111-1111-4111-8111-111111111111",
       user: { email: "owner@example.com", displayName: "홍길동" },
@@ -87,21 +93,22 @@ describe("billing card verification", () => {
     const db = dbWithRows(
       [],
       [],
-      [],
-      [],
       [{ id: "verification-created" }],
       [{
         id: "22222222-2222-4222-8222-222222222222",
         userId: "11111111-1111-4111-8111-111111111111",
         requestId: "33333333-3333-4333-8333-333333333333",
         mode: "subscribe",
-        planCode: "starter_6m",
-        billingCycle: "yearly",
+        planCode: "easycut_pro_v2",
+        billingCycle: "monthly",
         billingDay: "00",
         status: "active",
         providerOrderId: "provider-order",
         providerTransactionId: "provider-auth-transaction",
         providerResultCode: "0000",
+        providerCredentialScope: "default",
+        providerMerchantId: "test-merchant",
+        providerTerminalId: "test-default-terminal",
         billingKeyCiphertext: "encrypted-card-id",
         billingKeyIv: "verification-iv",
         billingKeyTag: "verification-tag",
@@ -147,27 +154,28 @@ describe("billing card verification", () => {
     expect(mocks.register).toHaveBeenCalledOnce();
     expect(mocks.register).toHaveBeenCalledWith(expect.objectContaining({
       billingDay: "00",
-    }), "package");
+    }), "default");
   });
 
   it("reuses an unexpired idempotent result without registering the card twice", async () => {
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     mocks.getDb.mockReturnValue(dbWithRows(
       [],
-      [],
-      [],
       [{
         id: "22222222-2222-4222-8222-222222222222",
         userId: "11111111-1111-4111-8111-111111111111",
         requestId: "33333333-3333-4333-8333-333333333333",
         mode: "subscribe",
-        planCode: "starter_6m",
-        billingCycle: "yearly",
+        planCode: "easycut_pro_v2",
+        billingCycle: "monthly",
         billingDay: "00",
         status: "active",
         providerOrderId: "provider-order",
         providerTransactionId: "provider-auth-transaction",
         providerResultCode: "0000",
+        providerCredentialScope: "default",
+        providerMerchantId: "test-merchant",
+        providerTerminalId: "test-default-terminal",
         billingKeyCiphertext: "encrypted-card-id",
         billingKeyIv: "verification-iv",
         billingKeyTag: "verification-tag",
@@ -192,15 +200,18 @@ describe("billing card verification", () => {
     expect(mocks.register).not.toHaveBeenCalled();
   });
 
-  it("blocks card verification when the package product was already purchased", async () => {
-    mocks.getDb.mockReturnValue(dbWithRows([], [{ id: "existing-order" }]));
-
-    const response = await POST(request("33333333-3333-4333-8333-333333333333"));
+  it("never calls the recurring card-registration API for a package", async () => {
+    const response = await POST(request(
+      "33333333-3333-4333-8333-333333333333",
+      "starter_6m",
+    ));
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({
-      code: "PACKAGE_ALREADY_PURCHASED",
+      code: "PACKAGE_MANUAL_DIRECT_REQUIRED",
     });
+    expect(mocks.session).not.toHaveBeenCalled();
+    expect(mocks.getDb).not.toHaveBeenCalled();
     expect(mocks.register).not.toHaveBeenCalled();
   });
 });

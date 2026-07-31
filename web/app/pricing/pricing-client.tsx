@@ -20,7 +20,11 @@ import {
   type PricingV2PlanCode,
 } from "@/lib/pricing-v2";
 import { EbookPreviewRail } from "./ebook-preview-rail";
-import { PlanCheckoutOverlay } from "./plan-checkout-overlay";
+import {
+  PlanCheckoutOverlay,
+  type AddonCheckoutProduct,
+  type CheckoutInstallmentOffer,
+} from "./plan-checkout-overlay";
 import {
   ReplacementCardPaymentOverlay,
   type ReplacementCardAuth,
@@ -41,6 +45,13 @@ type PackagePlanCode = "starter" | "expert";
 type PlanCheckoutState = {
   mode: "subscribe" | "change_subscription";
   product: NonNullable<ReturnType<typeof getPricingV2Plan>>;
+  initialInstallmentOffer?: CheckoutInstallmentOffer | null;
+  preferredInstallmentMonths?: number;
+} | {
+  mode: "purchase_addon";
+  product: AddonCheckoutProduct;
+  initialInstallmentOffer: CheckoutInstallmentOffer;
+  preferredInstallmentMonths?: number;
 };
 
 type PlanCard = {
@@ -254,6 +265,9 @@ export function PricingClient({
   const [earlyBirdUseDifferentCard, setEarlyBirdUseDifferentCard] = useState(false);
   const [resubscribeUseDifferentCard, setResubscribeUseDifferentCard] = useState(false);
   const [packageMonths, setPackageMonths] = useState<PackageMonths>(6);
+  const [packageInstallmentOffers, setPackageInstallmentOffers] = useState<
+    Map<PricingV2PlanCode, CheckoutInstallmentOffer>
+  >(new Map());
 
   useEffect(() => {
     if (initialState) return;
@@ -276,6 +290,29 @@ export function PricingClient({
     return () => controller.abort();
   }, [initialState]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    const packageCodes = (["starter", "expert"] as const)
+      .map((tier) => getPricingV2Package(tier, packageMonths)?.code)
+      .filter((code): code is PricingV2PlanCode => Boolean(code));
+    setPackageInstallmentOffers(new Map());
+    void Promise.all(packageCodes.map(async (code) => {
+      const response = await fetch(
+        `/api/billing/installments?${new URLSearchParams({ planCode: code })}`,
+        { cache: "no-store", signal: controller.signal },
+      );
+      if (!response.ok) return null;
+      const offer = await response.json() as CheckoutInstallmentOffer;
+      return [code, offer] as const;
+    })).then((entries) => {
+      if (controller.signal.aborted) return;
+      setPackageInstallmentOffers(new Map(
+        entries.filter((entry): entry is NonNullable<typeof entry> => entry !== null),
+      ));
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [packageMonths]);
+
   async function reloadState() {
     const response = await fetch("/api/mvp/state", {
       cache: "no-store",
@@ -292,13 +329,20 @@ export function PricingClient({
     const monthlyMinutes = packagePlanMinutes(plan.code);
     const monthlyShorts = plan.code === "starter" ? 160 : 480;
     const totalShorts = monthlyShorts * packageMonths;
+    const installmentOffer = packageInstallmentOffers.get(packagePrice.code);
+    const supportsMatchingInstallments = (
+      installmentOffer?.paymentFlow === "manual_direct"
+      && installmentOffer.selectableMonths.includes(packageMonths)
+    );
     return {
       ...plan,
       eyebrow: `${packagePrice.discountPercent}% 할인`,
       checkoutPlanCode: packagePrice.code,
       price: `₩${priceFormatter.format(packagePrice.monthlyPriceKrw)}`,
       billing: `${packageMonths}개월 총 ₩${priceFormatter.format(packagePrice.totalPriceKrw)}`,
-      cta: `${plan.name} ${packageMonths}개월 선택`,
+      cta: supportsMatchingInstallments
+        ? `${plan.name} ${packageMonths}개월 할부결제`
+        : `${plan.name} ${packageMonths}개월 선택`,
       features: [
         {
           text: `원본 영상 처리시간 · 매월 ${priceFormatter.format(monthlyMinutes)}분 × ${packageMonths}개월`,
@@ -358,6 +402,28 @@ export function PricingClient({
     return true;
   }
 
+  function openPlanCheckout(
+    mode: "subscribe" | "change_subscription",
+    product: NonNullable<ReturnType<typeof getPricingV2Plan>>,
+  ) {
+    const installmentOffer = product.kind === "package"
+      ? packageInstallmentOffers.get(product.code) || null
+      : null;
+    const preferredInstallmentMonths = (
+      product.kind === "package"
+      && installmentOffer?.paymentFlow === "manual_direct"
+      && installmentOffer.selectableMonths.includes(product.durationMonths)
+    )
+      ? product.durationMonths
+      : undefined;
+    setPlanCheckout({
+      mode,
+      product,
+      initialInstallmentOffer: installmentOffer,
+      preferredInstallmentMonths,
+    });
+  }
+
   async function choosePlan(planCode: PricingV2PlanCode) {
     if (requireLogin()) return;
     const product = getPricingV2Plan(planCode);
@@ -387,7 +453,7 @@ export function PricingClient({
           return;
         }
         setError(null);
-        setPlanCheckout({ mode: "subscribe", product });
+        openPlanCheckout("subscribe", product);
         return;
       }
       if (billing.billingCycle !== "monthly") {
@@ -406,7 +472,7 @@ export function PricingClient({
           billingCycle: product.billingCycle,
         });
         if (result.action === "checkout" && result.checkoutUrl) {
-          setPlanCheckout({ mode: "change_subscription", product });
+          openPlanCheckout("change_subscription", product);
           return;
         }
         const effectiveDate = result.effectiveAt
@@ -434,17 +500,54 @@ export function PricingClient({
       return;
     }
     setError(null);
-    setPlanCheckout({
-      mode: hasCurrentPlan ? "change_subscription" : "subscribe",
-      product,
-    });
+    openPlanCheckout(hasCurrentPlan ? "change_subscription" : "subscribe", product);
   }
 
-  function buyEarlyBird(product: EarlyBirdProduct) {
+  async function buyEarlyBird(product: EarlyBirdProduct) {
     if (requireLogin()) return;
     if (state?.billing.status !== "active") {
       setError("얼리버드 추가시간은 활성 이용권이 있는 사용자만 구매할 수 있습니다.");
       return;
+    }
+    setBusy(product.code);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/billing/installments?${new URLSearchParams({ addonCode: product.code })}`,
+        { cache: "no-store" },
+      );
+      const offer = await response.json().catch(() => ({})) as (
+        CheckoutInstallmentOffer & { detail?: string }
+      );
+      if (!response.ok) {
+        throw new Error(offer.detail || "추가시간 결제방식을 확인하지 못했습니다.");
+      }
+      if (offer.paymentFlow === "manual_direct") {
+        setPlanCheckout({
+          mode: "purchase_addon",
+          product: {
+            code: product.code,
+            kind: "addon",
+            displayName: `얼리버드 추가 ${priceFormatter.format(product.minutes)}분`,
+            billingCycle: "yearly",
+            durationMonths: 0,
+            monthlyPriceKrw: product.salePrice,
+            totalPriceKrw: product.salePrice,
+            minutes: product.minutes,
+            validityDays: 90,
+          },
+          initialInstallmentOffer: offer,
+        });
+        return;
+      }
+      if (offer.paymentFlow === "disabled") {
+        throw new Error("추가시간 결제가 현재 중지되어 있습니다.");
+      }
+    } catch (cause) {
+      setError(userFacingErrorMessage(cause, "추가시간 결제를 준비하지 못했습니다."));
+      return;
+    } finally {
+      setBusy(null);
     }
     if (
       state.billing.paymentProvider !== "thepayone"
@@ -793,7 +896,7 @@ export function PricingClient({
               <button
                 type="button"
                 disabled={busy !== null}
-                onClick={() => buyEarlyBird(product)}
+                onClick={() => void buyEarlyBird(product)}
               >
                 {busy === product.code ? "결제 중..." : "구매"}
               </button>
@@ -842,9 +945,12 @@ export function PricingClient({
         <PlanCheckoutOverlay
           mode={planCheckout.mode}
           product={planCheckout.product}
+          initialInstallmentOffer={planCheckout.initialInstallmentOffer}
+          preferredInstallmentMonths={planCheckout.preferredInstallmentMonths}
           initialName={state?.user?.displayName}
           initialEmail={state?.user?.email}
-          savedPaymentMethod={hasReusableStoredCard ? {
+          savedPaymentMethod={
+            planCheckout.product.kind === "subscription" && hasReusableStoredCard ? {
             hasStoredPayerTel: Boolean(state?.billing.hasStoredPayerTel),
             issuer: selectedPaymentCard?.issuer || null,
             last4: selectedPaymentCard?.last4 || null,

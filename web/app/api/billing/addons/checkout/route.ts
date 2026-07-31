@@ -14,6 +14,7 @@ import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { getDb } from "@/lib/db";
 import { getDefaultPaymentMethodId } from "@/lib/default-payment-method";
 import { apiError, HttpError } from "@/lib/http";
+import { oneTimePaymentMode } from "@/lib/manual-payment-routing";
 import { isPricingV2EarlyBirdCode } from "@/lib/pricing-v2";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
@@ -50,6 +51,16 @@ export async function POST(request: Request) {
     assertBillingMutationRequest(request);
     assertThePayOneBillingEnabled();
     const body = schema.parse(await request.json());
+    const addonPaymentMode = oneTimePaymentMode("addon");
+    if (addonPaymentMode !== "legacy") {
+      throw new HttpError(
+        503,
+        addonPaymentMode === "manual"
+          ? "추가시간 수기결제는 요금제의 새 카드 결제창에서 진행해 주세요."
+          : "추가시간 결제가 현재 중지되어 있습니다.",
+        "ADDON_LEGACY_CHECKOUT_DISABLED",
+      );
+    }
     const session = await requireAuthenticatedMvpSession();
     if (!session.user?.email) throw new HttpError(409, "결제에 사용할 계정 이메일을 확인할 수 없습니다.");
     const db = getDb();

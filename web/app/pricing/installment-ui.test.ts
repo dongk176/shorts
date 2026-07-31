@@ -1,0 +1,187 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+const pricingSource = readFileSync(
+  new URL("./pricing-client.tsx", import.meta.url),
+  "utf8",
+);
+const checkoutSource = readFileSync(
+  new URL("./plan-checkout-overlay.tsx", import.meta.url),
+  "utf8",
+);
+
+describe("package installment UI", () => {
+  it("does not advertise installments on the pricing cards", () => {
+    expect(pricingSource).not.toContain("대상 신용카드 최대");
+    expect(pricingSource).not.toContain("installmentMaxMonthsByCode");
+  });
+
+  it("requires a server-provided issuer-month option before enabling manual payment", () => {
+    expect(checkoutSource).toContain("selectedInstallmentOption");
+    expect(checkoutSource).toContain("Boolean(selectedInstallmentOption)");
+    expect(checkoutSource).not.toContain("카드사별 혜택 조건에 따라 최대");
+    expect(checkoutSource).not.toContain("체크·선불카드는 할부를 이용할 수 없습니다");
+    expect(checkoutSource).not.toContain("카드를 저장하지 않으며");
+  });
+
+  it("keeps the product summary and final payment CTA concise", () => {
+    expect(checkoutSource).toContain("원/월 할부 결제");
+    expect(checkoutSource).toContain('"일시불로 결제"');
+    expect(checkoutSource).toContain("flex min-h-[54px] items-center");
+    expect(checkoutSource).not.toContain("서비스 이용기간:");
+    expect(checkoutSource).not.toContain("기본시간: 매월");
+    expect(checkoutSource).not.toContain("사용기한: 구매일부터");
+    expect(checkoutSource).not.toContain("총 {priceFormatter.format(chargeAmount)}원 승인");
+    expect(checkoutSource).not.toContain("회차당 약");
+    expect(checkoutSource).not.toContain("priceFormatter.format(chargeAmount)");
+  });
+
+  it("advertises and preselects the matching package installment only when supported", () => {
+    expect(pricingSource).toContain("paymentFlow === \"manual_direct\"");
+    expect(pricingSource).toContain("${plan.name} ${packageMonths}개월 할부결제");
+    expect(pricingSource).toContain("preferredInstallmentMonths");
+    expect(checkoutSource).toContain("preferredInstallmentMonths");
+    expect(checkoutSource).toContain(
+      'product.kind === "package" ? product.durationMonths : undefined',
+    );
+    expect(checkoutSource).toContain(
+      "selectableMonths.includes(defaultInstallmentMonths)",
+    );
+    expect(checkoutSource).toContain("setInstallmentMonths(preferredMonths)");
+    expect(checkoutSource).toContain(
+      "preferredInstallmentPendingRef.current = preferredMonths > 0",
+    );
+  });
+
+  it("selects card kind, then credit-card issuer, before showing installments", () => {
+    const cardKindPosition = checkoutSource.indexOf("<ManualCardKindSelect");
+    const issuerSelectPosition = checkoutSource.indexOf("<CardIssuerSelect");
+    const installmentSelectPosition = checkoutSource.indexOf("<InstallmentSelect");
+    const cardNumberPosition = checkoutSource.indexOf(
+      '<legend className="text-xs font-bold text-neutral-300">카드번호</legend>',
+    );
+    expect(cardKindPosition).toBeGreaterThan(-1);
+    expect(issuerSelectPosition).toBeGreaterThan(cardKindPosition);
+    expect(issuerSelectPosition).toBeLessThan(cardNumberPosition);
+    expect(installmentSelectPosition).toBeGreaterThan(issuerSelectPosition);
+    expect(checkoutSource).toContain("selectedIssuerInstallmentMonths");
+    expect(checkoutSource).toContain("카드사를 먼저 선택해 주세요");
+    expect(checkoutSource).toContain(
+      "(!requiresInstallmentIssuer || Boolean(installmentIssuerCode))",
+    );
+    expect(checkoutSource).toContain(
+      "(!requiresManualCardKind || Boolean(manualCardKind))",
+    );
+    expect(checkoutSource).not.toContain("<select");
+  });
+
+  it("keeps debit and prepaid cards cash-only without installment benefits", () => {
+    expect(checkoutSource).toContain('manualCardKind === "debit_prepaid"');
+    expect(checkoutSource).toContain("체크·선불카드는 일시불로 결제됩니다.");
+    expect(checkoutSource).toContain('manualCardKind === "credit" && (');
+    expect(checkoutSource).toContain("declaredCardKind");
+  });
+
+  it("shows issuer benefit details in the installment selector", () => {
+    expect(checkoutSource).toContain("installmentBenefitDescription");
+    expect(checkoutSource).toContain("selectedIssuerInstallmentDetails");
+    expect(checkoutSource).toContain("optionDetails={selectedIssuerInstallmentDetails}");
+    expect(checkoutSource).toContain(
+      "highlightedOptions={selectedIssuerInterestFreeMonths}",
+    );
+    expect(checkoutSource).toContain("회 고객부담");
+    expect(checkoutSource).toContain("일반 할부 · 이자 발생 가능");
+  });
+
+  it("keeps the card in memory but hides months above a definite provider limit", () => {
+    expect(checkoutSource).toContain("providerMaxInstallmentMonths");
+    expect(checkoutSource).toContain("cardLimitedInstallmentOffer");
+    expect(checkoutSource).toContain(
+      "option.installmentMonths <= providerMaxInstallmentMonths",
+    );
+    expect(checkoutSource).toContain('"INSTALLMENT_LIMIT_EXCEEDED"');
+    expect(checkoutSource).toContain("paymentRequestIdRef.current = crypto.randomUUID()");
+    expect(checkoutSource).not.toContain("더 긴 할부 옵션은 숨겼습니다.");
+    expect(checkoutSource).toContain(
+      "setProviderMaxInstallmentMonths(null)",
+    );
+  });
+
+  it("collects required purchase terms consent on the card step", () => {
+    const consentPositions = [...checkoutSource.matchAll(/<PurchaseTermsConsent/g)]
+      .map((match) => match.index);
+    const manualSummaryPosition = checkoutSource.indexOf(
+      "{isManualOneTime && chargeAmount !== null && (",
+    );
+    expect(consentPositions).toHaveLength(2);
+    expect(consentPositions.at(-1)).toBeLessThan(manualSummaryPosition);
+    expect(checkoutSource).toContain("&& form.consent");
+  });
+
+  it("hides manual one-time checkout step titles", () => {
+    expect(checkoutSource).toContain(
+      'isOneTimeProduct && paymentFlow !== "legacy"',
+    );
+    expect(checkoutSource).not.toContain(
+      'title={usesSavedPaymentMethod || step === "card"',
+    );
+    expect(checkoutSource).not.toContain('isManualOneTime ? "결제 확인"');
+  });
+
+  it("fails closed while a one-time payment flow is loading or disabled", () => {
+    expect(checkoutSource).toContain(
+      'isOneTimeProduct && paymentFlow === null',
+    );
+    expect(checkoutSource).toContain(
+      'isOneTimeProduct && paymentFlow === "disabled"',
+    );
+    expect(checkoutSource).toContain("결제 옵션을 확인하고 있습니다");
+    expect(checkoutSource).toContain("확인이 끝나면 카드 종류부터 선택할 수 있습니다.");
+    expect(checkoutSource).toContain("현재 결제를 진행할 수 없습니다");
+    expect(checkoutSource).toContain("결제 옵션 확인 시간이 초과되었습니다.");
+    expect(checkoutSource).toContain("다시 불러오기");
+    expect(checkoutSource).toContain("setInstallmentReloadKey");
+  });
+
+  it("keeps the manual card-step CTA active while required input is incomplete", () => {
+    expect(checkoutSource).toContain(
+      "? isManualOneTime ? false : !cardStepValid",
+    );
+    expect(checkoutSource).toContain('"[data-card-issuer-trigger]"');
+    expect(checkoutSource).toContain("setInstallmentIssuerAttention(true)");
+    expect(checkoutSource).toContain("attention={installmentIssuerAttention}");
+    expect(checkoutSource).toContain("setManualCardKindAttention(true)");
+    expect(checkoutSource).toContain("attention={manualCardKindAttention}");
+    expect(checkoutSource).toContain("event.preventDefault()");
+  });
+
+  it("focuses and highlights the first invalid manual-card field", () => {
+    expect(checkoutSource).toContain("firstManualCardValidationField");
+    expect(checkoutSource).toContain("showManualCardValidationIssue");
+    expect(checkoutSource).toContain(
+      'data-manual-card-field={index === 0 ? "cardNumber" : undefined}',
+    );
+    expect(checkoutSource).toContain('data-manual-card-field="identityNumber"');
+    expect(checkoutSource).toContain('data-manual-card-field="payerTel"');
+    expect(checkoutSource).toContain("카드번호 16자리를 확인해 주세요.");
+    expect(checkoutSource).toContain("scrollIntoView");
+  });
+
+  it("progressively reveals manual-card fields after each prior group is complete", () => {
+    expect(checkoutSource).toContain("showManualCardNumber");
+    expect(checkoutSource).toContain("showManualExpiry");
+    expect(checkoutSource).toContain("showManualCardCredentials");
+    expect(checkoutSource).toContain("showManualPayerTel");
+    expect(checkoutSource).toContain("showManualConsent");
+    expect(checkoutSource).toContain("manual-checkout-field-enter");
+    expect(checkoutSource).toContain("relative z-[70]");
+  });
+
+  it("scrolls the newly revealed consent into view when the phone number is complete", () => {
+    expect(checkoutSource).toContain("previousPayerTelCompleteRef");
+    expect(checkoutSource).toContain("payerTelJustCompleted");
+    expect(checkoutSource).toContain("consentRef.current?.scrollIntoView");
+    expect(checkoutSource).toContain('behavior: "smooth"');
+    expect(checkoutSource).toContain('block: "end"');
+  });
+});

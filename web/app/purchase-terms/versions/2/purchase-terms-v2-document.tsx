@@ -8,23 +8,26 @@ export function PurchaseTermsV2Document({
   version = 2,
 }: {
   archived?: boolean;
-  version?: 2 | 3;
+  version?: 2 | 3 | 4;
 }) {
-  const usesFirstCompletedJobPolicy = version === 3;
+  const usesFirstCompletedJobPolicy = version >= 3;
+  const supportsOneTimeInstallments = version >= 4;
   return (
     <LegalDocument
       eyebrow="Purchase Terms"
       title="유료서비스 구매약관"
       description="본 약관은 Easy Cut의 월간 구독, 기간 패키지 및 추가 처리시간 구매에 적용되는 결제·제공 조건을 정합니다. 결제 전 상품, 금액, 적용일과 환불 규정을 함께 확인해 주세요."
       effectiveDate={archived
-        ? "2026년 7월 26일 · 구매약관 v2 (보관본)"
+        ? `${version === 3 ? "2026년 7월 28일 · 구매약관 v3" : "2026년 7월 26일 · 구매약관 v2"} (보관본)`
+        : supportsOneTimeInstallments
+          ? "2026년 7월 30일 개정 · 구매약관 v4"
         : usesFirstCompletedJobPolicy
           ? "2026년 7월 28일 개정 · 구매약관 v3"
           : "2026년 7월 26일 개정 · 구매약관 v2"}
     >
       {archived && (
         <p className="rounded-2xl border border-white/10 bg-white/[.035] p-4 text-sm leading-7 text-neutral-300">
-          이 페이지는 구매약관 v2 보관본입니다. 현재 약관은{" "}
+          이 페이지는 구매약관 v{version} 보관본입니다. 현재 약관은{" "}
           <Link href="/purchase-terms" className={accentLink}>유료서비스 구매약관</Link>에서 확인할 수 있습니다.
         </p>
       )}
@@ -76,6 +79,9 @@ export function PurchaseTermsV2Document({
             </tbody>
           </table>
         </div>
+        {supportsOneTimeInstallments && (
+          <p>기간 패키지와 추가 처리시간은 카드정보를 매 구매 시 입력하는 일회성 수기결제로 승인합니다. 총 결제금액이 5만원 이상이면 결제 화면에 게시된 카드사 캠페인과 회사가 실승인으로 확인한 범위 안에서 할부를 선택할 수 있습니다. 체크·선불카드는 할부 대상이 아니며, 실제 청구 조건은 카드사 정책에 따릅니다.</p>
+        )}
         <p>구매 시 결제 확인 화면에 표시되는 상품명, 플랜, 결제 주기, 결제금액, 제공량, 적용일 및 다음 결제일이 해당 주문의 구체적인 계약 내용이 됩니다. 세금은 별도 표시가 없는 한 표시 금액에 포함됩니다.</p>
       </LegalSection>
 
@@ -100,7 +106,7 @@ export function PurchaseTermsV2Document({
       <LegalSection title="제6조 상품 변경">
         <p>이지컷 프로 이용 중 기간 패키지를 선택하면 현재 월간 결제기간 종료일로 변경이 예약됩니다. 예약 시 새 결제나 환불은 발생하지 않으며, 현재 기간이 끝난 뒤 요금제 페이지에서 패키지 결제를 완료하면 새 상품이 적용됩니다.</p>
         <p>스타터·전문가의 3·6·12개월 기간 패키지는 각 상품별로 계정당 한 번만 구매할 수 있습니다. 이미 구매한 상품과 다른 기간 또는 등급의 패키지는 각각 한 번씩 추가 구매할 수 있으며, 각 패키지는 결제 승인일부터 독립적인 이용기간을 시작하고 월별 처리시간을 합산해 지급합니다. 패키지 이용 중에는 이지컷 프로 월간 구독을 추가할 수 없습니다. 별도로 구매한 추가 처리시간은 표시된 유효기간까지 유지됩니다.</p>
-        <p>기간 패키지를 포함한 모든 카드 결제는 일시불로만 제공되며, 결제 화면에서 할부를 선택할 수 없습니다.</p>
+        <p>{supportsOneTimeInstallments ? "기간 패키지와 추가 처리시간의 총 결제금액이 5만원 이상인 경우 카드사 캠페인과 결제대행사 지원 조건에 따라 결제 화면에서 할부를 선택할 수 있습니다. 결제 화면에 선택 항목으로 표시되지 않은 할부개월은 이용할 수 없습니다." : "기간 패키지를 포함한 모든 카드 결제는 일시불로만 제공되며, 결제 화면에서 할부를 선택할 수 없습니다."}</p>
       </LegalSection>
 
       <LegalSection title="제7조 유료서비스의 제공과 사용">
@@ -125,7 +131,7 @@ export function PurchaseTermsV2Document({
       </LegalSection>
 
       <LegalSection title="제9조 결제 정보와 과오금">
-        <p>회사는 결제를 위해 더페이원 등 결제대행사에 필요한 정보를 전달합니다. 카드번호, 유효기간, 생년월일·사업자번호 및 카드 비밀번호 앞 2자리는 회사 데이터베이스에 저장하지 않습니다. 다음 결제에서 이용할 수 있도록 결제대행사가 발급한 결제수단 토큰과 암호화한 휴대전화 번호 등 최소 정보만 저장할 수 있습니다.</p>
+        <p>{supportsOneTimeInstallments ? "회사는 결제를 위해 더페이원 등 결제대행사에 필요한 정보를 전달합니다. 카드번호, 유효기간, 생년월일·사업자번호 및 카드 비밀번호 앞 2자리는 회사 데이터베이스에 저장하지 않습니다. 월간 구독에는 다음 자동결제를 위한 결제대행사 토큰과 암호화한 휴대전화 번호 등 최소 정보가 저장될 수 있지만, 기간 패키지와 추가 처리시간에 입력한 카드는 저장 결제수단으로 만들거나 월간 구독 카드로 변경하지 않습니다." : "회사는 결제를 위해 더페이원 등 결제대행사에 필요한 정보를 전달합니다. 카드번호, 유효기간, 생년월일·사업자번호 및 카드 비밀번호 앞 2자리는 회사 데이터베이스에 저장하지 않습니다. 다음 결제에서 이용할 수 있도록 결제대행사가 발급한 결제수단 토큰과 암호화한 휴대전화 번호 등 최소 정보만 저장할 수 있습니다."}</p>
         <p>중복 결제나 과오금이 확인되면 관계 법령과 취소 및 환불 정책에 따라 원 결제수단으로 취소 또는 환급합니다. 결제 실패나 미납 상태에서는 유료 권한의 제공 또는 일부 기능 이용이 제한될 수 있습니다.</p>
       </LegalSection>
 

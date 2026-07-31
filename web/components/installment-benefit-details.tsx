@@ -34,7 +34,7 @@ export function InstallmentBenefitDetails({
             key={issuer.issuerCode}
             className="rounded-2xl border border-white/8 bg-black/15 p-4"
           >
-            <strong className="text-sm text-white">{issuer.issuerName}</strong>
+            <strong className="text-base text-white">{issuer.issuerName}</strong>
             <div className="mt-3 divide-y divide-white/8">
               {issuer.lines.map((line) => (
                 <div
@@ -42,21 +42,25 @@ export function InstallmentBenefitDetails({
                   className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-3 py-3 first:pt-0 last:pb-0"
                 >
                   <div>
-                    <span className="block text-xs font-bold text-neutral-300">
+                    <span className={`block text-sm font-bold ${
+                      line.benefitType === "interest_free"
+                        ? "text-emerald-200"
+                        : "text-neutral-200"
+                    }`}>
                       {line.benefitType === "interest_free" ? "무이자" : "부분 무이자"}
                     </span>
                     {line.benefitType === "partial_interest_free" && (
-                      <span className="mt-1 block text-[11px] leading-4 text-neutral-500">
+                      <span className="mt-1 block text-xs leading-5 text-neutral-400">
                         1~{line.customerPaidInstallments}회차 고객 부담
                       </span>
                     )}
                     {line.minAmountKrw !== offer.defaultMinAmountKrw && (
-                      <span className="mt-1 block text-[10px] text-neutral-600">
+                      <span className="mt-1 block text-[11px] text-neutral-500">
                         {formatAmount(line.minAmountKrw)} 이상
                       </span>
                     )}
                   </div>
-                  <div className="text-right text-xs font-black leading-5">
+                  <div className="text-right text-sm font-black leading-6">
                     {line.supportedMonths.length > 0 && (
                       <span className="block text-white">
                         {compactInstallmentMonths(line.supportedMonths)}
@@ -65,11 +69,11 @@ export function InstallmentBenefitDetails({
                     {line.pendingMonths.length > 0 && (
                       <span className="block text-amber-300">
                         {compactInstallmentMonths(line.pendingMonths)}
-                        <small className="block text-[10px] font-bold">PG 지원 확인 중</small>
+                        <small className="block text-[11px] font-bold">현재 결제창 미지원</small>
                       </span>
                     )}
                     {line.note && (
-                      <span className="mt-1 block text-[10px] font-medium text-neutral-500">
+                      <span className="mt-1 block text-[11px] font-medium text-neutral-400">
                         {line.note}
                       </span>
                     )}

@@ -6,6 +6,7 @@ import {
   decryptCardToken,
   revokeThePayOneCard,
   thePayOneCredentialScopeForPackage,
+  thePayOneCredentialScopeForMerchantTerminal,
   type ThePayOneCredentialScope,
   ThePayOneError,
 } from "@/lib/thepayone";
@@ -22,6 +23,9 @@ export type BillingCardVerification = {
   billingDay: string;
   status: string;
   providerOrderId: string;
+  providerCredentialScope: ThePayOneCredentialScope | null;
+  providerMerchantId: string | null;
+  providerTerminalId: string | null;
   providerTransactionId: string | null;
   providerResultCode: string | null;
   billingKeyCiphertext: string | null;
@@ -40,6 +44,9 @@ export type BillingCardVerification = {
 type RevocationClaim = {
   id: string;
   planCode: string;
+  providerCredentialScope: ThePayOneCredentialScope | null;
+  providerMerchantId: string | null;
+  providerTerminalId: string | null;
   billingKeyCiphertext: string;
   billingKeyIv: string;
   billingKeyTag: string;
@@ -67,8 +74,14 @@ async function revokeClaimedVerification(
     tag: claimed.billingKeyTag,
   }, claimed.id);
   const orderId = createPaymentTrackId("AUDT");
-  const credentialScope: ThePayOneCredentialScope = thePayOneCredentialScopeForPackage(
-    isPricingV2PackageCode(claimed.planCode),
+  const credentialScope: ThePayOneCredentialScope = (
+    claimed.providerMerchantId && claimed.providerTerminalId
+      ? thePayOneCredentialScopeForMerchantTerminal(
+        claimed.providerMerchantId,
+        claimed.providerTerminalId,
+      )
+      : claimed.providerCredentialScope
+        || thePayOneCredentialScopeForPackage(isPricingV2PackageCode(claimed.planCode))
   );
   try {
     const result = await revokeThePayOneCard(cardId, orderId, credentialScope);
@@ -103,7 +116,8 @@ export async function revokeOwnedBillingCardVerification(
     set status='revoking'
     where id=${verificationId} and user_id=${userId}
       and status in ('active','revoke_failed')
-    returning id,plan_code,billing_key_ciphertext,billing_key_iv,billing_key_tag
+    returning id,plan_code,provider_credential_scope,provider_merchant_id,
+      provider_terminal_id,billing_key_ciphertext,billing_key_iv,billing_key_tag
   ` as unknown as RevocationClaim[];
   const claimed = claimedRows[0];
   if (claimed && hasEncryptedCard(claimed)) {
@@ -146,7 +160,8 @@ export async function cleanupExpiredBillingCardVerifications(
       where id=${candidate.id}
         and expires_at <= clock_timestamp()
         and status in ('active','revoke_failed')
-      returning id,plan_code,billing_key_ciphertext,billing_key_iv,billing_key_tag
+      returning id,plan_code,provider_credential_scope,provider_merchant_id,
+        provider_terminal_id,billing_key_ciphertext,billing_key_iv,billing_key_tag
     ` as unknown as RevocationClaim[];
     const claimed = claimedRows[0];
     if (!claimed || !hasEncryptedCard(claimed)) continue;

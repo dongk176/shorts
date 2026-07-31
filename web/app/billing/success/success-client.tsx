@@ -3,7 +3,11 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { BillingResult } from "./result";
-import { paymentMethodUpdatedMessage, type UpdatedCardSummary } from "./success-copy";
+import {
+  packagePaymentCompletedMessage,
+  paymentMethodUpdatedMessage,
+  type UpdatedCardSummary,
+} from "./success-copy";
 
 export function BillingSuccessClient() {
   const params = useSearchParams();
@@ -18,13 +22,16 @@ export function BillingSuccessClient() {
     orderName?: string;
     refund?: { mode: string; amountKrw: number; processingBusinessDays: number };
     installmentMonths?: number;
+    chargedAmountKrw?: number;
+    nextQuotaAt?: string | null;
+    nextChargeAt?: string | null;
   } | null>(null);
   const status = params.get("status");
   const checkoutId = params.get("checkoutId");
   const message = orderState === "pending"
     ? "결제 승인 결과를 확인하고 있습니다. 이 화면을 잠시 유지해 주세요."
     : orderState === "manual_review"
-      ? "결제는 접수되었으며 주문 정보를 확인하고 있습니다. 확인이 완료되면 이용 내역에 반영됩니다."
+      ? "승인 여부를 확인 중입니다. 중복 결제를 막기 위해 같은 상품을 다시 결제하지 마세요. 확인 전에는 이용권이나 추가시간이 지급되지 않습니다."
       : orderState === "failed"
         ? "결제 승인을 완료하지 못했습니다. 가격 페이지에서 다시 시도해 주세요."
     : orderDetail?.refund?.mode === "manual_partial" && orderDetail.refund.amountKrw > 0
@@ -32,13 +39,21 @@ export function BillingSuccessClient() {
     : orderDetail?.refund?.mode === "automatic_full" && orderDetail.refund.amountKrw > 0
       ? `기존 플랜 결제 ${orderDetail.refund.amountKrw.toLocaleString("ko-KR")}원은 즉시 전액취소되었고 새 플랜이 적용되었습니다.`
     : status === "addon_granted" || (orderState === "succeeded" && orderDetail?.kind === "addon")
-    ? "추가 처리시간이 계정에 충전되었습니다."
+    ? `추가 처리시간이 계정에 충전되었습니다.${
+      orderDetail?.chargedAmountKrw
+        ? ` 총 ${orderDetail.chargedAmountKrw.toLocaleString("ko-KR")}원${
+          Number(orderDetail.installmentMonths || 0) > 0
+            ? ` · ${orderDetail.installmentMonths}개월 할부`
+            : " · 일시불"
+        }로 승인되었습니다.`
+        : ""
+    }`
     : orderState === "succeeded"
       && (
         orderDetail?.productCode?.startsWith("starter_")
         || orderDetail?.productCode?.startsWith("expert_")
       )
-      ? `${orderDetail.orderName || "선택한 패키지"} 결제가 완료되었습니다.`
+      ? packagePaymentCompletedMessage(orderDetail)
     : status === "payment_method_updated"
       ? paymentMethodUpdatedMessage(updatedCard)
       : "구독이 시작되었습니다. 지금부터 Easy Cut의 모든 플랜 기능을 이용할 수 있습니다.";
@@ -93,6 +108,9 @@ export function BillingSuccessClient() {
           status?: string;
           refund?: { mode: string; amountKrw: number; processingBusinessDays: number };
           installmentMonths?: number;
+          chargedAmountKrw?: number;
+          nextQuotaAt?: string | null;
+          nextChargeAt?: string | null;
         };
         if (!active) return;
         setOrderDetail({
@@ -101,6 +119,9 @@ export function BillingSuccessClient() {
           orderName: value.orderName,
           refund: value.refund,
           installmentMonths: value.installmentMonths,
+          chargedAmountKrw: value.chargedAmountKrw,
+          nextQuotaAt: value.nextQuotaAt,
+          nextChargeAt: value.nextChargeAt,
         });
         if (value.status === "succeeded") return setOrderState("succeeded");
         if (value.status === "failed" || value.status === "expired" || value.status === "canceled") {

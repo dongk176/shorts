@@ -1,7 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 
 export function ThePayOnePaymentOverlay({
   title,
@@ -9,16 +15,18 @@ export function ThePayOnePaymentOverlay({
   primaryLabel,
   primaryDisabled = false,
   secondaryLabel,
+  onPrimaryClick,
   onClose,
   onSecondary,
   onSubmit,
   children,
 }: {
-  title: string;
+  title?: string | null;
   busy: boolean;
   primaryLabel: string;
   primaryDisabled?: boolean;
   secondaryLabel?: string;
+  onPrimaryClick?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onClose: () => void;
   onSecondary?: () => void;
   onSubmit: () => void;
@@ -78,7 +86,8 @@ export function ThePayOnePaymentOverlay({
       className="fixed inset-0 z-[120] flex items-end bg-black/80 pt-8 backdrop-blur-md sm:grid sm:place-items-center sm:overflow-y-auto sm:px-5 sm:py-8"
       role="dialog"
       aria-modal="true"
-      aria-labelledby={titleId}
+      aria-labelledby={title ? titleId : undefined}
+      aria-label={title ? undefined : "더페이원 결제"}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !busy) onClose();
       }}
@@ -89,10 +98,10 @@ export function ThePayOnePaymentOverlay({
           event.preventDefault();
           onSubmit();
         }}
-        className="relative flex h-[calc(100dvh-0.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-t-[30px] border border-[#ff8f80]/20 bg-[#181b1d] shadow-[0_30px_100px_rgba(0,0,0,.72),0_0_70px_rgba(255,113,94,.08)] sm:h-auto sm:max-h-[calc(100dvh-4rem)] sm:rounded-[30px]"
+        className="thepayone-payment-dialog relative flex h-[calc(100dvh-0.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-t-[30px] border border-[#ff8f80]/20 bg-[#181b1d] shadow-[0_30px_100px_rgba(0,0,0,.72),0_0_70px_rgba(255,113,94,.08)] sm:h-auto sm:max-h-[calc(100dvh-4rem)] sm:rounded-[30px]"
       >
         <div className="pointer-events-none absolute inset-x-20 -top-24 h-44 rounded-full bg-[#ff715e]/10 blur-3xl" />
-        <div className="relative min-h-0 flex-1 overflow-y-auto px-5 pb-7 pt-3 sm:px-8 sm:pt-8">
+        <div className="thepayone-payment-content relative min-h-0 flex-1 overflow-y-auto px-5 pb-7 pt-3 sm:flex-auto sm:px-8 sm:pt-8">
           <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20 sm:hidden" aria-hidden="true" />
           <div className="flex items-center justify-between gap-5">
             <div className="flex items-center gap-3">
@@ -119,9 +128,11 @@ export function ThePayOnePaymentOverlay({
               ×
             </button>
           </div>
-          <h2 id={titleId} className="mt-7 text-[28px] font-black tracking-[-.04em] text-white">
-            {title}
-          </h2>
+          {title && (
+            <h2 id={titleId} className="mt-7 text-[28px] font-black tracking-[-.04em] text-white">
+              {title}
+            </h2>
+          )}
           {children}
         </div>
 
@@ -141,6 +152,7 @@ export function ThePayOnePaymentOverlay({
           <button
             type="submit"
             disabled={busy || primaryDisabled}
+            onClick={onPrimaryClick}
             className="min-h-[52px] w-full rounded-xl bg-gradient-to-r from-[#ef4939] to-[#ff715e] px-5 text-sm font-black text-white shadow-[0_12px_30px_rgba(239,73,57,.22)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {primaryLabel}

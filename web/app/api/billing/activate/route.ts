@@ -30,7 +30,16 @@ import {
   setDefaultPaymentMethod,
 } from "@/lib/default-payment-method";
 import { apiError, HttpError } from "@/lib/http";
-import { validateInstallmentSelection } from "@/lib/installments";
+import {
+  installmentIssuerCodes,
+  installmentResponseMatchesSelection,
+  validateInstallmentSelection,
+} from "@/lib/installments";
+import {
+  assertLocalManualCheckoutAccess,
+  assertManualPaymentAvailable,
+  oneTimePaymentMode,
+} from "@/lib/manual-payment-routing";
 import {
   canStackPricingV2Package,
   getPricingV2Plan,
@@ -43,14 +52,17 @@ import {
   cardTokenHash,
   changeThePayOneCardStatus,
   chargeThePayOneCard,
+  chargeThePayOneManualCard,
   createPaymentTrackId,
   decryptCardToken,
   encryptCardToken,
   refundThePayOnePayment,
   registerThePayOneCard,
   revokeThePayOneCard,
+  thePayOneCardTypeAllowsInstallment,
+  thePayOneCardTypeMatchesDeclaredKind,
+  thePayOneInstallmentMaxMonths,
   thePayOneRefundMismatchFields,
-  thePayOneCredentialScopeForPackage,
   thePayOneMerchantId,
   thePayOneTerminalId,
   type ThePayOneCredentialScope,
@@ -74,12 +86,14 @@ const cardFields = {
   expiryYear: z.string().refine((value) => /^\d{2}$/.test(value)),
   expiryMonth: z.string().refine((value) => /^(0[1-9]|1[0-2])$/.test(value)),
   cardVerificationId: z.string().uuid().optional(),
+  declaredCardKind: z.enum(["credit", "debit_prepaid"]).optional(),
   ...cardAuthFields,
 };
 
 const installmentFields = {
   installmentMonths: z.number().int().min(0).max(36).refine((value) => value !== 1).default(0),
   installmentCampaignId: z.string().uuid().nullable().optional(),
+  installmentIssuerCode: z.enum(installmentIssuerCodes).nullable().optional(),
 };
 
 const savedCardFields = {
@@ -383,18 +397,63 @@ export async function POST(request: Request) {
         "INVALID_BILLING_CYCLE",
       );
     }
-    paymentCredentialScope = thePayOneCredentialScopeForPackage(
-      pricingV2Plan?.kind === "package",
-    );
+    const isPackageProduct = pricingV2Plan?.kind === "package";
+    const packagePaymentMode = isPackageProduct
+      ? oneTimePaymentMode("package")
+      : "legacy";
+    if (isPackageProduct && packagePaymentMode === "disabled") {
+      throw new HttpError(
+        503,
+        "패키지 결제가 현재 중지되어 있습니다.",
+        "PACKAGE_MANUAL_BILLING_DISABLED",
+      );
+    }
+    const isManualPackage = isPackageProduct && packagePaymentMode === "manual";
+    const localManualCheckout = isManualPackage
+      ? assertLocalManualCheckoutAccess(request, session, { mutation: true })
+      : false;
+    if (isManualPackage) {
+      await assertManualPaymentAvailable(db, "package", {
+        localManualCheckout,
+      });
+      paymentCredentialScope = "manual";
+    } else {
+      paymentCredentialScope = "default";
+    }
     const merchantId = thePayOneMerchantId(paymentCredentialScope);
     const expectedTerminalId = thePayOneTerminalId(paymentCredentialScope);
-    if (paymentCredentialScope === "package" && reuseStoredMethod) {
+    if (isManualPackage && reuseStoredMethod) {
       throw new HttpError(
         409,
         "패키지는 수기결제 카드 정보를 새로 입력해 주세요.",
         "PACKAGE_MANUAL_CARD_REQUIRED",
       );
     }
+    if (isManualPackage && !("cardNumber" in body)) {
+      throw new HttpError(
+        409,
+        "패키지는 수기결제 카드 정보를 새로 입력해 주세요.",
+        "PACKAGE_MANUAL_CARD_REQUIRED",
+      );
+    }
+    if (isManualPackage && body.mode === "replace_payment_method") {
+      throw new HttpError(
+        409,
+        "패키지는 자동결제 카드 변경 대상이 아닙니다.",
+        "PACKAGE_PAYMENT_METHOD_NOT_APPLICABLE",
+      );
+    }
+    const manualPackageCard = isManualPackage && "cardNumber" in body
+      ? {
+        cardNumber: body.cardNumber,
+        expiry: `${body.expiryYear}${body.expiryMonth}`,
+        authDob: body.identityNumber,
+        authPw: body.cardPassword,
+        payerName: body.payerName,
+        payerEmail: body.payerEmail,
+        payerTel: body.payerTel,
+      }
+      : null;
     const calculationTime = new Date();
     let currentPaymentToRefund: RefundableCurrentPaymentOrder | null = null;
     if (subscriptionChange) {
@@ -492,6 +551,13 @@ export async function POST(request: Request) {
     const requestedCardVerificationId = "cardVerificationId" in body
       ? body.cardVerificationId
       : undefined;
+    if (isManualPackage && requestedCardVerificationId) {
+      throw new HttpError(
+        409,
+        "패키지 수기결제는 카드 등록 확인값을 사용하지 않습니다.",
+        "PACKAGE_MANUAL_DIRECT_REQUIRED",
+      );
+    }
     if (requestedCardVerificationId) {
       const verificationRows = await db`
         select *
@@ -512,6 +578,14 @@ export async function POST(request: Request) {
         || !("planCode" in body)
         || cardVerification.planCode !== body.planCode
         || cardVerification.billingCycle !== billingCycle
+        || (
+          cardVerification.providerCredentialScope !== null
+          && (
+            cardVerification.providerCredentialScope !== paymentCredentialScope
+            || cardVerification.providerMerchantId !== merchantId
+            || cardVerification.providerTerminalId !== expectedTerminalId
+          )
+        )
       ) {
         throw new HttpError(
           409,
@@ -550,11 +624,28 @@ export async function POST(request: Request) {
     const requestedCampaignId = "installmentCampaignId" in body
       ? body.installmentCampaignId
       : null;
-    if (pricingV2Plan?.kind === "package" && requestedInstallmentMonths !== 0) {
+    const requestedInstallmentIssuer = "installmentIssuerCode" in body
+      ? body.installmentIssuerCode
+      : null;
+    const declaredCardKind = "declaredCardKind" in body
+      ? body.declaredCardKind
+      : undefined;
+    if (isManualPackage && !declaredCardKind) {
       throw new HttpError(
         409,
-        "기간 패키지는 현재 일시불 결제만 지원합니다.",
-        "INSTALLMENT_NOT_SUPPORTED",
+        "카드 종류를 다시 선택해 주세요.",
+        "MANUAL_CARD_KIND_REQUIRED",
+      );
+    }
+    if (
+      isManualPackage
+      && declaredCardKind === "debit_prepaid"
+      && requestedInstallmentMonths > 0
+    ) {
+      throw new HttpError(
+        409,
+        "체크·선불카드는 일시불로만 결제할 수 있습니다.",
+        "DEBIT_CARD_INSTALLMENT_NOT_ALLOWED",
       );
     }
     const installment = await validateInstallmentSelection(db, {
@@ -562,11 +653,16 @@ export async function POST(request: Request) {
       amountKrw: quotedChargeAmount,
       installmentMonths: requestedInstallmentMonths,
       campaignId: requestedCampaignId,
-      issuer: cardVerification
-        ? cardVerification.issuerName
-        : reuseStoredMethod
-          ? existingMethod?.issuerName ?? null
-          : undefined,
+      productKind: pricingV2Plan?.kind || "subscription",
+      credentialScope: paymentCredentialScope,
+      localManualCheckout,
+      issuer: isManualPackage
+        ? requestedInstallmentIssuer
+        : cardVerification
+          ? cardVerification.issuerName
+          : reuseStoredMethod
+            ? existingMethod?.issuerName ?? null
+            : undefined,
     });
     const resetsMonthlyBillingPeriod = Boolean(changeQuote?.startsNewBillingPeriod);
     const periodBase = resetsMonthlyBillingPeriod
@@ -600,7 +696,11 @@ export async function POST(request: Request) {
         ${chargeNow ? quotedChargeAmount : 0},${orderId},${orderName},'thepayone',${orderId},
         ${merchantId},${expectedTerminalId},${kind === "subscription_renewal" ? current?.currentPeriodEnd || null : null},
         now()+interval '10 minutes',${quotedProrationCreditKrw},
-        ${requestedInstallmentMonths},${installment.campaignId},${db.json(installment.snapshot as never)},
+        ${requestedInstallmentMonths},${installment.campaignId},${db.json((
+          isManualPackage
+            ? { ...installment.snapshot, declaredCardKind }
+            : installment.snapshot
+        ) as never)},
         ${pricingV2Plan?.kind === "package" ? 1 : 0}
       ) on conflict do nothing returning *
     `;
@@ -656,7 +756,7 @@ export async function POST(request: Request) {
     claimedOrder = true;
 
     const oldMethod = existingMethod;
-    let chargeCardId: string;
+    let chargeCardId = "";
     let payerName: string;
     let payerEmail: string;
     let payerTel: string;
@@ -701,11 +801,13 @@ export async function POST(request: Request) {
         `;
       }
     } else {
-      paymentMethodId = randomUUID();
       payerName = body.payerName;
       payerEmail = body.payerEmail;
       payerTel = body.payerTel;
-      if (cardVerification) {
+      if (!isManualPackage) {
+        paymentMethodId = randomUUID();
+      }
+      if (!isManualPackage && cardVerification) {
         const verifiedCard = cardVerification;
         const claimedVerifications = await db`
           update shorts_mvp.billing_card_verifications
@@ -757,62 +859,66 @@ export async function POST(request: Request) {
           throw error;
         }
       }
-      const authTrackId = createPaymentTrackId("AUTH");
-      const registration = await registerThePayOneCard({
-        trackId: authTrackId,
-        payerName: body.payerName,
-        payerEmail: body.payerEmail,
-        payerTel: body.payerTel,
-        cardNumber: body.cardNumber,
-        expiry: `${body.expiryYear}${body.expiryMonth}`,
-        authDob: body.identityNumber,
-        authPw: body.cardPassword,
-        billingDay,
-        productName: orderName,
-      }, paymentCredentialScope);
-      issuedCardId = registration.cardId;
-      registrationTransactionId = registration.providerTransactionId;
-      chargeCardId = registration.cardId;
-      if (
-        registration.trackId !== authTrackId
-        || registration.amount !== 0
-        || registration.billingDay !== billingDay
-      ) {
-        throw new ThePayOneError(
-          "카드 등록 결과가 요청 정보와 일치하지 않습니다.",
-          "REGISTRATION_MISMATCH",
-          null,
-          true,
-        );
+      if (!isManualPackage) {
+        const authTrackId = createPaymentTrackId("AUTH");
+        const registration = await registerThePayOneCard({
+          trackId: authTrackId,
+          payerName: body.payerName,
+          payerEmail: body.payerEmail,
+          payerTel: body.payerTel,
+          cardNumber: body.cardNumber,
+          expiry: `${body.expiryYear}${body.expiryMonth}`,
+          authDob: body.identityNumber,
+          authPw: body.cardPassword,
+          billingDay,
+          productName: orderName,
+        }, paymentCredentialScope);
+        issuedCardId = registration.cardId;
+        registrationTransactionId = registration.providerTransactionId;
+        chargeCardId = registration.cardId;
+        if (
+          registration.trackId !== authTrackId
+          || registration.amount !== 0
+          || registration.billingDay !== billingDay
+        ) {
+          throw new ThePayOneError(
+            "카드 등록 결과가 요청 정보와 일치하지 않습니다.",
+            "REGISTRATION_MISMATCH",
+            null,
+            true,
+          );
+        }
+        const encrypted = encryptCardToken(registration.cardId, paymentMethodId!);
+        const encryptedPhone = encryptBillingPhone(body.payerTel, paymentMethodId!);
+        const masked = `${body.cardNumber.slice(0, 6)}${"*".repeat(Math.max(3, body.cardNumber.length - 10))}${body.cardNumber.slice(-4)}`;
+        await db`
+          insert into shorts_mvp.billing_payment_methods (
+            id,user_id,provider,billing_key_ciphertext,billing_key_iv,billing_key_tag,billing_key_hash,
+            registration_order_id,registration_transaction_id,registration_result_code,
+            provider_merchant_id,provider_terminal_id,provider_schedule_status,
+            payer_tel_ciphertext,payer_tel_iv,payer_tel_tag,
+            issuer_name,card_number_masked,card_last4,card_type,status
+          ) values (
+            ${paymentMethodId},${session.userId},'thepayone',${encrypted.ciphertext},${encrypted.iv},${encrypted.tag},
+            ${cardTokenHash(registration.cardId)},${authTrackId},${registration.providerTransactionId},${registration.resultCode},
+            ${merchantId},${expectedTerminalId},${billingCycle === "monthly" ? "active" : "none"},
+            ${encryptedPhone.ciphertext},${encryptedPhone.iv},${encryptedPhone.tag},
+            ${resolveStoredCardIssuer({
+              issuer: registration.issuer,
+              acquirer: registration.acquirer,
+              cardNumberMasked: body.cardNumber,
+            })},${masked},${registration.last4},${registration.cardType},'active'
+          )
+        `;
       }
-      const encrypted = encryptCardToken(registration.cardId, paymentMethodId);
-      const encryptedPhone = encryptBillingPhone(body.payerTel, paymentMethodId);
-      const masked = `${body.cardNumber.slice(0, 6)}${"*".repeat(Math.max(3, body.cardNumber.length - 10))}${body.cardNumber.slice(-4)}`;
+    }
+    if (!isManualPackage) {
       await db`
-        insert into shorts_mvp.billing_payment_methods (
-          id,user_id,provider,billing_key_ciphertext,billing_key_iv,billing_key_tag,billing_key_hash,
-          registration_order_id,registration_transaction_id,registration_result_code,
-          provider_merchant_id,provider_terminal_id,provider_schedule_status,
-          payer_tel_ciphertext,payer_tel_iv,payer_tel_tag,
-          issuer_name,card_number_masked,card_last4,card_type,status
-        ) values (
-          ${paymentMethodId},${session.userId},'thepayone',${encrypted.ciphertext},${encrypted.iv},${encrypted.tag},
-          ${cardTokenHash(registration.cardId)},${authTrackId},${registration.providerTransactionId},${registration.resultCode},
-          ${merchantId},${expectedTerminalId},${billingCycle === "monthly" ? "active" : "none"},
-          ${encryptedPhone.ciphertext},${encryptedPhone.iv},${encryptedPhone.tag},
-          ${resolveStoredCardIssuer({
-            issuer: registration.issuer,
-            acquirer: registration.acquirer,
-            cardNumberMasked: body.cardNumber,
-          })},${masked},${registration.last4},${registration.cardType},'active'
-        )
+        update shorts_mvp.billing_orders
+        set payment_method_id=${paymentMethodId},provider_card_id_hash=${cardTokenHash(chargeCardId)}
+        where id=${order.id} and status='processing'
       `;
     }
-    await db`
-      update shorts_mvp.billing_orders
-      set payment_method_id=${paymentMethodId},provider_card_id_hash=${cardTokenHash(chargeCardId)}
-      where id=${order.id} and status='processing'
-    `;
 
     if (!chargeNow) {
       const oldPaused = await pauseOldSchedule(oldMethod);
@@ -869,30 +975,101 @@ export async function POST(request: Request) {
     const paymentDescription = pricingV2Plan?.kind === "package"
       ? `${plan.prepaidMonths}개월 패키지 단건 결제`
       : billingCycle === "yearly" ? "연간 이용권 선결제" : "월간 구독 첫 결제";
-    const payment = await chargeThePayOneCard({
-      trackId: order.orderId,
-      cardId: chargeCardId,
-      authDob: body.identityNumber,
-      authPw: body.cardPassword,
-      amount: chargeAmount,
-      payerName,
-      payerEmail,
-      payerTel,
-      billingDay,
-      installmentMonths: 0,
-      productName: orderName,
-      description: paymentDescription,
-      referenceId: order.id,
-    }, paymentCredentialScope);
+    const payment = isManualPackage
+      ? await chargeThePayOneManualCard({
+        trackId: order.orderId,
+        cardNumber: manualPackageCard!.cardNumber,
+        expiry: manualPackageCard!.expiry,
+        authDob: manualPackageCard!.authDob,
+        authPw: manualPackageCard!.authPw,
+        amount: chargeAmount,
+        payerName: manualPackageCard!.payerName,
+        payerEmail: manualPackageCard!.payerEmail,
+        payerTel: manualPackageCard!.payerTel,
+        installmentMonths: requestedInstallmentMonths,
+        productName: orderName,
+        description: paymentDescription,
+        referenceId: order.id,
+      }, "manual")
+      : await chargeThePayOneCard({
+        trackId: order.orderId,
+        cardId: chargeCardId,
+        authDob: body.identityNumber,
+        authPw: body.cardPassword,
+        amount: chargeAmount,
+        payerName,
+        payerEmail,
+        payerTel,
+        billingDay,
+        installmentMonths: requestedInstallmentMonths,
+        productName: orderName,
+        description: paymentDescription,
+        referenceId: order.id,
+      }, paymentCredentialScope);
     providerPaymentCompleted = true;
-    if (
-      payment.trackId !== order.orderId
-      || payment.amount !== chargeAmount
-      || payment.cardId !== chargeCardId
-      || payment.terminalId !== expectedTerminalId
-      || payment.installmentMonths !== 0
-    ) {
-      throw new ThePayOneError("결제 승인 결과가 주문 정보와 일치하지 않습니다.", "PAYMENT_MISMATCH", null, true);
+    const installmentCardTypeRejected = (
+      isManualPackage
+      && !thePayOneCardTypeAllowsInstallment(
+        payment.cardType,
+        requestedInstallmentMonths,
+      )
+    );
+    const paymentMismatchFields = [
+      payment.trackId !== order.orderId ? "trackId" : null,
+      payment.amount !== chargeAmount ? "amount" : null,
+      (!isManualPackage && payment.cardId !== chargeCardId) ? "cardId" : null,
+      payment.terminalId !== expectedTerminalId ? "terminalId" : null,
+      (
+        isManualPackage
+        && !installmentResponseMatchesSelection({
+          requestedMonths: requestedInstallmentMonths,
+          responseMonths: payment.installmentMonths,
+          requestedIssuer: requestedInstallmentIssuer,
+          responseIssuer: payment.issuer,
+          responseAcquirer: payment.acquirer,
+        })
+      ) ? "installmentSelection" : null,
+      (
+        !isManualPackage
+        && payment.installmentMonths !== requestedInstallmentMonths
+      ) ? "installmentMonths" : null,
+      installmentCardTypeRejected ? "cardType" : null,
+    ].filter((field): field is string => Boolean(field));
+    const installmentTermsSnapshot = isManualPackage
+      ? {
+        ...installment.snapshot,
+        declaredCardKind,
+        providerResponseIssuer: payment.issuer,
+        providerResponseAcquirer: payment.acquirer,
+        providerResponseCardType: payment.cardType,
+        providerResponseCardKindMatchesSelection: declaredCardKind
+          ? thePayOneCardTypeMatchesDeclaredKind(payment.cardType, declaredCardKind)
+          : null,
+        providerResponseInstallmentMonths: payment.installmentMonths,
+      }
+      : installment.snapshot;
+    if (paymentMismatchFields.length) {
+      if (isManualPackage) {
+        await db`
+          update shorts_mvp.billing_orders
+          set provider_transaction_id=${payment.providerTransactionId},
+            provider_auth_code=${payment.authCode},
+            provider_terminal_id=${payment.terminalId},
+            provider_transaction_day=${kstTransactionDay(payment.approvedAt)},
+            installment_terms_snapshot=${db.json(installmentTermsSnapshot as never)}
+          where id=${order.id} and status='processing'
+        `;
+      }
+      throw new ThePayOneError(
+        installmentCardTypeRejected
+          ? "입력한 카드가 체크·선불카드로 확인되어 할부 결제를 확정할 수 없습니다."
+          : "결제 승인 결과가 주문 정보와 일치하지 않습니다.",
+        installmentCardTypeRejected
+          ? "INSTALLMENT_CARD_TYPE_NOT_CREDIT"
+          : "PAYMENT_MISMATCH",
+        `불일치: ${paymentMismatchFields.join(",")}`,
+        true,
+      );
     }
     let replacementRefundTransactionId: string | null = null;
     if (needsCurrentPaymentFullRefund && currentPaymentToRefund) {
@@ -956,22 +1133,26 @@ export async function POST(request: Request) {
             and proration_refund_status='pending'
         `;
       } catch (error) {
-        await changeThePayOneCardStatus(
-          chargeCardId,
-          "중지",
-          createPaymentTrackId("AUDT"),
-          paymentCredentialScope,
-        ).catch(() => undefined);
+        if (chargeCardId) {
+          await changeThePayOneCardStatus(
+            chargeCardId,
+            "중지",
+            createPaymentTrackId("AUDT"),
+            paymentCredentialScope,
+          ).catch(() => undefined);
+        }
         await db`
           update shorts_mvp.billing_orders
           set proration_refund_status='manual_review',refund_status='manual_review'
           where id=${currentPaymentToRefund.id} and proration_refund_status='pending'
         `.catch(() => undefined);
-        await db`
-          update shorts_mvp.billing_payment_methods
-          set status='manual_review',provider_schedule_status='manual_review'
-          where id=${paymentMethodId}
-        `.catch(() => undefined);
+        if (paymentMethodId) {
+          await db`
+            update shorts_mvp.billing_payment_methods
+            set status='manual_review',provider_schedule_status='manual_review'
+            where id=${paymentMethodId}
+          `.catch(() => undefined);
+        }
         throw error;
       }
     }
@@ -1098,7 +1279,8 @@ export async function POST(request: Request) {
             billing_review_status=${scheduleReview ? "manual_review" : "clear"},
             billing_review_reason=${scheduleReview ? "OLD_SCHEDULE_PAUSE_FAILED" : null},
             current_period_start=${immediateProration ? current.currentPeriodStart : periodStart},
-            current_period_end=${periodEnd},next_charge_at=${periodEnd},next_retry_at=null,
+            current_period_end=${periodEnd},
+            next_charge_at=${isManualPackage ? null : periodEnd},next_retry_at=null,
             grace_ends_at=null,retry_count=0,cancel_at_period_end=false,canceled_at=null,
             scheduled_plan_code=null,scheduled_billing_cycle=null,
             billing_anchor_day=${monthlyPeriodReset
@@ -1218,9 +1400,10 @@ export async function POST(request: Request) {
         set subscription_id=${subscriptionId},status='succeeded',
           provider_transaction_id=${payment.providerTransactionId},provider_status='paid',
           provider_terminal_id=${payment.terminalId},provider_auth_code=${payment.authCode},
-          provider_card_id_hash=${cardTokenHash(payment.cardId)},
+          provider_card_id_hash=${isManualPackage ? null : cardTokenHash(payment.cardId)},
           provider_transaction_day=${kstTransactionDay(approvedAt)},
           installment_months=${payment.installmentMonths},
+          installment_terms_snapshot=${tx.json(installmentTermsSnapshot as never)},
           approved_at=${approvedAt},failure_code=null,failure_message=null
         where id=${order.id}
       `;
@@ -1295,11 +1478,11 @@ export async function POST(request: Request) {
           payer_tel_ciphertext=null,payer_tel_iv=null,payer_tel_tag=null,revoked_at=now()
         where id=${oldMethod.id}
       `;
-      if (paymentCredentialScope === "default") {
+      if (paymentCredentialScope === "default" && paymentMethodId) {
         await setDefaultPaymentMethod(
           tx,
           session.userId,
-          paymentMethodId!,
+          paymentMethodId,
         );
       }
       await syncCachedPlan(tx, session.userId, plan.code);
@@ -1319,7 +1502,7 @@ export async function POST(request: Request) {
         processingBusinessDays: changeQuote?.refundMode === "manual_partial" ? 3 : 0,
       },
       installmentMonths: Number(order.installmentMonths || 0),
-      nextChargeAt: periodEnd.toISOString(),
+      nextChargeAt: isManualPackage ? null : periodEnd.toISOString(),
       manualReview: scheduleReview,
     });
   } catch (error) {
@@ -1360,7 +1543,11 @@ export async function POST(request: Request) {
         diagnostic: error.diagnostic,
       });
     }
-    if (issuedCardId && paymentMethodId && !unknown) {
+    if (
+      issuedCardId
+      && paymentMethodId
+      && (!unknown || paymentCredentialScope === "manual")
+    ) {
       try {
         await revokeThePayOneCard(
           issuedCardId,
@@ -1391,6 +1578,23 @@ export async function POST(request: Request) {
         set status='revoke_failed'
         where id=${cardVerification.id} and status='consuming'
       `.catch(() => undefined);
+    }
+    if (unknown && billingOrderId) {
+      return NextResponse.json({
+        ok: false,
+        checkoutId: billingOrderId,
+        manualReview: true,
+      }, { status: 202 });
+    }
+    const providerInstallmentMaxMonths = error instanceof ThePayOneError
+      ? thePayOneInstallmentMaxMonths(error.diagnostic)
+      : null;
+    if (providerInstallmentMaxMonths !== null) {
+      return NextResponse.json({
+        detail: `해당 카드는 최대 ${providerInstallmentMaxMonths}개월 할부까지 지원합니다. 할부 개월수를 다시 선택해 주세요.`,
+        code: "INSTALLMENT_LIMIT_EXCEEDED",
+        maxInstallmentMonths: providerInstallmentMaxMonths,
+      }, { status: 400 });
     }
     if (error instanceof ThePayOneError && failureMessage) {
       return apiError(

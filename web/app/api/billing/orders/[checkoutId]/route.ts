@@ -21,12 +21,14 @@ export async function GET(
       select o.id,o.kind,o.product_code,o.order_name,o.billing_cycle,o.status,
         o.failure_code,o.approved_at,o.amount_krw,
         o.installment_months,o.proration_credit_krw,
+        s.next_quota_at,s.next_charge_at,
         coalesce(r.status,
           case when o.proration_refund_status='succeeded' and o.proration_credit_krw > 0
             then 'completed' else null end
         ) as upgrade_refund_status,
         coalesce(r.refund_amount_krw,o.proration_credit_krw,0)::integer as refund_amount_krw
       from shorts_mvp.billing_orders o
+      left join shorts_mvp.user_subscriptions s on s.id=o.subscription_id
       left join shorts_mvp.subscription_upgrade_refunds r on r.upgrade_order_id=o.id
       where o.id=${id} and o.user_id=${session.userId} limit 1
     `;
@@ -43,6 +45,8 @@ export async function GET(
       approvedAt: order.approvedAt?.toISOString() || null,
       chargedAmountKrw: Number(order.amountKrw || 0),
       installmentMonths: Number(order.installmentMonths || 0),
+      nextQuotaAt: order.nextQuotaAt?.toISOString() || null,
+      nextChargeAt: order.nextChargeAt?.toISOString() || null,
       refund: {
         mode: order.upgradeRefundStatus
           ? "manual_partial"

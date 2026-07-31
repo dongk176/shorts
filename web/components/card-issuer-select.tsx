@@ -2,27 +2,26 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
-function installmentLabel(months: number) {
-  return months === 0 ? "일시불" : `${months}개월 할부`;
-}
+export type CardIssuerOption = {
+  value: string;
+  label: string;
+};
 
-export function InstallmentSelect({
+export function CardIssuerSelect({
   value,
-  months,
+  options,
   onChange,
-  optionDetails = {},
-  highlightedOptions = [],
+  autoFocus = false,
+  attention = false,
   disabled = false,
-  disabledLabel,
   className = "",
 }: {
-  value: number;
-  months: number[];
-  onChange: (months: number) => void;
-  optionDetails?: Record<number, string>;
-  highlightedOptions?: number[];
+  value: string;
+  options: CardIssuerOption[];
+  onChange: (issuerCode: string) => void;
+  autoFocus?: boolean;
+  attention?: boolean;
   disabled?: boolean;
-  disabledLabel?: string;
   className?: string;
 }) {
   const listboxId = useId();
@@ -30,7 +29,7 @@ export function InstallmentSelect({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [open, setOpen] = useState(false);
-  const options = [0, ...new Set(months)].sort((left, right) => left - right);
+  const selectedOption = options.find((option) => option.value === value);
 
   useEffect(() => {
     if (!open) return;
@@ -41,13 +40,19 @@ export function InstallmentSelect({
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
   }, [open]);
 
+  useEffect(() => {
+    if (!autoFocus || disabled || options.length === 0) return;
+    const frame = window.requestAnimationFrame(() => triggerRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [autoFocus, disabled, options.length]);
+
   function openAndFocus(optionIndex: number) {
-    if (disabled) return;
+    if (disabled || options.length === 0) return;
     setOpen(true);
     window.requestAnimationFrame(() => optionRefs.current[optionIndex]?.focus());
   }
 
-  function select(nextValue: number) {
+  function select(nextValue: string) {
     onChange(nextValue);
     setOpen(false);
     triggerRef.current?.focus();
@@ -56,7 +61,7 @@ export function InstallmentSelect({
   return (
     <div
       ref={rootRef}
-      className={`relative ${className}`}
+      className={`relative ${open ? "z-[80]" : "z-0"} ${className}`}
       onKeyDown={(event) => {
         if (event.key === "Escape" && open) {
           event.preventDefault();
@@ -69,17 +74,17 @@ export function InstallmentSelect({
         <div
           id={listboxId}
           role="listbox"
-          aria-label="결제 방식"
-          className="absolute inset-x-0 bottom-[calc(100%+0.5rem)] z-50 max-h-60 overflow-y-auto rounded-2xl border border-white/12 bg-[#25282a]/98 p-1.5 shadow-[0_20px_50px_rgba(0,0,0,.55)] backdrop-blur-xl"
+          aria-label="카드사"
+          className="absolute isolate inset-x-0 top-[calc(100%+0.5rem)] z-[90] max-h-64 overflow-y-auto rounded-2xl border border-white/12 bg-[#25282a] p-1.5 shadow-[0_20px_50px_rgba(0,0,0,.72)] ring-1 ring-black/50 sm:bottom-[calc(100%+0.5rem)] sm:top-auto sm:shadow-[0_-20px_50px_rgba(0,0,0,.72)]"
         >
           {options.map((option, index) => (
             <button
-              key={option}
+              key={option.value}
               ref={(element) => { optionRefs.current[index] = element; }}
               type="button"
               role="option"
-              aria-selected={option === value}
-              onClick={() => select(option)}
+              aria-selected={option.value === value}
+              onClick={() => select(option.value)}
               onKeyDown={(event) => {
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                   event.preventDefault();
@@ -94,29 +99,27 @@ export function InstallmentSelect({
                   optionRefs.current[options.length - 1]?.focus();
                 }
               }}
-              className={`flex min-h-10 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-bold transition ${
-                option === value
+              className={`flex min-h-10 w-full items-center justify-between rounded-xl px-3 text-left text-sm font-bold transition ${
+                option.value === value
                   ? "bg-[#ff715e]/14 text-[#ffad9f]"
                   : "text-neutral-200 hover:bg-white/[.07] hover:text-white"
               }`}
             >
-              <span className="shrink-0">{installmentLabel(option)}</span>
-              <span className="ml-auto flex min-w-0 items-center justify-end gap-1.5">
-                {optionDetails[option] && (
-                  <small className={`shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-right text-xs font-bold ${
-                    highlightedOptions.includes(option)
-                      ? "bg-emerald-300/10 text-emerald-200"
-                      : "text-neutral-300"
-                  }`}>
-                    {optionDetails[option]}
-                  </small>
-                )}
-                {option === value && (
-                  <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m5 10 3 3 7-7" />
-                  </svg>
-                )}
-              </span>
+              <span>{option.label}</span>
+              {option.value === value && (
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 20 20"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m5 10 3 3 7-7" />
+                </svg>
+              )}
             </button>
           ))}
         </div>
@@ -124,7 +127,8 @@ export function InstallmentSelect({
       <button
         ref={triggerRef}
         type="button"
-        disabled={disabled}
+        data-card-issuer-trigger
+        disabled={disabled || options.length === 0}
         aria-haspopup="listbox"
         aria-controls={listboxId}
         aria-expanded={open}
@@ -132,45 +136,39 @@ export function InstallmentSelect({
         onKeyDown={(event) => {
           if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
             event.preventDefault();
-            const selectedIndex = Math.max(0, options.indexOf(value));
+            const selectedIndex = Math.max(
+              0,
+              options.findIndex((option) => option.value === value),
+            );
             openAndFocus(selectedIndex);
           }
         }}
         className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border px-3.5 text-sm font-black outline-none transition ${
-          disabled
+          disabled || options.length === 0
             ? "cursor-not-allowed border-white/[.06] bg-[#171a1c] text-neutral-600"
-            : open
+            : attention && !value
+              ? "border-[#ff9b8d] bg-[#ff715e]/10 text-white shadow-[0_0_0_3px_rgba(255,113,94,.15),0_0_20px_rgba(255,113,94,.28)] motion-safe:animate-pulse"
+              : open
               ? "border-[#ff8f7f]/60 bg-[#292c2e] text-white shadow-[0_0_0_3px_rgba(255,113,94,.1)]"
               : "border-white/10 bg-[#202325] text-white hover:border-white/20 hover:bg-[#25282a]"
         }`}
       >
-        <span className="min-w-0 shrink-0 truncate text-left">
-          {disabled && disabledLabel ? disabledLabel : installmentLabel(value)}
-        </span>
-        <span className="ml-auto flex min-w-0 items-center justify-end gap-1.5">
-          {!disabled && optionDetails[value] && (
-            <small className={`shrink-0 whitespace-nowrap rounded-full px-2 py-1 text-right text-xs font-bold ${
-              highlightedOptions.includes(value)
-                ? "bg-emerald-300/10 text-emerald-200"
-                : "text-neutral-300"
-            }`}>
-              {optionDetails[value]}
-            </small>
-          )}
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/[.06] text-neutral-300">
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 20 20"
-              className={`h-4 w-4 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.9"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="m6 8 4 4 4-4" />
-            </svg>
-          </span>
+        <span>{selectedOption?.label || "카드사를 선택해 주세요"}</span>
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/[.06] text-neutral-300">
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 20 20"
+            className={`h-4 w-4 transition-transform duration-200 ${
+              open ? "rotate-180 sm:rotate-0" : "sm:rotate-180"
+            }`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m6 8 4 4 4-4" />
+          </svg>
         </span>
       </button>
     </div>

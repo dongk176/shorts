@@ -3,14 +3,44 @@
 import type { BillingCycle, PaidPlanCode } from "@/lib/contracts";
 import { currentClientLocale, localizeApiError } from "@/lib/i18n/errors";
 
+export class BillingClientError extends Error {
+  constructor(
+    message: string,
+    readonly code: string | null,
+    readonly status: number,
+    readonly maxInstallmentMonths: number | null = null,
+  ) {
+    super(message);
+    this.name = "BillingClientError";
+  }
+}
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const value = await response.json().catch(() => ({})) as { detail?: string; code?: string } & T;
-  if (!response.ok) throw new Error(localizeApiError(value, response.status, currentClientLocale()));
+  const value = await response.json().catch(() => ({})) as {
+    detail?: string;
+    code?: string;
+    maxInstallmentMonths?: number;
+  } & T;
+  if (!response.ok) {
+    const maxInstallmentMonths = (
+      Number.isSafeInteger(value.maxInstallmentMonths)
+      && Number(value.maxInstallmentMonths) >= 2
+      && Number(value.maxInstallmentMonths) <= 36
+    )
+      ? Number(value.maxInstallmentMonths)
+      : null;
+    throw new BillingClientError(
+      localizeApiError(value, response.status, currentClientLocale()),
+      value.code || null,
+      response.status,
+      maxInstallmentMonths,
+    );
+  }
   return value;
 }
 
@@ -34,6 +64,52 @@ export async function purchaseAddonWithSavedCard(input: {
     cardPassword: input.cardPassword,
     consent: true,
     ...(input.payerTel ? { payerTel: input.payerTel } : {}),
+  });
+}
+
+export async function purchaseAddonWithManualCard(input: {
+  requestId: string;
+  addonCode: string;
+  expectedChargeAmountKrw: number;
+  payerName: string;
+  payerEmail: string;
+  payerTel: string;
+  cardNumber: string;
+  expiryYear: string;
+  expiryMonth: string;
+  identityNumber: string;
+  cardPassword: string;
+  declaredCardKind: "credit" | "debit_prepaid";
+  installmentMonths: number;
+  installmentCampaignId: string | null;
+  installmentIssuerCode: string | null;
+}) {
+  return postJson<{
+    ok: boolean;
+    checkoutId: string;
+    orderId?: string;
+    addedMinutes?: number;
+    chargedAmountKrw?: number;
+    installmentMonths?: number;
+    manualReview?: boolean;
+  }>("/api/billing/addons/purchase", {
+    paymentInputMode: "manual_direct",
+    addonCode: input.addonCode,
+    requestId: input.requestId,
+    expectedChargeAmountKrw: input.expectedChargeAmountKrw,
+    payerName: input.payerName,
+    payerEmail: input.payerEmail,
+    payerTel: input.payerTel,
+    cardNumber: input.cardNumber,
+    expiryYear: input.expiryYear,
+    expiryMonth: input.expiryMonth,
+    identityNumber: input.identityNumber,
+    cardPassword: input.cardPassword,
+    declaredCardKind: input.declaredCardKind,
+    consent: true,
+    installmentMonths: input.installmentMonths,
+    installmentCampaignId: input.installmentCampaignId,
+    installmentIssuerCode: input.installmentIssuerCode,
   });
 }
 

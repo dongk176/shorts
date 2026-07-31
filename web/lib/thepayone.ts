@@ -32,13 +32,38 @@ export class ThePayOneError extends Error {
   }
 }
 
+export function thePayOneInstallmentMaxMonths(
+  diagnostic: string | null | undefined,
+) {
+  if (!diagnostic) return null;
+  const normalized = diagnostic.normalize("NFKC").replace(/\s+/g, " ");
+  const matched = normalized.match(
+    /(?:할부\s*기간|할부\s*개월(?:\s*수)?)\s*(?:은|는)?\s*(\d{1,2})\s*개월\s*이하/,
+  );
+  if (!matched) return null;
+  const months = Number(matched[1]);
+  return Number.isSafeInteger(months) && months >= 2 && months <= 36
+    ? months
+    : null;
+}
+
 type ThePayOneConfig = {
   apiBaseUrl: string;
   payKey: string;
   encryptionKey: Buffer;
 };
 
-export type ThePayOneCredentialScope = "default" | "package";
+export type ThePayOneCredentialScope = "default" | "manual" | "package";
+export type ThePayOnePaymentMode = "legacy" | "manual" | "disabled";
+
+export function thePayOneCredentialScopesMatch(
+  left: ThePayOneCredentialScope,
+  right: ThePayOneCredentialScope,
+) {
+  if (left === right) return true;
+  return (left === "manual" || left === "package")
+    && (right === "manual" || right === "package");
+}
 
 export type CardRegistrationRequest = {
   trackId: string;
@@ -89,6 +114,22 @@ export type ThePayOneCardChargeRequest = {
   referenceId?: string;
 };
 
+export type ThePayOneManualCardChargeRequest = {
+  trackId: string;
+  cardNumber: string;
+  expiry: string;
+  authDob: string;
+  authPw: string;
+  amount: number;
+  payerName: string;
+  payerEmail: string;
+  payerTel: string;
+  installmentMonths?: number;
+  productName: string;
+  description?: string;
+  referenceId?: string;
+};
+
 export type ThePayOneCardChargeResult = {
   resultCode: string;
   providerTransactionId: string;
@@ -104,6 +145,43 @@ export type ThePayOneCardChargeResult = {
   acquirer: string | null;
   approvedAt: Date;
 };
+
+function normalizedCardType(value: string | null | undefined) {
+  return value?.normalize("NFKC").trim().toLocaleLowerCase("ko-KR")
+    .replace(/[\s_-]+/g, "") || "";
+}
+
+export type ThePayOneDeclaredCardKind = "credit" | "debit_prepaid";
+
+export function thePayOneCardTypeMatchesDeclaredKind(
+  cardType: string | null | undefined,
+  declaredCardKind: ThePayOneDeclaredCardKind,
+) {
+  const normalized = normalizedCardType(cardType);
+  if (declaredCardKind === "credit") {
+    return ["신용", "신용카드", "credit", "creditcard"].includes(normalized);
+  }
+  return [
+    "체크",
+    "체크카드",
+    "직불",
+    "직불카드",
+    "debit",
+    "debitcard",
+    "선불",
+    "선불카드",
+    "prepaid",
+    "prepaidcard",
+  ].includes(normalized);
+}
+
+export function thePayOneCardTypeAllowsInstallment(
+  cardType: string | null | undefined,
+  installmentMonths: number,
+) {
+  if (installmentMonths === 0) return true;
+  return thePayOneCardTypeMatchesDeclaredKind(cardType, "credit");
+}
 
 export type ThePayOneRefundRequest = {
   trackId: string;
@@ -232,9 +310,28 @@ export function thePayOnePackageBillingEnabled() {
   return process.env.THEPAYONE_PACKAGE_BILLING_ENABLED?.trim().toLowerCase() === "true";
 }
 
+function thePayOnePaymentMode(
+  name: "THEPAYONE_PACKAGE_PAYMENT_MODE" | "THEPAYONE_ADDON_PAYMENT_MODE",
+): ThePayOnePaymentMode {
+  const value = process.env[name]?.trim().toLowerCase();
+  return value === "manual" || value === "disabled" || value === "legacy"
+    ? value
+    : "legacy";
+}
+
+export function thePayOnePackagePaymentMode() {
+  return thePayOnePaymentMode("THEPAYONE_PACKAGE_PAYMENT_MODE");
+}
+
+export function thePayOneAddonPaymentMode() {
+  return thePayOnePaymentMode("THEPAYONE_ADDON_PAYMENT_MODE");
+}
+
 export function thePayOneCredentialScopeForPackage(isPackage: boolean) {
-  return isPackage && thePayOnePackageBillingEnabled()
-    ? "package" as const
+  return isPackage
+    && thePayOnePackagePaymentMode() === "manual"
+    && thePayOnePackageBillingEnabled()
+    ? "manual" as const
     : "default" as const;
 }
 
@@ -242,13 +339,13 @@ function credentialEnvName(
   scope: ThePayOneCredentialScope,
   suffix: "MID" | "TERMINAL_ID" | "PAY_KEY",
 ) {
-  return scope === "package"
+  return scope === "package" || scope === "manual"
     ? `THEPAYONE_PACKAGE_${suffix}`
     : `THEPAYONE_${suffix}`;
 }
 
 export function thePayOneMerchantId(scope: ThePayOneCredentialScope = "default") {
-  if (scope === "package") {
+  if (scope === "package" || scope === "manual") {
     return process.env.THEPAYONE_PACKAGE_MID?.trim() || requiredEnv("THEPAYONE_MID");
   }
   return requiredEnv(credentialEnvName(scope, "MID"));
@@ -269,9 +366,9 @@ export function thePayOneCredentialScopeForMerchantTerminal(
   const defaultMatches = merchantId === thePayOneMerchantId()
     && terminalId === thePayOneTerminalId();
   if (defaultMatches) return "default";
-  const packageMatches = merchantId === thePayOneMerchantId("package")
-    && terminalId === thePayOneTerminalId("package");
-  if (packageMatches) return "package";
+  const manualMatches = merchantId === thePayOneMerchantId("manual")
+    && terminalId === thePayOneTerminalId("manual");
+  if (manualMatches) return "manual";
   throw new PaymentConfigurationError("등록되지 않은 더페이원 가맹점 또는 터미널입니다.");
 }
 
@@ -493,6 +590,11 @@ export async function registerThePayOneCard(
   input: CardRegistrationRequest,
   scope: ThePayOneCredentialScope = "default",
 ): Promise<CardRegistrationResult> {
+  if (scope === "package" || scope === "manual") {
+    throw new PaymentConfigurationError(
+      "일회성 수기결제 터미널에서는 cardId를 발급하지 않습니다.",
+    );
+  }
   const amount = 0;
   const billingDay = input.billingDay ?? "00";
   if (!validBillingDay(billingDay)) {
@@ -682,6 +784,57 @@ export async function chargeThePayOneCard(
       }],
       metadata: {
         recurring: "pay",
+        cardAuth: "true",
+        authDob: input.authDob,
+        authPw: input.authPw,
+      },
+    },
+  }, scope);
+  return parseCardChargeResult(root, resultCode, installmentMonths);
+}
+
+export async function chargeThePayOneManualCard(
+  input: ThePayOneManualCardChargeRequest,
+  scope: ThePayOneCredentialScope = "manual",
+): Promise<ThePayOneCardChargeResult> {
+  if (scope !== "manual" && scope !== "package") {
+    throw new PaymentConfigurationError(
+      "수기결제 직접 승인은 일회성 수기결제 터미널에서만 실행할 수 있습니다.",
+    );
+  }
+  const installmentMonths = input.installmentMonths ?? 0;
+  validateChargeRequest(input.amount, installmentMonths);
+  if (
+    !isSupportedCardNumber(input.cardNumber)
+    || !/^\d{4}$/.test(input.expiry)
+    || !/^(\d{6}|\d{10})$/.test(input.authDob)
+    || !/^\d{2}$/.test(input.authPw)
+  ) {
+    throw new ThePayOneError("수기결제 카드 인증값이 올바르지 않습니다.", "INVALID_REQUEST");
+  }
+  const productName = safeProductName(input.productName);
+  const { root, resultCode } = await thePayOnePost("/api/pay", {
+    pay: {
+      trxType: "ONTR",
+      trackId: input.trackId,
+      amount: input.amount,
+      payerName: input.payerName,
+      payerEmail: input.payerEmail,
+      payerTel: input.payerTel,
+      udf1: input.referenceId || input.trackId,
+      udf2: "00",
+      card: {
+        number: normalizeCardNumber(input.cardNumber),
+        expiry: input.expiry,
+        installment: String(installmentMonths).padStart(2, "0"),
+      },
+      products: [{
+        name: productName,
+        qty: "1",
+        price: String(input.amount),
+        desc: [...(input.description || "Easy Cut 수기결제")].slice(0, 50).join(""),
+      }],
+      metadata: {
         cardAuth: "true",
         authDob: input.authDob,
         authPw: input.authPw,

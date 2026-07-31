@@ -12,7 +12,6 @@ import { billingCycles, paidPlanCodes } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
 import {
-  canStackPricingV2Package,
   getPricingV2Plan,
   isPricingV2PlanCode,
 } from "@/lib/pricing-v2";
@@ -27,6 +26,8 @@ import {
   PaymentConfigurationError,
   registerThePayOneCard,
   thePayOneCredentialScopeForPackage,
+  thePayOneMerchantId,
+  thePayOneTerminalId,
   ThePayOneError,
 } from "@/lib/thepayone";
 
@@ -128,6 +129,18 @@ export async function POST(request: Request) {
     if (!product || product.billingCycle !== input.billingCycle) {
       throw new HttpError(409, "선택한 상품의 결제 방식을 확인해 주세요.");
     }
+    if (product.kind === "package") {
+      throw new HttpError(
+        409,
+        "패키지 수기결제는 카드를 등록하지 않고 최종 승인 요청에서 직접 처리합니다.",
+        "PACKAGE_MANUAL_DIRECT_REQUIRED",
+      );
+    }
+    const credentialScope = thePayOneCredentialScopeForPackage(
+      false,
+    );
+    const merchantId = thePayOneMerchantId(credentialScope);
+    const terminalId = thePayOneTerminalId(credentialScope);
 
     const session = await requireAuthenticatedMvpSession();
     userId = session.userId;
@@ -147,11 +160,7 @@ export async function POST(request: Request) {
       limit 1
     ` as unknown as CurrentSubscription[];
     const current = currentRows[0] || null;
-    if (
-      input.mode === "subscribe"
-      && current
-      && !(product.kind === "package" && canStackPricingV2Package(current.planCode, input.planCode))
-    ) {
+    if (input.mode === "subscribe" && current) {
       throw new HttpError(409, "이미 이용 중인 상품이 있습니다. 요금제 변경 절차를 이용해 주세요.");
     }
     if (input.mode === "change_subscription" && !current) {
@@ -168,7 +177,15 @@ export async function POST(request: Request) {
     if (existing) {
       const matchesCheckout = existing.mode === input.mode
         && existing.planCode === input.planCode
-        && existing.billingCycle === input.billingCycle;
+        && existing.billingCycle === input.billingCycle
+        && (
+          existing.providerCredentialScope === null
+          || (
+            existing.providerCredentialScope === credentialScope
+            && existing.providerMerchantId === merchantId
+            && existing.providerTerminalId === terminalId
+          )
+        );
       if (
         existing.status === "active"
         && existing.expiresAt > new Date()
@@ -194,11 +211,12 @@ export async function POST(request: Request) {
     const inserted = await db`
       insert into shorts_mvp.billing_card_verifications (
         id,user_id,request_id,mode,plan_code,billing_cycle,billing_day,
-        provider_order_id,status,expires_at
+        provider_order_id,provider_credential_scope,provider_merchant_id,
+        provider_terminal_id,status,expires_at
       ) values (
         ${verificationId},${session.userId},${input.requestId},${input.mode},
         ${input.planCode},${input.billingCycle},${billingDay},
-        ${providerOrderId},'pending',
+        ${providerOrderId},${credentialScope},${merchantId},${terminalId},'pending',
         clock_timestamp()+${BILLING_CARD_VERIFICATION_TTL_MINUTES}*interval '1 minute'
       )
       on conflict (request_id) do nothing
@@ -221,7 +239,7 @@ export async function POST(request: Request) {
         authPw: input.cardPassword,
         billingDay,
         productName: `${product.displayName} 카드 확인`,
-      }, thePayOneCredentialScopeForPackage(product.kind === "package"));
+      }, credentialScope);
     } catch (error) {
       await db`
         update shorts_mvp.billing_card_verifications

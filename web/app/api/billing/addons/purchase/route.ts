@@ -16,14 +16,28 @@ import {
   setDefaultPaymentMethod,
 } from "@/lib/default-payment-method";
 import { apiError, HttpError } from "@/lib/http";
+import {
+  installmentIssuerCodes,
+  installmentResponseMatchesSelection,
+  validateInstallmentSelection,
+} from "@/lib/installments";
+import {
+  assertLocalManualCheckoutAccess,
+  assertManualPaymentAvailable,
+  oneTimePaymentMode,
+} from "@/lib/manual-payment-routing";
 import { isPricingV2EarlyBirdCode } from "@/lib/pricing-v2";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
   assertThePayOneBillingEnabled,
   cardTokenHash,
   chargeThePayOneCard,
+  chargeThePayOneManualCard,
   decryptCardToken,
+  thePayOneCardTypeAllowsInstallment,
+  thePayOneCardTypeMatchesDeclaredKind,
   thePayOneCredentialScopeForMerchantTerminal,
+  thePayOneInstallmentMaxMonths,
   thePayOneMerchantId,
   thePayOneTerminalId,
   ThePayOneError,
@@ -32,7 +46,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const schema = z.object({
+const commonFields = {
   addonCode: z.enum([
     "minutes_50",
     "minutes_100",
@@ -43,6 +57,11 @@ const schema = z.object({
   ]),
   requestId: z.string().uuid(),
   expectedChargeAmountKrw: z.number().int().positive(),
+  consent: z.literal(true),
+};
+
+const legacySchema = z.object({
+  ...commonFields,
   payerTel: z.string()
     .transform((value) => value.replace(/[^0-9]/g, ""))
     .refine((value) => /^\d{10,11}$/.test(value))
@@ -51,8 +70,34 @@ const schema = z.object({
     .transform((value) => value.replace(/[^0-9]/g, ""))
     .refine((value) => /^(\d{6}|\d{10})$/.test(value)),
   cardPassword: z.string().refine((value) => /^\d{2}$/.test(value)),
-  consent: z.literal(true),
 }).strict();
+
+const manualSchema = z.object({
+  ...commonFields,
+  paymentInputMode: z.literal("manual_direct"),
+  payerName: z.string().trim().min(1).max(20),
+  payerEmail: z.string().trim().email().max(100),
+  payerTel: z.string()
+    .transform((value) => value.replace(/[^0-9]/g, ""))
+    .refine((value) => /^\d{10,11}$/.test(value)),
+  cardNumber: z.string()
+    .transform((value) => value.replace(/[^0-9]/g, ""))
+    .refine((value) => /^\d{13,19}$/.test(value)),
+  expiryYear: z.string().refine((value) => /^\d{2}$/.test(value)),
+  expiryMonth: z.string().refine((value) => /^(0[1-9]|1[0-2])$/.test(value)),
+  identityNumber: z.string()
+    .transform((value) => value.replace(/[^0-9]/g, ""))
+    .refine((value) => /^(\d{6}|\d{10})$/.test(value)),
+  cardPassword: z.string().refine((value) => /^\d{2}$/.test(value)),
+  declaredCardKind: z.enum(["credit", "debit_prepaid"]),
+  installmentMonths: z.number().int().min(0).max(36)
+    .refine((value) => value !== 1)
+    .default(0),
+  installmentCampaignId: z.string().uuid().nullable().optional(),
+  installmentIssuerCode: z.enum(installmentIssuerCodes).nullable().optional(),
+}).strict();
+
+const schema = z.union([manualSchema, legacySchema]);
 
 type StoredMethod = Record<string, unknown> & {
   id: string;
@@ -101,6 +146,7 @@ export async function POST(request: Request) {
         select id from shorts_mvp.billing_orders
         where user_id=${session.userId} and kind='addon' and product_code=${body.addonCode}
           and status in ('pending','processing','succeeded','manual_review')
+          and request_id<>${body.requestId}
         limit 1
       `;
       if (previous[0]) {
@@ -112,6 +158,254 @@ export async function POST(request: Request) {
         409,
         "확인한 뒤 결제 금액이 변경되었습니다. 금액을 다시 확인해 주세요.",
         "PAYMENT_QUOTE_CHANGED",
+      );
+    }
+    const addonPaymentMode = oneTimePaymentMode("addon");
+    if (addonPaymentMode === "disabled") {
+      throw new HttpError(
+        503,
+        "추가시간 결제가 현재 중지되어 있습니다.",
+        "ADDON_MANUAL_BILLING_DISABLED",
+      );
+    }
+    if (addonPaymentMode === "manual") {
+      if (!("paymentInputMode" in body) || body.paymentInputMode !== "manual_direct") {
+        throw new HttpError(
+          409,
+          "추가시간은 수기결제 카드 정보를 새로 입력해 주세요.",
+          "ADDON_MANUAL_CARD_REQUIRED",
+        );
+      }
+      const localManualCheckout = assertLocalManualCheckoutAccess(
+        request,
+        session,
+        { mutation: true },
+      );
+      await assertManualPaymentAvailable(db, "addon", {
+        localManualCheckout,
+      });
+      const requestedInstallmentMonths = body.installmentMonths;
+      const requestedInstallmentIssuer = body.installmentIssuerCode || null;
+      if (
+        body.declaredCardKind === "debit_prepaid"
+        && requestedInstallmentMonths > 0
+      ) {
+        throw new HttpError(
+          409,
+          "체크·선불카드는 일시불로만 결제할 수 있습니다.",
+          "DEBIT_CARD_INSTALLMENT_NOT_ALLOWED",
+        );
+      }
+      const installment = await validateInstallmentSelection(db, {
+        billingCycle: "yearly",
+        amountKrw: product.priceKrw,
+        installmentMonths: requestedInstallmentMonths,
+        campaignId: body.installmentCampaignId || null,
+        issuer: requestedInstallmentIssuer,
+        productKind: "addon",
+        credentialScope: "manual",
+        localManualCheckout,
+      });
+      const merchantId = thePayOneMerchantId("manual");
+      const terminalId = thePayOneTerminalId("manual");
+      const orderId = createBillingOrderId("ADD");
+      const orderName = `Easy Cut ${product.displayName}`;
+      const inserted = await db`
+        insert into shorts_mvp.billing_orders (
+          user_id,subscription_id,request_id,kind,product_code,amount_krw,
+          order_id,order_name,provider,provider_track_id,provider_merchant_id,
+          provider_terminal_id,installment_months,installment_campaign_id,
+          installment_terms_snapshot,checkout_expires_at
+        ) values (
+          ${session.userId},${subscription.id},${body.requestId},'addon',
+          ${product.code},${product.priceKrw},${orderId},${orderName},'thepayone',${orderId},
+          ${merchantId},${terminalId},${requestedInstallmentMonths},${installment.campaignId},
+          ${db.json({
+            ...installment.snapshot,
+            declaredCardKind: body.declaredCardKind,
+          } as never)},now()+interval '10 minutes'
+        ) on conflict (request_id) do nothing returning *
+      `;
+      const order = inserted[0] || (await db`
+        select * from shorts_mvp.billing_orders
+        where request_id=${body.requestId} and user_id=${session.userId} and kind='addon'
+        limit 1
+      `)[0];
+      if (!order) throw new HttpError(409, "추가시간 주문 ID가 이미 사용되었습니다.");
+      billingOrderId = order.id;
+      if (order.status === "succeeded") {
+        return NextResponse.json({
+          ok: true,
+          checkoutId: order.id,
+          orderId: order.orderId,
+          addedMinutes: Math.floor(product.seconds / 60),
+          chargedAmountKrw: Number(order.amountKrw),
+          installmentMonths: Number(order.installmentMonths || 0),
+          alreadyProcessed: true,
+        });
+      }
+      if (order.status === "manual_review") {
+        return NextResponse.json({
+          ok: false,
+          checkoutId: order.id,
+          manualReview: true,
+        }, { status: 202 });
+      }
+      if (
+        order.status !== "pending"
+        || !order.checkoutExpiresAt
+        || order.checkoutExpiresAt <= new Date()
+      ) {
+        throw new HttpError(409, "추가시간 주문이 만료되었거나 이미 처리되었습니다.");
+      }
+      const claimed = await db`
+        update shorts_mvp.billing_orders set status='processing'
+        where id=${order.id} and status='pending' returning id
+      `;
+      if (!claimed[0]) throw new HttpError(409, "다른 요청에서 결제를 처리하고 있습니다.");
+      claimedOrder = true;
+      const attempts = await db`
+        insert into shorts_mvp.billing_attempts (order_id,attempt_no,provider_order_id)
+        values (${order.id},1,${order.orderId})
+        on conflict (order_id,attempt_no) do nothing returning id
+      `;
+      billingAttemptId = attempts[0]?.id || null;
+      if (!billingAttemptId) throw new HttpError(409, "같은 결제가 이미 처리 중입니다.");
+
+      const payment = await chargeThePayOneManualCard({
+        trackId: order.orderId,
+        cardNumber: body.cardNumber,
+        expiry: `${body.expiryYear}${body.expiryMonth}`,
+        authDob: body.identityNumber,
+        authPw: body.cardPassword,
+        amount: Number(order.amountKrw),
+        payerName: body.payerName,
+        payerEmail: body.payerEmail,
+        payerTel: body.payerTel,
+        installmentMonths: requestedInstallmentMonths,
+        productName: orderName,
+        description: "추가 처리시간 90일 이용권",
+        referenceId: order.id,
+      }, "manual");
+      providerPaymentCompleted = true;
+      const installmentCardTypeRejected = !thePayOneCardTypeAllowsInstallment(
+        payment.cardType,
+        requestedInstallmentMonths,
+      );
+      const mismatchFields = [
+        payment.trackId !== order.orderId ? "trackId" : null,
+        payment.amount !== Number(order.amountKrw) ? "amount" : null,
+        payment.terminalId !== terminalId ? "terminalId" : null,
+        !installmentResponseMatchesSelection({
+          requestedMonths: requestedInstallmentMonths,
+          responseMonths: payment.installmentMonths,
+          requestedIssuer: requestedInstallmentIssuer,
+          responseIssuer: payment.issuer,
+          responseAcquirer: payment.acquirer,
+        }) ? "installmentSelection" : null,
+        installmentCardTypeRejected ? "cardType" : null,
+      ].filter((field): field is string => Boolean(field));
+      const installmentTermsSnapshot = {
+        ...installment.snapshot,
+        declaredCardKind: body.declaredCardKind,
+        providerResponseIssuer: payment.issuer,
+        providerResponseAcquirer: payment.acquirer,
+        providerResponseCardType: payment.cardType,
+        providerResponseCardKindMatchesSelection:
+          thePayOneCardTypeMatchesDeclaredKind(
+            payment.cardType,
+            body.declaredCardKind,
+          ),
+        providerResponseInstallmentMonths: payment.installmentMonths,
+      };
+      if (mismatchFields.length > 0) {
+        await db`
+          update shorts_mvp.billing_orders
+          set provider_transaction_id=${payment.providerTransactionId},
+            provider_auth_code=${payment.authCode},
+            provider_terminal_id=${payment.terminalId},
+            installment_terms_snapshot=${db.json(installmentTermsSnapshot as never)},
+            approved_at=${payment.approvedAt}
+          where id=${order.id} and status='processing'
+        `;
+        throw new ThePayOneError(
+          installmentCardTypeRejected
+            ? "입력한 카드가 체크·선불카드로 확인되어 할부 결제를 확정할 수 없습니다."
+            : "추가시간 승인 결과가 주문 정보와 일치하지 않습니다.",
+          installmentCardTypeRejected
+            ? "INSTALLMENT_CARD_TYPE_NOT_CREDIT"
+            : "PAYMENT_MISMATCH",
+          `불일치: ${mismatchFields.join(",")}`,
+          true,
+        );
+      }
+
+      await db.begin(async (tx) => {
+        const locked = await tx`
+          select o.*,s.status as subscription_status,s.current_period_end
+          from shorts_mvp.billing_orders o
+          join shorts_mvp.user_subscriptions s on s.id=o.subscription_id
+          where o.id=${order.id} for update of o
+        `;
+        const current = locked[0];
+        if (!current) throw new HttpError(409, "추가시간 주문을 찾을 수 없습니다.");
+        if (current.status === "succeeded") return;
+        if (current.status !== "processing") {
+          throw new HttpError(409, "추가시간 주문 상태가 변경되었습니다.");
+        }
+        if (current.subscriptionStatus !== "active" || current.currentPeriodEnd <= new Date()) {
+          throw new HttpError(402, "활성 이용권이 필요합니다.");
+        }
+        await tx`
+          insert into shorts_mvp.usage_grants (
+            user_id,subscription_id,billing_order_id,kind,product_code,
+            total_seconds,credited_seconds,carried_seconds,valid_from,expires_at
+          ) values (
+            ${session.userId},${subscription.id},${order.id},'addon',${product.code},
+            ${product.seconds},${product.seconds},0,now(),now()+${product.validityDays}*interval '1 day'
+          ) on conflict (billing_order_id) where kind='addon' do nothing
+        `;
+        await tx`
+          update shorts_mvp.billing_orders
+          set status='succeeded',provider_transaction_id=${payment.providerTransactionId},
+            provider_status='paid',provider_terminal_id=${payment.terminalId},
+            provider_auth_code=${payment.authCode},
+            installment_months=${payment.installmentMonths},
+            installment_terms_snapshot=${tx.json(installmentTermsSnapshot as never)},
+            approved_at=${payment.approvedAt},failure_code=null,failure_message=null
+          where id=${order.id}
+        `;
+        await tx`
+          update shorts_mvp.billing_attempts
+          set status='succeeded',provider_transaction_id=${payment.providerTransactionId},
+            finished_at=now()
+          where id=${billingAttemptId}
+        `;
+        await tx`
+          update shorts_mvp.billing_payment_events
+          set billing_order_id=${order.id},subscription_id=${subscription.id},
+            payment_method_id=null,validation_status='processed',
+            processing_result='addon_server_payment_reconciled',processed_at=now()
+          where provider='thepayone'
+            and provider_transaction_id=${payment.providerTransactionId}
+            and validation_status in ('received','validated')
+        `;
+      });
+
+      return NextResponse.json({
+        ok: true,
+        checkoutId: order.id,
+        orderId: order.orderId,
+        addedMinutes: Math.floor(product.seconds / 60),
+        chargedAmountKrw: Number(order.amountKrw),
+        installmentMonths: payment.installmentMonths,
+      });
+    }
+    if ("paymentInputMode" in body) {
+      throw new HttpError(
+        409,
+        "추가시간 결제방식이 변경되었습니다. 결제창을 다시 열어 주세요.",
+        "ADDON_PAYMENT_FLOW_CHANGED",
       );
     }
     const paymentMethodId = await getDefaultPaymentMethodId(db, session.userId)
@@ -332,12 +626,31 @@ export async function POST(request: Request) {
       }
     }
     if (error instanceof ThePayOneError) {
-      console.error("thepayone_addon_saved_card_payment_failed", {
+      console.error("thepayone_addon_payment_failed", {
         billingOrderId,
         resultCode: error.resultCode,
         outcomeUnknown: error.outcomeUnknown,
         diagnostic: error.diagnostic,
       });
+    }
+    if (unknown && billingOrderId) {
+      return NextResponse.json({
+        ok: false,
+        checkoutId: billingOrderId,
+        manualReview: true,
+      }, { status: 202 });
+    }
+    const providerInstallmentMaxMonths = error instanceof ThePayOneError
+      ? thePayOneInstallmentMaxMonths(error.diagnostic)
+      : null;
+    if (providerInstallmentMaxMonths !== null) {
+      return NextResponse.json({
+        detail: `해당 카드는 최대 ${providerInstallmentMaxMonths}개월 할부까지 지원합니다. 할부 개월수를 다시 선택해 주세요.`,
+        code: "INSTALLMENT_LIMIT_EXCEEDED",
+        maxInstallmentMonths: providerInstallmentMaxMonths,
+      }, { status: 400 });
+    }
+    if (error instanceof ThePayOneError) {
       if (failureMessage) {
         return apiError(
           new HttpError(400, failureMessage, "THEPAYONE_REJECTED"),

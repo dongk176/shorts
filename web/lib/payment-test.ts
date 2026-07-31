@@ -16,6 +16,44 @@ export const PAYMENT_TEST_CHARGE_COUNT = 5;
 export const PAYMENT_TEST_INTERVAL_SECONDS = 180;
 export const PAYMENT_TEST_CONFIRMATION = "1,000원씩 5회 실제 결제";
 
+export const paymentTestPackageScenarioNames = [
+  "cash_1000",
+  "installment_50000_3m",
+] as const;
+
+export type PaymentTestPackageScenarioName =
+  (typeof paymentTestPackageScenarioNames)[number];
+
+export const PAYMENT_TEST_PACKAGE_SCENARIOS = {
+  cash_1000: {
+    amount: 1_000,
+    installmentMonths: 0,
+    label: "1,000원 일시불",
+    chargeConfirmation: "1,000원 일시불 실제 승인",
+    refundConfirmation: "1,000원 전액환불",
+  },
+  installment_50000_3m: {
+    amount: 50_000,
+    installmentMonths: 3,
+    label: "50,000원 3개월 할부",
+    chargeConfirmation: "50,000원 3개월 할부 실제 승인",
+    refundConfirmation: "50,000원 전액환불",
+  },
+} as const satisfies Record<
+  PaymentTestPackageScenarioName,
+  {
+    amount: number;
+    installmentMonths: number;
+    label: string;
+    chargeConfirmation: string;
+    refundConfirmation: string;
+  }
+>;
+
+export function paymentTestPackageScenario(name: PaymentTestPackageScenarioName) {
+  return PAYMENT_TEST_PACKAGE_SCENARIOS[name];
+}
+
 export function isLocalHostname(hostname: string) {
   const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase();
   return normalized === "localhost"

@@ -4,6 +4,12 @@ import { requireAdminUser } from "@/lib/admin";
 import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
+import { MANUAL_INSTALLMENT_MAX_MONTHS } from "@/lib/installments";
+import {
+  MANUAL_PAYMENT_FLAG_KEYS,
+  oneTimePaymentMode,
+} from "@/lib/manual-payment-routing";
+import { thePayOnePackageBillingEnabled } from "@/lib/thepayone";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,9 +46,16 @@ const saveSchema = z.object({
 
 const capabilitySchema = z.object({
   action: z.literal("capability"),
+  credentialScope: z.enum(["default", "manual", "package"]),
   installmentMonths: z.number().int().min(2).max(36),
   enabled: z.boolean(),
   note: z.string().trim().max(500).default(""),
+}).strict();
+
+const manualPaymentFlagSchema = z.object({
+  action: z.literal("manual_payment_flag"),
+  productKind: z.enum(["package", "addon"]),
+  enabled: z.boolean(),
 }).strict();
 
 const cloneSchema = z.object({
@@ -62,7 +75,7 @@ export async function GET() {
   try {
     await requireAdminUser();
     const db = getDb();
-    const [campaigns, terms, capabilities] = await Promise.all([
+    const [campaigns, terms, capabilities, manualPaymentFlags] = await Promise.all([
       db`select * from shorts_mvp.installment_campaigns order by effective_from desc,created_at desc limit 24`,
       db`
         select t.* from shorts_mvp.installment_campaign_terms t
@@ -73,10 +86,29 @@ export async function GET() {
       `,
       db`
         select * from shorts_mvp.payment_provider_installment_capabilities
-        where provider='thepayone' order by installment_months
+        where provider='thepayone' order by credential_scope,installment_months
+      `,
+      db`
+        select flag_key,enabled,updated_at
+        from shorts_mvp.runtime_feature_flags
+        where flag_key in (
+          ${MANUAL_PAYMENT_FLAG_KEYS.package},
+          ${MANUAL_PAYMENT_FLAG_KEYS.addon}
+        )
+        order by flag_key
       `,
     ]);
-    return NextResponse.json({ campaigns, terms, capabilities });
+    return NextResponse.json({
+      campaigns,
+      terms,
+      capabilities,
+      manualPaymentFlags,
+      paymentModes: {
+        package: oneTimePaymentMode("package"),
+        addon: oneTimePaymentMode("addon"),
+        credentialsEnabled: thePayOnePackageBillingEnabled(),
+      },
+    });
   } catch (error) {
     return apiError(error, "할부 캠페인을 불러오지 못했습니다.");
   }
@@ -88,17 +120,69 @@ export async function POST(request: Request) {
     const admin = await requireAdminUser();
     const raw = await request.json();
     const db = getDb();
+    if (raw?.action === "manual_payment_flag") {
+      const body = manualPaymentFlagSchema.parse(raw);
+      const flagKey = MANUAL_PAYMENT_FLAG_KEYS[body.productKind];
+      await db.begin(async (tx) => {
+        const currentRows = await tx`
+          select enabled
+          from shorts_mvp.runtime_feature_flags
+          where flag_key=${flagKey}
+          for update
+        `;
+        if (!currentRows[0]) {
+          throw new HttpError(503, "수기결제 운영 설정을 찾을 수 없습니다.");
+        }
+        await tx`
+          update shorts_mvp.runtime_feature_flags
+          set enabled=${body.enabled},updated_by_user_id=${admin.id}
+          where flag_key=${flagKey}
+        `;
+        await tx`
+          insert into shorts_mvp.admin_audit_logs (
+            actor_user_id,action,entity_type,entity_id,metadata
+          ) values (
+            ${admin.id},'billing.manual_payment_flag_changed','runtime_feature_flag',
+            ${flagKey},${tx.json({
+              productKind: body.productKind,
+              previousEnabled: Boolean(currentRows[0].enabled),
+              enabled: body.enabled,
+            })}
+          )
+        `;
+      });
+      return NextResponse.json({ ok: true });
+    }
     if (raw?.action === "capability") {
       const body = capabilitySchema.parse(raw);
+      const credentialScope = body.credentialScope === "package"
+        ? "manual"
+        : body.credentialScope;
+      if (body.enabled && credentialScope === "manual") {
+        if (body.installmentMonths > MANUAL_INSTALLMENT_MAX_MONTHS) {
+          throw new HttpError(
+            409,
+            `arti02 수기결제는 최대 ${MANUAL_INSTALLMENT_MAX_MONTHS}개월까지만 운영할 수 있습니다.`,
+            "MANUAL_CAPABILITY_MONTHS_EXCEEDED",
+          );
+        }
+        if (!body.note) {
+          throw new HttpError(
+            409,
+            "arti02 지원 확인 근거를 메모에 남겨 주세요.",
+            "MANUAL_CAPABILITY_EVIDENCE_REQUIRED",
+          );
+        }
+      }
       await db.begin(async (tx) => {
         await tx`
           insert into shorts_mvp.payment_provider_installment_capabilities (
-            provider,installment_months,enabled,verified_at,note,updated_by_user_id
+            provider,credential_scope,installment_months,enabled,verified_at,note,updated_by_user_id
           ) values (
-            'thepayone',${body.installmentMonths},${body.enabled},
+            'thepayone',${credentialScope},${body.installmentMonths},${body.enabled},
             ${body.enabled ? new Date() : null},${body.note},${admin.id}
           )
-          on conflict (provider,installment_months) do update
+          on conflict (provider,credential_scope,installment_months) do update
           set enabled=excluded.enabled,verified_at=excluded.verified_at,
             note=excluded.note,updated_by_user_id=excluded.updated_by_user_id
         `;
@@ -107,8 +191,12 @@ export async function POST(request: Request) {
             actor_user_id,action,entity_type,entity_id,metadata
           ) values (
             ${admin.id},'billing.installment_capability_changed','installment_capability',
-            ${`thepayone:${body.installmentMonths}`},
-            ${tx.json({ enabled: body.enabled, note: body.note })}
+            ${`thepayone:${credentialScope}:${body.installmentMonths}`},
+            ${tx.json({
+              credentialScope,
+              enabled: body.enabled,
+              note: body.note,
+            })}
           )
         `;
       });

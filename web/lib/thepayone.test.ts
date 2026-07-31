@@ -2,15 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cardTokenHash,
   chargeThePayOneCard,
+  chargeThePayOneManualCard,
   chargeThePayOneRecurringCard,
   decryptCardToken,
   encryptCardToken,
   parseThePayOneWebhook,
+  PaymentConfigurationError,
   refundThePayOnePayment,
   registerThePayOneCard,
   revokeThePayOneCard,
   thePayOneCredentialScopeForPackage,
   thePayOneCredentialScopeForMerchantTerminal,
+  thePayOneCardTypeAllowsInstallment,
+  thePayOneCardTypeMatchesDeclaredKind,
+  thePayOneInstallmentMaxMonths,
   thePayOneRefundMismatchFields,
   thePayOneTaxBreakdown,
   ThePayOneError,
@@ -35,6 +40,35 @@ afterEach(() => {
 });
 
 describe("ThePayOne client", () => {
+  it("extracts a definite provider installment limit without treating other 9999 diagnostics as a limit", () => {
+    expect(thePayOneInstallmentMaxMonths(
+      "할부개월초과 / 할부기간은 6개월 이하로 이용하여 주시기 바랍니다.",
+    )).toBe(6);
+    expect(thePayOneInstallmentMaxMonths("할부 개월수는 12개월 이하")).toBe(12);
+    expect(thePayOneInstallmentMaxMonths("승인실패 / 카드사 문의")).toBeNull();
+    expect(thePayOneInstallmentMaxMonths(null)).toBeNull();
+  });
+
+  it("allows installments only when the provider explicitly identifies a credit card", () => {
+    expect(thePayOneCardTypeAllowsInstallment("신용", 3)).toBe(true);
+    expect(thePayOneCardTypeAllowsInstallment(" 신용카드 ", 3)).toBe(true);
+    expect(thePayOneCardTypeAllowsInstallment("CREDIT_CARD", 3)).toBe(true);
+    expect(thePayOneCardTypeAllowsInstallment("체크", 3)).toBe(false);
+    expect(thePayOneCardTypeAllowsInstallment("debit", 3)).toBe(false);
+    expect(thePayOneCardTypeAllowsInstallment(null, 3)).toBe(false);
+    expect(thePayOneCardTypeAllowsInstallment("체크", 0)).toBe(true);
+  });
+
+  it("normalizes the provider card type against the customer's card-kind choice", () => {
+    expect(thePayOneCardTypeMatchesDeclaredKind("신용카드", "credit")).toBe(true);
+    expect(thePayOneCardTypeMatchesDeclaredKind("CREDIT_CARD", "credit")).toBe(true);
+    expect(thePayOneCardTypeMatchesDeclaredKind("체크", "credit")).toBe(false);
+    expect(thePayOneCardTypeMatchesDeclaredKind("체크카드", "debit_prepaid")).toBe(true);
+    expect(thePayOneCardTypeMatchesDeclaredKind("DEBIT_CARD", "debit_prepaid")).toBe(true);
+    expect(thePayOneCardTypeMatchesDeclaredKind("선불", "debit_prepaid")).toBe(true);
+    expect(thePayOneCardTypeMatchesDeclaredKind(null, "debit_prepaid")).toBe(false);
+  });
+
   it("sends authPw in the zero-won card registration metadata", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       result: { resultCd: "0000", resultMsg: "정상" },
@@ -74,18 +108,21 @@ describe("ThePayOne client", () => {
     });
   });
 
-  it("uses the package key for package-scoped manual card registration", async () => {
+  it("uses the package key for direct manual-card approval without registration", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       result: { resultCd: "0000", resultMsg: "정상" },
-      auth: {
-        trxId: "A260729000001",
-        card: { cardId: "package_card_token", last4: "4242" },
+      pay: {
+        trxId: "T260729000001",
+        trackId: "EC-PAY-PACKAGE",
+        amount: 1000,
+        tmnId: "arti02",
+        card: { cardId: "package_response_card", last4: "4242", installment: "00" },
       },
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await registerThePayOneCard({
-      trackId: "EC-AUTH-PACKAGE",
+    await chargeThePayOneManualCard({
+      trackId: "EC-PAY-PACKAGE",
       payerName: "테스트",
       payerEmail: "tester@example.com",
       payerTel: "01012345678",
@@ -93,21 +130,64 @@ describe("ThePayOne client", () => {
       expiry: "2910",
       authDob: "900101",
       authPw: "12",
-    }, "package");
+      amount: 1000,
+      installmentMonths: 0,
+      productName: "패키지 수기결제 테스트",
+    });
 
-    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(url.toString()).toBe("https://api.thepayone.com/api/pay");
     expect(new Headers(init.headers).get("Authorization")).toBe("package-pay-key-test");
+    const body = JSON.parse(String(init.body));
+    expect(body.pay).toMatchObject({
+      trxType: "ONTR",
+      udf2: "00",
+      card: {
+        number: "4242424242424242",
+        expiry: "2910",
+        installment: "00",
+      },
+      metadata: { cardAuth: "true", authDob: "900101", authPw: "12" },
+    });
+    expect(body.pay.card).not.toHaveProperty("cardId");
+    expect(body.pay.metadata).not.toHaveProperty("recurring");
     expect(thePayOneCredentialScopeForMerchantTerminal(
       "merchant-default",
       "arti02",
-    )).toBe("package");
+    )).toBe("manual");
   });
 
-  it("keeps package payments on the existing credentials until explicitly enabled", () => {
+  it("prevents package card registration and default-terminal manual approval", async () => {
+    await expect(registerThePayOneCard({
+      trackId: "EC-AUTH-PACKAGE-BLOCKED",
+      payerName: "테스트",
+      payerEmail: "tester@example.com",
+      payerTel: "01012345678",
+      cardNumber: "4242424242424242",
+      expiry: "2910",
+      authDob: "900101",
+      authPw: "12",
+    }, "package")).rejects.toBeInstanceOf(PaymentConfigurationError);
+    await expect(chargeThePayOneManualCard({
+      trackId: "EC-PAY-DEFAULT-BLOCKED",
+      payerName: "테스트",
+      payerEmail: "tester@example.com",
+      payerTel: "01012345678",
+      cardNumber: "4242424242424242",
+      expiry: "2910",
+      authDob: "900101",
+      authPw: "12",
+      amount: 1_000,
+      productName: "잘못된 터미널",
+    }, "default")).rejects.toBeInstanceOf(PaymentConfigurationError);
+  });
+
+  it("selects manual credentials only after the mode and credential gate are enabled", () => {
+    vi.stubEnv("THEPAYONE_PACKAGE_PAYMENT_MODE", "manual");
     vi.stubEnv("THEPAYONE_PACKAGE_BILLING_ENABLED", "false");
     expect(thePayOneCredentialScopeForPackage(true)).toBe("default");
     vi.stubEnv("THEPAYONE_PACKAGE_BILLING_ENABLED", "true");
-    expect(thePayOneCredentialScopeForPackage(true)).toBe("package");
+    expect(thePayOneCredentialScopeForPackage(true)).toBe("manual");
     expect(thePayOneCredentialScopeForPackage(false)).toBe("default");
   });
 
@@ -204,6 +284,56 @@ describe("ThePayOne client", () => {
     });
     const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
     expect(body.pay.card.Installment).toBe("10");
+  });
+
+  it("sends package-terminal 3-month installments as 03", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: { resultCd: "0000", create: "20260729153000" },
+      pay: {
+        trxId: "T260729000003",
+        trackId: "EC-PACKAGE-3M",
+        amount: 50000,
+        tmnId: "arti02",
+        card: {
+          cardId: "package_card_token",
+          installment: "03",
+          cardType: "신용",
+        },
+      },
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(chargeThePayOneManualCard({
+      trackId: "EC-PACKAGE-3M",
+      cardNumber: "4242424242424242",
+      expiry: "2910",
+      authDob: "900101",
+      authPw: "12",
+      amount: 50_000,
+      payerName: "테스트",
+      payerEmail: "tester@example.com",
+      payerTel: "01012345678",
+      installmentMonths: 3,
+      productName: "패키지 3개월 테스트",
+    })).resolves.toMatchObject({
+      amount: 50_000,
+      terminalId: "arti02",
+      installmentMonths: 3,
+      cardType: "신용",
+    });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(String(init.body));
+    expect(new Headers(init.headers).get("Authorization")).toBe("package-pay-key-test");
+    expect(body.pay.card).toEqual({
+      number: "4242424242424242",
+      expiry: "2910",
+      installment: "03",
+    });
+    expect(body.pay.metadata).toEqual({
+      cardAuth: "true",
+      authDob: "900101",
+      authPw: "12",
+    });
   });
 
   it("registers a production monthly schedule at zero won with the billing day", async () => {

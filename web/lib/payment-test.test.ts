@@ -6,6 +6,8 @@ import {
   isPaymentTesterEmail,
   PAYMENT_TEST_CHARGE_COUNT,
   PAYMENT_TEST_INTERVAL_SECONDS,
+  PAYMENT_TEST_PACKAGE_SCENARIOS,
+  paymentTestPackageScenario,
 } from "./payment-test";
 
 const originalNodeEnv = process.env.NODE_ENV;
@@ -76,5 +78,21 @@ describe("local payment test access", () => {
   it("uses five charges with three-minute gaps for new local tests", () => {
     expect(PAYMENT_TEST_CHARGE_COUNT).toBe(5);
     expect(PAYMENT_TEST_INTERVAL_SECONDS).toBe(180);
+  });
+
+  it("keeps package live-payment scenarios fixed on the server", () => {
+    expect(paymentTestPackageScenario("cash_1000")).toEqual({
+      amount: 1_000,
+      installmentMonths: 0,
+      label: "1,000원 일시불",
+      chargeConfirmation: "1,000원 일시불 실제 승인",
+      refundConfirmation: "1,000원 전액환불",
+    });
+    expect(PAYMENT_TEST_PACKAGE_SCENARIOS.installment_50000_3m).toMatchObject({
+      amount: 50_000,
+      installmentMonths: 3,
+      chargeConfirmation: "50,000원 3개월 할부 실제 승인",
+      refundConfirmation: "50,000원 전액환불",
+    });
   });
 });
