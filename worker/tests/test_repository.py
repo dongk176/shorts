@@ -264,6 +264,43 @@ def test_deferred_timeline_commit_only_updates_live_completed_project_output() -
     assert parameters[4] == "short-a"
 
 
+def test_legacy_snapshot_rerender_promotes_edited_timeline_subtitles() -> None:
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+    selected = MagicMock()
+    selected.fetchone.return_value = {
+        "output_s3_key": "outputs/v1.mp4",
+        "thumbnail_s3_key": "thumbnails/v1.jpg",
+        "clean_clip_s3_key": "edit-sources/timeline-v1.mp4",
+    }
+    updated = MagicMock()
+    updated.fetchone.return_value = {"id": "short-a"}
+    connection.execute.side_effect = [selected, updated, MagicMock()]
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+
+    repository.complete_snapshot_rerender(
+        "short-a",
+        output_key="outputs/v2.mp4",
+        thumbnail_key="thumbnails/v2.jpg",
+        clean_key="edit-sources/clean-v2.mp4",
+        size=123,
+        version=2,
+    )
+
+    promotion_query = connection.execute.call_args_list[1].args[0]
+    assert "edit_timeline_subtitle_segments=coalesce(" in promotion_query
+    assert "pending_edit_snapshot->'timelineSubtitleSegments'" in promotion_query
+    assert (
+        promotion_query.index("pending_edit_snapshot->'timelineSubtitleSegments'")
+        < promotion_query.index("edit_timeline_subtitle_segments\n")
+    )
+
+
 def test_first_editor_document_rerender_preserves_legacy_clean_as_timeline() -> None:
     repository = WorkerRepository("postgresql://example", "ap-northeast-2")
     connection = MagicMock()

@@ -1278,6 +1278,10 @@ class WorkerRepository:
                   channel_display_name=pending_edit_snapshot->>'channelDisplayName',
                   subtitles_enabled=(pending_edit_snapshot->>'subtitlesEnabled')::boolean,
                   subtitle_segments=pending_edit_snapshot->'subtitleSegments',
+                  edit_timeline_subtitle_segments=coalesce(
+                    pending_edit_snapshot->'timelineSubtitleSegments',
+                    edit_timeline_subtitle_segments
+                  ),
                   comment_overlays=pending_edit_snapshot->'commentOverlays',
                   template_id=pending_edit_snapshot->>'templateId',
                   custom_template_id=nullif(
