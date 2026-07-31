@@ -3,12 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import { claimEditorLaunchAnnouncement } from "@/app/actions/editor-launch-announcement";
 import { useUsageState } from "@/components/usage-provider";
+import { useWelcomeOverlayStage } from "@/components/welcome-overlay-queue";
 import type { EditorLaunchAnnouncement } from "@/lib/editor-launch-announcement";
 import { formatLocale } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
 
 export function EditorLaunchAnnouncementOverlay() {
   const { authenticated, refreshUsage } = useUsageState();
+  const {
+    active: queueActive,
+    complete: completeQueueStage,
+  } = useWelcomeOverlayStage("existing-welcome");
   const { locale, t } = useI18n();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -16,7 +21,7 @@ export function EditorLaunchAnnouncementOverlay() {
   const [announcement, setAnnouncement] = useState<EditorLaunchAnnouncement | null>(null);
 
   useEffect(() => {
-    if (!authenticated) {
+    if (!authenticated || !queueActive) {
       claimStartedRef.current = false;
       setAnnouncement(null);
       return;
@@ -27,17 +32,27 @@ export function EditorLaunchAnnouncementOverlay() {
     let cancelled = false;
     void claimEditorLaunchAnnouncement()
       .then((claimed) => {
-        if (cancelled || !claimed) return;
+        if (cancelled) return;
+        if (!claimed) {
+          completeQueueStage();
+          return;
+        }
         setAnnouncement(claimed);
         void refreshUsage();
       })
       .catch(() => {
         // 안내 조회 실패가 핵심 제작 흐름을 막지 않도록 조용히 종료한다.
+        if (!cancelled) completeQueueStage();
       });
     return () => {
       cancelled = true;
     };
-  }, [authenticated, refreshUsage]);
+  }, [
+    authenticated,
+    completeQueueStage,
+    queueActive,
+    refreshUsage,
+  ]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -59,7 +74,10 @@ export function EditorLaunchAnnouncementOverlay() {
     timeStyle: "short",
     timeZone: "Asia/Seoul",
   }).format(new Date(announcement.validUntil));
-  const close = () => setAnnouncement(null);
+  const close = () => {
+    setAnnouncement(null);
+    completeQueueStage();
+  };
 
   return (
     <dialog

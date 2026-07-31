@@ -46,9 +46,11 @@ function NavigationLinks({ pathname, onNavigate, mobile = false }: {
 export function SiteHeader({
   children,
   showUsageIndicator = true,
+  desktopSidebar = false,
 }: {
   children: ReactNode;
   showUsageIndicator?: boolean;
+  desktopSidebar?: boolean;
 }) {
   const pathname = usePathname();
   const { t } = useI18n();
@@ -74,17 +76,17 @@ export function SiteHeader({
   useEffect(() => setMenuOpen(false), [pathname]);
 
   return (
-    <header className="site-header">
-      <div className="relative mx-auto flex h-[72px] max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
+    <header className={`site-header${desktopSidebar ? " site-header-sidebar" : ""}`}>
+      <div className="site-header-inner relative mx-auto flex h-[72px] max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
         <Link href="/" className="flex shrink-0 items-center gap-3" aria-label={t("nav.homeLabel")}>
           <span className="brand-mark" aria-hidden="true"><Image src="/east-cut-logo.png" alt="" width={34} height={34} priority /></span>
           <span className="brand-type">Easy <em>Cut</em></span>
         </Link>
-        <nav className="hidden items-center gap-8 text-sm font-semibold text-neutral-300 md:flex" aria-label={t("nav.primary")}>
+        <nav className="site-header-primary hidden items-center gap-8 text-sm font-semibold text-neutral-300 md:flex" aria-label={t("nav.primary")}>
           <NavigationLinks pathname={pathname} />
           {showUsageIndicator ? <HeaderUsageIndicator /> : null}
         </nav>
-        <div ref={menuRef} className="relative shrink-0">
+        <div ref={menuRef} className="site-header-actions relative shrink-0">
           <button
             type="button"
             className="site-header-menu-trigger"

@@ -433,11 +433,13 @@ function isProjectExpired(job: VideoJob) {
   return Boolean(job.expiresAt && new Date(job.expiresAt).getTime() <= Date.now());
 }
 
-function CountUpNumber({ value }: { value: number }) {
+function CountUpNumber({ value, initialValue }: { value: number; initialValue?: number }) {
   const target = Math.max(0, Math.floor(value));
-  const initialValue = target > 0 ? 1 : 0;
-  const [displayedValue, setDisplayedValue] = useState(initialValue);
-  const displayedValueRef = useRef(initialValue);
+  const startingValue = initialValue === undefined
+    ? target > 0 ? 1 : 0
+    : Math.max(0, Math.floor(initialValue));
+  const [displayedValue, setDisplayedValue] = useState(startingValue);
+  const displayedValueRef = useRef(startingValue);
 
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -510,7 +512,7 @@ const visibleCustomerReviews = SHOW_MONETIZATION_CONTENT
 const CUSTOMER_REVIEW_SCROLL_PIXELS_PER_SECOND = 60;
 const CUSTOMER_REVIEW_DRAG_THRESHOLD_PX = 4;
 
-function CustomerReviews({ generatedShortCount }: { generatedShortCount: number | null }) {
+function CustomerReviews() {
   const { locale } = useI18n();
   const railRef = useRef<HTMLDivElement>(null);
   const interactionActiveRef = useRef(false);
@@ -626,10 +628,6 @@ function CustomerReviews({ generatedShortCount }: { generatedShortCount: number 
       <div className="customer-reviews-inner">
         <div className="customer-reviews-heading">
           <h2 id="customer-reviews-title">{localizedValue(locale, { ko: "사용자 후기", en: "Customer reviews", ja: "ユーザーレビュー" })}</h2>
-          <div className="customer-review-count">
-            <strong aria-busy={generatedShortCount === null}>{generatedShortCount === null ? "—" : <CountUpNumber value={generatedShortCount} />}</strong>
-            <p>{localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}</p>
-          </div>
         </div>
         <div
           id="customer-review-rail"
@@ -8353,10 +8351,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   };
 
   return (
-    <div className="app-shell site-chrome flex min-h-screen flex-col text-neutral-100">
+    <div className="app-shell site-chrome desktop-sidebar-layout home-desktop-sidebar flex min-h-screen flex-col text-neutral-100">
       <div className="ambient ambient-coral" aria-hidden="true" />
       <div className="ambient ambient-violet" aria-hidden="true" />
-      <SiteHeader><AuthControls user={state?.user || null} next={loginNext} loginOpen={loginOpen} onLoginOpenChange={setLoginOpen} /></SiteHeader>
+      <SiteHeader desktopSidebar><AuthControls user={state?.user || null} next={loginNext} loginOpen={loginOpen} onLoginOpenChange={setLoginOpen} /></SiteHeader>
       <NoticeDialog
         open={creationRestrictionOpen && Boolean(creationRestrictionReason)}
         dialogId="creation-restriction"
@@ -8373,6 +8371,12 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         onClose={closeConcurrentJobNotice}
       />
       <main id="top" className="relative mx-auto w-full max-w-6xl flex-1 space-y-10 px-5 pb-20 pt-7 sm:px-8 sm:pt-10">
+      <div className="home-generated-shorts-count" aria-label={localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}>
+        <strong aria-busy={stateLoadStatus === "loading"}>
+          <CountUpNumber value={state?.generatedShortCount ?? 14_259} initialValue={14_259} />
+        </strong>
+        <p>{localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}</p>
+      </div>
       <section className="hero mx-auto flex max-w-4xl flex-col items-center text-center">
         <h1 className="hero-title">{t("home.heroLine1")}<br /><span>{t("home.heroLine2")}</span></h1>
         <p className="mt-5 max-w-2xl text-sm leading-6 text-[#d5aaa4] sm:text-base">{t("home.heroDescription")}</p>
@@ -8467,7 +8471,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         </section>
       )}
       <ThreeStepProcess />
-      <CustomerReviews generatedShortCount={state?.generatedShortCount ?? null} />
+      <CustomerReviews />
     </main>
     <SiteFooter />
     <SupportInquiryWidget

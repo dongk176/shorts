@@ -54,8 +54,8 @@ export default async function TemplatesPage() {
   }
 
   return (
-    <div className="app-shell site-chrome min-h-screen overflow-visible text-neutral-100">
-      <SiteHeader><AuthControls user={user ? authProfile(user) : null} next={PAGE_PATH} /></SiteHeader>
+    <div className="app-shell site-chrome desktop-sidebar-layout min-h-screen overflow-visible text-neutral-100">
+      <SiteHeader desktopSidebar><AuthControls user={user ? authProfile(user) : null} next={PAGE_PATH} /></SiteHeader>
       <main className="w-full flex-1 px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
         <TemplateLibrary
           personalTemplates={personalTemplates}

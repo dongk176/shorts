@@ -20,7 +20,7 @@ export async function GET() {
   try {
     const session = await requireAuthenticatedMvpSession();
     const rows = await getDb()`
-      select 1
+      select onboarding_version
       from shorts_mvp.user_onboarding_profiles
       where user_id=${session.userId}
       limit 1
@@ -28,6 +28,7 @@ export async function GET() {
     return noStoreJson({
       required: !rows[0],
       version: USER_ONBOARDING_VERSION,
+      storedVersion: rows[0] ? Number(rows[0].onboardingVersion) : null,
     });
   } catch (error) {
     const response = apiError(error, "온보딩 정보를 불러오지 못했습니다.");
@@ -44,11 +45,12 @@ export async function POST(request: Request) {
     await getDb()`
       insert into shorts_mvp.user_onboarding_profiles (
         user_id,request_id,occupation,occupation_other,usage_purposes,
-        usage_purpose_other,onboarding_version
+        usage_purpose_other,discovery_source,discovery_source_other,onboarding_version
       ) values (
         ${session.userId},${input.requestId},${input.occupation},
         ${input.occupationOther},${input.usagePurposes},
-        ${input.usagePurposeOther},${USER_ONBOARDING_VERSION}
+        ${input.usagePurposeOther},${input.discoverySource},
+        ${input.discoverySourceOther},${USER_ONBOARDING_VERSION}
       )
       on conflict (user_id) do nothing
     `;

@@ -1,66 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const mocks = vi.hoisted(() => ({
-  getDb: vi.fn(),
-  session: vi.fn(),
-}));
-
-vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
-vi.mock("@/lib/session", () => ({
-  requireAuthenticatedMvpSession: mocks.session,
-}));
+import { describe, expect, it } from "vitest";
 
 import { POST } from "./route";
 
-const userId = "6f856acc-5b6a-4f62-9971-d7feb1f2a624";
-const requestId = "276a287d-8531-4cb5-9918-5811b12148e4";
-
-function sqlWithRows(...responses: unknown[][]) {
-  const sql = vi.fn();
-  for (const response of responses) sql.mockResolvedValueOnce(response);
-  return sql;
-}
-
-beforeEach(() => {
-  vi.clearAllMocks();
-  mocks.session.mockResolvedValue({ userId });
-});
-
 describe("project feedback deferral API", () => {
-  it("permanently stops prompting after deferral at completion 12", async () => {
-    const tx = sqlWithRows(
-      [],
-      [],
-      [{
-        completedProjectCount: 12,
-        submitted: false,
-        lastDeferredPromptCompletionCount: 9,
-      }],
-      [],
-      [{
-        completedProjectCount: 12,
-        submitted: false,
-        lastDeferredPromptCompletionCount: 12,
-      }],
-    );
-    const db = sqlWithRows();
-    Object.assign(db, {
-      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
-    });
-    mocks.getDb.mockReturnValue(db);
+  it("rejects every attempt to postpone required feedback", async () => {
+    const response = await POST();
 
-    const response = await POST(new Request("http://localhost/api/project-feedback/dismiss", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requestId }),
-    }));
-
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(410);
     await expect(response.json()).resolves.toMatchObject({
-      eligible: false,
-      permanentlyDismissed: true,
-      promptCompletionCount: null,
+      detail: "피드백은 나중에 할 수 없습니다. 피드백을 작성해 주세요.",
     });
-    expect(tx).toHaveBeenCalledTimes(5);
   });
 });

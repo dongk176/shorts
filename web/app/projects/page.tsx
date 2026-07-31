@@ -26,10 +26,10 @@ export default async function ProjectsPage() {
     : await getPublicExampleJobs(db);
 
   return (
-    <div className="app-shell site-chrome flex min-h-screen flex-col text-neutral-100">
+    <div className="app-shell site-chrome desktop-sidebar-layout flex min-h-screen flex-col text-neutral-100">
       <div className="ambient ambient-coral" aria-hidden="true" />
       <div className="ambient ambient-violet" aria-hidden="true" />
-      <SiteHeader>
+      <SiteHeader desktopSidebar>
         <AuthControls user={user ? authProfile(user) : null} next={PAGE_PATH} />
       </SiteHeader>
       <main className="relative mx-auto w-full max-w-6xl flex-1 px-5 pb-24 pt-10 sm:px-8 sm:pt-14">

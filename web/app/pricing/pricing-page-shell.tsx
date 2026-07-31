@@ -17,8 +17,8 @@ export function PricingPageShell({
   const [loginOpen, setLoginOpen] = useState(false);
 
   return (
-    <div className="app-shell site-chrome pricing-page min-h-screen text-neutral-100">
-      <SiteHeader>
+    <div className="app-shell site-chrome desktop-sidebar-layout pricing-page min-h-screen text-neutral-100">
+      <SiteHeader desktopSidebar>
         <AuthControls
           user={user}
           next="/pricing"

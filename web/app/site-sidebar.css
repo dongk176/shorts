@@ -1,0 +1,262 @@
+:root {
+  --site-sidebar-width: 244px;
+  --site-sidebar-half-width: 122px;
+}
+
+.home-generated-shorts-count {
+  display: flex;
+  width: fit-content;
+  min-width: 180px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.home-generated-shorts-count strong {
+  min-height: 38px;
+  color: #fff;
+  font-size: clamp(2rem,3vw,2.45rem);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -.035em;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-generated-shorts-count p {
+  color: #d5aaa4;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -.015em;
+}
+
+@media (min-width: 768px) {
+  .site-chrome.desktop-sidebar-layout {
+    padding-top: 0;
+    padding-left: var(--site-sidebar-width);
+  }
+
+  .site-header.site-header-sidebar {
+    right: auto;
+    bottom: 0;
+    width: var(--site-sidebar-width);
+    height: 100dvh;
+    border-right: 1px solid rgba(255,255,255,.08);
+    border-bottom: 0;
+    background:
+      linear-gradient(180deg,rgba(255,113,94,.035),transparent 28%),
+      rgba(16,20,21,.96);
+  }
+
+  .site-header-sidebar .site-header-inner {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 0;
+    margin: 0;
+    padding: 30px 20px 24px;
+  }
+
+  .site-header-sidebar .site-header-inner > a {
+    min-height: 44px;
+    padding: 0 9px;
+  }
+
+  .site-header-sidebar .brand-mark,
+  .site-header-sidebar .brand-mark img {
+    width: 40px;
+    height: 40px;
+  }
+
+  .site-header-sidebar .brand-type {
+    font-size: 20px;
+  }
+
+  .site-header-sidebar .site-header-primary {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 7px;
+    margin-top: 44px;
+  }
+
+  .site-header-sidebar .nav-link {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    border-radius: 13px;
+    padding: 0 14px;
+    color: #b9bdbe;
+    font-size: 14px;
+    font-weight: 750;
+  }
+
+  .site-header-sidebar .nav-link:hover {
+    color: #fff;
+    background: rgba(255,255,255,.055);
+  }
+
+  .site-header-sidebar .nav-link[aria-current="page"] {
+    color: #ffd0c9;
+    background: rgba(255,113,94,.11);
+    box-shadow: inset 3px 0 0 #ff715e;
+  }
+
+  .site-header-sidebar .header-usage-indicator {
+    width: 100%;
+    min-height: 44px;
+    justify-content: flex-start;
+    border: 0;
+    border-radius: 13px;
+    margin-top: 12px;
+    padding: 0 14px;
+    background: rgba(255,255,255,.035);
+  }
+
+  .site-header-sidebar .header-usage-indicator span {
+    display: inline;
+  }
+
+  .site-header-sidebar .site-header-actions {
+    width: 100%;
+    margin-top: auto;
+  }
+
+  .site-header-sidebar .site-header-menu-panel,
+  .site-header-sidebar .site-header-menu-account {
+    width: 100%;
+  }
+
+  .site-header-sidebar .site-header-menu-account > .header-cta,
+  .site-header-sidebar .site-header-menu-account form,
+  .site-header-sidebar .site-header-menu-account form .header-cta {
+    width: 100%;
+    min-height: 46px;
+    justify-content: center;
+  }
+
+  .site-header-sidebar .site-header-menu-account > div {
+    display: grid;
+    width: 100%;
+    grid-template-columns: minmax(0,1fr) 44px;
+    gap: 8px;
+  }
+
+  .site-header-sidebar .site-header-menu-account > div > a:first-child {
+    display: flex;
+    min-height: 40px;
+    min-width: 0;
+    max-width: none;
+    align-items: center;
+    padding: 0 10px;
+  }
+
+  .site-header-sidebar .account-settings-link {
+    width: 44px;
+    border-radius: 12px;
+    background: rgba(255,255,255,.04);
+  }
+
+  body:has(.desktop-sidebar-layout) .language-selector-floating {
+    top: calc(20px + env(safe-area-inset-top));
+    right: calc(24px + env(safe-area-inset-right));
+    bottom: auto;
+    left: auto;
+  }
+
+  body:has(.desktop-sidebar-layout) .language-selector-menu {
+    top: calc(100% + 10px);
+    right: 0;
+    bottom: auto;
+    left: auto;
+    transform-origin: right top;
+  }
+
+  body:has(.desktop-sidebar-layout) .language-selector-floating .language-selector-error {
+    top: calc(100% + 8px);
+    right: 0;
+    bottom: auto;
+    left: auto;
+  }
+
+  .home-desktop-sidebar > main > section.background-showcase-section,
+  .home-desktop-sidebar > main > section.three-step-process-section,
+  .home-desktop-sidebar > main > section.customer-reviews-section,
+  .home-desktop-sidebar > main > section.transformation-showcase-section {
+    width: calc(100vw - var(--site-sidebar-width));
+    margin-left: calc(-50vw + var(--site-sidebar-half-width));
+  }
+
+  .sidebar-announcement-open .site-header-sidebar {
+    z-index: 82;
+    box-shadow:
+      0 0 0 2px rgba(255,155,141,.78),
+      18px 0 60px rgba(0,0,0,.52);
+  }
+
+  .sidebar-announcement-backdrop {
+    position: fixed;
+    z-index: 80;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    padding: 24px 24px 24px calc(var(--site-sidebar-width) + 24px);
+    background: rgba(0,0,0,.68);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+
+  .sidebar-announcement-card {
+    width: min(390px,calc(100vw - var(--site-sidebar-width) - 48px));
+    border: 1px solid rgba(255,255,255,.13);
+    border-radius: 22px;
+    padding: 26px;
+    color: #fff;
+    background: #191b1d;
+    box-shadow: 0 28px 90px rgba(0,0,0,.64);
+  }
+
+  .sidebar-announcement-eyebrow {
+    color: #ff9b8d;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: .12em;
+  }
+
+  .sidebar-announcement-card h2 {
+    margin: 12px 0 0;
+    font-size: 21px;
+    font-weight: 900;
+    line-height: 1.35;
+    letter-spacing: -.035em;
+  }
+
+  .sidebar-announcement-card p {
+    margin: 12px 0 0;
+    color: #b9bdbe;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.7;
+  }
+
+  .sidebar-announcement-card button {
+    width: 100%;
+    min-height: 46px;
+    border: 0;
+    border-radius: 12px;
+    margin-top: 22px;
+    color: #111;
+    background: #fff;
+    font-size: 14px;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .sidebar-announcement-card button:hover {
+    background: #e5e5e5;
+  }
+}

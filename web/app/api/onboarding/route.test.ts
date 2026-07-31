@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -33,17 +34,39 @@ describe("user onboarding API", () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ required: true, version: 1 });
+    await expect(response.json()).resolves.toEqual({
+      required: true,
+      version: 2,
+      storedVersion: null,
+    });
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
   });
 
   it("does not require onboarding after a response was stored", async () => {
-    mocks.getDb.mockReturnValue(dbWithRows([{ "?column?": 1 }]));
+    mocks.getDb.mockReturnValue(dbWithRows([{ onboardingVersion: 1 }]));
 
     const response = await GET();
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ required: false, version: 1 });
+    await expect(response.json()).resolves.toEqual({
+      required: false,
+      version: 2,
+      storedVersion: 1,
+    });
+  });
+
+  it("keeps older v2 rows without discovery data migration-compatible", () => {
+    const migration = readFileSync(
+      new URL(
+        "../../../../supabase/migrations/202607300011_onboarding_discovery_source.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(migration).toContain("or onboarding_version=2");
+    expect(migration).not.toContain(
+      "onboarding_version=2 and discovery_source is not null",
+    );
   });
 
   it("stores a valid response without coupling onboarding to the login grant", async () => {
@@ -59,6 +82,8 @@ describe("user onboarding API", () => {
         occupationOther: null,
         usagePurposes: ["youtube_shorts", "save_editing_time"],
         usagePurposeOther: null,
+        discoverySource: "youtube",
+        discoverySourceOther: null,
       }),
     }));
 
@@ -77,6 +102,27 @@ describe("user onboarding API", () => {
         occupationOther: null,
         usagePurposes: ["other"],
         usagePurposeOther: null,
+        discoverySource: "direct_search",
+        discoverySourceOther: null,
+      }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
+  it("rejects an other discovery source without a direct answer", async () => {
+    const response = await POST(new Request("http://localhost/api/onboarding", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requestId,
+        occupation: "creator",
+        occupationOther: null,
+        usagePurposes: ["youtube_shorts"],
+        usagePurposeOther: null,
+        discoverySource: "other",
+        discoverySourceOther: null,
       }),
     }));
 

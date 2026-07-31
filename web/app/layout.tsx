@@ -5,7 +5,9 @@ import { FirebaseAnalytics } from "@/components/google-analytics";
 import { StructuredData } from "@/components/structured-data";
 import { LanguageSelector } from "@/components/language-selector";
 import { ProjectFeedbackOverlay } from "@/components/project-feedback-overlay";
+import { SidebarNavigationAnnouncement } from "@/components/sidebar-navigation-announcement";
 import { UserOnboardingOverlay } from "@/components/user-onboarding-overlay";
+import { WelcomeOverlayQueueProvider } from "@/components/welcome-overlay-queue";
 import { UsageProvider, type UsageState } from "@/components/usage-provider";
 import { getDb } from "@/lib/db";
 import { I18nProvider } from "@/lib/i18n/provider";
@@ -14,6 +16,7 @@ import { DEFAULT_DESCRIPTION, OG_IMAGE_PATH, SITE_NAME, SITE_URL } from "@/lib/s
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { getUsageSnapshot } from "@/lib/usage";
 import "./globals.css";
+import "./site-sidebar.css";
 import "./editor-v2.css";
 
 export const metadata: Metadata = {
@@ -69,7 +72,11 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   const { locale, messages } = await getRequestMessages();
-  let initialUsageState: UsageState = { authenticated: false, usage: null };
+  let initialUsageState: UsageState = {
+    authenticated: false,
+    accountId: null,
+    usage: null,
+  };
   try {
     const authenticatedUser = await getAuthenticatedUser();
     if (authenticatedUser) {
@@ -83,6 +90,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       const appUserId = typeof appUserRows[0]?.id === "string" ? appUserRows[0].id : null;
       initialUsageState = {
         authenticated: true,
+        accountId: appUserId,
         usage: appUserId
           ? await getUsageSnapshot(db, {
               id: "",
@@ -138,11 +146,17 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       <body>
         <I18nProvider key={locale} locale={locale} messages={messages}>
           <StructuredData data={websiteData} />
-          <UsageProvider initialState={initialUsageState}>
-            {children}
-            <EditorLaunchAnnouncementOverlay />
-            <UserOnboardingOverlay />
-            <ProjectFeedbackOverlay />
+          <UsageProvider
+            key={initialUsageState.accountId || "guest"}
+            initialState={initialUsageState}
+          >
+            <WelcomeOverlayQueueProvider>
+              {children}
+              <UserOnboardingOverlay />
+              <EditorLaunchAnnouncementOverlay />
+              <SidebarNavigationAnnouncement />
+              <ProjectFeedbackOverlay />
+            </WelcomeOverlayQueueProvider>
           </UsageProvider>
           <FirebaseAnalytics
             config={{

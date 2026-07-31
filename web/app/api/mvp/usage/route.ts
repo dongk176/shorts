@@ -12,14 +12,14 @@ export async function GET() {
     const authenticatedUser = await getAuthenticatedUser();
     if (!authenticatedUser) {
       return NextResponse.json(
-        { authenticated: false, usage: null },
+        { authenticated: false, accountId: null, usage: null },
         { headers: { "Cache-Control": "private, no-store" } },
       );
     }
     const session = await requireMvpSession(authenticatedUser);
     const usage = await getUsageSnapshot(getDb(), session);
     return NextResponse.json(
-      { authenticated: true, usage },
+      { authenticated: true, accountId: session.userId, usage },
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (error) {

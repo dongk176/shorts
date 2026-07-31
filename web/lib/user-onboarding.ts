@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const USER_ONBOARDING_VERSION = 1;
+export const USER_ONBOARDING_VERSION = 2;
 
 export const userOccupationOptions = [
   { value: "creator", label: "크리에이터·유튜버" },
@@ -23,6 +23,15 @@ export const userUsagePurposeOptions = [
   { value: "other", label: "기타" },
 ] as const;
 
+export const userDiscoverySourceOptions = [
+  { value: "instagram", label: "인스타그램" },
+  { value: "youtube", label: "유튜브" },
+  { value: "friend_referral", label: "지인 추천" },
+  { value: "direct_search", label: "네이버·구글 직접 검색" },
+  { value: "blog_community", label: "블로그·커뮤니티" },
+  { value: "other", label: "기타" },
+] as const;
+
 export const userOccupationValues = userOccupationOptions.map((option) => option.value) as [
   (typeof userOccupationOptions)[number]["value"],
   ...(typeof userOccupationOptions)[number]["value"][],
@@ -31,9 +40,14 @@ export const userUsagePurposeValues = userUsagePurposeOptions.map((option) => op
   (typeof userUsagePurposeOptions)[number]["value"],
   ...(typeof userUsagePurposeOptions)[number]["value"][],
 ];
+export const userDiscoverySourceValues = userDiscoverySourceOptions.map((option) => option.value) as [
+  (typeof userDiscoverySourceOptions)[number]["value"],
+  ...(typeof userDiscoverySourceOptions)[number]["value"][],
+];
 
 export type UserOccupation = (typeof userOccupationOptions)[number]["value"];
 export type UserUsagePurpose = (typeof userUsagePurposeOptions)[number]["value"];
+export type UserDiscoverySource = (typeof userDiscoverySourceOptions)[number]["value"];
 
 export const userOnboardingSubmissionSchema = z.object({
   requestId: z.string().uuid(),
@@ -44,6 +58,8 @@ export const userOnboardingSubmissionSchema = z.object({
     .max(userUsagePurposeValues.length)
     .refine((values) => new Set(values).size === values.length),
   usagePurposeOther: z.string().trim().min(1).max(100).nullable().optional(),
+  discoverySource: z.enum(userDiscoverySourceValues),
+  discoverySourceOther: z.string().trim().min(1).max(100).nullable().optional(),
 }).superRefine((value, context) => {
   if (value.occupation === "other" && !value.occupationOther) {
     context.addIssue({
@@ -59,13 +75,22 @@ export const userOnboardingSubmissionSchema = z.object({
       message: "이용 목적을 직접 입력해 주세요.",
     });
   }
+  if (value.discoverySource === "other" && !value.discoverySourceOther) {
+    context.addIssue({
+      code: "custom",
+      path: ["discoverySourceOther"],
+      message: "이지컷을 알게 된 경로를 직접 입력해 주세요.",
+    });
+  }
 }).transform((value) => ({
   ...value,
   occupationOther: value.occupation === "other" ? value.occupationOther! : null,
   usagePurposeOther: value.usagePurposes.includes("other") ? value.usagePurposeOther! : null,
+  discoverySourceOther: value.discoverySource === "other" ? value.discoverySourceOther! : null,
 }));
 
 export type UserOnboardingStatus = {
   required: boolean;
   version: number;
+  storedVersion: number | null;
 };

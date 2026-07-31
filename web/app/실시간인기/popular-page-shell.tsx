@@ -17,8 +17,8 @@ export function PopularPageShell({
   const [loginOpen, setLoginOpen] = useState(false);
 
   return (
-    <div className="app-shell site-chrome min-h-screen overflow-visible text-neutral-100">
-      <SiteHeader>
+    <div className="app-shell site-chrome desktop-sidebar-layout min-h-screen overflow-visible text-neutral-100">
+      <SiteHeader desktopSidebar>
         <AuthControls
           user={user}
           next="/popular"

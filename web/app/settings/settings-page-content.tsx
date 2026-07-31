@@ -289,8 +289,8 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
   }
 
   return (
-    <div className="app-shell site-chrome min-h-screen text-neutral-100">
-      <SiteHeader><AuthControls user={user} next="/settings" /></SiteHeader>
+    <div className="app-shell site-chrome desktop-sidebar-layout min-h-screen text-neutral-100">
+      <SiteHeader desktopSidebar><AuthControls user={user} next="/settings" /></SiteHeader>
       <main className="mx-auto w-full max-w-4xl flex-1 px-5 py-12 sm:px-8 sm:py-16">
         <header>
           <p className="text-xs font-black tracking-[.2em] text-[#ff8c7c]">{t("settings.eyebrow")}</p>

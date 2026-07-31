@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useUsageState } from "@/components/usage-provider";
+import { useWelcomeOverlayStage } from "@/components/welcome-overlay-queue";
 import type { UsageSnapshot } from "@/lib/contracts";
 import {
   projectFeedbackDisappointmentReasons,
@@ -9,6 +10,7 @@ import {
   type ProjectFeedbackDisappointmentReason,
   type ProjectFeedbackPromptStatus,
 } from "@/lib/project-feedback";
+import { PROJECT_FEEDBACK_STATUS_REFRESH_EVENT } from "@/lib/project-feedback-client";
 import { userFacingErrorMessage } from "@/lib/public-error";
 import { publishUsageSnapshot } from "@/lib/usage-client";
 
@@ -27,6 +29,10 @@ async function responseBody<T>(response: Response): Promise<T> {
 
 export function ProjectFeedbackOverlay() {
   const { authenticated, usage } = useUsageState();
+  const {
+    active: queueActive,
+    complete: completeQueueStage,
+  } = useWelcomeOverlayStage("feedback");
   const [status, setStatus] = useState<ProjectFeedbackPromptStatus | null>(null);
   const [open, setOpen] = useState(false);
   const [satisfactionRating, setSatisfactionRating] = useState<number | null>(null);
@@ -39,7 +45,7 @@ export function ProjectFeedbackOverlay() {
   const skippedInitialUsageRefresh = useRef(false);
 
   const loadStatus = useCallback(async () => {
-    if (!authenticated || success) return;
+    if (!authenticated || !queueActive || success) return;
     try {
       const response = await fetch("/api/project-feedback", {
         cache: "no-store",
@@ -50,10 +56,10 @@ export function ProjectFeedbackOverlay() {
     } catch {
       // 피드백 요청은 핵심 작업 흐름을 방해하지 않도록 조용히 재시도한다.
     }
-  }, [authenticated, success]);
+  }, [authenticated, queueActive, success]);
 
   useEffect(() => {
-    if (!authenticated) {
+    if (!authenticated || !queueActive) {
       setStatus(null);
       setOpen(false);
       return;
@@ -63,13 +69,16 @@ export function ProjectFeedbackOverlay() {
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") void loadStatus();
     };
+    const onStatusRefresh = () => void loadStatus();
     window.addEventListener("focus", onFocus);
+    window.addEventListener(PROJECT_FEEDBACK_STATUS_REFRESH_EVENT, onStatusRefresh);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener(PROJECT_FEEDBACK_STATUS_REFRESH_EVENT, onStatusRefresh);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [authenticated, loadStatus]);
+  }, [authenticated, loadStatus, queueActive]);
 
   const usageFingerprint = usage
     ? `${usage.usedSeconds}:${usage.reservedSeconds}:${usage.remainingSeconds}`
@@ -83,10 +92,14 @@ export function ProjectFeedbackOverlay() {
   }, [loadStatus, usageFingerprint]);
 
   useEffect(() => {
-    if (!status?.eligible || success) return;
+    if (!queueActive || !status || success) return;
+    if (!status.eligible) {
+      completeQueueStage();
+      return;
+    }
     const timer = window.setTimeout(() => setOpen(true), 900);
     return () => window.clearTimeout(timer);
-  }, [status?.eligible, success]);
+  }, [completeQueueStage, queueActive, status, success]);
 
   useEffect(() => {
     if (!open) return;
@@ -96,26 +109,6 @@ export function ProjectFeedbackOverlay() {
       document.body.style.overflow = previousOverflow;
     };
   }, [open]);
-
-  const deferFeedback = async () => {
-    if (submitting) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/project-feedback/dismiss", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ requestId: crypto.randomUUID() }),
-      });
-      setStatus(await responseBody<ProjectFeedbackPromptStatus>(response));
-      setOpen(false);
-    } catch (cause) {
-      setError(userFacingErrorMessage(cause, "피드백을 미루지 못했습니다."));
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const submitFeedback = async (event: FormEvent) => {
     event.preventDefault();
@@ -173,7 +166,10 @@ export function ProjectFeedbackOverlay() {
             </p>
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                setOpen(false);
+                completeQueueStage();
+              }}
               className="mt-7 min-h-12 rounded-xl bg-white px-7 text-sm font-black text-black transition hover:bg-neutral-200"
             >
               확인
@@ -275,19 +271,11 @@ export function ProjectFeedbackOverlay() {
               )}
             </div>
 
-            <footer className="flex flex-col-reverse gap-2 border-t border-white/10 px-6 py-5 sm:flex-row sm:justify-end sm:px-9">
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={() => void deferFeedback()}
-                className="min-h-12 rounded-xl border border-white/10 px-5 text-sm font-bold text-neutral-400 transition hover:bg-white/[.05] hover:text-white disabled:opacity-50"
-              >
-                나중에 할게요
-              </button>
+            <footer className="border-t border-white/10 px-6 py-5 sm:px-9">
               <button
                 type="submit"
                 disabled={submitting || satisfactionRating === null || disappointmentReason === null}
-                className="min-h-12 rounded-xl bg-white px-6 text-sm font-black text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+                className="min-h-12 w-full rounded-xl bg-white px-6 text-sm font-black text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {submitting ? "보내는 중..." : "피드백 보내고 30분 받기"}
               </button>

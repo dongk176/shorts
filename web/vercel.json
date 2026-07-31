@@ -3,6 +3,10 @@
   "framework": "nextjs",
   "crons": [
     {
+      "path": "/api/cron/job-completion-emails",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/youtube-daily",
       "schedule": "0 8 * * *"
     },
