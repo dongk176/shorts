@@ -1900,6 +1900,13 @@ const EDITOR_TEXT_LAYER_MIN_SCALE = 0.5;
 const EDITOR_TEXT_LAYER_MAX_SCALE = 2;
 const EDITOR_TEXT_OVERLAY_LIMIT = 20;
 type EditorOverlaySelection = EditorOverlayOrderItem | null;
+type EditorSidebarTool =
+  | "title"
+  | "text"
+  | "comment"
+  | "channel"
+  | "background"
+  | "template";
 const EDITOR_OVERLAY_LABELS: Record<EditorOverlayLayer, string> = {
   video: "영상",
   title: "제목",
@@ -1917,7 +1924,7 @@ const selectedEditorTextId = (selection: EditorOverlaySelection) => (
 function EditorSidebarSectionIcon({
   section,
 }: {
-  section: "title" | "comment" | "channel" | "background" | "template";
+  section: EditorSidebarTool;
 }) {
   if (section === "title") {
     return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -1928,6 +1935,12 @@ function EditorSidebarSectionIcon({
     return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path d="M4.25 4.25h11.5v8.5H9l-3.75 3v-3h-1Z" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M7 7.25h6M7 9.75h4" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" />
+    </svg>;
+  }
+  if (section === "text") {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="3.25" y="3.25" width="13.5" height="13.5" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M6.25 7h7.5M10 7v6.25M7.8 13.25h4.4" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" />
     </svg>;
   }
   if (section === "channel") {
@@ -1951,6 +1964,7 @@ function EditorSidebarSectionIcon({
 
 const EDITOR_SIDEBAR_TOOLS = [
   { id: "title", label: "후킹 제목" },
+  { id: "text", label: "텍스트" },
   { id: "comment", label: "댓글" },
   { id: "channel", label: "채널명" },
   { id: "background", label: "배경" },
@@ -2701,7 +2715,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     () => !overlayPreviewEnabled,
   );
   const [activeEditorSidebarTool, setActiveEditorSidebarTool] = useState<
-    "title" | "comment" | "channel" | "background" | "template"
+    EditorSidebarTool
   >("title");
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [mobileEditorBlocked, setMobileEditorBlocked] = useState<boolean | null>(
@@ -2756,6 +2770,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     ) {
       return;
     }
+    setActiveEditorSidebarTool("text");
     setDesktopSidebarOpen(true);
   }, [overlayPreviewEnabled, selectedOverlay]);
   useEffect(() => {
@@ -2769,8 +2784,17 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     }
   }, [overlayPreviewEnabled]);
   const toggleEditorSidebarTool = (
-    tool: "title" | "comment" | "channel" | "background" | "template",
+    tool: EditorSidebarTool,
   ) => {
+    if (tool === "text") {
+      if (activeEditorSidebarTool === tool) {
+        setDesktopSidebarOpen((current) => !current);
+        return;
+      }
+      setActiveEditorSidebarTool(tool);
+      setDesktopSidebarOpen(true);
+      return;
+    }
     if (isEditorTextSelection(selectedOverlay)) {
       setInlineEditingOverlay(null);
       setSelectedOverlay(
@@ -5509,6 +5533,18 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setPreviewTime(next);
   };
 
+  const selectEditorTextFromSidebar = (textOverlay: EditorTextOverlay) => {
+    if (inlineEditingOverlay !== null) finishEditorInlineEdit();
+    setSelectedVideoClipId(null);
+    setSelectedOverlay(editorTextSelection(textOverlay.id));
+    setActiveEditorSidebarTool("text");
+    setDesktopSidebarOpen(true);
+    seekCommentTimeline(Math.max(
+      textOverlay.startSeconds,
+      Math.min(textOverlay.endSeconds - 0.001, textOverlay.startSeconds + 0.001),
+    ));
+  };
+
   const addComment = () => {
     if (overlayPreviewEnabled) {
       if (!overlayLayoutRef.current.visible.comment) {
@@ -6814,13 +6850,6 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           >
             + 댓글
           </button>
-          <button
-            type="button"
-            disabled={textOverlays.length >= EDITOR_TEXT_OVERLAY_LIMIT}
-            onClick={addEditorTextOverlay}
-          >
-            + 텍스트
-          </button>
         </div>}
         {videoCuttingEnabled && <div
           className="editor-preview-cut-actions"
@@ -6861,8 +6890,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               data-editor-guide="sidebar-tools"
             >
             {EDITOR_SIDEBAR_TOOLS.map((tool) => {
-              const active = !selectedTextOverlay
-                && activeEditorSidebarTool === tool.id
+              const active = activeEditorSidebarTool === tool.id
                 && desktopSidebarOpen;
               return (
                 <button
@@ -6899,9 +6927,45 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             {!standalone && <button onClick={onClose} className="editor-dialog-close-button rounded-lg px-3 py-2 text-sm text-white hover:bg-white/10">닫기</button>}
           </div>
           <div id="editor-controls-scroll" className="editor-controls-scroll">
-          {overlayPreviewEnabled
-            && selectedTextOverlay
-            && <section className="editor-elements-panel" aria-label="오버레이 요소">
+          {overlayPreviewEnabled && <section
+            className={`editor-sidebar-tool-panel editor-v2-text-tool-panel${activeEditorSidebarTool === "text" ? " is-active" : ""}`}
+            aria-label="텍스트 설정"
+          >
+            <header className="editor-tool-panel-header">
+              <strong>텍스트</strong>
+            </header>
+            <button
+              type="button"
+              className="editor-v2-text-add"
+              disabled={textOverlays.length >= EDITOR_TEXT_OVERLAY_LIMIT}
+              onClick={addEditorTextOverlay}
+            >
+              <span aria-hidden="true">+</span>
+              텍스트 추가
+            </button>
+            {textOverlays.length > 0
+              ? <div className="editor-v2-text-list" aria-label="추가한 텍스트 목록">
+                {textOverlays.map((textOverlay, index) => {
+                  const selection = editorTextSelection(textOverlay.id);
+                  const textLabel = textOverlay.text.trim() || `텍스트 ${index + 1}`;
+                  return <button
+                    key={textOverlay.id}
+                    type="button"
+                    className="editor-v2-text-list-item"
+                    aria-pressed={selectedOverlay === selection}
+                    onClick={() => selectEditorTextFromSidebar(textOverlay)}
+                  >
+                    <span className="editor-v2-text-list-icon" aria-hidden="true">T</span>
+                    <span className="editor-v2-text-list-copy">
+                      <strong>{textLabel}</strong>
+                      <small>{formatPreciseTimestamp(textOverlay.startSeconds)} – {formatPreciseTimestamp(textOverlay.endSeconds)}</small>
+                    </span>
+                  </button>;
+                })}
+              </div>
+              : <p className="editor-v2-text-empty">
+                추가한 텍스트가 없습니다.
+              </p>}
             {selectedTextOverlay && <div className="editor-element-settings">
               <label className="editor-text-content-setting">
                 <span>내용</span>
@@ -6969,6 +7033,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                   </button>
                 </div>
               </fieldset>
+              <button
+                type="button"
+                className="editor-v2-text-delete"
+                onClick={deleteSelectedEditorOverlay}
+              >
+                선택한 텍스트 삭제
+              </button>
             </div>}
           </section>}
           {overlayPreviewEnabled && <section
