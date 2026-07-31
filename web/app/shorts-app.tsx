@@ -2588,7 +2588,15 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     tool: "title" | "comment" | "channel" | "background" | "template",
   ) => {
     if (isEditorTextSelection(selectedOverlay)) {
-      setSelectedOverlay(null);
+      setInlineEditingOverlay(null);
+      setSelectedOverlay(
+        tool === "channel" && overlayLayoutRef.current.visible.channel
+          ? "channel"
+          : null,
+      );
+      setActiveEditorSidebarTool(tool);
+      setDesktopSidebarOpen(true);
+      return;
     }
     if (tool === "channel" && overlayLayoutRef.current.visible.channel) {
       setInlineEditingOverlay(null);
