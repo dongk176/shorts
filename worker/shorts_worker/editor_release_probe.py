@@ -29,6 +29,15 @@ FONT_IDS = (
     "spoqa-han-sans-neo",
 )
 
+PROBE_SCENARIOS = (
+    "baseline",
+    "ripple-cut",
+    "comment-gaps",
+    "text-effects",
+    "background-template",
+    "channel-layer-order",
+)
+
 
 def _run(command: list[str], *, timeout: float = 180) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -41,7 +50,7 @@ def _run(command: list[str], *, timeout: float = 180) -> subprocess.CompletedPro
     )
 
 
-def _document() -> EditorDocument:
+def _document(scenario: str = "baseline") -> EditorDocument:
     text_overlays = [
         {
             "id": f"font-{index}",
@@ -64,7 +73,7 @@ def _document() -> EditorDocument:
         "title",
         "channel",
     ]
-    return EditorDocument.model_validate({
+    value: dict[str, Any] = {
         "version": 2,
         "sourceShortId": "00000000-0000-4000-8000-000000000001",
         "baseRenderVersion": 1,
@@ -161,7 +170,260 @@ def _document() -> EditorDocument:
             "selectionStartSeconds": 11,
             "selectionEndSeconds": 16,
         },
-    })
+    }
+    if scenario == "baseline":
+        return EditorDocument.model_validate(value)
+    if scenario == "ripple-cut":
+        value["title"] = {
+            "text": "세 조각 리플 편집",
+            "textStyles": [{"start": 3, "end": 5, "color": "#FF715E"}],
+            "fontScale": 1.05,
+        }
+        value["comments"] = [
+            {
+                "id": "ripple-first",
+                "startSeconds": 0,
+                "endSeconds": 0.9,
+                "text": "첫 조각 댓글",
+                "initial": "첫",
+                "avatarColor": "#2674C8",
+                "nickname": "리플검증",
+                "likeCount": 101,
+                "ageLabel": "방금 전",
+            },
+            {
+                "id": "ripple-last",
+                "startSeconds": 2.4,
+                "endSeconds": 3.5,
+                "text": "삭제 구간 뒤 댓글",
+                "initial": "뒤",
+                "avatarColor": "#D3446F",
+                "nickname": "리플검증",
+                "likeCount": 202,
+                "ageLabel": "방금 전",
+            },
+        ]
+        value["subtitles"]["segments"] = [
+            {"start": 0.5, "end": 1.4, "text": "첫 원본 구간"},
+            {"start": 2, "end": 3, "text": "가운데 원본 구간"},
+            {"start": 6, "end": 7.6, "text": "마지막 원본 구간"},
+        ]
+        value["overlays"]["commentOffsets"] = {
+            "ripple-first": {"x": 0, "y": -20},
+            "ripple-last": {"x": 0, "y": 24},
+        }
+        value["overlays"]["textOverlays"] = []
+        value["overlays"]["layerOrder"] = [
+            "video",
+            "comment",
+            "title",
+            "channel",
+        ]
+        value["video"]["clips"] = [
+            {
+                "id": "ripple-1",
+                "sourceStartSeconds": 0.5,
+                "sourceEndSeconds": 1.4,
+            },
+            {
+                "id": "ripple-2",
+                "sourceStartSeconds": 2,
+                "sourceEndSeconds": 3,
+            },
+            {
+                "id": "ripple-3",
+                "sourceStartSeconds": 6,
+                "sourceEndSeconds": 7.6,
+            },
+        ]
+        value["video"]["selectionStartSeconds"] = 10.5
+        value["video"]["selectionEndSeconds"] = 17.6
+    elif scenario == "comment-gaps":
+        value["template"]["id"] = "comment-capture"
+        value["title"] = {
+            "text": "댓글 빈 구간 검증",
+            "textStyles": [],
+            "fontScale": 1,
+        }
+        value["comments"] = [
+            {
+                "id": "gap-1",
+                "startSeconds": 0,
+                "endSeconds": 0.75,
+                "text": "처음에만 보이는 댓글",
+                "initial": "처",
+                "avatarColor": "#16A34A",
+                "nickname": "댓글검증",
+                "likeCount": 110,
+                "ageLabel": "1분 전",
+            },
+            {
+                "id": "gap-2",
+                "startSeconds": 1.5,
+                "endSeconds": 2.2,
+                "text": "빈 구간 뒤 두 번째 댓글",
+                "initial": "두",
+                "avatarColor": "#3B82F6",
+                "nickname": "댓글검증",
+                "likeCount": 220,
+                "ageLabel": "2분 전",
+            },
+            {
+                "id": "gap-3",
+                "startSeconds": 3,
+                "endSeconds": 3.5,
+                "text": "끝 구간 댓글",
+                "initial": "끝",
+                "avatarColor": "#DB2777",
+                "nickname": "댓글검증",
+                "likeCount": 330,
+                "ageLabel": "3분 전",
+            },
+        ]
+        value["overlays"]["commentOffsets"] = {
+            "gap-1": {"x": 0, "y": -36},
+            "gap-2": {"x": 0, "y": 0},
+            "gap-3": {"x": 0, "y": 38},
+        }
+        value["overlays"]["commentTheme"] = "light"
+        value["overlays"]["textOverlays"] = []
+        value["overlays"]["layerOrder"] = [
+            "video",
+            "comment",
+            "title",
+            "channel",
+        ]
+        value["overlays"]["background"] = {
+            "kind": "image",
+            "assetId": "white-grid",
+        }
+    elif scenario == "text-effects":
+        value["title"] = {
+            "text": "텍스트 시간과 효과",
+            "textStyles": [],
+            "fontScale": 1,
+        }
+        value["comments"] = []
+        value["overlays"]["commentOffsets"] = {}
+        value["overlays"]["visible"]["comment"] = False
+        value["overlays"]["textOverlays"] = [
+            {
+                "id": "outline-red",
+                "text": "굵은 테두리",
+                "fontId": "black-han-sans",
+                "color": "#FF4D4F",
+                "effect": "outline",
+                "offset": {"x": -210, "y": -260},
+                "width": 300,
+                "scale": 1.15,
+                "startSeconds": 0.5,
+                "endSeconds": 1.25,
+            },
+            {
+                "id": "shadow-yellow",
+                "text": "그림자와 줄바꿈을 확인하는 긴 문구",
+                "fontId": "do-hyeon",
+                "color": "#FFD84D",
+                "effect": "shadow",
+                "offset": {"x": 180, "y": 0},
+                "width": 260,
+                "scale": 0.9,
+                "startSeconds": 1.25,
+                "endSeconds": 2.5,
+            },
+            {
+                "id": "plain-blue",
+                "text": "효과 없음",
+                "fontId": "noto-serif-kr",
+                "color": "#3B82F6",
+                "effect": "none",
+                "offset": {"x": 0, "y": 300},
+                "width": 520,
+                "scale": 1.3,
+                "startSeconds": 2.5,
+                "endSeconds": 3.5,
+            },
+        ]
+        value["overlays"]["layerOrder"] = [
+            "video",
+            "text:outline-red",
+            "text:shadow-yellow",
+            "text:plain-blue",
+            "title",
+            "comment",
+            "channel",
+        ]
+        value["overlays"]["background"] = {"kind": "color", "color": "#040404"}
+    elif scenario == "background-template":
+        value["template"]["id"] = "paper"
+        value["title"] = {
+            "text": "한지 배경\n정사각 영상",
+            "textStyles": [
+                {"start": 6, "end": 12, "color": "#E32626", "backgroundColor": "#FFD84D"}
+            ],
+            "fontScale": 0.95,
+        }
+        value["video"]["aspectRatio"] = "1:1"
+        value["overlays"]["background"] = {
+            "kind": "image",
+            "assetId": "white-hanji",
+        }
+        value["overlays"]["commentTheme"] = "light"
+        value["overlays"]["fonts"] = {
+            "title": "nanum-myeongjo",
+            "channel": "spoqa-han-sans-neo",
+        }
+        value["overlays"]["textOverlays"] = []
+        value["overlays"]["layerOrder"] = [
+            "video",
+            "comment",
+            "title",
+            "channel",
+        ]
+    elif scenario == "channel-layer-order":
+        value["title"] = {
+            "text": "레이어 순서 검증",
+            "textStyles": [
+                {"start": 0, "end": 3, "color": "#35E6E3"},
+                {"start": 4, "end": 6, "color": "#FF715E"},
+            ],
+            "fontScale": 1.2,
+        }
+        value["channel"]["displayName"] = "교체한 채널 프로필"
+        value["overlays"]["offsets"]["channel"] = {"x": 150, "y": -120}
+        value["overlays"]["scales"]["channel"] = 1.45
+        value["overlays"]["fonts"] = {
+            "title": "gmarket-sans",
+            "channel": "black-han-sans",
+        }
+        value["overlays"]["textOverlays"] = [
+            {
+                "id": "top-layer",
+                "text": "가장 위 텍스트",
+                "fontId": "suit",
+                "color": "#FFFFFF",
+                "effect": "outline",
+                "offset": {"x": 130, "y": 650},
+                "width": 460,
+                "scale": 1.1,
+                "startSeconds": 0,
+                "endSeconds": 3.5,
+            }
+        ]
+        value["overlays"]["layerOrder"] = [
+            "video",
+            "title",
+            "comment",
+            "channel",
+            "text:top-layer",
+        ]
+        value["overlays"]["background"] = {
+            "kind": "image",
+            "assetId": "news-red-globe",
+        }
+    else:
+        raise RuntimeError(f"Unsupported editor release scenario: {scenario}")
+    return EditorDocument.model_validate(value)
 
 
 def _green_video_bounds(frame_path: Path) -> tuple[int, int, int, int]:
@@ -198,17 +460,21 @@ def run_editor_release_probe() -> dict[str, Any]:
             "EDITOR_RELEASE_SUITE_VERIFIED must confirm the legacy and timeline test suite"
         )
 
+    scenario = os.environ.get("EDITOR_RELEASE_SCENARIO", "baseline").strip().lower()
+    if scenario not in PROBE_SCENARIOS:
+        raise RuntimeError(f"Unsupported EDITOR_RELEASE_SCENARIO: {scenario}")
+
     settings = Settings(
         database_url=None,
         openai_api_key=None,
         gemini_api_key=None,
         ffmpeg_timeout_seconds=180,
-        ffmpeg_threads=2,
+        ffmpeg_threads=max(1, int(os.environ.get("FFMPEG_THREADS", "2"))),
         clean_clip_preset="ultrafast",
         clean_clip_crf=28,
     )
     verify_editor_fonts()
-    document = _document()
+    document = _document(scenario)
     with tempfile.TemporaryDirectory(
         prefix="editor-release-probe-",
         dir=settings.temp_dir if settings.temp_dir.is_dir() else None,
@@ -315,6 +581,7 @@ def run_editor_release_probe() -> dict[str, Any]:
             )
         manifest = {
             "schemaVersion": 1,
+            "scenario": scenario,
             "gitSha": git_sha,
             "workerImageDigest": image_digest,
             "documentVersion": document.version,
@@ -348,11 +615,30 @@ def run_editor_release_probe() -> dict[str, Any]:
                 "maximumErrorPixels": geometry_error,
             },
             "fonts": list(FONT_IDS),
+            "features": {
+                "clipCount": len(document.video.clips),
+                "commentCount": len(document.comments),
+                "textOverlayCount": len(document.overlays.text_overlays),
+                "background": document.overlays.background.model_dump(
+                    mode="json",
+                    by_alias=True,
+                )
+                if document.overlays.background is not None
+                else None,
+                "template": document.template.id.value,
+                "layerOrder": document.overlays.layer_order,
+            },
         }
         bucket = settings.s3_bucket
         if not bucket:
             raise RuntimeError("AWS_S3_OUTPUT_BUCKET is required for release evidence")
-        prefix = f"editor-release-probes/{git_sha}/{image_digest[7:19]}"
+        if scenario == "baseline":
+            prefix = f"editor-release-probes/{git_sha}/{image_digest[7:19]}"
+        else:
+            prefix = (
+                f"editor-release-scenarios/{git_sha}/{image_digest[7:19]}/"
+                f"{scenario}"
+            )
         client = boto3.client("s3", region_name=settings.aws_region)
         client.upload_file(str(output), bucket, f"{prefix}/output.mp4")
         client.upload_file(str(frame_path), bucket, f"{prefix}/frame.png")

@@ -20,6 +20,45 @@ def test_probe_document_covers_all_supported_editor_fonts() -> None:
     assert document.comments[0].end_seconds < document.comments[1].start_seconds
 
 
+@pytest.mark.parametrize("scenario", editor_release_probe.PROBE_SCENARIOS)
+def test_editor_release_probe_scenarios_are_valid_and_renderable(scenario: str) -> None:
+    document = editor_release_probe._document(scenario)
+
+    assert document.version == 2
+    assert document.video.output_duration_seconds == pytest.approx(3.5)
+    assert document.overlays.visible["video"] is True
+    assert set(document.overlays.layer_order) == {
+        "video",
+        "title",
+        "comment",
+        "channel",
+        *(f"text:{overlay.id}" for overlay in document.overlays.text_overlays),
+    }
+
+
+def test_editor_release_probe_matrix_covers_candidate_editing_features() -> None:
+    documents = {
+        scenario: editor_release_probe._document(scenario)
+        for scenario in editor_release_probe.PROBE_SCENARIOS
+    }
+
+    assert len(documents["ripple-cut"].video.clips) == 3
+    assert len(documents["comment-gaps"].comments) == 3
+    assert documents["comment-gaps"].overlays.comment_theme == "light"
+    assert {
+        overlay.effect for overlay in documents["text-effects"].overlays.text_overlays
+    } == {"none", "outline", "shadow"}
+    assert documents["background-template"].overlays.background is not None
+    assert documents["background-template"].overlays.background.asset_id == "white-hanji"
+    assert documents["channel-layer-order"].channel.display_name == "교체한 채널 프로필"
+    assert documents["channel-layer-order"].overlays.layer_order[-1] == "text:top-layer"
+
+
+def test_editor_release_probe_rejects_unknown_scenario() -> None:
+    with pytest.raises(RuntimeError, match="Unsupported editor release scenario"):
+        editor_release_probe._document("unknown")
+
+
 @pytest.mark.render
 @pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
@@ -39,6 +78,7 @@ def test_release_probe_renders_and_uploads_machine_verifiable_evidence(
 
     result = editor_release_probe.run_editor_release_probe()
 
+    assert result["scenario"] == "baseline"
     assert result["checks"] == {
         "worker-image": True,
         "legacy-no-timeline": True,
