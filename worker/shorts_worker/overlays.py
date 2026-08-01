@@ -65,6 +65,7 @@ FONT_CANDIDATES = {
     "bold": (
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Bold.otf",
+        "/usr/share/fonts/noto/NotoSansCJK-Bold.ttc",
         "/System/Library/Fonts/AppleSDGothicNeo.ttc",
         "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -72,6 +73,7 @@ FONT_CANDIDATES = {
     "regular": (
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf",
+        "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
         "/System/Library/Fonts/AppleSDGothicNeo.ttc",
         "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",

@@ -1,16 +1,16 @@
-FROM denoland/deno:bin-2.8.3 AS deno
-
-FROM python:3.12-slim AS worker-base
+FROM python:3.12-alpine3.22@sha256:a190708a2dec1bd18b1decb539f8e8f5407abaa9bf39cacda583f7f8c11db322 AS worker-base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=deno /deno /usr/local/bin/deno
+USER 0
+RUN apk add --no-cache \
+        bash \
+        coreutils \
+        deno \
+        ffmpeg \
+        libstdc++
 
 WORKDIR /app/worker
 COPY requirements.txt ./
@@ -26,9 +26,7 @@ CMD ["python", "-m", "shorts_worker"]
 
 FROM worker-base AS render
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-noto-cjk \
-    && rm -rf /var/lib/apt/lists/* \
+RUN apk add --no-cache font-noto-cjk \
     && python -c "from shorts_worker.editor_renderer import verify_editor_fonts; verify_editor_fonts()"
 
 ENTRYPOINT ["./entrypoint.sh"]

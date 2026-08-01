@@ -175,6 +175,23 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(registrar, /docker\s+(build|push)/);
 });
 
+test("candidate worker uses a pinned, scan-friendly image with render dependencies", async () => {
+  const [dockerfile, overlays] = await Promise.all([
+    source("worker/Dockerfile"),
+    source("worker/shorts_worker/overlays.py"),
+  ]);
+
+  assert.match(
+    dockerfile,
+    /FROM python:3\.12-alpine3\.22@sha256:[a-f0-9]{64} AS worker-base/,
+  );
+  assert.match(dockerfile, /apk add --no-cache[\s\S]*deno[\s\S]*ffmpeg/);
+  assert.match(dockerfile, /apk add --no-cache font-noto-cjk/);
+  assert.doesNotMatch(dockerfile, /python:3\.12-slim/);
+  assert.match(overlays, /\/usr\/share\/fonts\/noto\/NotoSansCJK-Bold\.ttc/);
+  assert.match(overlays, /\/usr\/share\/fonts\/noto\/NotoSansCJK-Regular\.ttc/);
+});
+
 test("admin promotion is transactional, gated, and audited", async () => {
   const actions = await source(
     "web/app/admin/easycutcutcutcutcutcut/editor-release-actions.ts",
