@@ -11,6 +11,8 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 LAMBDA_DIR = Path(__file__).parents[2] / "infra" / "aws" / "lambda"
 
 
@@ -947,11 +949,11 @@ def _editor_release_registration_event() -> dict[str, object]:
         "imageDigest": f"sha256:{'b' * 64}",
         "productionJobDefinitionArn": (
             "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
-            "shorts-mvp-editor-release-aaaaaaaaaaaa:3"
+            "shorts-mvp-editor-release-aaaaaaaaaaaa-4vcpu:3"
         ),
         "isolatedJobDefinitionArn": (
             "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
-            "shorts-mvp-editor-test-release-aaaaaaaaaaaa:2"
+            "shorts-mvp-editor-test-release-aaaaaaaaaaaa-4vcpu:2"
         ),
         "isolatedBatchJobId": "isolated-job-a",
         "artifactUri": (
@@ -997,6 +999,36 @@ def _editor_release_manifest() -> dict[str, object]:
     }
 
 
+def _editor_release_job_definition(
+    name: str,
+    *,
+    image: str | None,
+    vcpus: str,
+) -> dict[str, object]:
+    container: dict[str, object] = {
+        "jobRoleArn": "arn:aws:iam::123456789012:role/trusted",
+        "command": ["python", "-m", "shorts_worker", "rerender"],
+        "environment": [
+            {"name": "TASK_VCPUS", "value": vcpus},
+            {"name": "FFMPEG_THREADS", "value": vcpus},
+        ],
+        "resourceRequirements": [
+            {"type": "MEMORY", "value": "16384"},
+            {"type": "VCPU", "value": vcpus},
+        ],
+    }
+    if image is not None:
+        container["image"] = image
+    return {
+        "status": "ACTIVE",
+        "revision": 1,
+        "jobDefinitionName": name,
+        "type": "container",
+        "containerProperties": container,
+        "platformCapabilities": ["FARGATE"],
+    }
+
+
 def test_editor_release_registrar_verifies_evidence_before_creating_candidate() -> None:
     module, _ = _load_lambda("editor_release_registrar")
     event = _editor_release_registration_event()
@@ -1009,24 +1041,26 @@ def test_editor_release_registrar_verifies_evidence_before_creating_candidate() 
         "stoppedAt": int(datetime.now(UTC).timestamp() * 1000),
     }]}
     module.batch.describe_job_definitions.side_effect = [
-        {"jobDefinitions": [{
-            "status": "ACTIVE",
-            "containerProperties": {"image": image},
-        }]},
-        {"jobDefinitions": [{
-            "status": "ACTIVE",
-            "containerProperties": {"image": image},
-        }]},
-        {"jobDefinitions": [{
-            "status": "ACTIVE",
-            "revision": 1,
-            "containerProperties": {},
-        }]},
-        {"jobDefinitions": [{
-            "status": "ACTIVE",
-            "revision": 1,
-            "containerProperties": {},
-        }]},
+        {"jobDefinitions": [_editor_release_job_definition(
+            "shorts-mvp-editor-release-aaaaaaaaaaaa-4vcpu",
+            image=image,
+            vcpus="4",
+        )]},
+        {"jobDefinitions": [_editor_release_job_definition(
+            "shorts-mvp-editor-test-release-aaaaaaaaaaaa-4vcpu",
+            image=image,
+            vcpus="4",
+        )]},
+        {"jobDefinitions": [_editor_release_job_definition(
+            "trusted-production-template",
+            image=None,
+            vcpus="2",
+        )]},
+        {"jobDefinitions": [_editor_release_job_definition(
+            "trusted-isolated-template",
+            image=None,
+            vcpus="2",
+        )]},
     ]
     module.ecr = MagicMock()
     module.ecr.describe_image_scan_findings.return_value = {
@@ -1123,6 +1157,35 @@ def test_editor_release_registrar_rejects_definition_contract_drift() -> None:
         )
     else:
         raise AssertionError("definition role drift was accepted")
+
+
+def test_editor_release_registrar_allows_only_the_4_vcpu_candidate_delta() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    trusted = _editor_release_job_definition(
+        "trusted-template",
+        image=None,
+        vcpus="2",
+    )
+    candidate = _editor_release_job_definition(
+        "shorts-mvp-editor-release-aaaaaaaaaaaa-4vcpu",
+        image="registry.example/shorts@sha256:" + "b" * 64,
+        vcpus="4",
+    )
+
+    module._verify_definition_contract(
+        candidate,
+        trusted,
+        allow_candidate_resources=True,
+    )
+
+    invalid = deepcopy(candidate)
+    invalid["containerProperties"]["resourceRequirements"][1]["value"] = "8"
+    with pytest.raises(RuntimeError, match="exactly 4 vCPU"):
+        module._verify_definition_contract(
+            invalid,
+            trusted,
+            allow_candidate_resources=True,
+        )
 
 
 def test_editor_release_registration_retry_never_pauses_an_active_canary() -> None:

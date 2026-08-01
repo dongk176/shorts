@@ -47,6 +47,8 @@ _REQUIRED_FONTS = {
     "suit",
     "spoqa-han-sans-neo",
 }
+_CANDIDATE_VCPUS = "4"
+_CANDIDATE_FFMPEG_THREADS = "4"
 
 
 def _required_string(event: dict[str, Any], name: str) -> str:
@@ -114,8 +116,53 @@ def _definition_contract(definition: dict[str, Any]) -> dict[str, Any]:
 def _verify_definition_contract(
     definition: dict[str, Any],
     trusted_template: dict[str, Any],
+    *,
+    allow_candidate_resources: bool = False,
 ) -> None:
-    if _definition_contract(definition) != _definition_contract(trusted_template):
+    candidate_contract = _definition_contract(definition)
+    trusted_contract = _definition_contract(trusted_template)
+    if allow_candidate_resources:
+        definition_name = str(definition.get("jobDefinitionName") or "")
+        if not definition_name.endswith("-4vcpu"):
+            raise RuntimeError("Editor release job definition is not the 4 vCPU candidate")
+        candidate_container = candidate_contract["containerProperties"]
+        trusted_container = trusted_contract["containerProperties"]
+        candidate_resources = candidate_container.get("resourceRequirements", [])
+        trusted_resources = trusted_container.get("resourceRequirements", [])
+        candidate_vcpu = next(
+            (item for item in candidate_resources if item.get("type") == "VCPU"),
+            None,
+        )
+        trusted_vcpu = next(
+            (item for item in trusted_resources if item.get("type") == "VCPU"),
+            None,
+        )
+        if candidate_vcpu is None or candidate_vcpu.get("value") != _CANDIDATE_VCPUS:
+            raise RuntimeError("Editor release candidate must use exactly 4 vCPU")
+        if trusted_vcpu is None:
+            raise RuntimeError("Trusted editor template does not define vCPU")
+        candidate_vcpu["value"] = trusted_vcpu.get("value")
+
+        candidate_environment = candidate_container.get("environment", [])
+        trusted_environment = trusted_container.get("environment", [])
+        for name, required_value in (
+            ("TASK_VCPUS", _CANDIDATE_VCPUS),
+            ("FFMPEG_THREADS", _CANDIDATE_FFMPEG_THREADS),
+        ):
+            candidate_item = next(
+                (item for item in candidate_environment if item.get("name") == name),
+                None,
+            )
+            trusted_item = next(
+                (item for item in trusted_environment if item.get("name") == name),
+                None,
+            )
+            if candidate_item is None or candidate_item.get("value") != required_value:
+                raise RuntimeError(f"Editor release candidate has invalid {name}")
+            if trusted_item is None:
+                raise RuntimeError(f"Trusted editor template does not define {name}")
+            candidate_item["value"] = trusted_item.get("value")
+    if candidate_contract != trusted_contract:
         raise RuntimeError(
             "Editor release job definition differs from its trusted template"
         )
@@ -365,12 +412,14 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     _verify_definition_contract(
         production_definition,
         _latest_job_definition(os.environ["RERENDER_JOB_DEFINITION"]),
+        allow_candidate_resources=True,
     )
     _verify_definition_contract(
         isolated_definition,
         _latest_job_definition(
             os.environ["EDITOR_TEST_TEMPLATE_JOB_DEFINITION"],
         ),
+        allow_candidate_resources=True,
     )
     production_image = _definition_image(production_definition, digest)
     isolated_image = _definition_image(isolated_definition, digest)
