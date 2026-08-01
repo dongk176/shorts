@@ -119,7 +119,43 @@ describe("AI comment regeneration", () => {
   it("keeps the confirmation copy and undoable comment replacement in the editor", () => {
     expect(editorSource).toContain("AI로 댓글 재생성");
     expect(editorSource).toContain("댓글 재생성은 사용량 1분을 소모합니다.");
+    expect(editorSource).toContain("어떤 댓글을 사용할까요?");
+    expect(editorSource).toContain("모두 기존 댓글");
+    expect(editorSource).toContain("모두 새 댓글");
+    expect(editorSource).toContain("선택한 댓글 적용");
+    expect(editorSource).toContain("max-w-[760px]");
+    expect(editorSource).not.toContain("생성 사용량 1분은 이미 반영되었어요.");
     expect(editorSource).toContain('"comment-replace"');
     expect(editorSource).toContain("recordEditorCommentReplacement(before, after)");
+  });
+
+  it("keeps generated comments pending until the user applies their choices", () => {
+    const regenerationStart = editorSource.indexOf(
+      "const regenerateEditorComments = useCallback(async () =>",
+    );
+    const regenerationEnd = editorSource.indexOf(
+      "const beginEditorOverlayHistoryInteraction",
+      regenerationStart,
+    );
+    const regenerationFlow = editorSource.slice(regenerationStart, regenerationEnd);
+    expect(regenerationFlow).toContain("setCommentRegenerationComparison({");
+    expect(regenerationFlow).not.toContain("setComments(after)");
+    expect(editorSource).toContain(
+      "const applyRegeneratedCommentComparison = useCallback(() =>",
+    );
+    expect(editorSource).toContain("setComments(after)");
+  });
+
+  it("lets users edit either comparison option before applying it", () => {
+    expect(editorSource).toContain("더블클릭해서 직접 수정하세요.");
+    expect(editorSource).toContain("더블클릭해서 수정");
+    expect(editorSource).toContain("onDoubleClick={(event) => {");
+    expect(editorSource).toContain("onTextChange={updateRegeneratedCommentText}");
+    expect(editorSource).toContain(
+      "existingTexts: before.map((comment) => comment.text)",
+    );
+    expect(editorSource).toContain("comparison.existingTexts[index]");
+    expect(editorSource).toContain("selectedTexts[index]");
+    expect(editorSource).toContain("disabled={!selectedCommentsValid}");
   });
 });

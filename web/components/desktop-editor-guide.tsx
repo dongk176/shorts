@@ -43,6 +43,7 @@ export function DesktopEditorGuide({
         : DESKTOP_EDITOR_GUIDE_STORAGE_KEY}
       mediaQuery={DESKTOP_EDITOR_GUIDE_MEDIA_QUERY}
       closeAriaLabel="편집 가이드 닫기"
+      smoothTransitions={overlayPreviewEnabled}
     />
   );
 }

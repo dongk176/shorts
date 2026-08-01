@@ -12,7 +12,38 @@ import {
 const snapshot = () => {
   const overlays = createInitialEditorOverlayLayout();
   overlays.textOverlays = [createEditorTextOverlay("text-1", 3)];
-  overlays.layerOrder.push("text:text-1");
+  overlays.textOverlays[0] = {
+    ...overlays.textOverlays[0],
+    text: "추가 문구",
+    fontId: "do-hyeon",
+    color: "#000000",
+    effect: "shadow",
+    offset: { x: 42, y: -18 },
+    width: 420,
+    scale: 1.35,
+    startSeconds: 0.5,
+    endSeconds: 2.5,
+  };
+  overlays.offsets.video = { x: 24, y: -12 };
+  overlays.offsets.title = { x: -30, y: 18 };
+  overlays.offsets.channel = { x: 12, y: 20 };
+  overlays.commentOffsets = { "comment-1": { x: 0, y: 88 } };
+  overlays.scales = { video: 1.2, title: 1.1, channel: 0.9 };
+  overlays.fonts = { title: "black-han-sans", channel: "suit" };
+  overlays.visible = {
+    video: true,
+    title: true,
+    comment: true,
+    channel: false,
+  };
+  overlays.commentTheme = "light";
+  overlays.layerOrder = [
+    "video",
+    "comment",
+    "text:text-1",
+    "title",
+    "channel",
+  ];
   overlays.background = { kind: "color", color: "#FFFFFF" };
   return createEditorDocumentSnapshot({
   sourceShortId: "short-1",
@@ -71,7 +102,30 @@ describe("editor document snapshot", () => {
     expect(value.baseRenderVersion).toBe(4);
     expect(value.video.clips).toHaveLength(1);
     expect(value.comments).toHaveLength(1);
-    expect(value.overlays.textOverlays[0].text).toBe("텍스트를 입력하세요");
+    expect(value.overlays.textOverlays[0]).toMatchObject({
+      text: "추가 문구",
+      fontId: "do-hyeon",
+      color: "#000000",
+      effect: "shadow",
+      offset: { x: 42, y: -18 },
+      width: 420,
+      scale: 1.35,
+      startSeconds: 0.5,
+      endSeconds: 2.5,
+    });
+    expect(value.overlays.offsets.video).toEqual({ x: 24, y: -12 });
+    expect(value.overlays.commentOffsets["comment-1"]).toEqual({ x: 0, y: 88 });
+    expect(value.overlays.scales).toEqual({ video: 1.2, title: 1.1, channel: 0.9 });
+    expect(value.overlays.fonts).toEqual({ title: "black-han-sans", channel: "suit" });
+    expect(value.overlays.visible.channel).toBe(false);
+    expect(value.overlays.commentTheme).toBe("light");
+    expect(value.overlays.layerOrder).toEqual([
+      "video",
+      "comment",
+      "text:text-1",
+      "title",
+      "channel",
+    ]);
     expect(value.overlays.background).toEqual({
       kind: "color",
       color: "#FFFFFF",
@@ -94,7 +148,7 @@ describe("editor document snapshot", () => {
     expect(original.title.textStyles[0].color).toBe("#ffffff");
     expect(original.video.clips[0].sourceEndSeconds).toBe(3);
     expect(original.subtitles.segments[0].text).toBe("자막");
-    expect(original.overlays.offsets.video.x).toBe(0);
+    expect(original.overlays.offsets.video.x).toBe(24);
     expect(editorDocumentSnapshotsEqual(original, cloned)).toBe(false);
   });
 });

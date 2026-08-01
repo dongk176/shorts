@@ -82,7 +82,7 @@ const layerOrderItemSchema = z.string().min(1).max(105).refine(
   ),
 );
 
-export const editorDocumentSnapshotSchema = z.object({
+const editorDocumentSnapshotBaseSchema = z.object({
   version: z.literal(EDITOR_DOCUMENT_SNAPSHOT_VERSION),
   sourceShortId: z.string().uuid(),
   baseRenderVersion: z.number().int().nonnegative(),
@@ -163,7 +163,17 @@ export const editorDocumentSnapshotSchema = z.object({
     selectionStartSeconds: finiteNumber.nonnegative(),
     selectionEndSeconds: finiteNumber.positive(),
   }).strict(),
-}).strict().superRefine((document, context) => {
+}).strict();
+
+type EditorDocumentSnapshotShape = z.infer<
+  typeof editorDocumentSnapshotBaseSchema
+>;
+
+function validateEditorDocumentSnapshot(
+  document: EditorDocumentSnapshotShape,
+  context: z.RefinementCtx,
+  timedOverlaysMustFitOutput: boolean,
+) {
   const titleLength = Array.from(document.title.text).length;
   const titleStyles = [...document.title.textStyles]
     .sort((left, right) => left.start - right.start);
@@ -277,7 +287,7 @@ export const editorDocumentSnapshotSchema = z.object({
       message: "댓글 식별자는 중복될 수 없습니다.",
     });
   }
-  if (orderedComments.some(
+  if (timedOverlaysMustFitOutput && orderedComments.some(
     (comment) => comment.endSeconds > outputDuration + 0.001,
   )) {
     context.addIssue({
@@ -319,7 +329,7 @@ export const editorDocumentSnapshotSchema = z.object({
       message: "텍스트 식별자는 중복될 수 없습니다.",
     });
   }
-  if (document.overlays.textOverlays.some(
+  if (timedOverlaysMustFitOutput && document.overlays.textOverlays.some(
     (overlay) => overlay.endSeconds > outputDuration + 0.001,
   )) {
     context.addIssue({
@@ -347,7 +357,17 @@ export const editorDocumentSnapshotSchema = z.object({
       message: "레이어 순서가 현재 오버레이와 일치하지 않습니다.",
     });
   }
-});
+}
+
+export const editorDraftDocumentSnapshotSchema =
+  editorDocumentSnapshotBaseSchema.superRefine((document, context) => {
+    validateEditorDocumentSnapshot(document, context, false);
+  });
+
+export const editorDocumentSnapshotSchema =
+  editorDocumentSnapshotBaseSchema.superRefine((document, context) => {
+    validateEditorDocumentSnapshot(document, context, true);
+  });
 
 export type ValidatedEditorDocumentSnapshot = z.infer<
   typeof editorDocumentSnapshotSchema

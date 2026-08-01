@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   type GuideTargetRect,
@@ -66,6 +73,14 @@ function elementRect(element: Element | null): GuideTargetRect | null {
   };
 }
 
+function targetNeedsScroll(rect: GuideTargetRect) {
+  const margin = 16;
+  return rect.top < margin
+    || rect.left < margin
+    || rect.bottom > window.innerHeight - margin
+    || rect.right > window.innerWidth - margin;
+}
+
 export function FeatureGuideOverlay({
   enabled,
   steps,
@@ -73,6 +88,7 @@ export function FeatureGuideOverlay({
   mediaQuery,
   closeAriaLabel,
   tone = "coral",
+  smoothTransitions = false,
 }: {
   enabled: boolean;
   steps: readonly FeatureGuideStep[];
@@ -80,6 +96,7 @@ export function FeatureGuideOverlay({
   mediaQuery?: string;
   closeAriaLabel: string;
   tone?: FeatureGuideTone;
+  smoothTransitions?: boolean;
 }) {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
@@ -156,7 +173,7 @@ export function FeatureGuideOverlay({
     cardRef.current?.focus();
   }, [open, stepIndex]);
 
-  useEffect(() => {
+  const trackTarget = useCallback((stabilizeBeforePaint: boolean) => {
     if (!open || !targetSelector) {
       setTargetRect(null);
       return;
@@ -174,11 +191,20 @@ export function FeatureGuideOverlay({
     };
 
     activeTarget = document.querySelector(targetSelector);
-    activeTarget?.scrollIntoView({
-      block: "nearest",
-      inline: "nearest",
-      behavior: "auto",
-    });
+    const initialRect = elementRect(activeTarget);
+    if (
+      initialRect
+      && (!stabilizeBeforePaint || targetNeedsScroll(initialRect))
+    ) {
+      activeTarget?.scrollIntoView({
+        block: "nearest",
+        inline: "nearest",
+        behavior: "auto",
+      });
+    }
+    if (stabilizeBeforePaint) {
+      setTargetRect(elementRect(activeTarget));
+    }
     measure();
 
     const observer = new MutationObserver(measure);
@@ -196,6 +222,16 @@ export function FeatureGuideOverlay({
       document.removeEventListener("scroll", measure, GUIDE_SCROLL_LISTENER_OPTIONS);
     };
   }, [open, targetSelector]);
+
+  useLayoutEffect(() => {
+    if (!smoothTransitions) return;
+    return trackTarget(true);
+  }, [smoothTransitions, trackTarget]);
+
+  useEffect(() => {
+    if (smoothTransitions) return;
+    return trackTarget(false);
+  }, [smoothTransitions, trackTarget]);
 
   const spotlightStyle = useMemo(() => {
     if (!targetRect || !mounted) return undefined;
@@ -314,8 +350,8 @@ export function FeatureGuideOverlay({
       }}
     >
       {spotlightStyle
-        ? <div
-            className={`pointer-events-none fixed border-2 ${toneStyles.spotlightClassName}`}
+          ? <div
+            className={`pointer-events-none fixed border-2 ${smoothTransitions ? "transition-[left,top,width,height,border-radius] duration-200 ease-out" : ""} ${toneStyles.spotlightClassName}`}
             style={{
               ...spotlightStyle,
               boxShadow: toneStyles.spotlightShadow,
@@ -327,7 +363,7 @@ export function FeatureGuideOverlay({
       <section
         ref={cardRef}
         tabIndex={-1}
-        className={`fixed overflow-hidden rounded-2xl border border-white/15 bg-[#171719] text-white shadow-2xl outline-none ${
+        className={`fixed overflow-hidden rounded-2xl border border-white/15 bg-[#171719] text-white shadow-2xl outline-none ${smoothTransitions ? "transition-[left,top,width,transform] duration-200 ease-out" : ""} ${
           isLastStep
             ? "w-[min(340px,calc(100vw-32px))]"
             : "w-[min(400px,calc(100vw-32px))]"

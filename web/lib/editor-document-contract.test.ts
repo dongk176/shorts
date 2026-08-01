@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
+  editorDraftDocumentSnapshotSchema,
   editorDocumentOutputDuration,
   editorDocumentSnapshotSchema,
 } from "./editor-document-contract";
@@ -131,6 +132,13 @@ describe("editor document v2 contract", () => {
     expect(() => editorDocumentSnapshotSchema.parse(value)).toThrow(
       "댓글 노출 구간이 최종 영상 길이를 넘을 수 없습니다.",
     );
+  });
+
+  it("keeps source-timeline overlays in an in-progress shortened-video draft", () => {
+    const value = validDocument();
+    value.comments[0].endSeconds = 4;
+    expect(editorDraftDocumentSnapshotSchema.parse(value).comments[0].endSeconds)
+      .toBe(4);
   });
 
   it("rejects horizontal comment offsets that the editor cannot render", () => {

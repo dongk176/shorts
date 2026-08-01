@@ -20,9 +20,27 @@ describe("editor v2 text tool", () => {
       "onClick={() => selectEditorTextFromSidebar(textOverlay)}",
     );
     expect(editorSource).toContain(
-      "setSelectedOverlay(editorTextSelection(textOverlay.id))",
+      "setSelectedOverlay(selection)",
     );
     expect(editorSource).toContain("seekCommentTimeline(Math.max(");
+    expect(editorSource).toContain(
+      "setExpandedEditorTextId(selectedEditorTextId(selectedOverlay))",
+    );
+  });
+
+  it("expands text settings below the selected item and collapses on repeat", () => {
+    expect(editorSource).toContain(
+      "selectedOverlay === selection\n      && expandedEditorTextId === textOverlay.id",
+    );
+    expect(editorSource).toContain("setExpandedEditorTextId(null)");
+    expect(editorSource).toContain("aria-expanded={expanded}");
+    expect(editorSource).toContain(
+      "{expanded && <div\n                      id={detailId}\n                      className=\"editor-v2-text-accordion-detail\"",
+    );
+    const styles = source("./editor-v2.css");
+    expect(styles).toContain(
+      ".editor-v2-root .editor-v2-text-accordion-detail",
+    );
   });
 
   it("moves text creation into the text panel", () => {
@@ -33,6 +51,35 @@ describe("editor v2 text tool", () => {
     expect(quickActions).toContain("+ 댓글");
     expect(quickActions).not.toContain("+ 텍스트");
     expect(editorSource).toContain("선택한 텍스트 삭제");
+  });
+
+  it("toggles the text detail panel from the fixed tool rail", () => {
+    expect(editorSource).toContain('if (tool === "text")');
+    expect(editorSource).toContain(
+      "setDesktopSidebarOpen((current) => !current)",
+    );
+    expect(editorSource).toContain(
+      "activeEditorSidebarTool === tool.id\n                && desktopSidebarOpen",
+    );
+  });
+
+  it("shows comment copy and removes v2 timeline card chrome", () => {
+    expect(editorSource).toContain("showCommentText={overlayPreviewEnabled}");
+    expect(editorSource).toContain(
+      "const visibleLabel = showCommentText ? commentText : fallbackLabel",
+    );
+    const styles = source("./editor-v2.css");
+    expect(styles).toContain(
+      ".editor-v2-root .editor-comment-timeline-panel",
+    );
+    expect(styles).toContain(
+      ".editor-v2-root .editor-text-timeline-panel.is-selected",
+    );
+    expect(styles).toContain(
+      ".editor-v2-root .editor-text-timeline-label",
+    );
+    expect(styles).toContain("font-size: 12px;");
+    expect(styles).toContain("margin-top: 4px;");
   });
 
   it("keeps every new style under the v2 root", () => {
