@@ -80,6 +80,7 @@ describe("shorts MVP infrastructure", () => {
     );
 
     expect(editorReleaseRepository).toBeDefined();
+    expect(editorReleaseRepository?.Properties?.ImageTagMutability).toBe("IMMUTABLE");
     expect(editorReleaseRepository?.Properties?.LifecyclePolicy).toBeUndefined();
     const workerRepositories = foundation.findResources("AWS::ECR::Repository");
     const workerRepository = Object.values(workerRepositories).find(

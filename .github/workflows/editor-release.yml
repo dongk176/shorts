@@ -92,6 +92,10 @@ jobs:
           target: render
           platforms: linux/amd64
           push: true
+          # ECR basic scanning cannot scan the OCI index emitted for build
+          # provenance. Publish one linux/amd64 image manifest so the digest
+          # that is scanned is exactly the digest later registered in Batch.
+          provenance: false
           tags: ${{ env.EDITOR_RELEASE_ECR_REPOSITORY_URI }}:editor-release-${{ github.sha }}
           cache-from: type=gha,scope=editor-release-render
           cache-to: type=gha,mode=max,scope=editor-release-render

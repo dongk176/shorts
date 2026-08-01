@@ -151,6 +151,7 @@ test("release workflow promotes one tested digest without deploying the website"
     1,
     "The editor release workflow must build the render image exactly once.",
   );
+  assert.match(workflow, /provenance: false/);
   assert.match(workflow, /EDITOR_RELEASE_IMAGE_DIGEST: \$\{\{ steps\.build\.outputs\.digest \}\}/);
   assert.match(workflow, /register-editor-release-job\.sh \\\s+isolated/);
   assert.match(workflow, /register-editor-release-job\.sh \\\s+production/);

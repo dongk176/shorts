@@ -45,6 +45,7 @@ export class ShortsMvpEditorReleaseRepositoryStack extends cdk.Stack {
     this.repository = new ecr.Repository(this, "EditorReleaseRepository", {
       repositoryName: `shorts-mvp-editor-releases-${props.environment}`,
       imageScanOnPush: true,
+      imageTagMutability: ecr.TagMutability.IMMUTABLE,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
       // Release images are intentionally not age-expired. The active,
       // previous stable, and candidate pointers may remain valid longer than
