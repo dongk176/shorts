@@ -64,21 +64,24 @@ def test_editor_release_probe_rejects_unknown_scenario() -> None:
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
+@pytest.mark.parametrize("scenario", editor_release_probe.PROBE_SCENARIOS)
 def test_release_probe_renders_and_uploads_machine_verifiable_evidence(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    scenario: str,
 ) -> None:
     s3 = MagicMock()
     monkeypatch.setenv("EDITOR_RELEASE_GIT_SHA", "a" * 40)
     monkeypatch.setenv("WORKER_IMAGE_DIGEST", f"sha256:{'b' * 64}")
     monkeypatch.setenv("EDITOR_RELEASE_SUITE_VERIFIED", "true")
+    monkeypatch.setenv("EDITOR_RELEASE_SCENARIO", scenario)
     monkeypatch.setenv("AWS_S3_OUTPUT_BUCKET", "isolated-editor-test")
     monkeypatch.setenv("TEMP_ROOT", str(tmp_path))
     monkeypatch.setattr(editor_release_probe.boto3, "client", lambda *_args, **_kwargs: s3)
 
     result = editor_release_probe.run_editor_release_probe()
 
-    assert result["scenario"] == "baseline"
+    assert result["scenario"] == scenario
     assert result["checks"] == {
         "worker-image": True,
         "legacy-no-timeline": True,

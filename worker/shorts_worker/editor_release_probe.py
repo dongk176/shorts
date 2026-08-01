@@ -204,9 +204,9 @@ def _document(scenario: str = "baseline") -> EditorDocument:
             },
         ]
         value["subtitles"]["segments"] = [
-            {"start": 0.5, "end": 1.4, "text": "첫 원본 구간"},
+            {"start": 0.5, "end": 1.375, "text": "첫 원본 구간"},
             {"start": 2, "end": 3, "text": "가운데 원본 구간"},
-            {"start": 6, "end": 7.6, "text": "마지막 원본 구간"},
+            {"start": 6, "end": 7.625, "text": "마지막 원본 구간"},
         ]
         value["overlays"]["commentOffsets"] = {
             "ripple-first": {"x": 0, "y": -20},
@@ -223,7 +223,7 @@ def _document(scenario: str = "baseline") -> EditorDocument:
             {
                 "id": "ripple-1",
                 "sourceStartSeconds": 0.5,
-                "sourceEndSeconds": 1.4,
+                "sourceEndSeconds": 1.375,
             },
             {
                 "id": "ripple-2",
@@ -233,11 +233,11 @@ def _document(scenario: str = "baseline") -> EditorDocument:
             {
                 "id": "ripple-3",
                 "sourceStartSeconds": 6,
-                "sourceEndSeconds": 7.6,
+                "sourceEndSeconds": 7.625,
             },
         ]
         value["video"]["selectionStartSeconds"] = 10.5
-        value["video"]["selectionEndSeconds"] = 17.6
+        value["video"]["selectionEndSeconds"] = 17.625
     elif scenario == "comment-gaps":
         value["template"]["id"] = "comment-capture"
         value["title"] = {
@@ -549,6 +549,7 @@ def run_editor_release_probe() -> dict[str, Any]:
             raise RuntimeError("Probe duration exceeds one frame of tolerance")
 
         frame_path = root / "frame.png"
+        geometry_sample_seconds = 1.0 if scenario == "comment-gaps" else 2.0
         _run([
             "ffmpeg",
             "-hide_banner",
@@ -556,7 +557,7 @@ def run_editor_release_probe() -> dict[str, Any]:
             "error",
             "-y",
             "-ss",
-            "2",
+            f"{geometry_sample_seconds:.3f}",
             "-i",
             str(output),
             "-frames:v",
@@ -610,6 +611,7 @@ def run_editor_release_probe() -> dict[str, Any]:
                 "fps": fps,
             },
             "geometry": {
+                "sampleSeconds": geometry_sample_seconds,
                 "expectedVideoBounds": expected,
                 "observedVideoBounds": observed,
                 "maximumErrorPixels": geometry_error,
