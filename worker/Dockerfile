@@ -10,7 +10,8 @@ RUN apk add --no-cache \
         coreutils \
         deno \
         ffmpeg \
-        libstdc++
+        libstdc++ \
+        openssl=3.5.7-r0
 
 WORKDIR /app/worker
 COPY requirements.txt ./

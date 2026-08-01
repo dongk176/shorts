@@ -186,6 +186,7 @@ test("candidate worker uses a pinned, scan-friendly image with render dependenci
     /FROM python:3\.12-alpine3\.22@sha256:[a-f0-9]{64} AS worker-base/,
   );
   assert.match(dockerfile, /apk add --no-cache[\s\S]*deno[\s\S]*ffmpeg/);
+  assert.match(dockerfile, /openssl=3\.5\.7-r0/);
   assert.match(dockerfile, /apk add --no-cache font-noto-cjk/);
   assert.doesNotMatch(dockerfile, /python:3\.12-slim/);
   assert.match(overlays, /\/usr\/share\/fonts\/noto\/NotoSansCJK-Bold\.ttc/);
