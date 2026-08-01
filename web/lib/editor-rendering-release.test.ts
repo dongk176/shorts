@@ -17,6 +17,7 @@ function releaseRow(overrides: Record<string, unknown> = {}) {
     canaryEnabled: false,
     runtimeEnabled: false,
     testerEnabled: false,
+    userIsAdmin: false,
     stableReleaseId: null,
     stableUiVersion: null,
     stableDocumentVersion: null,
@@ -78,6 +79,7 @@ describe("editor release gate", () => {
     const db = vi.fn().mockResolvedValue([releaseRow({
       canaryEnabled: true,
       testerEnabled: true,
+      userIsAdmin: true,
       candidateReleaseId: releaseId,
       candidateUiVersion: 2,
       candidateDocumentVersion: 2,
@@ -95,9 +97,27 @@ describe("editor release gate", () => {
     });
   });
 
-  it("allows the emergency env tester only when a candidate is active", async () => {
+  it("keeps a non-administrator tester on the legacy editor", async () => {
     const db = vi.fn().mockResolvedValue([releaseRow({
       canaryEnabled: true,
+      testerEnabled: true,
+      userIsAdmin: false,
+      candidateReleaseId: releaseId,
+      candidateUiVersion: 2,
+      candidateDocumentVersion: 2,
+      candidateStatus: "canary_active",
+    })]);
+    await expect(resolveEditorRelease(
+      db as never,
+      userId,
+      { EDITOR_RENDERING_V2_ENABLED: "true" },
+    )).resolves.toMatchObject({ channel: "legacy" });
+  });
+
+  it("allows an administrator emergency env tester only when a candidate is active", async () => {
+    const db = vi.fn().mockResolvedValue([releaseRow({
+      canaryEnabled: true,
+      userIsAdmin: true,
       candidateReleaseId: releaseId,
       candidateUiVersion: 2,
       candidateDocumentVersion: 2,
@@ -111,6 +131,25 @@ describe("editor release gate", () => {
         EDITOR_RENDERING_V2_TEST_USER_IDS: userId,
       },
     )).resolves.toMatchObject({ channel: "canary", releaseId });
+  });
+
+  it("ignores an emergency env tester that is not an administrator", async () => {
+    const db = vi.fn().mockResolvedValue([releaseRow({
+      canaryEnabled: true,
+      userIsAdmin: false,
+      candidateReleaseId: releaseId,
+      candidateUiVersion: 2,
+      candidateDocumentVersion: 2,
+      candidateStatus: "canary_ready",
+    })]);
+    await expect(resolveEditorRelease(
+      db as never,
+      userId,
+      {
+        EDITOR_RENDERING_V2_ENABLED: "true",
+        EDITOR_RENDERING_V2_TEST_USER_IDS: userId,
+      },
+    )).resolves.toMatchObject({ channel: "legacy" });
   });
 
   it("assigns stable only after every public gate is enabled", async () => {

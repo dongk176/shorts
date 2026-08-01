@@ -81,13 +81,20 @@ export async function addEditorReleaseTester(emailValue: string) {
   const admin = await requireAdminUser();
   const result = await getDb().begin(async (tx) => {
     const users = await tx`
-      select id,email
+      select id,email,is_admin
       from shorts_mvp.app_users
       where lower(email)=lower(${email})
       limit 1
     `;
     const user = users[0];
     if (!user) throw new HttpError(404, "해당 이메일의 회원을 찾을 수 없습니다.");
+    if (!user.isAdmin) {
+      throw new HttpError(
+        400,
+        "관리자 계정만 신규 편집기 테스트 사용자로 등록할 수 있습니다.",
+        "EDITOR_RELEASE_TESTER_ADMIN_REQUIRED",
+      );
+    }
     await tx`
       insert into shorts_mvp.editor_release_testers (
         user_id,enabled,created_by_user_id

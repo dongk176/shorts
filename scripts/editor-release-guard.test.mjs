@@ -59,6 +59,11 @@ test("release switches default to legacy and v2 saving is server-authorized", as
     /if \(!editorRenderingV2MasterEnabled\(environment\) \|\| !userId\) \{\s+return legacyAssignment;/,
   );
   assert.match(page, /editorRelease = await resolveEditorRelease/);
+  assert.match(resolver, /coalesce\(release_user\.is_admin,false\) as user_is_admin/);
+  assert.match(
+    resolver,
+    /state\.canaryEnabled\s+&& state\.userIsAdmin\s+&& \(state\.testerEnabled \|\| emergencyTestUser\)/,
+  );
   assert.match(page, /const editorSaveEnabled = editorRelease\.channel !== "legacy"/);
   assert.match(route, /if \(release\.channel === "legacy" \|\| !release\.releaseId\)/);
   assert.match(editor, /editor-v2-root/);
@@ -170,6 +175,8 @@ test("admin promotion is transactional, gated, and audited", async () => {
   );
 
   assert.match(actions, /getDb\(\)\.begin/);
+  assert.match(actions, /select id,email,is_admin/);
+  assert.match(actions, /if \(!user\.isAdmin\)/);
   assert.match(actions, /const isolatedChecks = \[/);
   assert.match(actions, /const productionCanaryChecks = \[/);
   assert.match(actions, /editor_release\.promoted/);

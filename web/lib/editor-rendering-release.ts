@@ -62,6 +62,7 @@ type EditorReleaseRow = {
   canaryEnabled: boolean;
   runtimeEnabled: boolean;
   testerEnabled: boolean;
+  userIsAdmin: boolean;
   stableReleaseId: string | null;
   stableUiVersion: number | null;
   stableDocumentVersion: number | null;
@@ -95,6 +96,7 @@ export async function resolveEditorRelease(
     select state.public_enabled,state.canary_enabled,
       coalesce(flag.enabled,false) as runtime_enabled,
       coalesce(tester.enabled,false) as tester_enabled,
+      coalesce(release_user.is_admin,false) as user_is_admin,
       stable.id as stable_release_id,
       stable.ui_version as stable_ui_version,
       stable.document_version as stable_document_version,
@@ -108,6 +110,8 @@ export async function resolveEditorRelease(
       on flag.flag_key=${EDITOR_RENDERING_V2_FLAG_KEY}
     left join shorts_mvp.editor_release_testers tester
       on tester.user_id=${userId}
+    left join shorts_mvp.app_users release_user
+      on release_user.id=${userId}
     left join shorts_mvp.editor_releases stable
       on stable.id=state.stable_release_id
     left join shorts_mvp.editor_releases candidate
@@ -120,6 +124,7 @@ export async function resolveEditorRelease(
   if (!state) return legacyAssignment;
   if (
     state.canaryEnabled
+    && state.userIsAdmin
     && (state.testerEnabled || emergencyTestUser)
     && ["canary_ready", "canary_active", "approved"].includes(
       state.candidateStatus || "",
