@@ -78,6 +78,18 @@ describe("editor v2 resilience", () => {
     ].forEach((statement) => expect(restoreSource).toContain(statement));
   });
 
+  it("resolves a persisted channel image asset back into the v2 preview", () => {
+    expect(editorSource).toContain(
+      "editorChannelAssetPreviewUrl(item.id, item.renderVersion)",
+    );
+    expect(editorSource).toContain(
+      "const renderChannelThumbnailUrl = editorDocumentSnapshot.channel.thumbnailAssetKey",
+    );
+    expect(editorSource).not.toContain(
+      "const renderChannelThumbnailUrl = editorDocumentSnapshot.channel.thumbnailUrl;",
+    );
+  });
+
   it("asks about a saved draft before opening the editor and resumes silently", () => {
     const projectStart = editorSource.indexOf("function ProjectWorkspace(");
     const projectSource = editorSource.slice(projectStart);

@@ -761,6 +761,17 @@ def _escape_filter_path(path: Path) -> str:
     return str(path).replace("\\", "\\\\").replace(":", "\\:").replace("'", r"\'")
 
 
+def _timed_overlay_enable_expression(
+    start_seconds: float,
+    end_seconds: float,
+) -> str:
+    """Match the browser's half-open visibility window: start <= t < end."""
+    return (
+        f"gte(t,{start_seconds:.6f})*"
+        f"lt(t,{end_seconds:.6f})"
+    )
+
+
 class EditorDocumentRenderer:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -1014,10 +1025,11 @@ class EditorDocumentRenderer:
                 next_label = f"scene{len(filters)}"
                 enable = ""
                 if asset.start_seconds is not None and asset.end_seconds is not None:
-                    enable = (
-                        ":enable='between(t,"
-                        f"{asset.start_seconds:.6f},{asset.end_seconds:.6f})'"
+                    timed_expression = _timed_overlay_enable_expression(
+                        asset.start_seconds,
+                        asset.end_seconds,
                     )
+                    enable = f":enable='{timed_expression}'"
                 filters.append(
                     f"[{current_label}][{prepared_label}]"
                     f"overlay=x={asset.x}:y={asset.y}:"

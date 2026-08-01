@@ -7,6 +7,8 @@ repository_uri="${EDITOR_RELEASE_ECR_REPOSITORY_URI:?EDITOR_RELEASE_ECR_REPOSITO
 git_sha="${EDITOR_RELEASE_GIT_SHA:?EDITOR_RELEASE_GIT_SHA is required}"
 image_digest="${EDITOR_RELEASE_IMAGE_DIGEST:?EDITOR_RELEASE_IMAGE_DIGEST is required}"
 region="${AWS_REGION:-ap-northeast-2}"
+candidate_vcpus="4"
+candidate_ffmpeg_threads="4"
 
 if [[ ! "$git_sha" =~ ^[0-9a-f]{40}$ ]]; then
   echo "EDITOR_RELEASE_GIT_SHA must be a lowercase 40-character commit SHA" >&2
@@ -18,10 +20,10 @@ if [[ ! "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
 fi
 case "$release_kind" in
   production)
-    definition_name="shorts-mvp-editor-release-${git_sha:0:12}"
+    definition_name="shorts-mvp-editor-release-${git_sha:0:12}-4vcpu"
     ;;
   isolated)
-    definition_name="shorts-mvp-editor-test-release-${git_sha:0:12}"
+    definition_name="shorts-mvp-editor-test-release-${git_sha:0:12}-4vcpu"
     ;;
   *)
     echo "release kind must be production or isolated" >&2
@@ -55,6 +57,8 @@ jq \
   --arg name "$definition_name" \
   --arg image "${repository_uri}@${image_digest}" \
   --arg digest "$image_digest" \
+  --arg candidateVcpus "$candidate_vcpus" \
+  --arg candidateFfmpegThreads "$candidate_ffmpeg_threads" \
   '{
     jobDefinitionName: $name,
     type,
@@ -70,13 +74,25 @@ jq \
   | .tags=(
       (.tags // {})
       | with_entries(select(.key | ascii_downcase | startswith("aws:") | not))
+  )
+  | .containerProperties.resourceRequirements=(
+      (.containerProperties.resourceRequirements // [])
+      | map(select(.type!="VCPU"))
+      + [{type:"VCPU",value:$candidateVcpus}]
     )
   | .containerProperties.environment=(
       (.containerProperties.environment // [])
-      | map(select(.name!="WORKER_IMAGE_TAG" and .name!="WORKER_IMAGE_DIGEST"))
+      | map(select(
+          .name!="WORKER_IMAGE_TAG"
+          and .name!="WORKER_IMAGE_DIGEST"
+          and .name!="TASK_VCPUS"
+          and .name!="FFMPEG_THREADS"
+        ))
       + [
           {name:"WORKER_IMAGE_TAG",value:$digest},
-          {name:"WORKER_IMAGE_DIGEST",value:$digest}
+          {name:"WORKER_IMAGE_DIGEST",value:$digest},
+          {name:"TASK_VCPUS",value:$candidateVcpus},
+          {name:"FFMPEG_THREADS",value:$candidateFfmpegThreads}
         ]
     )
   | with_entries(select(.value != null))' \

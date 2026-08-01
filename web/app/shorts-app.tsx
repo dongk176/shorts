@@ -96,6 +96,7 @@ import {
   PROJECT_EDIT_REFRESH_STORAGE_KEY,
 } from "@/lib/project-edit-refresh";
 import {
+  applyEditorFontToSelectableText,
   EDITOR_TEXT_DEFAULT_WIDTH,
   EMPTY_EDITOR_OVERLAY_GUIDES,
   canvasOffsetTranslate,
@@ -131,6 +132,7 @@ import {
   type EditorTextResizeEdge,
   type EditorVideoResizeHandle,
 } from "@/lib/editor-overlay-preview";
+import { editorChannelAssetPreviewUrl } from "@/lib/editor-channel-asset-url";
 import {
   DEFAULT_EDITOR_FONT_ID,
   editorFontFamily,
@@ -3076,7 +3078,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [editorChannelThumbnailUrl, setEditorChannelThumbnailUrl] = useState(
     savedEditorDocument?.channel.thumbnailUrl
       || (initialChannelThumbnailAssetKey
-        ? `/api/shorts/${item.id}/editor-channel-asset`
+        ? editorChannelAssetPreviewUrl(item.id, item.renderVersion)
         : channelThumbnailUrl),
   );
   const editorChannelThumbnailUrlRef = useRef(editorChannelThumbnailUrl);
@@ -3301,6 +3303,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [expandedEditorTextId, setExpandedEditorTextId] = useState<
     string | null
   >(null);
+  const [editorFontApplySuggestion, setEditorFontApplySuggestion] = useState<{
+    sourceTextId: string;
+    fontId: EditorFontId;
+  } | null>(null);
   const [editorTimelineZoom, setEditorTimelineZoom] = useState(1);
   const updateEditorTimelineZoom = useCallback((nextZoom: number) => {
     const scrollArea = editorTimelineScrollAreaRef.current;
@@ -3754,7 +3760,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const renderTitleTextStyles = editorDocumentSnapshot.title.textStyles;
   const renderTitleFontScale = editorDocumentSnapshot.title.fontScale;
   const renderChannel = editorDocumentSnapshot.channel.displayName;
-  const renderChannelThumbnailUrl = editorDocumentSnapshot.channel.thumbnailUrl;
+  const renderChannelThumbnailUrl = editorDocumentSnapshot.channel.thumbnailAssetKey
+    ? editorChannelAssetPreviewUrl(item.id, item.renderVersion)
+    : editorDocumentSnapshot.channel.thumbnailUrl;
   const renderVideoClips = editorDocumentSnapshot.video.clips;
   const overlayOffsets = renderOverlayLayout.offsets;
   const videoScale = renderOverlayLayout.scales.video;
@@ -3786,6 +3794,16 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       setExpandedEditorTextId(null);
     }
   }, [expandedEditorTextId, textOverlays]);
+  useEffect(() => {
+    if (
+      editorFontApplySuggestion
+      && !textOverlays.some((textOverlay) => (
+        textOverlay.id === editorFontApplySuggestion.sourceTextId
+      ))
+    ) {
+      setEditorFontApplySuggestion(null);
+    }
+  }, [editorFontApplySuggestion, textOverlays]);
   const validTitle = title.trim().length > 0 && title.length <= 80 && title.split("\n").length <= 2;
   const template = templates.find((value) => value.id === templateId) || templates[0];
   const editorCanvasBackground = renderOverlayLayout.background;
@@ -4356,7 +4374,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     const document = cloneEditorDocumentSnapshot(draft.document);
     const draftCustomTemplate = customTemplateFromEditorDraft(draft.document);
     const channelThumbnailUrl = document.channel.thumbnailAssetKey
-      ? `/api/shorts/${item.id}/editor-channel-asset`
+      ? editorChannelAssetPreviewUrl(item.id, item.renderVersion)
       : document.channel.thumbnailUrl;
 
     videoRef.current?.pause();
@@ -4437,7 +4455,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       if (!video) return;
       video.currentTime = document.video.clips[0]?.sourceStartSeconds || 0;
     });
-  }, [editorDraftCandidate, item.id]);
+  }, [editorDraftCandidate, item.id, item.renderVersion]);
 
   useEffect(() => {
     if (
@@ -6811,6 +6829,32 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     }));
   };
 
+  const updateSelectedEditorTextFont = (fontId: EditorFontId) => {
+    if (!selectedTextOverlayId) return;
+    const current = overlayLayoutRef.current;
+    const hasOtherFont = current.fonts.title !== fontId
+      || current.fonts.channel !== fontId
+      || current.textOverlays.some((textOverlay) => (
+        textOverlay.id !== selectedTextOverlayId
+        && textOverlay.fontId !== fontId
+      ));
+    updateSelectedEditorText({ fontId });
+    setEditorFontApplySuggestion(hasOtherFont
+      ? { sourceTextId: selectedTextOverlayId, fontId }
+      : null);
+  };
+
+  const applySuggestedEditorFontToAll = () => {
+    if (!editorFontApplySuggestion) return;
+    commitEditorOverlayLayoutChange((current) => (
+      applyEditorFontToSelectableText(
+        current,
+        editorFontApplySuggestion.fontId,
+      )
+    ));
+    setEditorFontApplySuggestion(null);
+  };
+
   const seekTimeline = (absoluteSeconds: number) => {
     if (!editTimeline || !videoRef.current) return;
     const relativeSeconds = absoluteSeconds - editTimeline.timelineStartSeconds;
@@ -7282,8 +7326,27 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       </label>
       <EditorFontPicker
         value={selectedTextOverlay.fontId || DEFAULT_EDITOR_FONT_ID}
-        onChange={(fontId) => updateSelectedEditorText({ fontId })}
+        onChange={updateSelectedEditorTextFont}
       />
+      {editorFontApplySuggestion?.sourceTextId === selectedTextOverlay.id
+        && <div className="editor-v2-font-apply-suggestion" role="status">
+          <span>모든 텍스트에 적용할까요?</span>
+          <div>
+            <button
+              type="button"
+              onClick={applySuggestedEditorFontToAll}
+            >
+              모두 적용
+            </button>
+            <button
+              type="button"
+              aria-label="모든 텍스트에 적용 제안 닫기"
+              onClick={() => setEditorFontApplySuggestion(null)}
+            >
+              ×
+            </button>
+          </div>
+        </div>}
       <fieldset className="editor-text-color-setting">
         <legend>색상</legend>
         <div>

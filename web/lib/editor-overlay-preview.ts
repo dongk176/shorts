@@ -184,6 +184,23 @@ export function cloneEditorOverlayLayout(
   };
 }
 
+export function applyEditorFontToSelectableText(
+  layout: EditorOverlayLayoutSnapshot,
+  fontId: EditorFontId,
+): EditorOverlayLayoutSnapshot {
+  return {
+    ...layout,
+    fonts: {
+      title: fontId,
+      channel: fontId,
+    },
+    textOverlays: layout.textOverlays.map((textOverlay) => ({
+      ...textOverlay,
+      fontId,
+    })),
+  };
+}
+
 export function resetEditorOverlayGeometry(
   layout: EditorOverlayLayoutSnapshot,
 ): EditorOverlayLayoutSnapshot {

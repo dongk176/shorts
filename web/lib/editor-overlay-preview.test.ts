@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyEditorFontToSelectableText,
   clampCanvasDelta,
   clientDeltaToCanvas,
   clientRectToCanvas,
@@ -20,6 +21,31 @@ import {
 } from "@/lib/editor-overlay-preview";
 
 describe("editor overlay preview geometry", () => {
+  it("applies one font to every dropdown-selectable text layer", () => {
+    const layout = createInitialEditorOverlayLayout();
+    layout.fonts.title = "do-hyeon";
+    layout.fonts.channel = "noto-serif-kr";
+    layout.textOverlays = [
+      createEditorTextOverlay("first", 10),
+      {
+        ...createEditorTextOverlay("second", 10),
+        fontId: "black-han-sans",
+      },
+    ];
+
+    const applied = applyEditorFontToSelectableText(layout, "suit");
+
+    expect(applied.fonts).toEqual({ title: "suit", channel: "suit" });
+    expect(applied.textOverlays.map((textOverlay) => textOverlay.fontId)).toEqual([
+      "suit",
+      "suit",
+    ]);
+    expect(layout.fonts).toEqual({
+      title: "do-hyeon",
+      channel: "noto-serif-kr",
+    });
+  });
+
   it("maps client movement and rectangles to the 1080 by 1920 canvas", () => {
     expect(clientDeltaToCanvas(
       { x: 18, y: 32 },

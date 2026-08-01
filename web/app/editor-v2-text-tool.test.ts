@@ -53,6 +53,17 @@ describe("editor v2 text tool", () => {
     expect(editorSource).toContain("선택한 텍스트 삭제");
   });
 
+  it("offers to apply a changed added-text font to every selectable text", () => {
+    expect(editorSource).toContain("모든 텍스트에 적용할까요?");
+    expect(editorSource).toContain("모두 적용");
+    expect(editorSource).toContain("applyEditorFontToSelectableText(");
+    expect(editorSource).toContain("onChange={updateSelectedEditorTextFont}");
+    const styles = source("./editor-v2.css");
+    expect(styles).toContain(
+      ".editor-v2-root .editor-v2-font-apply-suggestion",
+    );
+  });
+
   it("toggles the text detail panel from the fixed tool rail", () => {
     expect(editorSource).toContain('if (tool === "text")');
     expect(editorSource).toContain(

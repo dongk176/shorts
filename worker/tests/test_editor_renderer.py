@@ -13,6 +13,7 @@ from shorts_worker.editor_renderer import (
     EditorDocumentRenderer,
     EditorLayerAsset,
     _prepare_editor_layer_asset,
+    _timed_overlay_enable_expression,
     create_editor_text_layer,
     editor_render_timeout_seconds,
     editor_video_frame,
@@ -89,6 +90,77 @@ def test_editor_render_timeout_scales_for_complex_longer_outputs() -> None:
     assert editor_render_timeout_seconds(300, 30) == 570
     assert editor_render_timeout_seconds(300, 120) == 1_200
     assert editor_render_timeout_seconds(1_500, 30) == 1_500
+
+
+def test_timed_overlay_enable_expression_uses_half_open_window() -> None:
+    expression = _timed_overlay_enable_expression(1.25, 3.5)
+
+    assert expression == "gte(t,1.250000)*lt(t,3.500000)"
+    assert "between" not in expression
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None,
+    reason="ffmpeg is required",
+)
+def test_adjacent_timed_overlays_do_not_share_the_boundary_frame() -> None:
+    first = _timed_overlay_enable_expression(0, 1)
+    second = _timed_overlay_enable_expression(1, 2)
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=64x64:r=10:d=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:s=32x64:r=1:d=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=32x64:r=1:d=2",
+            "-filter_complex",
+            (
+                f"[0:v][1:v]overlay=x=0:y=0:eof_action=repeat:repeatlast=1:"
+                f"enable='{first}'[first];"
+                f"[first][2:v]overlay=x=32:y=0:eof_action=repeat:repeatlast=1:"
+                f"enable='{second}'[out]"
+            ),
+            "-map",
+            "[out]",
+            "-frames:v",
+            "20",
+            "-pix_fmt",
+            "rgb24",
+            "-f",
+            "rawvideo",
+            "pipe:1",
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+        shell=False,
+    )
+    frame_size = 64 * 64 * 3
+
+    def pixel(frame_index: int, x: int, y: int) -> tuple[int, int, int]:
+        offset = frame_index * frame_size + (y * 64 + x) * 3
+        return tuple(result.stdout[offset:offset + 3])
+
+    before_left = pixel(9, 16, 32)
+    before_right = pixel(9, 48, 32)
+    boundary_left = pixel(10, 16, 32)
+    boundary_right = pixel(10, 48, 32)
+
+    assert before_left[0] > 200 and max(before_left[1:]) < 40
+    assert max(before_right) < 40
+    assert max(boundary_left) < 40
+    assert boundary_right[2] > 200 and max(boundary_right[:2]) < 40
 
 
 def test_editor_subtitles_are_retimed_across_deleted_video_gaps() -> None:
