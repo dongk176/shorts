@@ -30,6 +30,13 @@ const usageMigration = readFileSync(
   ),
   "utf8",
 );
+const auditRetentionMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/202608020001_ai_comment_regeneration_audit_retention.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 function providerResponse(comments: string[]) {
   return {
@@ -114,6 +121,18 @@ describe("AI comment regeneration", () => {
     expect(usageMigration).toContain(
       "created_at<clock_timestamp()-interval '5 minutes'",
     );
+  });
+
+  it("retains consumed AI usage evidence after the browser session is deleted", () => {
+    expect(auditRetentionMigration).toContain(
+      "alter column mvp_session_id drop not null",
+    );
+    expect(auditRetentionMigration).toContain("on delete set null");
+    expect(auditRetentionMigration).toContain("not valid");
+    expect(auditRetentionMigration).toContain(
+      "shorts_mvp.ai_comment_regeneration_requests",
+    );
+    expect(auditRetentionMigration).not.toContain("public.");
   });
 
   it("keeps the confirmation copy and undoable comment replacement in the editor", () => {
