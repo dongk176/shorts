@@ -344,6 +344,9 @@ def test_first_editor_document_rerender_preserves_legacy_clean_as_timeline() -> 
     assert "edit_timeline_s3_key=coalesce(" in promotion_query
     assert "edit_timeline_s3_key,clean_clip_s3_key" in promotion_query
     assert "pending_edit_snapshot->'subtitles'->'segments'" in promotion_query
+    assert "title_font_scale=greatest(" in promotion_query
+    assert "least(\n                      1.2," in promotion_query
+    assert "editor_document=pending_edit_snapshot" in promotion_query
 
 
 def test_editor_document_rerender_can_delete_clean_when_timeline_already_exists() -> None:

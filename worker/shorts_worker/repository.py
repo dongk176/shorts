@@ -1381,9 +1381,19 @@ class WorkerRepository:
                     pending_edit_snapshot->'template'->'snapshot','null'::jsonb
                   ),
                   video_aspect_ratio=pending_edit_snapshot->'video'->>'aspectRatio',
-                  title_font_scale=(
-                    pending_edit_snapshot->'title'->>'fontScale'
-                  )::numeric,
+                  -- editor_document keeps the full v2 scale. This legacy
+                  -- compatibility column still has its original 0.8..1.2
+                  -- constraint, so never let v2-only values abort the atomic
+                  -- promotion after a successful render.
+                  title_font_scale=greatest(
+                    0.8,
+                    least(
+                      1.2,
+                      (
+                        pending_edit_snapshot->'title'->>'fontScale'
+                      )::numeric
+                    )
+                  ),
                   title_text_styles=pending_edit_snapshot->'title'->'textStyles',
                   title_text_styles_initialized=true,
                   edit_timeline_s3_key=coalesce(
