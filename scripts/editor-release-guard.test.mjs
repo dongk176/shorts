@@ -171,6 +171,7 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(registrar, /shorts-mvp-editor-release-\$\{git_sha:0:12\}/);
   assert.match(registrar, /shorts-mvp-editor-test-release-\$\{git_sha:0:12\}/);
   assert.match(registrar, /\$\{repository_uri\}@\$\{image_digest\}/);
+  assert.match(registrar, /ascii_downcase \| startswith\("aws:"\) \| not/);
   assert.doesNotMatch(registrar, /:latest/);
   assert.doesNotMatch(registrar, /docker\s+(build|push)/);
 });

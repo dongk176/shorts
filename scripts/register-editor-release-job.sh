@@ -67,6 +67,10 @@ jq \
     tags
   }
   | .containerProperties.image=$image
+  | .tags=(
+      (.tags // {})
+      | with_entries(select(.key | ascii_downcase | startswith("aws:") | not))
+    )
   | .containerProperties.environment=(
       (.containerProperties.environment // [])
       | map(select(.name!="WORKER_IMAGE_TAG" and .name!="WORKER_IMAGE_DIGEST"))
