@@ -752,6 +752,8 @@ def test_canary_rerender_uses_the_release_digest_and_isolated_queue() -> None:
     request, submission_key = module._submit_once.call_args.args
     assert request["jobQueue"] == "editor-canary-queue"
     assert request["jobDefinition"] == definition
+    assert "shareIdentifier" not in request
+    assert "schedulingPriorityOverride" not in request
     assert submission_key.endswith(f":release:{release_id}")
     request_patch = next(
         call for call in module.patch.call_args_list
@@ -763,6 +765,62 @@ def test_canary_rerender_uses_the_release_digest_and_isolated_queue() -> None:
         "batch_job_id": "canary-batch-a",
         "updated_at": "2026-07-13T12:00:00+00:00",
     }
+
+
+def test_final_canary_submit_failure_releases_pending_edit() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    request_id = "a4f71dc3-1ffd-4670-b6d2-d4704461edc0"
+    short_id = "8cf39a2c-4c34-4f78-9a1d-9bdf015a4b9e"
+    module._submit = MagicMock(side_effect=RuntimeError("submit failed"))
+    module.patch = MagicMock()
+
+    result = module.handler({"Records": [{
+        "messageId": "message-a",
+        "body": json.dumps({
+            "kind": "rerender",
+            "shortId": short_id,
+            "requestId": request_id,
+        }),
+        "attributes": {"ApproximateReceiveCount": "5"},
+    }]}, None)
+
+    assert result == {"batchItemFailures": []}
+    request_patch = next(
+        call for call in module.patch.call_args_list
+        if call.args[0] == "editor_render_requests"
+    )
+    assert request_patch.args[2]["status"] == "failed"
+    assert request_patch.args[2]["failure_code"] == "editor_batch_submit_failed"
+    short_patch = next(
+        call for call in module.patch.call_args_list
+        if call.args[0] == "generated_shorts"
+    )
+    assert short_patch.args[2]["status"] == "ready"
+    assert short_patch.args[2]["pending_edit_snapshot"] is None
+    outbox_patch = next(
+        call for call in module.patch.call_args_list
+        if call.args[0] == "editor_render_outbox"
+    )
+    assert outbox_patch.args[2]["status"] == "failed"
+
+
+def test_transient_canary_submit_failure_is_retried_without_releasing_edit() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module._submit = MagicMock(side_effect=RuntimeError("submit failed"))
+    module.patch = MagicMock()
+
+    result = module.handler({"Records": [{
+        "messageId": "message-a",
+        "body": json.dumps({
+            "kind": "rerender",
+            "shortId": "8cf39a2c-4c34-4f78-9a1d-9bdf015a4b9e",
+            "requestId": "a4f71dc3-1ffd-4670-b6d2-d4704461edc0",
+        }),
+        "attributes": {"ApproximateReceiveCount": "4"},
+    }]}, None)
+
+    assert result == {"batchItemFailures": [{"itemIdentifier": "message-a"}]}
+    module.patch.assert_not_called()
 
 
 def test_stable_rerender_reuses_the_promoted_canary_job_definition() -> None:

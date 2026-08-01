@@ -70,6 +70,24 @@ def _scheduling_priority(priority_class: object) -> int:
     return 1000 if _priority_class(priority_class) == "paid" else 0
 
 
+def _rerender_scheduling_overrides(
+    job_queue: str,
+    priority_class: object,
+    *identity_values: object,
+) -> dict[str, object]:
+    # The isolated editor canary queue intentionally uses simple FIFO
+    # scheduling. AWS Batch rejects fair-share-only fields on that queue.
+    if job_queue == os.environ.get("EDITOR_CANARY_BATCH_QUEUE", "").strip():
+        return {}
+    return {
+        "shareIdentifier": _priority_share_identifier(
+            priority_class,
+            *identity_values,
+        ),
+        "schedulingPriorityOverride": _scheduling_priority(priority_class),
+    }
+
+
 def _render_container_overrides(command: list[str]) -> dict[str, object]:
     return {
         "command": command,
@@ -460,14 +478,14 @@ def _submit(payload: dict[str, Any]) -> str | None:
             ),
             jobQueue=rerender_queue,
             jobDefinition=rerender_definition,
-            shareIdentifier=_priority_share_identifier(
+            **_rerender_scheduling_overrides(
+                rerender_queue,
                 priority_class,
                 parent_job.get("user_id"),
                 parent_job.get("mvp_session_id"),
                 shorts[0].get("mvp_session_id"),
                 short_id,
             ),
-            schedulingPriorityOverride=_scheduling_priority(priority_class),
             containerOverrides=_render_container_overrides([
                 "python", "-m", "shorts_worker", "rerender", "--short-id", short_id,
             ]),
@@ -516,6 +534,70 @@ def _submit(payload: dict[str, Any]) -> str | None:
     raise ValueError(f"Unsupported work kind: {kind}")
 
 
+def _aws_error_code(exc: Exception) -> str:
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict):
+        error = response.get("Error")
+        if isinstance(error, dict) and error.get("Code"):
+            return str(error["Code"])[:100]
+    return type(exc).__name__
+
+
+def _release_terminal_editor_submission(
+    payload: dict[str, Any],
+    error_code: str,
+) -> bool:
+    if payload.get("kind") != "rerender":
+        return False
+    request_id = str(payload.get("requestId") or "").strip()
+    short_id = str(payload.get("shortId") or "").strip()
+    if not request_id or not short_id:
+        return False
+    encoded_request_id = urllib.parse.quote(request_id, safe="")
+    encoded_short_id = urllib.parse.quote(short_id, safe="")
+    now = iso_now()
+    patch(
+        "editor_render_requests",
+        (
+            f"id=eq.{encoded_request_id}&short_id=eq.{encoded_short_id}"
+            "&status=eq.queued"
+        ),
+        {
+            "status": "failed",
+            "failure_code": "editor_batch_submit_failed",
+            "updated_at": now,
+            "completed_at": now,
+        },
+    )
+    patch(
+        "generated_shorts",
+        (
+            f"id=eq.{encoded_short_id}&status=eq.rerendering"
+            f"&pending_edit_request_id=eq.{encoded_request_id}"
+        ),
+        {
+            "status": "ready",
+            "rerender_progress": 0,
+            "pending_render_hash": None,
+            "pending_edit_snapshot": None,
+            "pending_edit_request_id": None,
+            "rerender_batch_job_id": None,
+            "render_error_code": "editor_batch_submit_failed",
+            "render_error_message": "편집 렌더 작업을 시작하지 못했습니다. 다시 시도해 주세요.",
+        },
+    )
+    patch(
+        "editor_render_outbox",
+        f"request_id=eq.{encoded_request_id}",
+        {
+            "status": "failed",
+            "updated_at": now,
+            "last_error": error_code,
+        },
+    )
+    return True
+
+
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     if event.get("kind"):
         result = _submit(event)
@@ -541,11 +623,34 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                 batch_job_id=result,
             )
         except Exception as exc:
+            error_code = _aws_error_code(exc)
+            receive_count = int(
+                record.get("attributes", {}).get("ApproximateReceiveCount") or 1
+            )
             log_event(
                 "batch_submit_failed",
                 kind=payload.get("kind"),
                 job_id=payload.get("jobId"),
                 error_type=type(exc).__name__,
+                error_code=error_code,
+                receive_count=receive_count,
             )
+            if receive_count >= 5:
+                try:
+                    if _release_terminal_editor_submission(payload, error_code):
+                        log_event(
+                            "editor_batch_submit_terminal_failure_released",
+                            short_id=payload.get("shortId"),
+                            request_id=payload.get("requestId"),
+                            error_code=error_code,
+                        )
+                        continue
+                except Exception as release_exc:
+                    log_event(
+                        "editor_batch_submit_terminal_release_failed",
+                        short_id=payload.get("shortId"),
+                        request_id=payload.get("requestId"),
+                        error_type=type(release_exc).__name__,
+                    )
             failures.append({"itemIdentifier": record["messageId"]})
     return {"batchItemFailures": failures}
