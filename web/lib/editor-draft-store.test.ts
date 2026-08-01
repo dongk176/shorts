@@ -5,6 +5,7 @@ import {
   createEditorDraftRecord,
   editorDraftSavedAgoLabel,
   editorDraftKey,
+  parseEditorDraftChange,
   parseEditorDraftRecord,
 } from "@/lib/editor-draft-store";
 import { createEditorVideoClips } from "@/lib/editor-video-cuts";
@@ -82,6 +83,20 @@ describe("editor draft store", () => {
     expect(parseEditorDraftRecord({
       ...record,
       baseRenderVersion: 8,
+    })).toBeNull();
+  });
+
+  it("accepts only a valid cross-tab draft change signal", () => {
+    expect(parseEditorDraftChange({
+      shortId: SHORT_ID,
+      baseRenderVersion: 7,
+    })).toEqual({
+      shortId: SHORT_ID,
+      baseRenderVersion: 7,
+    });
+    expect(parseEditorDraftChange({
+      shortId: "not-a-short-id",
+      baseRenderVersion: 7,
     })).toBeNull();
   });
 

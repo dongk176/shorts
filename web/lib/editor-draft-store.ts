@@ -7,7 +7,15 @@ import type { EditorDocumentSnapshot } from "@/lib/editor-document-snapshot";
 const EDITOR_DRAFT_DATABASE = "easycut-editor-drafts";
 const EDITOR_DRAFT_STORE = "drafts";
 const EDITOR_DRAFT_DATABASE_VERSION = 1;
+const EDITOR_DRAFT_CHANGE_CHANNEL = "easycut-editor-draft-changes";
 let editorDraftDatabasePromise: Promise<IDBDatabase> | null = null;
+
+const editorDraftChangeSchema = z.object({
+  shortId: z.string().uuid(),
+  baseRenderVersion: z.number().int().nonnegative(),
+}).strict();
+
+export type EditorDraftChange = z.infer<typeof editorDraftChangeSchema>;
 
 const editorDraftRecordSchema = z.object({
   key: z.string().min(1).max(240),
@@ -73,6 +81,34 @@ export function editorDraftSavedAgoLabel(
 export function parseEditorDraftRecord(value: unknown): EditorDraftRecord | null {
   const parsed = editorDraftRecordSchema.safeParse(value);
   return parsed.success ? parsed.data as unknown as EditorDraftRecord : null;
+}
+
+export function parseEditorDraftChange(value: unknown): EditorDraftChange | null {
+  const parsed = editorDraftChangeSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function publishEditorDraftChange(change: EditorDraftChange) {
+  if (typeof BroadcastChannel === "undefined") return;
+  const channel = new BroadcastChannel(EDITOR_DRAFT_CHANGE_CHANNEL);
+  channel.postMessage(change);
+  channel.close();
+}
+
+export function subscribeEditorDraftChanges(
+  listener: (change: EditorDraftChange) => void,
+) {
+  if (typeof BroadcastChannel === "undefined") return () => undefined;
+  const channel = new BroadcastChannel(EDITOR_DRAFT_CHANGE_CHANNEL);
+  const handleMessage = (event: MessageEvent<unknown>) => {
+    const change = parseEditorDraftChange(event.data);
+    if (change) listener(change);
+  };
+  channel.addEventListener("message", handleMessage);
+  return () => {
+    channel.removeEventListener("message", handleMessage);
+    channel.close();
+  };
 }
 
 function openEditorDraftDatabase() {
@@ -149,6 +185,10 @@ export async function writeEditorDraft(record: EditorDraftRecord) {
   const transaction = database.transaction(EDITOR_DRAFT_STORE, "readwrite");
   transaction.objectStore(EDITOR_DRAFT_STORE).put(parsed);
   await transactionComplete(transaction);
+  publishEditorDraftChange({
+    shortId: parsed.shortId,
+    baseRenderVersion: parsed.baseRenderVersion,
+  });
 }
 
 export async function deleteEditorDraft(
@@ -161,4 +201,5 @@ export async function deleteEditorDraft(
     editorDraftKey(shortId, baseRenderVersion),
   );
   await transactionComplete(transaction);
+  publishEditorDraftChange({ shortId, baseRenderVersion });
 }

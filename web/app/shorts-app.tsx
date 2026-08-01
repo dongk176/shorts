@@ -160,6 +160,7 @@ import {
   deleteEditorDraft,
   editorDraftSavedAgoLabel,
   readEditorDraft,
+  subscribeEditorDraftChanges,
   writeEditorDraft,
   type EditorDraftRecord,
 } from "@/lib/editor-draft-store";
@@ -9075,6 +9076,7 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
   const revealDecidedJobIds = useRef(new Set<string>());
   const requestedAccessVersions = useRef(new Set<string>());
   const playbackRefreshTimes = useRef(new Map<string, number>());
+  const editorDraftLookupGeneration = useRef(0);
   const mounted = useRef(true);
   const selected = job.shorts[0];
 
@@ -9087,22 +9089,47 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
     return () => { mounted.current = false; };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all(job.shorts.map(async (item) => ({
+  const refreshEditorDrafts = useCallback(async () => {
+    const generation = editorDraftLookupGeneration.current + 1;
+    editorDraftLookupGeneration.current = generation;
+    const entries = await Promise.all(job.shorts.map(async (item) => ({
       shortId: item.id,
       draft: await readEditorDraft(item.id, item.renderVersion)
         .catch(() => null),
-    }))).then((entries) => {
-      if (cancelled) return;
-      setEditorDraftsByShortId(Object.fromEntries(entries.flatMap((entry) => (
-        entry.draft ? [[entry.shortId, entry.draft]] : []
-      ))));
-    });
-    return () => {
-      cancelled = true;
-    };
+    })));
+    if (!mounted.current || editorDraftLookupGeneration.current !== generation) {
+      return;
+    }
+    setEditorDraftsByShortId(Object.fromEntries(entries.flatMap((entry) => (
+      entry.draft ? [[entry.shortId, entry.draft]] : []
+    ))));
   }, [job.shorts]);
+
+  useEffect(() => {
+    void refreshEditorDrafts();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshEditorDrafts();
+      }
+    };
+    const unsubscribe = subscribeEditorDraftChanges((change) => {
+      if (job.shorts.some((item) => (
+        item.id === change.shortId
+        && item.renderVersion === change.baseRenderVersion
+      ))) {
+        void refreshEditorDrafts();
+      }
+    });
+    window.addEventListener("focus", refreshEditorDrafts);
+    window.addEventListener("pageshow", refreshEditorDrafts);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("focus", refreshEditorDrafts);
+      window.removeEventListener("pageshow", refreshEditorDrafts);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [job.shorts, refreshEditorDrafts]);
 
   const openEditorFromDraftEntry = (choice: "continue" | "new") => {
     const entry = editorDraftEntry;

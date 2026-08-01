@@ -85,6 +85,13 @@ describe("editor v2 resilience", () => {
     expect(projectSource).toContain(
       "readEditorDraft(item.id, item.renderVersion)",
     );
+    expect(projectSource).toContain("subscribeEditorDraftChanges");
+    expect(projectSource).toContain(
+      'window.addEventListener("focus", refreshEditorDrafts)',
+    );
+    expect(projectSource).toContain(
+      'document.addEventListener("visibilitychange", refreshWhenVisible)',
+    );
     expect(projectSource).toContain("<EditorDraftEntryDialog");
     expect(projectSource).toContain(
       'target.searchParams.set("draftChoice", choice)',
