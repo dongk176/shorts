@@ -23,6 +23,10 @@ import { EstimatedProcessingOverlay, ProjectCard } from "@/components/project-ca
 import { ProjectReveal } from "@/components/project-reveal";
 import { PaidProjectFeatureOverlay } from "@/components/paid-project-feature-overlay";
 import { ProjectActionGuide } from "@/components/project-action-guide";
+import {
+  ShortsEventParticipationCompleteOverlay,
+  ShortsEventWelcomeController,
+} from "@/components/shorts-creation-event-overlay";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SupportInquiryWidget } from "@/components/support-inquiry-widget";
@@ -42,9 +46,10 @@ import type {
   VideoJob,
   YoutubeAnalysis,
 } from "@/lib/contracts";
-import { outputLanguageOptions, videoAspectRatioOptions } from "@/lib/contracts";
+import { videoAspectRatioOptions } from "@/lib/contracts";
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
+import { FIRST_JOB_CREATED_EMAIL_PREFERENCE_EVENT } from "@/lib/job-completion-preference";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
 import {
   adjustTimedRange,
@@ -57,7 +62,10 @@ import {
   type TimedRangeAdjustment,
 } from "@/lib/range-editing";
 import { userFacingErrorMessage } from "@/lib/public-error";
-import { isIosDownloadDevice, shortDownloadFilename } from "@/lib/short-download";
+import {
+  requiresIndividualShortDownloads,
+  shortDownloadFilename,
+} from "@/lib/short-download";
 import { stateRetryDelayMs } from "@/lib/state-loading";
 import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
 import { titleLineBackground, titleLineColor, wrapPreviewTitle } from "@/lib/title-preview";
@@ -180,12 +188,12 @@ import {
   type EditorVideoClip,
 } from "@/lib/editor-video-cuts";
 import { CENTER_SNAP_THRESHOLD_PX } from "@/lib/template-editor-snap";
+import { publishProjectFeedbackStatusRefresh } from "@/lib/project-feedback-client";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 import { currentClientLocale, localizeApiError, localizeAuthError } from "@/lib/i18n/errors";
 import { messagesByLocale } from "@/lib/i18n/messages";
 import { useI18n } from "@/lib/i18n/provider";
 import { localizedValue } from "@/lib/i18n/config";
-import { outputLanguageName } from "@/lib/i18n/product";
 import { publishUsageSnapshot } from "@/lib/usage-client";
 
 const templates: Array<{ id: TemplateId; name: string; label: string; background: string; primary: string; accent: string; accentBackground: string | null; channel: string }> = [
@@ -9058,7 +9066,7 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
     url: string;
     posterUrl: string | null;
   }>>({});
-  const [iosDownloadDevice, setIosDownloadDevice] = useState(false);
+  const [individualDownloadDevice, setIndividualDownloadDevice] = useState(false);
   const [downloadNoticeOpen, setDownloadNoticeOpen] = useState(false);
   const [downloadPaywallOpen, setDownloadPaywallOpen] = useState(false);
   const [editorDraftsByShortId, setEditorDraftsByShortId] = useState<
@@ -9074,6 +9082,7 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
     show: boolean;
   } | null>(null);
   const revealDecidedJobIds = useRef(new Set<string>());
+  const resultViewMarkedJobIds = useRef(new Set<string>());
   const requestedAccessVersions = useRef(new Set<string>());
   const playbackRefreshTimes = useRef(new Map<string, number>());
   const editorDraftLookupGeneration = useRef(0);
@@ -9082,7 +9091,7 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
 
   useEffect(() => {
     mounted.current = true;
-    setIosDownloadDevice(isIosDownloadDevice(
+    setIndividualDownloadDevice(requiresIndividualShortDownloads(
       window.navigator.userAgent,
       window.navigator.maxTouchPoints,
     ));
@@ -9202,6 +9211,32 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
   const playbackAsset = (item: GeneratedShort) => isPlaybackAvailable(item)
     ? playbackAssets[shortPlaybackVersionKey(item)] || null
     : null;
+  const resultWorkspaceVisible = Boolean(
+    !job.isExample
+    && job.status === "completed"
+    && selected
+    && revealDecision?.jobId === job.id
+    && !revealDecision.show
+  );
+
+  useEffect(() => {
+    if (!resultWorkspaceVisible) return;
+    const markResultViewed = () => {
+      if (resultViewMarkedJobIds.current.has(job.id)) return;
+      resultViewMarkedJobIds.current.add(job.id);
+      void requestJson<{ viewed: true }>(
+        `/api/projects/${job.projectNumber}/viewed`,
+        { method: "POST" },
+      )
+        .then(() => publishProjectFeedbackStatusRefresh())
+        .catch(() => resultViewMarkedJobIds.current.delete(job.id));
+    };
+
+    markResultViewed();
+    window.addEventListener("focus", markResultViewed);
+    return () => window.removeEventListener("focus", markResultViewed);
+  }, [job.id, job.projectNumber, resultWorkspaceVisible]);
+
   const dismissReveal = useCallback(() => {
     setRevealDecision({ jobId: job.id, show: false });
   }, [job.id]);
@@ -9228,7 +9263,7 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
       setDownloadPaywallOpen(true);
       return;
     }
-    if (iosDownloadDevice) {
+    if (individualDownloadDevice) {
       setDownloadNoticeOpen(true);
       return;
     }
@@ -9275,7 +9310,7 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
     <div className="project-workspace">
       <header className="workspace-header">
         <div className="min-w-0"><button data-project-guide="back" onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 프로젝트 /{job.projectNumber}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
-        <button data-project-guide="bulk-download" disabled={job.isExample || !downloadableItems.length} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={downloadAll} className="workspace-button workspace-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-40">{iosDownloadDevice ? "↓ 쇼츠별 다운로드 안내" : "↓ 모든 쇼츠 다운로드"}</button>
+        <button data-project-guide="bulk-download" disabled={job.isExample || !downloadableItems.length} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={downloadAll} className="workspace-button workspace-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-40">{individualDownloadDevice ? "↓ 쇼츠별 다운로드 안내" : "↓ 모든 쇼츠 다운로드"}</button>
       </header>
       <ProjectActionGuide
         enabled={!job.isExample && job.status === "completed"}
@@ -9290,9 +9325,9 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
       />
       <NoticeDialog
         open={downloadNoticeOpen}
-        dialogId="ios-download-notice"
+        dialogId="mobile-download-notice"
         title="쇼츠별로 바로 저장해 주세요"
-        description="iPhone과 iPad는 여러 파일의 자동 저장을 제한합니다. 아래 각 쇼츠의 다운로드 버튼을 누르면 파일 앱의 다운로드 폴더에 안전하게 저장됩니다."
+        description="갤럭시 태블릿을 포함한 Android와 iPhone·iPad에서는 여러 파일을 한 번에 요청하면 다운로드 허용 창이 닫히거나 차단될 수 있습니다. 아래 각 쇼츠의 다운로드 버튼을 한 번씩 눌러 저장해 주세요."
         variant="info"
         onClose={() => setDownloadNoticeOpen(false)}
       />
@@ -9505,7 +9540,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(null);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
-  const [outputLanguage, setOutputLanguage] = useState<OutputLanguage>("ko");
+  const outputLanguage: OutputLanguage = "ko";
   const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
   const [customTemplateId, setCustomTemplateId] = useState<string | null>(null);
   const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
@@ -9518,12 +9553,16 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [creationRestrictionOpen, setCreationRestrictionOpen] = useState(false);
   const [creationRestrictionReason, setCreationRestrictionReason] = useState<string | null>(null);
   const [concurrentJobNoticeOpen, setConcurrentJobNoticeOpen] = useState(false);
+  const [shortsEventRewardAvailable, setShortsEventRewardAvailable] = useState(false);
+  const [shortsEventParticipationOpen, setShortsEventParticipationOpen] = useState(false);
+  const [shortsEventGrantedSeconds, setShortsEventGrantedSeconds] = useState(0);
   const [scrollToAnalysis, setScrollToAnalysis] = useState(false);
   const [scrollToProjects, setScrollToProjects] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollStarted = useRef(0);
   const loginOpenTimer = useRef<number | null>(null);
+  const firstJobEmailPromptPending = useRef(false);
   const stateLoadInFlight = useRef<Promise<void> | null>(null);
   const analysisSectionRef = useRef<HTMLElement>(null);
   const projectsSectionRef = useRef<HTMLElement>(null);
@@ -9546,6 +9585,15 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const effectiveVideoAspectRatio = selectedPersonalTemplate?.config.video.aspectRatio ?? videoAspectRatio;
   const closeCreationRestriction = useCallback(() => setCreationRestrictionOpen(false), []);
   const closeConcurrentJobNotice = useCallback(() => setConcurrentJobNoticeOpen(false), []);
+  const promptFirstJobEmailPreference = useCallback(() => {
+    window.dispatchEvent(new Event(FIRST_JOB_CREATED_EMAIL_PREFERENCE_EVENT));
+  }, []);
+  const closeShortsEventParticipation = useCallback(() => {
+    setShortsEventParticipationOpen(false);
+    if (!firstJobEmailPromptPending.current) return;
+    firstJobEmailPromptPending.current = false;
+    promptFirstJobEmailPreference();
+  }, [promptFirstJobEmailPreference]);
   const openLoginAfterDelay = useCallback((next: string) => {
     if (loginOpenTimer.current !== null) return;
     setLoginNext(next);
@@ -9692,7 +9740,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       scrollFrame = window.requestAnimationFrame(() => {
         const section = analysisSectionRef.current;
         if (section) {
-          const headerHeight = document.querySelector<HTMLElement>(".site-header")?.getBoundingClientRect().height || 0;
+          const headerHeight = window.matchMedia("(min-width: 768px)").matches
+            ? 0
+            : document.querySelector<HTMLElement>(".site-header")?.getBoundingClientRect().height || 0;
           window.scrollTo({
             top: Math.max(0, window.scrollY + section.getBoundingClientRect().top - headerHeight - 16),
             behavior: "smooth",
@@ -9825,7 +9875,11 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       openLoginAfterDelay(next);
       return;
     }
-    if (state.usage.enforcementEnabled && !state.billing.canCreateJobs) {
+    if (
+      state.usage.enforcementEnabled
+      && !state.billing.canCreateJobs
+      && !shortsEventRewardAvailable
+    ) {
       window.location.href = "/pricing";
       return;
     }
@@ -9835,7 +9889,28 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     }
     setBusy(true); setError(null);
     try {
-      const value = await requestJson<{ jobId: string; projectNumber: number; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID() }) });
+      const value = await requestJson<{
+        jobId: string;
+        projectNumber: number;
+        isFirstJob: boolean;
+        usage: UsageSnapshot;
+        shortsThankYouEventReward: {
+          granted: boolean;
+          grantedSeconds: number;
+          validUntil: string | null;
+        };
+      }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID() }) });
+      setShortsEventRewardAvailable(false);
+      firstJobEmailPromptPending.current = false;
+      if (value.shortsThankYouEventReward.granted) {
+        setShortsEventGrantedSeconds(
+          value.shortsThankYouEventReward.grantedSeconds,
+        );
+        setShortsEventParticipationOpen(true);
+        firstJobEmailPromptPending.current = value.isFirstJob;
+      } else if (value.isFirstJob) {
+        promptFirstJobEmailPreference();
+      }
       const pendingJob: VideoJob = { id: value.jobId, projectNumber: value.projectNumber, isExample: false, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: analysis.expectedShortCount, plannedShortCount: analysis.expectedShortCount, readyShortCount: 0, failedShortCount: 0, renderSuccessPercent: null, status: "queued", stage: "queued", progress: SIMULATED_PROGRESS_START, stageCompletedCount: 0, stageTotalCount: 0, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
       setState((current) => current ? { ...current, usage: value.usage, recentJobs: [pendingJob, ...current.recentJobs.filter((job) => job.id !== pendingJob.id)] } : current);
       publishUsageSnapshot(value.usage);
@@ -9881,6 +9956,14 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <div className="ambient ambient-coral" aria-hidden="true" />
       <div className="ambient ambient-violet" aria-hidden="true" />
       <SiteHeader desktopSidebar><AuthControls user={state?.user || null} next={loginNext} loginOpen={loginOpen} onLoginOpenChange={setLoginOpen} /></SiteHeader>
+      <ShortsEventWelcomeController
+        onRewardAvailabilityChange={setShortsEventRewardAvailable}
+      />
+      <ShortsEventParticipationCompleteOverlay
+        open={shortsEventParticipationOpen}
+        grantedSeconds={shortsEventGrantedSeconds}
+        onClose={closeShortsEventParticipation}
+      />
       <NoticeDialog
         open={creationRestrictionOpen && Boolean(creationRestrictionReason)}
         dialogId="creation-restriction"
@@ -9933,9 +10016,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <BackgroundShowcase />
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}
       {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>{t("home.serviceLoadError")}</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">{t("common.retry")}</button></div>}
-      {analysis && <section id="shorts-settings" ref={analysisSectionRef} className="scroll-mt-24 rounded-2xl border border-white/10 bg-[#141416] p-5 sm:scroll-mt-28"><label htmlFor="output-language" className="text-xl font-bold">{t("home.outputLanguage")}</label><p className="mt-1 text-sm text-neutral-500">{t("home.outputLanguageDescription")}</p><select id="output-language" value={outputLanguage} onChange={(event) => setOutputLanguage(event.target.value as OutputLanguage)} className="mt-3 h-12 w-full rounded-xl border border-white/10 bg-[#141416] px-4 text-sm text-neutral-100 outline-none focus:border-red-500 sm:max-w-xs">{outputLanguageOptions.map((option) => <option key={option.code} value={option.code}>{outputLanguageName(option.code, locale)}</option>)}</select></section>}
       {analysis && (
-        <section className="scroll-mt-24 space-y-8 sm:scroll-mt-28">
+        <section id="shorts-settings" ref={analysisSectionRef} className="scroll-mt-24 space-y-8 sm:scroll-mt-28">
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex">
             <Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" />
             <div className="p-5">
@@ -9991,7 +10073,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           <button disabled={analysisCreationBlocked || !rightsConfirmed || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
               {loginPromptPending && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
-              {analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs ? t("home.create") : t("home.choosePlan")}
+              {analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs || shortsEventRewardAvailable ? t("home.create") : t("home.choosePlan")}
             </span>
           </button>
         </section>

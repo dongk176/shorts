@@ -46,7 +46,7 @@ beforeEach(() => {
 });
 
 describe("project feedback API", () => {
-  it("returns the first prompt after one completed project", async () => {
+  it("returns the first prompt after one completed project has been viewed", async () => {
     mocks.getDb.mockReturnValue(sqlWithRows([{
       completedProjectCount: 1,
       submitted: false,

@@ -24,3 +24,11 @@ export function isIosDownloadDevice(
   return /iPhone|iPad|iPod/i.test(userAgent)
     || (/Macintosh/i.test(userAgent) && maxTouchPoints > 1);
 }
+
+export function requiresIndividualShortDownloads(
+  userAgent: string,
+  maxTouchPoints = 0,
+) {
+  return /Android/i.test(userAgent)
+    || isIosDownloadDevice(userAgent, maxTouchPoints);
+}

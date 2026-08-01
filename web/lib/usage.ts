@@ -1,6 +1,8 @@
 import type { Sql, TransactionSql } from "postgres";
+import { ADMIN_USAGE_GRANT_PRODUCT_CODE } from "@/lib/admin-usage-grant";
 import type { UsageSnapshot } from "@/lib/contracts";
 import { ONBOARDING_WELCOME_PRODUCT_CODE } from "@/lib/onboarding-welcome";
+import { SHORTS_THANK_YOU_EVENT_PRODUCT_CODE } from "@/lib/shorts-thank-you-event";
 import type { MvpSession } from "@/lib/session";
 
 export function isPlanEnforcementEnabled() {
@@ -92,7 +94,11 @@ export async function getUsageSnapshot(
         and grant_row.expires_at > clock_timestamp()
         and (
           service_access.enabled
-          or grant_row.product_code=${ONBOARDING_WELCOME_PRODUCT_CODE}
+          or grant_row.product_code in (
+            ${ONBOARDING_WELCOME_PRODUCT_CODE},
+            ${SHORTS_THANK_YOU_EVENT_PRODUCT_CODE},
+            ${ADMIN_USAGE_GRANT_PRODUCT_CODE}
+          )
         )
     )
     select

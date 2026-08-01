@@ -199,6 +199,7 @@ export async function POST(request: Request) {
         where id=${input.registrationId}
           and user_id=${tester.userId}
           and status='active'
+          and provider_credential_scope='default'
           and billing_key_ciphertext is not null
           and billing_key_iv is not null
           and billing_key_tag is not null

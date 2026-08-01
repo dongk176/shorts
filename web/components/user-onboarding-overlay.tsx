@@ -1,15 +1,16 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { claimOnboardingWelcomeAnnouncement } from "@/app/actions/onboarding-welcome";
 import { useUsageState } from "@/components/usage-provider";
 import { useWelcomeOverlayStage } from "@/components/welcome-overlay-queue";
-import type {
-  JobCompletionEmailDecision,
-  JobCompletionEmailPreferenceResponse,
-  JobCompletionEmailPreferenceStatus,
-  MarketingEmailDecision,
+import {
+  FIRST_JOB_CREATED_EMAIL_PREFERENCE_EVENT,
+  type JobCompletionEmailDecision,
+  type JobCompletionEmailPreferenceResponse,
+  type JobCompletionEmailPreferenceStatus,
+  type MarketingEmailDecision,
 } from "@/lib/job-completion-preference";
 import type { OnboardingWelcomeAnnouncement } from "@/lib/onboarding-welcome";
 import { userFacingErrorMessage } from "@/lib/public-error";
@@ -31,7 +32,6 @@ async function responseBody<T>(response: Response): Promise<T> {
 
 export function UserOnboardingOverlay() {
   const router = useRouter();
-  const pathname = usePathname();
   const { accountId, authenticated, refreshUsage } = useUsageState();
   const {
     active: queueActive,
@@ -50,7 +50,7 @@ export function UserOnboardingOverlay() {
     useState<JobCompletionEmailPreferenceStatus>("not_asked");
   const [marketingEmailStatus, setMarketingEmailStatus] =
     useState<JobCompletionEmailPreferenceStatus>("not_asked");
-  const [marketingEmailOptIn, setMarketingEmailOptIn] = useState(false);
+  const [marketingEmailOptIn, setMarketingEmailOptIn] = useState(true);
   const [occupation, setOccupation] = useState<UserOccupation | null>(null);
   const [occupationOther, setOccupationOther] = useState("");
   const [purposes, setPurposes] = useState<UserUsagePurpose[]>([]);
@@ -59,10 +59,11 @@ export function UserOnboardingOverlay() {
   const [discoverySourceOther, setDiscoverySourceOther] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [preferenceSaving, setPreferenceSaving] = useState(false);
+  const [firstJobPromptActive, setFirstJobPromptActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!authenticated || !queueActive) {
+    if (!authenticated || (!queueActive && !firstJobPromptActive)) {
       setVisible(false);
       setWelcome(null);
       setCompletionEmail(null);
@@ -70,11 +71,13 @@ export function UserOnboardingOverlay() {
       setEmailEditing(false);
       setCompletionEmailStatus("not_asked");
       setMarketingEmailStatus("not_asked");
-      setMarketingEmailOptIn(false);
+      setMarketingEmailOptIn(true);
       setDiscoverySource(null);
       setDiscoverySourceOther("");
+      if (!authenticated) setFirstJobPromptActive(false);
       return;
     }
+    if (!queueActive) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -104,47 +107,8 @@ export function UserOnboardingOverlay() {
           void refreshUsage();
           return;
         }
-        if (pathname !== "/" || status.storedVersion !== 2) {
-          setVisible(false);
-          completeQueueStage();
-          return;
-        }
-        const preferenceResponse = await fetch(
-          "/api/account/completion-email-preference",
-          {
-            cache: "no-store",
-            credentials: "same-origin",
-          },
-        );
-        if (preferenceResponse.status === 401) {
-          completeQueueStage();
-          return;
-        }
-        const preference =
-          await responseBody<JobCompletionEmailPreferenceResponse>(preferenceResponse);
-        if (cancelled) return;
-        const marketingStatus = preference.marketingStatus ?? "not_asked";
-        if (
-          preference.available
-          &&
-          preference.promptDue
-          &&
-          (preference.status === "not_asked" || marketingStatus === "not_asked")
-          && preference.email
-        ) {
-          setWelcome(null);
-          setCompletionEmail(preference.email);
-          setCompletionEmailDraft(preference.email);
-          setEmailEditing(false);
-          setCompletionEmailStatus(preference.status);
-          setMarketingEmailStatus(marketingStatus);
-          setMarketingEmailOptIn(false);
-          setStep("completion-email");
-          setVisible(true);
-        } else {
-          setVisible(false);
-          completeQueueStage();
-        }
+        setVisible(false);
+        completeQueueStage();
       } catch {
         // 온보딩 상태 오류로 핵심 서비스 사용을 막지 않는다.
         if (!cancelled) completeQueueStage();
@@ -157,7 +121,7 @@ export function UserOnboardingOverlay() {
     accountId,
     authenticated,
     completeQueueStage,
-    pathname,
+    firstJobPromptActive,
     queueActive,
     refreshUsage,
   ]);
@@ -187,7 +151,7 @@ export function UserOnboardingOverlay() {
     && (discoverySource !== "other" || discoverySourceOther.trim().length > 0);
   const ready = occupationReady && purposesReady && discoverySourceReady;
 
-  const showCompletionEmailPrompt = async () => {
+  const showCompletionEmailPrompt = useCallback(async () => {
     const response = await fetch("/api/account/completion-email-preference", {
       cache: "no-store",
       credentials: "same-origin",
@@ -197,8 +161,6 @@ export function UserOnboardingOverlay() {
       await responseBody<JobCompletionEmailPreferenceResponse>(response);
     const marketingStatus = preference.marketingStatus ?? "not_asked";
     if (
-      !preference.available
-      ||
       !preference.promptDue
       ||
       (
@@ -213,11 +175,35 @@ export function UserOnboardingOverlay() {
     setEmailEditing(false);
     setCompletionEmailStatus(preference.status);
     setMarketingEmailStatus(marketingStatus);
-    setMarketingEmailOptIn(false);
+    setMarketingEmailOptIn(true);
     setStep("completion-email");
     setVisible(true);
     return true;
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    const handleFirstJobCreated = () => {
+      setFirstJobPromptActive(true);
+      setError(null);
+      void showCompletionEmailPrompt()
+        .then((shown) => {
+          if (!shown) setFirstJobPromptActive(false);
+        })
+        .catch(() => {
+          // 알림 설정을 불러오지 못해도 생성된 작업 처리를 막지 않는다.
+          setFirstJobPromptActive(false);
+        });
+    };
+    window.addEventListener(
+      FIRST_JOB_CREATED_EMAIL_PREFERENCE_EVENT,
+      handleFirstJobCreated,
+    );
+    return () => window.removeEventListener(
+      FIRST_JOB_CREATED_EMAIL_PREFERENCE_EVENT,
+      handleFirstJobCreated,
+    );
+  }, [authenticated, showCompletionEmailPrompt]);
 
   const finishOverlay = () => {
     setVisible(false);
@@ -227,7 +213,8 @@ export function UserOnboardingOverlay() {
     setEmailEditing(false);
     setCompletionEmailStatus("not_asked");
     setMarketingEmailStatus("not_asked");
-    setMarketingEmailOptIn(false);
+    setMarketingEmailOptIn(true);
+    setFirstJobPromptActive(false);
     setError(null);
     completeQueueStage();
     router.push("/");
@@ -267,7 +254,7 @@ export function UserOnboardingOverlay() {
       if (announcement) {
         setWelcome(announcement);
         setStep("welcome");
-      } else if (!await showCompletionEmailPrompt()) {
+      } else {
         finishOverlay();
       }
     } catch (cause) {
@@ -277,18 +264,9 @@ export function UserOnboardingOverlay() {
     }
   };
 
-  const continueAfterWelcome = async () => {
+  const continueAfterWelcome = () => {
     if (preferenceSaving) return;
-    setPreferenceSaving(true);
-    setError(null);
-    try {
-      if (!await showCompletionEmailPrompt()) finishOverlay();
-    } catch {
-      // 알림 설정을 불러오지 못해도 무료 사용 시작을 막지 않는다.
-      finishOverlay();
-    } finally {
-      setPreferenceSaving(false);
-    }
+    finishOverlay();
   };
 
   const saveEmailPreferences = async (
@@ -795,6 +773,7 @@ export function UserOnboardingOverlay() {
                 disabled={
                   preferenceSaving
                   || emailEditing
+                  || (!completionQuestionPending && !marketingEmailOptIn)
                 }
                 onClick={() => void saveEmailPreferences(
                   primaryCompletionDecision,
@@ -808,8 +787,8 @@ export function UserOnboardingOverlay() {
                   {preferenceSaving
                     ? "저장 중..."
                     : completionQuestionPending
-                    ? "동의하고 이메일 알림 받기"
-                      : "이메일 설정 저장하기"}
+                      ? "동의하고 이메일 알림 받기"
+                      : "광고성 이메일 수신 동의"}
                   {!preferenceSaving && (
                     <span
                       aria-hidden="true"

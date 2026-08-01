@@ -6,6 +6,9 @@ import {
   decryptCardToken,
   PaymentConfigurationError,
   revokeThePayOneCard,
+  thePayOneCredentialScopesMatch,
+  thePayOneCredentialScopeForMerchantTerminal,
+  type ThePayOneCredentialScope,
   ThePayOneError,
 } from "@/lib/thepayone";
 import {
@@ -23,6 +26,9 @@ type StoredRegistration = {
   billingKeyCiphertext: string;
   billingKeyIv: string;
   billingKeyTag: string;
+  providerCredentialScope: ThePayOneCredentialScope;
+  providerMerchantId: string | null;
+  providerTerminalId: string | null;
 };
 
 function json(body: unknown, init?: ResponseInit) {
@@ -62,7 +68,8 @@ export async function POST(
       update shorts_mvp.payment_method_registrations
       set status='revoking'
       where id=${registrationId} and user_id=${userId} and status in ('active','revoke_failed')
-      returning id,billing_key_ciphertext,billing_key_iv,billing_key_tag
+      returning id,billing_key_ciphertext,billing_key_iv,billing_key_tag,
+        provider_credential_scope,provider_merchant_id,provider_terminal_id
     ` as unknown as StoredRegistration[];
     const stored = rows[0];
     if (!stored?.billingKeyCiphertext || !stored.billingKeyIv || !stored.billingKeyTag) {
@@ -74,8 +81,22 @@ export async function POST(
       tag: stored.billingKeyTag,
     }, registrationId);
     const orderId = createPaymentTrackId("AUDT");
+    const credentialScope = stored.providerMerchantId && stored.providerTerminalId
+      ? thePayOneCredentialScopeForMerchantTerminal(
+        stored.providerMerchantId,
+        stored.providerTerminalId,
+      )
+      : stored.providerCredentialScope;
+    if (!thePayOneCredentialScopesMatch(
+      credentialScope,
+      stored.providerCredentialScope,
+    )) {
+      throw new PaymentConfigurationError(
+        "카드 등록의 가맹점·터미널 스냅샷과 credential 범위가 일치하지 않습니다.",
+      );
+    }
     try {
-      const result = await revokeThePayOneCard(cardId, orderId);
+      const result = await revokeThePayOneCard(cardId, orderId, credentialScope);
       await db.begin(async (tx) => {
         await tx`
           update shorts_mvp.payment_method_registrations

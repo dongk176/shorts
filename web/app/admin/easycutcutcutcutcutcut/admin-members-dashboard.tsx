@@ -1,7 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import {
+  ADMIN_USAGE_GRANT_MAX_MINUTES,
+  ADMIN_USAGE_GRANT_VALIDITY_DAYS,
+} from "@/lib/admin-usage-grant";
 import { usageMinutes } from "@/lib/admin-member-usage";
 import type { AdminSubscriptionStatus } from "@/lib/admin-subscription";
 
@@ -33,6 +37,13 @@ export type AdminMember = {
   referralPartnerId: string | null;
   referralCreatorName: string | null;
   referralSlug: string | null;
+};
+
+type AdminMemberSearchResult = {
+  id: string;
+  email: string;
+  displayName: string | null;
+  usageRemainingSeconds: number;
 };
 
 const statusLabels: Record<string, string> = {
@@ -112,6 +123,15 @@ export function AdminMembersDashboard({
   const [referralEditing, setReferralEditing] = useState<AdminMember | null>(null);
   const [targetReferralPartnerId, setTargetReferralPartnerId] = useState("");
   const [referralReason, setReferralReason] = useState("");
+  const [usageGrantOpen, setUsageGrantOpen] = useState(false);
+  const [usageSearchQuery, setUsageSearchQuery] = useState("");
+  const [usageSearching, setUsageSearching] = useState(false);
+  const [usageSearchAttempted, setUsageSearchAttempted] = useState(false);
+  const [usageSearchResults, setUsageSearchResults] = useState<AdminMemberSearchResult[]>([]);
+  const [usageGrantMember, setUsageGrantMember] = useState<AdminMemberSearchResult | null>(null);
+  const [usageGrantMinutes, setUsageGrantMinutes] = useState("60");
+  const [usageGrantReason, setUsageGrantReason] = useState("");
+  const usageGrantRequestId = useRef<string | null>(null);
 
   const openEditor = (member: AdminMember) => {
     setEditing(member);
@@ -194,6 +214,106 @@ export function AdminMembersDashboard({
     }
   };
 
+  const openUsageGrant = () => {
+    setUsageGrantOpen(true);
+    setUsageSearchQuery("");
+    setUsageSearchAttempted(false);
+    setUsageSearchResults([]);
+    setUsageGrantMember(null);
+    setUsageGrantMinutes("60");
+    setUsageGrantReason("");
+    usageGrantRequestId.current = null;
+    setMessage(null);
+  };
+
+  const closeUsageGrant = () => {
+    if (submitting) return;
+    setUsageGrantOpen(false);
+    setMessage(null);
+  };
+
+  const searchUsageMembers = async () => {
+    const query = usageSearchQuery.trim();
+    if (query.length < 2 || usageSearching) return;
+    setUsageSearching(true);
+    setMessage(null);
+    try {
+      const response = await fetch(
+        `/api/admin/members/search?q=${encodeURIComponent(query)}`,
+        { credentials: "same-origin" },
+      );
+      const result = await response.json() as {
+        results?: AdminMemberSearchResult[];
+        detail?: string;
+      };
+      if (!response.ok) {
+        throw new Error(result.detail || "회원 검색에 실패했습니다.");
+      }
+      setUsageSearchAttempted(true);
+      setUsageSearchResults(result.results || []);
+      setUsageGrantMember(null);
+      usageGrantRequestId.current = null;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "회원 검색에 실패했습니다.");
+    } finally {
+      setUsageSearching(false);
+    }
+  };
+
+  const selectUsageGrantMember = (member: AdminMemberSearchResult) => {
+    setUsageGrantMember(member);
+    usageGrantRequestId.current = null;
+  };
+
+  const submitUsageGrant = async () => {
+    if (!usageGrantMember || submitting) return;
+    const minutes = Number(usageGrantMinutes);
+    if (!Number.isSafeInteger(minutes)
+      || minutes < 1
+      || minutes > ADMIN_USAGE_GRANT_MAX_MINUTES) {
+      setMessage(`사용량은 1분부터 ${ADMIN_USAGE_GRANT_MAX_MINUTES.toLocaleString("ko-KR")}분까지 입력해 주세요.`);
+      return;
+    }
+    if (!window.confirm(
+      `${usageGrantMember.email} 회원에게 사용량 ${minutes.toLocaleString("ko-KR")}분을 지급하시겠습니까?`,
+    )) return;
+
+    setSubmitting(true);
+    setMessage(null);
+    usageGrantRequestId.current ||= crypto.randomUUID();
+    try {
+      const response = await fetch("/api/admin/members/usage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          requestId: usageGrantRequestId.current,
+          userId: usageGrantMember.id,
+          minutes,
+          reason: usageGrantReason,
+        }),
+      });
+      const result = await response.json() as {
+        detail?: string;
+        alreadyProcessed?: boolean;
+      };
+      if (!response.ok) {
+        throw new Error(result.detail || "사용량을 추가하지 못했습니다.");
+      }
+      setUsageGrantOpen(false);
+      setMessage(
+        `${usageGrantMember.email} 회원에게 사용량 ${minutes.toLocaleString("ko-KR")}분을 `
+        + `${result.alreadyProcessed ? "이미 지급했습니다." : "지급했습니다."}`,
+      );
+      usageGrantRequestId.current = null;
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "사용량을 추가하지 못했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="mt-7">
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#151819]">
@@ -205,6 +325,13 @@ export function AdminMembersDashboard({
                 <span className="rounded-full border border-[#ff8c7c]/25 bg-[#ff8c7c]/10 px-2.5 py-1 text-xs font-black text-[#ffb4a8]">
                   필터 결과 총 {totalCount.toLocaleString("ko-KR")}명
                 </span>
+                <button
+                  type="button"
+                  onClick={openUsageGrant}
+                  className="rounded-lg bg-[#ff806f] px-3 py-2 text-xs font-black text-white transition hover:bg-[#ff6f5c]"
+                >
+                  사용량 추가
+                </button>
               </div>
               <p className="mt-1 text-xs text-neutral-500">조건에 맞는 회원 전체 표시 · 구독 상태와 자동결제 상태를 함께 관리합니다.</p>
             </div>
@@ -376,6 +503,176 @@ export function AdminMembersDashboard({
           </table>
         </div>
       </section>
+
+      {usageGrantOpen && (
+        <div
+          className="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="member-usage-grant-title"
+        >
+          <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-[#191c1d] p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[.18em] text-[#ff9585]">
+                  Member usage grant
+                </p>
+                <h3 id="member-usage-grant-title" className="mt-2 text-xl font-black">
+                  사용량 추가
+                </h3>
+                <p className="mt-2 text-sm text-neutral-400">
+                  이메일이나 이름으로 회원을 검색한 뒤 지급할 사용량을 입력하세요.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeUsageGrant}
+                className="rounded-lg px-3 py-2 text-neutral-400 hover:bg-white/[.06]"
+              >
+                닫기
+              </button>
+            </div>
+
+            {message && (
+              <p
+                role="status"
+                className="mt-4 rounded-xl border border-[#ff8c7c]/20 bg-[#ff8c7c]/10 px-4 py-3 text-sm font-bold text-[#ffb4a8]"
+              >
+                {message}
+              </p>
+            )}
+
+            <form
+              className="mt-5 flex gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void searchUsageMembers();
+              }}
+            >
+              <input
+                value={usageSearchQuery}
+                onChange={(event) => {
+                  setUsageSearchQuery(event.target.value);
+                  setUsageSearchAttempted(false);
+                  setUsageSearchResults([]);
+                  setUsageGrantMember(null);
+                  usageGrantRequestId.current = null;
+                }}
+                minLength={2}
+                maxLength={100}
+                placeholder="이메일 또는 이름을 2자 이상 입력"
+                aria-label="사용량을 지급할 회원 검색"
+                className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 text-sm outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]"
+              />
+              <button
+                type="submit"
+                disabled={usageSearching || usageSearchQuery.trim().length < 2}
+                className="h-11 rounded-xl bg-white px-5 text-sm font-black text-black disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {usageSearching ? "검색 중..." : "검색"}
+              </button>
+            </form>
+
+            {usageSearchResults.length > 0 && (
+              <div className="mt-3 max-h-60 space-y-2 overflow-y-auto rounded-2xl border border-white/10 bg-black/15 p-2">
+                {usageSearchResults.map((member) => (
+                  <button
+                    key={member.id}
+                    type="button"
+                    onClick={() => selectUsageGrantMember(member)}
+                    aria-pressed={usageGrantMember?.id === member.id}
+                    className={`flex w-full items-center justify-between gap-4 rounded-xl border p-3 text-left transition ${
+                      usageGrantMember?.id === member.id
+                        ? "border-[#ff8c7c]/70 bg-[#ff8c7c]/10"
+                        : "border-transparent hover:border-white/10 hover:bg-white/[.04]"
+                    }`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-black text-neutral-100">
+                        {member.displayName || "이름 없음"}
+                      </span>
+                      <span className="mt-1 block truncate text-xs text-neutral-500">
+                        {member.email}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xs font-bold text-emerald-200">
+                      잔여 {usageMinutes(member.usageRemainingSeconds)}분
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {!usageSearching
+              && usageSearchAttempted
+              && usageSearchResults.length === 0 && (
+              <p className="mt-4 rounded-xl bg-black/20 px-4 py-5 text-center text-sm text-neutral-500">
+                검색 결과가 없습니다.
+              </p>
+            )}
+
+            {usageGrantMember && (
+              <div className="mt-5 rounded-2xl border border-[#ff8c7c]/20 bg-[#ff8c7c]/[.06] p-4">
+                <p className="text-xs font-bold text-[#ffb4a8]">선택한 회원</p>
+                <p className="mt-2 font-black">{usageGrantMember.displayName || "이름 없음"}</p>
+                <p className="mt-1 text-sm text-neutral-400">{usageGrantMember.email}</p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <label className="block text-sm font-bold">
+                    지급 사용량 (분)
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={ADMIN_USAGE_GRANT_MAX_MINUTES}
+                      step={1}
+                      value={usageGrantMinutes}
+                      onChange={(event) => {
+                        setUsageGrantMinutes(event.target.value);
+                        usageGrantRequestId.current = null;
+                      }}
+                      className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-lg font-black outline-none focus:border-[#ff8c7c]"
+                    />
+                  </label>
+                  <label className="block text-sm font-bold">
+                    지급 사유 (선택)
+                    <input
+                      value={usageGrantReason}
+                      onChange={(event) => {
+                        setUsageGrantReason(event.target.value);
+                        usageGrantRequestId.current = null;
+                      }}
+                      maxLength={500}
+                      placeholder="고객 보상, 운영 보정 등"
+                      className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]"
+                    />
+                  </label>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-neutral-500">
+                  지급분은 즉시 사용할 수 있고 지급일로부터 {ADMIN_USAGE_GRANT_VALIDITY_DAYS}일 후 만료됩니다.
+                  관리자 감사 로그에 회원, 수량, 사유가 기록됩니다.
+                </p>
+              </div>
+            )}
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={closeUsageGrant}
+                className="h-12 flex-1 rounded-xl border border-white/10 font-bold"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={!usageGrantMember || submitting}
+                onClick={() => void submitUsageGrant()}
+                className="h-12 flex-1 rounded-xl bg-[#ff806f] font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {submitting ? "지급 중..." : "사용량 지급"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editing && (
         <div className="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="member-status-title">

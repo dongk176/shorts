@@ -15,6 +15,7 @@ import type { SiteLocale } from "@/lib/i18n/config";
 import { formatLocale } from "@/lib/i18n/config";
 import { formatNumber } from "@/lib/i18n/format";
 import { useI18n } from "@/lib/i18n/provider";
+import { discoveryPeriodAfterTypeSelection } from "@/lib/popular-filter-selection";
 import { userFacingErrorMessage } from "@/lib/public-error";
 
 const dataTypeOptions: Array<{ value: PopularVideoType; label: string }> = [
@@ -757,7 +758,10 @@ export function PopularVideosExplorer({
                       aria-haspopup={canUseFilters ? undefined : "dialog"}
                       aria-describedby={reusable ? "reusable-filter-help" : undefined}
                       onClick={() => reusable
-                        ? requestReusableFilter(() => applyFilter(() => setDataType(option.value)))
+                        ? requestReusableFilter(() => applyFilter(() => {
+                            setDataType(option.value);
+                            setDiscoveryPeriod((current) => discoveryPeriodAfterTypeSelection(option.value, current));
+                          }))
                         : applyFilter(() => setDataType(option.value))}
                       className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition ${dataType === option.value ? "border-[#ff715e] bg-[#ff715e]/15 text-[#ffd0c9] shadow-[0_0_18px_rgba(255,85,64,.1)]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
                     >

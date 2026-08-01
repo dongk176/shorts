@@ -9,6 +9,13 @@ export type AdminUser = {
   displayName: string | null;
 };
 
+export function isAdminAuthenticationRequired(error: unknown) {
+  return typeof error === "object"
+    && error !== null
+    && "status" in error
+    && error.status === 401;
+}
+
 export async function requireAdminUser(): Promise<AdminUser> {
   const authUser = await getAuthenticatedUser();
   if (!authUser) throw new HttpError(401, "로그인이 필요합니다.");

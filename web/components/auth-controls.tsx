@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { AuthProfile } from "@/lib/session";
 import { useI18n } from "@/lib/i18n/provider";
 
@@ -55,6 +56,7 @@ export function AuthControls({
   onLoginOpenChange?: (open: boolean) => void;
 }) {
   const { t } = useI18n();
+  const pathname = usePathname();
   const [internalLoginOpen, setInternalLoginOpen] = useState(false);
   const [loginMethod, setLoginMethod] = useState<"social" | "password">("social");
   const [loginId, setLoginId] = useState("");
@@ -264,6 +266,7 @@ export function AuthControls({
         className="account-settings-link"
         title={t("auth.settings")}
         aria-label={t("auth.openSettings")}
+        aria-current={pathname === "/settings" ? "page" : undefined}
       >
         <svg
           aria-hidden="true"

@@ -18,6 +18,7 @@ export async function getProjectFeedbackPromptStatus(
           and not is_example
           and status='completed'
           and completed_at is not null
+          and result_viewed_at is not null
       ) as completed_project_count,
       exists (
         select 1

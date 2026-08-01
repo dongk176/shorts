@@ -25,35 +25,52 @@ function sqlWithRows(...responses: unknown[][]) {
 describe("job completion email", () => {
   it("escapes user-controlled content and links to the owned project", () => {
     const html = jobCompletionEmailHtml(claim);
+
     expect(html).toContain("테스트 &lt;사용자&gt;");
     expect(html).toContain("완성된 &lt;쇼츠&gt; &amp; 테스트");
     expect(html).toContain("https://www.easycut.co.kr/projects/12");
     expect(html).not.toContain("테스트 <사용자>");
   });
 
-  it("marks a claimed notification sent after provider acceptance", async () => {
+  it("marks a claimed notification sent after the provider accepts it", async () => {
     const db = sqlWithRows([claim], [{ jobId: claim.jobId }]);
     const send = vi.fn().mockResolvedValue("provider-message-id");
-    await expect(processJobCompletionEmailNotifications(
+
+    const result = await processJobCompletionEmailNotifications(
       db as unknown as Sql,
       send,
-    )).resolves.toEqual({ claimed: 1, sent: 1, retried: 0, failed: 0 });
+    );
+
+    expect(result).toEqual({ claimed: 1, sent: 1, retried: 0, failed: 0 });
+    expect(send).toHaveBeenCalledWith(claim);
+    expect(db.mock.calls[1].slice(1)).toContain("provider-message-id");
   });
 
-  it("retries transient failures and stops after the fifth attempt", async () => {
-    const transientDb = sqlWithRows([claim], [{ jobId: claim.jobId }]);
-    await expect(processJobCompletionEmailNotifications(
-      transientDb as unknown as Sql,
-      vi.fn().mockRejectedValue(new Error("Resend:rate_limit_exceeded")),
-    )).resolves.toEqual({ claimed: 1, sent: 0, retried: 1, failed: 0 });
+  it("returns a transient provider failure to the retry queue", async () => {
+    const db = sqlWithRows([claim], [{ jobId: claim.jobId }]);
+    const send = vi.fn().mockRejectedValue(new Error("Resend:rate_limit_exceeded"));
 
-    const terminalDb = sqlWithRows(
-      [{ ...claim, attemptCount: 5 }],
-      [{ jobId: claim.jobId }],
+    const result = await processJobCompletionEmailNotifications(
+      db as unknown as Sql,
+      send,
     );
-    await expect(processJobCompletionEmailNotifications(
-      terminalDb as unknown as Sql,
-      vi.fn().mockRejectedValue(new Error("Resend:validation_error")),
-    )).resolves.toEqual({ claimed: 1, sent: 0, retried: 0, failed: 1 });
+
+    expect(result).toEqual({ claimed: 1, sent: 0, retried: 1, failed: 0 });
+    expect(db.mock.calls[1].slice(1)).toContain("pending");
+    expect(db.mock.calls[1].slice(1)).toContain(1);
+  });
+
+  it("stops retrying after the fifth failed attempt", async () => {
+    const finalClaim = { ...claim, attemptCount: 5 };
+    const db = sqlWithRows([finalClaim], [{ jobId: claim.jobId }]);
+    const send = vi.fn().mockRejectedValue(new Error("Resend:validation_error"));
+
+    const result = await processJobCompletionEmailNotifications(
+      db as unknown as Sql,
+      send,
+    );
+
+    expect(result).toEqual({ claimed: 1, sent: 0, retried: 0, failed: 1 });
+    expect(db.mock.calls[1].slice(1)).toContain("failed");
   });
 });

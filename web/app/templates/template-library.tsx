@@ -364,7 +364,7 @@ export function TemplateLibrary({
         </label>
       </div>
 
-      <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4" aria-live="polite">
+      <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4" aria-live="polite">
         {!query.trim() && <EmptyTemplateCard authenticated={authenticated} canUseCustomTemplates={canUseCustomTemplates} />}
         {visiblePersonalTemplates.map((template) => {
           const templateKey = customTemplateFavoriteKey(template.id);

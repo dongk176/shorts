@@ -18,6 +18,9 @@ describe("project feedback reward eligibility", () => {
       completedProjectCount: 1,
       promptCompletionCount: null,
     });
+    expect(String((db as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0])).toContain(
+      "result_viewed_at is not null",
+    );
   });
 
   it("restores normal feedback eligibility after a successful payment", async () => {

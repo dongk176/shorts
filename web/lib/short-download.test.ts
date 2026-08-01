@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isIosDownloadDevice,
+  requiresIndividualShortDownloads,
   shortDownloadExpirySeconds,
   shortDownloadFilename,
 } from "@/lib/short-download";
@@ -22,5 +23,29 @@ describe("short download helpers", () => {
     expect(isIosDownloadDevice("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15")).toBe(true);
     expect(isIosDownloadDevice("Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15", 5)).toBe(true);
     expect(isIosDownloadDevice("Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15", 0)).toBe(false);
+  });
+
+  it("uses individual downloads on Galaxy tablets and other mobile devices", () => {
+    const galaxyTabSamsungInternet = [
+      "Mozilla/5.0 (Linux; Android 14; SM-X710)",
+      "AppleWebKit/537.36 (KHTML, like Gecko)",
+      "SamsungBrowser/26.0 Chrome/122.0.0.0 Safari/537.36",
+    ].join(" ");
+    const androidChrome = [
+      "Mozilla/5.0 (Linux; Android 14; Pixel 8)",
+      "AppleWebKit/537.36 (KHTML, like Gecko)",
+      "Chrome/126.0.0.0 Mobile Safari/537.36",
+    ].join(" ");
+    const desktopChrome = [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      "AppleWebKit/537.36 (KHTML, like Gecko)",
+      "Chrome/126.0.0.0 Safari/537.36",
+    ].join(" ");
+
+    expect(requiresIndividualShortDownloads(galaxyTabSamsungInternet)).toBe(true);
+    expect(requiresIndividualShortDownloads(androidChrome)).toBe(true);
+    expect(requiresIndividualShortDownloads("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15")).toBe(true);
+    expect(requiresIndividualShortDownloads("Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15", 5)).toBe(true);
+    expect(requiresIndividualShortDownloads(desktopChrome)).toBe(false);
   });
 });

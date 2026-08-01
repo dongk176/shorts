@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   session: vi.fn(),
   authenticatedSession: vi.fn(),
+  ensureLocalDbReady: vi.fn(),
   getDb: vi.fn(),
   usage: vi.fn(),
   recentJobs: vi.fn(),
@@ -19,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   billing: vi.fn(),
   signedUrl: vi.fn(),
   shortDownloadUrl: vi.fn(),
+  putEditorChannelAsset: vi.fn(),
+  shortsThankYouEventGrant: vi.fn(),
 }));
 
 vi.mock("@aws-sdk/cloudfront-signer", () => ({
@@ -28,7 +31,10 @@ vi.mock("@/lib/session", () => ({
   requireMvpSession: mocks.session,
   requireAuthenticatedMvpSession: mocks.authenticatedSession,
 }));
-vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
+vi.mock("@/lib/db", () => ({
+  ensureLocalDbReady: mocks.ensureLocalDbReady,
+  getDb: mocks.getDb,
+}));
 vi.mock("@/lib/billing", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/billing")>()),
   getBillingSummary: mocks.billing,
@@ -37,6 +43,11 @@ vi.mock("@/lib/supabase/server", () => ({ getAuthenticatedUser: mocks.authentica
 vi.mock("@/lib/usage", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/usage")>()),
   getUsageSnapshot: mocks.usage,
+}));
+vi.mock("@/lib/shorts-thank-you-event", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/shorts-thank-you-event")>()),
+  issueShortsThankYouEventGrantIfEligible:
+    mocks.shortsThankYouEventGrant,
 }));
 vi.mock("@/lib/data", () => ({
   getRecentJobs: mocks.recentJobs,
@@ -56,6 +67,7 @@ vi.mock("@/lib/aws", () => ({
   wakeOutboxDispatcher: mocks.wakeDispatcher,
   deleteShortObjects: mocks.deleteObjects,
   getShortDownloadUrl: mocks.shortDownloadUrl,
+  putEditorChannelAsset: mocks.putEditorChannelAsset,
 }));
 
 import { GET as getJob } from "./jobs/[jobId]/route";
@@ -106,7 +118,7 @@ function dbWithRows(...responses: unknown[][]) {
 
 function dbForSuccessfulJobCreation() {
   const db = dbWithRows([], [analysisRow]);
-  const tx = dbWithRows([], [], [{ active: 0 }], [{ projectNumber: 1 }], [{ id: "reservation-a" }], [], []);
+  const tx = dbWithRows([], [], [{ active: 0, isFirstJob: true }], [{ projectNumber: 1 }], [{ id: "reservation-a" }], [], []);
   Object.assign(db, { begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)) });
   return db;
 }
@@ -131,6 +143,8 @@ beforeEach(() => {
   delete process.env.CLOUDFRONT_DOMAIN;
   delete process.env.CLOUDFRONT_KEY_PAIR_ID;
   delete process.env.CLOUDFRONT_PRIVATE_KEY_B64;
+  delete process.env.EDITOR_RENDERING_V2_ENABLED;
+  delete process.env.EDITOR_RENDERING_V2_TEST_USER_IDS;
   mocks.session.mockResolvedValue({
     id: "session-a",
     selectedPlanCode: "plus",
@@ -146,6 +160,11 @@ beforeEach(() => {
   mocks.wakeDispatcher.mockResolvedValue(undefined);
   mocks.signedUrl.mockReturnValue("https://cdn.example.com/signed-edit-source.mp4");
   mocks.shortDownloadUrl.mockResolvedValue("https://cdn.example.com/signed-download.mp4");
+  mocks.shortsThankYouEventGrant.mockResolvedValue({
+    granted: false,
+    grantedSeconds: 0,
+    validUntil: null,
+  });
   mocks.billing.mockResolvedValue({
     activeProducts: [{
       planCode: "plus",
@@ -189,6 +208,179 @@ describe("range editing feature gate and snapshot", () => {
     titleFontScale: 1,
     titleTextStyles: [],
   };
+
+  it("queues one validated v2 editor document atomically", async () => {
+    const userId = "7d90fb55-6732-43fc-a32a-ce0da88d6c2d";
+    const releaseId = "5af6cbda-2356-4f76-a611-0a261c538d19";
+    const releaseState = {
+      publicEnabled: false,
+      canaryEnabled: true,
+      runtimeEnabled: false,
+      testerEnabled: false,
+      userIsAdmin: true,
+      stableReleaseId: null,
+      stableUiVersion: null,
+      stableDocumentVersion: null,
+      stableStatus: null,
+      candidateReleaseId: releaseId,
+      candidateUiVersion: 2,
+      candidateDocumentVersion: 2,
+      candidateStatus: "canary_active",
+    };
+    process.env.EDITOR_RENDERING_V2_ENABLED = "true";
+    process.env.EDITOR_RENDERING_V2_TEST_USER_IDS = userId;
+    mocks.authenticatedSession.mockResolvedValue({
+      id: "94b4e3f7-6fe9-43c8-af7d-482dcaa6a78c",
+      userId,
+      selectedPlanCode: "plus",
+      user: {
+        id: userId,
+        email: "editor@example.com",
+        displayName: null,
+        avatarUrl: null,
+      },
+    });
+    const document = {
+      version: 2,
+      sourceShortId: shortId,
+      baseRenderVersion: 1,
+      template: {
+        id: "dark-minimal",
+        customTemplateId: null,
+        presetVersion: 0,
+        snapshot: null,
+      },
+      title: {
+        text: "통합 편집 저장",
+        textStyles: [],
+        fontScale: 1,
+      },
+      channel: {
+        displayName: "이지컷",
+        thumbnailUrl: null,
+        thumbnailAssetKey: null,
+      },
+      comments: [],
+      subtitles: { enabled: false, segments: [] },
+      overlays: {
+        offsets: {
+          video: { x: 0, y: 0 },
+          title: { x: 0, y: 0 },
+          comment: { x: 0, y: 0 },
+          channel: { x: 0, y: 0 },
+        },
+        commentOffsets: {},
+        scales: { video: 1, title: 1, channel: 1 },
+        fonts: { title: "pretendard", channel: "pretendard" },
+        visible: {
+          video: true,
+          title: true,
+          comment: false,
+          channel: true,
+        },
+        commentTheme: null,
+        textOverlays: [],
+        layerOrder: ["video", "title", "comment", "channel"],
+        background: { kind: "color", color: "#111111" },
+      },
+      video: {
+        clips: [
+          {
+            id: "clip-1",
+            sourceStartSeconds: 1,
+            sourceEndSeconds: 2.5,
+          },
+          {
+            id: "clip-2",
+            sourceStartSeconds: 4,
+            sourceEndSeconds: 6,
+          },
+        ],
+        aspectRatio: "16:9",
+        timelineStartSeconds: 90,
+        timelineEndSeconds: 100,
+        selectionStartSeconds: 91,
+        selectionEndSeconds: 96,
+      },
+    };
+    const db = dbWithRows(
+      [releaseState],
+      [{
+        id: shortId,
+        jobId: "31868a78-67da-44cd-af4c-62343d49615d",
+        mvpSessionId: "94b4e3f7-6fe9-43c8-af7d-482dcaa6a78c",
+        status: "ready",
+        renderVersion: 1,
+        durationSeconds: 5,
+        templateId: "dark-minimal",
+        customTemplateId: null,
+        templateSnapshot: { presetVersion: 3 },
+        videoAspectRatio: "16:9",
+        editTimelineS3Key: "edit-sources/timeline.mp4",
+        editTimelineStartSeconds: 90,
+        editTimelineEndSeconds: 100,
+        cleanClipS3Key: "edit-sources/clean.mp4",
+        startSeconds: 91,
+        endSeconds: 96,
+        channelThumbnailUrl: null,
+        editorDocument: null,
+        onboardingWelcomeFunded: false,
+      }],
+      [],
+    );
+    const tx = dbWithRows(
+      [releaseState],
+      [{ id: "request" }],
+      [{ id: shortId }],
+      [],
+    );
+    Object.assign(db, {
+      begin: vi.fn(
+        (callback: (transaction: typeof tx) => unknown) => callback(tx),
+      ),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        requestId: "ce0827c6-acb3-44e4-b973-974c2cc02d19",
+        release: {
+          releaseId,
+          channel: "canary",
+          uiVersion: 2,
+          documentVersion: 2,
+        },
+        document,
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "rerendering",
+      requestId: "ce0827c6-acb3-44e4-b973-974c2cc02d19",
+    });
+    expect(tx).toHaveBeenCalledTimes(4);
+    const pendingDocument = tx.mock.calls.flat().find((value) => (
+      typeof value === "object"
+      && value !== null
+      && "sourceShortId" in value
+    ));
+    expect(pendingDocument).toMatchObject({
+      sourceShortId: shortId,
+      template: {
+        id: "dark-minimal",
+        presetVersion: 3,
+        snapshot: { presetVersion: 3 },
+      },
+      video: {
+        clips: [
+          { sourceStartSeconds: 1, sourceEndSeconds: 2.5 },
+          { sourceStartSeconds: 4, sourceEndSeconds: 6 },
+        ],
+      },
+    });
+  });
 
   it("hides both new APIs when the environment flag is disabled", async () => {
     const timelineResponse = await accessEditTimeline(
@@ -707,7 +899,31 @@ describe("job API security and idempotency", () => {
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d0",
     }));
     expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({ isFirstJob: true });
     expect(mocks.authenticatedSession).toHaveBeenCalledOnce();
+  });
+
+  it("returns the one-time 50-minute event grant only after job creation succeeds", async () => {
+    const eventReward = {
+      granted: true,
+      grantedSeconds: 3_000,
+      validUntil: "2026-10-28T00:00:00.000Z",
+    };
+    mocks.shortsThankYouEventGrant.mockResolvedValue(eventReward);
+    mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rightsConfirmed: true,
+      requestId: "25cbd68f-54c7-4637-b437-787a877de526",
+    }));
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({
+      shortsThankYouEventReward: eventReward,
+    });
+    expect(mocks.shortsThankYouEventGrant).toHaveBeenCalledOnce();
   });
 
   it("temporarily blocks only after repeated membership or paid-content failures", async () => {

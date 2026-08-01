@@ -4,7 +4,6 @@ import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
 import {
   emailPreferenceDecisionSchema,
-  jobCompletionEmailPreferenceAvailable,
   type JobCompletionEmailPreferenceStatus,
 } from "@/lib/job-completion-preference";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
@@ -20,12 +19,10 @@ function noStoreJson(body: unknown) {
 export async function GET() {
   try {
     const session = await requireAuthenticatedMvpSession();
-    const available = jobCompletionEmailPreferenceAvailable();
     const rows = await getDb()`
       select account.email,preference.notification_email,
              preference.completion_email_status,
              preference.marketing_email_status,
-             onboarding.onboarding_version,
              prompt.next_prompt_completed_job_count,
              (
                select count(*)::integer
@@ -39,8 +36,6 @@ export async function GET() {
         on preference.user_id=account.id
       left join shorts_mvp.email_preference_prompt_snoozes prompt
         on prompt.user_id=account.id
-      left join shorts_mvp.user_onboarding_profiles onboarding
-        on onboarding.user_id=account.id
       where account.id=${session.userId}
         and account.withdrawn_at is null
       limit 1
@@ -66,13 +61,10 @@ export async function GET() {
     const hasPendingDecision =
       status === "not_asked" || marketingStatus === "not_asked";
     return noStoreJson({
-      available,
       status,
       marketingStatus,
       email: String(account.notificationEmail || account.email || "").trim() || null,
-      promptDue: available
-        && Number(account.onboardingVersion) === 2
-        && hasPendingDecision && (
+      promptDue: hasPendingDecision && (
         nextPromptCompletedJobCount === null
         || completedJobCount >= nextPromptCompletedJobCount
       ),
@@ -89,39 +81,23 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     assertSameOriginJsonRequest(request, "완료 알림 설정 요청");
-    if (!jobCompletionEmailPreferenceAvailable()) {
-      throw new HttpError(
-        503,
-        "완료 이메일 기능이 아직 준비되지 않았습니다.",
-        "JOB_COMPLETION_EMAIL_UNAVAILABLE",
-      );
-    }
     const input = emailPreferenceDecisionSchema.parse(await request.json());
     const session = await requireAuthenticatedMvpSession();
     const result = await getDb().begin(async (tx) => {
       const accountRows = await tx`
-        select account.email,onboarding.onboarding_version,
+        select account.email,
                (
                  select preference.notification_email
                  from shorts_mvp.user_email_notification_preferences preference
                  where preference.user_id=account.id
                ) as notification_email
         from shorts_mvp.app_users account
-        left join shorts_mvp.user_onboarding_profiles onboarding
-          on onboarding.user_id=account.id
         where account.id=${session.userId}
           and account.withdrawn_at is null
         limit 1
         for update
       `;
       if (!accountRows[0]) throw new HttpError(404, "회원 정보를 찾을 수 없습니다.");
-      if (Number(accountRows[0].onboardingVersion) !== 2) {
-        throw new HttpError(
-          409,
-          "이 설정은 최신 온보딩을 완료한 회원에게만 제공됩니다.",
-          "ONBOARDING_V2_REQUIRED",
-        );
-      }
       const accountEmail = String(accountRows[0].email || "").trim().toLowerCase();
       const existingNotificationEmail =
         String(accountRows[0].notificationEmail || "").trim().toLowerCase() || null;
@@ -184,12 +160,6 @@ export async function POST(request: Request) {
             )
           on conflict (job_id) do nothing
         `;
-      } else {
-        await tx`
-          delete from shorts_mvp.job_completion_email_notifications
-          where user_id=${session.userId}
-            and status in ('waiting','pending')
-        `;
       }
 
       await tx`
@@ -198,7 +168,6 @@ export async function POST(request: Request) {
       `;
 
       return {
-        available: true,
         status: preferenceRows[0].completionEmailStatus,
         marketingStatus: preferenceRows[0].marketingEmailStatus,
         email: email || null,

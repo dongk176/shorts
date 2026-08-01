@@ -425,7 +425,7 @@ export async function POST(request: Request) {
     if (isManualPackage && reuseStoredMethod) {
       throw new HttpError(
         409,
-        "패키지 결제 화면이 업데이트되었습니다. 페이지를 새로고침한 뒤 새 카드 정보를 입력해 주세요.",
+        "패키지는 수기결제 카드 정보를 새로 입력해 주세요.",
         "PACKAGE_MANUAL_CARD_REQUIRED",
       );
     }
@@ -554,7 +554,7 @@ export async function POST(request: Request) {
     if (isManualPackage && requestedCardVerificationId) {
       throw new HttpError(
         409,
-        "패키지 결제 화면이 업데이트되었습니다. 페이지를 새로고침한 뒤 새 카드 정보를 입력해 주세요.",
+        "패키지 수기결제는 카드 등록 확인값을 사용하지 않습니다.",
         "PACKAGE_MANUAL_DIRECT_REQUIRED",
       );
     }

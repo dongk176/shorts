@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import {
+  assertThePayOneBillingEnabled,
   cardTokenHash,
   createPaymentTrackId,
   encryptCardToken,
@@ -10,6 +11,9 @@ import {
   normalizeCardNumber,
   PaymentConfigurationError,
   registerThePayOneCard,
+  thePayOneMerchantId,
+  thePayOneTerminalId,
+  type ThePayOneCredentialScope,
   ThePayOneError,
 } from "@/lib/thepayone";
 import {
@@ -25,6 +29,7 @@ export const dynamic = "force-dynamic";
 
 const registrationSchema = z.object({
   requestId: z.string().uuid(),
+  credentialScope: z.enum(["default", "package"]),
   payerName: z.string().trim().min(1).max(30),
   payerEmail: z.string().trim().email().max(60),
   payerTel: z.string().transform((value) => value.replace(/[^0-9]/g, "")).refine((value) => /^\d{10,11}$/.test(value)),
@@ -63,6 +68,9 @@ type RegistrationRow = {
   cardAcquirer: string | null;
   transactionId: string | null;
   resultCode: string | null;
+  providerCredentialScope: ThePayOneCredentialScope;
+  providerMerchantId: string | null;
+  providerTerminalId: string | null;
   createdAt: Date;
   revokedAt: Date | null;
 };
@@ -77,6 +85,9 @@ function safeRegistration(row: RegistrationRow) {
     acquirer: row.cardAcquirer,
     transactionId: row.transactionId,
     resultCode: row.resultCode,
+    credentialScope: row.providerCredentialScope,
+    merchantId: row.providerMerchantId,
+    terminalId: row.providerTerminalId,
     createdAt: row.createdAt.toISOString(),
     revokedAt: row.revokedAt?.toISOString() || null,
   };
@@ -112,7 +123,8 @@ function paymentError(error: unknown) {
 
 const registrationColumns = `
   id, status, card_last4, card_issuer, card_type, card_acquirer,
-  transaction_id, result_code, created_at, revoked_at
+  transaction_id, result_code, provider_credential_scope,
+  provider_merchant_id, provider_terminal_id, created_at, revoked_at
 `;
 
 export async function GET(request: Request) {
@@ -122,7 +134,7 @@ export async function GET(request: Request) {
     const rows = await getDb().unsafe<RegistrationRow[]>(`
       select ${registrationColumns}
       from shorts_mvp.payment_method_registrations
-      where user_id=$1
+      where user_id=$1 and provider_credential_scope='default'
       order by created_at desc
       limit 20
     `, [tester.userId]);
@@ -139,7 +151,18 @@ export async function POST(request: Request) {
     assertLocalPaymentMutation(request);
     const tester = assertPaymentTester(await requireMvpSession());
     userId = tester.userId;
+    assertThePayOneBillingEnabled();
     const input = registrationSchema.parse(await request.json());
+    if (input.credentialScope === "package") {
+      throw new PaymentTestAccessError(
+        "패키지 수기결제는 카드 등록 없이 승인마다 카드정보를 직접 입력해야 합니다.",
+        409,
+        "PACKAGE_MANUAL_DIRECT_REQUIRED",
+      );
+    }
+    const credentialScope = "default" as const;
+    const merchantId = thePayOneMerchantId(credentialScope);
+    const terminalId = thePayOneTerminalId(credentialScope);
     const db = getDb();
     const existing = await db.unsafe<RegistrationRow[]>(`
       select ${registrationColumns}
@@ -153,9 +176,11 @@ export async function POST(request: Request) {
     const orderId = createPaymentTrackId("AUTH");
     await db`
       insert into shorts_mvp.payment_method_registrations (
-        id,user_id,request_id,order_id,status
+        id,user_id,request_id,order_id,status,provider_credential_scope,
+        provider_merchant_id,provider_terminal_id
       ) values (
-        ${registrationId},${tester.userId},${input.requestId},${orderId},'pending'
+        ${registrationId},${tester.userId},${input.requestId},${orderId},'pending',
+        ${credentialScope},${merchantId},${terminalId}
       )
     `;
 
@@ -170,7 +195,21 @@ export async function POST(request: Request) {
         payerName: input.payerName,
         payerEmail: input.payerEmail,
         payerTel: input.payerTel,
-      });
+        billingDay: "00",
+        productName: "Easy Cut 반복결제 테스트",
+      }, credentialScope);
+      if (
+        issued.trackId !== orderId
+        || issued.amount !== 0
+        || issued.billingDay !== "00"
+      ) {
+        throw new ThePayOneError(
+          "더페이원 카드 등록 응답이 요청과 일치하지 않습니다.",
+          "CARD_REGISTRATION_MISMATCH",
+          null,
+          true,
+        );
+      }
     } catch (error) {
       const outcomeUnknown = error instanceof ThePayOneError && error.outcomeUnknown;
       await db`
@@ -193,7 +232,8 @@ export async function POST(request: Request) {
         card_acquirer_code=null,card_acquirer=${issued.acquirer}
       where id=${registrationId} and user_id=${tester.userId} and status='pending'
       returning id,status,card_last4,card_issuer,card_type,card_acquirer,
-        transaction_id,result_code,created_at,revoked_at
+        transaction_id,result_code,provider_credential_scope,
+        provider_merchant_id,provider_terminal_id,created_at,revoked_at
     ` as unknown as RegistrationRow[];
     if (!rows[0]) throw new Error("카드 등록 상태를 저장하지 못했습니다.");
     return json({ registration: safeRegistration(rows[0]) }, { status: 201 });

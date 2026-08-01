@@ -132,7 +132,7 @@ export async function POST(request: Request) {
     if (product.kind === "package") {
       throw new HttpError(
         409,
-        "패키지 결제 화면이 업데이트되었습니다. 페이지를 새로고침한 뒤 카드 정보를 다시 입력해 주세요.",
+        "패키지 수기결제는 카드를 등록하지 않고 최종 승인 요청에서 직접 처리합니다.",
         "PACKAGE_MANUAL_DIRECT_REQUIRED",
       );
     }

@@ -25,6 +25,10 @@ import { billableSourceSeconds, getUsageSnapshot } from "@/lib/usage";
 import { templateSnapshotFromRow } from "@/lib/custom-templates";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
 import { assertSupportedSourceVideoDuration } from "@/lib/source-video";
+import {
+  issueShortsThankYouEventGrantIfEligible,
+  type ShortsThankYouEventGrant,
+} from "@/lib/shorts-thank-you-event";
 
 const schema = z.object({
   analysisId: z.string().uuid(),
@@ -36,6 +40,12 @@ const schema = z.object({
   rightsConfirmed: z.boolean().optional(),
   requestId: z.string().uuid(),
 });
+
+const noShortsThankYouEventReward: ShortsThankYouEventGrant = {
+  granted: false,
+  grantedSeconds: 0,
+  validUntil: null,
+};
 
 export async function POST(request: Request) {
   try {
@@ -52,17 +62,25 @@ export async function POST(request: Request) {
     const db = getDb();
     const executionBackend = getInitialJobBackend();
     const existing = await db`
-      select id, project_number, status from shorts_mvp.video_jobs
-      where request_id=${input.requestId} and (
-        (${session.userId}::uuid is not null and user_id=${session.userId})
-        or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+      select job.id,job.project_number,job.status,
+        not exists (
+          select 1 from shorts_mvp.video_jobs other
+          where other.user_id=job.user_id and not other.is_example
+            and other.id<>job.id
+        ) as is_first_job
+      from shorts_mvp.video_jobs job
+      where job.request_id=${input.requestId} and (
+        (${session.userId}::uuid is not null and job.user_id=${session.userId})
+        or (${session.userId}::uuid is null and job.user_id is null and job.mvp_session_id=${session.id})
       )
     `;
     if (existing[0]) return NextResponse.json({
       jobId: existing[0].id,
       projectNumber: Number(existing[0].projectNumber),
       status: existing[0].status,
+      isFirstJob: Boolean(existing[0].isFirstJob),
       usage: await getUsageSnapshot(db, session),
+      shortsThankYouEventReward: noShortsThankYouEventReward,
     });
     // Circuit breaker logic removed to allow continuous testing with proxies.
 
@@ -100,13 +118,21 @@ export async function POST(request: Request) {
     const deadlineMinutes = jobDeadlineMinutes(sourceDurationSeconds);
     const jobId = randomUUID();
     let createdProjectNumber: number | null = null;
+    let createdIsFirstJob = false;
+    let shortsThankYouEventReward = noShortsThankYouEventReward;
     const duplicate = await db.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtextextended(${session.userId || session.id}, 0))`;
       const concurrentExisting = await tx`
-        select id, project_number, status from shorts_mvp.video_jobs
-        where request_id=${input.requestId} and (
-          (${session.userId}::uuid is not null and user_id=${session.userId})
-          or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+        select job.id,job.project_number,job.status,
+          not exists (
+            select 1 from shorts_mvp.video_jobs other
+            where other.user_id=job.user_id and not other.is_example
+              and other.id<>job.id
+          ) as is_first_job
+        from shorts_mvp.video_jobs job
+        where job.request_id=${input.requestId} and (
+          (${session.userId}::uuid is not null and job.user_id=${session.userId})
+          or (${session.userId}::uuid is null and job.user_id is null and job.mvp_session_id=${session.id})
         )
       `;
       if (concurrentExisting[0]) {
@@ -114,6 +140,7 @@ export async function POST(request: Request) {
           id: concurrentExisting[0].id,
           projectNumber: Number(concurrentExisting[0].projectNumber),
           status: concurrentExisting[0].status,
+          isFirstJob: Boolean(concurrentExisting[0].isFirstJob),
         };
       }
       let resolvedTemplateId = input.templateId;
@@ -122,6 +149,8 @@ export async function POST(request: Request) {
         | ReturnType<typeof templateSnapshotFromRow>
         | { presetVersion: 2 | 3 }
         | null = null;
+      shortsThankYouEventReward =
+        await issueShortsThankYouEventGrantIfEligible(tx, session.userId);
       const billing = await getBillingSummary(tx, session.userId);
       if (input.customTemplateId) {
         assertCustomTemplateAccess(billing);
@@ -155,6 +184,7 @@ export async function POST(request: Request) {
               - ${RESTRICTED_CONTENT_FAILURE_WINDOW_MINUTES} * interval '1 minute'
         )
         select
+          not exists(select 1 from scoped_jobs) as is_first_job,
           (select count(*)::int from scoped_jobs where status in (
             'validating','queued','starting','downloading','transcribing','selecting',
             'extracting','rendering','uploading','retry_waiting'
@@ -170,6 +200,7 @@ export async function POST(request: Request) {
           end as restricted_content_cooldown_minutes
         from restricted_failures
       `;
+      createdIsFirstJob = Boolean(limits[0].isFirstJob);
       assertRestrictedContentCooldown(
         Number(limits[0].restrictedContentCooldownMinutes || 0),
       );
@@ -227,7 +258,9 @@ export async function POST(request: Request) {
         jobId: duplicate.id,
         projectNumber: duplicate.projectNumber,
         status: duplicate.status,
+        isFirstJob: duplicate.isFirstJob,
         usage: await getUsageSnapshot(db, session),
+        shortsThankYouEventReward: noShortsThankYouEventReward,
       });
     }
     if (!createdProjectNumber || !Number.isSafeInteger(createdProjectNumber)) {
@@ -249,8 +282,10 @@ export async function POST(request: Request) {
       jobId,
       projectNumber: createdProjectNumber,
       status: "queued",
+      isFirstJob: createdIsFirstJob,
       executionBackend,
       usage: await getUsageSnapshot(db, session),
+      shortsThankYouEventReward,
     }, { status: 202 });
   } catch (error) { return apiError(error); }
 }

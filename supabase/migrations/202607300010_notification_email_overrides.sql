@@ -58,7 +58,6 @@ as $$
           and n.claimed_at < clock_timestamp() - interval '10 minutes'
         )
       )
-      and preference.completion_email_status='enabled'
       and coalesce(
         nullif(btrim(preference.notification_email),''),
         nullif(btrim(u.email),'')

@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+export const FIRST_JOB_CREATED_EMAIL_PREFERENCE_EVENT =
+  "easycut:first-job-created-email-preference";
+
 export const jobCompletionEmailDecisionSchema = z.object({
   status: z.enum(["enabled", "declined"]),
 }).strict();
@@ -27,7 +30,6 @@ export type JobCompletionEmailPreferenceStatus =
   | JobCompletionEmailDecision;
 
 export type JobCompletionEmailPreferenceResponse = {
-  available: boolean;
   status: JobCompletionEmailPreferenceStatus;
   marketingStatus: JobCompletionEmailPreferenceStatus;
   email: string | null;
@@ -35,10 +37,3 @@ export type JobCompletionEmailPreferenceResponse = {
   completedJobCount?: number;
   nextPromptCompletedJobCount?: number | null;
 };
-
-export function jobCompletionEmailPreferenceAvailable() {
-  return Boolean(
-    process.env.RESEND_API_KEY?.trim()
-    && process.env.RESEND_FROM_EMAIL?.trim(),
-  );
-}

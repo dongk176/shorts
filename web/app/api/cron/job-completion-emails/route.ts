@@ -33,7 +33,8 @@ export async function GET(request: Request) {
   }
   if (!jobCompletionEmailConfigured()) {
     return NextResponse.json(
-      { ok: true, skipped: "not_configured" },
+      { detail: "Job completion email is not configured" },
+      { status: 503 },
     );
   }
 

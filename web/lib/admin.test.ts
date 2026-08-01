@@ -10,13 +10,20 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 
-import { requireAdminUser } from "./admin";
+import { HttpError } from "./http";
+import { isAdminAuthenticationRequired, requireAdminUser } from "./admin";
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe("administrator authorization", () => {
+  it("recognizes authentication failures across development module reloads", () => {
+    expect(isAdminAuthenticationRequired(new HttpError(401, "로그인이 필요합니다."))).toBe(true);
+    expect(isAdminAuthenticationRequired({ status: 401 })).toBe(true);
+    expect(isAdminAuthenticationRequired(new HttpError(403, "관리자 권한이 필요합니다."))).toBe(false);
+  });
+
   it("requires an authenticated Supabase user", async () => {
     mocks.getAuthenticatedUser.mockResolvedValue(null);
     await expect(requireAdminUser()).rejects.toMatchObject({ status: 401 });

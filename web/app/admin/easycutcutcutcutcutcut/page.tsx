@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { requireAdminUser } from "@/lib/admin";
+import { isAdminAuthenticationRequired, requireAdminUser } from "@/lib/admin";
+import { ADMIN_USAGE_GRANT_PRODUCT_CODE } from "@/lib/admin-usage-grant";
 import { addKstMonths } from "@/lib/billing";
-import { getDb } from "@/lib/db";
-import { HttpError } from "@/lib/http";
+import { ensureLocalDbReady, getDb } from "@/lib/db";
 import { getPrepaidPackageMonthState } from "@/lib/refund-policy";
 import { createNoIndexMetadata } from "@/lib/seo";
 import { AdminBillingDashboard, type AdminOrder, type AdminRefund } from "./admin-billing-dashboard";
@@ -22,6 +21,7 @@ import { AdminMembersDashboard, type AdminMember } from "./admin-members-dashboa
 import { AdminManagedAccountsSection } from "./admin-managed-accounts-section";
 import { AdminInstallmentsDashboard } from "./admin-installments-dashboard";
 import { AdminRuntimeSettings } from "./admin-runtime-settings";
+import { AdminShortsEventSetting } from "./admin-shorts-event-setting";
 import {
   AdminEditorReleases,
   type AdminEditorRelease,
@@ -41,20 +41,33 @@ import {
   type AdminUserOnboardingResponse,
 } from "./admin-onboarding-dashboard";
 import {
-  editorRenderingV2GlobalEnabled,
-  editorRenderingV2MasterEnabled,
-} from "@/lib/editor-rendering-release";
-import {
   LOGIN_WELCOME_GRANT_FLAG_KEY,
   ONBOARDING_WELCOME_PRODUCT_CODE,
   onboardingWelcomeGrantEnabled,
 } from "@/lib/onboarding-welcome";
 import {
+  userDiscoverySourceValues,
   userOccupationValues,
   userUsagePurposeValues,
+  type UserDiscoverySource,
   type UserOccupation,
   type UserUsagePurpose,
 } from "@/lib/user-onboarding";
+import {
+  SHORTS_THANK_YOU_EVENT_FLAG_KEY,
+  SHORTS_THANK_YOU_EVENT_PRODUCT_CODE,
+  shortsThankYouEventEnabled,
+} from "@/lib/shorts-thank-you-event";
+import {
+  editorRenderingV2GlobalEnabled,
+  editorRenderingV2MasterEnabled,
+} from "@/lib/editor-rendering-release";
+import {
+  type AdminMemberTrendPoint,
+  AdminShell,
+  type AdminSalesTrendPoint,
+  type AdminTab,
+} from "./admin-shell";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = createNoIndexMetadata(
@@ -75,11 +88,12 @@ function iso(value: unknown) {
 }
 
 export default async function AdminBillingPage({ searchParams }: PageProps) {
+  await ensureLocalDbReady();
   let admin: Awaited<ReturnType<typeof requireAdminUser>>;
   try {
     admin = await requireAdminUser();
   } catch (error) {
-    if (error instanceof HttpError && error.status === 401) {
+    if (isAdminAuthenticationRequired(error)) {
       redirect(`/auth/sign-in?next=${encodeURIComponent("/admin/easycutcutcutcutcutcut")}`);
     }
     notFound();
@@ -87,8 +101,9 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
 
   const params = await searchParams;
   const requestedTab = first(params.tab);
-  const tab = ["billing", "refunds", "members", "managed-accounts", "referrals", "inquiries", "feedback", "onboarding", "settings", "installments", "editor-releases"].includes(requestedTab)
-    ? requestedTab
+  const validTabs: AdminTab[] = ["billing", "refunds", "members", "managed-accounts", "referrals", "inquiries", "feedback", "onboarding", "settings", "installments", "editor-releases"];
+  const tab: AdminTab = validTabs.includes(requestedTab as AdminTab)
+    ? requestedTab as AdminTab
     : "billing";
   const requestedStatus = first(params.status);
   const requestedProvider = first(params.provider);
@@ -127,7 +142,11 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     ? requestedInquiryKind
     : "all";
   const db = getDb();
-  const [runtimeSettingRows, metricRows, subscriptionRows] = await Promise.all([
+  const [
+    runtimeSettingRows,
+    eventRuntimeSettingRows,
+    overviewRows,
+  ] = await Promise.all([
     tab === "settings" ? db`
         select feature_flag.enabled,feature_flag.updated_at,administrator.email as updated_by_email
         from shorts_mvp.runtime_feature_flags feature_flag
@@ -136,25 +155,124 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         where feature_flag.flag_key=${LOGIN_WELCOME_GRANT_FLAG_KEY}
         limit 1
       ` : Promise.resolve([]),
+    tab === "settings" ? db`
+        select feature_flag.enabled,feature_flag.updated_at,
+          administrator.email as updated_by_email
+        from shorts_mvp.runtime_feature_flags feature_flag
+        left join shorts_mvp.app_users administrator
+          on administrator.id=feature_flag.updated_by_user_id
+        where feature_flag.flag_key=${SHORTS_THANK_YOU_EVENT_FLAG_KEY}
+        limit 1
+      ` : Promise.resolve([]),
     db`
+      with payment_metrics as (
+        select
+          coalesce(sum(amount_krw) filter (where status='succeeded'),0)::bigint as gross_sales,
+          coalesce(sum(refunded_amount_krw),0)::bigint as refunded_sales,
+          coalesce(sum(amount_krw) filter (
+            where status='succeeded'
+              and amount_krw>0
+              and approved_at >= (
+                date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul')
+                at time zone 'Asia/Seoul'
+              )
+          ),0)::bigint as today_sales,
+          count(*) filter (
+            where status='succeeded' and amount_krw>0
+          )::integer as paid_orders,
+          count(*) filter (where status in ('unknown','manual_review'))::integer as review_orders
+        from shorts_mvp.billing_orders
+      ),
+      subscription_metrics as (
+        select
+          count(*) filter (
+            where subscription.status='active'
+          )::integer as active_subscriptions,
+          count(*) filter (
+            where subscription.status='past_due'
+          )::integer as past_due_subscriptions,
+          count(*) filter (
+            where subscription.billing_review_status='manual_review'
+          )::integer as manual_review_subscriptions,
+          count(*) filter (
+            where subscription.status='active'
+              and subscription.plan_code='easycut_pro_v2'
+          )::integer as active_pro_subscriptions,
+          coalesce(sum(plan.monthly_price_krw) filter (
+            where subscription.status='active'
+              and subscription.plan_code='easycut_pro_v2'
+          ),0)::bigint as active_subscription_billing_krw
+        from shorts_mvp.user_subscriptions subscription
+        join shorts_mvp.plans plan on plan.code=subscription.plan_code
+      ),
+      days as (
+        select generate_series(
+          date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days',
+          date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul'),
+          interval '1 day'
+        )::date as trend_day
+      ),
+      daily_sales as (
+        select
+          (approved_at at time zone 'Asia/Seoul')::date as trend_day,
+          coalesce(sum(amount_krw),0)::bigint as sales,
+          count(*)::integer as order_count
+        from shorts_mvp.billing_orders
+        where status='succeeded'
+          and amount_krw>0
+          and approved_at >= (
+            date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days'
+          ) at time zone 'Asia/Seoul'
+        group by (approved_at at time zone 'Asia/Seoul')::date
+      ),
+      daily_members as (
+        select
+          (created_at at time zone 'Asia/Seoul')::date as trend_day,
+          count(*)::integer as member_count
+        from shorts_mvp.app_users
+        where created_at >= (
+          date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days'
+        ) at time zone 'Asia/Seoul'
+        group by (created_at at time zone 'Asia/Seoul')::date
+      ),
+      sales_trend as (
+        select coalesce(
+          jsonb_agg(
+            jsonb_build_object(
+              'date',to_char(days.trend_day,'YYYY-MM-DD'),
+              'sales',coalesce(daily_sales.sales,0),
+              'orderCount',coalesce(daily_sales.order_count,0)
+            )
+            order by days.trend_day
+          ),
+          '[]'::jsonb
+        ) as points
+        from days
+        left join daily_sales using (trend_day)
+      ),
+      member_trend as (
+        select coalesce(
+          jsonb_agg(
+            jsonb_build_object(
+              'date',to_char(days.trend_day,'YYYY-MM-DD'),
+              'memberCount',coalesce(daily_members.member_count,0)
+            )
+            order by days.trend_day
+          ),
+          '[]'::jsonb
+        ) as points
+        from days
+        left join daily_members using (trend_day)
+      )
       select
-        coalesce(sum(amount_krw) filter (where status='succeeded'),0)::bigint as gross_sales,
-        coalesce(sum(refunded_amount_krw),0)::bigint as refunded_sales,
-        coalesce(sum(amount_krw-refunded_amount_krw) filter (where status='succeeded'),0)::bigint as net_sales,
-        coalesce(sum(amount_krw-refunded_amount_krw) filter (
-          where status='succeeded'
-            and approved_at >= (date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul')
-        ),0)::bigint as today_net_sales,
-        count(*) filter (where status='succeeded')::integer as paid_orders,
-        count(*) filter (where status in ('unknown','manual_review'))::integer as review_orders
-      from shorts_mvp.billing_orders
-    `,
-    db`
-      select
-        count(*) filter (where status='active')::integer as active,
-        count(*) filter (where status='past_due')::integer as past_due,
-        count(*) filter (where billing_review_status='manual_review')::integer as manual_review
-      from shorts_mvp.user_subscriptions
+        payment_metrics.*,
+        subscription_metrics.*,
+        sales_trend.points as sales_trend,
+        member_trend.points as member_trend
+      from payment_metrics
+      cross join subscription_metrics
+      cross join sales_trend
+      cross join member_trend
     `,
   ]);
   const [
@@ -402,7 +520,11 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             or (
               grant_row.kind='addon'
               and (
-                grant_row.product_code=${ONBOARDING_WELCOME_PRODUCT_CODE}
+                grant_row.product_code in (
+                  ${ONBOARDING_WELCOME_PRODUCT_CODE},
+                  ${SHORTS_THANK_YOU_EVENT_PRODUCT_CODE},
+                  ${ADMIN_USAGE_GRANT_PRODUCT_CODE}
+                )
                 or u.manual_service_access_until>clock_timestamp()
                 or exists (
                   select 1
@@ -528,7 +650,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const onboardingRows = tab === "onboarding" ? await db`
       select
         p.user_id,p.occupation,p.occupation_other,p.usage_purposes,
-        p.usage_purpose_other,p.onboarding_version,p.completed_at,
+        p.usage_purpose_other,p.discovery_source,p.discovery_source_other,
+        p.onboarding_version,p.completed_at,
         u.email,u.display_name
       from shorts_mvp.user_onboarding_profiles p
       join shorts_mvp.app_users u on u.id=p.user_id
@@ -538,6 +661,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         or lower(coalesce(u.display_name,'')) like ${`%${query.toLowerCase()}%`}
         or lower(coalesce(p.occupation_other,'')) like ${`%${query.toLowerCase()}%`}
         or lower(coalesce(p.usage_purpose_other,'')) like ${`%${query.toLowerCase()}%`}
+        or lower(coalesce(p.discovery_source_other,'')) like ${`%${query.toLowerCase()}%`}
         or p.user_id::text=${query}
       )
       order by p.completed_at desc
@@ -561,9 +685,34 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       group by selected.purpose
       order by count desc,selected.purpose
     ` : [];
+  const onboardingDiscoverySourceCountRows = tab === "onboarding" ? await db`
+      select discovery_source,count(*)::integer as count
+      from shorts_mvp.user_onboarding_profiles
+      where discovery_source is not null
+      group by discovery_source
+      order by count desc,discovery_source
+    ` : [];
 
-  const metrics = metricRows[0] || {};
-  const subscriptions = subscriptionRows[0] || {};
+  const overview = overviewRows[0] || {};
+  const metrics = overview;
+  const subscriptions = {
+    active: overview.activeSubscriptions,
+    pastDue: overview.pastDueSubscriptions,
+    manualReview: overview.manualReviewSubscriptions,
+  };
+  const salesTrend: AdminSalesTrendPoint[] = (
+    Array.isArray(overview.salesTrend) ? overview.salesTrend : []
+  ).map((row) => ({
+    date: String(row.date),
+    sales: Number(row.sales || 0),
+    orderCount: Number(row.orderCount || 0),
+  }));
+  const memberTrend: AdminMemberTrendPoint[] = (
+    Array.isArray(overview.memberTrend) ? overview.memberTrend : []
+  ).map((row) => ({
+    date: String(row.date),
+    memberCount: Number(row.memberCount || 0),
+  }));
   const orders: AdminOrder[] = orderRows.map((row) => {
     const contractStart = row.renewalPeriodStart instanceof Date
       ? row.renewalPeriodStart
@@ -771,6 +920,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   };
   const validOccupations = new Set<string>(userOccupationValues);
   const validUsagePurposes = new Set<string>(userUsagePurposeValues);
+  const validDiscoverySources = new Set<string>(userDiscoverySourceValues);
   const onboardingResponses: AdminUserOnboardingResponse[] = onboardingRows
     .filter((row) => validOccupations.has(String(row.occupation)))
     .map((row) => ({
@@ -782,6 +932,10 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       usagePurposes: (Array.isArray(row.usagePurposes) ? row.usagePurposes : [])
         .filter((purpose): purpose is UserUsagePurpose => validUsagePurposes.has(String(purpose))),
       usagePurposeOther: row.usagePurposeOther || null,
+      discoverySource: validDiscoverySources.has(String(row.discoverySource))
+        ? row.discoverySource as UserDiscoverySource
+        : null,
+      discoverySourceOther: row.discoverySourceOther || null,
       onboardingVersion: Number(row.onboardingVersion || 1),
       completedAt: iso(row.completedAt)!,
     }));
@@ -799,6 +953,12 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     .filter((row) => validUsagePurposes.has(String(row.purpose)))
     .map((row) => ({
       purpose: row.purpose as UserUsagePurpose,
+      count: Number(row.count || 0),
+    }));
+  const onboardingDiscoverySourceCounts = onboardingDiscoverySourceCountRows
+    .filter((row) => validDiscoverySources.has(String(row.discoverySource)))
+    .map((row) => ({
+      discoverySource: row.discoverySource as UserDiscoverySource,
       count: Number(row.count || 0),
     }));
   const editorReleaseState = editorReleaseStateRows[0];
@@ -838,211 +998,121 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     }));
 
   return (
-    <main className="min-h-screen bg-[#0d0f10] text-neutral-100">
-      <header className="border-b border-white/10 bg-[#111415]/95">
-        <div className="mx-auto flex max-w-[1480px] items-center justify-between gap-4 px-5 py-4 sm:px-8">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[.22em] text-[#ff9585]">Easy Cut Admin</p>
-            <h1 className="mt-1 text-xl font-black">운영 관리</h1>
-          </div>
-          <div className="flex items-center gap-3 text-sm text-neutral-400">
-            <span className="hidden sm:inline">{admin.email}</span>
-            <Link href="/" className="rounded-xl border border-white/10 px-4 py-2 font-bold text-neutral-200 transition hover:bg-white/[.06]">서비스로 이동</Link>
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-[1480px] px-5 py-7 sm:px-8">
-        <nav className="mb-6 flex flex-wrap gap-2" aria-label="관리자 메뉴">
-          <Link
-            href="/admin/easycutcutcutcutcutcut?tab=billing"
-            aria-current={tab === "billing" ? "page" : undefined}
-            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "billing" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
-          >
-            결제
-          </Link>
-          <Link
-            href="/admin/easycutcutcutcutcutcut?tab=refunds"
-            aria-current={tab === "refunds" ? "page" : undefined}
-            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "refunds" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
-          >
-            환불
-          </Link>
-          <Link
-            href="/admin/easycutcutcutcutcutcut?tab=members"
-            aria-current={tab === "members" ? "page" : undefined}
-            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "members" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
-          >
-            회원
-          </Link>
-          <Link
-            href="/admin/easycutcutcutcutcutcut?tab=managed-accounts"
-            aria-current={tab === "managed-accounts" ? "page" : undefined}
-            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "managed-accounts" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
-          >
-            발급 계정
-          </Link>
-          <Link
-            href="/admin/easycutcutcutcutcutcut?tab=referrals"
-            aria-current={tab === "referrals" ? "page" : undefined}
-            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "referrals" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
-          >
-            레퍼럴
-          </Link>
-          <Link
-            href="/admin/easycutcutcutcutcutcut?tab=inquiries"
-            aria-current={tab === "inquiries" ? "page" : undefined}
-            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "inquiries" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
-          >
-            문의
-          </Link>
-          <Link
-            href="/admin/easycutcutcutcutcutcut?tab=feedback"
-            aria-current={tab === "feedback" ? "page" : undefined}
-            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "feedback" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
-          >
-            피드백
-          </Link>
-          <Link
-            href="/admin/easycutcutcutcutcutcut?tab=onboarding"
-            aria-current={tab === "onboarding" ? "page" : undefined}
-            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "onboarding" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
-          >
-            온보딩
-          </Link>
-          <Link
-            href="/admin/easycutcutcutcutcutcut?tab=settings"
-            aria-current={tab === "settings" ? "page" : undefined}
-            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "settings" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
-          >
-            운영 설정
-          </Link>
-          <Link
-            href="/admin/easycutcutcutcutcutcut?tab=editor-releases"
-            aria-current={tab === "editor-releases" ? "page" : undefined}
-            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "editor-releases" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
-          >
-            편집기 릴리스
-          </Link>
-          <Link
-            href="/admin/easycutcutcutcutcutcut?tab=installments"
-            aria-current={tab === "installments" ? "page" : undefined}
-            className={`rounded-xl px-5 py-2.5 text-sm font-black transition ${tab === "installments" ? "bg-white text-black" : "border border-white/10 text-neutral-400 hover:bg-white/[.05] hover:text-white"}`}
-          >
-            할부 혜택
-          </Link>
-        </nav>
-
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6" aria-label="결제 요약">
-          {[
-            ["누적 총매출", Number(metrics.grossSales || 0), "money"],
-            ["누적 환불", Number(metrics.refundedSales || 0), "money"],
-            ["누적 순매출", Number(metrics.netSales || 0), "money"],
-            ["오늘 순매출", Number(metrics.todayNetSales || 0), "money"],
-            ["활성 구독", Number(subscriptions.active || 0), "count"],
-            ["확인 필요", Number(metrics.reviewOrders || 0) + Number(subscriptions.manualReview || 0), "count"],
-          ].map(([label, value, kind]) => (
-            <article key={String(label)} className="rounded-2xl border border-white/10 bg-[#171a1b] p-5 shadow-[0_16px_50px_rgba(0,0,0,.18)]">
-              <p className="text-xs font-bold text-neutral-500">{label}</p>
-              <p className="mt-3 text-2xl font-black tracking-tight text-white">
-                {kind === "money" ? `${Number(value).toLocaleString("ko-KR")}원` : `${Number(value).toLocaleString("ko-KR")}건`}
-              </p>
-            </article>
-          ))}
-        </section>
-
-        <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-neutral-400">
-          <span className="rounded-full bg-white/[.05] px-3 py-1.5">승인 주문 {Number(metrics.paidOrders || 0).toLocaleString("ko-KR")}건</span>
-          <span className="rounded-full bg-white/[.05] px-3 py-1.5">연체 구독 {Number(subscriptions.pastDue || 0).toLocaleString("ko-KR")}건</span>
-        </div>
-
-        {tab === "billing" ? (
-          <AdminBillingDashboard
-            orders={orders}
-            refunds={refunds}
-            initialFilters={{ status, provider, query }}
-          />
-        ) : tab === "refunds" ? (
-          <AdminRefundsDashboard
-            refundCases={refundCases}
-            metrics={refundCaseMetrics}
-            initialFilters={{ status: refundCaseStatus, query }}
-          />
-        ) : tab === "members" ? (
-          <AdminMembersDashboard
-            members={members}
-            totalCount={filteredMemberCount}
-            referralOptions={memberReferralOptionRows.map((row) => ({
-              id: row.id,
-              creatorName: row.creatorName,
-              slug: row.slug,
-            }))}
-            initialFilters={{ query, memberType, memberPlan, memberActivity, memberReferrer }}
-          />
-        ) : tab === "managed-accounts" ? (
-          <AdminManagedAccountsSection />
-        ) : tab === "referrals" ? (
-          <AdminReferralsSection />
-        ) : tab === "inquiries" ? (
-          <AdminInquiriesDashboard
-            inquiries={inquiries}
-            metrics={inquiryMetrics}
-            initialFilters={{
-              query,
-              status: inquiryStatus,
-              category: inquiryCategory,
-              kind: inquiryKind,
-            }}
-          />
-        ) : tab === "feedback" ? (
-          <AdminFeedbackDashboard
-            feedback={feedback}
-            metrics={feedbackMetrics}
-            reasonCounts={feedbackReasonRows.map((row) => ({
-              reason: row.disappointmentReason,
-              count: Number(row.count),
-            }))}
-            query={query}
-          />
-        ) : tab === "onboarding" ? (
-          <AdminOnboardingDashboard
-            responses={onboardingResponses}
-            metrics={onboardingMetrics}
-            occupationCounts={onboardingOccupationCounts}
-            usagePurposeCounts={onboardingUsagePurposeCounts}
-            query={query}
-          />
-        ) : tab === "editor-releases" ? (
-          <AdminEditorReleases
-            masterEnvironmentEnabled={editorRenderingV2MasterEnabled()}
-            globalEnvironmentEnabled={editorRenderingV2GlobalEnabled()}
-            publicEnabled={Boolean(editorReleaseState?.publicEnabled)}
-            canaryEnabled={Boolean(editorReleaseState?.canaryEnabled)}
-            stableReleaseId={editorReleaseState?.stableReleaseId
-              ? String(editorReleaseState.stableReleaseId)
-              : null}
-            previousStableReleaseId={editorReleaseState?.previousStableReleaseId
-              ? String(editorReleaseState.previousStableReleaseId)
-              : null}
-            candidateReleaseId={editorReleaseState?.candidateReleaseId
-              ? String(editorReleaseState.candidateReleaseId)
-              : null}
-            releases={editorReleases}
-            checks={editorReleaseChecks}
-            testers={editorReleaseTesters}
-            renderStats={editorReleaseRenderStats}
-          />
-        ) : tab === "settings" ? (
+    <AdminShell
+      activeTab={tab}
+      adminEmail={admin.email}
+      metrics={{
+        grossSales: Number(metrics.grossSales || 0),
+        refundedSales: Number(metrics.refundedSales || 0),
+        todaySales: Number(metrics.todaySales || 0),
+        paidOrders: Number(metrics.paidOrders || 0),
+        orderReviewCount: Number(metrics.reviewOrders || 0),
+        activeSubscriptions: Number(subscriptions.active || 0),
+        pastDueSubscriptions: Number(subscriptions.pastDue || 0),
+        manualReviewSubscriptions: Number(subscriptions.manualReview || 0),
+        activeProSubscriptions: Number(overview.activeProSubscriptions || 0),
+        activeSubscriptionBillingKrw: Number(overview.activeSubscriptionBillingKrw || 0),
+      }}
+      salesTrend={salesTrend}
+      memberTrend={memberTrend}
+    >
+      {tab === "billing" ? (
+        <AdminBillingDashboard
+          orders={orders}
+          refunds={refunds}
+          initialFilters={{ status, provider, query }}
+        />
+      ) : tab === "refunds" ? (
+        <AdminRefundsDashboard
+          refundCases={refundCases}
+          metrics={refundCaseMetrics}
+          initialFilters={{ status: refundCaseStatus, query }}
+        />
+      ) : tab === "members" ? (
+        <AdminMembersDashboard
+          members={members}
+          totalCount={filteredMemberCount}
+          referralOptions={memberReferralOptionRows.map((row) => ({
+            id: row.id,
+            creatorName: row.creatorName,
+            slug: row.slug,
+          }))}
+          initialFilters={{ query, memberType, memberPlan, memberActivity, memberReferrer }}
+        />
+      ) : tab === "managed-accounts" ? (
+        <AdminManagedAccountsSection />
+      ) : tab === "referrals" ? (
+        <AdminReferralsSection />
+      ) : tab === "inquiries" ? (
+        <AdminInquiriesDashboard
+          inquiries={inquiries}
+          metrics={inquiryMetrics}
+          initialFilters={{
+            query,
+            status: inquiryStatus,
+            category: inquiryCategory,
+            kind: inquiryKind,
+          }}
+        />
+      ) : tab === "feedback" ? (
+        <AdminFeedbackDashboard
+          feedback={feedback}
+          metrics={feedbackMetrics}
+          reasonCounts={feedbackReasonRows.map((row) => ({
+            reason: row.disappointmentReason,
+            count: Number(row.count),
+          }))}
+          query={query}
+        />
+      ) : tab === "onboarding" ? (
+        <AdminOnboardingDashboard
+          responses={onboardingResponses}
+          metrics={onboardingMetrics}
+          occupationCounts={onboardingOccupationCounts}
+          usagePurposeCounts={onboardingUsagePurposeCounts}
+          discoverySourceCounts={onboardingDiscoverySourceCounts}
+          query={query}
+        />
+      ) : tab === "editor-releases" ? (
+        <AdminEditorReleases
+          masterEnvironmentEnabled={editorRenderingV2MasterEnabled()}
+          globalEnvironmentEnabled={editorRenderingV2GlobalEnabled()}
+          publicEnabled={Boolean(editorReleaseState?.publicEnabled)}
+          canaryEnabled={Boolean(editorReleaseState?.canaryEnabled)}
+          stableReleaseId={editorReleaseState?.stableReleaseId
+            ? String(editorReleaseState.stableReleaseId)
+            : null}
+          previousStableReleaseId={editorReleaseState?.previousStableReleaseId
+            ? String(editorReleaseState.previousStableReleaseId)
+            : null}
+          candidateReleaseId={editorReleaseState?.candidateReleaseId
+            ? String(editorReleaseState.candidateReleaseId)
+            : null}
+          releases={editorReleases}
+          checks={editorReleaseChecks}
+          testers={editorReleaseTesters}
+          renderStats={editorReleaseRenderStats}
+        />
+      ) : tab === "settings" ? (
+        <>
           <AdminRuntimeSettings
             initialEnabled={Boolean(runtimeSettingRows[0]?.enabled)}
             environmentEnabled={onboardingWelcomeGrantEnabled()}
             initialUpdatedAt={iso(runtimeSettingRows[0]?.updatedAt)}
             initialUpdatedBy={runtimeSettingRows[0]?.updatedByEmail || null}
           />
-        ) : (
-          <AdminInstallmentsDashboard />
-        )}
-      </div>
-    </main>
+          <AdminShortsEventSetting
+            initialEnabled={Boolean(eventRuntimeSettingRows[0]?.enabled)}
+            environmentEnabled={shortsThankYouEventEnabled()}
+            initialUpdatedAt={iso(eventRuntimeSettingRows[0]?.updatedAt)}
+            initialUpdatedBy={
+              eventRuntimeSettingRows[0]?.updatedByEmail || null
+            }
+          />
+        </>
+      ) : (
+        <AdminInstallmentsDashboard />
+      )}
+    </AdminShell>
   );
 }

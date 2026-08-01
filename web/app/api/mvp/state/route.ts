@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { ensureLocalDbReady } from "@/lib/db";
 import { apiError } from "@/lib/http";
 import { loadMvpState } from "@/lib/mvp-state";
 
@@ -8,6 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const requestId = randomUUID();
   try {
+    await ensureLocalDbReady();
     const response = NextResponse.json(
       await loadMvpState(),
       { headers: { "x-request-id": requestId } },

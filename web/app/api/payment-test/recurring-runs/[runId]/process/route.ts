@@ -56,6 +56,7 @@ type RunClaimRow = {
   payerEmail: string;
   payerTel: string;
   registrationStatus: string;
+  providerCredentialScope: string;
   billingKeyCiphertext: string;
   billingKeyIv: string;
   billingKeyTag: string;
@@ -98,7 +99,8 @@ async function claimDueAttempt(runId: string, userId: string): Promise<ClaimResu
     const rows = await tx`
       select r.id,r.registration_id,r.amount,r.target_charge_count,r.interval_seconds,
         r.succeeded_charge_count,r.next_charge_at,r.payer_name,r.payer_email,r.payer_tel,
-        p.status as registration_status,p.billing_key_ciphertext,p.billing_key_iv,p.billing_key_tag
+        p.status as registration_status,p.provider_credential_scope,
+        p.billing_key_ciphertext,p.billing_key_iv,p.billing_key_tag
       from shorts_mvp.payment_test_recurring_runs r
       join shorts_mvp.payment_method_registrations p on p.id=r.registration_id
       where r.id=${runId} and r.user_id=${userId} and r.status='running'
@@ -108,6 +110,7 @@ async function claimDueAttempt(runId: string, userId: string): Promise<ClaimResu
     if (!run || run.nextChargeAt.getTime() > Date.now()) return { state: "idle" };
     if (
       run.registrationStatus !== "active"
+      || run.providerCredentialScope !== "default"
       || !run.billingKeyCiphertext
       || !run.billingKeyIv
       || !run.billingKeyTag
