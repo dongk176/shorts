@@ -3,6 +3,8 @@ import { Match, Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import {
   ShortsMvpComputeStack,
+  ShortsMvpEditorCanaryStack,
+  ShortsMvpEditorReleaseRepositoryStack,
   ShortsMvpEditorTestStack,
   ShortsMvpFoundationStack,
 } from "../lib/stacks";
@@ -15,16 +17,32 @@ function stacks(environment = "test") {
     legacyRerenderImageTag: "legacy-worker-image",
   } });
   const env = { account: "123456789012", region: "ap-northeast-2" };
+  const editorRepositoryStack = new ShortsMvpEditorReleaseRepositoryStack(
+    app,
+    "EditorRepository",
+    { env, environment },
+  );
   const foundation = new ShortsMvpFoundationStack(app, "Foundation", {
     env,
     environment,
+    editorReleaseRepository: editorRepositoryStack.repository,
   });
   const compute = new ShortsMvpComputeStack(app, "Compute", {
     env,
     environment,
     foundation,
   });
-  return { foundation: Template.fromStack(foundation), compute: Template.fromStack(compute) };
+  const editorCanaryStack = new ShortsMvpEditorCanaryStack(app, "EditorCanary", {
+    env,
+    environment,
+    foundation,
+  });
+  return {
+    editorRepository: Template.fromStack(editorRepositoryStack),
+    foundation: Template.fromStack(foundation),
+    compute: Template.fromStack(compute),
+    editorCanary: Template.fromStack(editorCanaryStack),
+  };
 }
 
 function editorTestStack() {
@@ -32,9 +50,15 @@ function editorTestStack() {
     workerImageTag: "test-worker-image",
   } });
   const env = { account: "123456789012", region: "ap-northeast-2" };
+  const editorRepositoryStack = new ShortsMvpEditorReleaseRepositoryStack(
+    app,
+    "EditorRepository",
+    { env, environment: "production" },
+  );
   const foundationStack = new ShortsMvpFoundationStack(app, "Foundation", {
     env,
     environment: "production",
+    editorReleaseRepository: editorRepositoryStack.repository,
   });
   const editorTest = new ShortsMvpEditorTestStack(app, "EditorTest", {
     env,
@@ -46,9 +70,9 @@ function editorTestStack() {
 
 describe("shorts MVP infrastructure", () => {
   it("keeps immutable editor releases outside the rolling worker image policy", () => {
-    const { foundation } = stacks();
-    const repositories = foundation.findResources("AWS::ECR::Repository");
-    const editorReleaseRepository = Object.values(repositories).find(
+    const { editorRepository, foundation } = stacks();
+    const editorRepositories = editorRepository.findResources("AWS::ECR::Repository");
+    const editorReleaseRepository = Object.values(editorRepositories).find(
       (resource) => (
         resource.Properties?.RepositoryName
         === "shorts-mvp-editor-releases-test"
@@ -57,7 +81,8 @@ describe("shorts MVP infrastructure", () => {
 
     expect(editorReleaseRepository).toBeDefined();
     expect(editorReleaseRepository?.Properties?.LifecyclePolicy).toBeUndefined();
-    const workerRepository = Object.values(repositories).find(
+    const workerRepositories = foundation.findResources("AWS::ECR::Repository");
+    const workerRepository = Object.values(workerRepositories).find(
       (resource) => resource.Properties?.RepositoryName === "shorts-mvp-worker-test",
     );
     const lifecycle = JSON.parse(
@@ -260,19 +285,19 @@ describe("shorts MVP infrastructure", () => {
   });
 
   it("keeps editor canary work on a separate four-vCPU production queue", () => {
-    const { compute } = stacks();
+    const { editorCanary } = stacks();
 
-    compute.hasResourceProperties("AWS::Batch::ComputeEnvironment", {
+    editorCanary.hasResourceProperties("AWS::Batch::ComputeEnvironment", {
       ComputeResources: Match.objectLike({
         MaxvCpus: 4,
         Type: "FARGATE",
       }),
     });
-    compute.hasResourceProperties("AWS::Batch::JobQueue", {
+    editorCanary.hasResourceProperties("AWS::Batch::JobQueue", {
       JobQueueName: "shorts-mvp-editor-canary-test",
       Priority: 1,
     });
-    compute.hasResourceProperties("AWS::Lambda::Function", {
+    editorCanary.hasResourceProperties("AWS::Lambda::Function", {
       Handler: "batch_submitter.handler",
       Environment: {
         Variables: Match.objectLike({
@@ -283,6 +308,9 @@ describe("shorts MVP infrastructure", () => {
           RERENDER_JOB_DEFINITION: "shorts-mvp-rerender-fargate-test",
         }),
       },
+    });
+    editorCanary.hasResourceProperties("AWS::Lambda::Function", {
+      Handler: "editor_outbox_dispatcher.handler",
     });
   });
 

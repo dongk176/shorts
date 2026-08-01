@@ -446,11 +446,8 @@ async function applyEditorDocumentV2({
       );
     }
     await tx`
-      insert into shorts_mvp.short_outbox (short_id)
-      values (${shortId})
-      on conflict (short_id) do update
-      set status='pending',available_at=now(),
-        dispatched_at=null,last_error=null
+      insert into shorts_mvp.editor_render_outbox (request_id,short_id)
+      values (${requestId},${shortId})
     `;
   });
   return NextResponse.json({

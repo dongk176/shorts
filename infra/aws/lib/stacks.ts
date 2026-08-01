@@ -33,15 +33,39 @@ interface BaseProps extends cdk.StackProps {
   environment: string;
 }
 
+interface FoundationProps extends BaseProps {
+  editorReleaseRepository: ecr.IRepository;
+}
+
+export class ShortsMvpEditorReleaseRepositoryStack extends cdk.Stack {
+  readonly repository: ecr.Repository;
+
+  constructor(scope: Construct, id: string, props: BaseProps) {
+    super(scope, id, props);
+    this.repository = new ecr.Repository(this, "EditorReleaseRepository", {
+      repositoryName: `shorts-mvp-editor-releases-${props.environment}`,
+      imageScanOnPush: true,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      // Release images are intentionally not age-expired. The active,
+      // previous stable, and candidate pointers may remain valid longer than
+      // 30 days; deletion is a release-aware maintenance operation.
+    });
+
+    new cdk.CfnOutput(this, "EditorReleaseRepositoryUri", {
+      value: this.repository.repositoryUri,
+    });
+  }
+}
+
 export class ShortsMvpFoundationStack extends cdk.Stack {
   readonly bucket: s3.Bucket;
   readonly repository: ecr.Repository;
-  readonly editorReleaseRepository: ecr.Repository;
+  readonly editorReleaseRepository: ecr.IRepository;
   readonly runtimeSecret: secretsmanager.Secret;
   readonly distribution: cloudfront.Distribution;
   readonly keyPairId: string;
 
-  constructor(scope: Construct, id: string, props: BaseProps) {
+  constructor(scope: Construct, id: string, props: FoundationProps) {
     super(scope, id, props);
     this.bucket = new s3.Bucket(this, "MediaBucket", {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -83,18 +107,7 @@ export class ShortsMvpFoundationStack extends cdk.Stack {
         },
       ],
     });
-    this.editorReleaseRepository = new ecr.Repository(
-      this,
-      "EditorReleaseRepository",
-      {
-        repositoryName: `shorts-mvp-editor-releases-${props.environment}`,
-        imageScanOnPush: true,
-        removalPolicy: cdk.RemovalPolicy.RETAIN,
-        // Release images are intentionally not age-expired. The active,
-        // previous stable, and candidate pointers may remain valid longer than
-        // 30 days; deletion is a release-aware maintenance operation.
-      },
-    );
+    this.editorReleaseRepository = props.editorReleaseRepository;
     this.runtimeSecret = new secretsmanager.Secret(this, "WorkerRuntimeSecret", {
       secretName: `shorts-mvp/${props.environment}/worker-runtime`,
       description: "Server-only runtime values for the Shorts MVP worker and cleanup Lambdas",
@@ -189,13 +202,314 @@ interface ComputeProps extends BaseProps {
   foundation: ShortsMvpFoundationStack;
 }
 
+export class ShortsMvpEditorCanaryStack extends cdk.Stack {
+  readonly queue: batch.CfnJobQueue;
+
+  constructor(scope: Construct, id: string, props: ComputeProps) {
+    super(scope, id, props);
+    const { bucket, editorReleaseRepository, runtimeSecret } = props.foundation;
+    const vpc = new ec2.Vpc(this, "EditorCanaryVpc", {
+      maxAzs: 2,
+      natGateways: 0,
+      subnetConfiguration: [{
+        name: "EditorCanaryWorkers",
+        subnetType: ec2.SubnetType.PUBLIC,
+        cidrMask: 24,
+      }],
+    });
+    const subnetIds = vpc.selectSubnets({
+      subnetGroupName: "EditorCanaryWorkers",
+    }).subnetIds;
+    const securityGroup = new ec2.SecurityGroup(this, "EditorCanarySecurityGroup", {
+      vpc,
+      allowAllOutbound: false,
+      description: "No inbound traffic; editor canary worker egress only",
+    });
+    securityGroup.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), "HTTPS");
+    securityGroup.addEgressRule(
+      ec2.Peer.anyIpv4(), ec2.Port.tcp(5432), "Production Postgres",
+    );
+    securityGroup.addEgressRule(
+      ec2.Peer.anyIpv4(), ec2.Port.tcp(6543), "Production Postgres pooler",
+    );
+    securityGroup.addEgressRule(
+      ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.udp(53), "VPC DNS UDP",
+    );
+    securityGroup.addEgressRule(
+      ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(53), "VPC DNS TCP",
+    );
+    const compute = new batch.CfnComputeEnvironment(this, "EditorCanaryCompute", {
+      type: "MANAGED",
+      state: "ENABLED",
+      computeResources: {
+        type: "FARGATE",
+        maxvCpus: 4,
+        subnets: subnetIds,
+        securityGroupIds: [securityGroup.securityGroupId],
+      },
+    });
+    this.queue = new batch.CfnJobQueue(this, "EditorCanaryQueue", {
+      priority: 1,
+      state: "ENABLED",
+      computeEnvironmentOrder: [{ order: 1, computeEnvironment: compute.ref }],
+      jobQueueName: `shorts-mvp-editor-canary-${props.environment}`,
+    });
+
+    const dispatchDlq = new sqs.Queue(this, "EditorDispatchDlq", {
+      retentionPeriod: cdk.Duration.days(14),
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
+    });
+    const dispatchQueue = new sqs.Queue(this, "EditorDispatchQueue", {
+      visibilityTimeout: cdk.Duration.minutes(2),
+      retentionPeriod: cdk.Duration.days(2),
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
+      deadLetterQueue: { queue: dispatchDlq, maxReceiveCount: 5 },
+    });
+    const lambdaRole = new iam.Role(this, "EditorCanaryLambdaRole", {
+      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName(
+          "service-role/AWSLambdaBasicExecutionRole",
+        ),
+      ],
+    });
+    runtimeSecret.grantRead(lambdaRole);
+    dispatchQueue.grantConsumeMessages(lambdaRole);
+    dispatchQueue.grantSendMessages(lambdaRole);
+    lambdaRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        "batch:DescribeJobDefinitions",
+        "batch:DescribeJobs",
+        "batch:ListJobs",
+        "batch:SubmitJob",
+      ],
+      resources: ["*"],
+    }));
+    lambdaRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["ecr:DescribeImageScanFindings"],
+      resources: [editorReleaseRepository.repositoryArn],
+    }));
+    lambdaRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["s3:GetObject"],
+      resources: [this.formatArn({
+        service: "s3",
+        region: "",
+        account: "",
+        resource: `shorts-mvp-editor-test-${this.account}-${this.region}`,
+        resourceName: "editor-release-probes/*",
+        arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+      })],
+    }));
+    const environment = {
+      RUNTIME_SECRET_ARN: runtimeSecret.secretArn,
+      MEDIA_BUCKET: bucket.bucketName,
+      PROJECT_BATCH_QUEUE: `shorts-mvp-project-fargate-${props.environment}`,
+      EDITOR_STABLE_BATCH_QUEUE:
+        `shorts-mvp-project-fargate-${props.environment}`,
+      EDITOR_CANARY_BATCH_QUEUE: this.queue.ref,
+      RERENDER_JOB_DEFINITION:
+        `shorts-mvp-rerender-fargate-${props.environment}`,
+      EDITOR_TEST_BUCKET_NAME:
+        `shorts-mvp-editor-test-${this.account}-${this.region}`,
+      EDITOR_TEST_TEMPLATE_JOB_DEFINITION:
+        "shorts-mvp-editor-test-template",
+      EDITOR_WORK_DISPATCH_QUEUE_URL: dispatchQueue.queueUrl,
+      WORK_DISPATCH_QUEUE_URL: dispatchQueue.queueUrl,
+    };
+    const lambdaCode = lambda.Code.fromAsset(path.join(__dirname, "../lambda"), {
+      exclude: ["__pycache__", "*.pyc"],
+    });
+    const outboxDispatcher = new lambda.Function(
+      this,
+      "EditorOutboxDispatcherFunction",
+      {
+        functionName: `shorts-mvp-editor-outbox-${props.environment}`,
+        runtime: lambda.Runtime.PYTHON_3_12,
+        handler: "editor_outbox_dispatcher.handler",
+        code: lambdaCode,
+        role: lambdaRole,
+        timeout: cdk.Duration.seconds(60),
+        memorySize: 256,
+        environment,
+      },
+    );
+    const batchSubmitter = new lambda.Function(
+      this,
+      "EditorBatchSubmitterFunction",
+      {
+        functionName: `shorts-mvp-editor-batch-submitter-${props.environment}`,
+        runtime: lambda.Runtime.PYTHON_3_12,
+        handler: "batch_submitter.handler",
+        code: lambdaCode,
+        role: lambdaRole,
+        timeout: cdk.Duration.seconds(30),
+        memorySize: 256,
+        reservedConcurrentExecutions: 2,
+        environment,
+      },
+    );
+    const batchState = new lambda.Function(this, "EditorBatchStateFunction", {
+      functionName: `shorts-mvp-editor-batch-state-${props.environment}`,
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "batch_state.handler",
+      code: lambdaCode,
+      role: lambdaRole,
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 256,
+      environment,
+    });
+    const cleanup = new lambda.Function(this, "EditorCleanupFunction", {
+      functionName: `shorts-mvp-editor-cleanup-${props.environment}`,
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "editor_cleanup.handler",
+      code: lambdaCode,
+      role: lambdaRole,
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 256,
+      environment,
+    });
+    const registrar = new lambda.Function(this, "EditorReleaseRegistrarFunction", {
+      functionName: `shorts-mvp-editor-release-registrar-${props.environment}`,
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "editor_release_registrar.handler",
+      code: lambdaCode,
+      role: lambdaRole,
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 256,
+      environment,
+    });
+    batchSubmitter.addEventSource(new lambdaEventSources.SqsEventSource(
+      dispatchQueue,
+      { batchSize: 1, reportBatchItemFailures: true },
+    ));
+    new events.Rule(this, "EditorOutboxSchedule", {
+      schedule: events.Schedule.rate(cdk.Duration.minutes(1)),
+      targets: [new targets.LambdaFunction(outboxDispatcher)],
+    });
+    new events.Rule(this, "EditorCleanupSchedule", {
+      schedule: events.Schedule.rate(cdk.Duration.minutes(10)),
+      targets: [new targets.LambdaFunction(cleanup)],
+    });
+    new events.Rule(this, "EditorBatchStateEvents", {
+      eventPattern: {
+        source: ["aws.batch"],
+        detailType: ["Batch Job State Change"],
+        detail: {
+          status: ["SUCCEEDED", "FAILED"],
+          jobQueue: [this.queue.ref],
+        },
+      },
+      targets: [new targets.LambdaFunction(batchState)],
+    });
+
+    const githubOrg = this.node.tryGetContext("githubOrg") || "dongk176";
+    const githubRepo = this.node.tryGetContext("githubRepo") || "shorts";
+    const githubProviderArn = this.node.tryGetContext("githubOidcProviderArn");
+    const githubProvider = githubProviderArn
+      ? iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
+          this,
+          "ImportedGithubOidcProvider",
+          githubProviderArn,
+        )
+      : new iam.OpenIdConnectProvider(this, "GithubOidcProvider", {
+          url: "https://token.actions.githubusercontent.com",
+          clientIds: ["sts.amazonaws.com"],
+        });
+    const githubRole = new iam.Role(this, "EditorReleaseBuildRole", {
+      assumedBy: new iam.OpenIdConnectPrincipal(githubProvider).withConditions({
+        StringEquals: {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+        },
+        StringLike: {
+          "token.actions.githubusercontent.com:sub":
+            `repo:${githubOrg}/${githubRepo}:ref:refs/heads/main`,
+        },
+      }),
+      maxSessionDuration: cdk.Duration.hours(1),
+    });
+    editorReleaseRepository.grantPullPush(githubRole);
+    githubRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["ecr:GetAuthorizationToken"],
+      resources: ["*"],
+    }));
+    registrar.grantInvoke(githubRole);
+    githubRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        "batch:DescribeJobDefinitions",
+        "batch:DescribeJobs",
+        "batch:RegisterJobDefinition",
+      ],
+      resources: ["*"],
+    }));
+    githubRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["batch:SubmitJob"],
+      resources: [
+        this.queue.attrJobQueueArn,
+        this.formatArn({
+          service: "batch",
+          resource: "job-queue",
+          resourceName: "shorts-mvp-editor-test",
+          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+        }),
+        this.formatArn({
+          service: "batch",
+          resource: "job-definition",
+          resourceName: "shorts-mvp-editor-release-*",
+          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+        }),
+        this.formatArn({
+          service: "batch",
+          resource: "job-definition",
+          resourceName: "shorts-mvp-editor-test-release-*",
+          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+        }),
+      ],
+    }));
+    githubRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["ecr:DescribeImages", "ecr:DescribeImageScanFindings"],
+      resources: [editorReleaseRepository.repositoryArn],
+    }));
+    githubRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["iam:PassRole"],
+      resources: [
+        this.formatArn({
+          service: "iam",
+          region: "",
+          resource: "role",
+          resourceName: "ShortsMvpCompute-production-Worker*Role*",
+          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+        }),
+        this.formatArn({
+          service: "iam",
+          region: "",
+          resource: "role",
+          resourceName: "shorts-mvp-editor-test-*",
+          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+        }),
+      ],
+      conditions: {
+        StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" },
+      },
+    }));
+
+    new cdk.CfnOutput(this, "EditorCanaryBatchJobQueue", {
+      value: this.queue.ref,
+    });
+    new cdk.CfnOutput(this, "EditorReleaseRegistrarFunctionArn", {
+      value: registrar.functionArn,
+    });
+    new cdk.CfnOutput(this, "EditorReleaseBuildRoleArn", {
+      value: githubRole.roleArn,
+    });
+  }
+}
+
 export class ShortsMvpComputeStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ComputeProps) {
     super(scope, id, props);
     const {
       bucket,
       repository,
-      editorReleaseRepository,
       runtimeSecret,
     } = props.foundation;
     const workerImageTag = String(
@@ -277,7 +591,6 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AmazonECSTaskExecutionRolePolicy"),
       ],
     });
-    editorReleaseRepository.grantPull(executionRole);
     runtimeSecret.grantRead(executionRole);
     workerLogGroup.grantWrite(executionRole);
 
@@ -340,34 +653,6 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       computeEnvironmentOrder: [{ order: 1, computeEnvironment: compute.ref }],
       jobQueueName: `shorts-mvp-project-fargate-${props.environment}`,
     });
-    const editorCanaryCompute = new batch.CfnComputeEnvironment(
-      this,
-      "EditorCanaryFargateCompute",
-      {
-        type: "MANAGED",
-        state: "ENABLED",
-        computeResources: {
-          type: "FARGATE",
-          maxvCpus: 4,
-          subnets: workerSubnetIds,
-          securityGroupIds: [securityGroup.securityGroupId],
-        },
-      },
-    );
-    const editorCanaryQueue = new batch.CfnJobQueue(
-      this,
-      "EditorCanaryJobQueue",
-      {
-        priority: 1,
-        state: "ENABLED",
-        computeEnvironmentOrder: [{
-          order: 1,
-          computeEnvironment: editorCanaryCompute.ref,
-        }],
-        jobQueueName: `shorts-mvp-editor-canary-${props.environment}`,
-      },
-    );
-
     const ecsInstanceRole = new iam.Role(this, "RenderEcsInstanceRole", {
       assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
       managedPolicies: [
@@ -660,28 +945,11 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     bucket.grantReadWrite(lambdaRole);
     lambdaRole.addToPolicy(new iam.PolicyStatement({
       actions: [
-        "batch:DescribeJobs", "batch:DescribeJobDefinitions",
+        "batch:DescribeJobs",
         "batch:ListJobs", "batch:SubmitJob",
         "batch:TerminateJob", "batch:CancelJob",
       ],
       resources: ["*"],
-    }));
-    lambdaRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["ecr:DescribeImageScanFindings"],
-      resources: [editorReleaseRepository.repositoryArn],
-    }));
-    lambdaRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["s3:GetObject"],
-      resources: [
-        this.formatArn({
-          service: "s3",
-          region: "",
-          account: "",
-          resource: `shorts-mvp-editor-test-${this.account}-${this.region}`,
-          resourceName: "editor-release-probes/*",
-          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-        }),
-      ],
     }));
     workQueue.grantConsumeMessages(lambdaRole);
     workQueue.grantSendMessages(lambdaRole);
@@ -696,12 +964,6 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       RENDER_BATCH_QUEUE: renderQueue.ref,
       RENDER_JOB_DEFINITION: renderDefinitionName,
       PROJECT_BATCH_QUEUE: projectQueue.ref,
-      EDITOR_STABLE_BATCH_QUEUE: projectQueue.ref,
-      EDITOR_CANARY_BATCH_QUEUE: editorCanaryQueue.ref,
-      EDITOR_TEST_BUCKET_NAME:
-        `shorts-mvp-editor-test-${this.account}-${this.region}`,
-      EDITOR_TEST_TEMPLATE_JOB_DEFINITION:
-        "shorts-mvp-editor-test-template",
       PROJECT_JOB_DEFINITION: projectDefinitionName,
       PROJECT_HEAVY_JOB_DEFINITION: projectHeavyDefinitionName,
       RERENDER_JOB_DEFINITION: rerenderDefinitionName,
@@ -969,20 +1231,6 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       reservedConcurrentExecutions: 10,
       environment: lambdaEnvironment,
     });
-    const editorReleaseRegistrar = new lambda.Function(
-      this,
-      "EditorReleaseRegistrarFunction",
-      {
-        functionName: `shorts-mvp-editor-release-registrar-${props.environment}`,
-        runtime: lambda.Runtime.PYTHON_3_12,
-        handler: "editor_release_registrar.handler",
-        code: lambdaCode,
-        role: lambdaRole,
-        timeout: cdk.Duration.seconds(60),
-        memorySize: 256,
-        environment: lambdaEnvironment,
-      },
-    );
     outboxDispatcher.addEnvironment(
       "BATCH_SUBMITTER_FUNCTION_NAME",
       batchSubmitterFunctionName,
@@ -1092,64 +1340,9 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       maxSessionDuration: cdk.Duration.hours(1),
     });
     repository.grantPullPush(githubRole);
-    editorReleaseRepository.grantPullPush(githubRole);
     githubRole.addToPolicy(new iam.PolicyStatement({
       actions: ["ecr:GetAuthorizationToken"],
       resources: ["*"],
-    }));
-    editorReleaseRegistrar.grantInvoke(githubRole);
-    githubRole.addToPolicy(new iam.PolicyStatement({
-      actions: [
-        "batch:DescribeJobDefinitions",
-        "batch:DescribeJobs",
-        "batch:RegisterJobDefinition",
-      ],
-      resources: ["*"],
-    }));
-    githubRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["batch:SubmitJob"],
-      resources: [
-        this.formatArn({
-          service: "batch",
-          resource: "job-queue",
-          resourceName: "shorts-mvp-editor-test",
-          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-        }),
-        this.formatArn({
-          service: "batch",
-          resource: "job-definition",
-          resourceName: "shorts-mvp-editor-test-release-*",
-          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-        }),
-      ],
-    }));
-    githubRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["ecr:DescribeImages", "ecr:DescribeImageScanFindings"],
-      resources: [editorReleaseRepository.repositoryArn],
-    }));
-    githubRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["iam:PassRole"],
-      resources: [
-        taskRole.roleArn,
-        executionRole.roleArn,
-        this.formatArn({
-          service: "iam",
-          region: "",
-          resource: "role",
-          resourceName: "shorts-mvp-editor-test-task",
-          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-        }),
-        this.formatArn({
-          service: "iam",
-          region: "",
-          resource: "role",
-          resourceName: "shorts-mvp-editor-test-execution",
-          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-        }),
-      ],
-      conditions: {
-        StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" },
-      },
     }));
 
     new cdk.CfnOutput(this, "BatchJobQueue", { value: queue.ref });
@@ -1166,12 +1359,6 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     new cdk.CfnOutput(this, "RerenderFargateBatchJobDefinition", {
       value: rerenderDefinition.ref,
     });
-    new cdk.CfnOutput(this, "EditorStableBatchJobQueue", {
-      value: projectQueue.ref,
-    });
-    new cdk.CfnOutput(this, "EditorCanaryBatchJobQueue", {
-      value: editorCanaryQueue.ref,
-    });
     new cdk.CfnOutput(this, "WorkDispatchQueueUrl", { value: workQueue.queueUrl });
     new cdk.CfnOutput(this, "StateEventQueueUrl", { value: stateQueue.queueUrl });
     new cdk.CfnOutput(this, "OutboxDispatcherFunctionArn", {
@@ -1180,9 +1367,6 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     new cdk.CfnOutput(this, "VercelRoleArn", { value: vercelRole.roleArn });
     new cdk.CfnOutput(this, "WorkerTaskRoleArn", { value: taskRole.roleArn });
     new cdk.CfnOutput(this, "GithubWorkerBuildRoleArn", { value: githubRole.roleArn });
-    new cdk.CfnOutput(this, "EditorReleaseRegistrarFunctionArn", {
-      value: editorReleaseRegistrar.functionArn,
-    });
   }
 }
 

@@ -113,6 +113,28 @@ test("editor release migration is additive and keeps legacy requests nullable", 
   }
 });
 
+test("candidate renders use an isolated outbox while legacy rerenders stay unchanged", async () => {
+  const [route, migration, legacyDispatcher, candidateDispatcher] = await Promise.all([
+    source("web/app/api/shorts/[shortId]/apply-edit/route.ts"),
+    source("supabase/migrations/202608010001_editor_render_canary_outbox.sql"),
+    source("infra/aws/lambda/outbox_dispatcher.py"),
+    source("infra/aws/lambda/editor_outbox_dispatcher.py"),
+  ]);
+
+  assert.match(
+    route,
+    /insert into shorts_mvp\.editor_render_outbox \(request_id,short_id\)/,
+  );
+  assert.match(migration, /create table if not exists shorts_mvp\.editor_render_outbox/);
+  assert.match(migration, /for update skip locked/);
+  assert.match(migration, /enable row level security/);
+  assert.doesNotMatch(migration, /\bdrop\s+(table|column)\b/i);
+  assert.match(legacyDispatcher, /rpc\/claim_short_outbox/);
+  assert.doesNotMatch(legacyDispatcher, /claim_editor_render_outbox/);
+  assert.match(candidateDispatcher, /rpc\/claim_editor_render_outbox/);
+  assert.doesNotMatch(candidateDispatcher, /claim_short_outbox/);
+});
+
 test("release workflow promotes one tested digest without deploying the website", async () => {
   const [workflow, registrar] = await Promise.all([
     source(".github/workflows/editor-release.yml"),
