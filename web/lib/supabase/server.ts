@@ -2,7 +2,10 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { getDb } from "@/lib/db";
 import { getSupabaseAuthConfig } from "@/lib/supabase/config";
-import { fetchSupabaseAuth } from "@/lib/supabase/auth-fetch";
+import {
+  fetchSupabaseAuth,
+  withSupabaseAuthTimeout,
+} from "@/lib/supabase/auth-fetch";
 
 export { getSupabaseAuthConfig } from "@/lib/supabase/config";
 
@@ -54,7 +57,9 @@ export async function getAuthenticatedUser() {
   if (!config) return null;
   const supabase = createConfiguredSupabaseServerClient(config, cookieStore);
   try {
-    const { data, error } = await supabase.auth.getUser();
+    const { data, error } = await withSupabaseAuthTimeout(
+      supabase.auth.getUser(),
+    );
     if (error) return null;
     const user = data.user;
     if (user?.app_metadata?.login_type === "managed") {

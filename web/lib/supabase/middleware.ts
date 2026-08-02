@@ -1,7 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import { getSupabaseAuthConfig } from "@/lib/supabase/config";
-import { fetchSupabaseAuth } from "@/lib/supabase/auth-fetch";
+import {
+  fetchSupabaseAuth,
+  withSupabaseAuthTimeout,
+} from "@/lib/supabase/auth-fetch";
 
 export async function refreshSupabaseSession(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -28,7 +31,7 @@ export async function refreshSupabaseSession(request: NextRequest) {
   });
 
   try {
-    await supabase.auth.getClaims();
+    await withSupabaseAuthTimeout(supabase.auth.getClaims());
   } catch (error) {
     console.warn("supabase_session_refresh_failed", {
       errorName: error instanceof Error ? error.name : "UnknownError",
