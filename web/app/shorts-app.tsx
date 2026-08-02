@@ -1757,6 +1757,80 @@ function ApplyEditConfirmDialog({
   );
 }
 
+function EditorFontApplyDialog({
+  fontId,
+  onCancel,
+  onConfirm,
+}: {
+  fontId: EditorFontId | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const open = fontId !== null;
+  const font = editorFontOptions.find((option) => option.id === fontId)
+    || editorFontOptions[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onCancel, open]);
+
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[155] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[6px] sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="editor-font-apply-title"
+        aria-describedby="editor-font-apply-description"
+        className="w-full max-w-[420px] rounded-[24px] border border-[#ff8c7c]/25 bg-[#211d20] p-7 text-white shadow-[0_30px_100px_rgba(0,0,0,.75)] sm:p-8"
+      >
+        <p className="text-[12px] font-extrabold text-[#ff9b8d]" style={{ fontFamily: font.family }}>
+          {font.label}
+        </p>
+        <h2 id="editor-font-apply-title" className="mt-3 text-[23px] font-extrabold tracking-[-0.035em]">
+          모든 텍스트에 적용할까요?
+        </h2>
+        <p id="editor-font-apply-description" className="mt-3 text-[13px] font-medium leading-6 text-white/60">
+          후킹 제목, 채널명과 추가한 텍스트의 폰트를 한 번에 맞출 수 있어요.
+        </p>
+        <div className="mt-7 grid grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            autoFocus
+            onClick={onCancel}
+            className="min-h-12 rounded-[13px] border border-white/12 bg-white/[.045] px-4 text-[13px] font-extrabold text-white/75 transition hover:bg-white/[.09] hover:text-white"
+          >
+            현재 텍스트만
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="min-h-12 rounded-[13px] bg-[#ff715e] px-4 text-[13px] font-extrabold text-white transition hover:bg-[#ff8878] active:scale-[.99]"
+          >
+            모두 적용
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function ResetTimelineConfirmDialog({
   open,
   onCancel,
@@ -2381,6 +2455,7 @@ const EDITOR_TEXT_LAYER_MIN_SCALE = 0.5;
 const EDITOR_TEXT_LAYER_MAX_SCALE = 2;
 const EDITOR_TEXT_OVERLAY_LIMIT = 20;
 type EditorOverlaySelection = EditorOverlayOrderItem | null;
+type EditorFontApplySource = "title" | "channel" | `text:${string}`;
 type EditorSidebarTool =
   | "title"
   | "text"
@@ -3304,7 +3379,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     string | null
   >(null);
   const [editorFontApplySuggestion, setEditorFontApplySuggestion] = useState<{
-    sourceTextId: string;
+    source: EditorFontApplySource;
     fontId: EditorFontId;
   } | null>(null);
   const [editorTimelineZoom, setEditorTimelineZoom] = useState(1);
@@ -3797,8 +3872,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   useEffect(() => {
     if (
       editorFontApplySuggestion
+      && isEditorTextSelection(editorFontApplySuggestion.source)
       && !textOverlays.some((textOverlay) => (
-        textOverlay.id === editorFontApplySuggestion.sourceTextId
+        textOverlay.id === selectedEditorTextId(editorFontApplySuggestion.source)
       ))
     ) {
       setEditorFontApplySuggestion(null);
@@ -6257,7 +6333,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   useEffect(() => {
     if (!overlayPreviewEnabled) return;
     const handleOverlayKeyboard = (event: KeyboardEvent) => {
-      if (commentRegenerationConfirmationOpen || commentRegenerationComparison) return;
+      if (
+        commentRegenerationConfirmationOpen
+        || commentRegenerationComparison
+        || editorFontApplySuggestion
+      ) return;
       const target = event.target;
       const historyShortcut = resolveEditorHistoryShortcut(event);
       if (historyShortcut) {
@@ -6343,6 +6423,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     deleteEditorComment,
     deleteSelectedEditorVideoClip,
     deleteSelectedEditorOverlay,
+    editorFontApplySuggestion,
     finishPendingEditorInteractions,
     inlineEditingOverlay,
     layoutPreviewComment,
@@ -6829,19 +6910,65 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     }));
   };
 
+  const updateEditorFont = (
+    source: EditorFontApplySource,
+    fontId: EditorFontId,
+  ) => {
+    const current = overlayLayoutRef.current;
+    const currentFonts = current.fonts || {
+      title: DEFAULT_EDITOR_FONT_ID,
+      channel: DEFAULT_EDITOR_FONT_ID,
+    };
+    const sourceTextId = isEditorTextSelection(source)
+      ? selectedEditorTextId(source)
+      : null;
+    const sourceText = sourceTextId
+      ? current.textOverlays.find((textOverlay) => textOverlay.id === sourceTextId)
+      : null;
+    if (sourceTextId && !sourceText) return;
+    const sourceFontId = source === "title"
+      ? currentFonts.title
+      : source === "channel"
+        ? currentFonts.channel
+        : sourceText?.fontId || DEFAULT_EDITOR_FONT_ID;
+    if (sourceFontId === fontId) {
+      setEditorFontApplySuggestion(null);
+      return;
+    }
+    const hasOtherFont = (
+      (source !== "title" && currentFonts.title !== fontId)
+      || (source !== "channel" && currentFonts.channel !== fontId)
+      || current.textOverlays.some((textOverlay) => (
+        textOverlay.id !== sourceTextId
+        && (textOverlay.fontId || DEFAULT_EDITOR_FONT_ID) !== fontId
+      ))
+    );
+    commitEditorOverlayLayoutChange((layout) => ({
+      ...layout,
+      fonts: {
+        ...(layout.fonts || {
+          title: DEFAULT_EDITOR_FONT_ID,
+          channel: DEFAULT_EDITOR_FONT_ID,
+        }),
+        ...(source === "title" ? { title: fontId } : {}),
+        ...(source === "channel" ? { channel: fontId } : {}),
+      },
+      textOverlays: sourceTextId
+        ? layout.textOverlays.map((textOverlay) => (
+            textOverlay.id === sourceTextId
+              ? { ...textOverlay, fontId }
+              : textOverlay
+          ))
+        : layout.textOverlays,
+    }));
+    setEditorFontApplySuggestion(hasOtherFont
+      ? { source, fontId }
+      : null);
+  };
+
   const updateSelectedEditorTextFont = (fontId: EditorFontId) => {
     if (!selectedTextOverlayId) return;
-    const current = overlayLayoutRef.current;
-    const hasOtherFont = current.fonts.title !== fontId
-      || current.fonts.channel !== fontId
-      || current.textOverlays.some((textOverlay) => (
-        textOverlay.id !== selectedTextOverlayId
-        && textOverlay.fontId !== fontId
-      ));
-    updateSelectedEditorText({ fontId });
-    setEditorFontApplySuggestion(hasOtherFont
-      ? { sourceTextId: selectedTextOverlayId, fontId }
-      : null);
+    updateEditorFont(editorTextSelection(selectedTextOverlayId), fontId);
   };
 
   const applySuggestedEditorFontToAll = () => {
@@ -6853,6 +6980,23 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       )
     ));
     setEditorFontApplySuggestion(null);
+  };
+
+  const toggleEditorChannelVisibility = () => {
+    const visible = !overlayLayoutRef.current.visible.channel;
+    commitEditorOverlayLayoutChange((current) => ({
+      ...current,
+      visible: {
+        ...current.visible,
+        channel: visible,
+      },
+    }));
+    setInlineEditingOverlay(null);
+    if (visible) {
+      setSelectedOverlay("channel");
+    } else if (selectedOverlay === "channel") {
+      setSelectedOverlay(null);
+    }
   };
 
   const seekTimeline = (absoluteSeconds: number) => {
@@ -7071,7 +7215,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   useEffect(() => {
     if (!standalone) return;
     const handleDesktopPlaybackShortcut = (event: KeyboardEvent) => {
-      if (commentRegenerationConfirmationOpen) return;
+      if (commentRegenerationConfirmationOpen || editorFontApplySuggestion) return;
       if (event.code !== "Space" || event.repeat || !window.matchMedia("(min-width: 921px)").matches) return;
       const target = event.target;
       if (
@@ -7087,6 +7231,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     return () => window.removeEventListener("keydown", handleDesktopPlaybackShortcut);
   }, [
     commentRegenerationConfirmationOpen,
+    editorFontApplySuggestion,
     standalone,
     togglePreviewPlayback,
   ]);
@@ -7328,25 +7473,6 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         value={selectedTextOverlay.fontId || DEFAULT_EDITOR_FONT_ID}
         onChange={updateSelectedEditorTextFont}
       />
-      {editorFontApplySuggestion?.sourceTextId === selectedTextOverlay.id
-        && <div className="editor-v2-font-apply-suggestion" role="status">
-          <span>모든 텍스트에 적용할까요?</span>
-          <div>
-            <button
-              type="button"
-              onClick={applySuggestedEditorFontToAll}
-            >
-              모두 적용
-            </button>
-            <button
-              type="button"
-              aria-label="모든 텍스트에 적용 제안 닫기"
-              onClick={() => setEditorFontApplySuggestion(null)}
-            >
-              ×
-            </button>
-          </div>
-        </div>}
       <fieldset className="editor-text-color-setting">
         <legend>색상</legend>
         <div>
@@ -7418,6 +7544,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           setApplyConfirmationOpen(false);
           void save();
         }}
+      />
+      <EditorFontApplyDialog
+        fontId={overlayPreviewEnabled
+          ? editorFontApplySuggestion?.fontId || null
+          : null}
+        onCancel={() => setEditorFontApplySuggestion(null)}
+        onConfirm={applySuggestedEditorFontToAll}
       />
       <ResetTimelineConfirmDialog
         open={resetConfirmationOpen && overlayPreviewEnabled && Boolean(editTimeline)}
@@ -8431,6 +8564,18 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           >
             <header className="editor-tool-panel-header">
               <strong>채널명</strong>
+              <button
+                type="button"
+                className="editor-channel-visibility-toggle"
+                aria-label={renderOverlayLayout.visible.channel
+                  ? "채널명 숨기기"
+                  : "채널명 보이기"}
+                aria-pressed={renderOverlayLayout.visible.channel}
+                onClick={toggleEditorChannelVisibility}
+              >
+                <span aria-hidden="true"><i /></span>
+                {renderOverlayLayout.visible.channel ? "숨기기" : "보이기"}
+              </button>
             </header>
             <div className="editor-channel-preset-library">
               <button
@@ -8589,16 +8734,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               </label>
               <EditorFontPicker
                 value={channelFontId}
-                onChange={(fontId) => commitEditorOverlayLayoutChange((current) => ({
-                  ...current,
-                  fonts: {
-                    ...(current.fonts || {
-                      title: DEFAULT_EDITOR_FONT_ID,
-                      channel: DEFAULT_EDITOR_FONT_ID,
-                    }),
-                    channel: fontId,
-                  },
-                }))}
+                onChange={(fontId) => updateEditorFont("channel", fontId)}
               />
             </div>
           </section>}
@@ -8685,16 +8821,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               <p className={`mt-1 text-xs text-white ${validTitle ? "opacity-60" : "opacity-100"}`}>최대 2줄·80자 ({title.length}/80)</p>
             {overlayPreviewEnabled && <EditorFontPicker
               value={titleFontId}
-              onChange={(fontId) => commitEditorOverlayLayoutChange((current) => ({
-                ...current,
-                fonts: {
-                  ...(current.fonts || {
-                    title: DEFAULT_EDITOR_FONT_ID,
-                    channel: DEFAULT_EDITOR_FONT_ID,
-                  }),
-                  title: fontId,
-                },
-              }))}
+              onChange={(fontId) => updateEditorFont("title", fontId)}
             />}
             <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
             <p className="text-xs leading-5 text-white/70">글자를 선택하면 선택한 부분만, 선택하지 않으면 제목 전체의 색상이 바뀝니다.</p>
