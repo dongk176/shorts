@@ -14,6 +14,8 @@ export type EditorCommentTheme = "dark" | "light";
 export type EditorTextEffect = "none" | "outline" | "shadow";
 export type EditorTextResizeEdge = "left" | "right";
 export const EDITOR_TEXT_DEFAULT_WIDTH = 780;
+export const EDITOR_TITLE_FONT_SCALE_MIN = 0.5;
+export const EDITOR_TITLE_FONT_SCALE_MAX = 2;
 // Keep only a technical positive-width guard; the editor should not impose a
 // visible minimum when users narrow an added-text box.
 export const EDITOR_TEXT_MIN_WIDTH = 1;
@@ -191,6 +193,39 @@ export function cloneEditorOverlayLayout(
     layerOrder: pinEditorChannelLayerOnTop(layout.layerOrder),
     background: layout.background ? { ...layout.background } : null,
   };
+}
+
+export function clampEditorTitleFontScale(scale: number): number {
+  if (!Number.isFinite(scale)) return 1;
+  return Math.min(
+    EDITOR_TITLE_FONT_SCALE_MAX,
+    Math.max(EDITOR_TITLE_FONT_SCALE_MIN, scale),
+  );
+}
+
+/**
+ * Older editor documents could apply title sizing twice: once through
+ * title.fontScale and again through overlays.scales.title. Keep their visible
+ * size when loading them, but collapse the two controls into one canonical
+ * title font scale for every new snapshot.
+ */
+export function consolidateEditorTitleFontScale(
+  fontScale: number,
+  legacyOverlayScale: number,
+): number {
+  const safeFontScale = Number.isFinite(fontScale) ? fontScale : 1;
+  const safeOverlayScale = Number.isFinite(legacyOverlayScale)
+    ? legacyOverlayScale
+    : 1;
+  return clampEditorTitleFontScale(safeFontScale * safeOverlayScale);
+}
+
+export function normalizeEditorTitleScaleLayout(
+  layout: EditorOverlayLayoutSnapshot,
+): EditorOverlayLayoutSnapshot {
+  const next = cloneEditorOverlayLayout(layout);
+  next.scales.title = 1;
+  return next;
 }
 
 export function applyEditorFontToSelectableText(

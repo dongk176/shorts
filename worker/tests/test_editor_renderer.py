@@ -81,6 +81,24 @@ def test_title_line_boxes_match_the_browser_for_every_editor_font() -> None:
         assert content.height == 84 * 2 + 18
 
 
+def test_title_layer_uses_every_selected_editor_font(tmp_path: Path) -> None:
+    document = _document()
+    document.title.text = "선택한 폰트 검증"
+    document.title.text_styles = []
+    document.overlays.scales["title"] = 1
+    rendered_pixels: set[bytes] = set()
+    for font_id in EditorFontId:
+        document.overlays.fonts["title"] = font_id
+        output = create_editor_title_layer(
+            document,
+            tmp_path / f"{font_id.value}.png",
+        )
+        with Image.open(output) as image:
+            rendered_pixels.add(image.tobytes())
+
+    assert len(rendered_pixels) == len(EditorFontId)
+
+
 def test_title_ignores_horizontal_offset_and_preserves_vertical_offset(
     tmp_path: Path,
 ) -> None:

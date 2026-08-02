@@ -82,7 +82,7 @@ export function TitleOverlayPreview({
   const bottomMargin = layout.panelHeight === 285 && !layout.overlay
     ? 12
     : Math.min(44, Math.max(24, Math.round(layout.panelHeight * 0.105)));
-  const scaledFontSize = Math.max(18, Math.min(100, Math.round(fittedFontSize * fontScale)));
+  const scaledFontSize = Math.max(18, Math.min(200, Math.round(fittedFontSize * fontScale)));
   const lineRuns = useMemo(() => lines.map((line, index) => (
     styledTitleLineRuns(line, lineIndices[index], textStyles)
   )), [lineIndices, lines, textStyles]);

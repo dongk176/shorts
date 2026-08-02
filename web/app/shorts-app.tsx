@@ -107,15 +107,18 @@ import {
   canvasOffsetTranslate,
   clampCanvasDelta,
   clampCenteredOverlayOffsetAfterScale,
+  clampEditorTitleFontScale,
   clientDeltaToCanvas,
   clientDistanceToCanvas,
   clientRectToCanvas,
   cloneEditorOverlayLayout,
+  consolidateEditorTitleFontScale,
   createEditorTextOverlay,
   createInitialEditorOverlayLayout,
   editorOverlayLayoutsEqual,
   lockEditorTitleHorizontalOffset,
   moveEditorOverlayOrderItem,
+  normalizeEditorTitleScaleLayout,
   recordEditorOverlayHistory,
   redoEditorOverlayHistory,
   resetEditorOverlayGeometry,
@@ -3230,9 +3233,17 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   });
   const commentsRef = useRef(comments);
   const [titleFontScale, setTitleFontScale] = useState(
-    savedEditorDocument?.title.fontScale || item.titleFontScale || 1,
+    consolidateEditorTitleFontScale(
+      savedEditorDocument?.title.fontScale ?? item.titleFontScale ?? 1,
+      savedEditorDocument?.overlays.scales.title ?? 1,
+    ),
   );
   const titleFontScaleRef = useRef(titleFontScale);
+  const updateEditorTitleFontScale = useCallback((value: number) => {
+    const nextValue = clampEditorTitleFontScale(value);
+    titleFontScaleRef.current = nextValue;
+    setTitleFontScale(nextValue);
+  }, []);
   const [cleanVideoUrl, setCleanVideoUrl] = useState<string | null>(null);
   const [editTimeline, setEditTimeline] = useState<EditTimeline | null>(null);
   const [selectionStart, setSelectionStart] = useState(
@@ -3262,7 +3273,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const videoClipTrimCleanupRef = useRef<(() => void) | null>(null);
   const [overlayLayout, setOverlayLayout] = useState(() => (
     savedEditorDocument
-      ? cloneEditorOverlayLayout(savedEditorDocument.overlays)
+      ? normalizeEditorTitleScaleLayout(savedEditorDocument.overlays)
       : createInitialEditorOverlayLayout()
   ));
   const overlayLayoutRef = useRef(overlayLayout);
@@ -3850,7 +3861,6 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const renderVideoClips = editorDocumentSnapshot.video.clips;
   const overlayOffsets = renderOverlayLayout.offsets;
   const videoScale = renderOverlayLayout.scales.video;
-  const titleScale = renderOverlayLayout.scales.title;
   const channelScale = renderOverlayLayout.scales.channel;
   const titleFontId = renderOverlayLayout.fonts?.title || DEFAULT_EDITOR_FONT_ID;
   const channelFontId = renderOverlayLayout.fonts?.channel || DEFAULT_EDITOR_FONT_ID;
@@ -4083,7 +4093,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     ? selectedOverlay
     : null;
   const scalableOverlayScale = scalableBaseOverlaySelection === "title"
-    ? titleScale
+    ? renderTitleFontScale
     : scalableBaseOverlaySelection === "channel"
       ? channelScale
       : selectedTextOverlay?.scale ?? null;
@@ -4137,11 +4147,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     const offset = layer === "title"
       ? lockEditorTitleHorizontalOffset(rawOffset)
       : rawOffset;
-    const scale = layer === "title"
-      ? titleScale
-      : layer === "channel"
-        ? channelScale
-        : null;
+    const scale = layer === "channel" ? channelScale : null;
     return {
       zIndex: editorOverlayZIndex(layer),
       translate: canvasOffsetTranslate(offset),
@@ -5660,6 +5666,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       EDITOR_TEXT_LAYER_MAX_SCALE,
       Math.max(EDITOR_TEXT_LAYER_MIN_SCALE, scale),
     );
+    if (selection === "title") {
+      updateEditorTitleFontScale(nextScale);
+      return;
+    }
     const textId = selectedEditorTextId(selection);
     const canvas = editorCanvasRef.current;
     const canvasClientRect = canvas?.getBoundingClientRect();
@@ -5701,7 +5711,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       }));
       return;
     }
-    if (selection !== "title" && selection !== "channel") return;
+    if (selection !== "channel") return;
     const baseSelection = selection;
     updateEditorOverlayLayout((current) => {
       const adjustedOffset = layerRect
@@ -5716,9 +5726,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         ...current,
         offsets: {
           ...current.offsets,
-          [baseSelection]: baseSelection === "title"
-            ? lockEditorTitleHorizontalOffset(adjustedOffset)
-            : adjustedOffset,
+          [baseSelection]: adjustedOffset,
         },
         scales: {
           ...current.scales,
@@ -5726,7 +5734,31 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         },
       };
     });
-  }, [updateEditorOverlayLayout, updateEditorTextOverlay]);
+  }, [
+    updateEditorOverlayLayout,
+    updateEditorTextOverlay,
+    updateEditorTitleFontScale,
+  ]);
+
+  const beginEditorScaleHistoryInteraction = useCallback((
+    selection: "title" | "channel" | `text:${string}`,
+  ) => {
+    if (selection === "title") {
+      beginEditorCopyInteraction();
+      return;
+    }
+    beginEditorOverlayHistoryInteraction();
+  }, [beginEditorCopyInteraction, beginEditorOverlayHistoryInteraction]);
+
+  const finishEditorScaleHistoryInteraction = useCallback((
+    selection: "title" | "channel" | `text:${string}`,
+  ) => {
+    if (selection === "title") {
+      finishEditorCopyInteraction();
+      return;
+    }
+    finishEditorOverlayHistoryInteraction();
+  }, [finishEditorCopyInteraction, finishEditorOverlayHistoryInteraction]);
 
   const beginEditorOverlayScaleDrag = useCallback((
     selection: "title" | "channel" | `text:${string}`,
@@ -5737,7 +5769,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     event.stopPropagation();
     overlayDragCleanupRef.current?.();
     finishPendingEditorInteractions();
-    beginEditorOverlayHistoryInteraction();
+    beginEditorScaleHistoryInteraction(selection);
 
     const captureTarget = event.currentTarget;
     const pointerId = event.pointerId;
@@ -5777,7 +5809,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       if (finishEvent.pointerId !== pointerId) return;
       updateScale(finishEvent.clientY);
       cleanup();
-      finishEditorOverlayHistoryInteraction();
+      finishEditorScaleHistoryInteraction(selection);
     };
     updateScale(event.clientY);
     overlayDragCleanupRef.current = cleanup;
@@ -5785,8 +5817,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     window.addEventListener("pointerup", finish);
     window.addEventListener("pointercancel", finish);
   }, [
-    beginEditorOverlayHistoryInteraction,
-    finishEditorOverlayHistoryInteraction,
+    beginEditorScaleHistoryInteraction,
+    finishEditorScaleHistoryInteraction,
     finishPendingEditorInteractions,
     overlayPreviewEnabled,
     setEditorOverlayScale,
@@ -6982,11 +7014,6 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     titleTextStylesRef.current = nextStyles;
     setTitleTextStyles(nextStyles);
     recordEditorCopyChange(before, currentEditorCopySnapshot());
-  };
-
-  const updateEditorTitleFontScale = (value: number) => {
-    titleFontScaleRef.current = value;
-    setTitleFontScale(value);
   };
 
   const updateSelectedEditorText = (
@@ -8389,11 +8416,15 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                         );
                 if (nextScale === null) return;
                 event.preventDefault();
-                beginEditorOverlayHistoryInteraction();
+                beginEditorScaleHistoryInteraction(scalableOverlaySelection);
                 setEditorOverlayScale(scalableOverlaySelection, nextScale);
               }}
-              onKeyUp={finishEditorOverlayHistoryInteraction}
-              onBlur={finishEditorOverlayHistoryInteraction}
+              onKeyUp={() => finishEditorScaleHistoryInteraction(
+                scalableOverlaySelection,
+              )}
+              onBlur={() => finishEditorScaleHistoryInteraction(
+                scalableOverlaySelection,
+              )}
               onChange={(event) => setEditorOverlayScale(
                 scalableOverlaySelection,
                 Number(event.target.value) / 100,
@@ -8955,8 +8986,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               <input
                 aria-label="제목 글자 크기"
                 type="range"
-                min={0.8}
-                max={1.2}
+                min={EDITOR_TEXT_LAYER_MIN_SCALE}
+                max={EDITOR_TEXT_LAYER_MAX_SCALE}
                 step={0.05}
                 value={titleFontScale}
                 onPointerDown={beginEditorCopyInteraction}

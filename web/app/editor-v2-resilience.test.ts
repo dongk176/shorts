@@ -78,6 +78,21 @@ describe("editor v2 resilience", () => {
     ].forEach((statement) => expect(restoreSource).toContain(statement));
   });
 
+  it("drives both hook-title size controls from one canonical value", () => {
+    expect(editorSource).toContain(
+      'if (selection === "title") {\n      updateEditorTitleFontScale(nextScale);',
+    );
+    expect(editorSource).toContain(
+      '? renderTitleFontScale\n    : scalableBaseOverlaySelection === "channel"',
+    );
+    expect(editorSource).not.toContain(
+      "const titleScale = renderOverlayLayout.scales.title",
+    );
+    expect(editorSource).toContain(
+      'const scale = layer === "channel" ? channelScale : null;',
+    );
+  });
+
   it("resolves a persisted channel image asset back into the v2 preview", () => {
     expect(editorSource).toContain(
       "editorChannelAssetPreviewUrl(item.id, item.renderVersion)",

@@ -6,6 +6,7 @@ import type {
 } from "./contracts";
 import {
   cloneEditorOverlayLayout,
+  consolidateEditorTitleFontScale,
   lockEditorTitleHorizontalOffset,
   type EditorOverlayLayoutSnapshot,
 } from "./editor-overlay-preview";
@@ -72,6 +73,11 @@ export function createEditorDocumentSnapshot(
   input: EditorDocumentSnapshotInput,
 ): EditorDocumentSnapshot {
   const overlays = cloneEditorOverlayLayout(input.overlays);
+  const titleFontScale = consolidateEditorTitleFontScale(
+    input.title.fontScale,
+    overlays.scales.title,
+  );
+  overlays.scales.title = 1;
   overlays.offsets.title = lockEditorTitleHorizontalOffset(
     overlays.offsets.title,
   );
@@ -82,6 +88,7 @@ export function createEditorDocumentSnapshot(
     template: { ...input.template },
     title: {
       ...input.title,
+      fontScale: titleFontScale,
       textStyles: input.title.textStyles.map((style) => ({ ...style })),
     },
     channel: { ...input.channel },

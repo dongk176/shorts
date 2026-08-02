@@ -116,7 +116,8 @@ describe("editor document snapshot", () => {
     expect(value.overlays.offsets.video).toEqual({ x: 24, y: -12 });
     expect(value.overlays.offsets.title).toEqual({ x: 0, y: 18 });
     expect(value.overlays.commentOffsets["comment-1"]).toEqual({ x: 0, y: 88 });
-    expect(value.overlays.scales).toEqual({ video: 1.2, title: 1.1, channel: 0.9 });
+    expect(value.title.fontScale).toBeCloseTo(1.1);
+    expect(value.overlays.scales).toEqual({ video: 1.2, title: 1, channel: 0.9 });
     expect(value.overlays.fonts).toEqual({ title: "black-han-sans", channel: "suit" });
     expect(value.overlays.visible.channel).toBe(false);
     expect(value.overlays.commentTheme).toBe("light");
@@ -134,6 +135,23 @@ describe("editor document snapshot", () => {
     expect(value.title.text).toBe("후킹 제목");
     expect(value.channel.thumbnailUrl).toBe("blob:channel-image");
     expect(value.subtitles.segments[0].text).toBe("자막");
+  });
+
+  it("consolidates legacy dual title sizing into the canonical font scale", () => {
+    const overlays = createInitialEditorOverlayLayout();
+    overlays.scales.title = 1.4;
+    const value = createEditorDocumentSnapshot({
+      ...snapshot(),
+      title: {
+        text: "후킹 제목",
+        textStyles: [],
+        fontScale: 1.2,
+      },
+      overlays,
+    });
+
+    expect(value.title.fontScale).toBeCloseTo(1.68);
+    expect(value.overlays.scales.title).toBe(1);
   });
 
   it("clones nested state so preview and future render payloads cannot mutate each other", () => {

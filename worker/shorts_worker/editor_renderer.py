@@ -430,7 +430,7 @@ def create_editor_title_layer(
         )
         base_font_size = max(
             18,
-            min(100, round(fitted.size * document.title.font_scale)),
+            min(200, round(fitted.size * document.title.font_scale)),
         )
         aspect_ratio = document.video.aspect_ratio
         if (

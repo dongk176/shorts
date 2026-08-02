@@ -3,13 +3,16 @@ import {
   applyEditorFontToSelectableText,
   clampCanvasDelta,
   clampCenteredOverlayOffsetAfterScale,
+  clampEditorTitleFontScale,
   clientDeltaToCanvas,
   clientRectToCanvas,
   createEditorTextOverlay,
   createInitialEditorOverlayLayout,
+  consolidateEditorTitleFontScale,
   editorOverlayLayoutsEqual,
   lockEditorTitleHorizontalOffset,
   moveEditorOverlayOrderItem,
+  normalizeEditorTitleScaleLayout,
   pinEditorChannelLayerOnTop,
   recordEditorOverlayHistory,
   redoEditorOverlayHistory,
@@ -24,6 +27,19 @@ import {
 } from "@/lib/editor-overlay-preview";
 
 describe("editor overlay preview geometry", () => {
+  it("uses one bounded title size for both editor controls", () => {
+    expect(consolidateEditorTitleFontScale(1.2, 1.4)).toBeCloseTo(1.68);
+    expect(consolidateEditorTitleFontScale(2, 2)).toBe(2);
+    expect(consolidateEditorTitleFontScale(0.5, 0.5)).toBe(0.5);
+    expect(clampEditorTitleFontScale(Number.NaN)).toBe(1);
+
+    const layout = createInitialEditorOverlayLayout();
+    layout.scales.title = 1.35;
+    const normalized = normalizeEditorTitleScaleLayout(layout);
+    expect(normalized.scales.title).toBe(1);
+    expect(layout.scales.title).toBe(1.35);
+  });
+
   it("keeps the hook title horizontally fixed while preserving its vertical offset", () => {
     expect(lockEditorTitleHorizontalOffset({ x: 184, y: -27 })).toEqual({
       x: 0,
