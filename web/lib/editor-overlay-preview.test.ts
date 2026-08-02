@@ -30,7 +30,7 @@ describe("editor overlay preview geometry", () => {
       currentScale: 1,
       nextScale: 1.4,
     });
-    expect(result.x).toBeCloseTo(41.6);
+    expect(result.x).toBe(0);
     expect(result.y).toBe(0);
   });
 

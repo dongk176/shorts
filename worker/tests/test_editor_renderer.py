@@ -55,7 +55,7 @@ def test_movable_overlay_positions_are_clamped_after_scaling() -> None:
 
     assert _clamp_centered_layer_position(layer, 724, 160) == (724, 160)
     scaled = layer.resize((997, 224))
-    assert _clamp_centered_layer_position(scaled, 724, 160) == (581.5, 160)
+    assert _clamp_centered_layer_position(scaled, 724, 160) == (540, 160)
 
 
 def test_oversized_overlay_axes_are_centered() -> None:

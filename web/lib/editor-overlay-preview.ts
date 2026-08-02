@@ -477,8 +477,10 @@ export function clampCenteredOverlayOffsetAfterScale({
     height: nextHeight,
   };
   const boundedCorrection = clampCanvasDelta(nextRect, { x: 0, y: 0 });
+  const overflowsHorizontally = nextRect.x < 0
+    || nextRect.x + nextRect.width > TEMPLATE_CANVAS.width;
   const correction = {
-    x: nextWidth > TEMPLATE_CANVAS.width
+    x: overflowsHorizontally
       ? (TEMPLATE_CANVAS.width - nextWidth) / 2 - nextRect.x
       : boundedCorrection.x,
     y: nextHeight > TEMPLATE_CANVAS.height

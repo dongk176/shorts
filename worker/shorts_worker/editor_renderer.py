@@ -244,12 +244,11 @@ def _clamp_centered_layer_position(
     center_y: float,
 ) -> tuple[float, float]:
     """Keep movable non-video overlays visible inside the output canvas."""
-    if layer.width <= CANVAS_WIDTH:
-        center_x = min(
-            CANVAS_WIDTH - layer.width / 2,
-            max(layer.width / 2, center_x),
-        )
-    else:
+    if (
+        layer.width > CANVAS_WIDTH
+        or center_x - layer.width / 2 < 0
+        or center_x + layer.width / 2 > CANVAS_WIDTH
+    ):
         center_x = CANVAS_WIDTH / 2
     if layer.height <= CANVAS_HEIGHT:
         center_y = min(
