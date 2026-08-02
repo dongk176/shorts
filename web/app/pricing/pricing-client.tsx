@@ -1017,6 +1017,8 @@ export function PricingClient({
                   required
                   inputMode="numeric"
                   autoComplete="off"
+                  data-payment-advance-at="6,10"
+                  data-payment-advance-delay="400"
                   value={cardAuth.identityNumber}
                   onChange={(event) => setCardAuth((current) => ({
                     ...current,
@@ -1033,6 +1035,7 @@ export function PricingClient({
                   type="password"
                   inputMode="numeric"
                   autoComplete="off"
+                  data-payment-advance-at="2"
                   value={cardAuth.cardPassword}
                   onChange={(event) => setCardAuth((current) => ({
                     ...current,
@@ -1050,6 +1053,8 @@ export function PricingClient({
                   required
                   inputMode="numeric"
                   autoComplete="tel"
+                  data-payment-advance-at="10,11"
+                  data-payment-advance-delay="400"
                   value={cardAuth.payerTel}
                   onChange={(event) => setCardAuth((current) => ({
                     ...current,
@@ -1136,6 +1141,8 @@ export function PricingClient({
                   required
                   inputMode="numeric"
                   autoComplete="off"
+                  data-payment-advance-at="6,10"
+                  data-payment-advance-delay="400"
                   value={resubscribeAuth.identityNumber}
                   onChange={(event) => setResubscribeAuth((current) => current ? {
                     ...current,
@@ -1152,6 +1159,7 @@ export function PricingClient({
                   type="password"
                   inputMode="numeric"
                   autoComplete="off"
+                  data-payment-advance-at="2"
                   value={resubscribeAuth.cardPassword}
                   onChange={(event) => setResubscribeAuth((current) => current ? {
                     ...current,

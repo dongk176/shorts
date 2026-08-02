@@ -206,6 +206,7 @@ export function ReplacementCardPaymentOverlay({
                   required
                   inputMode="numeric"
                   autoComplete="cc-exp-month"
+                  data-payment-advance-at="2"
                   value={form.expiryMonth}
                   onChange={(event) => update("expiryMonth", digits(event.target.value, 2))}
                   placeholder="MM"
@@ -218,6 +219,7 @@ export function ReplacementCardPaymentOverlay({
                   required
                   inputMode="numeric"
                   autoComplete="cc-exp-year"
+                  data-payment-advance-at="2"
                   value={form.expiryYear}
                   onChange={(event) => update("expiryYear", digits(event.target.value, 2))}
                   placeholder="YY"
@@ -233,6 +235,7 @@ export function ReplacementCardPaymentOverlay({
                   type="password"
                   inputMode="numeric"
                   autoComplete="off"
+                  data-payment-advance-at="2"
                   value={form.cardPassword}
                   onChange={(event) => update("cardPassword", digits(event.target.value, 2))}
                   placeholder="••"
@@ -245,6 +248,8 @@ export function ReplacementCardPaymentOverlay({
                   required
                   inputMode="numeric"
                   autoComplete="off"
+                  data-payment-advance-at="6,10"
+                  data-payment-advance-delay="400"
                   value={form.identityNumber}
                   onChange={(event) => update("identityNumber", digits(event.target.value, 10))}
                   placeholder="6자리 또는 10자리"
@@ -258,6 +263,8 @@ export function ReplacementCardPaymentOverlay({
                 required
                 inputMode="numeric"
                 autoComplete="tel"
+                data-payment-advance-at="10,11"
+                data-payment-advance-delay="400"
                 value={form.payerTel}
                 onChange={(event) => update("payerTel", digits(event.target.value, 11))}
                 placeholder="01012345678"

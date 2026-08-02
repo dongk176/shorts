@@ -133,8 +133,6 @@ export function PlanCheckoutOverlay({
     ?? (product.kind === "package" ? product.durationMonths : undefined);
   const [step, setStep] = useState<"card" | "payer">("card");
   const cardPartRefs = useRef<Array<HTMLInputElement | null>>([]);
-  const consentRef = useRef<HTMLDivElement | null>(null);
-  const previousPayerTelCompleteRef = useRef(false);
   const [form, setForm] = useState<CheckoutForm>({
     cardNumberParts: ["", "", "", ""],
     expiryMonth: "",
@@ -389,28 +387,6 @@ export function PlanCheckoutOverlay({
     : installmentMonths > 0
       ? `${priceFormatter.format(Math.floor(chargeAmount / installmentMonths))}원/월 할부 결제`
       : "일시불로 결제";
-
-  useEffect(() => {
-    const payerTelJustCompleted = (
-      isManualOneTime
-      && step === "card"
-      && payerTelComplete
-      && !previousPayerTelCompleteRef.current
-    );
-    previousPayerTelCompleteRef.current = (
-      isManualOneTime
-      && step === "card"
-      && payerTelComplete
-    );
-    if (!payerTelJustCompleted) return;
-    const frame = window.requestAnimationFrame(() => {
-      consentRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "end",
-      });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [isManualOneTime, payerTelComplete, step]);
 
   useEffect(() => () => {
     const verificationId = cardVerificationIdRef.current;
@@ -1043,6 +1019,8 @@ export function PlanCheckoutOverlay({
                   required
                   inputMode="numeric"
                   autoComplete="off"
+                  data-payment-advance-at="6,10"
+                  data-payment-advance-delay="400"
                   value={form.identityNumber}
                   onChange={(event) => update("identityNumber", digits(event.target.value, 10))}
                   placeholder="6자리 또는 10자리"
@@ -1056,6 +1034,7 @@ export function PlanCheckoutOverlay({
                   type="password"
                   inputMode="numeric"
                   autoComplete="off"
+                  data-payment-advance-at="2"
                   value={form.cardPassword}
                   onChange={(event) => update("cardPassword", digits(event.target.value, 2))}
                   placeholder="••"
@@ -1070,6 +1049,8 @@ export function PlanCheckoutOverlay({
                   required
                   inputMode="numeric"
                   autoComplete="tel"
+                  data-payment-advance-at="10,11"
+                  data-payment-advance-delay="400"
                   value={form.payerTel}
                   onChange={(event) => update("payerTel", digits(event.target.value, 11))}
                   placeholder="01012345678"
@@ -1208,6 +1189,7 @@ export function PlanCheckoutOverlay({
                   required
                   inputMode="numeric"
                   autoComplete="cc-exp-month"
+                  data-payment-advance-at="2"
                   value={form.expiryMonth}
                   onChange={(event) => {
                     clearManualCardValidationField("expiryMonth");
@@ -1228,6 +1210,7 @@ export function PlanCheckoutOverlay({
                   required
                   inputMode="numeric"
                   autoComplete="cc-exp-year"
+                  data-payment-advance-at="2"
                   value={form.expiryYear}
                   onChange={(event) => {
                     clearManualCardValidationField("expiryYear");
@@ -1253,6 +1236,7 @@ export function PlanCheckoutOverlay({
                   type="password"
                   inputMode="numeric"
                   autoComplete="off"
+                  data-payment-advance-at="2"
                   value={form.cardPassword}
                   onChange={(event) => {
                     clearManualCardValidationField("cardPassword");
@@ -1273,6 +1257,8 @@ export function PlanCheckoutOverlay({
                   required
                   inputMode="numeric"
                   autoComplete="off"
+                  data-payment-advance-at="6,10"
+                  data-payment-advance-delay="400"
                   value={form.identityNumber}
                   onChange={(event) => {
                     clearManualCardValidationField("identityNumber");
@@ -1296,6 +1282,8 @@ export function PlanCheckoutOverlay({
                 required
                 inputMode="numeric"
                 autoComplete="tel"
+                data-payment-advance-at="10,11"
+                data-payment-advance-delay="400"
                 value={form.payerTel}
                 onChange={(event) => {
                   clearManualCardValidationField("payerTel");
@@ -1312,7 +1300,6 @@ export function PlanCheckoutOverlay({
             )}
             {showManualConsent && (
             <div
-              ref={consentRef}
               data-manual-card-field="consent"
               className={isManualOneTime ? "manual-checkout-field-enter" : ""}
             >

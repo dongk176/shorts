@@ -79,4 +79,18 @@ describe("refreshSupabaseSession", () => {
 
     expect(response.headers.get("x-middleware-next")).toBe("1");
   });
+
+  it("configures a bounded transport for session refresh", async () => {
+    mocks.getClaims.mockResolvedValue({ data: { claims: null }, error: null });
+
+    await refreshSupabaseSession(new NextRequest("https://www.easycut.co.kr/pricing"));
+
+    expect(mocks.createServerClient).toHaveBeenCalledWith(
+      "https://project.supabase.co",
+      "publishable",
+      expect.objectContaining({
+        global: { fetch: expect.any(Function) },
+      }),
+    );
+  });
 });

@@ -67,7 +67,9 @@ describe("getAuthenticatedUser", () => {
     expect(mocks.createServerClient).toHaveBeenCalledWith(
       "https://project.supabase.co",
       "publishable",
-      expect.any(Object),
+      expect.objectContaining({
+        global: { fetch: expect.any(Function) },
+      }),
     );
   });
 

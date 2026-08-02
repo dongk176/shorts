@@ -304,7 +304,7 @@ export function AdminBillingDashboard({
                 return <tr key={order.id} className="align-top hover:bg-white/[.02]">
                   <td className="whitespace-nowrap px-5 py-4 text-neutral-400">{date(order.approvedAt || order.createdAt)}</td>
                   <td className="px-4 py-4"><p className="max-w-56 truncate font-bold text-neutral-200">{order.email}</p><p className="mt-1 text-xs text-neutral-600">구독 {label(order.subscriptionStatus)}</p></td>
-                  <td className="px-4 py-4"><p className="font-bold">{productLabel(order.productCode)}</p><p className="mt-1 text-xs text-neutral-500">{order.kind} · {order.productCode.startsWith("starter_") || order.productCode.startsWith("expert_") ? "단건 패키지" : order.billingCycle || "단건"}</p>{order.popularFilterUsageCount > 0 && <p className="mt-1 text-xs font-bold text-amber-300">유료 인기 필터 {order.popularFilterUsageCount}회 사용</p>}</td>
+                  <td className="px-4 py-4"><p className="font-bold">{productLabel(order.productCode)}</p><p className="mt-1 text-xs text-neutral-500">{order.kind} · {order.productCode?.startsWith("starter_") || order.productCode?.startsWith("expert_") ? "단건 패키지" : order.billingCycle || "단건"}</p>{order.popularFilterUsageCount > 0 && <p className="mt-1 text-xs font-bold text-amber-300">유료 인기 필터 {order.popularFilterUsageCount}회 사용</p>}</td>
                   <td className="px-4 py-4">
                     <p className="font-bold">{order.provider === "thepayone" ? "더페이원" : "나이스페이"}</p>
                     {(paymentFlow || order.providerTerminalId) && <p className="mt-1 text-xs font-bold text-neutral-400">{[paymentFlow, order.providerTerminalId].filter(Boolean).join(" · ")}</p>}

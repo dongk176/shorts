@@ -189,11 +189,11 @@ describe("package installment UI", () => {
     expect(checkoutSource).toContain("relative z-[70]");
   });
 
-  it("scrolls the newly revealed consent into view when the phone number is complete", () => {
-    expect(checkoutSource).toContain("previousPayerTelCompleteRef");
-    expect(checkoutSource).toContain("payerTelJustCompleted");
-    expect(checkoutSource).toContain("consentRef.current?.scrollIntoView");
-    expect(checkoutSource).toContain('behavior: "smooth"');
-    expect(checkoutSource).toContain('block: "end"');
+  it("advances completed payment inputs without smooth-scrolling the sheet", () => {
+    expect(checkoutSource).toContain('data-payment-advance-at="2"');
+    expect(checkoutSource).toContain('data-payment-advance-at="6,10"');
+    expect(checkoutSource).toContain('data-payment-advance-at="10,11"');
+    expect(checkoutSource).not.toContain("previousPayerTelCompleteRef");
+    expect(checkoutSource).not.toContain("consentRef.current?.scrollIntoView");
   });
 });

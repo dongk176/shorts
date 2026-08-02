@@ -378,6 +378,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           or lower(coalesce(o.provider_transaction_id,'')) like ${`%${query.toLowerCase()}%`}
         )
       order by o.created_at desc
+      limit 500
     ` : [];
   const refundRows = tab === "billing" ? await db`
       select r.id,r.billing_order_id,r.amount_krw,r.reason,r.status,
@@ -693,7 +694,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       id: row.id,
       orderId: row.orderId,
       kind: row.kind,
-      productCode: row.productCode,
+      productCode: row.productCode || "unknown",
       billingCycle: row.billingCycle || null,
       prepaidMonths: contractMonths,
       refundPolicyVersion: Number(row.refundPolicyVersion || 1),

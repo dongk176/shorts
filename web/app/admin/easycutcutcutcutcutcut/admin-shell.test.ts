@@ -37,4 +37,9 @@ describe("administrator shell recovery", () => {
     );
     expect(pageSource).toContain("and amount_krw>0");
   });
+
+  it("bounds the billing table and tolerates historical orders without a product code", () => {
+    expect(pageSource).toContain('productCode: row.productCode || "unknown"');
+    expect(pageSource).toContain("order by o.created_at desc\n      limit 500");
+  });
 });

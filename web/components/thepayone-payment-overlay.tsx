@@ -8,6 +8,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
+import { advancePaymentFocusIfComplete } from "@/lib/payment-focus";
 
 export function ThePayOnePaymentOverlay({
   title,
@@ -98,7 +99,8 @@ export function ThePayOnePaymentOverlay({
           event.preventDefault();
           onSubmit();
         }}
-        className="thepayone-payment-dialog relative flex h-[calc(100dvh-0.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-t-[30px] border border-[#ff8f80]/20 bg-[#181b1d] shadow-[0_30px_100px_rgba(0,0,0,.72),0_0_70px_rgba(255,113,94,.08)] sm:h-auto sm:max-h-[calc(100dvh-4rem)] sm:rounded-[30px]"
+        onInput={(event) => advancePaymentFocusIfComplete(event.target)}
+        className="thepayone-payment-dialog relative flex h-[calc(100svh-0.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-t-[30px] border border-[#ff8f80]/20 bg-[#181b1d] shadow-[0_30px_100px_rgba(0,0,0,.72),0_0_70px_rgba(255,113,94,.08)] sm:h-auto sm:max-h-[calc(100dvh-4rem)] sm:rounded-[30px]"
       >
         <div className="pointer-events-none absolute inset-x-20 -top-24 h-44 rounded-full bg-[#ff715e]/10 blur-3xl" />
         <div className="thepayone-payment-content relative min-h-0 flex-1 overflow-y-auto px-5 pb-7 pt-3 sm:flex-auto sm:px-8 sm:pt-8">

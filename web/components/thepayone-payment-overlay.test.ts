@@ -34,4 +34,11 @@ describe("ThePayOne payment overlay", () => {
     expect(checkoutStyles).toContain("min-height: min(36rem,calc(100dvh - 4rem))");
     expect(checkoutStyles).toContain("padding-top: 4.5rem");
   });
+
+  it("keeps the mobile sheet stable and advances completed inputs", () => {
+    expect(source).toContain("h-[calc(100svh-0.5rem)]");
+    expect(source).toContain("advancePaymentFocusIfComplete(event.target)");
+    expect(checkoutStyles).toContain("@media (max-width: 639px)");
+    expect(checkoutStyles).toContain("overscroll-behavior: contain");
+  });
 });

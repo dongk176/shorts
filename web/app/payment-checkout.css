@@ -7,6 +7,11 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+@media (max-width: 639px) {
+  .manual-checkout-field-enter { animation: none; }
+  .thepayone-payment-content { overscroll-behavior: contain; }
+}
+
 @media (min-width: 640px) {
   .thepayone-payment-dialog:has([data-card-issuer-trigger][aria-expanded="true"]) {
     min-height: min(36rem,calc(100dvh - 4rem));

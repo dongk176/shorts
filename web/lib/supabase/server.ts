@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { getDb } from "@/lib/db";
 import { getSupabaseAuthConfig } from "@/lib/supabase/config";
+import { fetchSupabaseAuth } from "@/lib/supabase/auth-fetch";
 
 export { getSupabaseAuthConfig } from "@/lib/supabase/config";
 
@@ -10,6 +11,7 @@ type SupabaseAuthConfig = NonNullable<ReturnType<typeof getSupabaseAuthConfig>>;
 
 function createConfiguredSupabaseServerClient(config: SupabaseAuthConfig, cookieStore: CookieStore) {
   return createServerClient(config.url, config.key, {
+    global: { fetch: fetchSupabaseAuth },
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (values) => {

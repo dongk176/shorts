@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import { getSupabaseAuthConfig } from "@/lib/supabase/config";
+import { fetchSupabaseAuth } from "@/lib/supabase/auth-fetch";
 
 export async function refreshSupabaseSession(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -8,6 +9,7 @@ export async function refreshSupabaseSession(request: NextRequest) {
   if (!config) return response;
 
   const supabase = createServerClient(config.url, config.key, {
+    global: { fetch: fetchSupabaseAuth },
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (cookiesToSet, headers) => {
