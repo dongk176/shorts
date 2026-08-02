@@ -31,3 +31,14 @@
 - `make lint` runs backend and frontend static checks.
 - `make verify` runs worker tests, frontend checks/build, and CDK tests/synth.
 - Renderer changes must retain the synthetic FFmpeg/ffprobe integration test.
+
+## Production deployment safety
+
+- Use the currently promoted production commit as the only release baseline.
+  Never deploy from an older branch, an unrelated worktree, or a worktree with
+  uncommitted files.
+- Before promotion, compare the candidate route manifest with production and
+  stop if `/`, `/guidebook`, `/pricing`, the admin page, or the editor route
+  disappears unexpectedly.
+- Deploy to an unaliased candidate URL first, verify the five protected paths,
+  then promote that exact deployment without rebuilding it.
