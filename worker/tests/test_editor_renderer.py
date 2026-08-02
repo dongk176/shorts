@@ -12,6 +12,7 @@ from shorts_worker.config import Settings
 from shorts_worker.editor_renderer import (
     EditorDocumentRenderer,
     EditorLayerAsset,
+    _clamp_centered_layer_position,
     _prepare_editor_layer_asset,
     _timed_overlay_enable_expression,
     _timed_overlay_input_filter,
@@ -47,6 +48,20 @@ def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
 
 def _document() -> EditorDocument:
     return EditorDocument.model_validate_json(FIXTURE.read_text())
+
+
+def test_movable_overlay_positions_are_clamped_after_scaling() -> None:
+    layer = Image.new("RGBA", (712, 160), (255, 255, 255, 255))
+
+    assert _clamp_centered_layer_position(layer, 724, 160) == (724, 160)
+    scaled = layer.resize((997, 224))
+    assert _clamp_centered_layer_position(scaled, 724, 160) == (581.5, 160)
+
+
+def test_oversized_overlay_axes_are_centered() -> None:
+    layer = Image.new("RGBA", (1200, 2100), (255, 255, 255, 255))
+
+    assert _clamp_centered_layer_position(layer, 900, 1400) == (540, 960)
 
 
 def test_editor_video_frame_matches_browser_geometry_and_allows_crop() -> None:

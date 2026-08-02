@@ -238,6 +238,43 @@ def _paste_center(
     canvas.paste(layer, (left, top), layer)
 
 
+def _clamp_centered_layer_position(
+    layer: Image.Image,
+    center_x: float,
+    center_y: float,
+) -> tuple[float, float]:
+    """Keep movable non-video overlays visible inside the output canvas."""
+    if layer.width <= CANVAS_WIDTH:
+        center_x = min(
+            CANVAS_WIDTH - layer.width / 2,
+            max(layer.width / 2, center_x),
+        )
+    else:
+        center_x = CANVAS_WIDTH / 2
+    if layer.height <= CANVAS_HEIGHT:
+        center_y = min(
+            CANVAS_HEIGHT - layer.height / 2,
+            max(layer.height / 2, center_y),
+        )
+    else:
+        center_y = CANVAS_HEIGHT / 2
+    return center_x, center_y
+
+
+def _paste_center_clamped(
+    canvas: Image.Image,
+    layer: Image.Image,
+    center_x: float,
+    center_y: float,
+) -> None:
+    center_x, center_y = _clamp_centered_layer_position(
+        layer,
+        center_x,
+        center_y,
+    )
+    _paste_center(canvas, layer, center_x, center_y)
+
+
 def _draw_styled_title_content(
     document: EditorDocument,
     *,
@@ -425,7 +462,12 @@ def create_editor_title_layer(
         center_y -= content.height / 2
     content = _scale_layer(content, document.overlays.scales["title"])
     offset = document.overlays.offsets["title"]
-    _paste_center(canvas, content, center_x + offset.x, center_y + offset.y)
+    _paste_center_clamped(
+        canvas,
+        content,
+        center_x + offset.x,
+        center_y + offset.y,
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(output_path, format="PNG", compress_level=1)
     return output_path
@@ -573,7 +615,12 @@ def create_editor_channel_layer(
     )
     content = _scale_layer(content, document.overlays.scales["channel"])
     offset = document.overlays.offsets["channel"]
-    _paste_center(canvas, content, center_x + offset.x, center_y + offset.y)
+    _paste_center_clamped(
+        canvas,
+        content,
+        center_x + offset.x,
+        center_y + offset.y,
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(output_path, format="PNG", compress_level=1)
     return output_path
@@ -670,7 +717,7 @@ def create_editor_text_layer(
         content.paste(shadow_color, (0, 7), shadow_color)
     content.alpha_composite(foreground)
     content = _scale_layer(content, overlay.scale)
-    _paste_center(
+    _paste_center_clamped(
         canvas,
         content,
         CANVAS_WIDTH / 2 + overlay.offset.x,
@@ -735,7 +782,10 @@ def create_editor_comment_layers(
             comment.id,
             document.overlays.offsets["comment"],
         )
-        y = round(base_y + offset.y)
+        y = min(
+            max(0, CANVAS_HEIGHT - panel.height),
+            max(0, round(base_y + offset.y)),
+        )
         layer.paste(panel, (0, y), panel)
         layer_path = directory / f"comment-layer-{index:02d}.png"
         layer.save(layer_path, format="PNG", compress_level=1)

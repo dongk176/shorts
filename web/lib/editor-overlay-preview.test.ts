@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyEditorFontToSelectableText,
   clampCanvasDelta,
+  clampCenteredOverlayOffsetAfterScale,
   clientDeltaToCanvas,
   clientRectToCanvas,
   createEditorTextOverlay,
@@ -22,6 +23,26 @@ import {
 } from "@/lib/editor-overlay-preview";
 
 describe("editor overlay preview geometry", () => {
+  it("repositions a scaled centered overlay before it can leave the canvas", () => {
+    const result = clampCenteredOverlayOffsetAfterScale({
+      layerRect: { x: 368, y: 80, width: 712, height: 160 },
+      offset: { x: 184, y: 0 },
+      currentScale: 1,
+      nextScale: 1.4,
+    });
+    expect(result.x).toBeCloseTo(41.6);
+    expect(result.y).toBe(0);
+  });
+
+  it("centers an overlay axis when the scaled layer is larger than the canvas", () => {
+    expect(clampCenteredOverlayOffsetAfterScale({
+      layerRect: { x: 200, y: 700, width: 880, height: 200 },
+      offset: { x: 100, y: 0 },
+      currentScale: 1,
+      nextScale: 2,
+    })).toEqual({ x: 0, y: 0 });
+  });
+
   it("applies one font to every dropdown-selectable text layer", () => {
     const layout = createInitialEditorOverlayLayout();
     layout.fonts.title = "do-hyeon";

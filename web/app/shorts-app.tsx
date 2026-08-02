@@ -106,6 +106,7 @@ import {
   EMPTY_EDITOR_OVERLAY_GUIDES,
   canvasOffsetTranslate,
   clampCanvasDelta,
+  clampCenteredOverlayOffsetAfterScale,
   clientDeltaToCanvas,
   clientDistanceToCanvas,
   clientRectToCanvas,
@@ -5656,18 +5657,64 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       Math.max(EDITOR_TEXT_LAYER_MIN_SCALE, scale),
     );
     const textId = selectedEditorTextId(selection);
+    const canvas = editorCanvasRef.current;
+    const canvasClientRect = canvas?.getBoundingClientRect();
+    const layerElement = canvas
+      ? textId
+        ? Array.from(canvas.querySelectorAll<HTMLElement>(
+            "[data-editor-text-overlay-id]",
+          )).find((element) => element.dataset.editorTextOverlayId === textId)
+        : canvas.querySelector<HTMLElement>(
+            `[data-editor-overlay-layer="${selection}"]`,
+          )
+      : null;
+    const layerClientRect = layerElement?.getBoundingClientRect();
+    const layerRect = canvasClientRect && layerClientRect
+      ? clientRectToCanvas({
+          x: layerClientRect.x,
+          y: layerClientRect.y,
+          width: layerClientRect.width,
+          height: layerClientRect.height,
+        }, {
+          x: canvasClientRect.x,
+          y: canvasClientRect.y,
+          width: canvasClientRect.width,
+          height: canvasClientRect.height,
+        })
+      : null;
     if (textId) {
       updateEditorTextOverlay(textId, (textOverlay) => ({
         ...textOverlay,
         scale: nextScale,
+        offset: layerRect
+          ? clampCenteredOverlayOffsetAfterScale({
+              layerRect,
+              offset: textOverlay.offset,
+              currentScale: textOverlay.scale,
+              nextScale,
+            })
+          : textOverlay.offset,
       }));
       return;
     }
+    if (selection !== "title" && selection !== "channel") return;
+    const baseSelection = selection;
     updateEditorOverlayLayout((current) => ({
       ...current,
+      offsets: {
+        ...current.offsets,
+        [baseSelection]: layerRect
+          ? clampCenteredOverlayOffsetAfterScale({
+              layerRect,
+              offset: current.offsets[baseSelection],
+              currentScale: current.scales[baseSelection],
+              nextScale,
+            })
+          : current.offsets[baseSelection],
+      },
       scales: {
         ...current.scales,
-        [selection]: nextScale,
+        [baseSelection]: nextScale,
       },
     }));
   }, [updateEditorOverlayLayout, updateEditorTextOverlay]);

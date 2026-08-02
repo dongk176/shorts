@@ -443,6 +443,54 @@ export function clampCanvasDelta(
   };
 }
 
+/**
+ * Keep a centered overlay inside the 1080x1920 editor canvas when its scale
+ * changes. The supplied rectangle is the element's currently rendered box,
+ * including the current scale and offset.
+ */
+export function clampCenteredOverlayOffsetAfterScale({
+  layerRect,
+  offset,
+  currentScale,
+  nextScale,
+}: {
+  layerRect: CanvasRect;
+  offset: CanvasPoint;
+  currentScale: number;
+  nextScale: number;
+}): CanvasPoint {
+  if (
+    layerRect.width <= 0
+    || layerRect.height <= 0
+    || currentScale <= 0
+    || nextScale <= 0
+  ) {
+    return { ...offset };
+  }
+  const ratio = nextScale / currentScale;
+  const nextWidth = layerRect.width * ratio;
+  const nextHeight = layerRect.height * ratio;
+  const nextRect: CanvasRect = {
+    x: layerRect.x + (layerRect.width - nextWidth) / 2,
+    y: layerRect.y + (layerRect.height - nextHeight) / 2,
+    width: nextWidth,
+    height: nextHeight,
+  };
+  const boundedCorrection = clampCanvasDelta(nextRect, { x: 0, y: 0 });
+  const correction = {
+    x: nextWidth > TEMPLATE_CANVAS.width
+      ? (TEMPLATE_CANVAS.width - nextWidth) / 2 - nextRect.x
+      : boundedCorrection.x,
+    y: nextHeight > TEMPLATE_CANVAS.height
+      ? (TEMPLATE_CANVAS.height - nextHeight) / 2 - nextRect.y
+      : boundedCorrection.y,
+  };
+  return {
+    x: offset.x + correction.x,
+    y: offset.y + correction.y,
+  };
+}
+
 export function snapRectCenterToCanvas(
   layerRect: CanvasRect,
   delta: CanvasPoint,
