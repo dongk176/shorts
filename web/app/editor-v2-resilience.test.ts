@@ -78,12 +78,12 @@ describe("editor v2 resilience", () => {
     ].forEach((statement) => expect(restoreSource).toContain(statement));
   });
 
-  it("drives both hook-title size controls from one canonical value", () => {
+  it("keeps hook-title sizing only in the left sidebar", () => {
     expect(editorSource).toContain(
-      'if (selection === "title") {\n      updateEditorTitleFontScale(nextScale);',
+      'const scalableBaseOverlaySelection = selectedOverlay === "channel"',
     );
-    expect(editorSource).toContain(
-      '? renderTitleFontScale\n    : scalableBaseOverlaySelection === "channel"',
+    expect(editorSource).not.toContain(
+      'selectedOverlay === "title"\n    || selectedOverlay === "channel"',
     );
     expect(editorSource).not.toContain(
       "const titleScale = renderOverlayLayout.scales.title",

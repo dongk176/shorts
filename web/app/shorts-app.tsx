@@ -4088,15 +4088,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     && selectedOverlay !== "channel"
     && selectedLayerOrderIndex < visibleEditorLayerOrder.length - 1
     && visibleEditorLayerOrder[selectedLayerOrderIndex + 1] !== "channel";
-  const scalableBaseOverlaySelection = selectedOverlay === "title"
-    || selectedOverlay === "channel"
+  const scalableBaseOverlaySelection = selectedOverlay === "channel"
     ? selectedOverlay
     : null;
-  const scalableOverlayScale = scalableBaseOverlaySelection === "title"
-    ? renderTitleFontScale
-    : scalableBaseOverlaySelection === "channel"
-      ? channelScale
-      : selectedTextOverlay?.scale ?? null;
+  const scalableOverlayScale = scalableBaseOverlaySelection === "channel"
+    ? channelScale
+    : selectedTextOverlay?.scale ?? null;
   const scalableOverlayLabel = scalableBaseOverlaySelection
     ? EDITOR_OVERLAY_LABELS[scalableBaseOverlaySelection]
     : selectedTextOverlay
