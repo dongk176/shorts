@@ -88,6 +88,12 @@ describe("editor v2 text tool", () => {
     expect(editorSource).toContain("rebaseTitleTextStyles(");
   });
 
+  it("opens the hook-title detail sidebar when the preview title is selected", () => {
+    expect(editorSource).toContain('selectedOverlay !== "title"');
+    expect(editorSource).toContain('setActiveEditorSidebarTool("title")');
+    expect(editorSource).toContain("setDesktopSidebarOpen(true)");
+  });
+
   it("toggles the text detail panel from the fixed tool rail", () => {
     expect(editorSource).toContain('if (tool === "text")');
     expect(editorSource).toContain(

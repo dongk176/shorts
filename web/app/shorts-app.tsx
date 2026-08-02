@@ -3486,6 +3486,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     if (selectedOverlay !== null) setSelectedVideoClipId(null);
   }, [selectedOverlay]);
   useEffect(() => {
+    if (!overlayPreviewEnabled || selectedOverlay !== "title") return;
+    setActiveEditorSidebarTool("title");
+    setDesktopSidebarOpen(true);
+  }, [overlayPreviewEnabled, selectedOverlay]);
+  useEffect(() => {
     if (!overlayPreviewEnabled || selectedOverlay !== "channel") return;
     setActiveEditorSidebarTool("channel");
     setDesktopSidebarOpen(true);
