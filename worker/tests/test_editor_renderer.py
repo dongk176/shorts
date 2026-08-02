@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageFont
 
 from shorts_worker.config import Settings
 from shorts_worker.editor_renderer import (
@@ -20,9 +20,11 @@ from shorts_worker.editor_renderer import (
     create_editor_comment_layers,
     create_editor_text_layer,
     create_editor_title_layer,
+    editor_font_path,
     editor_layer_order,
     editor_render_timeout_seconds,
     editor_video_frame,
+    load_editor_font,
     retime_editor_subtitles,
     verify_editor_fonts,
 )
@@ -97,6 +99,19 @@ def test_title_layer_uses_every_selected_editor_font(tmp_path: Path) -> None:
             rendered_pixels.add(image.tobytes())
 
     assert len(rendered_pixels) == len(EditorFontId)
+
+
+def test_noto_serif_title_uses_the_same_bold_weight_as_the_browser() -> None:
+    text = "후킹 제목 굵기"
+    preview_weight_font = load_editor_font(EditorFontId.NOTO_SERIF_KR, 84)
+    default_weight_font = ImageFont.truetype(
+        str(editor_font_path(EditorFontId.NOTO_SERIF_KR)),
+        size=84,
+    )
+    preview_weight_mask = preview_weight_font.getmask(text, mode="L")
+    default_weight_mask = default_weight_font.getmask(text, mode="L")
+
+    assert sum(preview_weight_mask) > sum(default_weight_mask) * 1.35
 
 
 def test_title_ignores_horizontal_offset_and_preserves_vertical_offset(

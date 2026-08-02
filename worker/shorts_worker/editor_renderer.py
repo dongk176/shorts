@@ -53,6 +53,9 @@ EDITOR_FONT_FILES = {
     EditorFontId.SPOQA_HAN_SANS_NEO: "SpoqaHanSansNeo-Bold.woff2",
 }
 EDITOR_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
+EDITOR_FONT_VARIATION_WEIGHTS = {
+    EditorFontId.NOTO_SERIF_KR: 700,
+}
 TIMED_OVERLAY_TRANSITION_FRAMES = 3
 TIMED_OVERLAY_CONTIGUOUS_TOLERANCE_SECONDS = 0.001
 
@@ -115,10 +118,17 @@ def editor_font_path(font_id: EditorFontId) -> Path:
 
 
 def load_editor_font(font_id: EditorFontId, size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(
+    font = ImageFont.truetype(
         str(editor_font_path(font_id)),
         size=max(1, round(size)),
     )
+    variation_weight = EDITOR_FONT_VARIATION_WEIGHTS.get(font_id)
+    if variation_weight is not None:
+        # The browser preview requests font-weight: 700. Pillow otherwise opens
+        # variable fonts at their default axis value, which made Noto Serif KR
+        # visibly thinner in the rendered video than in the editor preview.
+        font.set_variation_by_axes([variation_weight])
+    return font
 
 
 def verify_editor_fonts() -> None:
