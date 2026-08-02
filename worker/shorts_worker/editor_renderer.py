@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
@@ -52,6 +53,8 @@ EDITOR_FONT_FILES = {
     EditorFontId.SPOQA_HAN_SANS_NEO: "SpoqaHanSansNeo-Bold.woff2",
 }
 EDITOR_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
+TIMED_OVERLAY_TRANSITION_FRAMES = 3
+TIMED_OVERLAY_CONTIGUOUS_TOLERANCE_SECONDS = 0.001
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +72,8 @@ class EditorLayerAsset:
     end_seconds: float | None = None
     x: int = 0
     y: int = 0
+    fade_in: bool = False
+    fade_out: bool = False
 
 
 def _prepare_editor_layer_asset(
@@ -89,6 +94,8 @@ def _prepare_editor_layer_asset(
         end_seconds=asset.end_seconds,
         x=left,
         y=top,
+        fade_in=asset.fade_in,
+        fade_out=asset.fade_out,
     )
 
 
@@ -699,9 +706,9 @@ def create_editor_comment_layers(
     size = config.comment.size if config is not None else "medium"
     base_y = _base_comment_y(document)
     assets: list[EditorLayerAsset] = []
-    for index, comment in enumerate(
-        sorted(document.comments, key=lambda item: item.start_seconds)
-    ):
+    comments = sorted(document.comments, key=lambda item: item.start_seconds)
+    output_duration = document.video.output_duration_seconds
+    for index, comment in enumerate(comments):
         panel_path = directory / f"comment-panel-{index:02d}.png"
         create_comment_panel(
             comment,
@@ -721,10 +728,23 @@ def create_editor_comment_layers(
         layer.paste(panel, (0, y), panel)
         layer_path = directory / f"comment-layer-{index:02d}.png"
         layer.save(layer_path, format="PNG", compress_level=1)
+        previous = comments[index - 1] if index > 0 else None
+        following = comments[index + 1] if index + 1 < len(comments) else None
+        touches_previous = previous is not None and abs(
+            previous.end_seconds - comment.start_seconds
+        ) <= TIMED_OVERLAY_CONTIGUOUS_TOLERANCE_SECONDS
+        touches_following = following is not None and abs(
+            comment.end_seconds - following.start_seconds
+        ) <= TIMED_OVERLAY_CONTIGUOUS_TOLERANCE_SECONDS
         assets.append(EditorLayerAsset(
             path=layer_path,
             start_seconds=comment.start_seconds,
             end_seconds=comment.end_seconds,
+            fade_in=comment.start_seconds > 0.001 and not touches_previous,
+            fade_out=(
+                comment.end_seconds < output_duration - 0.001
+                and not touches_following
+            ),
         ))
     return assets
 
@@ -764,12 +784,70 @@ def _escape_filter_path(path: Path) -> str:
 def _timed_overlay_enable_expression(
     start_seconds: float,
     end_seconds: float,
+    fps: float,
 ) -> str:
-    """Match the browser's half-open visibility window: start <= t < end."""
-    return (
-        f"gte(t,{start_seconds:.6f})*"
-        f"lt(t,{end_seconds:.6f})"
+    """Match the browser's half-open window on deterministic output frames."""
+    start_frame, end_frame = _timed_overlay_frame_window(
+        start_seconds,
+        end_seconds,
+        fps,
     )
+    return f"gte(n,{start_frame})*lt(n,{end_frame})"
+
+
+def _timed_overlay_frame_window(
+    start_seconds: float,
+    end_seconds: float,
+    fps: float,
+) -> tuple[int, int]:
+    if fps <= 0:
+        raise ValueError("timed overlay fps must be positive")
+    if end_seconds <= start_seconds:
+        raise ValueError("timed overlay end must be after start")
+    # The first visible frame is the first frame whose timestamp is at or
+    # after the browser boundary. Subtracting a tiny epsilon keeps exact frame
+    # boundaries (for example 1.0 * 30) from rounding up due to float noise.
+    start_frame = max(0, ceil(start_seconds * fps - 1e-9))
+    end_frame = max(start_frame + 1, ceil(end_seconds * fps - 1e-9))
+    return start_frame, end_frame
+
+
+def _timed_overlay_input_filter(
+    asset: EditorLayerAsset,
+    *,
+    input_index: int,
+    output_label: str,
+    fps: float,
+) -> str:
+    filters = [f"[{input_index}:v]setpts=PTS-STARTPTS"]
+    fade_filters: list[str] = []
+    if asset.start_seconds is not None and asset.end_seconds is not None:
+        start_frame, end_frame = _timed_overlay_frame_window(
+            asset.start_seconds,
+            asset.end_seconds,
+            fps,
+        )
+        frame_count = end_frame - start_frame
+        transition_frames = min(
+            TIMED_OVERLAY_TRANSITION_FRAMES,
+            max(0, (frame_count - 1) // 2),
+        )
+        if transition_frames > 0 and asset.fade_in:
+            fade_filters.append(
+                "fade=t=in:"
+                f"start_frame={start_frame}:nb_frames={transition_frames}:alpha=1"
+            )
+        if transition_frames > 0 and asset.fade_out:
+            fade_filters.append(
+                "fade=t=out:"
+                f"start_frame={end_frame - transition_frames}:"
+                f"nb_frames={transition_frames}:alpha=1"
+            )
+    if fade_filters:
+        filters.append(f"fps={fps:.3f}")
+    filters.append("format=rgba")
+    filters.extend(fade_filters)
+    return ",".join(filters) + f"[{output_label}]"
 
 
 class EditorDocumentRenderer:
@@ -916,6 +994,11 @@ class EditorDocumentRenderer:
                     ),
                     start_seconds=overlay.start_seconds,
                     end_seconds=overlay.end_seconds,
+                    fade_in=overlay.start_seconds > 0.001,
+                    fade_out=(
+                        overlay.end_seconds
+                        < document.video.output_duration_seconds - 0.001
+                    ),
                 )
             ]
             for index, overlay in enumerate(document.overlays.text_overlays)
@@ -1019,8 +1102,12 @@ class EditorDocumentRenderer:
             ):
                 prepared_label = f"asset{next_image_index}"
                 filters.append(
-                    f"[{next_image_index}:v]setpts=PTS-STARTPTS,format=rgba"
-                    f"[{prepared_label}]"
+                    _timed_overlay_input_filter(
+                        asset,
+                        input_index=next_image_index,
+                        output_label=prepared_label,
+                        fps=fps,
+                    )
                 )
                 next_label = f"scene{len(filters)}"
                 enable = ""
@@ -1028,6 +1115,7 @@ class EditorDocumentRenderer:
                     timed_expression = _timed_overlay_enable_expression(
                         asset.start_seconds,
                         asset.end_seconds,
+                        fps,
                     )
                     enable = f":enable='{timed_expression}'"
                 filters.append(

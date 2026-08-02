@@ -14,6 +14,8 @@ from shorts_worker.editor_renderer import (
     EditorLayerAsset,
     _prepare_editor_layer_asset,
     _timed_overlay_enable_expression,
+    _timed_overlay_input_filter,
+    create_editor_comment_layers,
     create_editor_text_layer,
     editor_render_timeout_seconds,
     editor_video_frame,
@@ -74,6 +76,8 @@ def test_prepared_editor_layer_is_cropped_without_losing_canvas_position(
             path=source_path,
             start_seconds=1.25,
             end_seconds=3.5,
+            fade_in=True,
+            fade_out=True,
         ),
         tmp_path / "prepared.png",
     )
@@ -81,6 +85,8 @@ def test_prepared_editor_layer_is_cropped_without_losing_canvas_position(
     assert prepared is not None
     assert (prepared.x, prepared.y) == (140, 320)
     assert (prepared.start_seconds, prepared.end_seconds) == (1.25, 3.5)
+    assert prepared.fade_in is True
+    assert prepared.fade_out is True
     with Image.open(prepared.path) as cropped:
         assert cropped.size == (320, 200)
 
@@ -93,10 +99,81 @@ def test_editor_render_timeout_scales_for_complex_longer_outputs() -> None:
 
 
 def test_timed_overlay_enable_expression_uses_half_open_window() -> None:
-    expression = _timed_overlay_enable_expression(1.25, 3.5)
+    expression = _timed_overlay_enable_expression(1.25, 3.5, 30)
 
-    assert expression == "gte(t,1.250000)*lt(t,3.500000)"
+    assert expression == "gte(n,38)*lt(n,105)"
     assert "between" not in expression
+
+
+def test_timed_overlay_boundaries_are_quantized_to_the_same_output_frame() -> None:
+    first = _timed_overlay_enable_expression(6.692, 12.265, 30)
+    second = _timed_overlay_enable_expression(12.265, 16.015, 30)
+
+    assert first == "gte(n,201)*lt(n,368)"
+    assert second == "gte(n,368)*lt(n,481)"
+
+
+def test_timed_overlay_filter_uses_short_alpha_transitions() -> None:
+    value = _timed_overlay_input_filter(
+        EditorLayerAsset(
+            path=Path("overlay.png"),
+            start_seconds=3.977,
+            end_seconds=24.2,
+            fade_in=True,
+            fade_out=True,
+        ),
+        input_index=2,
+        output_label="asset2",
+        fps=30,
+    )
+
+    assert "fps=30.000" in value
+    assert "fade=t=in:start_frame=120:nb_frames=3:alpha=1" in value
+    assert "fade=t=out:start_frame=723:nb_frames=3:alpha=1" in value
+
+
+def test_contiguous_comments_swap_without_fading_to_the_background(
+    tmp_path: Path,
+) -> None:
+    value = json.loads(FIXTURE.read_text())
+    comment = {
+        "id": "comment-1",
+        "startSeconds": 0,
+        "endSeconds": 1.5,
+        "text": "첫 댓글",
+        "initial": "첫",
+        "avatarColor": "#2563EB",
+        "nickname": "첫댓글",
+        "likeCount": 30,
+        "ageLabel": "방금 전",
+    }
+    value["comments"] = [
+        comment,
+        {
+            **comment,
+            "id": "comment-2",
+            "startSeconds": 1.5,
+            "endSeconds": 2.5,
+            "text": "둘째 댓글",
+        },
+        {
+            **comment,
+            "id": "comment-3",
+            "startSeconds": 2.8,
+            "endSeconds": 3.5,
+            "text": "셋째 댓글",
+        },
+    ]
+    value["overlays"]["visible"]["comment"] = True
+    document = EditorDocument.model_validate(value)
+
+    assets = create_editor_comment_layers(document, tmp_path)
+
+    assert [(asset.fade_in, asset.fade_out) for asset in assets] == [
+        (False, False),
+        (False, True),
+        (True, False),
+    ]
 
 
 @pytest.mark.skipif(
@@ -104,8 +181,8 @@ def test_timed_overlay_enable_expression_uses_half_open_window() -> None:
     reason="ffmpeg is required",
 )
 def test_adjacent_timed_overlays_do_not_share_the_boundary_frame() -> None:
-    first = _timed_overlay_enable_expression(0, 1)
-    second = _timed_overlay_enable_expression(1, 2)
+    first = _timed_overlay_enable_expression(0, 1, 10)
+    second = _timed_overlay_enable_expression(1, 2, 10)
     result = subprocess.run(
         [
             "ffmpeg",
