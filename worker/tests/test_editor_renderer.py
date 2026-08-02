@@ -132,6 +132,77 @@ def test_timed_overlay_filter_uses_short_alpha_transitions() -> None:
     assert "fade=t=out:start_frame=723:nb_frames=3:alpha=1" in value
 
 
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None,
+    reason="ffmpeg is required",
+)
+def test_timed_overlay_without_fade_never_drops_at_one_second_ticks(
+    tmp_path: Path,
+) -> None:
+    overlay_path = tmp_path / "black-overlay.png"
+    Image.new("RGBA", (64, 64), (0, 0, 0, 255)).save(overlay_path)
+    asset = EditorLayerAsset(
+        path=overlay_path,
+        start_seconds=0,
+        end_seconds=3,
+    )
+    prepared = _timed_overlay_input_filter(
+        asset,
+        input_index=1,
+        output_label="asset1",
+        fps=30,
+    )
+    enable = _timed_overlay_enable_expression(0, 3, 30)
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=white:s=64x64:r=30:d=3",
+            "-loop",
+            "1",
+            "-framerate",
+            "1",
+            "-i",
+            str(overlay_path),
+            "-filter_complex",
+            (
+                f"{prepared};"
+                "[0:v][asset1]overlay=x=0:y=0:"
+                f"eof_action=repeat:repeatlast=1:enable='{enable}'[out]"
+            ),
+            "-map",
+            "[out]",
+            "-frames:v",
+            "90",
+            "-pix_fmt",
+            "rgb24",
+            "-f",
+            "rawvideo",
+            "pipe:1",
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+        shell=False,
+    )
+    frame_size = 64 * 64 * 3
+    center_offset = (32 * 64 + 32) * 3
+    center_pixels = [
+        result.stdout[
+            frame_index * frame_size + center_offset:
+            frame_index * frame_size + center_offset + 3
+        ]
+        for frame_index in range(90)
+    ]
+
+    assert all(max(pixel) < 5 for pixel in center_pixels)
+
+
 def test_contiguous_comments_swap_without_fading_to_the_background(
     tmp_path: Path,
 ) -> None:

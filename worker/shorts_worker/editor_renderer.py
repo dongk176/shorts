@@ -821,7 +821,8 @@ def _timed_overlay_input_filter(
 ) -> str:
     filters = [f"[{input_index}:v]setpts=PTS-STARTPTS"]
     fade_filters: list[str] = []
-    if asset.start_seconds is not None and asset.end_seconds is not None:
+    is_timed = asset.start_seconds is not None and asset.end_seconds is not None
+    if is_timed:
         start_frame, end_frame = _timed_overlay_frame_window(
             asset.start_seconds,
             asset.end_seconds,
@@ -843,7 +844,11 @@ def _timed_overlay_input_filter(
                 f"start_frame={end_frame - transition_frames}:"
                 f"nb_frames={transition_frames}:alpha=1"
             )
-    if fade_filters:
+    # Image inputs are intentionally opened at 1 fps. Timed overlays must be
+    # normalized to the main output fps before overlay framesync evaluates an
+    # n-based enable expression. Otherwise FFmpeg briefly emits only the main
+    # input whenever the sparse secondary stream advances (once per second).
+    if is_timed:
         filters.append(f"fps={fps:.3f}")
     filters.append("format=rgba")
     filters.extend(fade_filters)
