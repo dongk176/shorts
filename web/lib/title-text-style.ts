@@ -50,43 +50,11 @@ function compactTitleTextStyles(
   return next;
 }
 
-export function codePointOffset(value: string, codeUnitOffset: number) {
-  return Array.from(value.slice(0, codeUnitOffset)).length;
-}
-
-export function applyTitleTextStyle(
-  styles: TitleTextStyle[],
-  titleLength: number,
-  start: number,
-  end: number,
-  patch: { color?: string | null; backgroundColor?: string | null },
+function rebaseCharacterTitleTextStyles(
+  previousCharacters: string[],
+  nextCharacters: string[],
+  previousStyles: CharacterTitleTextStyle[],
 ) {
-  const characters = expandTitleTextStyles(styles, titleLength);
-  for (let index = Math.max(0, start); index < Math.min(titleLength, end); index += 1) {
-    const current = characters[index];
-    if (patch.color !== undefined) {
-      if (patch.color) current.color = patch.color;
-      else delete current.color;
-    }
-    if (patch.backgroundColor !== undefined) {
-      if (patch.backgroundColor) current.backgroundColor = patch.backgroundColor;
-      else delete current.backgroundColor;
-    }
-  }
-  return compactTitleTextStyles(characters);
-}
-
-export function rebaseTitleTextStyles(
-  previousTitle: string,
-  nextTitle: string,
-  styles: TitleTextStyle[],
-): TitleTextStyle[] {
-  const previousCharacters = Array.from(previousTitle);
-  const nextCharacters = Array.from(nextTitle);
-  const previousStyles = expandTitleTextStyles(
-    styles,
-    previousCharacters.length,
-  );
   let commonPrefixLength = 0;
   while (
     commonPrefixLength < previousCharacters.length
@@ -146,7 +114,91 @@ export function rebaseTitleTextStyles(
   ) {
     nextStyles[index] = { ...inheritedStyle };
   }
-  return compactTitleTextStyles(nextStyles);
+  return nextStyles;
+}
+
+function titleLineRanges(characters: string[]) {
+  const ranges: Array<{ start: number; end: number }> = [];
+  let start = 0;
+  characters.forEach((character, index) => {
+    if (character !== "\n") return;
+    ranges.push({ start, end: index });
+    start = index + 1;
+  });
+  ranges.push({ start, end: characters.length });
+  return ranges;
+}
+
+export function codePointOffset(value: string, codeUnitOffset: number) {
+  return Array.from(value.slice(0, codeUnitOffset)).length;
+}
+
+export function applyTitleTextStyle(
+  styles: TitleTextStyle[],
+  titleLength: number,
+  start: number,
+  end: number,
+  patch: { color?: string | null; backgroundColor?: string | null },
+) {
+  const characters = expandTitleTextStyles(styles, titleLength);
+  for (let index = Math.max(0, start); index < Math.min(titleLength, end); index += 1) {
+    const current = characters[index];
+    if (patch.color !== undefined) {
+      if (patch.color) current.color = patch.color;
+      else delete current.color;
+    }
+    if (patch.backgroundColor !== undefined) {
+      if (patch.backgroundColor) current.backgroundColor = patch.backgroundColor;
+      else delete current.backgroundColor;
+    }
+  }
+  return compactTitleTextStyles(characters);
+}
+
+export function rebaseTitleTextStyles(
+  previousTitle: string,
+  nextTitle: string,
+  styles: TitleTextStyle[],
+): TitleTextStyle[] {
+  const previousCharacters = Array.from(previousTitle);
+  const nextCharacters = Array.from(nextTitle);
+  const previousStyles = expandTitleTextStyles(
+    styles,
+    previousCharacters.length,
+  );
+  const previousLines = titleLineRanges(previousCharacters);
+  const nextLines = titleLineRanges(nextCharacters);
+
+  // When both titles already have the same explicit line structure, rebase
+  // each line independently. A change in one row can then never consume or
+  // replace the saved color/background ranges of another row.
+  if (previousLines.length > 1 && previousLines.length === nextLines.length) {
+    const nextStyles: CharacterTitleTextStyle[] = Array.from(
+      { length: nextCharacters.length },
+      () => ({}),
+    );
+    previousLines.forEach((previousLine, lineIndex) => {
+      const nextLine = nextLines[lineIndex];
+      const rebasedLineStyles = rebaseCharacterTitleTextStyles(
+        previousCharacters.slice(previousLine.start, previousLine.end),
+        nextCharacters.slice(nextLine.start, nextLine.end),
+        previousStyles.slice(previousLine.start, previousLine.end),
+      );
+      rebasedLineStyles.forEach((style, offset) => {
+        nextStyles[nextLine.start + offset] = style;
+      });
+      if (lineIndex < previousLines.length - 1) {
+        nextStyles[nextLine.end] = { ...previousStyles[previousLine.end] };
+      }
+    });
+    return compactTitleTextStyles(nextStyles);
+  }
+
+  return compactTitleTextStyles(rebaseCharacterTitleTextStyles(
+    previousCharacters,
+    nextCharacters,
+    previousStyles,
+  ));
 }
 
 export function defaultTemplateTitleTextStyles(

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { TitleTextStyle } from "./contracts";
 import {
   applyTitleTextStyle,
   codePointOffset,
@@ -73,5 +74,56 @@ describe("title text selection styles", () => {
       "첫줄\n둘째줄",
       inserted,
     )).toEqual(styles);
+  });
+
+  it("keeps first-line color and background while the second line is replaced", () => {
+    expect(rebaseTitleTextStyles(
+      "첫 번째 행\n두 번째 행",
+      "첫 번째 행\n완전히 바꾼 두 번째 행",
+      [
+        { start: 0, end: 6, color: "#FF715E", backgroundColor: "#111111" },
+        { start: 7, end: 13, color: "#35E6E3", backgroundColor: "#E32626" },
+      ],
+    )).toEqual([
+      { start: 0, end: 6, color: "#FF715E", backgroundColor: "#111111" },
+      { start: 7, end: 20, color: "#35E6E3", backgroundColor: "#E32626" },
+    ]);
+  });
+
+  it("keeps second-line color and background while the first line is replaced", () => {
+    expect(rebaseTitleTextStyles(
+      "첫 번째 행\n두 번째 행",
+      "새로 바꾼 첫 번째 행\n두 번째 행",
+      [
+        { start: 0, end: 6, color: "#FF715E", backgroundColor: "#111111" },
+        { start: 7, end: 13, color: "#35E6E3", backgroundColor: "#E32626" },
+      ],
+    )).toEqual([
+      { start: 0, end: 12, color: "#FF715E", backgroundColor: "#111111" },
+      { start: 13, end: 19, color: "#35E6E3", backgroundColor: "#E32626" },
+    ]);
+  });
+
+  it("preserves the untouched row through repeated Korean input changes", () => {
+    const firstLineStyle = {
+      start: 0,
+      end: 3,
+      color: "#FF4D4F",
+      backgroundColor: "#111111",
+    };
+    let title = "첫째줄\n둘째줄";
+    let styles: TitleTextStyle[] = [
+      firstLineStyle,
+      { start: 4, end: 7, color: "#35E6E3" },
+    ];
+    for (const nextTitle of [
+      "첫째줄\n새둘째줄",
+      "첫째줄\n새로운둘째줄",
+      "첫째줄\n수정한 두 번째 행",
+    ]) {
+      styles = rebaseTitleTextStyles(title, nextTitle, styles);
+      expect(styles[0]).toEqual(firstLineStyle);
+      title = nextTitle;
+    }
   });
 });

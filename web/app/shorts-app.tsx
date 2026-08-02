@@ -6982,7 +6982,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
   const captureTitleSelection = () => {
     const input = titleInputRef.current;
-    if (!input || input.selectionStart === input.selectionEnd) return;
+    if (!input) return;
+    if (input.selectionStart === input.selectionEnd) {
+      setTitleSelection(null);
+      return;
+    }
     setTitleSelection({
       start: codePointOffset(title, input.selectionStart),
       end: codePointOffset(title, input.selectionEnd),
