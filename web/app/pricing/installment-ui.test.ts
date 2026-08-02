@@ -191,6 +191,7 @@ describe("package installment UI", () => {
 
   it("advances completed payment inputs without smooth-scrolling the sheet", () => {
     expect(checkoutSource).toContain('data-payment-advance-at="2"');
+    expect(checkoutSource).toContain('data-payment-advance-at="4"');
     expect(checkoutSource).toContain('data-payment-advance-at="6,10"');
     expect(checkoutSource).toContain('data-payment-advance-at="10,11"');
     expect(checkoutSource).not.toContain("previousPayerTelCompleteRef");

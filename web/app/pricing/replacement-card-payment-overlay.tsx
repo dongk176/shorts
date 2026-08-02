@@ -5,6 +5,7 @@ import { PurchaseTermsConsent } from "@/components/purchase-terms-consent";
 import { ThePayOnePaymentOverlay } from "@/components/thepayone-payment-overlay";
 import { replaceStoredPaymentMethod } from "@/lib/billing-client";
 import { useRef, useState } from "react";
+import { focusNextPaymentInput } from "@/lib/payment-focus";
 
 export type ReplacementCardAuth = {
   identityNumber: string;
@@ -99,7 +100,13 @@ export function ReplacementCardPaymentOverlay({
     }
     update("cardNumberParts", nextParts);
     const destination = Math.min(3, index + Math.ceil(value.length / 4) - 1);
-    window.requestAnimationFrame(() => cardPartRefs.current[destination]?.focus());
+    window.requestAnimationFrame(() => {
+      const destinationInput = cardPartRefs.current[destination];
+      destinationInput?.focus();
+      if (destinationInput && nextParts.join("").length === 16) {
+        focusNextPaymentInput(destinationInput);
+      }
+    });
   }
 
   function pasteCardNumber(index: number, event: React.ClipboardEvent<HTMLInputElement>) {
@@ -182,6 +189,7 @@ export function ReplacementCardPaymentOverlay({
                     type={index === 3 ? "password" : "text"}
                     inputMode="numeric"
                     autoComplete={index === 0 ? "cc-number" : "off"}
+                    data-payment-advance-at="4"
                     aria-label={`카드번호 ${index + 1}번째 4자리`}
                     value={part}
                     onChange={(event) => updateCardNumberPart(index, event.target.value)}

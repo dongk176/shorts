@@ -21,6 +21,7 @@ import { MANUAL_INSTALLMENT_MAX_MONTHS } from "@/lib/installment-policy";
 import type { InstallmentOffer } from "@/lib/installments";
 import type { PricingV2PlanProduct } from "@/lib/pricing-v2";
 import { userFacingErrorMessage } from "@/lib/public-error";
+import { focusNextPaymentInput } from "@/lib/payment-focus";
 import { useEffect, useRef, useState } from "react";
 
 type CheckoutMode = "subscribe" | "change_subscription" | "purchase_addon";
@@ -590,7 +591,13 @@ export function PlanCheckoutOverlay({
     }
     update("cardNumberParts", nextParts);
     const destination = Math.min(3, index + Math.ceil(value.length / 4) - 1);
-    window.requestAnimationFrame(() => cardPartRefs.current[destination]?.focus());
+    window.requestAnimationFrame(() => {
+      const destinationInput = cardPartRefs.current[destination];
+      destinationInput?.focus();
+      if (destinationInput && nextParts.join("").length === 16) {
+        focusNextPaymentInput(destinationInput);
+      }
+    });
   }
 
   function pasteCardNumber(index: number, event: React.ClipboardEvent<HTMLInputElement>) {
@@ -1151,6 +1158,7 @@ export function PlanCheckoutOverlay({
                     type={index === 3 ? "password" : "text"}
                     inputMode="numeric"
                     autoComplete={index === 0 ? "cc-number" : "off"}
+                    data-payment-advance-at="4"
                     aria-label={`카드번호 ${index + 1}번째 4자리`}
                     value={part}
                     onChange={(event) => {

@@ -3,6 +3,18 @@ const pendingAdvance = new WeakMap<HTMLInputElement, number>();
 function numericLength(input: HTMLInputElement) {
   return input.value.replace(/\D/g, "").length;
 }
+
+export function focusNextPaymentInput(target: HTMLInputElement) {
+  window.requestAnimationFrame(() => {
+    const form = target.form;
+    if (!form) return;
+    const inputs = Array.from(form.querySelectorAll<HTMLInputElement>(
+      'input:not([type="hidden"]):not([disabled])',
+    ));
+    const next = inputs[inputs.indexOf(target) + 1];
+    next?.focus({ preventScroll: true });
+  });
+}
 /**
  * Moves numeric checkout input to the next visible field after a complete
  * value. Ambiguous 6/10 and 10/11 digit fields use a short delay so pasting or
@@ -29,15 +41,7 @@ export function advancePaymentFocusIfComplete(target: EventTarget | null) {
       document.activeElement !== target
       || !acceptedLengths.includes(numericLength(target))
     ) return;
-    window.requestAnimationFrame(() => {
-      const form = target.form;
-      if (!form) return;
-      const inputs = Array.from(form.querySelectorAll<HTMLInputElement>(
-        'input:not([type="hidden"]):not([disabled])',
-      ));
-      const next = inputs[inputs.indexOf(target) + 1];
-      next?.focus({ preventScroll: true });
-    });
+    focusNextPaymentInput(target);
   }, Math.max(0, delay));
   pendingAdvance.set(target, timer);
 }
