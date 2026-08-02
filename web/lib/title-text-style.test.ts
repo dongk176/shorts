@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "./title-text-style";
+import {
+  applyTitleTextStyle,
+  codePointOffset,
+  defaultTemplateTitleTextStyles,
+  rebaseTitleTextStyles,
+} from "./title-text-style";
 
 describe("title text selection styles", () => {
   it("converts textarea UTF-16 offsets to Unicode character offsets", () => {
@@ -45,5 +50,28 @@ describe("title text selection styles", () => {
 
   it("keeps templates without a background transparent outside overlay mode", () => {
     expect(defaultTemplateTitleTextStyles("배경 없음", "4:5", "#000000", null)).toEqual([]);
+  });
+
+  it("keeps the first-line color when a second title line is added", () => {
+    expect(rebaseTitleTextStyles(
+      "첫줄",
+      "첫줄\n둘째줄",
+      [{ start: 0, end: 2, color: "#FF715E" }],
+    )).toEqual([{ start: 0, end: 6, color: "#FF715E" }]);
+  });
+
+  it("moves the second-line color range when the first line changes", () => {
+    const styles = [{ start: 3, end: 6, color: "#35E6E3" }];
+    const inserted = rebaseTitleTextStyles(
+      "첫줄\n둘째줄",
+      "첫째줄\n둘째줄",
+      styles,
+    );
+    expect(inserted).toEqual([{ start: 4, end: 7, color: "#35E6E3" }]);
+    expect(rebaseTitleTextStyles(
+      "첫째줄\n둘째줄",
+      "첫줄\n둘째줄",
+      inserted,
+    )).toEqual(styles);
   });
 });

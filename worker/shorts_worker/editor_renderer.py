@@ -579,6 +579,17 @@ def create_editor_channel_layer(
     return output_path
 
 
+def editor_layer_order(document: EditorDocument) -> list[str]:
+    return [
+        *(
+            layer_name
+            for layer_name in document.overlays.layer_order
+            if layer_name != "channel"
+        ),
+        "channel",
+    ]
+
+
 def _wrap_overlay_text(
     text: str,
     font: ImageFont.FreeTypeFont,
@@ -1018,10 +1029,11 @@ class EditorDocumentRenderer:
             else [],
             **text_assets,
         }
+        layer_order = editor_layer_order(document)
 
         image_inputs: list[Path] = [background_path]
         ordered_assets: list[tuple[str, EditorLayerAsset]] = []
-        for layer_name in document.overlays.layer_order:
+        for layer_name in layer_order:
             if layer_name == "video":
                 continue
             for asset in layer_assets.get(layer_name, []):
@@ -1091,7 +1103,7 @@ class EditorDocumentRenderer:
         # The browser uses z-index 50 for subtitles. Editor layers receive
         # 10, 20, ... from their order, so the fifth and later layers cover
         # subtitles while the first four stay behind them.
-        for layer_index, layer_name in enumerate(document.overlays.layer_order):
+        for layer_index, layer_name in enumerate(layer_order):
             if layer_index == 4:
                 apply_subtitles()
             if layer_name == "video":

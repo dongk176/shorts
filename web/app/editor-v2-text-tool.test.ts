@@ -77,6 +77,15 @@ describe("editor v2 text tool", () => {
     expect(styles).toContain(
       ".editor-v2-root .editor-channel-visibility-toggle",
     );
+    expect(editorSource).toContain("forceVisible={overlayPreviewEnabled}");
+    expect(editorSource).toContain(
+      'selectedOverlay === "channel" ? "맨앞 고정" : "레이어 순서"',
+    );
+  });
+
+  it("preserves title color ranges while either title line is edited", () => {
+    expect(editorSource).toContain("const nextTitleTextStyles = overlayPreviewEnabled");
+    expect(editorSource).toContain("rebaseTitleTextStyles(");
   });
 
   it("toggles the text detail panel from the fixed tool rail", () => {

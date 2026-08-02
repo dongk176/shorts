@@ -8,6 +8,7 @@ import {
   createInitialEditorOverlayLayout,
   editorOverlayLayoutsEqual,
   moveEditorOverlayOrderItem,
+  pinEditorChannelLayerOnTop,
   recordEditorOverlayHistory,
   redoEditorOverlayHistory,
   resetEditorOverlayGeometry,
@@ -315,12 +316,29 @@ describe("editor overlay preview geometry", () => {
     ]);
     expect(moveEditorOverlayOrderItem([...order], "video", "backward")).toEqual(order);
     expect(moveEditorOverlayOrderItem([...order], "channel", "forward")).toEqual(order);
+    expect(moveEditorOverlayOrderItem([...order], "channel", "backward")).toEqual(order);
     expect(moveEditorOverlayOrderItem(
       [...order],
       "title",
       "forward",
       ["video", "title", "channel"],
-    )).toEqual(["video", "channel", "comment", "title"]);
+    )).toEqual(order);
+  });
+
+  it("keeps the channel layer at the very front", () => {
+    expect(pinEditorChannelLayerOnTop([
+      "channel",
+      "video",
+      "text:one",
+      "title",
+      "comment",
+    ])).toEqual([
+      "video",
+      "text:one",
+      "title",
+      "comment",
+      "channel",
+    ]);
   });
 
   it("clears redo history after a new edit and caps stored snapshots", () => {
@@ -371,7 +389,8 @@ describe("editor overlay preview geometry", () => {
       endSeconds: 7.5,
       text: "나중에 바뀐 값",
     });
-    expect(redone.layout?.layerOrder.at(-1)).toBe("text:local-text");
+    expect(redone.layout?.layerOrder.at(-2)).toBe("text:local-text");
+    expect(redone.layout?.layerOrder.at(-1)).toBe("channel");
   });
 
   it("resets template-dependent geometry without deleting editor content or styles", () => {
@@ -412,7 +431,9 @@ describe("editor overlay preview geometry", () => {
     expect(reset.visible).toEqual(edited.visible);
     expect(reset.commentTheme).toBe("light");
     expect(reset.background).toEqual(edited.background);
-    expect(reset.layerOrder).toEqual(edited.layerOrder);
+    expect(reset.layerOrder).toEqual(
+      pinEditorChannelLayerOnTop(edited.layerOrder),
+    );
     expect(reset.textOverlays).toEqual(edited.textOverlays);
     expect(reset.textOverlays[0]).not.toBe(edited.textOverlays[0]);
   });

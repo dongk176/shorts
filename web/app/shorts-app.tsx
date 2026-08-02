@@ -59,7 +59,12 @@ import {
 import { userFacingErrorMessage } from "@/lib/public-error";
 import { isIosDownloadDevice, shortDownloadFilename } from "@/lib/short-download";
 import { stateRetryDelayMs } from "@/lib/state-loading";
-import { applyTitleTextStyle, codePointOffset, defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
+import {
+  applyTitleTextStyle,
+  codePointOffset,
+  defaultTemplateTitleTextStyles,
+  rebaseTitleTextStyles,
+} from "@/lib/title-text-style";
 import { titleLineBackground, titleLineColor, wrapPreviewTitle } from "@/lib/title-preview";
 import {
   customCanvasWidth,
@@ -995,6 +1000,7 @@ function CustomEditorChannel({
   channelThumbnailUrl,
   fontFamily,
   selected = false,
+  forceVisible = false,
   movementStyle,
   onPointerDown,
 }: {
@@ -1003,11 +1009,12 @@ function CustomEditorChannel({
   channelThumbnailUrl: string | null;
   fontFamily?: string;
   selected?: boolean;
+  forceVisible?: boolean;
   movementStyle?: CSSProperties;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
   const channel = template.config.channel;
-  if (!channel.visible) return null;
+  if (!channel.visible && !forceVisible) return null;
   const style = {
     ...customCenteredLayerStyle(channel),
     color: channel.color,
@@ -4033,7 +4040,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const editorCommentOverlayEnabled = templateProvidesComments
     || (overlayPreviewEnabled && comments.length > 0);
   const commentOverlayMovable = editorCommentOverlayEnabled;
-  const channelOverlayMovable = !activeCustomTemplate
+  const channelOverlayMovable = overlayPreviewEnabled
+    || !activeCustomTemplate
     || activeCustomTemplate.config.channel.visible;
   const titleOverlayMovable = !activeCustomTemplate
     || activeCustomTemplate.config.title.visible;
@@ -4062,9 +4070,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     : isEditorTextSelection(selectedOverlay)
       ? "텍스트"
       : EDITOR_OVERLAY_LABELS[selectedOverlay];
-  const canMoveSelectedLayerBackward = selectedLayerOrderIndex > 0;
+  const canMoveSelectedLayerBackward = selectedOverlay !== "channel"
+    && selectedLayerOrderIndex > 0;
   const canMoveSelectedLayerForward = selectedLayerOrderIndex >= 0
-    && selectedLayerOrderIndex < visibleEditorLayerOrder.length - 1;
+    && selectedOverlay !== "channel"
+    && selectedLayerOrderIndex < visibleEditorLayerOrder.length - 1
+    && visibleEditorLayerOrder[selectedLayerOrderIndex + 1] !== "channel";
   const scalableBaseOverlaySelection = selectedOverlay === "title"
     || selectedOverlay === "channel"
     ? selectedOverlay
@@ -4967,12 +4978,19 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const updateEditorTitleInlineValue = useCallback((value: string) => {
     const twoLines = value.split("\n").slice(0, 2).join("\n");
     const nextTitle = Array.from(twoLines).slice(0, 80).join("");
+    const nextTitleTextStyles = overlayPreviewEnabled
+      ? rebaseTitleTextStyles(
+        titleRef.current,
+        nextTitle,
+        titleTextStylesRef.current,
+      )
+      : [];
     titleRef.current = nextTitle;
-    titleTextStylesRef.current = [];
+    titleTextStylesRef.current = nextTitleTextStyles;
     setTitle(nextTitle);
-    setTitleTextStyles(titleTextStylesRef.current);
+    setTitleTextStyles(nextTitleTextStyles);
     setTitleSelection(null);
-  }, []);
+  }, [overlayPreviewEnabled]);
 
   const beginEditorTextInlineEdit = useCallback((id: string) => {
     if (!overlayPreviewEnabled) return;
@@ -8073,6 +8091,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                     channelThumbnailUrl={renderChannelThumbnailUrl}
                     fontFamily={channelFontFamily}
                     selected={overlayPreviewEnabled && selectedOverlay === "channel"}
+                    forceVisible={overlayPreviewEnabled}
                     movementStyle={overlayMovementStyle("channel")}
                     onPointerDown={overlayPreviewEnabled
                       ? (event) => beginEditorOverlayDrag("channel", event)
@@ -8323,8 +8342,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           aria-label={`${selectedLayerOrderLabel} 레이어 순서`}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <strong>레이어 순서</strong>
-          <div>
+          <strong>{selectedOverlay === "channel" ? "맨앞 고정" : "레이어 순서"}</strong>
+          {selectedOverlay !== "channel" && <div>
             <button
               type="button"
               disabled={!canMoveSelectedLayerForward}
@@ -8347,7 +8366,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               </svg>
               뒤로
             </button>
-          </div>
+          </div>}
         </aside>}
         {overlayPreviewEnabled && <button
           type="button"

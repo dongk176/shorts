@@ -17,6 +17,7 @@ from shorts_worker.editor_renderer import (
     _timed_overlay_input_filter,
     create_editor_comment_layers,
     create_editor_text_layer,
+    editor_layer_order,
     editor_render_timeout_seconds,
     editor_video_frame,
     retime_editor_subtitles,
@@ -61,6 +62,23 @@ def test_editor_video_frame_matches_browser_geometry_and_allows_crop() -> None:
     assert frame.height == 730
     assert frame.x == -78
     assert frame.y == 575
+
+
+def test_editor_channel_is_always_rendered_as_the_front_layer() -> None:
+    document = _document()
+    document.overlays.layer_order = [
+        "channel",
+        "video",
+        "title",
+        "comment",
+    ]
+
+    assert editor_layer_order(document) == [
+        "video",
+        "title",
+        "comment",
+        "channel",
+    ]
 
 
 def test_prepared_editor_layer_is_cropped_without_losing_canvas_position(

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from shorts_worker import editor_release_probe
+from shorts_worker.editor_renderer import editor_layer_order
 
 
 def test_probe_document_covers_all_supported_editor_fonts() -> None:
@@ -52,6 +53,7 @@ def test_editor_release_probe_matrix_covers_candidate_editing_features() -> None
     assert documents["background-template"].overlays.background.asset_id == "white-hanji"
     assert documents["channel-layer-order"].channel.display_name == "교체한 채널 프로필"
     assert documents["channel-layer-order"].overlays.layer_order[-1] == "text:top-layer"
+    assert editor_layer_order(documents["channel-layer-order"])[-1] == "channel"
 
 
 def test_editor_release_probe_rejects_unknown_scenario() -> None:

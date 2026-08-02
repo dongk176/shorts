@@ -134,6 +134,15 @@ export function createInitialEditorOverlayLayout(): EditorOverlayLayoutSnapshot 
   };
 }
 
+export function pinEditorChannelLayerOnTop(
+  order: EditorOverlayOrderItem[],
+): EditorOverlayOrderItem[] {
+  return [
+    ...order.filter((item) => item !== "channel"),
+    "channel",
+  ];
+}
+
 export function createEditorTextOverlay(
   id: string,
   durationSeconds: number,
@@ -179,7 +188,7 @@ export function cloneEditorOverlayLayout(
       ...textOverlay,
       offset: { ...textOverlay.offset },
     })),
-    layerOrder: [...layout.layerOrder],
+    layerOrder: pinEditorChannelLayerOnTop(layout.layerOrder),
     background: layout.background ? { ...layout.background } : null,
   };
 }
@@ -289,6 +298,7 @@ export function moveEditorOverlayOrderItem(
   direction: "forward" | "backward",
   visibleOrder: EditorOverlayOrderItem[] = order,
 ): EditorOverlayOrderItem[] {
+  if (item === "channel") return order;
   const currentIndex = order.indexOf(item);
   const visibleIndex = visibleOrder.indexOf(item);
   if (currentIndex < 0 || visibleIndex < 0) return order;
@@ -296,6 +306,7 @@ export function moveEditorOverlayOrderItem(
     ? Math.min(visibleOrder.length - 1, visibleIndex + 1)
     : Math.max(0, visibleIndex - 1);
   if (adjacentVisibleIndex === visibleIndex) return order;
+  if (visibleOrder[adjacentVisibleIndex] === "channel") return order;
   const nextIndex = order.indexOf(visibleOrder[adjacentVisibleIndex]);
   if (nextIndex < 0) return order;
   const next = [...order];
