@@ -114,6 +114,7 @@ describe("editor document snapshot", () => {
       endSeconds: 2.5,
     });
     expect(value.overlays.offsets.video).toEqual({ x: 24, y: -12 });
+    expect(value.overlays.offsets.title).toEqual({ x: 0, y: 18 });
     expect(value.overlays.commentOffsets["comment-1"]).toEqual({ x: 0, y: 88 });
     expect(value.overlays.scales).toEqual({ video: 1.2, title: 1.1, channel: 0.9 });
     expect(value.overlays.fonts).toEqual({ title: "black-han-sans", channel: "suit" });

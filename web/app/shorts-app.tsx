@@ -114,6 +114,7 @@ import {
   createEditorTextOverlay,
   createInitialEditorOverlayLayout,
   editorOverlayLayoutsEqual,
+  lockEditorTitleHorizontalOffset,
   moveEditorOverlayOrderItem,
   recordEditorOverlayHistory,
   redoEditorOverlayHistory,
@@ -4130,9 +4131,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     commentId?: string,
   ): CSSProperties | undefined => {
     if (!overlayPreviewEnabled) return undefined;
-    const offset = layer === "comment" && commentId
+    const rawOffset = layer === "comment" && commentId
       ? commentOffsets[commentId] || overlayOffsets.comment
       : overlayOffsets[layer];
+    const offset = layer === "title"
+      ? lockEditorTitleHorizontalOffset(rawOffset)
+      : rawOffset;
     const scale = layer === "title"
       ? titleScale
       : layer === "channel"
@@ -5699,24 +5703,29 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     }
     if (selection !== "title" && selection !== "channel") return;
     const baseSelection = selection;
-    updateEditorOverlayLayout((current) => ({
-      ...current,
-      offsets: {
-        ...current.offsets,
-        [baseSelection]: layerRect
-          ? clampCenteredOverlayOffsetAfterScale({
-              layerRect,
-              offset: current.offsets[baseSelection],
-              currentScale: current.scales[baseSelection],
-              nextScale,
-            })
-          : current.offsets[baseSelection],
-      },
-      scales: {
-        ...current.scales,
-        [baseSelection]: nextScale,
-      },
-    }));
+    updateEditorOverlayLayout((current) => {
+      const adjustedOffset = layerRect
+        ? clampCenteredOverlayOffsetAfterScale({
+            layerRect,
+            offset: current.offsets[baseSelection],
+            currentScale: current.scales[baseSelection],
+            nextScale,
+          })
+        : current.offsets[baseSelection];
+      return {
+        ...current,
+        offsets: {
+          ...current.offsets,
+          [baseSelection]: baseSelection === "title"
+            ? lockEditorTitleHorizontalOffset(adjustedOffset)
+            : adjustedOffset,
+        },
+        scales: {
+          ...current.scales,
+          [baseSelection]: nextScale,
+        },
+      };
+    });
   }, [updateEditorOverlayLayout, updateEditorTextOverlay]);
 
   const beginEditorOverlayScaleDrag = useCallback((
@@ -5818,6 +5827,30 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         guides: {
           ...EMPTY_EDITOR_OVERLAY_GUIDES,
           commentDocked: snapped.snapped,
+        },
+      };
+    }
+
+    if (layer === "title") {
+      const clamped = clampCanvasDelta(
+        layerRect,
+        { x: 0, y: rawDelta.y },
+        "vertical",
+      );
+      const snapped = snapRectCenterToCanvas(
+        layerRect,
+        clamped,
+        clientDistanceToCanvas(CENTER_SNAP_THRESHOLD_PX, canvasRect.width),
+      );
+      return {
+        delta: clampCanvasDelta(
+          layerRect,
+          { x: 0, y: snapped.delta.y },
+          "vertical",
+        ),
+        guides: {
+          ...EMPTY_EDITOR_OVERLAY_GUIDES,
+          y: snapped.guides.y,
         },
       };
     }
@@ -5963,7 +5996,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       });
       updateEditorOverlayLayout((current) => {
         const nextOffset = {
-          x: layer === "comment" ? 0 : startOffset.x + resolved.delta.x,
+          x: layer === "comment" || layer === "title"
+            ? 0
+            : startOffset.x + resolved.delta.x,
           y: startOffset.y + resolved.delta.y,
         };
         if (layer === "comment" && commentId) {
@@ -6348,10 +6383,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       return;
     }
     const baseLayer = selectedOverlay;
+    const verticallyConstrained = baseLayer === "comment" || baseLayer === "title";
     const movement = clampCanvasDelta(
       layerRect,
-      baseLayer === "comment" ? { x: 0, y: delta.y } : delta,
-      baseLayer === "comment" ? "vertical" : "both",
+      verticallyConstrained ? { x: 0, y: delta.y } : delta,
+      verticallyConstrained ? "vertical" : "both",
     );
     if (baseLayer === "comment" && layoutPreviewComment) {
       const commentId = layoutPreviewComment.id;
@@ -6376,7 +6412,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       offsets: {
         ...current.offsets,
         [baseLayer]: {
-          x: baseLayer === "comment"
+          x: baseLayer === "comment" || baseLayer === "title"
             ? 0
             : current.offsets[baseLayer].x + movement.x,
           y: current.offsets[baseLayer].y + movement.y,

@@ -3,6 +3,22 @@ import type { TitleTextStyle } from "@/lib/contracts";
 const TITLE_MAX_CHARS = 20;
 const TITLE_MAX_LINES = 2;
 export const TITLE_MAX_WIDTH = 930;
+export const TITLE_LINE_GAP = 18;
+
+export function titlePreviewLinePaddingX(fontSize: number) {
+  return Math.max(1, Math.round(fontSize * 0.34));
+}
+
+export function titlePreviewLinePaddingY(fontSize: number) {
+  return Math.max(1, Math.round(fontSize * 0.14));
+}
+
+export function titlePreviewLineBoxHeight(
+  fontSize: number,
+  hasBackground: boolean,
+) {
+  return fontSize + (hasBackground ? titlePreviewLinePaddingY(fontSize) * 2 : 0);
+}
 
 export function titleLineBackground(
   index: number,

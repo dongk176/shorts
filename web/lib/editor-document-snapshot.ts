@@ -6,6 +6,7 @@ import type {
 } from "./contracts";
 import {
   cloneEditorOverlayLayout,
+  lockEditorTitleHorizontalOffset,
   type EditorOverlayLayoutSnapshot,
 } from "./editor-overlay-preview";
 import type { EditorVideoClip } from "./editor-video-cuts";
@@ -70,6 +71,10 @@ type EditorDocumentSnapshotInput = Omit<EditorDocumentSnapshot, "version">;
 export function createEditorDocumentSnapshot(
   input: EditorDocumentSnapshotInput,
 ): EditorDocumentSnapshot {
+  const overlays = cloneEditorOverlayLayout(input.overlays);
+  overlays.offsets.title = lockEditorTitleHorizontalOffset(
+    overlays.offsets.title,
+  );
   return {
     version: EDITOR_DOCUMENT_SNAPSHOT_VERSION,
     sourceShortId: input.sourceShortId,
@@ -85,7 +90,7 @@ export function createEditorDocumentSnapshot(
       enabled: input.subtitles.enabled,
       segments: input.subtitles.segments.map((segment) => ({ ...segment })),
     },
-    overlays: cloneEditorOverlayLayout(input.overlays),
+    overlays,
     video: {
       ...input.video,
       clips: input.video.clips.map((clip) => ({ ...clip })),

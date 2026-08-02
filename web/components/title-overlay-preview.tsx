@@ -7,13 +7,16 @@ import type { TitleTextStyle, VideoAspectRatio } from "@/lib/contracts";
 import {
   fitPreviewTitleFont,
   styledTitleLineRuns,
+  TITLE_LINE_GAP,
+  titlePreviewLineBoxHeight,
+  titlePreviewLinePaddingX,
+  titlePreviewLinePaddingY,
   titleLineCharacterIndices,
   titleLineColor,
   wrapPreviewTitle,
 } from "@/lib/title-preview";
 
 const CANVAS_WIDTH = 1080;
-const TITLE_LINE_GAP = 18;
 const DEFAULT_TITLE_FONT_FAMILY = '"Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
 
 function titlePanelLayout(videoAspectRatio: VideoAspectRatio, liftLandscape: boolean) {
@@ -80,6 +83,9 @@ export function TitleOverlayPreview({
     ? 12
     : Math.min(44, Math.max(24, Math.round(layout.panelHeight * 0.105)));
   const scaledFontSize = Math.max(18, Math.min(100, Math.round(fittedFontSize * fontScale)));
+  const lineRuns = useMemo(() => lines.map((line, index) => (
+    styledTitleLineRuns(line, lineIndices[index], textStyles)
+  )), [lineIndices, lines, textStyles]);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,33 +112,42 @@ export function TitleOverlayPreview({
     fontSize: canvasWidth(scaledFontSize),
     lineHeight: 1,
   };
-  const content = lines.map((line, index) => (
-    <span
-      key={`${line}-${index}`}
-      className="max-w-full shrink-0 whitespace-nowrap"
-      style={{
-        color: titleLineColor(index, layout.overlay, primary, accent, keepPrimaryFirstLine),
-        background: "transparent",
-      }}
-    >
-      {styledTitleLineRuns(line, lineIndices[index], textStyles).map((run, runIndex) => (
-        <span
-          key={`${run.text}-${runIndex}`}
-          style={{
-            color: run.color || "inherit",
-            background: run.backgroundColor || "transparent",
-            borderRadius: run.backgroundColor ? "0.12em" : 0,
-            boxDecorationBreak: "clone",
-            display: run.backgroundColor ? "inline-block" : "inline",
-            padding: run.backgroundColor ? "0.14em 0.34em" : 0,
-            WebkitBoxDecorationBreak: "clone",
-          }}
-        >
-          {run.text}
-        </span>
-      ))}
-    </span>
-  ));
+  const content = lines.map((line, index) => {
+    const runs = lineRuns[index];
+    const hasBackground = runs.some((run) => Boolean(run.backgroundColor));
+    const paddingX = titlePreviewLinePaddingX(scaledFontSize);
+    const paddingY = titlePreviewLinePaddingY(scaledFontSize);
+    return (
+      <span
+        key={`${line}-${index}`}
+        className="flex max-w-full shrink-0 items-center justify-center whitespace-nowrap"
+        style={{
+          color: titleLineColor(index, layout.overlay, primary, accent, keepPrimaryFirstLine),
+          background: "transparent",
+          height: canvasWidth(titlePreviewLineBoxHeight(scaledFontSize, hasBackground)),
+        }}
+      >
+        {runs.map((run, runIndex) => (
+          <span
+            key={`${run.text}-${runIndex}`}
+            style={{
+              color: run.color || "inherit",
+              background: run.backgroundColor || "transparent",
+              borderRadius: run.backgroundColor ? "0.12em" : 0,
+              boxDecorationBreak: "clone",
+              display: run.backgroundColor ? "inline-block" : "inline",
+              padding: run.backgroundColor
+                ? `${canvasWidth(paddingY)} ${canvasWidth(paddingX)}`
+                : 0,
+              WebkitBoxDecorationBreak: "clone",
+            }}
+          >
+            {run.text}
+          </span>
+        ))}
+      </span>
+    );
+  });
   const titleClassName = "absolute inset-x-0 flex flex-col items-center justify-end text-center font-bold";
 
   return (
@@ -171,7 +186,7 @@ export function TitleOverlayPreview({
               : <button
                   type="button"
                   data-editor-overlay-layer="title"
-                  aria-label="제목 오버레이 선택 및 이동"
+                  aria-label="제목 오버레이 선택 및 세로 이동"
                   aria-pressed={selected}
                   onPointerDown={onPointerDown}
                   onDoubleClick={(event) => {
@@ -180,7 +195,7 @@ export function TitleOverlayPreview({
                     onEditStart?.();
                   }}
                   title="더블클릭해서 제목 수정"
-                  className={`pointer-events-auto flex cursor-move appearance-none flex-col items-center border-0 bg-transparent p-0 ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
+                  className={`pointer-events-auto flex cursor-ns-resize appearance-none flex-col items-center border-0 bg-transparent p-0 ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
                   style={{
                     gap: canvasWidth(TITLE_LINE_GAP),
                     ...movementStyle,

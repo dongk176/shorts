@@ -787,3 +787,7 @@ export function snapResizedCanvasRectToCanvas({
 export function canvasOffsetTranslate(offset: CanvasPoint) {
   return `${offset.x / (TEMPLATE_CANVAS.width / 100)}cqw ${offset.y / (TEMPLATE_CANVAS.width / 100)}cqw`;
 }
+
+export function lockEditorTitleHorizontalOffset(offset: CanvasPoint): CanvasPoint {
+  return { x: 0, y: offset.y };
+}

@@ -13,18 +13,20 @@ from shorts_worker.editor_renderer import (
     EditorDocumentRenderer,
     EditorLayerAsset,
     _clamp_centered_layer_position,
+    _draw_styled_title_content,
     _prepare_editor_layer_asset,
     _timed_overlay_enable_expression,
     _timed_overlay_input_filter,
     create_editor_comment_layers,
     create_editor_text_layer,
+    create_editor_title_layer,
     editor_layer_order,
     editor_render_timeout_seconds,
     editor_video_frame,
     retime_editor_subtitles,
     verify_editor_fonts,
 )
-from shorts_worker.schemas import EditorDocument, EditorTextOverlay
+from shorts_worker.schemas import EditorDocument, EditorFontId, EditorTextOverlay
 
 pytestmark = pytest.mark.render
 
@@ -62,6 +64,50 @@ def test_oversized_overlay_axes_are_centered() -> None:
     layer = Image.new("RGBA", (1200, 2100), (255, 255, 255, 255))
 
     assert _clamp_centered_layer_position(layer, 900, 1400) == (540, 960)
+
+
+def test_title_line_boxes_match_the_browser_for_every_editor_font() -> None:
+    document = _document()
+    document.title.text = "첫 번째 제목\n두 번째 제목"
+    document.title.text_styles = []
+
+    for font_id in EditorFontId:
+        content = _draw_styled_title_content(
+            document,
+            font_id=font_id,
+            font_size=84,
+            custom_config=None,
+        )
+        assert content.height == 84 * 2 + 18
+
+
+def test_title_ignores_horizontal_offset_and_preserves_vertical_offset(
+    tmp_path: Path,
+) -> None:
+    document = _document()
+    document.title.text = "후킹 제목 위치"
+    document.title.text_styles = []
+    document.overlays.offsets["title"] = document.overlays.offsets[
+        "title"
+    ].model_copy(update={"x": 240, "y": 0})
+    right = create_editor_title_layer(document, tmp_path / "right.png")
+    document.overlays.offsets["title"] = document.overlays.offsets[
+        "title"
+    ].model_copy(update={"x": -240, "y": 0})
+    left = create_editor_title_layer(document, tmp_path / "left.png")
+
+    assert Image.open(right).tobytes() == Image.open(left).tobytes()
+
+    base_box = Image.open(left).getchannel("A").getbbox()
+    document.overlays.offsets["title"] = document.overlays.offsets[
+        "title"
+    ].model_copy(update={"x": 0, "y": 31})
+    lowered = create_editor_title_layer(document, tmp_path / "lowered.png")
+    lowered_box = Image.open(lowered).getchannel("A").getbbox()
+    assert base_box is not None
+    assert lowered_box is not None
+    assert lowered_box[1] - base_box[1] == 31
+    assert lowered_box[3] - base_box[3] == 31
 
 
 def test_editor_video_frame_matches_browser_geometry_and_allows_crop() -> None:

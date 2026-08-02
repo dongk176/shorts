@@ -301,59 +301,65 @@ def _draw_styled_title_content(
         line_padding_y = max(6, round(font_size * 0.14))
     else:
         gap = TITLE_LINE_GAP
-        line_padding_x = 24
-        line_padding_y = 10
-    maximum_width = max(width for width, _height, _box in metrics)
-    content_width = maximum_width + line_padding_x * 2 + 16
-    line_heights: list[int] = []
-    for index, (_width, height, _box) in enumerate(metrics):
-        has_background = custom_config is not None and (
-            (
-                custom_config.title.accent_background_color
-                if index > 0
-                else custom_config.title.primary_background_color
-            )
-            is not None
-        ) or any(
-            run_background
-            for _, _, _, run_background in _title_style_runs(
-                lines[index],
-                indices[index],
-                document.title.text_styles,
-            )
+        line_padding_x = max(1, round(font_size * 0.34))
+        line_padding_y = max(1, round(font_size * 0.14))
+    line_runs = [
+        _title_style_runs(
+            lines[index],
+            indices[index],
+            document.title.text_styles,
         )
-        line_heights.append(height + (line_padding_y * 2 if has_background else 0))
-    content_height = sum(line_heights) + gap * max(0, len(lines) - 1) + 16
+        for index in range(len(lines))
+    ]
+    custom_backgrounds = [
+        (
+            custom_config.title.accent_background_color
+            if index > 0
+            else custom_config.title.primary_background_color
+        )
+        if custom_config is not None
+        else None
+        for index in range(len(lines))
+    ]
+    padded_lines = [
+        custom_config is not None
+        or custom_backgrounds[index] is not None
+        or any(run_background for _, _, _, run_background in line_runs[index])
+        for index in range(len(lines))
+    ]
+    line_heights: list[int] = []
+    line_widths: list[int] = []
+    for index, (width, _height, _box) in enumerate(metrics):
+        line_heights.append(
+            font_size + (line_padding_y * 2 if padded_lines[index] else 0),
+        )
+        line_widths.append(
+            width + (line_padding_x * 2 if padded_lines[index] else 0),
+        )
+    content_width = max(line_widths)
+    content_height = sum(line_heights) + gap * max(0, len(lines) - 1)
     content = Image.new(
         "RGBA",
         (max(1, content_width), max(1, content_height)),
         (0, 0, 0, 0),
     )
     draw = ImageDraw.Draw(content)
-    cursor_y = 8
+    cursor_y = 0
     style = TEMPLATE_STYLES[document.template.id]
     for index, line in enumerate(lines):
         width, height, box = metrics[index]
         left = (content.width - width) / 2
-        custom_background = None
-        if custom_config is not None:
-            custom_background = (
-                custom_config.title.accent_background_color
-                if index > 0
-                else custom_config.title.primary_background_color
-            )
-        runs = _title_style_runs(line, indices[index], document.title.text_styles)
-        has_background = custom_background is not None or any(
-            run_background for _, _, _, run_background in runs
-        )
-        visible_y = cursor_y + (line_padding_y if has_background else 0)
+        custom_background = custom_backgrounds[index]
+        runs = line_runs[index]
+        line_height = line_heights[index]
+        visible_y = cursor_y + (line_height - height) / 2
         if custom_background:
             draw.rounded_rectangle(
                 (
                     left - line_padding_x,
                     cursor_y,
                     left + width + line_padding_x,
-                    cursor_y + height + line_padding_y * 2,
+                    cursor_y + line_height,
                 ),
                 radius=max(6, round(font_size * 0.14)),
                 fill=custom_background,
@@ -368,7 +374,7 @@ def _draw_styled_title_content(
                     left + run_left - line_padding_x,
                     cursor_y,
                     left + run_right + line_padding_x,
-                    cursor_y + height + line_padding_y * 2,
+                    cursor_y + line_height,
                 ),
                 radius=max(6, round(font_size * 0.14)),
                 fill=run_background,
@@ -464,7 +470,7 @@ def create_editor_title_layer(
     _paste_center_clamped(
         canvas,
         content,
-        center_x + offset.x,
+        center_x,
         center_y + offset.y,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)

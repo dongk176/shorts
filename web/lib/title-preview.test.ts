@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   fitPreviewTitleFont,
   styledTitleLineRuns,
+  titlePreviewLineBoxHeight,
   titleLineCharacterIndices,
   titleLineBackground,
   titleLineColor,
@@ -9,6 +10,11 @@ import {
 } from "./title-preview";
 
 describe("render-matched title preview", () => {
+  it("uses renderer-matched fixed line boxes instead of font ink bounds", () => {
+    expect(titlePreviewLineBoxHeight(84, false)).toBe(84);
+    expect(titlePreviewLineBoxHeight(84, true)).toBe(108);
+  });
+
   it("preserves two user-authored lines without wrapping either line again", () => {
     expect(wrapPreviewTitle("4억 투자 올인, 다\n8400만원 남아……")).toEqual([
       "4억 투자 올인, 다",

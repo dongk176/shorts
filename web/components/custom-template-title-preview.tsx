@@ -126,7 +126,7 @@ export function CustomTemplateTitlePreview({
         }}
       />;
     }
-    return <button type="button" data-editor-overlay-layer="title" aria-label="제목 위치 이동" aria-pressed={selected} onPointerDown={onPointerDown} onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); onEditStart?.(); }} title="더블클릭해서 제목 수정" className={`absolute z-20 flex cursor-move flex-col items-center text-center font-bold ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`} style={wrapperStyle}>{lines}</button>;
+    return <button type="button" data-editor-overlay-layer="title" aria-label="제목 세로 위치 이동" aria-pressed={selected} onPointerDown={onPointerDown} onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); onEditStart?.(); }} title="더블클릭해서 제목 수정" className={`absolute z-20 flex cursor-ns-resize flex-col items-center text-center font-bold ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`} style={wrapperStyle}>{lines}</button>;
   }
   return <div className="absolute z-20 flex flex-col items-center text-center font-bold" style={wrapperStyle}>{lines}</div>;
 }

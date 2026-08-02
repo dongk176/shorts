@@ -8,6 +8,7 @@ import {
   createEditorTextOverlay,
   createInitialEditorOverlayLayout,
   editorOverlayLayoutsEqual,
+  lockEditorTitleHorizontalOffset,
   moveEditorOverlayOrderItem,
   pinEditorChannelLayerOnTop,
   recordEditorOverlayHistory,
@@ -23,6 +24,13 @@ import {
 } from "@/lib/editor-overlay-preview";
 
 describe("editor overlay preview geometry", () => {
+  it("keeps the hook title horizontally fixed while preserving its vertical offset", () => {
+    expect(lockEditorTitleHorizontalOffset({ x: 184, y: -27 })).toEqual({
+      x: 0,
+      y: -27,
+    });
+  });
+
   it("repositions a scaled centered overlay before it can leave the canvas", () => {
     const result = clampCenteredOverlayOffsetAfterScale({
       layerRect: { x: 368, y: 80, width: 712, height: 160 },
