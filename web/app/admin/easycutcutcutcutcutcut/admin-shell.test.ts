@@ -6,6 +6,18 @@ const shellSource = readFileSync(
   new URL("./admin-shell.tsx", import.meta.url),
   "utf8",
 );
+const billingDashboardSource = readFileSync(
+  new URL("./admin-billing-dashboard.tsx", import.meta.url),
+  "utf8",
+);
+const billingOrderLoaderSource = readFileSync(
+  new URL("../../../lib/admin-billing-orders.ts", import.meta.url),
+  "utf8",
+);
+const billingOrderRouteSource = readFileSync(
+  new URL("../../api/admin/billing/orders/route.ts", import.meta.url),
+  "utf8",
+);
 
 describe("administrator shell recovery", () => {
   it("restores the latest administrator navigation and overview", () => {
@@ -38,8 +50,13 @@ describe("administrator shell recovery", () => {
     expect(pageSource).toContain("and amount_krw>0");
   });
 
-  it("bounds the billing table and tolerates historical orders without a product code", () => {
-    expect(pageSource).toContain('productCode: row.productCode || "unknown"');
-    expect(pageSource).toContain("order by o.created_at desc\n      limit 500");
+  it("loads billing orders in stable administrator-only pages of 100", () => {
+    expect(billingOrderLoaderSource).toContain("ADMIN_BILLING_ORDER_PAGE_SIZE = 100");
+    expect(billingOrderLoaderSource).toContain("order by o.created_at desc,o.id desc");
+    expect(billingOrderLoaderSource).toContain("limit ${ADMIN_BILLING_ORDER_PAGE_SIZE + 1}");
+    expect(billingOrderLoaderSource).toContain('productCode: row.productCode ? String(row.productCode) : "unknown"');
+    expect(billingOrderRouteSource).toContain("await requireAdminUser();");
+    expect(billingDashboardSource).toContain('"더보기"');
+    expect(billingDashboardSource).toContain("setLoadedOrders");
   });
 });

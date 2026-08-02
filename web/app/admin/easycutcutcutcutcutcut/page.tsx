@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { requireAdminUser } from "@/lib/admin";
-import { addKstMonths } from "@/lib/billing";
+import { loadAdminBillingOrders } from "@/lib/admin-billing-orders";
 import { ensureLocalDbReady, getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
-import { getPrepaidPackageMonthState } from "@/lib/refund-policy";
 import { createNoIndexMetadata } from "@/lib/seo";
-import { AdminBillingDashboard, type AdminOrder, type AdminRefund } from "./admin-billing-dashboard";
+import { AdminBillingDashboard, type AdminRefund } from "./admin-billing-dashboard";
 import {
   AdminFeedbackDashboard,
   type AdminProjectFeedback,
@@ -307,79 +306,11 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         `,
       ])
     : [[], [], [], [], []];
-  const orderRows = tab === "billing" ? await db`
-      select o.id,o.order_id,o.kind,o.product_code,o.billing_cycle,o.amount_krw,
-        o.refunded_amount_krw,o.refund_status,o.status,o.provider,o.provider_transaction_id,
-        o.provider_status,o.failure_code,o.provider_terminal_id,o.installment_months,
-        (o.payment_method_id is not null) as has_payment_method,
-        nullif(o.installment_terms_snapshot->>'credentialScope','') as credential_scope,
-        coalesce(
-          nullif(o.installment_terms_snapshot->>'issuerName',''),
-          nullif(pm.issuer_name,'')
-        ) as card_issuer_name,
-        nullif(o.installment_terms_snapshot->>'benefitType','') as installment_benefit_type,
-        nullif(o.installment_terms_snapshot->>'declaredCardKind','') as declared_card_kind,
-        o.renewal_period_start,o.approved_at,o.created_at,o.refund_policy_version,u.email,
-        s.status as subscription_status,p.prepaid_months,
-        coalesce(ur.reserved_refund_krw,0)::integer as reserved_refund_krw,
-        coalesce(pfu.usage_count,0)::integer as popular_filter_usage_count,
-        pfu.last_used_at as popular_filter_last_used_at,
-        bua.last_allocated_at as last_base_allocated_at,
-        ebook.last_downloaded_at as ebook_last_downloaded_at,
-        first_job.completed_at as first_completed_job_at
-      from shorts_mvp.billing_orders o
-      join shorts_mvp.app_users u on u.id=o.user_id
-      left join shorts_mvp.user_subscriptions s on s.id=o.subscription_id
-      left join shorts_mvp.plans p on p.code=o.product_code
-      left join shorts_mvp.billing_payment_methods pm on pm.id=o.payment_method_id
-      left join (
-        select source_order_id, sum(refund_amount_krw)::integer as reserved_refund_krw
-        from shorts_mvp.subscription_upgrade_refunds
-        where status in ('pending','submitted','manual_review')
-        group by source_order_id
-      ) ur on ur.source_order_id=o.id
-      left join lateral (
-        select max(a.created_at) as last_allocated_at
-        from shorts_mvp.usage_grants g
-        join shorts_mvp.usage_grant_allocations a on a.grant_id=g.id
-        where g.billing_order_id=o.id and g.kind='base'
-          and a.status in ('reserved','consumed')
-      ) bua on true
-      left join lateral (
-        select count(*)::integer as usage_count,max(occurred_at) as last_used_at
-        from shorts_mvp.popular_filter_usage_events
-        where billing_order_id=o.id
-      ) pfu on true
-      left join lateral (
-        select max(last_downloaded_at) as last_downloaded_at
-        from shorts_mvp.ebook_download_counters
-        where user_id=o.user_id
-          and last_downloaded_at >= coalesce(o.renewal_period_start,o.approved_at)
-      ) ebook on true
-      left join lateral (
-        select j.completed_at
-        from shorts_mvp.usage_grants g
-        join shorts_mvp.usage_grant_allocations a
-          on a.grant_id=g.id and a.status='consumed'
-        join shorts_mvp.usage_reservations ur
-          on ur.id=a.reservation_id and ur.status='consumed'
-        join shorts_mvp.video_jobs j
-          on j.id=ur.job_id and j.status='completed' and j.completed_at is not null
-        where g.billing_order_id=o.id
-        order by j.completed_at,j.created_at,j.id
-        limit 1
-      ) first_job on true
-      where (${status}='all' or o.status=${status})
-        and (${provider}='all' or o.provider=${provider})
-        and (
-          ${query}=''
-          or lower(coalesce(u.email,'')) like ${`%${query.toLowerCase()}%`}
-          or lower(o.order_id) like ${`%${query.toLowerCase()}%`}
-          or lower(coalesce(o.provider_transaction_id,'')) like ${`%${query.toLowerCase()}%`}
-        )
-      order by o.created_at desc
-      limit 500
-    ` : [];
+  const orderPage = tab === "billing"
+    ? await loadAdminBillingOrders({
+      filters: { status, provider, query },
+    })
+    : { orders: [], hasMore: false, nextOffset: 0 };
   const refundRows = tab === "billing" ? await db`
       select r.id,r.billing_order_id,r.amount_krw,r.reason,r.status,
         r.entitlement_action_status,r.provider_refund_transaction_id,r.failure_message,
@@ -670,65 +601,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     date: String(row.date),
     memberCount: Number(row.memberCount || 0),
   }));
-  const orders: AdminOrder[] = orderRows.map((row) => {
-    const contractStart = row.renewalPeriodStart instanceof Date
-      ? row.renewalPeriodStart
-      : row.approvedAt instanceof Date
-        ? row.approvedAt
-        : null;
-    const contractMonths = row.billingCycle === "yearly" ? Number(row.prepaidMonths || 12) : 1;
-    const packageMonthState = contractStart
-      ? getPrepaidPackageMonthState({
-        periodStart: contractStart,
-        prepaidMonths: contractMonths,
-      })
-      : null;
-    const isInCurrentPackageMonth = (value: unknown) => (
-      value instanceof Date
-      && packageMonthState?.currentMonthStart instanceof Date
-      && packageMonthState.currentMonthEnd instanceof Date
-      && value >= packageMonthState.currentMonthStart
-      && value < packageMonthState.currentMonthEnd
-    );
-    return {
-      id: row.id,
-      orderId: row.orderId,
-      kind: row.kind,
-      productCode: row.productCode || "unknown",
-      billingCycle: row.billingCycle || null,
-      prepaidMonths: contractMonths,
-      refundPolicyVersion: Number(row.refundPolicyVersion || 1),
-      amountKrw: Number(row.amountKrw),
-      refundedAmountKrw: Number(row.refundedAmountKrw || 0),
-      reservedRefundKrw: Number(row.reservedRefundKrw || 0),
-      refundStatus: row.refundStatus,
-      status: row.status,
-      provider: row.provider,
-      providerTransactionId: row.providerTransactionId || null,
-      providerStatus: row.providerStatus || null,
-      providerTerminalId: row.providerTerminalId || null,
-      hasPaymentMethod: Boolean(row.hasPaymentMethod),
-      credentialScope: row.credentialScope || null,
-      installmentMonths: Number(row.installmentMonths || 0),
-      cardIssuerName: row.cardIssuerName || null,
-      installmentBenefitType: row.installmentBenefitType || null,
-      declaredCardKind: row.declaredCardKind || null,
-      failureCode: row.failureCode || null,
-      approvedAt: iso(row.approvedAt),
-      createdAt: iso(row.createdAt)!,
-      email: row.email || "-",
-      subscriptionStatus: row.subscriptionStatus || null,
-      contractPeriodStart: iso(contractStart),
-      contractPeriodEnd: contractStart ? addKstMonths(contractStart, contractMonths).toISOString() : null,
-      currentPackageMonthUsed:
-        isInCurrentPackageMonth(row.lastBaseAllocatedAt)
-        || isInCurrentPackageMonth(row.popularFilterLastUsedAt)
-        || isInCurrentPackageMonth(row.ebookLastDownloadedAt),
-      firstCompletedJobAt: iso(row.firstCompletedJobAt),
-      popularFilterUsageCount: Number(row.popularFilterUsageCount || 0),
-      popularFilterLastUsedAt: iso(row.popularFilterLastUsedAt),
-    };
-  });
+  const orders = orderPage.orders;
   const refunds: AdminRefund[] = refundRows.map((row) => ({
     id: row.id,
     billingOrderId: row.billingOrderId,
@@ -967,6 +840,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           orders={orders}
           refunds={refunds}
           initialFilters={{ status, provider, query }}
+          initialHasMore={orderPage.hasMore}
+          initialNextOffset={orderPage.nextOffset}
         />
       ) : tab === "refunds" ? (
         <AdminRefundsDashboard

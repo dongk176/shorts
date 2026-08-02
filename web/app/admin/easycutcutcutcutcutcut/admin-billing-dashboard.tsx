@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   adminRefundReasonCodes,
   adminRefundReasonLabel,
@@ -125,12 +125,21 @@ export function AdminBillingDashboard({
   orders,
   refunds,
   initialFilters,
+  initialHasMore,
+  initialNextOffset,
 }: {
   orders: AdminOrder[];
   refunds: AdminRefund[];
   initialFilters: { status: string; provider: string; query: string };
+  initialHasMore: boolean;
+  initialNextOffset: number;
 }) {
   const router = useRouter();
+  const [loadedOrders, setLoadedOrders] = useState(orders);
+  const [hasMoreOrders, setHasMoreOrders] = useState(initialHasMore);
+  const [nextOrderOffset, setNextOrderOffset] = useState(initialNextOffset);
+  const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [refundOrder, setRefundOrder] = useState<AdminOrder | null>(null);
   const [manualReviewOrder, setManualReviewOrder] = useState<AdminOrder | null>(null);
   const [manualReviewTransactionId, setManualReviewTransactionId] = useState("");
@@ -141,6 +150,52 @@ export function AdminBillingDashboard({
   const [refundReason, setRefundReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoadedOrders(orders);
+    setHasMoreOrders(initialHasMore);
+    setNextOrderOffset(initialNextOffset);
+    setLoadMoreError(null);
+  }, [initialHasMore, initialNextOffset, orders]);
+
+  const loadMoreOrders = async () => {
+    if (loadingMoreOrders || !hasMoreOrders) return;
+    setLoadingMoreOrders(true);
+    setLoadMoreError(null);
+    try {
+      const params = new URLSearchParams({
+        offset: String(nextOrderOffset),
+        status: initialFilters.status,
+        provider: initialFilters.provider,
+      });
+      if (initialFilters.query) params.set("q", initialFilters.query);
+      const response = await fetch(`/api/admin/billing/orders?${params.toString()}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const result = await response.json() as {
+        orders?: AdminOrder[];
+        hasMore?: boolean;
+        nextOffset?: number;
+        detail?: string;
+      };
+      if (!response.ok || !Array.isArray(result.orders)) {
+        throw new Error(result.detail || "결제 주문을 더 불러오지 못했습니다.");
+      }
+      setLoadedOrders((current) => {
+        const knownIds = new Set(current.map((order) => order.id));
+        return [...current, ...result.orders!.filter((order) => !knownIds.has(order.id))];
+      });
+      setHasMoreOrders(Boolean(result.hasMore));
+      setNextOrderOffset(Number(result.nextOffset ?? nextOrderOffset));
+    } catch (error) {
+      setLoadMoreError(error instanceof Error
+        ? error.message
+        : "결제 주문을 더 불러오지 못했습니다.");
+    } finally {
+      setLoadingMoreOrders(false);
+    }
+  };
 
   const openRefund = (order: AdminOrder) => {
     setRefundOrder(order);
@@ -267,7 +322,7 @@ export function AdminBillingDashboard({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-black">결제 주문</h2>
-              <p className="mt-1 text-xs text-neutral-500">조건에 맞는 전체 {orders.length.toLocaleString("ko-KR")}건 · 승인 금액과 실제 환불 누계 기준</p>
+              <p className="mt-1 text-xs text-neutral-500">현재 {loadedOrders.length.toLocaleString("ko-KR")}건 표시 · 승인 금액과 실제 환불 누계 기준</p>
             </div>
             <form className="flex flex-wrap gap-2" method="get">
               <input type="hidden" name="tab" value="billing" />
@@ -290,7 +345,7 @@ export function AdminBillingDashboard({
               <th className="px-5 py-3">승인 시각</th><th className="px-4 py-3">고객</th><th className="px-4 py-3">상품</th><th className="px-4 py-3">결제사</th><th className="px-4 py-3">결제 / 환불</th><th className="px-4 py-3">상태</th><th className="px-4 py-3">주문번호</th><th className="px-5 py-3 text-right">관리</th>
             </tr></thead>
             <tbody className="divide-y divide-white/[.06]">
-              {orders.map((order) => {
+              {loadedOrders.map((order) => {
                 const refundable = order.amountKrw - order.refundedAmountKrw - order.reservedRefundKrw;
                 const paymentFlow = adminPaymentFlowLabel(order);
                 const paymentDetails = adminPaymentDetailParts(order);
@@ -324,10 +379,21 @@ export function AdminBillingDashboard({
                   </td>
                 </tr>;
               })}
-              {!orders.length && <tr><td colSpan={8} className="px-5 py-16 text-center text-neutral-500">조건에 맞는 결제 주문이 없습니다.</td></tr>}
+              {!loadedOrders.length && <tr><td colSpan={8} className="px-5 py-16 text-center text-neutral-500">조건에 맞는 결제 주문이 없습니다.</td></tr>}
             </tbody>
           </table>
         </div>
+        {(hasMoreOrders || loadMoreError) && <div className="border-t border-white/10 px-5 py-4 text-center">
+          {loadMoreError && <p role="alert" className="mb-3 text-sm font-bold text-[#ff9b8d]">{loadMoreError}</p>}
+          {hasMoreOrders && <button
+            type="button"
+            disabled={loadingMoreOrders}
+            onClick={() => void loadMoreOrders()}
+            className="min-h-11 rounded-xl border border-white/15 bg-white/[.04] px-6 text-sm font-black text-white transition hover:bg-white/[.08] disabled:cursor-wait disabled:opacity-50"
+          >
+            {loadingMoreOrders ? "불러오는 중…" : "더보기"}
+          </button>}
+        </div>}
       </section>
 
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#151819]">
