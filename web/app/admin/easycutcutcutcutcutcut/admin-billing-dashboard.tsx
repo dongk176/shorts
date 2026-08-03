@@ -10,6 +10,7 @@ import {
 } from "@/lib/refund-policy";
 import {
   adminPaymentDetailParts,
+  adminPaymentFailureLabel,
   adminPaymentFlowLabel,
 } from "@/lib/admin-billing-presentation";
 
@@ -37,6 +38,7 @@ export type AdminOrder = {
   installmentBenefitType: string | null;
   declaredCardKind: string | null;
   failureCode: string | null;
+  failureMessage: string | null;
   approvedAt: string | null;
   createdAt: string;
   email: string;
@@ -349,6 +351,7 @@ export function AdminBillingDashboard({
                 const refundable = order.amountKrw - order.refundedAmountKrw - order.reservedRefundKrw;
                 const paymentFlow = adminPaymentFlowLabel(order);
                 const paymentDetails = adminPaymentDetailParts(order);
+                const paymentFailure = adminPaymentFailureLabel(order);
                 const canRefund = order.provider === "thepayone"
                   && order.status === "succeeded"
                   && Boolean(order.providerTransactionId)
@@ -370,7 +373,7 @@ export function AdminBillingDashboard({
                     <p className="mt-1 text-xs text-[#ff9b8d]">환불 {money(order.refundedAmountKrw)} · {label(order.refundStatus)}</p>
                     {order.reservedRefundKrw > 0 && <p className="mt-1 text-xs text-amber-300">기존 환불 처리 중 {money(order.reservedRefundKrw)}</p>}
                   </td>
-                  <td className="px-4 py-4"><p className="font-bold">{label(order.status)}</p>{order.failureCode && <p className="mt-1 text-xs text-amber-300">{order.failureCode}</p>}</td>
+                  <td className="px-4 py-4"><p className="font-bold">{label(order.status)}</p>{paymentFailure && <p className="mt-1 text-xs text-amber-300">{paymentFailure}</p>}</td>
                   <td className="px-4 py-4 font-mono text-xs text-neutral-500" title={order.orderId}><p>{shortId(order.orderId)}</p><p className="mt-1">{shortId(order.providerTransactionId)}</p></td>
                   <td className="px-5 py-4 text-right">
                     {canResolveManualReview

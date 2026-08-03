@@ -11,10 +11,7 @@ import {
 import type { MvpState } from "@/lib/contracts";
 import { localizeApiError } from "@/lib/i18n/errors";
 import { useI18n } from "@/lib/i18n/provider";
-import type {
-  SupportInquiryCategory,
-  SupportInquiryRefundReason,
-} from "@/lib/support-inquiry";
+import type { SupportInquiryCategory } from "@/lib/support-inquiry";
 
 type InquiryResponse = {
   submitted: true;
@@ -23,38 +20,7 @@ type InquiryResponse = {
   createdAt: string;
 };
 
-type WidgetView = "menu" | "billing-login" | "billing-orders" | "form";
-
-type RefundableOrder = {
-  id: string;
-  orderId: string;
-  orderName: string;
-  productCode: string;
-  billingCycle: string | null;
-  kind: string;
-  amountKrw: number;
-  unavailableRefundAmountKrw: number;
-  remainingRefundableAmountKrw: number;
-  approvedAt: string | null;
-  createdAt: string;
-  hasOpenRefundInquiry: boolean;
-};
-
-const refundReasonOptions: Array<{
-  value: SupportInquiryRefundReason;
-  labelKey:
-    | "supportWidget.refundReasonUnused"
-    | "supportWidget.refundReasonDuplicate"
-    | "supportWidget.refundReasonService"
-    | "supportWidget.refundReasonBilling"
-    | "supportWidget.refundReasonOther";
-}> = [
-  { value: "unused_or_changed_mind", labelKey: "supportWidget.refundReasonUnused" },
-  { value: "duplicate_payment", labelKey: "supportWidget.refundReasonDuplicate" },
-  { value: "service_issue", labelKey: "supportWidget.refundReasonService" },
-  { value: "billing_error", labelKey: "supportWidget.refundReasonBilling" },
-  { value: "other", labelKey: "supportWidget.refundReasonOther" },
-];
+type WidgetView = "menu" | "form";
 
 const categoryOptions: Array<{
   category: SupportInquiryCategory;
@@ -124,41 +90,18 @@ function ChevronIcon() {
   );
 }
 
-function formatPaymentDate(value: string | null, locale: "ko" | "en" | "ja") {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat(
-    locale === "ko" ? "ko-KR" : locale === "ja" ? "ja-JP" : "en-US",
-    { dateStyle: "medium", timeZone: "Asia/Seoul" },
-  ).format(new Date(value));
-}
-
-function formatKrw(value: number, locale: "ko" | "en" | "ja") {
-  return new Intl.NumberFormat(
-    locale === "ko" ? "ko-KR" : locale === "ja" ? "ja-JP" : "en-US",
-    { style: "currency", currency: "KRW", maximumFractionDigits: 0 },
-  ).format(value);
-}
-
 export function SupportInquiryWidget({
   user,
-  onLoginRequest,
 }: {
   user: MvpState["user"];
   onLoginRequest?: () => void;
 }) {
   const { locale, t } = useI18n();
-  const userId = user?.id;
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<WidgetView>("menu");
   const [category, setCategory] = useState<SupportInquiryCategory | null>(null);
   const [contactEmail, setContactEmail] = useState(user?.loginId ? "" : user?.email || "");
   const [message, setMessage] = useState("");
-  const [billingOrders, setBillingOrders] = useState<RefundableOrder[]>([]);
-  const [billingOrdersStatus, setBillingOrdersStatus] =
-    useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [billingOrdersReloadToken, setBillingOrdersReloadToken] = useState(0);
-  const [selectedBillingOrder, setSelectedBillingOrder] = useState<RefundableOrder | null>(null);
-  const [refundReason, setRefundReason] = useState<SupportInquiryRefundReason | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<InquiryResponse | null>(null);
   const [referenceCopied, setReferenceCopied] = useState(false);
@@ -201,34 +144,6 @@ export function SupportInquiryWidget({
     if (open && contentRef.current) contentRef.current.scrollTop = 0;
   }, [open, view]);
 
-  useEffect(() => {
-    if (view !== "billing-orders" || !userId) return;
-    const controller = new AbortController();
-    setBillingOrdersStatus("loading");
-    setError(null);
-    void fetch("/api/support/refundable-orders", {
-      cache: "no-store",
-      credentials: "same-origin",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const body = await response.json().catch(() => ({})) as {
-          items?: RefundableOrder[];
-          detail?: string;
-          code?: string;
-        };
-        if (!response.ok) throw new Error(localizeApiError(body, response.status, locale));
-        setBillingOrders(body.items || []);
-        setBillingOrdersStatus("ready");
-      })
-      .catch((cause) => {
-        if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setBillingOrdersStatus("error");
-        setError(cause instanceof Error ? cause.message : t("supportWidget.refundOrdersError"));
-      });
-    return () => controller.abort();
-  }, [billingOrdersReloadToken, locale, t, userId, view]);
-
   const closeAndRestoreFocus = () => {
     setOpen(false);
     window.requestAnimationFrame(() => triggerRef.current?.focus());
@@ -236,12 +151,8 @@ export function SupportInquiryWidget({
 
   const chooseCategory = (nextCategory: SupportInquiryCategory) => {
     setCategory(nextCategory);
-    setSelectedBillingOrder(null);
-    setRefundReason(null);
     setMessage("");
-    setView(nextCategory === "billing_refund"
-      ? user ? "billing-orders" : "billing-login"
-      : "form");
+    setView("form");
     setError(null);
     setResult(null);
     requestIdRef.current = null;
@@ -251,10 +162,6 @@ export function SupportInquiryWidget({
     setView("menu");
     setCategory(null);
     setMessage("");
-    setBillingOrders([]);
-    setBillingOrdersStatus("idle");
-    setSelectedBillingOrder(null);
-    setRefundReason(null);
     setResult(null);
     setReferenceCopied(false);
     setError(null);
@@ -282,8 +189,6 @@ export function SupportInquiryWidget({
       setView("menu");
       setCategory(null);
       setMessage("");
-      setSelectedBillingOrder(null);
-      setRefundReason(null);
       setReferenceCopied(false);
       setError(null);
       requestIdRef.current = null;
@@ -297,33 +202,10 @@ export function SupportInquiryWidget({
     };
   }, [result]);
 
-  const selectBillingOrder = (order: RefundableOrder) => {
-    if (order.hasOpenRefundInquiry) return;
-    setSelectedBillingOrder(order);
-    setRefundReason(null);
-    setMessage("");
-    setError(null);
-    requestIdRef.current = null;
-    setView("form");
-  };
-
-  const openGeneralBillingInquiry = () => {
-    setSelectedBillingOrder(null);
-    setRefundReason(null);
-    setMessage("");
-    setError(null);
-    requestIdRef.current = null;
-    setView("form");
-  };
-
   const backFromForm = () => {
     setError(null);
-    setSelectedBillingOrder(null);
-    setRefundReason(null);
     requestIdRef.current = null;
-    setView(category === "billing_refund"
-      ? user ? "billing-orders" : "billing-login"
-      : "menu");
+    setView("menu");
   };
 
   const submitInquiry = async (event: FormEvent) => {
@@ -346,9 +228,9 @@ export function SupportInquiryWidget({
           message,
           locale,
           pagePath: window.location.pathname,
-          inquiryKind: selectedBillingOrder ? "refund_request" : "general",
-          billingOrderId: selectedBillingOrder?.id || null,
-          refundReasonCode: selectedBillingOrder ? refundReason : null,
+          inquiryKind: "general",
+          billingOrderId: null,
+          refundReasonCode: null,
         }),
       });
       const body = await response.json().catch(() => ({})) as InquiryResponse & {
@@ -370,18 +252,14 @@ export function SupportInquiryWidget({
   };
 
   const selectedOption = categoryOptions.find((option) => option.category === category);
-  const successTitleKey = selectedBillingOrder
-    ? "supportWidget.successRefundTitle"
-    : category === "service_usage"
+  const successTitleKey = category === "service_usage"
       ? "supportWidget.successUsageTitle"
       : category === "billing_refund"
         ? "supportWidget.successBillingTitle"
         : category === "technical_issue"
           ? "supportWidget.successTechnicalTitle"
           : "supportWidget.successOtherTitle";
-  const successDescriptionKey = selectedBillingOrder
-    ? "supportWidget.successRefundDescription"
-    : category === "service_usage"
+  const successDescriptionKey = category === "service_usage"
       ? "supportWidget.successUsageDescription"
       : category === "billing_refund"
         ? "supportWidget.successBillingDescription"
@@ -496,150 +374,6 @@ export function SupportInquiryWidget({
               </div>
             )}
 
-            {view === "billing-login" && (
-              <div className="px-6 py-10 text-center">
-                <div className="mx-auto grid h-14 w-14 place-items-center rounded-full border border-[#ff9b8d]/20 bg-[#ff715e]/10 text-[#ff9b8d]">
-                  <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" aria-hidden="true">
-                    <path d="M4 8.25h16M7 15.75h3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                    <rect x="3.75" y="5" width="16.5" height="14" rx="2.25" stroke="currentColor" strokeWidth="1.8" />
-                  </svg>
-                </div>
-                <h3 className="mt-5 text-lg font-black tracking-[-.03em] text-white">
-                  {t("supportWidget.billingLoginTitle")}
-                </h3>
-                <p className="mt-3 text-sm leading-6 text-neutral-400">
-                  {t("supportWidget.billingLoginDescription")}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpen(false);
-                    onLoginRequest?.();
-                  }}
-                  className="mt-7 min-h-12 w-full rounded-xl bg-white px-5 text-sm font-black text-black transition hover:bg-neutral-200"
-                >
-                  {t("supportWidget.billingLoginButton")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setView("menu")}
-                  className="mt-3 min-h-10 px-4 text-xs font-bold text-neutral-500 transition hover:text-white"
-                >
-                  {t("supportWidget.back")}
-                </button>
-              </div>
-            )}
-
-            {view === "billing-orders" && (
-              <div className="p-5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setView("menu");
-                    setError(null);
-                  }}
-                  className="mb-5 inline-flex min-h-9 items-center gap-1.5 rounded-lg px-1 text-xs font-bold text-neutral-400 transition hover:text-white"
-                >
-                  <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" aria-hidden="true">
-                    <path d="m12.25 5.75-4.25 4.25 4.25 4.25" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  {t("supportWidget.back")}
-                </button>
-
-                <h3 className="text-base font-black tracking-[-.025em] text-white">
-                  {t("supportWidget.refundOrdersTitle")}
-                </h3>
-                <p className="mt-1.5 text-xs leading-5 text-neutral-500">
-                  {t("supportWidget.refundOrdersDescription")}
-                </p>
-
-                {billingOrdersStatus === "loading" && (
-                  <div className="flex min-h-36 items-center justify-center gap-2 text-xs font-bold text-neutral-500">
-                    <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-white/15 border-t-[#ff8c7c]" />
-                    {t("supportWidget.refundOrdersLoading")}
-                  </div>
-                )}
-
-                {billingOrdersStatus === "error" && (
-                  <div className="mt-4 rounded-xl border border-red-400/20 bg-red-500/[.08] px-4 py-4 text-center">
-                    <p role="alert" className="text-xs leading-5 text-red-200">
-                      {error || t("supportWidget.refundOrdersError")}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setBillingOrdersReloadToken((value) => value + 1)}
-                      className="mt-3 min-h-9 rounded-lg border border-red-200/20 px-3 text-xs font-bold text-red-100"
-                    >
-                      {t("common.retry")}
-                    </button>
-                  </div>
-                )}
-
-                {billingOrdersStatus === "ready" && (
-                  <>
-                    <div className="mt-4 grid gap-2.5">
-                      {billingOrders.map((order) => (
-                        <button
-                          key={order.id}
-                          type="button"
-                          disabled={order.hasOpenRefundInquiry}
-                          onClick={() => selectBillingOrder(order)}
-                          className="group w-full rounded-2xl border border-white/10 bg-black/15 p-4 text-left transition hover:border-[#ff8c7c]/40 hover:bg-[#ff715e]/[.055] disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                          <span className="flex items-start justify-between gap-3">
-                            <span className="min-w-0">
-                              <strong className="block truncate text-sm font-extrabold text-white">
-                                {order.orderName}
-                              </strong>
-                              <span className="mt-1 block text-[11px] text-neutral-500">
-                                {t("supportWidget.refundOrderDate", {
-                                  date: formatPaymentDate(order.approvedAt || order.createdAt, locale),
-                                })}
-                              </span>
-                            </span>
-                            <span className="shrink-0 text-sm font-black text-white">
-                              {formatKrw(order.amountKrw, locale)}
-                            </span>
-                          </span>
-                          <span className={`mt-3 flex items-center justify-between gap-2 border-t border-white/[.07] pt-3 text-[11px] font-bold ${
-                            order.hasOpenRefundInquiry ? "text-amber-300" : "text-[#ff9b8d]"
-                          }`}>
-                            <span>
-                              {order.hasOpenRefundInquiry
-                                ? t("supportWidget.refundOrderOpen")
-                                : t("supportWidget.refundOrderRemaining", {
-                                  amount: formatKrw(order.remainingRefundableAmountKrw, locale),
-                                })}
-                            </span>
-                            {!order.hasOpenRefundInquiry && (
-                              <span className="inline-flex items-center gap-1 text-neutral-400 transition group-hover:text-white">
-                                {t("supportWidget.refundOrderSelect")}
-                                <span className="h-4 w-4"><ChevronIcon /></span>
-                              </span>
-                            )}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-
-                    {!billingOrders.length && (
-                      <p className="mt-4 rounded-2xl border border-white/[.08] bg-white/[.025] px-4 py-8 text-center text-xs leading-5 text-neutral-500">
-                        {t("supportWidget.refundOrdersEmpty")}
-                      </p>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={openGeneralBillingInquiry}
-                      className="mt-4 min-h-11 w-full rounded-xl border border-white/10 px-4 text-xs font-extrabold text-neutral-300 transition hover:border-white/25 hover:bg-white/[.05] hover:text-white"
-                    >
-                      {t("supportWidget.otherBillingInquiry")}
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-
             {view === "form" && selectedOption && (
               <form onSubmit={submitInquiry} className="p-5">
                 <button
@@ -650,55 +384,8 @@ export function SupportInquiryWidget({
                   <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" aria-hidden="true">
                     <path d="m12.25 5.75-4.25 4.25 4.25 4.25" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  {selectedBillingOrder ? t("supportWidget.changePayment") : t("supportWidget.back")}
+                  {t("supportWidget.back")}
                 </button>
-
-                {selectedBillingOrder && (
-                  <>
-                    <section className="mb-5 rounded-2xl border border-[#ff8c7c]/25 bg-[#ff715e]/[.06] p-4">
-                      <p className="text-[10px] font-black uppercase tracking-[.12em] text-[#ff9b8d]">
-                        {t("supportWidget.selectedPayment")}
-                      </p>
-                      <div className="mt-2 flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <strong className="block truncate text-sm font-extrabold text-white">
-                            {selectedBillingOrder.orderName}
-                          </strong>
-                          <p className="mt-1 text-[11px] text-neutral-500">
-                            {t("supportWidget.refundOrderDate", {
-                              date: formatPaymentDate(
-                                selectedBillingOrder.approvedAt || selectedBillingOrder.createdAt,
-                                locale,
-                              ),
-                            })}
-                          </p>
-                        </div>
-                        <strong className="shrink-0 text-sm font-black text-white">
-                          {formatKrw(selectedBillingOrder.amountKrw, locale)}
-                        </strong>
-                      </div>
-                    </section>
-
-                    <label className="mb-5 block">
-                      <span className="text-xs font-extrabold text-neutral-200">
-                        {t("supportWidget.refundReason")}
-                      </span>
-                      <select
-                        required
-                        value={refundReason || ""}
-                        onChange={(event) => setRefundReason(
-                          event.target.value as SupportInquiryRefundReason,
-                        )}
-                        className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-[#111415] px-3.5 text-sm text-white outline-none transition focus:border-[#ff8c7c]/60 focus:ring-4 focus:ring-[#ff715e]/10"
-                      >
-                        <option value="" disabled>{t("supportWidget.refundReasonPlaceholder")}</option>
-                        {refundReasonOptions.map((option) => (
-                          <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </>
-                )}
 
                 <label className="block">
                   <span className="text-xs font-extrabold text-neutral-200">{t("supportWidget.email")}</span>
@@ -742,23 +429,13 @@ export function SupportInquiryWidget({
                   </Link>
                 </p>
 
-                {selectedBillingOrder && (
-                  <p className="mt-4 rounded-xl border border-amber-300/15 bg-amber-300/[.06] px-3.5 py-3 text-[11px] font-medium leading-5 text-amber-100/80">
-                    {t("supportWidget.refundPolicyNotice")}
-                  </p>
-                )}
-
                 <button
                   type="submit"
                   disabled={submitting}
                   className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#f04435] to-[#8b5cf6] px-5 text-sm font-black text-white shadow-[0_12px_30px_rgba(240,68,53,.2)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   {submitting && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />}
-                  {submitting
-                    ? t("supportWidget.submitting")
-                    : selectedBillingOrder
-                      ? t("supportWidget.refundSubmit")
-                      : t("supportWidget.submit")}
+                  {submitting ? t("supportWidget.submitting") : t("supportWidget.submit")}
                 </button>
               </form>
             )}
@@ -804,22 +481,6 @@ export function SupportInquiryWidget({
             <p className="mx-auto mt-3 max-w-[330px] text-sm leading-6 text-neutral-400">
               {t(successDescriptionKey)}
             </p>
-
-            {selectedBillingOrder && (
-              <div className="mt-5 rounded-2xl border border-[#ff8c7c]/20 bg-[#ff715e]/[.055] p-4 text-left">
-                <p className="text-[10px] font-black uppercase tracking-[.12em] text-[#ff9b8d]">
-                  {t("supportWidget.selectedPayment")}
-                </p>
-                <div className="mt-2 flex items-start justify-between gap-3">
-                  <strong className="min-w-0 truncate text-sm font-extrabold text-white">
-                    {selectedBillingOrder.orderName}
-                  </strong>
-                  <strong className="shrink-0 text-sm font-black text-white">
-                    {formatKrw(selectedBillingOrder.amountKrw, locale)}
-                  </strong>
-                </div>
-              </div>
-            )}
 
             <div className="mt-4 rounded-2xl border border-white/[.08] bg-white/[.025] p-4 text-left">
               <p className="text-[10px] font-black uppercase tracking-[.12em] text-neutral-500">

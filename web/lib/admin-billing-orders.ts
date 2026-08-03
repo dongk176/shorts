@@ -74,6 +74,7 @@ function toAdminOrder(row: Record<string, unknown>): AdminOrder {
     installmentBenefitType: row.installmentBenefitType ? String(row.installmentBenefitType) : null,
     declaredCardKind: row.declaredCardKind ? String(row.declaredCardKind) : null,
     failureCode: row.failureCode ? String(row.failureCode) : null,
+    failureMessage: row.failureMessage ? String(row.failureMessage) : null,
     approvedAt: iso(row.approvedAt),
     createdAt: iso(row.createdAt)!,
     email: row.email ? String(row.email) : "-",
@@ -103,7 +104,7 @@ export async function loadAdminBillingOrders({
   const rows = await db`
     select o.id,o.order_id,o.kind,o.product_code,o.billing_cycle,o.amount_krw,
       o.refunded_amount_krw,o.refund_status,o.status,o.provider,o.provider_transaction_id,
-      o.provider_status,o.failure_code,o.provider_terminal_id,o.installment_months,
+      o.provider_status,o.failure_code,o.failure_message,o.provider_terminal_id,o.installment_months,
       (o.payment_method_id is not null) as has_payment_method,
       nullif(o.installment_terms_snapshot->>'credentialScope','') as credential_scope,
       coalesce(
