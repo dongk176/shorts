@@ -1,5 +1,10 @@
 begin;
 
+-- Never hold up live checkout traffic while waiting for a schema lock. The
+-- transaction rolls back unchanged if the lock cannot be acquired quickly.
+set local lock_timeout = '3s';
+set local statement_timeout = '30s';
+
 -- Preserve every existing order's recorded policy while assigning the new
 -- policy only to orders created after this migration is applied.
 alter table shorts_mvp.billing_orders
