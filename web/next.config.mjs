@@ -10,6 +10,21 @@ const nextConfig = {
   images: {
     minimumCacheTTL: 2_678_400,
   },
+  async rewrites() {
+    return {
+      beforeFiles: [
+        {
+          source: "/admin/easycutcutcutcutcutcut",
+          has: [
+            { type: "header", key: "next-router-prefetch", value: "1|2" },
+          ],
+          destination: "/api/admin/prefetch-noop",
+        },
+      ],
+      afterFiles: [],
+      fallback: [],
+    };
+  },
   async headers() {
     const productionSecurityHeaders = [
       {
