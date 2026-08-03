@@ -50,14 +50,7 @@ export function PurchaseTermsConsent({
         <span>
           {" "}및{" "}
         </span>
-        <Link
-          href="/refund"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-black text-[#ff9b8d] underline decoration-[#ff9b8d]/45 underline-offset-2"
-        >
-          취소·환불 규정
-        </Link>
+        <span className="font-black text-neutral-200">취소·환불 규정</span>
         <span>
           을 확인했으며 이에 동의합니다.
         </span>

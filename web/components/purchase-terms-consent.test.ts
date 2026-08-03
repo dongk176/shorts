@@ -13,4 +13,9 @@ describe("purchase terms consent", () => {
     expect(source).toContain("cursor-pointer");
     expect(source).toContain("required");
   });
+
+  it("does not expose a refund-policy navigation link in the payment consent", () => {
+    expect(source).not.toContain('href="/refund"');
+    expect(source).toContain("취소·환불 규정");
+  });
 });

@@ -74,6 +74,7 @@ export async function POST(request: Request) {
       `;
       const order = orders[0];
       if (!order) throw new HttpError(404, "환불할 주문을 찾을 수 없습니다.");
+      const refundPolicyVersion = Number(order.refundPolicyVersion || 3);
       if (
         order.status !== "succeeded"
         || order.provider !== "thepayone"
@@ -206,6 +207,13 @@ export async function POST(request: Request) {
       let entitlementActionMode: "none" | "revoke_now" | "end_at" = "none";
       let entitlementEffectiveAt: Date | null = null;
       if (body.reasonCode === "customer_early_termination") {
+        if (refundPolicyVersion >= 4) {
+          throw new HttpError(
+            409,
+            "환불정책 v4 주문은 사용 후 중도해지 자동 환불 대상이 아닙니다. 미사용·회사 귀책·중복 결제 또는 별도 승인 사유로 검토해 주세요.",
+            "REFUND_POLICY_V4_REVIEW_REQUIRED",
+          );
+        }
         if (order.kind === "addon") {
           throw new HttpError(409, "추가 처리시간에는 구독·패키지 환불 기준을 적용할 수 없습니다.");
         }
@@ -274,7 +282,7 @@ export async function POST(request: Request) {
         ) values (
           ${body.requestId},${order.id},${admin.id},'thepayone',${trackId},
           ${order.providerTransactionId},${amountKrw},${reason},'pending',
-          ${3},
+          ${refundPolicyVersion},
           ${policyQuote ? tx.json(policyQuote) : null},${entitlementActionMode},
           ${entitlementEffectiveAt}
         ) returning *
@@ -290,7 +298,7 @@ export async function POST(request: Request) {
             reasonCode: body.reasonCode,
             reason: body.reason,
             policyQuote,
-            refundPolicyVersion: 3,
+            refundPolicyVersion,
             firstCompletedJobId: firstCompletedJob?.id || null,
             firstCompletedJobAt: firstCompletedJob?.completedAt || null,
             entitlementActionMode,
