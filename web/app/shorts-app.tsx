@@ -169,8 +169,10 @@ import {
 } from "@/lib/editor-document-snapshot";
 import {
   editorDraftDocumentSnapshotSchema,
+  editorDocumentSnapshotSchema,
   editorDocumentOutputDuration,
 } from "@/lib/editor-document-contract";
+import { editorSubtitlesForSave } from "@/lib/editor-subtitle-save";
 import {
   createEditorDraftRecord,
   deleteEditorDraft,
@@ -7414,6 +7416,26 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             };
           },
         );
+        document.subtitles.segments = editorSubtitlesForSave(
+          document.subtitles.segments,
+        );
+        const validatedDocument = editorDocumentSnapshotSchema.safeParse(
+          document,
+        );
+        if (!validatedDocument.success) {
+          const issue = validatedDocument.error.issues[0];
+          const field = issue?.path[0];
+          const message = field === "subtitles"
+            ? "비어 있거나 올바르지 않은 자막을 다시 확인해 주세요."
+            : field === "comments"
+              ? "댓글 내용과 노출 구간을 다시 확인해 주세요."
+              : field === "title"
+                ? "후킹 제목의 내용과 스타일을 다시 확인해 주세요."
+                : field === "video"
+                  ? "영상 구간을 다시 확인해 주세요."
+                  : "저장할 편집 내용을 다시 확인해 주세요.";
+          throw new Error(message);
+        }
         const requestId = editorSaveRequestIdRef.current
           || globalThis.crypto.randomUUID();
         editorSaveRequestIdRef.current = requestId;
@@ -7428,7 +7450,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               uiVersion: editorRelease.uiVersion,
               documentVersion: editorRelease.documentVersion,
             },
-            document,
+            document: validatedDocument.data,
           }),
         });
         editorSaveRequestIdRef.current = null;

@@ -467,7 +467,20 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
       && typeof requestBody === "object"
       && "document" in requestBody
     ) {
-      const input = editorDocumentRequestSchema.parse(requestBody);
+      const parsedInput = editorDocumentRequestSchema.safeParse(requestBody);
+      if (!parsedInput.success) {
+        console.warn(JSON.stringify({
+          level: "warning",
+          msg: "editor_document_validation_failed",
+          shortId,
+          issues: parsedInput.error.issues.slice(0, 10).map((issue) => ({
+            code: issue.code,
+            path: issue.path.map(String).join("."),
+          })),
+        }));
+        throw parsedInput.error;
+      }
+      const input = parsedInput.data;
       return await applyEditorDocumentV2({
         shortId,
         requestId: input.requestId,
