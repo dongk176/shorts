@@ -42,3 +42,8 @@
   disappears unexpectedly.
 - Deploy to an unaliased candidate URL first, verify the five protected paths,
   then promote that exact deployment without rebuilding it.
+- Keep the unfinished YouTube publishing/content-calendar experiment out of
+  production releases. Production candidates must not contain the
+  `/content-calendar` route, publishing OAuth/publication APIs, publishing
+  navigation or share UI, test publishing migrations, `EasyCutYoutubeTest-*`
+  infrastructure, or the YouTube uploader worker.

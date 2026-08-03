@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { requireAdminUser } from "@/lib/admin";
 import { loadAdminBillingOrders } from "@/lib/admin-billing-orders";
-import { ADMIN_USAGE_GRANT_PRODUCT_CODE } from "@/lib/admin-usage-grant";
+import { loadAdminMembers } from "@/lib/admin-members";
+import { loadAdminOverview } from "@/lib/admin-overview";
 import { ensureLocalDbReady, getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { createNoIndexMetadata } from "@/lib/seo";
@@ -17,15 +18,13 @@ import {
   type AdminCustomerInquiry,
   type AdminInquiryMetrics,
 } from "./admin-inquiries-dashboard";
-import { AdminMembersDashboard, type AdminMember } from "./admin-members-dashboard";
+import { AdminMembersDashboard } from "./admin-members-dashboard";
 import { AdminManagedAccountsSection } from "./admin-managed-accounts-section";
 import { AdminInstallmentsDashboard } from "./admin-installments-dashboard";
 import { AdminRuntimeSettings } from "./admin-runtime-settings";
 import { AdminShortsEventSetting } from "./admin-shorts-event-setting";
 import {
   AdminShell,
-  type AdminMemberTrendPoint,
-  type AdminSalesTrendPoint,
   type AdminTab,
 } from "./admin-shell";
 import {
@@ -52,7 +51,6 @@ import {
 } from "@/lib/editor-rendering-release";
 import {
   LOGIN_WELCOME_GRANT_FLAG_KEY,
-  ONBOARDING_WELCOME_PRODUCT_CODE,
   onboardingWelcomeGrantEnabled,
 } from "@/lib/onboarding-welcome";
 import {
@@ -65,7 +63,6 @@ import {
 } from "@/lib/user-onboarding";
 import {
   SHORTS_THANK_YOU_EVENT_FLAG_KEY,
-  SHORTS_THANK_YOU_EVENT_PRODUCT_CODE,
   shortsThankYouEventEnabled,
 } from "@/lib/shorts-thank-you-event";
 
@@ -157,10 +154,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const [
     runtimeSettingRows,
     eventRuntimeSettingRows,
-    metricRows,
-    subscriptionRows,
-    salesTrendRows,
-    memberTrendRows,
+    overview,
   ] = await Promise.all([
     tab === "settings" ? db`
         select feature_flag.enabled,feature_flag.updated_at,administrator.email as updated_by_email
@@ -179,97 +173,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         where feature_flag.flag_key=${SHORTS_THANK_YOU_EVENT_FLAG_KEY}
         limit 1
       ` : Promise.resolve([]),
-    db`
-      select
-        coalesce(sum(amount_krw) filter (where status='succeeded'),0)::bigint as gross_sales,
-        coalesce(sum(refunded_amount_krw),0)::bigint as refunded_sales,
-        coalesce(sum(amount_krw-refunded_amount_krw) filter (where status='succeeded'),0)::bigint as net_sales,
-        coalesce(sum(amount_krw) filter (
-          where status='succeeded'
-            and amount_krw>0
-            and approved_at >= (
-              date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul')
-              at time zone 'Asia/Seoul'
-            )
-        ),0)::bigint as today_sales,
-        count(*) filter (
-          where status='succeeded' and amount_krw>0
-        )::integer as paid_orders,
-        count(*) filter (where status in ('unknown','manual_review'))::integer as review_orders
-      from shorts_mvp.billing_orders
-    `,
-    db`
-      select
-        count(*) filter (where subscription.status='active')::integer as active,
-        count(*) filter (where subscription.status='past_due')::integer as past_due,
-        count(*) filter (
-          where subscription.billing_review_status='manual_review'
-        )::integer as manual_review,
-        count(*) filter (
-          where subscription.status='active'
-            and subscription.plan_code='easycut_pro_v2'
-        )::integer as active_pro,
-        coalesce(sum(plan.monthly_price_krw) filter (
-          where subscription.status='active'
-            and subscription.plan_code='easycut_pro_v2'
-        ),0)::bigint as active_billing_krw
-      from shorts_mvp.user_subscriptions subscription
-      left join shorts_mvp.plans plan on plan.code=subscription.plan_code
-    `,
-    db`
-      with days as (
-        select generate_series(
-          date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days',
-          date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul'),
-          interval '1 day'
-        )::date as trend_day
-      ),
-      daily_sales as (
-        select
-          (approved_at at time zone 'Asia/Seoul')::date as trend_day,
-          coalesce(sum(amount_krw),0)::bigint as sales,
-          count(*)::integer as order_count
-        from shorts_mvp.billing_orders
-        where status='succeeded'
-          and amount_krw>0
-          and approved_at >= (
-            date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days'
-          ) at time zone 'Asia/Seoul'
-        group by (approved_at at time zone 'Asia/Seoul')::date
-      )
-      select
-        to_char(days.trend_day,'YYYY-MM-DD') as date,
-        coalesce(daily_sales.sales,0)::bigint as sales,
-        coalesce(daily_sales.order_count,0)::integer as order_count
-      from days
-      left join daily_sales using (trend_day)
-      order by days.trend_day
-    `,
-    db`
-      with days as (
-        select generate_series(
-          date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days',
-          date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul'),
-          interval '1 day'
-        )::date as trend_day
-      ),
-      daily_members as (
-        select
-          (created_at at time zone 'Asia/Seoul')::date as trend_day,
-          count(*)::integer as member_count
-        from shorts_mvp.app_users
-        where created_at >= (
-          date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days'
-        ) at time zone 'Asia/Seoul'
-        group by (created_at at time zone 'Asia/Seoul')::date
-      )
-      select
-        to_char(days.trend_day,'YYYY-MM-DD') as date,
-        coalesce(daily_members.member_count,0)::integer as member_count
-      from days
-      left join daily_members using (trend_day)
-      order by days.trend_day
-    `,
+    loadAdminOverview(),
   ]);
   const [
     editorReleaseStateRows,
@@ -306,10 +210,10 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           order by updated_at desc
         `,
         db`
-          select tester.user_id,user.email,user.display_name,
+          select tester.user_id,tester_user.email,tester_user.display_name,
             tester.enabled,tester.updated_at
           from shorts_mvp.editor_release_testers tester
-          join shorts_mvp.app_users user on user.id=tester.user_id
+          join shorts_mvp.app_users tester_user on tester_user.id=tester.user_id
           order by tester.enabled desc,tester.updated_at desc
         `,
         db`
@@ -325,186 +229,93 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         `,
       ])
     : [[], [], [], [], []];
-  const orderPage = tab === "billing"
-    ? await loadAdminBillingOrders({
-      filters: { status, provider, query },
-    })
-    : { orders: [], hasMore: false, nextOffset: 0 };
-  const refundRows = tab === "billing" ? await db`
-      select r.id,r.billing_order_id,r.amount_krw,r.reason,r.status,
-        r.entitlement_action_status,r.provider_refund_transaction_id,r.failure_message,
-        r.requested_at,r.processed_at,o.order_id,u.email,a.email as admin_email
-      from shorts_mvp.admin_billing_refunds r
-      join shorts_mvp.billing_orders o on o.id=r.billing_order_id
-      join shorts_mvp.app_users u on u.id=o.user_id
-      join shorts_mvp.app_users a on a.id=r.requested_by_user_id
-      order by r.requested_at desc
-      limit 50
-    ` : [];
-  const refundCaseRows = tab === "refunds" ? await db`
-      select
-        c.*,o.order_id,o.product_code,o.order_name,o.amount_krw as order_amount_krw,
-        o.refunded_amount_krw as order_refunded_amount_krw,o.approved_at,o.provider,
-        o.provider_transaction_id,u.email,u.display_name,
-        coalesce(p.display_name,o.order_name) as product_name,
-        s.status as subscription_status,
-        assigned.email as assigned_admin_email
-      from shorts_mvp.admin_refund_cases c
-      join shorts_mvp.billing_orders o on o.id=c.billing_order_id
-      join shorts_mvp.app_users u on u.id=c.user_id
-      left join shorts_mvp.plans p on p.code=o.product_code
-      left join shorts_mvp.user_subscriptions s on s.id=o.subscription_id
-      left join shorts_mvp.app_users assigned on assigned.id=c.assigned_to_user_id
-      where (${refundCaseStatus}='all' or c.status=${refundCaseStatus})
-        and (
-          ${query}=''
-          or lower(coalesce(u.email,'')) like ${`%${query.toLowerCase()}%`}
-          or lower(coalesce(u.display_name,'')) like ${`%${query.toLowerCase()}%`}
-          or lower(o.order_id) like ${`%${query.toLowerCase()}%`}
-          or lower(coalesce(o.provider_transaction_id,'')) like ${`%${query.toLowerCase()}%`}
-          or c.id::text=${query}
-          or u.id::text=${query}
-        )
-      order by
-        case c.status
-          when 'manual_review' then 0
-          when 'unprocessed' then 1
-          when 'in_progress' then 2
-          when 'completed' then 3
-          else 4
-        end,
-        c.updated_at desc
-      limit 500
-    ` : [];
-  const refundCaseMetricRows = tab === "refunds" ? await db`
-      select
-        count(*) filter (where status='unprocessed')::integer as unprocessed,
-        count(*) filter (where status='in_progress')::integer as in_progress,
-        count(*) filter (where status='completed')::integer as completed,
-        count(*) filter (where status='manual_review')::integer as manual_review,
-        coalesce(sum(planned_refund_krw) filter (
-          where payment_status='completed'
-            and updated_at >= clock_timestamp()-interval '30 days'
-        ),0)::bigint as recent_refund_krw
-      from shorts_mvp.admin_refund_cases
-    ` : [];
-  const memberRows = tab === "members" ? await db`
-      select
-        u.id,u.email,u.display_name,u.created_at,u.last_sign_in_at,
-        u.referral_partner_id,rp.creator_name as referral_creator_name,rp.slug as referral_slug,
-        s.id as subscription_id,s.plan_code,s.billing_cycle,s.status as subscription_status,
-        s.current_period_start,s.current_period_end,s.next_charge_at,
-        s.provider_schedule_status,s.billing_review_status,s.billing_review_reason,
-        s.payment_provider,m.issuer_name,m.card_number_masked,
-        coalesce(projects.project_count,0)::integer as project_count,
-        coalesce(shorts.short_count,0)::integer as short_count,
-        coalesce(current_usage.limit_seconds,0)::bigint as usage_limit_seconds,
-        coalesce(current_usage.consumed_seconds,0)::bigint as usage_consumed_seconds,
-        coalesce(current_usage.reserved_seconds,0)::bigint as usage_reserved_seconds,
-        count(*) over()::integer as filtered_count
-      from shorts_mvp.app_users u
-      left join shorts_mvp.referral_partners rp on rp.id=u.referral_partner_id
-      left join lateral (
-        select subscription.*
-        from shorts_mvp.user_subscriptions subscription
-        where subscription.user_id=u.id
-        order by
-          case when subscription.status in ('pending','trialing','active','past_due') then 0 else 1 end,
-          subscription.created_at desc
-        limit 1
-      ) s on true
-      left join shorts_mvp.billing_payment_methods m on m.id=s.payment_method_id
-      left join lateral (
-        select count(*)::integer as project_count
-        from shorts_mvp.video_jobs project
-        where project.user_id=u.id
-      ) projects on true
-      left join lateral (
-        select count(*)::integer as short_count
-        from shorts_mvp.generated_shorts generated_short
-        where generated_short.user_id=u.id
-      ) shorts on true
-      left join lateral (
-        select
-          coalesce(sum(grant_row.total_seconds),0)::bigint as limit_seconds,
-          coalesce(sum(grant_row.consumed_seconds),0)::bigint as consumed_seconds,
-          coalesce(sum(grant_row.reserved_seconds),0)::bigint as reserved_seconds
-        from shorts_mvp.usage_grants grant_row
-        where grant_row.user_id=u.id
-          and grant_row.status='active'
-          and grant_row.valid_from<=clock_timestamp()
-          and grant_row.expires_at>clock_timestamp()
-          and (
-            (
-              grant_row.kind='base'
-              and exists (
-                select 1
-                from shorts_mvp.user_subscriptions active_subscription
-                where active_subscription.id=grant_row.subscription_id
-                  and active_subscription.status='active'
-                  and active_subscription.current_period_start<=clock_timestamp()
-                  and active_subscription.current_period_end>clock_timestamp()
-              )
+  const [orderPage, refundRows] = tab === "billing"
+    ? await Promise.all([
+        loadAdminBillingOrders({
+          filters: { status, provider, query },
+        }),
+        db`
+          select r.id,r.billing_order_id,r.amount_krw,r.reason,r.status,
+            r.entitlement_action_status,r.provider_refund_transaction_id,r.failure_message,
+            r.requested_at,r.processed_at,o.order_id,u.email,a.email as admin_email
+          from shorts_mvp.admin_billing_refunds r
+          join shorts_mvp.billing_orders o on o.id=r.billing_order_id
+          join shorts_mvp.app_users u on u.id=o.user_id
+          join shorts_mvp.app_users a on a.id=r.requested_by_user_id
+          order by r.requested_at desc
+          limit 50
+        `,
+      ])
+    : [{ orders: [], hasMore: false, nextOffset: 0 }, []];
+  const [refundCaseRows, refundCaseMetricRows] = tab === "refunds"
+    ? await Promise.all([
+        db`
+          select
+            c.*,o.order_id,o.product_code,o.order_name,o.amount_krw as order_amount_krw,
+            o.refunded_amount_krw as order_refunded_amount_krw,o.approved_at,o.provider,
+            o.provider_transaction_id,u.email,u.display_name,
+            coalesce(p.display_name,o.order_name) as product_name,
+            s.status as subscription_status,
+            assigned.email as assigned_admin_email
+          from shorts_mvp.admin_refund_cases c
+          join shorts_mvp.billing_orders o on o.id=c.billing_order_id
+          join shorts_mvp.app_users u on u.id=c.user_id
+          left join shorts_mvp.plans p on p.code=o.product_code
+          left join shorts_mvp.user_subscriptions s on s.id=o.subscription_id
+          left join shorts_mvp.app_users assigned on assigned.id=c.assigned_to_user_id
+          where (${refundCaseStatus}='all' or c.status=${refundCaseStatus})
+            and (
+              ${query}=''
+              or lower(coalesce(u.email,'')) like ${`%${query.toLowerCase()}%`}
+              or lower(coalesce(u.display_name,'')) like ${`%${query.toLowerCase()}%`}
+              or lower(o.order_id) like ${`%${query.toLowerCase()}%`}
+              or lower(coalesce(o.provider_transaction_id,'')) like ${`%${query.toLowerCase()}%`}
+              or c.id::text=${query}
+              or u.id::text=${query}
             )
-            or (
-              grant_row.kind='addon'
-              and (
-                grant_row.product_code in (
-                  ${ONBOARDING_WELCOME_PRODUCT_CODE},
-                  ${SHORTS_THANK_YOU_EVENT_PRODUCT_CODE},
-                  ${ADMIN_USAGE_GRANT_PRODUCT_CODE}
-                )
-                or u.manual_service_access_until>clock_timestamp()
-                or exists (
-                  select 1
-                  from shorts_mvp.user_subscriptions active_subscription
-                  where active_subscription.user_id=u.id
-                    and active_subscription.status='active'
-                    and active_subscription.current_period_start<=clock_timestamp()
-                    and active_subscription.current_period_end>clock_timestamp()
-                )
-              )
-            )
-          )
-      ) current_usage on true
-      where (
-        ${query}=''
-        or lower(coalesce(u.email,'')) like ${`%${query.toLowerCase()}%`}
-        or lower(coalesce(u.display_name,'')) like ${`%${query.toLowerCase()}%`}
-        or u.id::text=${query}
-      )
-      and (
-        ${memberType}='all'
-        or (${memberType}='free' and s.id is null)
-        or (${memberType}='paid_active' and s.status in ('active','trialing') and coalesce(s.billing_review_status,'')<>'manual_review')
-        or (${memberType}='paid_attention' and (s.status='past_due' or s.billing_review_status='manual_review'))
-        or (${memberType}='paid_inactive' and s.status in ('canceled','expired','paused'))
-      )
-      and (
-        ${memberPlan}='all'
-        or (${memberPlan}='monthly' and s.billing_cycle='monthly')
-        or (${memberPlan}='starter' and s.plan_code like 'starter_%')
-        or (${memberPlan}='expert' and s.plan_code like 'expert_%')
-      )
-      and (
-        ${memberActivity}='all'
-        or (${memberActivity}='with_projects' and coalesce(projects.project_count,0)>0)
-        or (${memberActivity}='with_shorts' and coalesce(shorts.short_count,0)>0)
-        or (${memberActivity}='no_projects' and coalesce(projects.project_count,0)=0)
-      )
-      and (
-        ${memberReferrer}='all'
-        or (${memberReferrer}='none' and u.referral_partner_id is null)
-        or (${memberReferrer}='referred' and u.referral_partner_id is not null)
-        or u.referral_partner_id::text=${memberReferrer}
-      )
-      order by coalesce(u.last_sign_in_at,u.created_at) desc
-    ` : [];
-  const memberReferralOptionRows = tab === "members" ? await db`
-      select id,creator_name,slug
-      from shorts_mvp.referral_partners
-      order by creator_name,slug
-    ` : [];
+          order by
+            case c.status
+              when 'manual_review' then 0
+              when 'unprocessed' then 1
+              when 'in_progress' then 2
+              when 'completed' then 3
+              else 4
+            end,
+            c.updated_at desc
+          limit 500
+        `,
+        db`
+          select
+            count(*) filter (where status='unprocessed')::integer as unprocessed,
+            count(*) filter (where status='in_progress')::integer as in_progress,
+            count(*) filter (where status='completed')::integer as completed,
+            count(*) filter (where status='manual_review')::integer as manual_review,
+            coalesce(sum(planned_refund_krw) filter (
+              where payment_status='completed'
+                and updated_at >= clock_timestamp()-interval '30 days'
+            ),0)::bigint as recent_refund_krw
+          from shorts_mvp.admin_refund_cases
+        `,
+      ])
+    : [[], []];
+  const [memberPage, memberReferralOptionRows] = tab === "members"
+    ? await Promise.all([
+        loadAdminMembers({
+          filters: {
+            query,
+            memberType,
+            memberPlan,
+            memberActivity,
+            memberReferrer,
+          },
+        }),
+        db`
+          select id,creator_name,slug
+          from shorts_mvp.referral_partners
+          order by creator_name,slug
+        `,
+      ])
+    : [{ members: [], totalCount: 0, hasMore: false, nextOffset: 0 }, []];
   const feedbackRows = tab === "feedback" ? await db`
       select f.id,f.satisfaction_rating,f.disappointment_reason,f.improvement_text,
         f.prompt_completion_count,f.completed_project_count,f.reward_seconds,f.created_at,
@@ -622,17 +433,6 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       order by count desc,discovery_source
     ` : [];
 
-  const metrics = metricRows[0] || {};
-  const subscriptions = subscriptionRows[0] || {};
-  const salesTrend: AdminSalesTrendPoint[] = salesTrendRows.map((row) => ({
-    date: String(row.date),
-    sales: Number(row.sales || 0),
-    orderCount: Number(row.orderCount || 0),
-  }));
-  const memberTrend: AdminMemberTrendPoint[] = memberTrendRows.map((row) => ({
-    date: String(row.date),
-    memberCount: Number(row.memberCount || 0),
-  }));
   const orders = orderPage.orders;
   const refunds: AdminRefund[] = refundRows.map((row) => ({
     id: row.id,
@@ -692,41 +492,6 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     manualReview: Number(refundCaseMetricRows[0]?.manualReview || 0),
     recentRefundKrw: Number(refundCaseMetricRows[0]?.recentRefundKrw || 0),
   };
-  const members: AdminMember[] = memberRows.map((row) => ({
-    id: row.id,
-    email: row.email || "-",
-    displayName: row.displayName || null,
-    createdAt: iso(row.createdAt)!,
-    lastSignInAt: iso(row.lastSignInAt),
-    subscriptionId: row.subscriptionId || null,
-    planCode: row.planCode || null,
-    billingCycle: row.billingCycle || null,
-    subscriptionStatus: row.subscriptionStatus || null,
-    currentPeriodStart: iso(row.currentPeriodStart),
-    currentPeriodEnd: iso(row.currentPeriodEnd),
-    nextChargeAt: iso(row.nextChargeAt),
-    providerScheduleStatus: row.providerScheduleStatus || null,
-    billingReviewStatus: row.billingReviewStatus || null,
-    billingReviewReason: row.billingReviewReason || null,
-    paymentProvider: row.paymentProvider || null,
-    cardIssuer: row.issuerName || null,
-    cardNumberMasked: row.cardNumberMasked || null,
-    projectCount: Number(row.projectCount || 0),
-    shortCount: Number(row.shortCount || 0),
-    usageLimitSeconds: Number(row.usageLimitSeconds || 0),
-    usageConsumedSeconds: Number(row.usageConsumedSeconds || 0),
-    usageReservedSeconds: Number(row.usageReservedSeconds || 0),
-    usageRemainingSeconds: Math.max(
-      0,
-      Number(row.usageLimitSeconds || 0)
-        - Number(row.usageConsumedSeconds || 0)
-        - Number(row.usageReservedSeconds || 0),
-    ),
-    referralPartnerId: row.referralPartnerId || null,
-    referralCreatorName: row.referralCreatorName || null,
-    referralSlug: row.referralSlug || null,
-  }));
-  const filteredMemberCount = Number(memberRows[0]?.filteredCount || 0);
   const feedback: AdminProjectFeedback[] = feedbackRows.map((row) => ({
     id: row.id,
     email: row.email || "-",
@@ -863,20 +628,9 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     <AdminShell
       activeTab={tab}
       adminEmail={admin.email}
-      metrics={{
-        grossSales: Number(metrics.grossSales || 0),
-        refundedSales: Number(metrics.refundedSales || 0),
-        todaySales: Number(metrics.todaySales || 0),
-        paidOrders: Number(metrics.paidOrders || 0),
-        orderReviewCount: Number(metrics.reviewOrders || 0),
-        activeSubscriptions: Number(subscriptions.active || 0),
-        pastDueSubscriptions: Number(subscriptions.pastDue || 0),
-        manualReviewSubscriptions: Number(subscriptions.manualReview || 0),
-        activeProSubscriptions: Number(subscriptions.activePro || 0),
-        activeSubscriptionBillingKrw: Number(subscriptions.activeBillingKrw || 0),
-      }}
-      salesTrend={salesTrend}
-      memberTrend={memberTrend}
+      metrics={overview.metrics}
+      salesTrend={overview.salesTrend}
+      memberTrend={overview.memberTrend}
     >
       {tab === "billing" ? (
         <AdminBillingDashboard
@@ -894,8 +648,10 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         />
       ) : tab === "members" ? (
         <AdminMembersDashboard
-          members={members}
-          totalCount={filteredMemberCount}
+          members={memberPage.members}
+          totalCount={memberPage.totalCount}
+          initialHasMore={memberPage.hasMore}
+          initialNextOffset={memberPage.nextOffset}
           referralOptions={memberReferralOptionRows.map((row) => ({
             id: row.id,
             creatorName: row.creatorName,

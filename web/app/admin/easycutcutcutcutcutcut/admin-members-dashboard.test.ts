@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { usageMinutes } from "@/lib/admin-member-usage";
 
-const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const memberLoaderSource = readFileSync(
+  new URL("../../../lib/admin-members.ts", import.meta.url),
+  "utf8",
+);
 const dashboardSource = readFileSync(
   new URL("./admin-members-dashboard.tsx", import.meta.url),
   "utf8",
@@ -17,15 +20,15 @@ describe("administrator member usage column", () => {
   });
 
   it("uses the same current entitlement constraints as member usage", () => {
-    expect(pageSource).toContain("from shorts_mvp.usage_grants grant_row");
-    expect(pageSource).toContain("grant_row.status='active'");
-    expect(pageSource).toContain(
+    expect(memberLoaderSource).toContain("from shorts_mvp.usage_grants grant_row");
+    expect(memberLoaderSource).toContain("grant_row.status='active'");
+    expect(memberLoaderSource).toContain(
       "active_subscription.current_period_end>clock_timestamp()",
     );
-    expect(pageSource).toContain(
+    expect(memberLoaderSource).toContain(
       "${ONBOARDING_WELCOME_PRODUCT_CODE}",
     );
-    expect(pageSource).toContain(
+    expect(memberLoaderSource).toContain(
       "${ADMIN_USAGE_GRANT_PRODUCT_CODE}",
     );
   });

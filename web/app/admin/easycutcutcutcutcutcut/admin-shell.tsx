@@ -411,6 +411,7 @@ export function AdminShell({
                   <Link
                     key={item.tab}
                     href={`/admin/easycutcutcutcutcutcut?tab=${item.tab}`}
+                    prefetch={false}
                     aria-current={active ? "page" : undefined}
                     className={`${styles.navLink} ${active ? styles.navLinkActive : ""}`}
                   >
@@ -445,7 +446,7 @@ export function AdminShell({
           </div>
           <div className={styles.topbarActions}>
             <span className={styles.kstBadge}>KST · 실시간 운영 데이터</span>
-            <Link href="/" className={styles.serviceLink}>
+            <Link href="/" prefetch={false} className={styles.serviceLink}>
               서비스로 이동
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
                 <path d="M7 4h9v9M16 4 8 12" />

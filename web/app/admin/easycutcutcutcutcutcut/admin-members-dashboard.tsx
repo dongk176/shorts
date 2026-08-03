@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ADMIN_USAGE_GRANT_MAX_MINUTES,
   ADMIN_USAGE_GRANT_VALIDITY_DAYS,
@@ -100,11 +100,15 @@ function statusTone(status: string | null) {
 export function AdminMembersDashboard({
   members,
   totalCount,
+  initialHasMore,
+  initialNextOffset,
   referralOptions,
   initialFilters,
 }: {
   members: AdminMember[];
   totalCount: number;
+  initialHasMore: boolean;
+  initialNextOffset: number;
   referralOptions: Array<{ id: string; creatorName: string; slug: string }>;
   initialFilters: {
     query: string;
@@ -115,6 +119,11 @@ export function AdminMembersDashboard({
   };
 }) {
   const router = useRouter();
+  const [loadedMembers, setLoadedMembers] = useState(members);
+  const [hasMoreMembers, setHasMoreMembers] = useState(initialHasMore);
+  const [nextMemberOffset, setNextMemberOffset] = useState(initialNextOffset);
+  const [loadingMoreMembers, setLoadingMoreMembers] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [editing, setEditing] = useState<AdminMember | null>(null);
   const [targetStatus, setTargetStatus] = useState<AdminSubscriptionStatus>("active");
   const [reason, setReason] = useState("");
@@ -132,6 +141,53 @@ export function AdminMembersDashboard({
   const [usageGrantMinutes, setUsageGrantMinutes] = useState("60");
   const [usageGrantReason, setUsageGrantReason] = useState("");
   const usageGrantRequestId = useRef<string | null>(null);
+
+  useEffect(() => {
+    setLoadedMembers(members);
+    setHasMoreMembers(initialHasMore);
+    setNextMemberOffset(initialNextOffset);
+    setLoadMoreError(null);
+  }, [initialHasMore, initialNextOffset, members]);
+
+  const loadMoreMembers = async () => {
+    if (loadingMoreMembers || !hasMoreMembers) return;
+    setLoadingMoreMembers(true);
+    setLoadMoreError(null);
+    try {
+      const params = new URLSearchParams({
+        offset: String(nextMemberOffset),
+        memberType: initialFilters.memberType,
+        memberPlan: initialFilters.memberPlan,
+        memberActivity: initialFilters.memberActivity,
+        memberReferrer: initialFilters.memberReferrer,
+      });
+      if (initialFilters.query) params.set("q", initialFilters.query);
+      const response = await fetch(`/api/admin/members?${params.toString()}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const result = await response.json() as {
+        members?: AdminMember[];
+        hasMore?: boolean;
+        nextOffset?: number;
+        detail?: string;
+      };
+      if (!response.ok) {
+        throw new Error(result.detail || "회원을 더 불러오지 못했습니다.");
+      }
+      const appendedMembers = result.members || [];
+      setLoadedMembers((current) => {
+        const knownIds = new Set(current.map((member) => member.id));
+        return current.concat(appendedMembers.filter((member) => !knownIds.has(member.id)));
+      });
+      setHasMoreMembers(Boolean(result.hasMore));
+      setNextMemberOffset(Number(result.nextOffset || nextMemberOffset));
+    } catch (error) {
+      setLoadMoreError(error instanceof Error ? error.message : "회원을 더 불러오지 못했습니다.");
+    } finally {
+      setLoadingMoreMembers(false);
+    }
+  };
 
   const openEditor = (member: AdminMember) => {
     setEditing(member);
@@ -333,7 +389,7 @@ export function AdminMembersDashboard({
                   사용량 추가
                 </button>
               </div>
-              <p className="mt-1 text-xs text-neutral-500">조건에 맞는 회원 전체 표시 · 구독 상태와 자동결제 상태를 함께 관리합니다.</p>
+              <p className="mt-1 text-xs text-neutral-500">100명씩 불러오며 구독 상태와 자동결제 상태를 함께 관리합니다.</p>
             </div>
             <form className="grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-[220px_150px_150px_150px_180px_auto]" method="get">
               <input type="hidden" name="tab" value="members" />
@@ -414,7 +470,7 @@ export function AdminMembersDashboard({
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[.06]">
-              {members.map((member) => (
+              {loadedMembers.map((member) => (
                 <tr key={member.id} className="align-top hover:bg-white/[.02]">
                   <td className="px-5 py-4">
                     <p className="max-w-64 truncate font-bold text-neutral-100">{member.email}</p>
@@ -496,12 +552,31 @@ export function AdminMembersDashboard({
                   </td>
                 </tr>
               ))}
-              {!members.length && (
+              {!loadedMembers.length && (
                 <tr><td colSpan={11} className="px-5 py-16 text-center text-neutral-500">조건에 맞는 회원이 없습니다.</td></tr>
               )}
             </tbody>
           </table>
         </div>
+        {(hasMoreMembers || loadMoreError) && (
+          <div className="border-t border-white/10 px-5 py-4 text-center">
+            {loadMoreError && (
+              <p role="alert" className="mb-3 text-sm font-bold text-[#ff9b8d]">
+                {loadMoreError}
+              </p>
+            )}
+            {hasMoreMembers && (
+              <button
+                type="button"
+                disabled={loadingMoreMembers}
+                onClick={() => void loadMoreMembers()}
+                className="min-h-11 rounded-xl border border-white/15 bg-white/[.04] px-6 text-sm font-black text-white transition hover:bg-white/[.08] disabled:cursor-wait disabled:opacity-50"
+              >
+                {loadingMoreMembers ? "불러오는 중…" : "더보기"}
+              </button>
+            )}
+          </div>
+        )}
       </section>
 
       {usageGrantOpen && (
