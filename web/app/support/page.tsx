@@ -16,7 +16,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function SupportPage() {
   return (
-    <LegalDocument eyebrow="Customer Support" title="고객센터" description="서비스 이용, 결제, 개인정보 및 계정 관련 문의를 아래 연락처로 보내주세요." effectiveDate="2026년 7월 14일" translations={supportTranslations} showTranslationNotice={false}>
+    <LegalDocument eyebrow="Customer Support" title="고객센터" description="서비스 이용, 결제, 개인정보 및 계정 관련 문의를 아래 연락처로 보내주세요." effectiveDate="2026년 7월 14일" translations={supportTranslations} showTranslationNotice={false} preventTextSelection={false}>
       <LegalSection title="고객센터">
         <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/[.03] p-5 sm:p-6">
           <p><strong className="inline-block w-24 text-white">운영시간</strong>평일 14:00 ~ 19:00</p>

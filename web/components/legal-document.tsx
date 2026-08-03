@@ -22,7 +22,7 @@ function localizedEffectiveDate(value: string, locale: "ko" | "en" | "ja") {
     .format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))));
 }
 
-export function LegalDocument({ eyebrow, title, description, effectiveDate, children, translations, sectionIds, showTranslationNotice = true }: {
+export function LegalDocument({ eyebrow, title, description, effectiveDate, children, translations, sectionIds, showTranslationNotice = true, preventTextSelection = true }: {
   eyebrow: string;
   title: string;
   description: string;
@@ -31,11 +31,16 @@ export function LegalDocument({ eyebrow, title, description, effectiveDate, chil
   translations?: Partial<Record<SiteLocale, LegalTranslation>>;
   sectionIds?: Partial<Record<number, string>>;
   showTranslationNotice?: boolean;
+  preventTextSelection?: boolean;
 }) {
   const { locale, t } = useI18n();
   const translated = locale === "ko" ? undefined : translations?.[locale];
   return (
-    <div className="site-chrome min-h-screen bg-[#101415] text-neutral-100">
+    <div
+      className={`${preventTextSelection ? "legal-document-page " : ""}site-chrome min-h-screen bg-[#101415] text-neutral-100`}
+      onCopy={preventTextSelection ? (event) => event.preventDefault() : undefined}
+      onDragStart={preventTextSelection ? (event) => event.preventDefault() : undefined}
+    >
       <header className="site-header">
         <div className="mx-auto flex h-[72px] max-w-4xl items-center justify-between px-5 sm:px-8">
           <Link href="/" className="text-lg font-black tracking-tight text-white">Easy <em className="not-italic text-[#ff7b69]">Cut</em></Link>

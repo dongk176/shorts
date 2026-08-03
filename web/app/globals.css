@@ -1388,6 +1388,12 @@ body:has(.editor-page) .language-selector-floating { display: none; }
 .pricing-addon-card button { width: 100%; min-height: 40px; margin-top: 20px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; color: #e0e3e4; font-size: 12px; font-weight: 800; transition: border-color .2s,color .2s,background .2s; }.pricing-addon-card button:hover { border-color: var(--pricing-red); background: rgba(255,113,94,.07); color: var(--pricing-red-soft); }.pricing-addon-card-value button:hover { border-color: var(--pricing-purple); background: rgba(160,120,255,.08); color: var(--pricing-purple-soft); }.pricing-addon-card button:disabled { opacity: .55; }
 .pricing-addon-note { margin-top: 24px; color: var(--pricing-muted); font-size: 12px; line-height: 1.6; }
 .pricing-note { margin-top: 46px; text-align: center; color: #737376; font-size: 12px; }
+.legal-document-page,
+.legal-document-page * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
 .legal-document h2 { scroll-margin-top: 32px; }
 .legal-document ul { display: grid; gap: 6px; }
 .legal-document table { width: 100%; min-width: 640px; border-collapse: collapse; border: 1px solid rgba(255,255,255,.1); background: rgba(25,28,30,.55); }
