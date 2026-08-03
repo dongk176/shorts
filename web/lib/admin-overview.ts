@@ -26,8 +26,11 @@ export type AdminOverviewData = {
 
 export const loadAdminOverview = unstable_cache(async (): Promise<AdminOverviewData> => {
   const db = getDb();
-  const [metricRows, subscriptionRows, salesTrendRows, memberTrendRows] = await Promise.all([
-    db`
+  // Keep the administrator overview from occupying every connection in the
+  // four-slot serverless pool at once. These cached reads are small, and
+  // sequential execution leaves capacity for authentication and the active
+  // dashboard tab even when two administrator navigations overlap.
+  const metricRows = await db`
       select
         coalesce(sum(amount_krw) filter (where status='succeeded'),0)::bigint as gross_sales,
         coalesce(sum(refunded_amount_krw),0)::bigint as refunded_sales,
@@ -44,8 +47,8 @@ export const loadAdminOverview = unstable_cache(async (): Promise<AdminOverviewD
         )::integer as paid_orders,
         count(*) filter (where status in ('unknown','manual_review'))::integer as review_orders
       from shorts_mvp.billing_orders
-    `,
-    db`
+    `;
+  const subscriptionRows = await db`
       select
         count(*) filter (where subscription.status='active')::integer as active,
         count(*) filter (where subscription.status='past_due')::integer as past_due,
@@ -62,8 +65,8 @@ export const loadAdminOverview = unstable_cache(async (): Promise<AdminOverviewD
         ),0)::bigint as active_billing_krw
       from shorts_mvp.user_subscriptions subscription
       left join shorts_mvp.plans plan on plan.code=subscription.plan_code
-    `,
-    db`
+    `;
+  const salesTrendRows = await db`
       with days as (
         select generate_series(
           date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days',
@@ -91,8 +94,8 @@ export const loadAdminOverview = unstable_cache(async (): Promise<AdminOverviewD
       from days
       left join daily_sales using (trend_day)
       order by days.trend_day
-    `,
-    db`
+    `;
+  const memberTrendRows = await db`
       with days as (
         select generate_series(
           date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days',
@@ -116,8 +119,7 @@ export const loadAdminOverview = unstable_cache(async (): Promise<AdminOverviewD
       from days
       left join daily_members using (trend_day)
       order by days.trend_day
-    `,
-  ]);
+    `;
   const metrics = metricRows[0] || {};
   const subscriptions = subscriptionRows[0] || {};
 

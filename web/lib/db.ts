@@ -6,12 +6,12 @@ const globalDb = globalThis as typeof globalThis & {
 };
 
 let client: Sql | null = globalDb.__shortsMvpDbClient ?? null;
-const LOCAL_DB_HEALTH_TIMEOUT_MS = 4_000;
+const DB_HEALTH_TIMEOUT_MS = 4_000;
 
-class LocalDbHealthTimeoutError extends Error {
+class DbHealthTimeoutError extends Error {
   constructor() {
-    super("로컬 DB 연결 확인 시간이 초과되었습니다.");
-    this.name = "LocalDbHealthTimeoutError";
+    super("DB 연결 확인 시간이 초과되었습니다.");
+    this.name = "DbHealthTimeoutError";
   }
 }
 
@@ -40,15 +40,15 @@ export function getDb(): Sql {
   return client;
 }
 
-async function runLocalDbHealthCheck(db: Sql) {
+async function runDbHealthCheck(db: Sql) {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
       db`select 1`,
       new Promise<never>((_, reject) => {
         timeout = setTimeout(
-          () => reject(new LocalDbHealthTimeoutError()),
-          LOCAL_DB_HEALTH_TIMEOUT_MS,
+          () => reject(new DbHealthTimeoutError()),
+          DB_HEALTH_TIMEOUT_MS,
         );
       }),
     ]);
@@ -57,7 +57,7 @@ async function runLocalDbHealthCheck(db: Sql) {
   }
 }
 
-async function recycleLocalDbClient(expectedClient: Sql) {
+async function recycleDbClient(expectedClient: Sql) {
   if (client === expectedClient) client = null;
   if (globalDb.__shortsMvpDbClient === expectedClient) {
     delete globalDb.__shortsMvpDbClient;
@@ -65,13 +65,7 @@ async function recycleLocalDbClient(expectedClient: Sql) {
   await expectedClient.end({ timeout: 1 }).catch(() => undefined);
 }
 
-/**
- * Next.js 개발 HMR 뒤 postgres.js 풀이 드물게 응답을 반환하지 않는 경우가
- * 있다. 읽기 API가 실제 조회를 시작하기 전에 무해한 쿼리로 풀을 확인하고,
- * 멈춘 풀만 교체한다. 결제 승인 같은 mutation에는 사용하지 않는다.
- */
-export async function ensureLocalDbReady() {
-  if (process.env.NODE_ENV === "production") return;
+async function ensureDbReady() {
   if (globalDb.__shortsMvpDbHealthCheck) {
     return globalDb.__shortsMvpDbHealthCheck;
   }
@@ -79,11 +73,11 @@ export async function ensureLocalDbReady() {
   const healthCheck = (async () => {
     const currentClient = getDb();
     try {
-      await runLocalDbHealthCheck(currentClient);
+      await runDbHealthCheck(currentClient);
     } catch (error) {
-      if (!(error instanceof LocalDbHealthTimeoutError)) throw error;
-      await recycleLocalDbClient(currentClient);
-      await runLocalDbHealthCheck(getDb());
+      if (!(error instanceof DbHealthTimeoutError)) throw error;
+      await recycleDbClient(currentClient);
+      await runDbHealthCheck(getDb());
     }
   })();
   globalDb.__shortsMvpDbHealthCheck = healthCheck;
@@ -94,4 +88,26 @@ export async function ensureLocalDbReady() {
       delete globalDb.__shortsMvpDbHealthCheck;
     }
   }
+}
+
+/**
+ * The administrator page performs several read-only queries during its first
+ * render. Serverless instances can occasionally resume with a stale postgres
+ * pool; unlike a running query, waiting for a free pool slot has no PostgreSQL
+ * statement timeout. Probe and recycle only the administrator function's pool
+ * before starting those reads so the page never waits for Vercel's 300-second
+ * runtime timeout.
+ */
+export async function ensureAdminDbReady() {
+  return ensureDbReady();
+}
+
+/**
+ * Next.js development HMR can leave a local postgres.js pool unresponsive.
+ * Production call sites keep their previous no-op behavior; the administrator
+ * page opts into the bounded production check through ensureAdminDbReady().
+ */
+export async function ensureLocalDbReady() {
+  if (process.env.NODE_ENV === "production") return;
+  return ensureDbReady();
 }

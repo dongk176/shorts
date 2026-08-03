@@ -4,7 +4,7 @@ import { requireAdminUser } from "@/lib/admin";
 import { loadAdminBillingOrders } from "@/lib/admin-billing-orders";
 import { loadAdminMembers } from "@/lib/admin-members";
 import { loadAdminOverview } from "@/lib/admin-overview";
-import { ensureLocalDbReady, getDb } from "@/lib/db";
+import { ensureAdminDbReady, getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { createNoIndexMetadata } from "@/lib/seo";
 import { AdminBillingDashboard, type AdminRefund } from "./admin-billing-dashboard";
@@ -84,7 +84,7 @@ function iso(value: unknown) {
 }
 
 export default async function AdminBillingPage({ searchParams }: PageProps) {
-  await ensureLocalDbReady();
+  await ensureAdminDbReady();
 
   let admin: Awaited<ReturnType<typeof requireAdminUser>>;
   try {

@@ -58,8 +58,8 @@ describe("administrator shell recovery", () => {
     expect(shellSource).toContain("href={`/admin/easycutcutcutcutcutcut?tab=${item.tab}`}");
   });
 
-  it("repairs a stalled local database pool before admin authentication", () => {
-    const healthCheck = pageSource.indexOf("await ensureLocalDbReady();");
+  it("repairs a stalled production database pool before admin authentication", () => {
+    const healthCheck = pageSource.indexOf("await ensureAdminDbReady();");
     const authentication = pageSource.indexOf("admin = await requireAdminUser();");
 
     expect(healthCheck).toBeGreaterThan(-1);
@@ -73,6 +73,7 @@ describe("administrator shell recovery", () => {
     expect(overviewSource).toContain("and amount_krw>0");
     expect(overviewSource).toContain("revalidate: 30");
     expect(pageSource).toContain("loadAdminOverview()");
+    expect(overviewSource).not.toContain("await Promise.all([");
   });
 
   it("loads billing orders in stable administrator-only pages of 100", () => {
