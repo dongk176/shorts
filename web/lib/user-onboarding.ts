@@ -26,6 +26,7 @@ export const userUsagePurposeOptions = [
 export const userDiscoverySourceOptions = [
   { value: "instagram", label: "인스타그램" },
   { value: "youtube", label: "유튜브" },
+  { value: "tiktok", label: "틱톡" },
   { value: "friend_referral", label: "지인 추천" },
   { value: "direct_search", label: "네이버·구글 직접 검색" },
   { value: "blog_community", label: "블로그·커뮤니티" },

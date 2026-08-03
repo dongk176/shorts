@@ -75,6 +75,20 @@ describe("user onboarding API", () => {
     );
   });
 
+  it("keeps the database discovery-source constraint aligned with TikTok", () => {
+    const migration = readFileSync(
+      new URL(
+        "../../../../supabase/migrations/202608030003_add_tiktok_onboarding_discovery_source.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(migration).toContain("'tiktok'");
+    expect(migration).toContain(
+      "drop constraint if exists user_onboarding_profiles_discovery_source_check",
+    );
+  });
+
   it("stores a valid response without coupling onboarding to the login grant", async () => {
     const db = dbWithRows([]);
     mocks.getDb.mockReturnValue(db);
@@ -88,7 +102,7 @@ describe("user onboarding API", () => {
         occupationOther: null,
         usagePurposes: ["youtube_shorts", "save_editing_time"],
         usagePurposeOther: null,
-        discoverySource: "youtube",
+        discoverySource: "tiktok",
         discoverySourceOther: null,
       }),
     }));

@@ -2,6 +2,7 @@ export const welcomeOverlayStages = [
   "onboarding",
   "existing-welcome",
   "sidebar-navigation",
+  "shorts-event",
   "feedback",
   "done",
 ] as const;

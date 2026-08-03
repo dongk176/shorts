@@ -23,6 +23,10 @@ import { EstimatedProcessingOverlay, ProjectCard } from "@/components/project-ca
 import { ProjectReveal } from "@/components/project-reveal";
 import { PaidProjectFeatureOverlay } from "@/components/paid-project-feature-overlay";
 import { ProjectActionGuide } from "@/components/project-action-guide";
+import {
+  ShortsEventParticipationCompleteOverlay,
+  ShortsEventWelcomeController,
+} from "@/components/shorts-creation-event-overlay";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SupportInquiryWidget } from "@/components/support-inquiry-widget";
@@ -9847,6 +9851,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [creationRestrictionOpen, setCreationRestrictionOpen] = useState(false);
   const [creationRestrictionReason, setCreationRestrictionReason] = useState<string | null>(null);
   const [concurrentJobNoticeOpen, setConcurrentJobNoticeOpen] = useState(false);
+  const [shortsEventRewardAvailable, setShortsEventRewardAvailable] = useState(false);
+  const [shortsEventParticipationOpen, setShortsEventParticipationOpen] = useState(false);
+  const [shortsEventGrantedSeconds, setShortsEventGrantedSeconds] = useState(0);
   const [scrollToAnalysis, setScrollToAnalysis] = useState(false);
   const [scrollToProjects, setScrollToProjects] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -9875,6 +9882,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const effectiveVideoAspectRatio = selectedPersonalTemplate?.config.video.aspectRatio ?? videoAspectRatio;
   const closeCreationRestriction = useCallback(() => setCreationRestrictionOpen(false), []);
   const closeConcurrentJobNotice = useCallback(() => setConcurrentJobNoticeOpen(false), []);
+  const closeShortsEventParticipation = useCallback(() => {
+    setShortsEventParticipationOpen(false);
+  }, []);
   const openLoginAfterDelay = useCallback((next: string) => {
     if (loginOpenTimer.current !== null) return;
     setLoginNext(next);
@@ -10154,7 +10164,11 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       openLoginAfterDelay(next);
       return;
     }
-    if (state.usage.enforcementEnabled && !state.billing.canCreateJobs) {
+    if (
+      state.usage.enforcementEnabled
+      && !state.billing.canCreateJobs
+      && !shortsEventRewardAvailable
+    ) {
       window.location.href = "/pricing";
       return;
     }
@@ -10164,7 +10178,23 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     }
     setBusy(true); setError(null);
     try {
-      const value = await requestJson<{ jobId: string; projectNumber: number; usage: UsageSnapshot }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID() }) });
+      const value = await requestJson<{
+        jobId: string;
+        projectNumber: number;
+        usage: UsageSnapshot;
+        shortsThankYouEventReward: {
+          granted: boolean;
+          grantedSeconds: number;
+          validUntil: string | null;
+        };
+      }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID() }) });
+      setShortsEventRewardAvailable(false);
+      if (value.shortsThankYouEventReward.granted) {
+        setShortsEventGrantedSeconds(
+          value.shortsThankYouEventReward.grantedSeconds,
+        );
+        setShortsEventParticipationOpen(true);
+      }
       const pendingJob: VideoJob = { id: value.jobId, projectNumber: value.projectNumber, isExample: false, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: analysis.expectedShortCount, plannedShortCount: analysis.expectedShortCount, readyShortCount: 0, failedShortCount: 0, renderSuccessPercent: null, status: "queued", stage: "queued", progress: SIMULATED_PROGRESS_START, stageCompletedCount: 0, stageTotalCount: 0, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
       setState((current) => current ? { ...current, usage: value.usage, recentJobs: [pendingJob, ...current.recentJobs.filter((job) => job.id !== pendingJob.id)] } : current);
       publishUsageSnapshot(value.usage);
@@ -10210,6 +10240,14 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <div className="ambient ambient-coral" aria-hidden="true" />
       <div className="ambient ambient-violet" aria-hidden="true" />
       <SiteHeader desktopSidebar><AuthControls user={state?.user || null} next={loginNext} loginOpen={loginOpen} onLoginOpenChange={setLoginOpen} /></SiteHeader>
+      <ShortsEventWelcomeController
+        onRewardAvailabilityChange={setShortsEventRewardAvailable}
+      />
+      <ShortsEventParticipationCompleteOverlay
+        open={shortsEventParticipationOpen}
+        grantedSeconds={shortsEventGrantedSeconds}
+        onClose={closeShortsEventParticipation}
+      />
       <NoticeDialog
         open={creationRestrictionOpen && Boolean(creationRestrictionReason)}
         dialogId="creation-restriction"
@@ -10320,7 +10358,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           <button disabled={analysisCreationBlocked || !rightsConfirmed || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
               {loginPromptPending && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
-              {analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs ? t("home.create") : t("home.choosePlan")}
+              {analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs || shortsEventRewardAvailable ? t("home.create") : t("home.choosePlan")}
             </span>
           </button>
         </section>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { requireAdminUser } from "@/lib/admin";
 import { loadAdminBillingOrders } from "@/lib/admin-billing-orders";
+import { ADMIN_USAGE_GRANT_PRODUCT_CODE } from "@/lib/admin-usage-grant";
 import { ensureLocalDbReady, getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { createNoIndexMetadata } from "@/lib/seo";
@@ -20,6 +21,7 @@ import { AdminMembersDashboard, type AdminMember } from "./admin-members-dashboa
 import { AdminManagedAccountsSection } from "./admin-managed-accounts-section";
 import { AdminInstallmentsDashboard } from "./admin-installments-dashboard";
 import { AdminRuntimeSettings } from "./admin-runtime-settings";
+import { AdminShortsEventSetting } from "./admin-shorts-event-setting";
 import {
   AdminShell,
   type AdminMemberTrendPoint,
@@ -54,11 +56,18 @@ import {
   onboardingWelcomeGrantEnabled,
 } from "@/lib/onboarding-welcome";
 import {
+  userDiscoverySourceValues,
   userOccupationValues,
   userUsagePurposeValues,
+  type UserDiscoverySource,
   type UserOccupation,
   type UserUsagePurpose,
 } from "@/lib/user-onboarding";
+import {
+  SHORTS_THANK_YOU_EVENT_FLAG_KEY,
+  SHORTS_THANK_YOU_EVENT_PRODUCT_CODE,
+  shortsThankYouEventEnabled,
+} from "@/lib/shorts-thank-you-event";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = createNoIndexMetadata(
@@ -147,6 +156,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const db = getDb();
   const [
     runtimeSettingRows,
+    eventRuntimeSettingRows,
     metricRows,
     subscriptionRows,
     salesTrendRows,
@@ -158,6 +168,15 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         left join shorts_mvp.app_users administrator
           on administrator.id=feature_flag.updated_by_user_id
         where feature_flag.flag_key=${LOGIN_WELCOME_GRANT_FLAG_KEY}
+        limit 1
+      ` : Promise.resolve([]),
+    tab === "settings" ? db`
+        select feature_flag.enabled,feature_flag.updated_at,
+          administrator.email as updated_by_email
+        from shorts_mvp.runtime_feature_flags feature_flag
+        left join shorts_mvp.app_users administrator
+          on administrator.id=feature_flag.updated_by_user_id
+        where feature_flag.flag_key=${SHORTS_THANK_YOU_EVENT_FLAG_KEY}
         limit 1
       ` : Promise.resolve([]),
     db`
@@ -430,7 +449,11 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             or (
               grant_row.kind='addon'
               and (
-                grant_row.product_code=${ONBOARDING_WELCOME_PRODUCT_CODE}
+                grant_row.product_code in (
+                  ${ONBOARDING_WELCOME_PRODUCT_CODE},
+                  ${SHORTS_THANK_YOU_EVENT_PRODUCT_CODE},
+                  ${ADMIN_USAGE_GRANT_PRODUCT_CODE}
+                )
                 or u.manual_service_access_until>clock_timestamp()
                 or exists (
                   select 1
@@ -556,7 +579,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const onboardingRows = tab === "onboarding" ? await db`
       select
         p.user_id,p.occupation,p.occupation_other,p.usage_purposes,
-        p.usage_purpose_other,p.onboarding_version,p.completed_at,
+        p.usage_purpose_other,p.discovery_source,p.discovery_source_other,
+        p.onboarding_version,p.completed_at,
         u.email,u.display_name
       from shorts_mvp.user_onboarding_profiles p
       join shorts_mvp.app_users u on u.id=p.user_id
@@ -566,6 +590,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         or lower(coalesce(u.display_name,'')) like ${`%${query.toLowerCase()}%`}
         or lower(coalesce(p.occupation_other,'')) like ${`%${query.toLowerCase()}%`}
         or lower(coalesce(p.usage_purpose_other,'')) like ${`%${query.toLowerCase()}%`}
+        or lower(coalesce(p.discovery_source_other,'')) like ${`%${query.toLowerCase()}%`}
         or p.user_id::text=${query}
       )
       order by p.completed_at desc
@@ -588,6 +613,13 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       cross join lateral unnest(p.usage_purposes) as selected(purpose)
       group by selected.purpose
       order by count desc,selected.purpose
+    ` : [];
+  const onboardingDiscoverySourceCountRows = tab === "onboarding" ? await db`
+      select discovery_source,count(*)::integer as count
+      from shorts_mvp.user_onboarding_profiles
+      where discovery_source is not null
+      group by discovery_source
+      order by count desc,discovery_source
     ` : [];
 
   const metrics = metricRows[0] || {};
@@ -750,6 +782,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   };
   const validOccupations = new Set<string>(userOccupationValues);
   const validUsagePurposes = new Set<string>(userUsagePurposeValues);
+  const validDiscoverySources = new Set<string>(userDiscoverySourceValues);
   const onboardingResponses: AdminUserOnboardingResponse[] = onboardingRows
     .filter((row) => validOccupations.has(String(row.occupation)))
     .map((row) => ({
@@ -761,6 +794,10 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       usagePurposes: (Array.isArray(row.usagePurposes) ? row.usagePurposes : [])
         .filter((purpose): purpose is UserUsagePurpose => validUsagePurposes.has(String(purpose))),
       usagePurposeOther: row.usagePurposeOther || null,
+      discoverySource: validDiscoverySources.has(String(row.discoverySource))
+        ? row.discoverySource as UserDiscoverySource
+        : null,
+      discoverySourceOther: row.discoverySourceOther || null,
       onboardingVersion: Number(row.onboardingVersion || 1),
       completedAt: iso(row.completedAt)!,
     }));
@@ -778,6 +815,12 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     .filter((row) => validUsagePurposes.has(String(row.purpose)))
     .map((row) => ({
       purpose: row.purpose as UserUsagePurpose,
+      count: Number(row.count || 0),
+    }));
+  const onboardingDiscoverySourceCounts = onboardingDiscoverySourceCountRows
+    .filter((row) => validDiscoverySources.has(String(row.discoverySource)))
+    .map((row) => ({
+      discoverySource: row.discoverySource as UserDiscoverySource,
       count: Number(row.count || 0),
     }));
   const editorReleaseState = editorReleaseStateRows[0];
@@ -891,6 +934,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           metrics={onboardingMetrics}
           occupationCounts={onboardingOccupationCounts}
           usagePurposeCounts={onboardingUsagePurposeCounts}
+          discoverySourceCounts={onboardingDiscoverySourceCounts}
           query={query}
         />
       ) : tab === "editor-releases" ? (
@@ -914,12 +958,20 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           renderStats={editorReleaseRenderStats}
         />
       ) : tab === "settings" ? (
-        <AdminRuntimeSettings
-          initialEnabled={Boolean(runtimeSettingRows[0]?.enabled)}
-          environmentEnabled={onboardingWelcomeGrantEnabled()}
-          initialUpdatedAt={iso(runtimeSettingRows[0]?.updatedAt)}
-          initialUpdatedBy={runtimeSettingRows[0]?.updatedByEmail || null}
-        />
+        <>
+          <AdminRuntimeSettings
+            initialEnabled={Boolean(runtimeSettingRows[0]?.enabled)}
+            environmentEnabled={onboardingWelcomeGrantEnabled()}
+            initialUpdatedAt={iso(runtimeSettingRows[0]?.updatedAt)}
+            initialUpdatedBy={runtimeSettingRows[0]?.updatedByEmail || null}
+          />
+          <AdminShortsEventSetting
+            initialEnabled={Boolean(eventRuntimeSettingRows[0]?.enabled)}
+            environmentEnabled={shortsThankYouEventEnabled()}
+            initialUpdatedAt={iso(eventRuntimeSettingRows[0]?.updatedAt)}
+            initialUpdatedBy={eventRuntimeSettingRows[0]?.updatedByEmail || null}
+          />
+        </>
       ) : (
         <AdminInstallmentsDashboard />
       )}

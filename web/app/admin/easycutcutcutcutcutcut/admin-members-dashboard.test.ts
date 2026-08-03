@@ -23,7 +23,10 @@ describe("administrator member usage column", () => {
       "active_subscription.current_period_end>clock_timestamp()",
     );
     expect(pageSource).toContain(
-      "grant_row.product_code=${ONBOARDING_WELCOME_PRODUCT_CODE}",
+      "${ONBOARDING_WELCOME_PRODUCT_CODE}",
+    );
+    expect(pageSource).toContain(
+      "${ADMIN_USAGE_GRANT_PRODUCT_CODE}",
     );
   });
 
@@ -38,5 +41,13 @@ describe("administrator member usage column", () => {
     expect(dashboardSource).toContain(
       "잔여 {usageMinutes(member.usageRemainingSeconds)}분",
     );
+  });
+
+  it("supports searching and selecting a member before granting custom usage", () => {
+    expect(dashboardSource).toContain("사용량 추가");
+    expect(dashboardSource).toContain("/api/admin/members/search");
+    expect(dashboardSource).toContain("/api/admin/members/usage");
+    expect(dashboardSource).toContain("selectUsageGrantMember(member)");
+    expect(dashboardSource).toContain("usageGrantMinutes");
   });
 });

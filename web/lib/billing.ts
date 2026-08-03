@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Sql, TransactionSql } from "postgres";
+import { ADMIN_USAGE_GRANT_PRODUCT_CODE } from "@/lib/admin-usage-grant";
 import type {
   BillingCycle,
   BillingSummary,
@@ -10,6 +11,7 @@ import type {
 import { resolveStoredCardIssuer } from "@/lib/billing-card";
 import { HttpError } from "@/lib/http";
 import { ONBOARDING_WELCOME_PRODUCT_CODE } from "@/lib/onboarding-welcome";
+import { SHORTS_THANK_YOU_EVENT_PRODUCT_CODE } from "@/lib/shorts-thank-you-event";
 import { isPricingV2PackageCode } from "@/lib/pricing-v2";
 
 export type BillingDb = Sql | TransactionSql;
@@ -282,7 +284,11 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
         select 1
         from shorts_mvp.usage_grants welcome_grant
         where welcome_grant.user_id=account.id
-          and welcome_grant.product_code=${ONBOARDING_WELCOME_PRODUCT_CODE}
+          and welcome_grant.product_code in (
+            ${ONBOARDING_WELCOME_PRODUCT_CODE},
+            ${SHORTS_THANK_YOU_EVENT_PRODUCT_CODE},
+            ${ADMIN_USAGE_GRANT_PRODUCT_CODE}
+          )
           and welcome_grant.status='active'
           and welcome_grant.valid_from<=clock_timestamp()
           and welcome_grant.expires_at>clock_timestamp()

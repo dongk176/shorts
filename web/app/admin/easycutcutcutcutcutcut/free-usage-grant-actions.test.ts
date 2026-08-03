@@ -16,11 +16,15 @@ vi.mock("next/cache", () => ({
   revalidatePath: mocks.revalidatePath,
 }));
 
-import { updateFreeUsageGrantSetting } from "./free-usage-grant-actions";
+import {
+  updateFreeUsageGrantSetting,
+  updateShortsThankYouEventSetting,
+} from "./free-usage-grant-actions";
 
 beforeEach(() => {
   vi.clearAllMocks();
   delete process.env.ONBOARDING_WELCOME_GRANT_ENABLED;
+  delete process.env.SHORTS_10K_EVENT_ENABLED;
   mocks.requireAdminUser.mockResolvedValue({
     id: "850a1122-2dc5-481f-9c1b-147d6e5addaa",
     email: "admin@example.com",
@@ -29,6 +33,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.ONBOARDING_WELCOME_GRANT_ENABLED;
+  delete process.env.SHORTS_10K_EVENT_ENABLED;
 });
 
 function mockDb(currentEnabled: boolean, updatedAt = "2026-07-29T00:00:00.000Z") {
@@ -102,6 +107,25 @@ describe("administrator free usage grant setting action", () => {
 
     await expect(updateFreeUsageGrantSetting(true)).resolves.toMatchObject({
       enabled: true,
+      effectiveEnabled: false,
+    });
+  });
+});
+
+describe("administrator shorts event setting action", () => {
+  it("cannot enable the database flag while the deployment switch is off", async () => {
+    await expect(updateShortsThankYouEventSetting(true)).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(mocks.requireAdminUser).toHaveBeenCalledOnce();
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
+  it("can still turn a stale database flag off while the deployment switch is off", async () => {
+    mockDb(true);
+
+    await expect(updateShortsThankYouEventSetting(false)).resolves.toMatchObject({
+      enabled: false,
       effectiveEnabled: false,
     });
   });

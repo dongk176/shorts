@@ -25,6 +25,10 @@ import { billableSourceSeconds, getUsageSnapshot } from "@/lib/usage";
 import { templateSnapshotFromRow } from "@/lib/custom-templates";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
 import { assertSupportedSourceVideoDuration } from "@/lib/source-video";
+import {
+  issueShortsThankYouEventGrantIfEligible,
+  type ShortsThankYouEventGrant,
+} from "@/lib/shorts-thank-you-event";
 
 const schema = z.object({
   analysisId: z.string().uuid(),
@@ -36,6 +40,12 @@ const schema = z.object({
   rightsConfirmed: z.boolean().optional(),
   requestId: z.string().uuid(),
 });
+
+const noShortsThankYouEventReward: ShortsThankYouEventGrant = {
+  granted: false,
+  grantedSeconds: 0,
+  validUntil: null,
+};
 
 export async function POST(request: Request) {
   try {
@@ -63,6 +73,7 @@ export async function POST(request: Request) {
       projectNumber: Number(existing[0].projectNumber),
       status: existing[0].status,
       usage: await getUsageSnapshot(db, session),
+      shortsThankYouEventReward: noShortsThankYouEventReward,
     });
     // Circuit breaker logic removed to allow continuous testing with proxies.
 
@@ -100,6 +111,7 @@ export async function POST(request: Request) {
     const deadlineMinutes = jobDeadlineMinutes(sourceDurationSeconds);
     const jobId = randomUUID();
     let createdProjectNumber: number | null = null;
+    let shortsThankYouEventReward = noShortsThankYouEventReward;
     const duplicate = await db.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtextextended(${session.userId || session.id}, 0))`;
       const concurrentExisting = await tx`
@@ -122,6 +134,8 @@ export async function POST(request: Request) {
         | ReturnType<typeof templateSnapshotFromRow>
         | { presetVersion: 2 | 3 }
         | null = null;
+      shortsThankYouEventReward =
+        await issueShortsThankYouEventGrantIfEligible(tx, session.userId);
       const billing = await getBillingSummary(tx, session.userId);
       if (input.customTemplateId) {
         assertCustomTemplateAccess(billing);
@@ -228,6 +242,7 @@ export async function POST(request: Request) {
         projectNumber: duplicate.projectNumber,
         status: duplicate.status,
         usage: await getUsageSnapshot(db, session),
+        shortsThankYouEventReward: noShortsThankYouEventReward,
       });
     }
     if (!createdProjectNumber || !Number.isSafeInteger(createdProjectNumber)) {
@@ -251,6 +266,7 @@ export async function POST(request: Request) {
       status: "queued",
       executionBackend,
       usage: await getUsageSnapshot(db, session),
+      shortsThankYouEventReward,
     }, { status: 202 });
   } catch (error) { return apiError(error); }
 }

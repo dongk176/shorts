@@ -1,6 +1,8 @@
 import {
+  userDiscoverySourceOptions,
   userOccupationOptions,
   userUsagePurposeOptions,
+  type UserDiscoverySource,
   type UserOccupation,
   type UserUsagePurpose,
 } from "@/lib/user-onboarding";
@@ -13,6 +15,8 @@ export type AdminUserOnboardingResponse = {
   occupationOther: string | null;
   usagePurposes: UserUsagePurpose[];
   usagePurposeOther: string | null;
+  discoverySource: UserDiscoverySource | null;
+  discoverySourceOther: string | null;
   onboardingVersion: number;
   completedAt: string;
 };
@@ -27,6 +31,9 @@ const occupationLabels = new Map<string, string>(
 );
 const usagePurposeLabels = new Map<string, string>(
   userUsagePurposeOptions.map((option) => [option.value, option.label]),
+);
+const discoverySourceLabels = new Map<string, string>(
+  userDiscoverySourceOptions.map((option) => [option.value, option.label]),
 );
 
 function date(value: string) {
@@ -46,12 +53,14 @@ export function AdminOnboardingDashboard({
   metrics,
   occupationCounts,
   usagePurposeCounts,
+  discoverySourceCounts,
   query,
 }: {
   responses: AdminUserOnboardingResponse[];
   metrics: AdminUserOnboardingMetrics;
   occupationCounts: Array<{ occupation: UserOccupation; count: number }>;
   usagePurposeCounts: Array<{ purpose: UserUsagePurpose; count: number }>;
+  discoverySourceCounts: Array<{ discoverySource: UserDiscoverySource; count: number }>;
   query: string;
 }) {
   const unansweredCount = Math.max(metrics.totalMemberCount - metrics.responseCount, 0);
@@ -71,7 +80,7 @@ export function AdminOnboardingDashboard({
         ))}
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2" aria-label="온보딩 응답 분포">
+      <section className="grid gap-4 lg:grid-cols-3" aria-label="온보딩 응답 분포">
         <article className="rounded-2xl border border-white/10 bg-[#151819] p-5">
           <h2 className="text-lg font-black">직업 분포</h2>
           <div className="mt-4 flex flex-wrap gap-2">
@@ -104,6 +113,26 @@ export function AdminOnboardingDashboard({
             )}
           </div>
         </article>
+
+        <article className="rounded-2xl border border-white/10 bg-[#151819] p-5">
+          <h2 className="text-lg font-black">유입 경로 분포</h2>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {discoverySourceCounts.length
+              ? discoverySourceCounts.map(({ discoverySource, count }) => (
+                <span
+                  key={discoverySource}
+                  className="rounded-full border border-white/10 bg-white/[.04] px-3 py-2 text-xs font-bold text-neutral-300"
+                >
+                  {discoverySourceLabels.get(discoverySource) || discoverySource}
+                  {" · "}
+                  {count.toLocaleString("ko-KR")}명
+                </span>
+              ))
+              : (
+                <p className="text-sm text-neutral-500">아직 수집된 응답이 없습니다.</p>
+              )}
+          </div>
+        </article>
       </section>
 
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#151819]">
@@ -127,13 +156,14 @@ export function AdminOnboardingDashboard({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1050px] text-left text-sm">
+          <table className="w-full min-w-[1200px] text-left text-sm">
             <thead className="bg-black/20 text-xs text-neutral-500">
               <tr>
                 <th className="px-5 py-3">응답 시각</th>
                 <th className="px-4 py-3">회원</th>
                 <th className="px-4 py-3">직업</th>
                 <th className="px-4 py-3">이용 목적</th>
+                <th className="px-4 py-3">유입 경로</th>
                 <th className="px-5 py-3">설문 버전</th>
               </tr>
             </thead>
@@ -168,6 +198,19 @@ export function AdminOnboardingDashboard({
                       <p className="mt-2 text-xs text-[#ffb4a8]">기타: {response.usagePurposeOther}</p>
                     )}
                   </td>
+                  <td className="px-4 py-4 font-semibold text-neutral-200">
+                    <p>
+                      {response.discoverySource
+                        ? discoverySourceLabels.get(response.discoverySource)
+                          || response.discoverySource
+                        : "-"}
+                    </p>
+                    {response.discoverySourceOther && (
+                      <p className="mt-1 text-xs font-normal text-[#ffb4a8]">
+                        {response.discoverySourceOther}
+                      </p>
+                    )}
+                  </td>
                   <td className="whitespace-nowrap px-5 py-4 text-neutral-400">
                     v{response.onboardingVersion}
                   </td>
@@ -175,7 +218,7 @@ export function AdminOnboardingDashboard({
               ))}
               {!responses.length && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-14 text-center text-neutral-500">
+                  <td colSpan={6} className="px-5 py-14 text-center text-neutral-500">
                     조건에 맞는 온보딩 응답이 없습니다.
                   </td>
                 </tr>
