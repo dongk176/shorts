@@ -8,6 +8,13 @@ const LEGACY_PRODUCTION_HOSTS = new Set([
   "shorts-artiroom.vercel.app",
   "shorts-dmsthaalcls-1044-artiroom.vercel.app",
 ]);
+const ADMIN_DASHBOARD_PATH = "/admin/easycutcutcutcutcutcut";
+
+function isNavigationPrefetch(request: NextRequest) {
+  return request.headers.get("next-router-prefetch") === "1"
+    || request.headers.get("purpose")?.toLowerCase() === "prefetch"
+    || request.headers.get("sec-purpose")?.toLowerCase().includes("prefetch") === true;
+}
 
 export async function middleware(request: NextRequest) {
   if (LEGACY_PRODUCTION_HOSTS.has(request.nextUrl.hostname)) {
@@ -38,6 +45,25 @@ export async function middleware(request: NextRequest) {
 
   if (pathname === "/auth/sign-out") {
     return NextResponse.next({ request });
+  }
+
+  // Older admin client bundles eagerly prefetched every dashboard tab. A single
+  // visit could fan out into many expensive RSC renders and exhaust the shared
+  // database pool before the real navigation request was served. New links also
+  // opt out of prefetching, but this server-side breaker protects already-open
+  // browser tabs until they receive the new bundle.
+  if (
+    request.method === "GET"
+    && pathname.startsWith(ADMIN_DASHBOARD_PATH)
+    && isNavigationPrefetch(request)
+  ) {
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        "Cache-Control": "private, no-store, max-age=0",
+        Vary: "Next-Router-Prefetch, Purpose, Sec-Purpose",
+      },
+    });
   }
 
   return refreshSupabaseSession(request);

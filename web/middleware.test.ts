@@ -90,6 +90,34 @@ describe("canonical URL middleware", () => {
     expect(mocks.refreshSession).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["next-router-prefetch", "1"],
+    ["purpose", "prefetch"],
+    ["sec-purpose", "prefetch;prerender"],
+  ])("short-circuits legacy admin prefetch requests carrying %s", async (name, value) => {
+    const request = new NextRequest(
+      "https://www.easycut.co.kr/admin/easycutcutcutcutcutcut?tab=members",
+      { headers: { [name]: value } },
+    );
+
+    const response = await middleware(request);
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(mocks.refreshSession).not.toHaveBeenCalled();
+  });
+
+  it("continues to authenticate real admin navigation requests", async () => {
+    const request = new NextRequest(
+      "https://www.easycut.co.kr/admin/easycutcutcutcutcutcut?tab=members",
+    );
+
+    const response = await middleware(request);
+
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(mocks.refreshSession).toHaveBeenCalledOnce();
+  });
+
   it("leaves unrelated routes unchanged", async () => {
     const response = await middleware(new NextRequest("https://example.com/pricing"));
 

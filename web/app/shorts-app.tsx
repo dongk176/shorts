@@ -46,7 +46,7 @@ import type {
   VideoJob,
   YoutubeAnalysis,
 } from "@/lib/contracts";
-import { outputLanguageOptions, videoAspectRatioOptions } from "@/lib/contracts";
+import { videoAspectRatioOptions } from "@/lib/contracts";
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
@@ -203,7 +203,6 @@ import { currentClientLocale, localizeApiError, localizeAuthError } from "@/lib/
 import { messagesByLocale } from "@/lib/i18n/messages";
 import { useI18n } from "@/lib/i18n/provider";
 import { localizedValue } from "@/lib/i18n/config";
-import { outputLanguageName } from "@/lib/i18n/product";
 import { publishUsageSnapshot } from "@/lib/usage-client";
 
 const templates: Array<{ id: TemplateId; name: string; label: string; background: string; primary: string; accent: string; accentBackground: string | null; channel: string }> = [
@@ -9860,7 +9859,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(null);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
-  const [outputLanguage, setOutputLanguage] = useState<OutputLanguage>("ko");
+  const outputLanguage: OutputLanguage = "ko";
   const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
   const [customTemplateId, setCustomTemplateId] = useState<string | null>(null);
   const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
@@ -10322,9 +10321,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <BackgroundShowcase />
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}
       {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>{t("home.serviceLoadError")}</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">{t("common.retry")}</button></div>}
-      {analysis && <section id="shorts-settings" ref={analysisSectionRef} className="scroll-mt-24 rounded-2xl border border-white/10 bg-[#141416] p-5 sm:scroll-mt-28"><label htmlFor="output-language" className="text-xl font-bold">{t("home.outputLanguage")}</label><p className="mt-1 text-sm text-neutral-500">{t("home.outputLanguageDescription")}</p><select id="output-language" value={outputLanguage} onChange={(event) => setOutputLanguage(event.target.value as OutputLanguage)} className="mt-3 h-12 w-full rounded-xl border border-white/10 bg-[#141416] px-4 text-sm text-neutral-100 outline-none focus:border-red-500 sm:max-w-xs">{outputLanguageOptions.map((option) => <option key={option.code} value={option.code}>{outputLanguageName(option.code, locale)}</option>)}</select></section>}
       {analysis && (
-        <section className="scroll-mt-24 space-y-8 sm:scroll-mt-28">
+        <section id="shorts-settings" ref={analysisSectionRef} className="scroll-mt-24 space-y-8 sm:scroll-mt-28">
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex">
             <Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" />
             <div className="p-5">
