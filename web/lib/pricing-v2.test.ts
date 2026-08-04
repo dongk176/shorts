@@ -3,6 +3,7 @@ import {
   canStackPricingV2Package,
   getPricingV2Plan,
   getPricingV2Package,
+  isEasycutProPackageReplacement,
   pricingV2EarlyBirdProducts,
   pricingV2PackageMonths,
 } from "./pricing-v2";
@@ -77,5 +78,13 @@ describe("pricing v2 catalog", () => {
     expect(canStackPricingV2Package("starter_6m", "expert_12m")).toBe(true);
     expect(canStackPricingV2Package("easycut_pro_v2", "starter_6m")).toBe(false);
     expect(canStackPricingV2Package("starter_6m", "easycut_pro_v2")).toBe(false);
+  });
+
+  it("recognizes only Easycut Pro to package replacements", () => {
+    expect(isEasycutProPackageReplacement("easycut_pro_v2", "starter_6m")).toBe(true);
+    expect(isEasycutProPackageReplacement("easycut_pro_v2", "expert_12m")).toBe(true);
+    expect(isEasycutProPackageReplacement("starter_3m", "starter_6m")).toBe(false);
+    expect(isEasycutProPackageReplacement("plus", "starter_6m")).toBe(false);
+    expect(isEasycutProPackageReplacement("easycut_pro_v2", "easycut_pro_v2")).toBe(false);
   });
 });

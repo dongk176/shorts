@@ -20,7 +20,10 @@ import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
 import { getActiveInstallmentOffer } from "@/lib/installments";
-import { getPricingV2Plan } from "@/lib/pricing-v2";
+import {
+  getPricingV2Plan,
+  isEasycutProPackageReplacement,
+} from "@/lib/pricing-v2";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
   assertThePayOneBillingEnabled,
@@ -336,6 +339,17 @@ export async function GET(request: Request) {
       currentMonthlyPayment(session.userId, subscription),
       currentBaseCarryoverSeconds(subscription, now),
     ]);
+    const replacesEasycutPro = isEasycutProPackageReplacement(
+      subscription.planCode,
+      targetPlan.code,
+    );
+    if (replacesEasycutPro && !sourcePayment) {
+      throw new HttpError(
+        409,
+        "기존 이지컷 프로 결제의 전액 환불 가능 상태를 확인하지 못했습니다. 고객센터로 문의해 주세요.",
+        "CURRENT_PAYMENT_NOT_REFUNDABLE",
+      );
+    }
     const quote = buildQuote(
         subscription,
         currentPlan,
@@ -351,7 +365,7 @@ export async function GET(request: Request) {
       quote,
       currentPlan.displayName,
       targetPlan.monthlySourceSeconds,
-      carryoverSeconds,
+      replacesEasycutPro ? 0 : carryoverSeconds,
       installment,
     ));
   } catch (error) {
@@ -429,6 +443,17 @@ export async function POST(request: Request) {
         currentMonthlyPayment(session.userId, subscription),
         currentBaseCarryoverSeconds(subscription, quoteTime),
       ]);
+      const replacesEasycutPro = isEasycutProPackageReplacement(
+        subscription.planCode,
+        targetPlan.code,
+      );
+      if (replacesEasycutPro && !sourcePayment) {
+        throw new HttpError(
+          409,
+          "기존 이지컷 프로 결제의 전액 환불 가능 상태를 확인하지 못했습니다. 고객센터로 문의해 주세요.",
+          "CURRENT_PAYMENT_NOT_REFUNDABLE",
+        );
+      }
       const quote = buildQuote(
         subscription,
         currentPlan,
@@ -449,7 +474,7 @@ export async function POST(request: Request) {
           quote,
           currentPlan.displayName,
           targetPlan.monthlySourceSeconds,
-          carryoverSeconds,
+          replacesEasycutPro ? 0 : carryoverSeconds,
         ),
       });
     }

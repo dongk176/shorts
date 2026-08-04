@@ -43,6 +43,7 @@ import {
 import {
   canStackPricingV2Package,
   getPricingV2Plan,
+  isEasycutProPackageReplacement,
   isPricingV2PackageCode,
   isPricingV2PlanCode,
 } from "@/lib/pricing-v2";
@@ -297,7 +298,11 @@ function payerPhoneFromMethod(method: StoredMethod) {
 }
 
 async function pauseOldSchedule(method: StoredMethod | null) {
-  if (!method || method.provider !== "thepayone" || method.providerScheduleStatus !== "active") return true;
+  if (
+    !method
+    || method.provider !== "thepayone"
+    || !["active", "manual_review"].includes(method.providerScheduleStatus)
+  ) return true;
   try {
     await changeThePayOneCardStatus(cardIdFromMethod(method), "중지", createPaymentTrackId("AUDT"));
     return true;
@@ -388,6 +393,11 @@ export async function POST(request: Request) {
       billingCycle = current!.billingCycle;
     }
     const pricingV2Plan = getPricingV2Plan(plan.code);
+    const replacesEasycutPro = Boolean(
+      subscriptionChange
+      && current
+      && isEasycutProPackageReplacement(current.planCode, plan.code),
+    );
     if (pricingV2Plan && pricingV2Plan.billingCycle !== billingCycle) {
       throw new HttpError(
         409,
@@ -476,6 +486,13 @@ export async function POST(request: Request) {
         }
         if (current!.billingCycle === "monthly") {
           currentPaymentToRefund = await currentMonthlyPaymentOrder(session.userId, current!);
+        }
+        if (replacesEasycutPro && !currentPaymentToRefund) {
+          throw new HttpError(
+            409,
+            "기존 이지컷 프로 결제의 전액 환불 가능 상태를 확인하지 못했습니다. 고객센터로 문의해 주세요.",
+            "CURRENT_PAYMENT_NOT_REFUNDABLE",
+          );
         }
         changeQuote = quoteSubscriptionChange({
           currentPlanCode: current!.planCode as PaidPlanProduct["code"],
@@ -1107,13 +1124,15 @@ export async function POST(request: Request) {
           rootTransactionId: currentPaymentToRefund.providerTransactionId,
           amount: refundAmount,
           referenceId: currentPaymentToRefund.id,
-          reason: "월간 플랜 업그레이드 기존 결제 전액취소",
+          reason: replacesEasycutPro
+            ? "이지컷 프로 패키지 전환 기존 결제 전액취소"
+            : "월간 플랜 업그레이드 기존 결제 전액취소",
         });
         const refundMismatchFields = thePayOneRefundMismatchFields(refund, {
           trackId: refundTrackId,
           rootTransactionId: currentPaymentToRefund.providerTransactionId,
           amount: refundAmount,
-          terminalId: expectedTerminalId,
+          terminalId: currentPaymentToRefund.providerTerminalId,
         });
         if (refundMismatchFields.length > 0) {
           throw new ThePayOneError(
@@ -1133,6 +1152,46 @@ export async function POST(request: Request) {
             and proration_refund_status='pending'
         `;
       } catch (error) {
+        let packageChargeReversed = false;
+        if (replacesEasycutPro) {
+          const reversalTrackId = createPaymentTrackId("REFUND");
+          try {
+            const reversal = await refundThePayOnePayment({
+              trackId: reversalTrackId,
+              rootTransactionId: payment.providerTransactionId,
+              amount: chargeAmount,
+              referenceId: order.id,
+              reason: "기존 프로 환불 실패로 패키지 결제 전액취소",
+            }, paymentCredentialScope);
+            const reversalMismatchFields = thePayOneRefundMismatchFields(reversal, {
+              trackId: reversalTrackId,
+              rootTransactionId: payment.providerTransactionId,
+              amount: chargeAmount,
+              terminalId: expectedTerminalId,
+            });
+            if (reversalMismatchFields.length > 0) {
+              throw new ThePayOneError(
+                "패키지 결제 취소 결과가 주문 정보와 일치하지 않습니다.",
+                "PACKAGE_REVERSAL_MISMATCH",
+                `불일치 필드: ${reversalMismatchFields.join(",")}`,
+                true,
+              );
+            }
+            await db`
+              update shorts_mvp.billing_orders
+              set refunded_amount_krw=${chargeAmount},refund_status='full',
+                proration_refund_track_id=${reversalTrackId},
+                proration_refund_transaction_id=${reversal.providerTransactionId},
+                proration_refund_status='succeeded'
+              where id=${order.id} and status='processing'
+            `;
+            packageChargeReversed = true;
+            providerPaymentCompleted = false;
+          } catch {
+            // The original payment remains under manual review if compensation
+            // cannot be proved successful.
+          }
+        }
         if (chargeCardId) {
           await changeThePayOneCardStatus(
             chargeCardId,
@@ -1152,6 +1211,13 @@ export async function POST(request: Request) {
             set status='manual_review',provider_schedule_status='manual_review'
             where id=${paymentMethodId}
           `.catch(() => undefined);
+        }
+        if (packageChargeReversed) {
+          throw new HttpError(
+            502,
+            "기존 이지컷 프로 결제를 환불하지 못해 패키지 결제를 전액 취소했습니다. 기존 프로 이용권은 그대로 유지됩니다.",
+            "PRO_REFUND_FAILED_PACKAGE_REVERSED",
+          );
         }
         throw error;
       }
@@ -1317,7 +1383,7 @@ export async function POST(request: Request) {
           );
           const upgradedBaseGrantSeconds = monthlyUpgradeBaseGrantSeconds({
             targetPlanSeconds: plan.monthlySourceSeconds,
-            currentBaseUnconsumedSeconds: carriedBaseSeconds,
+            currentBaseUnconsumedSeconds: replacesEasycutPro ? 0 : carriedBaseSeconds,
           });
           await tx`
             update shorts_mvp.usage_grants set status='revoked'

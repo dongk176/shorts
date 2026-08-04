@@ -155,6 +155,14 @@ export function isPricingV2PackageCode(value: string | null | undefined) {
   return pricingV2Plans.some((plan) => plan.code === value && plan.kind === "package");
 }
 
+export function isEasycutProPackageReplacement(
+  currentPlanCode: string | null | undefined,
+  targetPlanCode: string | null | undefined,
+) {
+  return currentPlanCode === "easycut_pro_v2"
+    && isPricingV2PackageCode(targetPlanCode);
+}
+
 export function canStackPricingV2Package(
   currentPlanCode: string | null | undefined,
   targetPlanCode: string | null | undefined,

@@ -1,5 +1,8 @@
 import type { BillingCycle, PaidPlanCode } from "@/lib/contracts";
-import { isPricingV2PackageCode } from "@/lib/pricing-v2";
+import {
+  isEasycutProPackageReplacement,
+  isPricingV2PackageCode,
+} from "@/lib/pricing-v2";
 
 export const paidPlanRank: Record<PaidPlanCode, number> = {
   plus: 0,
@@ -72,9 +75,12 @@ export function classifySubscriptionChange(input: {
   if (currentPlanCode === targetPlanCode && currentBillingCycle === targetBillingCycle) {
     return "unchanged";
   }
-  // The current catalog has only one recurring plan. Moving from a monthly
-  // subscription to a prepaid package takes effect at period end, so there is
-  // no mid-cycle credit or partial-refund workflow.
+  // Easycut Pro is replaced immediately by a prepaid package. The package is
+  // charged first and the current Pro payment is then fully refunded.
+  if (isEasycutProPackageReplacement(currentPlanCode, targetPlanCode)) {
+    return "immediate_annual_conversion";
+  }
+  // Retired monthly products still move to a prepaid package at period end.
   if (currentBillingCycle === "monthly" && isPricingV2PackageCode(targetPlanCode)) {
     return "scheduled";
   }
@@ -194,7 +200,7 @@ export function quoteSubscriptionChange(input: {
 
   if (input.currentBillingCycle === "monthly") {
     const targetPrice = periodPrice(input.targetPlan, input.targetBillingCycle);
-    const refund = input.sourcePaymentApprovedAt
+    const policyRefund = input.sourcePaymentApprovedAt
       && Number.isSafeInteger(input.sourcePaymentAmountKrw)
       ? quoteMonthlyUpgradeRefund({
         sourcePaymentAmountKrw: input.sourcePaymentAmountKrw || 0,
@@ -209,6 +215,16 @@ export function quoteSubscriptionChange(input: {
         totalPeriodDays: 0,
         unusedPeriodDays: 0,
       };
+    const refund = (
+      isEasycutProPackageReplacement(input.currentPlanCode, input.targetPlanCode)
+      && Number.isSafeInteger(input.sourcePaymentAmountKrw)
+      && (input.sourcePaymentAmountKrw || 0) > 0
+    ) ? {
+      mode: "automatic_full" as const,
+      amountKrw: input.sourcePaymentAmountKrw || 0,
+      totalPeriodDays: policyRefund.totalPeriodDays,
+      unusedPeriodDays: policyRefund.totalPeriodDays,
+    } : policyRefund;
     return {
       action,
       chargeAmountKrw: targetPrice,

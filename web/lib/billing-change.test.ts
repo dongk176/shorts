@@ -92,13 +92,16 @@ describe("subscription change policy", () => {
     })).toBe("scheduled");
   });
 
-  it("schedules monthly subscriptions into the new prepaid packages without proration", () => {
+  it("replaces Easycut Pro with a prepaid package immediately", () => {
     expect(classifySubscriptionChange({
       currentPlanCode: "easycut_pro_v2",
       currentBillingCycle: "monthly",
       targetPlanCode: "starter_6m",
       targetBillingCycle: "yearly",
-    })).toBe("scheduled");
+    })).toBe("immediate_annual_conversion");
+  });
+
+  it("keeps retired monthly subscriptions scheduled into prepaid packages", () => {
     expect(classifySubscriptionChange({
       currentPlanCode: "plus",
       currentBillingCycle: "monthly",
@@ -176,6 +179,34 @@ describe("subscription proration", () => {
     expect(quote.prorationCreditKrw).toBe(4_620);
     expect(quote.fullCurrentPaymentRefund).toBe(false);
     expect(quote.refundMode).toBe("manual_partial");
+    expect(quote.nextChargeAt).toEqual(annualPeriodEnd);
+  });
+
+  it("charges the package price and fully refunds Easycut Pro regardless of elapsed days", () => {
+    const quote = quoteSubscriptionChange({
+      currentPlanCode: "easycut_pro_v2",
+      currentBillingCycle: "monthly",
+      currentPlan: { monthlyPriceKrw: 9_900, yearlyPriceKrw: 0 },
+      targetPlanCode: "starter_6m",
+      targetBillingCycle: "yearly",
+      targetPlan: { monthlyPriceKrw: 19_900, yearlyPriceKrw: 119_400 },
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      now,
+      monthlyPeriodEnd,
+      annualPeriodEnd,
+      sourcePaymentAmountKrw: 9_900,
+      sourcePaymentApprovedAt: periodStart,
+    });
+
+    expect(quote.action).toBe("immediate_annual_conversion");
+    expect(quote.chargeAmountKrw).toBe(119_400);
+    expect(quote.providerChargeAmountKrw).toBe(119_400);
+    expect(quote.prorationCreditKrw).toBe(9_900);
+    expect(quote.fullCurrentPaymentRefund).toBe(true);
+    expect(quote.refundMode).toBe("automatic_full");
+    expect(quote.refundAmountKrw).toBe(9_900);
+    expect(quote.startsNewBillingPeriod).toBe(true);
     expect(quote.nextChargeAt).toEqual(annualPeriodEnd);
   });
 

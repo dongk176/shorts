@@ -86,6 +86,11 @@ export type CheckoutInstallmentOffer = InstallmentOffer & {
 
 type ChangeQuote = {
   chargeAmountKrw: number;
+  currentPlanDisplayName?: string | null;
+  refund?: {
+    mode: "automatic_full" | "manual_partial" | "none";
+    amountKrw: number;
+  };
 };
 
 const priceFormatter = new Intl.NumberFormat("ko-KR");
@@ -817,6 +822,13 @@ export function PlanCheckoutOverlay({
           cardPassword: "",
           identityNumber: "",
         }));
+      } else if (
+        cause instanceof BillingClientError
+        && cause.code === "PRO_REFUND_FAILED_PACKAGE_REVERSED"
+      ) {
+        paymentRequestIdRef.current = crypto.randomUUID();
+        setErrorTitle("기존 프로 이용권을 유지했습니다");
+        setError(cause.message);
       } else if (isManualOneTime) {
         setErrorTitle("승인 여부를 확인해 주세요");
         setError(
@@ -1100,6 +1112,20 @@ export function PlanCheckoutOverlay({
                   일시불 또는 2~{MANUAL_INSTALLMENT_MAX_MONTHS}개월 중 선택할 수 있으며,
                   카드사 정책에 따라 제한될 수 있습니다.
                 </p>
+                {mode === "change_subscription"
+                  && changeQuote?.refund?.mode === "automatic_full"
+                  && changeQuote.refund.amountKrw > 0 && (
+                  <div className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-400/[.07] px-3 py-3">
+                    <strong className="block text-xs font-black text-emerald-300">
+                      패키지 결제 완료 즉시 전환
+                    </strong>
+                    <p className="mt-1 text-xs font-medium leading-5 text-neutral-300">
+                      {changeQuote.currentPlanDisplayName || "이지컷 프로"} 결제금액
+                      {" "}{priceFormatter.format(changeQuote.refund.amountKrw)}원은 전액 환불되고,
+                      기존 프로 이용시간은 종료됩니다.
+                    </p>
+                  </div>
+                )}
               </section>
             )}
             {isManualOneTime && (
