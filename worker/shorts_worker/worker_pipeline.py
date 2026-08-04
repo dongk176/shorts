@@ -242,6 +242,74 @@ def classify_full_source_download(
     return "full_source_expected" if full_distance <= full_tolerance else "unexpected_duration"
 
 
+def is_partial_range_requested(
+    *,
+    source_duration_seconds: float,
+    range_start_seconds: float,
+    range_end_seconds: float,
+) -> bool:
+    return (
+        range_start_seconds > 0.5
+        or range_end_seconds < source_duration_seconds - 0.5
+    )
+
+
+def classify_range_download(
+    *,
+    source_duration_seconds: float,
+    range_start_seconds: float,
+    range_end_seconds: float,
+    raw_downloaded_duration_seconds: float,
+    normalized_duration_seconds: float,
+) -> str:
+    values = (
+        source_duration_seconds,
+        range_start_seconds,
+        range_end_seconds,
+        raw_downloaded_duration_seconds,
+        normalized_duration_seconds,
+    )
+    if (
+        not all(math.isfinite(value) for value in values)
+        or source_duration_seconds <= 0
+        or range_start_seconds < 0
+        or range_end_seconds <= range_start_seconds
+        or range_end_seconds > source_duration_seconds + 0.001
+        or raw_downloaded_duration_seconds <= 0
+        or normalized_duration_seconds <= 0
+    ):
+        return "unexpected_duration"
+
+    selected_duration = range_end_seconds - range_start_seconds
+    if abs(normalized_duration_seconds - selected_duration) > 0.1:
+        return "unexpected_duration"
+    if not is_partial_range_requested(
+        source_duration_seconds=source_duration_seconds,
+        range_start_seconds=range_start_seconds,
+        range_end_seconds=range_end_seconds,
+    ):
+        return classify_full_source_download(
+            source_duration_seconds=source_duration_seconds,
+            downloaded_duration_seconds=raw_downloaded_duration_seconds,
+        )
+
+    full_tolerance = max(2.0, min(5.0, source_duration_seconds * 0.02))
+    if abs(raw_downloaded_duration_seconds - source_duration_seconds) <= full_tolerance:
+        return "full_source_unexpected"
+    padded_start = max(0.0, range_start_seconds - 10.0)
+    padded_end = min(source_duration_seconds, range_end_seconds + 10.0)
+    expected_raw_duration = padded_end - padded_start
+    if abs(raw_downloaded_duration_seconds - expected_raw_duration) > 5.0:
+        return "unexpected_duration"
+    return "selected_range"
+
+
+def _absolute_source_second(value: float | None, offset_seconds: float) -> float | None:
+    if value is None:
+        return None
+    return round(offset_seconds + value, 3)
+
+
 class BatchWorker:
     MAX_INLINE_INGESTION_ROUTES = 10
     INGESTION_ROUTE_WAIT_SECONDS = 30.0
@@ -270,7 +338,7 @@ class BatchWorker:
 
     def _project_resource_tier(self) -> str:
         configured = os.getenv("PROJECT_RESOURCE_TIER", "").strip().lower()
-        if configured in {"standard", "heavy"}:
+        if configured in {"standard", "heavy", "source_range"}:
             return configured
         return "heavy" if self.settings.task_vcpus >= 8 else "standard"
 
@@ -518,6 +586,7 @@ class BatchWorker:
                 elapsed_seconds=round(total_seconds, 3),
                 container_peak_memory_bytes=_container_memory_peak_bytes(),
                 render_summary=render_summary,
+                resource_tier=resource_tier,
                 result=result,
             )
             return
@@ -541,6 +610,36 @@ class BatchWorker:
                         "프로젝트에 원본 다운로드 경로가 할당되지 않았습니다.",
                         code="ingestion_route_missing",
                     )
+                source_duration_seconds = float(job["source_duration_seconds"])
+                source_range_enabled = bool(job.get("source_range_selection_enabled"))
+                range_start_seconds = (
+                    float(job["range_start_seconds"])
+                    if source_range_enabled and job.get("range_start_seconds") is not None
+                    else None
+                )
+                range_end_seconds = (
+                    float(job["range_end_seconds"])
+                    if source_range_enabled and job.get("range_end_seconds") is not None
+                    else None
+                )
+                if source_range_enabled and (
+                    range_start_seconds is None
+                    or range_end_seconds is None
+                    or not all(math.isfinite(value) for value in (
+                        source_duration_seconds,
+                        range_start_seconds,
+                        range_end_seconds,
+                    ))
+                    or source_duration_seconds <= 0
+                    or range_start_seconds < 0
+                    or range_end_seconds > source_duration_seconds + 0.001
+                    or range_end_seconds - range_start_seconds < 240
+                    or range_end_seconds - range_start_seconds > 3600
+                ):
+                    raise IngestionError(
+                        "저장된 영상 선택 구간이 유효하지 않습니다.",
+                        code="ingestion_range_invalid",
+                    )
                 route_download_started = True
                 download_started_at = time.monotonic()
                 with PhaseResourceMonitor(self.settings.task_vcpus) as download_resources:
@@ -550,6 +649,11 @@ class BatchWorker:
                         youtube_url=str(job["youtube_url"]),
                         destination=work_dir / "source",
                         initial_route_id=route_id,
+                        source_duration_seconds=(
+                            source_duration_seconds if source_range_enabled else None
+                        ),
+                        range_start_seconds=range_start_seconds,
+                        range_end_seconds=range_end_seconds,
                     )
                     source = bundle.video_path
                     source_probe = probe_media(source)
@@ -564,26 +668,68 @@ class BatchWorker:
                     ),
                     job_attempt=int(claimed["attempt_count"]),
                 )
-                source_duration_seconds = float(job["source_duration_seconds"])
                 download_seconds = time.monotonic() - download_started_at
                 source_bytes = source.stat().st_size
-                download_status = classify_full_source_download(
-                    source_duration_seconds=source_duration_seconds,
-                    downloaded_duration_seconds=downloaded_duration_seconds,
+                normalized_source_start_seconds = (
+                    bundle.normalized_source_start_seconds if source_range_enabled else 0.0
                 )
+                if source_range_enabled:
+                    if bundle.raw_media_duration_seconds is None:
+                        raise IngestionError(
+                            "선택 구간 다운로드 길이를 확인하지 못했습니다.",
+                            code="ingestion_range_observation_missing",
+                        )
+                    download_status = classify_range_download(
+                        source_duration_seconds=source_duration_seconds,
+                        range_start_seconds=float(range_start_seconds),
+                        range_end_seconds=float(range_end_seconds),
+                        raw_downloaded_duration_seconds=(
+                            bundle.raw_media_duration_seconds
+                        ),
+                        normalized_duration_seconds=downloaded_duration_seconds,
+                    )
+                    observed_duration_seconds = bundle.raw_media_duration_seconds
+                    observed_media_bytes = bundle.raw_media_bytes
+                else:
+                    download_status = classify_full_source_download(
+                        source_duration_seconds=source_duration_seconds,
+                        downloaded_duration_seconds=downloaded_duration_seconds,
+                    )
+                    observed_duration_seconds = downloaded_duration_seconds
+                    observed_media_bytes = source_bytes or None
                 self.repository.record_source_download_observation(
                     job_id,
                     status=download_status,
-                    duration_seconds=downloaded_duration_seconds,
-                    media_bytes=source_bytes or None,
+                    duration_seconds=observed_duration_seconds,
+                    media_bytes=observed_media_bytes,
+                    normalized_source_start_seconds=normalized_source_start_seconds,
+                )
+                job["normalized_source_start_seconds"] = normalized_source_start_seconds
+                _log_event(
+                    "source_download_observed",
+                    job_id=job_id,
+                    source_range_enabled=source_range_enabled,
+                    source_duration_seconds=source_duration_seconds,
+                    selected_duration_seconds=(
+                        float(range_end_seconds) - float(range_start_seconds)
+                        if source_range_enabled else source_duration_seconds
+                    ),
+                    normalized_duration_seconds=downloaded_duration_seconds,
+                    raw_duration_seconds=observed_duration_seconds,
+                    raw_media_bytes=observed_media_bytes,
+                    status=download_status,
                 )
                 if (
                     bundle.metadata.video_id != job["youtube_video_id"]
-                    or bundle.metadata.duration_seconds > self.settings.max_video_duration_seconds
-                    or download_status != "full_source_expected"
+                    or (
+                        not source_range_enabled
+                        and bundle.metadata.duration_seconds
+                        > self.settings.max_video_duration_seconds
+                    )
+                    or download_status not in {"full_source_expected", "selected_range"}
                 ):
                     raise IngestionError(
-                        "다운로드한 전체 영상의 검증에 실패했습니다.",
+                        "다운로드한 영상 구간의 검증에 실패했습니다.",
                         code="ingestion_source_validation_failed",
                     )
                 self.repository.merge_job_performance_metrics(
@@ -594,6 +740,9 @@ class BatchWorker:
                             "seconds": round(download_seconds, 3),
                             "bytes": source_bytes,
                             "durationSeconds": round(downloaded_duration_seconds, 3),
+                            "rawBytes": observed_media_bytes,
+                            "rawDurationSeconds": round(observed_duration_seconds, 3),
+                            "normalizedSourceStartSeconds": normalized_source_start_seconds,
                             "status": download_status,
                         }
                     },
@@ -826,6 +975,7 @@ class BatchWorker:
                     container_peak_memory_bytes=_container_memory_peak_bytes(),
                     extraction_summary=extraction_summary,
                     render_summary=render_summary,
+                    resource_tier=resource_tier,
                     result=result,
                 )
                 if (
@@ -872,6 +1022,8 @@ class BatchWorker:
                 resume=False,
                 preparation_finished=preparation_finished,
                 error_type=type(exc).__name__,
+                error_code=error_code,
+                resource_tier=resource_tier,
                 container_peak_memory_bytes=_container_memory_peak_bytes(),
             )
             if not preparation_finished:
@@ -917,6 +1069,7 @@ class BatchWorker:
         clean_path.parent.mkdir(parents=True, exist_ok=True)
         clean_key: str | None = None
         clean_metrics: dict[str, object] = {}
+        source_offset_seconds = float(job.get("normalized_source_start_seconds") or 0.0)
         try:
             self.renderer.extract_clean_clip(
                 source_path=source,
@@ -938,12 +1091,20 @@ class BatchWorker:
                 short_id=short_id,
                 job=job,
                 clip_index=slot_index,
-                start_seconds=clip.start_seconds,
-                end_seconds=clip.end_seconds,
+                start_seconds=float(_absolute_source_second(
+                    clip.start_seconds, source_offset_seconds
+                )),
+                end_seconds=float(_absolute_source_second(
+                    clip.end_seconds, source_offset_seconds
+                )),
                 hook_title=clip.hook_title,
                 highlight_reason=clip.reason,
-                selection_raw_start_seconds=clip.selection_raw_start_seconds,
-                selection_raw_end_seconds=clip.selection_raw_end_seconds,
+                selection_raw_start_seconds=_absolute_source_second(
+                    clip.selection_raw_start_seconds, source_offset_seconds
+                ),
+                selection_raw_end_seconds=_absolute_source_second(
+                    clip.selection_raw_end_seconds, source_offset_seconds
+                ),
                 selection_raw_duration_seconds=clip.selection_raw_duration_seconds,
                 selection_candidate_index=clip.selection_candidate_index,
                 selection_provider=clip.selection_provider,
@@ -1160,8 +1321,14 @@ class BatchWorker:
                 committed = self.repository.complete_project_timeline(
                     short_id=target.short_id,
                     timeline_key=timeline_key,
-                    timeline_start_seconds=target.clip.start_seconds,
-                    timeline_end_seconds=target.clip.end_seconds,
+                    timeline_start_seconds=float(_absolute_source_second(
+                        target.clip.start_seconds,
+                        float(job.get("normalized_source_start_seconds") or 0.0),
+                    )),
+                    timeline_end_seconds=float(_absolute_source_second(
+                        target.clip.end_seconds,
+                        float(job.get("normalized_source_start_seconds") or 0.0),
+                    )),
                     timeline_subtitles=[
                         item.model_dump() for item in target.subtitles
                     ],
@@ -1411,7 +1578,29 @@ class BatchWorker:
         youtube_url: str,
         destination: Path,
         initial_route_id: str | None,
+        source_duration_seconds: float | None = None,
+        range_start_seconds: float | None = None,
+        range_end_seconds: float | None = None,
     ) -> tuple[DownloadedAssetBundle, str | None]:
+        range_deadline = (
+            time.monotonic() + 45 * 60 if source_duration_seconds is not None else None
+        )
+
+        def range_kwargs() -> dict[str, float | None]:
+            if source_duration_seconds is None:
+                return {}
+            remaining = float(range_deadline) - time.monotonic()
+            if remaining <= 0:
+                raise RetryExhaustedIngestionError(
+                    "선택 구간 다운로드의 전체 제한 시간이 초과되었습니다.",
+                    details={"asset": "video"},
+                )
+            return {
+                "source_duration_seconds": source_duration_seconds,
+                "range_start_seconds": range_start_seconds,
+                "range_end_seconds": range_end_seconds,
+                "range_total_timeout_seconds": remaining,
+            }
         if not initial_route_id:
             return (
                 self.ingestion.download_bundle(
@@ -1419,6 +1608,7 @@ class BatchWorker:
                     destination,
                     job_id=job_id,
                     route_id=None,
+                    **range_kwargs(),
                 ),
                 None,
             )
@@ -1443,6 +1633,7 @@ class BatchWorker:
                         destination,
                         job_id=job_id,
                         route_id=route_id,
+                        **range_kwargs(),
                     )
                 except (BotCheckError, RetryableIngestionError) as exc:
                     is_bot_check = isinstance(exc, BotCheckError)

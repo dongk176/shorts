@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import random
 import re
+import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -21,6 +24,7 @@ from .errors import (
     RetryableIngestionError,
     RetryExhaustedIngestionError,
 )
+from .media import first_video_packet_pts, media_duration, probe_media
 from .schemas import MAX_CHANNEL_NAME_CHARS
 from .url_validation import validate_youtube_url
 
@@ -31,6 +35,10 @@ RETRY_DELAY_JITTER_RATIO = 0.2
 MAX_CONFIGURED_EGRESS_ROUTES = 32
 MAX_WARP_EGRESS_ROUTES = 4
 DEFAULT_BOT_CHECK_ROUTE_COOLDOWN_SECONDS = 15.0
+RANGE_DOWNLOAD_PADDING_SECONDS = 10.0
+RANGE_DOWNLOAD_ATTEMPT_TIMEOUT_SECONDS = 20 * 60.0
+RANGE_DOWNLOAD_TOTAL_TIMEOUT_SECONDS = 45 * 60.0
+RANGE_NORMALIZATION_TIMEOUT_SECONDS = 30 * 60.0
 _ROUTE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 _SUPPORTED_PROXY_SCHEMES = frozenset({"http", "https", "socks5", "socks5h"})
 _SUPPORTED_EGRESS_MODES = frozenset({"auto", "webshare_isp", "warp"})
@@ -105,6 +113,9 @@ class DownloadedAssetBundle:
     video_attempt_count: int = 1
     video_failed_attempt_count: int = 0
     video_failure_reasons: tuple[str, ...] = ()
+    raw_media_duration_seconds: float | None = None
+    raw_media_bytes: int | None = None
+    normalized_source_start_seconds: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +125,9 @@ class VideoDownloadResult:
     attempt_count: int
     failed_attempt_count: int
     failure_reasons: tuple[str, ...]
+    raw_media_duration_seconds: float | None = None
+    raw_media_bytes: int | None = None
+    normalized_source_start_seconds: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,6 +329,10 @@ class IngestionProvider(ABC):
         *,
         job_id: str | None = None,
         route_id: str | None = None,
+        source_duration_seconds: float | None = None,
+        range_start_seconds: float | None = None,
+        range_end_seconds: float | None = None,
+        range_total_timeout_seconds: float | None = None,
     ) -> DownloadedAssetBundle:
         raise NotImplementedError
 
@@ -448,6 +466,7 @@ class YtDlpIngestionProvider(IngestionProvider):
             attempt_count=attempt,
             retryable=False,
             error_type=type(error).__name__,
+            error_code=getattr(error, "code", None),
             failure_reason=_failure_reason(error),
         )
 
@@ -480,6 +499,7 @@ class YtDlpIngestionProvider(IngestionProvider):
         job_id: str | None = None,
         asset: str = "standalone",
         attempt: int = 1,
+        terminate_process_group: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         selected_route = route
         if selected_route is None:
@@ -515,14 +535,47 @@ class YtDlpIngestionProvider(IngestionProvider):
                 current_args.extend(["--proxy", proxy])
 
             try:
-                result = subprocess.run(
-                    current_args,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout or self.timeout_seconds,
-                    check=False,
-                    shell=False,
-                )
+                effective_timeout = self.timeout_seconds if timeout is None else timeout
+                if terminate_process_group:
+                    process = subprocess.Popen(
+                        current_args,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        shell=False,
+                        start_new_session=True,
+                    )
+                    try:
+                        stdout, stderr = process.communicate(timeout=effective_timeout)
+                    except subprocess.TimeoutExpired:
+                        try:
+                            os.killpg(process.pid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
+                        try:
+                            stdout, stderr = process.communicate(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            stdout, stderr = process.communicate()
+                        raise
+                    result = subprocess.CompletedProcess(
+                        current_args,
+                        process.returncode,
+                        stdout,
+                        stderr,
+                    )
+                else:
+                    result = subprocess.run(
+                        current_args,
+                        capture_output=True,
+                        text=True,
+                        timeout=effective_timeout,
+                        check=False,
+                        shell=False,
+                    )
             except subprocess.TimeoutExpired:
                 last_error = RetryableIngestionError(
                     "YouTube 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.",
@@ -669,8 +722,15 @@ class YtDlpIngestionProvider(IngestionProvider):
         job_id: str | None,
         asset: str,
         attempt: int,
+        terminate_process_group: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         if route is None:
+            if terminate_process_group:
+                return self._run(
+                    args,
+                    timeout=timeout,
+                    terminate_process_group=True,
+                )
             return self._run(args, timeout=timeout)
         return self._run(
             args,
@@ -679,6 +739,7 @@ class YtDlpIngestionProvider(IngestionProvider):
             job_id=job_id,
             asset=asset,
             attempt=attempt,
+            terminate_process_group=terminate_process_group,
         )
 
     def _extract_info(
@@ -752,6 +813,197 @@ class YtDlpIngestionProvider(IngestionProvider):
     def analyze_url(self, youtube_url: str) -> VideoMetadata:
         return self._metadata_from_info(self._extract_info(youtube_url, asset="metadata"))
 
+    @staticmethod
+    def _download_section_args(
+        source_duration_seconds: float | None,
+        range_start_seconds: float | None,
+        range_end_seconds: float | None,
+    ) -> tuple[list[str], float | None, float | None]:
+        if range_start_seconds is None and range_end_seconds is None:
+            return [], None, None
+        if (
+            source_duration_seconds is None
+            or range_start_seconds is None
+            or range_end_seconds is None
+        ):
+            raise IngestionError(
+                "다운로드 구간과 원본 길이가 모두 필요합니다.",
+                code="ingestion_range_incomplete",
+            )
+        source = float(source_duration_seconds)
+        start = float(range_start_seconds)
+        end = float(range_end_seconds)
+        selected_duration = end - start
+        if (
+            not all(math.isfinite(value) for value in (source, start, end))
+            or source <= 0
+            or start < 0
+            or end <= start
+            or end > source + 0.001
+            or selected_duration < 240
+            or selected_duration > 3600
+        ):
+            raise IngestionError(
+                "유효하지 않은 영상 다운로드 구간입니다.",
+                code="ingestion_range_invalid",
+                details={
+                    "source_duration_seconds": source,
+                    "range_start_seconds": start,
+                    "range_end_seconds": end,
+                },
+            )
+        padded_start = max(0.0, start - RANGE_DOWNLOAD_PADDING_SECONDS)
+        padded_end = min(source, end + RANGE_DOWNLOAD_PADDING_SECONDS)
+        return (
+            [
+                "--download-sections",
+                f"*{padded_start:.3f}-{padded_end:.3f}",
+                "--no-force-keyframes-at-cuts",
+            ],
+            padded_start,
+            padded_end,
+        )
+
+    @staticmethod
+    def _normalize_selected_range(
+        raw_path: Path,
+        destination: Path,
+        *,
+        source_duration_seconds: float,
+        padded_start_seconds: float,
+        range_start_seconds: float,
+        range_end_seconds: float,
+    ) -> tuple[Path, float, int]:
+        raw_probe = probe_media(raw_path)
+        raw_duration = media_duration(raw_probe)
+        raw_start_time = first_video_packet_pts(raw_path)
+        raw_bytes = raw_path.stat().st_size
+        selected_duration = range_end_seconds - range_start_seconds
+        trim_offset = range_start_seconds - padded_start_seconds
+        partial_range = (
+            range_start_seconds > 0.5
+            or range_end_seconds < source_duration_seconds - 0.5
+        )
+        full_tolerance = max(2.0, min(5.0, source_duration_seconds * 0.02))
+        if partial_range and abs(raw_duration - source_duration_seconds) <= full_tolerance:
+            raise IngestionError(
+                "선택 구간 대신 원본 전체가 다운로드되어 처리를 중단했습니다.",
+                code="ingestion_full_source_downloaded",
+                details={
+                    "source_duration_seconds": source_duration_seconds,
+                    "raw_duration_seconds": raw_duration,
+                    "raw_media_bytes": raw_bytes,
+                },
+            )
+        if (
+            raw_start_time > trim_offset + 0.05
+            or raw_start_time + raw_duration + 0.5 < trim_offset + selected_duration
+        ):
+            raise IngestionError(
+                "다운로드한 영상에 선택 구간 전체가 포함되지 않았습니다.",
+                code="ingestion_range_incomplete_media",
+                details={
+                    "raw_duration_seconds": raw_duration,
+                    "raw_start_time_seconds": raw_start_time,
+                    "trim_offset_seconds": trim_offset,
+                    "selected_duration_seconds": selected_duration,
+                },
+            )
+        normalized_path = destination / "source.normalized.mp4"
+        threads = max(1, min(8, int(os.environ.get("FFMPEG_THREADS", "2"))))
+        args = [
+                "ffmpeg",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(raw_path),
+                "-ss",
+                f"{trim_offset:.3f}",
+                "-t",
+                f"{selected_duration:.3f}",
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a:0?",
+                "-vf",
+                "setpts=PTS-STARTPTS",
+                "-af",
+                "asetpts=PTS-STARTPTS",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-threads",
+                str(threads),
+                "-movflags",
+                "+faststart",
+                str(normalized_path),
+            ]
+        process = subprocess.Popen(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            shell=False,
+            start_new_session=True,
+        )
+        try:
+            stdout, stderr = process.communicate(timeout=RANGE_NORMALIZATION_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired as exc:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.communicate()
+            raise IngestionError(
+                "선택 구간 정규화 시간이 초과되었습니다.",
+                code="ingestion_range_normalization_timeout",
+            ) from exc
+        result = subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
+        if result.returncode != 0:
+            raise IngestionError(
+                "선택한 영상 구간을 정확히 정리하지 못했습니다.",
+                code="ingestion_range_normalization_failed",
+                details={"upstream_reason": _safe_upstream_reason(result.stderr)},
+            )
+        normalized_probe = probe_media(normalized_path)
+        normalized_duration = media_duration(normalized_probe)
+        normalized_start_time = first_video_packet_pts(normalized_path)
+        if abs(normalized_start_time) > 0.05:
+            raise IngestionError(
+                "정규화한 영상의 시작 시각이 0초가 아닙니다.",
+                code="ingestion_range_normalization_pts_mismatch",
+                details={"normalized_start_time_seconds": normalized_start_time},
+            )
+        if abs(normalized_duration - selected_duration) > 0.1:
+            raise IngestionError(
+                "정규화한 영상 길이가 선택 구간과 일치하지 않습니다.",
+                code="ingestion_range_normalization_mismatch",
+                details={
+                    "selected_duration_seconds": selected_duration,
+                    "normalized_duration_seconds": normalized_duration,
+                },
+            )
+        raw_path.unlink(missing_ok=True)
+        return normalized_path, raw_duration, raw_bytes
+
     def _download_video_once(
         self,
         normalized: str,
@@ -761,9 +1013,18 @@ class YtDlpIngestionProvider(IngestionProvider):
         route: EgressRoute | None,
         job_id: str | None,
         attempt: int,
-    ) -> tuple[VideoMetadata, Path]:
+        timeout_seconds: float | None = None,
+        source_duration_seconds: float | None = None,
+        range_start_seconds: float | None = None,
+        range_end_seconds: float | None = None,
+    ) -> tuple[VideoMetadata, Path, float | None, int | None, float]:
         destination.mkdir(parents=True, exist_ok=True)
         output_template = destination / "source.%(ext)s"
+        section_args, padded_start, _padded_end = self._download_section_args(
+            source_duration_seconds,
+            range_start_seconds,
+            range_end_seconds,
+        )
         self._run_for_route(
             [
                 *self._base_args(),
@@ -775,16 +1036,18 @@ class YtDlpIngestionProvider(IngestionProvider):
                 ),
                 "--merge-output-format",
                 "mp4",
+                *section_args,
                 "--write-info-json",
                 "--output",
                 str(output_template),
                 normalized,
             ],
-            timeout=None,
+            timeout=timeout_seconds,
             route=route,
             job_id=job_id,
             asset="video",
             attempt=attempt,
+            terminate_process_group=bool(section_args),
         )
 
         info_path = destination / "source.info.json"
@@ -814,9 +1077,31 @@ class YtDlpIngestionProvider(IngestionProvider):
                 code="ingestion_downloaded_file_missing",
                 details={"asset": "video", "work_attempt": attempt},
             )
+        raw_path = max(video_candidates, key=lambda path: path.stat().st_size)
+        raw_duration: float | None = None
+        raw_bytes: int | None = None
+        normalized_source_start = 0.0
+        result_path = raw_path
+        if (
+            padded_start is not None
+            and range_start_seconds is not None
+            and range_end_seconds is not None
+        ):
+            result_path, raw_duration, raw_bytes = self._normalize_selected_range(
+                raw_path,
+                destination,
+                source_duration_seconds=float(source_duration_seconds),
+                padded_start_seconds=padded_start,
+                range_start_seconds=float(range_start_seconds),
+                range_end_seconds=float(range_end_seconds),
+            )
+            normalized_source_start = float(range_start_seconds)
         return (
             self._metadata_from_info(info),
-            max(video_candidates, key=lambda path: path.stat().st_size),
+            result_path,
+            raw_duration,
+            raw_bytes,
+            normalized_source_start,
         )
 
     def _download_video_work(
@@ -827,10 +1112,38 @@ class YtDlpIngestionProvider(IngestionProvider):
         *,
         job_id: str | None,
         route_id: str | None = None,
+        source_duration_seconds: float | None = None,
+        range_start_seconds: float | None = None,
+        range_end_seconds: float | None = None,
+        range_total_timeout_seconds: float | None = None,
     ) -> VideoDownloadResult:
         failure_reasons: list[str] = []
         attempt_limit = 1 if route_id else self.max_attempts
+        range_download_started_at = time.monotonic()
+        total_timeout_seconds = min(
+            RANGE_DOWNLOAD_TOTAL_TIMEOUT_SECONDS,
+            (
+                float(range_total_timeout_seconds)
+                if range_total_timeout_seconds is not None
+                else RANGE_DOWNLOAD_TOTAL_TIMEOUT_SECONDS
+            ),
+        )
         for attempt in range(1, attempt_limit + 1):
+            attempt_dir = (
+                destination / f"attempt-{attempt}"
+                if range_start_seconds is not None
+                else destination
+            )
+            if range_start_seconds is not None:
+                shutil.rmtree(attempt_dir, ignore_errors=True)
+            remaining_timeout = total_timeout_seconds - (
+                time.monotonic() - range_download_started_at
+            )
+            if range_start_seconds is not None and remaining_timeout <= 0:
+                raise RetryExhaustedIngestionError(
+                    "선택 구간 다운로드의 전체 제한 시간이 초과되었습니다.",
+                    details={"asset": "video", "attempt_count": attempt - 1},
+                )
             route = self._acquire_route(
                 job_id=job_id,
                 asset="video",
@@ -838,20 +1151,42 @@ class YtDlpIngestionProvider(IngestionProvider):
                 required_route_id=route_id,
             )
             try:
-                metadata, path = self._download_video_once(
-                    normalized,
-                    expected_id,
-                    destination,
+                download_result = self._download_video_once(
+                    normalized, expected_id, attempt_dir,
                     route=route,
                     job_id=job_id,
                     attempt=attempt,
+                    timeout_seconds=(
+                        min(RANGE_DOWNLOAD_ATTEMPT_TIMEOUT_SECONDS, remaining_timeout)
+                        if range_start_seconds is not None
+                        else self.timeout_seconds
+                    ),
+                    source_duration_seconds=source_duration_seconds,
+                    range_start_seconds=range_start_seconds,
+                    range_end_seconds=range_end_seconds,
                 )
+                if len(download_result) == 2 and range_start_seconds is None:
+                    metadata, path = download_result
+                    raw_duration = None
+                    raw_bytes = None
+                    normalized_source_start = 0.0
+                else:
+                    (
+                        metadata,
+                        path,
+                        raw_duration,
+                        raw_bytes,
+                        normalized_source_start,
+                    ) = download_result
                 result = VideoDownloadResult(
                     metadata=metadata,
                     path=path,
                     attempt_count=attempt,
                     failed_attempt_count=len(failure_reasons),
                     failure_reasons=tuple(failure_reasons),
+                    raw_media_duration_seconds=raw_duration,
+                    raw_media_bytes=raw_bytes,
+                    normalized_source_start_seconds=normalized_source_start,
                 )
                 _log_ingestion_event(
                     "ingestion_work_completed",
@@ -865,6 +1200,7 @@ class YtDlpIngestionProvider(IngestionProvider):
                 )
                 return result
             except (RetryableIngestionError, BotCheckError) as exc:
+                shutil.rmtree(attempt_dir, ignore_errors=True)
                 next_retry_delay = (
                     self._retry_delay_seconds(attempt) if attempt < attempt_limit else None
                 )
@@ -906,6 +1242,7 @@ class YtDlpIngestionProvider(IngestionProvider):
                     raise AssertionError("retry delay is required before the last attempt") from exc
                 self._wait_before_retry(next_retry_delay)
             except IngestionError as exc:
+                shutil.rmtree(attempt_dir, ignore_errors=True)
                 self._log_terminal_work_failure(
                     asset="video", attempt=attempt, error=exc, job_id=job_id
                 )
@@ -919,6 +1256,10 @@ class YtDlpIngestionProvider(IngestionProvider):
         *,
         job_id: str | None = None,
         route_id: str | None = None,
+        source_duration_seconds: float | None = None,
+        range_start_seconds: float | None = None,
+        range_end_seconds: float | None = None,
+        range_total_timeout_seconds: float | None = None,
     ) -> DownloadedAssetBundle:
         """Download the source video with bounded retries and managed egress routing."""
         if (
@@ -939,6 +1280,10 @@ class YtDlpIngestionProvider(IngestionProvider):
             destination / "video",
             job_id=job_id,
             route_id=route_id,
+            source_duration_seconds=source_duration_seconds,
+            range_start_seconds=range_start_seconds,
+            range_end_seconds=range_end_seconds,
+            range_total_timeout_seconds=range_total_timeout_seconds,
         )
 
         return DownloadedAssetBundle(
@@ -947,6 +1292,9 @@ class YtDlpIngestionProvider(IngestionProvider):
             video_attempt_count=video.attempt_count,
             video_failed_attempt_count=video.failed_attempt_count,
             video_failure_reasons=video.failure_reasons,
+            raw_media_duration_seconds=video.raw_media_duration_seconds,
+            raw_media_bytes=video.raw_media_bytes,
+            normalized_source_start_seconds=video.normalized_source_start_seconds,
         )
 
     def download_video(self, youtube_url: str, destination: Path) -> Path:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 from fractions import Fraction
 from pathlib import Path
@@ -83,3 +84,54 @@ def media_duration(probe: dict) -> float:
         return max(0.0, float(raw))
     except (TypeError, ValueError):
         return 0.0
+
+
+def media_start_time(probe: dict) -> float:
+    """Return the first decodable video timestamp reported by FFprobe."""
+    video = next(
+        (
+            stream
+            for stream in probe.get("streams", [])
+            if stream.get("codec_type") == "video"
+        ),
+        {},
+    )
+    raw = video.get("start_time")
+    if raw is None:
+        raw = probe.get("format", {}).get("start_time")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+    return value if math.isfinite(value) else 0.0
+
+
+def first_video_packet_pts(path: Path, timeout: float = 30) -> float:
+    """Read the first decodable video packet PTS without scanning the whole file."""
+    result = run_command(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-read_intervals",
+            "%+#1",
+            "-show_entries",
+            "packet=pts_time",
+            "-of",
+            "json",
+            str(path),
+        ],
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        raise RenderError(f"영상의 시작 시각을 읽지 못했습니다: {result.stderr[-1000:]}")
+    try:
+        packets = json.loads(result.stdout).get("packets", [])
+        value = float(packets[0]["pts_time"])
+    except (IndexError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise RenderError("영상의 첫 디코딩 시각을 확인하지 못했습니다.") from exc
+    if not math.isfinite(value):
+        raise RenderError("영상의 첫 디코딩 시각이 유효하지 않습니다.")
+    return value

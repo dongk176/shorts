@@ -17,6 +17,7 @@ from shorts_worker.ingestion import (
     VideoMetadata,
     YtDlpIngestionProvider,
 )
+from shorts_worker.media import first_video_packet_pts, media_duration, probe_media
 
 
 def _fake_success(args: list[str], info: dict[str, object]) -> subprocess.CompletedProcess[str]:
@@ -42,6 +43,84 @@ def test_yt_dlp_retries_are_bounded_for_fast_route_failover() -> None:
         "--file-access-retries",
     ):
         assert args[args.index(option) + 1] == "1"
+
+
+@pytest.mark.parametrize(
+    ("source_seconds", "start_seconds", "end_seconds", "expected"),
+    [
+        (7200, 120, 360, "*110.000-370.000"),
+        (7200, 120, 3720, "*110.000-3730.000"),
+        (7200, 6960, 7200, "*6950.000-7200.000"),
+    ],
+)
+def test_source_range_download_adds_only_ten_seconds_of_padding(
+    source_seconds: float,
+    start_seconds: float,
+    end_seconds: float,
+    expected: str,
+) -> None:
+    args, padded_start, padded_end = YtDlpIngestionProvider._download_section_args(
+        source_seconds,
+        start_seconds,
+        end_seconds,
+    )
+
+    assert args == ["--download-sections", expected, "--no-force-keyframes-at-cuts"]
+    assert padded_start == max(0, start_seconds - 10)
+    assert padded_end == min(source_seconds, end_seconds + 10)
+
+
+@pytest.mark.parametrize(
+    ("start_seconds", "end_seconds"),
+    [(0, 239.999), (0, 3600.001), (-1, 240), (500, 400)],
+)
+def test_source_range_download_rejects_out_of_policy_ranges(
+    start_seconds: float,
+    end_seconds: float,
+) -> None:
+    with pytest.raises(IngestionError) as caught:
+        YtDlpIngestionProvider._download_section_args(
+            7200,
+            start_seconds,
+            end_seconds,
+        )
+    assert caught.value.code == "ingestion_range_invalid"
+
+
+def test_source_range_normalization_resets_pts_and_exact_duration(tmp_path: Path) -> None:
+    raw = tmp_path / "raw.mp4"
+    generated = subprocess.run(
+        [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "testsrc=size=320x180:rate=30:duration=6",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=6",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+            "-shortest", str(raw),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert generated.returncode == 0, generated.stderr
+
+    normalized, raw_duration, raw_bytes = (
+        YtDlpIngestionProvider._normalize_selected_range(
+            raw,
+            tmp_path,
+            source_duration_seconds=100,
+            padded_start_seconds=0,
+            range_start_seconds=1,
+            range_end_seconds=4,
+        )
+    )
+
+    normalized_probe = probe_media(normalized)
+    assert raw_duration == pytest.approx(6, abs=0.1)
+    assert raw_bytes > 0
+    assert first_video_packet_pts(normalized) == pytest.approx(0, abs=0.05)
+    assert media_duration(normalized_probe) == pytest.approx(3, abs=0.1)
+    assert not raw.exists()
 
 
 def test_youtube_bot_challenge_does_not_recommend_cookie_bypass(monkeypatch) -> None:

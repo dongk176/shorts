@@ -23,6 +23,7 @@ from shorts_worker.worker_pipeline import (
     BatchWorker,
     ProjectTimelineTarget,
     classify_full_source_download,
+    classify_range_download,
 )
 
 EDITOR_DOCUMENT_FIXTURE = (
@@ -31,6 +32,75 @@ EDITOR_DOCUMENT_FIXTURE = (
     / "editor-document-v2.json"
 )
 EDITOR_DOCUMENT_SHORT_ID = "11111111-1111-4111-8111-111111111111"
+
+
+def test_partial_range_download_never_accepts_a_full_source() -> None:
+    assert classify_range_download(
+        source_duration_seconds=7200,
+        range_start_seconds=1200,
+        range_end_seconds=1440,
+        raw_downloaded_duration_seconds=7200,
+        normalized_duration_seconds=240,
+    ) == "full_source_unexpected"
+    assert classify_range_download(
+        source_duration_seconds=7200,
+        range_start_seconds=1200,
+        range_end_seconds=1440,
+        raw_downloaded_duration_seconds=260,
+        normalized_duration_seconds=240,
+    ) == "selected_range"
+
+
+def test_project_clip_extracts_relative_media_but_stores_absolute_source_times(
+    tmp_path: Path,
+) -> None:
+    worker = BatchWorker.__new__(BatchWorker)
+    worker.settings = SimpleNamespace(clean_clip_preset="superfast", clean_clip_crf=20)
+    worker.renderer = MagicMock()
+    worker.storage = MagicMock()
+    worker.storage.upload.return_value = 1234
+    worker.repository = MagicMock()
+    worker.repository.add_pending_short.return_value = True
+    clip = HighlightClip(
+        start_seconds=15,
+        end_seconds=55,
+        hook_title="선택 구간 장면",
+        selection_raw_start_seconds=12,
+        selection_raw_end_seconds=56,
+        selection_raw_duration_seconds=44,
+    )
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"video")
+    job = {
+        "id": "job-range",
+        "mvp_session_id": "session-a",
+        "user_id": "user-a",
+        "channel_name": "채널",
+        "template_id": "dark-red",
+        "retention_days": 7,
+        "video_aspect_ratio": "16:9",
+        "pipeline_version": 2,
+        "normalized_source_start_seconds": 1200,
+    }
+
+    worker._prepare_project_clip(
+        job_id="job-range",
+        job=job,
+        source=source,
+        source_probe={},
+        work_dir=tmp_path,
+        slot_index=1,
+        clip=clip,
+        subtitles=[],
+        comments=[],
+    )
+
+    assert worker.renderer.extract_clean_clip.call_args.kwargs["clip"] is clip
+    stored = worker.repository.add_pending_short.call_args.kwargs
+    assert stored["start_seconds"] == 1215
+    assert stored["end_seconds"] == 1255
+    assert stored["selection_raw_start_seconds"] == 1212
+    assert stored["selection_raw_end_seconds"] == 1256
 
 
 @contextmanager

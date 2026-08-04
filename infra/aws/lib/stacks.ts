@@ -33,6 +33,14 @@ interface BaseProps extends cdk.StackProps {
   environment: string;
 }
 
+function requiredContext(stack: cdk.Stack, name: string): string {
+  const value = String(stack.node.tryGetContext(name) || "").trim();
+  if (!value) {
+    throw new Error(`${name} context is required`);
+  }
+  return value;
+}
+
 export class ShortsMvpFoundationStack extends cdk.Stack {
   readonly bucket: s3.Bucket;
   readonly repository: ecr.Repository;
@@ -704,6 +712,23 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         "shorts-mvp-editor-test-template",
       PROJECT_JOB_DEFINITION: projectDefinitionName,
       PROJECT_HEAVY_JOB_DEFINITION: projectHeavyDefinitionName,
+      LEGACY_PROJECT_JOB_DEFINITION_ARN: String(
+        this.node.tryGetContext("legacyProjectJobDefinitionArn")
+        || projectHeavyDefinition.ref,
+      ),
+      LEGACY_PROJECT_BATCH_QUEUE_ARN: String(
+        this.node.tryGetContext("legacyProjectBatchQueueArn") || projectQueue.ref,
+      ),
+      SOURCE_RANGE_JOB_DEFINITION_ARN: String(
+        this.node.tryGetContext("sourceRangeJobDefinitionArn")
+        || this.node.tryGetContext("legacyProjectJobDefinitionArn")
+        || projectHeavyDefinition.ref,
+      ),
+      SOURCE_RANGE_BATCH_QUEUE_ARN: String(
+        this.node.tryGetContext("sourceRangeBatchQueueArn")
+        || this.node.tryGetContext("legacyProjectBatchQueueArn")
+        || projectQueue.ref,
+      ),
       RERENDER_JOB_DEFINITION: rerenderDefinitionName,
       STATE_EVENT_QUEUE_URL: stateQueue.queueUrl,
     };
@@ -1182,6 +1207,178 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     new cdk.CfnOutput(this, "GithubWorkerBuildRoleArn", { value: githubRole.roleArn });
     new cdk.CfnOutput(this, "EditorReleaseRegistrarFunctionArn", {
       value: editorReleaseRegistrar.functionArn,
+    });
+  }
+}
+
+/**
+ * Isolated source-range capacity. This stack imports the exact running worker
+ * resources through deployment-time context so deploying it cannot revise the
+ * existing production Job Definitions or queues.
+ */
+export class ShortsMvpSourceRangeStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props: BaseProps) {
+    super(scope, id, props);
+    const subnetIds = requiredContext(this, "sourceRangeSubnetIds")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (subnetIds.length < 2 || subnetIds.some((value) => !/^subnet-[0-9a-f]+$/.test(value))) {
+      throw new Error("sourceRangeSubnetIds must contain at least two subnet IDs");
+    }
+    const securityGroupId = requiredContext(this, "sourceRangeSecurityGroupId");
+    const executionRoleArn = requiredContext(this, "sourceRangeExecutionRoleArn");
+    const taskRoleArn = requiredContext(this, "sourceRangeTaskRoleArn");
+    const logGroupName = requiredContext(this, "sourceRangeLogGroupName");
+    const runtimeSecretArn = requiredContext(this, "sourceRangeRuntimeSecretArn");
+    const mediaBucketName = requiredContext(this, "sourceRangeMediaBucketName");
+    const workQueueUrl = requiredContext(this, "sourceRangeWorkQueueUrl");
+    const stateQueueUrl = requiredContext(this, "sourceRangeStateQueueUrl");
+    const repositoryUri = requiredContext(this, "sourceRangeRepositoryUri");
+    const imageDigest = requiredContext(this, "sourceRangeImageDigest");
+    if (!/^sha256:[0-9a-f]{64}$/.test(imageDigest)) {
+      throw new Error("sourceRangeImageDigest must be an immutable sha256 digest");
+    }
+    const maxVcpus = Number(this.node.tryGetContext("sourceRangeMaxVcpus") || 160);
+    if (!Number.isInteger(maxVcpus) || maxVcpus < 8 || maxVcpus > 160) {
+      throw new Error("sourceRangeMaxVcpus must be an integer from 8 to 160");
+    }
+
+    const compute = new batch.CfnComputeEnvironment(this, "SourceRangeCompute", {
+      computeEnvironmentName: `shorts-mvp-source-range-fargate-${props.environment}`,
+      type: "MANAGED",
+      state: "ENABLED",
+      computeResources: {
+        type: "FARGATE",
+        maxvCpus: maxVcpus,
+        subnets: subnetIds,
+        securityGroupIds: [securityGroupId],
+      },
+    });
+    const schedulingPolicy = new batch.CfnSchedulingPolicy(
+      this,
+      "SourceRangeFairSharePolicy",
+      {
+        name: `shorts-mvp-source-range-fair-share-${props.environment}`,
+        fairsharePolicy: {
+          computeReservation: 10,
+          shareDecaySeconds: 600,
+          shareDistribution: [
+            { shareIdentifier: "paid*", weightFactor: 0.25 },
+            { shareIdentifier: "free*", weightFactor: 1 },
+          ],
+        },
+      },
+    );
+    const queue = new batch.CfnJobQueue(this, "SourceRangeQueue", {
+      jobQueueName: `shorts-mvp-source-range-${props.environment}`,
+      priority: 20,
+      state: "ENABLED",
+      schedulingPolicyArn: schedulingPolicy.attrArn,
+      computeEnvironmentOrder: [{ order: 1, computeEnvironment: compute.ref }],
+    });
+    const secret = (name: string) => ({
+      name,
+      valueFrom: `${runtimeSecretArn}:${name}::`,
+    });
+    const definition = new batch.CfnJobDefinition(this, "SourceRangeJobDefinition", {
+      type: "container",
+      platformCapabilities: ["FARGATE"],
+      jobDefinitionName: `shorts-mvp-source-range-v1-${props.environment}`,
+      retryStrategy: { attempts: 1 },
+      timeout: { attemptDurationSeconds: 7200 },
+      containerProperties: {
+        image: `${repositoryUri}@${imageDigest}`,
+        executionRoleArn,
+        jobRoleArn: taskRoleArn,
+        networkConfiguration: { assignPublicIp: "ENABLED" },
+        logConfiguration: {
+          logDriver: "awslogs",
+          options: {
+            "awslogs-group": logGroupName,
+            "awslogs-region": this.region,
+            "awslogs-stream-prefix": "source-range",
+          },
+        },
+        environment: [
+          { name: "AWS_REGION", value: this.region },
+          { name: "AWS_DEFAULT_REGION", value: this.region },
+          { name: "AWS_S3_OUTPUT_BUCKET", value: mediaBucketName },
+          { name: "TEMP_ROOT", value: "/tmp/shorts-jobs" },
+          { name: "WORK_DISPATCH_QUEUE_URL", value: workQueueUrl },
+          { name: "STATE_EVENT_QUEUE_URL", value: stateQueueUrl },
+          { name: "OPENAI_TRANSCRIBE_MODEL", value: "gpt-4o-mini-transcribe" },
+          { name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", value: "gpt-5-nano" },
+          { name: "OPENAI_COMMENT_FALLBACK_MODEL", value: "gpt-5-nano" },
+          { name: "GEMINI_COMMENT_MODEL", value: "gemini-2.5-flash-lite" },
+          { name: "GEMINI_PAID_DATA_PROCESSING_CONFIRMED", value: "true" },
+          { name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", value: "30" },
+          { name: "OPENAI_TRANSCRIBE_MAX_WORKERS", value: "4" },
+          { name: "FFMPEG_THREADS", value: "2" },
+          { name: "CLEAN_CLIP_PRESET", value: "superfast" },
+          { name: "CLEAN_CLIP_CRF", value: "20" },
+          { name: "EDIT_TIMELINE_CAPTURE_ENABLED", value: "true" },
+          { name: "TASK_VCPUS", value: "8" },
+          { name: "PROJECT_RESOURCE_TIER", value: "source_range" },
+          { name: "WORKER_IMAGE_TAG", value: imageDigest },
+          { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
+          { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "30" },
+        ],
+        secrets: [
+          secret("DATABASE_URL"),
+          secret("OPENAI_API_KEY"),
+          secret("GEMINI_API_KEY"),
+          secret("GEMINI_OPENAI_BASE_URL"),
+          secret("INGESTION_PROXY_ROUTES_JSON"),
+        ],
+        runtimePlatform: { cpuArchitecture: "X86_64", operatingSystemFamily: "LINUX" },
+        ephemeralStorage: { sizeInGiB: 30 },
+        resourceRequirements: [
+          { type: "VCPU", value: "8" },
+          { type: "MEMORY", value: "16384" },
+        ],
+      },
+    });
+
+    const metricNamespace = `ShortsMvp/${props.environment}`;
+    const metric = (id: string, eventPattern: string, metricName: string) => {
+      new logs.CfnMetricFilter(this, id, {
+        logGroupName,
+        filterPattern: eventPattern,
+        metricTransformations: [{
+          metricNamespace,
+          metricName,
+          metricValue: "1",
+        }],
+      });
+    };
+    metric(
+      "SourceRangeSucceededMetric",
+      '{ $.event = "project_run_finalized" && $.resource_tier = "source_range" }',
+      "SourceRangeProjectSucceeded",
+    );
+    metric(
+      "SourceRangeFailedMetric",
+      '{ $.event = "project_run_failed" && $.resource_tier = "source_range" }',
+      "SourceRangeProjectFailed",
+    );
+    metric(
+      "SourceRangeFullSourceMetric",
+      '{ $.event = "ingestion_work_failed" && $.error_code = "ingestion_full_source_downloaded" }',
+      "SourceRangeFullSourceDownloaded",
+    );
+    metric(
+      "SourceRangeTimestampMismatchMetric",
+      '{ $.event = "ingestion_work_failed" && $.error_code = "ingestion_range_normalization_pts_mismatch" }',
+      "SourceRangeTimestampMismatch",
+    );
+
+    new cdk.CfnOutput(this, "SourceRangeBatchJobQueueArn", { value: queue.ref });
+    new cdk.CfnOutput(this, "SourceRangeBatchJobDefinitionArn", {
+      value: definition.ref,
+    });
+    new cdk.CfnOutput(this, "SourceRangeComputeEnvironmentArn", {
+      value: compute.ref,
     });
   }
 }

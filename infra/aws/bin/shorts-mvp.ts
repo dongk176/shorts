@@ -4,6 +4,7 @@ import {
   ShortsMvpComputeStack,
   ShortsMvpEditorTestStack,
   ShortsMvpFoundationStack,
+  ShortsMvpSourceRangeStack,
 } from "../lib/stacks";
 
 const app = new cdk.App();
@@ -42,6 +43,17 @@ if (
   );
   editorTest.addDependency(foundation);
   stacks.push({ stack: editorTest, tagEnvironment: "editor-test" });
+}
+if (
+  app.node.tryGetContext("includeSourceRange") === "true"
+  || process.env.INCLUDE_SOURCE_RANGE === "true"
+) {
+  const sourceRange = new ShortsMvpSourceRangeStack(
+    app,
+    `ShortsMvpSourceRange-${environment}`,
+    { env, environment },
+  );
+  stacks.push({ stack: sourceRange, tagEnvironment: environment });
 }
 
 for (const { stack, tagEnvironment } of stacks) {
