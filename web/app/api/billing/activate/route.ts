@@ -12,9 +12,11 @@ import {
   type PaidPlanProduct,
 } from "@/lib/billing";
 import {
+  activatedSubscriptionBillingAnchorDay,
   classifySubscriptionChange,
   monthlyUpgradeBaseGrantSeconds,
   quoteSubscriptionChange,
+  shouldPauseRecurringPaymentMethod,
   type SubscriptionChangeQuote,
 } from "@/lib/billing-change";
 import { resolveStoredCardIssuer } from "@/lib/billing-card";
@@ -298,11 +300,10 @@ function payerPhoneFromMethod(method: StoredMethod) {
 }
 
 async function pauseOldSchedule(method: StoredMethod | null) {
-  if (
-    !method
-    || method.provider !== "thepayone"
-    || !["active", "manual_review"].includes(method.providerScheduleStatus)
-  ) return true;
+  if (!method || !shouldPauseRecurringPaymentMethod({
+    provider: method.provider,
+    providerScheduleStatus: method.providerScheduleStatus,
+  })) return true;
   try {
     await changeThePayOneCardStatus(cardIdFromMethod(method), "중지", createPaymentTrackId("AUDT"));
     return true;
@@ -331,6 +332,9 @@ export async function POST(request: Request) {
   let cardVerificationClaimed = false;
   let claimedOrder = false;
   let providerPaymentCompleted = false;
+  let refundedProMethod: StoredMethod | null = null;
+  let refundedProSubscriptionId: string | null = null;
+  let refundedProSchedulePaused = false;
   let changeQuote: SubscriptionChangeQuote | null = null;
   let paymentCredentialScope: ThePayOneCredentialScope = "default";
   try {
@@ -1155,6 +1159,10 @@ export async function POST(request: Request) {
           where id=${currentPaymentToRefund.id} and status='succeeded'
             and proration_refund_status='pending'
         `;
+        if (replacesEasycutPro && oldMethod) {
+          refundedProMethod = oldMethod;
+          refundedProSubscriptionId = current?.id || null;
+        }
       } catch (error) {
         let packageChargeReversed = false;
         if (replacesEasycutPro) {
@@ -1252,6 +1260,9 @@ export async function POST(request: Request) {
       }
     } else {
       oldPaused = await pauseOldSchedule(oldMethod);
+      if (refundedProMethod && oldMethod?.id === refundedProMethod.id) {
+        refundedProSchedulePaused = oldPaused;
+      }
       scheduleReview = !oldPaused;
       if (!oldPaused && billingCycle === "monthly") {
         const newPaused = await changeThePayOneCardStatus(
@@ -1271,10 +1282,10 @@ export async function POST(request: Request) {
     }
 
     const approvedAt = payment.approvedAt;
-    const monthlyPeriodReset = Boolean(changeQuote?.startsNewBillingPeriod);
-    const immediateProration = changeQuote?.action === "immediate_proration" && !monthlyPeriodReset;
+    const startsNewBillingPeriod = Boolean(changeQuote?.startsNewBillingPeriod);
+    const immediateProration = changeQuote?.action === "immediate_proration" && !startsNewBillingPeriod;
     const immediateAnnualConversion = changeQuote?.action === "immediate_annual_conversion";
-    const periodStart = monthlyPeriodReset
+    const periodStart = startsNewBillingPeriod
       ? approvedAt
       : immediateProration
       ? current!.currentPeriodStart
@@ -1283,7 +1294,7 @@ export async function POST(request: Request) {
         : current?.currentPeriodEnd && current.currentPeriodEnd > approvedAt
           ? current.currentPeriodEnd
           : approvedAt;
-    const periodEnd = monthlyPeriodReset
+    const periodEnd = startsNewBillingPeriod
       ? addKstMonths(
         periodStart,
         billingCycle === "yearly" ? plan.prepaidMonths : 1,
@@ -1294,6 +1305,14 @@ export async function POST(request: Request) {
       : billingCycle === "yearly"
         ? addKstMonths(periodStart, plan.prepaidMonths)
         : addKstMonths(periodStart, 1, Number(billingDay));
+    const subscriptionBillingAnchorDay = activatedSubscriptionBillingAnchorDay({
+      billingCycle,
+      providerBillingDay: billingDay,
+      currentBillingAnchorDay: changeQuote && !startsNewBillingPeriod
+        ? current?.billingAnchorDay
+        : null,
+      activatedAt: periodStart,
+    });
     let subscriptionId = current?.id || "";
     await db.begin(async (tx) => {
       if (!current) {
@@ -1323,7 +1342,7 @@ export async function POST(request: Request) {
             ${scheduleReview ? "manual_review" : billingCycle === "monthly" ? "active" : "none"},
             ${scheduleReview ? "manual_review" : "clear"},${scheduleReview ? "OLD_SCHEDULE_PAUSE_FAILED" : null},
             ${approvedAt},${periodEnd},${pricingV2Plan?.kind === "package" ? null : periodEnd},
-            ${addKstMonths(approvedAt, 1)},${Number(billingDay) || Math.min(new Date(approvedAt.getTime()+9*60*60*1000).getUTCDate(),28)}
+            ${addKstMonths(approvedAt, 1)},${subscriptionBillingAnchorDay}
           ) returning id
         `;
         subscriptionId = subscriptions[0].id;
@@ -1353,11 +1372,7 @@ export async function POST(request: Request) {
             next_charge_at=${isManualPackage ? null : periodEnd},next_retry_at=null,
             grace_ends_at=null,retry_count=0,cancel_at_period_end=false,canceled_at=null,
             scheduled_plan_code=null,scheduled_billing_cycle=null,
-            billing_anchor_day=${monthlyPeriodReset
-              ? Number(billingDay)
-              : changeQuote
-              ? current.billingAnchorDay || Math.min(new Date(periodStart.getTime()+9*60*60*1000).getUTCDate(),28)
-              : Number(billingDay) || Math.min(new Date(periodStart.getTime()+9*60*60*1000).getUTCDate(),28)}
+            billing_anchor_day=${subscriptionBillingAnchorDay}
           where id=${current.id} and user_id=${session.userId} and status in ('active','past_due')
         `;
         if (resetsUpgradeQuota) {
@@ -1576,6 +1591,29 @@ export async function POST(request: Request) {
       manualReview: scheduleReview,
     });
   } catch (error) {
+    if (refundedProMethod) {
+      if (!refundedProSchedulePaused) {
+        refundedProSchedulePaused = await pauseOldSchedule(refundedProMethod);
+      }
+      await getDb().begin(async (tx) => {
+        await tx`
+          update shorts_mvp.billing_payment_methods
+          set status=${refundedProSchedulePaused ? "replaced" : "manual_review"},
+            provider_schedule_status=${refundedProSchedulePaused ? "paused" : "manual_review"},
+            payer_tel_ciphertext=null,payer_tel_iv=null,payer_tel_tag=null,
+            revoked_at=${refundedProSchedulePaused ? new Date() : null}
+          where id=${refundedProMethod!.id}
+        `;
+        if (refundedProSubscriptionId) await tx`
+          update shorts_mvp.user_subscriptions
+          set next_charge_at=null,
+            provider_schedule_status=${refundedProSchedulePaused ? "paused" : "manual_review"},
+            billing_review_status='manual_review',
+            billing_review_reason='PACKAGE_ACTIVATION_AFTER_PRO_REFUND_FAILED'
+          where id=${refundedProSubscriptionId}
+        `;
+      }).catch(() => undefined);
+    }
     const unknown = providerPaymentCompleted || (error instanceof ThePayOneError && error.outcomeUnknown);
     const failureMessage = safeFailureMessage(error);
     if (billingOrderId && claimedOrder) {

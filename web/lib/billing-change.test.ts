@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  activatedSubscriptionBillingAnchorDay,
   classifySubscriptionChange,
   monthlyUpgradeBaseGrantSeconds,
   quoteMonthlyUpgradeRefund,
   quoteSubscriptionChange,
+  shouldPauseRecurringPaymentMethod,
 } from "./billing-change";
 
 const plus = { monthlyPriceKrw: 9_900, yearlyPriceKrw: 95_040 };
@@ -16,6 +18,47 @@ const monthlyPeriodEnd = new Date("2026-08-16T00:00:00.000Z");
 const annualPeriodEnd = new Date("2027-07-16T00:00:00.000Z");
 
 describe("subscription change policy", () => {
+  it("does not persist a recurring billing anchor when Pro becomes a prepaid package", () => {
+    expect(activatedSubscriptionBillingAnchorDay({
+      billingCycle: "yearly",
+      providerBillingDay: "00",
+      currentBillingAnchorDay: 4,
+      activatedAt: new Date("2026-08-04T05:56:30.000Z"),
+    })).toBeNull();
+  });
+
+  it("keeps a valid monthly billing anchor", () => {
+    expect(activatedSubscriptionBillingAnchorDay({
+      billingCycle: "monthly",
+      providerBillingDay: "04",
+      currentBillingAnchorDay: 4,
+      activatedAt: new Date("2026-08-04T05:56:30.000Z"),
+    })).toBe(4);
+  });
+
+  it("falls back to a valid KST day for a monthly activation", () => {
+    expect(activatedSubscriptionBillingAnchorDay({
+      billingCycle: "monthly",
+      providerBillingDay: "00",
+      activatedAt: new Date("2026-08-30T15:00:00.000Z"),
+    })).toBe(28);
+  });
+
+  it("stops every potentially live ThePayOne recurring schedule", () => {
+    expect(shouldPauseRecurringPaymentMethod({
+      provider: "thepayone",
+      providerScheduleStatus: "active",
+    })).toBe(true);
+    expect(shouldPauseRecurringPaymentMethod({
+      provider: "thepayone",
+      providerScheduleStatus: "manual_review",
+    })).toBe(true);
+    expect(shouldPauseRecurringPaymentMethod({
+      provider: "thepayone",
+      providerScheduleStatus: "paused",
+    })).toBe(false);
+  });
+
   it("covers every plan and billing-cycle transition", () => {
     const states = [
       ["plus", "monthly"],

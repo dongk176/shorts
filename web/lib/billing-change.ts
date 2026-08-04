@@ -38,6 +38,45 @@ export type SubscriptionChangeQuote = {
   nextChargeAt: Date;
 };
 
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+/**
+ * Only monthly subscriptions have a recurring billing anchor. Prepaid package
+ * purchases use the yearly billing-cycle enum for their fixed service period,
+ * but they must never persist the provider's non-recurring "00" billing day.
+ */
+export function activatedSubscriptionBillingAnchorDay(input: {
+  billingCycle: BillingCycle;
+  providerBillingDay: string;
+  currentBillingAnchorDay?: number | null;
+  activatedAt: Date;
+}) {
+  if (input.billingCycle !== "monthly") return null;
+  if (
+    Number.isInteger(input.currentBillingAnchorDay)
+    && Number(input.currentBillingAnchorDay) >= 1
+    && Number(input.currentBillingAnchorDay) <= 31
+  ) {
+    return Number(input.currentBillingAnchorDay);
+  }
+  const providerBillingDay = Number(input.providerBillingDay);
+  if (Number.isInteger(providerBillingDay) && providerBillingDay >= 1 && providerBillingDay <= 31) {
+    return providerBillingDay;
+  }
+  return Math.min(
+    new Date(input.activatedAt.getTime() + KST_OFFSET_MS).getUTCDate(),
+    28,
+  );
+}
+
+export function shouldPauseRecurringPaymentMethod(input: {
+  provider?: string | null;
+  providerScheduleStatus?: string | null;
+}) {
+  return input.provider === "thepayone"
+    && ["active", "manual_review"].includes(input.providerScheduleStatus || "none");
+}
+
 type PricePair = {
   monthlyPriceKrw: number;
   yearlyPriceKrw: number;
@@ -109,7 +148,6 @@ function proratedAmount(amount: number, remainingMs: number, periodMs: number) {
   return Math.max(0, Math.round(amount * Math.min(1, remainingMs / periodMs)));
 }
 
-const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function kstDayNumber(value: Date) {
