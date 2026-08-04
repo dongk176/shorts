@@ -34,7 +34,7 @@ import {
 import { apiError, HttpError } from "@/lib/http";
 import {
   installmentIssuerCodes,
-  installmentResponseMatchesSelection,
+  installmentResponseMatchesRequestedMonths,
   validateInstallmentSelection,
 } from "@/lib/installments";
 import {
@@ -42,6 +42,7 @@ import {
   assertManualPaymentAvailable,
   oneTimePaymentMode,
 } from "@/lib/manual-payment-routing";
+import { thePayOneUserPaymentFailure } from "@/lib/payment-failure";
 import {
   canStackPricingV2Package,
   getPricingV2Plan,
@@ -1046,14 +1047,11 @@ export async function POST(request: Request) {
       payment.terminalId !== expectedTerminalId ? "terminalId" : null,
       (
         isManualPackage
-        && !installmentResponseMatchesSelection({
+        && !installmentResponseMatchesRequestedMonths({
           requestedMonths: requestedInstallmentMonths,
           responseMonths: payment.installmentMonths,
-          requestedIssuer: requestedInstallmentIssuer,
-          responseIssuer: payment.issuer,
-          responseAcquirer: payment.acquirer,
         })
-      ) ? "installmentSelection" : null,
+      ) ? "installmentMonths" : null,
       (
         !isManualPackage
         && payment.installmentMonths !== requestedInstallmentMonths
@@ -1705,8 +1703,12 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
     if (error instanceof ThePayOneError && failureMessage) {
+      const userFailure = thePayOneUserPaymentFailure(
+        error.resultCode,
+        error.diagnostic,
+      );
       return apiError(
-        new HttpError(400, failureMessage, "THEPAYONE_REJECTED"),
+        new HttpError(400, userFailure.detail, userFailure.code),
         "더페이원 구독 결제를 완료하지 못했습니다.",
       );
     }

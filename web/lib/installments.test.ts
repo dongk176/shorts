@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getActiveInstallmentOffer,
-  installmentResponseMatchesSelection,
+  installmentResponseMatchesRequestedMonths,
   MANUAL_INSTALLMENT_MAX_MONTHS,
   normalizeInstallmentIssuer,
   validateInstallmentSelection,
@@ -435,38 +435,14 @@ describe("installment campaigns", () => {
     expect(normalizeInstallmentIssuer("알 수 없는 카드")).toBeNull();
   });
 
-  it("matches both installment months and issuer for a manual approval", () => {
-    expect(installmentResponseMatchesSelection({
+  it("validates approved installment months while treating issuer selection as advisory", () => {
+    expect(installmentResponseMatchesRequestedMonths({
       requestedMonths: 3,
       responseMonths: 3,
-      requestedIssuer: "kb",
-      responseIssuer: "KB국민카드",
     })).toBe(true);
-    expect(installmentResponseMatchesSelection({
+    expect(installmentResponseMatchesRequestedMonths({
       requestedMonths: 3,
       responseMonths: 0,
-      requestedIssuer: "kb",
-      responseIssuer: "KB국민카드",
-    })).toBe(false);
-    expect(installmentResponseMatchesSelection({
-      requestedMonths: 3,
-      responseMonths: 3,
-      requestedIssuer: "kb",
-      responseIssuer: "신한카드",
-    })).toBe(false);
-    expect(installmentResponseMatchesSelection({
-      requestedMonths: 3,
-      responseMonths: 3,
-      requestedIssuer: "hyundai",
-      responseIssuer: "NOL 카드",
-      responseAcquirer: "현대카드",
-    })).toBe(true);
-    expect(installmentResponseMatchesSelection({
-      requestedMonths: 3,
-      responseMonths: 3,
-      requestedIssuer: "hyundai",
-      responseIssuer: "NOL 카드",
-      responseAcquirer: "롯데카드",
     })).toBe(false);
   });
 });

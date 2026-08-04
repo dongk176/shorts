@@ -103,6 +103,17 @@ describe("package installment UI", () => {
     );
     expect(checkoutSource).toContain("회 고객부담");
     expect(checkoutSource).toContain("일반 할부 · 이자 발생 가능");
+    expect(checkoutSource).toContain("카드사 선택은 할부 혜택 안내용입니다.");
+    expect(checkoutSource).toContain(
+      "실제 적용 여부는 결제 카드와 카드사 정책에 따라 결정됩니다.",
+    );
+  });
+
+  it("keeps advisory issuer and installment choices after an actionable rejection", () => {
+    expect(checkoutSource).toContain("userPaymentFailureForCode");
+    expect(checkoutSource).toContain("setManualCardValidationField");
+    expect(checkoutSource).toContain('paymentFailure.field === "identityNumber"');
+    expect(checkoutSource).not.toContain('setInstallmentIssuerCode("");\n        setForm');
   });
 
   it("keeps the card in memory but hides months above a definite provider limit", () => {

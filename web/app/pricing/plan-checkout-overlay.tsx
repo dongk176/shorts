@@ -19,6 +19,7 @@ import {
 } from "@/lib/billing-client";
 import { MANUAL_INSTALLMENT_MAX_MONTHS } from "@/lib/installment-policy";
 import type { InstallmentOffer } from "@/lib/installments";
+import { userPaymentFailureForCode } from "@/lib/payment-failure";
 import type { PricingV2PlanProduct } from "@/lib/pricing-v2";
 import { userFacingErrorMessage } from "@/lib/public-error";
 import { focusNextPaymentInput } from "@/lib/payment-focus";
@@ -778,6 +779,9 @@ export function PlanCheckoutOverlay({
       if (result.checkoutId) success.searchParams.set("checkoutId", result.checkoutId);
       window.location.assign(success);
     } catch (cause) {
+      const paymentFailure = cause instanceof BillingClientError
+        ? userPaymentFailureForCode(cause.code)
+        : null;
       setError(userFacingErrorMessage(cause, "결제를 완료하지 못했습니다."));
       if (cause instanceof BillingClientError && cause.code === "INSTALLMENT_CAMPAIGN_CHANGED") {
         setInstallmentMonths(0);
@@ -807,13 +811,49 @@ export function PlanCheckoutOverlay({
       } else if (
         isManualOneTime
         && cause instanceof BillingClientError
+        && paymentFailure
+      ) {
+        paymentRequestIdRef.current = crypto.randomUUID();
+        setProviderMaxInstallmentMonths(null);
+        setStep("card");
+        setErrorTitle(paymentFailure.title);
+        setManualCardValidationField(
+          paymentFailure.field === "installments" ? null : paymentFailure.field,
+        );
+        if (paymentFailure.field === "installments") {
+          preferredInstallmentPendingRef.current = false;
+          setInstallmentMonths(0);
+        }
+        setForm((current) => ({
+          ...current,
+          cardNumberParts: paymentFailure.field === "cardNumber" || paymentFailure.field === null
+            ? ["", "", "", ""]
+            : current.cardNumberParts,
+          expiryMonth: paymentFailure.field === "cardNumber"
+            || paymentFailure.field === "expiryMonth"
+            || paymentFailure.field === null
+            ? ""
+            : current.expiryMonth,
+          expiryYear: paymentFailure.field === "cardNumber"
+            || paymentFailure.field === "expiryMonth"
+            || paymentFailure.field === null
+            ? ""
+            : current.expiryYear,
+          cardPassword: "",
+          identityNumber: paymentFailure.field === "cardNumber"
+            || paymentFailure.field === "identityNumber"
+            || paymentFailure.field === null
+            ? ""
+            : current.identityNumber,
+        }));
+      } else if (
+        isManualOneTime
+        && cause instanceof BillingClientError
         && cause.code === "THEPAYONE_REJECTED"
       ) {
         paymentRequestIdRef.current = crypto.randomUUID();
         setProviderMaxInstallmentMonths(null);
         setStep("card");
-        setInstallmentMonths(0);
-        setInstallmentIssuerCode("");
         setForm((current) => ({
           ...current,
           cardNumberParts: ["", "", "", ""],
@@ -1158,6 +1198,9 @@ export function PlanCheckoutOverlay({
                   }}
                   disabled={busy || installmentLoading}
                 />
+                <p className="mt-2 text-[11px] font-medium leading-5 text-neutral-500">
+                  카드사 선택은 할부 혜택 안내용입니다. 실제 적용 여부는 결제 카드와 카드사 정책에 따라 결정됩니다.
+                </p>
               </div>
             )}
             {showManualCardNumber && (

@@ -18,7 +18,7 @@ import {
 import { apiError, HttpError } from "@/lib/http";
 import {
   installmentIssuerCodes,
-  installmentResponseMatchesSelection,
+  installmentResponseMatchesRequestedMonths,
   validateInstallmentSelection,
 } from "@/lib/installments";
 import {
@@ -27,6 +27,7 @@ import {
   oneTimePaymentMode,
 } from "@/lib/manual-payment-routing";
 import { isPricingV2EarlyBirdCode } from "@/lib/pricing-v2";
+import { thePayOneUserPaymentFailure } from "@/lib/payment-failure";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
   assertThePayOneBillingEnabled,
@@ -296,13 +297,10 @@ export async function POST(request: Request) {
         payment.trackId !== order.orderId ? "trackId" : null,
         payment.amount !== Number(order.amountKrw) ? "amount" : null,
         payment.terminalId !== terminalId ? "terminalId" : null,
-        !installmentResponseMatchesSelection({
+        !installmentResponseMatchesRequestedMonths({
           requestedMonths: requestedInstallmentMonths,
           responseMonths: payment.installmentMonths,
-          requestedIssuer: requestedInstallmentIssuer,
-          responseIssuer: payment.issuer,
-          responseAcquirer: payment.acquirer,
-        }) ? "installmentSelection" : null,
+        }) ? "installmentMonths" : null,
         installmentCardTypeRejected ? "cardType" : null,
       ].filter((field): field is string => Boolean(field));
       const installmentTermsSnapshot = {
@@ -652,8 +650,12 @@ export async function POST(request: Request) {
     }
     if (error instanceof ThePayOneError) {
       if (failureMessage) {
+        const userFailure = thePayOneUserPaymentFailure(
+          error.resultCode,
+          error.diagnostic,
+        );
         return apiError(
-          new HttpError(400, failureMessage, "THEPAYONE_REJECTED"),
+          new HttpError(400, userFailure.detail, userFailure.code),
           "추가 시간 결제를 완료하지 못했습니다.",
         );
       }

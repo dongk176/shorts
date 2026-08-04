@@ -101,23 +101,11 @@ export function normalizeInstallmentIssuer(value: string | null | undefined) {
     || null;
 }
 
-export function installmentResponseMatchesSelection(input: {
+export function installmentResponseMatchesRequestedMonths(input: {
   requestedMonths: number;
   responseMonths: number;
-  requestedIssuer?: string | null;
-  responseIssuer?: string | null;
-  responseAcquirer?: string | null;
 }) {
-  if (input.responseMonths !== input.requestedMonths) return false;
-  if (input.requestedMonths === 0) return true;
-  const requestedIssuer = normalizeInstallmentIssuer(input.requestedIssuer);
-  return Boolean(
-    requestedIssuer
-    && (
-      requestedIssuer === normalizeInstallmentIssuer(input.responseIssuer)
-      || requestedIssuer === normalizeInstallmentIssuer(input.responseAcquirer)
-    ),
-  );
+  return input.responseMonths === input.requestedMonths;
 }
 
 export async function getActiveInstallmentOffer(
