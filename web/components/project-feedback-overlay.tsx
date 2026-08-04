@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useUsageState } from "@/components/usage-provider";
 import { useWelcomeOverlayStage } from "@/components/welcome-overlay-queue";
 import type { UsageSnapshot } from "@/lib/contracts";
@@ -10,7 +11,12 @@ import {
   type ProjectFeedbackDisappointmentReason,
   type ProjectFeedbackPromptStatus,
 } from "@/lib/project-feedback";
-import { PROJECT_FEEDBACK_STATUS_REFRESH_EVENT } from "@/lib/project-feedback-client";
+import {
+  clearCompletedProjectViewedForFeedback,
+  hasCompletedProjectViewedForFeedback,
+  isProjectFeedbackProjectRoute,
+  PROJECT_FEEDBACK_STATUS_REFRESH_EVENT,
+} from "@/lib/project-feedback-client";
 import { userFacingErrorMessage } from "@/lib/public-error";
 import { publishUsageSnapshot } from "@/lib/usage-client";
 
@@ -28,6 +34,7 @@ async function responseBody<T>(response: Response): Promise<T> {
 }
 
 export function ProjectFeedbackOverlay() {
+  const pathname = usePathname();
   const { authenticated, usage } = useUsageState();
   const {
     active: queueActive,
@@ -42,10 +49,26 @@ export function ProjectFeedbackOverlay() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<FeedbackSubmissionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [completedProjectViewed, setCompletedProjectViewed] = useState(false);
   const skippedInitialUsageRefresh = useRef(false);
+  const onProjectRoute = isProjectFeedbackProjectRoute(pathname);
+
+  useEffect(() => {
+    if (!authenticated || onProjectRoute) {
+      setCompletedProjectViewed(false);
+      return;
+    }
+    setCompletedProjectViewed(hasCompletedProjectViewedForFeedback());
+  }, [authenticated, onProjectRoute, pathname]);
 
   const loadStatus = useCallback(async () => {
-    if (!authenticated || !queueActive || success) return;
+    if (
+      !authenticated
+      || !queueActive
+      || !completedProjectViewed
+      || onProjectRoute
+      || success
+    ) return;
     try {
       const response = await fetch("/api/project-feedback", {
         cache: "no-store",
@@ -56,10 +79,15 @@ export function ProjectFeedbackOverlay() {
     } catch {
       // 피드백 요청은 핵심 작업 흐름을 방해하지 않도록 조용히 재시도한다.
     }
-  }, [authenticated, queueActive, success]);
+  }, [authenticated, completedProjectViewed, onProjectRoute, queueActive, success]);
 
   useEffect(() => {
-    if (!authenticated || !queueActive) {
+    if (
+      !authenticated
+      || !queueActive
+      || !completedProjectViewed
+      || onProjectRoute
+    ) {
       setStatus(null);
       setOpen(false);
       return;
@@ -78,7 +106,7 @@ export function ProjectFeedbackOverlay() {
       window.removeEventListener(PROJECT_FEEDBACK_STATUS_REFRESH_EVENT, onStatusRefresh);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [authenticated, loadStatus, queueActive]);
+  }, [authenticated, completedProjectViewed, loadStatus, onProjectRoute, queueActive]);
 
   const usageFingerprint = usage
     ? `${usage.usedSeconds}:${usage.reservedSeconds}:${usage.remainingSeconds}`
@@ -92,14 +120,29 @@ export function ProjectFeedbackOverlay() {
   }, [loadStatus, usageFingerprint]);
 
   useEffect(() => {
-    if (!queueActive || !status || success) return;
+    if (
+      !queueActive
+      || !completedProjectViewed
+      || onProjectRoute
+      || !status
+      || success
+    ) return;
     if (!status.eligible) {
+      clearCompletedProjectViewedForFeedback();
+      setCompletedProjectViewed(false);
       completeQueueStage();
       return;
     }
     const timer = window.setTimeout(() => setOpen(true), 900);
     return () => window.clearTimeout(timer);
-  }, [completeQueueStage, queueActive, status, success]);
+  }, [
+    completeQueueStage,
+    completedProjectViewed,
+    onProjectRoute,
+    queueActive,
+    status,
+    success,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -129,6 +172,7 @@ export function ProjectFeedbackOverlay() {
       });
       const result = await responseBody<FeedbackSubmissionResponse>(response);
       publishUsageSnapshot(result.usage);
+      clearCompletedProjectViewedForFeedback();
       setStatus((current) => current
         ? { ...current, eligible: false, submitted: true, promptCompletionCount: null }
         : current);
@@ -168,6 +212,7 @@ export function ProjectFeedbackOverlay() {
               type="button"
               onClick={() => {
                 setOpen(false);
+                setCompletedProjectViewed(false);
                 completeQueueStage();
               }}
               className="mt-7 min-h-12 rounded-xl bg-white px-7 text-sm font-black text-black transition hover:bg-neutral-200"

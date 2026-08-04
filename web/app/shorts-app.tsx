@@ -104,6 +104,7 @@ import {
   parseProjectEditRefreshSignal,
   PROJECT_EDIT_REFRESH_STORAGE_KEY,
 } from "@/lib/project-edit-refresh";
+import { markCompletedProjectViewedForFeedback } from "@/lib/project-feedback-client";
 import {
   applyEditorFontToSelectableText,
   EDITOR_TEXT_DEFAULT_WIDTH,
@@ -9791,6 +9792,11 @@ export function ProjectPage({ projectNumber }: { projectNumber: number }) {
   useEffect(() => {
     void loadProject();
   }, [loadProject]);
+
+  useEffect(() => {
+    if (project?.status !== "completed" || project.isExample) return;
+    markCompletedProjectViewedForFeedback(project.projectNumber);
+  }, [project?.isExample, project?.projectNumber, project?.status]);
 
   useEffect(() => {
     const refreshAfterAppliedEdit = (event: StorageEvent) => {

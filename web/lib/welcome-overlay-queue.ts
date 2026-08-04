@@ -9,9 +9,18 @@ export const welcomeOverlayStages = [
 
 export type WelcomeOverlayStage = (typeof welcomeOverlayStages)[number];
 
+const retiredWelcomeOverlayStages = new Set<WelcomeOverlayStage>([
+  "shorts-event",
+]);
+
 export function nextWelcomeOverlayStage(
   stage: Exclude<WelcomeOverlayStage, "done">,
 ): WelcomeOverlayStage {
-  const index = welcomeOverlayStages.indexOf(stage);
-  return welcomeOverlayStages[index + 1] ?? "done";
+  let index = welcomeOverlayStages.indexOf(stage) + 1;
+  while (index < welcomeOverlayStages.length) {
+    const nextStage = welcomeOverlayStages[index] ?? "done";
+    if (!retiredWelcomeOverlayStages.has(nextStage)) return nextStage;
+    index += 1;
+  }
+  return "done";
 }
