@@ -112,7 +112,7 @@ export async function POST(request: Request) {
         where account.id=${session.userId}
           and account.withdrawn_at is null
         limit 1
-        for update
+        for update of account
       `;
       if (!accountRows[0]) throw new HttpError(404, "회원 정보를 찾을 수 없습니다.");
       if (Number(accountRows[0].onboardingVersion) !== 2) {
