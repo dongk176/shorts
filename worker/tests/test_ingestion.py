@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -87,6 +88,10 @@ def test_source_range_download_rejects_out_of_policy_ranges(
     assert caught.value.code == "ingestion_range_invalid"
 
 
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="FFmpeg integration binaries are unavailable",
+)
 def test_source_range_normalization_resets_pts_and_exact_duration(tmp_path: Path) -> None:
     raw = tmp_path / "raw.mp4"
     generated = subprocess.run(
