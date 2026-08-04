@@ -143,5 +143,8 @@ describe("completion email preference API", () => {
       marketingStatus: "declined",
       promptDue: false,
     });
+    expect(db.sql.mock.calls[0][0].join("?")).toContain(
+      "for update of account",
+    );
   });
 });
