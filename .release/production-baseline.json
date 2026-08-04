@@ -1,0 +1,15 @@
+{
+  "commit": "a20884cd285ae788baadb109dca239e267e7fef0",
+  "deploymentId": "dpl_Cq9JvjaeMuESjCUEhNFDN5az2yGB",
+  "deploymentUrl": "https://shorts-4fc9bbd3a-artiroom.vercel.app",
+  "productionDomains": [
+    "https://easycut.co.kr",
+    "https://www.easycut.co.kr"
+  ],
+  "vercel": {
+    "orgId": "team_3pn55cGmUE8SRRKg0D3dRiPJ",
+    "projectId": "prj_bQyHRVC3Pfzq2dvUnAqEDlw66GOw",
+    "projectName": "shorts",
+    "scope": "artiroom"
+  }
+}

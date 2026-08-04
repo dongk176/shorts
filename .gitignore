@@ -11,16 +11,17 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .venv/
+worker/.venv
 worker/.coverage
 
 # Next.js
-web/node_modules/
+web/node_modules
 web/.next/
 web/.next-dev/
 web/out/
 web/.eslintcache
 web/*.tsbuildinfo
-infra/aws/node_modules/
+infra/aws/node_modules
 infra/aws/cdk.out/
 infra/aws/cdk.context.json
 

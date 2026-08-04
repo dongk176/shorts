@@ -13,6 +13,7 @@
     "db:migrate": "bash scripts/apply-supabase.sh",
     "db:backfill-project-owner": "node scripts/backfill-project-owner.mjs",
     "db:test": "node scripts/test-supabase.mjs",
+    "release:production": "node scripts/release-production.mjs",
     "verify": "bash scripts/verify-local.sh"
   }
 }
