@@ -81,6 +81,7 @@ describe("ThePayOne client", () => {
 
     await expect(registerThePayOneCard({
       trackId: "EC-AUTH-TEST",
+      amount: 0,
       payerName: "테스트",
       payerEmail: "tester@example.com",
       payerTel: "01012345678",
@@ -160,6 +161,7 @@ describe("ThePayOne client", () => {
   it("prevents package card registration and default-terminal manual approval", async () => {
     await expect(registerThePayOneCard({
       trackId: "EC-AUTH-PACKAGE-BLOCKED",
+      amount: 0,
       payerName: "테스트",
       payerEmail: "tester@example.com",
       payerTel: "01012345678",
@@ -336,13 +338,13 @@ describe("ThePayOne client", () => {
     });
   });
 
-  it("registers a production monthly schedule at zero won with the billing day", async () => {
+  it("registers a production monthly schedule at the recurring plan price", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       result: { resultCd: "0000" },
       auth: {
         trxId: "A260722000001",
         trackId: "EC-AUTH-PRODUCTION",
-        amount: 0,
+        amount: 9_900,
         udf2: "22",
         card: { cardId: "card_monthly_token", last4: "1234", issuer: "테스트카드" },
       },
@@ -351,6 +353,7 @@ describe("ThePayOne client", () => {
 
     await registerThePayOneCard({
       trackId: "EC-AUTH-PRODUCTION",
+      amount: 9_900,
       payerName: "테스트",
       payerEmail: "tester@example.com",
       payerTel: "01012345678",
@@ -366,12 +369,32 @@ describe("ThePayOne client", () => {
     expect(body.auth).toMatchObject({
       trnType: "ONTR",
       trxType: "card",
-      amount: 0,
+      amount: 9_900,
       udf2: "22",
       recurring: true,
-      prodAmt: "0",
+      prodAmt: "9900",
       metadata: { authDob: "900101", authPw: "12" },
     });
+  });
+
+  it("rejects a zero-won registration when a recurring billing day is present", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(registerThePayOneCard({
+      trackId: "EC-AUTH-ZERO-SCHEDULE",
+      amount: 0,
+      payerName: "테스트",
+      payerEmail: "tester@example.com",
+      payerTel: "01012345678",
+      cardNumber: "4242424242424242",
+      expiry: "2910",
+      authDob: "900101",
+      authPw: "12",
+      billingDay: "22",
+      productName: "Easy Cut Standard 월간",
+    })).rejects.toMatchObject({ resultCode: "INVALID_REQUEST" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("marks a network interruption as an unknown payment outcome", async () => {
@@ -542,6 +565,7 @@ describe("ThePayOne client", () => {
     try {
       await registerThePayOneCard({
         trackId: "EC-AUTH-TEST",
+        amount: 0,
         payerName: "테스트",
         payerEmail: "tester@example.com",
         payerTel: "01012345678",

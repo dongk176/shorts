@@ -878,8 +878,12 @@ export async function POST(request: Request) {
       }
       if (!isManualPackage) {
         const authTrackId = createPaymentTrackId("AUTH");
+        const registrationAmount = billingCycle === "monthly"
+          ? plan.monthlyPriceKrw
+          : 0;
         const registration = await registerThePayOneCard({
           trackId: authTrackId,
+          amount: registrationAmount,
           payerName: body.payerName,
           payerEmail: body.payerEmail,
           payerTel: body.payerTel,
@@ -895,7 +899,7 @@ export async function POST(request: Request) {
         chargeCardId = registration.cardId;
         if (
           registration.trackId !== authTrackId
-          || registration.amount !== 0
+          || registration.amount !== registrationAmount
           || registration.billingDay !== billingDay
         ) {
           throw new ThePayOneError(

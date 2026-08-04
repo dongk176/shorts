@@ -67,6 +67,7 @@ export function thePayOneCredentialScopesMatch(
 
 export type CardRegistrationRequest = {
   trackId: string;
+  amount: number;
   payerName: string;
   payerEmail: string;
   payerTel: string;
@@ -595,10 +596,13 @@ export async function registerThePayOneCard(
       "일회성 수기결제 터미널에서는 cardId를 발급하지 않습니다.",
     );
   }
-  const amount = 0;
+  const amount = input.amount;
   const billingDay = input.billingDay ?? "00";
-  if (!validBillingDay(billingDay)) {
-    throw new ThePayOneError("카드 등록 결제일이 올바르지 않습니다.", "INVALID_REQUEST");
+  const amountMatchesRegistration = billingDay === "00"
+    ? amount === 0
+    : Number.isSafeInteger(amount) && amount > 0 && amount <= 9_999_999_999_999;
+  if (!validBillingDay(billingDay) || !amountMatchesRegistration) {
+    throw new ThePayOneError("카드 등록 금액 또는 결제일이 올바르지 않습니다.", "INVALID_REQUEST");
   }
   const productName = safeProductName(input.productName || "Easy Cut 카드등록");
   const { root, resultCode } = await thePayOnePost("/api/auth", {

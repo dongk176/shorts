@@ -230,6 +230,7 @@ export async function POST(request: Request) {
     try {
       issued = await registerThePayOneCard({
         trackId: providerOrderId,
+        amount: 0,
         payerName: input.payerName,
         payerEmail: input.payerEmail,
         payerTel: input.payerTel,
