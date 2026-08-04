@@ -18,7 +18,7 @@ const faqsByLocale: Record<SiteLocale, ReadonlyArray<readonly [string, string]>>
     ["영상 하나에서 쇼츠가 몇 개 만들어지나요?", "영상 길이에 따라 기본 3개에서 최대 15개의 후보를 계획합니다. 실제 결과는 영상의 내용과 사용 가능한 하이라이트에 따라 달라질 수 있습니다."],
     ["어떤 YouTube 영상을 사용할 수 있나요?", "직접 업로드했거나 적법한 이용 권한을 가진 공개 영상을 사용해야 합니다. 비공개·유료·연령 제한·DRM 보호 등 이용이 제한된 영상은 처리하지 않습니다."],
     ["제목과 자막을 수정할 수 있나요?", "네. 생성 결과에서 후킹 제목, 채널 표시명, 자막과 템플릿을 수정한 뒤 다시 렌더링할 수 있습니다."],
-    ["영상 길이 제한이 있나요?", "원본 영상은 최대 60분까지 분석할 수 있으며, 사용량은 처리하는 원본 영상 길이를 기준으로 계산됩니다."],
+    ["영상 길이 제한이 있나요?", "3분 이상 원본 영상을 분석할 수 있습니다. 4분 이상 영상은 4~60분 구간을 직접 선택하며, 사용량은 선택한 구간만 계산됩니다. 3분대 영상은 전체 영상을 처리합니다."],
     ["알파컷이나 피카클립과 무엇이 다른가요?", "각 서비스는 사용량 계산, 생성 기준과 제공 기능이 다릅니다. 이지컷·알파컷·피카클립 비교 페이지에서 공식 공개정보 기준으로 확인할 수 있습니다."],
   ],
   en: [
@@ -26,7 +26,7 @@ const faqsByLocale: Record<SiteLocale, ReadonlyArray<readonly [string, string]>>
     ["How many Shorts are created from one video?", "Depending on video length, it plans from 3 to 15 candidates. Actual output depends on the content and available highlights."],
     ["Which YouTube videos can I use?", "Use public videos you uploaded or are legally authorized to use. Private, paid, age-restricted, DRM-protected, or otherwise restricted videos are not processed."],
     ["Can I edit titles and captions?", "Yes. You can edit the hook title, channel display name, captions, and template, then render the result again."],
-    ["Is there a video length limit?", "Source videos may be analyzed up to 60 minutes, and usage is calculated from the full source-video duration processed."],
+    ["Is there a video length limit?", "Source videos can be longer than 60 minutes. For videos at least 4 minutes long, select a 4-to-60-minute range and only that range counts toward usage. Videos between 3 and 4 minutes are processed in full."],
     ["How is this different from AlphaCut or FikaClip?", "Usage calculation, generation rules, and features differ by service. See the Easy Cut, AlphaCut, and FikaClip comparison based on their official public information."],
   ],
   ja: [
@@ -34,7 +34,7 @@ const faqsByLocale: Record<SiteLocale, ReadonlyArray<readonly [string, string]>>
     ["1本の動画から何本作成されますか？", "動画の長さに応じて3〜15本の候補を計画します。実際の結果は内容と利用可能なハイライトによって異なります。"],
     ["どのYouTube動画を使用できますか？", "自分でアップロードしたか、適法な利用権限を持つ公開動画を使用してください。非公開、有料、年齢制限、DRM保護等の制限動画は処理しません。"],
     ["タイトルと字幕を編集できますか？", "はい。フックタイトル、チャンネル表示名、字幕、テンプレートを編集し、再レンダリングできます。"],
-    ["動画の長さに制限はありますか？", "元動画は最大60分まで分析でき、利用量は処理する元動画全体の長さを基準に計算します。"],
+    ["動画の長さに制限はありますか？", "元動画は60分を超えていても分析できます。4分以上の動画では4〜60分の区間を選択し、その区間のみ利用量として計算します。3〜4分の動画は全体を処理します。"],
     ["AlphaCutやFikaClipとの違いは？", "利用量の計算、生成基準、機能はサービスごとに異なります。公式公開情報に基づくEasy Cut・AlphaCut・FikaClip比較をご確認ください。"],
   ],
 };

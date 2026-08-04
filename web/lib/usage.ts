@@ -3,6 +3,7 @@ import { ADMIN_USAGE_GRANT_PRODUCT_CODE } from "@/lib/admin-usage-grant";
 import type { UsageSnapshot } from "@/lib/contracts";
 import { ONBOARDING_WELCOME_PRODUCT_CODE } from "@/lib/onboarding-welcome";
 import { SHORTS_THANK_YOU_EVENT_PRODUCT_CODE } from "@/lib/shorts-thank-you-event";
+import { billableSelectedSourceSeconds } from "@/lib/source-range";
 import type { MvpSession } from "@/lib/session";
 
 export function isPlanEnforcementEnabled() {
@@ -10,14 +11,7 @@ export function isPlanEnforcementEnabled() {
 }
 
 export function billableSourceSeconds(durationSeconds: number) {
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-    throw new Error("차감할 원본 영상 길이가 올바르지 않습니다.");
-  }
-  const wholeSeconds = Math.floor(durationSeconds);
-  const minutes = Math.floor(wholeSeconds / 60);
-  const remainderSeconds = wholeSeconds % 60;
-  const billableMinutes = minutes + (remainderSeconds > 30 ? 1 : 0);
-  return Math.max(60, billableMinutes * 60);
+  return billableSelectedSourceSeconds(durationSeconds);
 }
 
 export function currentKstPeriod(now = new Date()) {

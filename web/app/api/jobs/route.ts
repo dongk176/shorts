@@ -11,6 +11,7 @@ import {
 import { wakeOutboxDispatcher } from "@/lib/aws";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
+import { projectDispatchTarget } from "@/lib/job-dispatch";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { apiError, HttpError } from "@/lib/http";
 import { getInitialJobBackend } from "@/lib/job-backend";
@@ -21,6 +22,11 @@ import {
   RESTRICTED_CONTENT_FAILURE_WINDOW_MINUTES,
 } from "@/lib/job-policy";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
+import { selectedSourceRange } from "@/lib/source-range";
+import {
+  isSourceRangeReleaseEnabled,
+  lockSourceRangeReleaseEnabled,
+} from "@/lib/source-range-release";
 import { billableSourceSeconds, getUsageSnapshot } from "@/lib/usage";
 import { templateSnapshotFromRow } from "@/lib/custom-templates";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
@@ -39,6 +45,8 @@ const schema = z.object({
   outputLanguage: z.enum(outputLanguages).default("ko"),
   rightsConfirmed: z.boolean().optional(),
   requestId: z.string().uuid(),
+  rangeStartSeconds: z.number().finite().nonnegative().optional(),
+  rangeEndSeconds: z.number().finite().positive().optional(),
 });
 
 const noShortsThankYouEventReward: ShortsThankYouEventGrant = {
@@ -80,7 +88,7 @@ export async function POST(request: Request) {
     const analyses = await db`
       select youtube_url, youtube_video_id, video_title, channel_name,
         channel_thumbnail_url, thumbnail_url, duration_seconds, creation_allowed, creation_block_code,
-        creation_block_reason
+        creation_block_reason, source_range_selection_enabled
       from shorts_mvp.youtube_analyses
       where id=${input.analysisId} and (
         (${session.userId}::uuid is not null and user_id=${session.userId})
@@ -105,15 +113,57 @@ export async function POST(request: Request) {
       durationSeconds: Number(analyses[0].durationSeconds),
     };
     const sourceDurationSeconds = metadata.durationSeconds;
-    assertSupportedSourceVideoDuration(sourceDurationSeconds);
-    const usageSeconds = billableSourceSeconds(sourceDurationSeconds);
-    const plannedShortCount = expectedShortCount(sourceDurationSeconds);
-    const deadlineMinutes = jobDeadlineMinutes(sourceDurationSeconds);
+    const sourceRangeSelectionEnabled = analyses[0].sourceRangeSelectionEnabled === true;
+    assertSupportedSourceVideoDuration(sourceDurationSeconds, { sourceRangeSelectionEnabled });
+    let rangeStartSeconds = 0;
+    let rangeEndSeconds = sourceDurationSeconds;
+    let selectedDurationSeconds = sourceDurationSeconds;
+    if (sourceRangeSelectionEnabled) {
+      if (!await isSourceRangeReleaseEnabled(db)) {
+        throw new HttpError(
+          409,
+          "영상 구간 선택 기능이 일시 중지되었습니다. 링크를 다시 확인해 주세요.",
+        );
+      }
+      if (input.rangeStartSeconds === undefined || input.rangeEndSeconds === undefined) {
+        throw new HttpError(400, "사용할 영상의 시작과 끝 구간을 선택해 주세요.");
+      }
+      try {
+        const range = selectedSourceRange(
+          sourceDurationSeconds,
+          input.rangeStartSeconds,
+          input.rangeEndSeconds,
+        );
+        rangeStartSeconds = range.startSeconds;
+        rangeEndSeconds = range.endSeconds;
+        selectedDurationSeconds = range.durationSeconds;
+      } catch (error) {
+        throw new HttpError(
+          400,
+          error instanceof Error ? error.message : "사용할 영상 구간을 확인해 주세요.",
+        );
+      }
+    }
+    const usageSeconds = billableSourceSeconds(selectedDurationSeconds);
+    const plannedShortCount = expectedShortCount(selectedDurationSeconds);
+    const deadlineMinutes = jobDeadlineMinutes(selectedDurationSeconds);
+    const dispatchTarget = executionBackend === "aws_batch"
+      ? projectDispatchTarget(sourceRangeSelectionEnabled)
+      : null;
     const jobId = randomUUID();
     let createdProjectNumber: number | null = null;
     let shortsThankYouEventReward = noShortsThankYouEventReward;
     const duplicate = await db.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtextextended(${session.userId || session.id}, 0))`;
+      if (
+        sourceRangeSelectionEnabled
+        && !await lockSourceRangeReleaseEnabled(tx)
+      ) {
+        throw new HttpError(
+          409,
+          "영상 구간 선택 기능이 일시 중지되었습니다. 링크를 다시 확인해 주세요.",
+        );
+      }
       const concurrentExisting = await tx`
         select id, project_number, status from shorts_mvp.video_jobs
         where request_id=${input.requestId} and (
@@ -204,15 +254,16 @@ export async function POST(request: Request) {
           range_end_seconds, template_id, custom_template_id, template_snapshot, video_aspect_ratio,
           clip_length_option, output_language, expected_short_count, rights_confirmed, execution_backend,
           status, stage, progress, deadline_at, planned_short_count,retention_days_snapshot,
-          pipeline_version
+          pipeline_version, source_range_selection_enabled, batch_job_definition, batch_job_queue
         ) values (
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
-          ${metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${sourceDurationSeconds}, 0,
-          ${sourceDurationSeconds}, ${resolvedTemplateId}, ${input.customTemplateId || null}, ${templateSnapshot ? tx.json(templateSnapshot) : null}, ${resolvedVideoAspectRatio},
+          ${metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${sourceDurationSeconds}, ${rangeStartSeconds},
+          ${rangeEndSeconds}, ${resolvedTemplateId}, ${input.customTemplateId || null}, ${templateSnapshot ? tx.json(templateSnapshot) : null}, ${resolvedVideoAspectRatio},
           'sec_31_60', ${input.outputLanguage}, ${plannedShortCount},
           ${rightsConfirmed}, ${executionBackend}, 'queued', 'queued', ${SIMULATED_PROGRESS_START},
           now() + ${deadlineMinutes} * interval '1 minute', ${plannedShortCount},${billing.retentionDays},
-          ${executionBackend === "aws_batch" ? 2 : 1}
+          ${executionBackend === "aws_batch" ? 2 : 1}, ${sourceRangeSelectionEnabled},
+          ${dispatchTarget?.jobDefinitionArn || null}, ${dispatchTarget?.jobQueueArn || null}
         )
         returning project_number
       `;

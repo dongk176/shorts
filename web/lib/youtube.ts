@@ -160,7 +160,12 @@ export async function analyzeYoutubeUrl(input: string) {
     throw new Error(UNAVAILABLE_VIDEO_MESSAGE);
   }
   const durationSeconds = parseIsoDuration(item.contentDetails.duration);
-  assertSupportedSourceVideoDuration(durationSeconds);
+  // The persisted release snapshot decides whether the legacy 60-minute cap
+  // applies. Metadata extraction must accept longer sources so a bounded
+  // range can be selected from them.
+  assertSupportedSourceVideoDuration(durationSeconds, {
+    sourceRangeSelectionEnabled: true,
+  });
   const thumbnails = Object.values(item.snippet.thumbnails);
   const availability = getYoutubeCreationAvailability(item);
   const channelThumbnailUrl = await getChannelThumbnailUrl(item.snippet.channelId, apiKey);
