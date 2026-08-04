@@ -4,7 +4,6 @@ import { getPopularSearchVideos, getReusablePopularVideos } from "./youtube-popu
 import {
   getPopularVideos,
   getStoredPopularVideo,
-  POPULAR_REUSABLE_MIN_VIEW_COUNT,
 } from "./youtube-popular";
 
 const run = {
@@ -145,7 +144,7 @@ describe("accumulated reusable popular videos", () => {
     expect(query.mock.calls[1].slice(1)).toContain("views");
   });
 
-  it("excludes reusable fallback videos with 10,000 views or fewer", async () => {
+  it("keeps every retained reusable fallback video regardless of view count", async () => {
     const query = vi.fn()
       .mockResolvedValueOnce([run])
       .mockResolvedValueOnce([reusableVideo]);
@@ -163,8 +162,7 @@ describe("accumulated reusable popular videos", () => {
     );
 
     const fallbackQuery = sqlText(query.mock.calls[1]);
-    expect(fallbackQuery).toContain("or view_count >");
-    expect(query.mock.calls[1].slice(1)).toContain(POPULAR_REUSABLE_MIN_VIEW_COUNT);
+    expect(fallbackQuery).not.toContain("view_count >");
   });
 
   it("allows a retained reusable trending video to open after its snapshot expires", async () => {
@@ -299,10 +297,9 @@ describe("accumulated reusable popular videos", () => {
     );
     expect(combinedQuery).not.toContain("date_trunc('day', now()");
     expect(combinedQuery).toContain("count(*) as all_count");
-    expect(combinedQuery).toContain("and view_count >");
+    expect(combinedQuery).not.toContain("view_count >");
     expect(combinedQuery).toContain("case when");
     expect(combinedQuery).toContain("then first_seen_at end desc");
-    expect(query.mock.calls[1].slice(1)).toContain(POPULAR_REUSABLE_MIN_VIEW_COUNT);
     expect(query.mock.calls[1].slice(1).filter((value) => value === run.id)).toHaveLength(1);
     expect(query.mock.calls[1].slice(1)).not.toContain(run.completedAt.toISOString());
   });

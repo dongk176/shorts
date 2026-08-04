@@ -5,7 +5,6 @@ import { parseIsoDuration } from "@/lib/youtube";
 import { isKoreanVideo } from "@/lib/youtube-language";
 
 export const popularVideoTypes = ["trending", "views", "reusable"] as const;
-export const POPULAR_REUSABLE_MIN_VIEW_COUNT = 10_000;
 export const popularDiscoveryPeriods = ["today", "week", "all"] as const;
 export const popularReusablePeriods = popularDiscoveryPeriods;
 export const POPULAR_VIDEO_LONG_FORM_SECONDS = 4 * 60;
@@ -500,11 +499,6 @@ export async function getPopularVideos(
         from historical_candidates
         where duplicate_rank=1
           and (
-            ${type}<>'views'
-            or ${reusableOnly}=false
-            or view_count > ${POPULAR_REUSABLE_MIN_VIEW_COUNT}
-          )
-          and (
             ${reusableOnly}=true
             or exists (
               select 1
@@ -618,7 +612,6 @@ export async function getPopularVideos(
         count(*) over() as total_count
       from historical_candidates
       where duplicate_rank=1
-        and (${type}<>'views' or view_count > ${POPULAR_REUSABLE_MIN_VIEW_COUNT})
       order by
         case when ${type}='views' then view_count end desc,
         case when ${type}='trending' then last_seen_at end desc,

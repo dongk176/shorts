@@ -204,6 +204,7 @@ import { currentClientLocale, localizeApiError, localizeAuthError } from "@/lib/
 import { messagesByLocale } from "@/lib/i18n/messages";
 import { useI18n } from "@/lib/i18n/provider";
 import { localizedValue } from "@/lib/i18n/config";
+import { homeAnalysisHeaderOffset } from "@/lib/home-analysis-scroll";
 import { publishUsageSnapshot } from "@/lib/usage-client";
 
 const templates: Array<{ id: TemplateId; name: string; label: string; background: string; primary: string; accent: string; accentBackground: string | null; channel: string }> = [
@@ -10058,7 +10059,11 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       scrollFrame = window.requestAnimationFrame(() => {
         const section = analysisSectionRef.current;
         if (section) {
-          const headerHeight = document.querySelector<HTMLElement>(".site-header")?.getBoundingClientRect().height || 0;
+          const headerHeight = homeAnalysisHeaderOffset({
+            isDesktop: window.matchMedia("(min-width: 768px)").matches,
+            headerHeight: document.querySelector<HTMLElement>(".site-header")
+              ?.getBoundingClientRect().height || 0,
+          });
           window.scrollTo({
             top: Math.max(0, window.scrollY + section.getBoundingClientRect().top - headerHeight - 16),
             behavior: "smooth",
