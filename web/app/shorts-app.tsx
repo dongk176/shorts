@@ -29,6 +29,7 @@ import {
 } from "@/components/shorts-creation-event-overlay";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { SourceRangeGuide } from "@/components/source-range-guide";
 import { SupportInquiryWidget } from "@/components/support-inquiry-widget";
 import { TemplateCommentPreview } from "@/components/template-comment-prototype";
 import { TitleOverlayPreview } from "@/components/title-overlay-preview";
@@ -1509,7 +1510,7 @@ function NoticeDialog({
   open: boolean;
   dialogId: string;
   title: string;
-  description: string;
+  description?: string;
   variant?: "danger" | "info";
   confirmLabel?: string;
   onClose: () => void;
@@ -1541,17 +1542,17 @@ function NoticeDialog({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={`${dialogId}-title`}
-        aria-describedby={`${dialogId}-description`}
+        aria-describedby={description ? `${dialogId}-description` : undefined}
         className={`relative w-full max-w-[480px] overflow-hidden rounded-[24px] border px-7 pb-8 pt-10 text-center shadow-[0_28px_90px_rgba(0,0,0,.68)] sm:px-9 sm:pb-9 ${info ? "border-violet-400/20 bg-[#24222b]" : "border-red-400/20 bg-[#272123]"}`}
       >
         <div aria-hidden="true" className={`pointer-events-none absolute inset-x-16 -top-24 h-40 rounded-full blur-3xl ${info ? "bg-violet-500/15" : "bg-red-500/15"}`} />
         <div aria-hidden="true" className={`relative mx-auto grid h-12 w-12 place-items-center rounded-full border text-2xl ${info ? "border-violet-300/20 bg-violet-500/10 text-violet-200" : "border-red-300/20 bg-red-500/10 text-red-200"}`}>{info ? "i" : "!"}</div>
-        <h2 id={`${dialogId}-title`} className="relative mt-5 text-2xl font-extrabold tracking-[-0.025em] text-white">
+        <h2 id={`${dialogId}-title`} className="relative mt-5 whitespace-pre-line text-2xl font-extrabold tracking-[-0.025em] text-white">
           {title}
         </h2>
-        <p id={`${dialogId}-description`} className={`relative mt-4 text-sm leading-6 ${info ? "text-violet-100/80" : "text-red-100/80"}`}>
+        {description && <p id={`${dialogId}-description`} className={`relative mt-4 text-sm leading-6 ${info ? "text-violet-100/80" : "text-red-100/80"}`}>
           {description}
-        </p>
+        </p>}
         <button
           type="button"
           autoFocus
@@ -9970,14 +9971,14 @@ function SourceRangeSelector({
       </div>
       <div className="mt-2 flex items-center justify-between gap-3 text-xs font-medium text-neutral-500">
         <span className="font-mono tabular-nums">0:00</span>
-        <span className="text-center">
+        <span className="text-center" data-source-range-guide="usage">
           선택 {formatDuration(selectedDuration)} · 차감 {formatDuration(usageSeconds)} · 예상 쇼츠 {plannedShortCount}개
         </span>
         <span className="font-mono tabular-nums">{formatTimestamp(sourceDurationSeconds)}</span>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <SourceTimestampInput label="시작 시각" value={startSeconds} onChange={onStartChange} />
-        <SourceTimestampInput label="종료 시각" value={endSeconds} onChange={onEndChange} />
+        <SourceTimestampInput guideTarget="start" label="시작 시각" value={startSeconds} onChange={onStartChange} />
+        <SourceTimestampInput guideTarget="end" label="종료 시각" value={endSeconds} onChange={onEndChange} />
       </div>
       <button type="button" onClick={onReset} className="mt-4 min-h-10 rounded-xl border border-white/10 px-4 text-xs font-bold text-neutral-300 transition hover:border-white/20 hover:bg-white/[.05] hover:text-white">
         선택 범위 초기화
@@ -9987,10 +9988,12 @@ function SourceRangeSelector({
 }
 
 function SourceTimestampInput({
+  guideTarget,
   label,
   value,
   onChange,
 }: {
+  guideTarget: "start" | "end";
   label: string;
   value: number;
   onChange: (seconds: number) => void;
@@ -10006,7 +10009,7 @@ function SourceTimestampInput({
     onChange(parsed);
   };
   return (
-    <label className="grid gap-2 text-xs font-bold text-neutral-300">
+    <label className="grid gap-2 text-xs font-bold text-neutral-300" data-source-range-guide={guideTarget}>
       <span>{label}</span>
       <input
         inputMode="decimal"
@@ -10555,11 +10558,18 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <NoticeDialog
         open={longSourceNoticeOpen}
         dialogId="long-source-notice"
-        title="길이가 긴 영상은 처리시간이 조금 더 걸릴 수 있어요"
-        description="원본 영상을 먼저 가져온 뒤 선택한 구간만 분석합니다. 영상 길이와 네트워크 상태에 따라 준비 시간이 길어질 수 있어요."
+        title={"길이가 긴 영상은 처리시간이\n조금 더 걸릴 수 있어요"}
         variant="info"
         confirmLabel="확인하고 계속"
         onClose={closeLongSourceNotice}
+      />
+      <SourceRangeGuide
+        enabled={Boolean(
+          sourceRangeSelectionEnabled
+          && analysis?.creationAllowed === true
+          && !longSourceNoticeOpen
+          && !creationRestrictionOpen
+        )}
       />
       <main id="top" className="relative mx-auto w-full max-w-6xl flex-1 space-y-10 px-5 pb-20 pt-7 sm:px-8 sm:pt-10">
       <div className="home-generated-shorts-count" aria-label={localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}>
