@@ -42,48 +42,48 @@ def _estimated_output_seconds(job: dict[str, Any]) -> int:
     return planned_count * nominal_seconds
 
 
-def _trusted_project_target(prefix: str) -> tuple[str, str]:
-    definition = os.environ[f"{prefix}_JOB_DEFINITION_ARN"].strip()
-    queue = os.environ[f"{prefix}_BATCH_QUEUE_ARN"].strip()
+def _trusted_source_range_target() -> tuple[str, str]:
+    definition = os.environ["SOURCE_RANGE_JOB_DEFINITION_ARN"].strip()
+    queue = os.environ["SOURCE_RANGE_BATCH_QUEUE_ARN"].strip()
     if not _BATCH_JOB_DEFINITION_ARN.fullmatch(definition):
-        raise RuntimeError(f"{prefix} project job definition ARN is invalid")
+        raise RuntimeError("Source-range project job definition ARN is invalid")
     if not _BATCH_QUEUE_ARN.fullmatch(queue):
-        raise RuntimeError(f"{prefix} project Batch queue ARN is invalid")
+        raise RuntimeError("Source-range project Batch queue ARN is invalid")
     return definition, queue
+
+
+def _project_job_definition(
+    job: dict[str, Any], *, resume: bool
+) -> tuple[str, str, int]:
+    standard_definition = os.environ["PROJECT_JOB_DEFINITION"]
+    heavy_definition = os.environ["PROJECT_HEAVY_JOB_DEFINITION"]
+    estimated_seconds = _estimated_output_seconds(job)
+    stored_definition = str(job.get("batch_job_definition") or "").strip()
+    if resume and stored_definition in {standard_definition, heavy_definition}:
+        return (
+            stored_definition,
+            "heavy" if stored_definition == heavy_definition else "standard",
+            estimated_seconds,
+        )
+    return heavy_definition, "heavy", estimated_seconds
 
 
 def _project_dispatch_target(
     job: dict[str, Any], *, resume: bool
 ) -> tuple[str, str, str, int]:
-    estimated_seconds = _estimated_output_seconds(job)
+    if not bool(job.get("source_range_selection_enabled")):
+        definition, tier, estimated_seconds = _project_job_definition(
+            job,
+            resume=resume,
+        )
+        return definition, os.environ["PROJECT_BATCH_QUEUE"], tier, estimated_seconds
+
+    definition, queue = _trusted_source_range_target()
     stored_definition = str(job.get("batch_job_definition") or "").strip()
     stored_queue = str(job.get("batch_job_queue") or "").strip()
-    legacy_definition, legacy_queue = _trusted_project_target("LEGACY_PROJECT")
-    range_definition, range_queue = _trusted_project_target("SOURCE_RANGE")
-    allowed_targets = {
-        (legacy_definition, legacy_queue): "legacy",
-        (range_definition, range_queue): "source_range",
-    }
-
-    if stored_definition or stored_queue:
-        tier = allowed_targets.get((stored_definition, stored_queue))
-        if tier:
-            return stored_definition, stored_queue, tier, estimated_seconds
-        legacy_names = {
-            os.environ.get("PROJECT_JOB_DEFINITION", "").strip(),
-            os.environ.get("PROJECT_HEAVY_JOB_DEFINITION", "").strip(),
-        }
-        if (
-            not bool(job.get("source_range_selection_enabled"))
-            and not stored_queue
-            and stored_definition in legacy_names
-        ):
-            return legacy_definition, legacy_queue, "legacy", estimated_seconds
-        raise RuntimeError("Stored project Batch target is not trusted")
-
-    if bool(job.get("source_range_selection_enabled")):
-        raise RuntimeError("Source-range job is missing its pinned Batch target")
-    return legacy_definition, legacy_queue, "legacy", estimated_seconds
+    if (stored_definition, stored_queue) != (definition, queue):
+        raise RuntimeError("Source-range job is missing its trusted pinned Batch target")
+    return definition, queue, "source_range", _estimated_output_seconds(job)
 
 
 def _share_identifier(*values: object) -> str:
@@ -260,14 +260,16 @@ def _submit(payload: dict[str, Any]) -> str | None:
         )
         submission_key = f"project:{job_id}:resume:1" if resume else f"project:{job_id}:0"
         project_batch_id = _submit_once(request, submission_key)
+        job_patch = {
+            "aws_batch_job_id": project_batch_id,
+            "batch_job_definition": job_definition,
+        }
+        if bool(job.get("source_range_selection_enabled")):
+            job_patch["batch_job_queue"] = job_queue
         patch(
             "video_jobs",
             f"id=eq.{encoded_job_id}&status=eq.{expected_status}",
-            {
-                "aws_batch_job_id": project_batch_id,
-                "batch_job_definition": job_definition,
-                "batch_job_queue": job_queue,
-            },
+            job_patch,
         )
         return project_batch_id
     if kind == "prepare_batch":

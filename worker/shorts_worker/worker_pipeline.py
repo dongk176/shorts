@@ -304,6 +304,16 @@ def classify_range_download(
     return "selected_range"
 
 
+def source_range_download_timeout_seconds(
+    range_start_seconds: float,
+    range_end_seconds: float,
+) -> float:
+    selected_duration = float(range_end_seconds) - float(range_start_seconds)
+    if not math.isfinite(selected_duration) or selected_duration <= 0:
+        raise ValueError("selected source range duration must be positive")
+    return min(30 * 60.0, max(5 * 60.0, 120.0 + selected_duration * 1.5))
+
+
 def _absolute_source_second(value: float | None, offset_seconds: float) -> float | None:
     if value is None:
         return None
@@ -1582,9 +1592,17 @@ class BatchWorker:
         range_start_seconds: float | None = None,
         range_end_seconds: float | None = None,
     ) -> tuple[DownloadedAssetBundle, str | None]:
-        range_deadline = (
-            time.monotonic() + 45 * 60 if source_duration_seconds is not None else None
-        )
+        range_deadline = None
+        if source_duration_seconds is not None:
+            if range_start_seconds is None or range_end_seconds is None:
+                raise IngestionError(
+                    "선택 구간 다운로드 제한 시간을 계산할 수 없습니다.",
+                    code="ingestion_range_incomplete",
+                )
+            range_deadline = time.monotonic() + source_range_download_timeout_seconds(
+                range_start_seconds,
+                range_end_seconds,
+            )
 
         def range_kwargs() -> dict[str, float | None]:
             if source_duration_seconds is None:

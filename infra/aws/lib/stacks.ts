@@ -712,21 +712,12 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         "shorts-mvp-editor-test-template",
       PROJECT_JOB_DEFINITION: projectDefinitionName,
       PROJECT_HEAVY_JOB_DEFINITION: projectHeavyDefinitionName,
-      LEGACY_PROJECT_JOB_DEFINITION_ARN: String(
-        this.node.tryGetContext("legacyProjectJobDefinitionArn")
-        || projectHeavyDefinition.ref,
-      ),
-      LEGACY_PROJECT_BATCH_QUEUE_ARN: String(
-        this.node.tryGetContext("legacyProjectBatchQueueArn") || projectQueue.ref,
-      ),
       SOURCE_RANGE_JOB_DEFINITION_ARN: String(
         this.node.tryGetContext("sourceRangeJobDefinitionArn")
-        || this.node.tryGetContext("legacyProjectJobDefinitionArn")
         || projectHeavyDefinition.ref,
       ),
       SOURCE_RANGE_BATCH_QUEUE_ARN: String(
         this.node.tryGetContext("sourceRangeBatchQueueArn")
-        || this.node.tryGetContext("legacyProjectBatchQueueArn")
         || projectQueue.ref,
       ),
       RERENDER_JOB_DEFINITION: rerenderDefinitionName,

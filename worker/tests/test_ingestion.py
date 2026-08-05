@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -126,6 +129,35 @@ def test_source_range_normalization_resets_pts_and_exact_duration(tmp_path: Path
     assert first_video_packet_pts(normalized) == pytest.approx(0, abs=0.05)
     assert media_duration(normalized_probe) == pytest.approx(3, abs=0.1)
     assert not raw.exists()
+
+
+def test_range_timeout_terminates_the_entire_process_group(tmp_path: Path) -> None:
+    child_pid_path = tmp_path / "child.pid"
+    script = (
+        "import pathlib,subprocess,sys,time;"
+        "child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)']);"
+        "pathlib.Path(sys.argv[1]).write_text(str(child.pid));"
+        "time.sleep(60)"
+    )
+    provider = YtDlpIngestionProvider(timeout_seconds=0.2)
+
+    with pytest.raises(RetryableIngestionError):
+        provider._run(
+            [sys.executable, "-c", script, str(child_pid_path)],
+            timeout=0.2,
+            terminate_process_group=True,
+        )
+
+    child_pid = int(child_pid_path.read_text())
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail("timed-out child process remained alive")
 
 
 def test_youtube_bot_challenge_does_not_recommend_cookie_bypass(monkeypatch) -> None:

@@ -24,6 +24,7 @@ from shorts_worker.worker_pipeline import (
     ProjectTimelineTarget,
     classify_full_source_download,
     classify_range_download,
+    source_range_download_timeout_seconds,
 )
 
 EDITOR_DOCUMENT_FIXTURE = (
@@ -49,6 +50,23 @@ def test_partial_range_download_never_accepts_a_full_source() -> None:
         raw_downloaded_duration_seconds=260,
         normalized_duration_seconds=240,
     ) == "selected_range"
+
+
+@pytest.mark.parametrize(
+    ("start_seconds", "end_seconds", "expected"),
+    [
+        (0, 240, 480),
+        (100, 340, 480),
+        (0, 600, 1020),
+        (1200, 4800, 1800),
+    ],
+)
+def test_source_range_download_timeout_uses_selected_duration(
+    start_seconds: float,
+    end_seconds: float,
+    expected: float,
+) -> None:
+    assert source_range_download_timeout_seconds(start_seconds, end_seconds) == expected
 
 
 def test_project_clip_extracts_relative_media_but_stores_absolute_source_times(

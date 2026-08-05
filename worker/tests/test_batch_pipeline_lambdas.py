@@ -477,8 +477,8 @@ def test_project_submission_uses_eight_vcpu_definition_with_idempotent_key() -> 
     assert result == "project-batch-a"
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-a:0"
-    assert request["jobQueue"] == os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
-    assert request["jobDefinition"] == os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"]
+    assert request["jobQueue"] == os.environ["PROJECT_BATCH_QUEUE"]
+    assert request["jobDefinition"] == os.environ["PROJECT_HEAVY_JOB_DEFINITION"]
     assert request["retryStrategy"] == {"attempts": 1}
     assert request["timeout"] == {"attemptDurationSeconds": 7200}
     assert request["shareIdentifier"].startswith("paiduser")
@@ -530,14 +530,13 @@ def test_heavy_project_submission_records_selected_definition() -> None:
     assert result == "project-heavy-batch"
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-heavy:0"
-    assert request["jobDefinition"] == os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"]
+    assert request["jobDefinition"] == os.environ["PROJECT_HEAVY_JOB_DEFINITION"]
     module.patch.assert_called_once_with(
         "video_jobs",
         "id=eq.job-heavy&status=eq.queued",
         {
             "aws_batch_job_id": "project-heavy-batch",
-            "batch_job_definition": os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"],
-            "batch_job_queue": os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"],
+            "batch_job_definition": os.environ["PROJECT_HEAVY_JOB_DEFINITION"],
         },
     )
 
@@ -565,7 +564,7 @@ def test_project_resume_preserves_original_heavy_definition() -> None:
     assert result == "project-heavy-resume"
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-heavy:resume:1"
-    assert request["jobDefinition"] == os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"]
+    assert request["jobDefinition"] == os.environ["PROJECT_HEAVY_JOB_DEFINITION"]
     assert request["containerOverrides"]["command"][-1] == "--resume"
 
 
@@ -592,7 +591,7 @@ def test_project_resume_preserves_original_standard_definition() -> None:
     assert result == "project-standard-resume"
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-standard:resume:1"
-    assert request["jobDefinition"] == os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"]
+    assert request["jobDefinition"] == os.environ["PROJECT_JOB_DEFINITION"]
     assert request["containerOverrides"]["command"][-1] == "--resume"
 
 
