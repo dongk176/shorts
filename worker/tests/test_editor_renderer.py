@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -37,6 +38,11 @@ FIXTURE = (
     / "test-fixtures"
     / "editor-document-v2.json"
 )
+V3_FIXTURE = (
+    Path(__file__).resolve().parents[2]
+    / "test-fixtures"
+    / "editor-document-v3.json"
+)
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -52,6 +58,49 @@ def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
 
 def _document() -> EditorDocument:
     return EditorDocument.model_validate_json(FIXTURE.read_text())
+
+
+def _document_v3() -> EditorDocument:
+    return EditorDocument.model_validate_json(V3_FIXTURE.read_text())
+
+
+def test_v3_font_files_are_byte_identical_in_web_and_worker() -> None:
+    root = Path(__file__).resolve().parents[2]
+    for font_id in EditorFontId:
+        worker_font = editor_font_path(font_id)
+        web_font = root / "web" / "public" / "fonts" / "editor" / worker_font.name
+        assert web_font.is_file()
+        assert hashlib.sha256(worker_font.read_bytes()).digest() == hashlib.sha256(
+            web_font.read_bytes()
+        ).digest()
+
+
+def test_v3_noto_serif_text_800_is_heavier_than_title_700() -> None:
+    text = "후킹 제목과 추가 텍스트"
+    title_font = load_editor_font(EditorFontId.NOTO_SERIF_KR, 72, weight=700)
+    text_font = load_editor_font(EditorFontId.NOTO_SERIF_KR, 72, weight=800)
+
+    assert sum(text_font.getmask(text, mode="L")) > sum(
+        title_font.getmask(text, mode="L")
+    ) * 1.05
+
+
+def test_v3_text_layer_uses_authoritative_lines_and_weight(tmp_path: Path) -> None:
+    document = _document_v3()
+    overlay = document.overlays.text_overlays[0]
+    spec = document.render_spec
+    assert spec is not None
+    output = create_editor_text_layer(
+        overlay,
+        tmp_path / "v3-text.png",
+        spec.text_overlays[0],
+    )
+
+    with Image.open(output) as image:
+        assert image.getchannel("A").getbbox() is not None
+    assert spec.text_overlays[0].font.resolved_weight == 800
+    assert spec.text_overlays[0].start_frame == 15
+    assert spec.text_overlays[0].end_frame == 75
 
 
 def test_movable_overlay_positions_are_clamped_after_scaling() -> None:
@@ -610,3 +659,54 @@ def test_editor_document_cuts_and_renders_browser_playable_vertical_mp4(
     assert audio["codec_name"] == "aac"
     assert float(probe["format"]["duration"]) == pytest.approx(3.5, abs=0.2)
     assert output.stat().st_size > 10_000
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
+def test_editor_document_v3_renders_at_authoritative_30fps(
+    tmp_path: Path,
+) -> None:
+    timeline = tmp_path / "timeline-v3.mp4"
+    _run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24",
+        "-f", "lavfi", "-i", "sine=frequency=330:sample_rate=16000",
+        "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-shortest", str(timeline),
+    ])
+    document = _document_v3()
+    settings = Settings(
+        temp_dir=tmp_path / "temp-v3",
+        ffmpeg_timeout_seconds=120,
+        ffmpeg_threads=2,
+        clean_clip_preset="ultrafast",
+        clean_clip_crf=28,
+    )
+    renderer = EditorDocumentRenderer(settings)
+    clean = renderer.extract_sequence(
+        timeline_path=timeline,
+        output_path=tmp_path / "clean-v3.mp4",
+        document=document,
+        work_dir=tmp_path / "cut-work-v3",
+    )
+    output = renderer.render(
+        clean_path=clean,
+        output_path=tmp_path / "output-v3.mp4",
+        document=document,
+        work_dir=tmp_path / "render-work-v3",
+        channel_thumbnail_path=None,
+    )
+    probe = json.loads(_run([
+        "ffprobe", "-v", "error", "-show_streams", "-show_format",
+        "-of", "json", str(output),
+    ]).stdout)
+    video = next(
+        stream for stream in probe["streams"] if stream["codec_type"] == "video"
+    )
+
+    assert (video["width"], video["height"]) == (1080, 1920)
+    assert video["codec_name"] == "h264"
+    assert video["avg_frame_rate"] == "30/1"
+    assert float(probe["format"]["duration"]) == pytest.approx(3.5, abs=0.2)

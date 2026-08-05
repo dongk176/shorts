@@ -4,7 +4,15 @@ import {
   videoAspectRatios,
 } from "@/lib/contracts";
 import { editorFontIds } from "@/lib/editor-fonts";
-import { EDITOR_DOCUMENT_SNAPSHOT_VERSION } from "@/lib/editor-document-snapshot";
+import {
+  EDITOR_DOCUMENT_SNAPSHOT_VERSION,
+  EDITOR_DOCUMENT_V3_VERSION,
+} from "@/lib/editor-document-snapshot";
+import {
+  createEditorRenderSpec,
+  EDITOR_RENDER_FPS,
+  EDITOR_RENDER_SPEC_VERSION,
+} from "@/lib/editor-render-spec";
 import {
   stockBackgroundIds,
   templatePresetColors,
@@ -81,6 +89,68 @@ const layerOrderItemSchema = z.string().min(1).max(105).refine(
     || /^text:[A-Za-z0-9:_-]{1,100}$/.test(value)
   ),
 );
+
+const resolvedFontFaceSchema = z.object({
+  fontId: z.enum(editorFontIds),
+  fileId: z.string().min(1).max(100),
+  family: z.string().min(1).max(200),
+  requestedWeight: z.union([z.literal(700), z.literal(800)]),
+  resolvedWeight: z.union([z.literal(400), z.literal(700), z.literal(800)]),
+  variableWeight: z.union([z.literal(700), z.literal(800)]).nullable(),
+}).strict();
+
+const renderFrameSchema = z.number().int().nonnegative();
+const renderSpecSchema = z.object({
+  version: z.literal(EDITOR_RENDER_SPEC_VERSION),
+  canvas: z.object({
+    width: z.literal(TEMPLATE_CANVAS.width),
+    height: z.literal(TEMPLATE_CANVAS.height),
+  }).strict(),
+  fps: z.literal(EDITOR_RENDER_FPS),
+  layerOrder: z.array(layerOrderItemSchema).min(1).max(24),
+  title: z.object({
+    lines: z.array(z.string().max(80)).min(1).max(2),
+    centerX: z.literal(540),
+    offsetY: canvasY,
+    fontSize: finiteNumber.min(18).max(200),
+    scale: z.literal(1),
+    font: resolvedFontFaceSchema,
+  }).strict(),
+  channel: z.object({
+    offsetX: canvasX,
+    offsetY: canvasY,
+    scale: finiteNumber.min(0.5).max(2),
+    font: resolvedFontFaceSchema,
+  }).strict(),
+  comments: z.array(z.object({
+    id: safeIdSchema,
+    offsetY: canvasY,
+    startFrame: renderFrameSchema,
+    endFrame: renderFrameSchema,
+  }).strict().refine((item) => item.endFrame > item.startFrame)).max(20),
+  textOverlays: z.array(z.object({
+    id: safeIdSchema,
+    lines: z.array(z.string().max(120)).min(1).max(20),
+    centerX: finiteNumber.min(-TEMPLATE_CANVAS.width).max(TEMPLATE_CANVAS.width * 2),
+    centerY: finiteNumber.min(-TEMPLATE_CANVAS.height).max(TEMPLATE_CANVAS.height * 2),
+    width: finiteNumber.min(1).max(1_000),
+    fontSize: z.literal(72),
+    lineHeight: z.literal(86),
+    scale: finiteNumber.min(0.25).max(3),
+    color: z.enum(templatePresetColors),
+    effect: z.enum(["none", "outline", "shadow"]),
+    outlineWidth: z.union([z.literal(0), z.literal(10)]),
+    shadowBlur: z.union([z.literal(0), z.literal(13)]),
+    startFrame: renderFrameSchema,
+    endFrame: renderFrameSchema,
+    font: resolvedFontFaceSchema,
+  }).strict().refine((item) => item.endFrame > item.startFrame)).max(20),
+  video: z.object({
+    offsetX: canvasX,
+    offsetY: canvasY,
+    scale: finiteNumber.min(0.1).max(5),
+  }).strict(),
+}).strict();
 
 const editorDocumentSnapshotBaseSchema = z.object({
   version: z.literal(EDITOR_DOCUMENT_SNAPSHOT_VERSION),
@@ -165,8 +235,13 @@ const editorDocumentSnapshotBaseSchema = z.object({
   }).strict(),
 }).strict();
 
+const editorDocumentV3BaseSchema = editorDocumentSnapshotBaseSchema.extend({
+  version: z.literal(EDITOR_DOCUMENT_V3_VERSION),
+  renderSpec: renderSpecSchema,
+}).strict();
+
 type EditorDocumentSnapshotShape = z.infer<
-  typeof editorDocumentSnapshotBaseSchema
+  typeof editorDocumentSnapshotBaseSchema | typeof editorDocumentV3BaseSchema
 >;
 
 function validateEditorDocumentSnapshot(
@@ -357,17 +432,43 @@ function validateEditorDocumentSnapshot(
       message: "레이어 순서가 현재 오버레이와 일치하지 않습니다.",
     });
   }
+  if (document.version === EDITOR_DOCUMENT_V3_VERSION) {
+    const canonical = createEditorRenderSpec(document);
+    if (JSON.stringify(document.renderSpec) !== JSON.stringify(canonical)) {
+      context.addIssue({
+        code: "custom",
+        path: ["renderSpec"],
+        message: "미리보기 렌더 사양이 편집 내용과 일치하지 않습니다.",
+      });
+    }
+  }
 }
 
-export const editorDraftDocumentSnapshotSchema =
+const editorDraftDocumentV2Schema =
   editorDocumentSnapshotBaseSchema.superRefine((document, context) => {
     validateEditorDocumentSnapshot(document, context, false);
   });
+const editorDraftDocumentV3Schema =
+  editorDocumentV3BaseSchema.superRefine((document, context) => {
+    validateEditorDocumentSnapshot(document, context, false);
+  });
+export const editorDraftDocumentSnapshotSchema = z.union([
+  editorDraftDocumentV2Schema,
+  editorDraftDocumentV3Schema,
+]);
 
-export const editorDocumentSnapshotSchema =
+const editorDocumentV2Schema =
   editorDocumentSnapshotBaseSchema.superRefine((document, context) => {
     validateEditorDocumentSnapshot(document, context, true);
   });
+const editorDocumentV3Schema =
+  editorDocumentV3BaseSchema.superRefine((document, context) => {
+    validateEditorDocumentSnapshot(document, context, true);
+  });
+export const editorDocumentSnapshotSchema = z.union([
+  editorDocumentV2Schema,
+  editorDocumentV3Schema,
+]);
 
 export type ValidatedEditorDocumentSnapshot = z.infer<
   typeof editorDocumentSnapshotSchema

@@ -1351,7 +1351,7 @@ class WorkerRepository:
                 from shorts_mvp.generated_shorts
                 where id=%s and status='rerendering' and deleted_at is null
                   and expires_at > clock_timestamp()
-                  and pending_edit_snapshot->'version'='2'::jsonb
+                  and (pending_edit_snapshot->>'version')::int in (2,3)
                   and pending_edit_request_id is not null
                 for update
                 """,
@@ -1411,7 +1411,9 @@ class WorkerRepository:
                   ),
                   edit_timeline_version=coalesce(edit_timeline_version,1),
                   editor_document=pending_edit_snapshot,
-                  editor_document_version=2,
+                  editor_document_version=(
+                    pending_edit_snapshot->>'version'
+                  )::smallint,
                   rendered_config_hash=pending_render_hash,
                   pending_render_hash=null,pending_edit_snapshot=null,
                   pending_edit_request_id=null,
@@ -1419,7 +1421,7 @@ class WorkerRepository:
                   render_error_code=null,render_error_message=null
                 where id=%s and status='rerendering' and deleted_at is null
                   and expires_at > clock_timestamp()
-                  and pending_edit_snapshot->'version'='2'::jsonb
+                  and (pending_edit_snapshot->>'version')::int in (2,3)
                   and pending_edit_request_id=%s
                 returning id
                 """,

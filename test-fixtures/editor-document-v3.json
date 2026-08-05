@@ -1,0 +1,124 @@
+{
+  "version": 3,
+  "sourceShortId": "d164fb8d-d6e1-4232-8463-9115cdf7e561",
+  "baseRenderVersion": 3,
+  "template": {
+    "id": "dark-minimal",
+    "customTemplateId": null,
+    "presetVersion": 3,
+    "snapshot": { "presetVersion": 3 }
+  },
+  "title": {
+    "text": "계약 검증",
+    "textStyles": [],
+    "fontScale": 1
+  },
+  "channel": {
+    "displayName": "이지컷",
+    "thumbnailUrl": "https://example.com/channel.png",
+    "thumbnailAssetKey": null
+  },
+  "comments": [],
+  "subtitles": {
+    "enabled": true,
+    "segments": [{ "start": 0, "end": 4, "text": "공통 계약 자막" }]
+  },
+  "overlays": {
+    "offsets": {
+      "video": { "x": 0, "y": 0 },
+      "title": { "x": 0, "y": 0 },
+      "comment": { "x": 0, "y": 0 },
+      "channel": { "x": 0, "y": 0 }
+    },
+    "commentOffsets": {},
+    "scales": { "video": 1, "title": 1, "channel": 1 },
+    "fonts": { "title": "pretendard", "channel": "pretendard" },
+    "visible": { "video": true, "title": true, "comment": false, "channel": true },
+    "commentTheme": null,
+    "textOverlays": [{
+      "id": "text-1",
+      "text": "굵기 검증",
+      "fontId": "noto-serif-kr",
+      "color": "#FFFFFF",
+      "effect": "outline",
+      "offset": { "x": 0, "y": 0 },
+      "width": 500,
+      "scale": 1,
+      "startSeconds": 0.5,
+      "endSeconds": 2.5
+    }],
+    "layerOrder": ["video", "title", "comment", "text:text-1", "channel"],
+    "background": { "kind": "color", "color": "#111111" }
+  },
+  "video": {
+    "clips": [
+      { "id": "clip-1", "sourceStartSeconds": 1, "sourceEndSeconds": 2.5 },
+      { "id": "clip-2", "sourceStartSeconds": 4, "sourceEndSeconds": 6 }
+    ],
+    "aspectRatio": "16:9",
+    "timelineStartSeconds": 10,
+    "timelineEndSeconds": 20,
+    "selectionStartSeconds": 11,
+    "selectionEndSeconds": 16
+  },
+  "renderSpec": {
+    "version": 1,
+    "canvas": { "width": 1080, "height": 1920 },
+    "fps": 30,
+    "layerOrder": ["video", "title", "comment", "text:text-1", "channel"],
+    "title": {
+      "lines": ["계약 검증"],
+      "centerX": 540,
+      "offsetY": 0,
+      "fontSize": 84,
+      "scale": 1,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V3 Pretendard\", sans-serif",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null
+      }
+    },
+    "channel": {
+      "offsetX": 0,
+      "offsetY": 0,
+      "scale": 1,
+      "font": {
+        "fontId": "pretendard",
+        "fileId": "Pretendard-Bold.woff2",
+        "family": "\"Editor V3 Pretendard\", sans-serif",
+        "requestedWeight": 700,
+        "resolvedWeight": 700,
+        "variableWeight": null
+      }
+    },
+    "comments": [],
+    "textOverlays": [{
+      "id": "text-1",
+      "lines": ["굵기 검증"],
+      "centerX": 540,
+      "centerY": 960,
+      "width": 500,
+      "fontSize": 72,
+      "lineHeight": 86,
+      "scale": 1,
+      "color": "#FFFFFF",
+      "effect": "outline",
+      "outlineWidth": 10,
+      "shadowBlur": 0,
+      "startFrame": 15,
+      "endFrame": 75,
+      "font": {
+        "fontId": "noto-serif-kr",
+        "fileId": "NotoSerifKR-Variable.ttf",
+        "family": "\"Editor V3 Noto Serif KR\", serif",
+        "requestedWeight": 800,
+        "resolvedWeight": 800,
+        "variableWeight": 800
+      }
+    }],
+    "video": { "offsetX": 0, "offsetY": 0, "scale": 1 }
+  }
+}

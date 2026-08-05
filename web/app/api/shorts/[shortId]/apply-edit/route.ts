@@ -11,6 +11,7 @@ import {
   type ValidatedEditorDocumentSnapshot,
 } from "@/lib/editor-document-contract";
 import type { EditorDocumentJsonObject } from "@/lib/editor-document-snapshot";
+import { createEditorRenderSpec } from "@/lib/editor-render-spec";
 import {
   resolveRequestedEditorRelease,
   type EditorReleaseAssignment,
@@ -137,7 +138,7 @@ function sameTimelineSecond(left: number, right: number) {
   return Math.abs(left - right) <= RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS;
 }
 
-async function applyEditorDocumentV2({
+async function applyEditorDocument({
   shortId,
   requestId,
   requestedRelease,
@@ -381,6 +382,9 @@ async function applyEditorDocumentV2({
       );
     }
   }
+  if (document.version === 3) {
+    document.renderSpec = createEditorRenderSpec(document);
+  }
   const snapshotHash = editorSnapshotHash(document);
   let persistedRelease = release;
   await db.begin(async (tx) => {
@@ -481,7 +485,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
         throw parsedInput.error;
       }
       const input = parsedInput.data;
-      return await applyEditorDocumentV2({
+      return await applyEditorDocument({
         shortId,
         requestId: input.requestId,
         requestedRelease: input.release,

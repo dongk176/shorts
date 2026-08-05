@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 from enum import Enum
+from math import floor
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -246,6 +247,7 @@ class TitleTextStyle(BaseModel):
 
 
 EDITOR_DOCUMENT_VERSION = 2
+EDITOR_DOCUMENT_LATEST_VERSION = 3
 EDITOR_CANVAS_WIDTH = 1080
 EDITOR_CANVAS_HEIGHT = 1920
 EDITOR_PRESET_COLORS = {
@@ -292,6 +294,150 @@ class EditorFontId(str, Enum):
     NANUM_MYEONGJO = "nanum-myeongjo"
     SUIT = "suit"
     SPOQA_HAN_SANS_NEO = "spoqa-han-sans-neo"
+
+
+EDITOR_FONT_FILE_IDS = {
+    EditorFontId.PRETENDARD: "Pretendard-Bold.woff2",
+    EditorFontId.BLACK_HAN_SANS: "BlackHanSans-Regular.ttf",
+    EditorFontId.GMARKET_SANS: "GmarketSans-Bold.ttf",
+    EditorFontId.DO_HYEON: "DoHyeon-Regular.ttf",
+    EditorFontId.NOTO_SERIF_KR: "NotoSerifKR-Variable.ttf",
+    EditorFontId.NANUM_MYEONGJO: "NanumMyeongjo-Bold.ttf",
+    EditorFontId.SUIT: "SUIT-Bold.woff2",
+    EditorFontId.SPOQA_HAN_SANS_NEO: "SpoqaHanSansNeo-Bold.woff2",
+}
+EDITOR_FONT_STATIC_WEIGHTS = {
+    EditorFontId.PRETENDARD: 700,
+    EditorFontId.BLACK_HAN_SANS: 400,
+    EditorFontId.GMARKET_SANS: 700,
+    EditorFontId.DO_HYEON: 400,
+    EditorFontId.NANUM_MYEONGJO: 700,
+    EditorFontId.SUIT: 700,
+    EditorFontId.SPOQA_HAN_SANS_NEO: 700,
+}
+
+
+class EditorResolvedFontFace(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    font_id: EditorFontId = Field(alias="fontId")
+    file_id: str = Field(alias="fileId", min_length=1, max_length=100)
+    family: str = Field(min_length=1, max_length=200)
+    requested_weight: int = Field(alias="requestedWeight")
+    resolved_weight: int = Field(alias="resolvedWeight")
+    variable_weight: int | None = Field(alias="variableWeight")
+
+    @model_validator(mode="after")
+    def validate_face(self) -> EditorResolvedFontFace:
+        if self.file_id != EDITOR_FONT_FILE_IDS[self.font_id]:
+            raise ValueError("editor render font file does not match font id")
+        if self.requested_weight not in {700, 800}:
+            raise ValueError("editor render requested font weight is invalid")
+        if self.font_id is EditorFontId.NOTO_SERIF_KR:
+            if (
+                self.variable_weight != self.requested_weight
+                or self.resolved_weight != self.requested_weight
+            ):
+                raise ValueError("editor variable font axis is invalid")
+        elif (
+            self.variable_weight is not None
+            or self.resolved_weight != EDITOR_FONT_STATIC_WEIGHTS[self.font_id]
+        ):
+            raise ValueError("editor static font weight is invalid")
+        return self
+
+
+class EditorRenderTitleSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    lines: list[str] = Field(min_length=1, max_length=2)
+    center_x: int = Field(alias="centerX", ge=540, le=540)
+    offset_y: float = Field(alias="offsetY", ge=-1920, le=1920)
+    font_size: float = Field(alias="fontSize", ge=18, le=200)
+    scale: float = Field(ge=1, le=1)
+    font: EditorResolvedFontFace
+
+
+class EditorRenderChannelSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    offset_x: float = Field(alias="offsetX", ge=-1080, le=1080)
+    offset_y: float = Field(alias="offsetY", ge=-1920, le=1920)
+    scale: float = Field(ge=0.5, le=2)
+    font: EditorResolvedFontFace
+
+
+class EditorRenderCommentSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9:_-]+$")
+    offset_y: float = Field(alias="offsetY", ge=-1920, le=1920)
+    start_frame: int = Field(alias="startFrame", ge=0)
+    end_frame: int = Field(alias="endFrame", gt=0)
+
+    @model_validator(mode="after")
+    def validate_frames(self) -> EditorRenderCommentSpec:
+        if self.end_frame <= self.start_frame:
+            raise ValueError("editor comment frames are invalid")
+        return self
+
+
+class EditorRenderTextSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9:_-]+$")
+    lines: list[str] = Field(min_length=1, max_length=20)
+    center_x: float = Field(alias="centerX", ge=-1080, le=2160)
+    center_y: float = Field(alias="centerY", ge=-1920, le=3840)
+    width: float = Field(ge=1, le=1000)
+    font_size: int = Field(alias="fontSize", ge=72, le=72)
+    line_height: int = Field(alias="lineHeight", ge=86, le=86)
+    scale: float = Field(ge=0.25, le=3)
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    effect: str = Field(pattern=r"^(none|outline|shadow)$")
+    outline_width: int = Field(alias="outlineWidth", ge=0, le=10)
+    shadow_blur: int = Field(alias="shadowBlur", ge=0, le=13)
+    start_frame: int = Field(alias="startFrame", ge=0)
+    end_frame: int = Field(alias="endFrame", gt=0)
+    font: EditorResolvedFontFace
+
+    @model_validator(mode="after")
+    def validate_values(self) -> EditorRenderTextSpec:
+        if self.end_frame <= self.start_frame:
+            raise ValueError("editor text frames are invalid")
+        if self.outline_width != (10 if self.effect == "outline" else 0):
+            raise ValueError("editor text outline spec is invalid")
+        if self.shadow_blur != (13 if self.effect == "shadow" else 0):
+            raise ValueError("editor text shadow spec is invalid")
+        return self
+
+
+class EditorRenderVideoSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    offset_x: float = Field(alias="offsetX", ge=-1080, le=1080)
+    offset_y: float = Field(alias="offsetY", ge=-1920, le=1920)
+    scale: float = Field(ge=0.1, le=5)
+
+
+class EditorRenderSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    version: int = Field(ge=1, le=1)
+    canvas: dict[str, int]
+    fps: int = Field(ge=30, le=30)
+    layer_order: list[str] = Field(alias="layerOrder", min_length=1, max_length=24)
+    title: EditorRenderTitleSpec
+    channel: EditorRenderChannelSpec
+    comments: list[EditorRenderCommentSpec] = Field(max_length=20)
+    text_overlays: list[EditorRenderTextSpec] = Field(alias="textOverlays", max_length=20)
+    video: EditorRenderVideoSpec
+
+    @model_validator(mode="after")
+    def validate_canvas(self) -> EditorRenderSpec:
+        if self.canvas != {"width": 1080, "height": 1920}:
+            raise ValueError("editor render canvas is invalid")
+        return self
 
 
 class EditorCanvasPoint(BaseModel):
@@ -534,7 +680,10 @@ class EditorDocumentVideo(BaseModel):
 class EditorDocument(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    version: int = Field(ge=EDITOR_DOCUMENT_VERSION, le=EDITOR_DOCUMENT_VERSION)
+    version: int = Field(
+        ge=EDITOR_DOCUMENT_VERSION,
+        le=EDITOR_DOCUMENT_LATEST_VERSION,
+    )
     source_short_id: str = Field(
         alias="sourceShortId",
         pattern=(
@@ -550,9 +699,14 @@ class EditorDocument(BaseModel):
     subtitles: EditorDocumentSubtitles
     overlays: EditorOverlayLayout
     video: EditorDocumentVideo
+    render_spec: EditorRenderSpec | None = Field(default=None, alias="renderSpec")
 
     @model_validator(mode="after")
     def validate_document(self) -> EditorDocument:
+        if self.version == 2 and self.render_spec is not None:
+            raise ValueError("editor v2 cannot contain renderSpec")
+        if self.version == 3 and self.render_spec is None:
+            raise ValueError("editor v3 requires renderSpec")
         duration = self.video.output_duration_seconds
         if duration < 0.999:
             raise ValueError("editor output must be at least one second")
@@ -583,6 +737,65 @@ class EditorDocument(BaseModel):
             for segment in self.subtitles.segments
         ):
             raise ValueError("subtitle exceeds editor timeline")
+        if self.render_spec is not None:
+            spec = self.render_spec
+            if spec.layer_order != self.overlays.layer_order:
+                raise ValueError("renderSpec layer order does not match editor overlays")
+            if spec.title.center_x != 540:
+                raise ValueError("editor title must remain horizontally centered")
+            if (
+                spec.title.offset_y != self.overlays.offsets["title"].y
+                or spec.title.font.font_id != self.overlays.fonts["title"]
+                or spec.title.font.requested_weight != 700
+            ):
+                raise ValueError("renderSpec title does not match editor title")
+            if (
+                spec.channel.offset_x != self.overlays.offsets["channel"].x
+                or spec.channel.offset_y != self.overlays.offsets["channel"].y
+                or spec.channel.scale != self.overlays.scales["channel"]
+                or spec.channel.font.font_id != self.overlays.fonts["channel"]
+                or spec.channel.font.requested_weight != 700
+            ):
+                raise ValueError("renderSpec channel does not match editor channel")
+            if (
+                spec.video.offset_x != self.overlays.offsets["video"].x
+                or spec.video.offset_y != self.overlays.offsets["video"].y
+                or spec.video.scale != self.overlays.scales["video"]
+            ):
+                raise ValueError("renderSpec video does not match editor video")
+            comment_specs = {item.id: item for item in spec.comments}
+            if set(comment_specs) != {item.id for item in self.comments}:
+                raise ValueError("renderSpec comments do not match editor comments")
+            for comment in self.comments:
+                item = comment_specs[comment.id]
+                expected_offset = self.overlays.comment_offsets.get(
+                    comment.id,
+                    self.overlays.offsets["comment"],
+                ).y
+                if (
+                    item.offset_y != expected_offset
+                    or item.start_frame != floor(comment.start_seconds * 30 + 0.5)
+                    or item.end_frame != floor(comment.end_seconds * 30 + 0.5)
+                ):
+                    raise ValueError("renderSpec comment timing is invalid")
+            text_specs = {item.id: item for item in spec.text_overlays}
+            if set(text_specs) != {item.id for item in self.overlays.text_overlays}:
+                raise ValueError("renderSpec text layers do not match editor text layers")
+            for overlay in self.overlays.text_overlays:
+                item = text_specs[overlay.id]
+                if (
+                    item.center_x != 540 + overlay.offset.x
+                    or item.center_y != 960 + overlay.offset.y
+                    or item.width != overlay.width
+                    or item.scale != overlay.scale
+                    or item.color != overlay.color
+                    or item.effect != overlay.effect
+                    or item.start_frame != floor(overlay.start_seconds * 30 + 0.5)
+                    or item.end_frame != floor(overlay.end_seconds * 30 + 0.5)
+                    or item.font.font_id != overlay.font_id
+                    or item.font.requested_weight != 800
+                ):
+                    raise ValueError("renderSpec text layer does not match editor overlay")
         comment_ids = {comment.id for comment in self.comments}
         if any(
             comment_id not in comment_ids

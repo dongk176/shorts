@@ -166,6 +166,7 @@ import { resolveEditorHistoryShortcut } from "@/lib/editor-history-shortcuts";
 import {
   cloneEditorDocumentSnapshot,
   createEditorDocumentSnapshot,
+  createEditorDocumentSnapshotV3,
   type EditorDocumentSnapshot,
 } from "@/lib/editor-document-snapshot";
 import {
@@ -173,6 +174,7 @@ import {
   editorDocumentSnapshotSchema,
   editorDocumentOutputDuration,
 } from "@/lib/editor-document-contract";
+import { createEditorRenderSpec } from "@/lib/editor-render-spec";
 import { editorSubtitlesForSave } from "@/lib/editor-subtitle-save";
 import {
   createEditorDraftRecord,
@@ -898,6 +900,7 @@ function CommentCaptureChannel({
   channelThumbnailUrl,
   fixedCenterY,
   fontFamily,
+  fontWeight,
   selected = false,
   movementStyle,
   onPointerDown,
@@ -906,6 +909,7 @@ function CommentCaptureChannel({
   channelThumbnailUrl: string | null;
   fixedCenterY?: number;
   fontFamily?: string;
+  fontWeight?: number;
   selected?: boolean;
   movementStyle?: CSSProperties;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
@@ -924,10 +928,11 @@ function CommentCaptureChannel({
     <div
       className="pointer-events-none absolute inset-x-0 z-20 flex items-center justify-center text-[4.2cqw] font-semibold text-white"
       style={fixedCenterY === undefined
-        ? { bottom: "13.5cqw", fontFamily, zIndex: movementStyle?.zIndex }
+        ? { bottom: "13.5cqw", fontFamily, fontWeight, zIndex: movementStyle?.zIndex }
         : {
             top: `${fixedCenterY / 19.2}%`,
             fontFamily,
+            fontWeight,
             transform: "translateY(-50%)",
             zIndex: movementStyle?.zIndex,
           }}
@@ -955,6 +960,7 @@ function FixedPresetChannel({
   foreground,
   background,
   fontFamily,
+  fontWeight,
   selected = false,
   movementStyle,
   onPointerDown,
@@ -964,6 +970,7 @@ function FixedPresetChannel({
   foreground: string;
   background: string;
   fontFamily?: string;
+  fontWeight?: number;
   selected?: boolean;
   movementStyle?: CSSProperties;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
@@ -985,6 +992,7 @@ function FixedPresetChannel({
         top: `${PRESET_SQUARE_CHANNEL_CENTER_Y / 19.2}%`,
         color: foreground,
         fontFamily,
+        fontWeight,
         transform: "translateY(-50%)",
         zIndex: movementStyle?.zIndex,
       }}
@@ -1011,6 +1019,7 @@ function CustomEditorChannel({
   channelName,
   channelThumbnailUrl,
   fontFamily,
+  fontWeight,
   selected = false,
   forceVisible = false,
   movementStyle,
@@ -1020,6 +1029,7 @@ function CustomEditorChannel({
   channelName: string;
   channelThumbnailUrl: string | null;
   fontFamily?: string;
+  fontWeight?: number;
   selected?: boolean;
   forceVisible?: boolean;
   movementStyle?: CSSProperties;
@@ -1032,6 +1042,7 @@ function CustomEditorChannel({
     color: channel.color,
     backgroundColor: channel.backgroundColor || "transparent",
     fontFamily,
+    fontWeight,
     fontSize: customCanvasWidth(channel.fontSize),
     ...movementStyle,
   };
@@ -1076,6 +1087,7 @@ function PresetInlineEditorChannel({
   foreground,
   background,
   fontFamily,
+  fontWeight,
   selected = false,
   movementStyle,
   onPointerDown,
@@ -1085,6 +1097,7 @@ function PresetInlineEditorChannel({
   foreground: string;
   background: string;
   fontFamily?: string;
+  fontWeight?: number;
   selected?: boolean;
   movementStyle?: CSSProperties;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
@@ -1100,7 +1113,7 @@ function PresetInlineEditorChannel({
     <span className="max-w-[72%] truncate">{channelName}</span>
   </>;
   if (!onPointerDown) {
-    return <div className="flex items-start justify-center gap-2" style={{ fontFamily }}>{content}</div>;
+    return <div className="flex items-start justify-center gap-2" style={{ fontFamily, fontWeight }}>{content}</div>;
   }
   return (
     <button
@@ -1110,7 +1123,7 @@ function PresetInlineEditorChannel({
       aria-pressed={selected}
       onPointerDown={onPointerDown}
       className={`relative mx-auto flex w-fit cursor-move touch-none appearance-none items-start justify-center gap-2 border-0 bg-transparent p-0 text-inherit ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
-      style={{ ...movementStyle, fontFamily }}
+      style={{ ...movementStyle, fontFamily, fontWeight }}
     >
       {content}
     </button>
@@ -3129,7 +3142,7 @@ function CommentTimelineEditor({
 
 function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; paidAccessBlocked?: boolean }) {
   const savedEditorDocument = overlayPreviewEnabled
-    && item.editorDocument?.version === 2
+    && (item.editorDocument?.version === 2 || item.editorDocument?.version === 3)
     ? item.editorDocument
     : null;
   const initialTemplateId = savedEditorDocument?.template.id || item.templateId;
@@ -3645,7 +3658,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setActiveEditorSidebarTool(tool);
     setDesktopSidebarOpen(true);
   };
-  const editorDocumentSnapshot = useMemo(() => createEditorDocumentSnapshot({
+  const editorDocumentSnapshot = useMemo(() => {
+    const input: Parameters<typeof createEditorDocumentSnapshot>[0] = {
     sourceShortId: item.id,
     baseRenderVersion: item.renderVersion,
     template: {
@@ -3690,7 +3704,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       selectionStartSeconds: selectionStart,
       selectionEndSeconds: selectionEnd,
     },
-  }), [
+    };
+    return editorRelease.documentVersion === 3
+      ? createEditorDocumentSnapshotV3(input)
+      : createEditorDocumentSnapshot(input);
+  }, [
     activeCustomTemplate,
     channel,
     comments,
@@ -3714,6 +3732,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     videoClips,
     editTimeline?.timelineEndSeconds,
     editTimeline?.timelineStartSeconds,
+    editorRelease.documentVersion,
   ]);
   const saveEditorDraftNow = useCallback(async () => {
     if (
@@ -3876,11 +3895,14 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const channelScale = renderOverlayLayout.scales.channel;
   const titleFontId = renderOverlayLayout.fonts?.title || DEFAULT_EDITOR_FONT_ID;
   const channelFontId = renderOverlayLayout.fonts?.channel || DEFAULT_EDITOR_FONT_ID;
+  const renderSpec = editorDocumentSnapshot.version === 3
+    ? editorDocumentSnapshot.renderSpec
+    : null;
   const titleFontFamily = overlayPreviewEnabled
-    ? editorFontFamily(titleFontId)
+    ? renderSpec?.title.font.family || editorFontFamily(titleFontId)
     : undefined;
   const channelFontFamily = overlayPreviewEnabled
-    ? editorFontFamily(channelFontId)
+    ? renderSpec?.channel.font.family || editorFontFamily(channelFontId)
     : undefined;
   const editorCommentTheme: EditorCommentTheme = renderOverlayLayout.commentTheme
     || activeCustomTemplate?.config.comment.theme
@@ -7420,6 +7442,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         document.subtitles.segments = editorSubtitlesForSave(
           document.subtitles.segments,
         );
+        if (document.version === 3) {
+          document.renderSpec = createEditorRenderSpec(document);
+        }
         const validatedDocument = editorDocumentSnapshotSchema.safeParse(
           document,
         );
@@ -7940,6 +7965,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 secondLine={customTitleLines[1] || ""}
                 fontScale={renderTitleFontScale}
                 fontFamily={titleFontFamily}
+                fontWeight={renderSpec?.title.font.resolvedWeight}
+                resolvedLines={renderSpec?.title.lines}
+                resolvedFontSize={renderSpec?.title.fontSize}
+                forceCenterX={Boolean(renderSpec)}
                 textStyles={renderTitleTextStyles}
                 selected={overlayPreviewEnabled && selectedOverlay === "title"}
                 editing={inlineEditingOverlay === "title"}
@@ -7960,6 +7989,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 accent={template.accent}
                 background={editorTemplateSurfaceBackground}
                 fontFamily={titleFontFamily}
+                fontWeight={renderSpec?.title.font.resolvedWeight}
+                resolvedLines={renderSpec?.title.lines}
+                resolvedFontSize={renderSpec?.title.fontSize}
                 keepPrimaryFirstLine={template.id === "paper"}
                 textStyles={renderTitleTextStyles}
                 liftLandscape={usesLiftedCommentLayout}
@@ -8233,6 +8265,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                     channelName={renderChannel}
                     channelThumbnailUrl={renderChannelThumbnailUrl}
                     fontFamily={channelFontFamily}
+                    fontWeight={renderSpec?.channel.font.resolvedWeight}
                     selected={overlayPreviewEnabled && selectedOverlay === "channel"}
                     forceVisible={overlayPreviewEnabled}
                     movementStyle={overlayMovementStyle("channel")}
@@ -8292,6 +8325,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                           channelName={renderChannel}
                           channelThumbnailUrl={renderChannelThumbnailUrl}
                           fontFamily={channelFontFamily}
+                          fontWeight={renderSpec?.channel.font.resolvedWeight}
                           selected={overlayPreviewEnabled && selectedOverlay === "channel"}
                           movementStyle={overlayMovementStyle("channel")}
                           onPointerDown={overlayPreviewEnabled
@@ -8305,6 +8339,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                         foreground={template.channel}
                         background={template.background}
                         fontFamily={channelFontFamily}
+                        fontWeight={renderSpec?.channel.font.resolvedWeight}
                         selected={overlayPreviewEnabled && selectedOverlay === "channel"}
                         movementStyle={overlayMovementStyle("channel")}
                         onPointerDown={overlayPreviewEnabled
@@ -8318,6 +8353,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                       channelThumbnailUrl={renderChannelThumbnailUrl}
                       fixedCenterY={COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y}
                       fontFamily={channelFontFamily}
+                      fontWeight={renderSpec?.channel.font.resolvedWeight}
                       selected={overlayPreviewEnabled && selectedOverlay === "channel"}
                       movementStyle={overlayMovementStyle("channel")}
                       onPointerDown={overlayPreviewEnabled
@@ -8330,6 +8366,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                       foreground={template.channel}
                       background={template.background}
                       fontFamily={channelFontFamily}
+                      fontWeight={renderSpec?.channel.font.resolvedWeight}
                       selected={overlayPreviewEnabled && selectedOverlay === "channel"}
                       movementStyle={overlayMovementStyle("channel")}
                       onPointerDown={overlayPreviewEnabled
@@ -8370,6 +8407,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             <EditorTextOverlayPreview
               key={textOverlay.id}
               textOverlay={textOverlay}
+              renderSpec={renderSpec?.textOverlays.find((item) => (
+                item.id === textOverlay.id
+              ))}
               selected={selectedTextOverlayId === textOverlay.id}
               editing={inlineEditingOverlay === editorTextSelection(textOverlay.id)}
               zIndex={editorOverlayZIndex(editorTextSelection(textOverlay.id))}

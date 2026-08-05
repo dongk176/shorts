@@ -147,3 +147,30 @@ describe("editor document v2 contract", () => {
     expect(() => editorDocumentSnapshotSchema.parse(value)).toThrow();
   });
 });
+
+describe("editor document v3 render specification", () => {
+  it("accepts the shared v3 fixture and distinguishes Noto title/text weights", () => {
+    const fixture = JSON.parse(readFileSync(
+      path.resolve(process.cwd(), "../test-fixtures/editor-document-v3.json"),
+      "utf8",
+    ));
+    const parsed = editorDocumentSnapshotSchema.parse(fixture);
+    expect(parsed.version).toBe(3);
+    if (parsed.version !== 3) throw new Error("v3 fixture was parsed as v2");
+    expect(parsed.renderSpec.title.font.resolvedWeight).toBe(700);
+    expect(parsed.renderSpec.textOverlays[0].font.resolvedWeight).toBe(800);
+    expect(parsed.renderSpec.textOverlays[0]).toMatchObject({
+      startFrame: 15,
+      endFrame: 75,
+    });
+  });
+
+  it("rejects a client render specification that differs from semantic edits", () => {
+    const fixture = JSON.parse(readFileSync(
+      path.resolve(process.cwd(), "../test-fixtures/editor-document-v3.json"),
+      "utf8",
+    ));
+    fixture.renderSpec.textOverlays[0].font.resolvedWeight = 700;
+    expect(() => editorDocumentSnapshotSchema.parse(fixture)).toThrow();
+  });
+});

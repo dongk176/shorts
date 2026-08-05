@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import tempfile
+from math import floor
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,45 @@ FONT_IDS = (
     "spoqa-han-sans-neo",
 )
 
+FONT_METADATA = {
+    "pretendard": (
+        "Pretendard-Bold.woff2",
+        '"Editor V3 Pretendard", sans-serif',
+        700,
+    ),
+    "black-han-sans": (
+        "BlackHanSans-Regular.ttf",
+        '"Editor V3 Black Han Sans", sans-serif',
+        400,
+    ),
+    "gmarket-sans": (
+        "GmarketSans-Bold.ttf",
+        '"Editor V3 Gmarket Sans", sans-serif',
+        700,
+    ),
+    "do-hyeon": (
+        "DoHyeon-Regular.ttf",
+        '"Editor V3 Do Hyeon", sans-serif',
+        400,
+    ),
+    "noto-serif-kr": (
+        "NotoSerifKR-Variable.ttf",
+        '"Editor V3 Noto Serif KR", serif',
+        None,
+    ),
+    "nanum-myeongjo": (
+        "NanumMyeongjo-Bold.ttf",
+        '"Editor V3 Nanum Myeongjo", serif',
+        700,
+    ),
+    "suit": ("SUIT-Bold.woff2", '"Editor V3 SUIT", sans-serif', 700),
+    "spoqa-han-sans-neo": (
+        "SpoqaHanSansNeo-Bold.woff2",
+        '"Editor V3 Spoqa Han Sans Neo", sans-serif',
+        700,
+    ),
+}
+
 PROBE_SCENARIOS = (
     "baseline",
     "ripple-cut",
@@ -37,6 +77,85 @@ PROBE_SCENARIOS = (
     "background-template",
     "channel-layer-order",
 )
+
+
+def _font_face(font_id: str, *, text: bool) -> dict[str, object]:
+    file_id, family, static_weight = FONT_METADATA[font_id]
+    requested_weight = 800 if text else 700
+    resolved_weight = requested_weight if static_weight is None else static_weight
+    return {
+        "fontId": font_id,
+        "fileId": file_id,
+        "family": family,
+        "requestedWeight": requested_weight,
+        "resolvedWeight": resolved_weight,
+        "variableWeight": requested_weight if static_weight is None else None,
+    }
+
+
+def _render_spec(value: dict[str, Any]) -> dict[str, object]:
+    overlays = value["overlays"]
+    title = value["title"]
+    title_lines = [line for line in str(title["text"]).splitlines() if line] or ["핵심 장면"]
+    title_font_size = max(18, min(200, round(84 * float(title["fontScale"]))))
+    comments = value["comments"]
+    text_overlays = overlays["textOverlays"]
+    return {
+        "version": 1,
+        "canvas": {"width": 1080, "height": 1920},
+        "fps": 30,
+        "layerOrder": list(overlays["layerOrder"]),
+        "title": {
+            "lines": title_lines[:2],
+            "centerX": 540,
+            "offsetY": overlays["offsets"]["title"]["y"],
+            "fontSize": title_font_size,
+            "scale": 1,
+            "font": _font_face(overlays["fonts"]["title"], text=False),
+        },
+        "channel": {
+            "offsetX": overlays["offsets"]["channel"]["x"],
+            "offsetY": overlays["offsets"]["channel"]["y"],
+            "scale": overlays["scales"]["channel"],
+            "font": _font_face(overlays["fonts"]["channel"], text=False),
+        },
+        "comments": [
+            {
+                "id": comment["id"],
+                "offsetY": overlays["commentOffsets"].get(
+                    comment["id"], overlays["offsets"]["comment"]
+                )["y"],
+                "startFrame": floor(float(comment["startSeconds"]) * 30 + 0.5),
+                "endFrame": floor(float(comment["endSeconds"]) * 30 + 0.5),
+            }
+            for comment in comments
+        ],
+        "textOverlays": [
+            {
+                "id": overlay["id"],
+                "lines": str(overlay["text"]).splitlines() or [" "],
+                "centerX": 540 + overlay["offset"]["x"],
+                "centerY": 960 + overlay["offset"]["y"],
+                "width": overlay["width"],
+                "fontSize": 72,
+                "lineHeight": 86,
+                "scale": overlay["scale"],
+                "color": overlay["color"],
+                "effect": overlay["effect"],
+                "outlineWidth": 10 if overlay["effect"] == "outline" else 0,
+                "shadowBlur": 13 if overlay["effect"] == "shadow" else 0,
+                "startFrame": floor(float(overlay["startSeconds"]) * 30 + 0.5),
+                "endFrame": floor(float(overlay["endSeconds"]) * 30 + 0.5),
+                "font": _font_face(overlay["fontId"], text=True),
+            }
+            for overlay in text_overlays
+        ],
+        "video": {
+            "offsetX": overlays["offsets"]["video"]["x"],
+            "offsetY": overlays["offsets"]["video"]["y"],
+            "scale": overlays["scales"]["video"],
+        },
+    }
 
 
 def _run(command: list[str], *, timeout: float = 180) -> subprocess.CompletedProcess[str]:
@@ -74,7 +193,7 @@ def _document(scenario: str = "baseline") -> EditorDocument:
         "channel",
     ]
     value: dict[str, Any] = {
-        "version": 2,
+        "version": 3,
         "sourceShortId": "00000000-0000-4000-8000-000000000001",
         "baseRenderVersion": 1,
         "template": {
@@ -172,8 +291,8 @@ def _document(scenario: str = "baseline") -> EditorDocument:
         },
     }
     if scenario == "baseline":
-        return EditorDocument.model_validate(value)
-    if scenario == "ripple-cut":
+        pass
+    elif scenario == "ripple-cut":
         value["title"] = {
             "text": "세 조각 리플 편집",
             "textStyles": [{"start": 3, "end": 5, "color": "#FF715E"}],
@@ -423,6 +542,7 @@ def _document(scenario: str = "baseline") -> EditorDocument:
         }
     else:
         raise RuntimeError(f"Unsupported editor release scenario: {scenario}")
+    value["renderSpec"] = _render_spec(value)
     return EditorDocument.model_validate(value)
 
 

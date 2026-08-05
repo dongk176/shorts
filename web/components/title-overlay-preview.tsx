@@ -46,6 +46,9 @@ export function TitleOverlayPreview({
   accent,
   background,
   fontFamily = DEFAULT_TITLE_FONT_FAMILY,
+  fontWeight = 700,
+  resolvedLines,
+  resolvedFontSize,
   keepPrimaryFirstLine = false,
   textStyles = [],
   liftLandscape = false,
@@ -64,6 +67,9 @@ export function TitleOverlayPreview({
   accent: string;
   background: string;
   fontFamily?: string;
+  fontWeight?: number;
+  resolvedLines?: string[];
+  resolvedFontSize?: number;
   keepPrimaryFirstLine?: boolean;
   textStyles?: TitleTextStyle[];
   liftLandscape?: boolean;
@@ -75,14 +81,20 @@ export function TitleOverlayPreview({
   onEditValueChange?: (value: string) => void;
   onEditEnd?: () => void;
 }) {
-  const lines = useMemo(() => wrapPreviewTitle(title), [title]);
+  const lines = useMemo(
+    () => resolvedLines || wrapPreviewTitle(title),
+    [resolvedLines, title],
+  );
   const lineIndices = useMemo(() => titleLineCharacterIndices(title, lines), [lines, title]);
   const [fittedFontSize, setFittedFontSize] = useState(() => fitPreviewTitleFont(lines));
   const layout = titlePanelLayout(videoAspectRatio, liftLandscape);
   const bottomMargin = layout.panelHeight === 285 && !layout.overlay
     ? 12
     : Math.min(44, Math.max(24, Math.round(layout.panelHeight * 0.105)));
-  const scaledFontSize = Math.max(18, Math.min(200, Math.round(fittedFontSize * fontScale)));
+  const scaledFontSize = resolvedFontSize ?? Math.max(
+    18,
+    Math.min(200, Math.round(fittedFontSize * fontScale)),
+  );
   const lineRuns = useMemo(() => lines.map((line, index) => (
     styledTitleLineRuns(line, lineIndices[index], textStyles)
   )), [lineIndices, lines, textStyles]);
@@ -90,10 +102,11 @@ export function TitleOverlayPreview({
   useEffect(() => {
     let cancelled = false;
     const fitUsingBrowserFont = () => {
+      if (resolvedFontSize !== undefined) return;
       const context = document.createElement("canvas").getContext("2d");
       if (!context || cancelled) return;
       const fitted = fitPreviewTitleFont(lines, (line, fontSize) => {
-        context.font = `700 ${fontSize}px ${fontFamily}`;
+        context.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
         return context.measureText(line).width;
       });
       if (!cancelled) setFittedFontSize(fitted);
@@ -101,7 +114,7 @@ export function TitleOverlayPreview({
     fitUsingBrowserFont();
     void document.fonts?.ready.then(fitUsingBrowserFont);
     return () => { cancelled = true; };
-  }, [fontFamily, lines]);
+  }, [fontFamily, fontWeight, lines, resolvedFontSize]);
 
   const panelStyle: CSSProperties = {
     top: layout.top,
@@ -111,6 +124,7 @@ export function TitleOverlayPreview({
     fontFamily,
     fontSize: canvasWidth(scaledFontSize),
     lineHeight: 1,
+    fontWeight,
   };
   const content = lines.map((line, index) => {
     const runs = lineRuns[index];

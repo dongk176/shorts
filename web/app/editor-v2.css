@@ -4,6 +4,67 @@
  * from reaching the legacy editor or any other product surface.
  */
 
+/*
+ * Editor v3 uses exact font capabilities. These aliases are never referenced
+ * by stable v2, so static faces cannot be synthetically emboldened there.
+ */
+@font-face {
+  font-family: "Editor V3 Pretendard";
+  src: url("/fonts/editor/Pretendard-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Black Han Sans";
+  src: url("/fonts/editor/BlackHanSans-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Gmarket Sans";
+  src: url("/fonts/editor/GmarketSans-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Do Hyeon";
+  src: url("/fonts/editor/DoHyeon-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Noto Serif KR";
+  src: url("/fonts/editor/NotoSerifKR-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Nanum Myeongjo";
+  src: url("/fonts/editor/NanumMyeongjo-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 SUIT";
+  src: url("/fonts/editor/SUIT-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Spoqa Han Sans Neo";
+  src: url("/fonts/editor/SpoqaHanSansNeo-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
 .editor-v2-root .editor-v2-text-tool-panel {
   padding-bottom: 24px;
 }

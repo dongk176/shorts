@@ -408,6 +408,22 @@ def test_editor_document_migration_is_additive_private_and_disabled() -> None:
     assert "public." not in migration
 
 
+def test_editor_document_v3_migration_preserves_v2_and_allows_v3() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202608050001_editor_document_v3_render_spec.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "editor_document_version in (2,3)" in migration
+    assert "pending_edit_snapshot->>'version'" in migration
+    assert "in (2,3)" in migration
+    assert "not valid" in migration
+    assert "validate constraint" in migration
+    assert "public." not in migration
+
+
 def test_selection_observability_migration_stays_in_shorts_schema() -> None:
     migration = (
         Path(__file__).parents[2]

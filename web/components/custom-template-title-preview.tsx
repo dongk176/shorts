@@ -19,6 +19,10 @@ export function CustomTemplateTitlePreview({
   secondLine,
   fontScale = 1,
   fontFamily = DEFAULT_TITLE_FONT_FAMILY,
+  fontWeight,
+  resolvedLines,
+  resolvedFontSize,
+  forceCenterX = false,
   textStyles = [],
   selected = false,
   editing = false,
@@ -35,6 +39,10 @@ export function CustomTemplateTitlePreview({
   secondLine: string;
   fontScale?: number;
   fontFamily?: string;
+  fontWeight?: number;
+  resolvedLines?: string[];
+  resolvedFontSize?: number;
+  forceCenterX?: boolean;
   textStyles?: TitleTextStyle[];
   selected?: boolean;
   editing?: boolean;
@@ -46,16 +54,19 @@ export function CustomTemplateTitlePreview({
   onEditEnd?: () => void;
 }) {
   if (!title.visible) return null;
-  const fontSize = title.fontSize * fontScale;
-  const visibleLines = [firstLine, ...(secondLine ? [secondLine] : [])];
+  const fontSize = resolvedFontSize ?? title.fontSize * fontScale;
+  const visibleLines = resolvedLines
+    || [firstLine, ...(secondLine ? [secondLine] : [])];
   const lineIndices = titleLineCharacterIndices(
     sourceTitle || visibleLines.join("\n"),
     visibleLines,
   );
   const wrapperStyle = {
     ...customCenteredLayerStyle(title),
+    ...(forceCenterX ? { left: "50%" } : {}),
     gap: customCanvasWidth(Math.max(6, Math.round(fontSize * 0.18))),
     fontFamily,
+    fontWeight,
     fontSize: customCanvasWidth(fontSize),
     lineHeight: 1,
     ...movementStyle,

@@ -97,6 +97,40 @@ describe("editor release gate", () => {
     });
   });
 
+  it("assigns v3 only to the enabled administrator canary tester", async () => {
+    const candidate = releaseRow({
+      canaryEnabled: true,
+      testerEnabled: true,
+      userIsAdmin: true,
+      candidateReleaseId: releaseId,
+      candidateUiVersion: 3,
+      candidateDocumentVersion: 3,
+      candidateStatus: "canary_active",
+    });
+    const adminDb = vi.fn().mockResolvedValue([candidate]);
+    await expect(resolveEditorRelease(
+      adminDb as never,
+      userId,
+      { EDITOR_RENDERING_V2_ENABLED: "true" },
+    )).resolves.toEqual({
+      channel: "canary",
+      releaseId,
+      uiVersion: 3,
+      documentVersion: 3,
+    });
+
+    const ordinaryDb = vi.fn().mockResolvedValue([releaseRow({
+      ...candidate,
+      testerEnabled: false,
+      userIsAdmin: false,
+    })]);
+    await expect(resolveEditorRelease(
+      ordinaryDb as never,
+      userId,
+      { EDITOR_RENDERING_V2_ENABLED: "true" },
+    )).resolves.toMatchObject({ channel: "legacy", documentVersion: null });
+  });
+
   it("keeps a non-administrator tester on the legacy editor", async () => {
     const db = vi.fn().mockResolvedValue([releaseRow({
       canaryEnabled: true,

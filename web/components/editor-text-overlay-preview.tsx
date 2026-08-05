@@ -19,6 +19,7 @@ import {
   type EditorTextResizeEdge,
 } from "@/lib/editor-overlay-preview";
 import { editorFontFamily } from "@/lib/editor-fonts";
+import type { EditorRenderTextLayerSpec } from "@/lib/editor-render-spec";
 
 function canvasWidth(value: number) {
   return `${value / (TEMPLATE_CANVAS.width / 100)}cqw`;
@@ -26,6 +27,7 @@ function canvasWidth(value: number) {
 
 export function EditorTextOverlayPreview({
   textOverlay,
+  renderSpec,
   selected,
   editing = false,
   zIndex,
@@ -37,6 +39,7 @@ export function EditorTextOverlayPreview({
   onEditEnd,
 }: {
   textOverlay: EditorTextOverlay;
+  renderSpec?: EditorRenderTextLayerSpec;
   selected: boolean;
   editing?: boolean;
   zIndex?: number;
@@ -64,7 +67,8 @@ export function EditorTextOverlayPreview({
   };
   const textStyle: CSSProperties = {
     color: textOverlay.color,
-    fontFamily: editorFontFamily(textOverlay.fontId),
+    fontFamily: renderSpec?.font.family || editorFontFamily(textOverlay.fontId),
+    fontWeight: renderSpec?.font.resolvedWeight,
     fontSize: canvasWidth(72),
     lineHeight: 1.2,
     ...(effect === "none"
@@ -156,7 +160,11 @@ export function EditorTextOverlayPreview({
         className="w-full cursor-move touch-none appearance-none whitespace-pre-wrap break-words rounded-[2cqw] border-0 bg-transparent px-[2cqw] py-[1cqw] text-center font-extrabold"
         style={textStyle}
       >
-        {textOverlay.text || "텍스트"}
+        {renderSpec
+          ? renderSpec.lines.map((line, index) => (
+              <span key={`${index}:${line}`} className="block">{line}</span>
+            ))
+          : textOverlay.text || "텍스트"}
       </button>
       {selected && onResizePointerDown && <>
         <button

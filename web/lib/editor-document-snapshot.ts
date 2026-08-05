@@ -11,8 +11,13 @@ import {
   type EditorOverlayLayoutSnapshot,
 } from "./editor-overlay-preview";
 import type { EditorVideoClip } from "./editor-video-cuts";
+import {
+  createEditorRenderSpec,
+  type EditorRenderSpec,
+} from "./editor-render-spec";
 
 export const EDITOR_DOCUMENT_SNAPSHOT_VERSION = 2 as const;
+export const EDITOR_DOCUMENT_V3_VERSION = 3 as const;
 
 export type EditorDocumentSubtitle = {
   start: number;
@@ -31,7 +36,7 @@ export type EditorDocumentJsonObject = {
   [key: string]: EditorDocumentJsonValue;
 };
 
-export type EditorDocumentSnapshot = {
+export type EditorDocumentSnapshotV2 = {
   version: typeof EDITOR_DOCUMENT_SNAPSHOT_VERSION;
   sourceShortId: string;
   baseRenderVersion: number;
@@ -67,11 +72,23 @@ export type EditorDocumentSnapshot = {
   };
 };
 
-type EditorDocumentSnapshotInput = Omit<EditorDocumentSnapshot, "version">;
+export type EditorDocumentSnapshotV3 = Omit<
+  EditorDocumentSnapshotV2,
+  "version"
+> & {
+  version: typeof EDITOR_DOCUMENT_V3_VERSION;
+  renderSpec: EditorRenderSpec;
+};
+
+export type EditorDocumentSnapshot =
+  | EditorDocumentSnapshotV2
+  | EditorDocumentSnapshotV3;
+
+type EditorDocumentSnapshotInput = Omit<EditorDocumentSnapshotV2, "version">;
 
 export function createEditorDocumentSnapshot(
   input: EditorDocumentSnapshotInput,
-): EditorDocumentSnapshot {
+): EditorDocumentSnapshotV2 {
   const overlays = cloneEditorOverlayLayout(input.overlays);
   const titleFontScale = consolidateEditorTitleFontScale(
     input.title.fontScale,
@@ -105,10 +122,23 @@ export function createEditorDocumentSnapshot(
   };
 }
 
+export function createEditorDocumentSnapshotV3(
+  input: EditorDocumentSnapshotInput,
+): EditorDocumentSnapshotV3 {
+  const v2 = createEditorDocumentSnapshot(input);
+  return {
+    ...v2,
+    version: EDITOR_DOCUMENT_V3_VERSION,
+    renderSpec: createEditorRenderSpec(v2),
+  };
+}
+
 export function cloneEditorDocumentSnapshot(
   snapshot: EditorDocumentSnapshot,
 ): EditorDocumentSnapshot {
-  return createEditorDocumentSnapshot(snapshot);
+  return snapshot.version === EDITOR_DOCUMENT_V3_VERSION
+    ? createEditorDocumentSnapshotV3(snapshot)
+    : createEditorDocumentSnapshot(snapshot);
 }
 
 export function editorDocumentSnapshotsEqual(

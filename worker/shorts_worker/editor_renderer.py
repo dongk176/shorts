@@ -22,6 +22,7 @@ from .schemas import (
     CustomTemplateConfig,
     EditorDocument,
     EditorFontId,
+    EditorRenderTextSpec,
     EditorTextOverlay,
     SubtitleSegment,
     TemplateId,
@@ -53,7 +54,7 @@ EDITOR_FONT_FILES = {
     EditorFontId.SPOQA_HAN_SANS_NEO: "SpoqaHanSansNeo-Bold.woff2",
 }
 EDITOR_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
-EDITOR_FONT_VARIATION_WEIGHTS = {
+EDITOR_FONT_DEFAULT_VARIATION_WEIGHTS = {
     EditorFontId.NOTO_SERIF_KR: 700,
 }
 TIMED_OVERLAY_TRANSITION_FRAMES = 3
@@ -117,12 +118,21 @@ def editor_font_path(font_id: EditorFontId) -> Path:
     return path
 
 
-def load_editor_font(font_id: EditorFontId, size: int) -> ImageFont.FreeTypeFont:
+def load_editor_font(
+    font_id: EditorFontId,
+    size: int,
+    *,
+    weight: int | None = None,
+) -> ImageFont.FreeTypeFont:
     font = ImageFont.truetype(
         str(editor_font_path(font_id)),
         size=max(1, round(size)),
     )
-    variation_weight = EDITOR_FONT_VARIATION_WEIGHTS.get(font_id)
+    variation_weight = (
+        weight
+        if font_id is EditorFontId.NOTO_SERIF_KR and weight is not None
+        else EDITOR_FONT_DEFAULT_VARIATION_WEIGHTS.get(font_id)
+    )
     if variation_weight is not None:
         # The browser preview requests font-weight: 700. Pillow otherwise opens
         # variable fonts at their default axis value, which made Noto Serif KR
@@ -215,14 +225,15 @@ def _fit_title_font(
     font_id: EditorFontId,
     maximum_width: int,
     preferred_size: int = 84,
+    weight: int | None = None,
 ) -> ImageFont.FreeTypeFont:
     image = Image.new("L", (1, 1))
     draw = ImageDraw.Draw(image)
     for size in range(preferred_size, 21, -2):
-        font = load_editor_font(font_id, size)
+        font = load_editor_font(font_id, size, weight=weight)
         if max(_text_size(draw, line, font)[0] for line in lines) <= maximum_width:
             return font
-    return load_editor_font(font_id, 22)
+    return load_editor_font(font_id, 22, weight=weight)
 
 
 def _scale_layer(image: Image.Image, scale: float) -> Image.Image:
@@ -291,18 +302,20 @@ def _draw_styled_title_content(
     font_size: int,
     custom_config: CustomTemplateConfig | None,
 ) -> Image.Image:
-    lines = wrap_korean_title(document.title.text)
-    font = load_editor_font(font_id, font_size)
+    render_title = document.render_spec.title if document.render_spec else None
+    lines = render_title.lines if render_title else wrap_korean_title(document.title.text)
+    font_weight = render_title.font.resolved_weight if render_title else None
+    font = load_editor_font(font_id, font_size, weight=font_weight)
     probe = Image.new("RGBA", (CANVAS_WIDTH, 500), (0, 0, 0, 0))
     draw = ImageDraw.Draw(probe)
-    if custom_config is not None:
+    if custom_config is not None and render_title is None:
         while (
             font_size > 20
             and max(_text_size(draw, line, font)[0] for line in lines)
             > custom_config.title.max_width
         ):
             font_size -= 2
-            font = load_editor_font(font_id, font_size)
+            font = load_editor_font(font_id, font_size, weight=font_weight)
     indices = _title_line_character_indices(document.title.text, lines)
     metrics = [_text_size(draw, line, font) for line in lines]
     if custom_config is not None:
@@ -428,7 +441,38 @@ def create_editor_title_layer(
         return output_path
     config = _custom_template_config(document)
     font_id = document.overlays.fonts["title"]
-    if config is not None:
+    render_title = document.render_spec.title if document.render_spec else None
+    if render_title is not None:
+        base_font_size = max(1, round(render_title.font_size))
+        center_x = CANVAS_WIDTH / 2
+        if config is not None:
+            center_y = config.title.y
+        else:
+            aspect_ratio = document.video.aspect_ratio
+            if (
+                document.template.id is TemplateId.COMMENT_CAPTURE
+                and aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+            ):
+                aspect_ratio = VideoAspectRatio.PORTRAIT
+            if aspect_ratio is VideoAspectRatio.FULL_VERTICAL:
+                panel_height = 360
+                panel_top = 96
+            else:
+                panel_height = round((CANVAS_HEIGHT - VIDEO_HEIGHTS[aspect_ratio]) / 2)
+                if (
+                    document.template.id is TemplateId.COMMENT_CAPTURE
+                    and document.template.preset_version >= 2
+                    and aspect_ratio is VideoAspectRatio.LANDSCAPE
+                ):
+                    panel_height -= COMMENT_CAPTURE_LANDSCAPE_LIFT_PX
+                panel_top = 0
+            bottom_margin = (
+                12
+                if panel_height == 285
+                else min(44, max(24, round(panel_height * 0.105)))
+            )
+            center_y = panel_top + panel_height - bottom_margin
+    elif config is not None:
         base_font_size = max(1, round(config.title.font_size * document.title.font_scale))
         center_x = config.title.x
         center_y = config.title.y
@@ -481,7 +525,7 @@ def create_editor_title_layer(
         canvas,
         content,
         center_x,
-        center_y + offset.y,
+        center_y + (render_title.offset_y if render_title else offset.y),
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(output_path, format="PNG", compress_level=1)
@@ -537,7 +581,12 @@ def create_editor_channel_layer(
         gap = 26
         padding_x = 53
         padding_y = 8
-    font = load_editor_font(font_id, base_font_size)
+    channel_weight = (
+        document.render_spec.channel.font.resolved_weight
+        if document.render_spec
+        else None
+    )
+    font = load_editor_font(font_id, base_font_size, weight=channel_weight)
     probe = Image.new("RGBA", (1, 1))
     probe_draw = ImageDraw.Draw(probe)
     name = _trim_text_to_width(
@@ -676,23 +725,33 @@ def _wrap_overlay_text(
 def create_editor_text_layer(
     overlay: EditorTextOverlay,
     output_path: Path,
+    render_spec: EditorRenderTextSpec | None = None,
 ) -> Path:
     canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
-    font = load_editor_font(overlay.font_id, 72)
+    font_size = render_spec.font_size if render_spec else 72
+    font = load_editor_font(
+        overlay.font_id,
+        font_size,
+        weight=render_spec.font.resolved_weight if render_spec else None,
+    )
     padding_x = 22
     padding_y = 11
     layout_width = max(1, round(overlay.width))
-    lines = _wrap_overlay_text(
-        overlay.text,
-        font,
-        max(1, layout_width - padding_x * 2),
+    lines = (
+        render_spec.lines
+        if render_spec
+        else _wrap_overlay_text(
+            overlay.text,
+            font,
+            max(1, layout_width - padding_x * 2),
+        )
     )
     probe = Image.new("RGBA", (1, 1))
     draw = ImageDraw.Draw(probe)
     boxes = [draw.textbbox((0, 0), line, font=font, stroke_width=10) for line in lines]
     widths = [box[2] - box[0] for box in boxes]
     heights = [box[3] - box[1] for box in boxes]
-    line_height = round(72 * 1.2)
+    line_height = render_spec.line_height if render_spec else round(72 * 1.2)
     # CSS lets glyphs overflow the technical 1px width while still using that
     # width to decide line breaks. Keep the same narrow wrapping without
     # clipping every glyph out of the rendered video.
@@ -719,14 +778,20 @@ def create_editor_text_layer(
             line,
             font=font,
             fill=overlay.color,
-            stroke_width=10 if overlay.effect == "outline" else 0,
+            stroke_width=(
+                render_spec.outline_width
+                if render_spec
+                else 10 if overlay.effect == "outline" else 0
+            ),
             stroke_fill="#000000",
         )
         cursor_y += line_height
     if overlay.effect == "shadow":
         alpha = foreground.getchannel("A")
         shadow = Image.new("RGBA", content.size, (0, 0, 0, 0))
-        shadow.putalpha(alpha.filter(ImageFilter.GaussianBlur(radius=13)))
+        shadow.putalpha(alpha.filter(ImageFilter.GaussianBlur(
+            radius=render_spec.shadow_blur if render_spec else 13,
+        )))
         shadow_color = Image.new("RGBA", content.size, (0, 0, 0, 220))
         shadow_color.putalpha(shadow.getchannel("A"))
         content.paste(shadow_color, (0, 7), shadow_color)
@@ -735,8 +800,8 @@ def create_editor_text_layer(
     _paste_center_clamped(
         canvas,
         content,
-        CANVAS_WIDTH / 2 + overlay.offset.x,
-        CANVAS_HEIGHT / 2 + overlay.offset.y,
+        render_spec.center_x if render_spec else CANVAS_WIDTH / 2 + overlay.offset.x,
+        render_spec.center_y if render_spec else CANVAS_HEIGHT / 2 + overlay.offset.y,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(output_path, format="PNG", compress_level=1)
@@ -781,6 +846,10 @@ def create_editor_comment_layers(
     assets: list[EditorLayerAsset] = []
     comments = sorted(document.comments, key=lambda item: item.start_seconds)
     output_duration = document.video.output_duration_seconds
+    render_comments = {
+        item.id: item
+        for item in (document.render_spec.comments if document.render_spec else [])
+    }
     for index, comment in enumerate(comments):
         panel_path = directory / f"comment-panel-{index:02d}.png"
         create_comment_panel(
@@ -812,13 +881,29 @@ def create_editor_comment_layers(
         touches_following = following is not None and abs(
             comment.end_seconds - following.start_seconds
         ) <= TIMED_OVERLAY_CONTIGUOUS_TOLERANCE_SECONDS
+        render_comment = render_comments.get(comment.id)
+        start_seconds = (
+            render_comment.start_frame / 30
+            if render_comment
+            else comment.start_seconds
+        )
+        end_seconds = (
+            render_comment.end_frame / 30
+            if render_comment
+            else comment.end_seconds
+        )
         assets.append(EditorLayerAsset(
             path=layer_path,
-            start_seconds=comment.start_seconds,
-            end_seconds=comment.end_seconds,
-            fade_in=comment.start_seconds > 0.001 and not touches_previous,
+            start_seconds=start_seconds,
+            end_seconds=end_seconds,
+            fade_in=(
+                document.render_spec is None
+                and comment.start_seconds > 0.001
+                and not touches_previous
+            ),
             fade_out=(
-                comment.end_seconds < output_duration - 0.001
+                document.render_spec is None
+                and comment.end_seconds < output_duration - 0.001
                 and not touches_following
             ),
         ))
@@ -1046,7 +1131,7 @@ class EditorDocumentRenderer:
         duration = media_duration(probe)
         if abs(duration - document.video.output_duration_seconds) > 0.12:
             raise RenderError("편집 영상 길이가 렌더링 문서와 일치하지 않습니다.")
-        fps = min(30.0, video_fps(probe))
+        fps = 30.0 if document.version == 3 else min(30.0, video_fps(probe))
         has_audio = any(
             stream.get("codec_type") == "audio"
             for stream in probe.get("streams", [])
@@ -1066,18 +1151,39 @@ class EditorDocumentRenderer:
             channel_thumbnail_path,
         )
         comment_assets = create_editor_comment_layers(document, assets_dir)
+        render_text_specs = {
+            item.id: item
+            for item in (
+                document.render_spec.text_overlays
+                if document.render_spec
+                else []
+            )
+        }
         text_assets = {
             f"text:{overlay.id}": [
                 EditorLayerAsset(
                     path=create_editor_text_layer(
                         overlay,
                         assets_dir / f"text-{index:02d}.png",
+                        render_text_specs.get(overlay.id),
                     ),
-                    start_seconds=overlay.start_seconds,
-                    end_seconds=overlay.end_seconds,
-                    fade_in=overlay.start_seconds > 0.001,
+                    start_seconds=(
+                        render_text_specs[overlay.id].start_frame / 30
+                        if overlay.id in render_text_specs
+                        else overlay.start_seconds
+                    ),
+                    end_seconds=(
+                        render_text_specs[overlay.id].end_frame / 30
+                        if overlay.id in render_text_specs
+                        else overlay.end_seconds
+                    ),
+                    fade_in=(
+                        document.render_spec is None
+                        and overlay.start_seconds > 0.001
+                    ),
                     fade_out=(
-                        overlay.end_seconds
+                        document.render_spec is None
+                        and overlay.end_seconds
                         < document.video.output_duration_seconds - 0.001
                     ),
                 )

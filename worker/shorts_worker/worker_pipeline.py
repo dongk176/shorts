@@ -2367,7 +2367,7 @@ class BatchWorker:
         pending_snapshot = item.get("pending_edit_snapshot")
         if (
             isinstance(pending_snapshot, dict)
-            and pending_snapshot.get("version") == 2
+            and pending_snapshot.get("version") in {2, 3}
         ):
             self._rerender_editor_document(short_id, item, pending_snapshot)
             return

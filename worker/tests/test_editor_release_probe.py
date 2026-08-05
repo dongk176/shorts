@@ -13,7 +13,8 @@ from shorts_worker.editor_renderer import editor_layer_order
 def test_probe_document_covers_all_supported_editor_fonts() -> None:
     document = editor_release_probe._document()
 
-    assert document.version == 2
+    assert document.version == 3
+    assert document.render_spec is not None
     assert {overlay.font_id.value for overlay in document.overlays.text_overlays} == set(
         editor_release_probe.FONT_IDS
     )
@@ -25,7 +26,8 @@ def test_probe_document_covers_all_supported_editor_fonts() -> None:
 def test_editor_release_probe_scenarios_are_valid_and_renderable(scenario: str) -> None:
     document = editor_release_probe._document(scenario)
 
-    assert document.version == 2
+    assert document.version == 3
+    assert document.render_spec is not None
     assert document.video.output_duration_seconds == pytest.approx(3.5)
     assert document.overlays.visible["video"] is True
     assert set(document.overlays.layer_order) == {
