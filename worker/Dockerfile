@@ -1,6 +1,6 @@
 FROM denoland/deno:bin-2.8.3 AS deno
 
-FROM python:3.12-slim AS worker-base
+FROM python:3.12-slim-bookworm AS worker-base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
