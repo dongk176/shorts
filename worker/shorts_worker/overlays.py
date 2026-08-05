@@ -63,6 +63,7 @@ CUSTOM_BACKGROUND_ASSETS = {
 
 FONT_CANDIDATES = {
     "bold": (
+        "/usr/share/fonts/noto/NotoSansCJK-Bold.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Bold.otf",
         "/System/Library/Fonts/AppleSDGothicNeo.ttc",
@@ -70,6 +71,7 @@ FONT_CANDIDATES = {
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     ),
     "regular": (
+        "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf",
         "/System/Library/Fonts/AppleSDGothicNeo.ttc",

@@ -1,6 +1,6 @@
 FROM denoland/deno:alpine-2.8.3 AS deno
 
-FROM python:3.12-alpine3.22 AS worker-base
+FROM python:3.12-alpine3.23 AS worker-base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

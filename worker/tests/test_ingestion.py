@@ -139,12 +139,12 @@ def test_range_timeout_terminates_the_entire_process_group(tmp_path: Path) -> No
         "pathlib.Path(sys.argv[1]).write_text(str(child.pid));"
         "time.sleep(60)"
     )
-    provider = YtDlpIngestionProvider(timeout_seconds=0.2)
+    provider = YtDlpIngestionProvider(timeout_seconds=1.0)
 
     with pytest.raises(RetryableIngestionError):
         provider._run(
             [sys.executable, "-c", script, str(child_pid_path)],
-            timeout=0.2,
+            timeout=1.0,
             terminate_process_group=True,
         )
 

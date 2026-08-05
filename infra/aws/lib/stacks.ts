@@ -1283,6 +1283,7 @@ export class ShortsMvpSourceRangeStack extends cdk.Stack {
         executionRoleArn,
         jobRoleArn: taskRoleArn,
         networkConfiguration: { assignPublicIp: "ENABLED" },
+        linuxParameters: { initProcessEnabled: true },
         logConfiguration: {
           logDriver: "awslogs",
           options: {

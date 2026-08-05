@@ -86,6 +86,7 @@ describe("source range stack", () => {
       JobDefinitionName: "shorts-mvp-source-range-v1-production",
       ContainerProperties: Match.objectLike({
         Image: Match.stringLikeRegexp("@sha256:a{64}$"),
+        LinuxParameters: { InitProcessEnabled: true },
         ResourceRequirements: Match.arrayWith([
           { Type: "VCPU", Value: "8" },
           { Type: "MEMORY", Value: "16384" },
