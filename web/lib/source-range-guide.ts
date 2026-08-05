@@ -1,4 +1,4 @@
-export const SOURCE_RANGE_GUIDE_STORAGE_KEY = "easycut:source-range-guide-dismissed:v1";
+export const SOURCE_RANGE_GUIDE_STORAGE_KEY = "easycut:source-range-guide-dismissed:v2";
 
 export const sourceRangeGuideSteps = [
   {

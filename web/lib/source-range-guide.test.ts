@@ -27,7 +27,7 @@ describe("source range guide", () => {
   });
 
   it("uses a versioned dismissal key", () => {
-    expect(SOURCE_RANGE_GUIDE_STORAGE_KEY).toBe("easycut:source-range-guide-dismissed:v1");
+    expect(SOURCE_RANGE_GUIDE_STORAGE_KEY).toBe("easycut:source-range-guide-dismissed:v2");
   });
 
   it("attaches the guide targets to the two slider handles", () => {
