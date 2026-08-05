@@ -119,7 +119,7 @@ describe("YouTube duration validation", () => {
     vi.unstubAllEnvs();
   });
 
-  it("rejects videos over sixty minutes after server-side metadata lookup", async () => {
+  it("accepts metadata for videos over sixty minutes", async () => {
     vi.stubEnv("YOUTUBE_API_KEY", "test-key");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       items: [{
@@ -135,7 +135,7 @@ describe("YouTube duration validation", () => {
     }), { status: 200 })));
     await expect(
       analyzeYoutubeUrl("https://youtu.be/dQw4w9WgXcQ"),
-    ).rejects.toThrow("최대 60분");
+    ).resolves.toMatchObject({ durationSeconds: 3601 });
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });

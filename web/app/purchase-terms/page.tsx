@@ -9,5 +9,5 @@ export const metadata: Metadata = createPageMetadata({
 });
 
 export default function PurchaseTermsPage() {
-  return <PurchaseTermsV2Document archived={false} version={5} />;
+  return <PurchaseTermsV2Document archived={false} version={6} />;
 }

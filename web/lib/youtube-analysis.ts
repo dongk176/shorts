@@ -1,29 +1,48 @@
 import { expectedShortCount, type YoutubeAnalysis } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import type { MvpSession } from "@/lib/session";
-import { assertSupportedSourceVideoDuration } from "@/lib/source-video";
+import { getSourceRangeReleaseAccess } from "@/lib/source-range-release";
+import {
+  assertSupportedSourceVideoDuration,
+  sourceRangeSelectionForDuration,
+} from "@/lib/source-video";
 
-export type YoutubeAnalysisMetadata = Omit<YoutubeAnalysis, "analysisId" | "expectedShortCount">;
+export type YoutubeAnalysisMetadata = Omit<
+  YoutubeAnalysis,
+  "analysisId" | "expectedShortCount" | "sourceRangeSelectionEnabled"
+>;
 
 export async function createYoutubeAnalysis(
   session: MvpSession,
   metadata: YoutubeAnalysisMetadata,
 ): Promise<YoutubeAnalysis> {
-  assertSupportedSourceVideoDuration(metadata.durationSeconds);
-  const rows = await getDb()`
+  // Reject unsupported short-form inputs before touching the release tables,
+  // while still allowing an entitled user to analyze source metadata over 60 minutes.
+  assertSupportedSourceVideoDuration(metadata.durationSeconds, {
+    sourceRangeSelectionEnabled: true,
+  });
+  const db = getDb();
+  const releaseAccess = await getSourceRangeReleaseAccess(db, session.userId);
+  const sourceRangeSelectionEnabled = sourceRangeSelectionForDuration(
+    metadata.durationSeconds,
+    releaseAccess.enabled,
+  );
+  const rows = await db`
     insert into shorts_mvp.youtube_analyses (
       mvp_session_id, user_id, youtube_url, youtube_video_id, video_title,
       channel_name, channel_thumbnail_url, thumbnail_url, duration_seconds, creation_allowed,
-      creation_block_code, creation_block_reason
+      creation_block_code, creation_block_reason, source_range_selection_enabled
     ) values (
       ${session.id}, ${session.userId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
       ${metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${metadata.durationSeconds},
-      ${metadata.creationAllowed}, ${metadata.creationBlockCode}, ${metadata.creationBlockReason}
+      ${metadata.creationAllowed}, ${metadata.creationBlockCode}, ${metadata.creationBlockReason},
+      ${sourceRangeSelectionEnabled}
     ) returning id
   `;
   return {
     ...metadata,
     analysisId: String(rows[0].id),
+    sourceRangeSelectionEnabled,
     expectedShortCount: expectedShortCount(metadata.durationSeconds),
   };
 }
@@ -32,7 +51,7 @@ export async function getYoutubeAnalysis(session: MvpSession, analysisId: string
   const rows = await getDb()`
     select id, youtube_url, youtube_video_id, video_title, channel_name,
       channel_thumbnail_url, thumbnail_url, duration_seconds, creation_allowed, creation_block_code,
-      creation_block_reason
+      creation_block_reason, source_range_selection_enabled
     from shorts_mvp.youtube_analyses
     where id=${analysisId} and expires_at > now() and (
       (${session.userId}::uuid is not null and user_id=${session.userId})
@@ -44,6 +63,7 @@ export async function getYoutubeAnalysis(session: MvpSession, analysisId: string
   const durationSeconds = Number(rows[0].durationSeconds);
   return {
     analysisId: String(rows[0].id),
+    sourceRangeSelectionEnabled: rows[0].sourceRangeSelectionEnabled === true,
     videoId: String(rows[0].youtubeVideoId),
     normalizedUrl: String(rows[0].youtubeUrl),
     title: String(rows[0].videoTitle),

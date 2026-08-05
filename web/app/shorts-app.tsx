@@ -46,7 +46,7 @@ import type {
   VideoJob,
   YoutubeAnalysis,
 } from "@/lib/contracts";
-import { videoAspectRatioOptions } from "@/lib/contracts";
+import { expectedShortCount, videoAspectRatioOptions } from "@/lib/contracts";
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
@@ -208,6 +208,12 @@ import { useI18n } from "@/lib/i18n/provider";
 import { localizedValue } from "@/lib/i18n/config";
 import { homeAnalysisHeaderOffset } from "@/lib/home-analysis-scroll";
 import { publishUsageSnapshot } from "@/lib/usage-client";
+import {
+  billableSelectedSourceSeconds,
+  MAX_SELECTED_SOURCE_SECONDS,
+  MIN_SELECTED_SOURCE_SECONDS,
+  parseSourceTimestampInput,
+} from "@/lib/source-range";
 
 const templates: Array<{ id: TemplateId; name: string; label: string; background: string; primary: string; accent: string; accentBackground: string | null; channel: string }> = [
   { id: "comment-capture", name: "댓글 캡처", label: "댓글 반응과 함께\n시청 지속시간 상승", background: COMMENT_BACKGROUND_COLOR, primary: "#FFFFFF", accent: "#35E6E3", accentBackground: null, channel: "#FFFFFF" },
@@ -9896,6 +9902,132 @@ function initialActiveJob(state: MvpState | null) {
   return running || rerendering || state.recentJobs[0] || null;
 }
 
+function SourceRangeSelector({
+  sourceDurationSeconds,
+  startSeconds,
+  endSeconds,
+  usageSeconds,
+  plannedShortCount,
+  onStartChange,
+  onEndChange,
+  onReset,
+}: {
+  sourceDurationSeconds: number;
+  startSeconds: number;
+  endSeconds: number;
+  usageSeconds: number;
+  plannedShortCount: number;
+  onStartChange: (seconds: number) => void;
+  onEndChange: (seconds: number) => void;
+  onReset: () => void;
+}) {
+  const safeDuration = Math.max(1, sourceDurationSeconds);
+  const selectedDuration = Math.max(0, endSeconds - startSeconds);
+  const selectedLeft = Math.max(0, Math.min(100, startSeconds / safeDuration * 100));
+  const selectedRight = Math.max(0, Math.min(100, 100 - endSeconds / safeDuration * 100));
+  return (
+    <div className="rounded-2xl border border-[#ff8f7f]/30 bg-[#ff715e]/[.055] p-5 sm:p-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-extrabold text-white">사용할 영상 구간</h2>
+          <p className="mt-1 text-sm leading-6 text-neutral-400">
+            양쪽 손잡이를 드래그해 다운로드·전사할 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.
+          </p>
+        </div>
+        <strong className="font-mono text-sm tabular-nums text-[#ffb4aa] sm:text-base">
+          {formatTimestamp(startSeconds)} – {formatTimestamp(endSeconds)}
+        </strong>
+      </div>
+      <div className="relative mt-6 h-10 select-none">
+        <div className="absolute inset-x-0 top-4 h-2 rounded-full bg-white/10" />
+        <div
+          className="absolute top-4 h-2 rounded-full bg-gradient-to-r from-[#ff715e] to-[#ff9c8e]"
+          style={{ left: `${selectedLeft}%`, right: `${selectedRight}%` }}
+        />
+        <input
+          aria-label="사용할 영상 시작 지점"
+          type="range"
+          min={0}
+          max={sourceDurationSeconds}
+          step={1}
+          value={startSeconds}
+          onChange={(event) => onStartChange(Number(event.target.value))}
+          className="range-editor-handle absolute inset-0 z-20 h-10 w-full"
+        />
+        <input
+          aria-label="사용할 영상 끝 지점"
+          type="range"
+          min={0}
+          max={sourceDurationSeconds}
+          step={1}
+          value={endSeconds}
+          onChange={(event) => onEndChange(Number(event.target.value))}
+          className="range-editor-handle absolute inset-0 z-10 h-10 w-full"
+        />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-3 text-xs font-medium text-neutral-500">
+        <span className="font-mono tabular-nums">0:00</span>
+        <span className="text-center">
+          선택 {formatDuration(selectedDuration)} · 차감 {formatDuration(usageSeconds)} · 예상 쇼츠 {plannedShortCount}개
+        </span>
+        <span className="font-mono tabular-nums">{formatTimestamp(sourceDurationSeconds)}</span>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <SourceTimestampInput label="시작 시각" value={startSeconds} onChange={onStartChange} />
+        <SourceTimestampInput label="종료 시각" value={endSeconds} onChange={onEndChange} />
+      </div>
+      <button type="button" onClick={onReset} className="mt-4 min-h-10 rounded-xl border border-white/10 px-4 text-xs font-bold text-neutral-300 transition hover:border-white/20 hover:bg-white/[.05] hover:text-white">
+        선택 범위 초기화
+      </button>
+    </div>
+  );
+}
+
+function SourceTimestampInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (seconds: number) => void;
+}) {
+  const [draft, setDraft] = useState(() => formatTimestamp(value));
+  useEffect(() => setDraft(formatTimestamp(value)), [value]);
+  const commit = () => {
+    const parsed = parseSourceTimestampInput(draft);
+    if (parsed === null) {
+      setDraft(formatTimestamp(value));
+      return;
+    }
+    onChange(parsed);
+  };
+  return (
+    <label className="grid gap-2 text-xs font-bold text-neutral-300">
+      <span>{label}</span>
+      <input
+        inputMode="decimal"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            setDraft(formatTimestamp(value));
+            event.currentTarget.blur();
+          }
+        }}
+        aria-label={label}
+        placeholder="0:00"
+        className="h-11 rounded-xl border border-white/10 bg-black/25 px-4 font-mono text-sm tabular-nums text-white outline-none transition focus:border-[#ff8f7f]/70"
+      />
+    </label>
+  );
+}
+
 export function ShortsApp({ initialState = null }: { initialState?: MvpState | null }) {
   const { locale, t } = useI18n();
   const [state, setState] = useState<MvpState | null>(initialState);
@@ -9905,6 +10037,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [stateLoadError, setStateLoadError] = useState<string | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(null);
+  const [sourceRangeStartSeconds, setSourceRangeStartSeconds] = useState(0);
+  const [sourceRangeEndSeconds, setSourceRangeEndSeconds] = useState(0);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const outputLanguage: OutputLanguage = "ko";
   const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
@@ -9931,11 +10065,35 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const stateLoadInFlight = useRef<Promise<void> | null>(null);
   const analysisSectionRef = useRef<HTMLElement>(null);
   const projectsSectionRef = useRef<HTMLElement>(null);
+  const initializedSourceRangeAnalysisId = useRef<string | null>(null);
   const activeJobId = activeJob?.id;
   const activeJobStatus = activeJob?.status;
   const activeJobHasRerendering = Boolean(activeJob?.shorts.some((item) => item.status === "rerendering"));
   const hasBackgroundWork = Boolean(state?.recentJobs.some((job) => !terminalStatuses.has(job.status) || job.shorts.some((item) => item.status === "rerendering")));
   const analysisCreationBlocked = Boolean(analysis && analysis.creationAllowed !== true);
+  const sourceRangeSelectionEnabled = analysis?.sourceRangeSelectionEnabled === true;
+  const selectedSourceDurationSeconds = sourceRangeSelectionEnabled
+    ? Math.max(0, sourceRangeEndSeconds - sourceRangeStartSeconds)
+    : analysis?.durationSeconds || 0;
+  const selectedSourceUsageSeconds = selectedSourceDurationSeconds > 0
+    ? billableSelectedSourceSeconds(selectedSourceDurationSeconds)
+    : 0;
+  const selectedSourceExceedsUsage = Boolean(
+    sourceRangeSelectionEnabled
+    && state?.usage.enforcementEnabled
+    && selectedSourceUsageSeconds > state.usage.remainingSeconds,
+  );
+  const sourceRangeIsValid = !sourceRangeSelectionEnabled || Boolean(
+    analysis
+    && sourceRangeStartSeconds >= 0
+    && sourceRangeEndSeconds <= analysis.durationSeconds
+    && selectedSourceDurationSeconds >= MIN_SELECTED_SOURCE_SECONDS
+    && selectedSourceDurationSeconds <= MAX_SELECTED_SOURCE_SECONDS
+    && !selectedSourceExceedsUsage,
+  );
+  const selectedPlannedShortCount = sourceRangeSelectionEnabled
+    ? expectedShortCount(selectedSourceDurationSeconds)
+    : analysis?.expectedShortCount || 0;
   const activeJobCount = state?.recentJobs.filter((job) => !terminalStatuses.has(job.status)).length || 0;
   const planEnforcementEnabled = state?.usage.enforcementEnabled ?? true;
   const canUseCustomTemplates = Boolean(state && billingSupportsCustomTemplates(state.billing));
@@ -9969,6 +10127,32 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       window.clearTimeout(loginOpenTimer.current);
     }
   }, []);
+
+  useEffect(() => {
+    if (!analysis) {
+      initializedSourceRangeAnalysisId.current = null;
+      setSourceRangeStartSeconds(0);
+      setSourceRangeEndSeconds(0);
+      return;
+    }
+    if (!analysis.sourceRangeSelectionEnabled) {
+      initializedSourceRangeAnalysisId.current = analysis.analysisId;
+      setSourceRangeStartSeconds(0);
+      setSourceRangeEndSeconds(analysis.durationSeconds);
+      return;
+    }
+    if (initializedSourceRangeAnalysisId.current === analysis.analysisId) return;
+    initializedSourceRangeAnalysisId.current = analysis.analysisId;
+    const availableSeconds = state?.usage.enforcementEnabled
+      ? state.usage.remainingSeconds
+      : MAX_SELECTED_SOURCE_SECONDS;
+    setSourceRangeStartSeconds(0);
+    setSourceRangeEndSeconds(Math.min(
+      analysis.durationSeconds,
+      availableSeconds,
+      MAX_SELECTED_SOURCE_SECONDS,
+    ));
+  }, [analysis, state?.usage.enforcementEnabled, state?.usage.remainingSeconds]);
 
   const loadState = useCallback(async () => {
     if (stateLoadInFlight.current) return stateLoadInFlight.current;
@@ -10231,6 +10415,12 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setError("쇼츠를 만들려면 원본 영상의 권리 보유 또는 적법한 이용 허가를 확인해 주세요.");
       return;
     }
+    if (!sourceRangeIsValid) {
+      setError(selectedSourceExceedsUsage
+        ? "선택한 구간이 남은 원본 영상 처리시간을 초과합니다."
+        : "사용할 영상 구간은 4분부터 60분까지 선택해 주세요.");
+      return;
+    }
     const next = `/?analysisId=${encodeURIComponent(analysis.analysisId)}`;
     if (!state?.user) {
       openLoginAfterDelay(next);
@@ -10259,7 +10449,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           grantedSeconds: number;
           validUntil: string | null;
         };
-      }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID() }) });
+      }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID(), ...(sourceRangeSelectionEnabled ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds } : {}) }) });
       setShortsEventRewardAvailable(false);
       if (value.shortsThankYouEventReward.granted) {
         setShortsEventGrantedSeconds(
@@ -10267,7 +10457,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         );
         setShortsEventParticipationOpen(true);
       }
-      const pendingJob: VideoJob = { id: value.jobId, projectNumber: value.projectNumber, isExample: false, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: analysis.expectedShortCount, plannedShortCount: analysis.expectedShortCount, readyShortCount: 0, failedShortCount: 0, renderSuccessPercent: null, status: "queued", stage: "queued", progress: SIMULATED_PROGRESS_START, stageCompletedCount: 0, stageTotalCount: 0, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
+      const pendingJob: VideoJob = { id: value.jobId, projectNumber: value.projectNumber, isExample: false, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: selectedPlannedShortCount, plannedShortCount: selectedPlannedShortCount, readyShortCount: 0, failedShortCount: 0, renderSuccessPercent: null, status: "queued", stage: "queued", progress: SIMULATED_PROGRESS_START, stageCompletedCount: 0, stageTotalCount: 0, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
       setState((current) => current ? { ...current, usage: value.usage, recentJobs: [pendingJob, ...current.recentJobs.filter((job) => job.id !== pendingJob.id)] } : current);
       publishUsageSnapshot(value.usage);
       setActiveJob(pendingJob);
@@ -10379,10 +10569,57 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             <div className="p-5">
               <h2 className="text-lg font-bold">{analysis.title}</h2>
               <p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p>
-              <p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {analysis.expectedShortCount}개</p>
-              <p className="mt-1 text-xs text-neutral-500">{planEnforcementEnabled ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.` : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p>
+              <p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {selectedPlannedShortCount}개</p>
+              <p className="mt-1 text-xs text-neutral-500">{sourceRangeSelectionEnabled
+                ? planEnforcementEnabled
+                  ? `선택한 ${formatDuration(selectedSourceDurationSeconds)}만 사용량으로 계산됩니다.`
+                  : `선택한 ${formatDuration(selectedSourceDurationSeconds)}만 다운로드·처리됩니다.`
+                : planEnforcementEnabled
+                  ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.`
+                  : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p>
             </div>
           </div>
+          {sourceRangeSelectionEnabled && (
+            <>
+              <SourceRangeSelector
+                sourceDurationSeconds={analysis.durationSeconds}
+                startSeconds={sourceRangeStartSeconds}
+                endSeconds={sourceRangeEndSeconds}
+                usageSeconds={selectedSourceUsageSeconds}
+                plannedShortCount={selectedPlannedShortCount}
+                onStartChange={(seconds) => setSourceRangeStartSeconds(Math.max(
+                  0,
+                  sourceRangeEndSeconds - MAX_SELECTED_SOURCE_SECONDS,
+                  Math.min(seconds, sourceRangeEndSeconds - MIN_SELECTED_SOURCE_SECONDS),
+                ))}
+                onEndChange={(seconds) => setSourceRangeEndSeconds(Math.min(
+                  analysis.durationSeconds,
+                  sourceRangeStartSeconds + MAX_SELECTED_SOURCE_SECONDS,
+                  Math.max(seconds, sourceRangeStartSeconds + MIN_SELECTED_SOURCE_SECONDS),
+                ))}
+                onReset={() => {
+                  const availableSeconds = state?.usage.enforcementEnabled
+                    ? state.usage.remainingSeconds
+                    : MAX_SELECTED_SOURCE_SECONDS;
+                  setSourceRangeStartSeconds(0);
+                  setSourceRangeEndSeconds(Math.min(
+                    analysis.durationSeconds,
+                    availableSeconds,
+                    MAX_SELECTED_SOURCE_SECONDS,
+                  ));
+                }}
+              />
+              {!sourceRangeIsValid && (
+                <div role="alert" className="rounded-xl border border-amber-400/25 bg-amber-400/[.07] px-4 py-3 text-sm font-medium text-amber-100">
+                  {selectedSourceExceedsUsage
+                    ? `선택 사용량 ${formatDuration(selectedSourceUsageSeconds)}가 남은 시간 ${formatDuration(state?.usage.remainingSeconds || 0)}을 초과합니다.`
+                    : selectedSourceDurationSeconds < MIN_SELECTED_SOURCE_SECONDS
+                      ? "최소 4분 이상 선택해야 쇼츠를 만들 수 있습니다."
+                      : "한 작업에서 최대 60분까지 선택할 수 있습니다."}
+                </div>
+              )}
+            </>
+          )}
           <TemplatePicker
             value={templateId}
             onChange={(nextTemplateId) => {
@@ -10426,7 +10663,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               </span>
             </span>
           </label>
-          <button disabled={analysisCreationBlocked || !rightsConfirmed || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
+          <button disabled={analysisCreationBlocked || !sourceRangeIsValid || !rightsConfirmed || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
               {loginPromptPending && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
               {analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs || shortsEventRewardAvailable ? t("home.create") : t("home.choosePlan")}

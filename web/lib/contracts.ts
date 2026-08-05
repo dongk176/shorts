@@ -144,6 +144,7 @@ export type BillingSummary = {
 
 export type YoutubeAnalysis = {
   analysisId: string;
+  sourceRangeSelectionEnabled: boolean;
   videoId: string;
   normalizedUrl: string;
   title: string;

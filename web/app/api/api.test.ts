@@ -111,6 +111,36 @@ function dbForSuccessfulJobCreation() {
   return db;
 }
 
+function dbForSuccessfulRangeJobCreation() {
+  const db = dbWithRows(
+    [],
+    [{ ...analysisRow, durationSeconds: 7200, sourceRangeSelectionEnabled: true }],
+    [
+      { flagKey: "source_range_selection", enabled: true },
+      { flagKey: "source_range_selection_public", enabled: true },
+    ],
+    [{ isAdmin: false }],
+  );
+  const tx = dbWithRows(
+    [],
+    [
+      { flagKey: "source_range_selection", enabled: true },
+      { flagKey: "source_range_selection_public", enabled: true },
+    ],
+    [{ isAdmin: false }],
+    [],
+    [{ active: 0 }],
+    [{ projectNumber: 1 }],
+    [{ id: "reservation-range" }],
+    [],
+    [],
+  );
+  Object.assign(db, {
+    begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+  });
+  return { db, tx };
+}
+
 const analysisId = "6bce83c4-b12e-4d11-8f16-2fef8a96c541";
 const analysisRow = {
   youtubeUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
@@ -127,6 +157,23 @@ const analysisRow = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  process.env.LEGACY_PROJECT_JOB_DEFINITION_ARN = (
+    "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+    + "shorts-mvp-project-heavy-fargate-production:27"
+  );
+  process.env.LEGACY_PROJECT_BATCH_QUEUE_ARN = (
+    "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+    + "shorts-mvp-project-fargate-production"
+  );
+  process.env.SOURCE_RANGE_JOB_DEFINITION_ARN = (
+    "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+    + "shorts-mvp-source-range-v1-production:1"
+  );
+  process.env.SOURCE_RANGE_BATCH_QUEUE_ARN = (
+    "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+    + "shorts-mvp-source-range-production"
+  );
+  process.env.SOURCE_RANGE_SELECTION_ENABLED = "true";
   delete process.env.RANGE_EDITING_ENABLED;
   delete process.env.CLOUDFRONT_DOMAIN;
   delete process.env.CLOUDFRONT_KEY_PAIR_ID;
@@ -684,6 +731,125 @@ describe("job API security and idempotency", () => {
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
 
+  it("creates a source-range job with selected usage and exact Batch target", async () => {
+    const { db, tx } = dbForSuccessfulRangeJobCreation();
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rightsConfirmed: true,
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511f0",
+      rangeStartSeconds: 1200,
+      rangeEndSeconds: 2400,
+    }));
+
+    expect(response.status).toBe(202);
+    const insertCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes(
+        "insert into shorts_mvp.video_jobs",
+      ));
+    expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
+      7200,
+      1200,
+      2400,
+      true,
+      process.env.SOURCE_RANGE_JOB_DEFINITION_ARN,
+      process.env.SOURCE_RANGE_BATCH_QUEUE_ARN,
+    ]));
+    const reservationCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes(
+        "insert into shorts_mvp.usage_reservations",
+      ));
+    expect(reservationCall?.slice(1)).toContain(1200);
+  });
+
+  it("blocks a snapshotted source-range analysis whenever the master switch is off", async () => {
+    process.env.SOURCE_RANGE_SELECTION_ENABLED = "false";
+    const db = dbWithRows(
+      [],
+      [{ ...analysisRow, durationSeconds: 7200, sourceRangeSelectionEnabled: true }],
+      [
+        { flagKey: "source_range_selection", enabled: true },
+        { flagKey: "source_range_selection_public", enabled: true },
+      ],
+      [{ isAdmin: false }],
+    );
+    const begin = vi.fn();
+    Object.assign(db, { begin });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rightsConfirmed: true,
+      requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511f1",
+      rangeStartSeconds: 1200,
+      rangeEndSeconds: 2400,
+    }));
+
+    expect(response.status).toBe(409);
+    expect(begin).not.toHaveBeenCalled();
+  });
+
+  it("blocks a non-admin snapshotted range after public access is disabled", async () => {
+    const db = dbWithRows(
+      [],
+      [{ ...analysisRow, durationSeconds: 7200, sourceRangeSelectionEnabled: true }],
+      [
+        { flagKey: "source_range_selection", enabled: true },
+        { flagKey: "source_range_selection_public", enabled: false },
+      ],
+      [{ isAdmin: false }],
+    );
+    const begin = vi.fn();
+    Object.assign(db, { begin });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rightsConfirmed: true,
+      requestId: crypto.randomUUID(),
+      rangeStartSeconds: 1200,
+      rangeEndSeconds: 2400,
+    }));
+
+    expect(response.status).toBe(409);
+    expect(begin).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [1200, 1439.999],
+    [1200, 4800.001],
+    [7000, 7240],
+  ])("rejects an invalid selected source range (%s-%s)", async (start, end) => {
+    const db = dbWithRows(
+      [],
+      [{ ...analysisRow, durationSeconds: 7200, sourceRangeSelectionEnabled: true }],
+      [
+        { flagKey: "source_range_selection", enabled: true },
+        { flagKey: "source_range_selection_public", enabled: true },
+      ],
+      [{ isAdmin: false }],
+    );
+    const begin = vi.fn();
+    Object.assign(db, { begin });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rightsConfirmed: true,
+      requestId: crypto.randomUUID(),
+      rangeStartSeconds: start,
+      rangeEndSeconds: end,
+    }));
+
+    expect(response.status).toBe(400);
+    expect(begin).not.toHaveBeenCalled();
+  });
+
   it("keeps legacy web clients working without a per-job rights confirmation", async () => {
     mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
@@ -854,7 +1020,7 @@ describe("job API security and idempotency", () => {
     expect(mocks.wakeDispatcher).not.toHaveBeenCalled();
   });
 
-  it("ignores legacy range fields and creates a full-source job", async () => {
+  it("rejects range fields from a non-entitled analysis", async () => {
     mocks.getDb.mockReturnValue(dbForSuccessfulJobCreation());
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       youtubeUrl: "https://youtu.be/dQw4w9WgXcQ",
@@ -866,8 +1032,8 @@ describe("job API security and idempotency", () => {
       requestId: "4a2ea3f0-49a9-4b2f-98ff-134d392511d2",
     }));
 
-    expect(response.status).toBe(202);
-    expect(mocks.wakeDispatcher).toHaveBeenCalledOnce();
+    expect(response.status).toBe(409);
+    expect(mocks.wakeDispatcher).not.toHaveBeenCalled();
   });
 
   it("keeps the queued job recoverable when the immediate dispatcher wake fails", async () => {
