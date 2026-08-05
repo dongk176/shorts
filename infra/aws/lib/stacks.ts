@@ -1240,12 +1240,22 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       reservedConcurrentExecutions: 10,
       environment: {
         ...lambdaEnvironment,
+        LEGACY_PROJECT_JOB_DEFINITION_ARN: String(
+          this.node.tryGetContext("legacyProjectJobDefinitionArn")
+          || projectHeavyDefinition.ref,
+        ),
+        LEGACY_PROJECT_BATCH_QUEUE_ARN: String(
+          this.node.tryGetContext("legacyProjectBatchQueueArn")
+          || projectQueue.ref,
+        ),
         SOURCE_RANGE_JOB_DEFINITION_ARN: String(
           this.node.tryGetContext("sourceRangeJobDefinitionArn")
+          || this.node.tryGetContext("legacyProjectJobDefinitionArn")
           || projectHeavyDefinition.ref,
         ),
         SOURCE_RANGE_BATCH_QUEUE_ARN: String(
           this.node.tryGetContext("sourceRangeBatchQueueArn")
+          || this.node.tryGetContext("legacyProjectBatchQueueArn")
           || projectQueue.ref,
         ),
       },

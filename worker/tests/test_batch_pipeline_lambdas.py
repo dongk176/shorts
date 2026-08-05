@@ -479,8 +479,10 @@ def test_project_submission_uses_eight_vcpu_definition_with_idempotent_key() -> 
     assert result == "project-batch-a"
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-a:0"
-    assert request["jobQueue"] == os.environ["PROJECT_BATCH_QUEUE"]
-    assert request["jobDefinition"] == os.environ["PROJECT_HEAVY_JOB_DEFINITION"]
+    assert request["jobQueue"] == os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
+    assert request["jobDefinition"] == os.environ[
+        "LEGACY_PROJECT_JOB_DEFINITION_ARN"
+    ]
     assert request["retryStrategy"] == {"attempts": 1}
     assert request["timeout"] == {"attemptDurationSeconds": 7200}
     assert request["shareIdentifier"].startswith("paiduser")
@@ -532,13 +534,18 @@ def test_heavy_project_submission_records_selected_definition() -> None:
     assert result == "project-heavy-batch"
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-heavy:0"
-    assert request["jobDefinition"] == os.environ["PROJECT_HEAVY_JOB_DEFINITION"]
+    assert request["jobDefinition"] == os.environ[
+        "LEGACY_PROJECT_JOB_DEFINITION_ARN"
+    ]
     module.patch.assert_called_once_with(
         "video_jobs",
         "id=eq.job-heavy&status=eq.queued",
         {
             "aws_batch_job_id": "project-heavy-batch",
-            "batch_job_definition": os.environ["PROJECT_HEAVY_JOB_DEFINITION"],
+            "batch_job_definition": os.environ[
+                "LEGACY_PROJECT_JOB_DEFINITION_ARN"
+            ],
+            "batch_job_queue": os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"],
         },
     )
 
@@ -566,7 +573,10 @@ def test_project_resume_preserves_original_heavy_definition() -> None:
     assert result == "project-heavy-resume"
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-heavy:resume:1"
-    assert request["jobDefinition"] == os.environ["PROJECT_HEAVY_JOB_DEFINITION"]
+    assert request["jobDefinition"] == os.environ[
+        "LEGACY_PROJECT_JOB_DEFINITION_ARN"
+    ]
+    assert request["jobQueue"] == os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
     assert request["containerOverrides"]["command"][-1] == "--resume"
 
 
@@ -593,7 +603,10 @@ def test_project_resume_preserves_original_standard_definition() -> None:
     assert result == "project-standard-resume"
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-standard:resume:1"
-    assert request["jobDefinition"] == os.environ["PROJECT_JOB_DEFINITION"]
+    assert request["jobDefinition"] == os.environ[
+        "LEGACY_PROJECT_JOB_DEFINITION_ARN"
+    ]
+    assert request["jobQueue"] == os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
     assert request["containerOverrides"]["command"][-1] == "--resume"
 
 
@@ -640,6 +653,34 @@ def test_source_range_project_and_resume_keep_the_exact_candidate_target() -> No
     assert first_request["jobQueue"] == resume_request["jobQueue"] == (
         os.environ["SOURCE_RANGE_BATCH_QUEUE_ARN"]
     )
+    assert first_request["timeout"] == resume_request["timeout"] == {
+        "attemptDurationSeconds": 18000,
+    }
+
+
+def test_project_submission_rejects_untrusted_stored_target() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module.rest = MagicMock(return_value=[{
+        "id": "job-untrusted",
+        "status": "queued",
+        "pipeline_version": 2,
+        "project_resume_count": 0,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "user-a",
+        "preparation_finished_at": None,
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": False,
+        "batch_job_definition": os.environ["SOURCE_RANGE_JOB_DEFINITION_ARN"],
+        "batch_job_queue": os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"],
+    }])
+    module._submit_once = MagicMock()
+
+    with pytest.raises(RuntimeError, match="not trusted"):
+        module._submit({"kind": "project", "jobId": "job-untrusted"})
+
+    module._submit_once.assert_not_called()
 
 
 def test_project_failure_after_checkpoint_submits_one_resume() -> None:
