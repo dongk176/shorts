@@ -1,16 +1,16 @@
-FROM denoland/deno:bin-2.8.3 AS deno
+FROM denoland/deno:alpine-2.8.3 AS deno
 
-FROM python:3.12-slim-bookworm AS worker-base
+FROM python:3.12-alpine3.22 AS worker-base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache bash ffmpeg libgcc libstdc++
 
-COPY --from=deno /deno /usr/local/bin/deno
+COPY --from=deno /bin/deno /usr/local/bin/deno
+COPY --from=deno /lib64/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
+COPY --from=deno /usr/local/lib/glibc /usr/local/lib/glibc
 
 WORKDIR /app/worker
 COPY requirements.txt ./
@@ -26,9 +26,7 @@ CMD ["python", "-m", "shorts_worker"]
 
 FROM worker-base AS render
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-noto-cjk \
-    && rm -rf /var/lib/apt/lists/* \
+RUN apk add --no-cache font-noto-cjk \
     && python -c "from shorts_worker.editor_renderer import verify_editor_fonts; verify_editor_fonts()"
 
 ENTRYPOINT ["./entrypoint.sh"]
