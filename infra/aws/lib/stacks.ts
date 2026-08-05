@@ -712,14 +712,6 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         "shorts-mvp-editor-test-template",
       PROJECT_JOB_DEFINITION: projectDefinitionName,
       PROJECT_HEAVY_JOB_DEFINITION: projectHeavyDefinitionName,
-      SOURCE_RANGE_JOB_DEFINITION_ARN: String(
-        this.node.tryGetContext("sourceRangeJobDefinitionArn")
-        || projectHeavyDefinition.ref,
-      ),
-      SOURCE_RANGE_BATCH_QUEUE_ARN: String(
-        this.node.tryGetContext("sourceRangeBatchQueueArn")
-        || projectQueue.ref,
-      ),
       RERENDER_JOB_DEFINITION: rerenderDefinitionName,
       STATE_EVENT_QUEUE_URL: stateQueue.queueUrl,
     };
@@ -983,7 +975,17 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
       reservedConcurrentExecutions: 10,
-      environment: lambdaEnvironment,
+      environment: {
+        ...lambdaEnvironment,
+        SOURCE_RANGE_JOB_DEFINITION_ARN: String(
+          this.node.tryGetContext("sourceRangeJobDefinitionArn")
+          || projectHeavyDefinition.ref,
+        ),
+        SOURCE_RANGE_BATCH_QUEUE_ARN: String(
+          this.node.tryGetContext("sourceRangeBatchQueueArn")
+          || projectQueue.ref,
+        ),
+      },
     });
     const editorReleaseRegistrar = new lambda.Function(
       this,
