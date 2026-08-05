@@ -64,6 +64,7 @@ import {
 import { userFacingErrorMessage } from "@/lib/public-error";
 import { isIosDownloadDevice, shortDownloadFilename } from "@/lib/short-download";
 import { stateRetryDelayMs } from "@/lib/state-loading";
+import { youtubePrivacyEnhancedEmbedUrl } from "@/lib/youtube-embed";
 import {
   applyTitleTextStyle,
   codePointOffset,
@@ -10093,6 +10094,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const hasBackgroundWork = Boolean(state?.recentJobs.some((job) => !terminalStatuses.has(job.status) || job.shorts.some((item) => item.status === "rerendering")));
   const analysisCreationBlocked = Boolean(analysis && analysis.creationAllowed !== true);
   const sourceRangeSelectionEnabled = analysis?.sourceRangeSelectionEnabled === true;
+  const sourceVideoEmbedUrl = sourceRangeSelectionEnabled && analysis
+    ? youtubePrivacyEnhancedEmbedUrl(analysis.videoId)
+    : null;
   const selectedSourceDurationSeconds = sourceRangeSelectionEnabled
     ? Math.max(0, sourceRangeEndSeconds - sourceRangeStartSeconds)
     : analysis?.durationSeconds || 0;
@@ -10625,7 +10629,20 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       {analysis && (
         <section id="shorts-settings" ref={analysisSectionRef} className="scroll-mt-24 space-y-8 sm:scroll-mt-28">
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex">
-            <Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" />
+            {sourceVideoEmbedUrl ? (
+              <div className="aspect-video w-full shrink-0 overflow-hidden bg-black sm:w-72">
+                <iframe
+                  src={sourceVideoEmbedUrl}
+                  title={`${analysis.title} 원본 영상 플레이어`}
+                  className="h-full w-full border-0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
+                />
+              </div>
+            ) : (
+              <Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" />
+            )}
             <div className="p-5">
               <h2 className="text-lg font-bold">{analysis.title}</h2>
               <p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p>
