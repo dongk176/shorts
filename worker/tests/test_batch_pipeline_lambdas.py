@@ -941,11 +941,13 @@ def test_editor_release_target_rejects_an_untrusted_job_definition() -> None:
         raise AssertionError("untrusted release definition was accepted")
 
 
-def _editor_release_registration_event() -> dict[str, object]:
+def _editor_release_registration_event(
+    document_version: int = 2,
+) -> dict[str, object]:
     return {
         "gitSha": "a" * 40,
         "uiVersion": 2,
-        "documentVersion": 2,
+        "documentVersion": document_version,
         "imageDigest": f"sha256:{'b' * 64}",
         "productionJobDefinitionArn": (
             "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
@@ -964,12 +966,12 @@ def _editor_release_registration_event() -> dict[str, object]:
     }
 
 
-def _editor_release_manifest() -> dict[str, object]:
+def _editor_release_manifest(document_version: int = 2) -> dict[str, object]:
     return {
         "schemaVersion": 1,
         "gitSha": "a" * 40,
         "workerImageDigest": f"sha256:{'b' * 64}",
-        "documentVersion": 2,
+        "documentVersion": document_version,
         "checks": {
             "worker-image": True,
             "legacy-no-timeline": True,
@@ -1029,9 +1031,12 @@ def _editor_release_job_definition(
     }
 
 
-def test_editor_release_registrar_verifies_evidence_before_creating_candidate() -> None:
+@pytest.mark.parametrize("document_version", [2, 3])
+def test_editor_release_registrar_verifies_evidence_before_creating_candidate(
+    document_version: int,
+) -> None:
     module, _ = _load_lambda("editor_release_registrar")
-    event = _editor_release_registration_event()
+    event = _editor_release_registration_event(document_version)
     digest = event["imageDigest"]
     image = f"123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/shorts@{digest}"
     module.batch = MagicMock()
@@ -1069,7 +1074,9 @@ def test_editor_release_registrar_verifies_evidence_before_creating_candidate() 
     }
     module.s3 = MagicMock()
     module.s3.get_object.return_value = {
-        "Body": io.BytesIO(json.dumps(_editor_release_manifest()).encode())
+        "Body": io.BytesIO(
+            json.dumps(_editor_release_manifest(document_version)).encode()
+        )
     }
     os.environ["EDITOR_TEST_BUCKET_NAME"] = "isolated-editor-test"
     os.environ["RERENDER_JOB_DEFINITION"] = "trusted-production-template"

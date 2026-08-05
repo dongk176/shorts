@@ -37,6 +37,7 @@ _REQUIRED_CHECKS = {
     "ffprobe",
     "frame-parity",
 }
+_SUPPORTED_DOCUMENT_VERSIONS = {2, 3}
 _REQUIRED_FONTS = {
     "pretendard",
     "black-han-sans",
@@ -215,12 +216,13 @@ def _verify_manifest(
     *,
     git_sha: str,
     digest: str,
+    document_version: int,
 ) -> None:
     if (
         manifest.get("schemaVersion") != 1
         or manifest.get("gitSha") != git_sha
         or manifest.get("workerImageDigest") != digest
-        or manifest.get("documentVersion") != 2
+        or manifest.get("documentVersion") != document_version
     ):
         raise RuntimeError("Editor release manifest identity does not match")
     checks = manifest.get("checks")
@@ -401,9 +403,11 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         raise ValueError("Production editor job definition is not trusted")
     if not _ISOLATED_DEFINITION.fullmatch(isolated_definition_arn):
         raise ValueError("Isolated editor job definition is not trusted")
-    if int(event.get("uiVersion") or 0) < 2 or int(
-        event.get("documentVersion") or 0
-    ) != 2:
+    document_version = int(event.get("documentVersion") or 0)
+    if (
+        int(event.get("uiVersion") or 0) < 2
+        or document_version not in _SUPPORTED_DOCUMENT_VERSIONS
+    ):
         raise ValueError("Unsupported editor UI or document version")
 
     _verify_isolated_job(isolated_job_id, isolated_definition_arn)
@@ -427,7 +431,12 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         raise RuntimeError("Canary and isolated definitions use different images")
     _verify_ecr_scan(production_image, digest)
     manifest = _read_manifest(artifact_uri)
-    _verify_manifest(manifest, git_sha=git_sha, digest=digest)
+    _verify_manifest(
+        manifest,
+        git_sha=git_sha,
+        digest=digest,
+        document_version=document_version,
+    )
     release_id = _record_release(
         event,
         git_sha=git_sha,
