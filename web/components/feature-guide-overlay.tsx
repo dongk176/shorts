@@ -21,6 +21,7 @@ export type FeatureGuideStep = {
   description: string;
   targetSelector: string | null;
   placement?: "auto" | "right" | "left" | "above" | "below";
+  scrollBlock?: "nearest" | "center";
 };
 
 const SPOTLIGHT_PADDING = 9;
@@ -192,12 +193,13 @@ export function FeatureGuideOverlay({
 
     activeTarget = document.querySelector(targetSelector);
     const initialRect = elementRect(activeTarget);
+    const shouldCenterTarget = step.scrollBlock === "center";
     if (
       initialRect
-      && (!stabilizeBeforePaint || targetNeedsScroll(initialRect))
+      && (shouldCenterTarget || !stabilizeBeforePaint || targetNeedsScroll(initialRect))
     ) {
       activeTarget?.scrollIntoView({
-        block: "nearest",
+        block: step.scrollBlock || "nearest",
         inline: "nearest",
         behavior: "auto",
       });
@@ -221,7 +223,7 @@ export function FeatureGuideOverlay({
       window.removeEventListener("resize", measure);
       document.removeEventListener("scroll", measure, GUIDE_SCROLL_LISTENER_OPTIONS);
     };
-  }, [open, targetSelector]);
+  }, [open, step.scrollBlock, targetSelector]);
 
   useLayoutEffect(() => {
     if (!smoothTransitions) return;

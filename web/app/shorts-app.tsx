@@ -9929,6 +9929,10 @@ function SourceRangeSelector({
   const selectedDuration = Math.max(0, endSeconds - startSeconds);
   const selectedLeft = Math.max(0, Math.min(100, startSeconds / safeDuration * 100));
   const selectedRight = Math.max(0, Math.min(100, 100 - endSeconds / safeDuration * 100));
+  const selectedEnd = 100 - selectedRight;
+  const sliderThumbCenter = (percent: number) => (
+    `calc(${percent}% + ${7 - percent * 0.14}px)`
+  );
   return (
     <div className="rounded-2xl border border-[#ff8f7f]/30 bg-[#ff715e]/[.055] p-5 sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -9947,6 +9951,18 @@ function SourceRangeSelector({
         <div
           className="absolute top-4 h-2 rounded-full bg-gradient-to-r from-[#ff715e] to-[#ff9c8e]"
           style={{ left: `${selectedLeft}%`, right: `${selectedRight}%` }}
+        />
+        <span
+          aria-hidden="true"
+          data-source-range-guide="start-handle"
+          className="pointer-events-none absolute top-[2px] z-30 h-[34px] w-[14px] -translate-x-1/2 rounded-[5px]"
+          style={{ left: sliderThumbCenter(selectedLeft) }}
+        />
+        <span
+          aria-hidden="true"
+          data-source-range-guide="end-handle"
+          className="pointer-events-none absolute top-[2px] z-30 h-[34px] w-[14px] -translate-x-1/2 rounded-[5px]"
+          style={{ left: sliderThumbCenter(selectedEnd) }}
         />
         <input
           aria-label="사용할 영상 시작 지점"
@@ -9977,8 +9993,8 @@ function SourceRangeSelector({
         <span className="font-mono tabular-nums">{formatTimestamp(sourceDurationSeconds)}</span>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <SourceTimestampInput guideTarget="start" label="시작 시각" value={startSeconds} onChange={onStartChange} />
-        <SourceTimestampInput guideTarget="end" label="종료 시각" value={endSeconds} onChange={onEndChange} />
+        <SourceTimestampInput label="시작 시각" value={startSeconds} onChange={onStartChange} />
+        <SourceTimestampInput label="종료 시각" value={endSeconds} onChange={onEndChange} />
       </div>
       <button type="button" onClick={onReset} className="mt-4 min-h-10 rounded-xl border border-white/10 px-4 text-xs font-bold text-neutral-300 transition hover:border-white/20 hover:bg-white/[.05] hover:text-white">
         선택 범위 초기화
@@ -9988,12 +10004,10 @@ function SourceRangeSelector({
 }
 
 function SourceTimestampInput({
-  guideTarget,
   label,
   value,
   onChange,
 }: {
-  guideTarget: "start" | "end";
   label: string;
   value: number;
   onChange: (seconds: number) => void;
@@ -10009,7 +10023,7 @@ function SourceTimestampInput({
     onChange(parsed);
   };
   return (
-    <label className="grid gap-2 text-xs font-bold text-neutral-300" data-source-range-guide={guideTarget}>
+    <label className="grid gap-2 text-xs font-bold text-neutral-300">
       <span>{label}</span>
       <input
         inputMode="decimal"

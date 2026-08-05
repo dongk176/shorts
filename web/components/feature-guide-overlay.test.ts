@@ -22,4 +22,9 @@ describe("feature guide step transitions", () => {
       "transition-[left,top,width,transform] duration-200 ease-out",
     );
   });
+
+  it("can center a requested target without changing other guides", () => {
+    expect(source).toContain('step.scrollBlock === "center"');
+    expect(source).toContain('block: step.scrollBlock || "nearest"');
+  });
 });
