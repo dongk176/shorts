@@ -3,6 +3,7 @@ import { MIN_SELECTED_SOURCE_SECONDS } from "@/lib/source-range";
 
 export const MIN_SOURCE_VIDEO_SECONDS = 3 * 60;
 export const MAX_SOURCE_VIDEO_SECONDS = 60 * 60;
+export const MAX_SOURCE_RANGE_VIDEO_SECONDS = 4 * 60 * 60;
 export const SOURCE_VIDEO_TOO_SHORT_MESSAGE =
   "롱폼 영상만 사용할 수 있어요. 쇼츠를 만들려면 3분 이상의 영상을 입력해 주세요.";
 
@@ -19,6 +20,13 @@ export function assertSupportedSourceVideoDuration(
   if (!options.sourceRangeSelectionEnabled && durationSeconds > MAX_SOURCE_VIDEO_SECONDS) {
     throw new Error("최대 60분 길이의 영상까지만 만들 수 있습니다.");
   }
+  if (options.sourceRangeSelectionEnabled && durationSeconds > MAX_SOURCE_RANGE_VIDEO_SECONDS) {
+    throw new HttpError(
+      400,
+      "구간 선택은 최대 4시간 길이의 원본 영상까지 사용할 수 있어요.",
+      "SOURCE_VIDEO_TOO_LONG",
+    );
+  }
 }
 
 export function sourceRangeSelectionForDuration(
@@ -29,4 +37,16 @@ export function sourceRangeSelectionForDuration(
     sourceRangeSelectionEnabled: releaseEnabled,
   });
   return releaseEnabled && durationSeconds >= MIN_SELECTED_SOURCE_SECONDS;
+}
+
+export function shouldShowLongSourceNotice(
+  durationSeconds: number,
+  sourceRangeSelectionEnabled: boolean,
+  creationAllowed: boolean,
+) {
+  return (
+    creationAllowed
+    && sourceRangeSelectionEnabled
+    && durationSeconds > MAX_SOURCE_VIDEO_SECONDS
+  );
 }

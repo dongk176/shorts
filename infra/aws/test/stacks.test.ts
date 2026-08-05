@@ -7,6 +7,7 @@ import {
   ShortsMvpEditorReleaseRepositoryStack,
   ShortsMvpEditorTestStack,
   ShortsMvpFoundationStack,
+  ShortsMvpSourceRangeStack,
 } from "../lib/stacks";
 
 function stacks(environment = "test") {
@@ -67,6 +68,71 @@ function editorTestStack() {
   });
   return Template.fromStack(editorTest);
 }
+
+function sourceRangeStack() {
+  const digest = `sha256:${"a".repeat(64)}`;
+  const app = new cdk.App({ context: {
+    sourceRangeSubnetIds: "subnet-aaaa,subnet-bbbb",
+    sourceRangeSecurityGroupId: "sg-aaaa",
+    sourceRangeExecutionRoleArn:
+      "arn:aws:iam::123456789012:role/worker-execution",
+    sourceRangeTaskRoleArn: "arn:aws:iam::123456789012:role/worker-task",
+    sourceRangeLogGroupName: "/shorts-mvp/production/worker",
+    sourceRangeRuntimeSecretArn:
+      "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:runtime-test",
+    sourceRangeMediaBucketName: "shorts-media",
+    sourceRangeWorkQueueUrl:
+      "https://sqs.ap-northeast-2.amazonaws.com/123456789012/work",
+    sourceRangeStateQueueUrl:
+      "https://sqs.ap-northeast-2.amazonaws.com/123456789012/state",
+    sourceRangeRepositoryUri:
+      "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-worker-production",
+    sourceRangeImageDigest: digest,
+  } });
+  const stack = new ShortsMvpSourceRangeStack(app, "SourceRange", {
+    env: { account: "123456789012", region: "ap-northeast-2" },
+    environment: "production",
+  });
+  return Template.fromStack(stack);
+}
+
+describe("source range stack", () => {
+  it("isolates capacity and pins the worker image digest", () => {
+    const template = sourceRangeStack();
+    template.hasResourceProperties("AWS::Batch::ComputeEnvironment", {
+      ComputeEnvironmentName: "shorts-mvp-source-range-fargate-production",
+      ComputeResources: Match.objectLike({ Type: "FARGATE", MaxvCpus: 160 }),
+    });
+    template.hasResourceProperties("AWS::Batch::JobQueue", {
+      JobQueueName: "shorts-mvp-source-range-production",
+    });
+    template.hasResourceProperties("AWS::Batch::JobDefinition", {
+      JobDefinitionName: "shorts-mvp-source-range-v1-production",
+      Timeout: { AttemptDurationSeconds: 18000 },
+      ContainerProperties: Match.objectLike({
+        Image: Match.stringLikeRegexp("@sha256:a{64}$"),
+        LinuxParameters: { InitProcessEnabled: true },
+        EphemeralStorage: { SizeInGiB: 80 },
+        Environment: Match.arrayWith([
+          { Name: "PROJECT_RESOURCE_TIER", Value: "source_range" },
+          { Name: "MAX_VIDEO_DURATION_SECONDS", Value: "14400" },
+          { Name: "DOWNLOAD_TIMEOUT_SECONDS", Value: "14400" },
+        ]),
+        ResourceRequirements: Match.arrayWith([
+          { Type: "VCPU", Value: "8" },
+          { Type: "MEMORY", Value: "16384" },
+        ]),
+      }),
+    });
+    template.hasResourceProperties("AWS::Logs::MetricFilter", {
+      FilterPattern:
+        '{ $.event = "source_download_observed" && $.source_range_enabled = true && $.status = "full_source_expected" }',
+      MetricTransformations: Match.arrayWith([
+        Match.objectLike({ MetricName: "SourceRangeFullSourceExpected" }),
+      ]),
+    });
+  });
+});
 
 describe("shorts MVP infrastructure", () => {
   it("keeps immutable editor releases outside the rolling worker image policy", () => {

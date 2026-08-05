@@ -23,7 +23,10 @@
 - Resolve served paths beneath `storage/`; never use user input as a filename.
 - Never log secrets. Missing configured AI provider credentials must take the
   deterministic fallback path.
-- Preserve the 60-minute input limit, one-job-at-a-time default, and 30-day cap.
+- Preserve the stable path's 3–60 minute input limit, one-job-at-a-time default,
+  and 30-day cap. The isolated source-range candidate may accept a source up to
+  4 hours only when its server release gate is enabled, while its selected
+  analysis range must remain 4–60 minutes. Never widen the stable path implicitly.
 - Never store full source videos in S3; use task ephemeral storage and `finally` cleanup.
 
 ## Verification

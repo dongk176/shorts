@@ -12,7 +12,12 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-_SOURCE_DOWNLOAD_STATUSES = frozenset({"full_source_expected", "unexpected_duration"})
+_SOURCE_DOWNLOAD_STATUSES = frozenset({
+    "full_source_expected",
+    "selected_range",
+    "full_source_unexpected",
+    "unexpected_duration",
+})
 
 
 class WorkerRepository:
@@ -512,6 +517,7 @@ class WorkerRepository:
         status: str,
         duration_seconds: float | None,
         media_bytes: int | None,
+        normalized_source_start_seconds: float = 0.0,
     ) -> None:
         if status not in _SOURCE_DOWNLOAD_STATUSES:
             raise ValueError(f"unsupported source download status: {status}")
@@ -519,6 +525,8 @@ class WorkerRepository:
             raise ValueError("download duration must be positive when provided")
         if media_bytes is not None and media_bytes <= 0:
             raise ValueError("download observation values must be positive")
+        if normalized_source_start_seconds < 0:
+            raise ValueError("normalized source start must not be negative")
 
         with self.connect() as connection, connection.transaction():
             connection.execute(
@@ -527,10 +535,17 @@ class WorkerRepository:
                 set range_download_status=%s,
                     downloaded_media_duration_seconds=%s,
                     downloaded_media_bytes=%s,
+                    normalized_source_start_seconds=%s,
                     range_download_verified_at=now(), heartbeat_at=now()
                 where id=%s
                 """,
-                (status, duration_seconds, media_bytes, job_id),
+                (
+                    status,
+                    duration_seconds,
+                    media_bytes,
+                    normalized_source_start_seconds,
+                    job_id,
+                ),
             )
             connection.execute(
                 """
@@ -547,6 +562,7 @@ class WorkerRepository:
                             "source_download_status": status,
                             "downloaded_media_duration_seconds": duration_seconds,
                             "downloaded_media_bytes": media_bytes,
+                            "normalized_source_start_seconds": normalized_source_start_seconds,
                         }
                     ),
                 ),

@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   expectedShortCount,
   jobDeadlineMinutes,
+  sourceRangeJobDeadlineMinutes,
   outputLanguages,
   templateIds,
   videoAspectRatios,
@@ -151,7 +152,9 @@ export async function POST(request: Request) {
     }
     const usageSeconds = billableSourceSeconds(selectedDurationSeconds);
     const plannedShortCount = expectedShortCount(selectedDurationSeconds);
-    const deadlineMinutes = jobDeadlineMinutes(selectedDurationSeconds);
+    const deadlineMinutes = sourceRangeSelectionEnabled
+      ? sourceRangeJobDeadlineMinutes(sourceDurationSeconds)
+      : jobDeadlineMinutes(selectedDurationSeconds);
     const dispatchTarget = executionBackend === "aws_batch" && sourceRangeSelectionEnabled
       ? sourceRangeDispatchTarget()
       : null;

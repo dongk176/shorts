@@ -79,9 +79,24 @@ class AudioTranscriber:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    def _extract_chunks(self, video_path: Path, audio_dir: Path) -> list[Path]:
+    def _extract_chunks(
+        self,
+        video_path: Path,
+        audio_dir: Path,
+        *,
+        start_seconds: float = 0.0,
+        duration_seconds: float | None = None,
+    ) -> list[Path]:
         audio_dir.mkdir(parents=True, exist_ok=True)
         output = audio_dir / "audio_%04d.m4a"
+        input_args = ["-i", str(video_path)]
+        if start_seconds > 0:
+            input_args = ["-ss", f"{start_seconds:.3f}", *input_args]
+        duration_args = (
+            ["-t", f"{duration_seconds:.3f}"]
+            if duration_seconds is not None
+            else []
+        )
         result = run_command(
             [
                 "ffmpeg",
@@ -89,8 +104,8 @@ class AudioTranscriber:
                 "-loglevel",
                 "error",
                 "-y",
-                "-i",
-                str(video_path),
+                *input_args,
+                *duration_args,
                 "-vn",
                 "-ac",
                 "1",
@@ -214,7 +229,14 @@ class AudioTranscriber:
             return chunk
         return retry_chunk
 
-    def transcribe(self, video_path: Path, work_dir: Path) -> TranscriptionResult:
+    def transcribe(
+        self,
+        video_path: Path,
+        work_dir: Path,
+        *,
+        start_seconds: float = 0.0,
+        duration_seconds: float | None = None,
+    ) -> TranscriptionResult:
         if not self.settings.openai_api_key:
             raise TranscriptionError("OPENAI_API_KEY가 없어 필수 전사를 시작할 수 없습니다.")
 
@@ -226,7 +248,15 @@ class AudioTranscriber:
                 timeout=self.settings.ai_timeout_seconds,
                 max_retries=0,
             )
-            chunks = self._extract_chunks(video_path, work_dir / "audio")
+            if start_seconds > 0 or duration_seconds is not None:
+                chunks = self._extract_chunks(
+                    video_path,
+                    work_dir / "audio",
+                    start_seconds=start_seconds,
+                    duration_seconds=duration_seconds,
+                )
+            else:
+                chunks = self._extract_chunks(video_path, work_dir / "audio")
             chunk_specs: list[tuple[int, Path, float, float]] = []
             offset = 0.0
             for index, chunk in enumerate(chunks):

@@ -38,6 +38,22 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
     os.environ["PROJECT_BATCH_QUEUE"] = "project-queue"
     os.environ["PROJECT_JOB_DEFINITION"] = "project-definition:1"
     os.environ["PROJECT_HEAVY_JOB_DEFINITION"] = "project-heavy-definition:1"
+    os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"] = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-project-heavy-fargate-production:27"
+    )
+    os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"] = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+        "shorts-mvp-project-fargate-production"
+    )
+    os.environ["SOURCE_RANGE_JOB_DEFINITION_ARN"] = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-source-range-v1-production:1"
+    )
+    os.environ["SOURCE_RANGE_BATCH_QUEUE_ARN"] = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+        "shorts-mvp-source-range-production"
+    )
     os.environ["RERENDER_JOB_DEFINITION"] = "rerender-definition:1"
     os.environ["EDITOR_STABLE_BATCH_QUEUE"] = "editor-stable-queue"
     os.environ["EDITOR_CANARY_BATCH_QUEUE"] = "editor-canary-queue"
@@ -463,8 +479,8 @@ def test_project_submission_uses_eight_vcpu_definition_with_idempotent_key() -> 
     assert result == "project-batch-a"
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-a:0"
-    assert request["jobQueue"] == "project-queue"
-    assert request["jobDefinition"] == "project-heavy-definition:1"
+    assert request["jobQueue"] == os.environ["PROJECT_BATCH_QUEUE"]
+    assert request["jobDefinition"] == os.environ["PROJECT_HEAVY_JOB_DEFINITION"]
     assert request["retryStrategy"] == {"attempts": 1}
     assert request["timeout"] == {"attemptDurationSeconds": 7200}
     assert request["shareIdentifier"].startswith("paiduser")
@@ -516,13 +532,13 @@ def test_heavy_project_submission_records_selected_definition() -> None:
     assert result == "project-heavy-batch"
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-heavy:0"
-    assert request["jobDefinition"] == "project-heavy-definition:1"
+    assert request["jobDefinition"] == os.environ["PROJECT_HEAVY_JOB_DEFINITION"]
     module.patch.assert_called_once_with(
         "video_jobs",
         "id=eq.job-heavy&status=eq.queued",
         {
             "aws_batch_job_id": "project-heavy-batch",
-            "batch_job_definition": "project-heavy-definition:1",
+            "batch_job_definition": os.environ["PROJECT_HEAVY_JOB_DEFINITION"],
         },
     )
 
@@ -550,7 +566,7 @@ def test_project_resume_preserves_original_heavy_definition() -> None:
     assert result == "project-heavy-resume"
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-heavy:resume:1"
-    assert request["jobDefinition"] == "project-heavy-definition:1"
+    assert request["jobDefinition"] == os.environ["PROJECT_HEAVY_JOB_DEFINITION"]
     assert request["containerOverrides"]["command"][-1] == "--resume"
 
 
@@ -577,8 +593,53 @@ def test_project_resume_preserves_original_standard_definition() -> None:
     assert result == "project-standard-resume"
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-standard:resume:1"
-    assert request["jobDefinition"] == "project-definition:1"
+    assert request["jobDefinition"] == os.environ["PROJECT_JOB_DEFINITION"]
     assert request["containerOverrides"]["command"][-1] == "--resume"
+
+
+def test_source_range_project_and_resume_keep_the_exact_candidate_target() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    base_job = {
+        "id": "job-range",
+        "pipeline_version": 2,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "user-a",
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": True,
+        "batch_job_definition": os.environ["SOURCE_RANGE_JOB_DEFINITION_ARN"],
+        "batch_job_queue": os.environ["SOURCE_RANGE_BATCH_QUEUE_ARN"],
+    }
+    module._submit_once = MagicMock(side_effect=["range-first", "range-resume"])
+    module.patch = MagicMock()
+    module.rest = MagicMock(return_value=[{
+        **base_job,
+        "status": "queued",
+        "project_resume_count": 0,
+        "preparation_finished_at": None,
+    }])
+
+    assert module._submit({"kind": "project", "jobId": "job-range"}) == "range-first"
+    first_request = module._submit_once.call_args_list[0].args[0]
+
+    module.rest = MagicMock(return_value=[{
+        **base_job,
+        "status": "rendering",
+        "project_resume_count": 1,
+        "preparation_finished_at": "2026-08-05T00:00:00+00:00",
+    }])
+    assert module._submit({
+        "kind": "project_resume", "jobId": "job-range",
+    }) == "range-resume"
+    resume_request = module._submit_once.call_args_list[1].args[0]
+
+    assert first_request["jobDefinition"] == resume_request["jobDefinition"] == (
+        os.environ["SOURCE_RANGE_JOB_DEFINITION_ARN"]
+    )
+    assert first_request["jobQueue"] == resume_request["jobQueue"] == (
+        os.environ["SOURCE_RANGE_BATCH_QUEUE_ARN"]
+    )
 
 
 def test_project_failure_after_checkpoint_submits_one_resume() -> None:

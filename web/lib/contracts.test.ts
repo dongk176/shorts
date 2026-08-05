@@ -4,6 +4,7 @@ import {
   AI_CLIP_MIN_SECONDS,
   expectedShortCount,
   jobDeadlineMinutes,
+  sourceRangeJobDeadlineMinutes,
   videoAspectRatioOptions,
   videoAspectRatios,
 } from "./contracts";
@@ -37,4 +38,15 @@ describe("clip rules", () => {
       expect(jobDeadlineMinutes(seconds)).toBe(minutes);
     },
   );
+
+  it.each([[3600, 90], [3601, 91], [10_800, 210], [14_400, 270]])(
+    "gives a %s second range-source a %s minute deadline",
+    (seconds, minutes) => {
+      expect(sourceRangeJobDeadlineMinutes(seconds)).toBe(minutes);
+    },
+  );
+
+  it("rejects range-source deadlines above four hours", () => {
+    expect(() => sourceRangeJobDeadlineMinutes(14_400.001)).toThrow("구간 선택");
+  });
 });

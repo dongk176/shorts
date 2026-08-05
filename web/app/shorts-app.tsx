@@ -214,6 +214,7 @@ import {
   MIN_SELECTED_SOURCE_SECONDS,
   parseSourceTimestampInput,
 } from "@/lib/source-range";
+import { shouldShowLongSourceNotice } from "@/lib/source-video";
 
 const templates: Array<{ id: TemplateId; name: string; label: string; background: string; primary: string; accent: string; accentBackground: string | null; channel: string }> = [
   { id: "comment-capture", name: "댓글 캡처", label: "댓글 반응과 함께\n시청 지속시간 상승", background: COMMENT_BACKGROUND_COLOR, primary: "#FFFFFF", accent: "#35E6E3", accentBackground: null, channel: "#FFFFFF" },
@@ -1502,6 +1503,7 @@ function NoticeDialog({
   title,
   description,
   variant = "danger",
+  confirmLabel = "확인",
   onClose,
 }: {
   open: boolean;
@@ -1509,6 +1511,7 @@ function NoticeDialog({
   title: string;
   description: string;
   variant?: "danger" | "info";
+  confirmLabel?: string;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -1555,7 +1558,7 @@ function NoticeDialog({
           onClick={onClose}
           className="relative mt-8 min-h-12 w-full rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-100 active:scale-[.99]"
         >
-          확인
+          {confirmLabel}
         </button>
       </section>
     </div>,
@@ -9931,7 +9934,7 @@ function SourceRangeSelector({
         <div>
           <h2 className="text-lg font-extrabold text-white">사용할 영상 구간</h2>
           <p className="mt-1 text-sm leading-6 text-neutral-400">
-            양쪽 손잡이를 드래그해 다운로드·전사할 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.
+            양쪽 손잡이를 드래그해 전사·분석할 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.
           </p>
         </div>
         <strong className="font-mono text-sm tabular-nums text-[#ffb4aa] sm:text-base">
@@ -10053,6 +10056,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [creationRestrictionOpen, setCreationRestrictionOpen] = useState(false);
   const [creationRestrictionReason, setCreationRestrictionReason] = useState<string | null>(null);
   const [concurrentJobNoticeOpen, setConcurrentJobNoticeOpen] = useState(false);
+  const [longSourceNoticeOpen, setLongSourceNoticeOpen] = useState(false);
   const [shortsEventRewardAvailable, setShortsEventRewardAvailable] = useState(false);
   const [shortsEventParticipationOpen, setShortsEventParticipationOpen] = useState(false);
   const [shortsEventGrantedSeconds, setShortsEventGrantedSeconds] = useState(0);
@@ -10108,6 +10112,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const effectiveVideoAspectRatio = selectedPersonalTemplate?.config.video.aspectRatio ?? videoAspectRatio;
   const closeCreationRestriction = useCallback(() => setCreationRestrictionOpen(false), []);
   const closeConcurrentJobNotice = useCallback(() => setConcurrentJobNoticeOpen(false), []);
+  const closeLongSourceNotice = useCallback(() => {
+    setLongSourceNoticeOpen(false);
+    setScrollToAnalysis(true);
+  }, []);
   const closeShortsEventParticipation = useCallback(() => {
     setShortsEventParticipationOpen(false);
   }, []);
@@ -10270,7 +10278,16 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           value.creationAllowed ? null : value.creationBlockReason || "이 영상은 이용 제한이 확인된 영상입니다.",
         );
         setCreationRestrictionOpen(value.creationAllowed !== true);
-        setScrollToAnalysis(true);
+        if (shouldShowLongSourceNotice(
+          value.durationSeconds,
+          value.sourceRangeSelectionEnabled === true,
+          value.creationAllowed === true,
+        )) {
+          setLongSourceNoticeOpen(true);
+          setScrollToAnalysis(false);
+        } else {
+          setScrollToAnalysis(true);
+        }
       })
       .catch((cause: unknown) => setError(userFacingErrorMessage(cause, "인기 영상 정보를 불러오지 못했습니다.")))
       .finally(() => setBusy(false));
@@ -10369,6 +10386,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     setRightsConfirmed(false);
     setCreationRestrictionOpen(false);
     setCreationRestrictionReason(null);
+    setLongSourceNoticeOpen(false);
     if (!state?.user) {
       setLoginNext("/");
       setLoginOpen(true);
@@ -10382,7 +10400,16 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         value.creationAllowed ? null : value.creationBlockReason || "이 영상은 이용 제한이 확인된 영상입니다.",
       );
       setCreationRestrictionOpen(value.creationAllowed !== true);
-      setScrollToAnalysis(true);
+      if (shouldShowLongSourceNotice(
+        value.durationSeconds,
+        value.sourceRangeSelectionEnabled === true,
+        value.creationAllowed === true,
+      )) {
+        setLongSourceNoticeOpen(true);
+        setScrollToAnalysis(false);
+      } else {
+        setScrollToAnalysis(true);
+      }
     }
     catch (cause) {
       const message = userFacingErrorMessage(cause, "영상을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
@@ -10525,6 +10552,15 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         variant="info"
         onClose={closeConcurrentJobNotice}
       />
+      <NoticeDialog
+        open={longSourceNoticeOpen}
+        dialogId="long-source-notice"
+        title="길이가 긴 영상은 처리시간이 조금 더 걸릴 수 있어요"
+        description="원본 영상을 먼저 가져온 뒤 선택한 구간만 분석합니다. 영상 길이와 네트워크 상태에 따라 준비 시간이 길어질 수 있어요."
+        variant="info"
+        confirmLabel="확인하고 계속"
+        onClose={closeLongSourceNotice}
+      />
       <main id="top" className="relative mx-auto w-full max-w-6xl flex-1 space-y-10 px-5 pb-20 pt-7 sm:px-8 sm:pt-10">
       <div className="home-generated-shorts-count" aria-label={localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}>
         <strong aria-busy={stateLoadStatus === "loading"}>
@@ -10573,7 +10609,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               <p className="mt-1 text-xs text-neutral-500">{sourceRangeSelectionEnabled
                 ? planEnforcementEnabled
                   ? `선택한 ${formatDuration(selectedSourceDurationSeconds)}만 사용량으로 계산됩니다.`
-                  : `선택한 ${formatDuration(selectedSourceDurationSeconds)}만 다운로드·처리됩니다.`
+                  : `선택한 ${formatDuration(selectedSourceDurationSeconds)}만 전사·분석됩니다.`
                 : planEnforcementEnabled
                   ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.`
                   : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p>

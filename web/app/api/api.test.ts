@@ -753,6 +753,7 @@ describe("job API security and idempotency", () => {
       7200,
       1200,
       2400,
+      150,
       true,
       process.env.SOURCE_RANGE_JOB_DEFINITION_ARN,
       process.env.SOURCE_RANGE_BATCH_QUEUE_ARN,

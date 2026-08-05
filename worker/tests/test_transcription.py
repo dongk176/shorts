@@ -4,12 +4,14 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from shutil import which
 from types import SimpleNamespace
 
 import pytest
 
 from shorts_worker.config import Settings
 from shorts_worker.errors import TranscriptionError
+from shorts_worker.media import media_duration, probe_media
 from shorts_worker.subtitles import AudioTranscriber
 
 
@@ -62,6 +64,78 @@ def test_audio_is_split_into_thirty_second_mono_16khz_chunks(
     assert captured[captured.index("-ac") + 1] == "1"
     assert captured[captured.index("-ar") + 1] == "16000"
     assert captured[captured.index("-segment_time") + 1] == "30"
+
+
+def test_selected_audio_uses_input_seek_and_duration_without_video_reencoding(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: list[str] = []
+
+    def fake_run(args: list[str], **_kwargs):
+        captured.extend(args)
+        output = Path(args[-1])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        (output.parent / "audio_0000.m4a").write_bytes(b"audio")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr("shorts_worker.subtitles.run_command", fake_run)
+
+    AudioTranscriber(_settings())._extract_chunks(
+        tmp_path / "three-hour-source.mp4",
+        tmp_path / "audio",
+        start_seconds=3600,
+        duration_seconds=240,
+    )
+
+    assert captured[captured.index("-ss") + 1] == "3600.000"
+    assert captured[captured.index("-t") + 1] == "240.000"
+    assert captured.index("-ss") < captured.index("-i")
+    assert "-c:v" not in captured
+    assert "-vf" not in captured
+
+
+@pytest.mark.skipif(
+    which("ffmpeg") is None or which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
+def test_selected_audio_integration_extracts_only_requested_duration(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "twelve-seconds.m4a"
+    generated = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=880:duration=12",
+            "-c:a",
+            "aac",
+            str(source),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert generated.returncode == 0, generated.stderr
+
+    chunks = AudioTranscriber(_settings())._extract_chunks(
+        source,
+        tmp_path / "selected-audio",
+        start_seconds=4,
+        duration_seconds=4,
+    )
+
+    extracted_duration = sum(
+        media_duration(probe_media(chunk))
+        for chunk in chunks
+    )
+    assert extracted_duration == pytest.approx(4, abs=0.15)
 
 
 def test_parallel_transcription_restores_order_offsets_silence_and_usage(

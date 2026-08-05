@@ -242,6 +242,67 @@ def classify_full_source_download(
     return "full_source_expected" if full_distance <= full_tolerance else "unexpected_duration"
 
 
+def _absolute_source_second(value: float | None, offset_seconds: float) -> float | None:
+    if value is None:
+        return None
+    return round(offset_seconds + value, 3)
+
+
+def _offset_highlight_clip(clip: HighlightClip, offset_seconds: float) -> HighlightClip:
+    if not offset_seconds:
+        return clip
+    return clip.model_copy(update={
+        "start_seconds": _absolute_source_second(clip.start_seconds, offset_seconds),
+        "end_seconds": _absolute_source_second(clip.end_seconds, offset_seconds),
+        "selection_raw_start_seconds": _absolute_source_second(
+            clip.selection_raw_start_seconds,
+            offset_seconds,
+        ),
+        "selection_raw_end_seconds": _absolute_source_second(
+            clip.selection_raw_end_seconds,
+            offset_seconds,
+        ),
+    })
+
+
+def project_source_window(
+    *,
+    source_duration_seconds: float,
+    source_range_enabled: bool,
+    range_start_seconds: float | None,
+    range_end_seconds: float | None,
+    max_source_duration_seconds: float,
+) -> float:
+    if (
+        not math.isfinite(source_duration_seconds)
+        or source_duration_seconds <= 0
+        or source_duration_seconds > max_source_duration_seconds
+    ):
+        raise IngestionError(
+            "원본 영상 길이가 허용된 범위를 벗어났습니다.",
+            code="ingestion_source_duration_invalid",
+        )
+    if not source_range_enabled:
+        return source_duration_seconds
+    if (
+        range_start_seconds is None
+        or range_end_seconds is None
+        or not all(math.isfinite(value) for value in (
+            range_start_seconds,
+            range_end_seconds,
+        ))
+        or range_start_seconds < 0
+        or range_end_seconds > source_duration_seconds + 0.001
+        or range_end_seconds - range_start_seconds < 240
+        or range_end_seconds - range_start_seconds > 3600
+    ):
+        raise IngestionError(
+            "저장된 영상 선택 구간이 유효하지 않습니다.",
+            code="ingestion_range_invalid",
+        )
+    return range_end_seconds - range_start_seconds
+
+
 class BatchWorker:
     MAX_INLINE_INGESTION_ROUTES = 10
     INGESTION_ROUTE_WAIT_SECONDS = 30.0
@@ -270,7 +331,7 @@ class BatchWorker:
 
     def _project_resource_tier(self) -> str:
         configured = os.getenv("PROJECT_RESOURCE_TIER", "").strip().lower()
-        if configured in {"standard", "heavy"}:
+        if configured in {"standard", "heavy", "source_range"}:
             return configured
         return "heavy" if self.settings.task_vcpus >= 8 else "standard"
 
@@ -395,9 +456,21 @@ class BatchWorker:
         source: Path,
         work_dir: Path,
         duration_seconds: float,
+        start_seconds: float = 0.0,
+        limit_audio: bool = False,
+        observation: dict[str, object] | None = None,
     ) -> list[SubtitleSegment]:
         try:
-            result = self.transcriber.transcribe(source, work_dir)
+            result = (
+                self.transcriber.transcribe(
+                    source,
+                    work_dir,
+                    start_seconds=start_seconds,
+                    duration_seconds=duration_seconds,
+                )
+                if limit_audio
+                else self.transcriber.transcribe(source, work_dir)
+            )
         except TranscriptionError as exc:
             _log_event(
                 "transcription_pipeline_observed",
@@ -424,6 +497,15 @@ class BatchWorker:
             transcript_segment_count=len(result.segments),
             transcript_coverage_ratio=self._transcript_coverage(result.segments, duration_seconds),
         )
+        if observation is not None:
+            observation.update({
+                "audioStartSeconds": round(start_seconds, 3),
+                "audioDurationSeconds": round(duration_seconds, 3),
+                "chunkCount": result.chunk_count,
+                "silentChunkCount": result.silent_chunk_count,
+                "skippedChunkCount": result.skipped_chunk_count,
+                "failedChunkCount": result.failed_chunk_count,
+            })
         return result.segments
 
     def _thumbnail(self, video: Path, output: Path, work_dir: Path) -> Path:
@@ -517,6 +599,7 @@ class BatchWorker:
                 elapsed_seconds=round(total_seconds, 3),
                 container_peak_memory_bytes=_container_memory_peak_bytes(),
                 render_summary=render_summary,
+                resource_tier=resource_tier,
                 result=result,
             )
             return
@@ -540,6 +623,25 @@ class BatchWorker:
                         "프로젝트에 원본 다운로드 경로가 할당되지 않았습니다.",
                         code="ingestion_route_missing",
                     )
+                source_duration_seconds = float(job["source_duration_seconds"])
+                source_range_enabled = bool(job.get("source_range_selection_enabled"))
+                range_start_seconds = (
+                    float(job["range_start_seconds"])
+                    if source_range_enabled and job.get("range_start_seconds") is not None
+                    else None
+                )
+                range_end_seconds = (
+                    float(job["range_end_seconds"])
+                    if source_range_enabled and job.get("range_end_seconds") is not None
+                    else None
+                )
+                selected_duration_seconds = project_source_window(
+                    source_duration_seconds=source_duration_seconds,
+                    source_range_enabled=source_range_enabled,
+                    range_start_seconds=range_start_seconds,
+                    range_end_seconds=range_end_seconds,
+                    max_source_duration_seconds=self.settings.max_video_duration_seconds,
+                )
                 route_download_started = True
                 download_started_at = time.monotonic()
                 with PhaseResourceMonitor(self.settings.task_vcpus) as download_resources:
@@ -563,18 +665,35 @@ class BatchWorker:
                     ),
                     job_attempt=int(claimed["attempt_count"]),
                 )
-                source_duration_seconds = float(job["source_duration_seconds"])
                 download_seconds = time.monotonic() - download_started_at
                 source_bytes = source.stat().st_size
+                normalized_source_start_seconds = 0.0
                 download_status = classify_full_source_download(
                     source_duration_seconds=source_duration_seconds,
                     downloaded_duration_seconds=downloaded_duration_seconds,
                 )
+                observed_duration_seconds = downloaded_duration_seconds
+                observed_media_bytes = source_bytes or None
                 self.repository.record_source_download_observation(
                     job_id,
                     status=download_status,
-                    duration_seconds=downloaded_duration_seconds,
-                    media_bytes=source_bytes or None,
+                    duration_seconds=observed_duration_seconds,
+                    media_bytes=observed_media_bytes,
+                    normalized_source_start_seconds=normalized_source_start_seconds,
+                )
+                job["normalized_source_start_seconds"] = normalized_source_start_seconds
+                _log_event(
+                    "source_download_observed",
+                    job_id=job_id,
+                    source_range_enabled=source_range_enabled,
+                    source_duration_seconds=source_duration_seconds,
+                    selected_duration_seconds=(
+                        selected_duration_seconds
+                    ),
+                    normalized_duration_seconds=downloaded_duration_seconds,
+                    raw_duration_seconds=observed_duration_seconds,
+                    raw_media_bytes=observed_media_bytes,
+                    status=download_status,
                 )
                 if (
                     bundle.metadata.video_id != job["youtube_video_id"]
@@ -582,7 +701,7 @@ class BatchWorker:
                     or download_status != "full_source_expected"
                 ):
                     raise IngestionError(
-                        "다운로드한 전체 영상의 검증에 실패했습니다.",
+                        "다운로드한 원본 영상의 검증에 실패했습니다.",
                         code="ingestion_source_validation_failed",
                     )
                 self.repository.merge_job_performance_metrics(
@@ -593,6 +712,12 @@ class BatchWorker:
                             "seconds": round(download_seconds, 3),
                             "bytes": source_bytes,
                             "durationSeconds": round(downloaded_duration_seconds, 3),
+                            "rawBytes": observed_media_bytes,
+                            "rawDurationSeconds": round(observed_duration_seconds, 3),
+                            "normalizedSourceStartSeconds": normalized_source_start_seconds,
+                            "selectedStartSeconds": range_start_seconds,
+                            "selectedEndSeconds": range_end_seconds,
+                            "selectedDurationSeconds": round(selected_duration_seconds, 3),
                             "status": download_status,
                         }
                     },
@@ -600,12 +725,16 @@ class BatchWorker:
 
                 self.repository.stage(job_id, "transcribing", 28, "영상 내용을 분석하고 있습니다.")
                 transcription_started_at = time.monotonic()
+                transcription_observation: dict[str, object] = {}
                 with PhaseResourceMonitor(self.settings.task_vcpus) as transcription_resources:
                     transcript = self._transcribe_source(
                         job_id=job_id,
                         source=source,
                         work_dir=work_dir,
-                        duration_seconds=downloaded_duration_seconds,
+                        duration_seconds=selected_duration_seconds,
+                        start_seconds=(float(range_start_seconds) if source_range_enabled else 0.0),
+                        limit_audio=source_range_enabled,
+                        observation=transcription_observation,
                     )
                 transcription_seconds = time.monotonic() - transcription_started_at
                 self.repository.merge_job_performance_metrics(
@@ -613,6 +742,7 @@ class BatchWorker:
                     {
                         "transcription": {
                             **transcription_resources.metrics,
+                            **transcription_observation,
                             "seconds": round(transcription_seconds, 3),
                             "segmentCount": len(transcript),
                         }
@@ -625,7 +755,7 @@ class BatchWorker:
                 with PhaseResourceMonitor(self.settings.task_vcpus) as selection_resources:
                     clips = self.selector.select(
                         video_title=str(job["video_title"]),
-                        duration_seconds=downloaded_duration_seconds,
+                        duration_seconds=selected_duration_seconds,
                         transcript=transcript,
                         required_count=target_count,
                         output_language=OutputLanguage(str(job["output_language"])),
@@ -648,7 +778,7 @@ class BatchWorker:
                     for index, clip in enumerate(clips, start=1)
                 }
                 edit_timeline_clips = {
-                    index: edit_timeline_clip(clip, downloaded_duration_seconds)
+                    index: edit_timeline_clip(clip, selected_duration_seconds)
                     for index, clip in enumerate(clips, start=1)
                 } if getattr(self.settings, "edit_timeline_capture_enabled", False) else {}
                 edit_timeline_subtitles = {
@@ -704,6 +834,21 @@ class BatchWorker:
                         },
                     )
 
+                absolute_clips = {
+                    index: _offset_highlight_clip(
+                        clip,
+                        float(range_start_seconds) if source_range_enabled else 0.0,
+                    )
+                    for index, clip in enumerate(clips, start=1)
+                }
+                absolute_timeline_clips = {
+                    index: _offset_highlight_clip(
+                        clip,
+                        float(range_start_seconds) if source_range_enabled else 0.0,
+                    )
+                    for index, clip in edit_timeline_clips.items()
+                }
+
                 for index in range(1, len(clips) + 1):
                     self.repository.set_project_attempt_selected(job_id, index)
                 selection_shortfall = self.repository.fail_unselected_project_attempts(job_id)
@@ -734,11 +879,11 @@ class BatchWorker:
                                 source_probe=source_probe,
                                 work_dir=work_dir,
                                 slot_index=index,
-                                clip=clip,
+                                clip=absolute_clips[index],
                                 subtitles=clip_subtitles[index],
                                 comments=comments_by_clip.get(index, []),
                             ): index
-                            for index, clip in enumerate(clips, start=1)
+                            for index, _clip in enumerate(clips, start=1)
                         }
                         for future in as_completed(futures):
                             index = futures[future]
@@ -747,7 +892,7 @@ class BatchWorker:
                                 short_id, clean_path, clean_metrics = prepared
                                 local_clean_paths[short_id] = clean_path
                                 clean_results.append(clean_metrics)
-                                if timeline_clip := edit_timeline_clips.get(index):
+                                if timeline_clip := absolute_timeline_clips.get(index):
                                     timeline_targets.append(ProjectTimelineTarget(
                                         short_id=short_id,
                                         slot_index=index,
@@ -825,6 +970,7 @@ class BatchWorker:
                     container_peak_memory_bytes=_container_memory_peak_bytes(),
                     extraction_summary=extraction_summary,
                     render_summary=render_summary,
+                    resource_tier=resource_tier,
                     result=result,
                 )
                 if (
@@ -871,6 +1017,8 @@ class BatchWorker:
                 resume=False,
                 preparation_finished=preparation_finished,
                 error_type=type(exc).__name__,
+                error_code=error_code,
+                resource_tier=resource_tier,
                 container_peak_memory_bytes=_container_memory_peak_bytes(),
             )
             if not preparation_finished:
@@ -916,6 +1064,7 @@ class BatchWorker:
         clean_path.parent.mkdir(parents=True, exist_ok=True)
         clean_key: str | None = None
         clean_metrics: dict[str, object] = {}
+        source_offset_seconds = float(job.get("normalized_source_start_seconds") or 0.0)
         try:
             self.renderer.extract_clean_clip(
                 source_path=source,
@@ -937,12 +1086,20 @@ class BatchWorker:
                 short_id=short_id,
                 job=job,
                 clip_index=slot_index,
-                start_seconds=clip.start_seconds,
-                end_seconds=clip.end_seconds,
+                start_seconds=float(_absolute_source_second(
+                    clip.start_seconds, source_offset_seconds
+                )),
+                end_seconds=float(_absolute_source_second(
+                    clip.end_seconds, source_offset_seconds
+                )),
                 hook_title=clip.hook_title,
                 highlight_reason=clip.reason,
-                selection_raw_start_seconds=clip.selection_raw_start_seconds,
-                selection_raw_end_seconds=clip.selection_raw_end_seconds,
+                selection_raw_start_seconds=_absolute_source_second(
+                    clip.selection_raw_start_seconds, source_offset_seconds
+                ),
+                selection_raw_end_seconds=_absolute_source_second(
+                    clip.selection_raw_end_seconds, source_offset_seconds
+                ),
                 selection_raw_duration_seconds=clip.selection_raw_duration_seconds,
                 selection_candidate_index=clip.selection_candidate_index,
                 selection_provider=clip.selection_provider,
@@ -1159,8 +1316,14 @@ class BatchWorker:
                 committed = self.repository.complete_project_timeline(
                     short_id=target.short_id,
                     timeline_key=timeline_key,
-                    timeline_start_seconds=target.clip.start_seconds,
-                    timeline_end_seconds=target.clip.end_seconds,
+                    timeline_start_seconds=float(_absolute_source_second(
+                        target.clip.start_seconds,
+                        float(job.get("normalized_source_start_seconds") or 0.0),
+                    )),
+                    timeline_end_seconds=float(_absolute_source_second(
+                        target.clip.end_seconds,
+                        float(job.get("normalized_source_start_seconds") or 0.0),
+                    )),
                     timeline_subtitles=[
                         item.model_dump() for item in target.subtitles
                     ],

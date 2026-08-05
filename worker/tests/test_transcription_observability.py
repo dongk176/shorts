@@ -96,6 +96,44 @@ def test_partial_transcription_is_observed_without_failing_the_pipeline(
     assert event["failed_audio_seconds"] == 30
 
 
+def test_selected_transcription_records_window_and_limits_audio(tmp_path: Path) -> None:
+    worker = _worker()
+    worker.transcriber.transcribe.return_value = TranscriptionResult(
+        segments=[SubtitleSegment(start=0, end=30, text="selected transcript")],
+        model="gpt-4o-mini-transcribe",
+        chunk_count=8,
+        silent_chunk_count=0,
+        input_tokens=10,
+        output_tokens=4,
+    )
+    observation: dict[str, object] = {}
+
+    worker._transcribe_source(
+        job_id="job-range",
+        source=tmp_path / "source.mp4",
+        work_dir=tmp_path,
+        duration_seconds=240,
+        start_seconds=3600,
+        limit_audio=True,
+        observation=observation,
+    )
+
+    worker.transcriber.transcribe.assert_called_once_with(
+        tmp_path / "source.mp4",
+        tmp_path,
+        start_seconds=3600,
+        duration_seconds=240,
+    )
+    assert observation == {
+        "audioStartSeconds": 3600,
+        "audioDurationSeconds": 240,
+        "chunkCount": 8,
+        "silentChunkCount": 0,
+        "skippedChunkCount": 0,
+        "failedChunkCount": 0,
+    }
+
+
 def test_transcription_failure_is_logged_without_provider_details(
     tmp_path: Path, capsys
 ) -> None:

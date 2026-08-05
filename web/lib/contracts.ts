@@ -284,3 +284,14 @@ export function jobDeadlineMinutes(durationSeconds: number) {
   // processing budget per full source minute (31-90 minutes total).
   return 30 + Math.ceil(durationSeconds / 60);
 }
+
+export function sourceRangeJobDeadlineMinutes(sourceDurationSeconds: number) {
+  if (
+    !Number.isFinite(sourceDurationSeconds)
+    || sourceDurationSeconds <= 0
+    || sourceDurationSeconds > 4 * 60 * 60
+  ) {
+    throw new Error("구간 선택 작업 제한 시간을 계산할 수 없는 영상 길이입니다.");
+  }
+  return Math.min(270, 30 + Math.ceil(sourceDurationSeconds / 60));
+}
