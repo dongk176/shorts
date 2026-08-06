@@ -6,7 +6,7 @@ import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import { resolveEditedTemplateSelection } from "@/lib/edit-template-selection";
 import { apiError, HttpError } from "@/lib/http";
-import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
+import { assertProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 
 const subtitle = z.object({ start: z.number().nonnegative(), end: z.number().positive(), text: z.string().max(200) }).refine((item) => item.end > item.start);
@@ -70,7 +70,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const billing = await getBillingSummary(db, session.userId);
-    assertPaidProjectActionAccess(billing, "edit");
+    await assertProjectActionAccess(db, billing, session.userId, "edit");
     const existing = await db`
       select s.id, s.subtitle_segments, s.duration_seconds, s.template_id,
         s.custom_template_id, s.template_snapshot

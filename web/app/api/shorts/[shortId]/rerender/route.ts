@@ -7,7 +7,7 @@ import {
   ONBOARDING_WELCOME_PRODUCT_CODE,
   onboardingWelcomeRerenderAllowed,
 } from "@/lib/onboarding-welcome";
-import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
+import { assertProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 
 export async function POST(_: Request, context: { params: Promise<{ shortId: string }> }) {
@@ -16,7 +16,7 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const billing = await getBillingSummary(db, session.userId);
-    assertPaidProjectActionAccess(billing, "edit");
+    await assertProjectActionAccess(db, billing, session.userId, "edit");
     const rows = await db`
       select s.id,s.status,s.render_version,s.rendered_config_hash,
         md5(concat_ws('|', s.hook_title, s.channel_display_name, s.subtitles_enabled::text,

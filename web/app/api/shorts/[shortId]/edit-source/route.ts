@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
-import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
+import { assertProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const billing = await getBillingSummary(db, session.userId);
-    assertPaidProjectActionAccess(billing, "edit");
+    await assertProjectActionAccess(db, billing, session.userId, "edit");
     const rows = await db`
       select s.clean_clip_s3_key, s.expires_at
       from shorts_mvp.generated_shorts s

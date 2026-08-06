@@ -3,7 +3,7 @@ import { getBillingSummary } from "@/lib/billing";
 import { getProjectByNumber, getPublicExampleProjectByNumber } from "@/lib/data";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
-import { billingSupportsPaidProjectActions } from "@/lib/project-action-entitlements";
+import { userSupportsProjectActions } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +39,11 @@ export async function GET(
       getBillingSummary(db, session.userId),
     ]);
     if (!project) throw new HttpError(404, "프로젝트를 찾을 수 없습니다.");
-    const hasPaidAccess = billingSupportsPaidProjectActions(billing);
+    const hasPaidAccess = await userSupportsProjectActions(
+      db,
+      billing,
+      session.userId,
+    );
 
     const response = NextResponse.json({
       project,

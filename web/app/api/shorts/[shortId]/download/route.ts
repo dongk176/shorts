@@ -3,7 +3,7 @@ import { getShortDownloadUrl } from "@/lib/aws";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
-import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
+import { assertProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
   shortDownloadExpirySeconds,
@@ -23,7 +23,7 @@ export async function GET(
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const billing = await getBillingSummary(db, session.userId);
-    assertPaidProjectActionAccess(billing, "download");
+    await assertProjectActionAccess(db, billing, session.userId, "download");
     const rows = await db`
       select s.output_s3_key,s.expires_at,s.hook_title
       from shorts_mvp.generated_shorts s

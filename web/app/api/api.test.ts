@@ -1295,7 +1295,7 @@ describe("job API security and idempotency", () => {
   });
 
   it("returns blocked project actions without an active paid product", async () => {
-    mocks.getDb.mockReturnValue(vi.fn());
+    mocks.getDb.mockReturnValue(dbWithRows([{ allowed: false }]));
     mocks.projectByNumber.mockResolvedValue({ id: "job-free", projectNumber: 14 });
     mocks.billing.mockResolvedValue({ activeProducts: [] });
 
@@ -1308,6 +1308,23 @@ describe("job API security and idempotency", () => {
     await expect(response.json()).resolves.toEqual({
       project: { id: "job-free", projectNumber: 14 },
       access: { canEdit: false, canDownload: false },
+    });
+  });
+
+  it("returns enabled project actions for an active administrator-issued account", async () => {
+    mocks.getDb.mockReturnValue(dbWithRows([{ allowed: true }]));
+    mocks.projectByNumber.mockResolvedValue({ id: "job-managed", projectNumber: 15 });
+    mocks.billing.mockResolvedValue({ activeProducts: [] });
+
+    const response = await getProject(
+      new Request("http://localhost/api/projects/15"),
+      { params: Promise.resolve({ projectNumber: "15" }) },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      project: { id: "job-managed", projectNumber: 15 },
+      access: { canEdit: true, canDownload: true },
     });
   });
 });
@@ -1323,7 +1340,7 @@ describe("plan API", () => {
 describe("short ownership, expiry, and edit validation", () => {
   it("does not issue a download URL without an active paid product", async () => {
     mocks.billing.mockResolvedValue({ activeProducts: [] });
-    mocks.getDb.mockReturnValue(vi.fn());
+    mocks.getDb.mockReturnValue(dbWithRows([{ allowed: false }]));
 
     const response = await downloadShort(
       new Request("http://localhost/api/shorts/short-free/download"),
@@ -1339,7 +1356,7 @@ describe("short ownership, expiry, and edit validation", () => {
 
   it("does not issue an edit source URL without an active paid product", async () => {
     mocks.billing.mockResolvedValue({ activeProducts: [] });
-    mocks.getDb.mockReturnValue(vi.fn());
+    mocks.getDb.mockReturnValue(dbWithRows([{ allowed: false }]));
 
     const response = await accessEditSource(
       new Request("http://localhost/api/shorts/short-free/edit-source"),
@@ -1351,6 +1368,50 @@ describe("short ownership, expiry, and edit validation", () => {
       code: "PAID_PROJECT_ACTION_REQUIRED",
     });
     expect(mocks.signedUrl).not.toHaveBeenCalled();
+  });
+
+  it("issues a download URL for an active administrator-issued account", async () => {
+    mocks.billing.mockResolvedValue({ activeProducts: [] });
+    mocks.getDb.mockReturnValue(dbWithRows(
+      [{ allowed: true }],
+      [{
+        outputS3Key: "outputs/managed-short.mp4",
+        expiresAt: new Date(Date.now() + 60_000),
+        hookTitle: "발급계정 쇼츠",
+      }],
+    ));
+
+    const response = await downloadShort(
+      new Request("http://localhost/api/shorts/short-managed/download"),
+      { params: Promise.resolve({ shortId: "short-managed" }) },
+    );
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe("https://cdn.example.com/signed-download.mp4");
+  });
+
+  it("issues an edit source URL for an active administrator-issued account", async () => {
+    process.env.CLOUDFRONT_DOMAIN = "cdn.example.com";
+    process.env.CLOUDFRONT_KEY_PAIR_ID = "key-pair";
+    process.env.CLOUDFRONT_PRIVATE_KEY_B64 = Buffer.from("private-key").toString("base64");
+    mocks.billing.mockResolvedValue({ activeProducts: [] });
+    mocks.getDb.mockReturnValue(dbWithRows(
+      [{ allowed: true }],
+      [{
+        cleanClipS3Key: "edit-sources/managed-clean.mp4",
+        expiresAt: new Date(Date.now() + 60_000),
+      }],
+    ));
+
+    const response = await accessEditSource(
+      new Request("http://localhost/api/shorts/short-managed/edit-source"),
+      { params: Promise.resolve({ shortId: "short-managed" }) },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      url: "https://cdn.example.com/signed-edit-source.mp4",
+    });
   });
 
   it("rejects a title longer than two lines before touching the database", async () => {
