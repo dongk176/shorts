@@ -54,6 +54,14 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
         "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
         "shorts-mvp-source-range-production"
     )
+    os.environ["ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN"] = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-elevenlabs-transcription-canary-production:1"
+    )
+    os.environ["ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN"] = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+        "shorts-mvp-elevenlabs-transcription-canary-production"
+    )
     os.environ["RERENDER_JOB_DEFINITION"] = "rerender-definition:1"
     os.environ["EDITOR_STABLE_BATCH_QUEUE"] = "editor-stable-queue"
     os.environ["EDITOR_CANARY_BATCH_QUEUE"] = "editor-canary-queue"
@@ -656,6 +664,127 @@ def test_source_range_project_and_resume_keep_the_exact_candidate_target() -> No
     assert first_request["timeout"] == resume_request["timeout"] == {
         "attemptDurationSeconds": 18000,
     }
+
+
+def test_elevenlabs_project_and_resume_keep_the_exact_candidate_target() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    base_job = {
+        "id": "job-elevenlabs",
+        "pipeline_version": 2,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "admin-a",
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "batch_job_definition": os.environ[
+            "ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN"
+        ],
+    }
+    module._submit_once = MagicMock(side_effect=["elevenlabs-first", "elevenlabs-resume"])
+    module.patch = MagicMock()
+    module.rest = MagicMock(return_value=[{
+        **base_job,
+        "status": "queued",
+        "project_resume_count": 0,
+        "preparation_finished_at": None,
+    }])
+
+    assert module._submit({
+        "kind": "project", "jobId": "job-elevenlabs",
+    }) == "elevenlabs-first"
+    first_request = module._submit_once.call_args_list[0].args[0]
+
+    module.rest = MagicMock(return_value=[{
+        **base_job,
+        "status": "rendering",
+        "project_resume_count": 1,
+        "preparation_finished_at": "2026-08-06T00:00:00+00:00",
+    }])
+    assert module._submit({
+        "kind": "project_resume", "jobId": "job-elevenlabs",
+    }) == "elevenlabs-resume"
+    resume_request = module._submit_once.call_args_list[1].args[0]
+
+    assert first_request["jobDefinition"] == resume_request["jobDefinition"] == (
+        os.environ["ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN"]
+    )
+    assert first_request["jobQueue"] == resume_request["jobQueue"] == (
+        os.environ["ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN"]
+    )
+    assert first_request["timeout"] == resume_request["timeout"] == {
+        "attemptDurationSeconds": 18000,
+    }
+
+
+def test_stable_transcription_rejects_elevenlabs_candidate_target() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module.rest = MagicMock(return_value=[{
+        "id": "job-wrong-policy",
+        "status": "queued",
+        "pipeline_version": 2,
+        "project_resume_count": 0,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "user-a",
+        "preparation_finished_at": None,
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "openai_stable",
+        "batch_job_definition": os.environ[
+            "ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN"
+        ],
+    }])
+    module._submit_once = MagicMock()
+
+    with pytest.raises(RuntimeError, match="Stable transcription job"):
+        module._submit({"kind": "project", "jobId": "job-wrong-policy"})
+
+    module._submit_once.assert_not_called()
+
+
+def test_elevenlabs_target_must_not_reuse_a_stable_target() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    os.environ["ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN"] = os.environ[
+        "LEGACY_PROJECT_JOB_DEFINITION_ARN"
+    ]
+    os.environ["ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN"] = os.environ[
+        "LEGACY_PROJECT_BATCH_QUEUE_ARN"
+    ]
+    module.rest = MagicMock(return_value=[{
+        "id": "job-colliding-target",
+        "status": "queued",
+        "pipeline_version": 2,
+        "project_resume_count": 0,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "admin-a",
+        "preparation_finished_at": None,
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "batch_job_definition": os.environ[
+            "ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN"
+        ],
+    }])
+    module._submit_once = MagicMock()
+
+    with pytest.raises(RuntimeError, match="must be isolated"):
+        module._submit({"kind": "project", "jobId": "job-colliding-target"})
+
+    module._submit_once.assert_not_called()
 
 
 def test_project_submission_rejects_untrusted_stored_target() -> None:

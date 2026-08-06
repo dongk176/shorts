@@ -48,7 +48,11 @@ from .schemas import (
 )
 from .selector import TranscriptSelector, minimum_clip_count
 from .storage import ObjectStorage
-from .subtitles import AudioTranscriber
+from .subtitles import (
+    ELEVENLABS_FALLBACK_POLICY,
+    OPENAI_STABLE_POLICY,
+    AudioTranscriber,
+)
 
 EDIT_TIMELINE_PADDING_SECONDS = 30.0
 
@@ -331,7 +335,12 @@ class BatchWorker:
 
     def _project_resource_tier(self) -> str:
         configured = os.getenv("PROJECT_RESOURCE_TIER", "").strip().lower()
-        if configured in {"standard", "heavy", "source_range"}:
+        if configured in {
+            "standard",
+            "heavy",
+            "source_range",
+            "elevenlabs_transcription",
+        }:
             return configured
         return "heavy" if self.settings.task_vcpus >= 8 else "standard"
 
@@ -458,6 +467,7 @@ class BatchWorker:
         duration_seconds: float,
         start_seconds: float = 0.0,
         limit_audio: bool = False,
+        policy: str = OPENAI_STABLE_POLICY,
         observation: dict[str, object] | None = None,
     ) -> list[SubtitleSegment]:
         try:
@@ -467,16 +477,26 @@ class BatchWorker:
                     work_dir,
                     start_seconds=start_seconds,
                     duration_seconds=duration_seconds,
+                    policy=policy,
                 )
                 if limit_audio
-                else self.transcriber.transcribe(source, work_dir)
+                else self.transcriber.transcribe(source, work_dir, policy=policy)
             )
         except TranscriptionError as exc:
             _log_event(
                 "transcription_pipeline_observed",
                 job_id=job_id,
-                provider="openai",
-                model=self.settings.openai_transcribe_model,
+                requested_policy=policy,
+                provider=(
+                    "elevenlabs"
+                    if policy == ELEVENLABS_FALLBACK_POLICY
+                    else "openai"
+                ),
+                model=(
+                    self.settings.elevenlabs_transcribe_model
+                    if policy == ELEVENLABS_FALLBACK_POLICY
+                    else self.settings.openai_transcribe_model
+                ),
                 status="failed",
                 error_type=type(exc).__name__,
             )
@@ -484,7 +504,8 @@ class BatchWorker:
         _log_event(
             "transcription_pipeline_observed",
             job_id=job_id,
-            provider="openai",
+            requested_policy=result.requested_policy,
+            provider=result.provider,
             model=result.model,
             status="partial" if result.failed_chunk_count else "succeeded",
             chunk_count=result.chunk_count,
@@ -496,7 +517,24 @@ class BatchWorker:
             output_tokens=result.output_tokens,
             transcript_segment_count=len(result.segments),
             transcript_coverage_ratio=self._transcript_coverage(result.segments, duration_seconds),
+            language_code=result.language_code,
+            fallback_chunk_count=result.fallback_chunk_count,
+            fallback_audio_seconds=result.fallback_audio_seconds,
         )
+        if policy == ELEVENLABS_FALLBACK_POLICY:
+            self.repository.save_job_transcript(
+                job_id,
+                requested_policy=result.requested_policy,
+                provider_used=result.provider,
+                model_used=result.model,
+                language_code=result.language_code,
+                language_probability=result.language_probability,
+                fallback_reasons=list(result.fallback_reasons),
+                source_offset_seconds=start_seconds,
+                transcript_text=" ".join(segment.text for segment in result.segments),
+                segments=[segment.model_dump() for segment in result.segments],
+                words=[word.as_dict() for word in result.words],
+            )
         if observation is not None:
             observation.update({
                 "audioStartSeconds": round(start_seconds, 3),
@@ -505,6 +543,12 @@ class BatchWorker:
                 "silentChunkCount": result.silent_chunk_count,
                 "skippedChunkCount": result.skipped_chunk_count,
                 "failedChunkCount": result.failed_chunk_count,
+                "provider": result.provider,
+                "model": result.model,
+                "languageCode": result.language_code,
+                "wordCount": len(result.words),
+                "fallbackChunkCount": result.fallback_chunk_count,
+                "fallbackAudioSeconds": result.fallback_audio_seconds,
             })
         return result.segments
 
@@ -734,6 +778,9 @@ class BatchWorker:
                         duration_seconds=selected_duration_seconds,
                         start_seconds=(float(range_start_seconds) if source_range_enabled else 0.0),
                         limit_audio=source_range_enabled,
+                        policy=str(
+                            job.get("transcription_policy") or OPENAI_STABLE_POLICY
+                        ),
                         observation=transcription_observation,
                     )
                 transcription_seconds = time.monotonic() - transcription_started_at
@@ -1832,6 +1879,9 @@ class BatchWorker:
                     source=source,
                     work_dir=work_dir,
                     duration_seconds=downloaded_duration_seconds,
+                    policy=str(
+                        job.get("transcription_policy") or OPENAI_STABLE_POLICY
+                    ),
                 )
 
                 self.repository.stage(job_id, "selecting", 42, "쇼츠로 만들 장면을 찾고 있습니다.")

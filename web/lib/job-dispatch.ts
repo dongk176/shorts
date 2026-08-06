@@ -20,3 +20,16 @@ export function sourceRangeDispatchTarget(): ProjectDispatchTarget {
     jobQueueArn: requiredArn("SOURCE_RANGE_BATCH_QUEUE_ARN", JOB_QUEUE_ARN),
   };
 }
+
+export function elevenLabsTranscriptionDispatchTarget(): ProjectDispatchTarget {
+  return {
+    jobDefinitionArn: requiredArn(
+      "ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN",
+      JOB_DEFINITION_ARN,
+    ),
+    jobQueueArn: requiredArn(
+      "ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN",
+      JOB_QUEUE_ARN,
+    ),
+  };
+}

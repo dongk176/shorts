@@ -12,7 +12,10 @@ import pytest
 from shorts_worker.config import Settings
 from shorts_worker.errors import TranscriptionError
 from shorts_worker.media import media_duration, probe_media
-from shorts_worker.subtitles import AudioTranscriber
+from shorts_worker.subtitles import (
+    ELEVENLABS_FALLBACK_POLICY,
+    AudioTranscriber,
+)
 
 
 def _install_openai(
@@ -35,7 +38,10 @@ def _install_openai(
 def _settings(**overrides: object) -> Settings:
     values: dict[str, object] = {
         "openai_api_key": "test-key",
+        "elevenlabs_api_key": "elevenlabs-test-key",
+        "elevenlabs_transcribe_model": "scribe_v2",
         "openai_transcribe_model": "gpt-4o-mini-transcribe",
+        "openai_transcribe_fallback_model": "whisper-1",
         "openai_transcribe_chunk_seconds": 30,
         "openai_transcribe_max_workers": 4,
     }
@@ -344,3 +350,248 @@ def test_missing_openai_key_fails_before_audio_extraction(
     with pytest.raises(TranscriptionError, match="OPENAI_API_KEY"):
         transcriber.transcribe(tmp_path / "source.mp4", tmp_path / "work")
     assert not extract_called
+
+
+def test_stable_policy_keeps_the_existing_openai_request_shape(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    chunk = tmp_path / "audio_0000.m4a"
+    chunk.write_bytes(b"audio")
+    requests: list[dict[str, object]] = []
+
+    def create(**kwargs):
+        requests.append(kwargs)
+        return {"text": "기존 경로"}
+
+    _install_openai(monkeypatch, create)
+    transcriber = AudioTranscriber(_settings())
+    monkeypatch.setattr(transcriber, "_extract_chunks", lambda *_args: [chunk])
+    monkeypatch.setattr(
+        "shorts_worker.subtitles.probe_media",
+        lambda *_args, **_kwargs: {"format": {"duration": "10"}},
+    )
+
+    result = transcriber.transcribe(tmp_path / "source.mp4", tmp_path / "work")
+
+    assert result.requested_policy == "openai_stable"
+    assert result.provider == "openai"
+    assert result.words == ()
+    assert len(requests) == 1
+    assert requests[0]["model"] == "gpt-4o-mini-transcribe"
+    assert requests[0]["response_format"] == "json"
+    assert "timestamp_granularities" not in requests[0]
+
+
+def test_elevenlabs_policy_autodetects_multilingual_words(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    chunk = tmp_path / "audio_0000.m4a"
+    chunk.write_bytes(b"audio")
+    _install_openai(
+        monkeypatch,
+        lambda **_kwargs: pytest.fail("OpenAI fallback must not be called"),
+    )
+    calls: list[dict[str, object]] = []
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "text": "안녕하세요 hello",
+                "language_code": "ko",
+                "language_probability": 0.97,
+                "words": [
+                    {"type": "word", "text": "안녕하세요", "start": 0.1, "end": 0.8},
+                    {"type": "word", "text": "hello", "start": 0.9, "end": 1.4},
+                ],
+            }
+
+    def post(*args, **kwargs):
+        calls.append({"args": args, **kwargs})
+        return Response()
+
+    monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(post=post))
+    transcriber = AudioTranscriber(_settings())
+    monkeypatch.setattr(transcriber, "_extract_chunks", lambda *_args: [chunk])
+    monkeypatch.setattr(
+        "shorts_worker.subtitles.probe_media",
+        lambda *_args, **_kwargs: {"format": {"duration": "10"}},
+    )
+
+    result = transcriber.transcribe(
+        tmp_path / "source.mp4",
+        tmp_path / "work",
+        policy=ELEVENLABS_FALLBACK_POLICY,
+    )
+
+    assert result.provider == "elevenlabs"
+    assert result.model == "scribe_v2"
+    assert result.language_code == "ko"
+    assert result.language_probability == pytest.approx(0.97)
+    assert [word.text for word in result.words] == ["안녕하세요", "hello"]
+    assert result.segments[0].text == "안녕하세요 hello"
+    assert calls[0]["headers"] == {"xi-api-key": "elevenlabs-test-key"}
+    assert calls[0]["data"]["model_id"] == "scribe_v2"
+    assert "language_code" not in calls[0]["data"]
+
+
+def test_elevenlabs_failure_falls_back_only_for_that_chunk(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    chunks = [tmp_path / f"audio_{index:04d}.m4a" for index in range(2)]
+    for chunk in chunks:
+        chunk.write_bytes(b"audio")
+    fallback_requests: list[str] = []
+
+    def create(**kwargs):
+        name = Path(kwargs["file"].name).name
+        fallback_requests.append(name)
+        return {
+            "text": "fallback words",
+            "language": "en",
+            "words": [
+                {"word": "fallback", "start": 0.0, "end": 0.5},
+                {"word": "words", "start": 0.6, "end": 1.0},
+            ],
+        }
+
+    _install_openai(monkeypatch, create)
+    transcriber = AudioTranscriber(_settings())
+    monkeypatch.setattr(transcriber, "_extract_chunks", lambda *_args: chunks)
+    monkeypatch.setattr(
+        "shorts_worker.subtitles.probe_media",
+        lambda *_args, **_kwargs: {"format": {"duration": "10"}},
+    )
+    monkeypatch.setattr("shorts_worker.subtitles.time.sleep", lambda *_args: None)
+
+    original_elevenlabs = transcriber._transcribe_chunk_elevenlabs
+
+    def elevenlabs(*, index, **_kwargs):
+        if index == 0:
+            return original_elevenlabs(
+                index=index,
+                chunk=chunks[index],
+                duration=10,
+                offset=0,
+            )
+        raise RuntimeError("temporary ElevenLabs failure")
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "text": "첫 청크",
+                "language_code": "ko",
+                "words": [
+                    {"type": "word", "text": "첫", "start": 0.0, "end": 0.4},
+                    {"type": "word", "text": "청크", "start": 0.5, "end": 1.0},
+                ],
+            }
+
+    monkeypatch.setitem(
+        sys.modules,
+        "httpx",
+        SimpleNamespace(post=lambda *_args, **_kwargs: Response()),
+    )
+    monkeypatch.setattr(transcriber, "_transcribe_chunk_elevenlabs", elevenlabs)
+
+    result = transcriber.transcribe(
+        tmp_path / "source.mp4",
+        tmp_path / "work",
+        policy=ELEVENLABS_FALLBACK_POLICY,
+    )
+
+    assert result.provider == "mixed"
+    assert result.fallback_chunk_count == 1
+    assert result.fallback_audio_seconds == 10
+    assert result.fallback_reasons == ("RuntimeError",)
+    assert fallback_requests == ["audio_0001.m4a"]
+    assert [segment.start for segment in result.segments] == [0.0, 10.0]
+
+
+def test_candidate_rejects_whisper_text_without_word_timestamps(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    chunk = tmp_path / "audio_0000.m4a"
+    chunk.write_bytes(b"audio")
+    _install_openai(
+        monkeypatch,
+        lambda **_kwargs: {
+            "text": "시간 정보가 없는 전사",
+            "segments": [{"text": "시간 정보가 없는 전사", "start": 0, "end": 1}],
+        },
+    )
+    transcriber = AudioTranscriber(_settings())
+    monkeypatch.setattr(transcriber, "_extract_chunks", lambda *_args, **_kwargs: [chunk])
+    monkeypatch.setattr(
+        "shorts_worker.subtitles.probe_media",
+        lambda *_args, **_kwargs: {"format": {"duration": "10"}},
+    )
+    monkeypatch.setattr(
+        transcriber,
+        "_transcribe_chunk_elevenlabs",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("elevenlabs failed")),
+    )
+    monkeypatch.setattr("shorts_worker.subtitles.time.sleep", lambda *_args: None)
+
+    with pytest.raises(TranscriptionError, match="단어 타임스탬프"):
+        transcriber.transcribe(
+            tmp_path / "source.mp4",
+            tmp_path / "work",
+            policy=ELEVENLABS_FALLBACK_POLICY,
+        )
+
+
+def test_candidate_words_use_original_source_timeline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    chunk = tmp_path / "audio_0000.m4a"
+    chunk.write_bytes(b"audio")
+    _install_openai(
+        monkeypatch,
+        lambda **_kwargs: pytest.fail("OpenAI fallback must not be called"),
+    )
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "text": "원본 시간",
+                "language_code": "kor",
+                "words": [
+                    {"type": "word", "text": "원본", "start": 0.1, "end": 0.5},
+                    {"type": "word", "text": "시간", "start": 0.6, "end": 1.0},
+                ],
+            }
+
+    monkeypatch.setitem(
+        sys.modules,
+        "httpx",
+        SimpleNamespace(post=lambda *_args, **_kwargs: Response()),
+    )
+    transcriber = AudioTranscriber(_settings())
+    monkeypatch.setattr(transcriber, "_extract_chunks", lambda *_args, **_kwargs: [chunk])
+    monkeypatch.setattr(
+        "shorts_worker.subtitles.probe_media",
+        lambda *_args, **_kwargs: {"format": {"duration": "10"}},
+    )
+
+    result = transcriber.transcribe(
+        tmp_path / "source.mp4",
+        tmp_path / "work",
+        start_seconds=3600,
+        duration_seconds=10,
+        policy=ELEVENLABS_FALLBACK_POLICY,
+    )
+
+    assert [(word.start, word.end) for word in result.words] == [
+        (3600.1, 3600.5),
+        (3600.6, 3601.0),
+    ]
+    assert result.segments[0].start == 3600.1

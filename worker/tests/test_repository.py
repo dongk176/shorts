@@ -68,6 +68,65 @@ def test_fail_job_persists_structured_error_details() -> None:
     }
 
 
+def test_candidate_transcript_is_saved_atomically_with_provider_summary() -> None:
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+    repository.save_job_transcript(
+        "job-a",
+        requested_policy="elevenlabs_primary_openai_fallback",
+        provider_used="mixed",
+        model_used="scribe_v2+whisper-1",
+        language_code="kor",
+        language_probability=0.98,
+        fallback_reasons=["HTTPStatusError"],
+        source_offset_seconds=120.0,
+        transcript_text="안녕하세요",
+        segments=[{"start": 120.0, "end": 121.0, "text": "안녕하세요"}],
+        words=[{"text": "안녕하세요", "start": 120.0, "end": 121.0}],
+    )
+
+    assert connection.execute.call_count == 2
+    insert_parameters = connection.execute.call_args_list[0].args[1]
+    assert insert_parameters[1:6] == (
+        "elevenlabs_primary_openai_fallback",
+        "mixed",
+        "scribe_v2+whisper-1",
+        "kor",
+        0.98,
+    )
+    update_parameters = connection.execute.call_args_list[1].args[1]
+    assert update_parameters == (
+        "mixed",
+        "scribe_v2+whisper-1",
+        "kor",
+        True,
+        "job-a",
+        "elevenlabs_primary_openai_fallback",
+    )
+
+
+def test_elevenlabs_transcription_migration_is_additive_and_private() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202608060001_elevenlabs_transcription_canary.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "alter table shorts_mvp.video_jobs" in migration
+    assert "create table if not exists shorts_mvp.job_transcripts" in migration
+    assert "enable row level security" in migration
+    assert "revoke all on shorts_mvp.job_transcripts from anon,authenticated" in migration
+    assert "grant all on shorts_mvp.job_transcripts to service_role" in migration
+    assert "public." not in migration
+
+
 def test_ingestion_failure_details_migration_is_schema_qualified() -> None:
     migration = (
         Path(__file__).parents[2]

@@ -2,6 +2,7 @@
 import * as cdk from "aws-cdk-lib";
 import {
   ShortsMvpComputeStack,
+  ShortsMvpElevenLabsTranscriptionStack,
   ShortsMvpEditorCanaryStack,
   ShortsMvpEditorReleaseRepositoryStack,
   ShortsMvpEditorTestStack,
@@ -70,6 +71,17 @@ if (
     { env, environment },
   );
   stacks.push({ stack: sourceRange, tagEnvironment: environment });
+}
+if (
+  app.node.tryGetContext("includeElevenLabsTranscription") === "true"
+  || process.env.INCLUDE_ELEVENLABS_TRANSCRIPTION === "true"
+) {
+  const transcriptionCanary = new ShortsMvpElevenLabsTranscriptionStack(
+    app,
+    `ShortsMvpElevenLabsTranscription-${environment}`,
+    { env, environment },
+  );
+  stacks.push({ stack: transcriptionCanary, tagEnvironment: environment });
 }
 
 for (const { stack, tagEnvironment } of stacks) {

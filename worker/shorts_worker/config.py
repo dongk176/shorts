@@ -63,9 +63,20 @@ class Settings:
         )
     )
     openai_api_key: str | None = field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
+    elevenlabs_api_key: str | None = field(
+        default_factory=lambda: os.getenv("ELEVENLABS_API_KEY")
+    )
+    elevenlabs_transcribe_model: str = field(
+        default_factory=lambda: os.getenv("ELEVENLABS_TRANSCRIBE_MODEL", "scribe_v2")
+    )
     openai_transcribe_model: str = field(
         default_factory=lambda: os.getenv(
             "OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe"
+        )
+    )
+    openai_transcribe_fallback_model: str = field(
+        default_factory=lambda: os.getenv(
+            "OPENAI_TRANSCRIBE_FALLBACK_MODEL", "whisper-1"
         )
     )
     openai_highlight_fallback_model: str = field(

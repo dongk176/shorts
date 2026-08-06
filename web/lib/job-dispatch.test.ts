@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sourceRangeDispatchTarget } from "./job-dispatch";
+import {
+  elevenLabsTranscriptionDispatchTarget,
+  sourceRangeDispatchTarget,
+} from "./job-dispatch";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -16,5 +19,23 @@ describe("project dispatch target", () => {
     vi.stubEnv("SOURCE_RANGE_JOB_DEFINITION_ARN", "shorts-mvp-source-range-v1-production");
     vi.stubEnv("SOURCE_RANGE_BATCH_QUEUE_ARN", "source-range-queue");
     expect(() => sourceRangeDispatchTarget()).toThrow("정확한 AWS ARN");
+  });
+
+  it("keeps the ElevenLabs candidate on its exact immutable target", () => {
+    vi.stubEnv(
+      "ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN",
+      "arn:aws:batch:ap-northeast-2:181651591905:job-definition/elevenlabs-canary:3",
+    );
+    vi.stubEnv(
+      "ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN",
+      "arn:aws:batch:ap-northeast-2:181651591905:job-queue/elevenlabs-canary",
+    );
+
+    expect(elevenLabsTranscriptionDispatchTarget()).toEqual({
+      jobDefinitionArn:
+        "arn:aws:batch:ap-northeast-2:181651591905:job-definition/elevenlabs-canary:3",
+      jobQueueArn:
+        "arn:aws:batch:ap-northeast-2:181651591905:job-queue/elevenlabs-canary",
+    });
   });
 });

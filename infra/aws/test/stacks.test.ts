@@ -3,6 +3,7 @@ import { Match, Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import {
   ShortsMvpComputeStack,
+  ShortsMvpElevenLabsTranscriptionStack,
   ShortsMvpEditorCanaryStack,
   ShortsMvpEditorReleaseRepositoryStack,
   ShortsMvpEditorTestStack,
@@ -95,6 +96,71 @@ function sourceRangeStack() {
   });
   return Template.fromStack(stack);
 }
+
+function elevenLabsTranscriptionStack() {
+  const digest = `sha256:${"b".repeat(64)}`;
+  const app = new cdk.App({ context: {
+    sourceRangeSubnetIds: "subnet-aaaa,subnet-bbbb",
+    sourceRangeSecurityGroupId: "sg-aaaa",
+    sourceRangeExecutionRoleArn:
+      "arn:aws:iam::123456789012:role/worker-execution",
+    sourceRangeTaskRoleArn: "arn:aws:iam::123456789012:role/worker-task",
+    sourceRangeLogGroupName: "/shorts-mvp/production/worker",
+    sourceRangeRuntimeSecretArn:
+      "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:runtime-test",
+    sourceRangeMediaBucketName: "shorts-media",
+    sourceRangeWorkQueueUrl:
+      "https://sqs.ap-northeast-2.amazonaws.com/123456789012/work",
+    sourceRangeStateQueueUrl:
+      "https://sqs.ap-northeast-2.amazonaws.com/123456789012/state",
+    sourceRangeRepositoryUri:
+      "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-worker-production",
+    elevenLabsTranscriptionImageDigest: digest,
+  } });
+  const stack = new ShortsMvpElevenLabsTranscriptionStack(
+    app,
+    "ElevenLabsTranscription",
+    {
+      env: { account: "123456789012", region: "ap-northeast-2" },
+      environment: "production",
+    },
+  );
+  return Template.fromStack(stack);
+}
+
+describe("ElevenLabs transcription stack", () => {
+  it("owns isolated capacity and an immutable candidate definition", () => {
+    const template = elevenLabsTranscriptionStack();
+    template.hasResourceProperties("AWS::Batch::ComputeEnvironment", {
+      ComputeEnvironmentName:
+        "shorts-mvp-elevenlabs-transcription-fargate-production",
+      ComputeResources: Match.objectLike({ Type: "FARGATE", MaxvCpus: 32 }),
+    });
+    template.hasResourceProperties("AWS::Batch::JobQueue", {
+      JobQueueName:
+        "shorts-mvp-elevenlabs-transcription-canary-production",
+    });
+    template.hasResourceProperties("AWS::Batch::JobDefinition", {
+      JobDefinitionName:
+        "shorts-mvp-elevenlabs-transcription-canary-production",
+      ContainerProperties: Match.objectLike({
+        Image: Match.stringLikeRegexp("@sha256:b{64}$"),
+        Secrets: Match.arrayWith([
+          Match.objectLike({ Name: "ELEVENLABS_API_KEY" }),
+        ]),
+        Environment: Match.arrayWith([
+          { Name: "ELEVENLABS_TRANSCRIBE_MODEL", Value: "scribe_v2" },
+          { Name: "OPENAI_TRANSCRIBE_FALLBACK_MODEL", Value: "whisper-1" },
+          { Name: "PROJECT_RESOURCE_TIER", Value: "elevenlabs_transcription" },
+        ]),
+        ResourceRequirements: Match.arrayWith([
+          { Type: "VCPU", Value: "8" },
+          { Type: "MEMORY", Value: "16384" },
+        ]),
+      }),
+    });
+  });
+});
 
 describe("source range stack", () => {
   it("isolates capacity and pins the worker image digest", () => {

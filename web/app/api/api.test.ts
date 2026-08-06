@@ -173,6 +173,15 @@ beforeEach(() => {
     "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
     + "shorts-mvp-source-range-production"
   );
+  process.env.ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN = (
+    "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+    + "shorts-mvp-elevenlabs-transcription-canary-production:1"
+  );
+  process.env.ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN = (
+    "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+    + "shorts-mvp-elevenlabs-transcription-canary-production"
+  );
+  delete process.env.ELEVENLABS_TRANSCRIPTION_ENABLED;
   process.env.SOURCE_RANGE_SELECTION_ENABLED = "true";
   delete process.env.RANGE_EDITING_ENABLED;
   delete process.env.CLOUDFRONT_DOMAIN;
@@ -763,6 +772,47 @@ describe("job API security and idempotency", () => {
         "insert into shorts_mvp.usage_reservations",
       ));
     expect(reservationCall?.slice(1)).toContain(1200);
+  });
+
+  it("pins only an admitted admin job to the ElevenLabs candidate", async () => {
+    process.env.ELEVENLABS_TRANSCRIPTION_ENABLED = "true";
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows(
+      [],
+      [
+        { flagKey: "elevenlabs_transcription", enabled: true },
+        { flagKey: "elevenlabs_transcription_public", enabled: false },
+      ],
+      [{ isAdmin: true }],
+      [],
+      [{ active: 0 }],
+      [{ projectNumber: 11 }],
+      [{ id: "reservation-elevenlabs" }],
+      [],
+      [],
+    );
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rightsConfirmed: true,
+      requestId: "51903416-67cc-410a-a1b7-89ffcc24f48e",
+    }));
+
+    expect(response.status).toBe(202);
+    const insertCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes(
+        "insert into shorts_mvp.video_jobs",
+      ));
+    expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
+      "elevenlabs_primary_openai_fallback",
+      process.env.ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN,
+      process.env.ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN,
+    ]));
   });
 
   it("blocks a snapshotted source-range analysis whenever the master switch is off", async () => {

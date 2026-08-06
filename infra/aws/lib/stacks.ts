@@ -1229,6 +1229,17 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       environment: lambdaEnvironment,
     });
     const batchSubmitterFunctionName = `shorts-mvp-batch-submitter-${props.environment}`;
+    const elevenLabsJobDefinitionArn = String(
+      this.node.tryGetContext("elevenLabsTranscriptionJobDefinitionArn") || "",
+    ).trim();
+    const elevenLabsBatchQueueArn = String(
+      this.node.tryGetContext("elevenLabsTranscriptionBatchQueueArn") || "",
+    ).trim();
+    if (Boolean(elevenLabsJobDefinitionArn) !== Boolean(elevenLabsBatchQueueArn)) {
+      throw new Error(
+        "ElevenLabs transcription Job Definition and queue ARNs must be configured together",
+      );
+    }
     const batchSubmitter = new lambda.Function(this, "BatchSubmitterFunction", {
       functionName: batchSubmitterFunctionName,
       runtime: lambda.Runtime.PYTHON_3_12,
@@ -1258,6 +1269,12 @@ export class ShortsMvpComputeStack extends cdk.Stack {
           || this.node.tryGetContext("legacyProjectBatchQueueArn")
           || projectQueue.ref,
         ),
+        ...(elevenLabsJobDefinitionArn ? {
+          ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN:
+            elevenLabsJobDefinitionArn,
+          ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN:
+            elevenLabsBatchQueueArn,
+        } : {}),
       },
     });
     outboxDispatcher.addEnvironment(
@@ -1571,6 +1588,141 @@ export class ShortsMvpSourceRangeStack extends cdk.Stack {
     new cdk.CfnOutput(this, "SourceRangeComputeEnvironmentArn", {
       value: compute.ref,
     });
+  }
+}
+
+/**
+ * Isolated ElevenLabs transcription canary. It imports the currently running
+ * worker roles, queues and storage but owns its compute, queue and immutable
+ * Job Definition, so enabling the canary cannot replace stable capacity.
+ */
+export class ShortsMvpElevenLabsTranscriptionStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props: BaseProps) {
+    super(scope, id, props);
+    const subnetIds = requiredContext(this, "sourceRangeSubnetIds")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (subnetIds.length < 2 || subnetIds.some((value) => !/^subnet-[0-9a-f]+$/.test(value))) {
+      throw new Error("sourceRangeSubnetIds must contain at least two subnet IDs");
+    }
+    const securityGroupId = requiredContext(this, "sourceRangeSecurityGroupId");
+    const executionRoleArn = requiredContext(this, "sourceRangeExecutionRoleArn");
+    const taskRoleArn = requiredContext(this, "sourceRangeTaskRoleArn");
+    const logGroupName = requiredContext(this, "sourceRangeLogGroupName");
+    const runtimeSecretArn = requiredContext(this, "sourceRangeRuntimeSecretArn");
+    const mediaBucketName = requiredContext(this, "sourceRangeMediaBucketName");
+    const workQueueUrl = requiredContext(this, "sourceRangeWorkQueueUrl");
+    const stateQueueUrl = requiredContext(this, "sourceRangeStateQueueUrl");
+    const repositoryUri = requiredContext(this, "sourceRangeRepositoryUri");
+    const imageDigest = requiredContext(this, "elevenLabsTranscriptionImageDigest");
+    if (!/^sha256:[0-9a-f]{64}$/.test(imageDigest)) {
+      throw new Error("elevenLabsTranscriptionImageDigest must be an immutable sha256 digest");
+    }
+    const maxVcpus = Number(
+      this.node.tryGetContext("elevenLabsTranscriptionMaxVcpus") || 32,
+    );
+    if (!Number.isInteger(maxVcpus) || maxVcpus < 8 || maxVcpus > 160) {
+      throw new Error(
+        "elevenLabsTranscriptionMaxVcpus must be an integer from 8 to 160",
+      );
+    }
+
+    const compute = new batch.CfnComputeEnvironment(this, "Compute", {
+      computeEnvironmentName:
+        `shorts-mvp-elevenlabs-transcription-fargate-${props.environment}`,
+      type: "MANAGED",
+      state: "ENABLED",
+      computeResources: {
+        type: "FARGATE",
+        maxvCpus: maxVcpus,
+        subnets: subnetIds,
+        securityGroupIds: [securityGroupId],
+      },
+    });
+    const queue = new batch.CfnJobQueue(this, "Queue", {
+      jobQueueName:
+        `shorts-mvp-elevenlabs-transcription-canary-${props.environment}`,
+      priority: 30,
+      state: "ENABLED",
+      computeEnvironmentOrder: [{ order: 1, computeEnvironment: compute.ref }],
+    });
+    const secret = (name: string) => ({
+      name,
+      valueFrom: `${runtimeSecretArn}:${name}::`,
+    });
+    const definition = new batch.CfnJobDefinition(this, "JobDefinition", {
+      type: "container",
+      platformCapabilities: ["FARGATE"],
+      jobDefinitionName:
+        `shorts-mvp-elevenlabs-transcription-canary-${props.environment}`,
+      retryStrategy: { attempts: 1 },
+      timeout: { attemptDurationSeconds: 18000 },
+      containerProperties: {
+        image: `${repositoryUri}@${imageDigest}`,
+        executionRoleArn,
+        jobRoleArn: taskRoleArn,
+        networkConfiguration: { assignPublicIp: "ENABLED" },
+        linuxParameters: { initProcessEnabled: true },
+        logConfiguration: {
+          logDriver: "awslogs",
+          options: {
+            "awslogs-group": logGroupName,
+            "awslogs-region": this.region,
+            "awslogs-stream-prefix": "elevenlabs-transcription-canary",
+          },
+        },
+        environment: [
+          { name: "AWS_REGION", value: this.region },
+          { name: "AWS_DEFAULT_REGION", value: this.region },
+          { name: "AWS_S3_OUTPUT_BUCKET", value: mediaBucketName },
+          { name: "TEMP_ROOT", value: "/tmp/shorts-jobs" },
+          { name: "WORK_DISPATCH_QUEUE_URL", value: workQueueUrl },
+          { name: "STATE_EVENT_QUEUE_URL", value: stateQueueUrl },
+          { name: "ELEVENLABS_TRANSCRIBE_MODEL", value: "scribe_v2" },
+          { name: "OPENAI_TRANSCRIBE_MODEL", value: "gpt-4o-mini-transcribe" },
+          { name: "OPENAI_TRANSCRIBE_FALLBACK_MODEL", value: "whisper-1" },
+          { name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", value: "gpt-5-nano" },
+          { name: "OPENAI_COMMENT_FALLBACK_MODEL", value: "gpt-5-nano" },
+          { name: "GEMINI_COMMENT_MODEL", value: "gemini-2.5-flash-lite" },
+          { name: "GEMINI_PAID_DATA_PROCESSING_CONFIRMED", value: "true" },
+          { name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", value: "30" },
+          { name: "OPENAI_TRANSCRIBE_MAX_WORKERS", value: "4" },
+          { name: "FFMPEG_THREADS", value: "2" },
+          { name: "CLEAN_CLIP_PRESET", value: "superfast" },
+          { name: "CLEAN_CLIP_CRF", value: "20" },
+          { name: "EDIT_TIMELINE_CAPTURE_ENABLED", value: "true" },
+          { name: "TASK_VCPUS", value: "8" },
+          { name: "PROJECT_RESOURCE_TIER", value: "elevenlabs_transcription" },
+          { name: "MAX_VIDEO_DURATION_SECONDS", value: "14400" },
+          { name: "DOWNLOAD_TIMEOUT_SECONDS", value: "14400" },
+          { name: "WORKER_IMAGE_TAG", value: imageDigest },
+          { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
+          { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "30" },
+        ],
+        secrets: [
+          secret("DATABASE_URL"),
+          secret("ELEVENLABS_API_KEY"),
+          secret("OPENAI_API_KEY"),
+          secret("GEMINI_API_KEY"),
+          secret("GEMINI_OPENAI_BASE_URL"),
+          secret("INGESTION_PROXY_ROUTES_JSON"),
+        ],
+        runtimePlatform: {
+          cpuArchitecture: "X86_64",
+          operatingSystemFamily: "LINUX",
+        },
+        ephemeralStorage: { sizeInGiB: 80 },
+        resourceRequirements: [
+          { type: "VCPU", value: "8" },
+          { type: "MEMORY", value: "16384" },
+        ],
+      },
+    });
+
+    new cdk.CfnOutput(this, "BatchJobQueueArn", { value: queue.ref });
+    new cdk.CfnOutput(this, "BatchJobDefinitionArn", { value: definition.ref });
+    new cdk.CfnOutput(this, "ComputeEnvironmentArn", { value: compute.ref });
   }
 }
 

@@ -301,6 +301,77 @@ class WorkerRepository:
             }, separators=(",", ":")), flush=True)
             return False
 
+    def save_job_transcript(
+        self,
+        job_id: str,
+        *,
+        requested_policy: str,
+        provider_used: str,
+        model_used: str,
+        language_code: str | None,
+        language_probability: float | None,
+        fallback_reasons: list[str],
+        source_offset_seconds: float,
+        transcript_text: str,
+        segments: list[dict[str, object]],
+        words: list[dict[str, object]],
+    ) -> None:
+        """Atomically persist the candidate transcript without exposing it to users."""
+        with self.connect() as connection, connection.transaction():
+            connection.execute(
+                """
+                insert into shorts_mvp.job_transcripts (
+                  job_id,requested_policy,provider_used,model_used,
+                  language_code,language_probability,fallback_used,fallback_reasons,
+                  source_offset_seconds,transcript_text,segments,words
+                ) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                on conflict (job_id) do update set
+                  requested_policy=excluded.requested_policy,
+                  provider_used=excluded.provider_used,
+                  model_used=excluded.model_used,
+                  language_code=excluded.language_code,
+                  language_probability=excluded.language_probability,
+                  fallback_used=excluded.fallback_used,
+                  fallback_reasons=excluded.fallback_reasons,
+                  source_offset_seconds=excluded.source_offset_seconds,
+                  transcript_text=excluded.transcript_text,
+                  segments=excluded.segments,
+                  words=excluded.words
+                """,
+                (
+                    job_id,
+                    requested_policy,
+                    provider_used,
+                    model_used,
+                    language_code,
+                    language_probability,
+                    bool(fallback_reasons),
+                    Jsonb(fallback_reasons),
+                    source_offset_seconds,
+                    transcript_text,
+                    Jsonb(segments),
+                    Jsonb(words),
+                ),
+            )
+            connection.execute(
+                """
+                update shorts_mvp.video_jobs
+                set transcription_provider_used=%s,
+                    transcription_model_used=%s,
+                    transcription_language_code=%s,
+                    transcription_fallback_used=%s
+                where id=%s and transcription_policy=%s
+                """,
+                (
+                    provider_used,
+                    model_used,
+                    language_code,
+                    bool(fallback_reasons),
+                    job_id,
+                    requested_policy,
+                ),
+            )
+
     def fail_project_attempt(
         self,
         job_id: str,

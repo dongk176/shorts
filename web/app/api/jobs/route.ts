@@ -12,7 +12,10 @@ import {
 import { wakeOutboxDispatcher } from "@/lib/aws";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
-import { sourceRangeDispatchTarget } from "@/lib/job-dispatch";
+import {
+  elevenLabsTranscriptionDispatchTarget,
+  sourceRangeDispatchTarget,
+} from "@/lib/job-dispatch";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { apiError, HttpError } from "@/lib/http";
 import { getInitialJobBackend } from "@/lib/job-backend";
@@ -28,6 +31,7 @@ import {
   getSourceRangeReleaseAccess,
   lockSourceRangeReleaseAccess,
 } from "@/lib/source-range-release";
+import { lockElevenLabsTranscriptionAccess } from "@/lib/transcription-release";
 import { billableSourceSeconds, getUsageSnapshot } from "@/lib/usage";
 import { templateSnapshotFromRow } from "@/lib/custom-templates";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
@@ -155,9 +159,6 @@ export async function POST(request: Request) {
     const deadlineMinutes = sourceRangeSelectionEnabled
       ? sourceRangeJobDeadlineMinutes(sourceDurationSeconds)
       : jobDeadlineMinutes(selectedDurationSeconds);
-    const dispatchTarget = executionBackend === "aws_batch" && sourceRangeSelectionEnabled
-      ? sourceRangeDispatchTarget()
-      : null;
     const jobId = randomUUID();
     let createdProjectNumber: number | null = null;
     let shortsThankYouEventReward = noShortsThankYouEventReward;
@@ -172,6 +173,18 @@ export async function POST(request: Request) {
           "영상 구간 선택 기능이 일시 중지되었습니다. 링크를 다시 확인해 주세요.",
         );
       }
+      const transcriptionAccess = await lockElevenLabsTranscriptionAccess(
+        tx,
+        session.userId,
+      );
+      const transcriptionPolicy = transcriptionAccess.policy;
+      const dispatchTarget = executionBackend !== "aws_batch"
+        ? null
+        : transcriptionAccess.enabled
+          ? elevenLabsTranscriptionDispatchTarget()
+          : sourceRangeSelectionEnabled
+            ? sourceRangeDispatchTarget()
+            : null;
       const concurrentExisting = await tx`
         select id, project_number, status from shorts_mvp.video_jobs
         where request_id=${input.requestId} and (
@@ -262,7 +275,8 @@ export async function POST(request: Request) {
           range_end_seconds, template_id, custom_template_id, template_snapshot, video_aspect_ratio,
           clip_length_option, output_language, expected_short_count, rights_confirmed, execution_backend,
           status, stage, progress, deadline_at, planned_short_count,retention_days_snapshot,
-          pipeline_version, source_range_selection_enabled, batch_job_definition, batch_job_queue
+          pipeline_version, source_range_selection_enabled, transcription_policy,
+          batch_job_definition, batch_job_queue
           ,selected_source_duration_seconds,billable_source_seconds
         ) values (
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
@@ -272,6 +286,7 @@ export async function POST(request: Request) {
           ${rightsConfirmed}, ${executionBackend}, 'queued', 'queued', ${SIMULATED_PROGRESS_START},
           now() + ${deadlineMinutes} * interval '1 minute', ${plannedShortCount},${billing.retentionDays},
           ${executionBackend === "aws_batch" ? 2 : 1}, ${sourceRangeSelectionEnabled},
+          ${transcriptionPolicy},
           ${dispatchTarget?.jobDefinitionArn || null}, ${dispatchTarget?.jobQueueArn || null},
           ${selectedDurationSeconds},${usageSeconds}
         )

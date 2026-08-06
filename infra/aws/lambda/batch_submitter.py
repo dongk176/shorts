@@ -52,6 +52,18 @@ def _trusted_project_target(prefix: str) -> tuple[str, str]:
     return definition, queue
 
 
+def _optional_trusted_project_target(prefix: str) -> tuple[str, str] | None:
+    definition = os.environ.get(f"{prefix}_JOB_DEFINITION_ARN", "").strip()
+    queue = os.environ.get(f"{prefix}_BATCH_QUEUE_ARN", "").strip()
+    if not definition and not queue:
+        return None
+    if not _BATCH_JOB_DEFINITION_ARN.fullmatch(definition):
+        raise RuntimeError(f"{prefix} project job definition ARN is invalid")
+    if not _BATCH_QUEUE_ARN.fullmatch(queue):
+        raise RuntimeError(f"{prefix} project Batch queue ARN is invalid")
+    return definition, queue
+
+
 def _project_dispatch_target(
     job: dict[str, Any], *, resume: bool
 ) -> tuple[str, str, str, int]:
@@ -60,14 +72,46 @@ def _project_dispatch_target(
     stored_queue = str(job.get("batch_job_queue") or "").strip()
     legacy_definition, legacy_queue = _trusted_project_target("LEGACY_PROJECT")
     range_definition, range_queue = _trusted_project_target("SOURCE_RANGE")
+    transcription_target = _optional_trusted_project_target(
+        "ELEVENLABS_TRANSCRIPTION"
+    )
     allowed_targets = {
         (legacy_definition, legacy_queue): "legacy",
         (range_definition, range_queue): "source_range",
     }
+    if transcription_target:
+        if transcription_target in allowed_targets:
+            raise RuntimeError(
+                "ElevenLabs transcription target must be isolated from stable targets"
+            )
+        allowed_targets[transcription_target] = "elevenlabs_transcription"
+
+    transcription_policy = str(
+        job.get("transcription_policy") or "openai_stable"
+    )
+    if transcription_policy not in {
+        "openai_stable",
+        "elevenlabs_primary_openai_fallback",
+    }:
+        raise RuntimeError("Project transcription policy is invalid")
 
     if stored_definition or stored_queue:
         resource_tier = allowed_targets.get((stored_definition, stored_queue))
         if resource_tier:
+            if (
+                transcription_policy == "elevenlabs_primary_openai_fallback"
+                and resource_tier != "elevenlabs_transcription"
+            ):
+                raise RuntimeError(
+                    "ElevenLabs transcription job is not pinned to its candidate target"
+                )
+            if (
+                transcription_policy == "openai_stable"
+                and resource_tier == "elevenlabs_transcription"
+            ):
+                raise RuntimeError(
+                    "Stable transcription job cannot use the ElevenLabs candidate target"
+                )
             return (
                 stored_definition,
                 stored_queue,
@@ -86,6 +130,10 @@ def _project_dispatch_target(
             return legacy_definition, legacy_queue, "legacy", estimated_seconds
         raise RuntimeError("Stored project Batch target is not trusted")
 
+    if transcription_policy == "elevenlabs_primary_openai_fallback":
+        raise RuntimeError(
+            "ElevenLabs transcription job is missing its pinned Batch target"
+        )
     if bool(job.get("source_range_selection_enabled")):
         raise RuntimeError("Source-range job is missing its pinned Batch target")
     return legacy_definition, legacy_queue, "legacy", estimated_seconds
@@ -231,7 +279,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
             "select=id,status,pipeline_version,project_resume_count,aws_batch_job_id,"
             "mvp_session_id,user_id,preparation_finished_at,planned_short_count,"
             "clip_length_option,batch_job_definition,batch_job_queue,"
-            "source_range_selection_enabled,dispatch_priority_class"
+            "source_range_selection_enabled,transcription_policy,dispatch_priority_class"
             f"&id=eq.{encoded_job_id}&limit=1"
         )) or []
         if not jobs or int(jobs[0].get("pipeline_version") or 1) != 2:
@@ -281,7 +329,9 @@ def _submit(payload: dict[str, Any]) -> str | None:
             retryStrategy={"attempts": 1},
             timeout={
                 "attemptDurationSeconds": (
-                    18000 if resource_tier == "source_range" else 7200
+                    18000
+                    if resource_tier in {"source_range", "elevenlabs_transcription"}
+                    else 7200
                 )
             },
         )
