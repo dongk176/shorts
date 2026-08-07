@@ -115,6 +115,8 @@ function elevenLabsTranscriptionStack() {
       "https://sqs.ap-northeast-2.amazonaws.com/123456789012/state",
     sourceRangeRepositoryUri:
       "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-worker-production",
+    sourceRangeSchedulingPolicyArn:
+      "arn:aws:batch:ap-northeast-2:123456789012:scheduling-policy/source-range-test",
     elevenLabsTranscriptionImageDigest: digest,
   } });
   const stack = new ShortsMvpElevenLabsTranscriptionStack(
@@ -139,6 +141,7 @@ describe("ElevenLabs transcription stack", () => {
     template.hasResourceProperties("AWS::Batch::JobQueue", {
       JobQueueName:
         "shorts-mvp-elevenlabs-transcription-canary-production",
+      SchedulingPolicyArn: Match.anyValue(),
     });
     template.hasResourceProperties("AWS::Batch::JobDefinition", {
       JobDefinitionName:

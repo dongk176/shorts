@@ -1640,11 +1640,16 @@ export class ShortsMvpElevenLabsTranscriptionStack extends cdk.Stack {
         securityGroupIds: [securityGroupId],
       },
     });
+    const schedulingPolicyArn = requiredContext(
+      this,
+      "sourceRangeSchedulingPolicyArn",
+    );
     const queue = new batch.CfnJobQueue(this, "Queue", {
       jobQueueName:
         `shorts-mvp-elevenlabs-transcription-canary-${props.environment}`,
       priority: 30,
       state: "ENABLED",
+      schedulingPolicyArn,
       computeEnvironmentOrder: [{ order: 1, computeEnvironment: compute.ref }],
     });
     const secret = (name: string) => ({
