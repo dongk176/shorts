@@ -121,6 +121,7 @@ export type BillingSummary = {
   lastPaidAt: string | null;
   purchasedPackageCodes: PaidPlanCode[];
   activeProducts: ActiveBillingProduct[];
+  hasManagedFeatureAccess: boolean;
   status: SubscriptionStatus;
   planCode: PlanCode;
   billingCycle: BillingCycle | null;

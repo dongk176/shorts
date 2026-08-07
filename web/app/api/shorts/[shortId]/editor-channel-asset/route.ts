@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
-import { assertProjectActionAccess } from "@/lib/project-action-entitlements";
+import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ export async function GET(
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const billing = await getBillingSummary(db, session.userId);
-    await assertProjectActionAccess(db, billing, session.userId, "edit");
+    assertPaidProjectActionAccess(billing, "edit");
     const rows = await db`
       select
         s.editor_document->'channel'->>'thumbnailAssetKey' as asset_key,

@@ -45,4 +45,14 @@ describe("ebook download entitlements", () => {
     expect(() => assertEbookDownloadAccess({ activeProducts: [] }))
       .toThrow("기간 패키지");
   });
+
+  it("allows every ebook for an active administrator-issued account", () => {
+    const billing = {
+      activeProducts: [],
+      hasManagedFeatureAccess: true,
+    };
+
+    expect(billingSupportsEbookDownloads(billing)).toBe(true);
+    expect(() => assertEbookDownloadAccess(billing)).not.toThrow();
+  });
 });

@@ -147,10 +147,42 @@ describe("billing summary", () => {
       status: "none",
       planCode: "free",
       activeProducts: [],
+      hasManagedFeatureAccess: false,
       canCreateJobs: true,
       maxActiveJobs: 1,
       retentionDays: 30,
     });
+  });
+
+  it("grants full product feature access to an active administrator-issued account", async () => {
+    const statements: string[] = [];
+    const responses = [
+      [{
+        hasPaymentHistory: false,
+        purchasedPackageCodes: [],
+        hasManualServiceAccess: true,
+        hasManagedFeatureAccess: true,
+      }],
+      [],
+    ];
+    const db = (async (strings: TemplateStringsArray) => {
+      statements.push(strings.join("?"));
+      return responses.shift() || [];
+    }) as unknown as BillingDb;
+
+    const summary = await getBillingSummary(db, "user-managed");
+
+    expect(summary).toMatchObject({
+      activeProducts: [],
+      hasManagedFeatureAccess: true,
+      canCreateJobs: true,
+      maxActiveJobs: 1,
+      retentionDays: 30,
+    });
+    expect(statements[0]).toContain(
+      "account.manual_service_access_until > clock_timestamp()",
+    );
+    expect(statements[0]).toContain("managed.is_active=true");
   });
 
   it("allows only one active job with one-day retention for a free welcome grant", async () => {

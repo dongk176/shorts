@@ -9,7 +9,7 @@ import { getDb } from "@/lib/db";
 import { editorOverlayPreviewEnabled } from "@/lib/editor-overlay-preview-flag";
 import { editorRenderingV2Enabled } from "@/lib/editor-rendering-release";
 import { apiError, HttpError } from "@/lib/http";
-import { assertProjectActionAccess } from "@/lib/project-action-entitlements";
+import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { getUsageSnapshot } from "@/lib/usage";
 
@@ -97,7 +97,7 @@ export async function POST(
       `,
       getUsageSnapshot(db, session),
     ]);
-    await assertProjectActionAccess(db, billing, session.userId, "edit");
+    assertPaidProjectActionAccess(billing, "edit");
     const generatedShort = shortRows[0] as {
       id: string;
       hookTitle: string;

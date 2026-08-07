@@ -1295,7 +1295,7 @@ describe("job API security and idempotency", () => {
   });
 
   it("returns blocked project actions without an active paid product", async () => {
-    mocks.getDb.mockReturnValue(dbWithRows([{ allowed: false }]));
+    mocks.getDb.mockReturnValue(dbWithRows());
     mocks.projectByNumber.mockResolvedValue({ id: "job-free", projectNumber: 14 });
     mocks.billing.mockResolvedValue({ activeProducts: [] });
 
@@ -1312,9 +1312,12 @@ describe("job API security and idempotency", () => {
   });
 
   it("returns enabled project actions for an active administrator-issued account", async () => {
-    mocks.getDb.mockReturnValue(dbWithRows([{ allowed: true }]));
+    mocks.getDb.mockReturnValue(dbWithRows());
     mocks.projectByNumber.mockResolvedValue({ id: "job-managed", projectNumber: 15 });
-    mocks.billing.mockResolvedValue({ activeProducts: [] });
+    mocks.billing.mockResolvedValue({
+      activeProducts: [],
+      hasManagedFeatureAccess: true,
+    });
 
     const response = await getProject(
       new Request("http://localhost/api/projects/15"),
@@ -1371,9 +1374,11 @@ describe("short ownership, expiry, and edit validation", () => {
   });
 
   it("issues a download URL for an active administrator-issued account", async () => {
-    mocks.billing.mockResolvedValue({ activeProducts: [] });
+    mocks.billing.mockResolvedValue({
+      activeProducts: [],
+      hasManagedFeatureAccess: true,
+    });
     mocks.getDb.mockReturnValue(dbWithRows(
-      [{ allowed: true }],
       [{
         outputS3Key: "outputs/managed-short.mp4",
         expiresAt: new Date(Date.now() + 60_000),
@@ -1394,9 +1399,11 @@ describe("short ownership, expiry, and edit validation", () => {
     process.env.CLOUDFRONT_DOMAIN = "cdn.example.com";
     process.env.CLOUDFRONT_KEY_PAIR_ID = "key-pair";
     process.env.CLOUDFRONT_PRIVATE_KEY_B64 = Buffer.from("private-key").toString("base64");
-    mocks.billing.mockResolvedValue({ activeProducts: [] });
+    mocks.billing.mockResolvedValue({
+      activeProducts: [],
+      hasManagedFeatureAccess: true,
+    });
     mocks.getDb.mockReturnValue(dbWithRows(
-      [{ allowed: true }],
       [{
         cleanClipS3Key: "edit-sources/managed-clean.mp4",
         expiresAt: new Date(Date.now() + 60_000),

@@ -1,4 +1,7 @@
-import type { BillingSummary } from "@/lib/contracts";
+import {
+  hasManagedFeatureAccess,
+  type FeatureEntitlementBilling,
+} from "@/lib/feature-entitlements";
 import { HttpError } from "@/lib/http";
 
 export const downloadableEbookSlugs = [
@@ -13,9 +16,9 @@ export const downloadableEbookSlugs = [
 export type DownloadableEbookSlug = typeof downloadableEbookSlugs[number];
 
 export function billingSupportsEbookDownloads(
-  billing: Pick<BillingSummary, "activeProducts">,
+  billing: FeatureEntitlementBilling,
 ) {
-  return billing.activeProducts.some((product) =>
+  return hasManagedFeatureAccess(billing) || billing.activeProducts.some((product) =>
     product.billingCycle === "yearly"
     && (
       product.planCode.startsWith("starter_")
@@ -25,7 +28,7 @@ export function billingSupportsEbookDownloads(
 }
 
 export function assertEbookDownloadAccess(
-  billing: Pick<BillingSummary, "activeProducts">,
+  billing: FeatureEntitlementBilling,
 ) {
   if (!billingSupportsEbookDownloads(billing)) {
     throw new HttpError(403, "전자책 다운로드는 활성 기간 패키지에서 이용할 수 있습니다.");

@@ -49,7 +49,7 @@ describe("popular filter entitlements", () => {
     expect(() => assertPopularFilterAccess(billing, true)).not.toThrow();
   });
 
-  it("uses the administrator toggle as the final policy for issued accounts", () => {
+  it("keeps an explicit legacy override for accounts without managed full access", () => {
     const paidBilling = { activeProducts: [{ planCode: "pro" }] };
 
     expect(billingSupportsPopularFilters(paidBilling as never, true, false)).toBe(false);
@@ -57,5 +57,15 @@ describe("popular filter entitlements", () => {
       POPULAR_FILTER_PLAN_MESSAGE,
     );
     expect(billingSupportsPopularFilters({ activeProducts: [] }, false, true)).toBe(true);
+  });
+
+  it("allows filters for an active administrator-issued account", () => {
+    const billing = {
+      activeProducts: [],
+      hasManagedFeatureAccess: true,
+    };
+
+    expect(billingSupportsPopularFilters(billing, false, false)).toBe(true);
+    expect(() => assertPopularFilterAccess(billing, false, false)).not.toThrow();
   });
 });

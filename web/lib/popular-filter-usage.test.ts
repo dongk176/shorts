@@ -84,6 +84,7 @@ describe("popular filter usage evidence", () => {
     expect(result).toMatchObject({ id: "event-direct" });
     expect(calls).toHaveLength(3);
     expect(calls[1].text).toContain("manual_service_access_until > clock_timestamp()");
+    expect(calls[1].text).not.toContain("popular_filter_enabled");
     expect(calls[2].values.slice(1, 4)).toEqual([
       "user-direct",
       null,

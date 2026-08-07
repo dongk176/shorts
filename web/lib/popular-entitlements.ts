@@ -1,21 +1,25 @@
 import type { Sql, TransactionSql } from "postgres";
-import type { BillingSummary } from "@/lib/contracts";
+import {
+  hasManagedFeatureAccess,
+  type FeatureEntitlementBilling,
+} from "@/lib/feature-entitlements";
 import { HttpError } from "@/lib/http";
 
 export const POPULAR_FILTER_PLAN_MESSAGE =
   "실시간 인기 필터는 활성 구독 또는 기간 패키지를 이용할 때 사용할 수 있습니다.";
 
 export function billingSupportsPopularFilters(
-  billing: Pick<BillingSummary, "activeProducts">,
+  billing: FeatureEntitlementBilling,
   hasDirectAccess = false,
   managedOverride: boolean | null = null,
 ) {
+  if (hasManagedFeatureAccess(billing)) return true;
   if (managedOverride !== null) return managedOverride;
   return hasDirectAccess || billing.activeProducts.length > 0;
 }
 
 export function assertPopularFilterAccess(
-  billing: Pick<BillingSummary, "activeProducts">,
+  billing: FeatureEntitlementBilling,
   hasDirectAccess = false,
   managedOverride: boolean | null = null,
 ) {
@@ -29,12 +33,15 @@ export async function managedPopularFilterOverride(
   userId: string,
 ): Promise<boolean | null> {
   const rows = await db`
-    select popular_filter_enabled
-    from shorts_mvp.managed_login_accounts
-    where app_user_id=${userId} and is_active=true
+    select true as feature_access
+    from shorts_mvp.managed_login_accounts managed
+    join shorts_mvp.app_users account on account.id=managed.app_user_id
+    where managed.app_user_id=${userId}
+      and managed.is_active=true
+      and account.manual_service_access_until>clock_timestamp()
     limit 1
   `;
-  return rows[0] ? Boolean(rows[0].popularFilterEnabled) : null;
+  return rows[0] ? true : null;
 }
 
 export async function hasDirectPopularFilterAccess(
@@ -59,7 +66,7 @@ export async function hasDirectPopularFilterAccess(
           from shorts_mvp.managed_login_accounts managed
           where managed.app_user_id=account.id
             and managed.is_active=true
-            and managed.popular_filter_enabled=true
+            and account.manual_service_access_until>clock_timestamp()
         )
       )
     limit 1

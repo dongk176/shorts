@@ -224,6 +224,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       lastPaidAt: null,
       purchasedPackageCodes: [],
       activeProducts: [],
+      hasManagedFeatureAccess: false,
       status: "none",
       planCode: "free",
       billingCycle: null,
@@ -280,6 +281,15 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       ) as default_has_stored_payer_tel,
       account.manual_service_access_until > clock_timestamp()
         as has_manual_service_access,
+      (
+        account.manual_service_access_until > clock_timestamp()
+        and exists (
+          select 1
+          from shorts_mvp.managed_login_accounts managed
+          where managed.app_user_id=account.id
+            and managed.is_active=true
+        )
+      ) as has_managed_feature_access,
       exists (
         select 1
         from shorts_mvp.usage_grants welcome_grant
@@ -345,6 +355,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       purchasedPackageCodes: Array.isArray(history?.purchasedPackageCodes)
         ? history.purchasedPackageCodes.filter(isPricingV2PackageCode) as PaidPlanCode[]
         : [],
+      hasManagedFeatureAccess: Boolean(history?.hasManagedFeatureAccess),
       cardIssuer: resolveStoredCardIssuer({
         issuer: history?.defaultIssuerName || history?.defaultIssuerCode || null,
         cardNumberMasked: history?.defaultCardNumberMasked || null,
@@ -395,6 +406,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       ? history.purchasedPackageCodes.filter(isPricingV2PackageCode) as PaidPlanCode[]
       : [],
     activeProducts,
+    hasManagedFeatureAccess: Boolean(history?.hasManagedFeatureAccess),
     status,
     planCode,
     billingCycle: row.billingCycle as BillingCycle | null,

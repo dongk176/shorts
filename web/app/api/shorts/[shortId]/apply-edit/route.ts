@@ -33,7 +33,7 @@ import {
   ONBOARDING_WELCOME_PRODUCT_CODE,
   onboardingWelcomeRerenderAllowed,
 } from "@/lib/onboarding-welcome";
-import { assertProjectActionAccess } from "@/lib/project-action-entitlements";
+import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 
 const hexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
@@ -167,7 +167,7 @@ async function applyEditorDocument({
     );
   }
   const billing = await getBillingSummary(db, session.userId);
-  await assertProjectActionAccess(db, billing, session.userId, "edit");
+  assertPaidProjectActionAccess(billing, "edit");
   const existingRows = await db`
     select s.id,s.job_id,s.mvp_session_id,s.status,s.render_version,
       s.duration_seconds,s.template_id,s.custom_template_id,s.template_snapshot,
@@ -497,7 +497,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
     const billing = await getBillingSummary(db, session.userId);
-    await assertProjectActionAccess(db, billing, session.userId, "edit");
+    assertPaidProjectActionAccess(billing, "edit");
     const existingRows = await db`
       select s.id,s.status,s.render_version,s.duration_seconds,
           s.template_id,s.custom_template_id,

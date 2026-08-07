@@ -1,4 +1,8 @@
-import type { BillingSummary, PlanCode } from "@/lib/contracts";
+import type { PlanCode } from "@/lib/contracts";
+import {
+  hasManagedFeatureAccess,
+  type FeatureEntitlementBilling,
+} from "@/lib/feature-entitlements";
 import { HttpError } from "@/lib/http";
 import { paidPlanCodes } from "@/lib/contracts";
 
@@ -11,15 +15,15 @@ export function planSupportsCustomTemplates(
 }
 
 export function billingSupportsCustomTemplates(
-  billing: Pick<BillingSummary, "activeProducts">,
+  billing: FeatureEntitlementBilling,
 ) {
-  return billing.activeProducts.some((product) =>
+  return hasManagedFeatureAccess(billing) || billing.activeProducts.some((product) =>
     planSupportsCustomTemplates(product.planCode)
   );
 }
 
 export function assertCustomTemplateAccess(
-  billing: Pick<BillingSummary, "activeProducts">,
+  billing: FeatureEntitlementBilling,
 ) {
   if (!billingSupportsCustomTemplates(billing)) {
     throw new HttpError(402, CUSTOM_TEMPLATE_PLAN_MESSAGE);

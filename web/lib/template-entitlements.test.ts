@@ -36,4 +36,14 @@ describe("custom-template plan entitlements", () => {
       }],
     })).toBe(true);
   });
+
+  it("allows custom templates for an active administrator-issued account", () => {
+    const billing = {
+      activeProducts: [],
+      hasManagedFeatureAccess: true,
+    };
+
+    expect(billingSupportsCustomTemplates(billing)).toBe(true);
+    expect(() => assertCustomTemplateAccess(billing)).not.toThrow();
+  });
 });
