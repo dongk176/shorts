@@ -848,7 +848,12 @@ class WorkerRepository:
                   subtitle_segments::text, comment_overlays::text, template_id,
                   coalesce(template_snapshot::text,''), video_aspect_ratio,
                   title_font_scale::text, title_text_styles::text,
-                  title_text_styles_initialized::text))
+                  title_text_styles_initialized::text,
+                  case when subtitle_template_id is null then null else concat_ws(
+                    '~caption~',subtitle_template_id,
+                    coalesce(subtitle_template_snapshot::text,''),
+                    coalesce(caption_render_spec::text,'')
+                  ) end))
                 where id=%s and rendered_config_hash is null
                 """,
                 (short_id,),
@@ -881,6 +886,7 @@ class WorkerRepository:
         timeline_subtitles: list[dict[str, Any]] | None,
         retention_days: int,
         shard_index: int,
+        caption_render_spec: dict[str, Any] | None = None,
     ) -> bool:
         with self.connect() as connection, connection.transaction():
             locked_job = connection.execute(
@@ -910,6 +916,8 @@ class WorkerRepository:
                   selection_provider, selection_model, selection_length_adjustment,
                   selection_repositioned, hook_title, highlight_reason,
                   channel_display_name,
+                  subtitle_template_id, subtitle_template_snapshot,
+                  caption_render_spec,
                   subtitle_segments, subtitles_enabled, comment_overlays,
                   template_id, custom_template_id, template_snapshot, video_aspect_ratio,
                   clean_clip_s3_key, edit_timeline_s3_key,
@@ -920,7 +928,7 @@ class WorkerRepository:
                   expires_at, status, render_shard_index, render_progress
                 ) values (
                   %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,null,null,null,
+                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,null,null,null,
                   now(),
                   now() + make_interval(days => least(greatest(%s::integer, 1), 30)),
                   'rendering',%s,0
@@ -935,6 +943,8 @@ class WorkerRepository:
                   initial_start_seconds=excluded.initial_start_seconds,
                   initial_end_seconds=excluded.initial_end_seconds,
                   subtitle_segments=excluded.subtitle_segments,
+                  subtitles_enabled=excluded.subtitles_enabled,
+                  caption_render_spec=excluded.caption_render_spec,
                   comment_overlays=case
                     when generated_shorts.comment_overlays='[]'::jsonb
                       then excluded.comment_overlays
@@ -977,8 +987,15 @@ class WorkerRepository:
                     hook_title,
                     highlight_reason,
                     (" ".join(str(job["channel_name"]).split())[:50] or "YouTube 채널"),
+                    job.get("subtitle_template_id"),
+                    (
+                        Jsonb(job["subtitle_template_snapshot"])
+                        if job.get("subtitle_template_snapshot")
+                        else None
+                    ),
+                    Jsonb(caption_render_spec) if caption_render_spec else None,
                     Jsonb(subtitles),
-                    False,
+                    bool(caption_render_spec),
                     Jsonb(comment_overlays),
                     job["template_id"],
                     job.get("custom_template_id"),
@@ -1083,7 +1100,12 @@ class WorkerRepository:
                       subtitle_segments::text, comment_overlays::text,
                       template_id, coalesce(template_snapshot::text,''), video_aspect_ratio,
                       title_font_scale::text, title_text_styles::text,
-                      title_text_styles_initialized::text)),
+                      title_text_styles_initialized::text,
+                      case when subtitle_template_id is null then null else concat_ws(
+                        '~caption~',subtitle_template_id,
+                        coalesce(subtitle_template_snapshot::text,''),
+                        coalesce(caption_render_spec::text,'')
+                      ) end)),
                     render_error_code=null, render_error_message=null
                 where s.id=%s and s.status='rendering'
                   and exists (
@@ -1406,7 +1428,12 @@ class WorkerRepository:
                   subtitle_segments::text, comment_overlays::text, template_id,
                   coalesce(template_snapshot::text,''), video_aspect_ratio,
                   title_font_scale::text, title_text_styles::text,
-                  title_text_styles_initialized::text))
+                  title_text_styles_initialized::text,
+                  case when subtitle_template_id is null then null else concat_ws(
+                    '~caption~',subtitle_template_id,
+                    coalesce(subtitle_template_snapshot::text,''),
+                    coalesce(caption_render_spec::text,'')
+                  ) end))
                 where id=%s
                 """,
                 (short_id,),

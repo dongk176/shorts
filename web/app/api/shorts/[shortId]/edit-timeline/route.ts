@@ -25,7 +25,7 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
         s.edit_timeline_end_seconds, s.edit_timeline_subtitle_segments,
         s.edit_timeline_version, s.start_seconds, s.end_seconds,
         s.initial_start_seconds, s.initial_end_seconds, s.subtitle_segments,
-        s.expires_at
+        s.expires_at, s.subtitle_template_id
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and not j.is_example and (
@@ -33,9 +33,17 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
         or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
       ) and s.status='ready' and s.deleted_at is null and s.expires_at > now()
         and s.output_s3_key is not null
+        and s.subtitle_template_id is null
         and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null
     `;
     if (!rows[0]) throw new HttpError(404, "이 쇼츠에는 편집 가능한 영상이 없습니다.");
+    if (rows[0].subtitleTemplateId) {
+      throw new HttpError(
+        409,
+        "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
+        "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+      );
+    }
 
     const row = rows[0];
     const hasCapturedTimeline = Boolean(row.editTimelineS3Key);

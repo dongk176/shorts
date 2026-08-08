@@ -18,11 +18,24 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default async function EditShortPage({ params }: { params: Promise<{ projectNumber: string; shortId: string }> }) {
   const { projectNumber: rawProjectNumber, shortId } = await params;
-  if (!/^[1-9]\d*$/.test(rawProjectNumber) || !shortId) notFound();
+  if (!/^[1-9]\d*$/.test(rawProjectNumber) || !uuidPattern.test(shortId)) notFound();
   const projectNumber = Number(rawProjectNumber);
   if (!Number.isSafeInteger(projectNumber)) notFound();
+  const db = getDb();
+  const subtitleTemplateShortRows = await db`
+    select s.id
+    from shorts_mvp.generated_shorts s
+    join shorts_mvp.video_jobs j on j.id=s.job_id
+    where s.id=${shortId}
+      and j.project_number=${projectNumber}
+      and s.subtitle_template_id is not null
+    limit 1
+  `;
+  if (subtitleTemplateShortRows[0]) notFound();
   const localOverlayPreviewEnabled = editorOverlayPreviewEnabled();
   let editorRelease: EditorReleaseAssignment = {
     channel: "legacy",
@@ -33,7 +46,7 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
   if (editorRenderingV2MasterEnabled()) {
     const session = await requireMvpSession();
     editorRelease = await resolveEditorRelease(
-      getDb(),
+      db,
       session.userId,
     );
   }

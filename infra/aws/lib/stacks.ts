@@ -1240,6 +1240,28 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         "ElevenLabs transcription Job Definition and queue ARNs must be configured together",
       );
     }
+    const subtitleTemplatesJobDefinitionArn = String(
+      this.node.tryGetContext("subtitleTemplatesJobDefinitionArn") || "",
+    ).trim();
+    const subtitleTemplatesBatchQueueArn = String(
+      this.node.tryGetContext("subtitleTemplatesBatchQueueArn") || "",
+    ).trim();
+    if (
+      Boolean(subtitleTemplatesJobDefinitionArn)
+      !== Boolean(subtitleTemplatesBatchQueueArn)
+    ) {
+      throw new Error(
+        "Subtitle template Job Definition and queue ARNs must be configured together",
+      );
+    }
+    if (
+      subtitleTemplatesJobDefinitionArn
+      && subtitleTemplatesJobDefinitionArn === elevenLabsJobDefinitionArn
+    ) {
+      throw new Error(
+        "Subtitle template target must use a new immutable Job Definition",
+      );
+    }
     const batchSubmitter = new lambda.Function(this, "BatchSubmitterFunction", {
       functionName: batchSubmitterFunctionName,
       runtime: lambda.Runtime.PYTHON_3_12,
@@ -1274,6 +1296,12 @@ export class ShortsMvpComputeStack extends cdk.Stack {
             elevenLabsJobDefinitionArn,
           ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN:
             elevenLabsBatchQueueArn,
+        } : {}),
+        ...(subtitleTemplatesJobDefinitionArn ? {
+          SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN:
+            subtitleTemplatesJobDefinitionArn,
+          SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN:
+            subtitleTemplatesBatchQueueArn,
         } : {}),
       },
     });

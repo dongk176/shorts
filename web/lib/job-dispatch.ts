@@ -33,3 +33,16 @@ export function elevenLabsTranscriptionDispatchTarget(): ProjectDispatchTarget {
     ),
   };
 }
+
+export function subtitleTemplatesDispatchTarget(): ProjectDispatchTarget {
+  return {
+    jobDefinitionArn: requiredArn(
+      "SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN",
+      JOB_DEFINITION_ARN,
+    ),
+    jobQueueArn: requiredArn(
+      "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN",
+      JOB_QUEUE_ARN,
+    ),
+  };
+}

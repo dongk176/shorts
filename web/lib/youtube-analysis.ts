@@ -2,6 +2,7 @@ import { expectedShortCount, type YoutubeAnalysis } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import type { MvpSession } from "@/lib/session";
 import { getSourceRangeReleaseAccess } from "@/lib/source-range-release";
+import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
 import {
   assertSupportedSourceVideoDuration,
   sourceRangeSelectionForDuration,
@@ -9,7 +10,7 @@ import {
 
 export type YoutubeAnalysisMetadata = Omit<
   YoutubeAnalysis,
-  "analysisId" | "expectedShortCount" | "sourceRangeSelectionEnabled"
+  "analysisId" | "expectedShortCount" | "sourceRangeSelectionEnabled" | "subtitleTemplateSelectionEnabled"
 >;
 
 export async function createYoutubeAnalysis(
@@ -22,7 +23,10 @@ export async function createYoutubeAnalysis(
     sourceRangeSelectionEnabled: true,
   });
   const db = getDb();
-  const releaseAccess = await getSourceRangeReleaseAccess(db, session.userId);
+  const [releaseAccess, subtitleTemplateAccess] = await Promise.all([
+    getSourceRangeReleaseAccess(db, session.userId),
+    getSubtitleTemplateAccess(db, session.userId),
+  ]);
   const sourceRangeSelectionEnabled = sourceRangeSelectionForDuration(
     metadata.durationSeconds,
     releaseAccess.enabled,
@@ -43,12 +47,14 @@ export async function createYoutubeAnalysis(
     ...metadata,
     analysisId: String(rows[0].id),
     sourceRangeSelectionEnabled,
+    subtitleTemplateSelectionEnabled: subtitleTemplateAccess.enabled,
     expectedShortCount: expectedShortCount(metadata.durationSeconds),
   };
 }
 
 export async function getYoutubeAnalysis(session: MvpSession, analysisId: string): Promise<YoutubeAnalysis> {
-  const rows = await getDb()`
+  const db = getDb();
+  const rows = await db`
     select id, youtube_url, youtube_video_id, video_title, channel_name,
       channel_thumbnail_url, thumbnail_url, duration_seconds, creation_allowed, creation_block_code,
       creation_block_reason, source_range_selection_enabled
@@ -61,9 +67,11 @@ export async function getYoutubeAnalysis(session: MvpSession, analysisId: string
   `;
   if (!rows[0]) throw new Error("영상 분석 정보를 찾을 수 없거나 만료되었습니다.");
   const durationSeconds = Number(rows[0].durationSeconds);
+  const subtitleTemplateAccess = await getSubtitleTemplateAccess(db, session.userId);
   return {
     analysisId: String(rows[0].id),
     sourceRangeSelectionEnabled: rows[0].sourceRangeSelectionEnabled === true,
+    subtitleTemplateSelectionEnabled: subtitleTemplateAccess.enabled,
     videoId: String(rows[0].youtubeVideoId),
     normalizedUrl: String(rows[0].youtubeUrl),
     title: String(rows[0].videoTitle),

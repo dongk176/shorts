@@ -39,6 +39,7 @@ describe("generated short details", () => {
         subtitleSegments: [],
         subtitlesEnabled: false,
         templateId: "dark-red",
+        subtitleTemplateId: "highlight",
         videoAspectRatio: "9:16",
         titleFontScale: "1",
         titleTextStyles: [{ start: 0, end: 2, color: "#00FF00" }],
@@ -63,6 +64,7 @@ describe("generated short details", () => {
       selectionCandidateIndex: 2,
       selectionLengthAdjustment: "none",
       selectionRepositioned: true,
+      subtitleTemplateId: "highlight",
     });
   });
 

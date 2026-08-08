@@ -289,8 +289,70 @@ def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> 
     assert "edit_timeline_s3_key" in insert_call.args[0]
     assert "selection_length_adjustment=excluded.selection_length_adjustment" in insert_call.args[0]
     assert insert_call.args[0].count("%s") == len(insert_call.args[1])
-    assert insert_call.args[1][20] is False
+    # Caption identity is inserted before the optional render spec. Legacy
+    # rows keep all caption fields empty and subtitles disabled.
+    assert insert_call.args[1][19:22] == (None, None, None)
+    assert insert_call.args[1][23] is False
     assert insert_call.args[1][-2] == 30
+
+
+def test_pending_caption_short_inserts_immutable_identity_and_render_spec() -> None:
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+    connection.execute.return_value.fetchone.return_value = {"id": "job-caption"}
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+    snapshot = {"templateId": "highlight", "titleAccentColor": "#FF715E"}
+    render_spec = {"schemaVersion": 1, "templateId": "highlight", "fps": 30}
+
+    assert repository.add_pending_short(
+        short_id="short-caption",
+        job={
+            "id": "job-caption",
+            "mvp_session_id": "session-caption",
+            "channel_name": "channel-caption",
+            "template_id": "dark-minimal",
+            "subtitle_template_id": "highlight",
+            "subtitle_template_snapshot": snapshot,
+        },
+        clip_index=1,
+        start_seconds=10,
+        end_seconds=20,
+        hook_title="hook",
+        highlight_reason="reason",
+        selection_raw_start_seconds=10,
+        selection_raw_end_seconds=20,
+        selection_raw_duration_seconds=10,
+        selection_candidate_index=1,
+        selection_provider="gemini",
+        selection_model="gemini-2.5-flash-lite",
+        selection_length_adjustment=None,
+        selection_repositioned=False,
+        subtitles=[],
+        comment_overlays=[],
+        clean_key="edit-sources/short-caption.mp4",
+        timeline_key=None,
+        timeline_start_seconds=None,
+        timeline_end_seconds=None,
+        timeline_subtitles=None,
+        retention_days=30,
+        shard_index=0,
+        caption_render_spec=render_spec,
+    )
+
+    query, parameters = connection.execute.call_args_list[2].args
+    assert query.count("%s") == len(parameters)
+    assert parameters[19] == "highlight"
+    assert parameters[20].obj == snapshot
+    assert parameters[21].obj == render_spec
+    assert parameters[23] is True
+    assert "subtitle_template_id=excluded.subtitle_template_id" not in query
+    assert "subtitle_template_snapshot=excluded.subtitle_template_snapshot" not in query
+    assert "caption_render_spec=excluded.caption_render_spec" in query
 
 
 def test_deferred_timeline_commit_only_updates_live_completed_project_output() -> None:

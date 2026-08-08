@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 const mocks = vi.hoisted(() => ({
   session: vi.fn(),
@@ -19,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   billing: vi.fn(),
   signedUrl: vi.fn(),
   shortDownloadUrl: vi.fn(),
+  generateComments: vi.fn(),
+  paidCommentGenerationEnabled: vi.fn(),
 }));
 
 vi.mock("@aws-sdk/cloudfront-signer", () => ({
@@ -57,6 +60,10 @@ vi.mock("@/lib/aws", () => ({
   deleteShortObjects: mocks.deleteObjects,
   getShortDownloadUrl: mocks.shortDownloadUrl,
 }));
+vi.mock("@/lib/comment-regeneration-server", () => ({
+  generateCommentsWithGemini: mocks.generateComments,
+  paidGeminiCommentGenerationEnabled: mocks.paidCommentGenerationEnabled,
+}));
 
 import { GET as getJob } from "./jobs/[jobId]/route";
 import { GET as getProject } from "./projects/[projectNumber]/route";
@@ -68,6 +75,8 @@ import { GET as accessShort } from "./shorts/[shortId]/access/route";
 import { GET as accessEditSource } from "./shorts/[shortId]/edit-source/route";
 import { POST as applyRangeEdit } from "./shorts/[shortId]/apply-edit/route";
 import { GET as accessEditTimeline } from "./shorts/[shortId]/edit-timeline/route";
+import { GET as accessEditorChannelAsset } from "./shorts/[shortId]/editor-channel-asset/route";
+import { POST as regenerateComments } from "./shorts/[shortId]/regenerate-comments/route";
 import { GET as downloadShort } from "./shorts/[shortId]/download/route";
 import { POST as rerenderShort } from "./shorts/[shortId]/rerender/route";
 import { PATCH as patchShort } from "./shorts/[shortId]/route";
@@ -181,7 +190,21 @@ beforeEach(() => {
     "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
     + "shorts-mvp-elevenlabs-transcription-canary-production"
   );
+  process.env.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN = (
+    "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+    + "shorts-mvp-subtitle-templates-canary-production:1"
+  );
+  process.env.SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN = (
+    "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+    + "shorts-mvp-subtitle-templates-canary-production"
+  );
   delete process.env.ELEVENLABS_TRANSCRIPTION_ENABLED;
+  delete process.env.SUBTITLE_TEMPLATES_ENABLED;
+  delete process.env.EDITOR_RENDERING_V2_ENABLED;
+  delete process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED;
+  delete process.env.EDITOR_RENDERING_V2_TEST_USER_IDS;
+  delete process.env.EDITOR_OVERLAY_PREVIEW_ENABLED;
+  delete process.env.VIDEO_JOB_BACKEND;
   process.env.SOURCE_RANGE_SELECTION_ENABLED = "true";
   delete process.env.RANGE_EDITING_ENABLED;
   delete process.env.CLOUDFRONT_DOMAIN;
@@ -202,6 +225,8 @@ beforeEach(() => {
   mocks.wakeDispatcher.mockResolvedValue(undefined);
   mocks.signedUrl.mockReturnValue("https://cdn.example.com/signed-edit-source.mp4");
   mocks.shortDownloadUrl.mockResolvedValue("https://cdn.example.com/signed-download.mp4");
+  mocks.paidCommentGenerationEnabled.mockReturnValue(true);
+  mocks.generateComments.mockResolvedValue(["생성된 댓글"]);
   mocks.billing.mockResolvedValue({
     activeProducts: [{
       planCode: "plus",
@@ -696,6 +721,234 @@ describe("range editing feature gate and snapshot", () => {
   });
 });
 
+describe("subtitle template edit isolation", () => {
+  const shortId = "d164fb8d-d6e1-4232-8463-9115cdf7e561";
+
+  it("rejects a legacy apply-edit before queuing a subtitle-template output", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    const db = dbWithRows([{
+      id: shortId,
+      status: "ready",
+      subtitleTemplateId: "highlight",
+    }]);
+    const begin = vi.fn();
+    Object.assign(db, { begin });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        startSeconds: 0,
+        endSeconds: 10,
+        hookTitle: "기존 편집 요청",
+        channelDisplayName: "채널",
+        subtitlesEnabled: true,
+        subtitleSegments: [],
+        commentOverlays: [],
+        templateId: "dark-minimal",
+        titleFontScale: 1,
+        titleTextStyles: [],
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      detail: "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
+      code: "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+    });
+    expect(begin).not.toHaveBeenCalled();
+  });
+
+  it("rejects a document apply-edit before recording a subtitle-template render request", async () => {
+    process.env.EDITOR_RENDERING_V2_ENABLED = "true";
+    const releaseId = "5a5f9f4d-f59d-4ba3-a28a-9396ac8284a7";
+    const document = JSON.parse(readFileSync(
+      new URL("../../../test-fixtures/editor-document-v2.json", import.meta.url),
+      "utf8",
+    ));
+    const db = dbWithRows(
+      [{
+        publicEnabled: false,
+        canaryEnabled: true,
+        runtimeEnabled: false,
+        testerEnabled: true,
+        userIsAdmin: true,
+        stableReleaseId: null,
+        stableUiVersion: null,
+        stableDocumentVersion: null,
+        stableStatus: null,
+        candidateReleaseId: releaseId,
+        candidateUiVersion: 2,
+        candidateDocumentVersion: 2,
+        candidateStatus: "canary_active",
+      }],
+      [{
+        id: shortId,
+        subtitleTemplateId: "pop",
+      }],
+    );
+    const begin = vi.fn();
+    Object.assign(db, { begin });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        requestId: "5253b207-cd49-45bc-8d83-69c2b781e21f",
+        release: {
+          releaseId,
+          channel: "canary",
+          uiVersion: 2,
+          documentVersion: 2,
+        },
+        document,
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      detail: "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
+      code: "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+    });
+    expect(db).toHaveBeenCalledTimes(2);
+    expect(begin).not.toHaveBeenCalled();
+  });
+
+  it("rejects edit-source and edit-timeline access for subtitle-template outputs", async () => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    const sourceDb = dbWithRows([{
+      cleanClipS3Key: "clean/source.mp4",
+      expiresAt: new Date(Date.now() + 60_000),
+      subtitleTemplateId: "basic",
+    }]);
+    mocks.getDb.mockReturnValue(sourceDb);
+
+    const sourceResponse = await accessEditSource(
+      new Request(`http://localhost/api/shorts/${shortId}/edit-source`),
+      { params: Promise.resolve({ shortId }) },
+    );
+    expect(sourceResponse.status).toBe(409);
+    await expect(sourceResponse.json()).resolves.toMatchObject({
+      code: "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+    });
+    expect(Array.from(
+      sourceDb.mock.calls[0][0] as TemplateStringsArray,
+    ).join("")).toContain("s.subtitle_template_id is null");
+    expect(mocks.signedUrl).not.toHaveBeenCalled();
+
+    const timelineDb = dbWithRows([{
+      editTimelineS3Key: "edit-sources/timeline.mp4",
+      cleanClipS3Key: "clean/source.mp4",
+      expiresAt: new Date(Date.now() + 60_000),
+      subtitleTemplateId: "highlight",
+    }]);
+    mocks.getDb.mockReturnValue(timelineDb);
+    const timelineResponse = await accessEditTimeline(
+      new Request(`http://localhost/api/shorts/${shortId}/edit-timeline`),
+      { params: Promise.resolve({ shortId }) },
+    );
+    expect(timelineResponse.status).toBe(409);
+    await expect(timelineResponse.json()).resolves.toMatchObject({
+      code: "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+    });
+    expect(Array.from(
+      timelineDb.mock.calls[0][0] as TemplateStringsArray,
+    ).join("")).toContain("s.subtitle_template_id is null");
+    expect(mocks.signedUrl).not.toHaveBeenCalled();
+
+    const channelAssetDb = dbWithRows([{
+      assetKey: "edit-sources/a/editor-assets/channel.png",
+      expiresAt: new Date(Date.now() + 60_000),
+      subtitleTemplateId: "pop",
+    }]);
+    mocks.getDb.mockReturnValue(channelAssetDb);
+    const channelAssetResponse = await accessEditorChannelAsset(
+      new Request(`http://localhost/api/shorts/${shortId}/editor-channel-asset`),
+      { params: Promise.resolve({ shortId }) },
+    );
+    expect(channelAssetResponse.status).toBe(409);
+    await expect(channelAssetResponse.json()).resolves.toMatchObject({
+      code: "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+    });
+    expect(Array.from(
+      channelAssetDb.mock.calls[0][0] as TemplateStringsArray,
+    ).join("")).toContain("s.subtitle_template_id is null");
+    expect(mocks.signedUrl).not.toHaveBeenCalled();
+  });
+
+  it("blocks caption comment regeneration before reservation or Gemini usage", async () => {
+    process.env.EDITOR_OVERLAY_PREVIEW_ENABLED = "true";
+    const db = dbWithRows(
+      [],
+      [{
+        id: shortId,
+        hookTitle: "자막 영상",
+        highlightReason: "테스트",
+        subtitleSegments: [],
+        status: "ready",
+        subtitleTemplateId: "pop",
+      }],
+    );
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await regenerateComments(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/regenerate-comments`, {
+        requestId: "8ef92390-124f-49e0-803b-f8987a7a3118",
+        commentCount: 1,
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+    });
+    const queriedSql = db.mock.calls.map(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join(""),
+    ).join("\n");
+    expect(queriedSql).toContain("generated_short.subtitle_template_id is null");
+    expect(queriedSql).not.toContain("reserve_ai_comment_regeneration_usage");
+    expect(mocks.generateComments).not.toHaveBeenCalled();
+  });
+
+  it("keeps ordinary comment regeneration unchanged", async () => {
+    process.env.EDITOR_OVERLAY_PREVIEW_ENABLED = "true";
+    const db = dbWithRows(
+      [],
+      [{
+        id: shortId,
+        hookTitle: "일반 영상",
+        highlightReason: "테스트",
+        subtitleSegments: [],
+        status: "ready",
+        subtitleTemplateId: null,
+      }],
+      [{ reservationId: "reservation-comment" }],
+      [],
+      [{ id: "reservation-comment" }],
+    );
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await regenerateComments(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/regenerate-comments`, {
+        requestId: "bda42bad-ae7c-43bb-960f-2c5984285404",
+        commentCount: 1,
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      comments: ["생성된 댓글"],
+    });
+    expect(mocks.generateComments).toHaveBeenCalledOnce();
+    const queriedSql = db.mock.calls.map(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join(""),
+    ).join("\n");
+    expect(queriedSql).toContain("reserve_ai_comment_regeneration_usage");
+  });
+});
+
 describe("MVP state visibility", () => {
   it("hides all projects until the visitor signs in", async () => {
     mocks.authenticatedUser.mockResolvedValue(null);
@@ -813,6 +1066,152 @@ describe("job API security and idempotency", () => {
       process.env.ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN,
       process.env.ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN,
     ]));
+  });
+
+  it("pins an authorized subtitle template job to its isolated candidate", async () => {
+    process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows(
+      [],
+      [
+        { flagKey: "subtitle_templates", enabled: true },
+        { flagKey: "subtitle_templates_public", enabled: false },
+      ],
+      [{ isAdmin: true }],
+      [],
+      [{ active: 0 }],
+      [{ projectNumber: 12 }],
+      [{ id: "reservation-subtitle" }],
+      [],
+      [],
+    );
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-minimal",
+      subtitleTemplateId: "highlight",
+      videoAspectRatio: "9:16",
+      rightsConfirmed: true,
+      requestId: "29199bd8-8097-49df-aa79-fd531436c4fa",
+    }));
+
+    expect(response.status).toBe(202);
+    const insertCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes(
+        "insert into shorts_mvp.video_jobs",
+      ));
+    expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
+      "highlight",
+      expect.objectContaining({
+        subtitleTemplateId: "highlight",
+        baseTemplateId: "dark-minimal",
+        videoAspectRatio: "9:16",
+        color: expect.objectContaining({ active: "#FF715E" }),
+      }),
+      "elevenlabs_primary_openai_fallback",
+      process.env.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN,
+      process.env.SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN,
+    ]));
+  });
+
+  it("rejects a forged subtitle template field from a non-admin", async () => {
+    process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows(
+      [],
+      [
+        { flagKey: "subtitle_templates", enabled: true },
+        { flagKey: "subtitle_templates_public", enabled: false },
+      ],
+      [{ isAdmin: false }],
+    );
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-minimal",
+      subtitleTemplateId: "basic",
+      rightsConfirmed: true,
+      requestId: "963e8dab-8244-463d-98ac-f7ab569dd227",
+    }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      detail: "현재 계정에서는 자막 템플릿 테스트를 사용할 수 없습니다.",
+    });
+    expect(tx.mock.calls.some(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes(
+        "insert into shorts_mvp.video_jobs",
+      ))).toBe(false);
+  });
+
+  it("fails closed when a subtitle job cannot use the isolated AWS Batch target", async () => {
+    process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    process.env.VIDEO_JOB_BACKEND = "mac_pull";
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows(
+      [],
+      [
+        { flagKey: "subtitle_templates", enabled: true },
+        { flagKey: "subtitle_templates_public", enabled: false },
+      ],
+      [{ isAdmin: true }],
+    );
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-minimal",
+      subtitleTemplateId: "pop",
+      rightsConfirmed: true,
+      requestId: "35a05777-8aad-457a-8745-271d5e1319b6",
+    }));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      detail: "자막 템플릿 테스트 작업을 안전한 전용 워커에 연결하지 못했습니다.",
+    });
+  });
+
+  it("does not consult subtitle release state for a regular job request", async () => {
+    process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows(
+      [],
+      [],
+      [{ active: 0 }],
+      [{ projectNumber: 13 }],
+      [{ id: "reservation-regular" }],
+      [],
+      [],
+    );
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rightsConfirmed: true,
+      requestId: "1b94a244-7684-4e0f-b2cf-50be83217de2",
+    }));
+
+    expect(response.status).toBe(202);
+    const queriedSql = tx.mock.calls.map(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join(""),
+    ).join("\n");
+    expect(queriedSql).not.toContain("subtitle_templates");
   });
 
   it("blocks a snapshotted source-range analysis whenever the master switch is off", async () => {
@@ -1498,6 +1897,32 @@ describe("short ownership, expiry, and edit validation", () => {
     expect(response.status).toBe(404);
   });
 
+  it("rejects patching a subtitle-template output before changing its metadata", async () => {
+    const db = dbWithRows([{
+      id: "short-caption",
+      subtitleTemplateId: "basic",
+    }]);
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await patchShort(jsonRequest(
+      "http://localhost/api/shorts/short-caption",
+      {
+        hookTitle: "변경 시도",
+        channelDisplayName: "채널",
+        subtitlesEnabled: true,
+        subtitleSegments: [],
+        commentOverlays: [],
+        templateId: "dark-minimal",
+      },
+    ), { params: Promise.resolve({ shortId: "short-caption" }) });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+    });
+    expect(db).toHaveBeenCalledOnce();
+  });
+
   it("persists a valid timed comment overlay for the comment template", async () => {
     const db = dbWithRows(
       [{ id: "short-a", subtitleSegments: [], durationSeconds: "30" }],
@@ -1627,6 +2052,28 @@ describe("short ownership, expiry, and edit validation", () => {
     );
     expect(response.status).toBe(404);
     expect(mocks.submitRerender).not.toHaveBeenCalled();
+  });
+
+  it("rejects legacy rerendering for a subtitle-template output", async () => {
+    const db = dbWithRows([{
+      id: "short-caption",
+      status: "ready",
+      subtitleTemplateId: "pop",
+    }]);
+    const begin = vi.fn();
+    Object.assign(db, { begin });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await rerenderShort(
+      new Request("http://localhost/api/shorts/short-caption/rerender", { method: "POST" }),
+      { params: Promise.resolve({ shortId: "short-caption" }) },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+    });
+    expect(begin).not.toHaveBeenCalled();
   });
 
   it("queues rerendering in the database without calling Batch from Vercel", async () => {

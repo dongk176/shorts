@@ -73,7 +73,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
     assertPaidProjectActionAccess(billing, "edit");
     const existing = await db`
       select s.id, s.subtitle_segments, s.duration_seconds, s.template_id,
-        s.custom_template_id, s.template_snapshot
+        s.custom_template_id, s.template_snapshot, s.subtitle_template_id
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and not j.is_example and (
@@ -84,6 +84,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
         and s.status='ready' and s.output_s3_key is not null
     `;
     if (!existing[0]) throw new Error("편집할 쇼츠를 찾을 수 없습니다.");
+    if (existing[0].subtitleTemplateId) {
+      throw new HttpError(
+        409,
+        "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
+        "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+      );
+    }
     const titleLength = Array.from(input.hookTitle).length;
     const orderedTitleStyles = [...input.titleTextStyles].sort((left, right) => left.start - right.start);
     if (orderedTitleStyles.some((style) => style.end > titleLength)) {
@@ -137,6 +144,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
         or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
       ) and s.deleted_at is null and s.expires_at > now()
         and s.status='ready' and s.output_s3_key is not null
+        and s.subtitle_template_id is null
       returning s.id, s.render_version
     `;
     if (!rows[0]) throw new Error("편집할 쇼츠를 찾을 수 없습니다.");

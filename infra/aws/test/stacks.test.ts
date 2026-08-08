@@ -17,6 +17,14 @@ function stacks(environment = "test") {
     vercelProjectName: "shorts",
     workerImageTag: "test-worker-image",
     legacyRerenderImageTag: "legacy-worker-image",
+    elevenLabsTranscriptionJobDefinitionArn:
+      "arn:aws:batch:ap-northeast-2:123456789012:job-definition/elevenlabs-canary:1",
+    elevenLabsTranscriptionBatchQueueArn:
+      "arn:aws:batch:ap-northeast-2:123456789012:job-queue/elevenlabs-canary",
+    subtitleTemplatesJobDefinitionArn:
+      "arn:aws:batch:ap-northeast-2:123456789012:job-definition/subtitle-canary:2",
+    subtitleTemplatesBatchQueueArn:
+      "arn:aws:batch:ap-northeast-2:123456789012:job-queue/elevenlabs-canary",
   } });
   const env = { account: "123456789012", region: "ap-northeast-2" };
   const editorRepositoryStack = new ShortsMvpEditorReleaseRepositoryStack(
@@ -546,6 +554,14 @@ describe("shorts MVP infrastructure", () => {
           PROJECT_JOB_DEFINITION: "shorts-mvp-project-fargate-test",
           PROJECT_HEAVY_JOB_DEFINITION: "shorts-mvp-project-heavy-fargate-test",
           RERENDER_JOB_DEFINITION: "shorts-mvp-rerender-fargate-test",
+          ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN:
+            "arn:aws:batch:ap-northeast-2:123456789012:job-definition/elevenlabs-canary:1",
+          ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN:
+            "arn:aws:batch:ap-northeast-2:123456789012:job-queue/elevenlabs-canary",
+          SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN:
+            "arn:aws:batch:ap-northeast-2:123456789012:job-definition/subtitle-canary:2",
+          SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN:
+            "arn:aws:batch:ap-northeast-2:123456789012:job-queue/elevenlabs-canary",
         }),
       },
     });
@@ -573,5 +589,16 @@ describe("shorts MVP infrastructure", () => {
     for (const policy of Object.values(policies) as Array<Record<string, unknown>>) {
       expect(JSON.stringify(policy)).not.toContain('"Action":"*"');
     }
+    compute.hasResourceProperties("AWS::IAM::Policy", {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: Match.arrayWith(["batch:SubmitJob"]),
+            Effect: "Allow",
+            Resource: "*",
+          }),
+        ]),
+      },
+    });
   });
 });

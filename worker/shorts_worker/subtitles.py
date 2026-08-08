@@ -41,6 +41,7 @@ class TranscriptWord:
     end: float
     provider: str
     speaker_id: str | None = None
+    space_before: bool = False
 
     def as_dict(self) -> dict[str, object]:
         result: dict[str, object] = {
@@ -51,6 +52,8 @@ class TranscriptWord:
         }
         if self.speaker_id:
             result["speakerId"] = self.speaker_id
+        if self.space_before:
+            result["spaceBefore"] = True
         return result
 
 
@@ -132,7 +135,7 @@ def _safe_float(value: Any) -> float | None:
     return parsed if parsed >= 0 else None
 
 
-def _join_word_text(current: str, token: str) -> str:
+def _join_word_text(current: str, token: str, *, space_before: bool = False) -> str:
     token = token.strip()
     if not token:
         return current
@@ -142,6 +145,8 @@ def _join_word_text(current: str, token: str) -> str:
     right = token[0]
     if right in _NO_SPACE_BEFORE or left in _NO_SPACE_AFTER:
         return current + token
+    if space_before:
+        return current + " " + token
     if _EAST_ASIAN_NO_SPACE_RE.fullmatch(left) and _EAST_ASIAN_NO_SPACE_RE.fullmatch(right):
         return current + token
     return current + " " + token
@@ -158,13 +163,20 @@ def _timed_transcript(
         return [], ()
     words: list[TranscriptWord] = []
     previous_start = -1.0
+    pending_space = False
     for raw in raw_words:
         word_type = str(_response_value(raw, "type", "word") or "word")
+        raw_text = str(
+            _response_value(raw, "text", _response_value(raw, "word", "")) or ""
+        )
+        if word_type == "spacing":
+            pending_space = pending_space or any(char.isspace() for char in raw_text)
+            continue
         if word_type != "word":
             continue
-        text = str(
-            _response_value(raw, "text", _response_value(raw, "word", "")) or ""
-        ).strip()
+        leading_space = bool(raw_text[:1] and raw_text[:1].isspace())
+        trailing_space = bool(raw_text[-1:] and raw_text[-1:].isspace())
+        text = raw_text.strip()
         start = _safe_float(_response_value(raw, "start"))
         end = _safe_float(_response_value(raw, "end"))
         if (
@@ -194,7 +206,13 @@ def _timed_transcript(
             speaker_id=(
                 str(speaker) if (speaker := _response_value(raw, "speaker_id")) else None
             ),
+            # Keep the provider's boundary signal even on the first word of a
+            # chunk. Chunk results are flattened later, where this bit is
+            # required to prevent the last Korean token of one chunk from
+            # being joined to the first token of the next.
+            space_before=pending_space or leading_space,
         ))
+        pending_space = trailing_space
     if not words:
         return [], ()
 
@@ -202,7 +220,11 @@ def _timed_transcript(
     group: list[TranscriptWord] = []
     group_text = ""
     for word in words:
-        proposed = _join_word_text(group_text, word.text)
+        proposed = _join_word_text(
+            group_text,
+            word.text,
+            space_before=word.space_before,
+        )
         sentence_end = word.text[-1:] in ".!?。！？"
         if group and len(proposed) > 50:
             segments.append(SubtitleSegment(

@@ -59,6 +59,7 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       selection_length_adjustment, selection_repositioned,
       hook_title, highlight_reason, channel_display_name, subtitle_segments, subtitles_enabled,
       comment_overlays, template_id, custom_template_id, template_snapshot, video_aspect_ratio, title_font_scale, title_text_styles,
+      subtitle_template_id,
       title_text_styles_initialized, render_version,
       editor_document,
       rerender_progress, status, expires_at
@@ -103,6 +104,7 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       templateId: row.templateId,
       customTemplateId: row.customTemplateId || null,
       templateSnapshot: row.templateSnapshot || null,
+      subtitleTemplateId: row.subtitleTemplateId || null,
       videoAspectRatio: row.videoAspectRatio || "1:1",
       titleFontScale: Number(row.titleFontScale),
       titleTextStyles: row.titleTextStyles || [],

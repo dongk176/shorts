@@ -27,15 +27,24 @@ export async function GET(
     const rows = await db`
       select
         s.editor_document->'channel'->>'thumbnailAssetKey' as asset_key,
-        s.expires_at
+        s.expires_at,
+        s.subtitle_template_id
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and not j.is_example
         and s.user_id=${session.userId}
         and s.status in ('ready','rerendering')
+        and s.subtitle_template_id is null
         and s.deleted_at is null and s.expires_at>clock_timestamp()
       limit 1
     `;
+    if (rows[0]?.subtitleTemplateId) {
+      throw new HttpError(
+        409,
+        "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
+        "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+      );
+    }
     const assetKey = String(rows[0]?.assetKey || "");
     if (!editorAssetKeyPattern.test(assetKey)) {
       throw new HttpError(404, "저장된 채널 이미지를 찾을 수 없습니다.");

@@ -64,6 +64,11 @@ import {
 import { userFacingErrorMessage } from "@/lib/public-error";
 import { isIosDownloadDevice, shortDownloadFilename } from "@/lib/short-download";
 import { stateRetryDelayMs } from "@/lib/state-loading";
+import {
+  SUBTITLE_TEMPLATE_BRAND_COLOR,
+  subtitleTemplateOptions,
+  type SubtitleTemplateId,
+} from "@/lib/subtitle-templates";
 import { youtubePrivacyEnhancedEmbedUrl } from "@/lib/youtube-embed";
 import {
   applyTitleTextStyle,
@@ -1382,10 +1387,73 @@ function CustomHomeTemplatePreview({ template }: { template: CustomTemplate }) {
   return <CustomTemplateCanvasPreview template={template} firstLine="AI가 만든 제목" secondLine="핵심 포인트" channelLabel="채널 이름" />;
 }
 
-function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioChange, channelName, channelThumbnailUrl, personalTemplates, favoriteTemplateKeys, customTemplateId, onCustomTemplateChange, canUseCustomTemplates }: { value: TemplateId; onChange: (value: TemplateId) => void; videoAspectRatio: VideoAspectRatio; onVideoAspectRatioChange: (value: VideoAspectRatio) => void; channelName: string; channelThumbnailUrl: string | null; personalTemplates: CustomTemplate[]; favoriteTemplateKeys: TemplateFavoriteKey[]; customTemplateId: string | null; onCustomTemplateChange: (template: CustomTemplate | null) => void; canUseCustomTemplates: boolean }) {
+function SubtitleTemplatePreview({ id }: { id: SubtitleTemplateId }) {
+  const outline = {
+    WebkitTextStroke: `${id === "pop" ? 1.4 : 1.1}px #080808`,
+    paintOrder: "stroke fill",
+  } satisfies CSSProperties;
+  return (
+    <div className="relative mx-auto aspect-[9/16] w-full max-w-[150px] overflow-hidden rounded-[10px] bg-black shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]">
+      <div className="absolute inset-x-0 top-[7%] text-center text-[8px] font-black leading-[1.25] text-white">
+        <span className="block">AI가 고른 오늘의</span>
+        <span className="block" style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>핵심 장면</span>
+      </div>
+      <div className="absolute inset-x-[7%] top-[27%] h-[52%] overflow-hidden rounded-[5px] bg-gradient-to-br from-neutral-600 via-neutral-800 to-neutral-950">
+        <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
+        <div className="absolute inset-x-[4%] bottom-[9%] text-center font-black leading-[1.15] text-white" style={outline}>
+          {id === "basic" && <span className="text-[8px]">지금 이 순간을 놓치지 마세요</span>}
+          {id === "highlight" && (
+            <span className="text-[8px]">
+              지금 이 <span className="animate-pulse" style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>순간을</span> 놓치지 마세요
+            </span>
+          )}
+          {id === "pop" && (
+            <span className="inline-block animate-pulse text-[10px]" style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>
+              바로 지금
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="absolute inset-x-0 bottom-[7%] text-center text-[7px] font-bold text-white">{`● ${"채널 이름"}`}</div>
+    </div>
+  );
+}
+
+function TemplatePicker({
+  value,
+  onChange,
+  videoAspectRatio,
+  onVideoAspectRatioChange,
+  channelName,
+  channelThumbnailUrl,
+  personalTemplates,
+  favoriteTemplateKeys,
+  customTemplateId,
+  onCustomTemplateChange,
+  canUseCustomTemplates,
+  subtitleTemplateSelectionEnabled,
+  subtitleTemplateId,
+  onSubtitleTemplateChange,
+}: {
+  value: TemplateId;
+  onChange: (value: TemplateId) => void;
+  videoAspectRatio: VideoAspectRatio;
+  onVideoAspectRatioChange: (value: VideoAspectRatio) => void;
+  channelName: string;
+  channelThumbnailUrl: string | null;
+  personalTemplates: CustomTemplate[];
+  favoriteTemplateKeys: TemplateFavoriteKey[];
+  customTemplateId: string | null;
+  onCustomTemplateChange: (template: CustomTemplate | null) => void;
+  canUseCustomTemplates: boolean;
+  subtitleTemplateSelectionEnabled: boolean;
+  subtitleTemplateId: SubtitleTemplateId | null;
+  onSubtitleTemplateChange: (value: SubtitleTemplateId | null) => void;
+}) {
   const usablePersonalTemplates = canUseCustomTemplates ? personalTemplates : [];
   const selectedCustom = usablePersonalTemplates.find((template) => template.id === customTemplateId);
   const selectedTemplate = templates.find((template) => template.id === value) || templates[0];
+  const selectedSubtitleTemplate = subtitleTemplateOptions.find((template) => template.id === subtitleTemplateId);
   const effectiveAspectRatio = selectedCustom?.config.video.aspectRatio ?? videoAspectRatio;
   const disabledPresetRatios: VideoAspectRatio[] = !selectedCustom && value === "comment-capture"
     ? ["4:5", "9:16"]
@@ -1408,7 +1476,7 @@ function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioC
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-bold">템플릿</h2>
-          <span className="text-xs font-semibold text-red-300">{selectedCustom?.name || selectedTemplate.name}</span>
+          <span className="text-xs font-semibold text-red-300">{selectedSubtitleTemplate?.name || selectedCustom?.name || selectedTemplate.name}</span>
         </div>
         <VideoAspectRatioPicker
           value={effectiveAspectRatio}
@@ -1421,10 +1489,10 @@ function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioC
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {favoriteCards.map((card) => {
           if (card.kind === "custom") {
-            const selected = customTemplateId === card.template.id;
+            const selected = !subtitleTemplateId && customTemplateId === card.template.id;
             return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
           }
-          const selected = !customTemplateId && value === card.template.id;
+          const selected = !subtitleTemplateId && !customTemplateId && value === card.template.id;
           return (
             <button
               key={`favorite-preset-${card.template.id}`}
@@ -1439,11 +1507,41 @@ function TemplatePicker({ value, onChange, videoAspectRatio, onVideoAspectRatioC
           );
         })}
         {remainingPersonalTemplates.map((template) => {
-          const selected = customTemplateId === template.id;
+          const selected = !subtitleTemplateId && customTemplateId === template.id;
           return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
         })}
       </div>
-      {!customTemplateId && value === "comment-capture" && (
+      {subtitleTemplateSelectionEnabled && (
+        <section className="mt-8" aria-labelledby="subtitle-template-test-heading">
+          <div className="flex items-center gap-2">
+            <h3 id="subtitle-template-test-heading" className="text-base font-extrabold text-white">자막 템플릿 · 테스트</h3>
+            <span className="rounded-full border border-[#ff715e]/30 bg-[#ff715e]/10 px-2 py-1 text-[10px] font-black text-[#ff9b8d]">어드민</span>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-neutral-400">영상 안쪽 안전영역에 자막이 완성된 형태로 적용됩니다.</p>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {subtitleTemplateOptions.map((option) => {
+              const selected = subtitleTemplateId === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => {
+                    onCustomTemplateChange(null);
+                    onSubtitleTemplateChange(option.id);
+                  }}
+                  className={`rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 text-left backdrop-blur-xl transition ${selected ? "border-[#ff715e] shadow-[0_0_0_3px_rgba(255,113,94,.14)]" : "border-white/10 hover:border-white/30"}`}
+                >
+                  <SubtitleTemplatePreview id={option.id} />
+                  <span className="mt-2.5 block text-center text-sm font-extrabold text-white">{option.name}</span>
+                  <span className="mt-1 block text-center text-[11px] leading-4 text-neutral-400">{option.description}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+      {!subtitleTemplateId && !customTemplateId && value === "comment-capture" && (
         <p className="mt-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[.06] px-4 py-3 text-sm text-cyan-100">
           AI가 실제 사람이 작성한 것처럼 자연스러운 댓글을 만들어줘요.
         </p>
@@ -9745,8 +9843,8 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
                       {itemIsRerendering && <EstimatedProcessingOverlay operationKey={`rerender:${item.id}:${item.renderVersion}`} durationSeconds={item.durationSeconds} rerender minimumProgress={item.rerenderProgress} />}
                     </div>
                     <div className="short-result-actions">
-                      {job.isExample || itemIsRerendering
-                        ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">✎ 편집하기</button>
+                      {job.isExample || itemIsRerendering || item.subtitleTemplateId
+                        ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : item.subtitleTemplateId ? "자막 템플릿 편집은 다음 단계에서 지원합니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">{item.subtitleTemplateId ? "✎ 편집 준비 중" : "✎ 편집하기"}</button>
                         : <Link
                             data-project-guide={item.id === guideEditShortId ? "edit" : undefined}
                             href={`/projects/${job.projectNumber}/edit/${item.id}`}
@@ -9770,6 +9868,9 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
                           ? <a data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download={shortDownloadFilename(item.hookTitle)} className="tool-button short-download-button flex items-center justify-center" aria-label={`${item.hookTitle} 다운로드`}>↓ 다운로드</a>
                           : <button data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} type="button" onClick={() => setDownloadPaywallOpen(true)} className="tool-button short-download-button">↓ 다운로드</button>}
                     </div>
+                    {item.subtitleTemplateId && (
+                      <p className="mt-2 text-center text-xs font-medium text-neutral-400">자막 편집은 다음 단계에서 지원해요.</p>
+                    )}
                   </div>
                   <div className="short-detail-column">
                     <div className="short-highlight-note"><strong>✦ AI 하이라이트</strong><p>{item.highlightReason.trim()}</p></div>
@@ -10063,6 +10164,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const outputLanguage: OutputLanguage = "ko";
   const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
+  const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateId | null>(null);
   const [customTemplateId, setCustomTemplateId] = useState<string | null>(null);
   const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
   const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState<TemplateFavoriteKey[]>([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);
@@ -10094,6 +10196,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const hasBackgroundWork = Boolean(state?.recentJobs.some((job) => !terminalStatuses.has(job.status) || job.shorts.some((item) => item.status === "rerendering")));
   const analysisCreationBlocked = Boolean(analysis && analysis.creationAllowed !== true);
   const sourceRangeSelectionEnabled = analysis?.sourceRangeSelectionEnabled === true;
+  const subtitleTemplateSelectionEnabled = analysis?.subtitleTemplateSelectionEnabled === true;
   const sourceVideoEmbedUrl = sourceRangeSelectionEnabled && analysis
     ? youtubePrivacyEnhancedEmbedUrl(analysis.videoId)
     : null;
@@ -10156,6 +10259,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       window.clearTimeout(loginOpenTimer.current);
     }
   }, []);
+
+  useEffect(() => {
+    if (!subtitleTemplateSelectionEnabled) setSubtitleTemplateId(null);
+  }, [subtitleTemplateSelectionEnabled]);
 
   useEffect(() => {
     if (!analysis) {
@@ -10497,7 +10604,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           grantedSeconds: number;
           validUntil: string | null;
         };
-      }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID(), ...(sourceRangeSelectionEnabled ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds } : {}) }) });
+      }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID(), ...(sourceRangeSelectionEnabled ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds } : {}), ...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId } : {}) }) });
       setShortsEventRewardAvailable(false);
       if (value.shortsThankYouEventReward.granted) {
         setShortsEventGrantedSeconds(
@@ -10513,6 +10620,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       pollStarted.current = Date.now();
       setYoutubeUrl("");
       setAnalysis(null);
+      setSubtitleTemplateId(null);
       setRightsConfirmed(false);
       setCreationRestrictionOpen(false);
       setCreationRestrictionReason(null);
@@ -10700,6 +10808,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           <TemplatePicker
             value={templateId}
             onChange={(nextTemplateId) => {
+              setSubtitleTemplateId(null);
               setTemplateId(nextTemplateId);
               if (nextTemplateId === "comment-capture") setVideoAspectRatio("16:9");
             }}
@@ -10711,7 +10820,17 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             favoriteTemplateKeys={favoriteTemplateKeys}
             customTemplateId={canUseCustomTemplates ? customTemplateId : null}
             canUseCustomTemplates={canUseCustomTemplates}
+            subtitleTemplateSelectionEnabled={subtitleTemplateSelectionEnabled}
+            subtitleTemplateId={subtitleTemplateId}
+            onSubtitleTemplateChange={(nextSubtitleTemplateId) => {
+              setSubtitleTemplateId(nextSubtitleTemplateId);
+              if (nextSubtitleTemplateId) {
+                setCustomTemplateId(null);
+                setTemplateId("dark-minimal");
+              }
+            }}
             onCustomTemplateChange={(template) => {
+              setSubtitleTemplateId(null);
               setCustomTemplateId(template?.id || null);
               if (template) {
                 setTemplateId(template.baseTemplateId);

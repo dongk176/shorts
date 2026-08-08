@@ -125,6 +125,7 @@ type EditorExistingRow = {
   cleanClipS3Key: string | null;
   startSeconds: number;
   endSeconds: number;
+  subtitleTemplateId: string | null;
   channelThumbnailUrl: string | null;
   editorDocument: ValidatedEditorDocumentSnapshot | null;
   onboardingWelcomeFunded: boolean;
@@ -174,7 +175,7 @@ async function applyEditorDocument({
       s.video_aspect_ratio,s.edit_timeline_s3_key,
       s.edit_timeline_start_seconds,s.edit_timeline_end_seconds,
       s.clean_clip_s3_key,s.start_seconds,s.end_seconds,
-      s.editor_document,j.channel_thumbnail_url,
+      s.subtitle_template_id,s.editor_document,j.channel_thumbnail_url,
       exists (
         select 1
         from shorts_mvp.usage_reservations reservation
@@ -207,6 +208,13 @@ async function applyEditorDocument({
   const existing = existingRows[0] as EditorExistingRow | undefined;
   if (!existing) {
     throw new HttpError(404, "편집 가능한 쇼츠 영상을 찾을 수 없습니다.");
+  }
+  if (existing.subtitleTemplateId) {
+    throw new HttpError(
+      409,
+      "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
+      "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+    );
   }
   // Keep the idempotency fingerprint tied to the request the browser sent.
   // The trusted render document is normalized below (for example, an inline
@@ -438,6 +446,7 @@ async function applyEditorDocument({
         and s.user_id=${session.userId}
         and s.status='ready'
         and s.render_version=${document.baseRenderVersion}
+        and s.subtitle_template_id is null
         and s.deleted_at is null and s.expires_at>clock_timestamp()
         and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null
       returning s.id
@@ -505,6 +514,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
           s.edit_timeline_start_seconds, s.edit_timeline_end_seconds,
           s.edit_timeline_subtitle_segments, s.clean_clip_s3_key,
           s.start_seconds,s.end_seconds,s.subtitle_segments,
+          s.subtitle_template_id,
           exists (
             select 1
             from shorts_mvp.usage_reservations reservation
@@ -536,6 +546,13 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
     `;
     const existing = existingRows[0];
     if (!existing) throw new HttpError(404, "편집 가능한 쇼츠 영상을 찾을 수 없습니다.");
+    if (existing.subtitleTemplateId) {
+      throw new HttpError(
+        409,
+        "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
+        "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+      );
+    }
     if (existing.status !== "ready") {
       throw new HttpError(409, "이미 수정 반영 중이거나 편집할 수 없는 상태입니다.");
     }
@@ -681,6 +698,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
           (${session.userId}::uuid is not null and s.user_id=${session.userId})
           or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
         ) and s.status='ready' and s.deleted_at is null and s.expires_at > now()
+          and s.subtitle_template_id is null
           and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null
           and (
             not (

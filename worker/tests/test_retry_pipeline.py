@@ -121,6 +121,48 @@ def test_project_clip_extracts_and_stores_absolute_source_times(
     assert stored["selection_raw_end_seconds"] == 1256
 
 
+def test_project_clip_forwards_immutable_caption_render_spec(tmp_path: Path) -> None:
+    worker = BatchWorker.__new__(BatchWorker)
+    worker.settings = SimpleNamespace(clean_clip_preset="superfast", clean_clip_crf=20)
+    worker.renderer = MagicMock()
+    worker.storage = MagicMock()
+    worker.storage.upload.return_value = 1234
+    worker.repository = MagicMock()
+    worker.repository.add_pending_short.return_value = True
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"video")
+    caption_spec = {"schemaVersion": 1, "templateId": "highlight", "fps": 30}
+
+    worker._prepare_project_clip(
+        job_id="job-caption",
+        job={
+            "id": "job-caption",
+            "mvp_session_id": "session-caption",
+            "user_id": "admin-user",
+            "channel_name": "채널",
+            "template_id": "dark-minimal",
+            "subtitle_template_id": "highlight",
+            "subtitle_template_snapshot": {"templateId": "highlight"},
+            "retention_days": 7,
+            "video_aspect_ratio": "9:16",
+            "pipeline_version": 2,
+            "normalized_source_start_seconds": 0,
+        },
+        source=source,
+        source_probe={},
+        work_dir=tmp_path,
+        slot_index=1,
+        clip=HighlightClip(start_seconds=1, end_seconds=11, hook_title="자막"),
+        subtitles=[SubtitleSegment(start=0, end=1, text="legacy")],
+        comments=[{"body": "legacy comment"}],
+        caption_render_spec=caption_spec,
+    )
+
+    stored = worker.repository.add_pending_short.call_args.kwargs
+    assert stored["caption_render_spec"] is caption_spec
+    assert stored["comment_overlays"] == []
+
+
 def test_selected_clips_are_shifted_once_to_full_source_absolute_times() -> None:
     relative = HighlightClip(
         start_seconds=15,

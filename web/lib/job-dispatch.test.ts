@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   elevenLabsTranscriptionDispatchTarget,
   sourceRangeDispatchTarget,
+  subtitleTemplatesDispatchTarget,
 } from "./job-dispatch";
 
 afterEach(() => vi.unstubAllEnvs());
@@ -34,6 +35,24 @@ describe("project dispatch target", () => {
     expect(elevenLabsTranscriptionDispatchTarget()).toEqual({
       jobDefinitionArn:
         "arn:aws:batch:ap-northeast-2:181651591905:job-definition/elevenlabs-canary:3",
+      jobQueueArn:
+        "arn:aws:batch:ap-northeast-2:181651591905:job-queue/elevenlabs-canary",
+    });
+  });
+
+  it("keeps subtitle jobs on their own immutable candidate target", () => {
+    vi.stubEnv(
+      "SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN",
+      "arn:aws:batch:ap-northeast-2:181651591905:job-definition/subtitle-templates:4",
+    );
+    vi.stubEnv(
+      "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN",
+      "arn:aws:batch:ap-northeast-2:181651591905:job-queue/elevenlabs-canary",
+    );
+
+    expect(subtitleTemplatesDispatchTarget()).toEqual({
+      jobDefinitionArn:
+        "arn:aws:batch:ap-northeast-2:181651591905:job-definition/subtitle-templates:4",
       jobQueueArn:
         "arn:aws:batch:ap-northeast-2:181651591905:job-queue/elevenlabs-canary",
     });

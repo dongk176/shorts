@@ -1,6 +1,7 @@
 pydantic==2.11.5
 yt-dlp[default]==2026.7.4
 Pillow==11.2.1
+fonttools[woff]==4.59.0
 openai==1.84.0
 httpx==0.28.1
 boto3==1.40.0

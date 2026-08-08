@@ -84,7 +84,8 @@ export async function POST(
           generated_short.hook_title,
           generated_short.highlight_reason,
           generated_short.subtitle_segments,
-          generated_short.status
+          generated_short.status,
+          generated_short.subtitle_template_id
         from shorts_mvp.generated_shorts generated_short
         join shorts_mvp.video_jobs job on job.id=generated_short.job_id
         where generated_short.id=${shortId}
@@ -93,6 +94,7 @@ export async function POST(
           and generated_short.deleted_at is null
           and generated_short.expires_at>clock_timestamp()
           and generated_short.status='ready'
+          and generated_short.subtitle_template_id is null
         limit 1
       `,
       getUsageSnapshot(db, session),
@@ -104,12 +106,20 @@ export async function POST(
       highlightReason: string | null;
       subtitleSegments: TranscriptSegment[];
       status: string;
+      subtitleTemplateId: string | null;
     } | undefined;
     if (!generatedShort) {
       throw new HttpError(
         404,
         "댓글을 재생성할 수 있는 쇼츠를 찾을 수 없습니다.",
         "EDITABLE_SHORT_NOT_FOUND",
+      );
+    }
+    if (generatedShort.subtitleTemplateId) {
+      throw new HttpError(
+        409,
+        "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
+        "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
       );
     }
 

@@ -32,6 +32,7 @@ const metadata = {
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.SOURCE_RANGE_SELECTION_ENABLED = "true";
+  delete process.env.SUBTITLE_TEMPLATES_ENABLED;
 });
 
 describe("YouTube analysis persistence", () => {
@@ -47,7 +48,35 @@ describe("YouTube analysis persistence", () => {
       ...metadata,
       analysisId: "6bce83c4-b12e-4d11-8f16-2fef8a96c541",
       sourceRangeSelectionEnabled: true,
+      subtitleTemplateSelectionEnabled: false,
       expectedShortCount: 12,
+    });
+  });
+
+  it("returns the server-authorized subtitle template capability for an administrator", async () => {
+    process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = strings.join(" ");
+      if (values.includes("subtitle_templates_public")) {
+        return [
+          { flagKey: "subtitle_templates", enabled: true },
+          { flagKey: "subtitle_templates_public", enabled: false },
+        ];
+      }
+      if (values.includes("source_range_selection_public")) return enabledReleaseFlags;
+      if (sql.includes("from shorts_mvp.app_users")) return [{ isAdmin: true }];
+      if (sql.includes("insert into shorts_mvp.youtube_analyses")) {
+        return [{ id: "6bce83c4-b12e-4d11-8f16-2fef8a96c541" }];
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    await expect(createYoutubeAnalysis(
+      { ...session, userId: "admin-user" },
+      metadata,
+    )).resolves.toMatchObject({
+      subtitleTemplateSelectionEnabled: true,
     });
   });
 

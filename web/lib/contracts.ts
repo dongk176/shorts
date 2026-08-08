@@ -146,6 +146,7 @@ export type BillingSummary = {
 export type YoutubeAnalysis = {
   analysisId: string;
   sourceRangeSelectionEnabled: boolean;
+  subtitleTemplateSelectionEnabled: boolean;
   videoId: string;
   normalizedUrl: string;
   title: string;
@@ -207,6 +208,7 @@ export type GeneratedShort = {
   subtitleSegments: Array<{ start: number; end: number; text: string }>;
   commentOverlays: CommentOverlay[];
   subtitlesEnabled: boolean;
+  subtitleTemplateId?: import("./subtitle-templates").SubtitleTemplateId | null;
   templateId: TemplateId;
   customTemplateId?: string | null;
   templateSnapshot?: Record<string, unknown> | null;

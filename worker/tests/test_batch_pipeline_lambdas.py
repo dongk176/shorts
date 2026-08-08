@@ -62,6 +62,14 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
         "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
         "shorts-mvp-elevenlabs-transcription-canary-production"
     )
+    os.environ["SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"] = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-subtitle-templates-canary-production:1"
+    )
+    os.environ["SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"] = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+        "shorts-mvp-elevenlabs-transcription-canary-production"
+    )
     os.environ["RERENDER_JOB_DEFINITION"] = "rerender-definition:1"
     os.environ["EDITOR_STABLE_BATCH_QUEUE"] = "editor-stable-queue"
     os.environ["EDITOR_CANARY_BATCH_QUEUE"] = "editor-canary-queue"
@@ -719,6 +727,225 @@ def test_elevenlabs_project_and_resume_keep_the_exact_candidate_target() -> None
     assert first_request["timeout"] == resume_request["timeout"] == {
         "attemptDurationSeconds": 18000,
     }
+
+
+def test_subtitle_template_project_and_resume_keep_the_exact_candidate_target() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    base_job = {
+        "id": "job-subtitle",
+        "pipeline_version": 2,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "admin-a",
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "highlight",
+        "batch_job_definition": os.environ[
+            "SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"
+        ],
+    }
+    module._submit_once = MagicMock(
+        side_effect=["subtitle-first", "subtitle-resume"]
+    )
+    module.patch = MagicMock()
+    module.rest = MagicMock(return_value=[{
+        **base_job,
+        "status": "queued",
+        "project_resume_count": 0,
+        "preparation_finished_at": None,
+    }])
+
+    assert module._submit({
+        "kind": "project", "jobId": "job-subtitle",
+    }) == "subtitle-first"
+    first_request = module._submit_once.call_args_list[0].args[0]
+
+    module.rest = MagicMock(return_value=[{
+        **base_job,
+        "status": "rendering",
+        "project_resume_count": 1,
+        "preparation_finished_at": "2026-08-08T00:00:00+00:00",
+    }])
+    assert module._submit({
+        "kind": "project_resume", "jobId": "job-subtitle",
+    }) == "subtitle-resume"
+    resume_request = module._submit_once.call_args_list[1].args[0]
+
+    assert first_request["jobDefinition"] == resume_request["jobDefinition"] == (
+        os.environ["SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"]
+    )
+    assert first_request["jobQueue"] == resume_request["jobQueue"] == (
+        os.environ["SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"]
+    )
+    assert first_request["timeout"] == resume_request["timeout"] == {
+        "attemptDurationSeconds": 18000,
+    }
+
+
+def test_subtitle_template_requires_word_timed_policy_and_dedicated_target() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    base_job = {
+        "id": "job-subtitle-invalid",
+        "status": "queued",
+        "pipeline_version": 2,
+        "project_resume_count": 0,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "admin-a",
+        "preparation_finished_at": None,
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": False,
+        "subtitle_template_id": "basic",
+        "batch_job_definition": os.environ[
+            "SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"
+        ],
+    }
+    module._submit_once = MagicMock()
+    module.rest = MagicMock(return_value=[{
+        **base_job,
+        "transcription_policy": "openai_stable",
+    }])
+
+    with pytest.raises(RuntimeError, match="word-timed transcription policy"):
+        module._submit({"kind": "project", "jobId": base_job["id"]})
+
+    module.rest = MagicMock(return_value=[{
+        **base_job,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": None,
+    }])
+    with pytest.raises(RuntimeError, match="not trusted"):
+        module._submit({"kind": "project", "jobId": base_job["id"]})
+
+    module._submit_once.assert_not_called()
+
+
+@pytest.mark.parametrize("source_range", [False, True])
+@pytest.mark.parametrize(
+    ("definition", "queue"),
+    [
+        ("not-an-arn", ""),
+        (
+            "",
+            "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+            "shorts-mvp-elevenlabs-transcription-canary-production",
+        ),
+        (
+            "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+            "shorts-mvp-subtitle-templates-canary-production:1",
+            "not-an-arn",
+        ),
+    ],
+)
+def test_invalid_subtitle_target_never_blocks_an_ordinary_project(
+    source_range: bool,
+    definition: str,
+    queue: str,
+) -> None:
+    module, _ = _load_lambda("batch_submitter")
+    os.environ["SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"] = definition
+    os.environ["SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"] = queue
+    definition_prefix = "SOURCE_RANGE" if source_range else "LEGACY_PROJECT"
+    module.rest = MagicMock(return_value=[{
+        "id": f"job-ordinary-{source_range}",
+        "status": "queued",
+        "pipeline_version": 2,
+        "project_resume_count": 0,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "user-a",
+        "preparation_finished_at": None,
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": source_range,
+        "transcription_policy": "openai_stable",
+        "subtitle_template_id": None,
+        "batch_job_definition": os.environ[
+            f"{definition_prefix}_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[f"{definition_prefix}_BATCH_QUEUE_ARN"],
+    }])
+    module._submit_once = MagicMock(return_value="ordinary-batch")
+    module.patch = MagicMock()
+
+    assert module._submit({
+        "kind": "project", "jobId": f"job-ordinary-{source_range}",
+    }) == "ordinary-batch"
+    request = module._submit_once.call_args.args[0]
+    assert request["jobDefinition"] == os.environ[
+        f"{definition_prefix}_JOB_DEFINITION_ARN"
+    ]
+    assert request["jobQueue"] == os.environ[
+        f"{definition_prefix}_BATCH_QUEUE_ARN"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("definition", "queue"),
+    [
+        ("not-an-arn", ""),
+        (
+            "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+            "shorts-mvp-subtitle-templates-canary-production:1",
+            "",
+        ),
+        (
+            "",
+            "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+            "shorts-mvp-elevenlabs-transcription-canary-production",
+        ),
+        (
+            "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+            "shorts-mvp-subtitle-templates-canary-production:1",
+            "not-an-arn",
+        ),
+        ("", ""),
+    ],
+)
+def test_invalid_subtitle_target_fails_closed_only_for_caption_jobs(
+    definition: str,
+    queue: str,
+) -> None:
+    module, _ = _load_lambda("batch_submitter")
+    stored_definition = os.environ["SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"]
+    stored_queue = os.environ["SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"]
+    os.environ["SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"] = definition
+    os.environ["SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"] = queue
+    module.rest = MagicMock(return_value=[{
+        "id": "job-caption-invalid-env",
+        "status": "queued",
+        "pipeline_version": 2,
+        "project_resume_count": 0,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "admin-a",
+        "preparation_finished_at": None,
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "basic",
+        "batch_job_definition": stored_definition,
+        "batch_job_queue": stored_queue,
+    }])
+    module._submit_once = MagicMock()
+
+    with pytest.raises(
+        RuntimeError,
+        match="SUBTITLE_TEMPLATES project|not trusted",
+    ):
+        module._submit({"kind": "project", "jobId": "job-caption-invalid-env"})
+
+    module._submit_once.assert_not_called()
 
 
 def test_stable_transcription_rejects_elevenlabs_candidate_target() -> None:

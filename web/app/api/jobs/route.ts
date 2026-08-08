@@ -15,6 +15,7 @@ import { getDb } from "@/lib/db";
 import {
   elevenLabsTranscriptionDispatchTarget,
   sourceRangeDispatchTarget,
+  subtitleTemplatesDispatchTarget,
 } from "@/lib/job-dispatch";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { apiError, HttpError } from "@/lib/http";
@@ -31,7 +32,16 @@ import {
   getSourceRangeReleaseAccess,
   lockSourceRangeReleaseAccess,
 } from "@/lib/source-range-release";
-import { lockElevenLabsTranscriptionAccess } from "@/lib/transcription-release";
+import {
+  ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY,
+  lockElevenLabsTranscriptionAccess,
+} from "@/lib/transcription-release";
+import { lockSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import {
+  SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID,
+  subtitleTemplateIds,
+  subtitleTemplateStyleSnapshot,
+} from "@/lib/subtitle-templates";
 import { billableSourceSeconds, getUsageSnapshot } from "@/lib/usage";
 import { templateSnapshotFromRow } from "@/lib/custom-templates";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
@@ -52,6 +62,7 @@ const schema = z.object({
   requestId: z.string().uuid(),
   rangeStartSeconds: z.number().finite().nonnegative().optional(),
   rangeEndSeconds: z.number().finite().positive().optional(),
+  subtitleTemplateId: z.enum(subtitleTemplateIds).optional(),
 });
 
 const noShortsThankYouEventReward: ShortsThankYouEventGrant = {
@@ -64,7 +75,8 @@ export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
     if (
-      !input.customTemplateId
+      !input.subtitleTemplateId
+      && !input.customTemplateId
       && input.templateId === "comment-capture"
       && (input.videoAspectRatio === "4:5" || input.videoAspectRatio === "9:16")
     ) {
@@ -173,14 +185,41 @@ export async function POST(request: Request) {
           "영상 구간 선택 기능이 일시 중지되었습니다. 링크를 다시 확인해 주세요.",
         );
       }
-      const transcriptionAccess = await lockElevenLabsTranscriptionAccess(
-        tx,
-        session.userId,
-      );
-      const transcriptionPolicy = transcriptionAccess.policy;
+      if (input.subtitleTemplateId) {
+        const subtitleTemplateAccess = await lockSubtitleTemplateAccess(
+          tx,
+          session.userId,
+        );
+        if (!subtitleTemplateAccess.enabled) {
+          throw new HttpError(
+            409,
+            "현재 계정에서는 자막 템플릿 테스트를 사용할 수 없습니다.",
+          );
+        }
+        if (input.customTemplateId || input.templateId !== SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID) {
+          throw new HttpError(
+            400,
+            "자막 템플릿은 지정된 기본 레이아웃으로만 사용할 수 있습니다.",
+          );
+        }
+        if (executionBackend !== "aws_batch") {
+          throw new HttpError(
+            503,
+            "자막 템플릿 테스트 작업을 안전한 전용 워커에 연결하지 못했습니다.",
+          );
+        }
+      }
+      const transcriptionAccess = input.subtitleTemplateId
+        ? null
+        : await lockElevenLabsTranscriptionAccess(tx, session.userId);
+      const transcriptionPolicy = input.subtitleTemplateId
+        ? ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY
+        : transcriptionAccess!.policy;
       const dispatchTarget = executionBackend !== "aws_batch"
         ? null
-        : transcriptionAccess.enabled
+        : input.subtitleTemplateId
+          ? subtitleTemplatesDispatchTarget()
+          : transcriptionAccess!.enabled
           ? elevenLabsTranscriptionDispatchTarget()
           : sourceRangeSelectionEnabled
             ? sourceRangeDispatchTarget()
@@ -223,6 +262,12 @@ export async function POST(request: Request) {
       } else {
         templateSnapshot = { presetVersion: 3 };
       }
+      const subtitleTemplateSnapshot = input.subtitleTemplateId
+        ? subtitleTemplateStyleSnapshot(
+            input.subtitleTemplateId,
+            resolvedVideoAspectRatio,
+          )
+        : null;
       const limits = await tx`
         with scoped_jobs as (
           select status,error_code,heartbeat_at
@@ -273,6 +318,7 @@ export async function POST(request: Request) {
           id, mvp_session_id, user_id, request_id, youtube_url, youtube_video_id, video_title,
           channel_name, channel_thumbnail_url, thumbnail_url, source_duration_seconds, range_start_seconds,
           range_end_seconds, template_id, custom_template_id, template_snapshot, video_aspect_ratio,
+          subtitle_template_id, subtitle_template_snapshot,
           clip_length_option, output_language, expected_short_count, rights_confirmed, execution_backend,
           status, stage, progress, deadline_at, planned_short_count,retention_days_snapshot,
           pipeline_version, source_range_selection_enabled, transcription_policy,
@@ -282,6 +328,7 @@ export async function POST(request: Request) {
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${sourceDurationSeconds}, ${rangeStartSeconds},
           ${rangeEndSeconds}, ${resolvedTemplateId}, ${input.customTemplateId || null}, ${templateSnapshot ? tx.json(templateSnapshot) : null}, ${resolvedVideoAspectRatio},
+          ${input.subtitleTemplateId || null}, ${subtitleTemplateSnapshot ? tx.json(subtitleTemplateSnapshot) : null},
           'sec_31_60', ${input.outputLanguage}, ${plannedShortCount},
           ${rightsConfirmed}, ${executionBackend}, 'queued', 'queued', ${SIMULATED_PROGRESS_START},
           now() + ${deadlineMinutes} * interval '1 minute', ${plannedShortCount},${billing.retentionDays},

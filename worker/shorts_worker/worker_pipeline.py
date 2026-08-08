@@ -18,6 +18,7 @@ from functools import cached_property
 from pathlib import Path
 from uuid import uuid4
 
+from .caption_templates import compile_caption_render_spec
 from .channel_thumbnail import download_channel_thumbnail
 from .comment_generator import CommentClipInput, CommentGenerator
 from .config import Settings
@@ -52,6 +53,7 @@ from .subtitles import (
     ELEVENLABS_FALLBACK_POLICY,
     OPENAI_STABLE_POLICY,
     AudioTranscriber,
+    TranscriptWord,
 )
 
 EDIT_TIMELINE_PADDING_SECONDS = 30.0
@@ -469,6 +471,7 @@ class BatchWorker:
         limit_audio: bool = False,
         policy: str = OPENAI_STABLE_POLICY,
         observation: dict[str, object] | None = None,
+        words_out: list[TranscriptWord] | None = None,
     ) -> list[SubtitleSegment]:
         try:
             result = (
@@ -550,6 +553,8 @@ class BatchWorker:
                 "fallbackChunkCount": result.fallback_chunk_count,
                 "fallbackAudioSeconds": result.fallback_audio_seconds,
             })
+        if words_out is not None:
+            words_out.extend(result.words)
         return result.segments
 
     def _thumbnail(self, video: Path, output: Path, work_dir: Path) -> Path:
@@ -770,6 +775,16 @@ class BatchWorker:
                 self.repository.stage(job_id, "transcribing", 28, "영상 내용을 분석하고 있습니다.")
                 transcription_started_at = time.monotonic()
                 transcription_observation: dict[str, object] = {}
+                subtitle_template_id = str(job.get("subtitle_template_id") or "")
+                transcript_words: list[TranscriptWord] = []
+                if (
+                    subtitle_template_id
+                    and str(job.get("transcription_policy") or "")
+                    != ELEVENLABS_FALLBACK_POLICY
+                ):
+                    raise TranscriptionError(
+                        "자막 템플릿 작업에 단어 타임스탬프 전사 정책이 고정되지 않았습니다."
+                    )
                 with PhaseResourceMonitor(self.settings.task_vcpus) as transcription_resources:
                     transcript = self._transcribe_source(
                         job_id=job_id,
@@ -782,6 +797,11 @@ class BatchWorker:
                             job.get("transcription_policy") or OPENAI_STABLE_POLICY
                         ),
                         observation=transcription_observation,
+                        words_out=(transcript_words if subtitle_template_id else None),
+                    )
+                if subtitle_template_id and not transcript_words:
+                    raise TranscriptionError(
+                        "자막 템플릿에 필요한 단어 타임스탬프가 비어 있습니다."
                     )
                 transcription_seconds = time.monotonic() - transcription_started_at
                 self.repository.merge_job_performance_metrics(
@@ -827,7 +847,10 @@ class BatchWorker:
                 edit_timeline_clips = {
                     index: edit_timeline_clip(clip, selected_duration_seconds)
                     for index, clip in enumerate(clips, start=1)
-                } if getattr(self.settings, "edit_timeline_capture_enabled", False) else {}
+                } if (
+                    getattr(self.settings, "edit_timeline_capture_enabled", False)
+                    and not subtitle_template_id
+                ) else {}
                 edit_timeline_subtitles = {
                     index: self._relative_subtitles(transcript, timeline_clip)
                     for index, timeline_clip in edit_timeline_clips.items()
@@ -895,6 +918,21 @@ class BatchWorker:
                     )
                     for index, clip in edit_timeline_clips.items()
                 }
+                caption_render_specs: dict[int, dict[str, object]] = {}
+                if subtitle_template_id:
+                    aspect_ratio = VideoAspectRatio(
+                        str(job.get("video_aspect_ratio") or "1:1")
+                    )
+                    caption_render_specs = {
+                        index: compile_caption_render_spec(
+                            transcript_words,
+                            template_id=subtitle_template_id,
+                            clip_start=clip.start_seconds,
+                            clip_end=clip.end_seconds,
+                            video_aspect_ratio=aspect_ratio,
+                        )
+                        for index, clip in absolute_clips.items()
+                    }
 
                 for index in range(1, len(clips) + 1):
                     self.repository.set_project_attempt_selected(job_id, index)
@@ -929,6 +967,7 @@ class BatchWorker:
                                 clip=absolute_clips[index],
                                 subtitles=clip_subtitles[index],
                                 comments=comments_by_clip.get(index, []),
+                                caption_render_spec=caption_render_specs.get(index),
                             ): index
                             for index, _clip in enumerate(clips, start=1)
                         }
@@ -1104,6 +1143,7 @@ class BatchWorker:
         clip: HighlightClip,
         subtitles: list[SubtitleSegment],
         comments: list[dict[str, object]],
+        caption_render_spec: dict[str, object] | None = None,
     ) -> tuple[str, Path, dict[str, object]] | None:
         started_at = time.monotonic()
         short_id = str(uuid4())
@@ -1154,7 +1194,7 @@ class BatchWorker:
                 selection_length_adjustment=clip.selection_length_adjustment,
                 selection_repositioned=clip.selection_repositioned,
                 subtitles=[item.model_dump() for item in subtitles],
-                comment_overlays=comments,
+                comment_overlays=[] if caption_render_spec else comments,
                 clean_key=clean_key,
                 timeline_key=None,
                 timeline_start_seconds=None,
@@ -1162,6 +1202,7 @@ class BatchWorker:
                 timeline_subtitles=None,
                 retention_days=int(job["retention_days"]),
                 shard_index=0,
+                caption_render_spec=caption_render_spec,
             )
             if not inserted:
                 raise RuntimeError("작업 제한 시간이 종료되었습니다.")
@@ -1767,6 +1808,10 @@ class BatchWorker:
         job = self.repository.get_job(job_id)
         if not job:
             raise KeyError(job_id)
+        if job.get("subtitle_template_id"):
+            raise TranscriptionError(
+                "자막 완성형 템플릿은 프로젝트 파이프라인 v2가 필요합니다."
+            )
         route_id = str(job.get("ingestion_route_id") or "").strip() or None
         egress_class = self.ingestion.egress_class_for(route_id) if route_id else None
         route_cleanup_owned_by_download = False
@@ -2320,6 +2365,11 @@ class BatchWorker:
                 fixed_preset_channel=_preset_fixed_channel_position(item),
                 title_text_styles=title_text_styles,
                 custom_template_config=_custom_template_config(item),
+                caption_render_spec=(
+                    dict(caption_spec)
+                    if isinstance((caption_spec := item.get("caption_render_spec")), dict)
+                    else None
+                ),
                 metrics_callback=render_metrics.update,
             )
             thumbnail_started_at = time.monotonic()

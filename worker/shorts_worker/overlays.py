@@ -283,6 +283,7 @@ def create_title_panel(
     panel_height: int = PANEL_HEIGHT,
     overlay_mode: bool = False,
     title_text_styles: list[TitleTextStyle] | None = None,
+    title_accent_color: str | None = None,
 ) -> Path:
     style = TEMPLATE_STYLES[template_id]
     image = Image.new(
@@ -331,11 +332,21 @@ def create_title_panel(
     row_y = max(12, panel_height - bottom_margin - total_height)
 
     for index, (line, box, width, height, accent_padding_y) in enumerate(line_metrics):
-        color = text_color or (
-            style.accent
-            if (overlay_mode and template_id != TemplateId.PAPER) or index == 1
-            else style.primary
-        )
+        if text_color:
+            color = text_color
+        elif title_accent_color is not None:
+            # Completed-caption jobs pass an explicit brand accent. Keep the
+            # first title row in the preset's primary color even in the
+            # full-vertical overlay layout, and accent only the second row.
+            color = title_accent_color if index == 1 else style.primary
+        else:
+            # Preserve the established legacy preset behavior exactly: full
+            # vertical non-paper titles use the preset accent on both rows.
+            color = (
+                style.accent
+                if (overlay_mode and template_id != TemplateId.PAPER) or index == 1
+                else style.primary
+            )
         visible_x = (PANEL_WIDTH - width) // 2
         visible_y = row_y + accent_padding_y
         draw_x = visible_x - box[0]
@@ -1020,6 +1031,7 @@ def create_panel_overlays(
     bottom_height: int = PANEL_HEIGHT,
     overlay_mode: bool = False,
     title_text_styles: list[TitleTextStyle] | None = None,
+    title_accent_color: str | None = None,
 ) -> tuple[Path, Path]:
     top = create_title_panel(
         title,
@@ -1031,6 +1043,7 @@ def create_panel_overlays(
         panel_height=top_height,
         overlay_mode=overlay_mode,
         title_text_styles=title_text_styles,
+        title_accent_color=title_accent_color,
     )
     bottom = create_channel_panel(
         channel_name,

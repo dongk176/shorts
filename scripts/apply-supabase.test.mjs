@@ -67,3 +67,31 @@ test("managed password accounts keep passwords in Supabase Auth and private tabl
   assert.match(migration, /revoke all on shorts_mvp\.managed_login_accounts from anon, authenticated/);
   assert.match(migration, /popular_filter_enabled boolean not null default false/);
 });
+
+test("subtitle template canary is additive, disabled, and schema isolated", () => {
+  const migration = fs.readFileSync(
+    new URL(
+      "../supabase/migrations/202608080001_subtitle_templates_admin_canary.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(migration, /set local lock_timeout = '3s'/);
+  assert.match(migration, /add column if not exists subtitle_template_id text/);
+  assert.match(migration, /add column if not exists caption_render_spec jsonb/);
+  assert.match(migration, /subtitle_template_id in \('basic','highlight','pop'\)/);
+  assert.match(migration, /add constraint video_jobs_subtitle_template_check[\s\S]*not valid/);
+  assert.match(
+    migration,
+    /subtitle_template_snapshot->>'subtitleTemplateId'\)[\s\n]*is not distinct from subtitle_template_id/,
+  );
+  assert.match(
+    migration,
+    /caption_render_spec->>'templateId'\)[\s\n]*is not distinct from subtitle_template_id/,
+  );
+  assert.match(migration, /subtitle template identity is immutable/);
+  assert.match(migration, /'subtitle_templates',[\s\S]*false/);
+  assert.match(migration, /'subtitle_templates_public',[\s\S]*false/);
+  assert.doesNotMatch(migration, /\b(?:create|alter|drop)\s+(?:table|function)\s+public\./i);
+});

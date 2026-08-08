@@ -18,8 +18,8 @@
 - `payment_provider_installment_capabilities`: 더페이원 실제 승인 지원을 확인한 할부개월
 - `payment_method_registrations`, `payment_test_one_time_orders`, `payment_test_recurring_runs`: 로컬 결제 테스트의 BID·단건·회차 상태
 - `mvp_sessions`: hashed browser token, 호환성용 plan 캐시, 로그인 사용자 연결
-- `video_jobs`: 원본 metadata, 생성 시점 보관기간 스냅샷, queue/processing deadline, ISP route lease, retry/Batch/stage/heartbeat/expiry
-- `generated_shorts`: 구간, render shard/progress, private object keys, render version/hash, 마지막 성공 `editor_document`와 승격 대기 편집 문서
+- `video_jobs`: 원본 metadata, 생성 시점 보관기간 스냅샷, queue/processing deadline, ISP route lease, retry/Batch/stage/heartbeat/expiry. 어드민 자막 카나리는 nullable `subtitle_template_id`와 생성 시점의 불변 `subtitle_template_snapshot`만 추가하며 기존 작업은 둘 다 `null`이다.
+- `generated_shorts`: 구간, render shard/progress, private object keys, render version/hash, 마지막 성공 `editor_document`와 승격 대기 편집 문서. 자막 카나리 출력만 불변 템플릿 스냅샷과 clip-local 30fps `caption_render_spec`을 보관한다.
 - `editor_render_requests`: 통합 편집 문서 저장의 UUID 멱등성, 기준 렌더 버전, 문서 해시, 성공·실패 감사 상태
 - `youtube_analyses`: 짧게 유지되는 YouTube 사전 분석 결과와 사용자 소유권
 - `job_outbox`, `dispatch_batches`, `dispatch_batch_items`: Prepare 제출과 Array child 매핑

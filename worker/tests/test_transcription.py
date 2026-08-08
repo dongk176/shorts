@@ -15,6 +15,7 @@ from shorts_worker.media import media_duration, probe_media
 from shorts_worker.subtitles import (
     ELEVENLABS_FALLBACK_POLICY,
     AudioTranscriber,
+    _timed_transcript,
 )
 
 
@@ -404,6 +405,7 @@ def test_elevenlabs_policy_autodetects_multilingual_words(
                 "language_probability": 0.97,
                 "words": [
                     {"type": "word", "text": "안녕하세요", "start": 0.1, "end": 0.8},
+                    {"type": "spacing", "text": " "},
                     {"type": "word", "text": "hello", "start": 0.9, "end": 1.4},
                 ],
             }
@@ -431,10 +433,52 @@ def test_elevenlabs_policy_autodetects_multilingual_words(
     assert result.language_code == "ko"
     assert result.language_probability == pytest.approx(0.97)
     assert [word.text for word in result.words] == ["안녕하세요", "hello"]
+    assert [word.space_before for word in result.words] == [False, True]
     assert result.segments[0].text == "안녕하세요 hello"
     assert calls[0]["headers"] == {"xi-api-key": "elevenlabs-test-key"}
     assert calls[0]["data"]["model_id"] == "scribe_v2"
     assert "language_code" not in calls[0]["data"]
+
+
+def test_whisper_leading_spaces_are_preserved_as_word_boundary_metadata() -> None:
+    segments, words = _timed_transcript(
+        [
+            {"word": "hello", "start": 0.0, "end": 0.2},
+            {"word": " world", "start": 0.2, "end": 0.4},
+            {"word": "!", "start": 0.4, "end": 0.5},
+        ],
+        offset=10.0,
+        duration=1.0,
+        provider="openai",
+    )
+
+    assert [word.text for word in words] == ["hello", "world", "!"]
+    assert [word.space_before for word in words] == [False, True, False]
+    assert segments[0].text == "hello world!"
+
+
+@pytest.mark.parametrize(
+    "raw_words",
+    [
+        [{"word": " 다음", "start": 0.0, "end": 0.2}],
+        [
+            {"type": "spacing", "text": " "},
+            {"type": "word", "text": "다음", "start": 0.0, "end": 0.2},
+        ],
+    ],
+)
+def test_first_word_keeps_chunk_boundary_spacing(raw_words: list[dict[str, object]]) -> None:
+    segments, words = _timed_transcript(
+        raw_words,
+        offset=30.0,
+        duration=1.0,
+        provider="elevenlabs",
+    )
+
+    assert len(words) == 1
+    assert words[0].text == "다음"
+    assert words[0].space_before is True
+    assert segments[0].text == "다음"
 
 
 def test_elevenlabs_failure_falls_back_only_for_that_chunk(

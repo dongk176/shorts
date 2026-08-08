@@ -19,6 +19,7 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
     assertPaidProjectActionAccess(billing, "edit");
     const rows = await db`
       select s.id,s.status,s.render_version,s.rendered_config_hash,
+        s.subtitle_template_id,
         md5(concat_ws('|', s.hook_title, s.channel_display_name, s.subtitles_enabled::text,
           s.subtitle_segments::text, s.comment_overlays::text, s.template_id,
           coalesce(s.template_snapshot::text,''), s.video_aspect_ratio,
@@ -54,6 +55,13 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
         and s.output_s3_key is not null
     `;
     if (!rows[0]) throw new Error("재렌더링할 쇼츠를 찾을 수 없습니다.");
+    if (rows[0].subtitleTemplateId) {
+      throw new HttpError(
+        409,
+        "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
+        "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+      );
+    }
     if (rows[0].status === "rerendering") return NextResponse.json({ status: "rerendering" });
     if (rows[0].renderedConfigHash === rows[0].currentConfigHash) {
       return NextResponse.json({ status: "ready", unchanged: true });
@@ -83,6 +91,7 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
           or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
         )
           and s.status='ready' and s.deleted_at is null and s.expires_at > now()
+          and s.subtitle_template_id is null
           and (
             not (
               exists (

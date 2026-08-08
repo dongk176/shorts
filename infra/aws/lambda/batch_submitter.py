@@ -28,6 +28,7 @@ _BATCH_JOB_DEFINITION_ARN = re.compile(
 _BATCH_QUEUE_ARN = re.compile(
     r"^arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-queue/[^/]+$"
 )
+_SUBTITLE_TEMPLATE_IDS = {"basic", "highlight", "pop"}
 
 
 def _estimated_output_seconds(job: dict[str, Any]) -> int:
@@ -75,16 +76,44 @@ def _project_dispatch_target(
     transcription_target = _optional_trusted_project_target(
         "ELEVENLABS_TRANSCRIPTION"
     )
+    raw_subtitle_template_id = job.get("subtitle_template_id")
+    subtitle_template_id = (
+        str(raw_subtitle_template_id)
+        if raw_subtitle_template_id is not None
+        else None
+    )
+    if (
+        subtitle_template_id is not None
+        and subtitle_template_id not in _SUBTITLE_TEMPLATE_IDS
+    ):
+        raise RuntimeError("Project subtitle template is invalid")
+    # A partially configured subtitle candidate must never stop an ordinary
+    # legacy/source-range submission. Parse this optional target only after the
+    # stored job itself proves it is a caption-template job.
+    subtitle_target = (
+        _optional_trusted_project_target("SUBTITLE_TEMPLATES")
+        if subtitle_template_id is not None
+        else None
+    )
     allowed_targets = {
         (legacy_definition, legacy_queue): "legacy",
         (range_definition, range_queue): "source_range",
     }
-    if transcription_target:
-        if transcription_target in allowed_targets:
+    allowed_definitions = {
+        definition for definition, _queue in allowed_targets
+    }
+    for candidate_target, resource_tier in (
+        (transcription_target, "elevenlabs_transcription"),
+        (subtitle_target, "subtitle_templates"),
+    ):
+        if not candidate_target:
+            continue
+        if candidate_target[0] in allowed_definitions:
             raise RuntimeError(
-                "ElevenLabs transcription target must be isolated from stable targets"
+                f"{resource_tier} Job Definition must be isolated from every other project target"
             )
-        allowed_targets[transcription_target] = "elevenlabs_transcription"
+        allowed_targets[candidate_target] = resource_tier
+        allowed_definitions.add(candidate_target[0])
 
     transcription_policy = str(
         job.get("transcription_policy") or "openai_stable"
@@ -94,23 +123,42 @@ def _project_dispatch_target(
         "elevenlabs_primary_openai_fallback",
     }:
         raise RuntimeError("Project transcription policy is invalid")
+    if (
+        subtitle_template_id is not None
+        and transcription_policy != "elevenlabs_primary_openai_fallback"
+    ):
+        raise RuntimeError(
+            "Subtitle template job requires the word-timed transcription policy"
+        )
 
     if stored_definition or stored_queue:
         resource_tier = allowed_targets.get((stored_definition, stored_queue))
         if resource_tier:
             if (
-                transcription_policy == "elevenlabs_primary_openai_fallback"
-                and resource_tier != "elevenlabs_transcription"
+                subtitle_template_id is None
+                and resource_tier == "subtitle_templates"
             ):
                 raise RuntimeError(
-                    "ElevenLabs transcription job is not pinned to its candidate target"
+                    "Non-caption job cannot use the subtitle template candidate target"
+                )
+            expected_candidate_tier = None
+            if subtitle_template_id is not None:
+                expected_candidate_tier = "subtitle_templates"
+            elif transcription_policy == "elevenlabs_primary_openai_fallback":
+                expected_candidate_tier = "elevenlabs_transcription"
+            if expected_candidate_tier and resource_tier != expected_candidate_tier:
+                raise RuntimeError(
+                    "Candidate job is not pinned to its exact immutable Batch target"
                 )
             if (
                 transcription_policy == "openai_stable"
-                and resource_tier == "elevenlabs_transcription"
+                and resource_tier in {
+                    "elevenlabs_transcription",
+                    "subtitle_templates",
+                }
             ):
                 raise RuntimeError(
-                    "Stable transcription job cannot use the ElevenLabs candidate target"
+                    "Stable transcription job cannot use an isolated candidate target"
                 )
             return (
                 stored_definition,
@@ -130,6 +178,10 @@ def _project_dispatch_target(
             return legacy_definition, legacy_queue, "legacy", estimated_seconds
         raise RuntimeError("Stored project Batch target is not trusted")
 
+    if subtitle_template_id is not None:
+        raise RuntimeError(
+            "Subtitle template job is missing its pinned Batch target"
+        )
     if transcription_policy == "elevenlabs_primary_openai_fallback":
         raise RuntimeError(
             "ElevenLabs transcription job is missing its pinned Batch target"
@@ -279,7 +331,8 @@ def _submit(payload: dict[str, Any]) -> str | None:
             "select=id,status,pipeline_version,project_resume_count,aws_batch_job_id,"
             "mvp_session_id,user_id,preparation_finished_at,planned_short_count,"
             "clip_length_option,batch_job_definition,batch_job_queue,"
-            "source_range_selection_enabled,transcription_policy,dispatch_priority_class"
+            "source_range_selection_enabled,transcription_policy,subtitle_template_id,"
+            "dispatch_priority_class"
             f"&id=eq.{encoded_job_id}&limit=1"
         )) or []
         if not jobs or int(jobs[0].get("pipeline_version") or 1) != 2:
@@ -330,7 +383,11 @@ def _submit(payload: dict[str, Any]) -> str | None:
             timeout={
                 "attemptDurationSeconds": (
                     18000
-                    if resource_tier in {"source_range", "elevenlabs_transcription"}
+                    if resource_tier in {
+                        "source_range",
+                        "elevenlabs_transcription",
+                        "subtitle_templates",
+                    }
                     else 7200
                 )
             },

@@ -597,6 +597,36 @@ def test_full_vertical_uses_second_line_text_color_for_both_rows(tmp_path: Path)
         assert (255, 255, 255, 255) not in pixels
 
 
+def test_caption_full_vertical_keeps_first_title_row_white_and_accents_second(
+    tmp_path: Path,
+) -> None:
+    output = create_title_panel(
+        "첫 번째 제목\n두 번째 제목",
+        TemplateId.DARK_MINIMAL,
+        tmp_path / "caption-vertical-title-color.png",
+        panel_height=360,
+        overlay_mode=True,
+        title_accent_color="#FF715E",
+    )
+    with Image.open(output).convert("RGBA") as image:
+        white_rows = {
+            y
+            for y in range(image.height)
+            for x in range(image.width)
+            if image.getpixel((x, y)) == (255, 255, 255, 255)
+        }
+        accent_rows = {
+            y
+            for y in range(image.height)
+            for x in range(image.width)
+            if image.getpixel((x, y)) == (255, 113, 94, 255)
+        }
+
+    assert white_rows
+    assert accent_rows
+    assert max(white_rows) < min(accent_rows)
+
+
 def test_full_vertical_paper_uses_different_colors_for_each_title_row(tmp_path: Path) -> None:
     output = create_title_panel(
         "첫 번째 제목\n두 번째 제목",
