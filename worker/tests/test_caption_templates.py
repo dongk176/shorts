@@ -18,15 +18,16 @@ from shorts_worker.caption_templates import (
     _ass_timestamp,
     _font,
     _measure,
+    caption_layout,
     caption_safe_area,
     compile_caption_render_spec,
     create_caption_ass,
     prepare_caption_fonts,
 )
 from shorts_worker.config import Settings
-from shorts_worker.errors import TranscriptionError
+from shorts_worker.errors import CaptionCompileError
 from shorts_worker.media import probe_media
-from shorts_worker.renderer import VideoRenderer, video_layout
+from shorts_worker.renderer import VideoRenderer, caption_video_layout
 from shorts_worker.schemas import TemplateId, VideoAspectRatio
 from shorts_worker.subtitles import TranscriptWord
 
@@ -67,7 +68,8 @@ def _compile(
 def test_caption_safe_area_matches_renderer_video_rect(
     ratio: VideoAspectRatio,
 ) -> None:
-    layout = video_layout(ratio)
+    snapshot_layout = caption_layout(ratio)
+    layout = caption_video_layout({"layout": snapshot_layout})
     assert layout.video_height == VIDEO_HEIGHTS[ratio]
     safe = caption_safe_area(ratio)
     assert safe["x"] == 120
@@ -75,19 +77,17 @@ def test_caption_safe_area_matches_renderer_video_rect(
     assert safe["y"] >= layout.video_y
     assert safe["y"] + safe["height"] <= layout.video_y + layout.video_height
     if ratio is VideoAspectRatio.FULL_VERTICAL:
-        assert safe == {"x": 120, "y": 1220, "width": 840, "height": 290}
+        assert safe == {"x": 120, "y": 1430, "width": 840, "height": 140}
     else:
-        expected_bottom = (
+        assert layout.video_y == max(
+            0,
+            (1920 - layout.video_height) // 2 - 160,
+        )
+        assert safe["y"] + safe["height"] == (
             layout.video_y
             + layout.video_height
             - max(64, round(layout.video_height * 0.08))
         )
-        expected_top = max(
-            layout.video_y + round(layout.video_height * 0.56),
-            expected_bottom - 250,
-        )
-        assert safe["y"] == expected_top
-        assert safe["y"] + safe["height"] == expected_bottom
 
 
 def test_approved_font_is_same_pretendard_face_for_measurement_and_libass(
@@ -175,7 +175,9 @@ def test_korean_sentence_punctuation_prevents_cross_sentence_merge() -> None:
 
 
 @pytest.mark.parametrize("template_id", ["basic", "highlight"])
-def test_sentence_templates_fit_two_lines_and_safe_width(template_id: str) -> None:
+def test_sentence_templates_are_always_one_line_and_fit_safe_width(
+    template_id: str,
+) -> None:
     words = [
         _word("영상", 0.0, 0.2),
         _word("안쪽", 0.2, 0.4, space_before=True),
@@ -186,7 +188,7 @@ def test_sentence_templates_fit_two_lines_and_safe_width(template_id: str) -> No
     spec = _compile(words, template_id, clip_end=1.1)
     safe = spec["safeArea"]
     for cue in spec["cues"]:
-        assert 1 <= len(cue["lines"]) <= 2
+        assert len(cue["lines"]) == 1
         serialized = cue["words"]
         for line in cue["lines"]:
             text = "".join(
@@ -200,8 +202,36 @@ def test_sentence_templates_fit_two_lines_and_safe_width(template_id: str) -> No
 
 @pytest.mark.parametrize("template_id", ["basic", "highlight", "pop"])
 def test_unbreakable_long_unit_fails_instead_of_overflowing(template_id: str) -> None:
-    with pytest.raises(TranscriptionError, match="안전영역"):
+    with pytest.raises(CaptionCompileError, match="안전영역"):
         _compile([_word("W" * 120, 0.0, 0.8)], template_id)
+
+
+def test_project_3204_pop_phrase_is_split_to_one_line_instead_of_failing() -> None:
+    words = [
+        _word("파이터를", 0.0, 0.35),
+        _word("많이", 0.35, 0.6, space_before=True),
+        _word("달아놓으셔가지고", 0.6, 1.2, space_before=True),
+        _word("하지만", 1.2, 1.5, space_before=True),
+        _word("뻔해버리면", 1.5, 1.85, space_before=True),
+        _word("당해버리는,", 1.85, 2.3, space_before=True),
+    ]
+    spec = _compile(words, "pop", clip_end=2.4)
+    assert len(spec["cues"]) >= 2
+    assert all(len(cue["words"]) <= 3 for cue in spec["cues"])
+    assert all(
+        max(word["centerX"] for word in cue["words"])
+        - min(word["centerX"] for word in cue["words"])
+        <= spec["safeArea"]["width"]
+        for cue in spec["cues"]
+    )
+
+
+def test_caption_display_leads_provider_timing_by_two_frames() -> None:
+    spec = _compile([_word("먼저", 0.5, 0.8)], "basic", clip_end=1.0)
+    word = spec["cues"][0]["words"][0]
+    assert spec["timingLeadFrames"] == 2
+    assert word["startFrame"] == round(0.5 * 30) - 2
+    assert word["endFrame"] == round(0.8 * 30)
 
 
 def test_same_start_frame_events_are_contiguous_without_overlap() -> None:
@@ -216,6 +246,22 @@ def test_same_start_frame_events_are_contiguous_without_overlap() -> None:
     assert all(
         left["endFrame"] == right["startFrame"]
         for left, right in zip(events[:-1], events[1:], strict=True)
+    )
+
+
+def test_overlapping_fast_pop_groups_are_serialized_without_failing() -> None:
+    spec = _compile([
+        _word("어유,", 0.10, 0.20),
+        _word("어유,", 0.12, 0.23, space_before=True),
+        _word("어유.", 0.13, 0.24, space_before=True),
+        _word("진짜", 0.14, 0.30, space_before=True),
+    ], "pop", clip_end=0.4)
+    events = [event for cue in spec["cues"] for event in cue["events"]]
+    assert all(event["endFrame"] > event["startFrame"] for event in events)
+    cues = spec["cues"]
+    assert all(
+        left["endFrame"] <= right["startFrame"]
+        for left, right in zip(cues[:-1], cues[1:], strict=True)
     )
 
 
@@ -294,8 +340,8 @@ def test_highlight_switches_on_the_exact_output_frame(tmp_path: Path) -> None:
     # The active word changes at frame 2. An ASS timestamp rounded to .07
     # leaves LEFT active on frame 2; flooring to .06 makes RIGHT active there.
     spec = _compile([
-        _word("LEFT", 0.0, 2 / 30),
-        _word("RIGHT", 2 / 30, 0.2, space_before=True),
+        _word("LEFT", 0.0, 4 / 30),
+        _word("RIGHT", 4 / 30, 0.2, space_before=True),
     ], "highlight", clip_end=0.2)
     ass_path = create_caption_ass(spec, tmp_path / "boundary.ass")
     font_directory = prepare_caption_fonts(tmp_path / "fonts")

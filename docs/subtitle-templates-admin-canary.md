@@ -18,6 +18,22 @@ Vercel environment after the build would create a different deployment and is
 not an allowed activation mechanism. Do not enable `subtitle_templates_public`
 during this release.
 
+## Immutable preview and render layout
+
+All three caption templates use the same server-authored 1080x1920 layout in
+both the browser card and the worker render spec. The hook title is at y=32,
+the channel row is at y=1710, and non-full-height video ratios are lifted 160px
+from their old centered position. Captions are always one line, centered in an
+840x140 box inside the actual video near its lower edge. Full-height 9:16 uses
+y=1430; other ratios use the video bottom minus the 8% lower inset.
+
+Provider word timestamps remain unchanged. Only the displayed start frame is
+advanced by two 30fps frames (about 67ms); the word end frame is preserved so a
+caption never disappears before the spoken word ends. Overlapping provider
+timestamps are serialized with at least one output frame per word. A caption
+layout failure is recorded separately from transcription failure and must never
+be shown to the user as “no human voice”.
+
 ## Candidate target
 
 Build the worker image once and record its immutable digest. Register a new Job

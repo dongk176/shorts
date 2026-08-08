@@ -66,6 +66,7 @@ import { isIosDownloadDevice, shortDownloadFilename } from "@/lib/short-download
 import { stateRetryDelayMs } from "@/lib/state-loading";
 import {
   SUBTITLE_TEMPLATE_BRAND_COLOR,
+  subtitleTemplateStyleSnapshot,
   subtitleTemplateOptions,
   type SubtitleTemplateId,
 } from "@/lib/subtitle-templates";
@@ -1387,34 +1388,59 @@ function CustomHomeTemplatePreview({ template }: { template: CustomTemplate }) {
   return <CustomTemplateCanvasPreview template={template} firstLine="AI가 만든 제목" secondLine="핵심 포인트" channelLabel="채널 이름" />;
 }
 
-function SubtitleTemplatePreview({ id }: { id: SubtitleTemplateId }) {
+function SubtitleTemplatePreview({
+  id,
+  videoAspectRatio,
+  channelName,
+  channelThumbnailUrl,
+}: {
+  id: SubtitleTemplateId;
+  videoAspectRatio: VideoAspectRatio;
+  channelName: string;
+  channelThumbnailUrl: string | null;
+}) {
+  const snapshot = subtitleTemplateStyleSnapshot(id, videoAspectRatio);
+  const layout = snapshot.layout;
+  const rectStyle = (rect: { x: number; y: number; width: number; height: number }) => ({
+    left: `${rect.x / 10.8}%`,
+    top: `${rect.y / 19.2}%`,
+    width: `${rect.width / 10.8}%`,
+    height: `${rect.height / 19.2}%`,
+  });
   const outline = {
     WebkitTextStroke: `${id === "pop" ? 1.4 : 1.1}px #080808`,
     paintOrder: "stroke fill",
   } satisfies CSSProperties;
   return (
     <div className="relative mx-auto aspect-[9/16] w-full max-w-[150px] overflow-hidden rounded-[10px] bg-black shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]">
-      <div className="absolute inset-x-0 top-[7%] text-center text-[8px] font-black leading-[1.25] text-white">
+      <div className="absolute z-20 flex flex-col items-center justify-center text-center text-[8px] font-black leading-[1.2] text-white" style={rectStyle(layout.title)}>
         <span className="block">AI가 고른 오늘의</span>
         <span className="block" style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>핵심 장면</span>
       </div>
-      <div className="absolute inset-x-[7%] top-[27%] h-[52%] overflow-hidden rounded-[5px] bg-gradient-to-br from-neutral-600 via-neutral-800 to-neutral-950">
+      <div className="absolute overflow-hidden bg-gradient-to-br from-neutral-600 via-neutral-800 to-neutral-950" style={rectStyle(layout.video)}>
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
-        <div className="absolute inset-x-[4%] bottom-[9%] text-center font-black leading-[1.15] text-white" style={outline}>
-          {id === "basic" && <span className="text-[8px]">지금 이 순간을 놓치지 마세요</span>}
+      </div>
+      <div className="absolute z-20 flex items-center justify-center overflow-hidden px-0.5 text-center font-black leading-none text-white" style={{ ...rectStyle(layout.caption), ...outline }}>
+          {id === "basic" && <span className="whitespace-nowrap text-[7px]">지금 이 순간을 놓치지 마세요</span>}
           {id === "highlight" && (
-            <span className="text-[8px]">
+            <span className="whitespace-nowrap text-[7px]">
               지금 이 <span className="animate-pulse" style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>순간을</span> 놓치지 마세요
             </span>
           )}
           {id === "pop" && (
-            <span className="inline-block animate-pulse text-[10px]" style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>
+            <span className="inline-block animate-pulse whitespace-nowrap text-[9px]" style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>
               바로 지금
             </span>
           )}
-        </div>
       </div>
-      <div className="absolute inset-x-0 bottom-[7%] text-center text-[7px] font-bold text-white">{`● ${"채널 이름"}`}</div>
+      <div className="absolute z-20 flex items-center justify-center gap-1 text-[7px] font-bold text-white" style={rectStyle(layout.channel)}>
+        <span
+          className="h-2 w-2 shrink-0 rounded-full bg-white bg-cover bg-center"
+          style={channelThumbnailUrl ? { backgroundImage: `url(${channelThumbnailUrl})` } : undefined}
+          aria-hidden="true"
+        />
+        <span className="max-w-[75%] truncate">{channelName.trim() || "YouTube 채널"}</span>
+      </div>
     </div>
   );
 }
@@ -1532,7 +1558,12 @@ function TemplatePicker({
                   }}
                   className={`rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 text-left backdrop-blur-xl transition ${selected ? "border-[#ff715e] shadow-[0_0_0_3px_rgba(255,113,94,.14)]" : "border-white/10 hover:border-white/30"}`}
                 >
-                  <SubtitleTemplatePreview id={option.id} />
+                  <SubtitleTemplatePreview
+                    id={option.id}
+                    videoAspectRatio={effectiveAspectRatio}
+                    channelName={channelName}
+                    channelThumbnailUrl={channelThumbnailUrl}
+                  />
                   <span className="mt-2.5 block text-center text-sm font-extrabold text-white">{option.name}</span>
                   <span className="mt-1 block text-center text-[11px] leading-4 text-neutral-400">{option.description}</span>
                 </button>

@@ -25,6 +25,7 @@ from .config import Settings
 from .editor_renderer import EditorDocumentRenderer, retime_editor_subtitles
 from .errors import (
     BotCheckError,
+    CaptionCompileError,
     IngestionError,
     RetryableIngestionError,
     RetryExhaustedIngestionError,
@@ -358,6 +359,10 @@ class BatchWorker:
     )
     FINAL_PROCESSING_MESSAGE = "쇼츠를 준비하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
     FINAL_RENDER_MESSAGE = "쇼츠 영상을 만드는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+    FINAL_CAPTION_MESSAGE = (
+        "자막을 구성하는 중 오류가 발생했습니다.\n"
+        "사용량은 다시 복구되었습니다."
+    )
     FINAL_TRANSCRIPTION_MESSAGE = (
         "영상에서 사람의 목소리를 찾지 못해 쇼츠를 생성할 수 없습니다.\n"
         "사용량은 다시 복구되었습니다."
@@ -1093,6 +1098,8 @@ class BatchWorker:
             )
             if error_code in self.RESTRICTED_CONTENT_ERROR_CODES:
                 error_message = self.FINAL_RESTRICTED_CONTENT_MESSAGE
+            elif isinstance(exc, CaptionCompileError):
+                error_message = self.FINAL_CAPTION_MESSAGE
             elif isinstance(exc, TranscriptionError):
                 error_message = self.FINAL_TRANSCRIPTION_MESSAGE
             else:
@@ -2100,6 +2107,22 @@ class BatchWorker:
                 else:
                     for shard_index in range(shard_count):
                         self.render_shard(job_id, shard_index)
+        except CaptionCompileError as exc:
+            _log_event(
+                "prepare_failed",
+                job_id=job_id,
+                attempt=attempt,
+                error_type=type(exc).__name__,
+                retryable=False,
+            )
+            self._cleanup_initial_objects(job)
+            self.repository.remove_partial_shorts(job_id)
+            self.repository.fail_job(
+                job_id,
+                type(exc).__name__,
+                self.FINAL_CAPTION_MESSAGE,
+            )
+            raise
         except TranscriptionError as exc:
             _log_event(
                 "prepare_failed",

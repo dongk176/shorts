@@ -195,6 +195,66 @@ def video_layout(video_aspect_ratio: VideoAspectRatio) -> VideoLayout:
     )
 
 
+def caption_video_layout(spec: dict[str, object]) -> VideoLayout:
+    """Consume the exact server-authored layout used by the template preview."""
+    layout = spec.get("layout")
+    if not isinstance(layout, dict):
+        raise RenderError("자막 템플릿 레이아웃이 올바르지 않습니다.")
+
+    def rect(name: str) -> dict[str, int]:
+        value = layout.get(name)
+        if not isinstance(value, dict):
+            raise RenderError("자막 템플릿 레이아웃이 올바르지 않습니다.")
+        try:
+            result = {
+                key: int(value[key])
+                for key in ("x", "y", "width", "height")
+            }
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RenderError("자막 템플릿 레이아웃이 올바르지 않습니다.") from exc
+        if (
+            result["x"] < 0
+            or result["y"] < 0
+            or result["width"] <= 0
+            or result["height"] <= 0
+            or result["x"] + result["width"] > CANVAS_WIDTH
+            or result["y"] + result["height"] > CANVAS_HEIGHT
+        ):
+            raise RenderError("자막 템플릿 레이아웃이 캔버스를 벗어났습니다.")
+        return result
+
+    canvas = rect("canvas")
+    video = rect("video")
+    title = rect("title")
+    channel = rect("channel")
+    caption = rect("caption")
+    if canvas != {"x": 0, "y": 0, "width": CANVAS_WIDTH, "height": CANVAS_HEIGHT}:
+        raise RenderError("자막 템플릿 캔버스가 올바르지 않습니다.")
+    if video["x"] != 0 or video["width"] != CANVAS_WIDTH:
+        raise RenderError("자막 템플릿 영상 영역이 올바르지 않습니다.")
+    if title["x"] != 0 or title["width"] != CANVAS_WIDTH:
+        raise RenderError("자막 템플릿 제목 영역이 올바르지 않습니다.")
+    if channel["x"] != 0 or channel["width"] != CANVAS_WIDTH:
+        raise RenderError("자막 템플릿 채널 영역이 올바르지 않습니다.")
+    if (
+        caption["x"] < video["x"]
+        or caption["y"] < video["y"]
+        or caption["x"] + caption["width"] > video["x"] + video["width"]
+        or caption["y"] + caption["height"] > video["y"] + video["height"]
+    ):
+        raise RenderError("자막이 실제 영상 영역을 벗어났습니다.")
+    return VideoLayout(
+        video_height=video["height"],
+        video_y=video["y"],
+        top_height=title["height"],
+        top_y=title["y"],
+        bottom_height=channel["height"],
+        bottom_y=channel["y"],
+        overlay_mode=True,
+        subtitle_margin_v=CANVAS_HEIGHT - caption["y"],
+    )
+
+
 def lifted_comment_landscape_layout() -> VideoLayout:
     video_height = VIDEO_HEIGHTS[VideoAspectRatio.LANDSCAPE]
     centered_y = (CANVAS_HEIGHT - video_height) // 2
@@ -399,11 +459,15 @@ class VideoRenderer:
             else video_aspect_ratio
         )
         layout = (
-            lifted_comment_landscape_layout()
-            if template_id is TemplateId.COMMENT_CAPTURE
-            and (comment_channel_below or comment_channel_fixed)
-            and video_aspect_ratio is VideoAspectRatio.LANDSCAPE
-            else video_layout(layout_ratio)
+            caption_video_layout(caption_render_spec)
+            if caption_render_spec is not None
+            else (
+                lifted_comment_landscape_layout()
+                if template_id is TemplateId.COMMENT_CAPTURE
+                and (comment_channel_below or comment_channel_fixed)
+                and video_aspect_ratio is VideoAspectRatio.LANDSCAPE
+                else video_layout(layout_ratio)
+            )
         )
         overlay_started_at = time.monotonic()
         top, bottom = create_panel_overlays(
@@ -421,7 +485,11 @@ class VideoRenderer:
             title_accent_color=(CAPTION_ACCENT if caption_render_spec else None),
         )
         channel_overlay_y = layout.bottom_y
-        if fixed_preset_channel and template_id is not TemplateId.COMMENT_CAPTURE:
+        if (
+            caption_render_spec is None
+            and fixed_preset_channel
+            and template_id is not TemplateId.COMMENT_CAPTURE
+        ):
             create_channel_panel(
                 channel_name,
                 template_id,

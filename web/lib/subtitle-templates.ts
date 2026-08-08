@@ -5,24 +5,61 @@ export type SubtitleTemplateId = typeof subtitleTemplateIds[number];
 
 export const SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID = "dark-minimal" as const;
 export const SUBTITLE_TEMPLATE_BRAND_COLOR = "#FF715E" as const;
+export const SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES = 2 as const;
+
+const CAPTION_CANVAS_HEIGHT = 1920;
+const CAPTION_VIDEO_HEIGHTS: Record<VideoAspectRatio, number> = {
+  "16:9": 608,
+  "5:4": 864,
+  "1:1": 1080,
+  "4:5": 1350,
+  "9:16": 1920,
+};
 
 export const subtitleTemplateOptions: Array<{
   id: SubtitleTemplateId;
   name: string;
   description: string;
 }> = [
-  { id: "basic", name: "자막 기본형", description: "문장을 또렷하게 두 줄까지" },
+  { id: "basic", name: "자막 기본형", description: "한 줄 문장을 또렷하게" },
   { id: "highlight", name: "자막 강조형", description: "말하는 어절만 브랜드 컬러로" },
   { id: "pop", name: "자막 팝형", description: "핵심 어절을 크고 리듬감 있게" },
 ];
+
+export function subtitleTemplateLayout(videoAspectRatio: VideoAspectRatio) {
+  const videoHeight = CAPTION_VIDEO_HEIGHTS[videoAspectRatio];
+  const fullVertical = videoAspectRatio === "9:16";
+  const centeredVideoY = Math.round((CAPTION_CANVAS_HEIGHT - videoHeight) / 2);
+  const videoY = fullVertical ? 0 : Math.max(0, centeredVideoY - 160);
+  const videoBottom = videoY + videoHeight;
+  const safeArea = fullVertical
+    ? { x: 120, y: 1430, width: 840, height: 140 }
+    : {
+        x: 120,
+        y: Math.max(
+          videoY,
+          videoBottom - Math.max(64, Math.round(videoHeight * 0.08)) - 140,
+        ),
+        width: 840,
+        height: 140,
+      };
+  return {
+    canvas: { x: 0, y: 0, width: 1080, height: CAPTION_CANVAS_HEIGHT },
+    video: { x: 0, y: videoY, width: 1080, height: videoHeight },
+    title: { x: 0, y: 32, width: 1080, height: 300 },
+    channel: { x: 0, y: 1710, width: 1080, height: 160 },
+    caption: safeArea,
+  } as const;
+}
 
 export function subtitleTemplateStyleSnapshot(
   id: SubtitleTemplateId,
   videoAspectRatio: VideoAspectRatio,
 ) {
   const pop = id === "pop";
+  const layout = subtitleTemplateLayout(videoAspectRatio);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     subtitleTemplateId: id,
     baseTemplateId: SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID,
     videoAspectRatio,
@@ -40,18 +77,14 @@ export function subtitleTemplateStyleSnapshot(
       outline: "#080808",
     },
     outlinePx: pop ? 8 : 7,
-    maxLines: pop ? 1 : 2,
+    maxLines: 1,
     maxWidthPx: 840,
     popScale: pop ? 1.12 : 1,
-    safeArea: videoAspectRatio === "9:16"
-      ? { x: 120, y: 1220, width: 840, height: 290 }
-      : {
-          horizontalInsetPx: 120,
-          bottomOffsetVideoRatio: 0.08,
-          maxHeightPx: 250,
-        },
+    timingLeadFrames: SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
+    layout,
+    safeArea: layout.caption,
     cueBreak: pop
       ? { maxWords: 3, silenceMs: 250 }
-      : { maxLines: 2, silenceMs: 420 },
+      : { maxLines: 1, silenceMs: 420 },
   } as const;
 }

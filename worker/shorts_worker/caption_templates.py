@@ -12,11 +12,12 @@ from typing import Any
 from fontTools.ttLib import TTFont
 from PIL import ImageFont
 
-from .errors import RenderError, TranscriptionError
+from .errors import CaptionCompileError, RenderError, TranscriptionError
 from .schemas import VideoAspectRatio
 from .subtitles import TranscriptWord
 
 CAPTION_FPS = 30
+CAPTION_TIMING_LEAD_FRAMES = 2
 CAPTION_TEMPLATE_IDS = frozenset({"basic", "highlight", "pop"})
 CAPTION_ACCENT = "#FF715E"
 CAPTION_TEXT = "#FFFFFF"
@@ -110,20 +111,39 @@ def prepare_caption_fonts(directory: Path) -> Path:
     return directory
 
 
-def caption_safe_area(video_aspect_ratio: VideoAspectRatio) -> dict[str, int]:
-    if video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL:
-        return {"x": 120, "y": 1220, "width": 840, "height": 290}
+def caption_layout(video_aspect_ratio: VideoAspectRatio) -> dict[str, dict[str, int]]:
     video_height = VIDEO_HEIGHTS[video_aspect_ratio]
-    video_y = (CANVAS_HEIGHT - video_height) // 2
+    centered_video_y = (CANVAS_HEIGHT - video_height) // 2
+    video_y = (
+        0
+        if video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+        else max(0, centered_video_y - 160)
+    )
     video_bottom = video_y + video_height
-    safe_bottom = video_bottom - max(64, round(video_height * 0.08))
-    safe_top = max(video_y + round(video_height * 0.56), safe_bottom - 250)
+    safe_area = (
+        {"x": 120, "y": 1430, "width": 840, "height": 140}
+        if video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+        else {
+            "x": 120,
+            "y": max(
+                video_y,
+                video_bottom - max(64, round(video_height * 0.08)) - 140,
+            ),
+            "width": 840,
+            "height": 140,
+        }
+    )
     return {
-        "x": 120,
-        "y": safe_top,
-        "width": 840,
-        "height": max(1, safe_bottom - safe_top),
+        "canvas": {"x": 0, "y": 0, "width": CANVAS_WIDTH, "height": CANVAS_HEIGHT},
+        "video": {"x": 0, "y": video_y, "width": CANVAS_WIDTH, "height": video_height},
+        "title": {"x": 0, "y": 32, "width": CANVAS_WIDTH, "height": 300},
+        "channel": {"x": 0, "y": 1710, "width": CANVAS_WIDTH, "height": 160},
+        "caption": safe_area,
     }
+
+
+def caption_safe_area(video_aspect_ratio: VideoAspectRatio) -> dict[str, int]:
+    return caption_layout(video_aspect_ratio)["caption"]
 
 
 def _has_cjk(text: str) -> bool:
@@ -154,6 +174,7 @@ def _clip_words(
     clip_start: float,
     clip_end: float,
     fps: int,
+    timing_lead_frames: int = CAPTION_TIMING_LEAD_FRAMES,
 ) -> list[_CaptionWord]:
     if clip_end <= clip_start:
         raise ValueError("자막 구간 길이가 올바르지 않습니다.")
@@ -165,15 +186,19 @@ def _clip_words(
             continue
         if not word.text.strip() or word.end <= word.start:
             raise TranscriptionError("자막 단어 타임스탬프가 올바르지 않습니다.")
-        start_frame = min(
+        source_start_frame = min(
             clip_frames - 1,
             max(0, round((max(word.start, clip_start) - clip_start) * fps)),
         )
-        end_frame = min(
+        source_end_frame = min(
             clip_frames,
             round((min(word.end, clip_end) - clip_start) * fps),
         )
-        end_frame = max(start_frame + 1, end_frame)
+        start_frame = max(0, source_start_frame - timing_lead_frames)
+        # Advance when a word becomes visible, but keep the provider-derived
+        # end boundary. Shifting both edges made the final caption disappear
+        # before the spoken word had actually finished.
+        end_frame = max(start_frame + 1, source_end_frame)
         if start_frame < previous_start or end_frame > clip_frames:
             raise TranscriptionError("자막 단어 순서가 올바르지 않습니다.")
         previous_start = start_frame
@@ -256,9 +281,10 @@ def _would_fit_phrase(
     *,
     font_size: int,
     max_width: int,
+    max_lines: int,
 ) -> bool:
     lines = _wrap_word_indexes(words, font_size=font_size, max_width=max_width)
-    return len(lines) <= 2 and all(
+    return len(lines) <= max_lines and all(
         _measure(_text_for_words([words[index] for index in line]), font_size)
         <= max_width
         for line in lines
@@ -273,6 +299,8 @@ def _partition_words(
     font_size: int,
     max_width: int,
     max_duration_frames: int,
+    max_lines: int = 2,
+    require_word_frames: bool = False,
 ) -> list[list[_CaptionWord]]:
     groups: list[list[_CaptionWord]] = []
     current: list[_CaptionWord] = []
@@ -282,10 +310,15 @@ def _partition_words(
             or bool(_SENTENCE_END_RE.search(current[-1].text))
             or (max_words is not None and len(current) >= max_words)
             or word.end_frame - current[0].start_frame > max_duration_frames
+            or (
+                require_word_frames
+                and word.end_frame - current[0].start_frame < len(current) + 1
+            )
             or not _would_fit_phrase(
                 [*current, word],
                 font_size=font_size,
                 max_width=max_width,
+                max_lines=max_lines,
             )
         )
         if should_break:
@@ -310,7 +343,7 @@ def _event_ranges(
         return []
     frame_count = cue_end - cue_start
     if frame_count < len(words):
-        raise TranscriptionError(
+        raise CaptionCompileError(
             "30fps에서 각 자막 어절의 표시 구간을 구분할 수 없습니다."
         )
 
@@ -361,15 +394,23 @@ def _basic_or_highlight_cues(
         font_size=72,
         max_width=max_width,
         max_duration_frames=round(3.2 * fps),
+        max_lines=1,
+        require_word_frames=highlighted,
     )
     cues: list[dict[str, object]] = []
+    previous_end_frame = 0
     for index, group in enumerate(groups):
-        start_frame = group[0].start_frame
-        end_frame = group[-1].end_frame
+        start_frame = max(group[0].start_frame, previous_end_frame)
+        minimum_frames = len(group) if highlighted else 1
+        end_frame = max(group[-1].end_frame, start_frame + minimum_frames)
         if index + 1 < len(groups):
-            gap = groups[index + 1][0].start_frame - end_frame
-            if gap < round(0.42 * fps):
-                end_frame = groups[index + 1][0].start_frame
+            next_start = groups[index + 1][0].start_frame
+            if (
+                next_start >= start_frame + minimum_frames
+                and next_start - group[-1].end_frame < round(0.42 * fps)
+            ):
+                end_frame = next_start
+        previous_end_frame = end_frame
         lines = _wrap_word_indexes(group, font_size=72, max_width=max_width)
         scale_x = 100
         if any(
@@ -382,7 +423,7 @@ def _basic_or_highlight_cues(
             )
             required_scale_x = min(100, max_width / widest * 100)
             if required_scale_x < 60:
-                raise TranscriptionError(
+                raise CaptionCompileError(
                     "자막 어절이 안전영역에 들어갈 수 없을 만큼 깁니다."
                 )
             scale_x = round(required_scale_x)
@@ -427,10 +468,13 @@ def _pop_cues(
         font_size=92,
         max_width=round(max_width / 1.12),
         max_duration_frames=round(2.0 * fps),
+        max_lines=1,
+        require_word_frames=True,
     )
     center_x = safe_area["x"] + safe_area["width"] / 2
     center_y = safe_area["y"] + safe_area["height"] / 2
     cues: list[dict[str, object]] = []
+    previous_end_frame = 0
     for index, group in enumerate(groups):
         sizes = [_pop_font_size(word, max_width) for word in group]
         widths = [
@@ -448,7 +492,7 @@ def _pop_cues(
             ]
             total_width = sum(widths) + sum(gaps)
         if total_width > max_width + 0.5:
-            raise TranscriptionError(
+            raise CaptionCompileError(
                 "팝 자막 어절이 안전영역에 들어갈 수 없을 만큼 깁니다."
             )
         cursor = center_x - total_width / 2
@@ -467,12 +511,16 @@ def _pop_cues(
             })
             serialized.append(serialized_word)
             cursor += width
-        start_frame = group[0].start_frame
-        end_frame = group[-1].end_frame
+        start_frame = max(group[0].start_frame, previous_end_frame)
+        end_frame = max(group[-1].end_frame, start_frame + len(group))
         if index + 1 < len(groups):
-            gap = groups[index + 1][0].start_frame - end_frame
-            if gap < round(0.25 * fps):
-                end_frame = groups[index + 1][0].start_frame
+            next_start = groups[index + 1][0].start_frame
+            if (
+                next_start >= start_frame + len(group)
+                and next_start - group[-1].end_frame < round(0.25 * fps)
+            ):
+                end_frame = next_start
+        previous_end_frame = end_frame
         cues.append({
             "startFrame": start_frame,
             "endFrame": end_frame,
@@ -500,7 +548,8 @@ def compile_caption_render_spec(
         raise ValueError("지원하지 않는 자막 템플릿입니다.")
     if fps != CAPTION_FPS:
         raise ValueError("자막 렌더 프레임레이트는 30fps여야 합니다.")
-    safe_area = caption_safe_area(video_aspect_ratio)
+    layout = caption_layout(video_aspect_ratio)
+    safe_area = layout["caption"]
     clipped_words = _clip_words(
         words,
         clip_start=clip_start,
@@ -521,11 +570,13 @@ def compile_caption_render_spec(
         font_size = 72
         outline = 7
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "templateId": template_id,
         "fps": fps,
         "clipStartSeconds": round(clip_start, 3),
         "clipEndSeconds": round(clip_end, 3),
+        "timingLeadFrames": CAPTION_TIMING_LEAD_FRAMES,
+        "layout": layout,
         "safeArea": safe_area,
         "font": {
             "fileId": CAPTION_FONT_PATH.name,
@@ -541,7 +592,7 @@ def compile_caption_render_spec(
             "outlineWidth": outline,
             "shadow": 0,
             "background": None,
-            "maxLines": 1 if template_id == "pop" else 2,
+            "maxLines": 1,
         },
         "cues": cues,
     }
@@ -587,7 +638,7 @@ def _line_text(
 
 
 def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
-    if int(spec.get("schemaVersion") or 0) != 1:
+    if int(spec.get("schemaVersion") or 0) not in {1, 2}:
         raise RenderError("자막 렌더 사양 버전이 올바르지 않습니다.")
     template_id = str(spec.get("templateId") or "")
     if template_id not in CAPTION_TEMPLATE_IDS:

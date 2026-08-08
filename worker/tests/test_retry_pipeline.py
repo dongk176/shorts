@@ -12,6 +12,7 @@ import pytest
 
 from shorts_worker.errors import (
     BotCheckError,
+    CaptionCompileError,
     IngestionError,
     RetryableIngestionError,
     RetryExhaustedIngestionError,
@@ -1207,6 +1208,19 @@ def test_transcription_failure_explains_that_human_voice_is_required() -> None:
     assert "isinstance(exc, TranscriptionError)" in source
     assert BatchWorker.FINAL_TRANSCRIPTION_MESSAGE == (
         "영상에서 사람의 목소리를 찾지 못해 쇼츠를 생성할 수 없습니다.\n"
+        "사용량은 다시 복구되었습니다."
+    )
+
+
+def test_caption_layout_failure_is_not_mislabeled_as_missing_voice() -> None:
+    project_source = inspect.getsource(BatchWorker.project)
+    prepare_source = inspect.getsource(BatchWorker.prepare)
+
+    assert "isinstance(exc, CaptionCompileError)" in project_source
+    assert "except CaptionCompileError as exc" in prepare_source
+    assert issubclass(CaptionCompileError, Exception)
+    assert BatchWorker.FINAL_CAPTION_MESSAGE == (
+        "자막을 구성하는 중 오류가 발생했습니다.\n"
         "사용량은 다시 복구되었습니다."
     )
 

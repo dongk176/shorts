@@ -74,3 +74,7 @@ class TranscriptionError(ShortsMakerError):
 
 class RenderError(ShortsMakerError):
     pass
+
+
+class CaptionCompileError(RenderError):
+    """Word timing exists, but an immutable caption layout cannot be compiled."""
