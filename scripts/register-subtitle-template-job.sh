@@ -60,7 +60,8 @@ jq \
     platformCapabilities: .jobDefinitions[0].platformCapabilities,
     eksProperties: .jobDefinitions[0].eksProperties,
     ecsProperties: .jobDefinitions[0].ecsProperties,
-    tags: ((.jobDefinitions[0].tags // {}) + {
+    tags: (((.jobDefinitions[0].tags // {})
+      | with_entries(select((.key | ascii_downcase | startswith("aws:")) | not))) + {
       Purpose: "subtitle-templates-admin-canary",
       ReleaseSha: $releaseSha
     })

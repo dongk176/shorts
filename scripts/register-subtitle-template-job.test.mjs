@@ -21,5 +21,6 @@ test("subtitle candidate keeps the source definition and only replaces its image
   assert.match(source, /repository_name="\$\{repository_name%%:\*\}"/);
   assert.match(source, /repository_uri="\$\{repository_prefix\}\/\$\{repository_name\}"/);
   assert.match(source, /containerProperties: \(\.jobDefinitions\[0\]\.containerProperties \| \.image = \$image\)/);
+  assert.match(source, /ascii_downcase \| startswith\("aws:"\)/);
   assert.match(source, /Purpose: "subtitle-templates-admin-canary"/);
 });
