@@ -19,6 +19,7 @@ MIN_TRANSCRIBE_CHUNK_SECONDS = 1.0
 TRANSCRIBE_CHUNK_MAX_ATTEMPTS = 2
 TRANSCRIBE_CHUNK_RETRY_DELAY_SECONDS = 1.0
 WORD_TIMESTAMP_BOUNDARY_TOLERANCE_SECONDS = 0.25
+WORD_TIMESTAMP_MIN_DURATION_SECONDS = 1 / 30
 OPENAI_STABLE_POLICY = "openai_stable"
 ELEVENLABS_FALLBACK_POLICY = "elevenlabs_primary_openai_fallback"
 SUPPORTED_TRANSCRIPTION_POLICIES = frozenset({
@@ -183,7 +184,7 @@ def _timed_transcript(
             not text
             or start is None
             or end is None
-            or end <= start
+            or end < start
             or start + 0.001 < previous_start
             or start > duration + WORD_TIMESTAMP_BOUNDARY_TOLERANCE_SECONDS
             or end > duration + WORD_TIMESTAMP_BOUNDARY_TOLERANCE_SECONDS
@@ -193,6 +194,22 @@ def _timed_transcript(
             )
         normalized_start = min(duration, start)
         normalized_end = min(duration, end)
+        if normalized_end < normalized_start:
+            raise TranscriptionError(
+                f"{provider} 단어 타임스탬프가 오디오 범위를 벗어났습니다."
+            )
+        if normalized_end == normalized_start:
+            if normalized_start >= duration:
+                normalized_start = max(
+                    0.0,
+                    duration - WORD_TIMESTAMP_MIN_DURATION_SECONDS,
+                )
+                normalized_end = duration
+            else:
+                normalized_end = min(
+                    duration,
+                    normalized_start + WORD_TIMESTAMP_MIN_DURATION_SECONDS,
+                )
         if normalized_end <= normalized_start:
             raise TranscriptionError(
                 f"{provider} 단어 타임스탬프가 오디오 범위를 벗어났습니다."
@@ -393,53 +410,77 @@ class AudioTranscriber:
         offset: float,
         fallback_reason: str,
     ) -> _ChunkTranscriptionResult:
-        with chunk.open("rb") as audio_file:
-            response = client.audio.transcriptions.create(
-                model=self.settings.openai_transcribe_fallback_model,
-                file=audio_file,
-                response_format="verbose_json",
-                timestamp_granularities=["word", "segment"],
+        def request(audio_path: Path) -> _ChunkTranscriptionResult:
+            with audio_path.open("rb") as audio_file:
+                response = client.audio.transcriptions.create(
+                    model=self.settings.openai_transcribe_fallback_model,
+                    file=audio_file,
+                    response_format="verbose_json",
+                    timestamp_granularities=["word", "segment"],
+                )
+            data = self._response_dict(response)
+            segments, words = _timed_transcript(
+                data.get("words"),
+                offset=offset,
+                duration=duration,
+                provider="openai",
             )
-        data = self._response_dict(response)
-        segments, words = _timed_transcript(
-            data.get("words"),
-            offset=offset,
-            duration=duration,
-            provider="openai",
-        )
-        text = " ".join(str(data.get("text") or "").split())
-        if text and not words:
-            raise TranscriptionError("Whisper 단어 타임스탬프가 비어 있습니다.")
-        if not segments:
-            raw_segments = data.get("segments")
-            if isinstance(raw_segments, list | tuple):
-                for raw in raw_segments:
-                    text = " ".join(str(_response_value(raw, "text", "") or "").split())
-                    start = _safe_float(_response_value(raw, "start"))
-                    end = _safe_float(_response_value(raw, "end"))
-                    if text and start is not None and end is not None and end > start:
-                        segments.append(SubtitleSegment(
-                            start=round(offset + start, 3),
-                            end=round(offset + end, 3),
-                            text=text,
-                        ))
-        if not segments:
-            segments = _plain_text_segments(text, duration, offset)
-        input_tokens, output_tokens = self._usage_tokens(data)
-        return _ChunkTranscriptionResult(
-            index=index,
-            segments=segments,
-            silent=not segments,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            provider="openai",
-            model=self.settings.openai_transcribe_fallback_model,
-            words=words,
-            language_code=(
-                str(language) if (language := data.get("language")) else None
-            ),
-            fallback_reason=fallback_reason,
-        )
+            text = " ".join(str(data.get("text") or "").split())
+            if text and not words:
+                raise TranscriptionError("Whisper 단어 타임스탬프가 비어 있습니다.")
+            if not segments:
+                raw_segments = data.get("segments")
+                if isinstance(raw_segments, list | tuple):
+                    for raw in raw_segments:
+                        segment_text = " ".join(
+                            str(_response_value(raw, "text", "") or "").split()
+                        )
+                        start = _safe_float(_response_value(raw, "start"))
+                        end = _safe_float(_response_value(raw, "end"))
+                        if (
+                            segment_text
+                            and start is not None
+                            and end is not None
+                            and end > start
+                        ):
+                            segments.append(SubtitleSegment(
+                                start=round(offset + start, 3),
+                                end=round(offset + end, 3),
+                                text=segment_text,
+                            ))
+            if not segments:
+                segments = _plain_text_segments(text, duration, offset)
+            input_tokens, output_tokens = self._usage_tokens(data)
+            return _ChunkTranscriptionResult(
+                index=index,
+                segments=segments,
+                silent=not segments,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                provider="openai",
+                model=self.settings.openai_transcribe_fallback_model,
+                words=words,
+                language_code=(
+                    str(language) if (language := data.get("language")) else None
+                ),
+                fallback_reason=fallback_reason,
+            )
+
+        try:
+            return request(chunk)
+        except Exception as first_error:
+            retry_chunk = self._normalize_retry_chunk(chunk)
+            _log_event(
+                "transcription_fallback_retrying",
+                provider="openai",
+                model=self.settings.openai_transcribe_fallback_model,
+                chunk_index=index,
+                duration_seconds=round(duration, 3),
+                retry_format=retry_chunk.suffix.lstrip("."),
+                error_type=type(first_error).__name__,
+            )
+            time.sleep(TRANSCRIBE_CHUNK_RETRY_DELAY_SECONDS)
+            return request(retry_chunk)
 
     def _transcribe_chunk_elevenlabs(
         self,
@@ -516,6 +557,21 @@ class AudioTranscriber:
                 )
             except Exception as exc:
                 last_error = exc
+                response = getattr(exc, "response", None)
+                status_code = getattr(response, "status_code", None)
+                provider_error_code = None
+                if response is not None:
+                    try:
+                        error_payload = response.json()
+                        detail = (
+                            error_payload.get("detail")
+                            if isinstance(error_payload, dict)
+                            else None
+                        )
+                        if isinstance(detail, dict):
+                            provider_error_code = detail.get("status")
+                    except Exception:
+                        provider_error_code = None
                 _log_event(
                     "transcription_provider_attempt_failed",
                     provider="elevenlabs",
@@ -524,9 +580,18 @@ class AudioTranscriber:
                     duration_seconds=round(duration, 3),
                     attempt=attempt,
                     error_type=type(exc).__name__,
+                    status_code=status_code,
+                    provider_error_code=provider_error_code,
                 )
-                if attempt < TRANSCRIBE_CHUNK_MAX_ATTEMPTS:
+                retryable = (
+                    status_code is None
+                    or status_code in {408, 409, 425, 429}
+                    or status_code >= 500
+                )
+                if attempt < TRANSCRIBE_CHUNK_MAX_ATTEMPTS and retryable:
                     time.sleep(TRANSCRIBE_CHUNK_RETRY_DELAY_SECONDS)
+                else:
+                    break
         fallback_reason = type(last_error).__name__ if last_error else "UnknownError"
         _log_event(
             "transcription_provider_fallback",
