@@ -17,7 +17,7 @@ from .schemas import VideoAspectRatio
 from .subtitles import TranscriptWord
 
 CAPTION_FPS = 30
-CAPTION_TIMING_LEAD_FRAMES = 2
+CAPTION_TIMING_LEAD_FRAMES = 4
 CAPTION_TEMPLATE_IDS = frozenset({"basic", "highlight", "pop"})
 CAPTION_ACCENT = "#FF715E"
 CAPTION_TEXT = "#FFFFFF"
@@ -35,6 +35,17 @@ VIDEO_HEIGHTS = {
     VideoAspectRatio.PORTRAIT: 1350,
     VideoAspectRatio.FULL_VERTICAL: 1920,
 }
+VIDEO_Y = {
+    VideoAspectRatio.LANDSCAPE: 432,
+    VideoAspectRatio.LANDSCAPE_FIVE_FOUR: 528,
+    VideoAspectRatio.SQUARE: 420,
+    VideoAspectRatio.PORTRAIT: 285,
+    VideoAspectRatio.FULL_VERTICAL: 0,
+}
+CAPTION_WORD_SEPARATOR = "\u2009"
+CAPTION_POP_SPACED_GAP_PX = 12
+CAPTION_POP_UNSPACED_GAP_PX = 2
+CAPTION_LANDSCAPE_GAP_PX = 48
 _NO_SPACE_BEFORE = frozenset(",.!?:;)]}%。！？、，．：；）」』】》〉…")
 _NO_SPACE_AFTER = frozenset("([{（「『【《〈")
 _SENTENCE_END_RE = re.compile(r"[.!?。！？]+[\"'”’」』】）)]*$")
@@ -113,15 +124,17 @@ def prepare_caption_fonts(directory: Path) -> Path:
 
 def caption_layout(video_aspect_ratio: VideoAspectRatio) -> dict[str, dict[str, int]]:
     video_height = VIDEO_HEIGHTS[video_aspect_ratio]
-    centered_video_y = (CANVAS_HEIGHT - video_height) // 2
-    video_y = (
-        0
-        if video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
-        else max(0, centered_video_y - 160)
-    )
+    video_y = VIDEO_Y[video_aspect_ratio]
     video_bottom = video_y + video_height
     safe_area = (
-        {"x": 120, "y": 1430, "width": 840, "height": 140}
+        {
+            "x": 120,
+            "y": video_bottom + CAPTION_LANDSCAPE_GAP_PX,
+            "width": 840,
+            "height": 140,
+        }
+        if video_aspect_ratio is VideoAspectRatio.LANDSCAPE
+        else {"x": 120, "y": 1430, "width": 840, "height": 140}
         if video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
         else {
             "x": 120,
@@ -133,10 +146,16 @@ def caption_layout(video_aspect_ratio: VideoAspectRatio) -> dict[str, dict[str, 
             "height": 140,
         }
     )
+    title = (
+        {"x": 0, "y": 96, "width": CANVAS_WIDTH, "height": 300}
+        if video_aspect_ratio
+        in {VideoAspectRatio.PORTRAIT, VideoAspectRatio.FULL_VERTICAL}
+        else {"x": 0, "y": 0, "width": CANVAS_WIDTH, "height": video_y}
+    )
     return {
         "canvas": {"x": 0, "y": 0, "width": CANVAS_WIDTH, "height": CANVAS_HEIGHT},
         "video": {"x": 0, "y": video_y, "width": CANVAS_WIDTH, "height": video_height},
-        "title": {"x": 0, "y": 32, "width": CANVAS_WIDTH, "height": 300},
+        "title": title,
         "channel": {"x": 0, "y": 1710, "width": CANVAS_WIDTH, "height": 160},
         "caption": safe_area,
     }
@@ -165,7 +184,7 @@ def _join_text(left: str, right: str, *, space_before: bool) -> str:
         return left
     if right[0] in _NO_SPACE_BEFORE or left[-1] in _NO_SPACE_AFTER:
         return left + right
-    return left + (" " if space_before else "") + right
+    return left + (CAPTION_WORD_SEPARATOR if space_before else "") + right
 
 
 def _clip_words(
@@ -481,7 +500,12 @@ def _pop_cues(
             _measure(word.text, size) * 1.12
             for word, size in zip(group, sizes, strict=True)
         ]
-        gaps = [24 if group[item].space_before else 4 for item in range(1, len(group))]
+        gaps = [
+            CAPTION_POP_SPACED_GAP_PX
+            if group[item].space_before
+            else CAPTION_POP_UNSPACED_GAP_PX
+            for item in range(1, len(group))
+        ]
         total_width = sum(widths) + sum(gaps)
         if total_width > max_width:
             ratio = max_width / total_width
@@ -570,7 +594,7 @@ def compile_caption_render_spec(
         font_size = 72
         outline = 7
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "templateId": template_id,
         "fps": fps,
         "clipStartSeconds": round(clip_start, 3),
@@ -631,14 +655,18 @@ def _line_text(
     result = ""
     for line_position, word_index in enumerate(indexes):
         word = words[word_index]
-        prefix = " " if line_position and word.get("spaceBefore") else ""
+        prefix = (
+            CAPTION_WORD_SEPARATOR
+            if line_position and word.get("spaceBefore")
+            else ""
+        )
         color = accent_color if word_index == active_index else text_color
         result += f"{{\\1c{_ass_color(color)}}}{prefix}{_ass_escape(str(word['text']))}"
     return result
 
 
 def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
-    if int(spec.get("schemaVersion") or 0) not in {1, 2}:
+    if int(spec.get("schemaVersion") or 0) not in {1, 2, 3}:
         raise RenderError("자막 렌더 사양 버전이 올바르지 않습니다.")
     template_id = str(spec.get("templateId") or "")
     if template_id not in CAPTION_TEMPLATE_IDS:

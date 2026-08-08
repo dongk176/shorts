@@ -1421,14 +1421,14 @@ function SubtitleTemplatePreview({
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
       </div>
       <div className="absolute z-20 flex items-center justify-center overflow-hidden px-0.5 text-center font-black leading-none text-white" style={{ ...rectStyle(layout.caption), ...outline }}>
-          {id === "basic" && <span className="whitespace-nowrap text-[7px]">지금 이 순간을 놓치지 마세요</span>}
+          {id === "basic" && <span className="whitespace-nowrap text-[7px] [word-spacing:-0.16em]">지금 이 순간을 놓치지 마세요</span>}
           {id === "highlight" && (
-            <span className="whitespace-nowrap text-[7px]">
+            <span className="whitespace-nowrap text-[7px] [word-spacing:-0.16em]">
               지금 이 <span className="animate-pulse" style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>순간을</span> 놓치지 마세요
             </span>
           )}
           {id === "pop" && (
-            <span className="inline-block animate-pulse whitespace-nowrap text-[9px]" style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>
+            <span className="inline-block animate-pulse whitespace-nowrap text-[9px] [word-spacing:-0.16em]" style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>
               바로 지금
             </span>
           )}

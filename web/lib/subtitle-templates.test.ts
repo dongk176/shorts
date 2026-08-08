@@ -12,10 +12,11 @@ describe("subtitle template snapshot", () => {
     const snapshot = subtitleTemplateStyleSnapshot("highlight", "9:16");
     expect(snapshot.baseTemplateId).toBe(SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID);
     expect(snapshot.color.active).toBe(SUBTITLE_TEMPLATE_BRAND_COLOR);
-    expect(snapshot.schemaVersion).toBe(2);
+    expect(snapshot.schemaVersion).toBe(3);
     expect(snapshot.maxLines).toBe(1);
     expect(snapshot.timingLeadFrames).toBe(SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES);
     expect(snapshot.safeArea).toEqual({ x: 120, y: 1430, width: 840, height: 140 });
+    expect(snapshot.layout.title).toEqual({ x: 0, y: 96, width: 1080, height: 300 });
     expect(snapshot.layout).toEqual(subtitleTemplateLayout("9:16"));
   });
 
@@ -24,11 +25,42 @@ describe("subtitle template snapshot", () => {
     expect(snapshot.outlinePx).toBe(8);
     expect(snapshot.font).toMatchObject({ sizePx: 92, minSizePx: 64 });
     expect(snapshot.popScale).toBe(1.12);
-    expect(snapshot.layout.video.y).toBe(496);
-    expect(snapshot.layout.caption.y).toBe(900);
+    expect(snapshot.layout.video.y).toBe(432);
+    expect(snapshot.layout.caption.y).toBe(1088);
+    expect(snapshot.layout.caption.y).toBe(
+      snapshot.layout.video.y + snapshot.layout.video.height + 48,
+    );
   });
 
-  it.each(["16:9", "5:4", "1:1", "4:5", "9:16"] as const)(
+  it("uses the ratio-specific title, video, and caption positions", () => {
+    expect(subtitleTemplateLayout("16:9")).toMatchObject({
+      title: { y: 0, height: 432 },
+      video: { y: 432, height: 608 },
+      caption: { y: 1088, height: 140 },
+    });
+    expect(subtitleTemplateLayout("5:4")).toMatchObject({
+      title: { y: 0, height: 528 },
+      video: { y: 528, height: 864 },
+      caption: { y: 1183, height: 140 },
+    });
+    expect(subtitleTemplateLayout("1:1")).toMatchObject({
+      title: { y: 0, height: 420 },
+      video: { y: 420, height: 1080 },
+      caption: { y: 1274, height: 140 },
+    });
+    expect(subtitleTemplateLayout("4:5")).toMatchObject({
+      title: { y: 96, height: 300 },
+      video: { y: 285, height: 1350 },
+      caption: { y: 1387, height: 140 },
+    });
+    expect(subtitleTemplateLayout("9:16")).toMatchObject({
+      title: { y: 96, height: 300 },
+      video: { y: 0, height: 1920 },
+      caption: { y: 1430, height: 140 },
+    });
+  });
+
+  it.each(["5:4", "1:1", "4:5", "9:16"] as const)(
     "keeps the one-line caption inside the %s video rect",
     (ratio) => {
       const layout = subtitleTemplateLayout(ratio);

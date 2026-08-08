@@ -236,13 +236,23 @@ def caption_video_layout(spec: dict[str, object]) -> VideoLayout:
         raise RenderError("자막 템플릿 제목 영역이 올바르지 않습니다.")
     if channel["x"] != 0 or channel["width"] != CANVAS_WIDTH:
         raise RenderError("자막 템플릿 채널 영역이 올바르지 않습니다.")
-    if (
-        caption["x"] < video["x"]
-        or caption["y"] < video["y"]
-        or caption["x"] + caption["width"] > video["x"] + video["width"]
-        or caption["y"] + caption["height"] > video["y"] + video["height"]
+    caption_is_horizontally_inside_video = (
+        caption["x"] >= video["x"]
+        and caption["x"] + caption["width"] <= video["x"] + video["width"]
+    )
+    landscape_caption_is_below_video = (
+        video["height"] == VIDEO_HEIGHTS[VideoAspectRatio.LANDSCAPE]
+        and caption["y"] >= video["y"] + video["height"]
+        and caption["y"] + caption["height"] <= channel["y"]
+    )
+    caption_is_inside_video = (
+        caption["y"] >= video["y"]
+        and caption["y"] + caption["height"] <= video["y"] + video["height"]
+    )
+    if not caption_is_horizontally_inside_video or not (
+        landscape_caption_is_below_video or caption_is_inside_video
     ):
-        raise RenderError("자막이 실제 영상 영역을 벗어났습니다.")
+        raise RenderError("자막이 허용된 안전영역을 벗어났습니다.")
     return VideoLayout(
         video_height=video["height"],
         video_y=video["y"],

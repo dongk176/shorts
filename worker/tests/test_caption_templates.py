@@ -14,7 +14,10 @@ from shorts_worker.caption_templates import (
     CAPTION_ACCENT,
     CAPTION_FONT_FAMILY,
     CAPTION_FONT_PATH,
+    CAPTION_POP_SPACED_GAP_PX,
+    CAPTION_WORD_SEPARATOR,
     VIDEO_HEIGHTS,
+    VIDEO_Y,
     _ass_timestamp,
     _font,
     _measure,
@@ -74,15 +77,21 @@ def test_caption_safe_area_matches_renderer_video_rect(
     safe = caption_safe_area(ratio)
     assert safe["x"] == 120
     assert safe["width"] == 840
-    assert safe["y"] >= layout.video_y
-    assert safe["y"] + safe["height"] <= layout.video_y + layout.video_height
-    if ratio is VideoAspectRatio.FULL_VERTICAL:
+    assert layout.video_y == VIDEO_Y[ratio]
+    if ratio is VideoAspectRatio.LANDSCAPE:
+        assert snapshot_layout["title"] == {
+            "x": 0, "y": 0, "width": 1080, "height": 432
+        }
+        assert safe == {"x": 120, "y": 1088, "width": 840, "height": 140}
+        assert safe["y"] == layout.video_y + layout.video_height + 48
+    elif ratio is VideoAspectRatio.FULL_VERTICAL:
+        assert snapshot_layout["title"] == {
+            "x": 0, "y": 96, "width": 1080, "height": 300
+        }
         assert safe == {"x": 120, "y": 1430, "width": 840, "height": 140}
     else:
-        assert layout.video_y == max(
-            0,
-            (1920 - layout.video_height) // 2 - 160,
-        )
+        assert safe["y"] >= layout.video_y
+        assert safe["y"] + safe["height"] <= layout.video_y + layout.video_height
         assert safe["y"] + safe["height"] == (
             layout.video_y
             + layout.video_height
@@ -192,7 +201,7 @@ def test_sentence_templates_are_always_one_line_and_fit_safe_width(
         serialized = cue["words"]
         for line in cue["lines"]:
             text = "".join(
-                ((" " if position and serialized[index]["spaceBefore"] else "")
+                ((CAPTION_WORD_SEPARATOR if position and serialized[index]["spaceBefore"] else "")
                  + serialized[index]["text"])
                 for position, index in enumerate(line)
             )
@@ -226,12 +235,36 @@ def test_project_3204_pop_phrase_is_split_to_one_line_instead_of_failing() -> No
     )
 
 
-def test_caption_display_leads_provider_timing_by_two_frames() -> None:
+def test_caption_display_leads_provider_timing_by_four_frames() -> None:
     spec = _compile([_word("먼저", 0.5, 0.8)], "basic", clip_end=1.0)
     word = spec["cues"][0]["words"][0]
-    assert spec["timingLeadFrames"] == 2
-    assert word["startFrame"] == round(0.5 * 30) - 2
+    assert spec["timingLeadFrames"] == 4
+    assert word["startFrame"] == round(0.5 * 30) - 4
     assert word["endFrame"] == round(0.8 * 30)
+
+
+def test_caption_word_spacing_is_compact_in_sentence_and_pop_templates(
+    tmp_path: Path,
+) -> None:
+    assert _measure(CAPTION_WORD_SEPARATOR, 72) < _measure(" ", 72)
+    sentence = _compile([
+        _word("가로", 0.0, 0.2),
+        _word("여백", 0.2, 0.4, space_before=True),
+    ], "highlight", clip_end=0.5)
+    ass = create_caption_ass(sentence, tmp_path / "compact.ass").read_text(
+        encoding="utf-8"
+    )
+    assert f"{CAPTION_WORD_SEPARATOR}여백" in ass
+    assert " 가로" not in ass
+
+    pop = _compile([
+        _word("가로", 0.0, 0.2),
+        _word("여백", 0.2, 0.4, space_before=True),
+    ], "pop", clip_end=0.5)
+    first, second = pop["cues"][0]["words"]
+    first_right = first["centerX"] + _measure(first["text"], first["fontSize"]) * 1.12 / 2
+    second_left = second["centerX"] - _measure(second["text"], second["fontSize"]) * 1.12 / 2
+    assert second_left - first_right == pytest.approx(CAPTION_POP_SPACED_GAP_PX)
 
 
 def test_same_start_frame_events_are_contiguous_without_overlap() -> None:
@@ -340,9 +373,11 @@ def test_highlight_switches_on_the_exact_output_frame(tmp_path: Path) -> None:
     # The active word changes at frame 2. An ASS timestamp rounded to .07
     # leaves LEFT active on frame 2; flooring to .06 makes RIGHT active there.
     spec = _compile([
-        _word("LEFT", 0.0, 4 / 30),
-        _word("RIGHT", 4 / 30, 0.2, space_before=True),
-    ], "highlight", clip_end=0.2)
+        _word("LEFT", 0.0, 6 / 30),
+        # The approved four-frame lead advances the provider's frame-6
+        # boundary to output frame 2.
+        _word("RIGHT", 6 / 30, 0.3, space_before=True),
+    ], "highlight", clip_end=0.3)
     ass_path = create_caption_ass(spec, tmp_path / "boundary.ass")
     font_directory = prepare_caption_fonts(tmp_path / "fonts")
     frames = tmp_path / "boundary-frames"
@@ -543,6 +578,104 @@ def test_caption_render_forces_30fps_without_desynchronizing_audio(
     # AAC packets are not frame-aligned with 30fps video. Allow one video frame
     # plus one 48kHz AAC packet while still catching cumulative conversion drift.
     assert abs(video_duration - audio_duration) <= 1 / 30 + 1024 / 48_000
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
+def test_landscape_render_places_caption_below_video_with_a_clear_gap(
+    tmp_path: Path,
+) -> None:
+    clean = tmp_path / "landscape-clean.mp4"
+    generated = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=0x2450a4:size=320x180:rate=30:duration=0.5",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=660:sample_rate=48000:duration=0.5",
+            "-shortest",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            str(clean),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert generated.returncode == 0, generated.stderr[-1000:]
+    spec = _compile(
+        [_word("영상 아래 자막", 0.0, 0.45)],
+        "basic",
+        clip_end=0.5,
+        ratio=VideoAspectRatio.LANDSCAPE,
+    )
+    output = tmp_path / "landscape-rendered.mp4"
+    VideoRenderer(Settings(temp_dir=tmp_path, ffmpeg_timeout_seconds=120)).render_clean_clip(
+        clean_path=clean,
+        output_path=output,
+        title="제목 안전영역\n영상에 가깝게",
+        channel_name="EasyCut",
+        template_id=TemplateId.DARK_MINIMAL,
+        transcript=[],
+        subtitles_enabled=True,
+        work_dir=tmp_path / "landscape-render-work",
+        prefix="landscape-caption",
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        caption_render_spec=spec,
+    )
+    frame = tmp_path / "landscape-frame.png"
+    extracted = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            "0.2",
+            "-i",
+            str(output),
+            "-frames:v",
+            "1",
+            str(frame),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert extracted.returncode == 0, extracted.stderr[-1000:]
+
+    with Image.open(frame).convert("RGB") as image:
+        def is_video(pixel: tuple[int, int, int]) -> bool:
+            red, green, blue = pixel
+            return blue > red * 1.8 and blue > green * 1.3
+
+        assert not is_video(image.getpixel((540, 431)))
+        assert is_video(image.getpixel((540, 432)))
+        assert is_video(image.getpixel((540, 1039)))
+        assert not is_video(image.getpixel((540, 1040)))
+        assert image.crop((0, 1040, 1080, 1088)).getbbox() is None
+
+        caption_crop = image.crop((120, 1088, 960, 1228))
+        assert caption_crop.getbbox() is not None
+        title_crop = image.crop((0, 96, 1080, 432))
+        title_bounds = title_crop.getbbox()
+        assert title_bounds is not None
+        assert title_bounds[3] <= 432 - 96
 
 
 def test_caption_spec_uses_approved_style_snapshot_values() -> None:
