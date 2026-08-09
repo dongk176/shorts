@@ -71,6 +71,7 @@ def test_transcription_observability_records_usage_without_source_text(
         "language_code": None,
         "fallback_chunk_count": 0,
         "fallback_audio_seconds": 0.0,
+        "unavailable_range_count": 0,
     }
     worker.repository.save_job_transcript.assert_not_called()
 
@@ -143,13 +144,16 @@ def test_partial_transcription_is_observed_without_failing_the_pipeline(
         failed_chunk_count=1,
         skipped_chunk_count=1,
         failed_audio_seconds=30,
+        unavailable_ranges=((30.0, 60.0),),
     )
+    unavailable_ranges: list[tuple[float, float]] = []
 
     transcript = worker._transcribe_source(
         job_id="job-a",
         source=tmp_path / "source.mp4",
         work_dir=tmp_path,
         duration_seconds=120,
+        unavailable_ranges_out=unavailable_ranges,
     )
 
     event = json.loads(capsys.readouterr().out)
@@ -158,6 +162,8 @@ def test_partial_transcription_is_observed_without_failing_the_pipeline(
     assert event["failed_chunk_count"] == 1
     assert event["skipped_chunk_count"] == 1
     assert event["failed_audio_seconds"] == 30
+    assert event["unavailable_range_count"] == 1
+    assert unavailable_ranges == [(30.0, 60.0)]
 
 
 def test_selected_transcription_records_window_and_limits_audio(tmp_path: Path) -> None:
@@ -202,6 +208,7 @@ def test_selected_transcription_records_window_and_limits_audio(tmp_path: Path) 
         "wordCount": 0,
         "fallbackChunkCount": 0,
         "fallbackAudioSeconds": 0.0,
+        "unavailableRangeCount": 0,
     }
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -18,6 +19,8 @@ SENTENCE_RE = re.compile(r"(?<=[.!?。！？])\s+|\n+")
 MIN_TRANSCRIBE_CHUNK_SECONDS = 1.0
 TRANSCRIBE_CHUNK_MAX_ATTEMPTS = 2
 TRANSCRIBE_CHUNK_RETRY_DELAY_SECONDS = 1.0
+OPENAI_FALLBACK_MAX_CHUNKS = 2
+OPENAI_FALLBACK_MAX_AUDIO_SECONDS = 60.0
 WORD_TIMESTAMP_BOUNDARY_TOLERANCE_SECONDS = 0.25
 WORD_TIMESTAMP_MIN_DURATION_SECONDS = 1 / 30
 OPENAI_STABLE_POLICY = "openai_stable"
@@ -77,6 +80,7 @@ class TranscriptionResult:
     fallback_chunk_count: int = 0
     fallback_audio_seconds: float = 0.0
     fallback_reasons: tuple[str, ...] = field(default_factory=tuple)
+    unavailable_ranges: tuple[tuple[float, float], ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +97,52 @@ class _ChunkTranscriptionResult:
     language_code: str | None = None
     language_probability: float | None = None
     fallback_reason: str | None = None
+
+
+class _OpenAIFallbackBudget:
+    """A job-scoped, thread-safe cap for paid provider fallback."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._chunk_count = 0
+        self._audio_seconds = 0.0
+        self._provider_blocked = False
+
+    def block_provider(self) -> None:
+        with self._lock:
+            self._provider_blocked = True
+
+    def reserve(self, duration: float) -> bool:
+        with self._lock:
+            if self._provider_blocked:
+                return False
+            if self._chunk_count >= OPENAI_FALLBACK_MAX_CHUNKS:
+                return False
+            if self._audio_seconds + duration > OPENAI_FALLBACK_MAX_AUDIO_SECONDS:
+                return False
+            self._chunk_count += 1
+            self._audio_seconds += duration
+            return True
+
+    @property
+    def provider_blocked(self) -> bool:
+        with self._lock:
+            return self._provider_blocked
+
+def _is_provider_wide_elevenlabs_failure(
+    error: Exception,
+    *,
+    status_code: int | None,
+    provider_error_code: object,
+) -> bool:
+    if status_code in {401, 402, 403}:
+        return True
+    code = str(provider_error_code or "").lower()
+    if any(marker in code for marker in (
+        "auth", "credit", "payment", "quota", "subscription", "api_key",
+    )):
+        return True
+    return isinstance(error, TranscriptionError) and "ELEVENLABS_API_KEY" in str(error)
 
 
 def _plain_text_segments(text: str, duration: float, offset: float) -> list[SubtitleSegment]:
@@ -537,9 +587,9 @@ class AudioTranscriber:
             language_probability=language_probability,
         )
 
-    def _transcribe_chunk_elevenlabs_with_fallback(
+    def _transcribe_chunk_elevenlabs_with_retries(
         self,
-        openai_client: Any,
+        fallback_budget: _OpenAIFallbackBudget,
         *,
         index: int,
         chunk: Path,
@@ -583,6 +633,13 @@ class AudioTranscriber:
                     status_code=status_code,
                     provider_error_code=provider_error_code,
                 )
+                if _is_provider_wide_elevenlabs_failure(
+                    exc,
+                    status_code=status_code,
+                    provider_error_code=provider_error_code,
+                ):
+                    fallback_budget.block_provider()
+                    break
                 retryable = (
                     status_code is None
                     or status_code in {408, 409, 425, 429}
@@ -592,23 +649,9 @@ class AudioTranscriber:
                     time.sleep(TRANSCRIBE_CHUNK_RETRY_DELAY_SECONDS)
                 else:
                     break
-        fallback_reason = type(last_error).__name__ if last_error else "UnknownError"
-        _log_event(
-            "transcription_provider_fallback",
-            from_provider="elevenlabs",
-            to_provider="openai",
-            chunk_index=index,
-            duration_seconds=round(duration, 3),
-            reason=fallback_reason,
-        )
-        return self._transcribe_chunk_openai_fallback(
-            openai_client,
-            index=index,
-            chunk=chunk,
-            duration=duration,
-            offset=offset,
-            fallback_reason=fallback_reason,
-        )
+        if last_error is not None:
+            raise last_error
+        raise TranscriptionError("ElevenLabs 전사를 완료하지 못했습니다.")
 
     def _normalize_retry_chunk(self, chunk: Path) -> Path:
         retry_chunk = chunk.with_name(f"{chunk.stem}.retry.wav")
@@ -711,61 +754,165 @@ class AudioTranscriber:
 
         failed_chunk_count = 0
         failed_audio_seconds = 0.0
+        unavailable_ranges: list[tuple[float, float]] = []
+        fallback_budget = _OpenAIFallbackBudget()
+
+        def record_failed_chunk(index: int, exc: Exception, *, reason: str) -> None:
+            nonlocal failed_chunk_count, failed_audio_seconds
+            _chunk_index, chunk, duration, failed_offset = chunk_specs[index]
+            failed_chunk_count += 1
+            failed_audio_seconds += duration
+            unavailable_ranges.append((failed_offset, failed_offset + duration))
+            _log_event(
+                "transcription_chunk_skipped",
+                chunk_index=index,
+                duration_seconds=round(duration, 3),
+                media_bytes=chunk.stat().st_size,
+                reason=reason,
+                attempt_count=TRANSCRIBE_CHUNK_MAX_ATTEMPTS,
+                error_type=type(exc).__name__,
+            )
+
         if transcribable_specs:
             max_workers = max(
                 1,
                 min(self.settings.openai_transcribe_max_workers, len(transcribable_specs)),
             )
-            with ThreadPoolExecutor(
-                max_workers=max_workers,
-                thread_name_prefix=(
-                    "elevenlabs-transcribe"
-                    if policy == ELEVENLABS_FALLBACK_POLICY
-                    else "openai-transcribe"
-                ),
-            ) as executor:
-                futures = {
-                    executor.submit(
-                        (
-                            self._transcribe_chunk_elevenlabs_with_fallback
-                            if policy == ELEVENLABS_FALLBACK_POLICY
-                            else self._transcribe_chunk
-                        ),
-                        openai_client,
-                        index=index,
-                        chunk=chunk,
-                        duration=duration,
-                        offset=offset,
-                    ): index
-                    for index, chunk, duration, offset in transcribable_specs
-                }
-                for future in as_completed(futures):
-                    index = futures[future]
-                    try:
-                        result = future.result()
-                    except Exception as exc:
-                        _chunk_index, chunk, duration, _offset = chunk_specs[index]
-                        failed_chunk_count += 1
-                        failed_audio_seconds += duration
+            if policy == ELEVENLABS_FALLBACK_POLICY:
+                elevenlabs_failures: dict[int, Exception] = {}
+                with ThreadPoolExecutor(
+                    max_workers=max_workers,
+                    thread_name_prefix="elevenlabs-transcribe",
+                ) as executor:
+                    futures = {
+                        executor.submit(
+                            self._transcribe_chunk_elevenlabs_with_retries,
+                            fallback_budget,
+                            index=index,
+                            chunk=chunk,
+                            duration=duration,
+                            offset=offset,
+                        ): index
+                        for index, chunk, duration, offset in transcribable_specs
+                    }
+                    for future in as_completed(futures):
+                        index = futures[future]
+                        try:
+                            result = future.result()
+                        except Exception as exc:
+                            elevenlabs_failures[index] = exc
+                            continue
+                        results[result.index] = result
+
+                # Complete the provider-wide pass before making any paid OpenAI
+                # request. This guarantees that quota/auth failures spend zero
+                # fallback credits even when chunks run concurrently.
+                if fallback_budget.provider_blocked:
+                    for index in sorted(elevenlabs_failures):
+                        _chunk_index, _chunk, duration, _offset = chunk_specs[index]
                         _log_event(
-                            "transcription_chunk_skipped",
+                            "transcription_provider_fallback_skipped",
+                            from_provider="elevenlabs",
+                            to_provider="openai",
                             chunk_index=index,
                             duration_seconds=round(duration, 3),
-                            media_bytes=chunk.stat().st_size,
-                            reason="attempts_exhausted",
-                            attempt_count=TRANSCRIBE_CHUNK_MAX_ATTEMPTS,
-                            error_type=type(exc).__name__,
+                            reason="provider_blocked",
                         )
-                        continue
-                    results[result.index] = result
+                    raise TranscriptionError(
+                        "ElevenLabs 크레딧 또는 인증 상태를 확인하지 못했습니다."
+                    )
+
+                fallback_futures: dict[Any, int] = {}
+                with ThreadPoolExecutor(
+                    max_workers=max_workers,
+                    thread_name_prefix="openai-transcribe-fallback",
+                ) as executor:
+                    for index in sorted(elevenlabs_failures):
+                        _chunk_index, chunk, duration, offset = chunk_specs[index]
+                        failure = elevenlabs_failures[index]
+                        if not fallback_budget.reserve(duration):
+                            _log_event(
+                                "transcription_provider_fallback_skipped",
+                                from_provider="elevenlabs",
+                                to_provider="openai",
+                                chunk_index=index,
+                                duration_seconds=round(duration, 3),
+                                reason="job_fallback_budget_exhausted",
+                            )
+                            record_failed_chunk(
+                                index,
+                                failure,
+                                reason="fallback_budget_exhausted",
+                            )
+                            continue
+                        fallback_reason = type(failure).__name__
+                        _log_event(
+                            "transcription_provider_fallback",
+                            from_provider="elevenlabs",
+                            to_provider="openai",
+                            chunk_index=index,
+                            duration_seconds=round(duration, 3),
+                            reason=fallback_reason,
+                        )
+                        fallback_futures[
+                            executor.submit(
+                                self._transcribe_chunk_openai_fallback,
+                                openai_client,
+                                index=index,
+                                chunk=chunk,
+                                duration=duration,
+                                offset=offset,
+                                fallback_reason=fallback_reason,
+                            )
+                        ] = index
+                    for future in as_completed(fallback_futures):
+                        index = fallback_futures[future]
+                        try:
+                            result = future.result()
+                        except Exception as exc:
+                            record_failed_chunk(
+                                index,
+                                exc,
+                                reason="attempts_exhausted",
+                            )
+                            continue
+                        results[result.index] = result
+            else:
+                with ThreadPoolExecutor(
+                    max_workers=max_workers,
+                    thread_name_prefix="openai-transcribe",
+                ) as executor:
+                    futures = {
+                        executor.submit(
+                            self._transcribe_chunk,
+                            openai_client,
+                            index=index,
+                            chunk=chunk,
+                            duration=duration,
+                            offset=offset,
+                        ): index
+                        for index, chunk, duration, offset in transcribable_specs
+                    }
+                    for future in as_completed(futures):
+                        index = futures[future]
+                        try:
+                            result = future.result()
+                        except Exception as exc:
+                            record_failed_chunk(
+                                index,
+                                exc,
+                                reason="attempts_exhausted",
+                            )
+                            continue
+                        results[result.index] = result
 
         ordered = [results[index] for index in sorted(results)]
         segments = [segment for result in ordered for segment in result.segments]
-        if policy == ELEVENLABS_FALLBACK_POLICY and failed_chunk_count:
-            raise TranscriptionError(
-                "단어 타임스탬프를 포함한 전체 전사를 완료하지 못했습니다."
-            )
         if not segments:
+            if policy == ELEVENLABS_FALLBACK_POLICY and failed_chunk_count:
+                raise TranscriptionError(
+                    "단어 타임스탬프를 포함한 전체 전사를 완료하지 못했습니다."
+                )
             raise TranscriptionError("전체 오디오 전사 결과가 비어 있습니다.")
         fallback_results = [result for result in ordered if result.fallback_reason]
         providers = {result.provider for result in ordered if not result.skipped}
@@ -819,4 +966,5 @@ class AudioTranscriber:
                 for result in fallback_results
                 if result.fallback_reason
             })),
+            unavailable_ranges=tuple(unavailable_ranges),
         )

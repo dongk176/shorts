@@ -1428,8 +1428,14 @@ function SubtitleTemplatePreview({
             </span>
           )}
           {id === "pop" && (
-            <span className="inline-block animate-pulse whitespace-nowrap text-[9px] [word-spacing:-0.16em]" style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>
-              바로 지금
+            <span
+              className="inline-flex animate-pulse items-center whitespace-nowrap text-[9px]"
+              style={{
+                color: SUBTITLE_TEMPLATE_BRAND_COLOR,
+                gap: `${snapshot.wordGapPx / snapshot.font.sizePx}em`,
+              }}
+            >
+              <span>바로</span><span>지금</span>
             </span>
           )}
       </div>

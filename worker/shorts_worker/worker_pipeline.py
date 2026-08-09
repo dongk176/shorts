@@ -477,6 +477,7 @@ class BatchWorker:
         policy: str = OPENAI_STABLE_POLICY,
         observation: dict[str, object] | None = None,
         words_out: list[TranscriptWord] | None = None,
+        unavailable_ranges_out: list[tuple[float, float]] | None = None,
     ) -> list[SubtitleSegment]:
         try:
             result = (
@@ -528,6 +529,7 @@ class BatchWorker:
             language_code=result.language_code,
             fallback_chunk_count=result.fallback_chunk_count,
             fallback_audio_seconds=result.fallback_audio_seconds,
+            unavailable_range_count=len(result.unavailable_ranges),
         )
         if policy == ELEVENLABS_FALLBACK_POLICY:
             self.repository.save_job_transcript(
@@ -557,9 +559,12 @@ class BatchWorker:
                 "wordCount": len(result.words),
                 "fallbackChunkCount": result.fallback_chunk_count,
                 "fallbackAudioSeconds": result.fallback_audio_seconds,
+                "unavailableRangeCount": len(result.unavailable_ranges),
             })
         if words_out is not None:
             words_out.extend(result.words)
+        if unavailable_ranges_out is not None:
+            unavailable_ranges_out.extend(result.unavailable_ranges)
         return result.segments
 
     def _thumbnail(self, video: Path, output: Path, work_dir: Path) -> Path:
@@ -782,6 +787,7 @@ class BatchWorker:
                 transcription_observation: dict[str, object] = {}
                 subtitle_template_id = str(job.get("subtitle_template_id") or "")
                 transcript_words: list[TranscriptWord] = []
+                transcription_unavailable_ranges: list[tuple[float, float]] = []
                 if (
                     subtitle_template_id
                     and str(job.get("transcription_policy") or "")
@@ -803,6 +809,11 @@ class BatchWorker:
                         ),
                         observation=transcription_observation,
                         words_out=(transcript_words if subtitle_template_id else None),
+                        unavailable_ranges_out=(
+                            transcription_unavailable_ranges
+                            if subtitle_template_id
+                            else None
+                        ),
                     )
                 if subtitle_template_id and not transcript_words:
                     raise TranscriptionError(
@@ -845,6 +856,72 @@ class BatchWorker:
                         }
                     },
                 )
+                caption_render_specs: dict[int, dict[str, object]] = {}
+                if subtitle_template_id:
+                    aspect_ratio = VideoAspectRatio(
+                        str(job.get("video_aspect_ratio") or "1:1")
+                    )
+                    source_offset_seconds = (
+                        float(range_start_seconds) if source_range_enabled else 0.0
+                    )
+                    compiled_clips: list[tuple[HighlightClip, dict[str, object]]] = []
+                    rejected_caption_clips = 0
+                    for original_index, clip in enumerate(clips, start=1):
+                        absolute_clip = _offset_highlight_clip(
+                            clip,
+                            source_offset_seconds,
+                        )
+                        if any(
+                            unavailable_end > absolute_clip.start_seconds
+                            and unavailable_start < absolute_clip.end_seconds
+                            for unavailable_start, unavailable_end
+                            in transcription_unavailable_ranges
+                        ):
+                            rejected_caption_clips += 1
+                            _log_event(
+                                "project_caption_clip_rejected",
+                                job_id=job_id,
+                                clip_index=original_index,
+                                error_type="TranscriptionRangeUnavailable",
+                            )
+                            continue
+                        try:
+                            caption_spec = compile_caption_render_spec(
+                                transcript_words,
+                                template_id=subtitle_template_id,
+                                clip_start=absolute_clip.start_seconds,
+                                clip_end=absolute_clip.end_seconds,
+                                video_aspect_ratio=aspect_ratio,
+                            )
+                        except (CaptionCompileError, TranscriptionError) as exc:
+                            rejected_caption_clips += 1
+                            _log_event(
+                                "project_caption_clip_rejected",
+                                job_id=job_id,
+                                clip_index=original_index,
+                                error_type=type(exc).__name__,
+                            )
+                            continue
+                        compiled_clips.append((clip, caption_spec))
+                    if len(compiled_clips) < required_minimum_count:
+                        raise TranscriptionError(
+                            "자막을 만들 수 있는 음성 구간이 부족합니다."
+                        )
+                    clips = [clip for clip, _spec in compiled_clips]
+                    caption_render_specs = {
+                        index: spec
+                        for index, (_clip, spec) in enumerate(compiled_clips, start=1)
+                    }
+                    self.repository.merge_job_performance_metrics(
+                        job_id,
+                        {
+                            "captionValidation": {
+                                "acceptedCount": len(compiled_clips),
+                                "rejectedCount": rejected_caption_clips,
+                                "minimumCount": required_minimum_count,
+                            }
+                        },
+                    )
                 clip_subtitles = {
                     index: self._relative_subtitles(transcript, clip)
                     for index, clip in enumerate(clips, start=1)
@@ -923,21 +1000,6 @@ class BatchWorker:
                     )
                     for index, clip in edit_timeline_clips.items()
                 }
-                caption_render_specs: dict[int, dict[str, object]] = {}
-                if subtitle_template_id:
-                    aspect_ratio = VideoAspectRatio(
-                        str(job.get("video_aspect_ratio") or "1:1")
-                    )
-                    caption_render_specs = {
-                        index: compile_caption_render_spec(
-                            transcript_words,
-                            template_id=subtitle_template_id,
-                            clip_start=clip.start_seconds,
-                            clip_end=clip.end_seconds,
-                            video_aspect_ratio=aspect_ratio,
-                        )
-                        for index, clip in absolute_clips.items()
-                    }
 
                 for index in range(1, len(clips) + 1):
                     self.repository.set_project_attempt_selected(job_id, index)

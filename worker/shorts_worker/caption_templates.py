@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import re
+import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -43,14 +44,15 @@ VIDEO_Y = {
     VideoAspectRatio.FULL_VERTICAL: 0,
 }
 CAPTION_WORD_SEPARATOR = "\u2009"
-CAPTION_POP_SPACED_GAP_PX = 12
-CAPTION_POP_UNSPACED_GAP_PX = 2
+CAPTION_POP_SPACED_GAP_PX = 6
+CAPTION_POP_UNSPACED_GAP_PX = 0
 CAPTION_LANDSCAPE_GAP_PX = 48
 _NO_SPACE_BEFORE = frozenset(",.!?:;)]}%。！？、，．：；）」』】》〉…")
 _NO_SPACE_AFTER = frozenset("([{（「『【《〈")
 _SENTENCE_END_RE = re.compile(r"[.!?。！？]+[\"'”’」』】）)]*$")
 _CJK_RE = re.compile(r"[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]")
 _HANGUL_TOKEN_RE = re.compile(r"[\uac00-\ud7af]+")
+_EXPRESSIVE_REPEAT_RE = re.compile(r"(.)\1{5,}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,6 +274,158 @@ def _text_for_words(words: Sequence[_CaptionWord]) -> str:
     for word in words:
         text = _join_text(text, word.text, space_before=word.space_before)
     return text
+
+
+def _ellipsize_to_width(
+    text: str,
+    *,
+    font_size: int,
+    max_width: float,
+    scale: float = 1.0,
+) -> str:
+    """Return the longest readable prefix that fits, preserving an ellipsis."""
+    ellipsis = "…"
+    if _measure(text, font_size) * scale <= max_width:
+        return text
+    if _measure(ellipsis, font_size) * scale > max_width:
+        return ellipsis
+    prefix = ""
+    for unit in _display_units(text):
+        candidate = f"{prefix}{unit}{ellipsis}"
+        if _measure(candidate, font_size) * scale > max_width:
+            break
+        prefix += unit
+    return f"{prefix}{ellipsis}" if prefix else ellipsis
+
+
+def _compact_expressive_repeat(text: str) -> str:
+    return _EXPRESSIVE_REPEAT_RE.sub(
+        lambda match: f"{match.group(1) * 3}…",
+        text,
+    )
+
+
+def _display_units(text: str) -> list[str]:
+    """Keep combining marks and common emoji sequences intact when splitting."""
+    units: list[str] = []
+    for character in text:
+        codepoint = ord(character)
+        joins_previous = (
+            bool(units)
+            and (
+                unicodedata.combining(character) > 0
+                or character == "\u200d"
+                or units[-1].endswith("\u200d")
+                or 0xFE00 <= codepoint <= 0xFE0F
+                or 0x1F3FB <= codepoint <= 0x1F3FF
+            )
+        )
+        if joins_previous:
+            units[-1] += character
+        else:
+            units.append(character)
+    return units
+
+
+def _split_caption_word(
+    word: _CaptionWord,
+    *,
+    font_size: int,
+    max_width: float,
+    scale: float = 1.0,
+) -> list[_CaptionWord]:
+    """Split an unbreakable display token without changing its source timing."""
+    if _measure(word.text, font_size) * scale <= max_width:
+        return [word]
+    if _EXPRESSIVE_REPEAT_RE.search(word.text):
+        compacted = _compact_expressive_repeat(word.text)
+        return [
+            _CaptionWord(
+                text=_ellipsize_to_width(
+                    compacted,
+                    font_size=font_size,
+                    max_width=max_width,
+                    scale=scale,
+                ),
+                start_frame=word.start_frame,
+                end_frame=word.end_frame,
+                space_before=word.space_before,
+                source_indexes=word.source_indexes,
+            )
+        ]
+
+    units = _display_units(word.text)
+    pieces: list[list[str]] = []
+    current: list[str] = []
+    for unit in units:
+        candidate = "".join([*current, unit])
+        if current and _measure(candidate, font_size) * scale > max_width:
+            pieces.append(current)
+            current = [unit]
+        else:
+            current.append(unit)
+    if current:
+        pieces.append(current)
+
+    frame_count = word.end_frame - word.start_frame
+    if not pieces or len(pieces) > frame_count:
+        return [
+            _CaptionWord(
+                text=_ellipsize_to_width(
+                    word.text,
+                    font_size=font_size,
+                    max_width=max_width,
+                    scale=scale,
+                ),
+                start_frame=word.start_frame,
+                end_frame=word.end_frame,
+                space_before=word.space_before,
+                source_indexes=word.source_indexes,
+            )
+        ]
+
+    starts = [word.start_frame]
+    consumed_units = len(pieces[0])
+    for index in range(1, len(pieces)):
+        remaining = len(pieces) - index
+        desired = word.start_frame + round(
+            frame_count * consumed_units / len(units)
+        )
+        starts.append(min(word.end_frame - remaining, max(starts[-1] + 1, desired)))
+        consumed_units += len(pieces[index])
+    return [
+        _CaptionWord(
+            text="".join(piece),
+            start_frame=start,
+            end_frame=(starts[index + 1] if index + 1 < len(starts) else word.end_frame),
+            space_before=word.space_before if index == 0 else False,
+            source_indexes=word.source_indexes,
+        )
+        for index, (piece, start) in enumerate(zip(pieces, starts, strict=True))
+    ]
+
+
+def _fit_display_words(
+    words: Sequence[_CaptionWord],
+    *,
+    template_id: str,
+    safe_area: dict[str, int],
+) -> list[_CaptionWord]:
+    outline = 8 if template_id == "pop" else 7
+    max_width = safe_area["width"] - outline * 2
+    font_size = 64 if template_id == "pop" else 72
+    scale = 1.12 if template_id == "pop" else 1.0
+    fitted: list[_CaptionWord] = []
+    for word in words:
+        fitted.extend(
+            _split_caption_word(
+                word,
+                font_size=font_size,
+                max_width=max_width,
+                scale=scale,
+            )
+        )
+    return fitted
 
 
 def _wrap_word_indexes(
@@ -579,6 +733,11 @@ def compile_caption_render_spec(
         clip_start=clip_start,
         clip_end=clip_end,
         fps=fps,
+    )
+    clipped_words = _fit_display_words(
+        clipped_words,
+        template_id=template_id,
+        safe_area=safe_area,
     )
     if template_id == "pop":
         cues = _pop_cues(clipped_words, safe_area=safe_area, fps=fps)

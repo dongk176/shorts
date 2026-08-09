@@ -15,6 +15,7 @@ from shorts_worker.caption_templates import (
     CAPTION_FONT_FAMILY,
     CAPTION_FONT_PATH,
     CAPTION_POP_SPACED_GAP_PX,
+    CAPTION_POP_UNSPACED_GAP_PX,
     CAPTION_WORD_SEPARATOR,
     VIDEO_HEIGHTS,
     VIDEO_Y,
@@ -28,7 +29,6 @@ from shorts_worker.caption_templates import (
     prepare_caption_fonts,
 )
 from shorts_worker.config import Settings
-from shorts_worker.errors import CaptionCompileError
 from shorts_worker.media import probe_media
 from shorts_worker.renderer import VideoRenderer, caption_video_layout
 from shorts_worker.schemas import TemplateId, VideoAspectRatio
@@ -210,9 +210,53 @@ def test_sentence_templates_are_always_one_line_and_fit_safe_width(
 
 
 @pytest.mark.parametrize("template_id", ["basic", "highlight", "pop"])
-def test_unbreakable_long_unit_fails_instead_of_overflowing(template_id: str) -> None:
-    with pytest.raises(CaptionCompileError, match="안전영역"):
-        _compile([_word("W" * 120, 0.0, 0.8)], template_id)
+def test_unbreakable_long_unit_is_split_instead_of_overflowing(
+    template_id: str,
+) -> None:
+    original = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" * 5
+    spec = _compile([_word(original, 0.0, 0.8)], template_id)
+    rendered = "".join(
+        word["text"]
+        for cue in spec["cues"]
+        for word in cue["words"]
+    )
+    assert rendered == original
+    if template_id == "pop":
+        assert all(
+            _measure(word["text"], word["fontSize"]) * 1.12
+            <= spec["safeArea"]["width"] - 16 + 0.5
+            for cue in spec["cues"]
+            for word in cue["words"]
+        )
+    else:
+        assert all(cue["scaleX"] >= 60 for cue in spec["cues"])
+
+
+def test_project_3258_expressive_repeat_is_compacted_without_losing_timing() -> None:
+    original = "허" + "어" * 36
+    spec = _compile([_word(original, 0.0, 1.7)], "pop", clip_end=2.0)
+    words = [word for cue in spec["cues"] for word in cue["words"]]
+
+    assert len(words) == 1
+    assert words[0]["text"] == "허어어어…"
+    assert len(words[0]["text"]) < len(original)
+    assert words[0]["sourceWordIndexes"] == [0]
+    assert words[0]["startFrame"] == 0
+    assert words[0]["endFrame"] == round(1.7 * 30)
+
+
+def test_long_emoji_sequence_splits_only_between_complete_display_units() -> None:
+    original = ("👨‍👩‍👧‍👦caption" * 12)
+    spec = _compile([_word(original, 0.0, 3.0)], "pop", clip_end=3.1)
+    rendered_words = [
+        word["text"]
+        for cue in spec["cues"]
+        for word in cue["words"]
+    ]
+
+    assert "".join(rendered_words) == original
+    assert all(not word.startswith("\u200d") for word in rendered_words)
+    assert all(not word.endswith("\u200d") for word in rendered_words)
 
 
 def test_project_3204_pop_phrase_is_split_to_one_line_instead_of_failing() -> None:
@@ -268,6 +312,28 @@ def test_caption_word_spacing_is_compact_in_sentence_and_pop_templates(
         CAPTION_POP_SPACED_GAP_PX,
         abs=0.01,
     )
+
+
+def test_project_3259_pop_spacing_uses_six_pixels_and_zero_for_joined_tokens() -> None:
+    assert CAPTION_POP_SPACED_GAP_PX == 6
+    assert CAPTION_POP_UNSPACED_GAP_PX == 0
+    spaced = _compile([
+        _word("그러니까", 0.0, 0.2),
+        _word("사실.", 0.2, 0.5, space_before=True),
+    ], "pop", clip_end=0.6, ratio=VideoAspectRatio.LANDSCAPE_FIVE_FOUR)
+    first, second = spaced["cues"][0]["words"]
+    first_right = first["centerX"] + _measure(first["text"], first["fontSize"]) * 1.12 / 2
+    second_left = second["centerX"] - _measure(second["text"], second["fontSize"]) * 1.12 / 2
+    assert second_left - first_right == pytest.approx(6, abs=0.01)
+
+    joined = _compile([
+        _word("easy", 0.0, 0.2),
+        _word("cut", 0.2, 0.4),
+    ], "pop", clip_end=0.5)
+    first, second = joined["cues"][0]["words"]
+    first_right = first["centerX"] + _measure(first["text"], first["fontSize"]) * 1.12 / 2
+    second_left = second["centerX"] - _measure(second["text"], second["fontSize"]) * 1.12 / 2
+    assert second_left - first_right == pytest.approx(0, abs=0.01)
 
 
 def test_same_start_frame_events_are_contiguous_without_overlap() -> None:

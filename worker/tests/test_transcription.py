@@ -625,7 +625,7 @@ def test_whisper_fallback_retries_once_with_normalized_audio(
     assert [word.text for word in result.words] == ["fallback", "success"]
 
 
-def test_non_retryable_elevenlabs_error_falls_back_without_repeating(
+def test_elevenlabs_credit_error_never_uses_openai_fallback(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     chunk = tmp_path / "audio_0000.m4a"
@@ -648,17 +648,13 @@ def test_non_retryable_elevenlabs_error_falls_back_without_repeating(
         elevenlabs_calls += 1
         raise ProviderError("payment required")
 
-    _install_openai(
-        monkeypatch,
-        lambda **_kwargs: {
-            "text": "fallback works",
-            "language": "en",
-            "words": [
-                {"word": "fallback", "start": 0.0, "end": 0.5},
-                {"word": " works", "start": 0.5, "end": 1.0},
-            ],
-        },
-    )
+    fallback_requests: list[str] = []
+
+    def create(**kwargs):
+        fallback_requests.append(Path(kwargs["file"].name).name)
+        pytest.fail("credit errors must not use OpenAI fallback")
+
+    _install_openai(monkeypatch, create)
     transcriber = AudioTranscriber(_settings())
     monkeypatch.setattr(transcriber, "_extract_chunks", lambda *_args: [chunk])
     monkeypatch.setattr(transcriber, "_transcribe_chunk_elevenlabs", elevenlabs)
@@ -672,14 +668,15 @@ def test_non_retryable_elevenlabs_error_falls_back_without_repeating(
         lambda event, **fields: observed_events.append({"event": event, **fields}),
     )
 
-    result = transcriber.transcribe(
-        tmp_path / "source.mp4",
-        tmp_path / "work",
-        policy=ELEVENLABS_FALLBACK_POLICY,
-    )
+    with pytest.raises(TranscriptionError, match="크레딧"):
+        transcriber.transcribe(
+            tmp_path / "source.mp4",
+            tmp_path / "work",
+            policy=ELEVENLABS_FALLBACK_POLICY,
+        )
 
     assert elevenlabs_calls == 1
-    assert result.provider == "openai"
+    assert fallback_requests == []
     failed_event = next(
         event
         for event in observed_events
@@ -687,6 +684,103 @@ def test_non_retryable_elevenlabs_error_falls_back_without_repeating(
     )
     assert failed_event["status_code"] == 402
     assert failed_event["provider_error_code"] == "quota_exceeded"
+
+
+def test_provider_wide_failure_blocks_fallback_after_other_chunk_transient_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    chunks = [tmp_path / f"audio_{index:04d}.m4a" for index in range(2)]
+    for chunk in chunks:
+        chunk.write_bytes(b"audio")
+    fallback_requests: list[str] = []
+
+    class Response:
+        status_code = 402
+
+        @staticmethod
+        def json() -> dict[str, object]:
+            return {"detail": {"status": "insufficient_credits"}}
+
+    class CreditError(Exception):
+        response = Response()
+
+    def elevenlabs(*, index, **_kwargs):
+        if index == 0:
+            raise RuntimeError("temporary network failure")
+        raise CreditError("credits exhausted")
+
+    def create(**kwargs):
+        fallback_requests.append(Path(kwargs["file"].name).name)
+        pytest.fail("provider-wide failures must block every OpenAI fallback")
+
+    _install_openai(monkeypatch, create)
+    transcriber = AudioTranscriber(_settings())
+    monkeypatch.setattr(transcriber, "_extract_chunks", lambda *_args: chunks)
+    monkeypatch.setattr(transcriber, "_transcribe_chunk_elevenlabs", elevenlabs)
+    monkeypatch.setattr(
+        "shorts_worker.subtitles.probe_media",
+        lambda *_args, **_kwargs: {"format": {"duration": "30"}},
+    )
+    monkeypatch.setattr("shorts_worker.subtitles.time.sleep", lambda *_args: None)
+
+    with pytest.raises(TranscriptionError, match="크레딧"):
+        transcriber.transcribe(
+            tmp_path / "source.mp4",
+            tmp_path / "work",
+            policy=ELEVENLABS_FALLBACK_POLICY,
+        )
+
+    assert fallback_requests == []
+
+
+def test_openai_fallback_is_capped_at_two_chunks_and_sixty_seconds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    chunks = [tmp_path / f"audio_{index:04d}.m4a" for index in range(3)]
+    for chunk in chunks:
+        chunk.write_bytes(b"audio")
+    fallback_requests: list[str] = []
+
+    def create(**kwargs):
+        name = Path(kwargs["file"].name).name
+        fallback_requests.append(name)
+        return {
+            "text": "fallback success",
+            "language": "en",
+            "words": [
+                {"word": "fallback", "start": 0.0, "end": 0.5},
+                {"word": " success", "start": 0.5, "end": 1.0},
+            ],
+        }
+
+    _install_openai(monkeypatch, create)
+    transcriber = AudioTranscriber(_settings())
+    monkeypatch.setattr(transcriber, "_extract_chunks", lambda *_args: chunks)
+    monkeypatch.setattr(
+        transcriber,
+        "_transcribe_chunk_elevenlabs",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("temporary failure")),
+    )
+    monkeypatch.setattr(
+        "shorts_worker.subtitles.probe_media",
+        lambda *_args, **_kwargs: {"format": {"duration": "30"}},
+    )
+    monkeypatch.setattr("shorts_worker.subtitles.time.sleep", lambda *_args: None)
+
+    result = transcriber.transcribe(
+        tmp_path / "source.mp4",
+        tmp_path / "work",
+        policy=ELEVENLABS_FALLBACK_POLICY,
+    )
+
+    assert len(fallback_requests) == 2
+    assert result.fallback_chunk_count == 2
+    assert result.fallback_audio_seconds == 60
+    assert result.failed_chunk_count == 1
+    assert result.failed_audio_seconds == 30
+    assert len(result.unavailable_ranges) == 1
+    unavailable_start, unavailable_end = result.unavailable_ranges[0]
+    assert unavailable_end - unavailable_start == 30
 
 
 def test_candidate_rejects_whisper_text_without_word_timestamps(

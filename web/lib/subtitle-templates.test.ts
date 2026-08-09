@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID,
   SUBTITLE_TEMPLATE_BRAND_COLOR,
+  SUBTITLE_TEMPLATE_POP_WORD_GAP_PX,
   SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
   subtitleTemplateLayout,
   subtitleTemplateStyleSnapshot,
@@ -25,6 +26,8 @@ describe("subtitle template snapshot", () => {
     expect(snapshot.outlinePx).toBe(8);
     expect(snapshot.font).toMatchObject({ sizePx: 92, minSizePx: 64 });
     expect(snapshot.popScale).toBe(1.12);
+    expect(SUBTITLE_TEMPLATE_POP_WORD_GAP_PX).toBe(6);
+    expect(snapshot.wordGapPx).toBe(6);
     expect(snapshot.layout.video.y).toBe(432);
     expect(snapshot.layout.caption.y).toBe(1088);
     expect(snapshot.layout.caption.y).toBe(
