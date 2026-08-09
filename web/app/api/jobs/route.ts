@@ -39,7 +39,7 @@ import {
 import { lockSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
 import {
   SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID,
-  subtitleTemplateIds,
+  subtitleTemplateCreationIds,
   subtitleTemplateStyleSnapshot,
 } from "@/lib/subtitle-templates";
 import { billableSourceSeconds, getUsageSnapshot } from "@/lib/usage";
@@ -62,7 +62,7 @@ const schema = z.object({
   requestId: z.string().uuid(),
   rangeStartSeconds: z.number().finite().nonnegative().optional(),
   rangeEndSeconds: z.number().finite().positive().optional(),
-  subtitleTemplateId: z.enum(subtitleTemplateIds).optional(),
+  subtitleTemplateId: z.enum(subtitleTemplateCreationIds).optional(),
 });
 
 const noShortsThankYouEventReward: ShortsThankYouEventGrant = {

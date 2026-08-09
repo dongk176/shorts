@@ -1442,7 +1442,6 @@ function SubtitleTemplatePreview({
           fontSize: canvasCqw(snapshot.font.sizePx),
         }}
       >
-          {id === "basic" && <span className="whitespace-nowrap">이게 바로 자막입니다</span>}
           {id === "highlight" && (
             <span className="whitespace-nowrap">
               이게 바로 <span style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>자막입니다</span>

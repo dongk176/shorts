@@ -20,14 +20,21 @@ during this release.
 
 ## Immutable preview and render layout
 
-All three caption templates use the same server-authored 1080x1920 layout in
+All compatible caption templates use the same server-authored 1080x1920 layout in
 both the browser card and the worker render spec. Hook-title placement follows
 the selected ratio instead of using one fixed top rectangle. The 16:9 video is
 at y=432 with its caption in a separate 840x140 box 48px below the video. The
-5:4, 1:1, and 4:5 video positions follow the established preset positions and
-keep captions inside the actual video near its lower edge. Full-height 9:16
-keeps the video at y=0, moves the title into the standard y=96 top safe area,
-and keeps the caption at y=1430. The channel row remains at y=1710.
+5:4 and 1:1 video positions follow the established preset positions and keep
+captions inside the actual video near its lower edge. The 4:5 title uses the
+same y=96 safe area as full-height 9:16, while its video starts at y=420; its
+caption ends above the channel row, and the channel row occupies y=1610
+through y=1770 inside the video. Full-height 9:16 keeps the video at y=0 and
+the caption at y=1430. Caption-template hook titles never render text
+background rectangles, even when legacy title style data contains one.
+
+New projects can select only `highlight` or `pop`. The retired `basic` id
+remains readable by the worker and stored-data constraints solely so existing
+completed or pinned jobs do not break.
 
 Provider word timestamps remain unchanged. Only the displayed start frame is
 advanced by four 30fps frames (about 133ms); the word end frame is preserved so a

@@ -31,7 +31,7 @@ from shorts_worker.caption_templates import (
 from shorts_worker.config import Settings
 from shorts_worker.media import probe_media
 from shorts_worker.renderer import VideoRenderer, caption_video_layout
-from shorts_worker.schemas import TemplateId, VideoAspectRatio
+from shorts_worker.schemas import TemplateId, TitleTextStyle, VideoAspectRatio
 from shorts_worker.subtitles import TranscriptWord
 
 
@@ -86,9 +86,23 @@ def test_caption_safe_area_matches_renderer_video_rect(
         assert snapshot_layout["title"] == {"x": 0, "y": 96, "width": 1080, "height": 300}
         assert safe == {"x": 120, "y": 1430, "width": 840, "height": 140}
     elif ratio is VideoAspectRatio.PORTRAIT:
-        assert snapshot_layout["title"] == {"x": 0, "y": 285, "width": 1080, "height": 300}
-        assert layout.top_y == layout.video_y == 285
-        assert layout.top_y + layout.top_height <= layout.video_y + layout.video_height
+        assert snapshot_layout["title"] == {"x": 0, "y": 96, "width": 1080, "height": 300}
+        assert snapshot_layout["video"] == {
+            "x": 0,
+            "y": 420,
+            "width": 1080,
+            "height": 1350,
+        }
+        assert snapshot_layout["channel"] == {
+            "x": 0,
+            "y": 1610,
+            "width": 1080,
+            "height": 160,
+        }
+        assert safe == {"x": 120, "y": 1446, "width": 840, "height": 140}
+        assert layout.top_y + layout.top_height < layout.video_y
+        assert safe["y"] + safe["height"] < layout.bottom_y
+        assert layout.bottom_y + layout.bottom_height == layout.video_y + layout.video_height
     else:
         assert safe["y"] >= layout.video_y
         assert safe["y"] + safe["height"] <= layout.video_y + layout.video_height
@@ -816,6 +830,9 @@ def test_landscape_render_places_caption_below_video_with_a_clear_gap(
         prefix="landscape-caption",
         video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
         caption_render_spec=spec,
+        title_text_styles=[
+            TitleTextStyle(start=0, end=4, backgroundColor="#E32626")
+        ],
     )
     with Image.open(
         tmp_path / "landscape-render-work" / "overlays" / "landscape-caption_top.png"
@@ -823,6 +840,7 @@ def test_landscape_render_places_caption_below_video_with_a_clear_gap(
         title_pixels = set(title_overlay.getdata())
         assert (255, 255, 255, 255) in title_pixels
         assert (53, 230, 227, 255) in title_pixels
+        assert (227, 38, 38, 255) not in title_pixels
         assert (255, 113, 94, 255) not in title_pixels
     frame = tmp_path / "landscape-frame.png"
     extracted = subprocess.run(
@@ -864,6 +882,99 @@ def test_landscape_render_places_caption_below_video_with_a_clear_gap(
         title_bounds = title_crop.getbbox()
         assert title_bounds is not None
         assert title_bounds[3] <= 432 - 96
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
+def test_portrait_render_separates_title_and_keeps_channel_inside_video(
+    tmp_path: Path,
+) -> None:
+    clean = tmp_path / "portrait-clean.mp4"
+    generated = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=0x2450a4:size=320x400:rate=30:duration=0.5",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=660:sample_rate=48000:duration=0.5",
+            "-shortest",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            str(clean),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert generated.returncode == 0, generated.stderr[-1000:]
+    spec = _compile(
+        [_word("영상 내부 자막", 0.0, 0.45)],
+        "highlight",
+        clip_end=0.5,
+        ratio=VideoAspectRatio.PORTRAIT,
+    )
+    output = tmp_path / "portrait-rendered.mp4"
+    VideoRenderer(Settings(temp_dir=tmp_path, ffmpeg_timeout_seconds=120)).render_clean_clip(
+        clean_path=clean,
+        output_path=output,
+        title="분리된 제목\n세로형 영상",
+        channel_name="EasyCut 채널",
+        template_id=TemplateId.DARK_MINIMAL,
+        transcript=[],
+        subtitles_enabled=True,
+        work_dir=tmp_path / "portrait-render-work",
+        prefix="portrait-caption",
+        video_aspect_ratio=VideoAspectRatio.PORTRAIT,
+        caption_render_spec=spec,
+    )
+    frame = tmp_path / "portrait-frame.png"
+    extracted = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            "0.2",
+            "-i",
+            str(output),
+            "-frames:v",
+            "1",
+            str(frame),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert extracted.returncode == 0, extracted.stderr[-1000:]
+
+    with Image.open(frame).convert("RGB") as image:
+        gap_pixels = list(image.crop((0, 396, 1080, 420)).getdata())
+        assert max(max(pixel) for pixel in gap_pixels) < 20
+
+        def is_channel_foreground(pixel: tuple[int, int, int]) -> bool:
+            red, green, blue = pixel
+            return red > 190 and green > 190 and blue > 190
+
+        channel_pixels = image.crop((0, 1610, 1080, 1770)).getdata()
+        below_video_pixels = image.crop((0, 1770, 1080, 1920)).getdata()
+        assert sum(is_channel_foreground(pixel) for pixel in channel_pixels) > 100
+        assert sum(is_channel_foreground(pixel) for pixel in below_video_pixels) == 0
 
 
 def test_caption_spec_uses_approved_style_snapshot_values() -> None:

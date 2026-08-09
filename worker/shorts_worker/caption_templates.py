@@ -38,13 +38,15 @@ VIDEO_Y = {
     VideoAspectRatio.LANDSCAPE: 432,
     VideoAspectRatio.LANDSCAPE_FIVE_FOUR: 528,
     VideoAspectRatio.SQUARE: 420,
-    VideoAspectRatio.PORTRAIT: 285,
+    VideoAspectRatio.PORTRAIT: 420,
     VideoAspectRatio.FULL_VERTICAL: 0,
 }
 CAPTION_WORD_SEPARATOR = "\u2009"
 CAPTION_POP_SPACED_GAP_PX = 6
 CAPTION_POP_UNSPACED_GAP_PX = 0
 CAPTION_LANDSCAPE_GAP_PX = 48
+CAPTION_PORTRAIT_CHANNEL_GAP_PX = 24
+CAPTION_CHANNEL_HEIGHT_PX = 160
 _NO_SPACE_BEFORE = frozenset(",.!?:;)]}%。！？、，．：；）」』】》〉…")
 _NO_SPACE_AFTER = frozenset("([{（「『【《〈")
 _SENTENCE_END_RE = re.compile(r"[.!?。！？]+[\"'”’」』】）)]*$")
@@ -126,6 +128,21 @@ def caption_layout(video_aspect_ratio: VideoAspectRatio) -> dict[str, dict[str, 
     video_height = VIDEO_HEIGHTS[video_aspect_ratio]
     video_y = VIDEO_Y[video_aspect_ratio]
     video_bottom = video_y + video_height
+    channel = (
+        {
+            "x": 0,
+            "y": video_bottom - CAPTION_CHANNEL_HEIGHT_PX,
+            "width": CANVAS_WIDTH,
+            "height": CAPTION_CHANNEL_HEIGHT_PX,
+        }
+        if video_aspect_ratio is VideoAspectRatio.PORTRAIT
+        else {
+            "x": 0,
+            "y": 1710,
+            "width": CANVAS_WIDTH,
+            "height": CAPTION_CHANNEL_HEIGHT_PX,
+        }
+    )
     safe_area = (
         {
             "x": 120,
@@ -138,6 +155,13 @@ def caption_layout(video_aspect_ratio: VideoAspectRatio) -> dict[str, dict[str, 
         if video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
         else {
             "x": 120,
+            "y": channel["y"] - CAPTION_PORTRAIT_CHANNEL_GAP_PX - 140,
+            "width": 840,
+            "height": 140,
+        }
+        if video_aspect_ratio is VideoAspectRatio.PORTRAIT
+        else {
+            "x": 120,
             "y": max(
                 video_y,
                 video_bottom - max(64, round(video_height * 0.08)) - 140,
@@ -147,17 +171,16 @@ def caption_layout(video_aspect_ratio: VideoAspectRatio) -> dict[str, dict[str, 
         }
     )
     title = (
-        {"x": 0, "y": video_y, "width": CANVAS_WIDTH, "height": 300}
-        if video_aspect_ratio is VideoAspectRatio.PORTRAIT
-        else {"x": 0, "y": 96, "width": CANVAS_WIDTH, "height": 300}
-        if video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+        {"x": 0, "y": 96, "width": CANVAS_WIDTH, "height": 300}
+        if video_aspect_ratio
+        in {VideoAspectRatio.PORTRAIT, VideoAspectRatio.FULL_VERTICAL}
         else {"x": 0, "y": 0, "width": CANVAS_WIDTH, "height": video_y}
     )
     return {
         "canvas": {"x": 0, "y": 0, "width": CANVAS_WIDTH, "height": CANVAS_HEIGHT},
         "video": {"x": 0, "y": video_y, "width": CANVAS_WIDTH, "height": video_height},
         "title": title,
-        "channel": {"x": 0, "y": 1710, "width": CANVAS_WIDTH, "height": 160},
+        "channel": channel,
         "caption": safe_area,
     }
 

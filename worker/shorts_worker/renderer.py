@@ -252,6 +252,12 @@ def caption_video_layout(spec: dict[str, object]) -> VideoLayout:
         landscape_caption_is_below_video or caption_is_inside_video
     ):
         raise RenderError("자막이 허용된 안전영역을 벗어났습니다.")
+    if video["height"] == VIDEO_HEIGHTS[VideoAspectRatio.PORTRAIT] and not (
+        channel["y"] >= video["y"]
+        and channel["y"] + channel["height"] <= video["y"] + video["height"]
+        and caption["y"] + caption["height"] <= channel["y"]
+    ):
+        raise RenderError("세로형 자막 템플릿의 채널 영역이 올바르지 않습니다.")
     return VideoLayout(
         video_height=video["height"],
         video_y=video["y"],
@@ -490,7 +496,9 @@ class VideoRenderer:
             top_height=layout.top_height,
             bottom_height=layout.bottom_height,
             overlay_mode=layout.overlay_mode,
-            title_text_styles=title_text_styles,
+            title_text_styles=(
+                [] if caption_render_spec is not None else title_text_styles
+            ),
             title_accent_color=(
                 TEMPLATE_STYLES[TemplateId.COMMENT_CAPTURE].accent
                 if caption_render_spec

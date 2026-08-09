@@ -6,11 +6,18 @@ import {
   SUBTITLE_TEMPLATE_TITLE_FONT_SIZE_PX,
   SUBTITLE_TEMPLATE_TITLE_SECOND_LINE_COLOR,
   SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
+  subtitleTemplateCreationIds,
   subtitleTemplateLayout,
+  subtitleTemplateOptions,
   subtitleTemplateStyleSnapshot,
 } from "./subtitle-templates";
 
 describe("subtitle template snapshot", () => {
+  it("offers only highlight and pop for new projects", () => {
+    expect(subtitleTemplateCreationIds).toEqual(["highlight", "pop"]);
+    expect(subtitleTemplateOptions.map(({ id }) => id)).toEqual(["highlight", "pop"]);
+  });
+
   it("keeps the complete template on the isolated dark-minimal shell", () => {
     const snapshot = subtitleTemplateStyleSnapshot("highlight", "9:16");
     expect(snapshot.baseTemplateId).toBe(SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID);
@@ -66,12 +73,20 @@ describe("subtitle template snapshot", () => {
       caption: { y: 1274, height: 140 },
     });
     expect(subtitleTemplateLayout("4:5")).toMatchObject({
-      title: { y: 285, height: 300 },
-      video: { y: 285, height: 1350 },
-      caption: { y: 1387, height: 140 },
+      title: { y: 96, height: 300 },
+      video: { y: 420, height: 1350 },
+      caption: { y: 1446, height: 140 },
+      channel: { y: 1610, height: 160 },
     });
-    expect(subtitleTemplateLayout("4:5").title.y).toBe(
-      subtitleTemplateLayout("4:5").video.y,
+    expect(subtitleTemplateLayout("4:5").title).toEqual(
+      subtitleTemplateLayout("9:16").title,
+    );
+    const portrait = subtitleTemplateLayout("4:5");
+    expect(portrait.title.y + portrait.title.height).toBeLessThan(portrait.video.y);
+    expect(portrait.caption.y + portrait.caption.height).toBeLessThan(portrait.channel.y);
+    expect(portrait.channel.y).toBeGreaterThanOrEqual(portrait.video.y);
+    expect(portrait.channel.y + portrait.channel.height).toBe(
+      portrait.video.y + portrait.video.height,
     );
     expect(subtitleTemplateLayout("9:16")).toMatchObject({
       title: { y: 96, height: 300 },

@@ -1118,6 +1118,19 @@ describe("job API security and idempotency", () => {
     ]));
   });
 
+  it("rejects the retired basic subtitle template before touching storage", async () => {
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-minimal",
+      subtitleTemplateId: "basic",
+      rightsConfirmed: true,
+      requestId: "02b4b365-06de-41aa-888d-f39b5d28ae97",
+    }));
+
+    expect(response.status).toBe(400);
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
   it("rejects a forged subtitle template field from a non-admin", async () => {
     process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
     const db = dbWithRows([], [analysisRow]);
@@ -1137,7 +1150,7 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-minimal",
-      subtitleTemplateId: "basic",
+      subtitleTemplateId: "highlight",
       rightsConfirmed: true,
       requestId: "963e8dab-8244-463d-98ac-f7ab569dd227",
     }));

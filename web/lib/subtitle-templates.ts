@@ -2,6 +2,7 @@ import type { VideoAspectRatio } from "@/lib/contracts";
 
 export const subtitleTemplateIds = ["basic", "highlight", "pop"] as const;
 export type SubtitleTemplateId = typeof subtitleTemplateIds[number];
+export const subtitleTemplateCreationIds = ["highlight", "pop"] as const;
 
 export const SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID = "dark-minimal" as const;
 export const SUBTITLE_TEMPLATE_BRAND_COLOR = "#35E6E3" as const;
@@ -25,7 +26,7 @@ const CAPTION_VIDEO_Y: Record<VideoAspectRatio, number> = {
   "16:9": 432,
   "5:4": 528,
   "1:1": 420,
-  "4:5": 285,
+  "4:5": 420,
   "9:16": 0,
 };
 const CAPTION_FULL_VERTICAL_TITLE_OVERLAY = {
@@ -35,13 +36,14 @@ const CAPTION_FULL_VERTICAL_TITLE_OVERLAY = {
   height: 300,
 } as const;
 const CAPTION_LANDSCAPE_GAP_PX = 48;
+const CAPTION_PORTRAIT_CHANNEL_GAP_PX = 24;
+const CAPTION_CHANNEL_HEIGHT_PX = 160;
 
 export const subtitleTemplateOptions: Array<{
   id: SubtitleTemplateId;
   name: string;
   description: string;
 }> = [
-  { id: "basic", name: "자막 기본형", description: "한 줄 문장을 또렷하게" },
   { id: "highlight", name: "자막 강조형", description: "말하는 어절만 브랜드 컬러로" },
   { id: "pop", name: "자막 팝형", description: "핵심 어절을 크고 리듬감 있게" },
 ];
@@ -51,6 +53,14 @@ export function subtitleTemplateLayout(videoAspectRatio: VideoAspectRatio) {
   const fullVertical = videoAspectRatio === "9:16";
   const videoY = CAPTION_VIDEO_Y[videoAspectRatio];
   const videoBottom = videoY + videoHeight;
+  const channel = videoAspectRatio === "4:5"
+    ? {
+        x: 0,
+        y: videoBottom - CAPTION_CHANNEL_HEIGHT_PX,
+        width: 1080,
+        height: CAPTION_CHANNEL_HEIGHT_PX,
+      }
+    : { x: 0, y: 1710, width: 1080, height: CAPTION_CHANNEL_HEIGHT_PX };
   const safeArea = videoAspectRatio === "16:9"
     ? {
         x: 120,
@@ -60,6 +70,13 @@ export function subtitleTemplateLayout(videoAspectRatio: VideoAspectRatio) {
       }
     : fullVertical
       ? { x: 120, y: 1430, width: 840, height: 140 }
+      : videoAspectRatio === "4:5"
+        ? {
+            x: 120,
+            y: channel.y - CAPTION_PORTRAIT_CHANNEL_GAP_PX - 140,
+            width: 840,
+            height: 140,
+          }
       : {
         x: 120,
         y: Math.max(
@@ -69,16 +86,14 @@ export function subtitleTemplateLayout(videoAspectRatio: VideoAspectRatio) {
         width: 840,
         height: 140,
       };
-  const title = videoAspectRatio === "4:5"
-    ? { x: 0, y: videoY, width: 1080, height: 300 }
-    : fullVertical
-      ? CAPTION_FULL_VERTICAL_TITLE_OVERLAY
+  const title = videoAspectRatio === "4:5" || fullVertical
+    ? CAPTION_FULL_VERTICAL_TITLE_OVERLAY
     : { x: 0, y: 0, width: 1080, height: videoY };
   return {
     canvas: { x: 0, y: 0, width: 1080, height: CAPTION_CANVAS_HEIGHT },
     video: { x: 0, y: videoY, width: 1080, height: videoHeight },
     title,
-    channel: { x: 0, y: 1710, width: 1080, height: 160 },
+    channel,
     caption: safeArea,
   } as const;
 }
