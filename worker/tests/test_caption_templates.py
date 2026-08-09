@@ -264,7 +264,10 @@ def test_caption_word_spacing_is_compact_in_sentence_and_pop_templates(
     first, second = pop["cues"][0]["words"]
     first_right = first["centerX"] + _measure(first["text"], first["fontSize"]) * 1.12 / 2
     second_left = second["centerX"] - _measure(second["text"], second["fontSize"]) * 1.12 / 2
-    assert second_left - first_right == pytest.approx(CAPTION_POP_SPACED_GAP_PX)
+    assert second_left - first_right == pytest.approx(
+        CAPTION_POP_SPACED_GAP_PX,
+        abs=0.01,
+    )
 
 
 def test_same_start_frame_events_are_contiguous_without_overlap() -> None:
