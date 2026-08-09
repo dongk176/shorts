@@ -1,4 +1,5 @@
 import type { TitleTextStyle } from "@/lib/contracts";
+import { contrastingTitleTextColor } from "@/lib/brand-color-contrast";
 
 const TITLE_MAX_CHARS = 20;
 const TITLE_MAX_LINES = 2;
@@ -39,6 +40,48 @@ export function titleLineColor(
   keepPrimaryFirstLine = false,
 ) {
   return (overlayMode && !keepPrimaryFirstLine) || index === 1 ? accent : primary;
+}
+
+export function brandedTitleLinePresentation({
+  index,
+  overlayMode,
+  background,
+  accentBackground,
+  primary,
+  accent,
+  brandColor,
+  keepPrimaryFirstLine = false,
+}: {
+  index: number;
+  overlayMode: boolean;
+  background: string;
+  accentBackground: string | null;
+  primary: string;
+  accent: string;
+  brandColor?: string;
+  keepPrimaryFirstLine?: boolean;
+}) {
+  const presetBackground = titleLineBackground(
+    index,
+    overlayMode,
+    background,
+    accentBackground,
+  );
+  const lineBackground = presetBackground && brandColor
+    ? brandColor
+    : presetBackground;
+  return {
+    background: lineBackground,
+    color: lineBackground
+      ? contrastingTitleTextColor(lineBackground)
+      : titleLineColor(
+          index,
+          overlayMode,
+          primary,
+          brandColor || accent,
+          keepPrimaryFirstLine || Boolean(brandColor),
+        ),
+  };
 }
 
 function characters(value: string) {

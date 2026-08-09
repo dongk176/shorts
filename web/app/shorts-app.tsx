@@ -78,7 +78,7 @@ import {
   defaultTemplateTitleTextStyles,
   rebaseTitleTextStyles,
 } from "@/lib/title-text-style";
-import { titleLineBackground, titleLineColor, wrapPreviewTitle } from "@/lib/title-preview";
+import { brandedTitleLinePresentation, wrapPreviewTitle } from "@/lib/title-preview";
 import {
   customCanvasWidth,
   customCenteredLayerStyle,
@@ -265,6 +265,14 @@ function editableCustomTemplate(item: GeneratedShort): CustomTemplate | null {
     createdAt: "",
     updatedAt: "",
   };
+}
+
+function generatedShortBrandColor(item: GeneratedShort) {
+  const brandColor = item.templateSnapshot?.brandColor;
+  return typeof brandColor === "string"
+    && templatePresetColorOptions.some((option) => option.color === brandColor)
+    ? brandColor as TemplatePresetColor
+    : undefined;
 }
 
 function customTemplateFromEditorDraft(
@@ -1334,26 +1342,24 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
     template.id === "comment-capture",
   );
   const previewLine = (line: string, index: number) => {
-    const lineBackground = titleLineBackground(
+    const linePresentation = brandedTitleLinePresentation({
       index,
-      layout.fullVertical,
-      template.background,
-      template.accentBackground,
-    );
+      overlayMode: layout.fullVertical,
+      background: template.background,
+      accentBackground: template.accentBackground,
+      primary: template.primary,
+      accent: template.accent,
+      brandColor,
+      keepPrimaryFirstLine: template.id === "paper",
+    });
     return (
       <span
         className={`${index === 1 ? "mt-[2.4cqw]" : ""} whitespace-nowrap`}
         style={{
-          color: titleLineColor(
-            index,
-            layout.fullVertical,
-            template.primary,
-            brandColor || template.accent,
-            template.id === "paper" || Boolean(brandColor),
-          ),
-          background: lineBackground || "transparent",
-          borderRadius: lineBackground ? "1cqw" : 0,
-          padding: lineBackground ? "1.2cqw 3.65cqw" : 0,
+          color: linePresentation.color,
+          background: linePresentation.background || "transparent",
+          borderRadius: linePresentation.background ? "1cqw" : 0,
+          padding: linePresentation.background ? "1.2cqw 3.65cqw" : 0,
         }}
       >
         {line}
@@ -3347,6 +3353,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const initialVideoAspectRatio = savedEditorDocument?.video.aspectRatio
     || item.videoAspectRatio;
   const initialTitle = savedEditorDocument?.title.text || item.hookTitle;
+  const presetBrandColor = generatedShortBrandColor(item);
   const initialTitleAspectRatio = initialTemplateId === "comment-capture" && initialVideoAspectRatio === "9:16"
     ? "4:5"
     : initialVideoAspectRatio || "1:1";
@@ -3359,6 +3366,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       initialTitleAspectRatio,
       initialTemplate.background,
       initialTemplate.accentBackground,
+      presetBrandColor,
   );
   const [title, setTitle] = useState(initialTitle);
   const [titleTextStyles, setTitleTextStyles] = useState<TitleTextStyle[]>(initialTitleTextStyles);
@@ -8180,7 +8188,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 fontScale={renderTitleFontScale}
                 videoAspectRatio={commentNeedsVerticalFit ? "4:5" : originalAspectRatio}
                 primary={template.primary}
-                accent={template.accent}
+                accent={presetBrandColor || template.accent}
                 background={editorTemplateSurfaceBackground}
                 fontFamily={titleFontFamily}
                 fontWeight={renderSpec?.title.font.resolvedWeight}
@@ -9923,7 +9931,7 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
                 <div className="short-result-layout">
                   <div className="short-video-column">
                     <div className="short-video-shell">
-                      {itemUrl ? <video key={shortPlaybackVersionKey(item)} src={itemUrl} poster={itemAsset?.posterUrl || undefined} controls={!itemIsRerendering} controlsList={job.isExample ? "nodownload" : undefined} playsInline preload="metadata" onError={() => refreshPlaybackAccess(item)} className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
+                      {itemUrl ? <video key={shortPlaybackVersionKey(item)} src={itemUrl} poster={itemAsset?.posterUrl || undefined} controls={!itemIsRerendering} controlsList="nodownload" playsInline preload="metadata" onError={() => refreshPlaybackAccess(item)} className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
                       <span className="short-duration-badge">{formatDuration(item.durationSeconds)}</span>
                       {itemIsRerendering && <EstimatedProcessingOverlay operationKey={`rerender:${item.id}:${item.renderVersion}`} durationSeconds={item.durationSeconds} rerender minimumProgress={item.rerenderProgress} />}
                     </div>

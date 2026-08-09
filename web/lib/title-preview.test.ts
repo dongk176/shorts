@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  brandedTitleLinePresentation,
   fitPreviewTitleFont,
   styledTitleLineRuns,
   titlePreviewLineBoxHeight,
@@ -53,6 +54,48 @@ describe("render-matched title preview", () => {
   it("keeps the first paper line primary-colored in full-vertical mode", () => {
     expect(titleLineColor(0, true, "#111111", "#D52B2B", true)).toBe("#111111");
     expect(titleLineColor(1, true, "#111111", "#D52B2B", true)).toBe("#D52B2B");
+  });
+
+  it("uses brand color as the background with automatically contrasting text", () => {
+    expect(brandedTitleLinePresentation({
+      index: 1,
+      overlayMode: false,
+      background: "#000000",
+      accentBackground: "#E32626",
+      primary: "#FFFFFF",
+      accent: "#FFFFFF",
+      brandColor: "#FFD84D",
+    })).toEqual({ background: "#FFD84D", color: "#000000" });
+    expect(brandedTitleLinePresentation({
+      index: 0,
+      overlayMode: true,
+      background: "#F3F0E9",
+      accentBackground: null,
+      primary: "#111111",
+      accent: "#D52B2B",
+      brandColor: "#2563EB",
+    })).toEqual({ background: "#2563EB", color: "#FFFFFF" });
+  });
+
+  it("keeps brand color on text when the template has no title background", () => {
+    expect(brandedTitleLinePresentation({
+      index: 0,
+      overlayMode: false,
+      background: "#000000",
+      accentBackground: null,
+      primary: "#FFFFFF",
+      accent: "#F04444",
+      brandColor: "#35E6E3",
+    })).toEqual({ background: null, color: "#FFFFFF" });
+    expect(brandedTitleLinePresentation({
+      index: 1,
+      overlayMode: false,
+      background: "#000000",
+      accentBackground: null,
+      primary: "#FFFFFF",
+      accent: "#F04444",
+      brandColor: "#35E6E3",
+    })).toEqual({ background: null, color: "#35E6E3" });
   });
 
   it("groups selected title characters into styled preview runs", () => {

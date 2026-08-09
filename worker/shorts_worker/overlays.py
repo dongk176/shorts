@@ -27,6 +27,37 @@ COMMENT_SIZE_SCALES = {"small": 0.82, "medium": 1.0, "large": 1.16}
 COMMENT_DARK_BACKGROUND = "#040404"
 
 
+def _linear_color_channel(value: int) -> float:
+    normalized = value / 255
+    return (
+        normalized / 12.92
+        if normalized <= 0.04045
+        else ((normalized + 0.055) / 1.055) ** 2.4
+    )
+
+
+def contrasting_title_text_color(background: str) -> str:
+    value = background.strip().lstrip("#")
+    if len(value) != 6:
+        return "#FFFFFF"
+    try:
+        red, green, blue = (
+            int(value[0:2], 16),
+            int(value[2:4], 16),
+            int(value[4:6], 16),
+        )
+    except ValueError:
+        return "#FFFFFF"
+    luminance = (
+        0.2126 * _linear_color_channel(red)
+        + 0.7152 * _linear_color_channel(green)
+        + 0.0722 * _linear_color_channel(blue)
+    )
+    black_contrast = (luminance + 0.05) / 0.05
+    white_contrast = 1.05 / (luminance + 0.05)
+    return "#000000" if black_contrast >= white_contrast else "#FFFFFF"
+
+
 @dataclass(frozen=True, slots=True)
 class TemplateStyle:
     background: str
@@ -286,6 +317,7 @@ def create_title_panel(
     title_accent_color: str | None = None,
 ) -> Path:
     style = TEMPLATE_STYLES[template_id]
+    uses_default_title_styles = title_text_styles is None
     image = Image.new(
         "RGBA" if overlay_mode else "RGB",
         (PANEL_WIDTH, panel_height),
@@ -355,6 +387,11 @@ def create_title_panel(
         for run_start, run_end, _, run_background in runs:
             if not run_background:
                 continue
+            effective_background = (
+                title_accent_color
+                if uses_default_title_styles and title_accent_color
+                else run_background
+            )
             run_x = _text_width(draw, line[:run_start], font)
             run_right = _text_width(draw, line[:run_end], font)
             draw.rounded_rectangle(
@@ -365,15 +402,27 @@ def create_title_panel(
                     row_y + height + TITLE_ACCENT_PADDING_Y * 2,
                 ),
                 radius=10,
-                fill=run_background,
+                fill=effective_background,
             )
-        for run_start, run_end, run_color, _ in runs:
+        for run_start, run_end, run_color, run_background in runs:
             run_x = _text_width(draw, line[:run_start], font)
+            brand_background = (
+                title_accent_color
+                if run_background and uses_default_title_styles and title_accent_color
+                else None
+            )
             draw.text(
                 (draw_x + run_x, draw_y),
                 line[run_start:run_end],
                 font=font,
-                fill=run_color or color,
+                fill=(
+                    run_color
+                    or (
+                        contrasting_title_text_color(brand_background)
+                        if brand_background
+                        else color
+                    )
+                ),
                 stroke_width=0,
             )
         row_y += height + accent_padding_y * 2 + TITLE_LINE_GAP

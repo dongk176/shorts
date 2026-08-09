@@ -100,7 +100,7 @@ export async function getShortDownloadUrl(
   if (!/^outputs\/[A-Za-z0-9/_-]+\.mp4$/.test(key)) {
     throw new Error("다운로드할 수 없는 영상 경로입니다.");
   }
-  if (!/^[0-9A-Za-z가-힣 _-]{1,80}\.mp4$/.test(filename)) {
+  if (!/^[\p{L}\p{N} _-]{1,80}\.mp4$/u.test(filename)) {
     throw new Error("다운로드 파일명이 올바르지 않습니다.");
   }
   const domain = process.env.CLOUDFRONT_DOMAIN;

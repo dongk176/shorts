@@ -5,11 +5,7 @@ import {
   templatePresetColorOptions,
   type TemplatePresetColor,
 } from "@/lib/template-config";
-
-const compactBrandColors = ["#FF4D4F", "#FF715E", "#FFD84D", "#35E6E3", "#3B82F6"] as const;
-const compactColorOptions = compactBrandColors.map(
-  (color) => templatePresetColorOptions.find((option) => option.color === color)!,
-);
+import { compactBrandColorOptions } from "@/lib/brand-color-picker-options";
 
 export function BrandColorPicker({
   value,
@@ -22,11 +18,7 @@ export function BrandColorPicker({
   const pickerId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const selected = templatePresetColorOptions.find((option) => option.color === value);
-  const displayedCompactOptions = compactColorOptions.some((option) => option.color === value)
-    ? compactColorOptions
-    : selected
-      ? [selected, ...compactColorOptions.slice(0, 4)]
-      : compactColorOptions;
+  const displayedCompactOptions = compactBrandColorOptions(value);
 
   useEffect(() => {
     if (!open) return;
@@ -47,6 +39,7 @@ export function BrandColorPicker({
   const colorButton = (
     option: (typeof templatePresetColorOptions)[number],
     compact = false,
+    className = "",
   ) => (
     <button
       key={option.color}
@@ -58,7 +51,7 @@ export function BrandColorPicker({
         onChange(option.color);
         if (!compact) setOpen(false);
       }}
-      className={`relative h-7 w-7 shrink-0 rounded-full border transition hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${value === option.color ? "border-white shadow-[0_0_0_3px_rgba(255,255,255,.2)]" : "border-white/20"}`}
+      className={`relative h-7 w-7 shrink-0 rounded-full border transition hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${value === option.color ? "border-white shadow-[0_0_0_3px_rgba(255,255,255,.2)]" : "border-white/20"} ${className}`}
       style={{ backgroundColor: option.color }}
     >
       {value === option.color && (
@@ -68,12 +61,18 @@ export function BrandColorPicker({
   );
 
   return (
-    <fieldset className="min-w-0">
+    <fieldset className="w-full min-w-0">
       <legend className="sr-only">브랜드 컬러</legend>
-      <div ref={rootRef} className="relative flex min-w-0 items-center gap-3">
+      <div ref={rootRef} className="relative grid min-w-0 grid-cols-[72px_minmax(0,1fr)] items-center gap-3">
         <span className="w-[72px] shrink-0 text-xs font-semibold text-neutral-400">브랜드 컬러</span>
-        <div className="flex min-w-0 items-center gap-2">
-          {displayedCompactOptions.map((option) => colorButton(option, true))}
+        <div className="flex min-w-0 max-w-full items-center gap-2">
+          {displayedCompactOptions.map((option, index) => colorButton(
+            option,
+            true,
+            index === displayedCompactOptions.length - 1
+              ? "hidden min-[420px]:inline-flex"
+              : "",
+          ))}
           <button
             type="button"
             aria-label="브랜드 컬러 더 보기"
@@ -92,7 +91,7 @@ export function BrandColorPicker({
             id={pickerId}
             role="group"
             aria-label="전체 브랜드 컬러"
-            className="absolute left-0 top-[calc(100%+10px)] z-40 grid grid-cols-6 gap-2 rounded-xl border border-white/15 bg-[#171719]/95 p-3 shadow-2xl backdrop-blur-xl sm:left-[84px]"
+            className="absolute left-0 top-[calc(100%+10px)] z-40 grid max-w-[calc(100vw-64px)] grid-cols-5 gap-2 rounded-xl border border-white/15 bg-[#171719]/95 p-3 shadow-2xl backdrop-blur-xl sm:left-[84px] sm:grid-cols-6"
           >
             {templatePresetColorOptions.map((option) => colorButton(option))}
           </div>

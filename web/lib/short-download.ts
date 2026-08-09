@@ -1,8 +1,11 @@
 export function shortDownloadFilename(hookTitle: string) {
   const safeTitle = hookTitle
-    .replace(/[^0-9A-Za-z가-힣 _-]/g, "")
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N} _-]+/gu, " ")
+    .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 80);
+    .slice(0, 80)
+    .trim();
   return `${safeTitle || "shorts"}.mp4`;
 }
 

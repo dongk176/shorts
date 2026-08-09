@@ -7,6 +7,7 @@ from PIL import Image
 from shorts_worker.config import Settings
 from shorts_worker.overlays import (
     COMMENT_BODY_FONT_SIZE,
+    contrasting_title_text_color,
     create_ass_subtitles,
     create_channel_panel,
     create_comment_panel,
@@ -48,6 +49,23 @@ def test_korean_title_overlay_is_created(tmp_path: Path) -> None:
         tmp_path / "title.png",
     )
     assert output.is_file()
+
+
+def test_brand_background_uses_matching_high_contrast_title_text(tmp_path: Path) -> None:
+    assert contrasting_title_text_color("#111111") == "#FFFFFF"
+    assert contrasting_title_text_color("#FFD84D") == "#000000"
+
+    output = create_title_panel(
+        "첫 번째 제목\n두 번째 제목",
+        TemplateId.DARK_RED,
+        tmp_path / "brand-title.png",
+        title_accent_color="#FFD84D",
+    )
+    with Image.open(output).convert("RGB") as image:
+        pixels = list(image.getdata())
+        assert (255, 216, 77) in pixels
+        assert (0, 0, 0) in pixels
+        assert (227, 38, 38) not in pixels
 
 
 def test_custom_title_lines_use_independent_background_colors(tmp_path: Path) -> None:
@@ -606,6 +624,7 @@ def test_caption_full_vertical_keeps_first_title_row_white_and_accents_second(
         tmp_path / "caption-vertical-title-color.png",
         panel_height=360,
         overlay_mode=True,
+        title_text_styles=[],
         title_accent_color="#FF715E",
     )
     with Image.open(output).convert("RGBA") as image:

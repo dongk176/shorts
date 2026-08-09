@@ -49,6 +49,21 @@ describe("title text selection styles", () => {
     )).toEqual([{ start: 0, end: 8, backgroundColor: "#000000" }]);
   });
 
+  it("uses the selected brand color for template-provided title backgrounds", () => {
+    expect(defaultTemplateTitleTextStyles(
+      "첫 줄\n둘째 줄",
+      "4:5",
+      "#000000",
+      "#E32626",
+      "#3B82F6",
+    )).toEqual([{
+      start: 4,
+      end: 8,
+      backgroundColor: "#3B82F6",
+      color: "#000000",
+    }]);
+  });
+
   it("keeps templates without a background transparent outside overlay mode", () => {
     expect(defaultTemplateTitleTextStyles("배경 없음", "4:5", "#000000", null)).toEqual([]);
   });

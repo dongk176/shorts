@@ -7,7 +7,9 @@ import {
 
 describe("short download helpers", () => {
   it("creates a safe Korean mp4 filename", () => {
-    expect(shortDownloadFilename("핵심: 제목 / 테스트?")).toBe("핵심 제목  테스트.mp4");
+    expect(shortDownloadFilename("핵심: 제목 / 테스트?")).toBe("핵심 제목 테스트.mp4");
+    expect(shortDownloadFilename("첫째 줄\n둘째 줄")).toBe("첫째 줄 둘째 줄.mp4");
+    expect(shortDownloadFilename("日本語 タイトル")).toBe("日本語 タイトル.mp4");
     expect(shortDownloadFilename("?!")).toBe("shorts.mp4");
   });
 

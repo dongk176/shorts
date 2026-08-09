@@ -1,4 +1,5 @@
 import type { TitleTextStyle, VideoAspectRatio } from "@/lib/contracts";
+import { contrastingTitleTextColor } from "@/lib/brand-color-contrast";
 import { titleLineCharacterIndices, wrapPreviewTitle } from "@/lib/title-preview";
 
 type CharacterTitleTextStyle = {
@@ -206,6 +207,7 @@ export function defaultTemplateTitleTextStyles(
   videoAspectRatio: VideoAspectRatio,
   background: string,
   accentBackground: string | null,
+  brandColor?: string,
 ): TitleTextStyle[] {
   const overlayMode = videoAspectRatio === "9:16";
   const selectedBackground = overlayMode ? accentBackground || background : accentBackground;
@@ -218,6 +220,7 @@ export function defaultTemplateTitleTextStyles(
   return [{
     start: Math.min(...selectedIndices),
     end: Math.max(...selectedIndices) + 1,
-    backgroundColor: selectedBackground,
+    backgroundColor: brandColor || selectedBackground,
+    ...(brandColor ? { color: contrastingTitleTextColor(brandColor) } : {}),
   }];
 }

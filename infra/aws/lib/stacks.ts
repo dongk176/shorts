@@ -16,6 +16,7 @@ import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
+import { DOWNLOAD_RESPONSE_HEADERS_FUNCTION_CODE } from "./cloudfront-functions";
 
 const projectRoot = path.resolve(__dirname, "../../..");
 const placeholderPublicKey = [
@@ -158,7 +159,7 @@ export class ShortsMvpFoundationStack extends cdk.Stack {
     });
     const downloadHeaders = new cloudfront.Function(this, "DownloadResponseHeaders", {
       code: cloudfront.FunctionCode.fromInline(
-        `function handler(event){var qs=event.request.querystring;var r=event.response;if(qs.download&&qs.download.value==='1'){var p=event.request.uri.split('/');var id=p.length>4?p[4].slice(0,8):'shorts';if(!/^[A-Za-z0-9_-]+$/.test(id))id='shorts';var cd='attachment; filename="easy-cut-'+id+'.mp4"';var name=qs.filename&&qs.filename.value;if(name&&/^[0-9A-Za-z가-힣 _-]{1,80}\\.mp4$/.test(name))cd+="; filename*=UTF-8''"+encodeURIComponent(name);r.headers['content-disposition']={value:cd};r.headers['cache-control']={value:'private, no-store, max-age=0'};r.headers['x-content-type-options']={value:'nosniff'};}return r;}`
+        DOWNLOAD_RESPONSE_HEADERS_FUNCTION_CODE,
       ),
     });
     const mediaHeaders = new cloudfront.ResponseHeadersPolicy(this, "MediaResponseHeaders", {
