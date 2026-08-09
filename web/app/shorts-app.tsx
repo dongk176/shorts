@@ -31,6 +31,7 @@ import {
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SourceRangeGuide } from "@/components/source-range-guide";
+import { SubtitlePositionGuide } from "@/components/subtitle-position-guide";
 import { SupportInquiryWidget } from "@/components/support-inquiry-widget";
 import { TemplateCommentPreview } from "@/components/template-comment-prototype";
 import { TitleOverlayPreview } from "@/components/title-overlay-preview";
@@ -69,6 +70,7 @@ import {
   SUBTITLE_TEMPLATE_BRAND_COLOR,
   subtitleTemplateStyleSnapshot,
   subtitleTemplateOptions,
+  type SubtitleCaptionPlacement,
   type SubtitleTemplateSelectionId,
 } from "@/lib/subtitle-templates";
 import { youtubePrivacyEnhancedEmbedUrl } from "@/lib/youtube-embed";
@@ -237,6 +239,26 @@ const templates: Array<{ id: TemplateId; name: string; label: string; background
 type FavoriteTemplateCard =
   | { kind: "custom"; template: CustomTemplate }
   | { kind: "preset"; template: (typeof templates)[number] };
+
+const subtitleCaptionPositionOptions: ReadonlyArray<{
+  value: SubtitleCaptionPlacement;
+  name: string;
+  useCase: string;
+  description: string;
+}> = [
+  {
+    value: "lower",
+    name: "하단",
+    useCase: "원본 영상에 자막이 없을 때",
+    description: "화면을 덜 가리며 내용을 안정적으로 전달해요.",
+  },
+  {
+    value: "center",
+    name: "중앙",
+    useCase: "짧은 대사·몰입형 장면",
+    description: "간헐적 자막에 시선을 빠르게 모아줘요.",
+  },
+];
 
 type ProjectActionAccess = {
   canEdit: boolean;
@@ -1398,18 +1420,25 @@ function CustomHomeTemplatePreview({ template }: { template: CustomTemplate }) {
 
 function SubtitleTemplatePreview({
   id,
+  captionPlacement,
   videoAspectRatio,
   channelName,
   channelThumbnailUrl,
   brandColor,
 }: {
   id: SubtitleTemplateSelectionId;
+  captionPlacement: SubtitleCaptionPlacement;
   videoAspectRatio: VideoAspectRatio;
   channelName: string;
   channelThumbnailUrl: string | null;
   brandColor: TemplatePresetColor;
 }) {
-  const snapshot = subtitleTemplateStyleSnapshot(id, videoAspectRatio, brandColor);
+  const snapshot = subtitleTemplateStyleSnapshot(
+    id,
+    videoAspectRatio,
+    brandColor,
+    captionPlacement,
+  );
   const layout = snapshot.layout;
   const canvasCqw = (pixels: number) => `${pixels / 10.8}cqw`;
   const rectStyle = (rect: { x: number; y: number; width: number; height: number }) => ({
@@ -1512,6 +1541,8 @@ function TemplatePicker({
   subtitleTemplateSelectionEnabled,
   subtitleTemplateId,
   onSubtitleTemplateChange,
+  subtitleCaptionPlacement,
+  onSubtitleCaptionPlacementChange,
   brandColorSelectionEnabled,
   brandColor,
   onBrandColorChange,
@@ -1530,6 +1561,8 @@ function TemplatePicker({
   subtitleTemplateSelectionEnabled: boolean;
   subtitleTemplateId: SubtitleTemplateSelectionId | null;
   onSubtitleTemplateChange: (value: SubtitleTemplateSelectionId | null) => void;
+  subtitleCaptionPlacement: SubtitleCaptionPlacement;
+  onSubtitleCaptionPlacementChange: (value: SubtitleCaptionPlacement) => void;
   brandColorSelectionEnabled: boolean;
   brandColor: TemplatePresetColor;
   onBrandColorChange: (value: TemplatePresetColor) => void;
@@ -1555,6 +1588,31 @@ function TemplatePicker({
   });
   const favoriteCustomIds = new Set(favoriteCards.flatMap((card) => card.kind === "custom" ? [card.template.id] : []));
   const remainingPersonalTemplates = usablePersonalTemplates.filter((template) => !favoriteCustomIds.has(template.id));
+  const leadingFavoriteCards = favoriteCards.filter(
+    (card) => card.kind === "preset" && card.template.id === "comment-capture",
+  );
+  const remainingFavoriteCards = favoriteCards.filter(
+    (card) => card.kind !== "preset" || card.template.id !== "comment-capture",
+  );
+  const renderFavoriteCard = (card: FavoriteTemplateCard) => {
+    if (card.kind === "custom") {
+      const selected = !subtitleTemplateId && customTemplateId === card.template.id;
+      return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
+    }
+    const selected = !subtitleTemplateId && !customTemplateId && value === card.template.id;
+    return (
+      <button
+        key={`favorite-preset-${card.template.id}`}
+        type="button"
+        aria-pressed={selected}
+        onClick={() => { onCustomTemplateChange(null); onChange(card.template.id); }}
+        className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
+      >
+        <TemplatePreview template={card.template} videoAspectRatio={effectiveAspectRatio} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} brandColor={brandColorSelectionEnabled ? brandColor : undefined} />
+        <span className="mt-2.5 block text-center text-sm font-semibold">{card.template.name}</span>
+      </button>
+    );
+  };
   return (
     <div id="template-picker">
       <div className="flex items-center gap-3">
@@ -1578,29 +1636,7 @@ function TemplatePicker({
         className="template-picker-rail mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-4 pr-2 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[rgba(255,255,255,.05)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-[rgba(0,0,0,.34)] [&::-webkit-scrollbar-thumb]:bg-[rgba(255,255,255,.34)] [&::-webkit-scrollbar-thumb:hover]:bg-[rgba(255,255,255,.5)]"
         style={{ scrollbarColor: "rgba(255,255,255,.34) rgba(255,255,255,.05)", scrollbarWidth: "auto" }}
       >
-        {favoriteCards.map((card) => {
-          if (card.kind === "custom") {
-            const selected = !subtitleTemplateId && customTemplateId === card.template.id;
-            return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
-          }
-          const selected = !subtitleTemplateId && !customTemplateId && value === card.template.id;
-          return (
-            <button
-              key={`favorite-preset-${card.template.id}`}
-              type="button"
-              aria-pressed={selected}
-              onClick={() => { onCustomTemplateChange(null); onChange(card.template.id); }}
-              className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
-            >
-              <TemplatePreview template={card.template} videoAspectRatio={effectiveAspectRatio} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} brandColor={brandColorSelectionEnabled ? brandColor : undefined} />
-              <span className="mt-2.5 block text-center text-sm font-semibold">{card.template.name}</span>
-            </button>
-          );
-        })}
-        {remainingPersonalTemplates.map((template) => {
-          const selected = !subtitleTemplateId && customTemplateId === template.id;
-          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
-        })}
+        {leadingFavoriteCards.map(renderFavoriteCard)}
         {subtitleTemplateSelectionEnabled && (
           <>
             {subtitleTemplateOptions.map((option) => {
@@ -1618,6 +1654,7 @@ function TemplatePicker({
                 >
                   <SubtitleTemplatePreview
                     id={option.id}
+                    captionPlacement={subtitleCaptionPlacement}
                     videoAspectRatio={effectiveAspectRatio}
                     channelName={channelName}
                     channelThumbnailUrl={channelThumbnailUrl}
@@ -1631,7 +1668,50 @@ function TemplatePicker({
             })}
           </>
         )}
+        {remainingFavoriteCards.map(renderFavoriteCard)}
+        {remainingPersonalTemplates.map((template) => {
+          const selected = !subtitleTemplateId && customTemplateId === template.id;
+          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
+        })}
       </div>
+      {subtitleTemplateSelectionEnabled && subtitleTemplateId && (
+        <section aria-label="자막 위치" className="mt-4 rounded-xl border border-white/[.09] bg-white/[.025] p-3">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-extrabold text-white">자막 위치</h3>
+              <p className="mt-1 text-[11px] text-neutral-400">영상에 맞는 위치를 고르면 미리보기에 바로 반영돼요.</p>
+            </div>
+            <span className="shrink-0 text-[10px] font-bold text-[#7dd3fc]">어드민</span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label="자막 위치 선택">
+            {subtitleCaptionPositionOptions.map((position) => {
+              const selected = subtitleCaptionPlacement === position.value;
+              return (
+                <button
+                  key={position.value}
+                  type="button"
+                  aria-pressed={selected}
+                  data-subtitle-position-guide={position.value}
+                  onClick={() => onSubtitleCaptionPlacementChange(position.value)}
+                  className={`min-w-0 rounded-xl border p-3 text-left transition ${selected ? "border-[#38bdf8] bg-[#38bdf8]/10 shadow-[0_0_0_2px_rgba(56,189,248,.12)]" : "border-white/10 bg-black/20 hover:border-white/25"}`}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-black text-white">{position.name}</span>
+                    <span className={`relative h-8 w-5 shrink-0 rounded border ${selected ? "border-sky-300/60 bg-sky-300/10" : "border-white/20 bg-black/30"}`} aria-hidden="true">
+                      <span className={`absolute inset-x-1 h-0.5 rounded-full ${selected ? "bg-sky-300" : "bg-white/45"} ${position.value === "lower" ? "bottom-1" : "top-1/2 -translate-y-1/2"}`} />
+                    </span>
+                  </span>
+                  <span className="mt-2 block text-[11px] font-bold leading-4 text-sky-100">{position.useCase}</span>
+                  <span className="mt-1 block text-[10px] leading-[1.45] text-neutral-400">{position.description}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+      <SubtitlePositionGuide
+        enabled={subtitleTemplateSelectionEnabled && Boolean(subtitleTemplateId)}
+      />
       {!subtitleTemplateId && !customTemplateId && value === "comment-capture" && (
         <p className="mt-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[.06] px-4 py-3 text-sm text-cyan-100">
           AI가 실제 사람이 작성한 것처럼 자연스러운 댓글을 만들어줘요.
@@ -10258,6 +10338,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const outputLanguage: OutputLanguage = "ko";
   const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
   const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateSelectionId | null>(null);
+  const [subtitleCaptionPlacement, setSubtitleCaptionPlacement] = useState<SubtitleCaptionPlacement>("lower");
   const [brandColor, setBrandColor] = useState<TemplatePresetColor>(SUBTITLE_TEMPLATE_BRAND_COLOR);
   const [customTemplateId, setCustomTemplateId] = useState<string | null>(null);
   const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
@@ -10356,7 +10437,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   }, []);
 
   useEffect(() => {
-    if (!subtitleTemplateSelectionEnabled) setSubtitleTemplateId(null);
+    if (!subtitleTemplateSelectionEnabled) {
+      setSubtitleTemplateId(null);
+      setSubtitleCaptionPlacement("lower");
+    }
   }, [subtitleTemplateSelectionEnabled]);
 
   useEffect(() => {
@@ -10699,7 +10783,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           grantedSeconds: number;
           validUntil: string | null;
         };
-      }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID(), ...(sourceRangeSelectionEnabled ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds } : {}), ...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId } : {}), ...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {}) }) });
+      }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID(), ...(sourceRangeSelectionEnabled ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds } : {}), ...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId, subtitleCaptionPlacement } : {}), ...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {}) }) });
       setShortsEventRewardAvailable(false);
       if (value.shortsThankYouEventReward.granted) {
         setShortsEventGrantedSeconds(
@@ -10716,6 +10800,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setYoutubeUrl("");
       setAnalysis(null);
       setSubtitleTemplateId(null);
+      setSubtitleCaptionPlacement("lower");
       setRightsConfirmed(false);
       setCreationRestrictionOpen(false);
       setCreationRestrictionReason(null);
@@ -10904,6 +10989,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             value={templateId}
             onChange={(nextTemplateId) => {
               setSubtitleTemplateId(null);
+              setSubtitleCaptionPlacement("lower");
               setTemplateId(nextTemplateId);
               if (nextTemplateId === "comment-capture") setVideoAspectRatio("16:9");
             }}
@@ -10917,6 +11003,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             canUseCustomTemplates={canUseCustomTemplates}
             subtitleTemplateSelectionEnabled={subtitleTemplateSelectionEnabled}
             subtitleTemplateId={subtitleTemplateId}
+            subtitleCaptionPlacement={subtitleCaptionPlacement}
+            onSubtitleCaptionPlacementChange={setSubtitleCaptionPlacement}
             brandColorSelectionEnabled={brandColorSelectionEnabled}
             brandColor={brandColor}
             onBrandColorChange={setBrandColor}
@@ -10929,6 +11017,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             }}
             onCustomTemplateChange={(template) => {
               setSubtitleTemplateId(null);
+              if (template) setSubtitleCaptionPlacement("lower");
               setCustomTemplateId(template?.id || null);
               if (template) {
                 setTemplateId(template.baseTemplateId);

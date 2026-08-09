@@ -6,6 +6,7 @@ import {
   SUBTITLE_TEMPLATE_TITLE_FONT_SIZE_PX,
   SUBTITLE_TEMPLATE_TITLE_SECOND_LINE_COLOR,
   SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
+  subtitleCaptionPlacements,
   subtitleTemplateCreationIds,
   subtitleTemplateLayout,
   subtitleTemplateOptions,
@@ -13,15 +14,11 @@ import {
 } from "./subtitle-templates";
 
 describe("subtitle template snapshot", () => {
-  it("offers lower and video-centered variants for highlight and pop", () => {
-    const expectedIds = [
-      "highlight",
-      "pop",
-      "highlight-center",
-      "pop-center",
-    ];
+  it("offers two visual styles and two independent caption positions", () => {
+    const expectedIds = ["pop", "highlight"];
     expect(subtitleTemplateCreationIds).toEqual(expectedIds);
     expect(subtitleTemplateOptions.map(({ id }) => id)).toEqual(expectedIds);
+    expect(subtitleCaptionPlacements).toEqual(["lower", "center"]);
   });
 
   it("keeps the complete template on the isolated dark-minimal shell", () => {
@@ -137,15 +134,17 @@ describe("subtitle template snapshot", () => {
     },
   );
 
-  it.each([
-    ["highlight-center", "highlight"],
-    ["pop-center", "pop"],
-  ] as const)(
-    "stores %s as the canonical %s template with centered placement",
-    (selectionId, canonicalId) => {
-      const snapshot = subtitleTemplateStyleSnapshot(selectionId, "4:5");
+  it.each(["highlight", "pop"] as const)(
+    "stores the canonical %s style with independently selected center placement",
+    (selectionId) => {
+      const snapshot = subtitleTemplateStyleSnapshot(
+        selectionId,
+        "4:5",
+        SUBTITLE_TEMPLATE_BRAND_COLOR,
+        "center",
+      );
       expect(snapshot.selectionId).toBe(selectionId);
-      expect(snapshot.subtitleTemplateId).toBe(canonicalId);
+      expect(snapshot.subtitleTemplateId).toBe(selectionId);
       expect(snapshot.captionPlacement).toBe("center");
       expect(snapshot.safeArea).toEqual({ x: 120, y: 1025, width: 840, height: 140 });
       expect(snapshot.layout.caption).toEqual(snapshot.safeArea);

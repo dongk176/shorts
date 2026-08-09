@@ -39,6 +39,7 @@ import {
 import { lockSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
 import {
   SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID,
+  subtitleCaptionPlacements,
   subtitleTemplateCreationIds,
   subtitleTemplateStyleSnapshot,
 } from "@/lib/subtitle-templates";
@@ -64,6 +65,7 @@ const schema = z.object({
   rangeStartSeconds: z.number().finite().nonnegative().optional(),
   rangeEndSeconds: z.number().finite().positive().optional(),
   subtitleTemplateId: z.enum(subtitleTemplateCreationIds).optional(),
+  subtitleCaptionPlacement: z.enum(subtitleCaptionPlacements).optional(),
   brandColor: z.enum(templatePresetColors).optional(),
 });
 
@@ -76,6 +78,9 @@ const noShortsThankYouEventReward: ShortsThankYouEventGrant = {
 export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
+    if (input.subtitleCaptionPlacement && !input.subtitleTemplateId) {
+      throw new HttpError(400, "자막 위치는 자막 템플릿과 함께 선택해 주세요.");
+    }
     if (
       !input.subtitleTemplateId
       && !input.customTemplateId
@@ -293,6 +298,7 @@ export async function POST(request: Request) {
             input.subtitleTemplateId,
             resolvedVideoAspectRatio,
             input.brandColor,
+            input.subtitleCaptionPlacement ?? "lower",
           )
         : null;
       const limits = await tx`

@@ -31,15 +31,17 @@ caption ends above the channel row, and the channel row occupies y=1610
 through y=1770 inside the video. Full-height 9:16 keeps the video at y=0 and
 the caption at y=1430. Caption-template hook titles never render text
 background rectangles, even when legacy title style data contains one. Each
-highlight and pop style also has a centered selection whose 840x140 caption box
-is centered exactly on the actual video rectangle for every aspect ratio.
+highlight and pop style can independently use a centered 840x140 caption box
+that is centered exactly on the actual video rectangle for every aspect ratio.
 
-New projects can select `highlight`, `pop`, `highlight-center`, or `pop-center`.
-The two centered selections store the existing canonical `highlight` or `pop`
-database id and pin `captionPlacement=center` in the immutable style snapshot.
-This keeps the database and trusted Batch allowlist unchanged. The retired
-`basic` id remains readable by the worker and stored-data constraints solely so
-existing completed or pinned jobs do not break.
+New projects select one of the two canonical styles, `pop` or `highlight`, and
+choose `captionPlacement=lower` or `captionPlacement=center` separately. The
+immutable style snapshot still stores the existing canonical database id and
+the selected placement, so the database and trusted Batch allowlist remain
+unchanged. Previously completed snapshots that used the old combined selection
+labels remain readable. The retired `basic` id remains readable by the worker
+and stored-data constraints solely so existing completed or pinned jobs do not
+break.
 
 Provider word timestamps remain unchanged. Only the displayed start frame is
 advanced by four 30fps frames (about 133ms); the word end frame is preserved so a

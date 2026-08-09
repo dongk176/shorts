@@ -25,8 +25,15 @@ describe("subtitle template UI isolation", () => {
     expect(subtitleTemplatesSource).not.toContain("자막 기본형");
     expect(subtitleTemplatesSource).toContain("자막 강조형");
     expect(subtitleTemplatesSource).toContain("자막 팝형");
-    expect(subtitleTemplatesSource).toContain("자막 강조형 · 중앙");
-    expect(subtitleTemplatesSource).toContain("자막 팝형 · 중앙");
+    expect(subtitleTemplatesSource).not.toContain("자막 강조형 · 중앙");
+    expect(subtitleTemplatesSource).not.toContain("자막 팝형 · 중앙");
+    expect(shortsAppSource).toContain('aria-label="자막 위치"');
+    expect(shortsAppSource).toContain('aria-label="자막 위치 선택"');
+    expect(shortsAppSource).toContain("leadingFavoriteCards.map(renderFavoriteCard)");
+    expect(shortsAppSource.indexOf("leadingFavoriteCards.map(renderFavoriteCard)"))
+      .toBeLessThan(shortsAppSource.indexOf("subtitleTemplateOptions.map"));
+    expect(shortsAppSource.indexOf("subtitleTemplateOptions.map"))
+      .toBeLessThan(shortsAppSource.indexOf("remainingFavoriteCards.map(renderFavoriteCard)"));
     expect(shortsAppSource).not.toContain('id === "basic"');
     expect(shortsAppSource).toContain("SUBTITLE_TEMPLATE_BRAND_COLOR");
     expect(shortsAppSource).toContain("canvasCqw(snapshot.title.fontSizePx)");
@@ -45,7 +52,7 @@ describe("subtitle template UI isolation", () => {
 
   it("omits the new request field unless capability and selection are both present", () => {
     expect(shortsAppSource).toContain(
-      "...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId } : {})",
+      "...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId, subtitleCaptionPlacement } : {})",
     );
     expect(shortsAppSource).toContain(
       "...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {})",

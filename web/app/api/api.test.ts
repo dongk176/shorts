@@ -1093,7 +1093,8 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-minimal",
-      subtitleTemplateId: "highlight-center",
+      subtitleTemplateId: "highlight",
+      subtitleCaptionPlacement: "center",
       brandColor: "#FF715E",
       videoAspectRatio: "9:16",
       rightsConfirmed: true,
@@ -1110,7 +1111,7 @@ describe("job API security and idempotency", () => {
       expect.objectContaining({ presetVersion: 3, brandColor: "#FF715E" }),
       expect.objectContaining({
         subtitleTemplateId: "highlight",
-        selectionId: "highlight-center",
+        selectionId: "highlight",
         captionPlacement: "center",
         baseTemplateId: "dark-minimal",
         videoAspectRatio: "9:16",
@@ -1176,6 +1177,22 @@ describe("job API security and idempotency", () => {
     }));
 
     expect(response.status).toBe(400);
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
+  it("rejects a subtitle position without a subtitle style before touching storage", async () => {
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-minimal",
+      subtitleCaptionPlacement: "center",
+      rightsConfirmed: true,
+      requestId: "bceea4e6-3db2-4816-9b58-ef20f2ad8425",
+    }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      detail: "자막 위치는 자막 템플릿과 함께 선택해 주세요.",
+    });
     expect(mocks.getDb).not.toHaveBeenCalled();
   });
 
