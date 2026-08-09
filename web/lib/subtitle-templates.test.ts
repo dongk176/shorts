@@ -29,6 +29,7 @@ describe("subtitle template snapshot", () => {
       secondLineColor: SUBTITLE_TEMPLATE_TITLE_SECOND_LINE_COLOR,
     });
     expect(snapshot.title.secondLineColor).toBe("#35E6E3");
+    expect(snapshot.color.active).toBe(snapshot.title.secondLineColor);
   });
 
   it("uses a larger outline and bounded scale for the pop template", () => {
@@ -65,10 +66,13 @@ describe("subtitle template snapshot", () => {
       caption: { y: 1274, height: 140 },
     });
     expect(subtitleTemplateLayout("4:5")).toMatchObject({
-      title: { y: 96, height: 300 },
+      title: { y: 285, height: 300 },
       video: { y: 285, height: 1350 },
       caption: { y: 1387, height: 140 },
     });
+    expect(subtitleTemplateLayout("4:5").title.y).toBe(
+      subtitleTemplateLayout("4:5").video.y,
+    );
     expect(subtitleTemplateLayout("9:16")).toMatchObject({
       title: { y: 96, height: 300 },
       video: { y: 0, height: 1920 },

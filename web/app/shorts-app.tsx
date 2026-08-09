@@ -1442,10 +1442,10 @@ function SubtitleTemplatePreview({
           fontSize: canvasCqw(snapshot.font.sizePx),
         }}
       >
-          {id === "basic" && <span className="whitespace-nowrap">지금 이 순간을 놓치지 마세요</span>}
+          {id === "basic" && <span className="whitespace-nowrap">이게 바로 자막입니다</span>}
           {id === "highlight" && (
             <span className="whitespace-nowrap">
-              지금 이 <span style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>순간을</span> 놓치지 마세요
+              이게 바로 <span style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>자막입니다</span>
             </span>
           )}
           {id === "pop" && (
@@ -1460,8 +1460,8 @@ function SubtitleTemplatePreview({
                   color: SUBTITLE_TEMPLATE_BRAND_COLOR,
                   fontSize: canvasCqw(snapshot.font.sizePx * snapshot.popScale),
                 }}
-              >바로</span>
-              <span>지금</span>
+              >자막</span>
+              <span>입니다</span>
             </span>
           )}
       </div>

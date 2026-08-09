@@ -1110,7 +1110,7 @@ describe("job API security and idempotency", () => {
         subtitleTemplateId: "highlight",
         baseTemplateId: "dark-minimal",
         videoAspectRatio: "9:16",
-        color: expect.objectContaining({ active: "#FF715E" }),
+        color: expect.objectContaining({ active: "#35E6E3" }),
       }),
       "elevenlabs_primary_openai_fallback",
       process.env.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN,

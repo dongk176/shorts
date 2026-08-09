@@ -26,6 +26,8 @@ describe("subtitle template UI isolation", () => {
     expect(shortsAppSource).toContain("canvasCqw(snapshot.font.sizePx)");
     expect(shortsAppSource).toContain("canvasCqw(snapshot.wordGapPx)");
     expect(shortsAppSource).toContain("snapshot.title.secondLineColor");
+    expect(shortsAppSource).toContain("이게 바로 자막입니다");
+    expect(shortsAppSource).not.toContain("지금 이 순간을 놓치지 마세요");
     expect(shortsAppSource).not.toContain('whitespace-nowrap text-[9px]');
   });
 

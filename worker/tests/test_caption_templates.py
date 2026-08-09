@@ -79,23 +79,21 @@ def test_caption_safe_area_matches_renderer_video_rect(
     assert safe["width"] == 840
     assert layout.video_y == VIDEO_Y[ratio]
     if ratio is VideoAspectRatio.LANDSCAPE:
-        assert snapshot_layout["title"] == {
-            "x": 0, "y": 0, "width": 1080, "height": 432
-        }
+        assert snapshot_layout["title"] == {"x": 0, "y": 0, "width": 1080, "height": 432}
         assert safe == {"x": 120, "y": 1088, "width": 840, "height": 140}
         assert safe["y"] == layout.video_y + layout.video_height + 48
     elif ratio is VideoAspectRatio.FULL_VERTICAL:
-        assert snapshot_layout["title"] == {
-            "x": 0, "y": 96, "width": 1080, "height": 300
-        }
+        assert snapshot_layout["title"] == {"x": 0, "y": 96, "width": 1080, "height": 300}
         assert safe == {"x": 120, "y": 1430, "width": 840, "height": 140}
+    elif ratio is VideoAspectRatio.PORTRAIT:
+        assert snapshot_layout["title"] == {"x": 0, "y": 285, "width": 1080, "height": 300}
+        assert layout.top_y == layout.video_y == 285
+        assert layout.top_y + layout.top_height <= layout.video_y + layout.video_height
     else:
         assert safe["y"] >= layout.video_y
         assert safe["y"] + safe["height"] <= layout.video_y + layout.video_height
         assert safe["y"] + safe["height"] == (
-            layout.video_y
-            + layout.video_height
-            - max(64, round(layout.video_height * 0.08))
+            layout.video_y + layout.video_height - max(64, round(layout.video_height * 0.08))
         )
 
 
@@ -145,42 +143,63 @@ def test_approved_font_is_same_pretendard_face_for_measurement_and_libass(
 
 
 def test_korean_unspaced_tokens_restore_an_eojeol_but_japanese_words_stay_intact() -> None:
-    korean = _compile([
-        _word("안", 0.0, 0.1),
-        _word("녕", 0.1, 0.2),
-        _word("하세요", 0.2, 0.5, space_before=True),
-    ], "pop")
-    korean_words = [
-        word["text"]
-        for cue in korean["cues"]
-        for word in cue["words"]
-    ]
+    korean = _compile(
+        [
+            _word("안", 0.0, 0.1),
+            _word("녕", 0.1, 0.2),
+            _word("하세요", 0.2, 0.5, space_before=True),
+        ],
+        "pop",
+    )
+    korean_words = [word["text"] for cue in korean["cues"] for word in cue["words"]]
     assert korean_words == ["안녕", "하세요"]
 
-    japanese = _compile([
-        _word("こんにちは", 0.0, 0.25),
-        _word("世界", 0.25, 0.5),
-    ], "pop")
-    japanese_words = [
-        word["text"]
-        for cue in japanese["cues"]
-        for word in cue["words"]
-    ]
+    japanese = _compile(
+        [
+            _word("こんにちは", 0.0, 0.25),
+            _word("世界", 0.25, 0.5),
+        ],
+        "pop",
+    )
+    japanese_words = [word["text"] for cue in japanese["cues"] for word in cue["words"]]
     assert japanese_words == ["こんにちは", "世界"]
 
 
 def test_korean_sentence_punctuation_prevents_cross_sentence_merge() -> None:
-    spec = _compile([
-        _word("안녕!", 0.0, 0.3),
-        _word("하세요", 0.3, 0.6),
-    ], "basic", clip_end=1.0)
+    spec = _compile(
+        [
+            _word("안녕!", 0.0, 0.3),
+            _word("하세요", 0.3, 0.6),
+        ],
+        "basic",
+        clip_end=1.0,
+    )
 
-    rendered_words = [
-        word["text"]
-        for cue in spec["cues"]
-        for word in cue["words"]
-    ]
+    rendered_words = [word["text"] for cue in spec["cues"] for word in cue["words"]]
     assert rendered_words == ["안녕!", "하세요"]
+
+
+@pytest.mark.parametrize("template_id", ["basic", "highlight", "pop"])
+def test_ascii_periods_are_removed_only_from_rendered_caption_text(
+    template_id: str,
+) -> None:
+    spec = _compile(
+        [
+            _word("첫째", 0.0, 0.2),
+            _word(".", 0.2, 0.3),
+            _word("둘째.", 0.3, 0.6, space_before=True),
+            _word("3.14", 0.6, 0.9, space_before=True),
+        ],
+        template_id,
+        clip_end=1.0,
+    )
+    rendered_words = [word for cue in spec["cues"] for word in cue["words"]]
+
+    assert all("." not in word["text"] for word in rendered_words)
+    assert [word["text"] for word in rendered_words] == ["첫째", "둘째", "314"]
+    first = rendered_words[0]
+    assert first["sourceWordIndexes"] == [0, 1]
+    assert first["endFrame"] == round(0.3 * 30)
 
 
 @pytest.mark.parametrize("template_id", ["basic", "highlight"])
@@ -201,8 +220,14 @@ def test_sentence_templates_are_always_one_line_and_fit_safe_width(
         serialized = cue["words"]
         for line in cue["lines"]:
             text = "".join(
-                ((CAPTION_WORD_SEPARATOR if position and serialized[index]["spaceBefore"] else "")
-                 + serialized[index]["text"])
+                (
+                    (
+                        CAPTION_WORD_SEPARATOR
+                        if position and serialized[index]["spaceBefore"]
+                        else ""
+                    )
+                    + serialized[index]["text"]
+                )
                 for position, index in enumerate(line)
             )
             rendered_width = _measure(text, cue["fontSize"]) * cue["scaleX"] / 100
@@ -215,16 +240,11 @@ def test_unbreakable_long_unit_is_split_instead_of_overflowing(
 ) -> None:
     original = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" * 5
     spec = _compile([_word(original, 0.0, 0.8)], template_id)
-    rendered = "".join(
-        word["text"]
-        for cue in spec["cues"]
-        for word in cue["words"]
-    )
+    rendered = "".join(word["text"] for cue in spec["cues"] for word in cue["words"])
     assert rendered == original
     if template_id == "pop":
         assert all(
-            _measure(word["text"], word["fontSize"]) * 1.12
-            <= spec["safeArea"]["width"] - 16 + 0.5
+            _measure(word["text"], word["fontSize"]) * 1.12 <= spec["safeArea"]["width"] - 16 + 0.5
             for cue in spec["cues"]
             for word in cue["words"]
         )
@@ -246,13 +266,9 @@ def test_project_3258_expressive_repeat_is_compacted_without_losing_timing() -> 
 
 
 def test_long_emoji_sequence_splits_only_between_complete_display_units() -> None:
-    original = ("👨‍👩‍👧‍👦caption" * 12)
+    original = "👨‍👩‍👧‍👦caption" * 12
     spec = _compile([_word(original, 0.0, 3.0)], "pop", clip_end=3.1)
-    rendered_words = [
-        word["text"]
-        for cue in spec["cues"]
-        for word in cue["words"]
-    ]
+    rendered_words = [word["text"] for cue in spec["cues"] for word in cue["words"]]
 
     assert "".join(rendered_words) == original
     assert all(not word.startswith("\u200d") for word in rendered_words)
@@ -291,20 +307,26 @@ def test_caption_word_spacing_is_compact_in_sentence_and_pop_templates(
     tmp_path: Path,
 ) -> None:
     assert _measure(CAPTION_WORD_SEPARATOR, 72) < _measure(" ", 72)
-    sentence = _compile([
-        _word("가로", 0.0, 0.2),
-        _word("여백", 0.2, 0.4, space_before=True),
-    ], "highlight", clip_end=0.5)
-    ass = create_caption_ass(sentence, tmp_path / "compact.ass").read_text(
-        encoding="utf-8"
+    sentence = _compile(
+        [
+            _word("가로", 0.0, 0.2),
+            _word("여백", 0.2, 0.4, space_before=True),
+        ],
+        "highlight",
+        clip_end=0.5,
     )
+    ass = create_caption_ass(sentence, tmp_path / "compact.ass").read_text(encoding="utf-8")
     assert f"{CAPTION_WORD_SEPARATOR}여백" in ass
     assert " 가로" not in ass
 
-    pop = _compile([
-        _word("가로", 0.0, 0.2),
-        _word("여백", 0.2, 0.4, space_before=True),
-    ], "pop", clip_end=0.5)
+    pop = _compile(
+        [
+            _word("가로", 0.0, 0.2),
+            _word("여백", 0.2, 0.4, space_before=True),
+        ],
+        "pop",
+        clip_end=0.5,
+    )
     cue = pop["cues"][0]
     first, second = cue["words"]
     for event in cue["events"]:
@@ -312,8 +334,7 @@ def test_caption_word_spacing_is_compact_in_sentence_and_pop_templates(
         first_scale = 1.12 if event["activeWordIndex"] == 0 else 1.0
         second_scale = 1.12 if event["activeWordIndex"] == 1 else 1.0
         first_right = (
-            positions[0]["centerX"]
-            + _measure(first["text"], first["fontSize"]) * first_scale / 2
+            positions[0]["centerX"] + _measure(first["text"], first["fontSize"]) * first_scale / 2
         )
         second_left = (
             positions[1]["centerX"]
@@ -328,10 +349,15 @@ def test_caption_word_spacing_is_compact_in_sentence_and_pop_templates(
 def test_project_3259_pop_spacing_uses_six_pixels_and_zero_for_joined_tokens() -> None:
     assert CAPTION_POP_SPACED_GAP_PX == 6
     assert CAPTION_POP_UNSPACED_GAP_PX == 0
-    spaced = _compile([
-        _word("그러니까", 0.0, 0.2),
-        _word("사실.", 0.2, 0.5, space_before=True),
-    ], "pop", clip_end=0.6, ratio=VideoAspectRatio.LANDSCAPE_FIVE_FOUR)
+    spaced = _compile(
+        [
+            _word("그러니까", 0.0, 0.2),
+            _word("사실.", 0.2, 0.5, space_before=True),
+        ],
+        "pop",
+        clip_end=0.6,
+        ratio=VideoAspectRatio.LANDSCAPE_FIVE_FOUR,
+    )
     spaced_cue = spaced["cues"][0]
     first, second = spaced_cue["words"]
     for event in spaced_cue["events"]:
@@ -347,10 +373,14 @@ def test_project_3259_pop_spacing_uses_six_pixels_and_zero_for_joined_tokens() -
         )
         assert second_left - first_right == pytest.approx(6, abs=0.01)
 
-    joined = _compile([
-        _word("easy", 0.0, 0.2),
-        _word("cut", 0.2, 0.4),
-    ], "pop", clip_end=0.5)
+    joined = _compile(
+        [
+            _word("easy", 0.0, 0.2),
+            _word("cut", 0.2, 0.4),
+        ],
+        "pop",
+        clip_end=0.5,
+    )
     joined_cue = joined["cues"][0]
     first, second = joined_cue["words"]
     for event in joined_cue["events"]:
@@ -368,11 +398,15 @@ def test_project_3259_pop_spacing_uses_six_pixels_and_zero_for_joined_tokens() -
 
 
 def test_same_start_frame_events_are_contiguous_without_overlap() -> None:
-    spec = _compile([
-        _word("one", 0.000, 0.010),
-        _word("two", 0.009, 0.080, space_before=True),
-        _word("three", 0.011, 0.300, space_before=True),
-    ], "highlight", clip_end=0.3)
+    spec = _compile(
+        [
+            _word("one", 0.000, 0.010),
+            _word("two", 0.009, 0.080, space_before=True),
+            _word("three", 0.011, 0.300, space_before=True),
+        ],
+        "highlight",
+        clip_end=0.3,
+    )
     events = spec["cues"][0]["events"]
     assert [event["activeWordIndex"] for event in events] == [0, 1, 2]
     assert all(event["endFrame"] > event["startFrame"] for event in events)
@@ -383,12 +417,16 @@ def test_same_start_frame_events_are_contiguous_without_overlap() -> None:
 
 
 def test_overlapping_fast_pop_groups_are_serialized_without_failing() -> None:
-    spec = _compile([
-        _word("어유,", 0.10, 0.20),
-        _word("어유,", 0.12, 0.23, space_before=True),
-        _word("어유.", 0.13, 0.24, space_before=True),
-        _word("진짜", 0.14, 0.30, space_before=True),
-    ], "pop", clip_end=0.4)
+    spec = _compile(
+        [
+            _word("어유,", 0.10, 0.20),
+            _word("어유,", 0.12, 0.23, space_before=True),
+            _word("어유.", 0.13, 0.24, space_before=True),
+            _word("진짜", 0.14, 0.30, space_before=True),
+        ],
+        "pop",
+        clip_end=0.4,
+    )
     events = [event for cue in spec["cues"] for event in cue["events"]]
     assert all(event["endFrame"] > event["startFrame"] for event in events)
     cues = spec["cues"]
@@ -399,10 +437,14 @@ def test_overlapping_fast_pop_groups_are_serialized_without_failing() -> None:
 
 
 def test_pop_uses_two_frame_ease_and_event_specific_word_positions(tmp_path: Path) -> None:
-    spec = _compile([
-        _word("pop", 0.0, 0.15),
-        _word("caption", 0.15, 0.35, space_before=True),
-    ], "pop", clip_end=0.4)
+    spec = _compile(
+        [
+            _word("pop", 0.0, 0.15),
+            _word("caption", 0.15, 0.35, space_before=True),
+        ],
+        "pop",
+        clip_end=0.4,
+    )
     cue = spec["cues"][0]
     assert cue["easeFrames"] == 2
     event_positions = [
@@ -419,10 +461,15 @@ def test_pop_uses_two_frame_ease_and_event_specific_word_positions(tmp_path: Pat
 
 
 def test_project_3272_pop_phrase_stays_tight_while_active_word_changes() -> None:
-    spec = _compile([
-        _word("공개하고", 0.0, 0.5),
-        _word("시작하도록", 0.5, 0.9, space_before=True),
-    ], "pop", clip_end=1.0, ratio=VideoAspectRatio.LANDSCAPE)
+    spec = _compile(
+        [
+            _word("공개하고", 0.0, 0.5),
+            _word("시작하도록", 0.5, 0.9, space_before=True),
+        ],
+        "pop",
+        clip_end=1.0,
+        ratio=VideoAspectRatio.LANDSCAPE,
+    )
     cue = spec["cues"][0]
     words = cue["words"]
 
@@ -434,7 +481,8 @@ def test_project_3272_pop_phrase_stays_tight_while_active_word_changes() -> None
             for index, word in enumerate(words)
         ]
         visible_gap = (
-            positions[1]["centerX"] - rendered_widths[1] / 2
+            positions[1]["centerX"]
+            - rendered_widths[1] / 2
             - (positions[0]["centerX"] + rendered_widths[0] / 2)
         )
         assert visible_gap == pytest.approx(6, abs=0.01)
@@ -447,33 +495,37 @@ def test_project_3272_pop_phrase_stays_tight_while_active_word_changes() -> None
 
 
 def test_pop_single_frame_word_is_immediately_full_scale(tmp_path: Path) -> None:
-    spec = _compile([
-        _word("짧게", 0.0, 0.01),
-        _word("강조", 0.011, 0.2, space_before=True),
-    ], "pop", clip_end=0.2)
+    spec = _compile(
+        [
+            _word("짧게", 0.0, 0.01),
+            _word("강조", 0.011, 0.2, space_before=True),
+        ],
+        "pop",
+        clip_end=0.2,
+    )
     first_event = spec["cues"][0]["events"][0]
     assert first_event["endFrame"] - first_event["startFrame"] == 1
 
     ass = create_caption_ass(spec, tmp_path / "single-frame-pop.ass").read_text(
         encoding="utf-8",
     )
-    first_dialogue = next(
-        line for line in ass.splitlines() if line.startswith("Dialogue:")
-    )
+    first_dialogue = next(line for line in ass.splitlines() if line.startswith("Dialogue:"))
     assert r"\fscx112\fscy112" in first_dialogue
     assert r"\t(" not in first_dialogue
 
 
 def test_ass_uses_exact_same_timestamp_at_shared_event_boundary(tmp_path: Path) -> None:
-    spec = _compile([
-        _word("first", 0.0, 0.1),
-        _word("second", 0.1, 0.3, space_before=True),
-    ], "highlight", clip_end=0.3)
+    spec = _compile(
+        [
+            _word("first", 0.0, 0.1),
+            _word("second", 0.1, 0.3, space_before=True),
+        ],
+        "highlight",
+        clip_end=0.3,
+    )
     ass = create_caption_ass(spec, tmp_path / "highlight.ass").read_text(encoding="utf-8")
     dialogue_times = [
-        line.split(",", 3)[1:3]
-        for line in ass.splitlines()
-        if line.startswith("Dialogue:")
+        line.split(",", 3)[1:3] for line in ass.splitlines() if line.startswith("Dialogue:")
     ]
     assert len(dialogue_times) == 2
     assert dialogue_times[0][1] == dialogue_times[1][0]
@@ -487,16 +539,16 @@ def test_ass_frame_boundaries_floor_to_the_current_30fps_frame() -> None:
 
 
 def test_unspaced_korean_tokens_do_not_merge_across_a_pause() -> None:
-    spec = _compile([
-        _word("안녕", 0.0, 0.2),
-        _word("하세요", 1.0, 1.2),
-    ], "highlight", clip_end=1.3)
+    spec = _compile(
+        [
+            _word("안녕", 0.0, 0.2),
+            _word("하세요", 1.0, 1.2),
+        ],
+        "highlight",
+        clip_end=1.3,
+    )
 
-    rendered_words = [
-        word["text"]
-        for cue in spec["cues"]
-        for word in cue["words"]
-    ]
+    rendered_words = [word["text"] for cue in spec["cues"] for word in cue["words"]]
     assert rendered_words == ["안녕", "하세요"]
     assert len(spec["cues"]) == 2
 
@@ -505,12 +557,16 @@ def test_unspaced_korean_tokens_do_not_merge_across_a_pause() -> None:
 def test_highlight_switches_on_the_exact_output_frame(tmp_path: Path) -> None:
     # The active word changes at frame 2. An ASS timestamp rounded to .07
     # leaves LEFT active on frame 2; flooring to .06 makes RIGHT active there.
-    spec = _compile([
-        _word("LEFT", 0.0, 6 / 30),
-        # The approved four-frame lead advances the provider's frame-6
-        # boundary to output frame 2.
-        _word("RIGHT", 6 / 30, 0.3, space_before=True),
-    ], "highlight", clip_end=0.3)
+    spec = _compile(
+        [
+            _word("LEFT", 0.0, 6 / 30),
+            # The approved four-frame lead advances the provider's frame-6
+            # boundary to output frame 2.
+            _word("RIGHT", 6 / 30, 0.3, space_before=True),
+        ],
+        "highlight",
+        clip_end=0.3,
+    )
     ass_path = create_caption_ass(spec, tmp_path / "boundary.ass")
     font_directory = prepare_caption_fonts(tmp_path / "fonts")
     frames = tmp_path / "boundary-frames"
@@ -541,21 +597,15 @@ def test_highlight_switches_on_the_exact_output_frame(tmp_path: Path) -> None:
 
     def accent_counts(path: Path) -> tuple[int, int]:
         def is_accent(pixel: tuple[int, int, int]) -> bool:
-            # FFmpeg's YUV/RGB conversion turns #FF715E into approximately
-            # (254, 111, 94); include antialiased interior pixels as well.
+            # FFmpeg's YUV/RGB conversion keeps #35E6E3 close to cyan;
+            # include antialiased interior pixels as well.
             red, green, blue = pixel
-            return (
-                red > 230
-                and 70 < green < 160
-                and 60 < blue < 140
-                and red > green + 80
-            )
+            return green > 170 and blue > 170 and red < 150 and abs(green - blue) < 70
 
         with Image.open(path).convert("RGB") as image:
             middle = image.width // 2
             left = sum(
-                is_accent(pixel)
-                for pixel in image.crop((0, 0, middle, image.height)).getdata()
+                is_accent(pixel) for pixel in image.crop((0, 0, middle, image.height)).getdata()
             )
             right = sum(
                 is_accent(pixel)
@@ -573,11 +623,15 @@ def test_highlight_switches_on_the_exact_output_frame(tmp_path: Path) -> None:
 def test_synthetic_highlight_has_no_empty_frame_and_stays_in_safe_area(
     tmp_path: Path,
 ) -> None:
-    spec = _compile([
-        _word("one", 0.000, 0.010),
-        _word("two", 0.009, 0.100, space_before=True),
-        _word("three", 0.100, 0.300, space_before=True),
-    ], "highlight", clip_end=0.3)
+    spec = _compile(
+        [
+            _word("one", 0.000, 0.010),
+            _word("two", 0.009, 0.100, space_before=True),
+            _word("three", 0.100, 0.300, space_before=True),
+        ],
+        "highlight",
+        clip_end=0.3,
+    )
     ass_path = create_caption_ass(spec, tmp_path / "caption.ass")
     font_directory = prepare_caption_fonts(tmp_path / "fonts")
     frames = tmp_path / "frames"
@@ -645,10 +699,7 @@ def test_caption_render_forces_30fps_without_desynchronizing_audio(
             "-f",
             "lavfi",
             "-i",
-            (
-                "color=0x334455:size=320x568:"
-                f"rate={source_rate}:duration={source_duration}"
-            ),
+            (f"color=0x334455:size=320x568:rate={source_rate}:duration={source_duration}"),
             "-f",
             "lavfi",
             "-i",
@@ -691,14 +742,10 @@ def test_caption_render_forces_30fps_without_desynchronizing_audio(
     )
     output_probe = probe_media(output)
     video = next(
-        stream
-        for stream in output_probe["streams"]
-        if stream.get("codec_type") == "video"
+        stream for stream in output_probe["streams"] if stream.get("codec_type") == "video"
     )
     audio = next(
-        stream
-        for stream in output_probe["streams"]
-        if stream.get("codec_type") == "audio"
+        stream for stream in output_probe["streams"] if stream.get("codec_type") == "audio"
     )
     assert Fraction(video["avg_frame_rate"]) == Fraction(30, 1)
     assert int(video["width"]) == 1080
@@ -800,6 +847,7 @@ def test_landscape_render_places_caption_below_video_with_a_clear_gap(
     assert extracted.returncode == 0, extracted.stderr[-1000:]
 
     with Image.open(frame).convert("RGB") as image:
+
         def is_video(pixel: tuple[int, int, int]) -> bool:
             red, green, blue = pixel
             return blue > red * 1.8 and blue > green * 1.3
@@ -824,4 +872,4 @@ def test_caption_spec_uses_approved_style_snapshot_values() -> None:
     assert spec["font"]["family"] == CAPTION_FONT_FAMILY
     assert spec["font"]["weight"] == 700
     assert re.fullmatch(r"[0-9a-f]{64}", spec["font"]["sha256"])
-    assert spec["style"]["accentColor"] == CAPTION_ACCENT == "#FF715E"
+    assert spec["style"]["accentColor"] == CAPTION_ACCENT == "#35E6E3"

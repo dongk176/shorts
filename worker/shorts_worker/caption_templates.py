@@ -20,12 +20,10 @@ from .subtitles import TranscriptWord
 CAPTION_FPS = 30
 CAPTION_TIMING_LEAD_FRAMES = 4
 CAPTION_TEMPLATE_IDS = frozenset({"basic", "highlight", "pop"})
-CAPTION_ACCENT = "#FF715E"
+CAPTION_ACCENT = "#35E6E3"
 CAPTION_TEXT = "#FFFFFF"
 CAPTION_OUTLINE = "#080808"
-CAPTION_FONT_PATH = (
-    Path(__file__).parent / "assets" / "editor_fonts" / "Pretendard-Bold.woff2"
-)
+CAPTION_FONT_PATH = Path(__file__).parent / "assets" / "editor_fonts" / "Pretendard-Bold.woff2"
 CAPTION_FONT_FAMILY = "Pretendard"
 CANVAS_WIDTH = 1080
 CANVAS_HEIGHT = 1920
@@ -149,9 +147,10 @@ def caption_layout(video_aspect_ratio: VideoAspectRatio) -> dict[str, dict[str, 
         }
     )
     title = (
-        {"x": 0, "y": 96, "width": CANVAS_WIDTH, "height": 300}
-        if video_aspect_ratio
-        in {VideoAspectRatio.PORTRAIT, VideoAspectRatio.FULL_VERTICAL}
+        {"x": 0, "y": video_y, "width": CANVAS_WIDTH, "height": 300}
+        if video_aspect_ratio is VideoAspectRatio.PORTRAIT
+        else {"x": 0, "y": 96, "width": CANVAS_WIDTH, "height": 300}
+        if video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
         else {"x": 0, "y": 0, "width": CANVAS_WIDTH, "height": video_y}
     )
     return {
@@ -223,13 +222,15 @@ def _clip_words(
         if start_frame < previous_start or end_frame > clip_frames:
             raise TranscriptionError("자막 단어 순서가 올바르지 않습니다.")
         previous_start = start_frame
-        selected.append(_CaptionWord(
-            text=word.text.strip(),
-            start_frame=start_frame,
-            end_frame=end_frame,
-            space_before=bool(selected) and word.space_before,
-            source_indexes=(source_index,),
-        ))
+        selected.append(
+            _CaptionWord(
+                text=word.text.strip(),
+                start_frame=start_frame,
+                end_frame=end_frame,
+                space_before=bool(selected) and word.space_before,
+                source_indexes=(source_index,),
+            )
+        )
     if not selected:
         raise TranscriptionError("선택한 쇼츠 구간의 단어 타임스탬프가 비어 있습니다.")
     return _merge_unspaced_cjk_words(selected)
@@ -310,15 +311,12 @@ def _display_units(text: str) -> list[str]:
     units: list[str] = []
     for character in text:
         codepoint = ord(character)
-        joins_previous = (
-            bool(units)
-            and (
-                unicodedata.combining(character) > 0
-                or character == "\u200d"
-                or units[-1].endswith("\u200d")
-                or 0xFE00 <= codepoint <= 0xFE0F
-                or 0x1F3FB <= codepoint <= 0x1F3FF
-            )
+        joins_previous = bool(units) and (
+            unicodedata.combining(character) > 0
+            or character == "\u200d"
+            or units[-1].endswith("\u200d")
+            or 0xFE00 <= codepoint <= 0xFE0F
+            or 0x1F3FB <= codepoint <= 0x1F3FF
         )
         if joins_previous:
             units[-1] += character
@@ -388,9 +386,7 @@ def _split_caption_word(
     consumed_units = len(pieces[0])
     for index in range(1, len(pieces)):
         remaining = len(pieces) - index
-        desired = word.start_frame + round(
-            frame_count * consumed_units / len(units)
-        )
+        desired = word.start_frame + round(frame_count * consumed_units / len(units))
         starts.append(min(word.end_frame - remaining, max(starts[-1] + 1, desired)))
         consumed_units += len(pieces[index])
     return [
@@ -428,6 +424,55 @@ def _fit_display_words(
     return fitted
 
 
+def _without_display_periods(words: Sequence[_CaptionWord]) -> list[_CaptionWord]:
+    """Remove ASCII full stops only from rendered caption text.
+
+    This runs after sentence partitioning, so punctuation still controls cue
+    boundaries. Period-only provider tokens are folded into an adjacent word
+    to retain the original source indexes and spoken timing without reserving
+    an invisible pop-caption slot.
+    """
+    cleaned: list[_CaptionWord] = []
+    pending_start_frame: int | None = None
+    pending_source_indexes: tuple[int, ...] = ()
+    for word in words:
+        text = word.text.replace(".", "")
+        if text:
+            cleaned.append(
+                _CaptionWord(
+                    text=text,
+                    start_frame=(
+                        min(pending_start_frame, word.start_frame)
+                        if pending_start_frame is not None
+                        else word.start_frame
+                    ),
+                    end_frame=word.end_frame,
+                    space_before=bool(cleaned) and word.space_before,
+                    source_indexes=pending_source_indexes + word.source_indexes,
+                )
+            )
+            pending_start_frame = None
+            pending_source_indexes = ()
+            continue
+        if cleaned:
+            previous = cleaned[-1]
+            cleaned[-1] = _CaptionWord(
+                text=previous.text,
+                start_frame=previous.start_frame,
+                end_frame=max(previous.end_frame, word.end_frame),
+                space_before=previous.space_before,
+                source_indexes=previous.source_indexes + word.source_indexes,
+            )
+        else:
+            pending_start_frame = (
+                min(pending_start_frame, word.start_frame)
+                if pending_start_frame is not None
+                else word.start_frame
+            )
+            pending_source_indexes += word.source_indexes
+    return cleaned
+
+
 def _wrap_word_indexes(
     words: Sequence[_CaptionWord],
     *,
@@ -458,8 +503,7 @@ def _would_fit_phrase(
 ) -> bool:
     lines = _wrap_word_indexes(words, font_size=font_size, max_width=max_width)
     return len(lines) <= max_lines and all(
-        _measure(_text_for_words([words[index] for index in line]), font_size)
-        <= max_width
+        _measure(_text_for_words([words[index] for index in line]), font_size) <= max_width
         for line in lines
     )
 
@@ -483,10 +527,7 @@ def _partition_words(
             or bool(_SENTENCE_END_RE.search(current[-1].text))
             or (max_words is not None and len(current) >= max_words)
             or word.end_frame - current[0].start_frame > max_duration_frames
-            or (
-                require_word_frames
-                and word.end_frame - current[0].start_frame < len(current) + 1
-            )
+            or (require_word_frames and word.end_frame - current[0].start_frame < len(current) + 1)
             or not _would_fit_phrase(
                 [*current, word],
                 font_size=font_size,
@@ -516,9 +557,7 @@ def _event_ranges(
         return []
     frame_count = cue_end - cue_start
     if frame_count < len(words):
-        raise CaptionCompileError(
-            "30fps에서 각 자막 어절의 표시 구간을 구분할 수 없습니다."
-        )
+        raise CaptionCompileError("30fps에서 각 자막 어절의 표시 구간을 구분할 수 없습니다.")
 
     starts = [cue_start]
     for index, word in enumerate(words[1:], start=1):
@@ -560,16 +599,20 @@ def _basic_or_highlight_cues(
 ) -> list[dict[str, object]]:
     outline = 7
     max_width = safe_area["width"] - outline * 2
-    groups = _partition_words(
-        words,
-        gap_frames=round(0.42 * fps),
-        max_words=None,
-        font_size=72,
-        max_width=max_width,
-        max_duration_frames=round(3.2 * fps),
-        max_lines=1,
-        require_word_frames=highlighted,
-    )
+    groups = [
+        cleaned
+        for group in _partition_words(
+            words,
+            gap_frames=round(0.42 * fps),
+            max_words=None,
+            font_size=72,
+            max_width=max_width,
+            max_duration_frames=round(3.2 * fps),
+            max_lines=1,
+            require_word_frames=highlighted,
+        )
+        if (cleaned := _without_display_periods(group))
+    ]
     cues: list[dict[str, object]] = []
     previous_end_frame = 0
     for index, group in enumerate(groups):
@@ -578,10 +621,9 @@ def _basic_or_highlight_cues(
         end_frame = max(group[-1].end_frame, start_frame + minimum_frames)
         if index + 1 < len(groups):
             next_start = groups[index + 1][0].start_frame
-            if (
-                next_start >= start_frame + minimum_frames
-                and next_start - group[-1].end_frame < round(0.42 * fps)
-            ):
+            if next_start >= start_frame + minimum_frames and next_start - group[
+                -1
+            ].end_frame < round(0.42 * fps):
                 end_frame = next_start
         previous_end_frame = end_frame
         lines = _wrap_word_indexes(group, font_size=72, max_width=max_width)
@@ -591,14 +633,11 @@ def _basic_or_highlight_cues(
             for line in lines
         ):
             widest = max(
-                _measure(_text_for_words([group[item] for item in line]), 72)
-                for line in lines
+                _measure(_text_for_words([group[item] for item in line]), 72) for line in lines
             )
             required_scale_x = min(100, max_width / widest * 100)
             if required_scale_x < 60:
-                raise CaptionCompileError(
-                    "자막 어절이 안전영역에 들어갈 수 없을 만큼 깁니다."
-                )
+                raise CaptionCompileError("자막 어절이 안전영역에 들어갈 수 없을 만큼 깁니다.")
             scale_x = round(required_scale_x)
         cue: dict[str, object] = {
             "startFrame": start_frame,
@@ -657,10 +696,12 @@ def _pop_event_positions(
     for word_index, width in enumerate(widths):
         if word_index:
             cursor += gaps[word_index - 1]
-        positions.append({
-            "centerX": round(cursor + width / 2, 3),
-            "centerY": round(center_y, 3),
-        })
+        positions.append(
+            {
+                "centerX": round(cursor + width / 2, 3),
+                "centerY": round(center_y, 3),
+            }
+        )
         cursor += width
     return positions
 
@@ -673,30 +714,29 @@ def _pop_cues(
 ) -> list[dict[str, object]]:
     outline = 8
     max_width = safe_area["width"] - outline * 2
-    groups = _partition_words(
-        words,
-        gap_frames=round(0.25 * fps),
-        max_words=3,
-        font_size=92,
-        max_width=round(max_width / 1.12),
-        max_duration_frames=round(2.0 * fps),
-        max_lines=1,
-        require_word_frames=True,
-    )
+    groups = [
+        cleaned
+        for group in _partition_words(
+            words,
+            gap_frames=round(0.25 * fps),
+            max_words=3,
+            font_size=92,
+            max_width=round(max_width / 1.12),
+            max_duration_frames=round(2.0 * fps),
+            max_lines=1,
+            require_word_frames=True,
+        )
+        if (cleaned := _without_display_periods(group))
+    ]
     center_x = safe_area["x"] + safe_area["width"] / 2
     center_y = safe_area["y"] + safe_area["height"] / 2
     cues: list[dict[str, object]] = []
     previous_end_frame = 0
     for index, group in enumerate(groups):
         sizes = [_pop_font_size(word, max_width) for word in group]
-        widths = [
-            _measure(word.text, size) * 1.12
-            for word, size in zip(group, sizes, strict=True)
-        ]
+        widths = [_measure(word.text, size) * 1.12 for word, size in zip(group, sizes, strict=True)]
         gaps = [
-            CAPTION_POP_SPACED_GAP_PX
-            if group[item].space_before
-            else CAPTION_POP_UNSPACED_GAP_PX
+            CAPTION_POP_SPACED_GAP_PX if group[item].space_before else CAPTION_POP_UNSPACED_GAP_PX
             for item in range(1, len(group))
         ]
         total_width = sum(widths) + sum(gaps)
@@ -704,37 +744,33 @@ def _pop_cues(
             ratio = max_width / total_width
             sizes = [max(64, round(size * ratio)) for size in sizes]
             widths = [
-                _measure(word.text, size) * 1.12
-                for word, size in zip(group, sizes, strict=True)
+                _measure(word.text, size) * 1.12 for word, size in zip(group, sizes, strict=True)
             ]
             total_width = sum(widths) + sum(gaps)
         if total_width > max_width + 0.5:
-            raise CaptionCompileError(
-                "팝 자막 어절이 안전영역에 들어갈 수 없을 만큼 깁니다."
-            )
+            raise CaptionCompileError("팝 자막 어절이 안전영역에 들어갈 수 없을 만큼 깁니다.")
         cursor = center_x - total_width / 2
         serialized: list[dict[str, object]] = []
-        for word_index, (word, size, width) in enumerate(
-            zip(group, sizes, widths, strict=True)
-        ):
+        for word_index, (word, size, width) in enumerate(zip(group, sizes, widths, strict=True)):
             if word_index:
                 cursor += gaps[word_index - 1]
             serialized_word = _serialize_word(word)
-            serialized_word.update({
-                "fontSize": size,
-                "centerX": round(cursor + width / 2, 3),
-                "centerY": round(center_y, 3),
-                "maxScale": 112,
-            })
+            serialized_word.update(
+                {
+                    "fontSize": size,
+                    "centerX": round(cursor + width / 2, 3),
+                    "centerY": round(center_y, 3),
+                    "maxScale": 112,
+                }
+            )
             serialized.append(serialized_word)
             cursor += width
         start_frame = max(group[0].start_frame, previous_end_frame)
         end_frame = max(group[-1].end_frame, start_frame + len(group))
         if index + 1 < len(groups):
             next_start = groups[index + 1][0].start_frame
-            if (
-                next_start >= start_frame + len(group)
-                and next_start - group[-1].end_frame < round(0.25 * fps)
+            if next_start >= start_frame + len(group) and next_start - group[-1].end_frame < round(
+                0.25 * fps
             ):
                 end_frame = next_start
         previous_end_frame = end_frame
@@ -753,13 +789,15 @@ def _pop_cues(
                 cue_end=end_frame,
             )
         ]
-        cues.append({
-            "startFrame": start_frame,
-            "endFrame": end_frame,
-            "words": serialized,
-            "easeFrames": 2,
-            "events": events,
-        })
+        cues.append(
+            {
+                "startFrame": start_frame,
+                "endFrame": end_frame,
+                "words": serialized,
+                "easeFrames": 2,
+                "events": events,
+            }
+        )
     return cues
 
 
@@ -802,6 +840,8 @@ def compile_caption_render_spec(
         )
         font_size = 72
         outline = 7
+    if not cues:
+        raise TranscriptionError("선택한 쇼츠 구간에 표시할 자막이 없습니다.")
     return {
         "schemaVersion": 3,
         "templateId": template_id,
@@ -864,11 +904,7 @@ def _line_text(
     result = ""
     for line_position, word_index in enumerate(indexes):
         word = words[word_index]
-        prefix = (
-            CAPTION_WORD_SEPARATOR
-            if line_position and word.get("spaceBefore")
-            else ""
-        )
+        prefix = CAPTION_WORD_SEPARATOR if line_position and word.get("spaceBefore") else ""
         color = accent_color if word_index == active_index else text_color
         result += f"{{\\1c{_ass_color(color)}}}{prefix}{_ass_escape(str(word['text']))}"
     return result
@@ -909,8 +945,7 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
                             words,
                             active_word_index=active_index,
                             safe_area={
-                                key: int(safe_area[key])
-                                for key in ("x", "y", "width", "height")
+                                key: int(safe_area[key]) for key in ("x", "y", "width", "height")
                             },
                         )
                     except (KeyError, TypeError, ValueError) as exc:
@@ -937,10 +972,7 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
                         if event_frames == 1:
                             scale = 112
                         else:
-                            ease = (
-                                f"\\t(0,{ease_milliseconds},"
-                                "\\fscx112\\fscy112)"
-                            )
+                            ease = f"\\t(0,{ease_milliseconds},\\fscx112\\fscy112)"
                     tags = (
                         f"\\an5\\pos({position['centerX']},{position['centerY']})"
                         f"\\fn{font['family']}\\fs{word['fontSize']}"
@@ -988,30 +1020,32 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
             )
     if not dialogues:
         raise RenderError("렌더링할 자막 이벤트가 없습니다.")
-    content = "\n".join([
-        "[Script Info]",
-        "ScriptType: v4.00+",
-        "PlayResX: 1080",
-        "PlayResY: 1920",
-        "WrapStyle: 2",
-        "ScaledBorderAndShadow: yes",
-        "",
-        "[V4+ Styles]",
-        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
-        "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
-        "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
-        "Alignment, MarginL, MarginR, MarginV, Encoding",
-        (
-            f"Style: Default,{font['family']},72,{_ass_color(text_color)},"
-            f"{_ass_color(text_color)},{_ass_color(outline_color)},&HFF000000,"
-            "-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1"
-        ),
-        "",
-        "[Events]",
-        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-        *dialogues,
-        "",
-    ])
+    content = "\n".join(
+        [
+            "[Script Info]",
+            "ScriptType: v4.00+",
+            "PlayResX: 1080",
+            "PlayResY: 1920",
+            "WrapStyle: 2",
+            "ScaledBorderAndShadow: yes",
+            "",
+            "[V4+ Styles]",
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+            "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
+            "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+            "Alignment, MarginL, MarginR, MarginV, Encoding",
+            (
+                f"Style: Default,{font['family']},72,{_ass_color(text_color)},"
+                f"{_ass_color(text_color)},{_ass_color(outline_color)},&HFF000000,"
+                "-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1"
+            ),
+            "",
+            "[Events]",
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+            *dialogues,
+            "",
+        ]
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(content, encoding="utf-8")
     return output_path

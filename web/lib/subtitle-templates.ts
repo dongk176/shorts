@@ -4,7 +4,7 @@ export const subtitleTemplateIds = ["basic", "highlight", "pop"] as const;
 export type SubtitleTemplateId = typeof subtitleTemplateIds[number];
 
 export const SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID = "dark-minimal" as const;
-export const SUBTITLE_TEMPLATE_BRAND_COLOR = "#FF715E" as const;
+export const SUBTITLE_TEMPLATE_BRAND_COLOR = "#35E6E3" as const;
 export const SUBTITLE_TEMPLATE_TITLE_SECOND_LINE_COLOR = "#35E6E3" as const;
 export const SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES = 4 as const;
 export const SUBTITLE_TEMPLATE_POP_WORD_GAP_PX = 6 as const;
@@ -28,7 +28,12 @@ const CAPTION_VIDEO_Y: Record<VideoAspectRatio, number> = {
   "4:5": 285,
   "9:16": 0,
 };
-const CAPTION_TITLE_OVERLAY = { x: 0, y: 96, width: 1080, height: 300 } as const;
+const CAPTION_FULL_VERTICAL_TITLE_OVERLAY = {
+  x: 0,
+  y: 96,
+  width: 1080,
+  height: 300,
+} as const;
 const CAPTION_LANDSCAPE_GAP_PX = 48;
 
 export const subtitleTemplateOptions: Array<{
@@ -64,8 +69,10 @@ export function subtitleTemplateLayout(videoAspectRatio: VideoAspectRatio) {
         width: 840,
         height: 140,
       };
-  const title = videoAspectRatio === "4:5" || fullVertical
-    ? CAPTION_TITLE_OVERLAY
+  const title = videoAspectRatio === "4:5"
+    ? { x: 0, y: videoY, width: 1080, height: 300 }
+    : fullVertical
+      ? CAPTION_FULL_VERTICAL_TITLE_OVERLAY
     : { x: 0, y: 0, width: 1080, height: videoY };
   return {
     canvas: { x: 0, y: 0, width: 1080, height: CAPTION_CANVAS_HEIGHT },
