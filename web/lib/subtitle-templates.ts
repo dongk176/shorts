@@ -5,8 +5,11 @@ export type SubtitleTemplateId = typeof subtitleTemplateIds[number];
 
 export const SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID = "dark-minimal" as const;
 export const SUBTITLE_TEMPLATE_BRAND_COLOR = "#FF715E" as const;
+export const SUBTITLE_TEMPLATE_TITLE_SECOND_LINE_COLOR = "#35E6E3" as const;
 export const SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES = 4 as const;
 export const SUBTITLE_TEMPLATE_POP_WORD_GAP_PX = 6 as const;
+export const SUBTITLE_TEMPLATE_TITLE_FONT_SIZE_PX = 84 as const;
+export const SUBTITLE_TEMPLATE_TITLE_LINE_GAP_PX = 18 as const;
 
 const CAPTION_CANVAS_HEIGHT = 1920;
 const CAPTION_VIDEO_HEIGHTS: Record<VideoAspectRatio, number> = {
@@ -79,6 +82,10 @@ export function subtitleTemplateStyleSnapshot(
 ) {
   const pop = id === "pop";
   const layout = subtitleTemplateLayout(videoAspectRatio);
+  const titleBottomMarginPx = Math.min(
+    44,
+    Math.max(24, Math.round(layout.title.height * 0.105)),
+  );
   return {
     schemaVersion: 3,
     subtitleTemplateId: id,
@@ -96,6 +103,18 @@ export function subtitleTemplateStyleSnapshot(
       text: "#FFFFFF",
       active: SUBTITLE_TEMPLATE_BRAND_COLOR,
       outline: "#080808",
+    },
+    title: {
+      fontSizePx: SUBTITLE_TEMPLATE_TITLE_FONT_SIZE_PX,
+      lineGapPx: SUBTITLE_TEMPLATE_TITLE_LINE_GAP_PX,
+      bottomMarginPx: titleBottomMarginPx,
+      firstLineColor: "#FFFFFF",
+      secondLineColor: SUBTITLE_TEMPLATE_TITLE_SECOND_LINE_COLOR,
+    },
+    channel: {
+      fontSizePx: 48,
+      iconSizePx: 64,
+      gapPx: 26,
     },
     outlinePx: pop ? 8 : 7,
     maxLines: 1,

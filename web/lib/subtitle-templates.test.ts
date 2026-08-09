@@ -3,6 +3,8 @@ import {
   SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID,
   SUBTITLE_TEMPLATE_BRAND_COLOR,
   SUBTITLE_TEMPLATE_POP_WORD_GAP_PX,
+  SUBTITLE_TEMPLATE_TITLE_FONT_SIZE_PX,
+  SUBTITLE_TEMPLATE_TITLE_SECOND_LINE_COLOR,
   SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
   subtitleTemplateLayout,
   subtitleTemplateStyleSnapshot,
@@ -19,6 +21,14 @@ describe("subtitle template snapshot", () => {
     expect(snapshot.safeArea).toEqual({ x: 120, y: 1430, width: 840, height: 140 });
     expect(snapshot.layout.title).toEqual({ x: 0, y: 96, width: 1080, height: 300 });
     expect(snapshot.layout).toEqual(subtitleTemplateLayout("9:16"));
+    expect(snapshot.title).toEqual({
+      fontSizePx: SUBTITLE_TEMPLATE_TITLE_FONT_SIZE_PX,
+      lineGapPx: 18,
+      bottomMarginPx: 32,
+      firstLineColor: "#FFFFFF",
+      secondLineColor: SUBTITLE_TEMPLATE_TITLE_SECOND_LINE_COLOR,
+    });
+    expect(snapshot.title.secondLineColor).toBe("#35E6E3");
   });
 
   it("uses a larger outline and bounded scale for the pop template", () => {
@@ -33,6 +43,9 @@ describe("subtitle template snapshot", () => {
     expect(snapshot.layout.caption.y).toBe(
       snapshot.layout.video.y + snapshot.layout.video.height + 48,
     );
+    expect(snapshot.title.fontSizePx).toBe(84);
+    expect(snapshot.title.bottomMarginPx).toBe(44);
+    expect(snapshot.channel).toEqual({ fontSizePx: 48, iconSizePx: 64, gapPx: 26 });
   });
 
   it("uses the ratio-specific title, video, and caption positions", () => {

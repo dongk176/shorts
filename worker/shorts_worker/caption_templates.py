@@ -626,6 +626,45 @@ def _pop_font_size(word: _CaptionWord, max_width: int) -> int:
     return size
 
 
+def _pop_event_positions(
+    words: Sequence[dict[str, object]],
+    *,
+    active_word_index: int,
+    safe_area: dict[str, int],
+) -> list[dict[str, float]]:
+    """Center a pop cue using the scale visible in this exact event.
+
+    CSS transforms and ASS scale tags do not participate in layout. Reserving
+    112% for every word therefore made inactive 100% words look much farther
+    apart than the configured six-pixel gap. Reflow each event around its one
+    active word so the rendered glyph boxes retain the approved spacing.
+    """
+    widths = [
+        _measure(str(word["text"]), int(word["fontSize"]))
+        * (1.12 if word_index == active_word_index else 1.0)
+        for word_index, word in enumerate(words)
+    ]
+    gaps = [
+        CAPTION_POP_SPACED_GAP_PX
+        if bool(words[word_index].get("spaceBefore"))
+        else CAPTION_POP_UNSPACED_GAP_PX
+        for word_index in range(1, len(words))
+    ]
+    center_x = safe_area["x"] + safe_area["width"] / 2
+    center_y = safe_area["y"] + safe_area["height"] / 2
+    cursor = center_x - (sum(widths) + sum(gaps)) / 2
+    positions: list[dict[str, float]] = []
+    for word_index, width in enumerate(widths):
+        if word_index:
+            cursor += gaps[word_index - 1]
+        positions.append({
+            "centerX": round(cursor + width / 2, 3),
+            "centerY": round(center_y, 3),
+        })
+        cursor += width
+    return positions
+
+
 def _pop_cues(
     words: list[_CaptionWord],
     *,
@@ -699,16 +738,27 @@ def _pop_cues(
             ):
                 end_frame = next_start
         previous_end_frame = end_frame
+        events: list[dict[str, object]] = [
+            {
+                **event,
+                "positions": _pop_event_positions(
+                    serialized,
+                    active_word_index=event["activeWordIndex"],
+                    safe_area=safe_area,
+                ),
+            }
+            for event in _event_ranges(
+                group,
+                cue_start=start_frame,
+                cue_end=end_frame,
+            )
+        ]
         cues.append({
             "startFrame": start_frame,
             "endFrame": end_frame,
             "words": serialized,
             "easeFrames": 2,
-            "events": _event_ranges(
-                group,
-                cue_start=start_frame,
-                cue_end=end_frame,
-            ),
+            "events": events,
         })
     return cues
 
@@ -849,6 +899,22 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
         if template_id == "pop":
             for event in events:
                 active_index = int(event["activeWordIndex"])
+                positions = event.get("positions")
+                if not isinstance(positions, list) or len(positions) != len(words):
+                    safe_area = spec.get("safeArea")
+                    if not isinstance(safe_area, dict):
+                        raise RenderError("팝 자막 안전영역이 올바르지 않습니다.")
+                    try:
+                        positions = _pop_event_positions(
+                            words,
+                            active_word_index=active_index,
+                            safe_area={
+                                key: int(safe_area[key])
+                                for key in ("x", "y", "width", "height")
+                            },
+                        )
+                    except (KeyError, TypeError, ValueError) as exc:
+                        raise RenderError("팝 자막 안전영역이 올바르지 않습니다.") from exc
                 ease_frames = max(0, int(cue.get("easeFrames") or 0))
                 ease_milliseconds = round(ease_frames / fps * 1000)
                 event_frames = max(
@@ -856,6 +922,9 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
                     int(event["endFrame"]) - int(event["startFrame"]),
                 )
                 for word_index, word in enumerate(words):
+                    position = positions[word_index]
+                    if not isinstance(position, dict):
+                        raise RenderError("팝 자막 위치가 올바르지 않습니다.")
                     scale = 100
                     color = accent_color if word_index == active_index else text_color
                     ease = ""
@@ -873,7 +942,7 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
                                 "\\fscx112\\fscy112)"
                             )
                     tags = (
-                        f"\\an5\\pos({word['centerX']},{word['centerY']})"
+                        f"\\an5\\pos({position['centerX']},{position['centerY']})"
                         f"\\fn{font['family']}\\fs{word['fontSize']}"
                         f"\\fscx{scale}\\fscy{scale}"
                         f"\\bord{style['outlineWidth']}\\shad0"

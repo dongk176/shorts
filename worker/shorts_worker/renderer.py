@@ -8,7 +8,6 @@ from pathlib import Path
 from PIL import Image
 
 from .caption_templates import (
-    CAPTION_ACCENT,
     CAPTION_FPS,
     create_caption_ass,
     prepare_caption_fonts,
@@ -492,7 +491,11 @@ class VideoRenderer:
             bottom_height=layout.bottom_height,
             overlay_mode=layout.overlay_mode,
             title_text_styles=title_text_styles,
-            title_accent_color=(CAPTION_ACCENT if caption_render_spec else None),
+            title_accent_color=(
+                TEMPLATE_STYLES[TemplateId.COMMENT_CAPTURE].accent
+                if caption_render_spec
+                else None
+            ),
         )
         channel_overlay_y = layout.bottom_y
         if (

@@ -22,6 +22,11 @@ describe("subtitle template UI isolation", () => {
     expect(subtitleTemplatesSource).toContain("자막 강조형");
     expect(subtitleTemplatesSource).toContain("자막 팝형");
     expect(shortsAppSource).toContain("SUBTITLE_TEMPLATE_BRAND_COLOR");
+    expect(shortsAppSource).toContain("canvasCqw(snapshot.title.fontSizePx)");
+    expect(shortsAppSource).toContain("canvasCqw(snapshot.font.sizePx)");
+    expect(shortsAppSource).toContain("canvasCqw(snapshot.wordGapPx)");
+    expect(shortsAppSource).toContain("snapshot.title.secondLineColor");
+    expect(shortsAppSource).not.toContain('whitespace-nowrap text-[9px]');
   });
 
   it("omits the new request field unless capability and selection are both present", () => {

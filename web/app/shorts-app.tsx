@@ -1401,6 +1401,7 @@ function SubtitleTemplatePreview({
 }) {
   const snapshot = subtitleTemplateStyleSnapshot(id, videoAspectRatio);
   const layout = snapshot.layout;
+  const canvasCqw = (pixels: number) => `${pixels / 10.8}cqw`;
   const rectStyle = (rect: { x: number; y: number; width: number; height: number }) => ({
     left: `${rect.x / 10.8}%`,
     top: `${rect.y / 19.2}%`,
@@ -1408,41 +1409,77 @@ function SubtitleTemplatePreview({
     height: `${rect.height / 19.2}%`,
   });
   const outline = {
-    WebkitTextStroke: `${id === "pop" ? 1.4 : 1.1}px #080808`,
+    WebkitTextStroke: `${canvasCqw(snapshot.outlinePx)} #080808`,
     paintOrder: "stroke fill",
   } satisfies CSSProperties;
   return (
-    <div className="relative mx-auto aspect-[9/16] w-full max-w-[150px] overflow-hidden rounded-[10px] bg-black shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]">
-      <div className="absolute z-20 flex flex-col items-center justify-center text-center text-[8px] font-black leading-[1.2] text-white" style={rectStyle(layout.title)}>
+    <div
+      className="relative mx-auto aspect-[9/16] w-full max-w-[150px] overflow-hidden rounded-[10px] bg-black shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]"
+      style={{ containerType: "inline-size" }}
+    >
+      <div
+        className="absolute z-20 flex flex-col items-center justify-end text-center font-black leading-none"
+        style={{
+          ...rectStyle(layout.title),
+          gap: canvasCqw(snapshot.title.lineGapPx),
+          paddingBottom: canvasCqw(snapshot.title.bottomMarginPx),
+          fontSize: canvasCqw(snapshot.title.fontSizePx),
+          color: snapshot.title.firstLineColor,
+        }}
+      >
         <span className="block">AI가 고른 오늘의</span>
-        <span className="block" style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>핵심 장면</span>
+        <span className="block" style={{ color: snapshot.title.secondLineColor }}>핵심 장면</span>
       </div>
       <div className="absolute overflow-hidden bg-gradient-to-br from-neutral-600 via-neutral-800 to-neutral-950" style={rectStyle(layout.video)}>
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
       </div>
-      <div className="absolute z-20 flex items-center justify-center overflow-hidden px-0.5 text-center font-black leading-none text-white" style={{ ...rectStyle(layout.caption), ...outline }}>
-          {id === "basic" && <span className="whitespace-nowrap text-[7px] [word-spacing:-0.16em]">지금 이 순간을 놓치지 마세요</span>}
+      <div
+        className="absolute z-20 flex items-center justify-center overflow-hidden text-center font-black leading-none text-white"
+        style={{
+          ...rectStyle(layout.caption),
+          ...outline,
+          fontFamily: '"Editor Pretendard", sans-serif',
+          fontSize: canvasCqw(snapshot.font.sizePx),
+        }}
+      >
+          {id === "basic" && <span className="whitespace-nowrap">지금 이 순간을 놓치지 마세요</span>}
           {id === "highlight" && (
-            <span className="whitespace-nowrap text-[7px] [word-spacing:-0.16em]">
-              지금 이 <span className="animate-pulse" style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>순간을</span> 놓치지 마세요
+            <span className="whitespace-nowrap">
+              지금 이 <span style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>순간을</span> 놓치지 마세요
             </span>
           )}
           {id === "pop" && (
             <span
-              className="inline-flex animate-pulse items-center whitespace-nowrap text-[9px]"
+              className="inline-flex items-center whitespace-nowrap"
               style={{
-                color: SUBTITLE_TEMPLATE_BRAND_COLOR,
-                gap: `${snapshot.wordGapPx / snapshot.font.sizePx}em`,
+                gap: canvasCqw(snapshot.wordGapPx),
               }}
             >
-              <span>바로</span><span>지금</span>
+              <span
+                style={{
+                  color: SUBTITLE_TEMPLATE_BRAND_COLOR,
+                  fontSize: canvasCqw(snapshot.font.sizePx * snapshot.popScale),
+                }}
+              >바로</span>
+              <span>지금</span>
             </span>
           )}
       </div>
-      <div className="absolute z-20 flex items-center justify-center gap-1 text-[7px] font-bold text-white" style={rectStyle(layout.channel)}>
+      <div
+        className="absolute z-20 flex items-center justify-center font-bold text-white"
+        style={{
+          ...rectStyle(layout.channel),
+          gap: canvasCqw(snapshot.channel.gapPx),
+          fontSize: canvasCqw(snapshot.channel.fontSizePx),
+        }}
+      >
         <span
-          className="h-2 w-2 shrink-0 rounded-full bg-white bg-cover bg-center"
-          style={channelThumbnailUrl ? { backgroundImage: `url(${channelThumbnailUrl})` } : undefined}
+          className="shrink-0 rounded-full bg-white bg-cover bg-center"
+          style={{
+            width: canvasCqw(snapshot.channel.iconSizePx),
+            height: canvasCqw(snapshot.channel.iconSizePx),
+            ...(channelThumbnailUrl ? { backgroundImage: `url(${channelThumbnailUrl})` } : {}),
+          }}
           aria-hidden="true"
         />
         <span className="max-w-[75%] truncate">{channelName.trim() || "YouTube 채널"}</span>

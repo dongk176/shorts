@@ -305,13 +305,24 @@ def test_caption_word_spacing_is_compact_in_sentence_and_pop_templates(
         _word("가로", 0.0, 0.2),
         _word("여백", 0.2, 0.4, space_before=True),
     ], "pop", clip_end=0.5)
-    first, second = pop["cues"][0]["words"]
-    first_right = first["centerX"] + _measure(first["text"], first["fontSize"]) * 1.12 / 2
-    second_left = second["centerX"] - _measure(second["text"], second["fontSize"]) * 1.12 / 2
-    assert second_left - first_right == pytest.approx(
-        CAPTION_POP_SPACED_GAP_PX,
-        abs=0.01,
-    )
+    cue = pop["cues"][0]
+    first, second = cue["words"]
+    for event in cue["events"]:
+        positions = event["positions"]
+        first_scale = 1.12 if event["activeWordIndex"] == 0 else 1.0
+        second_scale = 1.12 if event["activeWordIndex"] == 1 else 1.0
+        first_right = (
+            positions[0]["centerX"]
+            + _measure(first["text"], first["fontSize"]) * first_scale / 2
+        )
+        second_left = (
+            positions[1]["centerX"]
+            - _measure(second["text"], second["fontSize"]) * second_scale / 2
+        )
+        assert second_left - first_right == pytest.approx(
+            CAPTION_POP_SPACED_GAP_PX,
+            abs=0.01,
+        )
 
 
 def test_project_3259_pop_spacing_uses_six_pixels_and_zero_for_joined_tokens() -> None:
@@ -321,19 +332,39 @@ def test_project_3259_pop_spacing_uses_six_pixels_and_zero_for_joined_tokens() -
         _word("그러니까", 0.0, 0.2),
         _word("사실.", 0.2, 0.5, space_before=True),
     ], "pop", clip_end=0.6, ratio=VideoAspectRatio.LANDSCAPE_FIVE_FOUR)
-    first, second = spaced["cues"][0]["words"]
-    first_right = first["centerX"] + _measure(first["text"], first["fontSize"]) * 1.12 / 2
-    second_left = second["centerX"] - _measure(second["text"], second["fontSize"]) * 1.12 / 2
-    assert second_left - first_right == pytest.approx(6, abs=0.01)
+    spaced_cue = spaced["cues"][0]
+    first, second = spaced_cue["words"]
+    for event in spaced_cue["events"]:
+        first_scale = 1.12 if event["activeWordIndex"] == 0 else 1.0
+        second_scale = 1.12 if event["activeWordIndex"] == 1 else 1.0
+        first_right = (
+            event["positions"][0]["centerX"]
+            + _measure(first["text"], first["fontSize"]) * first_scale / 2
+        )
+        second_left = (
+            event["positions"][1]["centerX"]
+            - _measure(second["text"], second["fontSize"]) * second_scale / 2
+        )
+        assert second_left - first_right == pytest.approx(6, abs=0.01)
 
     joined = _compile([
         _word("easy", 0.0, 0.2),
         _word("cut", 0.2, 0.4),
     ], "pop", clip_end=0.5)
-    first, second = joined["cues"][0]["words"]
-    first_right = first["centerX"] + _measure(first["text"], first["fontSize"]) * 1.12 / 2
-    second_left = second["centerX"] - _measure(second["text"], second["fontSize"]) * 1.12 / 2
-    assert second_left - first_right == pytest.approx(0, abs=0.01)
+    joined_cue = joined["cues"][0]
+    first, second = joined_cue["words"]
+    for event in joined_cue["events"]:
+        first_scale = 1.12 if event["activeWordIndex"] == 0 else 1.0
+        second_scale = 1.12 if event["activeWordIndex"] == 1 else 1.0
+        first_right = (
+            event["positions"][0]["centerX"]
+            + _measure(first["text"], first["fontSize"]) * first_scale / 2
+        )
+        second_left = (
+            event["positions"][1]["centerX"]
+            - _measure(second["text"], second["fontSize"]) * second_scale / 2
+        )
+        assert second_left - first_right == pytest.approx(0, abs=0.01)
 
 
 def test_same_start_frame_events_are_contiguous_without_overlap() -> None:
@@ -367,19 +398,52 @@ def test_overlapping_fast_pop_groups_are_serialized_without_failing() -> None:
     )
 
 
-def test_pop_uses_two_frame_ease_and_keeps_word_anchor_positions(tmp_path: Path) -> None:
+def test_pop_uses_two_frame_ease_and_event_specific_word_positions(tmp_path: Path) -> None:
     spec = _compile([
         _word("pop", 0.0, 0.15),
         _word("caption", 0.15, 0.35, space_before=True),
     ], "pop", clip_end=0.4)
     cue = spec["cues"][0]
     assert cue["easeFrames"] == 2
-    positions = [(word["centerX"], word["centerY"]) for word in cue["words"]]
-    assert len(set(positions)) == 2
+    event_positions = [
+        [(position["centerX"], position["centerY"]) for position in event["positions"]]
+        for event in cue["events"]
+    ]
+    assert len(event_positions) == 2
+    assert event_positions[0] != event_positions[1]
     ass = create_caption_ass(spec, tmp_path / "pop.ass").read_text(encoding="utf-8")
     assert r"\t(0,67,\fscx112\fscy112)" in ass
-    for x, y in positions:
-        assert f"\\pos({x},{y})" in ass
+    for positions in event_positions:
+        for x, y in positions:
+            assert f"\\pos({x},{y})" in ass
+
+
+def test_project_3272_pop_phrase_stays_tight_while_active_word_changes() -> None:
+    spec = _compile([
+        _word("공개하고", 0.0, 0.5),
+        _word("시작하도록", 0.5, 0.9, space_before=True),
+    ], "pop", clip_end=1.0, ratio=VideoAspectRatio.LANDSCAPE)
+    cue = spec["cues"][0]
+    words = cue["words"]
+
+    for event in cue["events"]:
+        positions = event["positions"]
+        rendered_widths = [
+            _measure(word["text"], word["fontSize"])
+            * (1.12 if index == event["activeWordIndex"] else 1.0)
+            for index, word in enumerate(words)
+        ]
+        visible_gap = (
+            positions[1]["centerX"] - rendered_widths[1] / 2
+            - (positions[0]["centerX"] + rendered_widths[0] / 2)
+        )
+        assert visible_gap == pytest.approx(6, abs=0.01)
+        group_left = positions[0]["centerX"] - rendered_widths[0] / 2
+        group_right = positions[1]["centerX"] + rendered_widths[1] / 2
+        assert group_left + group_right == pytest.approx(
+            1080,
+            abs=0.01,
+        )
 
 
 def test_pop_single_frame_word_is_immediately_full_scale(tmp_path: Path) -> None:
@@ -706,6 +770,13 @@ def test_landscape_render_places_caption_below_video_with_a_clear_gap(
         video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
         caption_render_spec=spec,
     )
+    with Image.open(
+        tmp_path / "landscape-render-work" / "overlays" / "landscape-caption_top.png"
+    ).convert("RGBA") as title_overlay:
+        title_pixels = set(title_overlay.getdata())
+        assert (255, 255, 255, 255) in title_pixels
+        assert (53, 230, 227, 255) in title_pixels
+        assert (255, 113, 94, 255) not in title_pixels
     frame = tmp_path / "landscape-frame.png"
     extracted = subprocess.run(
         [
