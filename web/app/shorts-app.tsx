@@ -1444,7 +1444,7 @@ function SubtitleTemplatePreview({
       >
           {snapshot.subtitleTemplateId === "highlight" && (
             <span className="whitespace-nowrap">
-              이게 바로 <span style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>자막입니다</span>
+              이게 바로 <span style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>자막입니다</span>
             </span>
           )}
           {snapshot.subtitleTemplateId === "pop" && (
@@ -1554,11 +1554,14 @@ function TemplatePicker({
           onChange={onVideoAspectRatioChange}
         />
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <div
+        aria-label="템플릿 선택 레일"
+        className="mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-3 pr-2 [scrollbar-color:rgba(255,255,255,.24)_transparent] [scrollbar-width:thin]"
+      >
         {favoriteCards.map((card) => {
           if (card.kind === "custom") {
             const selected = !subtitleTemplateId && customTemplateId === card.template.id;
-            return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
+            return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
           }
           const selected = !subtitleTemplateId && !customTemplateId && value === card.template.id;
           return (
@@ -1567,7 +1570,7 @@ function TemplatePicker({
               type="button"
               aria-pressed={selected}
               onClick={() => { onCustomTemplateChange(null); onChange(card.template.id); }}
-              className={`rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
+              className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
             >
               <TemplatePreview template={card.template} videoAspectRatio={effectiveAspectRatio} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} />
               <span className="mt-2.5 block text-center text-sm font-semibold">{card.template.name}</span>
@@ -1576,17 +1579,10 @@ function TemplatePicker({
         })}
         {remainingPersonalTemplates.map((template) => {
           const selected = !subtitleTemplateId && customTemplateId === template.id;
-          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
+          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
         })}
-      </div>
-      {subtitleTemplateSelectionEnabled && (
-        <section className="mt-8" aria-labelledby="subtitle-template-test-heading">
-          <div className="flex items-center gap-2">
-            <h3 id="subtitle-template-test-heading" className="text-base font-extrabold text-white">자막 템플릿 · 테스트</h3>
-            <span className="rounded-full border border-[#ff715e]/30 bg-[#ff715e]/10 px-2 py-1 text-[10px] font-black text-[#ff9b8d]">어드민</span>
-          </div>
-          <p className="mt-1 text-xs leading-5 text-neutral-400">영상 안쪽 안전영역에 자막이 완성된 형태로 적용됩니다.</p>
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {subtitleTemplateSelectionEnabled && (
+          <>
             {subtitleTemplateOptions.map((option) => {
               const selected = subtitleTemplateId === option.id;
               return (
@@ -1598,7 +1594,7 @@ function TemplatePicker({
                     onCustomTemplateChange(null);
                     onSubtitleTemplateChange(option.id);
                   }}
-                  className={`rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 text-left backdrop-blur-xl transition ${selected ? "border-[#ff715e] shadow-[0_0_0_3px_rgba(255,113,94,.14)]" : "border-white/10 hover:border-white/30"}`}
+                  className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 text-left backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-[#ff715e] shadow-[0_0_0_3px_rgba(255,113,94,.14)]" : "border-white/10 hover:border-white/30"}`}
                 >
                   <SubtitleTemplatePreview
                     id={option.id}
@@ -1608,12 +1604,13 @@ function TemplatePicker({
                   />
                   <span className="mt-2.5 block text-center text-sm font-extrabold text-white">{option.name}</span>
                   <span className="mt-1 block text-center text-[11px] leading-4 text-neutral-400">{option.description}</span>
+                  <span className="mt-1.5 block text-center text-[10px] font-black text-[#ff9b8d]">자막 · 어드민</span>
                 </button>
               );
             })}
-          </div>
-        </section>
-      )}
+          </>
+        )}
+      </div>
       {!subtitleTemplateId && !customTemplateId && value === "comment-capture" && (
         <p className="mt-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[.06] px-4 py-3 text-sm text-cyan-100">
           AI가 실제 사람이 작성한 것처럼 자연스러운 댓글을 만들어줘요.

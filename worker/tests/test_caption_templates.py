@@ -14,6 +14,7 @@ from shorts_worker.caption_templates import (
     CAPTION_ACCENT,
     CAPTION_FONT_FAMILY,
     CAPTION_FONT_PATH,
+    CAPTION_HIGHLIGHT_WORD_SEPARATOR,
     CAPTION_POP_SPACED_GAP_PX,
     CAPTION_POP_UNSPACED_GAP_PX,
     CAPTION_WORD_SEPARATOR,
@@ -267,7 +268,7 @@ def test_sentence_templates_are_always_one_line_and_fit_safe_width(
             text = "".join(
                 (
                     (
-                        CAPTION_WORD_SEPARATOR
+                        str(cue.get("wordSeparator") or CAPTION_WORD_SEPARATOR)
                         if position and serialized[index]["spaceBefore"]
                         else ""
                     )
@@ -348,10 +349,11 @@ def test_caption_display_leads_provider_timing_by_four_frames() -> None:
     assert word["endFrame"] == round(0.8 * 30)
 
 
-def test_caption_word_spacing_is_compact_in_sentence_and_pop_templates(
+def test_highlight_word_spacing_matches_regular_space_while_pop_stays_six_pixels(
     tmp_path: Path,
 ) -> None:
     assert _measure(CAPTION_WORD_SEPARATOR, 72) < _measure(" ", 72)
+    assert CAPTION_HIGHLIGHT_WORD_SEPARATOR == " "
     sentence = _compile(
         [
             _word("가로", 0.0, 0.2),
@@ -361,8 +363,35 @@ def test_caption_word_spacing_is_compact_in_sentence_and_pop_templates(
         clip_end=0.5,
     )
     ass = create_caption_ass(sentence, tmp_path / "compact.ass").read_text(encoding="utf-8")
-    assert f"{CAPTION_WORD_SEPARATOR}여백" in ass
-    assert " 가로" not in ass
+    assert sentence["cues"][0]["wordSeparator"] == " "
+    assert " 여백" in ass
+    assert f"{CAPTION_WORD_SEPARATOR}여백" not in ass
+
+    legacy_basic = _compile(
+        [
+            _word("기존", 0.0, 0.2),
+            _word("간격", 0.2, 0.4, space_before=True),
+        ],
+        "basic",
+        clip_end=0.5,
+    )
+    assert legacy_basic["cues"][0]["wordSeparator"] == CAPTION_WORD_SEPARATOR
+
+    legacy_highlight = _compile(
+        [
+            _word("기존", 0.0, 0.2),
+            _word("스펙", 0.2, 0.4, space_before=True),
+        ],
+        "highlight",
+        clip_end=0.5,
+    )
+    for cue in legacy_highlight["cues"]:
+        cue.pop("wordSeparator")
+    legacy_ass = create_caption_ass(
+        legacy_highlight,
+        tmp_path / "legacy-highlight.ass",
+    ).read_text(encoding="utf-8")
+    assert f"{CAPTION_WORD_SEPARATOR}스펙" in legacy_ass
 
     pop = _compile(
         [

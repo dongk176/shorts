@@ -42,6 +42,7 @@ VIDEO_Y = {
     VideoAspectRatio.FULL_VERTICAL: 0,
 }
 CAPTION_WORD_SEPARATOR = "\u2009"
+CAPTION_HIGHLIGHT_WORD_SEPARATOR = " "
 CAPTION_POP_SPACED_GAP_PX = 6
 CAPTION_POP_UNSPACED_GAP_PX = 0
 CAPTION_LANDSCAPE_GAP_PX = 48
@@ -219,14 +220,20 @@ def _is_punctuation(text: str) -> bool:
     return bool(text) and all(not char.isalnum() and not _has_cjk(char) for char in text)
 
 
-def _join_text(left: str, right: str, *, space_before: bool) -> str:
+def _join_text(
+    left: str,
+    right: str,
+    *,
+    space_before: bool,
+    word_separator: str = CAPTION_WORD_SEPARATOR,
+) -> str:
     if not left:
         return right
     if not right:
         return left
     if right[0] in _NO_SPACE_BEFORE or left[-1] in _NO_SPACE_AFTER:
         return left + right
-    return left + (CAPTION_WORD_SEPARATOR if space_before else "") + right
+    return left + (word_separator if space_before else "") + right
 
 
 def _clip_words(
@@ -311,10 +318,19 @@ def _merge_unspaced_cjk_words(words: list[_CaptionWord]) -> list[_CaptionWord]:
     return merged
 
 
-def _text_for_words(words: Sequence[_CaptionWord]) -> str:
+def _text_for_words(
+    words: Sequence[_CaptionWord],
+    *,
+    word_separator: str = CAPTION_WORD_SEPARATOR,
+) -> str:
     text = ""
     for word in words:
-        text = _join_text(text, word.text, space_before=word.space_before)
+        text = _join_text(
+            text,
+            word.text,
+            space_before=word.space_before,
+            word_separator=word_separator,
+        )
     return text
 
 
@@ -519,12 +535,16 @@ def _wrap_word_indexes(
     *,
     font_size: int,
     max_width: int,
+    word_separator: str = CAPTION_WORD_SEPARATOR,
 ) -> list[list[int]]:
     lines: list[list[int]] = []
     current: list[int] = []
     for index, _word in enumerate(words):
         proposed = [*current, index]
-        proposed_text = _text_for_words([words[item] for item in proposed])
+        proposed_text = _text_for_words(
+            [words[item] for item in proposed],
+            word_separator=word_separator,
+        )
         if current and _measure(proposed_text, font_size) > max_width:
             lines.append(current)
             current = [index]
@@ -541,10 +561,23 @@ def _would_fit_phrase(
     font_size: int,
     max_width: int,
     max_lines: int,
+    word_separator: str = CAPTION_WORD_SEPARATOR,
 ) -> bool:
-    lines = _wrap_word_indexes(words, font_size=font_size, max_width=max_width)
+    lines = _wrap_word_indexes(
+        words,
+        font_size=font_size,
+        max_width=max_width,
+        word_separator=word_separator,
+    )
     return len(lines) <= max_lines and all(
-        _measure(_text_for_words([words[index] for index in line]), font_size) <= max_width
+        _measure(
+            _text_for_words(
+                [words[index] for index in line],
+                word_separator=word_separator,
+            ),
+            font_size,
+        )
+        <= max_width
         for line in lines
     )
 
@@ -559,6 +592,7 @@ def _partition_words(
     max_duration_frames: int,
     max_lines: int = 2,
     require_word_frames: bool = False,
+    word_separator: str = CAPTION_WORD_SEPARATOR,
 ) -> list[list[_CaptionWord]]:
     groups: list[list[_CaptionWord]] = []
     current: list[_CaptionWord] = []
@@ -574,6 +608,7 @@ def _partition_words(
                 font_size=font_size,
                 max_width=max_width,
                 max_lines=max_lines,
+                word_separator=word_separator,
             )
         )
         if should_break:
@@ -640,6 +675,9 @@ def _basic_or_highlight_cues(
 ) -> list[dict[str, object]]:
     outline = 7
     max_width = safe_area["width"] - outline * 2
+    word_separator = (
+        CAPTION_HIGHLIGHT_WORD_SEPARATOR if highlighted else CAPTION_WORD_SEPARATOR
+    )
     groups = [
         cleaned
         for group in _partition_words(
@@ -651,6 +689,7 @@ def _basic_or_highlight_cues(
             max_duration_frames=round(3.2 * fps),
             max_lines=1,
             require_word_frames=highlighted,
+            word_separator=word_separator,
         )
         if (cleaned := _without_display_periods(group))
     ]
@@ -667,14 +706,33 @@ def _basic_or_highlight_cues(
             ].end_frame < round(0.42 * fps):
                 end_frame = next_start
         previous_end_frame = end_frame
-        lines = _wrap_word_indexes(group, font_size=72, max_width=max_width)
+        lines = _wrap_word_indexes(
+            group,
+            font_size=72,
+            max_width=max_width,
+            word_separator=word_separator,
+        )
         scale_x = 100
         if any(
-            _measure(_text_for_words([group[item] for item in line]), 72) > max_width
+            _measure(
+                _text_for_words(
+                    [group[item] for item in line],
+                    word_separator=word_separator,
+                ),
+                72,
+            )
+            > max_width
             for line in lines
         ):
             widest = max(
-                _measure(_text_for_words([group[item] for item in line]), 72) for line in lines
+                _measure(
+                    _text_for_words(
+                        [group[item] for item in line],
+                        word_separator=word_separator,
+                    ),
+                    72,
+                )
+                for line in lines
             )
             required_scale_x = min(100, max_width / widest * 100)
             if required_scale_x < 60:
@@ -689,6 +747,7 @@ def _basic_or_highlight_cues(
             "centerY": safe_area["y"] + safe_area["height"] // 2,
             "words": [_serialize_word(word) for word in group],
             "lines": lines,
+            "wordSeparator": word_separator,
         }
         cue["events"] = (
             _event_ranges(group, cue_start=start_frame, cue_end=end_frame)
@@ -948,11 +1007,12 @@ def _line_text(
     active_index: int | None,
     text_color: str,
     accent_color: str,
+    word_separator: str,
 ) -> str:
     result = ""
     for line_position, word_index in enumerate(indexes):
         word = words[word_index]
-        prefix = CAPTION_WORD_SEPARATOR if line_position and word.get("spaceBefore") else ""
+        prefix = word_separator if line_position and word.get("spaceBefore") else ""
         color = accent_color if word_index == active_index else text_color
         result += f"{{\\1c{_ass_color(color)}}}{prefix}{_ass_escape(str(word['text']))}"
     return result
@@ -1049,6 +1109,9 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
                     active_index=active_index,
                     text_color=text_color,
                     accent_color=accent_color,
+                    word_separator=str(
+                        cue.get("wordSeparator") or CAPTION_WORD_SEPARATOR
+                    ),
                 )
                 for line in cue.get("lines") or []
             ]
