@@ -21,6 +21,8 @@ describe("subtitle template UI isolation", () => {
     expect(subtitleTemplatesSource).not.toContain("자막 기본형");
     expect(subtitleTemplatesSource).toContain("자막 강조형");
     expect(subtitleTemplatesSource).toContain("자막 팝형");
+    expect(subtitleTemplatesSource).toContain("자막 강조형 · 중앙");
+    expect(subtitleTemplatesSource).toContain("자막 팝형 · 중앙");
     expect(shortsAppSource).not.toContain('id === "basic"');
     expect(shortsAppSource).toContain("SUBTITLE_TEMPLATE_BRAND_COLOR");
     expect(shortsAppSource).toContain("canvasCqw(snapshot.title.fontSizePx)");

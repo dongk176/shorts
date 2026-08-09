@@ -1093,7 +1093,7 @@ describe("job API security and idempotency", () => {
     const response = await createJob(jsonRequest("http://localhost/api/jobs", {
       analysisId,
       templateId: "dark-minimal",
-      subtitleTemplateId: "highlight",
+      subtitleTemplateId: "highlight-center",
       videoAspectRatio: "9:16",
       rightsConfirmed: true,
       requestId: "29199bd8-8097-49df-aa79-fd531436c4fa",
@@ -1108,9 +1108,12 @@ describe("job API security and idempotency", () => {
       "highlight",
       expect.objectContaining({
         subtitleTemplateId: "highlight",
+        selectionId: "highlight-center",
+        captionPlacement: "center",
         baseTemplateId: "dark-minimal",
         videoAspectRatio: "9:16",
         color: expect.objectContaining({ active: "#35E6E3" }),
+        safeArea: { x: 120, y: 890, width: 840, height: 140 },
       }),
       "elevenlabs_primary_openai_fallback",
       process.env.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN,

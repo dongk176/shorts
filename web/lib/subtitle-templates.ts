@@ -2,7 +2,14 @@ import type { VideoAspectRatio } from "@/lib/contracts";
 
 export const subtitleTemplateIds = ["basic", "highlight", "pop"] as const;
 export type SubtitleTemplateId = typeof subtitleTemplateIds[number];
-export const subtitleTemplateCreationIds = ["highlight", "pop"] as const;
+export const subtitleTemplateCreationIds = [
+  "highlight",
+  "pop",
+  "highlight-center",
+  "pop-center",
+] as const;
+export type SubtitleTemplateSelectionId = typeof subtitleTemplateCreationIds[number];
+export type SubtitleCaptionPlacement = "lower" | "center";
 
 export const SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID = "dark-minimal" as const;
 export const SUBTITLE_TEMPLATE_BRAND_COLOR = "#35E6E3" as const;
@@ -40,15 +47,20 @@ const CAPTION_PORTRAIT_CHANNEL_GAP_PX = 24;
 const CAPTION_CHANNEL_HEIGHT_PX = 160;
 
 export const subtitleTemplateOptions: Array<{
-  id: SubtitleTemplateId;
+  id: SubtitleTemplateSelectionId;
   name: string;
   description: string;
 }> = [
   { id: "highlight", name: "자막 강조형", description: "말하는 어절만 브랜드 컬러로" },
   { id: "pop", name: "자막 팝형", description: "핵심 어절을 크고 리듬감 있게" },
+  { id: "highlight-center", name: "자막 강조형 · 중앙", description: "강조 자막을 영상 정가운데에" },
+  { id: "pop-center", name: "자막 팝형 · 중앙", description: "팝 자막을 영상 정가운데에" },
 ];
 
-export function subtitleTemplateLayout(videoAspectRatio: VideoAspectRatio) {
+export function subtitleTemplateLayout(
+  videoAspectRatio: VideoAspectRatio,
+  captionPlacement: SubtitleCaptionPlacement = "lower",
+) {
   const videoHeight = CAPTION_VIDEO_HEIGHTS[videoAspectRatio];
   const fullVertical = videoAspectRatio === "9:16";
   const videoY = CAPTION_VIDEO_Y[videoAspectRatio];
@@ -61,7 +73,14 @@ export function subtitleTemplateLayout(videoAspectRatio: VideoAspectRatio) {
         height: CAPTION_CHANNEL_HEIGHT_PX,
       }
     : { x: 0, y: 1710, width: 1080, height: CAPTION_CHANNEL_HEIGHT_PX };
-  const safeArea = videoAspectRatio === "16:9"
+  const safeArea = captionPlacement === "center"
+    ? {
+        x: 120,
+        y: videoY + Math.round((videoHeight - 140) / 2),
+        width: 840,
+        height: 140,
+      }
+    : videoAspectRatio === "16:9"
     ? {
         x: 120,
         y: videoBottom + CAPTION_LANDSCAPE_GAP_PX,
@@ -99,18 +118,25 @@ export function subtitleTemplateLayout(videoAspectRatio: VideoAspectRatio) {
 }
 
 export function subtitleTemplateStyleSnapshot(
-  id: SubtitleTemplateId,
+  id: SubtitleTemplateSelectionId,
   videoAspectRatio: VideoAspectRatio,
 ) {
-  const pop = id === "pop";
-  const layout = subtitleTemplateLayout(videoAspectRatio);
+  const centered = id === "highlight-center" || id === "pop-center";
+  const subtitleTemplateId = id === "pop" || id === "pop-center"
+    ? "pop"
+    : "highlight";
+  const pop = subtitleTemplateId === "pop";
+  const captionPlacement: SubtitleCaptionPlacement = centered ? "center" : "lower";
+  const layout = subtitleTemplateLayout(videoAspectRatio, captionPlacement);
   const titleBottomMarginPx = Math.min(
     44,
     Math.max(24, Math.round(layout.title.height * 0.105)),
   );
   return {
     schemaVersion: 3,
-    subtitleTemplateId: id,
+    subtitleTemplateId,
+    selectionId: id,
+    captionPlacement,
     baseTemplateId: SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID,
     videoAspectRatio,
     fps: 30,

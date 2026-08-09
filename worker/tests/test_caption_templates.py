@@ -57,6 +57,7 @@ def _compile(
     *,
     clip_end: float = 1.0,
     ratio: VideoAspectRatio = VideoAspectRatio.FULL_VERTICAL,
+    caption_placement: str = "lower",
 ) -> dict[str, object]:
     return compile_caption_render_spec(
         words,
@@ -64,6 +65,7 @@ def _compile(
         clip_start=0.0,
         clip_end=clip_end,
         video_aspect_ratio=ratio,
+        caption_placement=caption_placement,
     )
 
 
@@ -109,6 +111,35 @@ def test_caption_safe_area_matches_renderer_video_rect(
         assert safe["y"] + safe["height"] == (
             layout.video_y + layout.video_height - max(64, round(layout.video_height * 0.08))
         )
+
+
+@pytest.mark.parametrize("template_id", ["highlight", "pop"])
+@pytest.mark.parametrize("ratio", list(VideoAspectRatio))
+def test_center_variants_place_caption_at_exact_video_center(
+    template_id: str,
+    ratio: VideoAspectRatio,
+) -> None:
+    spec = _compile(
+        [_word("중앙", 0.0, 0.4), _word("자막", 0.4, 0.8, space_before=True)],
+        template_id,
+        ratio=ratio,
+        caption_placement="center",
+    )
+    video = spec["layout"]["video"]
+    safe = spec["safeArea"]
+
+    assert spec["captionPlacement"] == "center"
+    assert safe["x"] == 120
+    assert safe["width"] == 840
+    assert safe["height"] == 140
+    assert safe["y"] + safe["height"] / 2 == video["y"] + video["height"] / 2
+    assert safe["y"] >= video["y"]
+    assert safe["y"] + safe["height"] <= video["y"] + video["height"]
+
+
+def test_caption_compile_rejects_unknown_placement() -> None:
+    with pytest.raises(ValueError, match="지원하지 않는 자막 위치"):
+        _compile([_word("자막", 0.0, 0.4)], caption_placement="unknown")
 
 
 def test_approved_font_is_same_pretendard_face_for_measurement_and_libass(
@@ -888,7 +919,7 @@ def test_landscape_render_places_caption_below_video_with_a_clear_gap(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
-def test_portrait_render_separates_title_and_keeps_channel_inside_video(
+def test_portrait_center_caption_renders_only_at_video_center_and_keeps_channel_inside_video(
     tmp_path: Path,
 ) -> None:
     clean = tmp_path / "portrait-clean.mp4"
@@ -926,7 +957,9 @@ def test_portrait_render_separates_title_and_keeps_channel_inside_video(
         "highlight",
         clip_end=0.5,
         ratio=VideoAspectRatio.PORTRAIT,
+        caption_placement="center",
     )
+    assert spec["safeArea"] == {"x": 120, "y": 1025, "width": 840, "height": 140}
     output = tmp_path / "portrait-rendered.mp4"
     VideoRenderer(Settings(temp_dir=tmp_path, ffmpeg_timeout_seconds=120)).render_clean_clip(
         clean_path=clean,
@@ -975,6 +1008,15 @@ def test_portrait_render_separates_title_and_keeps_channel_inside_video(
         below_video_pixels = image.crop((0, 1770, 1080, 1920)).getdata()
         assert sum(is_channel_foreground(pixel) for pixel in channel_pixels) > 100
         assert sum(is_channel_foreground(pixel) for pixel in below_video_pixels) == 0
+
+        def is_accent(pixel: tuple[int, int, int]) -> bool:
+            red, green, blue = pixel
+            return green > 170 and blue > 170 and red < 150 and abs(green - blue) < 70
+
+        center_caption_pixels = image.crop((120, 1025, 960, 1165)).getdata()
+        old_lower_caption_pixels = image.crop((120, 1446, 960, 1586)).getdata()
+        assert sum(is_accent(pixel) for pixel in center_caption_pixels) > 100
+        assert sum(is_accent(pixel) for pixel in old_lower_caption_pixels) == 0
 
 
 def test_caption_spec_uses_approved_style_snapshot_values() -> None:

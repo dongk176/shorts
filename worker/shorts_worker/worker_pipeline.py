@@ -861,6 +861,12 @@ class BatchWorker:
                     aspect_ratio = VideoAspectRatio(
                         str(job.get("video_aspect_ratio") or "1:1")
                     )
+                    subtitle_template_snapshot = job.get("subtitle_template_snapshot")
+                    caption_placement = (
+                        str(subtitle_template_snapshot.get("captionPlacement") or "lower")
+                        if isinstance(subtitle_template_snapshot, dict)
+                        else "lower"
+                    )
                     source_offset_seconds = (
                         float(range_start_seconds) if source_range_enabled else 0.0
                     )
@@ -892,6 +898,7 @@ class BatchWorker:
                                 clip_start=absolute_clip.start_seconds,
                                 clip_end=absolute_clip.end_seconds,
                                 video_aspect_ratio=aspect_ratio,
+                                caption_placement=caption_placement,
                             )
                         except (CaptionCompileError, TranscriptionError) as exc:
                             rejected_caption_clips += 1

@@ -328,7 +328,7 @@ export async function POST(request: Request) {
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
           ${metadata.channelName}, ${metadata.channelThumbnailUrl}, ${metadata.thumbnailUrl}, ${sourceDurationSeconds}, ${rangeStartSeconds},
           ${rangeEndSeconds}, ${resolvedTemplateId}, ${input.customTemplateId || null}, ${templateSnapshot ? tx.json(templateSnapshot) : null}, ${resolvedVideoAspectRatio},
-          ${input.subtitleTemplateId || null}, ${subtitleTemplateSnapshot ? tx.json(subtitleTemplateSnapshot) : null},
+          ${subtitleTemplateSnapshot?.subtitleTemplateId || null}, ${subtitleTemplateSnapshot ? tx.json(subtitleTemplateSnapshot) : null},
           'sec_31_60', ${input.outputLanguage}, ${plannedShortCount},
           ${rightsConfirmed}, ${executionBackend}, 'queued', 'queued', ${SIMULATED_PROGRESS_START},
           now() + ${deadlineMinutes} * interval '1 minute', ${plannedShortCount},${billing.retentionDays},

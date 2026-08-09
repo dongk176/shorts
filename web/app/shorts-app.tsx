@@ -68,7 +68,7 @@ import {
   SUBTITLE_TEMPLATE_BRAND_COLOR,
   subtitleTemplateStyleSnapshot,
   subtitleTemplateOptions,
-  type SubtitleTemplateId,
+  type SubtitleTemplateSelectionId,
 } from "@/lib/subtitle-templates";
 import { youtubePrivacyEnhancedEmbedUrl } from "@/lib/youtube-embed";
 import {
@@ -1394,7 +1394,7 @@ function SubtitleTemplatePreview({
   channelName,
   channelThumbnailUrl,
 }: {
-  id: SubtitleTemplateId;
+  id: SubtitleTemplateSelectionId;
   videoAspectRatio: VideoAspectRatio;
   channelName: string;
   channelThumbnailUrl: string | null;
@@ -1442,12 +1442,12 @@ function SubtitleTemplatePreview({
           fontSize: canvasCqw(snapshot.font.sizePx),
         }}
       >
-          {id === "highlight" && (
+          {snapshot.subtitleTemplateId === "highlight" && (
             <span className="whitespace-nowrap">
               이게 바로 <span style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>자막입니다</span>
             </span>
           )}
-          {id === "pop" && (
+          {snapshot.subtitleTemplateId === "pop" && (
             <span
               className="inline-flex items-center whitespace-nowrap"
               style={{
@@ -1515,8 +1515,8 @@ function TemplatePicker({
   onCustomTemplateChange: (template: CustomTemplate | null) => void;
   canUseCustomTemplates: boolean;
   subtitleTemplateSelectionEnabled: boolean;
-  subtitleTemplateId: SubtitleTemplateId | null;
-  onSubtitleTemplateChange: (value: SubtitleTemplateId | null) => void;
+  subtitleTemplateId: SubtitleTemplateSelectionId | null;
+  onSubtitleTemplateChange: (value: SubtitleTemplateSelectionId | null) => void;
 }) {
   const usablePersonalTemplates = canUseCustomTemplates ? personalTemplates : [];
   const selectedCustom = usablePersonalTemplates.find((template) => template.id === customTemplateId);
@@ -10237,7 +10237,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const outputLanguage: OutputLanguage = "ko";
   const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
-  const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateId | null>(null);
+  const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateSelectionId | null>(null);
   const [customTemplateId, setCustomTemplateId] = useState<string | null>(null);
   const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
   const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState<TemplateFavoriteKey[]>([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);

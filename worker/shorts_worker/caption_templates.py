@@ -124,7 +124,11 @@ def prepare_caption_fonts(directory: Path) -> Path:
     return directory
 
 
-def caption_layout(video_aspect_ratio: VideoAspectRatio) -> dict[str, dict[str, int]]:
+def caption_layout(
+    video_aspect_ratio: VideoAspectRatio,
+    *,
+    caption_placement: str = "lower",
+) -> dict[str, dict[str, int]]:
     video_height = VIDEO_HEIGHTS[video_aspect_ratio]
     video_y = VIDEO_Y[video_aspect_ratio]
     video_bottom = video_y + video_height
@@ -145,6 +149,13 @@ def caption_layout(video_aspect_ratio: VideoAspectRatio) -> dict[str, dict[str, 
     )
     safe_area = (
         {
+            "x": 120,
+            "y": video_y + round((video_height - 140) / 2),
+            "width": 840,
+            "height": 140,
+        }
+        if caption_placement == "center"
+        else {
             "x": 120,
             "y": video_bottom + CAPTION_LANDSCAPE_GAP_PX,
             "width": 840,
@@ -185,8 +196,15 @@ def caption_layout(video_aspect_ratio: VideoAspectRatio) -> dict[str, dict[str, 
     }
 
 
-def caption_safe_area(video_aspect_ratio: VideoAspectRatio) -> dict[str, int]:
-    return caption_layout(video_aspect_ratio)["caption"]
+def caption_safe_area(
+    video_aspect_ratio: VideoAspectRatio,
+    *,
+    caption_placement: str = "lower",
+) -> dict[str, int]:
+    return caption_layout(
+        video_aspect_ratio,
+        caption_placement=caption_placement,
+    )["caption"]
 
 
 def _has_cjk(text: str) -> bool:
@@ -831,13 +849,19 @@ def compile_caption_render_spec(
     clip_start: float,
     clip_end: float,
     video_aspect_ratio: VideoAspectRatio,
+    caption_placement: str = "lower",
     fps: int = CAPTION_FPS,
 ) -> dict[str, object]:
     if template_id not in CAPTION_TEMPLATE_IDS:
         raise ValueError("지원하지 않는 자막 템플릿입니다.")
     if fps != CAPTION_FPS:
         raise ValueError("자막 렌더 프레임레이트는 30fps여야 합니다.")
-    layout = caption_layout(video_aspect_ratio)
+    if caption_placement not in {"lower", "center"}:
+        raise ValueError("지원하지 않는 자막 위치입니다.")
+    layout = caption_layout(
+        video_aspect_ratio,
+        caption_placement=caption_placement,
+    )
     safe_area = layout["caption"]
     clipped_words = _clip_words(
         words,
@@ -868,6 +892,7 @@ def compile_caption_render_spec(
     return {
         "schemaVersion": 3,
         "templateId": template_id,
+        "captionPlacement": caption_placement,
         "fps": fps,
         "clipStartSeconds": round(clip_start, 3),
         "clipEndSeconds": round(clip_end, 3),

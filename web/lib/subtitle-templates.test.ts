@@ -13,9 +13,15 @@ import {
 } from "./subtitle-templates";
 
 describe("subtitle template snapshot", () => {
-  it("offers only highlight and pop for new projects", () => {
-    expect(subtitleTemplateCreationIds).toEqual(["highlight", "pop"]);
-    expect(subtitleTemplateOptions.map(({ id }) => id)).toEqual(["highlight", "pop"]);
+  it("offers lower and video-centered variants for highlight and pop", () => {
+    const expectedIds = [
+      "highlight",
+      "pop",
+      "highlight-center",
+      "pop-center",
+    ];
+    expect(subtitleTemplateCreationIds).toEqual(expectedIds);
+    expect(subtitleTemplateOptions.map(({ id }) => id)).toEqual(expectedIds);
   });
 
   it("keeps the complete template on the isolated dark-minimal shell", () => {
@@ -104,6 +110,38 @@ describe("subtitle template snapshot", () => {
         layout.video.y + layout.video.height,
       );
       expect(layout.caption.height).toBe(140);
+    },
+  );
+
+  it.each([
+    ["16:9", 666],
+    ["5:4", 890],
+    ["1:1", 890],
+    ["4:5", 1025],
+    ["9:16", 890],
+  ] as const)(
+    "centers the caption box exactly inside the %s video rect",
+    (ratio, expectedY) => {
+      const layout = subtitleTemplateLayout(ratio, "center");
+      expect(layout.caption).toEqual({ x: 120, y: expectedY, width: 840, height: 140 });
+      expect(layout.caption.y + layout.caption.height / 2).toBe(
+        layout.video.y + layout.video.height / 2,
+      );
+    },
+  );
+
+  it.each([
+    ["highlight-center", "highlight"],
+    ["pop-center", "pop"],
+  ] as const)(
+    "stores %s as the canonical %s template with centered placement",
+    (selectionId, canonicalId) => {
+      const snapshot = subtitleTemplateStyleSnapshot(selectionId, "4:5");
+      expect(snapshot.selectionId).toBe(selectionId);
+      expect(snapshot.subtitleTemplateId).toBe(canonicalId);
+      expect(snapshot.captionPlacement).toBe("center");
+      expect(snapshot.safeArea).toEqual({ x: 120, y: 1025, width: 840, height: 140 });
+      expect(snapshot.layout.caption).toEqual(snapshot.safeArea);
     },
   );
 });

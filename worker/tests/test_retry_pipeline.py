@@ -1230,6 +1230,8 @@ def test_project_isolates_unavailable_or_uncompilable_caption_clips() -> None:
 
     assert "TranscriptionRangeUnavailable" in source
     assert "project_caption_clip_rejected" in source
+    assert 'subtitle_template_snapshot.get("captionPlacement")' in source
+    assert "caption_placement=caption_placement" in source
     assert "except (CaptionCompileError, TranscriptionError)" in source
     assert "len(compiled_clips) < required_minimum_count" in source
     assert "clips = [clip for clip, _spec in compiled_clips]" in source
