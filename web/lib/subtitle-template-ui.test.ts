@@ -33,6 +33,9 @@ describe("subtitle template UI isolation", () => {
     expect(shortsAppSource).toContain("canvasCqw(snapshot.font.sizePx)");
     expect(shortsAppSource).toContain("canvasCqw(snapshot.wordGapPx)");
     expect(shortsAppSource).toContain("snapshot.title.secondLineColor");
+    expect(shortsAppSource).toContain("brandColorSelectionEnabled");
+    expect(shortsAppSource).toContain("<BrandColorPicker");
+    expect(shortsAppSource).toContain("template-picker-rail");
     expect(shortsAppSource).toContain("이게 바로 ");
     expect(shortsAppSource).not.toContain("이게 바로 ");
     expect(shortsAppSource).toContain(">자막입니다</span>");
@@ -43,6 +46,9 @@ describe("subtitle template UI isolation", () => {
   it("omits the new request field unless capability and selection are both present", () => {
     expect(shortsAppSource).toContain(
       "...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId } : {})",
+    );
+    expect(shortsAppSource).toContain(
+      "...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {})",
     );
   });
 

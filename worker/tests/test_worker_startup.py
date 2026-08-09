@@ -2,6 +2,7 @@ from shorts_worker import worker_pipeline
 from shorts_worker.config import Settings
 from shorts_worker.worker_pipeline import (
     BatchWorker,
+    _preset_brand_color,
     _preset_comment_channel_below,
     _preset_comment_channel_fixed,
     _preset_fixed_channel_position,
@@ -22,6 +23,16 @@ def test_only_versioned_preset_snapshots_enable_the_new_channel_layouts() -> Non
     assert not _preset_comment_channel_below({
         "template_snapshot": {"config": {"video": {"aspectRatio": "16:9"}}},
     })
+
+
+def test_only_approved_brand_colors_are_read_from_preset_snapshots() -> None:
+    assert _preset_brand_color({
+        "template_snapshot": {"presetVersion": 3, "brandColor": "#FF715E"},
+    }) == "#FF715E"
+    assert _preset_brand_color({
+        "template_snapshot": {"presetVersion": 3, "brandColor": "#123456"},
+    }) is None
+    assert _preset_brand_color({"template_snapshot": None}) is None
 
 
 def test_render_worker_startup_does_not_require_ingestion_proxy_routes(

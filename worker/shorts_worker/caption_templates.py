@@ -910,6 +910,7 @@ def compile_caption_render_spec(
     video_aspect_ratio: VideoAspectRatio,
     caption_placement: str = "lower",
     fps: int = CAPTION_FPS,
+    accent_color: str = CAPTION_ACCENT,
 ) -> dict[str, object]:
     if template_id not in CAPTION_TEMPLATE_IDS:
         raise ValueError("지원하지 않는 자막 템플릿입니다.")
@@ -967,7 +968,7 @@ def compile_caption_render_spec(
         "style": {
             "fontSize": font_size,
             "textColor": CAPTION_TEXT,
-            "accentColor": CAPTION_ACCENT,
+            "accentColor": accent_color,
             "outlineColor": CAPTION_OUTLINE,
             "outlineWidth": outline,
             "shadow": 0,

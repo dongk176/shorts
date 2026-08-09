@@ -29,6 +29,12 @@ _BATCH_QUEUE_ARN = re.compile(
     r"^arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-queue/[^/]+$"
 )
 _SUBTITLE_TEMPLATE_IDS = {"basic", "highlight", "pop"}
+_BRAND_COLOR_VALUES = {
+    "#040404", "#000000", "#111111", "#1B1B1E", "#353438", "#64748B",
+    "#FFFFFF", "#F3F0E9", "#E32626", "#FF4D4F", "#FF715E", "#FFB4A8",
+    "#F97316", "#FFD84D", "#8BFF5A", "#16A34A", "#35E6E3", "#3B82F6",
+    "#2563EB", "#A78BFA", "#DB2777",
+}
 
 
 def _estimated_output_seconds(job: dict[str, Any]) -> int:
@@ -65,6 +71,16 @@ def _optional_trusted_project_target(prefix: str) -> tuple[str, str] | None:
     return definition, queue
 
 
+def _preset_brand_color(job: dict[str, Any]) -> str | None:
+    snapshot = job.get("template_snapshot")
+    if not isinstance(snapshot, dict):
+        return None
+    brand_color = snapshot.get("brandColor")
+    if isinstance(brand_color, str) and brand_color in _BRAND_COLOR_VALUES:
+        return brand_color
+    return None
+
+
 def _project_dispatch_target(
     job: dict[str, Any], *, resume: bool
 ) -> tuple[str, str, str, int]:
@@ -87,12 +103,16 @@ def _project_dispatch_target(
         and subtitle_template_id not in _SUBTITLE_TEMPLATE_IDS
     ):
         raise RuntimeError("Project subtitle template is invalid")
+    brand_color = _preset_brand_color(job)
+    uses_admin_template_candidate = (
+        subtitle_template_id is not None or brand_color is not None
+    )
     # A partially configured subtitle candidate must never stop an ordinary
     # legacy/source-range submission. Parse this optional target only after the
     # stored job itself proves it is a caption-template job.
     subtitle_target = (
         _optional_trusted_project_target("SUBTITLE_TEMPLATES")
-        if subtitle_template_id is not None
+        if uses_admin_template_candidate
         else None
     )
     allowed_targets = {
@@ -124,25 +144,25 @@ def _project_dispatch_target(
     }:
         raise RuntimeError("Project transcription policy is invalid")
     if (
-        subtitle_template_id is not None
+        uses_admin_template_candidate
         and transcription_policy != "elevenlabs_primary_openai_fallback"
     ):
         raise RuntimeError(
-            "Subtitle template job requires the word-timed transcription policy"
+            "Admin template candidate requires the word-timed transcription policy"
         )
 
     if stored_definition or stored_queue:
         resource_tier = allowed_targets.get((stored_definition, stored_queue))
         if resource_tier:
             if (
-                subtitle_template_id is None
+                not uses_admin_template_candidate
                 and resource_tier == "subtitle_templates"
             ):
                 raise RuntimeError(
-                    "Non-caption job cannot use the subtitle template candidate target"
+                    "Ordinary job cannot use the admin template candidate target"
                 )
             expected_candidate_tier = None
-            if subtitle_template_id is not None:
+            if uses_admin_template_candidate:
                 expected_candidate_tier = "subtitle_templates"
             elif transcription_policy == "elevenlabs_primary_openai_fallback":
                 expected_candidate_tier = "elevenlabs_transcription"
@@ -178,9 +198,9 @@ def _project_dispatch_target(
             return legacy_definition, legacy_queue, "legacy", estimated_seconds
         raise RuntimeError("Stored project Batch target is not trusted")
 
-    if subtitle_template_id is not None:
+    if uses_admin_template_candidate:
         raise RuntimeError(
-            "Subtitle template job is missing its pinned Batch target"
+            "Admin template candidate is missing its pinned Batch target"
         )
     if transcription_policy == "elevenlabs_primary_openai_fallback":
         raise RuntimeError(
@@ -332,6 +352,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
             "mvp_session_id,user_id,preparation_finished_at,planned_short_count,"
             "clip_length_option,batch_job_definition,batch_job_queue,"
             "source_range_selection_enabled,transcription_policy,subtitle_template_id,"
+            "template_snapshot,"
             "dispatch_priority_class"
             f"&id=eq.{encoded_job_id}&limit=1"
         )) or []

@@ -787,6 +787,45 @@ def test_subtitle_template_project_and_resume_keep_the_exact_candidate_target() 
     }
 
 
+def test_regular_brand_color_project_uses_the_isolated_admin_target() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module.rest = MagicMock(return_value=[{
+        "id": "job-brand-color",
+        "status": "queued",
+        "pipeline_version": 2,
+        "project_resume_count": 0,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "admin-a",
+        "preparation_finished_at": None,
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": None,
+        "template_snapshot": {"presetVersion": 3, "brandColor": "#FF715E"},
+        "batch_job_definition": os.environ[
+            "SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"
+        ],
+    }])
+    module._submit_once = MagicMock(return_value="brand-color-batch")
+    module.patch = MagicMock()
+
+    assert module._submit({
+        "kind": "project", "jobId": "job-brand-color",
+    }) == "brand-color-batch"
+    request = module._submit_once.call_args.args[0]
+    assert request["jobDefinition"] == os.environ[
+        "SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"
+    ]
+    assert request["jobQueue"] == os.environ[
+        "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"
+    ]
+
+
 def test_subtitle_template_requires_word_timed_policy_and_dedicated_target() -> None:
     module, _ = _load_lambda("batch_submitter")
     base_job = {

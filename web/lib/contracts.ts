@@ -147,6 +147,7 @@ export type YoutubeAnalysis = {
   analysisId: string;
   sourceRangeSelectionEnabled: boolean;
   subtitleTemplateSelectionEnabled: boolean;
+  brandColorSelectionEnabled: boolean;
   videoId: string;
   normalizedUrl: string;
   title: string;

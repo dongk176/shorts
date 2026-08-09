@@ -424,6 +424,7 @@ class VideoRenderer:
         title_text_styles: list[TitleTextStyle] | None = None,
         custom_template_config: CustomTemplateConfig | None = None,
         caption_render_spec: dict[str, object] | None = None,
+        title_accent_color: str | None = None,
         metrics_callback: RenderMetricsCallback | None = None,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -500,9 +501,12 @@ class VideoRenderer:
                 [] if caption_render_spec is not None else title_text_styles
             ),
             title_accent_color=(
-                TEMPLATE_STYLES[TemplateId.COMMENT_CAPTURE].accent
-                if caption_render_spec
-                else None
+                title_accent_color
+                or (
+                    TEMPLATE_STYLES[TemplateId.COMMENT_CAPTURE].accent
+                    if caption_render_spec
+                    else None
+                )
             ),
         )
         channel_overlay_y = layout.bottom_y

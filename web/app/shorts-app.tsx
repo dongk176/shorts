@@ -12,6 +12,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { AuthControls } from "@/components/auth-controls";
 import { BackgroundShowcase } from "@/components/background-showcase";
+import { BrandColorPicker } from "@/components/brand-color-picker";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
 import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
@@ -94,6 +95,7 @@ import {
   templatePresetColorOptions,
   TEMPLATE_CANVAS,
   type CustomTemplate,
+  type TemplatePresetColor,
 } from "@/lib/template-config";
 import {
   DEFAULT_FAVORITE_TEMPLATE_KEYS,
@@ -1322,7 +1324,7 @@ function EditorFontPicker({
   );
 }
 
-function TemplatePreview({ template, videoAspectRatio, channelName, channelThumbnailUrl }: { template: (typeof templates)[number]; videoAspectRatio: VideoAspectRatio; channelName: string; channelThumbnailUrl: string | null }) {
+function TemplatePreview({ template, videoAspectRatio, channelName, channelThumbnailUrl, brandColor }: { template: (typeof templates)[number]; videoAspectRatio: VideoAspectRatio; channelName: string; channelThumbnailUrl: string | null; brandColor?: TemplatePresetColor }) {
   const [firstLine, secondLine] = template.label.split("\n");
   const isLight = template.id === "white-yellow" || template.id === "paper";
   const foreground = isLight ? "text-black" : "text-white";
@@ -1346,8 +1348,8 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
             index,
             layout.fullVertical,
             template.primary,
-            template.accent,
-            template.id === "paper",
+            brandColor || template.accent,
+            template.id === "paper" || Boolean(brandColor),
           ),
           background: lineBackground || "transparent",
           borderRadius: lineBackground ? "1cqw" : 0,
@@ -1393,13 +1395,15 @@ function SubtitleTemplatePreview({
   videoAspectRatio,
   channelName,
   channelThumbnailUrl,
+  brandColor,
 }: {
   id: SubtitleTemplateSelectionId;
   videoAspectRatio: VideoAspectRatio;
   channelName: string;
   channelThumbnailUrl: string | null;
+  brandColor: TemplatePresetColor;
 }) {
-  const snapshot = subtitleTemplateStyleSnapshot(id, videoAspectRatio);
+  const snapshot = subtitleTemplateStyleSnapshot(id, videoAspectRatio, brandColor);
   const layout = snapshot.layout;
   const canvasCqw = (pixels: number) => `${pixels / 10.8}cqw`;
   const rectStyle = (rect: { x: number; y: number; width: number; height: number }) => ({
@@ -1444,7 +1448,7 @@ function SubtitleTemplatePreview({
       >
           {snapshot.subtitleTemplateId === "highlight" && (
             <span className="whitespace-nowrap">
-              이게 바로 <span style={{ color: SUBTITLE_TEMPLATE_BRAND_COLOR }}>자막입니다</span>
+              이게 바로 <span style={{ color: snapshot.color.active }}>자막입니다</span>
             </span>
           )}
           {snapshot.subtitleTemplateId === "pop" && (
@@ -1456,7 +1460,7 @@ function SubtitleTemplatePreview({
             >
               <span
                 style={{
-                  color: SUBTITLE_TEMPLATE_BRAND_COLOR,
+                  color: snapshot.color.active,
                   fontSize: canvasCqw(snapshot.font.sizePx * snapshot.popScale),
                 }}
               >자막</span>
@@ -1502,6 +1506,9 @@ function TemplatePicker({
   subtitleTemplateSelectionEnabled,
   subtitleTemplateId,
   onSubtitleTemplateChange,
+  brandColorSelectionEnabled,
+  brandColor,
+  onBrandColorChange,
 }: {
   value: TemplateId;
   onChange: (value: TemplateId) => void;
@@ -1517,6 +1524,9 @@ function TemplatePicker({
   subtitleTemplateSelectionEnabled: boolean;
   subtitleTemplateId: SubtitleTemplateSelectionId | null;
   onSubtitleTemplateChange: (value: SubtitleTemplateSelectionId | null) => void;
+  brandColorSelectionEnabled: boolean;
+  brandColor: TemplatePresetColor;
+  onBrandColorChange: (value: TemplatePresetColor) => void;
 }) {
   const usablePersonalTemplates = canUseCustomTemplates ? personalTemplates : [];
   const selectedCustom = usablePersonalTemplates.find((template) => template.id === customTemplateId);
@@ -1541,11 +1551,11 @@ function TemplatePicker({
   const remainingPersonalTemplates = usablePersonalTemplates.filter((template) => !favoriteCustomIds.has(template.id));
   return (
     <div id="template-picker">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-bold">템플릿</h2>
-          <span className="text-xs font-semibold text-red-300">{selectedSubtitleTemplate?.name || selectedCustom?.name || selectedTemplate.name}</span>
-        </div>
+      <div className="flex items-center gap-3">
+        <h2 className="text-xl font-bold">템플릿</h2>
+        <span className="text-xs font-semibold text-red-300">{selectedSubtitleTemplate?.name || selectedCustom?.name || selectedTemplate.name}</span>
+      </div>
+      <div className="mt-4 grid gap-3 rounded-xl border border-white/[.08] bg-white/[.025] p-3">
         <VideoAspectRatioPicker
           value={effectiveAspectRatio}
           lockedValue={selectedCustom?.config.video.aspectRatio}
@@ -1553,10 +1563,14 @@ function TemplatePicker({
           disabledReason={disabledPresetRatios.length ? "기본 댓글 템플릿에서는 세로형과 세로 꽉참 비율을 사용할 수 없어요. 내 템플릿에서는 모든 비율을 사용할 수 있습니다." : undefined}
           onChange={onVideoAspectRatioChange}
         />
+        {brandColorSelectionEnabled && (
+          <BrandColorPicker value={brandColor} onChange={onBrandColorChange} />
+        )}
       </div>
       <div
         aria-label="템플릿 선택 레일"
-        className="mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-3 pr-2 [scrollbar-color:rgba(255,255,255,.24)_transparent] [scrollbar-width:thin]"
+        className="template-picker-rail mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-4 pr-2 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[rgba(255,255,255,.05)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-[rgba(0,0,0,.34)] [&::-webkit-scrollbar-thumb]:bg-[rgba(255,255,255,.34)] [&::-webkit-scrollbar-thumb:hover]:bg-[rgba(255,255,255,.5)]"
+        style={{ scrollbarColor: "rgba(255,255,255,.34) rgba(255,255,255,.05)", scrollbarWidth: "auto" }}
       >
         {favoriteCards.map((card) => {
           if (card.kind === "custom") {
@@ -1572,7 +1586,7 @@ function TemplatePicker({
               onClick={() => { onCustomTemplateChange(null); onChange(card.template.id); }}
               className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
             >
-              <TemplatePreview template={card.template} videoAspectRatio={effectiveAspectRatio} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} />
+              <TemplatePreview template={card.template} videoAspectRatio={effectiveAspectRatio} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} brandColor={brandColorSelectionEnabled ? brandColor : undefined} />
               <span className="mt-2.5 block text-center text-sm font-semibold">{card.template.name}</span>
             </button>
           );
@@ -1601,6 +1615,7 @@ function TemplatePicker({
                     videoAspectRatio={effectiveAspectRatio}
                     channelName={channelName}
                     channelThumbnailUrl={channelThumbnailUrl}
+                    brandColor={brandColor}
                   />
                   <span className="mt-2.5 block text-center text-sm font-extrabold text-white">{option.name}</span>
                   <span className="mt-1 block text-center text-[11px] leading-4 text-neutral-400">{option.description}</span>
@@ -10235,6 +10250,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const outputLanguage: OutputLanguage = "ko";
   const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
   const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateSelectionId | null>(null);
+  const [brandColor, setBrandColor] = useState<TemplatePresetColor>(SUBTITLE_TEMPLATE_BRAND_COLOR);
   const [customTemplateId, setCustomTemplateId] = useState<string | null>(null);
   const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
   const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState<TemplateFavoriteKey[]>([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);
@@ -10267,6 +10283,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const analysisCreationBlocked = Boolean(analysis && analysis.creationAllowed !== true);
   const sourceRangeSelectionEnabled = analysis?.sourceRangeSelectionEnabled === true;
   const subtitleTemplateSelectionEnabled = analysis?.subtitleTemplateSelectionEnabled === true;
+  const brandColorSelectionEnabled = analysis?.brandColorSelectionEnabled === true;
   const sourceVideoEmbedUrl = sourceRangeSelectionEnabled && analysis
     ? youtubePrivacyEnhancedEmbedUrl(analysis.videoId)
     : null;
@@ -10674,7 +10691,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           grantedSeconds: number;
           validUntil: string | null;
         };
-      }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID(), ...(sourceRangeSelectionEnabled ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds } : {}), ...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId } : {}) }) });
+      }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID(), ...(sourceRangeSelectionEnabled ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds } : {}), ...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId } : {}), ...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {}) }) });
       setShortsEventRewardAvailable(false);
       if (value.shortsThankYouEventReward.granted) {
         setShortsEventGrantedSeconds(
@@ -10892,6 +10909,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             canUseCustomTemplates={canUseCustomTemplates}
             subtitleTemplateSelectionEnabled={subtitleTemplateSelectionEnabled}
             subtitleTemplateId={subtitleTemplateId}
+            brandColorSelectionEnabled={brandColorSelectionEnabled}
+            brandColor={brandColor}
+            onBrandColorChange={setBrandColor}
             onSubtitleTemplateChange={(nextSubtitleTemplateId) => {
               setSubtitleTemplateId(nextSubtitleTemplateId);
               if (nextSubtitleTemplateId) {

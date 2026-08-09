@@ -62,6 +62,13 @@ describe("subtitle template snapshot", () => {
     expect(snapshot.channel).toEqual({ fontSizePx: 48, iconSizePx: 64, gapPx: 26 });
   });
 
+  it("uses the selected admin brand color for title row two and caption emphasis", () => {
+    const snapshot = subtitleTemplateStyleSnapshot("highlight", "1:1", "#FF715E");
+    expect(snapshot.title.firstLineColor).toBe("#FFFFFF");
+    expect(snapshot.title.secondLineColor).toBe("#FF715E");
+    expect(snapshot.color.active).toBe("#FF715E");
+  });
+
   it("uses the ratio-specific title, video, and caption positions", () => {
     expect(subtitleTemplateLayout("16:9")).toMatchObject({
       title: { y: 0, height: 432 },

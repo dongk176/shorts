@@ -1055,3 +1055,15 @@ def test_caption_spec_uses_approved_style_snapshot_values() -> None:
     assert spec["font"]["weight"] == 700
     assert re.fullmatch(r"[0-9a-f]{64}", spec["font"]["sha256"])
     assert spec["style"]["accentColor"] == CAPTION_ACCENT == "#35E6E3"
+
+
+def test_caption_spec_uses_selected_admin_brand_color() -> None:
+    spec = compile_caption_render_spec(
+        [_word("caption", 0.0, 0.3)],
+        template_id="highlight",
+        clip_start=0.0,
+        clip_end=1.0,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+        accent_color="#FF715E",
+    )
+    assert spec["style"]["accentColor"] == "#FF715E"

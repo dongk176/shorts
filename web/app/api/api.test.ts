@@ -1094,6 +1094,7 @@ describe("job API security and idempotency", () => {
       analysisId,
       templateId: "dark-minimal",
       subtitleTemplateId: "highlight-center",
+      brandColor: "#FF715E",
       videoAspectRatio: "9:16",
       rightsConfirmed: true,
       requestId: "29199bd8-8097-49df-aa79-fd531436c4fa",
@@ -1106,15 +1107,59 @@ describe("job API security and idempotency", () => {
       ));
     expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
       "highlight",
+      expect.objectContaining({ presetVersion: 3, brandColor: "#FF715E" }),
       expect.objectContaining({
         subtitleTemplateId: "highlight",
         selectionId: "highlight-center",
         captionPlacement: "center",
         baseTemplateId: "dark-minimal",
         videoAspectRatio: "9:16",
-        color: expect.objectContaining({ active: "#35E6E3" }),
+        color: expect.objectContaining({ active: "#FF715E" }),
         safeArea: { x: 120, y: 890, width: 840, height: 140 },
       }),
+      "elevenlabs_primary_openai_fallback",
+      process.env.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN,
+      process.env.SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN,
+    ]));
+  });
+
+  it("pins an authorized regular brand-color job to the isolated admin candidate", async () => {
+    process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows(
+      [],
+      [
+        { flagKey: "subtitle_templates", enabled: true },
+        { flagKey: "subtitle_templates_public", enabled: false },
+      ],
+      [{ isAdmin: true }],
+      [],
+      [{ active: 0 }],
+      [{ projectNumber: 13 }],
+      [{ id: "reservation-brand-color" }],
+      [],
+      [],
+    );
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "comment-capture",
+      brandColor: "#FF715E",
+      rightsConfirmed: true,
+      requestId: "e75e0a53-9c53-48b0-a62e-601e6bb24b8a",
+    }));
+
+    expect(response.status).toBe(202);
+    const insertCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes(
+        "insert into shorts_mvp.video_jobs",
+      ));
+    expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ presetVersion: 3, brandColor: "#FF715E" }),
       "elevenlabs_primary_openai_fallback",
       process.env.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN,
       process.env.SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN,
@@ -1166,6 +1211,37 @@ describe("job API security and idempotency", () => {
       Array.from(strings as TemplateStringsArray).join("").includes(
         "insert into shorts_mvp.video_jobs",
       ))).toBe(false);
+  });
+
+  it("rejects a forged brand color field from a non-admin regular template request", async () => {
+    process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows(
+      [],
+      [
+        { flagKey: "subtitle_templates", enabled: true },
+        { flagKey: "subtitle_templates_public", enabled: false },
+      ],
+      [{ isAdmin: false }],
+    );
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-minimal",
+      brandColor: "#FF715E",
+      rightsConfirmed: true,
+      requestId: "c2d6f74f-c88b-4daa-b7bb-acde46ec3fd9",
+    }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      detail: "브랜드 컬러는 관리자 전용 기능입니다.",
+      code: "ADMIN_BRAND_COLOR_REQUIRED",
+    });
   });
 
   it("fails closed when a subtitle job cannot use the isolated AWS Batch target", async () => {

@@ -49,6 +49,7 @@ describe("YouTube analysis persistence", () => {
       analysisId: "6bce83c4-b12e-4d11-8f16-2fef8a96c541",
       sourceRangeSelectionEnabled: true,
       subtitleTemplateSelectionEnabled: false,
+      brandColorSelectionEnabled: false,
       expectedShortCount: 12,
     });
   });
@@ -77,6 +78,7 @@ describe("YouTube analysis persistence", () => {
       metadata,
     )).resolves.toMatchObject({
       subtitleTemplateSelectionEnabled: true,
+      brandColorSelectionEnabled: true,
     });
   });
 

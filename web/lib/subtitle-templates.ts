@@ -1,4 +1,5 @@
 import type { VideoAspectRatio } from "@/lib/contracts";
+import type { TemplatePresetColor } from "@/lib/template-config";
 
 export const subtitleTemplateIds = ["basic", "highlight", "pop"] as const;
 export type SubtitleTemplateId = typeof subtitleTemplateIds[number];
@@ -120,6 +121,7 @@ export function subtitleTemplateLayout(
 export function subtitleTemplateStyleSnapshot(
   id: SubtitleTemplateSelectionId,
   videoAspectRatio: VideoAspectRatio,
+  brandColor: TemplatePresetColor = SUBTITLE_TEMPLATE_BRAND_COLOR,
 ) {
   const centered = id === "highlight-center" || id === "pop-center";
   const subtitleTemplateId = id === "pop" || id === "pop-center"
@@ -149,7 +151,7 @@ export function subtitleTemplateStyleSnapshot(
     },
     color: {
       text: "#FFFFFF",
-      active: SUBTITLE_TEMPLATE_BRAND_COLOR,
+      active: brandColor,
       outline: "#080808",
     },
     title: {
@@ -157,7 +159,7 @@ export function subtitleTemplateStyleSnapshot(
       lineGapPx: SUBTITLE_TEMPLATE_TITLE_LINE_GAP_PX,
       bottomMarginPx: titleBottomMarginPx,
       firstLineColor: "#FFFFFF",
-      secondLineColor: SUBTITLE_TEMPLATE_TITLE_SECOND_LINE_COLOR,
+      secondLineColor: brandColor,
     },
     channel: {
       fontSizePx: 48,

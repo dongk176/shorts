@@ -18,7 +18,7 @@ from functools import cached_property
 from pathlib import Path
 from uuid import uuid4
 
-from .caption_templates import compile_caption_render_spec
+from .caption_templates import CAPTION_ACCENT, compile_caption_render_spec
 from .channel_thumbnail import download_channel_thumbnail
 from .comment_generator import CommentClipInput, CommentGenerator
 from .config import Settings
@@ -58,6 +58,12 @@ from .subtitles import (
 )
 
 EDIT_TIMELINE_PADDING_SECONDS = 30.0
+BRAND_COLOR_VALUES = frozenset({
+    "#040404", "#000000", "#111111", "#1B1B1E", "#353438", "#64748B",
+    "#FFFFFF", "#F3F0E9", "#E32626", "#FF4D4F", "#FF715E", "#FFB4A8",
+    "#F97316", "#FFD84D", "#8BFF5A", "#16A34A", "#35E6E3", "#3B82F6",
+    "#2563EB", "#A78BFA", "#DB2777",
+})
 
 
 @dataclass(frozen=True)
@@ -116,6 +122,16 @@ def _preset_fixed_channel_position(item: dict[str, object]) -> bool:
         return False
     version = snapshot.get("presetVersion")
     return isinstance(version, int) and not isinstance(version, bool) and version >= 3
+
+
+def _preset_brand_color(item: dict[str, object]) -> str | None:
+    snapshot = item.get("template_snapshot")
+    if not isinstance(snapshot, dict):
+        return None
+    brand_color = snapshot.get("brandColor")
+    if isinstance(brand_color, str) and brand_color in BRAND_COLOR_VALUES:
+        return brand_color
+    return None
 
 
 def _log_event(event: str, **fields: object) -> None:
@@ -899,6 +915,7 @@ class BatchWorker:
                                 clip_end=absolute_clip.end_seconds,
                                 video_aspect_ratio=aspect_ratio,
                                 caption_placement=caption_placement,
+                                accent_color=_preset_brand_color(job) or CAPTION_ACCENT,
                             )
                         except (CaptionCompileError, TranscriptionError) as exc:
                             rejected_caption_clips += 1
@@ -2462,6 +2479,7 @@ class BatchWorker:
                     if isinstance((caption_spec := item.get("caption_render_spec")), dict)
                     else None
                 ),
+                title_accent_color=_preset_brand_color(item),
                 metrics_callback=render_metrics.update,
             )
             thumbnail_started_at = time.monotonic()
@@ -2839,6 +2857,7 @@ class BatchWorker:
                 fixed_preset_channel=_preset_fixed_channel_position(render_item),
                 title_text_styles=title_text_styles,
                 custom_template_config=_custom_template_config(render_item),
+                title_accent_color=_preset_brand_color(render_item),
             )
             thumbnail_path = work_dir / "thumbnail.jpg"
             self._thumbnail(output_path, thumbnail_path, work_dir)

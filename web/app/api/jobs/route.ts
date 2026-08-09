@@ -45,6 +45,7 @@ import {
 import { billableSourceSeconds, getUsageSnapshot } from "@/lib/usage";
 import { templateSnapshotFromRow } from "@/lib/custom-templates";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
+import { templatePresetColors } from "@/lib/template-config";
 import { assertSupportedSourceVideoDuration } from "@/lib/source-video";
 import {
   issueShortsThankYouEventGrantIfEligible,
@@ -63,6 +64,7 @@ const schema = z.object({
   rangeStartSeconds: z.number().finite().nonnegative().optional(),
   rangeEndSeconds: z.number().finite().positive().optional(),
   subtitleTemplateId: z.enum(subtitleTemplateCreationIds).optional(),
+  brandColor: z.enum(templatePresetColors).optional(),
 });
 
 const noShortsThankYouEventReward: ShortsThankYouEventGrant = {
@@ -185,17 +187,26 @@ export async function POST(request: Request) {
           "영상 구간 선택 기능이 일시 중지되었습니다. 링크를 다시 확인해 주세요.",
         );
       }
-      if (input.subtitleTemplateId) {
+      if (input.subtitleTemplateId || input.brandColor) {
         const subtitleTemplateAccess = await lockSubtitleTemplateAccess(
           tx,
           session.userId,
         );
-        if (!subtitleTemplateAccess.enabled) {
+        if (input.subtitleTemplateId && !subtitleTemplateAccess.enabled) {
           throw new HttpError(
             409,
             "현재 계정에서는 자막 템플릿 테스트를 사용할 수 없습니다.",
           );
         }
+        if (input.brandColor && (!subtitleTemplateAccess.enabled || !subtitleTemplateAccess.isAdmin)) {
+          throw new HttpError(
+            403,
+            "브랜드 컬러는 관리자 전용 기능입니다.",
+            "ADMIN_BRAND_COLOR_REQUIRED",
+          );
+        }
+      }
+      if (input.subtitleTemplateId) {
         if (input.customTemplateId || input.templateId !== SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID) {
           throw new HttpError(
             400,
@@ -209,15 +220,24 @@ export async function POST(request: Request) {
           );
         }
       }
-      const transcriptionAccess = input.subtitleTemplateId
+      if (input.brandColor && executionBackend !== "aws_batch") {
+        throw new HttpError(
+          503,
+          "브랜드 컬러 테스트 작업을 안전한 전용 워커에 연결하지 못했습니다.",
+        );
+      }
+      const usesAdminTemplateCandidate = Boolean(
+        input.subtitleTemplateId || input.brandColor,
+      );
+      const transcriptionAccess = usesAdminTemplateCandidate
         ? null
         : await lockElevenLabsTranscriptionAccess(tx, session.userId);
-      const transcriptionPolicy = input.subtitleTemplateId
+      const transcriptionPolicy = usesAdminTemplateCandidate
         ? ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY
         : transcriptionAccess!.policy;
       const dispatchTarget = executionBackend !== "aws_batch"
         ? null
-        : input.subtitleTemplateId
+        : usesAdminTemplateCandidate
           ? subtitleTemplatesDispatchTarget()
           : transcriptionAccess!.enabled
           ? elevenLabsTranscriptionDispatchTarget()
@@ -248,6 +268,9 @@ export async function POST(request: Request) {
         await issueShortsThankYouEventGrantIfEligible(tx, session.userId);
       const billing = await getBillingSummary(tx, session.userId);
       if (input.customTemplateId) {
+        if (input.brandColor) {
+          throw new HttpError(400, "내 템플릿에는 브랜드 컬러를 별도로 적용할 수 없습니다.");
+        }
         assertCustomTemplateAccess(billing);
         const customTemplates = await tx`
           select id, name, base_template_id, config, version
@@ -260,12 +283,16 @@ export async function POST(request: Request) {
         resolvedTemplateId = templateSnapshot.baseTemplateId;
         resolvedVideoAspectRatio = templateSnapshot.config.video.aspectRatio;
       } else {
-        templateSnapshot = { presetVersion: 3 };
+        templateSnapshot = {
+          presetVersion: 3,
+          ...(input.brandColor ? { brandColor: input.brandColor } : {}),
+        };
       }
       const subtitleTemplateSnapshot = input.subtitleTemplateId
         ? subtitleTemplateStyleSnapshot(
             input.subtitleTemplateId,
             resolvedVideoAspectRatio,
+            input.brandColor,
           )
         : null;
       const limits = await tx`
