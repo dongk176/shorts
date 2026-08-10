@@ -901,6 +901,76 @@ def _pop_cues(
     return cues
 
 
+def rebuild_caption_cue_text(
+    cue: dict[str, object],
+    *,
+    text: str,
+    template_id: str,
+    safe_area: dict[str, int],
+    fps: int = CAPTION_FPS,
+) -> list[dict[str, object]]:
+    """Reflow one trusted cue while preserving its compiled frame window."""
+    if template_id not in {"highlight", "pop"}:
+        raise CaptionCompileError("편집할 수 없는 자막 템플릿입니다.")
+    if fps != CAPTION_FPS:
+        raise CaptionCompileError("편집 자막 프레임레이트가 올바르지 않습니다.")
+    start_frame = int(cue.get("startFrame") or 0)
+    end_frame = int(cue.get("endFrame") or 0)
+    frame_count = end_frame - start_frame
+    if frame_count < 1:
+        raise CaptionCompileError("편집 자막 표시 구간이 올바르지 않습니다.")
+    tokens = text.strip().split()
+    if not tokens:
+        raise CaptionCompileError("편집 자막 내용이 비어 있습니다.")
+
+    # Caption specs cap a cue at twenty words and animated templates require at
+    # least one output frame per word. Keep arbitrary user copy renderable by
+    # folding any overflow into the final timed word.
+    maximum_words = min(20, frame_count)
+    if len(tokens) > maximum_words:
+        tokens = [
+            *tokens[:maximum_words - 1],
+            " ".join(tokens[maximum_words - 1:]),
+        ] if maximum_words > 1 else [" ".join(tokens)]
+
+    weights = [max(1, len(token)) for token in tokens]
+    total_weight = sum(weights)
+    starts = [start_frame]
+    consumed_weight = weights[0]
+    for index in range(1, len(tokens)):
+        remaining = len(tokens) - index
+        desired = start_frame + round(frame_count * consumed_weight / total_weight)
+        starts.append(min(
+            end_frame - remaining,
+            max(starts[-1] + 1, desired),
+        ))
+        consumed_weight += weights[index]
+
+    words = [
+        _CaptionWord(
+            text=token,
+            start_frame=word_start,
+            end_frame=(starts[index + 1] if index + 1 < len(starts) else end_frame),
+            space_before=index > 0,
+            source_indexes=(),
+        )
+        for index, (token, word_start) in enumerate(zip(tokens, starts, strict=True))
+    ]
+    rebuilt = (
+        _pop_cues(words, safe_area=safe_area, fps=fps)
+        if template_id == "pop"
+        else _basic_or_highlight_cues(
+            words,
+            highlighted=True,
+            safe_area=safe_area,
+            fps=fps,
+        )
+    )
+    if not rebuilt:
+        raise CaptionCompileError("편집 자막을 다시 배치하지 못했습니다.")
+    return rebuilt
+
+
 def compile_caption_render_spec(
     words: Sequence[TranscriptWord],
     *,

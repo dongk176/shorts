@@ -77,6 +77,8 @@ def _document_v3_with_subtitle_layout(
     *,
     offset_y: int = -260,
     scale: float = 1.5,
+    accent_color: str | None = None,
+    cue_edits: list[dict[str, object]] | None = None,
 ) -> EditorDocument:
     value = json.loads(V3_FIXTURE.read_text())
     value["renderSpec"]["version"] = 2
@@ -84,6 +86,8 @@ def _document_v3_with_subtitle_layout(
         "centerX": 540,
         "offsetY": offset_y,
         "scale": scale,
+        **({"accentColor": accent_color} if accent_color else {}),
+        **({"cueEdits": cue_edits} if cue_edits else {}),
     }
     return EditorDocument.model_validate(value)
 
@@ -233,6 +237,58 @@ def test_admin_caption_template_layout_updates_highlight_font_and_y_only() -> No
     assert rendered["style"]["outlineWidth"] == 5.25
 
 
+def test_admin_caption_template_edits_point_color_text_and_bottom_position() -> None:
+    document = _document_v3_with_subtitle_layout(
+        offset_y=700,
+        scale=1,
+        accent_color="#16A34A",
+        cue_edits=[{"cueIndex": 0, "text": "바뀐 자막"}],
+    )
+    spec = {
+        "schemaVersion": 3,
+        "templateId": "pop",
+        "fps": 30,
+        "safeArea": {"x": 120, "y": 1025, "width": 840, "height": 140},
+        "style": {
+            "fontSize": 92,
+            "textColor": "#FFFFFF",
+            "accentColor": "#35E6E3",
+            "outlineColor": "#080808",
+            "outlineWidth": 8,
+        },
+        "cues": [{
+            "startFrame": 30,
+            "endFrame": 90,
+            "words": [{
+                "text": "원래",
+                "fontSize": 92,
+                "centerX": 540,
+                "centerY": 1095,
+            }],
+            "events": [{
+                "startFrame": 30,
+                "endFrame": 90,
+                "activeWordIndex": 0,
+                "positions": [{"centerX": 540, "centerY": 1095}],
+            }],
+        }],
+    }
+
+    rendered = retime_editor_caption_spec(document, spec)
+
+    assert rendered is not None
+    assert rendered["style"]["accentColor"] == "#16A34A"
+    assert [word["text"] for word in rendered["cues"][0]["words"]] == [
+        "바뀐",
+        "자막",
+    ]
+    assert all(
+        position["centerY"] == 1795.0
+        for event in rendered["cues"][0]["events"]
+        for position in event["positions"]
+    )
+
+
 def test_movable_overlay_positions_are_clamped_after_scaling() -> None:
     layer = Image.new("RGBA", (712, 160), (255, 255, 255, 255))
 
@@ -260,6 +316,24 @@ def test_title_line_boxes_match_the_browser_for_every_editor_font() -> None:
             custom_config=None,
         )
         assert content.height == 84 * 2 + 18
+
+
+def test_caption_editor_title_keeps_the_original_caption_accent() -> None:
+    document = _document_v3()
+    document.title.text = "첫 번째 제목\n두 번째 제목"
+    document.title.text_styles = []
+    assert document.render_spec is not None
+    document.render_spec.title.lines = ["첫 번째 제목", "두 번째 제목"]
+
+    content = _draw_styled_title_content(
+        document,
+        font_id=EditorFontId.PRETENDARD,
+        font_size=84,
+        custom_config=None,
+        title_accent_color="#16A34A",
+    )
+
+    assert (22, 163, 74, 255) in set(content.getdata())
 
 
 def test_title_layer_uses_every_selected_editor_font(tmp_path: Path) -> None:

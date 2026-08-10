@@ -384,12 +384,44 @@ class EditorRenderCommentSpec(BaseModel):
         return self
 
 
+class EditorSubtitleCueEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    cue_index: int = Field(alias="cueIndex", ge=0, le=1_999)
+    text: str = Field(min_length=1, max_length=200)
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("edited caption text cannot be empty")
+        return stripped
+
+
 class EditorRenderSubtitleSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     center_x: int = Field(alias="centerX", ge=540, le=540)
-    offset_y: float = Field(alias="offsetY", ge=-900, le=320)
+    offset_y: float = Field(alias="offsetY", ge=-900, le=900)
     scale: float = Field(ge=0.5, le=2)
+    accent_color: str | None = Field(
+        default=None,
+        alias="accentColor",
+        pattern=r"^#[0-9A-Fa-f]{6}$",
+    )
+    cue_edits: list[EditorSubtitleCueEdit] = Field(
+        default_factory=list,
+        alias="cueEdits",
+        max_length=2_000,
+    )
+
+    @model_validator(mode="after")
+    def validate_unique_cue_edits(self) -> EditorRenderSubtitleSpec:
+        indexes = [edit.cue_index for edit in self.cue_edits]
+        if len(indexes) != len(set(indexes)):
+            raise ValueError("edited caption cue indexes must be unique")
+        return self
 
 
 class EditorRenderTextSpec(BaseModel):

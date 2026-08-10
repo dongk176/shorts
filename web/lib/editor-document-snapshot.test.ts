@@ -177,6 +177,8 @@ describe("editor document snapshot", () => {
     const admin = createEditorDocumentSnapshotV3(ordinary, {
       offsetY: -240,
       scale: 1.35,
+      accentColor: "#16A34A",
+      cueEdits: [{ cueIndex: 2, text: "수정한 자막" }],
     });
 
     expect(ordinary.version).toBe(2);
@@ -187,10 +189,19 @@ describe("editor document snapshot", () => {
         centerX: 540,
         offsetY: -240,
         scale: 1.35,
+        accentColor: "#16A34A",
+        cueEdits: [{ cueIndex: 2, text: "수정한 자막" }],
       },
     });
 
     const cloned = cloneEditorDocumentSnapshot(admin);
     expect(cloned).toEqual(admin);
+    if (cloned.version !== 3 || cloned.renderSpec.version !== 2) {
+      throw new Error("admin subtitle render spec was not cloned");
+    }
+    cloned.renderSpec.subtitles.cueEdits![0].text = "별도 변경";
+    expect(admin.renderSpec.version).toBe(2);
+    if (admin.renderSpec.version !== 2) throw new Error("invalid test fixture");
+    expect(admin.renderSpec.subtitles.cueEdits?.[0].text).toBe("수정한 자막");
   });
 });

@@ -168,6 +168,11 @@ const renderSpecV2Schema = renderSpecBaseSchema.extend({
     scale: finiteNumber
       .min(EDITOR_SUBTITLE_SCALE_MIN)
       .max(EDITOR_SUBTITLE_SCALE_MAX),
+    accentColor: hexColorSchema.optional(),
+    cueEdits: z.array(z.object({
+      cueIndex: z.number().int().min(0).max(1_999),
+      text: z.string().trim().min(1).max(200),
+    }).strict()).max(2_000).optional(),
   }).strict(),
 }).strict();
 const renderSpecSchema = z.discriminatedUnion("version", [

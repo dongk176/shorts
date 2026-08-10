@@ -13,13 +13,20 @@ export const EDITOR_RENDER_FPS = 30 as const;
 export const EDITOR_SUBTITLE_DEFAULT_MARGIN_V = 445 as const;
 export const EDITOR_SUBTITLE_DEFAULT_FONT_SIZE = 48 as const;
 export const EDITOR_SUBTITLE_OFFSET_Y_MIN = -900 as const;
-export const EDITOR_SUBTITLE_OFFSET_Y_MAX = 320 as const;
+export const EDITOR_SUBTITLE_OFFSET_Y_MAX = 900 as const;
 export const EDITOR_SUBTITLE_SCALE_MIN = 0.5 as const;
 export const EDITOR_SUBTITLE_SCALE_MAX = 2 as const;
+
+export type EditorSubtitleCueEdit = {
+  cueIndex: number;
+  text: string;
+};
 
 export type EditorSubtitleLayout = {
   offsetY: number;
   scale: number;
+  accentColor?: string;
+  cueEdits?: EditorSubtitleCueEdit[];
 };
 
 export const DEFAULT_EDITOR_SUBTITLE_LAYOUT: Readonly<EditorSubtitleLayout> = {
@@ -87,6 +94,8 @@ export type EditorRenderSpecV2 = EditorRenderSpecBase & {
     centerX: 540;
     offsetY: number;
     scale: number;
+    accentColor?: string;
+    cueEdits?: EditorSubtitleCueEdit[];
   };
 };
 
@@ -95,6 +104,26 @@ export type EditorRenderSpec = EditorRenderSpecV1 | EditorRenderSpecV2;
 export function normalizeEditorSubtitleLayout(
   value: EditorSubtitleLayout,
 ): EditorSubtitleLayout {
+  const cueEdits = [...(value.cueEdits || [])]
+    .filter((edit) => (
+      Number.isInteger(edit.cueIndex)
+      && edit.cueIndex >= 0
+      && edit.cueIndex < 2_000
+      && edit.text.trim().length > 0
+      && edit.text.trim().length <= 200
+    ))
+    .sort((left, right) => left.cueIndex - right.cueIndex)
+    .filter((edit, index, values) => (
+      index === values.length - 1
+      || values[index + 1].cueIndex !== edit.cueIndex
+    ))
+    .map((edit) => ({
+      cueIndex: edit.cueIndex,
+      text: edit.text.trim(),
+    }));
+  const accentColor = /^#[0-9A-Fa-f]{6}$/.test(value.accentColor || "")
+    ? value.accentColor
+    : undefined;
   return {
     offsetY: Math.max(
       EDITOR_SUBTITLE_OFFSET_Y_MIN,
@@ -107,6 +136,8 @@ export function normalizeEditorSubtitleLayout(
         Math.round(value.scale * 100) / 100,
       ),
     ),
+    ...(accentColor ? { accentColor } : {}),
+    ...(cueEdits.length > 0 ? { cueEdits } : {}),
   };
 }
 
