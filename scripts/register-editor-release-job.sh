@@ -67,14 +67,9 @@ jq \
     platformCapabilities,
     retryStrategy,
     timeout,
-    propagateTags,
-    tags
+    propagateTags
   }
   | .containerProperties.image=$image
-  | .tags=(
-      (.tags // {})
-      | with_entries(select(.key | ascii_downcase | startswith("aws:") | not))
-  )
   | .containerProperties.resourceRequirements=(
       (.containerProperties.resourceRequirements // [])
       | map(select(.type!="VCPU"))
