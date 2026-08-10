@@ -193,7 +193,7 @@ test("release workflow promotes one tested digest without deploying the website"
     /\{name:"FFMPEG_THREADS",value:\$candidateFfmpegThreads\}/,
   );
   assert.match(registrar, /\$\{repository_uri\}@\$\{image_digest\}/);
-  assert.match(registrar, /ascii_downcase \| startswith\("aws:"\) \| not/);
+  assert.doesNotMatch(registrar, /\btags\b/);
   assert.doesNotMatch(registrar, /:latest/);
   assert.doesNotMatch(registrar, /docker\s+(build|push)/);
 });
