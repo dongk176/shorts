@@ -19,6 +19,7 @@ from shorts_worker.editor_renderer import (
     _prepare_editor_layer_asset,
     _timed_overlay_enable_expression,
     _timed_overlay_input_filter,
+    create_editor_channel_layer,
     create_editor_comment_layers,
     create_editor_text_layer,
     create_editor_title_layer,
@@ -409,6 +410,58 @@ def test_editor_video_frame_matches_browser_geometry_and_allows_crop() -> None:
     assert frame.height == 730
     assert frame.x == -78
     assert frame.y == 575
+
+
+def test_caption_editor_uses_the_server_authored_composition_layout(
+    tmp_path: Path,
+) -> None:
+    document = _document_v3()
+    caption_spec = compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="레이아웃",
+                start=0.2,
+                end=0.8,
+                provider="elevenlabs",
+            ),
+        ],
+        template_id="pop",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+    )
+    layout = caption_spec["layout"]
+
+    frame = editor_video_frame(document, caption_spec)
+    title_path = create_editor_title_layer(
+        document,
+        tmp_path / "caption-title.png",
+        caption_render_spec=caption_spec,
+    )
+    channel_path = create_editor_channel_layer(
+        document,
+        tmp_path / "caption-channel.png",
+        None,
+        caption_spec,
+    )
+
+    assert (frame.x, frame.y, frame.width, frame.height) == (
+        layout["video"]["x"],
+        layout["video"]["y"],
+        layout["video"]["width"],
+        layout["video"]["height"],
+    )
+    with Image.open(title_path) as title_image:
+        title_box = title_image.getchannel("A").getbbox()
+    with Image.open(channel_path) as channel_image:
+        channel_box = channel_image.getchannel("A").getbbox()
+    assert title_box is not None
+    assert channel_box is not None
+    assert title_box[3] <= layout["title"]["y"] + layout["title"]["height"]
+    assert (channel_box[1] + channel_box[3]) / 2 == pytest.approx(
+        layout["channel"]["y"] + layout["channel"]["height"] / 2,
+        abs=2,
+    )
 
 
 def test_editor_channel_is_always_rendered_as_the_front_layer() -> None:

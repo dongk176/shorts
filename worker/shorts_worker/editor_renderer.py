@@ -24,6 +24,7 @@ from .overlays import (
     create_comment_panel,
     wrap_korean_title,
 )
+from .renderer import VideoLayout, caption_video_layout
 from .schemas import (
     CustomTemplateConfig,
     EditorDocument,
@@ -192,9 +193,28 @@ def _custom_template_config(document: EditorDocument) -> CustomTemplateConfig | 
     return CustomTemplateConfig.model_validate(config) if isinstance(config, dict) else None
 
 
-def editor_video_frame(document: EditorDocument) -> EditorVideoFrame:
+def _editor_caption_layout(
+    caption_render_spec: dict[str, object] | None,
+) -> VideoLayout | None:
+    return (
+        caption_video_layout(caption_render_spec)
+        if caption_render_spec is not None
+        else None
+    )
+
+
+def editor_video_frame(
+    document: EditorDocument,
+    caption_render_spec: dict[str, object] | None = None,
+) -> EditorVideoFrame:
     config = _custom_template_config(document)
-    if config is not None:
+    caption_layout = _editor_caption_layout(caption_render_spec)
+    if caption_layout is not None:
+        base_x = 0
+        base_y = caption_layout.video_y
+        base_width = CANVAS_WIDTH
+        base_height = caption_layout.video_height
+    elif config is not None:
         base_x = config.video.x
         base_y = config.video.y
         base_width = config.video.width
@@ -673,18 +693,25 @@ def create_editor_title_layer(
     output_path: Path,
     *,
     title_accent_color: str | None = None,
+    caption_render_spec: dict[str, object] | None = None,
 ) -> Path:
     canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
     if not document.overlays.visible["title"]:
         canvas.save(output_path)
         return output_path
     config = _custom_template_config(document)
+    caption_layout = _editor_caption_layout(caption_render_spec)
     font_id = document.overlays.fonts["title"]
     render_title = document.render_spec.title if document.render_spec else None
     if render_title is not None:
         base_font_size = max(1, round(render_title.font_size))
         center_x = CANVAS_WIDTH / 2
-        if config is not None:
+        if caption_layout is not None:
+            panel_height = caption_layout.top_height
+            panel_top = caption_layout.top_y
+            bottom_margin = min(44, max(24, round(panel_height * 0.105)))
+            center_y = panel_top + panel_height - bottom_margin
+        elif config is not None:
             center_y = config.title.y
         else:
             aspect_ratio = document.video.aspect_ratio
@@ -788,14 +815,27 @@ def create_editor_channel_layer(
     document: EditorDocument,
     output_path: Path,
     thumbnail_path: Path | None,
+    caption_render_spec: dict[str, object] | None = None,
 ) -> Path:
     canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
     if not document.overlays.visible["channel"]:
         canvas.save(output_path)
         return output_path
     config = _custom_template_config(document)
+    caption_layout = _editor_caption_layout(caption_render_spec)
     font_id = document.overlays.fonts["channel"]
-    if config is not None:
+    if caption_layout is not None:
+        base_font_size = 48
+        center_x = CANVAS_WIDTH / 2
+        center_y = caption_layout.bottom_y + caption_layout.bottom_height / 2
+        foreground = TEMPLATE_STYLES[document.template.id].channel
+        background = None
+        maximum_width = 760
+        avatar_size = 64
+        gap = 26
+        padding_x = 53
+        padding_y = 8
+    elif config is not None:
         base_font_size = config.channel.font_size
         center_x = config.channel.x
         center_y = config.channel.y
@@ -1048,8 +1088,14 @@ def create_editor_text_layer(
     return output_path
 
 
-def _base_comment_y(document: EditorDocument) -> int:
+def _base_comment_y(
+    document: EditorDocument,
+    caption_render_spec: dict[str, object] | None = None,
+) -> int:
     config = _custom_template_config(document)
+    caption_layout = _editor_caption_layout(caption_render_spec)
+    if caption_layout is not None:
+        return caption_layout.video_y + caption_layout.video_height
     if config is not None:
         video_bottom = config.video.y + config.video.height
         if config.comment.docked_to_video and 720 <= video_bottom <= 1480:
@@ -1073,6 +1119,7 @@ def _base_comment_y(document: EditorDocument) -> int:
 def create_editor_comment_layers(
     document: EditorDocument,
     directory: Path,
+    caption_render_spec: dict[str, object] | None = None,
 ) -> list[EditorLayerAsset]:
     if not document.overlays.visible["comment"]:
         return []
@@ -1082,7 +1129,7 @@ def create_editor_comment_layers(
         or (config.comment.theme if config is not None else "dark")
     )
     size = config.comment.size if config is not None else "medium"
-    base_y = _base_comment_y(document)
+    base_y = _base_comment_y(document, caption_render_spec)
     assets: list[EditorLayerAsset] = []
     comments = sorted(document.comments, key=lambda item: item.start_seconds)
     output_duration = document.video.output_duration_seconds
@@ -1409,7 +1456,7 @@ class EditorDocumentRenderer:
             stream.get("codec_type") == "audio"
             for stream in probe.get("streams", [])
         )
-        frame = editor_video_frame(document)
+        frame = editor_video_frame(document, caption_render_spec)
         background_path = create_editor_background(
             document,
             assets_dir / "background.png",
@@ -1429,13 +1476,19 @@ class EditorDocumentRenderer:
             document,
             assets_dir / "title.png",
             title_accent_color=original_caption_accent,
+            caption_render_spec=caption_render_spec,
         )
         channel_path = create_editor_channel_layer(
             document,
             assets_dir / "channel.png",
             channel_thumbnail_path,
+            caption_render_spec,
         )
-        comment_assets = create_editor_comment_layers(document, assets_dir)
+        comment_assets = create_editor_comment_layers(
+            document,
+            assets_dir,
+            caption_render_spec,
+        )
         render_text_specs = {
             item.id: item
             for item in (

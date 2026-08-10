@@ -783,7 +783,7 @@ def run_editor_release_probe() -> dict[str, Any]:
             "1",
             str(frame_path),
         ])
-        expected_frame = editor_video_frame(document)
+        expected_frame = editor_video_frame(document, caption_render_spec)
         observed = _green_video_bounds(frame_path)
         expected = (
             max(0, expected_frame.x),
