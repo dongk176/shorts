@@ -11,7 +11,10 @@ import {
   type ValidatedEditorDocumentSnapshot,
 } from "@/lib/editor-document-contract";
 import type { EditorDocumentJsonObject } from "@/lib/editor-document-snapshot";
-import { createEditorRenderSpec } from "@/lib/editor-render-spec";
+import {
+  createEditorRenderSpec,
+  EDITOR_RENDER_SPEC_VERSION,
+} from "@/lib/editor-render-spec";
 import {
   resolveRequestedEditorRelease,
   type EditorReleaseAssignment,
@@ -165,6 +168,17 @@ async function applyEditorDocument({
       409,
       "편집기가 업데이트되었습니다. 화면을 새로 연 뒤 다시 저장해 주세요.",
       "EDITOR_RELEASE_VERSION_CONFLICT",
+    );
+  }
+  if (
+    requestedDocument.version === 3
+    && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+    && release.channel !== "canary"
+  ) {
+    throw new HttpError(
+      403,
+      "자막 위치와 크기 조절은 관리자 편집기에서만 사용할 수 있습니다.",
+      "EDITOR_SUBTITLE_LAYOUT_ADMIN_ONLY",
     );
   }
   const billing = await getBillingSummary(db, session.userId);

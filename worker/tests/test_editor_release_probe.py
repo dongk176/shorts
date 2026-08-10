@@ -15,6 +15,11 @@ def test_probe_document_covers_all_supported_editor_fonts() -> None:
 
     assert document.version == 3
     assert document.render_spec is not None
+    assert document.render_spec.version == 2
+    assert document.render_spec.subtitles is not None
+    assert document.render_spec.subtitles.center_x == 540
+    assert document.render_spec.subtitles.offset_y == -260
+    assert document.render_spec.subtitles.scale == 1.5
     assert {overlay.font_id.value for overlay in document.overlays.text_overlays} == set(
         editor_release_probe.FONT_IDS
     )
@@ -91,6 +96,7 @@ def test_release_probe_renders_and_uploads_machine_verifiable_evidence(
         "legacy-no-timeline": True,
         "captured-timeline": True,
         "editor-v2": True,
+        "subtitle-layout": True,
         "ffprobe": True,
         "frame-parity": True,
     }

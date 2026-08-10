@@ -59,6 +59,8 @@ EDITOR_FONT_DEFAULT_VARIATION_WEIGHTS = {
 }
 TIMED_OVERLAY_TRANSITION_FRAMES = 3
 TIMED_OVERLAY_CONTIGUOUS_TOLERANCE_SECONDS = 0.001
+EDITOR_SUBTITLE_DEFAULT_MARGIN_V = 445
+EDITOR_SUBTITLE_DEFAULT_FONT_SIZE = 48
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +69,33 @@ class EditorVideoFrame:
     y: int
     width: int
     height: int
+
+
+@dataclass(frozen=True, slots=True)
+class EditorSubtitleStyle:
+    margin_v: int
+    font_size: int
+
+
+def editor_subtitle_style(document: EditorDocument) -> EditorSubtitleStyle:
+    render_subtitles = (
+        document.render_spec.subtitles
+        if document.render_spec and document.render_spec.version == 2
+        else None
+    )
+    if render_subtitles is None:
+        return EditorSubtitleStyle(
+            margin_v=EDITOR_SUBTITLE_DEFAULT_MARGIN_V,
+            font_size=EDITOR_SUBTITLE_DEFAULT_FONT_SIZE,
+        )
+    return EditorSubtitleStyle(
+        margin_v=round(
+            EDITOR_SUBTITLE_DEFAULT_MARGIN_V - render_subtitles.offset_y
+        ),
+        font_size=round(
+            EDITOR_SUBTITLE_DEFAULT_FONT_SIZE * render_subtitles.scale
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1246,13 +1275,15 @@ class EditorDocumentRenderer:
         ]
         current_label = "scene0"
         next_image_index = 2
+        subtitle_style = editor_subtitle_style(document)
         subtitle_path = (
             create_ass_subtitles(
                 retime_editor_subtitles(document),
                 clip_start=0,
                 clip_end=duration,
                 output_path=assets_dir / "subtitles.ass",
-                margin_v=445,
+                margin_v=subtitle_style.margin_v,
+                font_size=subtitle_style.font_size,
             )
             if document.subtitles.enabled
             else None

@@ -24,6 +24,7 @@ from shorts_worker.editor_renderer import (
     editor_font_path,
     editor_layer_order,
     editor_render_timeout_seconds,
+    editor_subtitle_style,
     editor_video_frame,
     load_editor_font,
     retime_editor_subtitles,
@@ -64,6 +65,21 @@ def _document_v3() -> EditorDocument:
     return EditorDocument.model_validate_json(V3_FIXTURE.read_text())
 
 
+def _document_v3_with_subtitle_layout(
+    *,
+    offset_y: int = -260,
+    scale: float = 1.5,
+) -> EditorDocument:
+    value = json.loads(V3_FIXTURE.read_text())
+    value["renderSpec"]["version"] = 2
+    value["renderSpec"]["subtitles"] = {
+        "centerX": 540,
+        "offsetY": offset_y,
+        "scale": scale,
+    }
+    return EditorDocument.model_validate(value)
+
+
 def test_v3_font_files_are_byte_identical_in_web_and_worker() -> None:
     root = Path(__file__).resolve().parents[2]
     for font_id in EditorFontId:
@@ -101,6 +117,16 @@ def test_v3_text_layer_uses_authoritative_lines_and_weight(tmp_path: Path) -> No
     assert spec.text_overlays[0].font.resolved_weight == 800
     assert spec.text_overlays[0].start_frame == 15
     assert spec.text_overlays[0].end_frame == 75
+
+
+def test_admin_subtitle_layout_maps_to_ass_position_and_font_size() -> None:
+    legacy = editor_subtitle_style(_document_v3())
+    admin = editor_subtitle_style(
+        _document_v3_with_subtitle_layout(offset_y=-260, scale=1.5)
+    )
+
+    assert (legacy.margin_v, legacy.font_size) == (445, 48)
+    assert (admin.margin_v, admin.font_size) == (705, 72)
 
 
 def test_movable_overlay_positions_are_clamped_after_scaling() -> None:
@@ -676,7 +702,7 @@ def test_editor_document_v3_renders_at_authoritative_30fps(
         "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-shortest", str(timeline),
     ])
-    document = _document_v3()
+    document = _document_v3_with_subtitle_layout(offset_y=-260, scale=1.5)
     settings = Settings(
         temp_dir=tmp_path / "temp-v3",
         ffmpeg_timeout_seconds=120,
@@ -698,6 +724,9 @@ def test_editor_document_v3_renders_at_authoritative_30fps(
         work_dir=tmp_path / "render-work-v3",
         channel_thumbnail_path=None,
     )
+    subtitle_ass = (
+        tmp_path / "render-work-v3" / "editor-assets" / "subtitles.ass"
+    ).read_text(encoding="utf-8")
     probe = json.loads(_run([
         "ffprobe", "-v", "error", "-show_streams", "-show_format",
         "-of", "json", str(output),
@@ -710,3 +739,5 @@ def test_editor_document_v3_renders_at_authoritative_30fps(
     assert video["codec_name"] == "h264"
     assert video["avg_frame_rate"] == "30/1"
     assert float(probe["format"]["duration"]) == pytest.approx(3.5, abs=0.2)
+    assert "Style: Default,Noto Sans CJK KR,72," in subtitle_ass
+    assert ",60,60,705,1" in subtitle_ass

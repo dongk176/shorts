@@ -11,7 +11,12 @@ import {
 import {
   createEditorRenderSpec,
   EDITOR_RENDER_FPS,
+  EDITOR_RENDER_SPEC_LEGACY_VERSION,
   EDITOR_RENDER_SPEC_VERSION,
+  EDITOR_SUBTITLE_OFFSET_Y_MAX,
+  EDITOR_SUBTITLE_OFFSET_Y_MIN,
+  EDITOR_SUBTITLE_SCALE_MAX,
+  EDITOR_SUBTITLE_SCALE_MIN,
 } from "@/lib/editor-render-spec";
 import {
   stockBackgroundIds,
@@ -100,8 +105,7 @@ const resolvedFontFaceSchema = z.object({
 }).strict();
 
 const renderFrameSchema = z.number().int().nonnegative();
-const renderSpecSchema = z.object({
-  version: z.literal(EDITOR_RENDER_SPEC_VERSION),
+const renderSpecBaseSchema = z.object({
   canvas: z.object({
     width: z.literal(TEMPLATE_CANVAS.width),
     height: z.literal(TEMPLATE_CANVAS.height),
@@ -150,7 +154,26 @@ const renderSpecSchema = z.object({
     offsetY: canvasY,
     scale: finiteNumber.min(0.1).max(5),
   }).strict(),
+});
+const renderSpecV1Schema = renderSpecBaseSchema.extend({
+  version: z.literal(EDITOR_RENDER_SPEC_LEGACY_VERSION),
 }).strict();
+const renderSpecV2Schema = renderSpecBaseSchema.extend({
+  version: z.literal(EDITOR_RENDER_SPEC_VERSION),
+  subtitles: z.object({
+    centerX: z.literal(540),
+    offsetY: finiteNumber
+      .min(EDITOR_SUBTITLE_OFFSET_Y_MIN)
+      .max(EDITOR_SUBTITLE_OFFSET_Y_MAX),
+    scale: finiteNumber
+      .min(EDITOR_SUBTITLE_SCALE_MIN)
+      .max(EDITOR_SUBTITLE_SCALE_MAX),
+  }).strict(),
+}).strict();
+const renderSpecSchema = z.discriminatedUnion("version", [
+  renderSpecV1Schema,
+  renderSpecV2Schema,
+]);
 
 const editorDocumentSnapshotBaseSchema = z.object({
   version: z.literal(EDITOR_DOCUMENT_SNAPSHOT_VERSION),
