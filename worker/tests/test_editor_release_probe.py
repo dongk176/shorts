@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from shorts_worker import editor_release_probe
-from shorts_worker.editor_renderer import editor_layer_order
+from shorts_worker.editor_renderer import editor_layer_order, retime_editor_caption_spec
 
 
 def test_probe_document_covers_all_supported_editor_fonts() -> None:
@@ -63,6 +63,20 @@ def test_editor_release_probe_matrix_covers_candidate_editing_features() -> None
     assert editor_layer_order(documents["channel-layer-order"])[-1] == "channel"
 
 
+def test_editor_release_probe_pop_caption_survives_every_timeline() -> None:
+    caption_render_spec = editor_release_probe._pop_caption_render_spec()
+
+    assert caption_render_spec["templateId"] == "pop"
+    for scenario in editor_release_probe.PROBE_SCENARIOS:
+        rendered = retime_editor_caption_spec(
+            editor_release_probe._document(scenario),
+            caption_render_spec,
+        )
+        assert rendered is not None
+        assert rendered["templateId"] == "pop"
+        assert rendered["cues"]
+
+
 def test_editor_release_probe_rejects_unknown_scenario() -> None:
     with pytest.raises(RuntimeError, match="Unsupported editor release scenario"):
         editor_release_probe._document("unknown")
@@ -97,12 +111,15 @@ def test_release_probe_renders_and_uploads_machine_verifiable_evidence(
         "captured-timeline": True,
         "editor-v2": True,
         "subtitle-layout": True,
+        "caption-template-pop": True,
         "ffprobe": True,
         "frame-parity": True,
     }
     assert result["media"]["width"] == 1080
     assert result["media"]["height"] == 1920
     assert result["geometry"]["maximumErrorPixels"] <= 2
+    assert result["captionTemplate"]["templateId"] == "pop"
+    assert result["captionTemplate"]["accentPixels"] >= 25
     assert result["artifactUri"].endswith("/manifest.json")
     assert s3.upload_file.call_count == 2
     s3.put_object.assert_called_once()

@@ -160,6 +160,11 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_URL/);
   assert.match(workflow, /EDITOR_TEST_SUPABASE_PROJECT_REF/);
   assert.match(workflow, /PRODUCTION_SUPABASE_PROJECT_REF/);
+  assert.match(
+    workflow,
+    /node scripts\/apply-supabase\.mjs \\\s+202607310003_editor_release_channels\.sql \\\s+202608010001_editor_render_canary_outbox\.sql \\\s+202608080001_subtitle_templates_admin_canary\.sql/,
+  );
+  assert.doesNotMatch(workflow, /node scripts\/apply-supabase\.mjs\s*\n\s*$/m);
   assert.match(workflow, /EDITOR_RELEASE_ECR_REPOSITORY_URI/);
   assert.match(
     workflow,
