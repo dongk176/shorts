@@ -9,6 +9,8 @@ import {
   createEditorTextOverlay,
   createInitialEditorOverlayLayout,
   consolidateEditorTitleFontScale,
+  editorOverlayZIndex,
+  editorOverlayContainerStyle,
   editorOverlayLayoutsEqual,
   lockEditorTitleHorizontalOffset,
   moveEditorOverlayOrderItem,
@@ -411,6 +413,21 @@ describe("editor overlay preview geometry", () => {
       "comment",
       "channel",
     ]);
+    expect(editorOverlayZIndex([
+      "title",
+      "comment",
+      "video",
+      "channel",
+    ], "title")).toBeGreaterThan(editorOverlayZIndex([
+      "title",
+      "comment",
+      "video",
+      "channel",
+    ], "video"));
+    expect(editorOverlayContainerStyle(20)).toEqual({
+      containerType: "inline-size",
+      zIndex: 20,
+    });
   });
 
   it("does not let video and title layer controls cross each other", () => {

@@ -166,6 +166,24 @@ export function normalizeEditorOverlayLayerOrder(
   return pinEditorChannelLayerOnTop(pinEditorTitleAboveVideo(order));
 }
 
+export function editorOverlayZIndex(
+  order: EditorOverlayOrderItem[],
+  item: EditorOverlayOrderItem,
+): number {
+  const normalizedOrder = normalizeEditorOverlayLayerOrder(order);
+  const index = normalizedOrder.indexOf(item);
+  return 10 + Math.max(0, index) * 10;
+}
+
+export function editorOverlayContainerStyle(
+  zIndex: string | number | undefined,
+): { containerType: "inline-size"; zIndex: string | number | undefined } {
+  return {
+    containerType: "inline-size",
+    zIndex,
+  };
+}
+
 export function createEditorTextOverlay(
   id: string,
   durationSeconds: number,

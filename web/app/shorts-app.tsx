@@ -147,6 +147,7 @@ import {
   consolidateEditorTitleFontScale,
   createEditorTextOverlay,
   createInitialEditorOverlayLayout,
+  editorOverlayZIndex,
   editorOverlayLayoutsEqual,
   lockEditorTitleHorizontalOffset,
   moveEditorOverlayOrderItem,
@@ -4946,10 +4947,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     height: editorVideoBaseRect.height * videoScale,
   };
   const editorVideoBottom = editorVideoRect.y + editorVideoRect.height;
-  const editorOverlayZIndex = (item: EditorOverlayOrderItem) => {
-    const index = overlayLayout.layerOrder.indexOf(item);
-    return 10 + Math.max(0, index) * 10;
-  };
+  const previewOverlayZIndex = (item: EditorOverlayOrderItem) => (
+    editorOverlayZIndex(renderOverlayLayout.layerOrder, item)
+  );
   const overlayMovementStyle = (
     layer: EditorOverlayLayer,
     commentId?: string,
@@ -4963,7 +4963,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       : rawOffset;
     const scale = layer === "channel" ? channelScale : null;
     return {
-      zIndex: editorOverlayZIndex(layer),
+      zIndex: previewOverlayZIndex(layer),
       translate: canvasOffsetTranslate(offset),
       ...(scale === null
         ? {}
@@ -9454,7 +9454,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               ))}
               selected={selectedTextOverlayId === textOverlay.id}
               editing={inlineEditingOverlay === editorTextSelection(textOverlay.id)}
-              zIndex={editorOverlayZIndex(editorTextSelection(textOverlay.id))}
+              zIndex={previewOverlayZIndex(editorTextSelection(textOverlay.id))}
               onPointerDown={(event) => beginEditorTextOverlayDrag(
                 textOverlay.id,
                 event,

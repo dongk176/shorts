@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, PointerEventHandler } from "react";
 import { COMMENT_CAPTURE_LANDSCAPE_LIFT_PX } from "@/lib/template-config";
 import type { TitleTextStyle, VideoAspectRatio } from "@/lib/contracts";
+import { editorOverlayContainerStyle } from "@/lib/editor-overlay-preview";
 import {
   fitPreviewTitleFont,
   styledTitleLineRuns,
@@ -174,7 +175,10 @@ export function TitleOverlayPreview({
   const titleClassName = "absolute inset-x-0 flex flex-col items-center justify-end text-center font-bold";
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 overflow-visible" style={{ containerType: "inline-size" }}>
+    <div
+      className="pointer-events-none absolute inset-0 z-10 overflow-visible"
+      style={editorOverlayContainerStyle(movementStyle?.zIndex)}
+    >
       {onPointerDown
         ? <div className={`${titleClassName} overflow-visible`} style={panelStyle}>
             {editing && onEditValueChange && onEditEnd
