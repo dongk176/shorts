@@ -163,7 +163,7 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(workflow, /EDITOR_RELEASE_ECR_REPOSITORY_URI/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/codex\/editor-v2-canary-release' \|\| github\.ref == 'refs\/heads\/codex\/editor-v3-fidelity-canary-20260805'/,
+    /github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/codex\/editor-v2-canary-release' \|\| github\.ref == 'refs\/heads\/codex\/editor-v3-fidelity-canary-20260805' \|\| github\.ref == 'refs\/heads\/codex\/admin-subtitle-layout-canary-20260810'/,
   );
   assert.match(workflow, /uiVersion:3/);
   assert.match(workflow, /documentVersion:3/);
