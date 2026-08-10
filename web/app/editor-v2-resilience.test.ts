@@ -216,6 +216,21 @@ describe("editor v2 resilience", () => {
     expect(editorSource).toContain("편집용 영상 연결이 끊어졌어요.");
   });
 
+  it("checks cut boundaries every animation frame without reseeking contiguous splits", () => {
+    expect(editorSource).toContain(
+      "const advanceEditorVideoPlaybackBoundary = useCallback(",
+    );
+    expect(editorSource).toContain(
+      "window.requestAnimationFrame(checkPlaybackBoundary)",
+    );
+    expect(editorSource).toContain(
+      "editorVideoPlaybackBoundaryTransition(",
+    );
+    expect(editorSource).not.toContain(
+      "current >= clip.sourceEndSeconds - 0.03",
+    );
+  });
+
   it("keeps draft status styling inside the v2 root", () => {
     expect(editorStyles).toContain(
       ".editor-v2-root .editor-draft-status {",

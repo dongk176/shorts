@@ -224,12 +224,14 @@ import type { EditorReleaseAssignment } from "@/lib/editor-rendering-release";
 import { CURRENT_PRESET_TEMPLATE_SNAPSHOT } from "@/lib/edit-template-selection";
 import {
   EDITOR_VIDEO_MIN_CLIP_SECONDS,
+  EDITOR_VIDEO_PREVIEW_BOUNDARY_LEAD_SECONDS,
   canSplitEditorVideoAtTime,
   createEditorVideoClips,
   deleteEditorVideoClip,
   editorVideoClipDuration,
   editorVideoDuration,
   editorVideoOutputTimeForSource,
+  editorVideoPlaybackBoundaryTransition,
   locateEditorVideoTime,
   splitEditorVideoAtTime,
   type EditorVideoClip,
@@ -5927,6 +5929,77 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     if (video) video.currentTime = located.sourceSeconds;
   }, []);
 
+  const advanceEditorVideoPlaybackBoundary = useCallback((
+    video: HTMLVideoElement,
+    sourceSeconds: number,
+    boundaryLeadSeconds = 0,
+  ) => {
+    const clips = videoClipsRef.current;
+    if (clips.length === 0) return false;
+    let clipIndex = Math.min(
+      activeVideoClipIndexRef.current,
+      clips.length - 1,
+    );
+    let effectiveSourceSeconds = sourceSeconds;
+    let transitioned = false;
+
+    for (let transitionCount = 0; transitionCount < clips.length; transitionCount += 1) {
+      const transition = editorVideoPlaybackBoundaryTransition(
+        clips,
+        clipIndex,
+        effectiveSourceSeconds,
+        boundaryLeadSeconds,
+      );
+      if (!transition) break;
+      transitioned = true;
+      clipIndex = transition.nextClipIndex;
+      activeVideoClipIndexRef.current = clipIndex;
+      if (transition.seekSourceSeconds !== null) {
+        effectiveSourceSeconds = transition.seekSourceSeconds;
+        video.currentTime = transition.seekSourceSeconds;
+        break;
+      }
+    }
+
+    if (!transitioned) return false;
+    const outputTime = editorVideoOutputTimeForSource(
+      clips,
+      clipIndex,
+      effectiveSourceSeconds,
+    );
+    videoSequenceTimeRef.current = outputTime;
+    setVideoSequenceTime(outputTime);
+    setPreviewTime(effectiveSourceSeconds);
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (!videoCuttingEnabled || !isPreviewPlaying) return;
+    let animationFrameId = 0;
+    let cancelled = false;
+    const checkPlaybackBoundary = () => {
+      if (cancelled) return;
+      const video = videoRef.current;
+      if (video && !video.paused) {
+        advanceEditorVideoPlaybackBoundary(
+          video,
+          video.currentTime,
+          EDITOR_VIDEO_PREVIEW_BOUNDARY_LEAD_SECONDS,
+        );
+      }
+      animationFrameId = window.requestAnimationFrame(checkPlaybackBoundary);
+    };
+    animationFrameId = window.requestAnimationFrame(checkPlaybackBoundary);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(animationFrameId);
+    };
+  }, [
+    advanceEditorVideoPlaybackBoundary,
+    isPreviewPlaying,
+    videoCuttingEnabled,
+  ]);
+
   const applyEditorVideoClipsSnapshot = useCallback((
     snapshot: EditorVideoClip[],
   ) => {
@@ -8957,8 +9030,14 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             onError={handleEditorVideoLoadError}
             onTimeUpdate={(event) => {
               const current = event.currentTarget.currentTime;
-              setPreviewTime(current);
               if (videoCuttingEnabled) {
+                if (
+                  !event.currentTarget.paused
+                  && advanceEditorVideoPlaybackBoundary(
+                    event.currentTarget,
+                    current,
+                  )
+                ) return;
                 const clips = videoClipsRef.current;
                 const clipIndex = Math.min(
                   activeVideoClipIndexRef.current,
@@ -8973,35 +9052,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 );
                 videoSequenceTimeRef.current = outputTime;
                 setVideoSequenceTime(outputTime);
-                if (
-                  !event.currentTarget.paused
-                  && current >= clip.sourceEndSeconds - 0.03
-                ) {
-                  const nextClip = clips[clipIndex + 1];
-                  if (nextClip) {
-                    activeVideoClipIndexRef.current = clipIndex + 1;
-                    const nextOutputTime = editorVideoOutputTimeForSource(
-                      clips,
-                      clipIndex + 1,
-                      nextClip.sourceStartSeconds,
-                    );
-                    videoSequenceTimeRef.current = nextOutputTime;
-                    setVideoSequenceTime(nextOutputTime);
-                    event.currentTarget.currentTime = nextClip.sourceStartSeconds;
-                    void event.currentTarget.play().catch(() => undefined);
-                    return;
-                  }
-                  const firstClip = clips[0];
-                  if (firstClip) {
-                    activeVideoClipIndexRef.current = 0;
-                    videoSequenceTimeRef.current = 0;
-                    setVideoSequenceTime(0);
-                    event.currentTarget.currentTime = firstClip.sourceStartSeconds;
-                    void event.currentTarget.play().catch(() => undefined);
-                  }
-                }
+                setPreviewTime(current);
                 return;
               }
+              setPreviewTime(current);
               if (editTimeline) {
                 const start = selectionStart - editTimeline.timelineStartSeconds;
                 const end = selectionEnd - editTimeline.timelineStartSeconds;
