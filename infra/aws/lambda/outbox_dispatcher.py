@@ -79,6 +79,7 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
         prefer="return=representation",
     ) or []
     project_jobs = 0
+    project_failures = 0
     for item in projects:
         job_id = str(item["job_id"])
         priority_class = (
@@ -124,7 +125,11 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
                 },
                 prefer="return=representation",
             )
-            raise
+            # claim_project_job_outbox marks a batch of rows as dispatched
+            # before this loop runs. One bad target must not strand every
+            # later row from that claim without a Batch id.
+            project_failures += 1
+            continue
     batches = rest(
         "rpc/claim_job_outbox",
         method="POST",
@@ -132,6 +137,8 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
         prefer="return=representation",
     ) or []
     jobs = 0
+    dispatched_batches = 0
+    batch_failures = 0
     for item in batches:
         batch_id = item["dispatch_batch_id"]
         item_count = int(item["item_count"])
@@ -143,6 +150,7 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
                 batch_job_id=batch_job_id,
                 item_count=item_count,
             )
+            dispatched_batches += 1
             jobs += item_count
         except Exception as exc:
             # A synchronous invocation response can be lost after the child Lambda
@@ -179,11 +187,14 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
                 body={"p_dispatch_batch_id": batch_id},
                 prefer="return=representation",
             )
-            raise
+            batch_failures += 1
+            continue
     rerenders = rest(
         "rpc/claim_short_outbox", method="POST", body={"p_limit": 100},
         prefer="return=representation",
     ) or []
+    dispatched_rerenders = 0
+    rerender_failures = 0
     for item in rerenders:
         try:
             sqs.send_message(
@@ -192,6 +203,7 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
                     "kind": "rerender", "shortId": item["short_id"],
                 }, separators=(",", ":")),
             )
+            dispatched_rerenders += 1
         except Exception as exc:
             log_event(
                 "short_outbox_dispatch_failed",
@@ -202,9 +214,13 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
                 "status": "pending", "dispatched_at": None,
                 "last_error": str(exc)[:1000],
             })
-            raise
+            rerender_failures += 1
+            continue
     return {
         "dispatchedProjects": project_jobs,
-        "dispatchedBatches": len(batches), "dispatchedJobs": jobs,
-        "dispatchedRerenders": len(rerenders),
+        "failedProjects": project_failures,
+        "dispatchedBatches": dispatched_batches, "dispatchedJobs": jobs,
+        "failedBatches": batch_failures,
+        "dispatchedRerenders": dispatched_rerenders,
+        "failedRerenders": rerender_failures,
     }

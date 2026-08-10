@@ -1923,6 +1923,7 @@ def test_outbox_dispatcher_forwards_paid_priority_snapshot() -> None:
     result = module.handler({}, None)
 
     assert result["dispatchedProjects"] == 1
+    assert result["failedProjects"] == 0
     invocation = aws_client.invoke.call_args.kwargs
     assert json.loads(invocation["Payload"]) == {
         "kind": "project",
@@ -1950,9 +1951,12 @@ def test_outbox_dispatcher_submits_prepare_directly_without_sqs() -> None:
 
     assert result == {
         "dispatchedProjects": 0,
+        "failedProjects": 0,
         "dispatchedBatches": 1,
         "dispatchedJobs": 1,
+        "failedBatches": 0,
         "dispatchedRerenders": 0,
+        "failedRerenders": 0,
     }
     invocation = aws_client.invoke.call_args.kwargs
     assert invocation["FunctionName"] == "batch-submitter"
@@ -1963,6 +1967,58 @@ def test_outbox_dispatcher_submits_prepare_directly_without_sqs() -> None:
         "itemCount": 1,
     }
     aws_client.send_message.assert_not_called()
+
+
+def test_outbox_dispatcher_continues_after_one_project_submit_failure() -> None:
+    module, aws_client = _load_lambda("outbox_dispatcher")
+    aws_client.invoke.side_effect = [
+        {
+            "FunctionError": "Unhandled",
+            "Payload": io.BytesIO(b'{"errorMessage":"untrusted target"}'),
+        },
+        {"Payload": io.BytesIO(b'{"batchJobId":"project-batch-b"}')},
+    ]
+
+    def rest(table: str, **_kwargs):
+        if table == "rpc/claim_project_job_outbox":
+            return [
+                {
+                    "outbox_id": "outbox-a",
+                    "job_id": "job-a",
+                    "route_id": "route-a",
+                    "priority_class": "paid",
+                },
+                {
+                    "outbox_id": "outbox-b",
+                    "job_id": "job-b",
+                    "route_id": "route-b",
+                    "priority_class": "free",
+                },
+            ]
+        if table == "video_jobs":
+            return []
+        if table == "batch_submission_claims":
+            return []
+        if table in {"rpc/claim_job_outbox", "rpc/claim_short_outbox"}:
+            return []
+        if table == "rpc/release_ingestion_route":
+            return [{"released": True}]
+        return []
+
+    module.rest = rest
+    module.patch = MagicMock()
+
+    result = module.handler({}, None)
+
+    assert result["dispatchedProjects"] == 1
+    assert result["failedProjects"] == 1
+    assert aws_client.invoke.call_count == 2
+    failed_patch = next(
+        call for call in module.patch.call_args_list
+        if call.args[0] == "project_job_outbox"
+    )
+    assert failed_patch.args[1] == "id=eq.outbox-a"
+    assert failed_patch.args[2]["status"] == "pending"
 
 
 def test_paid_job_priority_migration_is_aged_and_non_preemptive() -> None:
