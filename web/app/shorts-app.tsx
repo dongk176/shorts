@@ -53,6 +53,7 @@ import type {
 import { expectedShortCount, videoAspectRatioOptions } from "@/lib/contracts";
 import {
   CAPTION_ASS_PREVIEW_FONT_SCALE,
+  captionRenderSpecForEditor,
   type CaptionRenderCue,
   type CaptionRenderSpec,
 } from "@/lib/caption-render-spec";
@@ -1625,6 +1626,13 @@ function CaptionTemplateEditorPreview({
         )),
       )
     : 0;
+  const editedGroupStart = spec.templateId === "pop"
+    ? Math.floor(editedActiveWordIndex / 3) * 3
+    : 0;
+  const visibleEditedWords = spec.templateId === "pop"
+    ? editedWords.slice(editedGroupStart, editedGroupStart + 3)
+    : editedWords;
+  const visibleEditedActiveWordIndex = editedActiveWordIndex - editedGroupStart;
   const captionCenterY = (
     cue.centerY ?? (spec.safeArea.y + spec.safeArea.height / 2)
   ) + layout.offsetY;
@@ -1674,7 +1682,7 @@ function CaptionTemplateEditorPreview({
         tabIndex={0}
         aria-label="자막 위치와 텍스트 편집"
         title="드래그해서 이동 · 더블클릭해서 자막 수정"
-        className="pointer-events-auto absolute inline-flex cursor-ns-resize touch-none items-center whitespace-nowrap text-center outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
+        className="pointer-events-auto absolute inline-flex cursor-ns-resize touch-none flex-wrap items-center justify-center whitespace-normal text-center outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
         onPointerDown={onPointerDown}
         onClick={onSelect}
         onDoubleClick={beginTextEdit}
@@ -1687,22 +1695,28 @@ function CaptionTemplateEditorPreview({
           ...sharedTextStyle,
           left: `${transformedX(cue.centerX ?? 540) / 10.8}%`,
           top: `${captionCenterY / 19.2}%`,
-          gap: canvasCqw(6 * layout.scale),
+          width: canvasCqw(spec.safeArea.width * layout.scale),
+          columnGap: canvasCqw(6 * layout.scale),
+          rowGap: canvasCqw(6 * layout.scale),
           color: spec.style.textColor,
           fontSize: canvasCqw(
-            spec.style.fontSize * layout.scale * CAPTION_ASS_PREVIEW_FONT_SCALE,
+            (spec.templateId === "pop" ? 92 : spec.style.fontSize)
+              * layout.scale
+              * CAPTION_ASS_PREVIEW_FONT_SCALE,
           ),
           WebkitTextStroke: `${canvasCqw(previewStrokeWidth)} ${spec.style.outlineColor}`,
           transform: "translate(-50%, -50%)",
         }}
       >
-        {editedWords.map((word, wordIndex) => <span
+        {visibleEditedWords.map((word, wordIndex) => <span
           key={`${word}-${wordIndex}`}
+          className="max-w-full [overflow-wrap:anywhere]"
           style={{
-            color: editedActiveWordIndex === wordIndex
+            color: visibleEditedActiveWordIndex === wordIndex
               ? accentColor
               : spec.style.textColor,
-            transform: spec.templateId === "pop" && editedActiveWordIndex === wordIndex
+            transform: spec.templateId === "pop"
+              && visibleEditedActiveWordIndex === wordIndex
               ? "scale(1.12)"
               : undefined,
           }}
@@ -2870,6 +2884,7 @@ type EditTimeline = {
   initialEndSeconds: number;
   subtitleSegments: EditorSubtitleSegment[];
   version: number;
+  canExtendSelection: boolean;
 };
 
 type EditorDraftSaveState = "idle" | "saving" | "saved" | "error";
@@ -3734,7 +3749,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const captionTemplateEditorSpec = adminSubtitleLayoutEnabled
     && item.captionRenderSpec
     && item.subtitleTemplateId === item.captionRenderSpec.templateId
-    ? item.captionRenderSpec
+    ? captionRenderSpecForEditor(item.captionRenderSpec)
     : null;
   const savedEditorDocument = overlayPreviewEnabled
     && (item.editorDocument?.version === 2 || item.editorDocument?.version === 3)

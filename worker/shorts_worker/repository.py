@@ -504,6 +504,7 @@ class WorkerRepository:
         timeline_start_seconds: float,
         timeline_end_seconds: float,
         timeline_subtitles: list[dict[str, Any]],
+        caption_editor_source: dict[str, Any] | None = None,
     ) -> bool:
         with self.connect() as connection:
             row = connection.execute(
@@ -513,7 +514,16 @@ class WorkerRepository:
                     edit_timeline_start_seconds=%s,
                     edit_timeline_end_seconds=%s,
                     edit_timeline_subtitle_segments=%s,
-                    edit_timeline_version=1
+                    edit_timeline_version=1,
+                    caption_render_spec=case
+                      when %s::jsonb is null then caption_render_spec
+                      else jsonb_set(
+                        coalesce(caption_render_spec,'{}'::jsonb),
+                        '{editorSource}',
+                        %s::jsonb,
+                        true
+                      )
+                    end
                 where s.id=%s and s.status in ('ready','rerendering')
                   and s.deleted_at is null and s.expires_at > clock_timestamp()
                   and s.edit_timeline_s3_key is null
@@ -528,6 +538,8 @@ class WorkerRepository:
                     timeline_start_seconds,
                     timeline_end_seconds,
                     Jsonb(timeline_subtitles),
+                    Jsonb(caption_editor_source) if caption_editor_source else None,
+                    Jsonb(caption_editor_source) if caption_editor_source else None,
                     short_id,
                 ),
             ).fetchone()

@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 from .caption_templates import (
     create_caption_ass,
     prepare_caption_fonts,
-    rebuild_caption_cue_text,
+    reflow_caption_cues_for_clips,
 )
 from .config import Settings
 from .errors import RenderError
@@ -272,31 +272,90 @@ def retime_editor_caption_spec(
         edit.cue_index: edit.text
         for edit in (render_subtitles.cue_edits if render_subtitles else [])
     }
-    if cue_edits:
-        source_cues = spec.get("cues")
-        safe_area_value = spec.get("safeArea")
-        if not isinstance(source_cues, list) or not isinstance(safe_area_value, dict):
-            raise RenderError("원본 자막 편집 정보를 찾을 수 없습니다.")
-        safe_area = {
-            key: int(safe_area_value[key])
-            for key in ("x", "y", "width", "height")
-        }
-        rebuilt_cues: list[dict[str, object]] = []
-        for cue_index, cue_value in enumerate(source_cues):
-            if not isinstance(cue_value, dict):
-                raise RenderError("원본 자막 큐가 올바르지 않습니다.")
-            edited_text = cue_edits.get(cue_index)
-            if edited_text is None:
-                rebuilt_cues.append(cue_value)
-                continue
-            rebuilt_cues.extend(rebuild_caption_cue_text(
-                cue_value,
-                text=edited_text,
+
+    source_cues = spec.get("cues")
+    safe_area_value = spec.get("safeArea")
+    if not isinstance(source_cues, list) or not isinstance(safe_area_value, dict):
+        raise RenderError("원본 자막 편집 정보를 찾을 수 없습니다.")
+    safe_area = {
+        key: int(safe_area_value[key])
+        for key in ("x", "y", "width", "height")
+    }
+
+    clip_windows: list[tuple[int, int, int]] = []
+    output_cursor = 0
+    for clip in document.video.clips:
+        clip_start = floor(clip.source_start_seconds * fps + 0.5)
+        clip_end = floor(clip.source_end_seconds * fps + 0.5)
+        if clip_end <= clip_start:
+            continue
+        clip_windows.append((clip_start, clip_end, output_cursor))
+        output_cursor += clip_end - clip_start
+    supports_word_reflow = all(
+        isinstance(cue, dict)
+        and isinstance(cue.get("words"), list)
+        and all(
+            isinstance(word, dict)
+            and "startFrame" in word
+            and "endFrame" in word
+            for word in cue["words"]
+        )
+        for cue in source_cues
+    )
+    try:
+        if supports_word_reflow or cue_edits:
+            spec["cues"] = reflow_caption_cues_for_clips(
+                source_cues,
                 template_id=str(spec["templateId"]),
                 safe_area=safe_area,
+                clip_windows=clip_windows,
+                cue_edits=cue_edits,
                 fps=fps,
-            ))
-        spec["cues"] = rebuilt_cues
+            )
+        else:
+            # Schema-v3 probes and early stored specs predate per-word frame
+            # fields. Keep their immutable event layout compatible; every new
+            # generated caption spec takes the word-reflow path above.
+            legacy_cues: list[dict[str, object]] = []
+            for cue_value in source_cues:
+                if not isinstance(cue_value, dict):
+                    raise RenderError("원본 자막 큐가 올바르지 않습니다.")
+                events_value = cue_value.get("events")
+                if not isinstance(events_value, list):
+                    raise RenderError("원본 자막 이벤트가 올바르지 않습니다.")
+                retimed_events: list[dict[str, object]] = []
+                for clip_start, clip_end, output_start in clip_windows:
+                    for event_value in events_value:
+                        if not isinstance(event_value, dict):
+                            raise RenderError("원본 자막 이벤트가 올바르지 않습니다.")
+                        event_start = int(event_value.get("startFrame") or 0)
+                        event_end = int(event_value.get("endFrame") or 0)
+                        visible_start = max(event_start, clip_start)
+                        visible_end = min(event_end, clip_end)
+                        if visible_end <= visible_start:
+                            continue
+                        event = deepcopy(event_value)
+                        event["startFrame"] = (
+                            output_start + visible_start - clip_start
+                        )
+                        event["endFrame"] = output_start + visible_end - clip_start
+                        retimed_events.append(event)
+                if not retimed_events:
+                    continue
+                cue = deepcopy(cue_value)
+                cue["events"] = retimed_events
+                cue["startFrame"] = min(
+                    int(event["startFrame"]) for event in retimed_events
+                )
+                cue["endFrame"] = max(
+                    int(event["endFrame"]) for event in retimed_events
+                )
+                legacy_cues.append(cue)
+            spec["cues"] = legacy_cues
+    except Exception as exc:
+        if isinstance(exc, RenderError):
+            raise
+        raise RenderError("편집한 자막을 다시 배치하지 못했습니다.") from exc
 
     def scaled_x(value: object) -> float:
         return round(540 + (float(value) - 540) * scale, 3)
@@ -341,16 +400,6 @@ def retime_editor_caption_spec(
     if not isinstance(cues, list):
         raise RenderError("원본 자막 큐가 올바르지 않습니다.")
 
-    clip_windows: list[tuple[int, int, int]] = []
-    output_cursor = 0
-    for clip in document.video.clips:
-        clip_start = floor(clip.source_start_seconds * fps + 0.5)
-        clip_end = floor(clip.source_end_seconds * fps + 0.5)
-        if clip_end <= clip_start:
-            continue
-        clip_windows.append((clip_start, clip_end, output_cursor))
-        output_cursor += clip_end - clip_start
-
     retimed_cues: list[dict[str, object]] = []
     for cue_value in cues:
         if not isinstance(cue_value, dict):
@@ -380,33 +429,16 @@ def retime_editor_caption_spec(
             if "centerY" in word_value:
                 word_value["centerY"] = shifted_y(word_value["centerY"])
 
-        retimed_events: list[dict[str, object]] = []
-        for clip_start, clip_end, output_start in clip_windows:
-            for event_value in events:
-                if not isinstance(event_value, dict):
-                    raise RenderError("원본 자막 이벤트가 올바르지 않습니다.")
-                event_start = int(event_value.get("startFrame") or 0)
-                event_end = int(event_value.get("endFrame") or 0)
-                visible_start = max(event_start, clip_start)
-                visible_end = min(event_end, clip_end)
-                if visible_end <= visible_start:
-                    continue
-                event = deepcopy(event_value)
-                event["startFrame"] = output_start + visible_start - clip_start
-                event["endFrame"] = output_start + visible_end - clip_start
-                positions = event.get("positions")
-                if isinstance(positions, list):
-                    for position in positions:
-                        if not isinstance(position, dict):
-                            raise RenderError("원본 팝 자막 위치가 올바르지 않습니다.")
-                        position["centerX"] = scaled_x(position["centerX"])
-                        position["centerY"] = shifted_y(position["centerY"])
-                retimed_events.append(event)
-        if not retimed_events:
-            continue
-        cue["events"] = retimed_events
-        cue["startFrame"] = min(int(event["startFrame"]) for event in retimed_events)
-        cue["endFrame"] = max(int(event["endFrame"]) for event in retimed_events)
+        for event in events:
+            if not isinstance(event, dict):
+                raise RenderError("원본 자막 이벤트가 올바르지 않습니다.")
+            positions = event.get("positions")
+            if isinstance(positions, list):
+                for position in positions:
+                    if not isinstance(position, dict):
+                        raise RenderError("원본 팝 자막 위치가 올바르지 않습니다.")
+                    position["centerX"] = scaled_x(position["centerX"])
+                    position["centerY"] = shifted_y(position["centerY"])
         retimed_cues.append(cue)
 
     if not retimed_cues:

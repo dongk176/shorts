@@ -3,7 +3,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { putEditorChannelAsset } from "@/lib/aws";
 import { getBillingSummary } from "@/lib/billing";
-import { parseCaptionRenderSpec } from "@/lib/caption-render-spec";
+import {
+  captionRenderSpecForEditor,
+  parseCaptionRenderSpec,
+} from "@/lib/caption-render-spec";
 import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import {
@@ -236,8 +239,11 @@ async function applyEditorDocument({
       "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
     );
   }
-  const captionRenderSpec = existing.subtitleTemplateId
+  const storedCaptionRenderSpec = existing.subtitleTemplateId
     ? parseCaptionRenderSpec(existing.captionRenderSpec)
+    : null;
+  const captionRenderSpec = storedCaptionRenderSpec
+    ? captionRenderSpecForEditor(storedCaptionRenderSpec)
     : null;
   if (existing.subtitleTemplateId) {
     if (
