@@ -29,8 +29,8 @@ describe("subtitle template UI isolation", () => {
     expect(subtitleTemplatesSource).not.toContain("자막 팝형 · 중앙");
     expect(shortsAppSource).toContain('aria-label="자막 위치"');
     expect(shortsAppSource).toContain('aria-label="자막 위치 선택"');
-    expect(shortsAppSource).toContain("primaryFavoriteCards.map(renderFavoriteCard)");
-    expect(shortsAppSource.indexOf("primaryFavoriteCards.map(renderFavoriteCard)"))
+    expect(shortsAppSource).toContain("leadingFavoriteCards.map(renderFavoriteCard)");
+    expect(shortsAppSource.indexOf("leadingFavoriteCards.map(renderFavoriteCard)"))
       .toBeLessThan(shortsAppSource.indexOf("subtitleTemplateOptions.map"));
     expect(shortsAppSource.indexOf("subtitleTemplateOptions.map"))
       .toBeLessThan(shortsAppSource.indexOf("remainingFavoriteCards.map(renderFavoriteCard)"));

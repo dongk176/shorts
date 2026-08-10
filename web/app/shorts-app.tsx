@@ -260,20 +260,6 @@ const subtitleCaptionPositionOptions: ReadonlyArray<{
   },
 ];
 
-const adminSubtitleStyleCopy: Record<SubtitleTemplateSelectionId, {
-  name: string;
-  description: string;
-}> = {
-  pop: {
-    name: "통통 튀는 자막",
-    description: "큼직한 자막이 리듬감 있게 나와요.",
-  },
-  highlight: {
-    name: "핵심 강조 자막",
-    description: "말하는 부분을 색상으로 강조해요.",
-  },
-};
-
 type ProjectActionAccess = {
   canEdit: boolean;
   canDownload: boolean;
@@ -1560,7 +1546,6 @@ function TemplatePicker({
   brandColorSelectionEnabled,
   brandColor,
   onBrandColorChange,
-  simplifiedAdminExperience,
 }: {
   value: TemplateId;
   onChange: (value: TemplateId) => void;
@@ -1581,10 +1566,7 @@ function TemplatePicker({
   brandColorSelectionEnabled: boolean;
   brandColor: TemplatePresetColor;
   onBrandColorChange: (value: TemplatePresetColor) => void;
-  simplifiedAdminExperience: boolean;
 }) {
-  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
-  const [allStylesOpen, setAllStylesOpen] = useState(false);
   const usablePersonalTemplates = canUseCustomTemplates ? personalTemplates : [];
   const selectedCustom = usablePersonalTemplates.find((template) => template.id === customTemplateId);
   const selectedTemplate = templates.find((template) => template.id === value) || templates[0];
@@ -1612,25 +1594,12 @@ function TemplatePicker({
   const remainingFavoriteCards = favoriteCards.filter(
     (card) => card.kind !== "preset" || card.template.id !== "comment-capture",
   );
-  const commentCaptureTemplate = templates.find((template) => template.id === "comment-capture")!;
-  const primaryFavoriteCards: FavoriteTemplateCard[] = simplifiedAdminExperience
-    ? [{ kind: "preset", template: commentCaptureTemplate }]
-    : leadingFavoriteCards;
-  const hasAdditionalStyles = remainingFavoriteCards.length > 0
-    || remainingPersonalTemplates.length > 0;
-  const selectedStyleIsAdditional = Boolean(customTemplateId)
-    || (!subtitleTemplateId && value !== "comment-capture");
-  const showAdditionalStyles = !simplifiedAdminExperience
-    || allStylesOpen
-    || selectedStyleIsAdditional;
   const renderFavoriteCard = (card: FavoriteTemplateCard) => {
     if (card.kind === "custom") {
       const selected = !subtitleTemplateId && customTemplateId === card.template.id;
       return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
     }
     const selected = !subtitleTemplateId && !customTemplateId && value === card.template.id;
-    const simplifiedCommentCard = simplifiedAdminExperience
-      && card.template.id === "comment-capture";
     return (
       <button
         key={`favorite-preset-${card.template.id}`}
@@ -1640,59 +1609,38 @@ function TemplatePicker({
         className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
       >
         <TemplatePreview template={card.template} videoAspectRatio={effectiveAspectRatio} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} brandColor={brandColorSelectionEnabled ? brandColor : undefined} />
-        <span className="mt-2.5 block text-center text-sm font-semibold">
-          {simplifiedCommentCard ? "댓글과 함께" : card.template.name}
-          {simplifiedCommentCard && <span className="ml-1.5 text-[10px] font-black text-[#ff9b8d]">추천</span>}
-        </span>
-        {simplifiedCommentCard && (
-          <span className="mt-1 block text-center text-[11px] leading-4 text-neutral-400">
-            댓글 반응까지 함께 보여줘요.
-          </span>
-        )}
+        <span className="mt-2.5 block text-center text-sm font-semibold">{card.template.name}</span>
       </button>
     );
   };
-  const settingsPanel = (
-    <div className="grid gap-3 rounded-xl border border-white/[.08] bg-white/[.025] p-3">
-      <VideoAspectRatioPicker
-        value={effectiveAspectRatio}
-        lockedValue={selectedCustom?.config.video.aspectRatio}
-        disabledValues={disabledPresetRatios}
-        disabledReason={disabledPresetRatios.length ? "기본 댓글 템플릿에서는 세로형과 세로 꽉참 비율을 사용할 수 없어요. 내 템플릿에서는 모든 비율을 사용할 수 있습니다." : undefined}
-        onChange={onVideoAspectRatioChange}
-      />
-      {brandColorSelectionEnabled && (
-        <BrandColorPicker value={brandColor} onChange={onBrandColorChange} />
-      )}
-    </div>
-  );
   return (
     <div id="template-picker">
-      {simplifiedAdminExperience ? (
-        <div>
-          <h2 className="text-xl font-extrabold text-white">2. 어떤 느낌으로 만들까요?</h2>
-          <p className="mt-1 text-sm leading-6 text-neutral-400">미리보기를 눌러 원하는 쇼츠 스타일을 골라보세요.</p>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-bold">템플릿</h2>
-          <span className="text-xs font-semibold text-red-300">{selectedSubtitleTemplate?.name || selectedCustom?.name || selectedTemplate.name}</span>
-        </div>
-      )}
-      {!simplifiedAdminExperience && <div className="mt-4">{settingsPanel}</div>}
+      <div className="flex items-center gap-3">
+        <h2 className="text-xl font-bold">템플릿</h2>
+        <span className="text-xs font-semibold text-red-300">{selectedSubtitleTemplate?.name || selectedCustom?.name || selectedTemplate.name}</span>
+      </div>
+      <div className="mt-4 grid gap-3 rounded-xl border border-white/[.08] bg-white/[.025] p-3">
+        <VideoAspectRatioPicker
+          value={effectiveAspectRatio}
+          lockedValue={selectedCustom?.config.video.aspectRatio}
+          disabledValues={disabledPresetRatios}
+          disabledReason={disabledPresetRatios.length ? "기본 댓글 템플릿에서는 세로형과 세로 꽉참 비율을 사용할 수 없어요. 내 템플릿에서는 모든 비율을 사용할 수 있습니다." : undefined}
+          onChange={onVideoAspectRatioChange}
+        />
+        {brandColorSelectionEnabled && (
+          <BrandColorPicker value={brandColor} onChange={onBrandColorChange} />
+        )}
+      </div>
       <div
         aria-label="템플릿 선택 레일"
         className="template-picker-rail mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-4 pr-2 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[rgba(255,255,255,.05)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-[rgba(0,0,0,.34)] [&::-webkit-scrollbar-thumb]:bg-[rgba(255,255,255,.34)] [&::-webkit-scrollbar-thumb:hover]:bg-[rgba(255,255,255,.5)]"
         style={{ scrollbarColor: "rgba(255,255,255,.34) rgba(255,255,255,.05)", scrollbarWidth: "auto" }}
       >
-        {primaryFavoriteCards.map(renderFavoriteCard)}
+        {leadingFavoriteCards.map(renderFavoriteCard)}
         {subtitleTemplateSelectionEnabled && (
           <>
             {subtitleTemplateOptions.map((option) => {
               const selected = subtitleTemplateId === option.id;
-              const presentation = simplifiedAdminExperience
-                ? adminSubtitleStyleCopy[option.id]
-                : option;
               return (
                 <button
                   key={option.id}
@@ -1712,56 +1660,21 @@ function TemplatePicker({
                     channelThumbnailUrl={channelThumbnailUrl}
                     brandColor={brandColor}
                   />
-                  <span className="mt-2.5 block text-center text-sm font-extrabold text-white">{presentation.name}</span>
-                  <span className="mt-1 block text-center text-[11px] leading-4 text-neutral-400">{presentation.description}</span>
-                  {!simplifiedAdminExperience && (
-                    <span className="mt-1.5 block text-center text-[10px] font-black text-[#ff9b8d]">자막 · 어드민</span>
-                  )}
+                  <span className="mt-2.5 block text-center text-sm font-extrabold text-white">{option.name}</span>
+                  <span className="mt-1 block text-center text-[11px] leading-4 text-neutral-400">{option.description}</span>
+                  <span className="mt-1.5 block text-center text-[10px] font-black text-[#ff9b8d]">자막 · 어드민</span>
                 </button>
               );
             })}
           </>
         )}
-        {showAdditionalStyles && (
-          <>
-            {remainingFavoriteCards.map(renderFavoriteCard)}
-            {remainingPersonalTemplates.map((template) => {
-              const selected = !subtitleTemplateId && customTemplateId === template.id;
-              return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
-            })}
-          </>
-        )}
+        {remainingFavoriteCards.map(renderFavoriteCard)}
+        {remainingPersonalTemplates.map((template) => {
+          const selected = !subtitleTemplateId && customTemplateId === template.id;
+          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
+        })}
       </div>
-      {simplifiedAdminExperience && hasAdditionalStyles && (
-        <button
-          type="button"
-          aria-expanded={allStylesOpen}
-          onClick={() => setAllStylesOpen((current) => !current)}
-          className="mt-1 min-h-10 rounded-xl border border-white/10 px-4 text-xs font-bold text-neutral-300 transition hover:border-white/25 hover:bg-white/[.05] hover:text-white"
-        >
-          {allStylesOpen ? "다른 스타일 접기" : "다른 스타일 보기"}
-        </button>
-      )}
-      {simplifiedAdminExperience && subtitleTemplateId && (
-        <section aria-label="자막 표시 위치" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-300/15 bg-sky-300/[.055] px-4 py-3">
-          <div>
-            <strong className="block text-sm font-extrabold text-white">
-              자막은 영상 {subtitleCaptionPlacement === "lower" ? "아래쪽" : "가운데"}에 표시돼요.
-            </strong>
-            <span className="mt-1 block text-xs text-neutral-400">선택하면 미리보기에도 바로 반영돼요.</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => onSubtitleCaptionPlacementChange(
-              subtitleCaptionPlacement === "lower" ? "center" : "lower",
-            )}
-            className="min-h-10 rounded-xl border border-sky-200/25 px-3 text-xs font-black text-sky-100 transition hover:border-sky-200/50 hover:bg-sky-200/10"
-          >
-            {subtitleCaptionPlacement === "lower" ? "가운데로 바꾸기" : "아래쪽으로 바꾸기"}
-          </button>
-        </section>
-      )}
-      {!simplifiedAdminExperience && subtitleTemplateSelectionEnabled && subtitleTemplateId && (
+      {subtitleTemplateSelectionEnabled && subtitleTemplateId && (
         <section aria-label="자막 위치" className="mt-4 rounded-xl border border-white/[.09] bg-white/[.025] p-3">
           <div className="flex items-end justify-between gap-3">
             <div>
@@ -1797,28 +1710,9 @@ function TemplatePicker({
         </section>
       )}
       <SubtitlePositionGuide
-        enabled={!simplifiedAdminExperience && subtitleTemplateSelectionEnabled && Boolean(subtitleTemplateId)}
+        enabled={subtitleTemplateSelectionEnabled && Boolean(subtitleTemplateId)}
       />
-      {simplifiedAdminExperience && (
-        <div className="mt-4 rounded-xl border border-emerald-300/15 bg-emerald-300/[.045] px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm font-semibold text-emerald-50">
-              <span aria-hidden="true" className="mr-1.5 text-emerald-300">✓</span>
-              화면 크기와 색상은 보기 좋게 자동으로 맞춰드려요.
-            </p>
-            <button
-              type="button"
-              aria-expanded={advancedSettingsOpen}
-              onClick={() => setAdvancedSettingsOpen((current) => !current)}
-              className="min-h-9 rounded-lg border border-white/10 px-3 text-xs font-bold text-neutral-200 transition hover:border-white/25 hover:bg-white/[.05] hover:text-white"
-            >
-              {advancedSettingsOpen ? "설정 접기" : "직접 설정하기"}
-            </button>
-          </div>
-          {advancedSettingsOpen && <div className="mt-3">{settingsPanel}</div>}
-        </div>
-      )}
-      {!simplifiedAdminExperience && !subtitleTemplateId && !customTemplateId && value === "comment-capture" && (
+      {!subtitleTemplateId && !customTemplateId && value === "comment-capture" && (
         <p className="mt-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[.06] px-4 py-3 text-sm text-cyan-100">
           AI가 실제 사람이 작성한 것처럼 자연스러운 댓글을 만들어줘요.
         </p>
@@ -10296,7 +10190,8 @@ function SourceRangeSelector({
   onStartChange,
   onEndChange,
   onReset,
-  compact = false,
+  singleRowControls = false,
+  showPlannedShortCount = true,
 }: {
   sourceDurationSeconds: number;
   startSeconds: number;
@@ -10306,7 +10201,8 @@ function SourceRangeSelector({
   onStartChange: (seconds: number) => void;
   onEndChange: (seconds: number) => void;
   onReset: () => void;
-  compact?: boolean;
+  singleRowControls?: boolean;
+  showPlannedShortCount?: boolean;
 }) {
   const safeDuration = Math.max(1, sourceDurationSeconds);
   const selectedDuration = Math.max(0, endSeconds - startSeconds);
@@ -10317,21 +10213,19 @@ function SourceRangeSelector({
     `calc(${percent}% + ${7 - percent * 0.14}px)`
   );
   return (
-    <div className={compact ? "mt-4 border-t border-white/10 pt-4" : "rounded-2xl border border-[#ff8f7f]/30 bg-[#ff715e]/[.055] p-5 sm:p-6"}>
-      {!compact && (
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-extrabold text-white">사용할 영상 구간</h2>
-            <p className="mt-1 text-sm leading-6 text-neutral-400">
-              양쪽 손잡이를 드래그해 전사·분석할 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.
-            </p>
-          </div>
-          <strong className="font-mono text-sm tabular-nums text-[#ffb4aa] sm:text-base">
-            {formatTimestamp(startSeconds)} – {formatTimestamp(endSeconds)}
-          </strong>
+    <div className="rounded-2xl border border-[#ff8f7f]/30 bg-[#ff715e]/[.055] p-5 sm:p-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-extrabold text-white">사용할 영상 구간</h2>
+          <p className="mt-1 text-sm leading-6 text-neutral-400">
+            양쪽 손잡이를 드래그해 전사·분석할 범위를 정하세요. 4분부터 60분까지 선택할 수 있습니다.
+          </p>
         </div>
-      )}
-      <div className={`relative h-10 select-none ${compact ? "mt-1" : "mt-6"}`}>
+        <strong className="font-mono text-sm tabular-nums text-[#ffb4aa] sm:text-base">
+          {formatTimestamp(startSeconds)} – {formatTimestamp(endSeconds)}
+        </strong>
+      </div>
+      <div className="relative mt-6 h-10 select-none">
         <div className="absolute inset-x-0 top-4 h-2 rounded-full bg-white/10" />
         <div
           className="absolute top-4 h-2 rounded-full bg-gradient-to-r from-[#ff715e] to-[#ff9c8e]"
@@ -10373,11 +10267,12 @@ function SourceRangeSelector({
       <div className="mt-2 flex items-center justify-between gap-3 text-xs font-medium text-neutral-500">
         <span className="font-mono tabular-nums">0:00</span>
         <span className="text-center" data-source-range-guide="usage">
-          선택 {formatDuration(selectedDuration)} · 차감 {formatDuration(usageSeconds)} · 예상 쇼츠 {plannedShortCount}개
+          선택 {formatDuration(selectedDuration)} · 차감 {formatDuration(usageSeconds)}
+          {showPlannedShortCount ? ` · 예상 쇼츠 ${plannedShortCount}개` : ""}
         </span>
         <span className="font-mono tabular-nums">{formatTimestamp(sourceDurationSeconds)}</span>
       </div>
-      {compact ? (
+      {singleRowControls ? (
         <div className="mt-4 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2">
           <SourceTimestampInput compact label="시작" value={startSeconds} onChange={onStartChange} />
           <SourceTimestampInput compact label="종료" value={endSeconds} onChange={onEndChange} />
@@ -10397,74 +10292,6 @@ function SourceRangeSelector({
         </>
       )}
     </div>
-  );
-}
-
-function AdminSourceRangeStep({
-  sourceDurationSeconds,
-  startSeconds,
-  endSeconds,
-  usageSeconds,
-  plannedShortCount,
-  editable,
-  onStartChange,
-  onEndChange,
-  onReset,
-}: {
-  sourceDurationSeconds: number;
-  startSeconds: number;
-  endSeconds: number;
-  usageSeconds: number;
-  plannedShortCount: number;
-  editable: boolean;
-  onStartChange: (seconds: number) => void;
-  onEndChange: (seconds: number) => void;
-  onReset: () => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const selectedDuration = Math.max(0, endSeconds - startSeconds);
-  const usesEntireVideo = startSeconds <= 0 && endSeconds >= sourceDurationSeconds;
-  const selectionLabel = usesEntireVideo
-    ? `전체 영상 ${formatDuration(sourceDurationSeconds)}`
-    : `${formatTimestamp(startSeconds)}부터 ${formatTimestamp(endSeconds)}까지`;
-
-  return (
-    <section aria-label="사용할 영상 부분" className="rounded-2xl border border-white/10 bg-white/[.025] p-5 sm:p-6">
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-sm font-black text-[#ff9b8d]">1. 어느 부분을 사용할까요?</p>
-          <strong className="mt-2 block truncate text-lg font-extrabold text-white">{selectionLabel}</strong>
-          <p className="mt-1 text-xs leading-5 text-neutral-400">
-            {usesEntireVideo
-              ? "영상 전체를 사용해 쇼츠를 만들어요."
-              : `선택한 ${formatDuration(selectedDuration)}만 사용해 쇼츠를 만들어요.`}
-          </p>
-        </div>
-        {editable && (
-          <button
-            type="button"
-            aria-expanded={expanded}
-            onClick={() => setExpanded((current) => !current)}
-            className="min-h-10 shrink-0 rounded-xl border border-white/15 px-3 text-xs font-bold text-white transition hover:border-white/30 hover:bg-white/[.06]"
-          >
-            {expanded ? "설정 접기" : "사용할 부분 바꾸기"}
-          </button>
-        )}
-      </div>
-      {editable && expanded && (
-        <SourceRangeSelector
-          compact
-          sourceDurationSeconds={sourceDurationSeconds}
-          startSeconds={startSeconds}
-          endSeconds={endSeconds}
-          usageSeconds={usageSeconds}
-          plannedShortCount={plannedShortCount}
-          onStartChange={onStartChange}
-          onEndChange={onEndChange}
-          onReset={onReset}
-        />
-      )}
-    </section>
   );
 }
 
@@ -10565,7 +10392,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const sourceRangeSelectionEnabled = analysis?.sourceRangeSelectionEnabled === true;
   const subtitleTemplateSelectionEnabled = analysis?.subtitleTemplateSelectionEnabled === true;
   const brandColorSelectionEnabled = analysis?.brandColorSelectionEnabled === true;
-  const adminSimplifiedSettingsEnabled = brandColorSelectionEnabled;
+  const adminCompactSourceRangeEnabled = brandColorSelectionEnabled;
   const sourceVideoEmbedUrl = sourceRangeSelectionEnabled && analysis
     ? youtubePrivacyEnhancedEmbedUrl(analysis.videoId)
     : null;
@@ -11064,8 +10891,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       />
       <SourceRangeGuide
         enabled={Boolean(
-          !adminSimplifiedSettingsEnabled
-          && sourceRangeSelectionEnabled
+          sourceRangeSelectionEnabled
           && analysis?.creationAllowed === true
           && !longSourceNoticeOpen
           && !creationRestrictionOpen
@@ -11138,40 +10964,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                   : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p>
             </div>
           </div>
-          {adminSimplifiedSettingsEnabled && (
-            <h2 className="text-2xl font-black tracking-tight text-white">이 영상으로 쇼츠를 만들어볼까요?</h2>
-          )}
-          {adminSimplifiedSettingsEnabled ? (
-            <AdminSourceRangeStep
-              sourceDurationSeconds={analysis.durationSeconds}
-              startSeconds={sourceRangeStartSeconds}
-              endSeconds={sourceRangeEndSeconds}
-              usageSeconds={selectedSourceUsageSeconds}
-              plannedShortCount={selectedPlannedShortCount}
-              editable={sourceRangeSelectionEnabled}
-              onStartChange={(seconds) => setSourceRangeStartSeconds(Math.max(
-                0,
-                sourceRangeEndSeconds - MAX_SELECTED_SOURCE_SECONDS,
-                Math.min(seconds, sourceRangeEndSeconds - MIN_SELECTED_SOURCE_SECONDS),
-              ))}
-              onEndChange={(seconds) => setSourceRangeEndSeconds(Math.min(
-                analysis.durationSeconds,
-                sourceRangeStartSeconds + MAX_SELECTED_SOURCE_SECONDS,
-                Math.max(seconds, sourceRangeStartSeconds + MIN_SELECTED_SOURCE_SECONDS),
-              ))}
-              onReset={() => {
-                const availableSeconds = state?.usage.enforcementEnabled
-                  ? state.usage.remainingSeconds
-                  : MAX_SELECTED_SOURCE_SECONDS;
-                setSourceRangeStartSeconds(0);
-                setSourceRangeEndSeconds(Math.min(
-                  analysis.durationSeconds,
-                  availableSeconds,
-                  MAX_SELECTED_SOURCE_SECONDS,
-                ));
-              }}
-            />
-          ) : sourceRangeSelectionEnabled ? (
+          {sourceRangeSelectionEnabled && (
             <>
               <SourceRangeSelector
                 sourceDurationSeconds={analysis.durationSeconds}
@@ -11179,6 +10972,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                 endSeconds={sourceRangeEndSeconds}
                 usageSeconds={selectedSourceUsageSeconds}
                 plannedShortCount={selectedPlannedShortCount}
+                singleRowControls={adminCompactSourceRangeEnabled}
+                showPlannedShortCount={!adminCompactSourceRangeEnabled}
                 onStartChange={(seconds) => setSourceRangeStartSeconds(Math.max(
                   0,
                   sourceRangeEndSeconds - MAX_SELECTED_SOURCE_SECONDS,
@@ -11201,16 +10996,16 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                   ));
                 }}
               />
+              {!sourceRangeIsValid && (
+                <div role="alert" className="rounded-xl border border-amber-400/25 bg-amber-400/[.07] px-4 py-3 text-sm font-medium text-amber-100">
+                  {selectedSourceExceedsUsage
+                    ? `선택 사용량 ${formatDuration(selectedSourceUsageSeconds)}가 남은 시간 ${formatDuration(state?.usage.remainingSeconds || 0)}을 초과합니다.`
+                    : selectedSourceDurationSeconds < MIN_SELECTED_SOURCE_SECONDS
+                      ? "최소 4분 이상 선택해야 쇼츠를 만들 수 있습니다."
+                      : "한 작업에서 최대 60분까지 선택할 수 있습니다."}
+                </div>
+              )}
             </>
-          ) : null}
-          {sourceRangeSelectionEnabled && !sourceRangeIsValid && (
-            <div role="alert" className="rounded-xl border border-amber-400/25 bg-amber-400/[.07] px-4 py-3 text-sm font-medium text-amber-100">
-              {selectedSourceExceedsUsage
-                ? `선택 사용량 ${formatDuration(selectedSourceUsageSeconds)}가 남은 시간 ${formatDuration(state?.usage.remainingSeconds || 0)}을 초과합니다.`
-                : selectedSourceDurationSeconds < MIN_SELECTED_SOURCE_SECONDS
-                  ? "최소 4분 이상 선택해야 쇼츠를 만들 수 있습니다."
-                  : "한 작업에서 최대 60분까지 선택할 수 있습니다."}
-            </div>
           )}
           <TemplatePicker
             value={templateId}
@@ -11235,7 +11030,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             brandColorSelectionEnabled={brandColorSelectionEnabled}
             brandColor={brandColor}
             onBrandColorChange={setBrandColor}
-            simplifiedAdminExperience={adminSimplifiedSettingsEnabled}
             onSubtitleTemplateChange={(nextSubtitleTemplateId) => {
               setSubtitleTemplateId(nextSubtitleTemplateId);
               if (nextSubtitleTemplateId) {
@@ -11277,15 +11071,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           <button disabled={analysisCreationBlocked || !sourceRangeIsValid || !rightsConfirmed || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
               {loginPromptPending && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
-              {analysisCreationBlocked
-                ? t("home.createUnavailable")
-                : stateLoadStatus !== "ready"
-                  ? t("home.loginChecking")
-                  : !state?.user
-                    ? t("home.create")
-                    : !planEnforcementEnabled || state.billing.canCreateJobs || shortsEventRewardAvailable
-                      ? adminSimplifiedSettingsEnabled ? "이 설정으로 쇼츠 만들기" : t("home.create")
-                      : t("home.choosePlan")}
+              {analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs || shortsEventRewardAvailable ? t("home.create") : t("home.choosePlan")}
             </span>
           </button>
         </section>

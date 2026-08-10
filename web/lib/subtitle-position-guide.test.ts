@@ -41,7 +41,7 @@ describe("subtitle position guide", () => {
     );
     expect(shortsAppSource).toContain("data-subtitle-position-guide={position.value}");
     expect(shortsAppSource).toContain(
-      "enabled={!simplifiedAdminExperience && subtitleTemplateSelectionEnabled && Boolean(subtitleTemplateId)}",
+      "enabled={subtitleTemplateSelectionEnabled && Boolean(subtitleTemplateId)}",
     );
     expect(guideComponentSource).toContain('closeAriaLabel="자막 위치 가이드 닫기"');
   });
