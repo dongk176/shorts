@@ -1278,7 +1278,8 @@ class EditorDocumentRenderer:
             document.video.timeline_end_seconds
             - document.video.timeline_start_seconds
         )
-        if abs(timeline_duration - expected_duration) > max(0.2, expected_duration * 0.01):
+        timeline_drift_tolerance = max(0.2, expected_duration * 0.01)
+        if abs(timeline_duration - expected_duration) > timeline_drift_tolerance:
             raise RenderError("편집 타임라인 길이가 저장된 문서와 일치하지 않습니다.")
         has_audio = any(
             stream.get("codec_type") == "audio"
@@ -1298,11 +1299,40 @@ class EditorDocumentRenderer:
                     f"end={clip.source_end_seconds:.6f},asetpts=PTS-STARTPTS[a{index}]"
                 )
                 concat_inputs.append(f"[a{index}]")
+        raw_video_label = "sequence_video_raw"
+        raw_audio_label = "sequence_audio_raw"
         filters.append(
             "".join(concat_inputs)
             + f"concat=n={len(document.video.clips)}:v=1:a={1 if has_audio else 0}"
-            + ("[sequence_video][sequence_audio]" if has_audio else "[sequence_video]")
+            + (
+                f"[{raw_video_label}][{raw_audio_label}]"
+                if has_audio
+                else f"[{raw_video_label}]"
+            )
         )
+        # YouTube/container duration metadata can be a few frames longer than
+        # the captured edit timeline, especially when the source selection ends
+        # at the physical end of the video. The document is still authoritative
+        # for editor timing, so pad only within the already accepted timeline
+        # drift and trim both streams back to the exact requested duration.
+        # This keeps split clips, overlays, captions, and the persisted editor
+        # document on one clock instead of failing at 99% or shortening output.
+        target_duration = document.video.output_duration_seconds
+        timeline_fps = video_fps(probe)
+        max_tail_padding = min(1.0, timeline_drift_tolerance) + (2 / timeline_fps)
+        filters.append(
+            f"[{raw_video_label}]"
+            f"tpad=stop_mode=clone:stop_duration={max_tail_padding:.6f},"
+            f"trim=duration={target_duration:.6f},setpts=PTS-STARTPTS"
+            "[sequence_video]"
+        )
+        if has_audio:
+            filters.append(
+                f"[{raw_audio_label}]"
+                f"apad=pad_dur={max_tail_padding:.6f},"
+                f"atrim=duration={target_duration:.6f},asetpts=PTS-STARTPTS"
+                "[sequence_audio]"
+            )
         command = [
             "ffmpeg",
             "-hide_banner",
@@ -1346,8 +1376,10 @@ class EditorDocumentRenderer:
             or output_path.stat().st_size == 0
         ):
             raise RenderError("영상 조각을 이어 붙이지 못했습니다.")
-        rendered_duration = media_duration(probe_media(output_path, timeout=30))
-        if abs(rendered_duration - document.video.output_duration_seconds) > 0.12:
+        rendered_probe = probe_media(output_path, timeout=30)
+        rendered_duration = media_duration(rendered_probe)
+        duration_tolerance = max(0.05, (2 / video_fps(rendered_probe)) + 0.01)
+        if abs(rendered_duration - target_duration) > duration_tolerance:
             output_path.unlink(missing_ok=True)
             raise RenderError("편집한 영상 조각의 길이를 검증하지 못했습니다.")
         return output_path

@@ -747,6 +747,60 @@ def test_one_pixel_text_layout_wraps_without_clipping_the_glyphs(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
+def test_editor_sequence_pads_small_source_tail_drift_to_document_duration(
+    tmp_path: Path,
+) -> None:
+    timeline = tmp_path / "short-tail-timeline.mp4"
+    _run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=30",
+        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000",
+        "-t", "9.8", "-c:v", "libx264", "-preset", "ultrafast",
+        "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(timeline),
+    ])
+    value = json.loads(FIXTURE.read_text())
+    value["video"]["clips"] = [{
+        "id": "clip-tail",
+        "sourceStartSeconds": 1,
+        "sourceEndSeconds": 10,
+    }]
+    value["video"]["selectionStartSeconds"] = 11
+    value["video"]["selectionEndSeconds"] = 20
+    document = EditorDocument.model_validate(value)
+    renderer = EditorDocumentRenderer(Settings(
+        temp_dir=tmp_path / "temp",
+        ffmpeg_timeout_seconds=120,
+        ffmpeg_threads=2,
+        clean_clip_preset="ultrafast",
+        clean_clip_crf=28,
+    ))
+
+    clean = renderer.extract_sequence(
+        timeline_path=timeline,
+        output_path=tmp_path / "clean.mp4",
+        document=document,
+        work_dir=tmp_path / "cut-work",
+    )
+
+    probe = json.loads(_run([
+        "ffprobe", "-v", "error", "-show_streams", "-show_format",
+        "-of", "json", str(clean),
+    ]).stdout)
+    video = next(
+        stream for stream in probe["streams"] if stream["codec_type"] == "video"
+    )
+    audio = next(
+        stream for stream in probe["streams"] if stream["codec_type"] == "audio"
+    )
+    assert float(probe["format"]["duration"]) == pytest.approx(9, abs=0.08)
+    assert float(video["duration"]) == pytest.approx(9, abs=0.08)
+    assert float(audio["duration"]) == pytest.approx(9, abs=0.08)
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
 def test_editor_document_cuts_and_renders_browser_playable_vertical_mp4(
     tmp_path: Path,
 ) -> None:
