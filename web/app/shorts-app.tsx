@@ -1546,6 +1546,7 @@ function TemplatePicker({
   brandColorSelectionEnabled,
   brandColor,
   onBrandColorChange,
+  settingsBelowRail,
 }: {
   value: TemplateId;
   onChange: (value: TemplateId) => void;
@@ -1566,6 +1567,7 @@ function TemplatePicker({
   brandColorSelectionEnabled: boolean;
   brandColor: TemplatePresetColor;
   onBrandColorChange: (value: TemplatePresetColor) => void;
+  settingsBelowRail: boolean;
 }) {
   const usablePersonalTemplates = canUseCustomTemplates ? personalTemplates : [];
   const selectedCustom = usablePersonalTemplates.find((template) => template.id === customTemplateId);
@@ -1613,24 +1615,27 @@ function TemplatePicker({
       </button>
     );
   };
+  const templateSettings = (
+    <div className="mt-4 grid gap-3 rounded-xl border border-white/[.08] bg-white/[.025] p-3">
+      <VideoAspectRatioPicker
+        value={effectiveAspectRatio}
+        lockedValue={selectedCustom?.config.video.aspectRatio}
+        disabledValues={disabledPresetRatios}
+        disabledReason={disabledPresetRatios.length ? "기본 댓글 템플릿에서는 세로형과 세로 꽉참 비율을 사용할 수 없어요. 내 템플릿에서는 모든 비율을 사용할 수 있습니다." : undefined}
+        onChange={onVideoAspectRatioChange}
+      />
+      {brandColorSelectionEnabled && (
+        <BrandColorPicker value={brandColor} onChange={onBrandColorChange} />
+      )}
+    </div>
+  );
   return (
     <div id="template-picker">
       <div className="flex items-center gap-3">
         <h2 className="text-xl font-bold">템플릿</h2>
         <span className="text-xs font-semibold text-red-300">{selectedSubtitleTemplate?.name || selectedCustom?.name || selectedTemplate.name}</span>
       </div>
-      <div className="mt-4 grid gap-3 rounded-xl border border-white/[.08] bg-white/[.025] p-3">
-        <VideoAspectRatioPicker
-          value={effectiveAspectRatio}
-          lockedValue={selectedCustom?.config.video.aspectRatio}
-          disabledValues={disabledPresetRatios}
-          disabledReason={disabledPresetRatios.length ? "기본 댓글 템플릿에서는 세로형과 세로 꽉참 비율을 사용할 수 없어요. 내 템플릿에서는 모든 비율을 사용할 수 있습니다." : undefined}
-          onChange={onVideoAspectRatioChange}
-        />
-        {brandColorSelectionEnabled && (
-          <BrandColorPicker value={brandColor} onChange={onBrandColorChange} />
-        )}
-      </div>
+      {!settingsBelowRail && templateSettings}
       <div
         aria-label="템플릿 선택 레일"
         className="template-picker-rail mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain pb-4 pr-2 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-[rgba(255,255,255,.05)] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-[rgba(0,0,0,.34)] [&::-webkit-scrollbar-thumb]:bg-[rgba(255,255,255,.34)] [&::-webkit-scrollbar-thumb:hover]:bg-[rgba(255,255,255,.5)]"
@@ -1674,6 +1679,7 @@ function TemplatePicker({
           return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
         })}
       </div>
+      {settingsBelowRail && templateSettings}
       {subtitleTemplateSelectionEnabled && subtitleTemplateId && (
         <section aria-label="자막 위치" className="mt-4 rounded-xl border border-white/[.09] bg-white/[.025] p-3">
           <div className="flex items-end justify-between gap-3">
@@ -10393,6 +10399,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const subtitleTemplateSelectionEnabled = analysis?.subtitleTemplateSelectionEnabled === true;
   const brandColorSelectionEnabled = analysis?.brandColorSelectionEnabled === true;
   const adminCompactSourceRangeEnabled = brandColorSelectionEnabled;
+  const adminTemplateLayoutEnabled = brandColorSelectionEnabled;
   const sourceVideoEmbedUrl = sourceRangeSelectionEnabled && analysis
     ? youtubePrivacyEnhancedEmbedUrl(analysis.videoId)
     : null;
@@ -10935,7 +10942,19 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}
       {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>{t("home.serviceLoadError")}</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">{t("common.retry")}</button></div>}
       {analysis && (
-        <section id="shorts-settings" ref={analysisSectionRef} className="scroll-mt-24 space-y-8 sm:scroll-mt-28">
+        <section
+          id="shorts-settings"
+          ref={analysisSectionRef}
+          className="scroll-mt-24 space-y-8 sm:scroll-mt-28"
+          style={adminTemplateLayoutEnabled ? {
+            border: 0,
+            borderRadius: 0,
+            padding: 0,
+            background: "transparent",
+            boxShadow: "none",
+            backdropFilter: "none",
+          } : undefined}
+        >
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141416] sm:flex">
             {sourceVideoEmbedUrl ? (
               <div className="aspect-video w-full shrink-0 overflow-hidden bg-black sm:w-72">
@@ -10954,14 +10973,18 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             <div className="p-5">
               <h2 className="text-lg font-bold">{analysis.title}</h2>
               <p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p>
-              <p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {selectedPlannedShortCount}개</p>
-              <p className="mt-1 text-xs text-neutral-500">{sourceRangeSelectionEnabled
-                ? planEnforcementEnabled
-                  ? `선택한 ${formatDuration(selectedSourceDurationSeconds)}만 사용량으로 계산됩니다.`
-                  : `선택한 ${formatDuration(selectedSourceDurationSeconds)}만 전사·분석됩니다.`
-                : planEnforcementEnabled
-                  ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.`
-                  : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p>
+              {!adminTemplateLayoutEnabled && (
+                <>
+                  <p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {selectedPlannedShortCount}개</p>
+                  <p className="mt-1 text-xs text-neutral-500">{sourceRangeSelectionEnabled
+                    ? planEnforcementEnabled
+                      ? `선택한 ${formatDuration(selectedSourceDurationSeconds)}만 사용량으로 계산됩니다.`
+                      : `선택한 ${formatDuration(selectedSourceDurationSeconds)}만 전사·분석됩니다.`
+                    : planEnforcementEnabled
+                      ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.`
+                      : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p>
+                </>
+              )}
             </div>
           </div>
           {sourceRangeSelectionEnabled && (
@@ -11030,6 +11053,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             brandColorSelectionEnabled={brandColorSelectionEnabled}
             brandColor={brandColor}
             onBrandColorChange={setBrandColor}
+            settingsBelowRail={adminTemplateLayoutEnabled}
             onSubtitleTemplateChange={(nextSubtitleTemplateId) => {
               setSubtitleTemplateId(nextSubtitleTemplateId);
               if (nextSubtitleTemplateId) {
