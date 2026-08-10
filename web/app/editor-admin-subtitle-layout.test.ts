@@ -25,10 +25,15 @@ describe("admin editor subtitle layout", () => {
     );
   });
 
-  it("offers vertical position and size controls with a live preview", () => {
+  it("offers caption copy, color, vertical drag and size controls with a live preview", () => {
     expect(editorSource).toContain('aria-label="자막 세로 위치"');
     expect(editorSource).toContain('aria-label="자막 크기"');
     expect(editorSource).toContain("data-editor-caption-template-preview");
+    expect(editorSource).toContain('aria-label={`자막 포인트 색상 ${option.name}`}');
+    expect(editorSource).toContain('title="드래그해서 이동 · 더블클릭해서 자막 수정"');
+    expect(editorSource).toContain("onEditStart={beginEditorCaptionTextEdit}");
+    expect(editorSource).toContain("onPointerDown={beginEditorSubtitleDrag}");
+    expect(editorSource).toContain("subtitleOffsetBounds.max");
     expect(editorSource).toContain('spec.templateId === "pop"');
     expect(editorSource).toContain("retimeCaptionRenderSpecForEditor");
     expect(editorSource).toContain(

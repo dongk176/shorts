@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { putEditorChannelAsset } from "@/lib/aws";
 import { getBillingSummary } from "@/lib/billing";
+import { parseCaptionRenderSpec } from "@/lib/caption-render-spec";
 import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import {
@@ -235,19 +236,31 @@ async function applyEditorDocument({
       "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
     );
   }
+  const captionRenderSpec = existing.subtitleTemplateId
+    ? parseCaptionRenderSpec(existing.captionRenderSpec)
+    : null;
   if (existing.subtitleTemplateId) {
-    const captionRenderSpec = existing.captionRenderSpec;
     if (
       !captionRenderSpec
-      || typeof captionRenderSpec !== "object"
-      || Array.isArray(captionRenderSpec)
-      || !("templateId" in captionRenderSpec)
       || captionRenderSpec.templateId !== existing.subtitleTemplateId
     ) {
       throw new HttpError(
         409,
         "원본 자막 렌더 정보를 찾을 수 없습니다.",
         "CAPTION_RENDER_SPEC_MISSING",
+      );
+    }
+    if (
+      requestedDocument.version === 3
+      && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+      && (requestedDocument.renderSpec.subtitles.cueEdits || []).some(
+        (edit) => edit.cueIndex >= captionRenderSpec.cues.length,
+      )
+    ) {
+      throw new HttpError(
+        400,
+        "수정할 자막 구간을 다시 선택해 주세요.",
+        "EDITOR_CAPTION_CUE_INVALID",
       );
     }
   }

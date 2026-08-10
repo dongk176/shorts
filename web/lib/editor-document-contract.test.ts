@@ -182,8 +182,10 @@ describe("editor document v3 render specification", () => {
     fixture.renderSpec.version = 2;
     fixture.renderSpec.subtitles = {
       centerX: 540,
-      offsetY: -260,
+      offsetY: 700,
       scale: 1.4,
+      accentColor: "#16A34A",
+      cueEdits: [{ cueIndex: 0, text: "수정한 자막" }],
     };
 
     const parsed = editorDocumentSnapshotSchema.parse(fixture);
@@ -193,8 +195,10 @@ describe("editor document v3 render specification", () => {
     }
     expect(parsed.renderSpec.subtitles).toEqual({
       centerX: 540,
-      offsetY: -260,
+      offsetY: 700,
       scale: 1.4,
+      accentColor: "#16A34A",
+      cueEdits: [{ cueIndex: 0, text: "수정한 자막" }],
     });
 
     fixture.renderSpec.subtitles.centerX = 520;

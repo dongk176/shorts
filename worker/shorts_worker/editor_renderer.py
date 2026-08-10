@@ -7,7 +7,11 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
-from .caption_templates import create_caption_ass, prepare_caption_fonts
+from .caption_templates import (
+    create_caption_ass,
+    prepare_caption_fonts,
+    rebuild_caption_cue_text,
+)
 from .config import Settings
 from .errors import RenderError
 from .media import media_duration, probe_media, run_command, video_fps
@@ -264,6 +268,36 @@ def retime_editor_caption_spec(
     offset_y = render_subtitles.offset_y if render_subtitles else 0.0
     scale = render_subtitles.scale if render_subtitles else 1.0
 
+    cue_edits = {
+        edit.cue_index: edit.text
+        for edit in (render_subtitles.cue_edits if render_subtitles else [])
+    }
+    if cue_edits:
+        source_cues = spec.get("cues")
+        safe_area_value = spec.get("safeArea")
+        if not isinstance(source_cues, list) or not isinstance(safe_area_value, dict):
+            raise RenderError("원본 자막 편집 정보를 찾을 수 없습니다.")
+        safe_area = {
+            key: int(safe_area_value[key])
+            for key in ("x", "y", "width", "height")
+        }
+        rebuilt_cues: list[dict[str, object]] = []
+        for cue_index, cue_value in enumerate(source_cues):
+            if not isinstance(cue_value, dict):
+                raise RenderError("원본 자막 큐가 올바르지 않습니다.")
+            edited_text = cue_edits.get(cue_index)
+            if edited_text is None:
+                rebuilt_cues.append(cue_value)
+                continue
+            rebuilt_cues.extend(rebuild_caption_cue_text(
+                cue_value,
+                text=edited_text,
+                template_id=str(spec["templateId"]),
+                safe_area=safe_area,
+                fps=fps,
+            ))
+        spec["cues"] = rebuilt_cues
+
     def scaled_x(value: object) -> float:
         return round(540 + (float(value) - 540) * scale, 3)
 
@@ -273,6 +307,8 @@ def retime_editor_caption_spec(
     style = spec.get("style")
     if not isinstance(style, dict):
         raise RenderError("원본 자막 스타일이 올바르지 않습니다.")
+    if render_subtitles and render_subtitles.accent_color:
+        style["accentColor"] = render_subtitles.accent_color
     style["fontSize"] = round(float(style.get("fontSize") or 0) * scale, 3)
     style["outlineWidth"] = round(
         float(style.get("outlineWidth") or 0) * scale,
@@ -469,6 +505,7 @@ def _draw_styled_title_content(
     font_id: EditorFontId,
     font_size: int,
     custom_config: CustomTemplateConfig | None,
+    title_accent_color: str | None = None,
 ) -> Image.Image:
     render_title = document.render_spec.title if document.render_spec else None
     lines = render_title.lines if render_title else wrap_korean_title(document.title.text)
@@ -579,7 +616,7 @@ def _draw_styled_title_content(
         else:
             overlay_mode = document.video.aspect_ratio is VideoAspectRatio.FULL_VERTICAL
             default_color = (
-                style.accent
+                title_accent_color or style.accent
                 if index > 0
                 or (overlay_mode and document.template.id is not TemplateId.PAPER)
                 else style.primary
@@ -602,6 +639,8 @@ def _draw_styled_title_content(
 def create_editor_title_layer(
     document: EditorDocument,
     output_path: Path,
+    *,
+    title_accent_color: str | None = None,
 ) -> Path:
     canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
     if not document.overlays.visible["title"]:
@@ -684,6 +723,7 @@ def create_editor_title_layer(
         font_id=font_id,
         font_size=base_font_size,
         custom_config=config,
+        title_accent_color=title_accent_color,
     )
     if config is None:
         center_y -= content.height / 2
@@ -1310,9 +1350,21 @@ class EditorDocumentRenderer:
             document,
             assets_dir / "background.png",
         )
+        caption_style = (
+            caption_render_spec.get("style")
+            if isinstance(caption_render_spec, dict)
+            else None
+        )
+        original_caption_accent = (
+            str(caption_style.get("accentColor"))
+            if isinstance(caption_style, dict)
+            and isinstance(caption_style.get("accentColor"), str)
+            else None
+        )
         title_path = create_editor_title_layer(
             document,
             assets_dir / "title.png",
+            title_accent_color=original_caption_accent,
         )
         channel_path = create_editor_channel_layer(
             document,

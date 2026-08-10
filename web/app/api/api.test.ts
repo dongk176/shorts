@@ -996,8 +996,22 @@ describe("subtitle template edit isolation", () => {
         captionRenderSpec: {
           schemaVersion: 3,
           templateId: "pop",
+          captionPlacement: "lower",
           fps: 30,
-          cues: [],
+          safeArea: { x: 72, y: 192, width: 936, height: 1_536 },
+          style: {
+            fontSize: 64,
+            textColor: "#FFFFFF",
+            accentColor: "#16A34A",
+            outlineColor: "#000000",
+            outlineWidth: 8,
+          },
+          cues: [{
+            startFrame: 0,
+            endFrame: 30,
+            words: [{ text: "자막" }],
+            events: [{ startFrame: 0, endFrame: 30 }],
+          }],
         },
         channelThumbnailUrl: "https://example.com/channel.png",
         editorDocument: null,

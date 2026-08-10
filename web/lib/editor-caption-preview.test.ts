@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { CaptionRenderSpec } from "./caption-render-spec";
-import { retimeCaptionRenderSpecForEditor } from "./editor-caption-preview";
+import {
+  editorCaptionVerticalOffsetBounds,
+  retimeCaptionRenderSpecForEditor,
+} from "./editor-caption-preview";
 
 const spec: CaptionRenderSpec = {
   schemaVersion: 3,
@@ -37,6 +40,7 @@ describe("editor caption preview timing", () => {
     }]);
 
     expect(retimed?.timingLeadFrames).toBe(7);
+    expect(retimed?.cues[0]?.sourceCueIndex).toBe(0);
     expect(retimed?.cues[0]?.events[0]).toMatchObject({
       startFrame: 8,
       endFrame: 25,
@@ -52,5 +56,17 @@ describe("editor caption preview timing", () => {
       sourceStartSeconds: 2,
       sourceEndSeconds: 3,
     }])).toBeNull();
+  });
+
+  it("lets a lower caption reach the bottom edge without leaving the canvas", () => {
+    const lower = {
+      ...spec,
+      safeArea: { x: 120, y: 1025, width: 840, height: 140 },
+    };
+
+    expect(editorCaptionVerticalOffsetBounds(lower, 1.4)).toEqual({
+      min: -900,
+      max: 717,
+    });
   });
 });

@@ -33,6 +33,7 @@ const captionEventSchema = z.object({
 }).strip().refine((event) => event.endFrame > event.startFrame);
 
 const captionCueSchema = z.object({
+  sourceCueIndex: z.number().int().nonnegative().optional(),
   startFrame: frame,
   endFrame: frame,
   fontSize: finiteNumber.min(16).max(300).optional(),
