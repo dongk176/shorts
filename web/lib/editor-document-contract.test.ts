@@ -173,4 +173,31 @@ describe("editor document v3 render specification", () => {
     fixture.renderSpec.textOverlays[0].font.resolvedWeight = 700;
     expect(() => editorDocumentSnapshotSchema.parse(fixture)).toThrow();
   });
+
+  it("accepts the admin-only vertical subtitle layout while fixing horizontal position", () => {
+    const fixture = JSON.parse(readFileSync(
+      path.resolve(process.cwd(), "../test-fixtures/editor-document-v3.json"),
+      "utf8",
+    ));
+    fixture.renderSpec.version = 2;
+    fixture.renderSpec.subtitles = {
+      centerX: 540,
+      offsetY: -260,
+      scale: 1.4,
+    };
+
+    const parsed = editorDocumentSnapshotSchema.parse(fixture);
+    expect(parsed.version).toBe(3);
+    if (parsed.version !== 3 || parsed.renderSpec.version !== 2) {
+      throw new Error("admin subtitle render spec was not preserved");
+    }
+    expect(parsed.renderSpec.subtitles).toEqual({
+      centerX: 540,
+      offsetY: -260,
+      scale: 1.4,
+    });
+
+    fixture.renderSpec.subtitles.centerX = 520;
+    expect(() => editorDocumentSnapshotSchema.parse(fixture)).toThrow();
+  });
 });

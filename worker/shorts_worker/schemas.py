@@ -248,6 +248,8 @@ class TitleTextStyle(BaseModel):
 
 EDITOR_DOCUMENT_VERSION = 2
 EDITOR_DOCUMENT_LATEST_VERSION = 3
+EDITOR_RENDER_SPEC_VERSION = 1
+EDITOR_RENDER_SPEC_LATEST_VERSION = 2
 EDITOR_CANVAS_WIDTH = 1080
 EDITOR_CANVAS_HEIGHT = 1920
 EDITOR_PRESET_COLORS = {
@@ -382,6 +384,14 @@ class EditorRenderCommentSpec(BaseModel):
         return self
 
 
+class EditorRenderSubtitleSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    center_x: int = Field(alias="centerX", ge=540, le=540)
+    offset_y: float = Field(alias="offsetY", ge=-900, le=320)
+    scale: float = Field(ge=0.5, le=2)
+
+
 class EditorRenderTextSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -423,7 +433,10 @@ class EditorRenderVideoSpec(BaseModel):
 class EditorRenderSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    version: int = Field(ge=1, le=1)
+    version: int = Field(
+        ge=EDITOR_RENDER_SPEC_VERSION,
+        le=EDITOR_RENDER_SPEC_LATEST_VERSION,
+    )
     canvas: dict[str, int]
     fps: int = Field(ge=30, le=30)
     layer_order: list[str] = Field(alias="layerOrder", min_length=1, max_length=24)
@@ -432,11 +445,16 @@ class EditorRenderSpec(BaseModel):
     comments: list[EditorRenderCommentSpec] = Field(max_length=20)
     text_overlays: list[EditorRenderTextSpec] = Field(alias="textOverlays", max_length=20)
     video: EditorRenderVideoSpec
+    subtitles: EditorRenderSubtitleSpec | None = None
 
     @model_validator(mode="after")
     def validate_canvas(self) -> EditorRenderSpec:
         if self.canvas != {"width": 1080, "height": 1920}:
             raise ValueError("editor render canvas is invalid")
+        if self.version == 1 and self.subtitles is not None:
+            raise ValueError("editor renderSpec v1 cannot contain subtitle layout")
+        if self.version == 2 and self.subtitles is None:
+            raise ValueError("editor renderSpec v2 requires subtitle layout")
         return self
 
 

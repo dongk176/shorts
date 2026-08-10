@@ -14,6 +14,7 @@ from PIL import Image
 from .config import Settings
 from .editor_renderer import (
     EditorDocumentRenderer,
+    editor_subtitle_style,
     editor_video_frame,
     verify_editor_fonts,
 )
@@ -101,7 +102,7 @@ def _render_spec(value: dict[str, Any]) -> dict[str, object]:
     comments = value["comments"]
     text_overlays = overlays["textOverlays"]
     return {
-        "version": 1,
+        "version": 2,
         "canvas": {"width": 1080, "height": 1920},
         "fps": 30,
         "layerOrder": list(overlays["layerOrder"]),
@@ -154,6 +155,11 @@ def _render_spec(value: dict[str, Any]) -> dict[str, object]:
             "offsetX": overlays["offsets"]["video"]["x"],
             "offsetY": overlays["offsets"]["video"]["y"],
             "scale": overlays["scales"]["video"],
+        },
+        "subtitles": {
+            "centerX": 540,
+            "offsetY": -260,
+            "scale": 1.5,
         },
     }
 
@@ -642,6 +648,16 @@ def run_editor_release_probe() -> dict[str, Any]:
             work_dir=root / "render-work",
             channel_thumbnail_path=thumbnail,
         )
+        subtitle_style = editor_subtitle_style(document)
+        subtitle_ass = (
+            root / "render-work" / "editor-assets" / "subtitles.ass"
+        ).read_text(encoding="utf-8")
+        if (
+            f"Style: Default,Noto Sans CJK KR,{subtitle_style.font_size},"
+            not in subtitle_ass
+            or f",60,60,{subtitle_style.margin_v},1" not in subtitle_ass
+        ):
+            raise RuntimeError("Probe subtitle layout does not match renderSpec")
         probe = json.loads(_run([
             "ffprobe",
             "-v",
@@ -711,6 +727,7 @@ def run_editor_release_probe() -> dict[str, Any]:
                 "legacy-no-timeline": True,
                 "captured-timeline": True,
                 "editor-v2": True,
+                "subtitle-layout": True,
                 "ffprobe": True,
                 "frame-parity": True,
             },
@@ -719,6 +736,7 @@ def run_editor_release_probe() -> dict[str, Any]:
                 "legacy-no-timeline": "make-verify",
                 "captured-timeline": "make-verify",
                 "editor-v2": "synthetic-render",
+                "subtitle-layout": "synthetic-render-ass",
                 "ffprobe": "synthetic-render",
                 "frame-parity": "synthetic-render",
             },
@@ -749,6 +767,12 @@ def run_editor_release_probe() -> dict[str, Any]:
                 else None,
                 "template": document.template.id.value,
                 "layerOrder": document.overlays.layer_order,
+                "subtitleLayout": document.render_spec.subtitles.model_dump(
+                    mode="json",
+                    by_alias=True,
+                )
+                if document.render_spec and document.render_spec.subtitles
+                else None,
             },
         }
         bucket = settings.s3_bucket

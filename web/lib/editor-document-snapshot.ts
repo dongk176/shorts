@@ -13,7 +13,9 @@ import {
 import type { EditorVideoClip } from "./editor-video-cuts";
 import {
   createEditorRenderSpec,
+  editorSubtitleLayoutFromRenderSpec,
   type EditorRenderSpec,
+  type EditorSubtitleLayout,
 } from "./editor-render-spec";
 
 export const EDITOR_DOCUMENT_SNAPSHOT_VERSION = 2 as const;
@@ -124,12 +126,13 @@ export function createEditorDocumentSnapshot(
 
 export function createEditorDocumentSnapshotV3(
   input: EditorDocumentSnapshotInput,
+  subtitleLayout?: EditorSubtitleLayout,
 ): EditorDocumentSnapshotV3 {
   const v2 = createEditorDocumentSnapshot(input);
   return {
     ...v2,
     version: EDITOR_DOCUMENT_V3_VERSION,
-    renderSpec: createEditorRenderSpec(v2),
+    renderSpec: createEditorRenderSpec(v2, subtitleLayout),
   };
 }
 
@@ -137,7 +140,12 @@ export function cloneEditorDocumentSnapshot(
   snapshot: EditorDocumentSnapshot,
 ): EditorDocumentSnapshot {
   return snapshot.version === EDITOR_DOCUMENT_V3_VERSION
-    ? createEditorDocumentSnapshotV3(snapshot)
+    ? createEditorDocumentSnapshotV3(
+        snapshot,
+        snapshot.renderSpec.version === 2
+          ? editorSubtitleLayoutFromRenderSpec(snapshot.renderSpec)
+          : undefined,
+      )
     : createEditorDocumentSnapshot(snapshot);
 }
 

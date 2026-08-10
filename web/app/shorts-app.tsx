@@ -186,7 +186,20 @@ import {
   editorDocumentSnapshotSchema,
   editorDocumentOutputDuration,
 } from "@/lib/editor-document-contract";
-import { createEditorRenderSpec } from "@/lib/editor-render-spec";
+import {
+  createEditorRenderSpec,
+  DEFAULT_EDITOR_SUBTITLE_LAYOUT,
+  EDITOR_RENDER_SPEC_VERSION,
+  EDITOR_SUBTITLE_DEFAULT_FONT_SIZE,
+  EDITOR_SUBTITLE_DEFAULT_MARGIN_V,
+  EDITOR_SUBTITLE_OFFSET_Y_MAX,
+  EDITOR_SUBTITLE_OFFSET_Y_MIN,
+  EDITOR_SUBTITLE_SCALE_MAX,
+  EDITOR_SUBTITLE_SCALE_MIN,
+  editorSubtitleLayoutFromRenderSpec,
+  normalizeEditorSubtitleLayout,
+  type EditorSubtitleLayout,
+} from "@/lib/editor-render-spec";
 import { editorSubtitlesForSave } from "@/lib/editor-subtitle-save";
 import {
   createEditorDraftRecord,
@@ -2631,6 +2644,7 @@ type EditorCopySnapshot = {
   channelThumbnailUrl: string | null;
   channelThumbnailAssetKey: string | null;
   subtitleSegments: EditorSubtitleSegment[];
+  subtitleLayout: EditorSubtitleLayout;
 };
 type EditorCopyHistoryEntry = {
   before: EditorCopySnapshot;
@@ -2707,6 +2721,7 @@ const cloneEditorCopySnapshot = (
   channelThumbnailUrl: snapshot.channelThumbnailUrl,
   channelThumbnailAssetKey: snapshot.channelThumbnailAssetKey,
   subtitleSegments: cloneEditorSubtitleSegments(snapshot.subtitleSegments),
+  subtitleLayout: { ...snapshot.subtitleLayout },
 });
 const cloneEditorCopyHistoryEntry = (
   entry: EditorCopyHistoryEntry,
@@ -2724,6 +2739,8 @@ const editorCopySnapshotsEqual = (
   && left.channelThumbnailUrl === right.channelThumbnailUrl
   && left.channelThumbnailAssetKey === right.channelThumbnailAssetKey
   && JSON.stringify(left.subtitleSegments) === JSON.stringify(right.subtitleSegments)
+  && left.subtitleLayout.offsetY === right.subtitleLayout.offsetY
+  && left.subtitleLayout.scale === right.subtitleLayout.scale
   && JSON.stringify(left.titleTextStyles) === JSON.stringify(right.titleTextStyles)
 );
 const editorCopyTitleChanged = (entry: EditorCopyHistoryEntry) => (
@@ -2735,6 +2752,8 @@ const editorCopyTitleChanged = (entry: EditorCopyHistoryEntry) => (
 const editorCopySubtitleChanged = (entry: EditorCopyHistoryEntry) => (
   JSON.stringify(entry.before.subtitleSegments)
   !== JSON.stringify(entry.after.subtitleSegments)
+  || entry.before.subtitleLayout.offsetY !== entry.after.subtitleLayout.offsetY
+  || entry.before.subtitleLayout.scale !== entry.after.subtitleLayout.scale
 );
 const cloneEditorTemplateSnapshot = (
   snapshot: EditorTemplateSnapshot,
@@ -2777,6 +2796,7 @@ type EditorFontApplySource = "title" | "channel" | `text:${string}`;
 type EditorSidebarTool =
   | "title"
   | "text"
+  | "subtitle"
   | "comment"
   | "channel"
   | "background"
@@ -2811,6 +2831,12 @@ function EditorSidebarSectionIcon({
       <path d="M7 7.25h6M7 9.75h4" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" />
     </svg>;
   }
+  if (section === "subtitle") {
+    return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5.75 9h3.5M10.75 9h3.5M5.75 12h5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>;
+  }
   if (section === "text") {
     return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <rect x="3.25" y="3.25" width="13.5" height="13.5" rx="2" stroke="currentColor" strokeWidth="1.5" />
@@ -2839,6 +2865,7 @@ function EditorSidebarSectionIcon({
 const EDITOR_SIDEBAR_TOOLS = [
   { id: "title", label: "후킹 제목" },
   { id: "text", label: "텍스트" },
+  { id: "subtitle", label: "자막" },
   { id: "comment", label: "댓글" },
   { id: "channel", label: "채널명" },
   { id: "background", label: "배경" },
@@ -3427,6 +3454,8 @@ function CommentTimelineEditor({
 }
 
 function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; paidAccessBlocked?: boolean }) {
+  const adminSubtitleLayoutEnabled = editorRelease.channel === "canary"
+    && editorRelease.documentVersion === 3;
   const savedEditorDocument = overlayPreviewEnabled
     && (item.editorDocument?.version === 2 || item.editorDocument?.version === 3)
     ? item.editorDocument
@@ -3505,6 +3534,20 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const subtitleSegmentsRef = useRef<EditorSubtitleSegment[]>(
     savedEditorDocument?.subtitles.segments || item.subtitleSegments,
   );
+  const initialSubtitleLayout = savedEditorDocument?.version === 3
+    ? editorSubtitleLayoutFromRenderSpec(savedEditorDocument.renderSpec)
+    : { ...DEFAULT_EDITOR_SUBTITLE_LAYOUT };
+  const [subtitleLayout, setSubtitleLayout] = useState<EditorSubtitleLayout>(
+    initialSubtitleLayout,
+  );
+  const subtitleLayoutRef = useRef(initialSubtitleLayout);
+  const updateEditorSubtitleLayout = useCallback((
+    value: EditorSubtitleLayout,
+  ) => {
+    const normalized = normalizeEditorSubtitleLayout(value);
+    subtitleLayoutRef.current = normalized;
+    setSubtitleLayout(normalized);
+  }, []);
   const [templateId, setTemplateId] = useState(initialTemplateId);
   const [activeCustomTemplate, setActiveCustomTemplate] = useState<CustomTemplate | null>(
     availableCustomTemplate,
@@ -3994,7 +4037,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     },
     };
     return editorRelease.documentVersion === 3
-      ? createEditorDocumentSnapshotV3(input)
+      ? createEditorDocumentSnapshotV3(
+          input,
+          adminSubtitleLayoutEnabled ? subtitleLayout : undefined,
+        )
       : createEditorDocumentSnapshot(input);
   }, [
     activeCustomTemplate,
@@ -4012,6 +4058,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     selectionEnd,
     selectionStart,
     segments,
+    subtitleLayout,
     subtitlesEnabled,
     templateId,
     title,
@@ -4021,6 +4068,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     editTimeline?.timelineEndSeconds,
     editTimeline?.timelineStartSeconds,
     editorRelease.documentVersion,
+    adminSubtitleLayoutEnabled,
   ]);
   const saveEditorDraftNow = useCallback(async () => {
     if (
@@ -4186,6 +4234,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const renderSpec = editorDocumentSnapshot.version === 3
     ? editorDocumentSnapshot.renderSpec
     : null;
+  const renderSubtitleLayout = editorSubtitleLayoutFromRenderSpec(renderSpec);
+  const renderSubtitleBottom = (
+    EDITOR_SUBTITLE_DEFAULT_MARGIN_V - renderSubtitleLayout.offsetY
+  ) / TEMPLATE_CANVAS.height * 100;
+  const renderSubtitleFontSize = (
+    EDITOR_SUBTITLE_DEFAULT_FONT_SIZE * renderSubtitleLayout.scale
+  ) / TEMPLATE_CANVAS.width * 100;
   const titleFontFamily = overlayPreviewEnabled
     ? renderSpec?.title.font.family || editorFontFamily(titleFontId)
     : undefined;
@@ -4688,6 +4743,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     subtitleSegments: cloneEditorSubtitleSegments(
       subtitleSegmentsRef.current,
     ),
+    subtitleLayout: { ...subtitleLayoutRef.current },
   }), []);
 
   const applyEditorCopySnapshot = useCallback((snapshot: EditorCopySnapshot) => {
@@ -4699,6 +4755,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     editorChannelThumbnailUrlRef.current = next.channelThumbnailUrl;
     editorChannelThumbnailAssetKeyRef.current = next.channelThumbnailAssetKey;
     subtitleSegmentsRef.current = next.subtitleSegments;
+    subtitleLayoutRef.current = next.subtitleLayout;
     setTitle(next.title);
     setTitleTextStyles(next.titleTextStyles);
     setTitleFontScale(next.titleFontScale);
@@ -4713,6 +4770,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setEditorChannelThumbnailUrl(next.channelThumbnailUrl);
     setEditorChannelThumbnailAssetKey(next.channelThumbnailAssetKey);
     setSegments(next.subtitleSegments);
+    setSubtitleLayout(next.subtitleLayout);
     setEditingSubtitleIndex(null);
     setTitleSelection(null);
   }, []);
@@ -4804,6 +4862,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     subtitleSegmentsRef.current = cloneEditorSubtitleSegments(
       document.subtitles.segments,
     );
+    const restoredSubtitleLayout = document.version === 3
+      ? editorSubtitleLayoutFromRenderSpec(document.renderSpec)
+      : { ...DEFAULT_EDITOR_SUBTITLE_LAYOUT };
+    subtitleLayoutRef.current = restoredSubtitleLayout;
     commentsRef.current = cloneEditorComments(document.comments);
     templateIdRef.current = document.template.id;
     activeCustomTemplateRef.current = draftCustomTemplate;
@@ -4827,6 +4889,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setEditorChannelThumbnailAssetKey(document.channel.thumbnailAssetKey);
     setSubtitlesEnabled(document.subtitles.enabled);
     setSegments(cloneEditorSubtitleSegments(document.subtitles.segments));
+    setSubtitleLayout(restoredSubtitleLayout);
     setComments(cloneEditorComments(document.comments));
     setTemplateId(document.template.id);
     setActiveCustomTemplate(draftCustomTemplate);
@@ -8473,8 +8536,24 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               </div>
             : <div className="pointer-events-none absolute inset-x-3 top-3 z-50 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100">편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>)}
           {subtitlesEnabled && activeSubtitle && <div
-            className="absolute inset-x-5 bottom-[23.2%] z-50 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white"
+            data-editor-admin-subtitle-layout={
+              adminSubtitleLayoutEnabled
+              && renderSpec?.version === EDITOR_RENDER_SPEC_VERSION
+                ? ""
+                : undefined
+            }
+            className={`absolute inset-x-5 bottom-[23.2%] z-50 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white${adminSubtitleLayoutEnabled ? " cursor-pointer outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55" : ""}`}
+            style={adminSubtitleLayoutEnabled ? {
+              bottom: `${renderSubtitleBottom}%`,
+              fontSize: `${renderSubtitleFontSize}cqw`,
+              lineHeight: 1.35,
+            } : undefined}
             onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => {
+              if (!adminSubtitleLayoutEnabled) return;
+              setActiveEditorSidebarTool("subtitle");
+              setDesktopSidebarOpen(true);
+            }}
           >
             {editingSubtitleIndex === activeSubtitleIndex
               ? <textarea
@@ -8953,7 +9032,14 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               className="editor-tool-rail-buttons"
               data-editor-guide="sidebar-tools"
             >
-            {EDITOR_SIDEBAR_TOOLS.map((tool) => {
+            {EDITOR_SIDEBAR_TOOLS.filter((tool) => (
+              tool.id !== "subtitle"
+              || (
+                adminSubtitleLayoutEnabled
+                && subtitlesEnabled
+                && segments.length > 0
+              )
+            )).map((tool) => {
               const active = activeEditorSidebarTool === tool.id
                 && desktopSidebarOpen;
               return (
@@ -9052,6 +9138,95 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 추가한 텍스트가 없습니다.
               </p>}
           </section>}
+          {overlayPreviewEnabled
+            && adminSubtitleLayoutEnabled
+            && subtitlesEnabled
+            && segments.length > 0
+            && <section
+              className={`editor-sidebar-tool-panel${activeEditorSidebarTool === "subtitle" ? " is-active" : ""}`}
+              aria-label="자막 위치와 크기 설정"
+            >
+              <header className="editor-tool-panel-header">
+                <strong>자막</strong>
+                <span className="rounded-full border border-[#ff715e]/35 bg-[#ff715e]/10 px-2 py-1 text-[10px] font-black text-[#ff9b8d]">
+                  관리자 전용
+                </span>
+              </header>
+              <p className="mb-5 text-xs leading-5 text-white/60">
+                자막은 가로 중앙에 고정됩니다. 세로 위치와 글자 크기만 조절할 수 있어요.
+              </p>
+              <label className="block font-semibold">
+                <span className="flex items-center justify-between gap-3 text-white">
+                  <span>세로 위치</span>
+                  <strong className="text-xs text-white/75">
+                    {subtitleLayout.offsetY === 0
+                      ? "기본"
+                      : `${Math.abs(subtitleLayout.offsetY)}px ${subtitleLayout.offsetY < 0 ? "위" : "아래"}`}
+                  </strong>
+                </span>
+                <input
+                  aria-label="자막 세로 위치"
+                  type="range"
+                  min={EDITOR_SUBTITLE_OFFSET_Y_MIN}
+                  max={EDITOR_SUBTITLE_OFFSET_Y_MAX}
+                  step={10}
+                  value={subtitleLayout.offsetY}
+                  onPointerDown={beginEditorCopyInteraction}
+                  onPointerUp={finishEditorCopyInteraction}
+                  onPointerCancel={finishEditorCopyInteraction}
+                  onKeyDown={beginEditorCopyInteraction}
+                  onKeyUp={finishEditorCopyInteraction}
+                  onBlur={finishEditorCopyInteraction}
+                  onChange={(event) => updateEditorSubtitleLayout({
+                    ...subtitleLayoutRef.current,
+                    offsetY: Number(event.target.value),
+                  })}
+                  className="mt-3 w-full accent-white"
+                />
+              </label>
+              <label className="mt-6 block font-semibold">
+                <span className="flex items-center justify-between gap-3 text-white">
+                  <span>자막 크기</span>
+                  <strong className="text-xs text-white/75">
+                    {Math.round(subtitleLayout.scale * 100)}%
+                  </strong>
+                </span>
+                <input
+                  aria-label="자막 크기"
+                  type="range"
+                  min={EDITOR_SUBTITLE_SCALE_MIN}
+                  max={EDITOR_SUBTITLE_SCALE_MAX}
+                  step={0.05}
+                  value={subtitleLayout.scale}
+                  onPointerDown={beginEditorCopyInteraction}
+                  onPointerUp={finishEditorCopyInteraction}
+                  onPointerCancel={finishEditorCopyInteraction}
+                  onKeyDown={beginEditorCopyInteraction}
+                  onKeyUp={finishEditorCopyInteraction}
+                  onBlur={finishEditorCopyInteraction}
+                  onChange={(event) => updateEditorSubtitleLayout({
+                    ...subtitleLayoutRef.current,
+                    scale: Number(event.target.value),
+                  })}
+                  className="mt-3 w-full accent-white"
+                />
+              </label>
+              <button
+                type="button"
+                disabled={
+                  subtitleLayout.offsetY === DEFAULT_EDITOR_SUBTITLE_LAYOUT.offsetY
+                  && subtitleLayout.scale === DEFAULT_EDITOR_SUBTITLE_LAYOUT.scale
+                }
+                onClick={() => {
+                  beginEditorCopyInteraction();
+                  updateEditorSubtitleLayout({ ...DEFAULT_EDITOR_SUBTITLE_LAYOUT });
+                  finishEditorCopyInteraction();
+                }}
+                className="mt-6 min-h-10 w-full rounded-xl border border-white/15 bg-white/[.04] px-3 text-xs font-extrabold text-white/75 transition hover:bg-white/[.09] disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                기본 위치·크기로 초기화
+              </button>
+            </section>}
           {overlayPreviewEnabled && <section
             className={`editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "channel" ? " is-active" : ""}`}
             aria-label="채널명 설정"
