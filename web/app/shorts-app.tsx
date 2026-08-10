@@ -10360,6 +10360,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [sourceRangeStartSeconds, setSourceRangeStartSeconds] = useState(0);
   const [sourceRangeEndSeconds, setSourceRangeEndSeconds] = useState(0);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
+  const [rightsConfirmationAttention, setRightsConfirmationAttention] = useState(false);
   const outputLanguage: OutputLanguage = "ko";
   const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
   const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateSelectionId | null>(null);
@@ -10388,6 +10389,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const loginOpenTimer = useRef<number | null>(null);
   const stateLoadInFlight = useRef<Promise<void> | null>(null);
   const analysisSectionRef = useRef<HTMLElement>(null);
+  const rightsConfirmationRef = useRef<HTMLLabelElement>(null);
+  const rightsCheckboxRef = useRef<HTMLInputElement>(null);
+  const rightsAttentionTimerRef = useRef<number | null>(null);
   const projectsSectionRef = useRef<HTMLElement>(null);
   const initializedSourceRangeAnalysisId = useRef<string | null>(null);
   const activeJobId = activeJob?.id;
@@ -10640,7 +10644,13 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               ?.getBoundingClientRect().height || 0,
           });
           window.scrollTo({
-            top: Math.max(0, window.scrollY + section.getBoundingClientRect().top - headerHeight - 16),
+            top: Math.max(
+              0,
+              window.scrollY
+                + section.getBoundingClientRect().top
+                - headerHeight
+                - (adminTemplateLayoutEnabled ? 8 : 16),
+            ),
             behavior: "smooth",
           });
         }
@@ -10651,7 +10661,13 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       window.cancelAnimationFrame(layoutFrame);
       window.cancelAnimationFrame(scrollFrame);
     };
-  }, [analysis, scrollToAnalysis]);
+  }, [adminTemplateLayoutEnabled, analysis, scrollToAnalysis]);
+
+  useEffect(() => () => {
+    if (rightsAttentionTimerRef.current !== null) {
+      window.clearTimeout(rightsAttentionTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (!scrollToProjects || !state?.recentJobs.length) return;
@@ -10773,7 +10789,17 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       return;
     }
     if (!rightsConfirmed) {
-      setError("쇼츠를 만들려면 원본 영상의 권리 보유 또는 적법한 이용 허가를 확인해 주세요.");
+      setError(null);
+      if (rightsAttentionTimerRef.current !== null) {
+        window.clearTimeout(rightsAttentionTimerRef.current);
+      }
+      setRightsConfirmationAttention(true);
+      rightsConfirmationRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      rightsCheckboxRef.current?.focus({ preventScroll: true });
+      rightsAttentionTimerRef.current = window.setTimeout(() => {
+        setRightsConfirmationAttention(false);
+        rightsAttentionTimerRef.current = null;
+      }, 1600);
       return;
     }
     if (!sourceRangeIsValid) {
@@ -10904,14 +10930,14 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           && !creationRestrictionOpen
         )}
       />
-      <main id="top" className="relative mx-auto w-full max-w-6xl flex-1 space-y-10 px-5 pb-20 pt-7 sm:px-8 sm:pt-10">
-      <div className="home-generated-shorts-count" aria-label={localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}>
+      <main id="top" className={`relative mx-auto w-full max-w-6xl flex-1 px-5 pb-20 pt-7 sm:px-8 sm:pt-10 ${adminTemplateLayoutEnabled ? "flex flex-col gap-10" : "space-y-10"}`}>
+      <div className={`home-generated-shorts-count ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`} aria-label={localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}>
         <strong aria-busy={stateLoadStatus === "loading"}>
           <CountUpNumber value={state?.generatedShortCount ?? 14_259} initialValue={14_259} />
         </strong>
         <p>{localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}</p>
       </div>
-      <section className="hero mx-auto flex max-w-4xl flex-col items-center text-center">
+      <section className={`hero mx-auto flex max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
         <h1 className="hero-title">{t("home.heroLine1")}<br /><span>{t("home.heroLine2")}</span></h1>
         <p className="mt-5 max-w-2xl text-sm leading-6 text-[#d5aaa4] sm:text-base">{t("home.heroDescription")}</p>
         <form id="workspace" onSubmit={analyze} className="url-console mt-10 w-full max-w-3xl">
@@ -10945,7 +10971,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         <section
           id="shorts-settings"
           ref={analysisSectionRef}
-          className="scroll-mt-24 space-y-8 sm:scroll-mt-28"
+          className={`scroll-mt-24 space-y-8 sm:scroll-mt-28 ${adminTemplateLayoutEnabled ? "order-[-1]" : ""}`}
           style={adminTemplateLayoutEnabled ? {
             border: 0,
             borderRadius: 0,
@@ -11076,11 +11102,18 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               생성 불가 사유 보기
             </button>
           )}
-          <label className={`flex items-start gap-3 rounded-xl border p-4 transition ${rightsConfirmed ? "border-emerald-300/40 bg-emerald-400/[.08]" : "border-white/10 bg-white/[.025]"} ${analysisCreationBlocked || busy ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:border-white/20"}`}>
+          <label
+            ref={rightsConfirmationRef}
+            className={`flex items-start gap-3 rounded-xl border p-4 transition duration-200 ${rightsConfirmationAttention ? "scale-[1.01] animate-pulse border-[#ff715e] bg-[#ff715e]/10 ring-4 ring-[#ff715e]/20 motion-reduce:animate-none" : rightsConfirmed ? "border-emerald-300/40 bg-emerald-400/[.08]" : "border-white/10 bg-white/[.025]"} ${analysisCreationBlocked || busy ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:border-white/20"}`}
+          >
             <input
+              ref={rightsCheckboxRef}
               type="checkbox"
               checked={rightsConfirmed}
-              onChange={(event) => setRightsConfirmed(event.target.checked)}
+              onChange={(event) => {
+                setRightsConfirmed(event.target.checked);
+                if (event.target.checked) setRightsConfirmationAttention(false);
+              }}
               disabled={analysisCreationBlocked || busy}
               aria-describedby="rights-confirmation-description"
               className="mt-1 h-5 w-5 shrink-0 accent-emerald-400"
@@ -11092,7 +11125,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               </span>
             </span>
           </label>
-          <button disabled={analysisCreationBlocked || !sourceRangeIsValid || !rightsConfirmed || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
+          <button disabled={analysisCreationBlocked || !sourceRangeIsValid || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
               {loginPromptPending && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
               {analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs || shortsEventRewardAvailable ? t("home.create") : t("home.choosePlan")}

@@ -53,4 +53,36 @@ describe("admin template layout", () => {
     expect(shortsAppSource).toContain('boxShadow: "none"');
     expect(shortsAppSource).toContain('backdropFilter: "none"');
   });
+
+  it("places the analyzed settings directly below the URL area for admins only", () => {
+    expect(shortsAppSource).toContain(
+      'adminTemplateLayoutEnabled ? "flex flex-col gap-10" : "space-y-10"',
+    );
+    expect(shortsAppSource).toContain(
+      'adminTemplateLayoutEnabled ? "order-[-2]" : ""',
+    );
+    expect(shortsAppSource).toContain(
+      'adminTemplateLayoutEnabled ? "order-[-1]" : ""',
+    );
+    expect(shortsAppSource).toContain(
+      "- (adminTemplateLayoutEnabled ? 8 : 16)",
+    );
+  });
+
+  it("keeps create active before rights confirmation and draws attention instead", () => {
+    expect(shortsAppSource).toContain("if (!rightsConfirmed) {");
+    expect(shortsAppSource).toContain("setRightsConfirmationAttention(true);");
+    expect(shortsAppSource).toContain(
+      'rightsConfirmationRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });',
+    );
+    expect(shortsAppSource).toContain(
+      'rightsCheckboxRef.current?.focus({ preventScroll: true });',
+    );
+    expect(shortsAppSource).toContain(
+      'disabled={analysisCreationBlocked || !sourceRangeIsValid || busy || stateLoadStatus !== "ready"}',
+    );
+    expect(shortsAppSource).not.toContain(
+      'disabled={analysisCreationBlocked || !sourceRangeIsValid || !rightsConfirmed || busy',
+    );
+  });
 });
