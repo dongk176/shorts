@@ -23,6 +23,7 @@ describe("generated short details", () => {
       templateId: "highlight",
       captionPlacement: "center",
       fps: 30,
+      timingLeadFrames: 4,
       safeArea: { x: 120, y: 1025, width: 840, height: 140 },
       style: {
         fontSize: 72,

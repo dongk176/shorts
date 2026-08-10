@@ -53,6 +53,7 @@ export const captionRenderSpecSchema = z.object({
   templateId: z.enum(["pop", "highlight"]),
   captionPlacement: z.enum(["lower", "center"]),
   fps: z.literal(30),
+  timingLeadFrames: z.number().int().min(0).max(30).optional(),
   safeArea: captionRectSchema,
   style: z.object({
     fontSize: finiteNumber.min(16).max(300),

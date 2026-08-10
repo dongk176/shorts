@@ -51,6 +51,7 @@ import type {
 } from "@/lib/contracts";
 import { expectedShortCount, videoAspectRatioOptions } from "@/lib/contracts";
 import type { CaptionRenderSpec } from "@/lib/caption-render-spec";
+import { retimeCaptionRenderSpecForEditor } from "@/lib/editor-caption-preview";
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
@@ -1548,7 +1549,8 @@ function CaptionTemplateEditorPreview({
   layout: EditorSubtitleLayout;
   onSelect: () => void;
 }) {
-  const currentFrame = Math.max(0, Math.floor(currentTimeSeconds * spec.fps + 0.0001));
+  const currentFrameFloat = Math.max(0, currentTimeSeconds * spec.fps);
+  const currentFrame = Math.floor(currentFrameFloat + 0.0001);
   const active = spec.cues
     .map((cue) => ({
       cue,
@@ -1565,10 +1567,16 @@ function CaptionTemplateEditorPreview({
     540 + (centerX - 540) * layout.scale
   );
   const sharedTextStyle = {
-    fontFamily: '"Editor Pretendard", sans-serif',
+    fontFamily: '"Editor V3 Pretendard", sans-serif',
+    fontWeight: 700,
+    lineHeight: 1,
     paintOrder: "stroke fill",
-    textShadow: "0 1px 1px rgba(0,0,0,.25)",
+    textRendering: "geometricPrecision",
+    WebkitFontSmoothing: "antialiased",
   } satisfies CSSProperties;
+  // CSS strokes are centered on a glyph and the fill covers their inner half.
+  // ASS `bord` is an outward border, so two CSS pixels match one ASS border px.
+  const previewStrokeWidth = spec.style.outlineWidth * layout.scale * 2;
 
   return <div
     data-editor-caption-template-preview={spec.templateId}
@@ -1582,13 +1590,24 @@ function CaptionTemplateEditorPreview({
             : null);
         if (!position || word.fontSize == null) return null;
         const activeWord = event.activeWordIndex === wordIndex;
-        const activeScale = activeWord ? (word.maxScale || 112) / 100 : 1;
+        const maximumScale = (word.maxScale || 112) / 100;
+        const eventFrames = event.endFrame - event.startFrame;
+        const easeFrames = Math.max(0, cue.easeFrames || 0);
+        const easeProgress = eventFrames === 1 || easeFrames === 0
+          ? 1
+          : Math.max(0, Math.min(
+              1,
+              (currentFrameFloat - event.startFrame) / easeFrames,
+            ));
+        const activeScale = activeWord
+          ? 1 + (maximumScale - 1) * easeProgress
+          : 1;
         return <span
           key={`${event.startFrame}-${wordIndex}`}
           role="button"
           tabIndex={0}
           aria-label="팝형 자막 위치와 크기 편집"
-          className="pointer-events-auto absolute cursor-pointer whitespace-nowrap font-black leading-none outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
+          className="pointer-events-auto absolute cursor-pointer whitespace-nowrap outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
           onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
           onClick={onSelect}
           onKeyDown={(keyboardEvent) => {
@@ -1602,7 +1621,7 @@ function CaptionTemplateEditorPreview({
             top: `${(position.centerY + layout.offsetY) / 19.2}%`,
             color: activeWord ? spec.style.accentColor : spec.style.textColor,
             fontSize: canvasCqw(word.fontSize * layout.scale),
-            WebkitTextStroke: `${canvasCqw(spec.style.outlineWidth * layout.scale)} ${spec.style.outlineColor}`,
+            WebkitTextStroke: `${canvasCqw(previewStrokeWidth)} ${spec.style.outlineColor}`,
             transform: `translate(-50%, -50%) scale(${activeScale})`,
           }}
         >{word.text}</span>;
@@ -1611,7 +1630,7 @@ function CaptionTemplateEditorPreview({
         role="button"
         tabIndex={0}
         aria-label="강조형 자막 위치와 크기 편집"
-        className="pointer-events-auto absolute cursor-pointer whitespace-nowrap text-center font-black leading-none outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
+        className="pointer-events-auto absolute cursor-pointer whitespace-nowrap text-center outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
         onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
         onClick={onSelect}
         onKeyDown={(keyboardEvent) => {
@@ -1625,7 +1644,7 @@ function CaptionTemplateEditorPreview({
           top: `${((cue.centerY ?? (spec.safeArea.y + spec.safeArea.height / 2)) + layout.offsetY) / 19.2}%`,
           color: spec.style.textColor,
           fontSize: canvasCqw((cue.fontSize || spec.style.fontSize) * layout.scale),
-          WebkitTextStroke: `${canvasCqw(spec.style.outlineWidth * layout.scale)} ${spec.style.outlineColor}`,
+          WebkitTextStroke: `${canvasCqw(previewStrokeWidth)} ${spec.style.outlineColor}`,
           transform: `translate(-50%, -50%) scaleX(${(cue.scaleX || 100) / 100})`,
         }}
       >
@@ -4344,6 +4363,14 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     ? editorChannelAssetPreviewUrl(item.id, item.renderVersion)
     : editorDocumentSnapshot.channel.thumbnailUrl;
   const renderVideoClips = editorDocumentSnapshot.video.clips;
+  const captionTemplatePreviewSpec = useMemo(() => (
+    captionTemplateEditorSpec
+      ? retimeCaptionRenderSpecForEditor(
+          captionTemplateEditorSpec,
+          renderVideoClips,
+        )
+      : null
+  ), [captionTemplateEditorSpec, renderVideoClips]);
   const overlayOffsets = renderOverlayLayout.offsets;
   const videoScale = renderOverlayLayout.scales.video;
   const channelScale = renderOverlayLayout.scales.channel;
@@ -8647,9 +8674,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 </button>
               </div>
             : <div className="pointer-events-none absolute inset-x-3 top-3 z-50 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100">편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>)}
-          {subtitlesEnabled && captionTemplateEditorSpec && <CaptionTemplateEditorPreview
-            spec={captionTemplateEditorSpec}
-            currentTimeSeconds={previewTime}
+          {subtitlesEnabled && captionTemplatePreviewSpec && <CaptionTemplateEditorPreview
+            spec={captionTemplatePreviewSpec}
+            currentTimeSeconds={displayedPreviewTime}
             layout={renderSubtitleLayout}
             onSelect={() => {
               setActiveEditorSidebarTool("subtitle");
@@ -9256,7 +9283,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 </span>
               </header>
               <p className="mb-5 text-xs leading-5 text-white/60">
-                실제 생성된 자막의 내용과 타이밍, 가로 중심은 고정됩니다. 세로 위치와 글자 크기만 조절할 수 있어요.
+                실제 생성된 자막의 내용과 가로 중심은 고정됩니다. 음성보다 {captionTemplateEditorSpec.timingLeadFrames ?? 4}프레임 먼저 표시되는 실제 렌더 타이밍도 그대로 미리 봅니다. 세로 위치와 글자 크기만 조절할 수 있어요.
               </p>
               <label className="block font-semibold">
                 <span className="flex items-center justify-between gap-3 text-white">
@@ -9721,7 +9748,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               </fieldset>
             </div>
           </details>}
-          {templateId !== "comment-capture" && <label className="editor-section block text-sm font-semibold">채널명<input value={channel} onFocus={beginEditorCopyInteraction} onBlur={finishEditorCopyInteraction} onChange={(event) => { channelRef.current = event.target.value; setChannel(event.target.value); }} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>}
+          {!overlayPreviewEnabled && templateId !== "comment-capture" && <label className="editor-section block text-sm font-semibold">채널명<input value={channel} onFocus={beginEditorCopyInteraction} onBlur={finishEditorCopyInteraction} onChange={(event) => { channelRef.current = event.target.value; setChannel(event.target.value); }} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>}
           <label className="hidden"><input type="checkbox" checked={subtitlesEnabled} onChange={(event) => setSubtitlesEnabled(event.target.checked)} />자동 자막 표시</label>
           {subtitlesEnabled && <div className="hidden">{segments.map((segment, index) => <label key={`${segment.start}-${index}`}><span>{formatTimestamp(segment.start)}</span><input value={segment.text} onChange={(event) => updateSubtitleText(index, event.target.value)} /></label>)}</div>}
           <details

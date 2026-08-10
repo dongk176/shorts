@@ -30,7 +30,11 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain('aria-label="자막 크기"');
     expect(editorSource).toContain("data-editor-caption-template-preview");
     expect(editorSource).toContain('spec.templateId === "pop"');
-    expect(editorSource).toContain("실제 생성된 자막의 내용과 타이밍, 가로 중심은 고정됩니다");
+    expect(editorSource).toContain("retimeCaptionRenderSpecForEditor");
+    expect(editorSource).toContain("음성보다 {captionTemplateEditorSpec.timingLeadFrames ?? 4}프레임 먼저 표시");
+    expect(editorSource).toContain("spec.style.outlineWidth * layout.scale * 2");
+    expect(editorSource).toContain("(currentFrameFloat - event.startFrame) / easeFrames");
+    expect(editorSource).toContain('!overlayPreviewEnabled && templateId !== "comment-capture"');
     expect(editorSource).toContain("!captionTemplateEditorSpec && activeSubtitle");
   });
 
