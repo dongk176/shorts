@@ -145,6 +145,27 @@ export function pinEditorChannelLayerOnTop(
   ];
 }
 
+export function pinEditorTitleAboveVideo(
+  order: EditorOverlayOrderItem[],
+): EditorOverlayOrderItem[] {
+  const videoIndex = order.indexOf("video");
+  const titleIndex = order.indexOf("title");
+  if (videoIndex < 0 || titleIndex < 0 || videoIndex < titleIndex) {
+    return [...order];
+  }
+  const next: EditorOverlayOrderItem[] = order.filter(
+    (item) => item !== "video",
+  );
+  next.splice(next.indexOf("title"), 0, "video");
+  return next;
+}
+
+export function normalizeEditorOverlayLayerOrder(
+  order: EditorOverlayOrderItem[],
+): EditorOverlayOrderItem[] {
+  return pinEditorChannelLayerOnTop(pinEditorTitleAboveVideo(order));
+}
+
 export function createEditorTextOverlay(
   id: string,
   durationSeconds: number,
@@ -190,7 +211,7 @@ export function cloneEditorOverlayLayout(
       ...textOverlay,
       offset: { ...textOverlay.offset },
     })),
-    layerOrder: pinEditorChannelLayerOnTop(layout.layerOrder),
+    layerOrder: normalizeEditorOverlayLayerOrder(layout.layerOrder),
     background: layout.background ? { ...layout.background } : null,
   };
 }
@@ -346,7 +367,7 @@ export function moveEditorOverlayOrderItem(
   if (nextIndex < 0) return order;
   const next = [...order];
   [next[currentIndex], next[nextIndex]] = [next[nextIndex], next[currentIndex]];
-  return next;
+  return normalizeEditorOverlayLayerOrder(next);
 }
 
 export function recordEditorOverlayHistory(

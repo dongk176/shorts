@@ -481,6 +481,23 @@ def test_editor_channel_is_always_rendered_as_the_front_layer() -> None:
     ]
 
 
+def test_editor_hook_title_is_always_rendered_in_front_of_video() -> None:
+    document = _document()
+    document.overlays.layer_order = [
+        "title",
+        "comment",
+        "video",
+        "channel",
+    ]
+
+    assert editor_layer_order(document) == [
+        "video",
+        "title",
+        "comment",
+        "channel",
+    ]
+
+
 def test_prepared_editor_layer_is_cropped_without_losing_canvas_position(
     tmp_path: Path,
 ) -> None:

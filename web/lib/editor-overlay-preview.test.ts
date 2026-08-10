@@ -12,8 +12,10 @@ import {
   editorOverlayLayoutsEqual,
   lockEditorTitleHorizontalOffset,
   moveEditorOverlayOrderItem,
+  normalizeEditorOverlayLayerOrder,
   normalizeEditorTitleScaleLayout,
   pinEditorChannelLayerOnTop,
+  pinEditorTitleAboveVideo,
   recordEditorOverlayHistory,
   redoEditorOverlayHistory,
   resetEditorOverlayGeometry,
@@ -384,6 +386,39 @@ describe("editor overlay preview geometry", () => {
       "comment",
       "channel",
     ]);
+  });
+
+  it("keeps the hook title in front of a full-canvas video", () => {
+    expect(pinEditorTitleAboveVideo([
+      "title",
+      "comment",
+      "video",
+      "channel",
+    ])).toEqual([
+      "video",
+      "title",
+      "comment",
+      "channel",
+    ]);
+    expect(normalizeEditorOverlayLayerOrder([
+      "channel",
+      "title",
+      "video",
+      "comment",
+    ])).toEqual([
+      "video",
+      "title",
+      "comment",
+      "channel",
+    ]);
+  });
+
+  it("does not let video and title layer controls cross each other", () => {
+    const order = ["video", "title", "comment", "channel"] as const;
+    expect(moveEditorOverlayOrderItem([...order], "video", "forward"))
+      .toEqual(order);
+    expect(moveEditorOverlayOrderItem([...order], "title", "backward"))
+      .toEqual(order);
   });
 
   it("clears redo history after a new edit and caps stored snapshots", () => {

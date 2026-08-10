@@ -971,14 +971,18 @@ def create_editor_channel_layer(
 
 
 def editor_layer_order(document: EditorDocument) -> list[str]:
-    return [
-        *(
-            layer_name
-            for layer_name in document.overlays.layer_order
-            if layer_name != "channel"
-        ),
-        "channel",
+    order = [
+        layer_name
+        for layer_name in document.overlays.layer_order
+        if layer_name != "channel"
     ]
+    if "video" in order and "title" in order:
+        video_index = order.index("video")
+        title_index = order.index("title")
+        if video_index > title_index:
+            order.pop(video_index)
+            order.insert(order.index("title"), "video")
+    return [*order, "channel"]
 
 
 def _wrap_overlay_text(

@@ -4845,11 +4845,19 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       ? "텍스트"
       : EDITOR_OVERLAY_LABELS[selectedOverlay];
   const canMoveSelectedLayerBackward = selectedOverlay !== "channel"
-    && selectedLayerOrderIndex > 0;
+    && selectedLayerOrderIndex > 0
+    && !(
+      selectedOverlay === "title"
+      && visibleEditorLayerOrder[selectedLayerOrderIndex - 1] === "video"
+    );
   const canMoveSelectedLayerForward = selectedLayerOrderIndex >= 0
     && selectedOverlay !== "channel"
     && selectedLayerOrderIndex < visibleEditorLayerOrder.length - 1
-    && visibleEditorLayerOrder[selectedLayerOrderIndex + 1] !== "channel";
+    && visibleEditorLayerOrder[selectedLayerOrderIndex + 1] !== "channel"
+    && !(
+      selectedOverlay === "video"
+      && visibleEditorLayerOrder[selectedLayerOrderIndex + 1] === "title"
+    );
   const scalableBaseOverlaySelection = selectedOverlay === "channel"
     ? selectedOverlay
     : null;
