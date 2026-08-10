@@ -31,7 +31,10 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain("data-editor-caption-template-preview");
     expect(editorSource).toContain('spec.templateId === "pop"');
     expect(editorSource).toContain("retimeCaptionRenderSpecForEditor");
-    expect(editorSource).toContain("음성보다 {captionTemplateEditorSpec.timingLeadFrames ?? 4}프레임 먼저 표시");
+    expect(editorSource).toContain(
+      "음성보다 {captionTemplateEditorSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES}프레임 먼저 표시",
+    );
+    expect(editorSource).toContain("* CAPTION_ASS_PREVIEW_FONT_SCALE");
     expect(editorSource).toContain("spec.style.outlineWidth * layout.scale * 2");
     expect(editorSource).toContain("(currentFrameFloat - event.startFrame) / easeFrames");
     expect(editorSource).toContain('!overlayPreviewEnabled && templateId !== "comment-capture"');

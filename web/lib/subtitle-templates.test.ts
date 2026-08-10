@@ -27,6 +27,7 @@ describe("subtitle template snapshot", () => {
     expect(snapshot.color.active).toBe(SUBTITLE_TEMPLATE_BRAND_COLOR);
     expect(snapshot.schemaVersion).toBe(3);
     expect(snapshot.maxLines).toBe(1);
+    expect(SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES).toBe(7);
     expect(snapshot.timingLeadFrames).toBe(SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES);
     expect(snapshot.safeArea).toEqual({ x: 120, y: 1430, width: 840, height: 140 });
     expect(snapshot.layout.title).toEqual({ x: 0, y: 96, width: 1080, height: 300 });

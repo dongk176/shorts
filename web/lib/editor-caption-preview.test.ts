@@ -7,7 +7,7 @@ const spec: CaptionRenderSpec = {
   templateId: "highlight",
   captionPlacement: "center",
   fps: 30,
-  timingLeadFrames: 4,
+  timingLeadFrames: 7,
   safeArea: { x: 120, y: 666, width: 840, height: 140 },
   style: {
     fontSize: 72,
@@ -17,33 +17,33 @@ const spec: CaptionRenderSpec = {
     outlineWidth: 7,
   },
   cues: [{
-    startFrame: 26,
+    startFrame: 23,
     endFrame: 40,
     fontSize: 72,
     centerX: 540,
     centerY: 736,
-    words: [{ text: "선행", startFrame: 26, endFrame: 40 }],
+    words: [{ text: "선행", startFrame: 23, endFrame: 40 }],
     lines: [[0]],
-    events: [{ startFrame: 26, endFrame: 40, activeWordIndex: 0 }],
+    events: [{ startFrame: 23, endFrame: 40, activeWordIndex: 0 }],
   }],
 };
 
 describe("editor caption preview timing", () => {
-  it("keeps the compiled four-frame lead after source clips are retimed", () => {
+  it("keeps the compiled seven-frame lead after source clips are retimed", () => {
     const retimed = retimeCaptionRenderSpecForEditor(spec, [{
       id: "clip-a",
       sourceStartSeconds: 0.5,
       sourceEndSeconds: 1.5,
     }]);
 
-    expect(retimed?.timingLeadFrames).toBe(4);
+    expect(retimed?.timingLeadFrames).toBe(7);
     expect(retimed?.cues[0]?.events[0]).toMatchObject({
-      startFrame: 11,
+      startFrame: 8,
       endFrame: 25,
     });
     // The spoken word starts at source frame 30. In this clip that is output
-    // frame 15, so the preview remains exactly four frames early.
-    expect(15 - (retimed?.cues[0]?.events[0]?.startFrame || 0)).toBe(4);
+    // frame 15, so the preview remains exactly seven frames early.
+    expect(15 - (retimed?.cues[0]?.events[0]?.startFrame || 0)).toBe(7);
   });
 
   it("drops caption events removed by the edited video clips", () => {
