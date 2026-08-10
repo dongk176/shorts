@@ -29,15 +29,19 @@ const UsageContext = createContext<UsageContextValue | null>(null);
 export function UsageProvider({
   children,
   initialState,
+  networkDisabled = false,
 }: {
   children: ReactNode;
   initialState: UsageState;
+  networkDisabled?: boolean;
 }) {
   const pathname = usePathname();
   const [usageState, setUsageState] = useState(initialState);
   const skippedInitialRefresh = useRef(false);
+  const disabledUsage = useRef(initialState.usage);
 
   const loadUsage = useCallback(async (): Promise<UsageSnapshot | null> => {
+    if (networkDisabled) return disabledUsage.current;
     const response = await fetch("/api/mvp/usage", {
       cache: "no-store",
       credentials: "same-origin",
@@ -50,17 +54,19 @@ export function UsageProvider({
       usage: body.authenticated ? body.usage : null,
     });
     return body.authenticated ? body.usage : null;
-  }, []);
+  }, [networkDisabled]);
 
   useEffect(() => {
+    if (networkDisabled) return;
     if (!skippedInitialRefresh.current) {
       skippedInitialRefresh.current = true;
       return;
     }
     void loadUsage();
-  }, [loadUsage, pathname]);
+  }, [loadUsage, networkDisabled, pathname]);
 
   useEffect(() => {
+    if (networkDisabled) return;
     const onUsageUpdated = (event: Event) => {
       setUsageState((current) => current.authenticated
         ? { ...current, usage: usageFromEvent(event) }
@@ -82,7 +88,7 @@ export function UsageProvider({
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [loadUsage]);
+  }, [loadUsage, networkDisabled]);
 
   const contextValue = useMemo<UsageContextValue>(() => ({
     ...usageState,

@@ -10348,15 +10348,25 @@ function SourceTimestampInput({
   );
 }
 
-export function ShortsApp({ initialState = null }: { initialState?: MvpState | null }) {
+export function ShortsApp({
+  initialState = null,
+  initialAnalysis = null,
+  initialPersonalTemplates = [],
+  localAdminPreview = false,
+}: {
+  initialState?: MvpState | null;
+  initialAnalysis?: YoutubeAnalysis | null;
+  initialPersonalTemplates?: CustomTemplate[];
+  localAdminPreview?: boolean;
+}) {
   const { locale, t } = useI18n();
   const [state, setState] = useState<MvpState | null>(initialState);
   const [stateLoadStatus, setStateLoadStatus] = useState<"loading" | "ready" | "error">(
     initialState ? "ready" : "loading",
   );
   const [stateLoadError, setStateLoadError] = useState<string | null>(null);
-  const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(null);
+  const [youtubeUrl, setYoutubeUrl] = useState(initialAnalysis?.normalizedUrl || "");
+  const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(initialAnalysis);
   const [sourceRangeStartSeconds, setSourceRangeStartSeconds] = useState(0);
   const [sourceRangeEndSeconds, setSourceRangeEndSeconds] = useState(0);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
@@ -10367,7 +10377,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [subtitleCaptionPlacement, setSubtitleCaptionPlacement] = useState<SubtitleCaptionPlacement>("lower");
   const [brandColor, setBrandColor] = useState<TemplatePresetColor>(SUBTITLE_TEMPLATE_BRAND_COLOR);
   const [customTemplateId, setCustomTemplateId] = useState<string | null>(null);
-  const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
+  const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>(initialPersonalTemplates);
   const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState<TemplateFavoriteKey[]>([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);
   const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>("16:9");
   const [activeJob, setActiveJob] = useState<VideoJob | null>(() => initialActiveJob(initialState));
@@ -10527,6 +10537,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   };
 
   useEffect(() => {
+    if (localAdminPreview) return;
     if (!state?.user) {
       setPersonalTemplates([]);
       setFavoriteTemplateKeys([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);
@@ -10547,9 +10558,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         setError(userFacingErrorMessage(cause, "템플릿을 불러오지 못했습니다."));
       });
     return () => controller.abort();
-  }, [state?.user]);
+  }, [localAdminPreview, state?.user]);
 
   useEffect(() => {
+    if (localAdminPreview) return;
     let stopped = false;
     let timer: number | undefined;
     let attempt = 0;
@@ -10569,7 +10581,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       stopped = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [loadState]);
+  }, [loadState, localAdminPreview]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -10593,6 +10605,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   }, [locale]);
 
   useEffect(() => {
+    if (localAdminPreview) return;
     const currentUrl = new URL(window.location.href);
     const analysisId = currentUrl.searchParams.get("analysisId");
     if (!analysisId) return;
@@ -10629,7 +10642,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       })
       .catch((cause: unknown) => setError(userFacingErrorMessage(cause, "인기 영상 정보를 불러오지 못했습니다.")))
       .finally(() => setBusy(false));
-  }, []);
+  }, [localAdminPreview]);
 
   useEffect(() => {
     if (!scrollToAnalysis || !analysis) return;
@@ -10733,6 +10746,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     setCreationRestrictionOpen(false);
     setCreationRestrictionReason(null);
     setLongSourceNoticeOpen(false);
+    if (localAdminPreview) {
+      setError("로컬 어드민 미리보기에서는 실제 영상 분석을 호출하지 않습니다.");
+      return;
+    }
     if (!state?.user) {
       setLoginNext("/");
       setLoginOpen(true);
@@ -10795,6 +10812,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setError(selectedSourceExceedsUsage
         ? "선택한 구간이 남은 원본 영상 처리시간을 초과합니다."
         : "사용할 영상 구간은 4분부터 60분까지 선택해 주세요.");
+      return;
+    }
+    if (localAdminPreview) {
+      setError("로컬 어드민 미리보기에서는 실제 쇼츠를 생성하지 않습니다.");
       return;
     }
     const next = `/?analysisId=${encodeURIComponent(analysis.analysisId)}`;
@@ -10881,9 +10902,11 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <div className="ambient ambient-coral" aria-hidden="true" />
       <div className="ambient ambient-violet" aria-hidden="true" />
       <SiteHeader desktopSidebar><AuthControls user={state?.user || null} next={loginNext} loginOpen={loginOpen} onLoginOpenChange={setLoginOpen} /></SiteHeader>
-      <ShortsEventWelcomeController
-        onRewardAvailabilityChange={setShortsEventRewardAvailable}
-      />
+      {!localAdminPreview && (
+        <ShortsEventWelcomeController
+          onRewardAvailabilityChange={setShortsEventRewardAvailable}
+        />
+      )}
       <ShortsEventParticipationCompleteOverlay
         open={shortsEventParticipationOpen}
         grantedSeconds={shortsEventGrantedSeconds}
@@ -10918,9 +10941,18 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           && analysis?.creationAllowed === true
           && !longSourceNoticeOpen
           && !creationRestrictionOpen
+          && !localAdminPreview
         )}
       />
       <main id="top" className={`relative mx-auto w-full max-w-6xl flex-1 px-5 pb-20 pt-7 sm:px-8 sm:pt-10 ${adminTemplateLayoutEnabled ? "flex flex-col gap-10" : "space-y-10"}`}>
+      {localAdminPreview && (
+        <aside
+          className="order-[-3] rounded-xl border border-sky-300/30 bg-sky-300/10 px-4 py-3 text-sm font-bold text-sky-100"
+          role="status"
+        >
+          로컬 어드민 미리보기 · DB, 결제, 영상 분석, 쇼츠 생성 요청이 모두 차단됩니다.
+        </aside>
+      )}
       <div className={`home-generated-shorts-count ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`} aria-label={localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}>
         <strong aria-busy={stateLoadStatus === "loading"}>
           <CountUpNumber value={state?.generatedShortCount ?? 14_259} initialValue={14_259} />
@@ -11127,13 +11159,15 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <CustomerReviews />
     </main>
     <SiteFooter />
-    <SupportInquiryWidget
-      user={state?.user || null}
-      onLoginRequest={() => {
-        setLoginNext("/");
-        setLoginOpen(true);
-      }}
-    />
+    {!localAdminPreview && (
+      <SupportInquiryWidget
+        user={state?.user || null}
+        onLoginRequest={() => {
+          setLoginNext("/");
+          setLoginOpen(true);
+        }}
+      />
+    )}
     </div>
   );
 }

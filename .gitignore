@@ -14,6 +14,7 @@ __pycache__/
 worker/.coverage
 
 # Next.js
+node_modules/
 web/node_modules/
 web/.next/
 web/.next-dev/
@@ -30,6 +31,7 @@ storage/*
 .vercel
 
 # Local generated artifacts
+output/
 supabase/.temp/
 tmp/
 outputs/

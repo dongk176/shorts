@@ -12,6 +12,10 @@ import { UsageProvider, type UsageState } from "@/components/usage-provider";
 import { getDb } from "@/lib/db";
 import { I18nProvider } from "@/lib/i18n/provider";
 import { getRequestMessages } from "@/lib/i18n/server";
+import {
+  createLocalAdminPreviewState,
+  localAdminPreviewEnvironmentEnabled,
+} from "@/lib/local-admin-preview";
 import { DEFAULT_DESCRIPTION, OG_IMAGE_PATH, SITE_NAME, SITE_URL } from "@/lib/seo";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { getUsageSnapshot } from "@/lib/usage";
@@ -73,39 +77,52 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   const { locale, messages } = await getRequestMessages();
+  const localAdminPreviewEnvironment = localAdminPreviewEnvironmentEnabled({
+    nodeEnv: process.env.NODE_ENV,
+    featureFlag: process.env.LOCAL_ADMIN_PREVIEW_ENABLED,
+  });
   let initialUsageState: UsageState = {
     authenticated: false,
     accountId: null,
     usage: null,
   };
-  try {
-    const authenticatedUser = await getAuthenticatedUser();
-    if (authenticatedUser) {
-      const db = getDb();
-      const appUserRows = await db`
-        select id
-        from shorts_mvp.app_users
-        where auth_user_id=${authenticatedUser.id}
-        limit 1
-      `;
-      const appUserId = typeof appUserRows[0]?.id === "string" ? appUserRows[0].id : null;
-      initialUsageState = {
-        authenticated: true,
-        accountId: appUserId,
-        usage: appUserId
-          ? await getUsageSnapshot(db, {
-              id: "",
-              selectedPlanCode: "free",
-              userId: appUserId,
-              user: null,
-            })
-          : null,
-      };
+  if (localAdminPreviewEnvironment) {
+    const previewState = createLocalAdminPreviewState();
+    initialUsageState = {
+      authenticated: true,
+      accountId: previewState.user?.id || null,
+      usage: previewState.usage,
+    };
+  } else {
+    try {
+      const authenticatedUser = await getAuthenticatedUser();
+      if (authenticatedUser) {
+        const db = getDb();
+        const appUserRows = await db`
+          select id
+          from shorts_mvp.app_users
+          where auth_user_id=${authenticatedUser.id}
+          limit 1
+        `;
+        const appUserId = typeof appUserRows[0]?.id === "string" ? appUserRows[0].id : null;
+        initialUsageState = {
+          authenticated: true,
+          accountId: appUserId,
+          usage: appUserId
+            ? await getUsageSnapshot(db, {
+                id: "",
+                selectedPlanCode: "free",
+                userId: appUserId,
+                user: null,
+              })
+            : null,
+        };
+      }
+    } catch (error) {
+      console.error("header_initial_usage_failed", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
     }
-  } catch (error) {
-    console.error("header_initial_usage_failed", {
-      errorName: error instanceof Error ? error.name : "UnknownError",
-    });
   }
   const websiteData = {
     "@context": "https://schema.org",
@@ -150,26 +167,33 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           <UsageProvider
             key={initialUsageState.accountId || "guest"}
             initialState={initialUsageState}
+            networkDisabled={localAdminPreviewEnvironment}
           >
             <WelcomeOverlayQueueProvider>
               {children}
-              <UserOnboardingOverlay />
-              <EditorLaunchAnnouncementOverlay />
-              <SidebarNavigationAnnouncement />
-              <ProjectFeedbackOverlay />
+              {!localAdminPreviewEnvironment && (
+                <>
+                  <UserOnboardingOverlay />
+                  <EditorLaunchAnnouncementOverlay />
+                  <SidebarNavigationAnnouncement />
+                  <ProjectFeedbackOverlay />
+                </>
+              )}
             </WelcomeOverlayQueueProvider>
           </UsageProvider>
-          <FirebaseAnalytics
-            config={{
-              apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-              authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-              projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-              storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-              messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-              appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-              measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
-            }}
-          />
+          {!localAdminPreviewEnvironment && (
+            <FirebaseAnalytics
+              config={{
+                apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+                authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+                projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+                storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+                messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+                appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+                measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
+              }}
+            />
+          )}
           <LanguageSelector />
         </I18nProvider>
       </body>

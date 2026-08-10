@@ -4,6 +4,13 @@ import { createPageMetadata, DEFAULT_DESCRIPTION, SITE_NAME, SITE_URL } from "@/
 import { getRequestLocale } from "@/lib/i18n/server";
 import { localizedValue } from "@/lib/i18n/config";
 import { loadMvpState } from "@/lib/mvp-state";
+import {
+  createLocalAdminPreviewAnalysis,
+  createLocalAdminPreviewState,
+  createLocalAdminPreviewTemplates,
+  LOCAL_ADMIN_PREVIEW_QUERY_KEY,
+  localAdminPreviewEnabled,
+} from "@/lib/local-admin-preview";
 import { ShortsApp } from "./shorts-app";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -19,10 +26,20 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const resolvedSearchParams = await searchParams;
+  const localAdminPreview = localAdminPreviewEnabled({
+    nodeEnv: process.env.NODE_ENV,
+    featureFlag: process.env.LOCAL_ADMIN_PREVIEW_ENABLED,
+    queryValue: resolvedSearchParams[LOCAL_ADMIN_PREVIEW_QUERY_KEY],
+  });
   const [locale, initialState] = await Promise.all([
     getRequestLocale(),
-    loadMvpState().catch((error) => {
+    localAdminPreview ? Promise.resolve(createLocalAdminPreviewState()) : loadMvpState().catch((error) => {
       console.error("home_initial_state_failed", {
         errorName: error instanceof Error ? error.name : "UnknownError",
       });
@@ -59,7 +76,12 @@ export default async function Home() {
   return (
     <>
       <StructuredData data={applicationData} />
-      <ShortsApp initialState={initialState} />
+      <ShortsApp
+        initialState={initialState}
+        initialAnalysis={localAdminPreview ? createLocalAdminPreviewAnalysis() : null}
+        initialPersonalTemplates={localAdminPreview ? createLocalAdminPreviewTemplates() : []}
+        localAdminPreview={localAdminPreview}
+      />
     </>
   );
 }
