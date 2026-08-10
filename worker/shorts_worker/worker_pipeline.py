@@ -2664,12 +2664,23 @@ class BatchWorker:
                     or None,
                     work_dir / "channel-thumbnail.png",
                 )
+            caption_render_spec = item.get("caption_render_spec")
+            if item.get("subtitle_template_id") and not isinstance(
+                caption_render_spec,
+                dict,
+            ):
+                raise ValueError("원본 자막 렌더 정보를 찾을 수 없습니다.")
             output_path = self.editor_renderer.render(
                 clean_path=clean_path,
                 output_path=work_dir / "output.mp4",
                 document=document,
                 work_dir=work_dir,
                 channel_thumbnail_path=channel_thumbnail_path,
+                caption_render_spec=(
+                    caption_render_spec
+                    if isinstance(caption_render_spec, dict)
+                    else None
+                ),
             )
             thumbnail_path = work_dir / "thumbnail.jpg"
             self._thumbnail(output_path, thumbnail_path, work_dir)
