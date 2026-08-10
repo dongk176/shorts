@@ -120,7 +120,7 @@ jobs:
           account_id="$(aws sts get-caller-identity --query Account --output text)"
           echo "EDITOR_TEST_BUCKET_NAME=shorts-mvp-editor-test-${account_id}-${AWS_REGION}" >> "$GITHUB_ENV"
 
-      - name: Apply additive migrations only to the isolated Supabase project
+      - name: Apply editor migrations only to the isolated Supabase project
         env:
           DATABASE_URL: ${{ secrets.EDITOR_TEST_DATABASE_URL }}
         run: |
@@ -133,7 +133,13 @@ jobs:
               throw new Error("isolated Supabase identity check failed");
             }
           '
-          node scripts/apply-supabase.mjs
+          # Replaying every historical migration is unsafe after later schema
+          # changes alter old conflict keys. The isolated editor probe only
+          # needs the additive editor release, outbox, and caption contracts.
+          node scripts/apply-supabase.mjs \
+            202607310003_editor_release_channels.sql \
+            202608010001_editor_render_canary_outbox.sql \
+            202608080001_subtitle_templates_admin_canary.sql
 
       - name: Register the isolated job definition at the tested digest
         id: isolated-definition
