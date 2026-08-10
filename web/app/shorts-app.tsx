@@ -50,6 +50,7 @@ import type {
   YoutubeAnalysis,
 } from "@/lib/contracts";
 import { expectedShortCount, videoAspectRatioOptions } from "@/lib/contracts";
+import type { CaptionRenderSpec } from "@/lib/caption-render-spec";
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
@@ -189,9 +190,6 @@ import {
 import {
   createEditorRenderSpec,
   DEFAULT_EDITOR_SUBTITLE_LAYOUT,
-  EDITOR_RENDER_SPEC_VERSION,
-  EDITOR_SUBTITLE_DEFAULT_FONT_SIZE,
-  EDITOR_SUBTITLE_DEFAULT_MARGIN_V,
   EDITOR_SUBTITLE_OFFSET_Y_MAX,
   EDITOR_SUBTITLE_OFFSET_Y_MIN,
   EDITOR_SUBTITLE_SCALE_MAX,
@@ -1537,6 +1535,121 @@ function SubtitleTemplatePreview({
       </div>
     </div>
   );
+}
+
+function CaptionTemplateEditorPreview({
+  spec,
+  currentTimeSeconds,
+  layout,
+  onSelect,
+}: {
+  spec: CaptionRenderSpec;
+  currentTimeSeconds: number;
+  layout: EditorSubtitleLayout;
+  onSelect: () => void;
+}) {
+  const currentFrame = Math.max(0, Math.floor(currentTimeSeconds * spec.fps + 0.0001));
+  const active = spec.cues
+    .map((cue) => ({
+      cue,
+      event: cue.events.find((event) => (
+        event.startFrame <= currentFrame && event.endFrame > currentFrame
+      )),
+    }))
+    .find((entry) => entry.event);
+  if (!active?.event) return null;
+
+  const { cue, event } = active;
+  const canvasCqw = (pixels: number) => `${pixels / 10.8}cqw`;
+  const transformedX = (centerX: number) => (
+    540 + (centerX - 540) * layout.scale
+  );
+  const sharedTextStyle = {
+    fontFamily: '"Editor Pretendard", sans-serif',
+    paintOrder: "stroke fill",
+    textShadow: "0 1px 1px rgba(0,0,0,.25)",
+  } satisfies CSSProperties;
+
+  return <div
+    data-editor-caption-template-preview={spec.templateId}
+    className="pointer-events-none absolute inset-0 z-50"
+  >
+    {spec.templateId === "pop"
+      ? cue.words.map((word, wordIndex) => {
+        const position = event.positions?.[wordIndex]
+          || (word.centerX != null && word.centerY != null
+            ? { centerX: word.centerX, centerY: word.centerY }
+            : null);
+        if (!position || word.fontSize == null) return null;
+        const activeWord = event.activeWordIndex === wordIndex;
+        const activeScale = activeWord ? (word.maxScale || 112) / 100 : 1;
+        return <span
+          key={`${event.startFrame}-${wordIndex}`}
+          role="button"
+          tabIndex={0}
+          aria-label="팝형 자막 위치와 크기 편집"
+          className="pointer-events-auto absolute cursor-pointer whitespace-nowrap font-black leading-none outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
+          onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
+          onClick={onSelect}
+          onKeyDown={(keyboardEvent) => {
+            if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
+            keyboardEvent.preventDefault();
+            onSelect();
+          }}
+          style={{
+            ...sharedTextStyle,
+            left: `${transformedX(position.centerX) / 10.8}%`,
+            top: `${(position.centerY + layout.offsetY) / 19.2}%`,
+            color: activeWord ? spec.style.accentColor : spec.style.textColor,
+            fontSize: canvasCqw(word.fontSize * layout.scale),
+            WebkitTextStroke: `${canvasCqw(spec.style.outlineWidth * layout.scale)} ${spec.style.outlineColor}`,
+            transform: `translate(-50%, -50%) scale(${activeScale})`,
+          }}
+        >{word.text}</span>;
+      })
+      : <span
+        role="button"
+        tabIndex={0}
+        aria-label="강조형 자막 위치와 크기 편집"
+        className="pointer-events-auto absolute cursor-pointer whitespace-nowrap text-center font-black leading-none outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
+        onPointerDown={(pointerEvent) => pointerEvent.stopPropagation()}
+        onClick={onSelect}
+        onKeyDown={(keyboardEvent) => {
+          if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
+          keyboardEvent.preventDefault();
+          onSelect();
+        }}
+        style={{
+          ...sharedTextStyle,
+          left: `${transformedX(cue.centerX ?? 540) / 10.8}%`,
+          top: `${((cue.centerY ?? (spec.safeArea.y + spec.safeArea.height / 2)) + layout.offsetY) / 19.2}%`,
+          color: spec.style.textColor,
+          fontSize: canvasCqw((cue.fontSize || spec.style.fontSize) * layout.scale),
+          WebkitTextStroke: `${canvasCqw(spec.style.outlineWidth * layout.scale)} ${spec.style.outlineColor}`,
+          transform: `translate(-50%, -50%) scaleX(${(cue.scaleX || 100) / 100})`,
+        }}
+      >
+        {(cue.lines?.length ? cue.lines : [cue.words.map((_, index) => index)]).map(
+          (line, lineIndex) => <span key={lineIndex} className="block">
+            {line.map((wordIndex, linePosition) => {
+              const word = cue.words[wordIndex];
+              if (!word) return null;
+              const prefix = linePosition > 0 && word.spaceBefore
+                ? (cue.wordSeparator || " ")
+                : "";
+              return <span
+                key={wordIndex}
+                style={{
+                  color: event.activeWordIndex === wordIndex
+                    ? spec.style.accentColor
+                    : spec.style.textColor,
+                }}
+              >{prefix}{word.text}</span>;
+            })}
+          </span>,
+        )}
+      </span>}
+  </div>;
 }
 
 function TemplatePicker({
@@ -3456,6 +3569,11 @@ function CommentTimelineEditor({
 function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; paidAccessBlocked?: boolean }) {
   const adminSubtitleLayoutEnabled = editorRelease.channel === "canary"
     && editorRelease.documentVersion === 3;
+  const captionTemplateEditorSpec = adminSubtitleLayoutEnabled
+    && item.captionRenderSpec
+    && item.subtitleTemplateId === item.captionRenderSpec.templateId
+    ? item.captionRenderSpec
+    : null;
   const savedEditorDocument = overlayPreviewEnabled
     && (item.editorDocument?.version === 2 || item.editorDocument?.version === 3)
     ? item.editorDocument
@@ -4235,12 +4353,6 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     ? editorDocumentSnapshot.renderSpec
     : null;
   const renderSubtitleLayout = editorSubtitleLayoutFromRenderSpec(renderSpec);
-  const renderSubtitleBottom = (
-    EDITOR_SUBTITLE_DEFAULT_MARGIN_V - renderSubtitleLayout.offsetY
-  ) / TEMPLATE_CANVAS.height * 100;
-  const renderSubtitleFontSize = (
-    EDITOR_SUBTITLE_DEFAULT_FONT_SIZE * renderSubtitleLayout.scale
-  ) / TEMPLATE_CANVAS.width * 100;
   const titleFontFamily = overlayPreviewEnabled
     ? renderSpec?.title.font.family || editorFontFamily(titleFontId)
     : undefined;
@@ -8535,25 +8647,18 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 </button>
               </div>
             : <div className="pointer-events-none absolute inset-x-3 top-3 z-50 rounded bg-red-950/90 px-3 py-2 text-center text-xs font-semibold text-red-100">편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.</div>)}
-          {subtitlesEnabled && activeSubtitle && <div
-            data-editor-admin-subtitle-layout={
-              adminSubtitleLayoutEnabled
-              && renderSpec?.version === EDITOR_RENDER_SPEC_VERSION
-                ? ""
-                : undefined
-            }
-            className={`absolute inset-x-5 bottom-[23.2%] z-50 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white${adminSubtitleLayoutEnabled ? " cursor-pointer outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55" : ""}`}
-            style={adminSubtitleLayoutEnabled ? {
-              bottom: `${renderSubtitleBottom}%`,
-              fontSize: `${renderSubtitleFontSize}cqw`,
-              lineHeight: 1.35,
-            } : undefined}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={() => {
-              if (!adminSubtitleLayoutEnabled) return;
+          {subtitlesEnabled && captionTemplateEditorSpec && <CaptionTemplateEditorPreview
+            spec={captionTemplateEditorSpec}
+            currentTimeSeconds={previewTime}
+            layout={renderSubtitleLayout}
+            onSelect={() => {
               setActiveEditorSidebarTool("subtitle");
               setDesktopSidebarOpen(true);
             }}
+          />}
+          {subtitlesEnabled && !captionTemplateEditorSpec && activeSubtitle && <div
+            className="absolute inset-x-5 bottom-[23.2%] z-50 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white"
+            onPointerDown={(event) => event.stopPropagation()}
           >
             {editingSubtitleIndex === activeSubtitleIndex
               ? <textarea
@@ -9035,9 +9140,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             {EDITOR_SIDEBAR_TOOLS.filter((tool) => (
               tool.id !== "subtitle"
               || (
-                adminSubtitleLayoutEnabled
+                captionTemplateEditorSpec
                 && subtitlesEnabled
-                && segments.length > 0
               )
             )).map((tool) => {
               const active = activeEditorSidebarTool === tool.id
@@ -9139,21 +9243,20 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               </p>}
           </section>}
           {overlayPreviewEnabled
-            && adminSubtitleLayoutEnabled
+            && captionTemplateEditorSpec
             && subtitlesEnabled
-            && segments.length > 0
             && <section
               className={`editor-sidebar-tool-panel${activeEditorSidebarTool === "subtitle" ? " is-active" : ""}`}
               aria-label="자막 위치와 크기 설정"
             >
               <header className="editor-tool-panel-header">
-                <strong>자막</strong>
+                <strong>{captionTemplateEditorSpec.templateId === "pop" ? "팝형 자막" : "강조형 자막"}</strong>
                 <span className="rounded-full border border-[#ff715e]/35 bg-[#ff715e]/10 px-2 py-1 text-[10px] font-black text-[#ff9b8d]">
                   관리자 전용
                 </span>
               </header>
               <p className="mb-5 text-xs leading-5 text-white/60">
-                자막은 가로 중앙에 고정됩니다. 세로 위치와 글자 크기만 조절할 수 있어요.
+                실제 생성된 자막의 내용과 타이밍, 가로 중심은 고정됩니다. 세로 위치와 글자 크기만 조절할 수 있어요.
               </p>
               <label className="block font-semibold">
                 <span className="flex items-center justify-between gap-3 text-white">
@@ -9912,7 +10015,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="editor-title">{editorContent}</div>;
 }
 
-function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: ProjectActionAccess; onBack: () => void }) {
+function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = false }: { job: VideoJob; access: ProjectActionAccess; onBack: () => void; adminSubtitleLayoutEnabled?: boolean }) {
   const [playbackAssets, setPlaybackAssets] = useState<Record<string, {
     url: string;
     posterUrl: string | null;
@@ -10197,8 +10300,8 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
                       {itemIsRerendering && <EstimatedProcessingOverlay operationKey={`rerender:${item.id}:${item.renderVersion}`} durationSeconds={item.durationSeconds} rerender minimumProgress={item.rerenderProgress} />}
                     </div>
                     <div className="short-result-actions">
-                      {job.isExample || itemIsRerendering || item.subtitleTemplateId
-                        ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : item.subtitleTemplateId ? "자막 템플릿 편집은 다음 단계에서 지원합니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">{item.subtitleTemplateId ? "✎ 편집 준비 중" : "✎ 편집하기"}</button>
+                      {job.isExample || itemIsRerendering || (item.subtitleTemplateId && !adminSubtitleLayoutEnabled)
+                        ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : item.subtitleTemplateId ? "자막 템플릿 편집은 관리자 테스트에서만 지원합니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">{item.subtitleTemplateId ? "✎ 편집 준비 중" : "✎ 편집하기"}</button>
                         : <Link
                             data-project-guide={item.id === guideEditShortId ? "edit" : undefined}
                             href={`/projects/${job.projectNumber}/edit/${item.id}`}
@@ -10222,7 +10325,7 @@ function ProjectWorkspace({ job, access, onBack }: { job: VideoJob; access: Proj
                           ? <a data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download={shortDownloadFilename(item.hookTitle)} className="tool-button short-download-button flex items-center justify-center" aria-label={`${item.hookTitle} 다운로드`}>↓ 다운로드</a>
                           : <button data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} type="button" onClick={() => setDownloadPaywallOpen(true)} className="tool-button short-download-button">↓ 다운로드</button>}
                     </div>
-                    {item.subtitleTemplateId && (
+                    {item.subtitleTemplateId && !adminSubtitleLayoutEnabled && (
                       <p className="mt-2 text-center text-xs font-medium text-neutral-400">자막 편집은 다음 단계에서 지원해요.</p>
                     )}
                   </div>
@@ -10273,7 +10376,7 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} paidAccessBlocked={!access?.canEdit} />;
 }
 
-export function ProjectPage({ projectNumber }: { projectNumber: number }) {
+export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false }: { projectNumber: number; adminSubtitleLayoutEnabled?: boolean }) {
   const [project, setProject] = useState<VideoJob | null>(null);
   const [access, setAccess] = useState<ProjectActionAccess>({ canEdit: false, canDownload: false });
   const [loading, setLoading] = useState(true);
@@ -10350,7 +10453,12 @@ export function ProjectPage({ projectNumber }: { projectNumber: number }) {
     );
   }
 
-  return <ProjectWorkspace job={project} access={access} onBack={returnToProjects} />;
+  return <ProjectWorkspace
+    job={project}
+    access={access}
+    onBack={returnToProjects}
+    adminSubtitleLayoutEnabled={adminSubtitleLayoutEnabled}
+  />;
 }
 
 function initialActiveJob(state: MvpState | null) {

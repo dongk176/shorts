@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from PIL import Image, ImageFont
 
+from shorts_worker.caption_templates import compile_caption_render_spec
 from shorts_worker.config import Settings
 from shorts_worker.editor_renderer import (
     EditorDocumentRenderer,
@@ -27,10 +28,17 @@ from shorts_worker.editor_renderer import (
     editor_subtitle_style,
     editor_video_frame,
     load_editor_font,
+    retime_editor_caption_spec,
     retime_editor_subtitles,
     verify_editor_fonts,
 )
-from shorts_worker.schemas import EditorDocument, EditorFontId, EditorTextOverlay
+from shorts_worker.schemas import (
+    EditorDocument,
+    EditorFontId,
+    EditorTextOverlay,
+    VideoAspectRatio,
+)
+from shorts_worker.subtitles import TranscriptWord
 
 pytestmark = pytest.mark.render
 
@@ -127,6 +135,102 @@ def test_admin_subtitle_layout_maps_to_ass_position_and_font_size() -> None:
 
     assert (legacy.margin_v, legacy.font_size) == (445, 48)
     assert (admin.margin_v, admin.font_size) == (705, 72)
+
+
+def test_admin_caption_template_layout_scales_and_retimes_trusted_pop_spec() -> None:
+    document = _document_v3_with_subtitle_layout(offset_y=-260, scale=1.5)
+    original = {
+        "schemaVersion": 3,
+        "templateId": "pop",
+        "fps": 30,
+        "safeArea": {"x": 120, "y": 1025, "width": 840, "height": 140},
+        "layout": {
+            "caption": {"x": 120, "y": 1025, "width": 840, "height": 140}
+        },
+        "style": {"fontSize": 92, "outlineWidth": 8},
+        "cues": [{
+            "startFrame": 30,
+            "endFrame": 150,
+            "words": [{
+                "text": "자막",
+                "fontSize": 92,
+                "centerX": 500,
+                "centerY": 1095,
+            }],
+            "events": [
+                {
+                    "startFrame": 30,
+                    "endFrame": 60,
+                    "activeWordIndex": 0,
+                    "positions": [{"centerX": 500, "centerY": 1095}],
+                },
+                {
+                    "startFrame": 120,
+                    "endFrame": 150,
+                    "activeWordIndex": 0,
+                    "positions": [{"centerX": 500, "centerY": 1095}],
+                },
+            ],
+        }],
+    }
+
+    rendered = retime_editor_caption_spec(document, original)
+
+    assert rendered is not None
+    assert original["style"] == {"fontSize": 92, "outlineWidth": 8}
+    assert rendered["style"] == {"fontSize": 138.0, "outlineWidth": 12.0}
+    assert rendered["safeArea"] == {
+        "x": -90.0,
+        "y": 730.0,
+        "width": 1260.0,
+        "height": 210.0,
+    }
+    cue = rendered["cues"][0]
+    assert cue["words"][0]["fontSize"] == 138.0
+    assert cue["words"][0]["centerX"] == 480.0
+    assert cue["words"][0]["centerY"] == 835.0
+    assert [
+        (event["startFrame"], event["endFrame"])
+        for event in cue["events"]
+    ] == [(0, 30), (45, 75)]
+    assert cue["events"][0]["positions"] == [
+        {"centerX": 480.0, "centerY": 835.0}
+    ]
+
+
+def test_admin_caption_template_layout_updates_highlight_font_and_y_only() -> None:
+    document = _document_v3_with_subtitle_layout(offset_y=120, scale=0.75)
+    spec = {
+        "schemaVersion": 3,
+        "templateId": "highlight",
+        "fps": 30,
+        "safeArea": {"x": 120, "y": 1025, "width": 840, "height": 140},
+        "style": {"fontSize": 72, "outlineWidth": 7},
+        "cues": [{
+            "startFrame": 30,
+            "endFrame": 60,
+            "fontSize": 72,
+            "scaleX": 100,
+            "centerX": 540,
+            "centerY": 1095,
+            "words": [{"text": "강조"}],
+            "lines": [[0]],
+            "events": [{
+                "startFrame": 30,
+                "endFrame": 60,
+                "activeWordIndex": 0,
+            }],
+        }],
+    }
+
+    rendered = retime_editor_caption_spec(document, spec)
+
+    assert rendered is not None
+    cue = rendered["cues"][0]
+    assert cue["fontSize"] == 54.0
+    assert cue["centerX"] == 540.0
+    assert cue["centerY"] == 1215.0
+    assert rendered["style"]["outlineWidth"] == 5.25
 
 
 def test_movable_overlay_positions_are_clamped_after_scaling() -> None:
@@ -711,6 +815,27 @@ def test_editor_document_v3_renders_at_authoritative_30fps(
         clean_clip_crf=28,
     )
     renderer = EditorDocumentRenderer(settings)
+    caption_spec = compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="첫자막",
+                start=1.05,
+                end=1.5,
+                provider="elevenlabs",
+            ),
+            TranscriptWord(
+                text="둘째자막",
+                start=4.05,
+                end=4.5,
+                provider="elevenlabs",
+            ),
+        ],
+        template_id="pop",
+        clip_start=0,
+        clip_end=10,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        caption_placement="center",
+    )
     clean = renderer.extract_sequence(
         timeline_path=timeline,
         output_path=tmp_path / "clean-v3.mp4",
@@ -723,6 +848,7 @@ def test_editor_document_v3_renders_at_authoritative_30fps(
         document=document,
         work_dir=tmp_path / "render-work-v3",
         channel_thumbnail_path=None,
+        caption_render_spec=caption_spec,
     )
     subtitle_ass = (
         tmp_path / "render-work-v3" / "editor-assets" / "subtitles.ass"
@@ -739,5 +865,10 @@ def test_editor_document_v3_renders_at_authoritative_30fps(
     assert video["codec_name"] == "h264"
     assert video["avg_frame_rate"] == "30/1"
     assert float(probe["format"]["duration"]) == pytest.approx(3.5, abs=0.2)
-    assert "Style: Default,Noto Sans CJK KR,72," in subtitle_ass
-    assert ",60,60,705,1" in subtitle_ass
+    assert "Style: Default,Pretendard,72," in subtitle_ass
+    assert r"\fs138.0" in subtitle_ass
+    assert r"\pos(" in subtitle_ass
+    assert "Noto Sans CJK KR" not in subtitle_ass
+    assert (
+        tmp_path / "render-work-v3" / "caption-fonts" / "Pretendard-Bold.ttf"
+    ).is_file()

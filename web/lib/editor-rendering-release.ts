@@ -18,6 +18,12 @@ export type RequestedEditorRelease = {
   documentVersion: number;
 };
 
+export function adminSubtitleLayoutReleaseEnabled(
+  release: EditorReleaseAssignment,
+) {
+  return release.channel === "canary" && release.documentVersion === 3;
+}
+
 type EditorRenderingEnvironment = {
   NODE_ENV?: string;
   EDITOR_RENDERING_V2_ENABLED?: string;

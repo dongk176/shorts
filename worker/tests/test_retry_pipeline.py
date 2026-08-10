@@ -1420,6 +1420,40 @@ def test_editor_document_rerender_promotes_one_atomic_snapshot(tmp_path) -> None
     }
 
 
+def test_editor_document_rerender_forwards_trusted_caption_template_spec(
+    tmp_path,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    caption_spec = {
+        "schemaVersion": 3,
+        "templateId": "pop",
+        "fps": 30,
+        "cues": [],
+    }
+    item = worker.repository.get_short.return_value
+    item["subtitle_template_id"] = "pop"
+    item["caption_render_spec"] = caption_spec
+
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
+        is caption_spec
+    )
+
+
+def test_editor_document_rerender_fails_closed_without_caption_template_spec(
+    tmp_path,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    worker.repository.get_short.return_value["subtitle_template_id"] = "highlight"
+
+    with pytest.raises(ValueError, match="원본 자막 렌더 정보를 찾을 수 없습니다"):
+        worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    worker.editor_renderer.render.assert_not_called()
+
+
 def test_editor_document_failure_releases_lock_after_final_attempt(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,

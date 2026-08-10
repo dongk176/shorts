@@ -4,6 +4,10 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
+import {
+  adminSubtitleLayoutReleaseEnabled,
+  resolveEditorRelease,
+} from "@/lib/editor-rendering-release";
 import { apiError, HttpError } from "@/lib/http";
 import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { rangeEditingEnabled } from "@/lib/range-editing";
@@ -33,11 +37,15 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
         or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
       ) and s.status='ready' and s.deleted_at is null and s.expires_at > now()
         and s.output_s3_key is not null
-        and s.subtitle_template_id is null
         and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null
     `;
     if (!rows[0]) throw new HttpError(404, "이 쇼츠에는 편집 가능한 영상이 없습니다.");
-    if (rows[0].subtitleTemplateId) {
+    if (
+      rows[0].subtitleTemplateId
+      && !adminSubtitleLayoutReleaseEnabled(
+        await resolveEditorRelease(db, session.userId),
+      )
+    ) {
       throw new HttpError(
         409,
         "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",

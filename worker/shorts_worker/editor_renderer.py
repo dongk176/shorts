@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
-from math import ceil
+from math import ceil, floor
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
+from .caption_templates import create_caption_ass, prepare_caption_fonts
 from .config import Settings
 from .errors import RenderError
 from .media import media_duration, probe_media, run_command, video_fps
@@ -238,6 +240,143 @@ def retime_editor_subtitles(document: EditorDocument) -> list[SubtitleSegment]:
             ))
         output_cursor += clip.source_end_seconds - clip.source_start_seconds
     return retimed
+
+
+def retime_editor_caption_spec(
+    document: EditorDocument,
+    caption_render_spec: dict[str, object],
+) -> dict[str, object] | None:
+    """Apply trusted editor timing and layout to an immutable caption template."""
+    spec = deepcopy(caption_render_spec)
+    if int(spec.get("schemaVersion") or 0) != 3:
+        raise RenderError("원본 자막 렌더 사양 버전이 올바르지 않습니다.")
+    if str(spec.get("templateId") or "") not in {"basic", "highlight", "pop"}:
+        raise RenderError("원본 자막 렌더 템플릿이 올바르지 않습니다.")
+    fps = int(spec.get("fps") or 0)
+    if fps != 30:
+        raise RenderError("원본 자막 렌더 프레임레이트가 올바르지 않습니다.")
+
+    render_subtitles = (
+        document.render_spec.subtitles
+        if document.render_spec and document.render_spec.version == 2
+        else None
+    )
+    offset_y = render_subtitles.offset_y if render_subtitles else 0.0
+    scale = render_subtitles.scale if render_subtitles else 1.0
+
+    def scaled_x(value: object) -> float:
+        return round(540 + (float(value) - 540) * scale, 3)
+
+    def shifted_y(value: object) -> float:
+        return round(float(value) + offset_y, 3)
+
+    style = spec.get("style")
+    if not isinstance(style, dict):
+        raise RenderError("원본 자막 스타일이 올바르지 않습니다.")
+    style["fontSize"] = round(float(style.get("fontSize") or 0) * scale, 3)
+    style["outlineWidth"] = round(
+        float(style.get("outlineWidth") or 0) * scale,
+        3,
+    )
+
+    for rectangle_key in ("safeArea",):
+        rectangle = spec.get(rectangle_key)
+        if not isinstance(rectangle, dict):
+            continue
+        original_width = float(rectangle.get("width") or 0)
+        original_height = float(rectangle.get("height") or 0)
+        original_center_x = float(rectangle.get("x") or 0) + original_width / 2
+        original_center_y = float(rectangle.get("y") or 0) + original_height / 2
+        rectangle["width"] = round(original_width * scale, 3)
+        rectangle["height"] = round(original_height * scale, 3)
+        rectangle["x"] = round(
+            scaled_x(original_center_x) - float(rectangle["width"]) / 2,
+            3,
+        )
+        rectangle["y"] = round(
+            original_center_y + offset_y - float(rectangle["height"]) / 2,
+            3,
+        )
+    layout = spec.get("layout")
+    if isinstance(layout, dict) and isinstance(layout.get("caption"), dict):
+        layout["caption"] = deepcopy(spec.get("safeArea"))
+
+    cues = spec.get("cues")
+    if not isinstance(cues, list):
+        raise RenderError("원본 자막 큐가 올바르지 않습니다.")
+
+    clip_windows: list[tuple[int, int, int]] = []
+    output_cursor = 0
+    for clip in document.video.clips:
+        clip_start = floor(clip.source_start_seconds * fps + 0.5)
+        clip_end = floor(clip.source_end_seconds * fps + 0.5)
+        if clip_end <= clip_start:
+            continue
+        clip_windows.append((clip_start, clip_end, output_cursor))
+        output_cursor += clip_end - clip_start
+
+    retimed_cues: list[dict[str, object]] = []
+    for cue_value in cues:
+        if not isinstance(cue_value, dict):
+            raise RenderError("원본 자막 큐가 올바르지 않습니다.")
+        cue = cue_value
+        words = cue.get("words")
+        events = cue.get("events")
+        if not isinstance(words, list) or not isinstance(events, list):
+            raise RenderError("원본 자막 이벤트가 올바르지 않습니다.")
+
+        if "centerX" in cue:
+            cue["centerX"] = scaled_x(cue["centerX"])
+        if "centerY" in cue:
+            cue["centerY"] = shifted_y(cue["centerY"])
+        if "fontSize" in cue:
+            cue["fontSize"] = round(float(cue["fontSize"]) * scale, 3)
+        for word_value in words:
+            if not isinstance(word_value, dict):
+                raise RenderError("원본 자막 어절이 올바르지 않습니다.")
+            if "fontSize" in word_value:
+                word_value["fontSize"] = round(
+                    float(word_value["fontSize"]) * scale,
+                    3,
+                )
+            if "centerX" in word_value:
+                word_value["centerX"] = scaled_x(word_value["centerX"])
+            if "centerY" in word_value:
+                word_value["centerY"] = shifted_y(word_value["centerY"])
+
+        retimed_events: list[dict[str, object]] = []
+        for clip_start, clip_end, output_start in clip_windows:
+            for event_value in events:
+                if not isinstance(event_value, dict):
+                    raise RenderError("원본 자막 이벤트가 올바르지 않습니다.")
+                event_start = int(event_value.get("startFrame") or 0)
+                event_end = int(event_value.get("endFrame") or 0)
+                visible_start = max(event_start, clip_start)
+                visible_end = min(event_end, clip_end)
+                if visible_end <= visible_start:
+                    continue
+                event = deepcopy(event_value)
+                event["startFrame"] = output_start + visible_start - clip_start
+                event["endFrame"] = output_start + visible_end - clip_start
+                positions = event.get("positions")
+                if isinstance(positions, list):
+                    for position in positions:
+                        if not isinstance(position, dict):
+                            raise RenderError("원본 팝 자막 위치가 올바르지 않습니다.")
+                        position["centerX"] = scaled_x(position["centerX"])
+                        position["centerY"] = shifted_y(position["centerY"])
+                retimed_events.append(event)
+        if not retimed_events:
+            continue
+        cue["events"] = retimed_events
+        cue["startFrame"] = min(int(event["startFrame"]) for event in retimed_events)
+        cue["endFrame"] = max(int(event["endFrame"]) for event in retimed_events)
+        retimed_cues.append(cue)
+
+    if not retimed_cues:
+        return None
+    spec["cues"] = retimed_cues
+    return spec
 
 
 def _text_size(
@@ -1149,6 +1288,7 @@ class EditorDocumentRenderer:
         document: EditorDocument,
         work_dir: Path,
         channel_thumbnail_path: Path | None,
+        caption_render_spec: dict[str, object] | None = None,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         assets_dir = work_dir / "editor-assets"
@@ -1275,9 +1415,24 @@ class EditorDocumentRenderer:
         ]
         current_label = "scene0"
         next_image_index = 2
-        subtitle_style = editor_subtitle_style(document)
-        subtitle_path = (
-            create_ass_subtitles(
+        caption_fonts_dir: Path | None = None
+        subtitle_path: Path | None = None
+        if document.subtitles.enabled and caption_render_spec is not None:
+            rendered_caption_spec = retime_editor_caption_spec(
+                document,
+                caption_render_spec,
+            )
+            if rendered_caption_spec is not None:
+                subtitle_path = create_caption_ass(
+                    rendered_caption_spec,
+                    assets_dir / "subtitles.ass",
+                )
+                caption_fonts_dir = prepare_caption_fonts(
+                    work_dir / "caption-fonts",
+                )
+        elif document.subtitles.enabled:
+            subtitle_style = editor_subtitle_style(document)
+            subtitle_path = create_ass_subtitles(
                 retime_editor_subtitles(document),
                 clip_start=0,
                 clip_end=duration,
@@ -1285,9 +1440,6 @@ class EditorDocumentRenderer:
                 margin_v=subtitle_style.margin_v,
                 font_size=subtitle_style.font_size,
             )
-            if document.subtitles.enabled
-            else None
-        )
         subtitles_applied = False
 
         def apply_subtitles() -> None:
@@ -1295,10 +1447,15 @@ class EditorDocumentRenderer:
             if not subtitle_path or subtitles_applied:
                 return
             next_label = f"captioned{len(filters)}"
-            filters.append(
+            subtitle_filter = (
                 f"[{current_label}]subtitles=filename="
-                f"'{_escape_filter_path(subtitle_path)}'[{next_label}]"
+                f"'{_escape_filter_path(subtitle_path)}'"
             )
+            if caption_fonts_dir is not None:
+                subtitle_filter += (
+                    f":fontsdir='{_escape_filter_path(caption_fonts_dir)}'"
+                )
+            filters.append(f"{subtitle_filter}[{next_label}]")
             current_label = next_label
             subtitles_applied = True
 

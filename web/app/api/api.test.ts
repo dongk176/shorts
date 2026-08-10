@@ -820,7 +820,7 @@ describe("subtitle template edit isolation", () => {
       cleanClipS3Key: "clean/source.mp4",
       expiresAt: new Date(Date.now() + 60_000),
       subtitleTemplateId: "basic",
-    }]);
+    }], []);
     mocks.getDb.mockReturnValue(sourceDb);
 
     const sourceResponse = await accessEditSource(
@@ -833,7 +833,7 @@ describe("subtitle template edit isolation", () => {
     });
     expect(Array.from(
       sourceDb.mock.calls[0][0] as TemplateStringsArray,
-    ).join("")).toContain("s.subtitle_template_id is null");
+    ).join("")).not.toContain("s.subtitle_template_id is null");
     expect(mocks.signedUrl).not.toHaveBeenCalled();
 
     const timelineDb = dbWithRows([{
@@ -841,7 +841,7 @@ describe("subtitle template edit isolation", () => {
       cleanClipS3Key: "clean/source.mp4",
       expiresAt: new Date(Date.now() + 60_000),
       subtitleTemplateId: "highlight",
-    }]);
+    }], []);
     mocks.getDb.mockReturnValue(timelineDb);
     const timelineResponse = await accessEditTimeline(
       new Request(`http://localhost/api/shorts/${shortId}/edit-timeline`),
@@ -853,14 +853,14 @@ describe("subtitle template edit isolation", () => {
     });
     expect(Array.from(
       timelineDb.mock.calls[0][0] as TemplateStringsArray,
-    ).join("")).toContain("s.subtitle_template_id is null");
+    ).join("")).not.toContain("s.subtitle_template_id is null");
     expect(mocks.signedUrl).not.toHaveBeenCalled();
 
     const channelAssetDb = dbWithRows([{
       assetKey: "edit-sources/a/editor-assets/channel.png",
       expiresAt: new Date(Date.now() + 60_000),
       subtitleTemplateId: "pop",
-    }]);
+    }], []);
     mocks.getDb.mockReturnValue(channelAssetDb);
     const channelAssetResponse = await accessEditorChannelAsset(
       new Request(`http://localhost/api/shorts/${shortId}/editor-channel-asset`),
@@ -872,8 +872,176 @@ describe("subtitle template edit isolation", () => {
     });
     expect(Array.from(
       channelAssetDb.mock.calls[0][0] as TemplateStringsArray,
-    ).join("")).toContain("s.subtitle_template_id is null");
+    ).join("")).not.toContain("s.subtitle_template_id is null");
     expect(mocks.signedUrl).not.toHaveBeenCalled();
+  });
+
+  it("serves subtitle-template editor assets only to the active admin v3 canary", async () => {
+    process.env.EDITOR_RENDERING_V2_ENABLED = "true";
+    process.env.RANGE_EDITING_ENABLED = "true";
+    process.env.CLOUDFRONT_DOMAIN = "cdn.example.com";
+    process.env.CLOUDFRONT_KEY_PAIR_ID = "key-pair";
+    process.env.CLOUDFRONT_PRIVATE_KEY_B64 = Buffer.from("private-key").toString("base64");
+    const candidateReleaseId = "5a5f9f4d-f59d-4ba3-a28a-9396ac8284a7";
+    const adminV3Release = {
+      publicEnabled: false,
+      canaryEnabled: true,
+      runtimeEnabled: false,
+      testerEnabled: true,
+      userIsAdmin: true,
+      stableReleaseId: null,
+      stableUiVersion: null,
+      stableDocumentVersion: null,
+      stableStatus: null,
+      candidateReleaseId,
+      candidateUiVersion: 3,
+      candidateDocumentVersion: 3,
+      candidateStatus: "canary_active",
+    };
+    const expiresAt = new Date(Date.now() + 60_000);
+
+    const sourceDb = dbWithRows([{
+      cleanClipS3Key: "edit-sources/clean.mp4",
+      expiresAt,
+      subtitleTemplateId: "pop",
+    }], [adminV3Release]);
+    mocks.getDb.mockReturnValue(sourceDb);
+    const sourceResponse = await accessEditSource(
+      new Request(`http://localhost/api/shorts/${shortId}/edit-source`),
+      { params: Promise.resolve({ shortId }) },
+    );
+    expect(sourceResponse.status).toBe(200);
+    await expect(sourceResponse.json()).resolves.toMatchObject({
+      url: "https://cdn.example.com/signed-edit-source.mp4",
+    });
+
+    const timelineDb = dbWithRows([{
+      editTimelineS3Key: null,
+      cleanClipS3Key: "edit-sources/clean.mp4",
+      startSeconds: 10,
+      endSeconds: 20,
+      initialStartSeconds: 10,
+      initialEndSeconds: 20,
+      subtitleSegments: [{ start: 0, end: 5, text: "자막" }],
+      expiresAt,
+      subtitleTemplateId: "pop",
+    }], [adminV3Release]);
+    mocks.getDb.mockReturnValue(timelineDb);
+    const timelineResponse = await accessEditTimeline(
+      new Request(`http://localhost/api/shorts/${shortId}/edit-timeline`),
+      { params: Promise.resolve({ shortId }) },
+    );
+    expect(timelineResponse.status).toBe(200);
+    await expect(timelineResponse.json()).resolves.toMatchObject({
+      url: "https://cdn.example.com/signed-edit-source.mp4",
+      subtitleSegments: [{ start: 0, end: 5, text: "자막" }],
+    });
+
+    const channelAssetDb = dbWithRows([{
+      assetKey: "edit-sources/a/editor-assets/channel.png",
+      expiresAt,
+      subtitleTemplateId: "pop",
+    }], [adminV3Release]);
+    mocks.getDb.mockReturnValue(channelAssetDb);
+    const channelAssetResponse = await accessEditorChannelAsset(
+      new Request(`http://localhost/api/shorts/${shortId}/editor-channel-asset`),
+      { params: Promise.resolve({ shortId }) },
+    );
+    expect(channelAssetResponse.status).toBe(307);
+  });
+
+  it("queues a subtitle-template v3 render only for the active admin canary", async () => {
+    process.env.EDITOR_RENDERING_V2_ENABLED = "true";
+    const candidateReleaseId = "5a5f9f4d-f59d-4ba3-a28a-9396ac8284a7";
+    const requestId = "5253b207-cd49-45bc-8d83-69c2b781e21f";
+    const adminV3Release = {
+      publicEnabled: false,
+      canaryEnabled: true,
+      runtimeEnabled: false,
+      testerEnabled: true,
+      userIsAdmin: true,
+      stableReleaseId: null,
+      stableUiVersion: null,
+      stableDocumentVersion: null,
+      stableStatus: null,
+      candidateReleaseId,
+      candidateUiVersion: 3,
+      candidateDocumentVersion: 3,
+      candidateStatus: "canary_active",
+    };
+    const document = JSON.parse(readFileSync(
+      new URL("../../../test-fixtures/editor-document-v3.json", import.meta.url),
+      "utf8",
+    ));
+    const db = dbWithRows(
+      [adminV3Release],
+      [{
+        id: shortId,
+        jobId: "job-a",
+        mvpSessionId: "session-a",
+        status: "ready",
+        renderVersion: 3,
+        durationSeconds: 3.5,
+        templateId: "dark-minimal",
+        customTemplateId: null,
+        templateSnapshot: { presetVersion: 3 },
+        videoAspectRatio: "16:9",
+        editTimelineS3Key: "edit-sources/timeline.mp4",
+        editTimelineStartSeconds: 10,
+        editTimelineEndSeconds: 20,
+        cleanClipS3Key: "edit-sources/clean.mp4",
+        startSeconds: 11,
+        endSeconds: 16,
+        subtitleTemplateId: "pop",
+        captionRenderSpec: {
+          schemaVersion: 3,
+          templateId: "pop",
+          fps: 30,
+          cues: [],
+        },
+        channelThumbnailUrl: "https://example.com/channel.png",
+        editorDocument: null,
+        onboardingWelcomeFunded: false,
+      }],
+      [],
+    );
+    const tx = dbWithRows(
+      [adminV3Release],
+      [{ id: requestId }],
+      [{ id: shortId }],
+      [],
+    );
+    Object.assign(db, {
+      begin: vi.fn(
+        (callback: (transaction: typeof tx) => unknown) => callback(tx),
+      ),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        requestId,
+        release: {
+          releaseId: candidateReleaseId,
+          channel: "canary",
+          uiVersion: 3,
+          documentVersion: 3,
+        },
+        document,
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "rerendering",
+      releaseId: candidateReleaseId,
+      releaseChannel: "canary",
+    });
+    const updateCall = tx.mock.calls[2];
+    expect(Array.from(updateCall[0] as TemplateStringsArray).join(""))
+      .toContain("s.subtitle_template_id is null");
+    expect(updateCall).toContain(true);
   });
 
   it("blocks caption comment regeneration before reservation or Gemini usage", async () => {
