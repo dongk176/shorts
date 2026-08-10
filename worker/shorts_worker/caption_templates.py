@@ -18,7 +18,7 @@ from .schemas import VideoAspectRatio
 from .subtitles import TranscriptWord
 
 CAPTION_FPS = 30
-CAPTION_TIMING_LEAD_FRAMES = 4
+CAPTION_TIMING_LEAD_FRAMES = 7
 CAPTION_TEMPLATE_IDS = frozenset({"basic", "highlight", "pop"})
 CAPTION_ACCENT = "#35E6E3"
 CAPTION_TEXT = "#FFFFFF"

@@ -50,7 +50,10 @@ import type {
   YoutubeAnalysis,
 } from "@/lib/contracts";
 import { expectedShortCount, videoAspectRatioOptions } from "@/lib/contracts";
-import type { CaptionRenderSpec } from "@/lib/caption-render-spec";
+import {
+  CAPTION_ASS_PREVIEW_FONT_SCALE,
+  type CaptionRenderSpec,
+} from "@/lib/caption-render-spec";
 import { retimeCaptionRenderSpecForEditor } from "@/lib/editor-caption-preview";
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
@@ -70,6 +73,7 @@ import { isIosDownloadDevice, shortDownloadFilename } from "@/lib/short-download
 import { stateRetryDelayMs } from "@/lib/state-loading";
 import {
   SUBTITLE_TEMPLATE_BRAND_COLOR,
+  SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
   subtitleTemplateStyleSnapshot,
   subtitleTemplateOptions,
   type SubtitleCaptionPlacement,
@@ -1620,7 +1624,9 @@ function CaptionTemplateEditorPreview({
             left: `${transformedX(position.centerX) / 10.8}%`,
             top: `${(position.centerY + layout.offsetY) / 19.2}%`,
             color: activeWord ? spec.style.accentColor : spec.style.textColor,
-            fontSize: canvasCqw(word.fontSize * layout.scale),
+            fontSize: canvasCqw(
+              word.fontSize * layout.scale * CAPTION_ASS_PREVIEW_FONT_SCALE,
+            ),
             WebkitTextStroke: `${canvasCqw(previewStrokeWidth)} ${spec.style.outlineColor}`,
             transform: `translate(-50%, -50%) scale(${activeScale})`,
           }}
@@ -1643,7 +1649,11 @@ function CaptionTemplateEditorPreview({
           left: `${transformedX(cue.centerX ?? 540) / 10.8}%`,
           top: `${((cue.centerY ?? (spec.safeArea.y + spec.safeArea.height / 2)) + layout.offsetY) / 19.2}%`,
           color: spec.style.textColor,
-          fontSize: canvasCqw((cue.fontSize || spec.style.fontSize) * layout.scale),
+          fontSize: canvasCqw(
+            (cue.fontSize || spec.style.fontSize)
+              * layout.scale
+              * CAPTION_ASS_PREVIEW_FONT_SCALE,
+          ),
           WebkitTextStroke: `${canvasCqw(previewStrokeWidth)} ${spec.style.outlineColor}`,
           transform: `translate(-50%, -50%) scaleX(${(cue.scaleX || 100) / 100})`,
         }}
@@ -9283,7 +9293,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 </span>
               </header>
               <p className="mb-5 text-xs leading-5 text-white/60">
-                실제 생성된 자막의 내용과 가로 중심은 고정됩니다. 음성보다 {captionTemplateEditorSpec.timingLeadFrames ?? 4}프레임 먼저 표시되는 실제 렌더 타이밍도 그대로 미리 봅니다. 세로 위치와 글자 크기만 조절할 수 있어요.
+                실제 생성된 자막의 내용과 가로 중심은 고정됩니다. 음성보다 {captionTemplateEditorSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES}프레임 먼저 표시되는 실제 렌더 타이밍도 그대로 미리 봅니다. 세로 위치와 글자 크기만 조절할 수 있어요.
               </p>
               <label className="block font-semibold">
                 <span className="flex items-center justify-between gap-3 text-white">

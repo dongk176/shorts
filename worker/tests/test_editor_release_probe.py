@@ -67,6 +67,13 @@ def test_editor_release_probe_pop_caption_survives_every_timeline() -> None:
     caption_render_spec = editor_release_probe._pop_caption_render_spec()
 
     assert caption_render_spec["templateId"] == "pop"
+    assert caption_render_spec["timingLeadFrames"] == 7
+    multiword_cues = [
+        cue for cue in caption_render_spec["cues"] if len(cue["words"]) >= 2
+    ]
+    assert multiword_cues
+    assert multiword_cues[0]["words"][1]["spaceBefore"] is True
+    assert len(multiword_cues[0]["events"][0]["positions"]) >= 2
     for scenario in editor_release_probe.PROBE_SCENARIOS:
         rendered = retime_editor_caption_spec(
             editor_release_probe._document(scenario),

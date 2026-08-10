@@ -341,11 +341,11 @@ def test_project_3204_pop_phrase_is_split_to_one_line_instead_of_failing() -> No
     )
 
 
-def test_caption_display_leads_provider_timing_by_four_frames() -> None:
+def test_caption_display_leads_provider_timing_by_seven_frames() -> None:
     spec = _compile([_word("먼저", 0.5, 0.8)], "basic", clip_end=1.0)
     word = spec["cues"][0]["words"][0]
-    assert spec["timingLeadFrames"] == 4
-    assert word["startFrame"] == round(0.5 * 30) - 4
+    assert spec["timingLeadFrames"] == 7
+    assert word["startFrame"] == round(0.5 * 30) - 7
     assert word["endFrame"] == round(0.8 * 30)
 
 
@@ -634,12 +634,12 @@ def test_highlight_switches_on_the_exact_output_frame(tmp_path: Path) -> None:
     spec = _compile(
         [
             _word("LEFT", 0.0, 6 / 30),
-            # The approved four-frame lead advances the provider's frame-6
+            # The approved seven-frame lead advances the provider's frame-9
             # boundary to output frame 2.
-            _word("RIGHT", 6 / 30, 0.3, space_before=True),
+            _word("RIGHT", 9 / 30, 0.4, space_before=True),
         ],
         "highlight",
-        clip_end=0.3,
+        clip_end=0.4,
     )
     ass_path = create_caption_ass(spec, tmp_path / "boundary.ass")
     font_directory = prepare_caption_fonts(tmp_path / "fonts")
