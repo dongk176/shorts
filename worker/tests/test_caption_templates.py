@@ -28,6 +28,8 @@ from shorts_worker.caption_templates import (
     compile_caption_render_spec,
     create_caption_ass,
     prepare_caption_fonts,
+    rebuild_caption_cue_text,
+    reflow_caption_cues_for_clips,
 )
 from shorts_worker.config import Settings
 from shorts_worker.media import probe_media
@@ -1067,3 +1069,94 @@ def test_caption_spec_uses_selected_admin_brand_color() -> None:
         accent_color="#FF715E",
     )
     assert spec["style"]["accentColor"] == "#FF715E"
+
+
+def test_editor_cuts_recompile_from_retained_caption_words() -> None:
+    spec = compile_caption_render_spec(
+        [
+            _word("남김", 1.0, 1.3),
+            _word("삭제", 2.0, 2.3, space_before=True),
+            _word("다시남김", 3.0, 3.3, space_before=True),
+        ],
+        template_id="highlight",
+        clip_start=0.0,
+        clip_end=5.0,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        spec["cues"],
+        template_id="highlight",
+        safe_area=spec["safeArea"],
+        clip_windows=[(0, 54, 0), (78, 150, 54)],
+    )
+
+    rendered_words = [
+        word["text"]
+        for cue in cues
+        for word in cue["words"]
+    ]
+    assert "남김" in rendered_words
+    assert "다시남김" in rendered_words
+    assert "삭제" not in rendered_words
+    assert all(cue["sourceCueIndex"] >= 0 for cue in cues)
+
+
+def test_plain_split_does_not_duplicate_a_caption_word() -> None:
+    spec = compile_caption_render_spec(
+        [_word("경계단어", 0.8, 1.2)],
+        template_id="pop",
+        clip_start=0.0,
+        clip_end=2.0,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        spec["cues"],
+        template_id="pop",
+        safe_area=spec["safeArea"],
+        clip_windows=[(0, 30, 0), (30, 60, 30)],
+    )
+
+    assert [word["text"] for cue in cues for word in cue["words"]] == [
+        "경계단어"
+    ]
+
+
+def test_long_edited_pop_caption_reflows_without_word_overlap() -> None:
+    spec = compile_caption_render_spec(
+        [_word("원본", 0.2, 2.8)],
+        template_id="pop",
+        clip_start=0.0,
+        clip_end=3.0,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+    safe_area = spec["safeArea"]
+
+    cues = rebuild_caption_cue_text(
+        spec["cues"][0],
+        text=f"{'아주긴수정자막' * 12} 다음단어",
+        template_id="pop",
+        safe_area=safe_area,
+    )
+
+    assert cues
+    for cue in cues:
+        for event in cue["events"]:
+            active_index = event["activeWordIndex"]
+            positions = event["positions"]
+            left_edges: list[float] = []
+            right_edges: list[float] = []
+            for word_index, (word, position) in enumerate(
+                zip(cue["words"], positions, strict=True)
+            ):
+                scale = 1.12 if word_index == active_index else 1.0
+                width = _measure(word["text"], word["fontSize"]) * scale
+                left_edges.append(position["centerX"] - width / 2)
+                right_edges.append(position["centerX"] + width / 2)
+            assert min(left_edges) >= safe_area["x"] - 0.5
+            assert max(right_edges) <= safe_area["x"] + safe_area["width"] + 0.5
+            assert all(
+                left_edges[index] >= right_edges[index - 1] - 0.5
+                for index in range(1, len(left_edges))
+            )

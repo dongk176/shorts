@@ -63,6 +63,8 @@ class _CaptionWord:
     end_frame: int
     space_before: bool
     source_indexes: tuple[int, ...]
+    speech_start_frame: int | None = None
+    speech_end_frame: int | None = None
 
 
 @lru_cache(maxsize=1)
@@ -277,6 +279,8 @@ def _clip_words(
                 end_frame=end_frame,
                 space_before=bool(selected) and word.space_before,
                 source_indexes=(source_index,),
+                speech_start_frame=source_start_frame,
+                speech_end_frame=source_end_frame,
             )
         )
     if not selected:
@@ -312,6 +316,16 @@ def _merge_unspaced_cjk_words(words: list[_CaptionWord]) -> list[_CaptionWord]:
                 end_frame=word.end_frame,
                 space_before=previous.space_before,
                 source_indexes=previous.source_indexes + word.source_indexes,
+                speech_start_frame=(
+                    previous.speech_start_frame
+                    if previous.speech_start_frame is not None
+                    else previous.start_frame
+                ),
+                speech_end_frame=(
+                    word.speech_end_frame
+                    if word.speech_end_frame is not None
+                    else word.end_frame
+                ),
             )
             continue
         merged.append(word)
@@ -406,6 +420,8 @@ def _split_caption_word(
                 end_frame=word.end_frame,
                 space_before=word.space_before,
                 source_indexes=word.source_indexes,
+                speech_start_frame=word.speech_start_frame,
+                speech_end_frame=word.speech_end_frame,
             )
         ]
 
@@ -436,6 +452,8 @@ def _split_caption_word(
                 end_frame=word.end_frame,
                 space_before=word.space_before,
                 source_indexes=word.source_indexes,
+                speech_start_frame=word.speech_start_frame,
+                speech_end_frame=word.speech_end_frame,
             )
         ]
 
@@ -453,6 +471,16 @@ def _split_caption_word(
             end_frame=(starts[index + 1] if index + 1 < len(starts) else word.end_frame),
             space_before=word.space_before if index == 0 else False,
             source_indexes=word.source_indexes,
+            speech_start_frame=(
+                word.speech_start_frame
+                if word.speech_start_frame is not None
+                else start
+            ),
+            speech_end_frame=(
+                word.speech_end_frame
+                if word.speech_end_frame is not None
+                else (starts[index + 1] if index + 1 < len(starts) else word.end_frame)
+            ),
         )
         for index, (piece, start) in enumerate(zip(pieces, starts, strict=True))
     ]
@@ -506,6 +534,8 @@ def _without_display_periods(words: Sequence[_CaptionWord]) -> list[_CaptionWord
                     end_frame=word.end_frame,
                     space_before=bool(cleaned) and word.space_before,
                     source_indexes=pending_source_indexes + word.source_indexes,
+                    speech_start_frame=word.speech_start_frame,
+                    speech_end_frame=word.speech_end_frame,
                 )
             )
             pending_start_frame = None
@@ -519,6 +549,8 @@ def _without_display_periods(words: Sequence[_CaptionWord]) -> list[_CaptionWord
                 end_frame=max(previous.end_frame, word.end_frame),
                 space_before=previous.space_before,
                 source_indexes=previous.source_indexes + word.source_indexes,
+                speech_start_frame=previous.speech_start_frame,
+                speech_end_frame=word.speech_end_frame,
             )
         else:
             pending_start_frame = (
@@ -657,13 +689,18 @@ def _event_ranges(
 
 
 def _serialize_word(word: _CaptionWord) -> dict[str, object]:
-    return {
+    serialized: dict[str, object] = {
         "text": word.text,
         "startFrame": word.start_frame,
         "endFrame": word.end_frame,
         "spaceBefore": word.space_before,
         "sourceWordIndexes": list(word.source_indexes),
     }
+    if word.speech_start_frame is not None:
+        serialized["speechStartFrame"] = word.speech_start_frame
+    if word.speech_end_frame is not None:
+        serialized["speechEndFrame"] = word.speech_end_frame
+    return serialized
 
 
 def _basic_or_highlight_cues(
@@ -953,9 +990,18 @@ def rebuild_caption_cue_text(
             end_frame=(starts[index + 1] if index + 1 < len(starts) else end_frame),
             space_before=index > 0,
             source_indexes=(),
+            speech_start_frame=word_start,
+            speech_end_frame=(
+                starts[index + 1] if index + 1 < len(starts) else end_frame
+            ),
         )
         for index, (token, word_start) in enumerate(zip(tokens, starts, strict=True))
     ]
+    words = _fit_display_words(
+        words,
+        template_id=template_id,
+        safe_area=safe_area,
+    )
     rebuilt = (
         _pop_cues(words, safe_area=safe_area, fps=fps)
         if template_id == "pop"
@@ -968,6 +1014,139 @@ def rebuild_caption_cue_text(
     )
     if not rebuilt:
         raise CaptionCompileError("편집 자막을 다시 배치하지 못했습니다.")
+    return rebuilt
+
+
+def reflow_caption_cues_for_clips(
+    cues: Sequence[dict[str, object]],
+    *,
+    template_id: str,
+    safe_area: dict[str, int],
+    clip_windows: Sequence[tuple[int, int, int]],
+    cue_edits: dict[int, str] | None = None,
+    fps: int = CAPTION_FPS,
+) -> list[dict[str, object]]:
+    """Recompile caption layout from the words retained by editor cuts.
+
+    Caption cues contain provider-derived word windows. Those words, rather
+    than the already-laid-out cue events, are the source of truth when a user
+    trims or removes video. Recompiling here prevents deleted words from
+    remaining visible and recalculates every gap and position after text edits.
+    """
+    if template_id not in CAPTION_TEMPLATE_IDS:
+        raise CaptionCompileError("편집할 수 없는 자막 템플릿입니다.")
+    if fps != CAPTION_FPS:
+        raise CaptionCompileError("편집 자막 프레임레이트가 올바르지 않습니다.")
+
+    # A plain split creates adjacent source clips. Treat them as one window so
+    # a word crossing the split point is not duplicated on both sides.
+    merged_windows: list[tuple[int, int, int]] = []
+    for clip_start, clip_end, output_start in clip_windows:
+        if clip_end <= clip_start:
+            continue
+        if (
+            merged_windows
+            and merged_windows[-1][1] == clip_start
+            and merged_windows[-1][2]
+            + merged_windows[-1][1]
+            - merged_windows[-1][0]
+            == output_start
+        ):
+            previous_start, _previous_end, previous_output = merged_windows[-1]
+            merged_windows[-1] = (previous_start, clip_end, previous_output)
+        else:
+            merged_windows.append((clip_start, clip_end, output_start))
+
+    edits = cue_edits or {}
+    rebuilt: list[dict[str, object]] = []
+    for cue_index, cue_value in enumerate(cues):
+        if not isinstance(cue_value, dict):
+            raise CaptionCompileError("원본 자막 큐가 올바르지 않습니다.")
+        source_cue_index = int(cue_value.get("sourceCueIndex", cue_index))
+        edited_text = edits.get(source_cue_index)
+        source_cues = (
+            rebuild_caption_cue_text(
+                cue_value,
+                text=edited_text,
+                template_id=template_id,
+                safe_area=safe_area,
+                fps=fps,
+            )
+            if edited_text is not None
+            else [cue_value]
+        )
+
+        for source_cue in source_cues:
+            words_value = source_cue.get("words")
+            if not isinstance(words_value, list):
+                raise CaptionCompileError("원본 자막 어절이 올바르지 않습니다.")
+            for clip_start, clip_end, output_start in merged_windows:
+                retained: list[_CaptionWord] = []
+                for word_value in words_value:
+                    if not isinstance(word_value, dict):
+                        raise CaptionCompileError("원본 자막 어절이 올바르지 않습니다.")
+                    if "startFrame" not in word_value or "endFrame" not in word_value:
+                        raise CaptionCompileError("원본 자막 어절 시간이 올바르지 않습니다.")
+                    word_start = int(word_value["startFrame"])
+                    word_end = int(word_value["endFrame"])
+                    speech_start = int(
+                        word_value.get("speechStartFrame", word_start)
+                    )
+                    speech_end = int(word_value.get("speechEndFrame", word_end))
+                    spoken_visible_start = max(speech_start, clip_start)
+                    spoken_visible_end = min(speech_end, clip_end)
+                    if spoken_visible_end <= spoken_visible_start:
+                        continue
+                    visible_start = max(word_start, clip_start)
+                    visible_end = min(word_end, clip_end)
+                    if visible_end <= visible_start:
+                        continue
+                    source_indexes_value = word_value.get("sourceWordIndexes")
+                    source_indexes = (
+                        tuple(int(value) for value in source_indexes_value)
+                        if isinstance(source_indexes_value, list)
+                        else ()
+                    )
+                    retained.append(_CaptionWord(
+                        text=str(word_value.get("text") or ""),
+                        start_frame=output_start + visible_start - clip_start,
+                        end_frame=output_start + visible_end - clip_start,
+                        space_before=bool(retained) and bool(
+                            word_value.get("spaceBefore")
+                        ),
+                        source_indexes=source_indexes,
+                        speech_start_frame=(
+                            output_start + spoken_visible_start - clip_start
+                        ),
+                        speech_end_frame=(
+                            output_start + spoken_visible_end - clip_start
+                        ),
+                    ))
+                if not retained:
+                    continue
+                retained = _fit_display_words(
+                    retained,
+                    template_id=template_id,
+                    safe_area=safe_area,
+                )
+                compiled = (
+                    _pop_cues(retained, safe_area=safe_area, fps=fps)
+                    if template_id == "pop"
+                    else _basic_or_highlight_cues(
+                        retained,
+                        highlighted=template_id == "highlight",
+                        safe_area=safe_area,
+                        fps=fps,
+                    )
+                )
+                for cue in compiled:
+                    cue["sourceCueIndex"] = source_cue_index
+                rebuilt.extend(compiled)
+
+    rebuilt.sort(key=lambda cue: (
+        int(cue.get("startFrame") or 0),
+        int(cue.get("endFrame") or 0),
+    ))
     return rebuilt
 
 

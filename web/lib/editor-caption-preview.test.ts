@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { CaptionRenderSpec } from "./caption-render-spec";
+import {
+  captionRenderSpecForEditor,
+  parseCaptionRenderSpec,
+  type CaptionRenderSpec,
+} from "./caption-render-spec";
 import {
   editorCaptionVerticalOffsetBounds,
   retimeCaptionRenderSpecForEditor,
@@ -56,6 +60,60 @@ describe("editor caption preview timing", () => {
       sourceStartSeconds: 2,
       sourceEndSeconds: 3,
     }])).toBeNull();
+  });
+
+  it("removes deleted words and preserves the remaining word indexes", () => {
+    const multiWord: CaptionRenderSpec = {
+      ...spec,
+      cues: [{
+        ...spec.cues[0],
+        startFrame: 20,
+        endFrame: 100,
+        words: [
+          { text: "남김", startFrame: 20, endFrame: 35 },
+          { text: "삭제", startFrame: 45, endFrame: 60, spaceBefore: true },
+          { text: "다시", startFrame: 75, endFrame: 90, spaceBefore: true },
+        ],
+        lines: [[0, 1, 2]],
+        events: [
+          { startFrame: 20, endFrame: 40, activeWordIndex: 0 },
+          { startFrame: 40, endFrame: 70, activeWordIndex: 1 },
+          { startFrame: 70, endFrame: 100, activeWordIndex: 2 },
+        ],
+      }],
+    };
+
+    const retimed = retimeCaptionRenderSpecForEditor(multiWord, [
+      { id: "keep-a", sourceStartSeconds: 0, sourceEndSeconds: 1.3 },
+      { id: "keep-b", sourceStartSeconds: 2.3, sourceEndSeconds: 3.5 },
+    ]);
+
+    expect(retimed?.cues.flatMap((cue) => cue.words.map((word) => word.text)))
+      .toEqual(["남김", "다시"]);
+    expect(retimed?.cues.flatMap((cue) => (
+      cue.events.map((event) => event.activeWordIndex)
+    ))).toEqual([0, 0]);
+  });
+
+  it("uses the padded word source saved with a captured edit timeline", () => {
+    const parsed = parseCaptionRenderSpec({
+      ...spec,
+      editorSource: {
+        timelineStartSeconds: 10,
+        timelineEndSeconds: 80,
+        spec: {
+          ...spec,
+          cues: [{
+            ...spec.cues[0],
+            words: [{ text: "앞뒤까지보존", startFrame: 23, endFrame: 40 }],
+          }],
+        },
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(captionRenderSpecForEditor(parsed!).cues[0].words[0].text)
+      .toBe("앞뒤까지보존");
   });
 
   it("lets a lower caption reach the bottom edge without leaving the canvas", () => {

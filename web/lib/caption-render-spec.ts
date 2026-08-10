@@ -13,6 +13,8 @@ const captionWordSchema = z.object({
   text: z.string().min(1).max(200),
   startFrame: frame.optional(),
   endFrame: frame.optional(),
+  speechStartFrame: frame.optional(),
+  speechEndFrame: frame.optional(),
   spaceBefore: z.boolean().optional(),
   fontSize: finiteNumber.min(16).max(300).optional(),
   centerX: finiteNumber.min(-1_080).max(2_160).optional(),
@@ -54,7 +56,7 @@ const captionRectSchema = z.object({
   height: finiteNumber.positive(),
 }).strict();
 
-export const captionRenderSpecSchema = z.object({
+const compiledCaptionRenderSpecSchema = z.object({
   schemaVersion: z.literal(3),
   templateId: z.enum(["pop", "highlight"]),
   captionPlacement: z.enum(["lower", "center"]),
@@ -71,6 +73,16 @@ export const captionRenderSpecSchema = z.object({
   cues: z.array(captionCueSchema).min(1).max(2_000),
 }).strip();
 
+export const captionRenderSpecSchema = compiledCaptionRenderSpecSchema.extend({
+  editorSource: z.object({
+    timelineStartSeconds: finiteNumber.nonnegative(),
+    timelineEndSeconds: finiteNumber.positive(),
+    spec: compiledCaptionRenderSpecSchema,
+  }).strict().refine(
+    (source) => source.timelineEndSeconds > source.timelineStartSeconds,
+  ).optional(),
+}).strip();
+
 export type CaptionRenderSpec = z.infer<typeof captionRenderSpecSchema>;
 export type CaptionRenderCue = CaptionRenderSpec["cues"][number];
 export type CaptionRenderEvent = CaptionRenderCue["events"][number];
@@ -78,4 +90,10 @@ export type CaptionRenderEvent = CaptionRenderCue["events"][number];
 export function parseCaptionRenderSpec(value: unknown): CaptionRenderSpec | null {
   const parsed = captionRenderSpecSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
+}
+
+export function captionRenderSpecForEditor(
+  spec: CaptionRenderSpec,
+): CaptionRenderSpec {
+  return spec.editorSource?.spec || spec;
 }

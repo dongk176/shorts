@@ -1094,6 +1094,13 @@ def test_project_finishes_user_outputs_before_timeline_postprocessing() -> None:
     assert 0 <= render_index < finalize_index < timeline_index
 
 
+def test_caption_template_projects_capture_the_padded_edit_timeline() -> None:
+    source = inspect.getsource(BatchWorker.project)
+
+    assert "and not subtitle_template_id" not in source
+    assert "caption_editor_sources.get(index)" in source
+
+
 def test_deferred_timeline_retries_once_and_commits_after_upload(tmp_path) -> None:
     worker = _timeline_worker(tmp_path)
     calls = 0
@@ -1439,6 +1446,39 @@ def test_editor_document_rerender_forwards_trusted_caption_template_spec(
     assert (
         worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
         is caption_spec
+    )
+
+
+def test_editor_document_rerender_uses_padded_caption_source_with_timeline(
+    tmp_path,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    editor_spec = {
+        "schemaVersion": 3,
+        "templateId": "pop",
+        "fps": 30,
+        "cues": [{"startFrame": 0}],
+    }
+    root_spec = {
+        "schemaVersion": 3,
+        "templateId": "pop",
+        "fps": 30,
+        "cues": [],
+        "editorSource": {
+            "timelineStartSeconds": 10,
+            "timelineEndSeconds": 20,
+            "spec": editor_spec,
+        },
+    }
+    item = worker.repository.get_short.return_value
+    item["subtitle_template_id"] = "pop"
+    item["caption_render_spec"] = root_spec
+
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
+        is editor_spec
     )
 
 

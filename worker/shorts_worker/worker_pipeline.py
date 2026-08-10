@@ -72,6 +72,7 @@ class ProjectTimelineTarget:
     slot_index: int
     clip: HighlightClip
     subtitles: list[SubtitleSegment]
+    caption_editor_source: dict[str, object] | None = None
 
 
 def edit_timeline_clip(
@@ -873,6 +874,7 @@ class BatchWorker:
                     },
                 )
                 caption_render_specs: dict[int, dict[str, object]] = {}
+                caption_editor_sources: dict[int, dict[str, object]] = {}
                 if subtitle_template_id:
                     aspect_ratio = VideoAspectRatio(
                         str(job.get("video_aspect_ratio") or "1:1")
@@ -955,8 +957,58 @@ class BatchWorker:
                     for index, clip in enumerate(clips, start=1)
                 } if (
                     getattr(self.settings, "edit_timeline_capture_enabled", False)
-                    and not subtitle_template_id
                 ) else {}
+                if subtitle_template_id and edit_timeline_clips:
+                    source_offset_seconds = (
+                        float(range_start_seconds) if source_range_enabled else 0.0
+                    )
+                    aspect_ratio = VideoAspectRatio(
+                        str(job.get("video_aspect_ratio") or "1:1")
+                    )
+                    subtitle_template_snapshot = job.get("subtitle_template_snapshot")
+                    caption_placement = (
+                        str(subtitle_template_snapshot.get("captionPlacement") or "lower")
+                        if isinstance(subtitle_template_snapshot, dict)
+                        else "lower"
+                    )
+                    unavailable_timeline_indexes: list[int] = []
+                    for index, timeline_clip in edit_timeline_clips.items():
+                        absolute_timeline_clip = _offset_highlight_clip(
+                            timeline_clip,
+                            source_offset_seconds,
+                        )
+                        try:
+                            timeline_spec = compile_caption_render_spec(
+                                transcript_words,
+                                template_id=subtitle_template_id,
+                                clip_start=absolute_timeline_clip.start_seconds,
+                                clip_end=absolute_timeline_clip.end_seconds,
+                                video_aspect_ratio=aspect_ratio,
+                                caption_placement=caption_placement,
+                                accent_color=_preset_brand_color(job) or CAPTION_ACCENT,
+                            )
+                        except (CaptionCompileError, TranscriptionError) as exc:
+                            unavailable_timeline_indexes.append(index)
+                            _log_event(
+                                "caption_edit_timeline_rejected",
+                                job_id=job_id,
+                                clip_index=index,
+                                error_type=type(exc).__name__,
+                            )
+                            continue
+                        caption_editor_sources[index] = {
+                            "timelineStartSeconds": round(
+                                absolute_timeline_clip.start_seconds,
+                                3,
+                            ),
+                            "timelineEndSeconds": round(
+                                absolute_timeline_clip.end_seconds,
+                                3,
+                            ),
+                            "spec": timeline_spec,
+                        }
+                    for index in unavailable_timeline_indexes:
+                        edit_timeline_clips.pop(index, None)
                 edit_timeline_subtitles = {
                     index: self._relative_subtitles(transcript, timeline_clip)
                     for index, timeline_clip in edit_timeline_clips.items()
@@ -1075,6 +1127,9 @@ class BatchWorker:
                                         slot_index=index,
                                         clip=timeline_clip,
                                         subtitles=edit_timeline_subtitles.get(index, []),
+                                        caption_editor_source=(
+                                            caption_editor_sources.get(index)
+                                        ),
                                     ))
                             else:
                                 extraction_failures += 1
@@ -1508,6 +1563,7 @@ class BatchWorker:
                     timeline_subtitles=[
                         item.model_dump() for item in target.subtitles
                     ],
+                    caption_editor_source=target.caption_editor_source,
                 )
             except Exception as exc:
                 # The database may have committed before the connection failed.
@@ -2677,7 +2733,16 @@ class BatchWorker:
                 work_dir=work_dir,
                 channel_thumbnail_path=channel_thumbnail_path,
                 caption_render_spec=(
-                    caption_render_spec
+                    (
+                        editor_source["spec"]
+                        if captured_timeline_key
+                        and isinstance(
+                            editor_source := caption_render_spec.get("editorSource"),
+                            dict,
+                        )
+                        and isinstance(editor_source.get("spec"), dict)
+                        else caption_render_spec
+                    )
                     if isinstance(caption_render_spec, dict)
                     else None
                 ),
