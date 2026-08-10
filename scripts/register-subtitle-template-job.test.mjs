@@ -24,3 +24,20 @@ test("subtitle candidate keeps the source definition and only replaces its image
   assert.match(source, /ascii_downcase \| startswith\("aws:"\)/);
   assert.match(source, /Purpose: "subtitle-templates-admin-canary"/);
 });
+
+test("subtitle candidate registration cannot drift from the Batch Submitter trust target", () => {
+  assert.match(
+    source,
+    /batch_submitter_function="\$\{4:\?production Batch Submitter Lambda name is required\}"/,
+  );
+  assert.match(source, /registered subtitle Job Definition image verification failed/);
+  assert.match(source, /get-function-configuration/);
+  assert.match(source, /--revision-id "\$revision_id"/);
+  assert.match(source, /update-function-configuration/);
+  assert.match(source, /wait function-updated-v2/);
+  assert.match(source, /Batch Submitter subtitle target verification failed/);
+  assert.ok(
+    source.indexOf("trusted_candidate_arn=") < source.lastIndexOf("printf '%s\\n'"),
+    "the candidate ARN must only be printed after the trusted target is verified",
+  );
+});
