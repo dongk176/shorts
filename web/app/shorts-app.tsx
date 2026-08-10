@@ -10391,7 +10391,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const analysisSectionRef = useRef<HTMLElement>(null);
   const rightsConfirmationRef = useRef<HTMLLabelElement>(null);
   const rightsCheckboxRef = useRef<HTMLInputElement>(null);
-  const rightsAttentionTimerRef = useRef<number | null>(null);
   const projectsSectionRef = useRef<HTMLElement>(null);
   const initializedSourceRangeAnalysisId = useRef<string | null>(null);
   const activeJobId = activeJob?.id;
@@ -10612,6 +10611,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         setYoutubeUrl(value.normalizedUrl);
         setAnalysis(value);
         setRightsConfirmed(false);
+        setRightsConfirmationAttention(false);
         setCreationRestrictionReason(
           value.creationAllowed ? null : value.creationBlockReason || "이 영상은 이용 제한이 확인된 영상입니다.",
         );
@@ -10662,12 +10662,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       window.cancelAnimationFrame(scrollFrame);
     };
   }, [adminTemplateLayoutEnabled, analysis, scrollToAnalysis]);
-
-  useEffect(() => () => {
-    if (rightsAttentionTimerRef.current !== null) {
-      window.clearTimeout(rightsAttentionTimerRef.current);
-    }
-  }, []);
 
   useEffect(() => {
     if (!scrollToProjects || !state?.recentJobs.length) return;
@@ -10724,6 +10718,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       if (!text.trim()) throw new Error("클립보드에 붙여넣을 텍스트가 없습니다.");
       setYoutubeUrl(text.trim());
       setRightsConfirmed(false);
+      setRightsConfirmationAttention(false);
       setError(null);
     } catch (cause) {
       setError(userFacingErrorMessage(cause, "클립보드를 읽지 못했습니다."));
@@ -10734,6 +10729,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     event.preventDefault();
     setError(null);
     setRightsConfirmed(false);
+    setRightsConfirmationAttention(false);
     setCreationRestrictionOpen(false);
     setCreationRestrictionReason(null);
     setLongSourceNoticeOpen(false);
@@ -10790,16 +10786,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     }
     if (!rightsConfirmed) {
       setError(null);
-      if (rightsAttentionTimerRef.current !== null) {
-        window.clearTimeout(rightsAttentionTimerRef.current);
-      }
       setRightsConfirmationAttention(true);
       rightsConfirmationRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       rightsCheckboxRef.current?.focus({ preventScroll: true });
-      rightsAttentionTimerRef.current = window.setTimeout(() => {
-        setRightsConfirmationAttention(false);
-        rightsAttentionTimerRef.current = null;
-      }, 1600);
       return;
     }
     if (!sourceRangeIsValid) {
@@ -10855,6 +10844,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setSubtitleTemplateId(null);
       setSubtitleCaptionPlacement("lower");
       setRightsConfirmed(false);
+      setRightsConfirmationAttention(false);
       setCreationRestrictionOpen(false);
       setCreationRestrictionReason(null);
       setScrollToAnalysis(false);
@@ -10943,7 +10933,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         <form id="workspace" onSubmit={analyze} className="url-console mt-10 w-full max-w-3xl">
           <div className="relative flex-1">
             <span className="absolute inset-y-0 left-4 flex items-center text-xl text-[#d7aaa4]" aria-hidden="true">↗</span>
-            <input type="url" value={youtubeUrl} onChange={(event) => { setYoutubeUrl(event.target.value); setRightsConfirmed(false); }} placeholder={t("home.youtubePlaceholder")} className="url-input" aria-label={t("home.youtubeLabel")} />
+            <input type="url" value={youtubeUrl} onChange={(event) => { setYoutubeUrl(event.target.value); setRightsConfirmed(false); setRightsConfirmationAttention(false); }} placeholder={t("home.youtubePlaceholder")} className="url-input" aria-label={t("home.youtubeLabel")} />
             <button type="button" onClick={() => void pasteYoutubeUrl()} className="paste-button" aria-label={t("home.pasteLabel")} title={t("home.paste")}><svg viewBox="0 0 24 24" width="19" height="19" fill="none" aria-hidden="true"><path d="M9 5.5h6M9.5 3h5a1 1 0 0 1 1 1v3h-7V4a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/><path d="M8 5H6.75A1.75 1.75 0 0 0 5 6.75v12.5C5 20.216 5.784 21 6.75 21h10.5A1.75 1.75 0 0 0 19 19.25V6.75A1.75 1.75 0 0 0 17.25 5H16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
           </div>
           <button disabled={busy} className="ai-button">{busy ? t("home.checking") : t("home.convert")}<span aria-hidden="true">✦</span></button>
