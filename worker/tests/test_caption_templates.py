@@ -696,6 +696,72 @@ def test_highlight_switches_on_the_exact_output_frame(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is required")
+def test_pop_cue_handoff_never_draws_both_cues_on_the_boundary_frame(
+    tmp_path: Path,
+) -> None:
+    spec = _compile(
+        [
+            _word("BEFORE.", 0.1, 0.5),
+            _word("AFTER", 0.5, 0.8, space_before=True),
+        ],
+        "pop",
+        clip_end=1.0,
+    )
+    assert [(cue["startFrame"], cue["endFrame"]) for cue in spec["cues"]] == [
+        (0, 8),
+        (8, 24),
+    ]
+    for cue, center_y in zip(spec["cues"], (600, 900), strict=True):
+        for word in cue["words"]:
+            word["centerY"] = center_y
+        for event in cue["events"]:
+            for position in event["positions"]:
+                position["centerY"] = center_y
+
+    ass_path = create_caption_ass(spec, tmp_path / "pop-handoff.ass")
+    font_directory = prepare_caption_fonts(tmp_path / "fonts")
+    frames = tmp_path / "pop-handoff-frames"
+    frames.mkdir()
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=black:size=1080x1920:rate=30:duration=0.34",
+            "-vf",
+            f"subtitles=filename='{ass_path}':fontsdir='{font_directory}'",
+            "-frames:v",
+            "10",
+            str(frames / "%02d.png"),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "XDG_CACHE_HOME": str(tmp_path / "font-cache")},
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+
+    def visible_pixels(path: Path, top: int, bottom: int) -> int:
+        with Image.open(path).convert("RGB") as image:
+            return sum(
+                max(pixel) > 50
+                for pixel in image.crop((0, top, image.width, bottom)).getdata()
+            )
+
+    frame_before = frames / "08.png"
+    frame_handoff = frames / "09.png"
+    assert visible_pixels(frame_before, 500, 700) > 100
+    assert visible_pixels(frame_before, 800, 1000) == 0
+    assert visible_pixels(frame_handoff, 500, 700) == 0
+    assert visible_pixels(frame_handoff, 800, 1000) > 100
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is required")
 def test_synthetic_highlight_has_no_empty_frame_and_stays_in_safe_area(
     tmp_path: Path,
 ) -> None:
@@ -1123,6 +1189,31 @@ def test_plain_split_does_not_duplicate_a_caption_word() -> None:
     ]
 
 
+def test_deleted_split_gap_assigns_a_crossing_word_to_one_clip_only() -> None:
+    spec = compile_caption_render_spec(
+        [_word("삭제경계단어", 0.8, 2.4)],
+        template_id="pop",
+        clip_start=0.0,
+        clip_end=3.0,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        spec["cues"],
+        template_id="pop",
+        safe_area=spec["safeArea"],
+        clip_windows=[(0, 30, 0), (60, 90, 30)],
+    )
+
+    assert [word["text"] for cue in cues for word in cue["words"]] == [
+        "삭제경계단어"
+    ]
+    assert all(
+        left["endFrame"] <= right["startFrame"]
+        for left, right in zip(cues[:-1], cues[1:], strict=True)
+    )
+
+
 def test_editor_reflow_ends_prior_pop_cue_at_next_early_start() -> None:
     spec = compile_caption_render_spec(
         [
@@ -1187,6 +1278,37 @@ def test_editor_reflow_serializes_impossibly_fast_pop_cues() -> None:
         event["endFrame"] > event["startFrame"]
         for cue in cues
         for event in cue["events"]
+    )
+
+
+def test_edited_final_pop_word_reflows_into_a_standalone_cue() -> None:
+    spec = compile_caption_render_spec(
+        [
+            _word("하나", 0.0, 0.7),
+            _word("둘", 0.7, 1.3, space_before=True),
+            _word("셋", 1.3, 2.0, space_before=True),
+        ],
+        template_id="pop",
+        clip_start=0.0,
+        clip_end=2.0,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        spec["cues"],
+        template_id="pop",
+        safe_area=spec["safeArea"],
+        clip_windows=[(0, 60, 0)],
+        cue_edits={0: "하나 둘 마지막수정단어"},
+    )
+
+    assert [
+        [word["text"] for word in cue["words"]]
+        for cue in cues
+    ] == [["하나", "둘"], ["마지막수정단어"]]
+    assert all(
+        left["endFrame"] <= right["startFrame"]
+        for left, right in zip(cues[:-1], cues[1:], strict=True)
     )
 
 

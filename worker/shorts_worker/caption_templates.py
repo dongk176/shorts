@@ -1203,19 +1203,29 @@ def reflow_caption_cues_for_clips(
             words_value = source_cue.get("words")
             if not isinstance(words_value, list):
                 raise CaptionCompileError("원본 자막 어절이 올바르지 않습니다.")
-            for clip_start, clip_end, output_start in merged_windows:
-                retained: list[_CaptionWord] = []
-                for word_value in words_value:
-                    if not isinstance(word_value, dict):
-                        raise CaptionCompileError("원본 자막 어절이 올바르지 않습니다.")
-                    if "startFrame" not in word_value or "endFrame" not in word_value:
-                        raise CaptionCompileError("원본 자막 어절 시간이 올바르지 않습니다.")
-                    word_start = int(word_value["startFrame"])
-                    word_end = int(word_value["endFrame"])
-                    speech_start = int(
-                        word_value.get("speechStartFrame", word_start)
-                    )
-                    speech_end = int(word_value.get("speechEndFrame", word_end))
+            retained_by_window: list[list[_CaptionWord]] = [
+                [] for _window in merged_windows
+            ]
+            for word_value in words_value:
+                if not isinstance(word_value, dict):
+                    raise CaptionCompileError("원본 자막 어절이 올바르지 않습니다.")
+                if "startFrame" not in word_value or "endFrame" not in word_value:
+                    raise CaptionCompileError("원본 자막 어절 시간이 올바르지 않습니다.")
+                word_start = int(word_value["startFrame"])
+                word_end = int(word_value["endFrame"])
+                speech_start = int(word_value.get("speechStartFrame", word_start))
+                speech_end = int(word_value.get("speechEndFrame", word_end))
+                best_window: tuple[
+                    tuple[int, int, int],
+                    int,
+                    int,
+                    int,
+                    int,
+                    int,
+                ] | None = None
+                for window_index, (clip_start, clip_end, _output_start) in enumerate(
+                    merged_windows
+                ):
                     spoken_visible_start = max(speech_start, clip_start)
                     spoken_visible_end = min(speech_end, clip_end)
                     if spoken_visible_end <= spoken_visible_start:
@@ -1224,27 +1234,55 @@ def reflow_caption_cues_for_clips(
                     visible_end = min(word_end, clip_end)
                     if visible_end <= visible_start:
                         continue
-                    source_indexes_value = word_value.get("sourceWordIndexes")
-                    source_indexes = (
-                        tuple(int(value) for value in source_indexes_value)
-                        if isinstance(source_indexes_value, list)
-                        else ()
+                    score = (
+                        spoken_visible_end - spoken_visible_start,
+                        visible_end - visible_start,
+                        -window_index,
                     )
-                    retained.append(_CaptionWord(
-                        text=str(word_value.get("text") or ""),
-                        start_frame=output_start + visible_start - clip_start,
-                        end_frame=output_start + visible_end - clip_start,
-                        space_before=bool(retained) and bool(
-                            word_value.get("spaceBefore")
-                        ),
-                        source_indexes=source_indexes,
-                        speech_start_frame=(
-                            output_start + spoken_visible_start - clip_start
-                        ),
-                        speech_end_frame=(
-                            output_start + spoken_visible_end - clip_start
-                        ),
-                    ))
+                    if best_window is None or score > best_window[0]:
+                        best_window = (
+                            score,
+                            window_index,
+                            visible_start,
+                            visible_end,
+                            spoken_visible_start,
+                            spoken_visible_end,
+                        )
+                if best_window is None:
+                    continue
+                (
+                    _score,
+                    window_index,
+                    visible_start,
+                    visible_end,
+                    spoken_visible_start,
+                    spoken_visible_end,
+                ) = best_window
+                clip_start, _clip_end, output_start = merged_windows[window_index]
+                retained = retained_by_window[window_index]
+                source_indexes_value = word_value.get("sourceWordIndexes")
+                source_indexes = (
+                    tuple(int(value) for value in source_indexes_value)
+                    if isinstance(source_indexes_value, list)
+                    else ()
+                )
+                retained.append(_CaptionWord(
+                    text=str(word_value.get("text") or ""),
+                    start_frame=output_start + visible_start - clip_start,
+                    end_frame=output_start + visible_end - clip_start,
+                    space_before=bool(retained) and bool(
+                        word_value.get("spaceBefore")
+                    ),
+                    source_indexes=source_indexes,
+                    speech_start_frame=(
+                        output_start + spoken_visible_start - clip_start
+                    ),
+                    speech_end_frame=(
+                        output_start + spoken_visible_end - clip_start
+                    ),
+                ))
+
+            for retained in retained_by_window:
                 if not retained:
                     continue
                 retained = _fit_display_words(
