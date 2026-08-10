@@ -49,6 +49,7 @@ export function TitleOverlayPreview({
   fontWeight = 700,
   resolvedLines,
   resolvedFontSize,
+  panelRect,
   keepPrimaryFirstLine = false,
   textStyles = [],
   liftLandscape = false,
@@ -70,6 +71,7 @@ export function TitleOverlayPreview({
   fontWeight?: number;
   resolvedLines?: string[];
   resolvedFontSize?: number;
+  panelRect?: { y: number; height: number };
   keepPrimaryFirstLine?: boolean;
   textStyles?: TitleTextStyle[];
   liftLandscape?: boolean;
@@ -87,7 +89,14 @@ export function TitleOverlayPreview({
   );
   const lineIndices = useMemo(() => titleLineCharacterIndices(title, lines), [lines, title]);
   const [fittedFontSize, setFittedFontSize] = useState(() => fitPreviewTitleFont(lines));
-  const layout = titlePanelLayout(videoAspectRatio, liftLandscape);
+  const layout = panelRect
+    ? {
+        top: `${(panelRect.y / 1920) * 100}%`,
+        height: `${(panelRect.height / 1920) * 100}%`,
+        panelHeight: panelRect.height,
+        overlay: panelRect.y > 0,
+      }
+    : titlePanelLayout(videoAspectRatio, liftLandscape);
   const bottomMargin = layout.panelHeight === 285 && !layout.overlay
     ? 12
     : Math.min(44, Math.max(24, Math.round(layout.panelHeight * 0.105)));

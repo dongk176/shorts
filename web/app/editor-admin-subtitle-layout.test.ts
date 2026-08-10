@@ -41,9 +41,15 @@ describe("admin editor subtitle layout", () => {
     );
     expect(editorSource).toContain("* CAPTION_ASS_PREVIEW_FONT_SCALE");
     expect(editorSource).toContain("spec.style.outlineWidth * layout.scale * 2");
+    expect(editorSource).toContain("subtitleLayout.cueEdits");
+    expect(editorSource).toContain("document.fonts.load");
+    expect(editorSource).not.toContain("visibleEditedWords");
     expect(editorSource).toContain("(currentFrameFloat - event.startFrame) / easeFrames");
     expect(editorSource).toContain('!overlayPreviewEnabled && templateId !== "comment-capture"');
     expect(editorSource).toContain("!captionTemplateEditorSpec && activeSubtitle");
+    expect(editorSource).toContain("captionTemplatePreviewSnapshot.layout.video");
+    expect(editorSource).toContain("panelRect={captionTemplatePreviewSnapshot?.layout.title}");
+    expect(editorSource).toContain("<CaptionTemplateEditorChannel");
   });
 
   it("sends a subtitle layout only through the admin v3 snapshot", () => {

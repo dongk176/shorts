@@ -1,4 +1,5 @@
 import type { CaptionRenderSpec } from "./caption-render-spec";
+import type { EditorSubtitleCueEdit } from "./editor-render-spec";
 import type { EditorVideoClip } from "./editor-video-cuts";
 import {
   EDITOR_RENDER_CANVAS,
@@ -9,6 +10,585 @@ import {
 const frameAt = (seconds: number, fps: number) => (
   Math.floor(seconds * fps + 0.5)
 );
+
+type CaptionCue = CaptionRenderSpec["cues"][number];
+type CaptionWord = CaptionCue["words"][number];
+type CaptionTextMeasurer = (text: string, fontSize: number) => number;
+
+const POP_SCALE = 1.12;
+const POP_SPACED_GAP = 6;
+const POP_UNSPACED_GAP = 0;
+const NO_SPACE_BEFORE = new Set(Array.from(",.!?:;)]}%。！？、，．：；）」』】》〉…"));
+const NO_SPACE_AFTER = new Set(Array.from("([{（「『【《〈"));
+const SENTENCE_END = /[.!?。！？]+["'”’」』】）)]*$/u;
+const EXPRESSIVE_REPEAT = /(.)\1{5,}/gu;
+
+let captionMeasureContext: CanvasRenderingContext2D | null | undefined;
+
+function fallbackCaptionTextWidth(text: string, fontSize: number) {
+  return Array.from(text).reduce((width, character) => {
+    if (/\s/u.test(character)) return width + fontSize * 0.28;
+    if (/\p{Script=Hangul}|\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}/u.test(character)) {
+      return width + fontSize;
+    }
+    if (/\p{Extended_Pictographic}/u.test(character)) return width + fontSize;
+    if (/[A-Z]/u.test(character)) return width + fontSize * 0.68;
+    if (/[a-z]/u.test(character)) return width + fontSize * 0.56;
+    if (/[0-9]/u.test(character)) return width + fontSize * 0.62;
+    return width + fontSize * 0.45;
+  }, 0);
+}
+
+export function measureEditorCaptionText(text: string, fontSize: number) {
+  if (captionMeasureContext === undefined) {
+    if (typeof document === "undefined") {
+      captionMeasureContext = null;
+    } else {
+      captionMeasureContext = document.createElement("canvas").getContext("2d");
+    }
+  }
+  if (!captionMeasureContext) return fallbackCaptionTextWidth(text, fontSize);
+  captionMeasureContext.font = `700 ${fontSize}px "Editor V3 Pretendard"`;
+  return captionMeasureContext.measureText(text).width;
+}
+
+function pythonRound(value: number) {
+  const lower = Math.floor(value);
+  const fraction = value - lower;
+  if (fraction < 0.5) return lower;
+  if (fraction > 0.5) return lower + 1;
+  return lower % 2 === 0 ? lower : lower + 1;
+}
+
+function round3(value: number) {
+  return Math.round(value * 1_000) / 1_000;
+}
+
+function displayUnits(text: string) {
+  const units: string[] = [];
+  for (const character of Array.from(text)) {
+    const codepoint = character.codePointAt(0) || 0;
+    const joinsPrevious = units.length > 0 && (
+      /\p{Mark}/u.test(character)
+      || character === "\u200d"
+      || units.at(-1)?.endsWith("\u200d")
+      || (codepoint >= 0xFE00 && codepoint <= 0xFE0F)
+      || (codepoint >= 0x1F3FB && codepoint <= 0x1F3FF)
+    );
+    if (joinsPrevious) units[units.length - 1] += character;
+    else units.push(character);
+  }
+  return units;
+}
+
+function ellipsizeCaptionText(
+  text: string,
+  fontSize: number,
+  maxWidth: number,
+  scale: number,
+  measure: CaptionTextMeasurer,
+) {
+  if (measure(text, fontSize) * scale <= maxWidth) return text;
+  const ellipsis = "…";
+  if (measure(ellipsis, fontSize) * scale > maxWidth) return ellipsis;
+  let prefix = "";
+  for (const unit of displayUnits(text)) {
+    if (measure(`${prefix}${unit}${ellipsis}`, fontSize) * scale > maxWidth) break;
+    prefix += unit;
+  }
+  return prefix ? `${prefix}${ellipsis}` : ellipsis;
+}
+
+function splitCaptionWord(
+  word: CaptionWord,
+  fontSize: number,
+  maxWidth: number,
+  scale: number,
+  measure: CaptionTextMeasurer,
+): CaptionWord[] {
+  if (
+    word.startFrame == null
+    || word.endFrame == null
+    || measure(word.text, fontSize) * scale <= maxWidth
+  ) return [{ ...word }];
+
+  if (EXPRESSIVE_REPEAT.test(word.text)) {
+    EXPRESSIVE_REPEAT.lastIndex = 0;
+    const compacted = word.text.replace(
+      EXPRESSIVE_REPEAT,
+      (_match, character: string) => `${character.repeat(3)}…`,
+    );
+    EXPRESSIVE_REPEAT.lastIndex = 0;
+    return [{
+      ...word,
+      text: ellipsizeCaptionText(compacted, fontSize, maxWidth, scale, measure),
+    }];
+  }
+  EXPRESSIVE_REPEAT.lastIndex = 0;
+
+  const units = displayUnits(word.text);
+  const pieces: string[][] = [];
+  let current: string[] = [];
+  for (const unit of units) {
+    const candidate = [...current, unit].join("");
+    if (current.length > 0 && measure(candidate, fontSize) * scale > maxWidth) {
+      pieces.push(current);
+      current = [unit];
+    } else {
+      current.push(unit);
+    }
+  }
+  if (current.length > 0) pieces.push(current);
+
+  const frameCount = word.endFrame - word.startFrame;
+  if (pieces.length === 0 || pieces.length > frameCount) {
+    return [{
+      ...word,
+      text: ellipsizeCaptionText(word.text, fontSize, maxWidth, scale, measure),
+    }];
+  }
+
+  const starts = [word.startFrame];
+  let consumedUnits = pieces[0].length;
+  for (let index = 1; index < pieces.length; index += 1) {
+    const remaining = pieces.length - index;
+    const desired = word.startFrame
+      + pythonRound(frameCount * consumedUnits / units.length);
+    starts.push(Math.min(
+      word.endFrame - remaining,
+      Math.max((starts.at(-1) || word.startFrame) + 1, desired),
+    ));
+    consumedUnits += pieces[index].length;
+  }
+  return pieces.map((piece, index) => ({
+    ...word,
+    text: piece.join(""),
+    startFrame: starts[index],
+    endFrame: starts[index + 1] ?? word.endFrame,
+    spaceBefore: index === 0 ? word.spaceBefore : false,
+  }));
+}
+
+function fitCaptionWords(
+  words: CaptionWord[],
+  templateId: CaptionRenderSpec["templateId"],
+  safeArea: CaptionRenderSpec["safeArea"],
+  measure: CaptionTextMeasurer,
+) {
+  const outline = templateId === "pop" ? 8 : 7;
+  const fontSize = templateId === "pop" ? 64 : 72;
+  const scale = templateId === "pop" ? POP_SCALE : 1;
+  const maxWidth = safeArea.width - outline * 2;
+  return words.flatMap((word) => (
+    splitCaptionWord(word, fontSize, maxWidth, scale, measure)
+  ));
+}
+
+function joinCaptionText(
+  left: string,
+  right: string,
+  spaceBefore: boolean,
+  wordSeparator: string,
+) {
+  if (!left) return right;
+  if (!right) return left;
+  if (NO_SPACE_BEFORE.has(right[0]) || NO_SPACE_AFTER.has(left.at(-1) || "")) {
+    return left + right;
+  }
+  return left + (spaceBefore ? wordSeparator : "") + right;
+}
+
+function captionTextForWords(words: CaptionWord[], wordSeparator: string) {
+  return words.reduce(
+    (text, word) => joinCaptionText(text, word.text, Boolean(word.spaceBefore), wordSeparator),
+    "",
+  );
+}
+
+function wrapCaptionWordIndexes(
+  words: CaptionWord[],
+  fontSize: number,
+  maxWidth: number,
+  wordSeparator: string,
+  measure: CaptionTextMeasurer,
+) {
+  const lines: number[][] = [];
+  let current: number[] = [];
+  for (let index = 0; index < words.length; index += 1) {
+    const proposed = [...current, index];
+    const proposedText = captionTextForWords(
+      proposed.map((wordIndex) => words[wordIndex]),
+      wordSeparator,
+    );
+    if (current.length > 0 && measure(proposedText, fontSize) > maxWidth) {
+      lines.push(current);
+      current = [index];
+    } else {
+      current = proposed;
+    }
+  }
+  if (current.length > 0) lines.push(current);
+  return lines;
+}
+
+function phraseFits(
+  words: CaptionWord[],
+  fontSize: number,
+  maxWidth: number,
+  maxLines: number,
+  wordSeparator: string,
+  measure: CaptionTextMeasurer,
+) {
+  const lines = wrapCaptionWordIndexes(
+    words,
+    fontSize,
+    maxWidth,
+    wordSeparator,
+    measure,
+  );
+  return lines.length <= maxLines && lines.every((line) => (
+    measure(
+      captionTextForWords(line.map((index) => words[index]), wordSeparator),
+      fontSize,
+    ) <= maxWidth
+  ));
+}
+
+function partitionCaptionWords(
+  words: CaptionWord[],
+  options: {
+    gapFrames: number;
+    maxWords: number | null;
+    fontSize: number;
+    maxWidth: number;
+    maxDurationFrames: number;
+    requireWordFrames: boolean;
+    wordSeparator: string;
+  },
+  measure: CaptionTextMeasurer,
+) {
+  const groups: CaptionWord[][] = [];
+  let current: CaptionWord[] = [];
+  for (const word of words) {
+    const previous = current.at(-1);
+    const shouldBreak = Boolean(previous) && (
+      (word.startFrame || 0) - (previous?.endFrame || 0) >= options.gapFrames
+      || SENTENCE_END.test(previous?.text || "")
+      || (options.maxWords != null && current.length >= options.maxWords)
+      || (word.endFrame || 0) - (current[0]?.startFrame || 0) > options.maxDurationFrames
+      || (options.requireWordFrames
+        && (word.endFrame || 0) - (current[0]?.startFrame || 0) < current.length + 1)
+      || !phraseFits(
+        [...current, word],
+        options.fontSize,
+        options.maxWidth,
+        1,
+        options.wordSeparator,
+        measure,
+      )
+    );
+    if (shouldBreak) {
+      groups.push(current);
+      current = [];
+    }
+    current.push(word);
+    if (SENTENCE_END.test(word.text)) {
+      groups.push(current);
+      current = [];
+    }
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
+function withoutDisplayPeriods(words: CaptionWord[]) {
+  const cleaned: CaptionWord[] = [];
+  for (const word of words) {
+    const text = word.text.replaceAll(".", "");
+    if (text) {
+      cleaned.push({
+        ...word,
+        text,
+        spaceBefore: cleaned.length > 0 && word.spaceBefore,
+      });
+    } else if (cleaned.length > 0) {
+      const previous = cleaned[cleaned.length - 1];
+      cleaned[cleaned.length - 1] = {
+        ...previous,
+        endFrame: Math.max(previous.endFrame || 0, word.endFrame || 0),
+        speechEndFrame: word.speechEndFrame ?? word.endFrame,
+      };
+    }
+  }
+  return cleaned;
+}
+
+function captionEventRanges(words: CaptionWord[], cueStart: number, cueEnd: number) {
+  const starts = [cueStart];
+  for (let index = 1; index < words.length; index += 1) {
+    const earliest = starts[index - 1] + 1;
+    const remaining = words.length - index;
+    const latest = cueEnd - remaining;
+    const desired = Math.min(cueEnd, Math.max(cueStart, words[index].startFrame || 0));
+    starts.push(Math.min(latest, Math.max(earliest, desired)));
+  }
+  return starts.map((startFrame, index) => ({
+    startFrame,
+    endFrame: starts[index + 1] ?? cueEnd,
+    activeWordIndex: index,
+  }));
+}
+
+function popEventPositions(
+  words: CaptionWord[],
+  activeWordIndex: number,
+  safeArea: CaptionRenderSpec["safeArea"],
+  measure: CaptionTextMeasurer,
+) {
+  const widths = words.map((word, index) => (
+    measure(word.text, word.fontSize || 92) * (index === activeWordIndex ? POP_SCALE : 1)
+  ));
+  const gaps: number[] = words.slice(1).map((word) => (
+    word.spaceBefore ? POP_SPACED_GAP : POP_UNSPACED_GAP
+  ));
+  const centerX = safeArea.x + safeArea.width / 2;
+  const centerY = safeArea.y + safeArea.height / 2;
+  let cursor = centerX
+    - (widths.reduce((sum, width) => sum + width, 0)
+      + gaps.reduce((sum, gap) => sum + gap, 0)) / 2;
+  return words.map((_word, index) => {
+    if (index > 0) cursor += gaps[index - 1];
+    const position = {
+      centerX: round3(cursor + widths[index] / 2),
+      centerY: round3(centerY),
+    };
+    cursor += widths[index];
+    return position;
+  });
+}
+
+function compilePopCaptionWords(
+  words: CaptionWord[],
+  safeArea: CaptionRenderSpec["safeArea"],
+  fps: number,
+  measure: CaptionTextMeasurer,
+) {
+  const maxWidth = safeArea.width - 16;
+  const groups = partitionCaptionWords(words, {
+    gapFrames: pythonRound(0.25 * fps),
+    maxWords: 3,
+    fontSize: 92,
+    maxWidth: pythonRound(maxWidth / POP_SCALE),
+    maxDurationFrames: pythonRound(2 * fps),
+    requireWordFrames: true,
+    wordSeparator: "\u2009",
+  }, measure).map(withoutDisplayPeriods).filter((group) => group.length > 0);
+  let previousEndFrame = 0;
+  return groups.map((group, index): CaptionCue => {
+    let sizes = group.map((word) => {
+      let size = 92;
+      while (size > 64 && measure(word.text, size) * POP_SCALE > maxWidth) size -= 2;
+      return size;
+    });
+    let widths = group.map((word, wordIndex) => (
+      measure(word.text, sizes[wordIndex]) * POP_SCALE
+    ));
+    const gaps: number[] = group.slice(1).map((word) => (
+      word.spaceBefore ? POP_SPACED_GAP : POP_UNSPACED_GAP
+    ));
+    let totalWidth = widths.reduce((sum, width) => sum + width, 0)
+      + gaps.reduce((sum, gap) => sum + gap, 0);
+    if (totalWidth > maxWidth) {
+      const ratio = maxWidth / totalWidth;
+      sizes = sizes.map((size) => Math.max(64, pythonRound(size * ratio)));
+      widths = group.map((word, wordIndex) => (
+        measure(word.text, sizes[wordIndex]) * POP_SCALE
+      ));
+      totalWidth = widths.reduce((sum, width) => sum + width, 0)
+        + gaps.reduce((sum, gap) => sum + gap, 0);
+    }
+    const centerX = safeArea.x + safeArea.width / 2;
+    const centerY = safeArea.y + safeArea.height / 2;
+    let cursor = centerX - totalWidth / 2;
+    const serialized = group.map((word, wordIndex) => {
+      if (wordIndex > 0) cursor += gaps[wordIndex - 1];
+      const serializedWord: CaptionWord = {
+        ...word,
+        fontSize: sizes[wordIndex],
+        centerX: round3(cursor + widths[wordIndex] / 2),
+        centerY: round3(centerY),
+        maxScale: 112,
+      };
+      cursor += widths[wordIndex];
+      return serializedWord;
+    });
+    const startFrame = Math.max(group[0].startFrame || 0, previousEndFrame);
+    let endFrame = Math.max(
+      group.at(-1)?.endFrame || 0,
+      startFrame + group.length,
+    );
+    const nextStart = groups[index + 1]?.[0]?.startFrame;
+    if (
+      nextStart != null
+      && nextStart >= startFrame + group.length
+      && nextStart - (group.at(-1)?.endFrame || 0) < pythonRound(0.25 * fps)
+    ) endFrame = nextStart;
+    previousEndFrame = endFrame;
+    const events = captionEventRanges(group, startFrame, endFrame).map((event) => ({
+      ...event,
+      positions: popEventPositions(serialized, event.activeWordIndex, safeArea, measure),
+    }));
+    return {
+      startFrame,
+      endFrame,
+      words: serialized,
+      easeFrames: 2,
+      events,
+    };
+  });
+}
+
+function compileHighlightCaptionWords(
+  words: CaptionWord[],
+  safeArea: CaptionRenderSpec["safeArea"],
+  fps: number,
+  measure: CaptionTextMeasurer,
+) {
+  const maxWidth = safeArea.width - 14;
+  const wordSeparator = " ";
+  const groups = partitionCaptionWords(words, {
+    gapFrames: pythonRound(0.42 * fps),
+    maxWords: null,
+    fontSize: 72,
+    maxWidth,
+    maxDurationFrames: pythonRound(3.2 * fps),
+    requireWordFrames: true,
+    wordSeparator,
+  }, measure).map(withoutDisplayPeriods).filter((group) => group.length > 0);
+  let previousEndFrame = 0;
+  return groups.map((group, index): CaptionCue => {
+    const startFrame = Math.max(group[0].startFrame || 0, previousEndFrame);
+    let endFrame = Math.max(group.at(-1)?.endFrame || 0, startFrame + group.length);
+    const nextStart = groups[index + 1]?.[0]?.startFrame;
+    if (
+      nextStart != null
+      && nextStart >= startFrame + group.length
+      && nextStart - (group.at(-1)?.endFrame || 0) < pythonRound(0.42 * fps)
+    ) endFrame = nextStart;
+    previousEndFrame = endFrame;
+    const lines = wrapCaptionWordIndexes(group, 72, maxWidth, wordSeparator, measure);
+    const widest = Math.max(...lines.map((line) => measure(
+      captionTextForWords(line.map((wordIndex) => group[wordIndex]), wordSeparator),
+      72,
+    )));
+    const scaleX = widest > maxWidth
+      ? pythonRound(Math.min(100, maxWidth / widest * 100))
+      : 100;
+    return {
+      startFrame,
+      endFrame,
+      fontSize: 72,
+      scaleX,
+      centerX: Math.floor(safeArea.x + safeArea.width / 2),
+      centerY: Math.floor(safeArea.y + safeArea.height / 2),
+      words: group,
+      lines,
+      wordSeparator,
+      events: captionEventRanges(group, startFrame, endFrame),
+    };
+  });
+}
+
+function compileCaptionWords(
+  words: CaptionWord[],
+  spec: CaptionRenderSpec,
+  measure: CaptionTextMeasurer,
+) {
+  return spec.templateId === "pop"
+    ? compilePopCaptionWords(words, spec.safeArea, spec.fps, measure)
+    : compileHighlightCaptionWords(words, spec.safeArea, spec.fps, measure);
+}
+
+function rebuildEditedCaptionCue(
+  cue: CaptionCue,
+  text: string,
+  spec: CaptionRenderSpec,
+  measure: CaptionTextMeasurer,
+) {
+  const frameCount = cue.endFrame - cue.startFrame;
+  let tokens = text.trim().split(/\s+/u).filter(Boolean);
+  const maximumWords = Math.min(20, frameCount);
+  if (tokens.length > maximumWords) {
+    tokens = maximumWords > 1
+      ? [...tokens.slice(0, maximumWords - 1), tokens.slice(maximumWords - 1).join(" ")]
+      : [tokens.join(" ")];
+  }
+  if (tokens.length === 0 || maximumWords < 1) return [];
+  const weights = tokens.map((token) => Math.max(1, Array.from(token).length));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  const starts = [cue.startFrame];
+  let consumedWeight = weights[0];
+  for (let index = 1; index < tokens.length; index += 1) {
+    const remaining = tokens.length - index;
+    const desired = cue.startFrame
+      + pythonRound(frameCount * consumedWeight / totalWeight);
+    starts.push(Math.min(
+      cue.endFrame - remaining,
+      Math.max(starts[index - 1] + 1, desired),
+    ));
+    consumedWeight += weights[index];
+  }
+  const words = tokens.map((token, index): CaptionWord => ({
+    text: token,
+    startFrame: starts[index],
+    endFrame: starts[index + 1] ?? cue.endFrame,
+    speechStartFrame: starts[index],
+    speechEndFrame: starts[index + 1] ?? cue.endFrame,
+    spaceBefore: index > 0,
+  }));
+  return compileCaptionWords(
+    fitCaptionWords(words, spec.templateId, spec.safeArea, measure),
+    spec,
+    measure,
+  );
+}
+
+function cueMinimumFrames(cue: CaptionCue) {
+  return cue.events.every((event) => event.activeWordIndex != null)
+    ? cue.events.length
+    : 1;
+}
+
+function retimeCompiledCue(cue: CaptionCue, startFrame: number, endFrame: number) {
+  const activeEvents = cue.events.every((event) => event.activeWordIndex != null);
+  const events = activeEvents
+    ? captionEventRanges(cue.words, startFrame, endFrame).map((range) => ({
+        ...cue.events.find((event) => event.activeWordIndex === range.activeWordIndex),
+        ...range,
+      }))
+    : [{ ...cue.events[0], startFrame, endFrame }];
+  cue.startFrame = startFrame;
+  cue.endFrame = endFrame;
+  cue.events = events;
+}
+
+function normalizeCaptionCueHandoffs(cues: CaptionCue[]) {
+  cues.sort((left, right) => left.startFrame - right.startFrame || left.endFrame - right.endFrame);
+  for (let index = 0; index < cues.length - 1; index += 1) {
+    const current = cues[index];
+    const following = cues[index + 1];
+    if (current.endFrame <= following.startFrame) continue;
+    const earliestHandoff = current.startFrame + cueMinimumFrames(current);
+    const handoff = Math.max(following.startFrame, earliestHandoff);
+    retimeCompiledCue(current, current.startFrame, handoff);
+    if (handoff <= following.startFrame) continue;
+    retimeCompiledCue(
+      following,
+      handoff,
+      Math.max(following.endFrame, handoff + cueMinimumFrames(following)),
+    );
+  }
+}
 
 export function editorCaptionVerticalOffsetBounds(
   spec: CaptionRenderSpec,
@@ -33,6 +613,8 @@ export function editorCaptionVerticalOffsetBounds(
 export function retimeCaptionRenderSpecForEditor(
   spec: CaptionRenderSpec,
   clips: EditorVideoClip[],
+  cueEdits: EditorSubtitleCueEdit[] = [],
+  measure: CaptionTextMeasurer = measureEditorCaptionText,
 ): CaptionRenderSpec | null {
   let outputCursor = 0;
   const unmergedWindows = clips.flatMap((clip) => {
@@ -66,105 +648,130 @@ export function retimeCaptionRenderSpecForEditor(
     [],
   );
 
-  const cues = spec.cues.flatMap((cue, cueIndex) => (
-    clipWindows.flatMap((clip) => {
-      const retainedWords = cue.words.flatMap((word, wordIndex) => {
-        const activeEvents = cue.events.filter(
+  const edits = new Map(cueEdits.map((edit) => [edit.cueIndex, edit.text]));
+  const cues: CaptionCue[] = [];
+  for (let cueIndex = 0; cueIndex < spec.cues.length; cueIndex += 1) {
+    const cue = spec.cues[cueIndex];
+    const sourceCueIndex = cue.sourceCueIndex ?? cueIndex;
+    const editedText = edits.get(sourceCueIndex);
+    const sourceCues = editedText == null
+      ? [cue]
+      : rebuildEditedCaptionCue(cue, editedText, spec, measure);
+    for (const sourceCue of sourceCues) {
+      const containingClip = editedText == null
+        ? clipWindows.find((clip) => (
+            clip.startFrame <= sourceCue.startFrame
+            && clip.endFrame >= sourceCue.endFrame
+          ))
+        : undefined;
+      if (containingClip) {
+        const offset = containingClip.outputStartFrame - containingClip.startFrame;
+        cues.push({
+          ...sourceCue,
+          sourceCueIndex,
+          startFrame: sourceCue.startFrame + offset,
+          endFrame: sourceCue.endFrame + offset,
+          words: sourceCue.words.map((word) => ({
+            ...word,
+            ...(word.startFrame == null ? {} : { startFrame: word.startFrame + offset }),
+            ...(word.endFrame == null ? {} : { endFrame: word.endFrame + offset }),
+            ...(word.speechStartFrame == null
+              ? {}
+              : { speechStartFrame: word.speechStartFrame + offset }),
+            ...(word.speechEndFrame == null
+              ? {}
+              : { speechEndFrame: word.speechEndFrame + offset }),
+          })),
+          events: sourceCue.events.map((event) => ({
+            ...event,
+            startFrame: event.startFrame + offset,
+            endFrame: event.endFrame + offset,
+            ...(event.positions
+              ? { positions: event.positions.map((position) => ({ ...position })) }
+              : {}),
+          })),
+        });
+        continue;
+      }
+      const retainedByClip = clipWindows.map(() => [] as CaptionWord[]);
+      for (let wordIndex = 0; wordIndex < sourceCue.words.length; wordIndex += 1) {
+        const word = sourceCue.words[wordIndex];
+        const activeEvents = sourceCue.events.filter(
           (event) => event.activeWordIndex === wordIndex,
         );
         const wordStartFrame = word.startFrame
-          ?? Math.min(...activeEvents.map((event) => event.startFrame), cue.startFrame);
+          ?? Math.min(...activeEvents.map((event) => event.startFrame), sourceCue.startFrame);
         const wordEndFrame = word.endFrame
-          ?? Math.max(...activeEvents.map((event) => event.endFrame), cue.endFrame);
+          ?? Math.max(...activeEvents.map((event) => event.endFrame), sourceCue.endFrame);
         const speechStartFrame = word.speechStartFrame ?? wordStartFrame;
         const speechEndFrame = word.speechEndFrame ?? wordEndFrame;
-        const spokenVisibleStartFrame = Math.max(
-          speechStartFrame,
-          clip.startFrame,
-        );
-        const spokenVisibleEndFrame = Math.min(speechEndFrame, clip.endFrame);
-        if (spokenVisibleEndFrame <= spokenVisibleStartFrame) return [];
-        const visibleStartFrame = Math.max(wordStartFrame, clip.startFrame);
-        const visibleEndFrame = Math.min(wordEndFrame, clip.endFrame);
-        if (visibleEndFrame <= visibleStartFrame) return [];
-        return [{
-          originalIndex: wordIndex,
-          word: {
-            ...word,
-            startFrame: clip.outputStartFrame
-              + visibleStartFrame
-              - clip.startFrame,
-            endFrame: clip.outputStartFrame
-              + visibleEndFrame
-              - clip.startFrame,
-            speechStartFrame: clip.outputStartFrame
-              + spokenVisibleStartFrame
-              - clip.startFrame,
-            speechEndFrame: clip.outputStartFrame
-              + spokenVisibleEndFrame
-              - clip.startFrame,
-          },
-        }];
-      });
-      if (retainedWords.length === 0) return [];
-      const retainedIndexByOriginal = new Map(
-        retainedWords.map((entry, index) => [entry.originalIndex, index]),
-      );
-      const events = cue.events.flatMap((event) => {
-        const activeWordIndex = event.activeWordIndex == null
-          ? undefined
-          : retainedIndexByOriginal.get(event.activeWordIndex);
-        if (event.activeWordIndex != null && activeWordIndex == null) return [];
-        const visibleStartFrame = Math.max(event.startFrame, clip.startFrame);
-        const visibleEndFrame = Math.min(event.endFrame, clip.endFrame);
-        if (visibleEndFrame <= visibleStartFrame) return [];
-        const positions = event.positions
-          ? retainedWords.flatMap((entry) => {
-              const position = event.positions?.[entry.originalIndex];
-              return position ? [{ ...position }] : [];
-            })
-          : undefined;
-        if (positions?.length) {
-          const centerX = spec.safeArea.x + spec.safeArea.width / 2;
-          const visibleCenterX = (
-            Math.min(...positions.map((position) => position.centerX))
-            + Math.max(...positions.map((position) => position.centerX))
-          ) / 2;
-          for (const position of positions) {
-            position.centerX += centerX - visibleCenterX;
-          }
+        let best: {
+          clipIndex: number;
+          spokenOverlap: number;
+          visibleOverlap: number;
+          spokenStart: number;
+          spokenEnd: number;
+          visibleStart: number;
+          visibleEnd: number;
+        } | null = null;
+        for (let clipIndex = 0; clipIndex < clipWindows.length; clipIndex += 1) {
+          const clip = clipWindows[clipIndex];
+          const spokenStart = Math.max(speechStartFrame, clip.startFrame);
+          const spokenEnd = Math.min(speechEndFrame, clip.endFrame);
+          const visibleStart = Math.max(wordStartFrame, clip.startFrame);
+          const visibleEnd = Math.min(wordEndFrame, clip.endFrame);
+          const candidate = {
+            clipIndex,
+            spokenOverlap: spokenEnd - spokenStart,
+            visibleOverlap: visibleEnd - visibleStart,
+            spokenStart,
+            spokenEnd,
+            visibleStart,
+            visibleEnd,
+          };
+          if (
+            candidate.spokenOverlap <= 0
+            || candidate.visibleOverlap <= 0
+            || (best
+              && candidate.spokenOverlap < best.spokenOverlap)
+            || (best
+              && candidate.spokenOverlap === best.spokenOverlap
+              && candidate.visibleOverlap <= best.visibleOverlap)
+          ) continue;
+          best = candidate;
         }
-        return [{
-          ...event,
-          ...(activeWordIndex == null ? {} : { activeWordIndex }),
-          ...(positions ? { positions } : {}),
-          startFrame: clip.outputStartFrame
-            + visibleStartFrame
-            - clip.startFrame,
-          endFrame: clip.outputStartFrame
-            + visibleEndFrame
-            - clip.startFrame,
-        }];
-      });
-      if (events.length === 0) return [];
-      const lines = cue.lines?.flatMap((line) => {
-        const retainedLine = line.flatMap((wordIndex) => {
-          const retainedIndex = retainedIndexByOriginal.get(wordIndex);
-          return retainedIndex == null ? [] : [retainedIndex];
+        if (!best) continue;
+        const selected = best;
+        const clip = clipWindows[selected.clipIndex];
+        const retained = retainedByClip[selected.clipIndex];
+        retained.push({
+          text: word.text,
+          startFrame: clip.outputStartFrame + selected.visibleStart - clip.startFrame,
+          endFrame: clip.outputStartFrame + selected.visibleEnd - clip.startFrame,
+          speechStartFrame: clip.outputStartFrame + selected.spokenStart - clip.startFrame,
+          speechEndFrame: clip.outputStartFrame + selected.spokenEnd - clip.startFrame,
+          spaceBefore: retained.length > 0 && word.spaceBefore,
         });
-        return retainedLine.length ? [retainedLine] : [];
-      });
-      return [{
-        ...cue,
-        sourceCueIndex: cue.sourceCueIndex ?? cueIndex,
-        startFrame: Math.min(...events.map((event) => event.startFrame)),
-        endFrame: Math.max(...events.map((event) => event.endFrame)),
-        words: retainedWords.map((entry) => entry.word),
-        ...(lines ? { lines } : {}),
-        events,
-      }];
-    })
-  )).sort((left, right) => left.startFrame - right.startFrame);
+      }
+      for (const retainedWords of retainedByClip) {
+        if (retainedWords.length === 0) continue;
+        const fitted = fitCaptionWords(
+          retainedWords,
+          spec.templateId,
+          spec.safeArea,
+          measure,
+        );
+        for (const rebuilt of compileCaptionWords(fitted, spec, measure)) {
+          cues.push({ ...rebuilt, sourceCueIndex });
+        }
+      }
+    }
+  }
+
+  normalizeCaptionCueHandoffs(cues);
+  if (cues.some((cue, index) => (
+    index > 0 && cues[index - 1].endFrame > cue.startFrame
+  ))) return null;
 
   return cues.length > 0 ? { ...spec, cues } : null;
 }

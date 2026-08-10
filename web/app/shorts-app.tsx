@@ -893,12 +893,14 @@ function ThreeStepProcess() {
 function ChannelAvatar({
   url,
   className,
+  style,
   fallbackForeground,
   fallbackBackground,
   sizes,
 }: {
   url: string | null;
   className: string;
+  style?: CSSProperties;
   fallbackForeground: string;
   fallbackBackground: string;
   sizes: string;
@@ -908,7 +910,7 @@ function ChannelAvatar({
   return (
     <span
       className={`relative shrink-0 overflow-hidden rounded-full ${className}`}
-      style={{ background: fallbackForeground }}
+      style={{ background: fallbackForeground, ...style }}
       aria-hidden="true"
     >
       {showImage && url
@@ -1081,6 +1083,80 @@ function FixedPresetChannel({
         : <div className="flex items-center justify-center gap-[2.4cqw] px-[4.9cqw]">{content}</div>}
     </div>
   );
+}
+
+function CaptionTemplateEditorChannel({
+  rect,
+  fontSize,
+  iconSize,
+  gap,
+  channelName,
+  channelThumbnailUrl,
+  fontFamily,
+  fontWeight,
+  selected = false,
+  movementStyle,
+  onPointerDown,
+}: {
+  rect: { x: number; y: number; width: number; height: number };
+  fontSize: number;
+  iconSize: number;
+  gap: number;
+  channelName: string;
+  channelThumbnailUrl: string | null;
+  fontFamily?: string;
+  fontWeight?: number;
+  selected?: boolean;
+  movementStyle?: CSSProperties;
+  onPointerDown?: PointerEventHandler<HTMLButtonElement>;
+}) {
+  const content = <>
+    <ChannelAvatar
+      url={channelThumbnailUrl}
+      className="shrink-0"
+      style={{
+        width: `${iconSize / 10.8}cqw`,
+        height: `${iconSize / 10.8}cqw`,
+      }}
+      fallbackForeground="#FFFFFF"
+      fallbackBackground="#000000"
+      sizes="20px"
+    />
+    <span className="max-w-[75%] truncate">{channelName}</span>
+  </>;
+  const contentStyle: CSSProperties = {
+    gap: `${gap / 10.8}cqw`,
+    fontFamily,
+    fontSize: `${fontSize / 10.8}cqw`,
+    fontWeight,
+    ...movementStyle,
+  };
+  const wrapperStyle: CSSProperties = {
+    left: `${rect.x / 10.8}%`,
+    top: `${rect.y / 19.2}%`,
+    width: `${rect.width / 10.8}%`,
+    height: `${rect.height / 19.2}%`,
+  };
+  return <div
+    className="pointer-events-none absolute z-20 flex items-center justify-center text-white"
+    style={wrapperStyle}
+  >
+    {onPointerDown
+      ? <button
+          type="button"
+          data-editor-overlay-layer="channel"
+          aria-label="채널명 오버레이 선택 및 이동"
+          aria-pressed={selected}
+          onPointerDown={onPointerDown}
+          className={`pointer-events-auto flex cursor-move touch-none appearance-none items-center justify-center border-0 bg-transparent p-0 text-inherit ${selected ? "outline outline-2 outline-[#ff715e]" : ""}`}
+          style={contentStyle}
+        >
+          {content}
+        </button>
+      : <div className="flex items-center justify-center" style={contentStyle}>
+          {content}
+        </div>}
+  </div>;
 }
 
 function CustomEditorChannel({
@@ -1614,25 +1690,6 @@ function CaptionTemplateEditorPreview({
     (edit) => edit.cueIndex === cueIndex,
   );
   const displayedText = storedEdit?.text || captionRenderCueText(cue);
-  const editedWords = storedEdit
-    ? displayedText.trim().split(/\s+/u).filter(Boolean).slice(0, 20)
-    : [];
-  const editedActiveWordIndex = editedWords.length > 0
-    ? Math.min(
-        editedWords.length - 1,
-        Math.max(0, Math.floor(
-          (((event.activeWordIndex || 0) + 0.5) / Math.max(1, cue.words.length))
-          * editedWords.length,
-        )),
-      )
-    : 0;
-  const editedGroupStart = spec.templateId === "pop"
-    ? Math.floor(editedActiveWordIndex / 3) * 3
-    : 0;
-  const visibleEditedWords = spec.templateId === "pop"
-    ? editedWords.slice(editedGroupStart, editedGroupStart + 3)
-    : editedWords;
-  const visibleEditedActiveWordIndex = editedActiveWordIndex - editedGroupStart;
   const captionCenterY = (
     cue.centerY ?? (spec.safeArea.y + spec.safeArea.height / 2)
   ) + layout.offsetY;
@@ -1676,53 +1733,7 @@ function CaptionTemplateEditorPreview({
     data-editor-caption-template-preview={spec.templateId}
     className="pointer-events-none absolute inset-0 z-50"
   >
-    {storedEdit
-      ? <span
-        role="button"
-        tabIndex={0}
-        aria-label="자막 위치와 텍스트 편집"
-        title="드래그해서 이동 · 더블클릭해서 자막 수정"
-        className="pointer-events-auto absolute inline-flex cursor-ns-resize touch-none flex-wrap items-center justify-center whitespace-normal text-center outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
-        onPointerDown={onPointerDown}
-        onClick={onSelect}
-        onDoubleClick={beginTextEdit}
-        onKeyDown={(keyboardEvent) => {
-          if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
-          keyboardEvent.preventDefault();
-          onSelect();
-        }}
-        style={{
-          ...sharedTextStyle,
-          left: `${transformedX(cue.centerX ?? 540) / 10.8}%`,
-          top: `${captionCenterY / 19.2}%`,
-          width: canvasCqw(spec.safeArea.width * layout.scale),
-          columnGap: canvasCqw(6 * layout.scale),
-          rowGap: canvasCqw(6 * layout.scale),
-          color: spec.style.textColor,
-          fontSize: canvasCqw(
-            (spec.templateId === "pop" ? 92 : spec.style.fontSize)
-              * layout.scale
-              * CAPTION_ASS_PREVIEW_FONT_SCALE,
-          ),
-          WebkitTextStroke: `${canvasCqw(previewStrokeWidth)} ${spec.style.outlineColor}`,
-          transform: "translate(-50%, -50%)",
-        }}
-      >
-        {visibleEditedWords.map((word, wordIndex) => <span
-          key={`${word}-${wordIndex}`}
-          className="max-w-full [overflow-wrap:anywhere]"
-          style={{
-            color: visibleEditedActiveWordIndex === wordIndex
-              ? accentColor
-              : spec.style.textColor,
-            transform: spec.templateId === "pop"
-              && visibleEditedActiveWordIndex === wordIndex
-              ? "scale(1.12)"
-              : undefined,
-          }}
-        >{word}</span>)}
-      </span>
-      : spec.templateId === "pop"
+    {spec.templateId === "pop"
       ? cue.words.map((word, wordIndex) => {
         const position = event.positions?.[wordIndex]
           || (word.centerX != null && word.centerY != null
@@ -3847,6 +3858,17 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [subtitleLayout, setSubtitleLayout] = useState<EditorSubtitleLayout>(
     initialSubtitleLayout,
   );
+  const [captionFontRevision, setCaptionFontRevision] = useState(0);
+  useEffect(() => {
+    if (!captionTemplateEditorSpec || typeof document === "undefined") return;
+    let cancelled = false;
+    void document.fonts.load('700 92px "Editor V3 Pretendard"').then(() => {
+      if (!cancelled) setCaptionFontRevision((revision) => revision + 1);
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [captionTemplateEditorSpec]);
   const subtitleLayoutRef = useRef(initialSubtitleLayout);
   const updateEditorSubtitleLayout = useCallback((
     value: EditorSubtitleLayout,
@@ -4537,14 +4559,25 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     ? editorChannelAssetPreviewUrl(item.id, item.renderVersion)
     : editorDocumentSnapshot.channel.thumbnailUrl;
   const renderVideoClips = editorDocumentSnapshot.video.clips;
-  const captionTemplatePreviewSpec = useMemo(() => (
-    captionTemplateEditorSpec
+  const subtitleCueEditsSignature = JSON.stringify(subtitleLayout.cueEdits || []);
+  const captionTemplatePreviewSpec = useMemo(() => {
+    void captionFontRevision;
+    const cueEdits = JSON.parse(
+      subtitleCueEditsSignature,
+    ) as NonNullable<EditorSubtitleLayout["cueEdits"]>;
+    return captionTemplateEditorSpec
       ? retimeCaptionRenderSpecForEditor(
           captionTemplateEditorSpec,
           renderVideoClips,
+          cueEdits,
         )
-      : null
-  ), [captionTemplateEditorSpec, renderVideoClips]);
+      : null;
+  }, [
+    captionFontRevision,
+    captionTemplateEditorSpec,
+    renderVideoClips,
+    subtitleCueEditsSignature,
+  ]);
   const overlayOffsets = renderOverlayLayout.offsets;
   const videoScale = renderOverlayLayout.scales.video;
   const channelScale = renderOverlayLayout.scales.channel;
@@ -4641,6 +4674,15 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     templateId === "comment-capture",
     usesLiftedCommentLayout,
   );
+  const captionTemplatePreviewSnapshot = captionTemplateEditorSpec
+    ? subtitleTemplateStyleSnapshot(
+        captionTemplateEditorSpec.templateId,
+        originalAspectRatio,
+        (subtitleLayout.accentColor
+          || captionTemplateEditorSpec.style.accentColor) as TemplatePresetColor,
+        captionTemplateEditorSpec.captionPlacement,
+      )
+    : null;
   const selectionDuration = Math.round((selectionEnd - selectionStart) * 1_000) / 1_000;
   const videoCuttingEnabled = overlayPreviewEnabled
     && Boolean(editTimeline)
@@ -4823,7 +4865,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     textOverlay.startSeconds <= displayedPreviewTime
     && textOverlay.endSeconds > displayedPreviewTime
   ));
-  const editorVideoBaseRect: CanvasRect = activeCustomTemplate
+  const editorVideoBaseRect: CanvasRect = captionTemplatePreviewSnapshot
+    ? captionTemplatePreviewSnapshot.layout.video
+    : activeCustomTemplate
     ? {
         x: activeCustomTemplate.config.video.x,
         y: activeCustomTemplate.config.video.y,
@@ -8826,7 +8870,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 fontFamily={titleFontFamily}
                 fontWeight={renderSpec?.title.font.resolvedWeight}
                 resolvedLines={renderSpec?.title.lines}
-                resolvedFontSize={renderSpec?.title.fontSize}
+                resolvedFontSize={renderSpec?.title.fontSize
+                  ?? captionTemplatePreviewSnapshot?.title.fontSizePx}
+                panelRect={captionTemplatePreviewSnapshot?.layout.title}
                 keepPrimaryFirstLine={template.id === "paper"}
                 textStyles={renderTitleTextStyles}
                 liftLandscape={usesLiftedCommentLayout}
@@ -8843,11 +8889,18 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           {renderOverlayLayout.visible.video && (cleanVideoUrl ? <video
             ref={videoRef}
             data-editor-overlay-layer={overlayPreviewEnabled ? "video" : undefined}
-            className={`${activeCustomTemplate
+            className={`${activeCustomTemplate || captionTemplatePreviewSnapshot
               ? "absolute bg-black object-cover"
               : `absolute inset-x-0 w-full bg-black ${commentNeedsVerticalFit ? "object-contain" : "object-cover"}`}${overlayPreviewEnabled ? " cursor-move touch-none" : ""}${overlayPreviewEnabled && selectedOverlay === "video" ? " outline outline-2 outline-white outline-offset-[-2px]" : ""}`}
             style={{
-              ...(activeCustomTemplate
+              ...(captionTemplatePreviewSnapshot
+                ? {
+                    left: `${captionTemplatePreviewSnapshot.layout.video.x / 10.8}%`,
+                    top: `${captionTemplatePreviewSnapshot.layout.video.y / 19.2}%`,
+                    width: `${captionTemplatePreviewSnapshot.layout.video.width / 10.8}%`,
+                    height: `${captionTemplatePreviewSnapshot.layout.video.height / 19.2}%`,
+                  }
+                : activeCustomTemplate
                 ? customVideoFrameStyle(activeCustomTemplate.config.video)
                 : { top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }),
               ...(videoMovementStyle || {}),
@@ -8960,11 +9013,18 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             }}
           /> : <div
             data-editor-overlay-layer={overlayPreviewEnabled ? "video" : undefined}
-            className={`${activeCustomTemplate
+            className={`${activeCustomTemplate || captionTemplatePreviewSnapshot
               ? "absolute flex items-center justify-center bg-black/50 text-sm text-neutral-400"
               : "absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400"}${overlayPreviewEnabled ? " cursor-move touch-none" : ""}${overlayPreviewEnabled && selectedOverlay === "video" ? " outline outline-2 outline-white outline-offset-[-2px]" : ""}`}
             style={{
-              ...(activeCustomTemplate
+              ...(captionTemplatePreviewSnapshot
+                ? {
+                    left: `${captionTemplatePreviewSnapshot.layout.video.x / 10.8}%`,
+                    top: `${captionTemplatePreviewSnapshot.layout.video.y / 19.2}%`,
+                    width: `${captionTemplatePreviewSnapshot.layout.video.width / 10.8}%`,
+                    height: `${captionTemplatePreviewSnapshot.layout.video.height / 19.2}%`,
+                  }
+                : activeCustomTemplate
                 ? customVideoFrameStyle(activeCustomTemplate.config.video)
                 : { top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }),
               ...(videoMovementStyle || {}),
@@ -9185,7 +9245,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                             : undefined}
                         />}
                       </div>
-                    : renderOverlayLayout.visible.channel && !usesFixedPresetChannel && <PresetInlineEditorChannel
+                    : renderOverlayLayout.visible.channel
+                      && !captionTemplatePreviewSnapshot
+                      && !usesFixedPresetChannel
+                      && <PresetInlineEditorChannel
                         channelName={renderChannel}
                         channelThumbnailUrl={renderChannelThumbnailUrl}
                         foreground={template.channel}
@@ -9199,7 +9262,27 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                           : undefined}
                       />}
                 </div>
-                {renderOverlayLayout.visible.channel && usesFixedPresetChannel && (templateId === "comment-capture"
+                {renderOverlayLayout.visible.channel
+                  && captionTemplatePreviewSnapshot
+                  && <CaptionTemplateEditorChannel
+                    rect={captionTemplatePreviewSnapshot.layout.channel}
+                    fontSize={captionTemplatePreviewSnapshot.channel.fontSizePx}
+                    iconSize={captionTemplatePreviewSnapshot.channel.iconSizePx}
+                    gap={captionTemplatePreviewSnapshot.channel.gapPx}
+                    channelName={renderChannel}
+                    channelThumbnailUrl={renderChannelThumbnailUrl}
+                    fontFamily={channelFontFamily}
+                    fontWeight={renderSpec?.channel.font.resolvedWeight}
+                    selected={overlayPreviewEnabled && selectedOverlay === "channel"}
+                    movementStyle={overlayMovementStyle("channel")}
+                    onPointerDown={overlayPreviewEnabled
+                      ? (event) => beginEditorOverlayDrag("channel", event)
+                      : undefined}
+                  />}
+                {renderOverlayLayout.visible.channel
+                  && !captionTemplatePreviewSnapshot
+                  && usesFixedPresetChannel
+                  && (templateId === "comment-capture"
                   ? <CommentCaptureChannel
                       channelName={renderChannel}
                       channelThumbnailUrl={renderChannelThumbnailUrl}
