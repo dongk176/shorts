@@ -22,6 +22,7 @@ from .overlays import (
     _title_style_runs,
     create_ass_subtitles,
     create_comment_panel,
+    ensure_title_text_background,
     wrap_korean_title,
 )
 from .renderer import VideoLayout, caption_video_layout
@@ -33,6 +34,7 @@ from .schemas import (
     EditorTextOverlay,
     SubtitleSegment,
     TemplateId,
+    TitleTextStyle,
     VideoAspectRatio,
 )
 
@@ -558,6 +560,7 @@ def _draw_styled_title_content(
     font_size: int,
     custom_config: CustomTemplateConfig | None,
     title_accent_color: str | None = None,
+    title_text_styles: list[TitleTextStyle] | None = None,
 ) -> Image.Image:
     render_title = document.render_spec.title if document.render_spec else None
     lines = render_title.lines if render_title else wrap_korean_title(document.title.text)
@@ -583,11 +586,16 @@ def _draw_styled_title_content(
         gap = TITLE_LINE_GAP
         line_padding_x = max(1, round(font_size * 0.34))
         line_padding_y = max(1, round(font_size * 0.14))
+    resolved_title_text_styles = (
+        document.title.text_styles
+        if title_text_styles is None
+        else title_text_styles
+    )
     line_runs = [
         _title_style_runs(
             lines[index],
             indices[index],
-            document.title.text_styles,
+            resolved_title_text_styles,
         )
         for index in range(len(lines))
     ]
@@ -777,12 +785,24 @@ def create_editor_title_layer(
         )
         center_x = CANVAS_WIDTH / 2
         center_y = panel_top + panel_height - bottom_margin
+    resolved_title_text_styles = None
+    if (
+        caption_render_spec is not None
+        and document.video.aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+    ):
+        style = TEMPLATE_STYLES[document.template.id]
+        resolved_title_text_styles = ensure_title_text_background(
+            document.title.text,
+            document.title.text_styles,
+            title_accent_color or style.background,
+        )
     content = _draw_styled_title_content(
         document,
         font_id=font_id,
         font_size=base_font_size,
         custom_config=config,
         title_accent_color=title_accent_color,
+        title_text_styles=resolved_title_text_styles,
     )
     if config is None:
         center_y -= content.height / 2

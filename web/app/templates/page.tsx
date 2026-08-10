@@ -10,6 +10,7 @@ import { getDb } from "@/lib/db";
 import { customTemplateFromRow } from "@/lib/custom-templates";
 import { getBillingSummary } from "@/lib/billing";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
+import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
 import type { CustomTemplate } from "@/lib/template-config";
 import {
   DEFAULT_FAVORITE_TEMPLATE_KEYS,
@@ -30,11 +31,12 @@ export default async function TemplatesPage() {
   const user = await getAuthenticatedUser();
   let personalTemplates: CustomTemplate[] = [];
   let canUseCustomTemplates = false;
+  let adminPresetNamesEnabled = false;
   let initialFavoriteTemplateKeys: TemplateFavoriteKey[] = [...DEFAULT_FAVORITE_TEMPLATE_KEYS];
   if (user) {
     const session = await requireMvpSession(user);
     const db = getDb();
-    const [templateRows, favoriteRows, billing] = await Promise.all([
+    const [templateRows, favoriteRows, billing, subtitleTemplateAccess] = await Promise.all([
       db`
         select id, name, base_template_id, config, version, created_at, updated_at
         from shorts_mvp.custom_templates where user_id=${session.userId}
@@ -45,9 +47,12 @@ export default async function TemplatesPage() {
         where user_id=${session.userId}
       `,
       getBillingSummary(db, session.userId),
+      getSubtitleTemplateAccess(db, session.userId),
     ]);
     personalTemplates = templateRows.map(customTemplateFromRow);
     canUseCustomTemplates = billingSupportsCustomTemplates(billing);
+    adminPresetNamesEnabled = subtitleTemplateAccess.enabled
+      && subtitleTemplateAccess.isAdmin;
     if (favoriteRows[0]) {
       initialFavoriteTemplateKeys = resolveStoredFavoriteTemplateKeys(favoriteRows[0].templateKeys);
     }
@@ -61,6 +66,7 @@ export default async function TemplatesPage() {
           personalTemplates={personalTemplates}
           authenticated={Boolean(user)}
           canUseCustomTemplates={canUseCustomTemplates}
+          adminPresetNamesEnabled={adminPresetNamesEnabled}
           initialFavoriteTemplateKeys={initialFavoriteTemplateKeys}
         />
       </main>

@@ -51,6 +51,8 @@ import type {
   YoutubeAnalysis,
 } from "@/lib/contracts";
 import { expectedShortCount, videoAspectRatioOptions } from "@/lib/contracts";
+import { presetTemplateDisplayName } from "@/lib/admin-template-copy";
+import { contrastingTitleTextColor } from "@/lib/brand-color-contrast";
 import {
   CAPTION_ASS_PREVIEW_FONT_SCALE,
   captionRenderSpecForEditor,
@@ -80,6 +82,7 @@ import { stateRetryDelayMs } from "@/lib/state-loading";
 import {
   SUBTITLE_TEMPLATE_BRAND_COLOR,
   SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
+  subtitleTemplateTitleTextStyles,
   subtitleTemplateStyleSnapshot,
   subtitleTemplateOptions,
   type SubtitleCaptionPlacement,
@@ -1525,6 +1528,7 @@ function SubtitleTemplatePreview({
   channelName,
   channelThumbnailUrl,
   brandColor,
+  fullVerticalTitleBackgroundEnabled,
 }: {
   id: SubtitleTemplateSelectionId;
   captionPlacement: SubtitleCaptionPlacement;
@@ -1532,6 +1536,7 @@ function SubtitleTemplatePreview({
   channelName: string;
   channelThumbnailUrl: string | null;
   brandColor: TemplatePresetColor;
+  fullVerticalTitleBackgroundEnabled: boolean;
 }) {
   const snapshot = subtitleTemplateStyleSnapshot(
     id,
@@ -1551,6 +1556,18 @@ function SubtitleTemplatePreview({
     WebkitTextStroke: `${canvasCqw(snapshot.outlinePx)} #080808`,
     paintOrder: "stroke fill",
   } satisfies CSSProperties;
+  const titleBackground = fullVerticalTitleBackgroundEnabled
+    && videoAspectRatio === "9:16"
+    ? brandColor
+    : null;
+  const titleRowStyle = titleBackground
+    ? {
+        color: contrastingTitleTextColor(titleBackground),
+        background: titleBackground,
+        borderRadius: canvasCqw(10),
+        padding: `${canvasCqw(12)} ${canvasCqw(29)}`,
+      }
+    : undefined;
   return (
     <div
       className="relative mx-auto aspect-[9/16] w-full max-w-[150px] overflow-hidden rounded-[10px] bg-black shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]"
@@ -1566,8 +1583,11 @@ function SubtitleTemplatePreview({
           color: snapshot.title.firstLineColor,
         }}
       >
-        <span className="block">AI가 고른 오늘의</span>
-        <span className="block" style={{ color: snapshot.title.secondLineColor }}>핵심 장면</span>
+        <span className="block" style={titleRowStyle}>AI가 고른 오늘의</span>
+        <span
+          className="block"
+          style={titleRowStyle || { color: snapshot.title.secondLineColor }}
+        >핵심 장면</span>
       </div>
       <div className="absolute overflow-hidden bg-gradient-to-br from-neutral-600 via-neutral-800 to-neutral-950" style={rectStyle(layout.video)}>
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
@@ -1881,6 +1901,11 @@ function TemplatePicker({
   const selectedCustom = usablePersonalTemplates.find((template) => template.id === customTemplateId);
   const selectedTemplate = templates.find((template) => template.id === value) || templates[0];
   const selectedSubtitleTemplate = subtitleTemplateOptions.find((template) => template.id === subtitleTemplateId);
+  const selectedPresetDisplayName = presetTemplateDisplayName(
+    selectedTemplate.id,
+    selectedTemplate.name,
+    brandColorSelectionEnabled,
+  );
   const effectiveAspectRatio = selectedCustom?.config.video.aspectRatio ?? videoAspectRatio;
   const disabledPresetRatios: VideoAspectRatio[] = !selectedCustom && value === "comment-capture"
     ? ["4:5", "9:16"]
@@ -1919,7 +1944,13 @@ function TemplatePicker({
         className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
       >
         <TemplatePreview template={card.template} videoAspectRatio={effectiveAspectRatio} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} brandColor={brandColorSelectionEnabled ? brandColor : undefined} />
-        <span className="mt-2.5 block text-center text-sm font-semibold">{card.template.name}</span>
+        <span className="mt-2.5 block text-center text-sm font-semibold">
+          {presetTemplateDisplayName(
+            card.template.id,
+            card.template.name,
+            brandColorSelectionEnabled,
+          )}
+        </span>
       </button>
     );
   };
@@ -1941,7 +1972,7 @@ function TemplatePicker({
     <div id="template-picker">
       <div className="flex items-center gap-3">
         <h2 className="text-xl font-bold">템플릿</h2>
-        <span className="text-xs font-semibold text-red-300">{selectedSubtitleTemplate?.name || selectedCustom?.name || selectedTemplate.name}</span>
+        <span className="text-xs font-semibold text-red-300">{selectedSubtitleTemplate?.name || selectedCustom?.name || selectedPresetDisplayName}</span>
       </div>
       {!settingsBelowRail && templateSettings}
       <div
@@ -1972,6 +2003,7 @@ function TemplatePicker({
                     channelName={channelName}
                     channelThumbnailUrl={channelThumbnailUrl}
                     brandColor={brandColor}
+                    fullVerticalTitleBackgroundEnabled={brandColorSelectionEnabled}
                   />
                   <span className="mt-2.5 block text-center text-sm font-extrabold text-white">{option.name}</span>
                   <span className="mt-1 block text-center text-[11px] leading-4 text-neutral-400">{option.description}</span>
@@ -3787,7 +3819,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const initialTitleAspectRatio = initialTemplateId === "comment-capture" && initialVideoAspectRatio === "9:16"
     ? "4:5"
     : initialVideoAspectRatio || "1:1";
-  const initialTitleTextStyles = savedEditorDocument
+  const baseInitialTitleTextStyles = savedEditorDocument
     ? savedEditorDocument.title.textStyles
     : item.titleTextStylesInitialized
       ? item.titleTextStyles
@@ -3798,6 +3830,14 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       initialTemplate.accentBackground,
       presetBrandColor,
   );
+  const initialTitleTextStyles = captionTemplateEditorSpec
+    ? subtitleTemplateTitleTextStyles(
+        initialTitle,
+        initialVideoAspectRatio,
+        presetBrandColor || SUBTITLE_TEMPLATE_BRAND_COLOR,
+        baseInitialTitleTextStyles,
+      )
+    : baseInitialTitleTextStyles;
   const [title, setTitle] = useState(initialTitle);
   const [titleTextStyles, setTitleTextStyles] = useState<TitleTextStyle[]>(initialTitleTextStyles);
   const titleRef = useRef(title);
@@ -4654,6 +4694,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   }, [editorFontApplySuggestion, textOverlays]);
   const validTitle = title.trim().length > 0 && title.length <= 80 && title.split("\n").length <= 2;
   const template = templates.find((value) => value.id === templateId) || templates[0];
+  const editorTemplateDisplayName = presetTemplateDisplayName(
+    template.id,
+    template.name,
+    adminSubtitleLayoutEnabled,
+  );
   const editorCanvasBackground = renderOverlayLayout.background;
   const resolvedEditorCanvasBackground = editorCanvasBackground
     ? editorCanvasBackgroundStyle(editorCanvasBackground)
@@ -10283,7 +10328,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             <summary className="editor-accordion-summary">
               <span className="editor-accordion-summary-icon"><EditorSidebarSectionIcon section="template" /></span>
               <span>템플릿</span>
-              <span className="editor-accordion-summary-meta">{activeCustomTemplate?.name || template.name}</span>
+              <span className="editor-accordion-summary-meta">{activeCustomTemplate?.name || editorTemplateDisplayName}</span>
               <span className="editor-accordion-chevron" aria-hidden="true">
                 <svg viewBox="0 0 20 20" fill="none">
                   <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -10321,7 +10366,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                     className={`min-w-0 rounded-xl border-2 p-2 transition ${selected ? "border-white/75 bg-white/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}
                   >
                     <TemplatePreview template={value} videoAspectRatio={item.videoAspectRatio || "1:1"} channelName={channel} channelThumbnailUrl={editorChannelThumbnailUrl} />
-                    <span className="mt-2 block truncate text-center text-xs font-semibold">{value.name}</span>
+                    <span className="mt-2 block truncate text-center text-xs font-semibold">
+                      {presetTemplateDisplayName(
+                        value.id,
+                        value.name,
+                        adminSubtitleLayoutEnabled,
+                      )}
+                    </span>
                   </button>;
                 })}
               </div>

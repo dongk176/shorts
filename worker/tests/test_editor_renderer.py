@@ -464,6 +464,54 @@ def test_caption_editor_uses_the_server_authored_composition_layout(
     )
 
 
+def test_full_vertical_caption_editor_draws_brand_background_on_both_title_rows(
+    tmp_path: Path,
+) -> None:
+    document = _document_v3()
+    document.render_spec = None
+    document.video.aspect_ratio = VideoAspectRatio.FULL_VERTICAL
+    document.title.text = "첫 번째 줄\n두 번째 줄"
+    document.title.text_styles = []
+    accent = "#F97316"
+    caption_spec = compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="자막",
+                start=0.2,
+                end=0.8,
+                provider="elevenlabs",
+            ),
+        ],
+        template_id="highlight",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.FULL_VERTICAL,
+        accent_color=accent,
+    )
+
+    title_path = create_editor_title_layer(
+        document,
+        tmp_path / "full-vertical-caption-title.png",
+        title_accent_color=accent,
+        caption_render_spec=caption_spec,
+    )
+
+    with Image.open(title_path).convert("RGBA") as image:
+        accent_rgba = (249, 115, 22, 255)
+        accent_rows = sorted({
+            y
+            for y in range(image.height)
+            for x in range(image.width)
+            if image.getpixel((x, y)) == accent_rgba
+        })
+    assert accent_rows
+    row_groups = 1 + sum(
+        current - previous > 1
+        for previous, current in zip(accent_rows, accent_rows[1:], strict=False)
+    )
+    assert row_groups == 2
+
+
 def test_editor_channel_is_always_rendered_as_the_front_layer() -> None:
     document = _document()
     document.overlays.layer_order = [

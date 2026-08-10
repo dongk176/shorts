@@ -9,6 +9,14 @@ const youtubeAnalysisSource = readFileSync(
   new URL("./youtube-analysis.ts", import.meta.url),
   "utf8",
 );
+const templatePageSource = readFileSync(
+  new URL("../app/templates/page.tsx", import.meta.url),
+  "utf8",
+);
+const templateLibrarySource = readFileSync(
+  new URL("../app/templates/template-library.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("admin template layout", () => {
   it("uses the server-authorized admin capability for every layout change", () => {
@@ -20,6 +28,21 @@ describe("admin template layout", () => {
     );
     expect(shortsAppSource).toContain(
       "settingsBelowRail={adminTemplateLayoutEnabled}",
+    );
+  });
+
+  it("shows the shortened preset names only through administrator gates", () => {
+    expect(templatePageSource).toContain(
+      "adminPresetNamesEnabled = subtitleTemplateAccess.enabled",
+    );
+    expect(templateLibrarySource).toContain(
+      "adminPresetNamesEnabled",
+    );
+    expect(shortsAppSource).toContain(
+      "adminSubtitleLayoutEnabled",
+    );
+    expect(shortsAppSource).toContain(
+      "brandColorSelectionEnabled",
     );
   });
 

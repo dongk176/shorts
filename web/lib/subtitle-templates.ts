@@ -1,5 +1,6 @@
-import type { VideoAspectRatio } from "@/lib/contracts";
+import type { TitleTextStyle, VideoAspectRatio } from "@/lib/contracts";
 import type { TemplatePresetColor } from "@/lib/template-config";
+import { ensureTitleTextBackground } from "@/lib/title-text-style";
 
 export const subtitleTemplateIds = ["basic", "highlight", "pop"] as const;
 export type SubtitleTemplateId = typeof subtitleTemplateIds[number];
@@ -54,6 +55,18 @@ export const subtitleTemplateOptions: Array<{
   { id: "pop", name: "자막 팝형", description: "핵심 어절을 크고 리듬감 있게" },
   { id: "highlight", name: "자막 강조형", description: "말하는 어절만 브랜드 컬러로" },
 ];
+
+export function subtitleTemplateTitleTextStyles(
+  title: string,
+  videoAspectRatio: VideoAspectRatio,
+  brandColor: TemplatePresetColor,
+  currentStyles: TitleTextStyle[] = [],
+) {
+  if (videoAspectRatio !== "9:16") {
+    return currentStyles.map((style) => ({ ...style }));
+  }
+  return ensureTitleTextBackground(title, currentStyles, brandColor);
+}
 
 export function subtitleTemplateLayout(
   videoAspectRatio: VideoAspectRatio,

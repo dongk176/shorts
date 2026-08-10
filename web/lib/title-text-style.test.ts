@@ -4,6 +4,7 @@ import {
   applyTitleTextStyle,
   codePointOffset,
   defaultTemplateTitleTextStyles,
+  ensureTitleTextBackground,
   rebaseTitleTextStyles,
 } from "./title-text-style";
 
@@ -62,6 +63,27 @@ describe("title text selection styles", () => {
       backgroundColor: "#3B82F6",
       color: "#000000",
     }]);
+  });
+
+  it("fills both title rows while preserving explicit character colors", () => {
+    expect(ensureTitleTextBackground(
+      "첫 줄\n둘째 줄",
+      [{ start: 0, end: 1, color: "#FF715E" }],
+      "#3B82F6",
+    )).toEqual([
+      {
+        start: 0,
+        end: 1,
+        color: "#FF715E",
+        backgroundColor: "#3B82F6",
+      },
+      {
+        start: 1,
+        end: 8,
+        color: "#000000",
+        backgroundColor: "#3B82F6",
+      },
+    ]);
   });
 
   it("keeps templates without a background transparent outside overlay mode", () => {

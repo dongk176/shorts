@@ -270,6 +270,18 @@ def caption_video_layout(spec: dict[str, object]) -> VideoLayout:
     )
 
 
+def caption_title_text_styles(
+    caption_render_spec: dict[str, object] | None,
+    video_aspect_ratio: VideoAspectRatio,
+    title_text_styles: list[TitleTextStyle] | None,
+) -> list[TitleTextStyle] | None:
+    if caption_render_spec is None:
+        return title_text_styles
+    if video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL:
+        return None
+    return []
+
+
 def lifted_comment_landscape_layout() -> VideoLayout:
     video_height = VIDEO_HEIGHTS[VideoAspectRatio.LANDSCAPE]
     centered_y = (CANVAS_HEIGHT - video_height) // 2
@@ -497,8 +509,10 @@ class VideoRenderer:
             top_height=layout.top_height,
             bottom_height=layout.bottom_height,
             overlay_mode=layout.overlay_mode,
-            title_text_styles=(
-                [] if caption_render_spec is not None else title_text_styles
+            title_text_styles=caption_title_text_styles(
+                caption_render_spec,
+                video_aspect_ratio,
+                title_text_styles,
             ),
             title_accent_color=(
                 title_accent_color

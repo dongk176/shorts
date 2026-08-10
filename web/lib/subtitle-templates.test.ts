@@ -11,6 +11,7 @@ import {
   subtitleTemplateLayout,
   subtitleTemplateOptions,
   subtitleTemplateStyleSnapshot,
+  subtitleTemplateTitleTextStyles,
 } from "./subtitle-templates";
 
 describe("subtitle template snapshot", () => {
@@ -41,6 +42,24 @@ describe("subtitle template snapshot", () => {
     });
     expect(snapshot.title.secondLineColor).toBe("#35E6E3");
     expect(snapshot.color.active).toBe(snapshot.title.secondLineColor);
+  });
+
+  it("adds a brand background to both hook-title rows only at 9:16", () => {
+    expect(subtitleTemplateTitleTextStyles(
+      "첫 줄\n둘째 줄",
+      "9:16",
+      "#F97316",
+    )).toEqual([{
+      start: 0,
+      end: 8,
+      color: "#000000",
+      backgroundColor: "#F97316",
+    }]);
+    expect(subtitleTemplateTitleTextStyles(
+      "첫 줄\n둘째 줄",
+      "4:5",
+      "#F97316",
+    )).toEqual([]);
   });
 
   it("uses a larger outline and bounded scale for the pop template", () => {

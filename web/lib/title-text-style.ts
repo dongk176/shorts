@@ -156,6 +156,21 @@ export function applyTitleTextStyle(
   return compactTitleTextStyles(characters);
 }
 
+export function ensureTitleTextBackground(
+  title: string,
+  styles: TitleTextStyle[],
+  backgroundColor: string,
+) {
+  const titleLength = Array.from(title).length;
+  const characters = expandTitleTextStyles(styles, titleLength);
+  const fallbackColor = contrastingTitleTextColor(backgroundColor);
+  characters.forEach((style) => {
+    if (!style.backgroundColor) style.backgroundColor = backgroundColor;
+    if (!style.color) style.color = fallbackColor;
+  });
+  return compactTitleTextStyles(characters);
+}
+
 export function rebaseTitleTextStyles(
   previousTitle: string,
   nextTitle: string,

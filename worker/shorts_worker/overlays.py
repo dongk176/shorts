@@ -303,6 +303,46 @@ def default_title_text_styles(
     ]
 
 
+def ensure_title_text_background(
+    title: str,
+    title_text_styles: list[TitleTextStyle],
+    background_color: str,
+) -> list[TitleTextStyle]:
+    characters: list[tuple[str | None, str | None]] = [
+        (None, None) for _ in title
+    ]
+    for style in title_text_styles:
+        for index in range(max(0, style.start), min(len(title), style.end)):
+            characters[index] = (style.color, style.background_color)
+
+    resolved: list[tuple[str, str]] = []
+    for color, current_background in characters:
+        effective_background = current_background or background_color
+        resolved.append((
+            color or contrasting_title_text_color(effective_background),
+            effective_background,
+        ))
+
+    compacted: list[TitleTextStyle] = []
+    for index, (color, current_background) in enumerate(resolved):
+        previous = compacted[-1] if compacted else None
+        if (
+            previous is not None
+            and previous.end == index
+            and previous.color == color
+            and previous.background_color == current_background
+        ):
+            previous.end += 1
+            continue
+        compacted.append(TitleTextStyle(
+            start=index,
+            end=index + 1,
+            color=color,
+            backgroundColor=current_background,
+        ))
+    return compacted
+
+
 def create_title_panel(
     title: str,
     template_id: TemplateId,
