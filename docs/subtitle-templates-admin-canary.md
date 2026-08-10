@@ -44,11 +44,12 @@ and stored-data constraints solely so existing completed or pinned jobs do not
 break.
 
 Provider word timestamps remain unchanged. Only the displayed start frame is
-advanced by four 30fps frames (about 133ms); the word end frame is preserved so a
-caption never disappears before the spoken word ends. Overlapping provider
-timestamps are serialized with at least one output frame per word. A caption
-layout failure is recorded separately from transcription failure and must never
-be shown to the user as “no human voice”.
+advanced by seven 30fps frames (about 233ms). When that early entrance overlaps
+the preceding cue, the preceding cue exits at the new cue's start frame; an
+impossibly fast boundary instead preserves at least one output frame per event
+and delays the following cue. A caption layout failure is recorded separately
+from transcription failure and must never be shown to the user as “no human
+voice”.
 
 ## Candidate target
 

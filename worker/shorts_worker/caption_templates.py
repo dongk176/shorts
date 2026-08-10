@@ -688,6 +688,129 @@ def _event_ranges(
     ]
 
 
+def _caption_cue_overlap_count(cues: Sequence[dict[str, object]]) -> int:
+    return sum(
+        int(left.get("endFrame") or 0)
+        > int(right.get("startFrame") or 0)
+        for left, right in zip(cues[:-1], cues[1:], strict=True)
+    )
+
+
+def _compiled_cue_minimum_frames(cue: dict[str, object]) -> int:
+    events = cue.get("events")
+    if not isinstance(events, list) or not events:
+        raise CaptionCompileError("자막 이벤트가 올바르지 않습니다.")
+    return len(events) if all(
+        isinstance(event, dict) and "activeWordIndex" in event
+        for event in events
+    ) else 1
+
+
+def _retime_compiled_cue(
+    cue: dict[str, object],
+    *,
+    start_frame: int,
+    end_frame: int,
+) -> None:
+    if end_frame <= start_frame:
+        raise CaptionCompileError("자막 큐 경계가 올바르지 않습니다.")
+    events_value = cue.get("events")
+    if not isinstance(events_value, list) or not events_value:
+        raise CaptionCompileError("자막 이벤트가 올바르지 않습니다.")
+    events = [event for event in events_value if isinstance(event, dict)]
+    if len(events) != len(events_value):
+        raise CaptionCompileError("자막 이벤트가 올바르지 않습니다.")
+
+    if all("activeWordIndex" in event for event in events):
+        words_value = cue.get("words")
+        if not isinstance(words_value, list) or not words_value:
+            raise CaptionCompileError("자막 어절이 올바르지 않습니다.")
+        words: list[_CaptionWord] = []
+        for word_value in words_value:
+            if not isinstance(word_value, dict):
+                raise CaptionCompileError("자막 어절이 올바르지 않습니다.")
+            words.append(_CaptionWord(
+                text=str(word_value.get("text") or ""),
+                start_frame=int(word_value.get("startFrame") or 0),
+                end_frame=int(word_value.get("endFrame") or 0),
+                space_before=bool(word_value.get("spaceBefore")),
+                source_indexes=(),
+            ))
+        event_by_active_index = {
+            int(event["activeWordIndex"]): event
+            for event in events
+        }
+        ranges = _event_ranges(
+            words,
+            cue_start=start_frame,
+            cue_end=end_frame,
+        )
+        retimed_events: list[dict[str, object]] = []
+        for event_range in ranges:
+            active_index = int(event_range["activeWordIndex"])
+            source_event = event_by_active_index.get(active_index)
+            if source_event is None:
+                raise CaptionCompileError("자막 활성 어절이 올바르지 않습니다.")
+            retimed_events.append({**source_event, **event_range})
+        cue["events"] = retimed_events
+    else:
+        if len(events) != 1:
+            raise CaptionCompileError("기본 자막 이벤트가 올바르지 않습니다.")
+        cue["events"] = [{
+            **events[0],
+            "startFrame": start_frame,
+            "endFrame": end_frame,
+        }]
+    cue["startFrame"] = start_frame
+    cue["endFrame"] = end_frame
+
+
+def _normalize_caption_cue_handoffs(cues: list[dict[str, object]]) -> None:
+    """Keep the early next-cue entrance while removing cross-cue overlap.
+
+    Current caption words intentionally start seven frames before speech. An
+    editor reflow recompiles each immutable source cue independently, so that
+    lead can be restored after the original cross-cue boundary was serialized.
+    Prefer ending the previous cue at the next cue's early start. Only delay
+    the next cue when the previous cue needs its minimum one-frame-per-event
+    display window.
+    """
+    cues.sort(key=lambda cue: (
+        int(cue.get("startFrame") or 0),
+        int(cue.get("endFrame") or 0),
+    ))
+    for index in range(len(cues) - 1):
+        current = cues[index]
+        following = cues[index + 1]
+        current_end = int(current.get("endFrame") or 0)
+        following_start = int(following.get("startFrame") or 0)
+        if current_end <= following_start:
+            continue
+
+        current_start = int(current.get("startFrame") or 0)
+        earliest_handoff = (
+            current_start + _compiled_cue_minimum_frames(current)
+        )
+        handoff = max(following_start, earliest_handoff)
+        _retime_compiled_cue(
+            current,
+            start_frame=current_start,
+            end_frame=handoff,
+        )
+        if handoff <= following_start:
+            continue
+
+        following_end = max(
+            int(following.get("endFrame") or 0),
+            handoff + _compiled_cue_minimum_frames(following),
+        )
+        _retime_compiled_cue(
+            following,
+            start_frame=handoff,
+            end_frame=following_end,
+        )
+
+
 def _serialize_word(word: _CaptionWord) -> dict[str, object]:
     serialized: dict[str, object] = {
         "text": word.text,
@@ -1143,10 +1266,12 @@ def reflow_caption_cues_for_clips(
                     cue["sourceCueIndex"] = source_cue_index
                 rebuilt.extend(compiled)
 
-    rebuilt.sort(key=lambda cue: (
-        int(cue.get("startFrame") or 0),
-        int(cue.get("endFrame") or 0),
-    ))
+    _normalize_caption_cue_handoffs(rebuilt)
+    overlap_count = _caption_cue_overlap_count(rebuilt)
+    if overlap_count:
+        raise CaptionCompileError(
+            f"편집 자막 큐 {overlap_count}개가 서로 겹칩니다."
+        )
     return rebuilt
 
 
@@ -1198,6 +1323,11 @@ def compile_caption_render_spec(
         outline = 7
     if not cues:
         raise TranscriptionError("선택한 쇼츠 구간에 표시할 자막이 없습니다.")
+    overlap_count = _caption_cue_overlap_count(cues)
+    if overlap_count:
+        raise CaptionCompileError(
+            f"생성 자막 큐 {overlap_count}개가 서로 겹칩니다."
+        )
     return {
         "schemaVersion": 3,
         "templateId": template_id,

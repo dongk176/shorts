@@ -1123,6 +1123,73 @@ def test_plain_split_does_not_duplicate_a_caption_word() -> None:
     ]
 
 
+def test_editor_reflow_ends_prior_pop_cue_at_next_early_start() -> None:
+    spec = compile_caption_render_spec(
+        [
+            _word("하나", 0.10, 0.30),
+            _word("둘", 0.30, 0.50, space_before=True),
+            _word("셋", 0.50, 1.00, space_before=True),
+            _word("넷", 1.00, 1.20, space_before=True),
+        ],
+        template_id="pop",
+        clip_start=0.0,
+        clip_end=2.0,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        spec["cues"],
+        template_id="pop",
+        safe_area=spec["safeArea"],
+        clip_windows=[(0, 60, 0)],
+    )
+
+    assert len(cues) == 2
+    first, second = cues
+    assert first["endFrame"] == second["startFrame"]
+    assert second["startFrame"] == (
+        second["words"][0]["speechStartFrame"]
+        - spec["timingLeadFrames"]
+    )
+    assert all(
+        left["endFrame"] <= right["startFrame"]
+        for left, right in zip(cues[:-1], cues[1:], strict=True)
+    )
+
+
+def test_editor_reflow_serializes_impossibly_fast_pop_cues() -> None:
+    spec = compile_caption_render_spec(
+        [
+            _word("어유,", 0.10, 0.20),
+            _word("어유,", 0.12, 0.23, space_before=True),
+            _word("어유.", 0.13, 0.24, space_before=True),
+            _word("진짜", 0.14, 0.30, space_before=True),
+        ],
+        template_id="pop",
+        clip_start=0.0,
+        clip_end=0.4,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        spec["cues"],
+        template_id="pop",
+        safe_area=spec["safeArea"],
+        clip_windows=[(0, 12, 0)],
+    )
+
+    assert cues
+    assert all(
+        left["endFrame"] <= right["startFrame"]
+        for left, right in zip(cues[:-1], cues[1:], strict=True)
+    )
+    assert all(
+        event["endFrame"] > event["startFrame"]
+        for cue in cues
+        for event in cue["events"]
+    )
+
+
 def test_long_edited_pop_caption_reflows_without_word_overlap() -> None:
     spec = compile_caption_render_spec(
         [_word("원본", 0.2, 2.8)],
