@@ -106,9 +106,21 @@ jobs:
         run: |
           test -n "$IMAGE_DIGEST"
           repository_name="${EDITOR_RELEASE_ECR_REPOSITORY_URI#*/}"
-          aws ecr wait image-scan-complete \
-            --repository-name "$repository_name" \
-            --image-id imageDigest="$IMAGE_DIGEST"
+          # Scan-on-push can lag behind the manifest becoming visible. The ECR
+          # waiter fails immediately with ScanNotFoundException during that
+          # short window, so retry only the waiter without bypassing the scan.
+          scan_ready=false
+          for attempt in {1..12}; do
+            if aws ecr wait image-scan-complete \
+              --repository-name "$repository_name" \
+              --image-id imageDigest="$IMAGE_DIGEST"; then
+              scan_ready=true
+              break
+            fi
+            echo "ECR scan is not ready yet (attempt ${attempt}/12)."
+            sleep 10
+          done
+          test "$scan_ready" = "true"
           critical="$(
             aws ecr describe-image-scan-findings \
               --repository-name "$repository_name" \
