@@ -558,11 +558,21 @@ def _pop_caption_render_spec() -> dict[str, object]:
     """Build immutable source-timeline pop captions spanning every probe cut."""
     words = [
         TranscriptWord(text="팝형", start=0.55, end=0.95, provider="probe"),
-        TranscriptWord(text="자막", start=1.05, end=1.45, provider="probe"),
-        TranscriptWord(text="위치", start=2.05, end=2.55, provider="probe"),
-        TranscriptWord(text="크기", start=4.10, end=4.80, provider="probe"),
-        TranscriptWord(text="렌더", start=6.05, end=6.55, provider="probe"),
-        TranscriptWord(text="검증", start=7.00, end=7.45, provider="probe"),
+        TranscriptWord(
+            text="자막", start=1.05, end=1.45, provider="probe", space_before=True
+        ),
+        TranscriptWord(
+            text="위치", start=2.05, end=2.55, provider="probe", space_before=True
+        ),
+        TranscriptWord(
+            text="크기", start=4.10, end=4.80, provider="probe", space_before=True
+        ),
+        TranscriptWord(
+            text="렌더", start=6.05, end=6.55, provider="probe", space_before=True
+        ),
+        TranscriptWord(
+            text="검증", start=7.00, end=7.45, provider="probe", space_before=True
+        ),
     ]
     return compile_caption_render_spec(
         words,
