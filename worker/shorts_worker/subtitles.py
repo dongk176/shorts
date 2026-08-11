@@ -544,6 +544,9 @@ class AudioTranscriber:
             raise TranscriptionError("ELEVENLABS_API_KEY가 설정되지 않았습니다.")
         import httpx
 
+        request_options: dict[str, Any] = {}
+        if self.settings.elevenlabs_zero_retention_mode:
+            request_options["params"] = {"enable_logging": "false"}
         with chunk.open("rb") as audio_file:
             response = httpx.post(
                 "https://api.elevenlabs.io/v1/speech-to-text",
@@ -557,6 +560,7 @@ class AudioTranscriber:
                 },
                 files={"file": (chunk.name, audio_file, "audio/mp4")},
                 timeout=self.settings.ai_timeout_seconds,
+                **request_options,
             )
         response.raise_for_status()
         data = response.json()

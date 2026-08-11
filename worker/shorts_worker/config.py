@@ -69,6 +69,9 @@ class Settings:
     elevenlabs_transcribe_model: str = field(
         default_factory=lambda: os.getenv("ELEVENLABS_TRANSCRIBE_MODEL", "scribe_v2")
     )
+    elevenlabs_zero_retention_mode: bool = field(
+        default_factory=lambda: _enabled("ELEVENLABS_ZERO_RETENTION_MODE")
+    )
     openai_transcribe_model: str = field(
         default_factory=lambda: os.getenv(
             "OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe"

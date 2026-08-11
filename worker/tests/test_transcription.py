@@ -383,8 +383,18 @@ def test_stable_policy_keeps_the_existing_openai_request_shape(
     assert "timestamp_granularities" not in requests[0]
 
 
+@pytest.mark.parametrize(
+    ("zero_retention_mode", "expected_params"),
+    [
+        (False, None),
+        (True, {"enable_logging": "false"}),
+    ],
+)
 def test_elevenlabs_policy_autodetects_multilingual_words(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    zero_retention_mode: bool,
+    expected_params: dict[str, str] | None,
 ) -> None:
     chunk = tmp_path / "audio_0000.m4a"
     chunk.write_bytes(b"audio")
@@ -415,7 +425,9 @@ def test_elevenlabs_policy_autodetects_multilingual_words(
         return Response()
 
     monkeypatch.setitem(sys.modules, "httpx", SimpleNamespace(post=post))
-    transcriber = AudioTranscriber(_settings())
+    transcriber = AudioTranscriber(
+        _settings(elevenlabs_zero_retention_mode=zero_retention_mode)
+    )
     monkeypatch.setattr(transcriber, "_extract_chunks", lambda *_args: [chunk])
     monkeypatch.setattr(
         "shorts_worker.subtitles.probe_media",
@@ -438,6 +450,10 @@ def test_elevenlabs_policy_autodetects_multilingual_words(
     assert calls[0]["headers"] == {"xi-api-key": "elevenlabs-test-key"}
     assert calls[0]["data"]["model_id"] == "scribe_v2"
     assert "language_code" not in calls[0]["data"]
+    if expected_params is None:
+        assert "params" not in calls[0]
+    else:
+        assert calls[0]["params"] == expected_params
 
 
 def test_whisper_leading_spaces_are_preserved_as_word_boundary_metadata() -> None:
