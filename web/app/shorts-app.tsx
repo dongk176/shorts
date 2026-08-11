@@ -2972,6 +2972,7 @@ type EditorCopySnapshot = {
   channel: string;
   channelThumbnailUrl: string | null;
   channelThumbnailAssetKey: string | null;
+  subtitlesEnabled: boolean;
   subtitleSegments: EditorSubtitleSegment[];
   subtitleLayout: EditorSubtitleLayout;
 };
@@ -3057,6 +3058,7 @@ const cloneEditorCopySnapshot = (
   channel: snapshot.channel,
   channelThumbnailUrl: snapshot.channelThumbnailUrl,
   channelThumbnailAssetKey: snapshot.channelThumbnailAssetKey,
+  subtitlesEnabled: snapshot.subtitlesEnabled,
   subtitleSegments: cloneEditorSubtitleSegments(snapshot.subtitleSegments),
   subtitleLayout: cloneEditorSubtitleLayout(snapshot.subtitleLayout),
 });
@@ -3075,6 +3077,7 @@ const editorCopySnapshotsEqual = (
   && left.channel === right.channel
   && left.channelThumbnailUrl === right.channelThumbnailUrl
   && left.channelThumbnailAssetKey === right.channelThumbnailAssetKey
+  && left.subtitlesEnabled === right.subtitlesEnabled
   && JSON.stringify(left.subtitleSegments) === JSON.stringify(right.subtitleSegments)
   && JSON.stringify(left.subtitleLayout) === JSON.stringify(right.subtitleLayout)
   && JSON.stringify(left.titleTextStyles) === JSON.stringify(right.titleTextStyles)
@@ -3086,7 +3089,8 @@ const editorCopyTitleChanged = (entry: EditorCopyHistoryEntry) => (
     !== JSON.stringify(entry.after.titleTextStyles)
 );
 const editorCopySubtitleChanged = (entry: EditorCopyHistoryEntry) => (
-  JSON.stringify(entry.before.subtitleSegments)
+  entry.before.subtitlesEnabled !== entry.after.subtitlesEnabled
+  || JSON.stringify(entry.before.subtitleSegments)
   !== JSON.stringify(entry.after.subtitleSegments)
   || JSON.stringify(entry.before.subtitleLayout)
     !== JSON.stringify(entry.after.subtitleLayout)
@@ -3884,6 +3888,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(
     savedEditorDocument?.subtitles.enabled ?? item.subtitlesEnabled,
   );
+  const subtitlesEnabledRef = useRef(subtitlesEnabled);
   const [segments, setSegments] = useState(
     savedEditorDocument?.subtitles.segments || item.subtitleSegments,
   );
@@ -5180,6 +5185,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     channel: channelRef.current,
     channelThumbnailUrl: editorChannelThumbnailUrlRef.current,
     channelThumbnailAssetKey: editorChannelThumbnailAssetKeyRef.current,
+    subtitlesEnabled: subtitlesEnabledRef.current,
     subtitleSegments: cloneEditorSubtitleSegments(
       subtitleSegmentsRef.current,
     ),
@@ -5194,6 +5200,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     channelRef.current = next.channel;
     editorChannelThumbnailUrlRef.current = next.channelThumbnailUrl;
     editorChannelThumbnailAssetKeyRef.current = next.channelThumbnailAssetKey;
+    subtitlesEnabledRef.current = next.subtitlesEnabled;
     subtitleSegmentsRef.current = next.subtitleSegments;
     subtitleLayoutRef.current = cloneEditorSubtitleLayout(next.subtitleLayout);
     setTitle(next.title);
@@ -5209,6 +5216,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setChannel(next.channel);
     setEditorChannelThumbnailUrl(next.channelThumbnailUrl);
     setEditorChannelThumbnailAssetKey(next.channelThumbnailAssetKey);
+    setSubtitlesEnabled(next.subtitlesEnabled);
     setSegments(next.subtitleSegments);
     setSubtitleLayout(cloneEditorSubtitleLayout(next.subtitleLayout));
     setEditingSubtitleIndex(null);
@@ -5300,6 +5308,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     channelRef.current = document.channel.displayName;
     editorChannelThumbnailUrlRef.current = channelThumbnailUrl;
     editorChannelThumbnailAssetKeyRef.current = document.channel.thumbnailAssetKey;
+    subtitlesEnabledRef.current = document.subtitles.enabled;
     subtitleSegmentsRef.current = cloneEditorSubtitleSegments(
       document.subtitles.segments,
     );
@@ -7843,6 +7852,27 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     finishEditorCopyInteraction();
   }, [finishEditorCopyInteraction]);
 
+  const toggleEditorSubtitles = useCallback(() => {
+    if (!captionTemplateEditorSpec) return;
+    if (captionTextDraft) {
+      commitEditorCaptionTextEdit();
+    } else {
+      finishPendingEditorInteractions();
+    }
+    beginEditorCopyInteraction();
+    const enabled = !subtitlesEnabledRef.current;
+    subtitlesEnabledRef.current = enabled;
+    setSubtitlesEnabled(enabled);
+    finishEditorCopyInteraction();
+  }, [
+    beginEditorCopyInteraction,
+    captionTemplateEditorSpec,
+    captionTextDraft,
+    commitEditorCaptionTextEdit,
+    finishEditorCopyInteraction,
+    finishPendingEditorInteractions,
+  ]);
+
   const beginEditorSubtitleDrag = useCallback((
     event: PointerEvent<HTMLElement>,
   ) => {
@@ -9709,10 +9739,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             >
             {EDITOR_SIDEBAR_TOOLS.filter((tool) => (
               tool.id !== "subtitle"
-              || (
-                captionTemplateEditorSpec
-                && subtitlesEnabled
-              )
+              || captionTemplateEditorSpec
             )).map((tool) => {
               const active = activeEditorSidebarTool === tool.id
                 && desktopSidebarOpen;
@@ -9814,17 +9841,30 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           </section>}
           {overlayPreviewEnabled
             && captionTemplateEditorSpec
-            && subtitlesEnabled
             && <section
-              className={`editor-sidebar-tool-panel${activeEditorSidebarTool === "subtitle" ? " is-active" : ""}`}
+              className={`editor-sidebar-tool-panel editor-subtitle-tool-panel${activeEditorSidebarTool === "subtitle" ? " is-active" : ""}`}
               aria-label="자막 내용, 색상, 위치와 크기 설정"
             >
               <header className="editor-tool-panel-header">
-                <strong>{captionTemplateEditorSpec.templateId === "pop" ? "팝형 자막" : "강조형 자막"}</strong>
-                <span className="rounded-full border border-[#ff715e]/35 bg-[#ff715e]/10 px-2 py-1 text-[10px] font-black text-[#ff9b8d]">
-                  관리자 전용
-                </span>
+                <div className="flex items-center gap-2">
+                  <strong>{captionTemplateEditorSpec.templateId === "pop" ? "팝형 자막" : "강조형 자막"}</strong>
+                  <span className="rounded-full border border-[#ff715e]/35 bg-[#ff715e]/10 px-2 py-1 text-[10px] font-black text-[#ff9b8d]">
+                    관리자 전용
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="editor-visibility-toggle"
+                  aria-label={subtitlesEnabled ? "자막 끄기" : "자막 켜기"}
+                  aria-pressed={subtitlesEnabled}
+                  onClick={toggleEditorSubtitles}
+                >
+                  <span aria-hidden="true"><i /></span>
+                  {subtitlesEnabled ? "켜짐" : "꺼짐"}
+                </button>
               </header>
+              {subtitlesEnabled
+                ? <>
               <p className="mb-5 text-xs leading-5 text-white/60">
                 자막을 위아래로 드래그해 옮기거나 더블클릭해 문구를 수정할 수 있습니다. 음성보다 {captionTemplateEditorSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES}프레임 먼저 표시되는 실제 렌더 타이밍도 그대로 유지됩니다.
               </p>
@@ -9926,6 +9966,15 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               >
                 기본 위치·크기로 초기화
               </button>
+                </>
+                : <div className="rounded-xl border border-white/10 bg-white/[.035] px-4 py-5">
+                  <strong className="block text-sm font-extrabold text-white">
+                    자막이 꺼져 있습니다
+                  </strong>
+                  <p className="mt-2 text-xs leading-5 text-white/55">
+                    미리보기와 실제 렌더 영상에서 자막이 모두 숨겨집니다. 다시 켜면 기존 문구와 위치·크기·색상 설정이 그대로 복원됩니다.
+                  </p>
+                </div>}
             </section>}
           {overlayPreviewEnabled && <section
             className={`editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "channel" ? " is-active" : ""}`}
@@ -9935,7 +9984,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               <strong>채널명</strong>
               <button
                 type="button"
-                className="editor-channel-visibility-toggle"
+                className="editor-visibility-toggle"
                 aria-label={renderOverlayLayout.visible.channel
                   ? "채널명 숨기기"
                   : "채널명 보이기"}
@@ -10319,7 +10368,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             </div>
           </details>}
           {!overlayPreviewEnabled && templateId !== "comment-capture" && <label className="editor-section block text-sm font-semibold">채널명<input value={channel} onFocus={beginEditorCopyInteraction} onBlur={finishEditorCopyInteraction} onChange={(event) => { channelRef.current = event.target.value; setChannel(event.target.value); }} maxLength={50} className="mt-2 h-11 w-full rounded-lg border border-white/15 bg-black/30 px-3" /></label>}
-          <label className="hidden"><input type="checkbox" checked={subtitlesEnabled} onChange={(event) => setSubtitlesEnabled(event.target.checked)} />자동 자막 표시</label>
+          {!captionTemplateEditorSpec && <label className="hidden"><input type="checkbox" checked={subtitlesEnabled} onChange={(event) => {
+            subtitlesEnabledRef.current = event.target.checked;
+            setSubtitlesEnabled(event.target.checked);
+          }} />자동 자막 표시</label>}
           {subtitlesEnabled && <div className="hidden">{segments.map((segment, index) => <label key={`${segment.start}-${index}`}><span>{formatTimestamp(segment.start)}</span><input value={segment.text} onChange={(event) => updateSubtitleText(index, event.target.value)} /></label>)}</div>}
           <details
             className={`editor-accordion editor-sidebar-tool-panel${!selectedTextOverlay && activeEditorSidebarTool === "template" ? " is-active" : ""}`}

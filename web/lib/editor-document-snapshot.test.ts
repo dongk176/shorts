@@ -174,6 +174,7 @@ describe("editor document snapshot", () => {
 
   it("keeps subtitle layout out of ordinary v2 while preserving it in admin v3", () => {
     const ordinary = snapshot();
+    ordinary.subtitles.enabled = false;
     const admin = createEditorDocumentSnapshotV3(ordinary, {
       offsetY: -240,
       scale: 1.35,
@@ -183,6 +184,7 @@ describe("editor document snapshot", () => {
 
     expect(ordinary.version).toBe(2);
     expect("renderSpec" in ordinary).toBe(false);
+    expect(admin.subtitles.enabled).toBe(false);
     expect(admin.renderSpec).toMatchObject({
       version: 2,
       subtitles: {
@@ -196,6 +198,7 @@ describe("editor document snapshot", () => {
 
     const cloned = cloneEditorDocumentSnapshot(admin);
     expect(cloned).toEqual(admin);
+    expect(cloned.subtitles.enabled).toBe(false);
     if (cloned.version !== 3 || cloned.renderSpec.version !== 2) {
       throw new Error("admin subtitle render spec was not cloned");
     }

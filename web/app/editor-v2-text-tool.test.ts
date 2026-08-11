@@ -70,12 +70,12 @@ describe("editor v2 text tool", () => {
 
   it("lets a hidden or visible channel layer be toggled from channel settings", () => {
     expect(editorSource).toContain("const toggleEditorChannelVisibility = () => {");
-    expect(editorSource).toContain('className="editor-channel-visibility-toggle"');
+    expect(editorSource).toContain('className="editor-visibility-toggle"');
     expect(editorSource).toContain('aria-pressed={renderOverlayLayout.visible.channel}');
     expect(editorSource).toContain('channel: visible');
     const styles = source("./editor-v2.css");
     expect(styles).toContain(
-      ".editor-v2-root .editor-channel-visibility-toggle",
+      ".editor-v2-root .editor-visibility-toggle",
     );
     expect(editorSource).toContain("forceVisible={overlayPreviewEnabled}");
     expect(editorSource).toContain(

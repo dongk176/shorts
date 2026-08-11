@@ -8,14 +8,19 @@ function source(path: string) {
 describe("admin editor subtitle layout", () => {
   const editorSource = source("./shorts-app.tsx");
 
-  it("shows the tool only for an administrator canary v3 caption template", () => {
+  it("shows the persistent tool only for an administrator canary v3 caption template", () => {
     expect(editorSource).toContain(
       'editorRelease.channel === "canary"\n    && editorRelease.documentVersion === 3',
     );
     expect(editorSource).toContain('{ id: "subtitle", label: "자막" }');
     expect(editorSource).toContain(
-      'tool.id !== "subtitle"\n              || (\n                captionTemplateEditorSpec\n                && subtitlesEnabled',
+      'tool.id !== "subtitle"\n              || captionTemplateEditorSpec',
     );
+    expect(editorSource).toContain("const toggleEditorSubtitles = useCallback(() => {");
+    expect(editorSource).toContain('aria-label={subtitlesEnabled ? "자막 끄기" : "자막 켜기"}');
+    expect(editorSource).toContain("subtitlesEnabledRef.current = enabled");
+    expect(editorSource).toContain("subtitlesEnabled: subtitlesEnabledRef.current");
+    expect(editorSource).toContain("다시 켜면 기존 문구와 위치·크기·색상 설정이 그대로 복원됩니다.");
     expect(editorSource).toContain(
       "item.subtitleTemplateId && !adminSubtitleLayoutEnabled",
     );
