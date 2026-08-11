@@ -8,7 +8,10 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 from .caption_templates import (
+    CAPTION_ACCENT,
+    CAPTION_FPS,
     caption_font_spec,
+    compile_caption_render_spec,
     create_caption_ass,
     prepare_caption_fonts,
     reflow_caption_cues_for_clips,
@@ -38,6 +41,7 @@ from .schemas import (
     TitleTextStyle,
     VideoAspectRatio,
 )
+from .subtitles import TranscriptWord
 
 CANVAS_WIDTH = 1080
 CANVAS_HEIGHT = 1920
@@ -279,6 +283,121 @@ def retime_editor_subtitles(document: EditorDocument) -> list[SubtitleSegment]:
             ))
         output_cursor += clip.source_end_seconds - clip.source_start_seconds
     return retimed
+
+
+def _editor_highlight_transcript_words(
+    segments: list[SubtitleSegment],
+) -> list[TranscriptWord]:
+    words: list[TranscriptWord] = []
+    for segment in sorted(segments, key=lambda item: (item.start, item.end)):
+        speech_start_frame = max(0, round(segment.start * CAPTION_FPS))
+        speech_end_frame = max(
+            speech_start_frame + 1,
+            round(segment.end * CAPTION_FPS),
+        )
+        available_frames = speech_end_frame - speech_start_frame
+        tokens = segment.text.split()
+        maximum_words = min(20, available_frames)
+        if len(tokens) > maximum_words:
+            tokens = (
+                [*tokens[: maximum_words - 1], " ".join(tokens[maximum_words - 1 :])]
+                if maximum_words > 1
+                else [" ".join(tokens)]
+            )
+        if not tokens or maximum_words < 1:
+            continue
+        weights = [max(1, len(token)) for token in tokens]
+        total_weight = sum(weights)
+        starts = [speech_start_frame]
+        consumed_weight = weights[0]
+        for index in range(1, len(tokens)):
+            remaining = len(tokens) - index
+            desired = speech_start_frame + round(
+                available_frames * consumed_weight / total_weight
+            )
+            starts.append(min(
+                speech_end_frame - remaining,
+                max(starts[-1] + 1, desired),
+            ))
+            consumed_weight += weights[index]
+        for index, token in enumerate(tokens):
+            start_frame = starts[index]
+            end_frame = starts[index + 1] if index + 1 < len(starts) else speech_end_frame
+            words.append(TranscriptWord(
+                text=token,
+                start=start_frame / CAPTION_FPS,
+                end=end_frame / CAPTION_FPS,
+                provider="editor-segment",
+                space_before=index > 0,
+            ))
+    return words
+
+
+def editor_highlight_caption_spec(
+    document: EditorDocument,
+) -> dict[str, object] | None:
+    words = _editor_highlight_transcript_words(document.subtitles.segments)
+    if not words:
+        return None
+    render_subtitles = (
+        document.render_spec.subtitles
+        if document.render_spec and document.render_spec.version == 2
+        else None
+    )
+    try:
+        return compile_caption_render_spec(
+            words,
+            template_id="highlight",
+            clip_start=0,
+            clip_end=(
+                document.video.timeline_end_seconds
+                - document.video.timeline_start_seconds
+            ),
+            video_aspect_ratio=document.video.aspect_ratio,
+            accent_color=(
+                render_subtitles.accent_color
+                if render_subtitles and render_subtitles.accent_color
+                else CAPTION_ACCENT
+            ),
+            font_id=(
+                render_subtitles.font_id
+                if render_subtitles and render_subtitles.font_id
+                else None
+            ),
+        )
+    except RenderError:
+        raise
+    except Exception as exc:
+        raise RenderError("일반 자막을 강조형으로 변환하지 못했습니다.") from exc
+
+
+def editor_highlight_subtitles_enabled(document: EditorDocument) -> bool:
+    return bool(
+        document.subtitles.enabled
+        and document.version == 3
+        and document.render_spec is not None
+        and document.render_spec.version == 2
+        and document.render_spec.subtitles is not None
+    )
+
+
+def editor_subtitle_render_mode(
+    document: EditorDocument,
+    caption_render_spec: dict[str, object] | None,
+) -> str:
+    """Choose one explicit subtitle renderer without silently changing styles."""
+    if not document.subtitles.enabled:
+        return "off"
+    if caption_render_spec is not None:
+        return "caption-template"
+    if editor_highlight_subtitles_enabled(document):
+        return "editor-highlight"
+    if document.version == 3:
+        # V3 documents are server-authored and must carry an authoritative
+        # subtitle render spec. Falling through to the old plain ASS renderer
+        # makes an unrelated, deprecated style appear in the final video.
+        return "invalid-v3"
+    return "legacy-v2"
 
 
 def retime_editor_caption_spec(
@@ -1637,7 +1756,12 @@ class EditorDocumentRenderer:
         next_image_index = 2
         caption_fonts_dir: Path | None = None
         subtitle_path: Path | None = None
-        if document.subtitles.enabled and caption_render_spec is not None:
+        subtitle_render_mode = editor_subtitle_render_mode(
+            document,
+            caption_render_spec,
+        )
+        if subtitle_render_mode == "caption-template":
+            assert caption_render_spec is not None
             rendered_caption_spec = retime_editor_caption_spec(
                 document,
                 caption_render_spec,
@@ -1651,7 +1775,23 @@ class EditorDocumentRenderer:
                     work_dir / "caption-fonts",
                     rendered_caption_spec,
                 )
-        elif document.subtitles.enabled:
+        elif subtitle_render_mode == "editor-highlight":
+            source_highlight_spec = editor_highlight_caption_spec(document)
+            rendered_caption_spec = (
+                retime_editor_caption_spec(document, source_highlight_spec)
+                if source_highlight_spec is not None
+                else None
+            )
+            if rendered_caption_spec is not None:
+                subtitle_path = create_caption_ass(
+                    rendered_caption_spec,
+                    assets_dir / "subtitles.ass",
+                )
+                caption_fonts_dir = prepare_caption_fonts(
+                    work_dir / "caption-fonts",
+                    rendered_caption_spec,
+                )
+        elif subtitle_render_mode == "legacy-v2":
             subtitle_style = editor_subtitle_style(document)
             subtitle_path = create_ass_subtitles(
                 retime_editor_subtitles(document),
@@ -1660,6 +1800,10 @@ class EditorDocumentRenderer:
                 output_path=assets_dir / "subtitles.ass",
                 margin_v=subtitle_style.margin_v,
                 font_size=subtitle_style.font_size,
+            )
+        elif subtitle_render_mode == "invalid-v3":
+            raise RenderError(
+                "편집 자막 렌더 설정이 없습니다. 영상을 다시 열어 자막을 저장해주세요."
             )
         subtitles_applied = False
 

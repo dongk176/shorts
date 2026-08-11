@@ -22,7 +22,11 @@ from .caption_templates import CAPTION_ACCENT, compile_caption_render_spec
 from .channel_thumbnail import download_channel_thumbnail
 from .comment_generator import CommentClipInput, CommentGenerator
 from .config import Settings
-from .editor_renderer import EditorDocumentRenderer, retime_editor_subtitles
+from .editor_renderer import (
+    EditorDocumentRenderer,
+    editor_subtitle_render_mode,
+    retime_editor_subtitles,
+)
 from .errors import (
     BotCheckError,
     CaptionCompileError,
@@ -2748,26 +2752,47 @@ class BatchWorker:
                 dict,
             ):
                 raise ValueError("원본 자막 렌더 정보를 찾을 수 없습니다.")
+            resolved_caption_render_spec = (
+                (
+                    editor_source["spec"]
+                    if captured_timeline_key
+                    and isinstance(
+                        editor_source := caption_render_spec.get("editorSource"),
+                        dict,
+                    )
+                    and isinstance(editor_source.get("spec"), dict)
+                    else caption_render_spec
+                )
+                if isinstance(caption_render_spec, dict)
+                else None
+            )
+            subtitle_render_mode = editor_subtitle_render_mode(
+                document,
+                resolved_caption_render_spec,
+            )
+            _log_event(
+                "editor_render_plan",
+                short_id=short_id,
+                document_version=document.version,
+                render_spec_version=(
+                    document.render_spec.version if document.render_spec else None
+                ),
+                template_id=document.template.id.value,
+                subtitle_render_mode=subtitle_render_mode,
+                subtitle_segment_count=len(document.subtitles.segments),
+                clip_count=len(document.video.clips),
+                channel_offset_x=document.overlays.offsets["channel"].x,
+                channel_offset_y=document.overlays.offsets["channel"].y,
+                channel_scale=document.overlays.scales["channel"],
+                layer_order=document.overlays.layer_order,
+            )
             output_path = self.editor_renderer.render(
                 clean_path=clean_path,
                 output_path=work_dir / "output.mp4",
                 document=document,
                 work_dir=work_dir,
                 channel_thumbnail_path=channel_thumbnail_path,
-                caption_render_spec=(
-                    (
-                        editor_source["spec"]
-                        if captured_timeline_key
-                        and isinstance(
-                            editor_source := caption_render_spec.get("editorSource"),
-                            dict,
-                        )
-                        and isinstance(editor_source.get("spec"), dict)
-                        else caption_render_spec
-                    )
-                    if isinstance(caption_render_spec, dict)
-                    else None
-                ),
+                caption_render_spec=resolved_caption_render_spec,
             )
             thumbnail_path = work_dir / "thumbnail.jpg"
             self._thumbnail(output_path, thumbnail_path, work_dir)

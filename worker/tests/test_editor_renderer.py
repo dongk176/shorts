@@ -24,8 +24,11 @@ from shorts_worker.editor_renderer import (
     create_editor_text_layer,
     create_editor_title_layer,
     editor_font_path,
+    editor_highlight_caption_spec,
+    editor_highlight_subtitles_enabled,
     editor_layer_order,
     editor_render_timeout_seconds,
+    editor_subtitle_render_mode,
     editor_subtitle_style,
     editor_video_frame,
     load_editor_font,
@@ -165,6 +168,96 @@ def test_admin_subtitle_layout_maps_to_ass_position_and_font_size() -> None:
 
     assert (legacy.margin_v, legacy.font_size) == (445, 48)
     assert (admin.margin_v, admin.font_size) == (705, 72)
+
+
+def test_general_v3_subtitles_compile_to_highlight_cues() -> None:
+    document = _document_v3_with_subtitle_layout(
+        offset_y=120,
+        scale=0.75,
+        accent_color="#16A34A",
+        cue_edits=[{"cueIndex": 0, "text": "수정한 강조 자막"}],
+    )
+
+    source = editor_highlight_caption_spec(document)
+    assert source is not None
+    assert source["templateId"] == "highlight"
+    assert source["timingLeadFrames"] == 7
+    assert source["style"]["accentColor"] == "#16A34A"
+    assert [
+        event["activeWordIndex"]
+        for cue in source["cues"]
+        for event in cue["events"]
+    ] == [0, 1, 0]
+
+    rendered = retime_editor_caption_spec(document, source)
+    assert rendered is not None
+    assert rendered["style"]["fontSize"] == 54
+    assert rendered["style"]["accentColor"] == "#16A34A"
+    assert [
+        word["text"]
+        for word in rendered["cues"][0]["words"]
+    ] == ["수정한", "강조", "자막"]
+    assert all(
+        rendered["cues"][index]["endFrame"]
+        <= rendered["cues"][index + 1]["startFrame"]
+        for index in range(len(rendered["cues"]) - 1)
+    )
+
+
+def test_general_highlight_subtitles_require_admin_word_timing_marker() -> None:
+    assert editor_highlight_subtitles_enabled(
+        _document_v3_with_subtitle_layout()
+    )
+    assert not editor_highlight_subtitles_enabled(_document_v3())
+    assert not editor_highlight_subtitles_enabled(_document())
+
+
+def test_v3_subtitles_never_fall_back_to_deprecated_plain_ass() -> None:
+    assert editor_subtitle_render_mode(
+        _document_v3_with_subtitle_layout(),
+        None,
+    ) == "editor-highlight"
+    assert editor_subtitle_render_mode(_document_v3(), None) == "invalid-v3"
+    assert editor_subtitle_render_mode(_document(), None) == "legacy-v2"
+
+
+def test_comment_capture_channel_offset_matches_saved_editor_pixels(
+    tmp_path: Path,
+) -> None:
+    value = json.loads(V3_FIXTURE.read_text())
+    value["template"] = {
+        "id": "comment-capture",
+        "customTemplateId": None,
+        "presetVersion": 3,
+        "snapshot": {"presetVersion": 3},
+    }
+    value["overlays"]["offsets"]["channel"] = {"x": 0, "y": 0}
+    value["renderSpec"]["channel"]["offsetX"] = 0
+    value["renderSpec"]["channel"]["offsetY"] = 0
+    baseline = EditorDocument.model_validate(value)
+    baseline_path = create_editor_channel_layer(
+        baseline,
+        tmp_path / "channel-baseline.png",
+        None,
+    )
+
+    value["overlays"]["offsets"]["channel"] = {"x": 0, "y": -165}
+    value["renderSpec"]["channel"]["offsetY"] = -165
+    moved = EditorDocument.model_validate(value)
+    moved_path = create_editor_channel_layer(
+        moved,
+        tmp_path / "channel-moved.png",
+        None,
+    )
+
+    with Image.open(baseline_path) as image:
+        baseline_box = image.getchannel("A").getbbox()
+    with Image.open(moved_path) as image:
+        moved_box = image.getchannel("A").getbbox()
+    assert baseline_box is not None
+    assert moved_box is not None
+    assert moved_box[1] - baseline_box[1] == -165
+    assert moved_box[3] - baseline_box[3] == -165
 
 
 def test_admin_caption_template_layout_scales_and_retimes_trusted_pop_spec() -> None:
@@ -1060,6 +1153,9 @@ def test_editor_document_cuts_and_renders_browser_playable_vertical_mp4(
     assert audio["codec_name"] == "aac"
     assert float(probe["format"]["duration"]) == pytest.approx(3.5, abs=0.2)
     assert output.stat().st_size > 10_000
+    subtitle_ass = tmp_path / "render-work" / "editor-assets" / "subtitles.ass"
+    assert subtitle_ass.is_file()
+    assert "첫 번째 조각" in subtitle_ass.read_text(encoding="utf-8")
 
 
 @pytest.mark.skipif(
@@ -1142,4 +1238,59 @@ def test_editor_document_v3_renders_at_authoritative_30fps(
     assert "Noto Sans CJK KR" not in subtitle_ass
     assert (
         tmp_path / "render-work-v3" / "caption-fonts" / "Pretendard-Bold.ttf"
+    ).is_file()
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
+def test_general_v3_subtitles_render_as_highlight_ass(tmp_path: Path) -> None:
+    timeline = tmp_path / "timeline-general-highlight.mp4"
+    _run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24",
+        "-f", "lavfi", "-i", "sine=frequency=330:sample_rate=16000",
+        "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-shortest", str(timeline),
+    ])
+    document = _document_v3_with_subtitle_layout(
+        offset_y=120,
+        scale=0.75,
+        accent_color="#16A34A",
+    )
+    renderer = EditorDocumentRenderer(Settings(
+        temp_dir=tmp_path / "temp-general-highlight",
+        ffmpeg_timeout_seconds=120,
+        ffmpeg_threads=2,
+        clean_clip_preset="ultrafast",
+        clean_clip_crf=28,
+    ))
+    clean = renderer.extract_sequence(
+        timeline_path=timeline,
+        output_path=tmp_path / "clean-general-highlight.mp4",
+        document=document,
+        work_dir=tmp_path / "cut-general-highlight",
+    )
+    output = renderer.render(
+        clean_path=clean,
+        output_path=tmp_path / "output-general-highlight.mp4",
+        document=document,
+        work_dir=tmp_path / "render-general-highlight",
+        channel_thumbnail_path=None,
+        caption_render_spec=None,
+    )
+
+    subtitle_ass = (
+        tmp_path / "render-general-highlight" / "editor-assets" / "subtitles.ass"
+    ).read_text(encoding="utf-8")
+    assert output.stat().st_size > 10_000
+    assert subtitle_ass.count("Dialogue: 0,") >= 2
+    assert r"\pos(" in subtitle_ass
+    assert r"\1c&H004AA316&" in subtitle_ass
+    assert (
+        tmp_path
+        / "render-general-highlight"
+        / "caption-fonts"
+        / "Pretendard-Bold.ttf"
     ).is_file()
