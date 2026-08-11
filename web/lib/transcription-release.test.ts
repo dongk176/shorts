@@ -41,6 +41,17 @@ describe("ElevenLabs transcription release", () => {
       featureEnabled: true,
       publicEnabled: true,
       isAdmin: false,
+      suitePublicEnabled: true,
+    }).policy).toBe(ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY);
+  });
+
+  it("admits a selected non-admin pilot before public promotion", () => {
+    expect(resolveElevenLabsTranscriptionAccess({
+      masterEnabled: true,
+      featureEnabled: true,
+      publicEnabled: false,
+      isAdmin: false,
+      pilotEnabled: true,
     }).policy).toBe(ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY);
   });
 

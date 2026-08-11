@@ -7,10 +7,20 @@ import { requireAdminUser } from "@/lib/admin";
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import {
+  EDITOR_SUBTITLE_EDITING_PUBLIC_FLAG_KEY,
   EDITOR_RENDERING_V2_FLAG_KEY,
   editorRenderingV2GlobalEnabled,
   editorRenderingV2MasterEnabled,
 } from "@/lib/editor-rendering-release";
+import {
+  ELEVENLABS_PUBLIC_COMPLIANCE_APPROVED_FLAG_KEY,
+  ELEVENLABS_TRANSCRIPTION_FLAG_KEY,
+  ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY,
+} from "@/lib/transcription-release";
+import {
+  SUBTITLE_TEMPLATES_FLAG_KEY,
+  SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY,
+} from "@/lib/subtitle-template-release";
 
 const adminPath = "/admin/easycutcutcutcutcutcut?tab=editor-releases";
 const uuidSchema = z.string().uuid();
@@ -88,13 +98,6 @@ export async function addEditorReleaseTester(emailValue: string) {
     `;
     const user = users[0];
     if (!user) throw new HttpError(404, "해당 이메일의 회원을 찾을 수 없습니다.");
-    if (!user.isAdmin) {
-      throw new HttpError(
-        400,
-        "관리자 계정만 신규 편집기 테스트 사용자로 등록할 수 있습니다.",
-        "EDITOR_RELEASE_TESTER_ADMIN_REQUIRED",
-      );
-    }
     await tx`
       insert into shorts_mvp.editor_release_testers (
         user_id,enabled,created_by_user_id
@@ -386,6 +389,142 @@ export async function promoteEditorRelease(releaseIdValue: string) {
   revalidatePath(adminPath);
 }
 
+export async function publishSubtitleSuite() {
+  const admin = await requireAdminUser();
+  if (
+    process.env.SUBTITLE_TEMPLATES_ENABLED?.trim().toLowerCase() !== "true"
+    || process.env.ELEVENLABS_TRANSCRIPTION_ENABLED?.trim().toLowerCase()
+      !== "true"
+  ) {
+    throw new HttpError(
+      409,
+      "자막 템플릿과 ElevenLabs 서버 마스터 스위치를 먼저 확인해 주세요.",
+      "SUBTITLE_SUITE_MASTER_DISABLED",
+    );
+  }
+  await getDb().begin(async (tx) => {
+    const states = await tx`
+      select state.stable_release_id,state.public_enabled,
+        release.status,release.subtitle_editing_capable
+      from shorts_mvp.editor_release_state state
+      join shorts_mvp.editor_releases release
+        on release.id=state.stable_release_id
+      where state.singleton=true
+      limit 1
+      for update of state,release
+    `;
+    const state = states[0];
+    if (
+      !state?.stableReleaseId
+      || !state.publicEnabled
+      || state.status !== "stable"
+      || state.subtitleEditingCapable !== true
+    ) {
+      throw new HttpError(
+        409,
+        "자막 편집 검증을 통과한 stable 릴리스를 먼저 승격해 주세요.",
+        "SUBTITLE_SUITE_STABLE_REQUIRED",
+      );
+    }
+    const releaseId = String(state.stableReleaseId);
+    const renderCounts = await tx`
+      select
+        count(*) filter (
+          where status in ('queued','rendering')
+        )::integer as active,
+        count(*) filter (where status='failed')::integer as failed
+      from shorts_mvp.editor_render_requests
+      where release_id=${releaseId}
+    `;
+    if (Number(renderCounts[0]?.active || 0) > 0) {
+      throw new HttpError(
+        409,
+        "일반 사용자 검증 렌더가 끝난 뒤 공개해 주세요.",
+        "SUBTITLE_SUITE_RENDER_ACTIVE",
+      );
+    }
+    if (Number(renderCounts[0]?.failed || 0) > 0) {
+      throw new HttpError(
+        409,
+        "실패한 자막 검증 렌더가 있어 공개할 수 없습니다.",
+        "SUBTITLE_SUITE_RENDER_FAILED",
+      );
+    }
+    const pilotEvidence = await tx`
+      select count(distinct j.id)::integer as verified_projects
+      from shorts_mvp.editor_render_requests request
+      join shorts_mvp.generated_shorts s on s.id=request.short_id
+      join shorts_mvp.video_jobs j on j.id=s.job_id
+      join shorts_mvp.editor_release_testers tester
+        on tester.user_id=j.user_id and tester.enabled=true
+      join shorts_mvp.app_users pilot_user
+        on pilot_user.id=j.user_id and pilot_user.is_admin=false
+      where request.release_id=${releaseId}
+        and request.status='succeeded'
+        and j.status='completed'
+        and j.transcription_policy='elevenlabs_primary_openai_fallback'
+    `;
+    const verifiedProjects = Number(
+      pilotEvidence[0]?.verifiedProjects || 0,
+    );
+    if (verifiedProjects < 3) {
+      throw new HttpError(
+        409,
+        `일반 사용자 프로젝트 3건 검증이 필요합니다. 현재 ${verifiedProjects}건입니다.`,
+        "SUBTITLE_SUITE_PILOT_INCOMPLETE",
+      );
+    }
+    const publicFlagKeys = [
+      EDITOR_SUBTITLE_EDITING_PUBLIC_FLAG_KEY,
+      ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY,
+      SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY,
+    ];
+    const requiredFlagKeys = [
+      EDITOR_RENDERING_V2_FLAG_KEY,
+      ELEVENLABS_TRANSCRIPTION_FLAG_KEY,
+      SUBTITLE_TEMPLATES_FLAG_KEY,
+      ELEVENLABS_PUBLIC_COMPLIANCE_APPROVED_FLAG_KEY,
+    ];
+    const requiredFlags = await tx`
+      select flag_key,enabled
+      from shorts_mvp.runtime_feature_flags
+      where flag_key=any(${requiredFlagKeys})
+      for update
+    `;
+    if (
+      requiredFlags.length !== requiredFlagKeys.length
+      || requiredFlags.some((flag) => flag.enabled !== true)
+    ) {
+      throw new HttpError(
+        409,
+        "자막 기능의 런타임 스위치와 ElevenLabs 공개 준수 승인을 먼저 확인해 주세요.",
+        "SUBTITLE_SUITE_APPROVAL_REQUIRED",
+      );
+    }
+    const updatedFlags = await tx`
+      update shorts_mvp.runtime_feature_flags
+      set enabled=true,updated_by_user_id=${admin.id}
+      where flag_key=any(${publicFlagKeys})
+      returning flag_key
+    `;
+    if (updatedFlags.length !== publicFlagKeys.length) {
+      throw new HttpError(
+        409,
+        "자막 공개 플래그 구성이 완전하지 않습니다.",
+        "SUBTITLE_SUITE_FLAGS_MISSING",
+      );
+    }
+    await recordAudit(
+      tx,
+      admin.id,
+      "editor_release.subtitle_suite_published",
+      releaseId,
+      { verifiedProjects, publicFlagKeys },
+    );
+  });
+  revalidatePath(adminPath);
+}
+
 export async function rollbackEditorRelease(modeValue: "previous" | "legacy") {
   const mode = z.enum(["previous", "legacy"]).parse(modeValue);
   const admin = await requireAdminUser();
@@ -399,6 +538,15 @@ export async function rollbackEditorRelease(modeValue: "previous" | "legacy") {
     `;
     const state = states[0];
     if (!state) throw new HttpError(503, "편집기 릴리스 상태를 찾을 수 없습니다.");
+    await tx`
+      update shorts_mvp.runtime_feature_flags
+      set enabled=false,updated_by_user_id=${admin.id}
+      where flag_key in (
+        ${EDITOR_SUBTITLE_EDITING_PUBLIC_FLAG_KEY},
+        ${ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY},
+        ${SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY}
+      )
+    `;
     const currentReleaseId = state.stableReleaseId
       ? String(state.stableReleaseId)
       : null;

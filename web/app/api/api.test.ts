@@ -826,6 +826,8 @@ describe("subtitle template edit isolation", () => {
         candidateUiVersion: 3,
         candidateDocumentVersion: 3,
         candidateStatus: "canary_active",
+        candidateSubtitleEditingCapable: true,
+        subtitleEditingPublicEnabled: false,
       }],
       [{
         id: shortId,
@@ -1031,6 +1033,8 @@ describe("subtitle template edit isolation", () => {
       candidateUiVersion: 3,
       candidateDocumentVersion: 3,
       candidateStatus: "canary_active",
+      candidateSubtitleEditingCapable: true,
+      subtitleEditingPublicEnabled: false,
     };
     const expiresAt = new Date(Date.now() + 60_000);
 
@@ -1121,6 +1125,8 @@ describe("subtitle template edit isolation", () => {
       candidateUiVersion: 3,
       candidateDocumentVersion: 3,
       candidateStatus: "canary_active",
+      candidateSubtitleEditingCapable: true,
+      subtitleEditingPublicEnabled: false,
     };
     const document = JSON.parse(readFileSync(
       new URL("../../../test-fixtures/editor-document-v3.json", import.meta.url),
@@ -1677,8 +1683,8 @@ describe("job API security and idempotency", () => {
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toMatchObject({
-      detail: "브랜드 컬러는 관리자 전용 기능입니다.",
-      code: "ADMIN_BRAND_COLOR_REQUIRED",
+      detail: "현재 계정에서는 브랜드 컬러를 사용할 수 없습니다.",
+      code: "SUBTITLE_SUITE_ACCESS_REQUIRED",
     });
   });
 

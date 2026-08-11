@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db";
 import {
-  adminSubtitleLayoutReleaseEnabled,
+  subtitleEditingReleaseEnabled,
   editorRenderingV2MasterEnabled,
   resolveEditorRelease,
 } from "@/lib/editor-rendering-release";
@@ -41,7 +41,7 @@ export default async function ProjectNumberPage({
       getDb(),
       session.userId,
     );
-    adminSubtitleLayoutEnabled = adminSubtitleLayoutReleaseEnabled(
+    adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(
       editorRelease,
     );
   }

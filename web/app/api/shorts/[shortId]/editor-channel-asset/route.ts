@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import {
-  adminSubtitleLayoutReleaseEnabled,
+  subtitleEditingReleaseEnabled,
   resolveEditorRelease,
 } from "@/lib/editor-rendering-release";
 import { apiError, HttpError } from "@/lib/http";
@@ -43,7 +43,7 @@ export async function GET(
     `;
     if (
       rows[0]?.subtitleTemplateId
-      && !adminSubtitleLayoutReleaseEnabled(
+      && !subtitleEditingReleaseEnabled(
         await resolveEditorRelease(db, session.userId),
       )
     ) {

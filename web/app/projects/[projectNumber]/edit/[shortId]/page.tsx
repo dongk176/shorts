@@ -4,7 +4,7 @@ import { parseCaptionRenderSpec } from "@/lib/caption-render-spec";
 import { getDb } from "@/lib/db";
 import { editorOverlayPreviewEnabled } from "@/lib/editor-overlay-preview-flag";
 import {
-  adminSubtitleLayoutReleaseEnabled,
+  subtitleEditingReleaseEnabled,
   editorRenderingV2MasterEnabled,
   resolveEditorRelease,
   type EditorReleaseAssignment,
@@ -34,6 +34,8 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
     releaseId: null,
     uiVersion: null,
     documentVersion: null,
+    subtitleEditingCapable: false,
+    subtitleEditingPublicEnabled: false,
   };
   if (editorRenderingV2MasterEnabled()) {
     const session = await requireMvpSession();
@@ -42,7 +44,7 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
       session.userId,
     );
   }
-  const adminSubtitleLayoutEnabled = adminSubtitleLayoutReleaseEnabled(
+  const adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(
     editorRelease,
   );
   const subtitleTemplateShortRows = await db`

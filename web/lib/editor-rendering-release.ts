@@ -1,6 +1,8 @@
 import type { Sql, TransactionSql } from "postgres";
 
 export const EDITOR_RENDERING_V2_FLAG_KEY = "editor_rendering_v2";
+export const EDITOR_SUBTITLE_EDITING_PUBLIC_FLAG_KEY =
+  "editor_subtitle_editing_public";
 
 export type EditorReleaseChannel = "legacy" | "stable" | "canary";
 
@@ -9,6 +11,8 @@ export type EditorReleaseAssignment = {
   releaseId: string | null;
   uiVersion: number | null;
   documentVersion: number | null;
+  subtitleEditingCapable: boolean;
+  subtitleEditingPublicEnabled: boolean;
 };
 
 export type RequestedEditorRelease = {
@@ -18,10 +22,17 @@ export type RequestedEditorRelease = {
   documentVersion: number;
 };
 
-export function adminSubtitleLayoutReleaseEnabled(
+export function subtitleEditingReleaseEnabled(
   release: EditorReleaseAssignment,
 ) {
-  return release.channel === "canary" && release.documentVersion === 3;
+  if (!release.subtitleEditingCapable || release.documentVersion !== 3) {
+    return false;
+  }
+  return release.channel === "canary"
+    || (
+      release.channel === "stable"
+      && release.subtitleEditingPublicEnabled
+    );
 }
 
 type EditorRenderingEnvironment = {
@@ -61,6 +72,8 @@ const legacyAssignment: EditorReleaseAssignment = {
   releaseId: null,
   uiVersion: null,
   documentVersion: null,
+  subtitleEditingCapable: false,
+  subtitleEditingPublicEnabled: false,
 };
 
 type EditorReleaseRow = {
@@ -73,10 +86,13 @@ type EditorReleaseRow = {
   stableUiVersion: number | null;
   stableDocumentVersion: number | null;
   stableStatus: string | null;
+  stableSubtitleEditingCapable: boolean;
   candidateReleaseId: string | null;
   candidateUiVersion: number | null;
   candidateDocumentVersion: number | null;
   candidateStatus: string | null;
+  candidateSubtitleEditingCapable: boolean;
+  subtitleEditingPublicEnabled: boolean;
 };
 
 function releaseAssignment(
@@ -84,9 +100,18 @@ function releaseAssignment(
   releaseId: string | null,
   uiVersion: number | null,
   documentVersion: number | null,
+  subtitleEditingCapable: boolean,
+  subtitleEditingPublicEnabled: boolean,
 ): EditorReleaseAssignment {
   if (!releaseId || !uiVersion || !documentVersion) return legacyAssignment;
-  return { channel, releaseId, uiVersion, documentVersion };
+  return {
+    channel,
+    releaseId,
+    uiVersion,
+    documentVersion,
+    subtitleEditingCapable,
+    subtitleEditingPublicEnabled,
+  };
 }
 
 export async function resolveEditorRelease(
@@ -107,13 +132,21 @@ export async function resolveEditorRelease(
       stable.ui_version as stable_ui_version,
       stable.document_version as stable_document_version,
       stable.status as stable_status,
+      coalesce(stable.subtitle_editing_capable,false)
+        as stable_subtitle_editing_capable,
       candidate.id as candidate_release_id,
       candidate.ui_version as candidate_ui_version,
       candidate.document_version as candidate_document_version,
-      candidate.status as candidate_status
+      candidate.status as candidate_status,
+      coalesce(candidate.subtitle_editing_capable,false)
+        as candidate_subtitle_editing_capable,
+      coalesce(subtitle_public.enabled,false)
+        as subtitle_editing_public_enabled
     from shorts_mvp.editor_release_state state
     left join shorts_mvp.runtime_feature_flags flag
       on flag.flag_key=${EDITOR_RENDERING_V2_FLAG_KEY}
+    left join shorts_mvp.runtime_feature_flags subtitle_public
+      on subtitle_public.flag_key=${EDITOR_SUBTITLE_EDITING_PUBLIC_FLAG_KEY}
     left join shorts_mvp.editor_release_testers tester
       on tester.user_id=${userId}
     left join shorts_mvp.app_users release_user
@@ -130,8 +163,10 @@ export async function resolveEditorRelease(
   if (!state) return legacyAssignment;
   if (
     state.canaryEnabled
-    && state.userIsAdmin
-    && (state.testerEnabled || emergencyTestUser)
+    && (
+      (state.userIsAdmin && (state.testerEnabled || emergencyTestUser))
+      || (state.testerEnabled && state.candidateSubtitleEditingCapable)
+    )
     && ["canary_ready", "canary_active", "approved"].includes(
       state.candidateStatus || "",
     )
@@ -141,6 +176,8 @@ export async function resolveEditorRelease(
       state.candidateReleaseId,
       Number(state.candidateUiVersion),
       Number(state.candidateDocumentVersion),
+      state.candidateSubtitleEditingCapable,
+      state.subtitleEditingPublicEnabled,
     );
   }
   if (
@@ -154,6 +191,8 @@ export async function resolveEditorRelease(
       state.stableReleaseId,
       Number(state.stableUiVersion),
       Number(state.stableDocumentVersion),
+      state.stableSubtitleEditingCapable,
+      state.subtitleEditingPublicEnabled,
     );
   }
   return legacyAssignment;
@@ -179,13 +218,18 @@ export async function resolveRequestedEditorRelease(
   }
   const rows = await db`
     select release.id,release.ui_version,release.document_version,release.status,
-      state.public_enabled,coalesce(flag.enabled,false) as runtime_enabled
+      release.subtitle_editing_capable,
+      state.public_enabled,coalesce(flag.enabled,false) as runtime_enabled,
+      coalesce(subtitle_public.enabled,false)
+        as subtitle_editing_public_enabled
     from shorts_mvp.editor_release_state state
     join shorts_mvp.editor_releases release on release.id in (
       state.stable_release_id,state.previous_stable_release_id
     )
     left join shorts_mvp.runtime_feature_flags flag
       on flag.flag_key=${EDITOR_RENDERING_V2_FLAG_KEY}
+    left join shorts_mvp.runtime_feature_flags subtitle_public
+      on subtitle_public.flag_key=${EDITOR_SUBTITLE_EDITING_PUBLIC_FLAG_KEY}
     where state.singleton=true and release.id=${requested.releaseId}
     limit 1
     for share of state
@@ -197,6 +241,8 @@ export async function resolveRequestedEditorRelease(
     status: string;
     publicEnabled: boolean;
     runtimeEnabled: boolean;
+    subtitleEditingCapable: boolean;
+    subtitleEditingPublicEnabled: boolean;
   } | undefined;
   if (
     !release
@@ -213,6 +259,8 @@ export async function resolveRequestedEditorRelease(
     release.id,
     Number(release.uiVersion),
     Number(release.documentVersion),
+    release.subtitleEditingCapable,
+    release.subtitleEditingPublicEnabled,
   );
 }
 

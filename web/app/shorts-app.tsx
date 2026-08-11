@@ -253,7 +253,10 @@ import {
   type EditorDraftRecord,
 } from "@/lib/editor-draft-store";
 import { editorVideoUrlRefreshDelay } from "@/lib/editor-video-url-refresh";
-import type { EditorReleaseAssignment } from "@/lib/editor-rendering-release";
+import {
+  subtitleEditingReleaseEnabled,
+  type EditorReleaseAssignment,
+} from "@/lib/editor-rendering-release";
 import { CURRENT_PRESET_TEMPLATE_SNAPSHOT } from "@/lib/edit-template-selection";
 import {
   EDITOR_VIDEO_MIN_CLIP_SECONDS,
@@ -1902,8 +1905,6 @@ function TemplatePicker({
   onSubtitleTemplateChange,
   subtitleCaptionPlacement,
   onSubtitleCaptionPlacementChange,
-  subtitleFontId,
-  onSubtitleFontChange,
   brandColorSelectionEnabled,
   brandColor,
   onBrandColorChange,
@@ -1925,8 +1926,6 @@ function TemplatePicker({
   onSubtitleTemplateChange: (value: SubtitleTemplateSelectionId | null) => void;
   subtitleCaptionPlacement: SubtitleCaptionPlacement;
   onSubtitleCaptionPlacementChange: (value: SubtitleCaptionPlacement) => void;
-  subtitleFontId: EditorFontId;
-  onSubtitleFontChange: (value: EditorFontId) => void;
   brandColorSelectionEnabled: boolean;
   brandColor: TemplatePresetColor;
   onBrandColorChange: (value: TemplatePresetColor) => void;
@@ -2039,11 +2038,11 @@ function TemplatePicker({
                     channelThumbnailUrl={channelThumbnailUrl}
                     brandColor={brandColor}
                     fullVerticalTitleBackgroundEnabled={brandColorSelectionEnabled}
-                    fontId={subtitleFontId}
+                    fontId={DEFAULT_EDITOR_FONT_ID}
                   />
                   <span className="mt-2.5 block text-center text-sm font-extrabold text-white">{option.name}</span>
                   <span className="mt-1 block text-center text-[11px] leading-4 text-neutral-400">{option.description}</span>
-                  <span className="mt-1.5 block text-center text-[10px] font-black text-[#ff9b8d]">자막 · 어드민</span>
+                  <span className="mt-1.5 block text-center text-[10px] font-black text-[#ff9b8d]">자막</span>
                 </button>
               );
             })}
@@ -2058,12 +2057,9 @@ function TemplatePicker({
       {settingsBelowRail && templateSettings}
       {subtitleTemplateSelectionEnabled && subtitleTemplateId && (
         <section aria-label="자막 위치" className="mt-4 rounded-xl border border-white/[.09] bg-white/[.025] p-3">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-extrabold text-white">자막 위치</h3>
-              <p className="mt-1 text-[11px] text-neutral-400">영상에 맞는 위치를 고르면 미리보기에 바로 반영돼요.</p>
-            </div>
-            <span className="shrink-0 text-[10px] font-bold text-[#7dd3fc]">어드민</span>
+          <div>
+            <h3 className="text-sm font-extrabold text-white">자막 위치</h3>
+            <p className="mt-1 text-[11px] text-neutral-400">영상에 맞는 위치를 고르면 미리보기에 바로 반영돼요.</p>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label="자막 위치 선택">
             {subtitleCaptionPositionOptions.map((position) => {
@@ -2089,22 +2085,6 @@ function TemplatePicker({
               );
             })}
           </div>
-        </section>
-      )}
-      {brandColorSelectionEnabled && subtitleTemplateId && (
-        <section aria-label="자막 글씨체" className="mt-4 rounded-xl border border-white/[.09] bg-white/[.025] p-3">
-          <div className="mb-3 flex items-end justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-extrabold text-white">자막 글씨체</h3>
-              <p className="mt-1 text-[11px] text-neutral-400">미리보기와 실제 렌더에 같은 폰트 파일을 사용합니다.</p>
-            </div>
-            <span className="shrink-0 text-[10px] font-bold text-[#7dd3fc]">어드민</span>
-          </div>
-          <EditorFontPicker
-            value={subtitleFontId}
-            onChange={onSubtitleFontChange}
-            options={editorFontOptions}
-          />
         </section>
       )}
       <SubtitlePositionGuide
@@ -3771,8 +3751,9 @@ function CommentTimelineEditor({
 }
 
 function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, wordTimedSubtitlesAvailable = false, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; wordTimedSubtitlesAvailable?: boolean; paidAccessBlocked?: boolean }) {
-  const adminSubtitleLayoutEnabled = editorRelease.channel === "canary"
-    && editorRelease.documentVersion === 3;
+  const adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(
+    editorRelease,
+  );
   const availableEditorFontOptions = adminSubtitleLayoutEnabled
     ? editorFontOptions
     : stableEditorFontOptions;
@@ -10261,9 +10242,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                       ? "팝형 자막"
                       : "강조형 자막"
                     : "강조형 자막"}</strong>
-                  <span className="rounded-full border border-[#ff715e]/35 bg-[#ff715e]/10 px-2 py-1 text-[10px] font-black text-[#ff9b8d]">
-                    관리자 전용
-                  </span>
+                  {editorRelease.channel === "canary" && <span className="rounded-full border border-[#ff715e]/35 bg-[#ff715e]/10 px-2 py-1 text-[10px] font-black text-[#ff9b8d]">
+                    테스트
+                  </span>}
                 </div>
                 <button
                   type="button"
@@ -11404,7 +11385,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                     </div>
                     <div className="short-result-actions">
                       {job.isExample || itemIsRerendering || subtitleEditorUnavailable
-                        ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : item.subtitleTemplateId ? item.captionRenderSpec ? "자막 템플릿 편집은 관리자 테스트에서만 지원합니다." : "이전 자막 형식은 새 편집기에서 지원하지 않습니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">{item.subtitleTemplateId ? "✎ 편집 준비 중" : "✎ 편집하기"}</button>
+                        ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : item.subtitleTemplateId ? item.captionRenderSpec ? "현재 편집기에서는 이 자막 영상을 편집할 수 없습니다." : "이전 자막 형식은 새 편집기에서 지원하지 않습니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">{item.subtitleTemplateId ? "✎ 편집 준비 중" : "✎ 편집하기"}</button>
                         : <Link
                             data-project-guide={item.id === guideEditShortId ? "edit" : undefined}
                             href={`/projects/${job.projectNumber}/edit/${item.id}`}
@@ -11431,7 +11412,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                     {subtitleEditorUnavailable && (
                       <p className="mt-2 text-center text-xs font-medium text-neutral-400">
                         {item.captionRenderSpec
-                          ? "자막 편집은 다음 단계에서 지원해요."
+                          ? "현재 편집기 릴리스에서는 이 자막을 편집할 수 없어요."
                           : "이전 자막 형식은 새 편집기에서 지원하지 않아요."}
                       </p>
                     )}
@@ -11755,7 +11736,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [templateId, setTemplateId] = useState<TemplateId>("comment-capture");
   const [subtitleTemplateId, setSubtitleTemplateId] = useState<SubtitleTemplateSelectionId | null>(null);
   const [subtitleCaptionPlacement, setSubtitleCaptionPlacement] = useState<SubtitleCaptionPlacement>("lower");
-  const [subtitleFontId, setSubtitleFontId] = useState<EditorFontId>(DEFAULT_EDITOR_FONT_ID);
   const [brandColor, setBrandColor] = useState<TemplatePresetColor>(SUBTITLE_TEMPLATE_BRAND_COLOR);
   const [customTemplateId, setCustomTemplateId] = useState<string | null>(null);
   const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
@@ -12216,7 +12196,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           grantedSeconds: number;
           validUntil: string | null;
         };
-      }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID(), ...(sourceRangeSelectionEnabled ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds } : {}), ...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId, subtitleCaptionPlacement, ...(brandColorSelectionEnabled ? { subtitleFontId } : {}) } : {}), ...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {}) }) });
+      }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID(), ...(sourceRangeSelectionEnabled ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds } : {}), ...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId, subtitleCaptionPlacement } : {}), ...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {}) }) });
       setShortsEventRewardAvailable(false);
       if (value.shortsThankYouEventReward.granted) {
         setShortsEventGrantedSeconds(
@@ -12457,8 +12437,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             subtitleTemplateId={subtitleTemplateId}
             subtitleCaptionPlacement={subtitleCaptionPlacement}
             onSubtitleCaptionPlacementChange={setSubtitleCaptionPlacement}
-            subtitleFontId={subtitleFontId}
-            onSubtitleFontChange={setSubtitleFontId}
             brandColorSelectionEnabled={brandColorSelectionEnabled}
             brandColor={brandColor}
             onBrandColorChange={setBrandColor}

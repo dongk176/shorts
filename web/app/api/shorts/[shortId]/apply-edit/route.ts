@@ -21,7 +21,7 @@ import {
   EDITOR_RENDER_SPEC_VERSION,
 } from "@/lib/editor-render-spec";
 import {
-  adminSubtitleLayoutReleaseEnabled,
+  subtitleEditingReleaseEnabled,
   resolveRequestedEditorRelease,
   type EditorReleaseAssignment,
   type RequestedEditorRelease,
@@ -201,12 +201,12 @@ async function applyEditorDocument({
   if (
     requestedDocument.version === 3
     && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
-    && release.channel !== "canary"
+    && !subtitleEditingReleaseEnabled(release)
   ) {
     throw new HttpError(
       403,
-      "자막 위치와 크기 조절은 관리자 편집기에서만 사용할 수 있습니다.",
-      "EDITOR_SUBTITLE_LAYOUT_ADMIN_ONLY",
+      "현재 편집기 릴리스에서는 자막 편집을 사용할 수 없습니다.",
+      "EDITOR_SUBTITLE_EDITING_DISABLED",
     );
   }
   const billing = await getBillingSummary(db, session.userId);
@@ -263,7 +263,7 @@ async function applyEditorDocument({
   }
   if (
     existing.subtitleTemplateId
-    && !adminSubtitleLayoutReleaseEnabled(release)
+    && !subtitleEditingReleaseEnabled(release)
   ) {
     throw new HttpError(
       409,
@@ -523,7 +523,7 @@ async function applyEditorDocument({
     }
     if (
       existing.subtitleTemplateId
-      && !adminSubtitleLayoutReleaseEnabled(lockedRelease)
+      && !subtitleEditingReleaseEnabled(lockedRelease)
     ) {
       throw new HttpError(
         409,
@@ -566,7 +566,7 @@ async function applyEditorDocument({
         and s.render_version=${document.baseRenderVersion}
         and (
           s.subtitle_template_id is null
-          or ${adminSubtitleLayoutReleaseEnabled(lockedRelease)}
+          or ${subtitleEditingReleaseEnabled(lockedRelease)}
         )
         and s.deleted_at is null and s.expires_at>clock_timestamp()
         and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null

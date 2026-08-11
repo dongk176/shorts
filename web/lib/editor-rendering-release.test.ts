@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  adminSubtitleLayoutReleaseEnabled,
+  subtitleEditingReleaseEnabled,
   editorRenderingV2Enabled,
   editorRenderingV2GlobalEnabled,
   editorRenderingV2MasterEnabled,
@@ -23,33 +23,50 @@ function releaseRow(overrides: Record<string, unknown> = {}) {
     stableUiVersion: null,
     stableDocumentVersion: null,
     stableStatus: null,
+    stableSubtitleEditingCapable: false,
     candidateReleaseId: null,
     candidateUiVersion: null,
     candidateDocumentVersion: null,
     candidateStatus: null,
+    candidateSubtitleEditingCapable: false,
+    subtitleEditingPublicEnabled: false,
     ...overrides,
   };
 }
 
 describe("editor release gate", () => {
-  it("enables subtitle layout only for a v3 canary assignment", () => {
-    expect(adminSubtitleLayoutReleaseEnabled({
+  it("enables subtitle editing only for a capable canary or published stable", () => {
+    expect(subtitleEditingReleaseEnabled({
       channel: "canary",
       releaseId,
       uiVersion: 3,
       documentVersion: 3,
+      subtitleEditingCapable: true,
+      subtitleEditingPublicEnabled: false,
     })).toBe(true);
-    expect(adminSubtitleLayoutReleaseEnabled({
+    expect(subtitleEditingReleaseEnabled({
       channel: "stable",
       releaseId,
       uiVersion: 3,
       documentVersion: 3,
+      subtitleEditingCapable: true,
+      subtitleEditingPublicEnabled: false,
     })).toBe(false);
-    expect(adminSubtitleLayoutReleaseEnabled({
+    expect(subtitleEditingReleaseEnabled({
+      channel: "stable",
+      releaseId,
+      uiVersion: 3,
+      documentVersion: 3,
+      subtitleEditingCapable: true,
+      subtitleEditingPublicEnabled: true,
+    })).toBe(true);
+    expect(subtitleEditingReleaseEnabled({
       channel: "canary",
       releaseId,
-      uiVersion: 2,
-      documentVersion: 2,
+      uiVersion: 3,
+      documentVersion: 3,
+      subtitleEditingCapable: false,
+      subtitleEditingPublicEnabled: true,
     })).toBe(false);
   });
 
@@ -84,6 +101,8 @@ describe("editor release gate", () => {
       releaseId: null,
       uiVersion: null,
       documentVersion: null,
+      subtitleEditingCapable: false,
+      subtitleEditingPublicEnabled: false,
     });
     expect(db).not.toHaveBeenCalled();
   });
@@ -116,6 +135,8 @@ describe("editor release gate", () => {
       releaseId,
       uiVersion: 2,
       documentVersion: 2,
+      subtitleEditingCapable: false,
+      subtitleEditingPublicEnabled: false,
     });
   });
 
@@ -139,6 +160,8 @@ describe("editor release gate", () => {
       releaseId,
       uiVersion: 3,
       documentVersion: 3,
+      subtitleEditingCapable: false,
+      subtitleEditingPublicEnabled: false,
     });
 
     const ordinaryDb = vi.fn().mockResolvedValue([releaseRow({
@@ -168,6 +191,28 @@ describe("editor release gate", () => {
       userId,
       { EDITOR_RENDERING_V2_ENABLED: "true" },
     )).resolves.toMatchObject({ channel: "legacy" });
+  });
+
+  it("admits a non-administrator tester only to a subtitle-capable candidate", async () => {
+    const db = vi.fn().mockResolvedValue([releaseRow({
+      canaryEnabled: true,
+      testerEnabled: true,
+      userIsAdmin: false,
+      candidateReleaseId: releaseId,
+      candidateUiVersion: 3,
+      candidateDocumentVersion: 3,
+      candidateStatus: "canary_active",
+      candidateSubtitleEditingCapable: true,
+    })]);
+    await expect(resolveEditorRelease(
+      db as never,
+      userId,
+      { EDITOR_RENDERING_V2_ENABLED: "true" },
+    )).resolves.toMatchObject({
+      channel: "canary",
+      releaseId,
+      subtitleEditingCapable: true,
+    });
   });
 
   it("allows an administrator emergency env tester only when a candidate is active", async () => {
@@ -230,6 +275,8 @@ describe("editor release gate", () => {
       releaseId,
       uiVersion: 2,
       documentVersion: 2,
+      subtitleEditingCapable: false,
+      subtitleEditingPublicEnabled: false,
     });
     await expect(editorRenderingV2Enabled(
       db as never,
@@ -266,6 +313,8 @@ describe("editor release gate", () => {
         status: "stable",
         publicEnabled: true,
         runtimeEnabled: true,
+        subtitleEditingCapable: false,
+        subtitleEditingPublicEnabled: false,
       }]);
 
     await expect(resolveRequestedEditorRelease(
@@ -286,6 +335,8 @@ describe("editor release gate", () => {
       releaseId: previousReleaseId,
       uiVersion: 2,
       documentVersion: 2,
+      subtitleEditingCapable: false,
+      subtitleEditingPublicEnabled: false,
     });
   });
 
@@ -307,6 +358,8 @@ describe("editor release gate", () => {
         status: "rolled_back",
         publicEnabled: true,
         runtimeEnabled: true,
+        subtitleEditingCapable: false,
+        subtitleEditingPublicEnabled: false,
       }]);
 
     await expect(resolveRequestedEditorRelease(

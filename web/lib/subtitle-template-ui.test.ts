@@ -54,27 +54,29 @@ describe("subtitle template UI isolation", () => {
     expect(shortsAppSource).not.toContain('whitespace-nowrap text-[9px]');
   });
 
-  it("omits the new request field unless capability and selection are both present", () => {
+  it("keeps creation simple by using the default subtitle font", () => {
     expect(shortsAppSource).toContain(
-      "...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId, subtitleCaptionPlacement, ...(brandColorSelectionEnabled ? { subtitleFontId } : {}) } : {})",
+      "...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId, subtitleCaptionPlacement } : {})",
     );
-    expect(shortsAppSource).toContain(
-      "{brandColorSelectionEnabled && subtitleTemplateId && (",
-    );
+    expect(shortsAppSource).toContain("fontId={DEFAULT_EDITOR_FONT_ID}");
+    expect(shortsAppSource).not.toContain("subtitleFontId");
+    expect(shortsAppSource).not.toContain('aria-label="자막 글씨체"');
     expect(shortsAppSource).toContain(
       "...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {})",
     );
   });
 
-  it("keeps generated-caption editing behind the admin canary capability", () => {
+  it("keeps generated-caption editing behind the release capability", () => {
     expect(shortsAppSource).toContain('setTemplateId("dark-minimal")');
-    expect(shortsAppSource).toContain("자막 편집은 다음 단계에서 지원해요.");
+    expect(shortsAppSource).toContain(
+      "현재 편집기 릴리스에서는 이 자막을 편집할 수 없어요.",
+    );
     expect(shortsAppSource).toContain(
       "const subtitleEditorUnavailable = Boolean(",
     );
     expect(shortsAppSource).toContain("|| !item.captionRenderSpec");
     expect(projectPageSource).toContain(
-      "adminSubtitleLayoutReleaseEnabled",
+      "subtitleEditingReleaseEnabled",
     );
     expect(projectPageSource).toContain(
       "adminSubtitleLayoutEnabled={adminSubtitleLayoutEnabled}",

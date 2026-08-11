@@ -51,8 +51,7 @@ export default async function TemplatesPage() {
     ]);
     personalTemplates = templateRows.map(customTemplateFromRow);
     canUseCustomTemplates = billingSupportsCustomTemplates(billing);
-    adminPresetNamesEnabled = subtitleTemplateAccess.enabled
-      && subtitleTemplateAccess.isAdmin;
+    adminPresetNamesEnabled = subtitleTemplateAccess.enabled;
     if (favoriteRows[0]) {
       initialFavoriteTemplateKeys = resolveStoredFavoriteTemplateKeys(favoriteRows[0].templateKeys);
     }

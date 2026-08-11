@@ -185,7 +185,12 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     ? await Promise.all([
         db`
           select stable_release_id,previous_stable_release_id,
-            candidate_release_id,public_enabled,canary_enabled
+            candidate_release_id,public_enabled,canary_enabled,
+            coalesce((
+              select enabled
+              from shorts_mvp.runtime_feature_flags
+              where flag_key='editor_subtitle_editing_public'
+            ),false) as subtitle_suite_public_enabled
           from shorts_mvp.editor_release_state
           where singleton=true
           limit 1
@@ -193,6 +198,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         db`
           select id,git_sha,ui_version,document_version,
             worker_image_digest,production_job_definition_arn,status,
+            subtitle_editing_capable,
             created_at,staging_verified_at,canary_started_at,promoted_at
           from shorts_mvp.editor_releases
           order by created_at desc
@@ -594,6 +600,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     gitSha: String(row.gitSha),
     uiVersion: Number(row.uiVersion),
     documentVersion: Number(row.documentVersion),
+    subtitleEditingCapable: Boolean(row.subtitleEditingCapable),
     workerImageDigest: String(row.workerImageDigest),
     productionJobDefinitionArn: String(row.productionJobDefinitionArn),
     status: String(row.status),
@@ -699,6 +706,9 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           globalEnvironmentEnabled={editorRenderingV2GlobalEnabled()}
           publicEnabled={Boolean(editorReleaseState?.publicEnabled)}
           canaryEnabled={Boolean(editorReleaseState?.canaryEnabled)}
+          subtitleSuitePublicEnabled={Boolean(
+            editorReleaseState?.subtitleSuitePublicEnabled,
+          )}
           stableReleaseId={editorReleaseState?.stableReleaseId
             ? String(editorReleaseState.stableReleaseId)
             : null}

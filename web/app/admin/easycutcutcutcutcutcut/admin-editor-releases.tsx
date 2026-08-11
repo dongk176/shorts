@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import {
   addEditorReleaseTester,
   pauseEditorReleaseCanary,
+  publishSubtitleSuite,
   promoteEditorRelease,
   recordEditorReleaseCanaryCheck,
   removeEditorReleaseTester,
@@ -16,6 +17,7 @@ export type AdminEditorRelease = {
   gitSha: string;
   uiVersion: number;
   documentVersion: number;
+  subtitleEditingCapable: boolean;
   workerImageDigest: string;
   productionJobDefinitionArn: string;
   status: string;
@@ -53,6 +55,7 @@ type Props = {
   globalEnvironmentEnabled: boolean;
   publicEnabled: boolean;
   canaryEnabled: boolean;
+  subtitleSuitePublicEnabled: boolean;
   stableReleaseId: string | null;
   previousStableReleaseId: string | null;
   candidateReleaseId: string | null;
@@ -119,6 +122,7 @@ export function AdminEditorReleases({
   globalEnvironmentEnabled,
   publicEnabled,
   canaryEnabled,
+  subtitleSuitePublicEnabled,
   stableReleaseId,
   previousStableReleaseId,
   candidateReleaseId,
@@ -132,6 +136,7 @@ export function AdminEditorReleases({
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [pending, startTransition] = useTransition();
   const candidate = releases.find((release) => release.id === candidateReleaseId);
+  const stable = releases.find((release) => release.id === stableReleaseId);
   const candidateStats = renderStats.find(
     (item) => item.releaseId === candidateReleaseId,
   );
@@ -257,6 +262,17 @@ export function AdminEditorReleases({
           })}
           className="rounded-xl border border-amber-300/30 bg-amber-400/10 px-4 py-2.5 text-sm font-bold text-amber-100 disabled:opacity-40"
         >직전 Stable 롤백</button>}
+        {publicEnabled && stable?.subtitleEditingCapable && <button
+          type="button"
+          disabled={pending || subtitleSuitePublicEnabled}
+          onClick={() => setConfirmation({
+            title: "검증된 자막 기능을 모든 사용자에게 공개할까요?",
+            description: "일반 사용자 프로젝트 3건, 자막 렌더 상태, ElevenLabs 공개 준수 승인을 서버에서 다시 확인한 뒤 자막 편집·전사·템플릿을 함께 공개합니다.",
+            confirmLabel: "자막 기능 공개",
+            action: publishSubtitleSuite,
+          })}
+          className="rounded-xl bg-sky-300 px-4 py-2.5 text-sm font-black text-sky-950 disabled:opacity-40"
+        >{subtitleSuitePublicEnabled ? "자막 기능 공개됨" : "자막 기능 전체 공개"}</button>}
       </div>
       {canaryEnabled && candidate && !promotionReady && <p className="mt-3 text-xs leading-5 text-amber-100/80">
         모든 격리·운영 카나리 검사가 통과하고 성공 렌더가 1건 이상이며,
@@ -332,7 +348,7 @@ export function AdminEditorReleases({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <strong className="text-sm text-white">{release.gitSha.slice(0, 12)}</strong>
-                  <span className="ml-2 text-xs text-white/50">UI {release.uiVersion} · 문서 {release.documentVersion}</span>
+                  <span className="ml-2 text-xs text-white/50">UI {release.uiVersion} · 문서 {release.documentVersion}{release.subtitleEditingCapable ? " · 자막 공개 검증" : ""}</span>
                 </div>
                 <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-bold text-white/75">{statusLabel(release.status)}</span>
               </div>

@@ -19,7 +19,6 @@ import {
 } from "@/lib/job-dispatch";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { apiError, HttpError } from "@/lib/http";
-import { editorFontIds } from "@/lib/editor-fonts";
 import { getInitialJobBackend } from "@/lib/job-backend";
 import {
   assertJobCreationAllowed,
@@ -69,7 +68,6 @@ const schema = z.object({
   rangeEndSeconds: z.number().finite().positive().optional(),
   subtitleTemplateId: z.enum(subtitleTemplateCreationIds).optional(),
   subtitleCaptionPlacement: z.enum(subtitleCaptionPlacements).optional(),
-  subtitleFontId: z.enum(editorFontIds).optional(),
   brandColor: z.enum(templatePresetColors).optional(),
 });
 
@@ -84,9 +82,6 @@ export async function POST(request: Request) {
     const input = schema.parse(await request.json());
     if (input.subtitleCaptionPlacement && !input.subtitleTemplateId) {
       throw new HttpError(400, "자막 위치는 자막 템플릿과 함께 선택해 주세요.");
-    }
-    if (input.subtitleFontId && !input.subtitleTemplateId) {
-      throw new HttpError(400, "자막 글씨체는 자막 템플릿과 함께 선택해 주세요.");
     }
     if (
       !input.subtitleTemplateId
@@ -199,31 +194,24 @@ export async function POST(request: Request) {
           "영상 구간 선택 기능이 일시 중지되었습니다. 링크를 다시 확인해 주세요.",
         );
       }
-      let subtitleTemplateIsAdmin = false;
-      if (input.subtitleTemplateId || input.brandColor || input.subtitleFontId) {
+      let subtitleTemplateUsesEnhancedTiming = false;
+      if (input.subtitleTemplateId || input.brandColor) {
         const subtitleTemplateAccess = await lockSubtitleTemplateAccess(
           tx,
           session.userId,
         );
-        subtitleTemplateIsAdmin = subtitleTemplateAccess.isAdmin;
+        subtitleTemplateUsesEnhancedTiming = subtitleTemplateAccess.enabled;
         if (input.subtitleTemplateId && !subtitleTemplateAccess.enabled) {
           throw new HttpError(
             409,
             "현재 계정에서는 자막 템플릿 테스트를 사용할 수 없습니다.",
           );
         }
-        if (input.brandColor && (!subtitleTemplateAccess.enabled || !subtitleTemplateAccess.isAdmin)) {
+        if (input.brandColor && !subtitleTemplateAccess.enabled) {
           throw new HttpError(
             403,
-            "브랜드 컬러는 관리자 전용 기능입니다.",
-            "ADMIN_BRAND_COLOR_REQUIRED",
-          );
-        }
-        if (input.subtitleFontId && (!subtitleTemplateAccess.enabled || !subtitleTemplateAccess.isAdmin)) {
-          throw new HttpError(
-            403,
-            "자막 글씨체 선택은 관리자 전용 기능입니다.",
-            "ADMIN_SUBTITLE_FONT_REQUIRED",
+            "현재 계정에서는 브랜드 컬러를 사용할 수 없습니다.",
+            "SUBTITLE_SUITE_ACCESS_REQUIRED",
           );
         }
       }
@@ -247,18 +235,18 @@ export async function POST(request: Request) {
           "브랜드 컬러 테스트 작업을 안전한 전용 워커에 연결하지 못했습니다.",
         );
       }
-      const usesAdminTemplateCandidate = Boolean(
-        input.subtitleTemplateId || input.brandColor || input.subtitleFontId,
+      const usesSubtitleSuiteCandidate = Boolean(
+        input.subtitleTemplateId || input.brandColor,
       );
-      const transcriptionAccess = usesAdminTemplateCandidate
+      const transcriptionAccess = usesSubtitleSuiteCandidate
         ? null
         : await lockElevenLabsTranscriptionAccess(tx, session.userId);
-      const transcriptionPolicy = usesAdminTemplateCandidate
+      const transcriptionPolicy = usesSubtitleSuiteCandidate
         ? ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY
         : transcriptionAccess!.policy;
       const dispatchTarget = executionBackend !== "aws_batch"
         ? null
-        : usesAdminTemplateCandidate
+        : usesSubtitleSuiteCandidate
           ? subtitleTemplatesDispatchTarget()
           : transcriptionAccess!.enabled
           ? elevenLabsTranscriptionDispatchTarget()
@@ -315,8 +303,8 @@ export async function POST(request: Request) {
             resolvedVideoAspectRatio,
             input.brandColor,
             input.subtitleCaptionPlacement ?? "lower",
-            input.subtitleFontId,
-            subtitleTemplateIsAdmin
+            undefined,
+            subtitleTemplateUsesEnhancedTiming
               ? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES
               : STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
           )

@@ -48,7 +48,7 @@ export async function createYoutubeAnalysis(
     analysisId: String(rows[0].id),
     sourceRangeSelectionEnabled,
     subtitleTemplateSelectionEnabled: subtitleTemplateAccess.enabled,
-    brandColorSelectionEnabled: subtitleTemplateAccess.enabled && subtitleTemplateAccess.isAdmin,
+    brandColorSelectionEnabled: subtitleTemplateAccess.enabled,
     expectedShortCount: expectedShortCount(metadata.durationSeconds),
   };
 }
@@ -73,7 +73,7 @@ export async function getYoutubeAnalysis(session: MvpSession, analysisId: string
     analysisId: String(rows[0].id),
     sourceRangeSelectionEnabled: rows[0].sourceRangeSelectionEnabled === true,
     subtitleTemplateSelectionEnabled: subtitleTemplateAccess.enabled,
-    brandColorSelectionEnabled: subtitleTemplateAccess.enabled && subtitleTemplateAccess.isAdmin,
+    brandColorSelectionEnabled: subtitleTemplateAccess.enabled,
     videoId: String(rows[0].youtubeVideoId),
     normalizedUrl: String(rows[0].youtubeUrl),
     title: String(rows[0].videoTitle),

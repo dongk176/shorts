@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import {
-  adminSubtitleLayoutReleaseEnabled,
+  subtitleEditingReleaseEnabled,
   resolveEditorRelease,
 } from "@/lib/editor-rendering-release";
 import { apiError, HttpError } from "@/lib/http";
@@ -34,7 +34,7 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
     if (!rows[0]) throw new Error("편집용 영상을 찾을 수 없습니다.");
     if (
       rows[0].subtitleTemplateId
-      && !adminSubtitleLayoutReleaseEnabled(
+      && !subtitleEditingReleaseEnabled(
         await resolveEditorRelease(db, session.userId),
       )
     ) {

@@ -1,8 +1,14 @@
 import type { Sql, TransactionSql } from "postgres";
+import {
+  resolveEditorRelease,
+  subtitleEditingReleaseEnabled,
+} from "@/lib/editor-rendering-release";
 
 export const ELEVENLABS_TRANSCRIPTION_FLAG_KEY = "elevenlabs_transcription";
 export const ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY =
   "elevenlabs_transcription_public";
+export const ELEVENLABS_PUBLIC_COMPLIANCE_APPROVED_FLAG_KEY =
+  "elevenlabs_public_compliance_approved";
 
 export const OPENAI_STABLE_TRANSCRIPTION_POLICY = "openai_stable";
 export const ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY =
@@ -33,6 +39,8 @@ export type ElevenLabsTranscriptionAccess = {
   featureEnabled: boolean;
   publicEnabled: boolean;
   isAdmin: boolean;
+  pilotEnabled: boolean;
+  suitePublicEnabled: boolean;
   policy: TranscriptionPolicy;
 };
 
@@ -45,12 +53,22 @@ export function resolveElevenLabsTranscriptionAccess(input: {
   featureEnabled: boolean;
   publicEnabled: boolean;
   isAdmin: boolean;
+  pilotEnabled?: boolean;
+  suitePublicEnabled?: boolean;
 }): ElevenLabsTranscriptionAccess {
+  const pilotEnabled = input.pilotEnabled === true;
+  const suitePublicEnabled = input.suitePublicEnabled === true;
   const enabled = input.masterEnabled
     && input.featureEnabled
-    && (input.publicEnabled || input.isAdmin);
+    && (
+      input.isAdmin
+      || pilotEnabled
+      || (input.publicEnabled && suitePublicEnabled)
+    );
   return {
     ...input,
+    pilotEnabled,
+    suitePublicEnabled,
     enabled,
     policy: enabled
       ? ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY
@@ -61,6 +79,7 @@ export function resolveElevenLabsTranscriptionAccess(input: {
 function accessFromRows(
   flagRows: Array<{ flagKey?: unknown; enabled?: unknown }>,
   adminRows: Array<{ isAdmin?: unknown }>,
+  release: Awaited<ReturnType<typeof resolveEditorRelease>>,
 ) {
   const flags = new Map(flagRows.map((row) => [String(row.flagKey || ""), row.enabled === true]));
   return resolveElevenLabsTranscriptionAccess({
@@ -68,6 +87,10 @@ function accessFromRows(
     featureEnabled: flags.get(ELEVENLABS_TRANSCRIPTION_FLAG_KEY) === true,
     publicEnabled: flags.get(ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY) === true,
     isAdmin: adminRows[0]?.isAdmin === true,
+    pilotEnabled: release.channel === "canary"
+      && subtitleEditingReleaseEnabled(release),
+    suitePublicEnabled: release.channel === "stable"
+      && subtitleEditingReleaseEnabled(release),
   });
 }
 
@@ -82,6 +105,8 @@ async function readAccess(
       featureEnabled: false,
       publicEnabled: false,
       isAdmin: false,
+      pilotEnabled: false,
+      suitePublicEnabled: false,
     });
   }
   const flagRows = lock ? await db`
@@ -107,7 +132,8 @@ async function readAccess(
     select is_admin from shorts_mvp.app_users
     where id=${userId} limit 1
   `;
-  return accessFromRows(flagRows, adminRows);
+  const release = await resolveEditorRelease(db, userId);
+  return accessFromRows(flagRows, adminRows, release);
 }
 
 export async function getElevenLabsTranscriptionAccess(

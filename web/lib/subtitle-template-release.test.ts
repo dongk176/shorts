@@ -34,4 +34,31 @@ describe("subtitle template release", () => {
       isAdmin: true,
     }).enabled).toBe(false);
   });
+
+  it("requires a capable stable release before the public flag admits members", () => {
+    expect(resolveSubtitleTemplateAccess({
+      masterEnabled: true,
+      featureEnabled: true,
+      publicEnabled: true,
+      isAdmin: false,
+      suitePublicEnabled: false,
+    }).enabled).toBe(false);
+    expect(resolveSubtitleTemplateAccess({
+      masterEnabled: true,
+      featureEnabled: true,
+      publicEnabled: true,
+      isAdmin: false,
+      suitePublicEnabled: true,
+    }).enabled).toBe(true);
+  });
+
+  it("admits a selected non-admin pilot before public promotion", () => {
+    expect(resolveSubtitleTemplateAccess({
+      masterEnabled: true,
+      featureEnabled: true,
+      publicEnabled: false,
+      isAdmin: false,
+      pilotEnabled: true,
+    }).enabled).toBe(true);
+  });
 });

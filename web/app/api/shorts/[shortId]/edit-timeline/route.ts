@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import {
-  adminSubtitleLayoutReleaseEnabled,
+  subtitleEditingReleaseEnabled,
   resolveEditorRelease,
 } from "@/lib/editor-rendering-release";
 import { apiError, HttpError } from "@/lib/http";
@@ -42,7 +42,7 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
     if (!rows[0]) throw new HttpError(404, "이 쇼츠에는 편집 가능한 영상이 없습니다.");
     if (
       rows[0].subtitleTemplateId
-      && !adminSubtitleLayoutReleaseEnabled(
+      && !subtitleEditingReleaseEnabled(
         await resolveEditorRelease(db, session.userId),
       )
     ) {
