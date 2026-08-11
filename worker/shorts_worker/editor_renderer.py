@@ -267,6 +267,35 @@ def editor_video_frame(
     return EditorVideoFrame(x=x, y=y, width=width, height=height)
 
 
+def _editor_video_input_filter(
+    document: EditorDocument,
+    frame: EditorVideoFrame,
+    fps: float,
+    caption_render_spec: dict[str, object] | None = None,
+) -> str:
+    prefix = f"[0:v]setpts=PTS-STARTPTS,fps={fps:.3f},"
+    if (
+        document.version == 3
+        and document.template.id is TemplateId.COMMENT_CAPTURE
+        and document.template.custom_template_id is None
+        and document.video.aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+        and caption_render_spec is None
+    ):
+        # The V3 browser preview reserves a 4:5 comment frame but keeps an
+        # original 9:16 source fully visible with object-contain and black bars.
+        # Preserve that exact fit when composing the final video.
+        geometry = (
+            f"scale={frame.width}:{frame.height}:force_original_aspect_ratio=decrease,"
+            f"pad={frame.width}:{frame.height}:(ow-iw)/2:(oh-ih)/2:color=black,"
+        )
+    else:
+        geometry = (
+            f"scale={frame.width}:{frame.height}:force_original_aspect_ratio=increase,"
+            f"crop={frame.width}:{frame.height},"
+        )
+    return f"{prefix}{geometry}format=rgba[video_layer]"
+
+
 def retime_editor_subtitles(document: EditorDocument) -> list[SubtitleSegment]:
     retimed: list[SubtitleSegment] = []
     output_cursor = 0.0
@@ -1746,10 +1775,11 @@ class EditorDocumentRenderer:
             f"[1:v]setpts=PTS-STARTPTS,scale={CANVAS_WIDTH}:{CANVAS_HEIGHT},"
             f"fps={fps:.3f},"
             "format=rgba[scene0]",
-            (
-                f"[0:v]setpts=PTS-STARTPTS,fps={fps:.3f},"
-                f"scale={frame.width}:{frame.height}:force_original_aspect_ratio=increase,"
-                f"crop={frame.width}:{frame.height},format=rgba[video_layer]"
+            _editor_video_input_filter(
+                document,
+                frame,
+                fps,
+                caption_render_spec,
             ),
         ]
         current_label = "scene0"

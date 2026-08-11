@@ -16,6 +16,7 @@ from shorts_worker.editor_renderer import (
     EditorLayerAsset,
     _clamp_centered_layer_position,
     _draw_styled_title_content,
+    _editor_video_input_filter,
     _prepare_editor_layer_asset,
     _timed_overlay_enable_expression,
     _timed_overlay_input_filter,
@@ -40,6 +41,7 @@ from shorts_worker.schemas import (
     EditorDocument,
     EditorFontId,
     EditorTextOverlay,
+    TemplateId,
     VideoAspectRatio,
 )
 from shorts_worker.subtitles import TranscriptWord
@@ -628,6 +630,49 @@ def test_full_vertical_caption_editor_draws_brand_background_on_both_title_rows(
         for previous, current in zip(accent_rows, accent_rows[1:], strict=False)
     )
     assert row_groups == 2
+
+
+def test_v3_full_vertical_comment_video_uses_preview_contain_fit() -> None:
+    document = _document_v3()
+    document.template.id = TemplateId.COMMENT_CAPTURE
+    document.video.aspect_ratio = VideoAspectRatio.FULL_VERTICAL
+    frame = editor_video_frame(document)
+
+    value = _editor_video_input_filter(document, frame, 30)
+
+    assert "force_original_aspect_ratio=decrease" in value
+    assert f"pad={frame.width}:{frame.height}" in value
+    assert "crop=" not in value
+
+
+def test_v2_full_vertical_comment_video_keeps_existing_cover_fit() -> None:
+    document = _document()
+    document.template.id = TemplateId.COMMENT_CAPTURE
+    document.video.aspect_ratio = VideoAspectRatio.FULL_VERTICAL
+    frame = editor_video_frame(document)
+
+    value = _editor_video_input_filter(document, frame, 30)
+
+    assert "force_original_aspect_ratio=increase" in value
+    assert f"crop={frame.width}:{frame.height}" in value
+    assert "pad=" not in value
+
+
+def test_v3_custom_or_caption_comment_video_keeps_preview_cover_fit() -> None:
+    document = _document_v3()
+    document.template.id = TemplateId.COMMENT_CAPTURE
+    document.template.custom_template_id = "00000000-0000-4000-8000-000000000001"
+    document.video.aspect_ratio = VideoAspectRatio.FULL_VERTICAL
+    frame = editor_video_frame(document)
+
+    custom_value = _editor_video_input_filter(document, frame, 30)
+    document.template.custom_template_id = None
+    caption_value = _editor_video_input_filter(document, frame, 30, {})
+
+    assert "force_original_aspect_ratio=increase" in custom_value
+    assert "force_original_aspect_ratio=increase" in caption_value
+    assert "pad=" not in custom_value
+    assert "pad=" not in caption_value
 
 
 def test_editor_channel_is_always_rendered_as_the_front_layer() -> None:
