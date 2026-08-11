@@ -10,10 +10,10 @@ const youtubeAnalysisSource = readFileSync(
   "utf8",
 );
 
-describe("admin source range layout", () => {
-  it("uses the admin-only capability for the compact source controls", () => {
+describe("authorized subtitle source range layout", () => {
+  it("uses the subtitle-suite capability for the compact source controls", () => {
     expect(youtubeAnalysisSource).toContain(
-      "brandColorSelectionEnabled: subtitleTemplateAccess.enabled && subtitleTemplateAccess.isAdmin",
+      "brandColorSelectionEnabled: subtitleTemplateAccess.enabled",
     );
     expect(shortsAppSource).toContain(
       "const adminCompactSourceRangeEnabled = brandColorSelectionEnabled;",

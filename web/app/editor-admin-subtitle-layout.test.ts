@@ -8,9 +8,9 @@ function source(path: string) {
 describe("admin editor subtitle layout", () => {
   const editorSource = source("./shorts-app.tsx");
 
-  it("shows the subtitle tool only for word-timed administrator canary v3 projects", () => {
+  it("shows the subtitle tool only for word-timed capable v3 releases", () => {
     expect(editorSource).toContain(
-      'editorRelease.channel === "canary"\n    && editorRelease.documentVersion === 3',
+      "subtitleEditingReleaseEnabled(\n    editorRelease,\n  )",
     );
     expect(editorSource).toContain('{ id: "subtitle", label: "자막" }');
     expect(editorSource).toContain(
@@ -77,13 +77,13 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain("<CaptionTemplateEditorChannel");
   });
 
-  it("sends a subtitle layout only through the admin v3 snapshot", () => {
+  it("sends a subtitle layout only through an enabled v3 release", () => {
     expect(editorSource).toContain(
       "? editorDocumentSubtitleLayout",
     );
     const routeSource = source("./api/shorts/[shortId]/apply-edit/route.ts");
-    expect(routeSource).toContain('release.channel !== "canary"');
-    expect(routeSource).toContain("EDITOR_SUBTITLE_LAYOUT_ADMIN_ONLY");
+    expect(routeSource).toContain("!subtitleEditingReleaseEnabled(release)");
+    expect(routeSource).toContain("EDITOR_SUBTITLE_EDITING_DISABLED");
     expect(routeSource).toContain("s.caption_render_spec");
     expect(routeSource).toContain("CAPTION_RENDER_SPEC_MISSING");
     expect(routeSource).toContain("word_timed_subtitles_available");

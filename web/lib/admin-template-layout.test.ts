@@ -18,10 +18,10 @@ const templateLibrarySource = readFileSync(
   "utf8",
 );
 
-describe("admin template layout", () => {
-  it("uses the server-authorized admin capability for every layout change", () => {
+describe("authorized subtitle template layout", () => {
+  it("uses the server-authorized subtitle-suite capability for every layout change", () => {
     expect(youtubeAnalysisSource).toContain(
-      "brandColorSelectionEnabled: subtitleTemplateAccess.enabled && subtitleTemplateAccess.isAdmin",
+      "brandColorSelectionEnabled: subtitleTemplateAccess.enabled",
     );
     expect(shortsAppSource).toContain(
       "const adminTemplateLayoutEnabled = brandColorSelectionEnabled;",
@@ -31,7 +31,7 @@ describe("admin template layout", () => {
     );
   });
 
-  it("shows the shortened preset names only through administrator gates", () => {
+  it("shows the shortened preset names only through subtitle-suite gates", () => {
     expect(templatePageSource).toContain(
       "adminPresetNamesEnabled = subtitleTemplateAccess.enabled",
     );
