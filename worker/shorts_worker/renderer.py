@@ -633,7 +633,10 @@ class VideoRenderer:
         if ass_path:
             fonts_dir = ""
             if caption_render_spec is not None:
-                caption_fonts_dir = prepare_caption_fonts(work_dir / "caption-fonts")
+                caption_fonts_dir = prepare_caption_fonts(
+                    work_dir / "caption-fonts",
+                    caption_render_spec,
+                )
                 fonts_dir = f":fontsdir='{_escape_filter_path(caption_fonts_dir)}'"
             filters.append(
                 f"[{video_label}]subtitles=filename='{_escape_filter_path(ass_path)}'"

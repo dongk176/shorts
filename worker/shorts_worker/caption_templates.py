@@ -5,6 +5,8 @@ import io
 import re
 import unicodedata
 from collections.abc import Iterable, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -14,7 +16,13 @@ from fontTools.ttLib import TTFont
 from PIL import ImageFont
 
 from .errors import CaptionCompileError, RenderError, TranscriptionError
-from .schemas import VideoAspectRatio
+from .schemas import (
+    EDITOR_FONT_FILE_IDS,
+    EDITOR_FONT_STATIC_WEIGHTS,
+    EDITOR_FONT_VARIABLE_IDS,
+    EditorFontId,
+    VideoAspectRatio,
+)
 from .subtitles import TranscriptWord
 
 CAPTION_FPS = 30
@@ -23,8 +31,45 @@ CAPTION_TEMPLATE_IDS = frozenset({"basic", "highlight", "pop"})
 CAPTION_ACCENT = "#35E6E3"
 CAPTION_TEXT = "#FFFFFF"
 CAPTION_OUTLINE = "#080808"
-CAPTION_FONT_PATH = Path(__file__).parent / "assets" / "editor_fonts" / "Pretendard-Bold.woff2"
+CAPTION_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
+CAPTION_DEFAULT_FONT_ID = EditorFontId.PRETENDARD
+# Backward-compatible aliases for stored specs and existing integration probes.
+CAPTION_FONT_PATH = CAPTION_FONT_DIRECTORY / EDITOR_FONT_FILE_IDS[CAPTION_DEFAULT_FONT_ID]
 CAPTION_FONT_FAMILY = "Pretendard"
+CAPTION_FONT_FAMILIES = {
+    EditorFontId.PRETENDARD: "Pretendard",
+    EditorFontId.BLACK_HAN_SANS: "Black Han Sans",
+    EditorFontId.GMARKET_SANS: "Gmarket Sans TTF",
+    EditorFontId.DO_HYEON: "Do Hyeon",
+    EditorFontId.NOTO_SERIF_KR: "Noto Serif KR",
+    EditorFontId.NANUM_MYEONGJO: "NanumMyeongjo",
+    EditorFontId.SUIT: "SUIT",
+    EditorFontId.SPOQA_HAN_SANS_NEO: "Spoqa Han Sans Neo",
+    EditorFontId.NOTO_SANS_KR: "Noto Sans KR",
+    EditorFontId.NANUM_SQUARE_NEO: "NanumSquare Neo",
+    EditorFontId.SANDBOX_AGGRO: "SB Aggro",
+    EditorFontId.JUA: "Jua",
+    EditorFontId.S_CORE_DREAM: "S-Core Dream",
+    EditorFontId.CAFE24_ANEMONE: "Cafe24 Ohsquare",
+    EditorFontId.CAFE24_PRO_UP: "Cafe24 PRO UP",
+    EditorFontId.RIDI_BATANG: "RIDIBatang",
+    EditorFontId.JALNAN_2: "Jalnan 2",
+    EditorFontId.GODO: "Godo B",
+    EditorFontId.GALMURI_9: "Galmuri9",
+}
+_CAPTION_FONT_CONTEXT: ContextVar[EditorFontId] = ContextVar(
+    "caption_font_id",
+    default=CAPTION_DEFAULT_FONT_ID,
+)
+
+
+@contextmanager
+def _caption_font_context(font_id: EditorFontId):
+    token = _CAPTION_FONT_CONTEXT.set(font_id)
+    try:
+        yield
+    finally:
+        _CAPTION_FONT_CONTEXT.reset(token)
 CANVAS_WIDTH = 1080
 CANVAS_HEIGHT = 1920
 VIDEO_HEIGHTS = {
@@ -67,12 +112,45 @@ class _CaptionWord:
     speech_end_frame: int | None = None
 
 
-@lru_cache(maxsize=1)
-def _caption_ttf_bytes() -> bytes:
-    if not CAPTION_FONT_PATH.is_file():
-        raise RenderError("자막 폰트 파일을 찾지 못했습니다.")
+def _caption_font_id(value: object) -> EditorFontId:
+    if isinstance(value, EditorFontId):
+        return value
+    if value in {None, "", "pretendard-bold"}:
+        return CAPTION_DEFAULT_FONT_ID
     try:
-        font = TTFont(str(CAPTION_FONT_PATH), recalcBBoxes=False, recalcTimestamp=False)
+        return EditorFontId(str(value))
+    except ValueError as exc:
+        raise RenderError("승인되지 않은 자막 폰트입니다.") from exc
+
+
+def _caption_font_path(font_id: EditorFontId) -> Path:
+    path = CAPTION_FONT_DIRECTORY / EDITOR_FONT_FILE_IDS[font_id]
+    if not path.is_file():
+        raise RenderError("자막 폰트 파일을 찾지 못했습니다.")
+    return path
+
+
+def caption_font_spec(font_id: EditorFontId | str | None) -> dict[str, object]:
+    resolved = _caption_font_id(font_id)
+    path = _caption_font_path(resolved)
+    return {
+        "fontId": resolved.value,
+        "fileId": path.name,
+        "sha256": _sha256(path),
+        "family": CAPTION_FONT_FAMILIES[resolved],
+        "weight": (
+            700
+            if resolved in EDITOR_FONT_VARIABLE_IDS
+            else EDITOR_FONT_STATIC_WEIGHTS[resolved]
+        ),
+    }
+
+
+@lru_cache(maxsize=32)
+def _caption_ttf_bytes(font_id: EditorFontId) -> bytes:
+    font_path = _caption_font_path(font_id)
+    try:
+        font = TTFont(str(font_path), recalcBBoxes=False, recalcTimestamp=False)
         font.flavor = None
         output = io.BytesIO()
         font.save(output, reorderTables=False)
@@ -85,12 +163,22 @@ def _caption_ttf_bytes() -> bytes:
     return value
 
 
-@lru_cache(maxsize=32)
-def _font(size: int) -> ImageFont.FreeTypeFont:
+@lru_cache(maxsize=512)
+def _font_for_id(font_id: EditorFontId, size: int) -> ImageFont.FreeTypeFont:
     try:
-        return ImageFont.truetype(io.BytesIO(_caption_ttf_bytes()), size=size)
+        font = ImageFont.truetype(
+            io.BytesIO(_caption_ttf_bytes(font_id)),
+            size=size,
+        )
+        if font_id in EDITOR_FONT_VARIABLE_IDS:
+            font.set_variation_by_axes([700])
+        return font
     except OSError as exc:
         raise RenderError("자막 폰트를 불러오지 못했습니다.") from exc
+
+
+def _font(size: int) -> ImageFont.FreeTypeFont:
+    return _font_for_id(_CAPTION_FONT_CONTEXT.get(), size)
 
 
 def _measure(text: str, size: int) -> float:
@@ -105,20 +193,28 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def prepare_caption_fonts(directory: Path) -> Path:
-    """Materialize the approved WOFF2 as a libass-compatible TTF.
+def prepare_caption_fonts(
+    directory: Path,
+    spec: dict[str, object] | None = None,
+) -> Path:
+    """Materialize the approved source face as a libass-compatible font.
 
     Pillow/Freetype can read the source WOFF2 directly, while fontconfig builds
     used by libass do not consistently discover WOFF2 files in ``fontsdir``.
     The conversion is deterministic and local to the render work directory;
     the immutable render spec still identifies and hashes the approved WOFF2.
     """
-    if not CAPTION_FONT_PATH.is_file():
-        raise RenderError("자막 폰트 파일을 찾지 못했습니다.")
+    font_value = spec.get("font") if isinstance(spec, dict) else None
+    font_id = _caption_font_id(
+        font_value.get("fontId") if isinstance(font_value, dict) else None
+    )
+    _caption_font_path(font_id)
     directory.mkdir(parents=True, exist_ok=True)
-    output_path = directory / "Pretendard-Bold.ttf"
+    output_path = directory / Path(EDITOR_FONT_FILE_IDS[font_id]).with_suffix(
+        ".ttf"
+    ).name
     try:
-        output_path.write_bytes(_caption_ttf_bytes())
+        output_path.write_bytes(_caption_ttf_bytes(font_id))
     except OSError as exc:
         output_path.unlink(missing_ok=True)
         raise RenderError("자막 렌더 폰트를 준비하지 못했습니다.") from exc
@@ -1140,7 +1236,7 @@ def rebuild_caption_cue_text(
     return rebuilt
 
 
-def reflow_caption_cues_for_clips(
+def _reflow_caption_cues_for_clips(
     cues: Sequence[dict[str, object]],
     *,
     template_id: str,
@@ -1313,6 +1409,28 @@ def reflow_caption_cues_for_clips(
     return rebuilt
 
 
+def reflow_caption_cues_for_clips(
+    cues: Sequence[dict[str, object]],
+    *,
+    template_id: str,
+    safe_area: dict[str, int],
+    clip_windows: Sequence[tuple[int, int, int]],
+    cue_edits: dict[int, str] | None = None,
+    fps: int = CAPTION_FPS,
+    font_id: EditorFontId | str | None = None,
+) -> list[dict[str, object]]:
+    resolved_font_id = _caption_font_id(font_id)
+    with _caption_font_context(resolved_font_id):
+        return _reflow_caption_cues_for_clips(
+            cues,
+            template_id=template_id,
+            safe_area=safe_area,
+            clip_windows=clip_windows,
+            cue_edits=cue_edits,
+            fps=fps,
+        )
+
+
 def compile_caption_render_spec(
     words: Sequence[TranscriptWord],
     *,
@@ -1323,6 +1441,7 @@ def compile_caption_render_spec(
     caption_placement: str = "lower",
     fps: int = CAPTION_FPS,
     accent_color: str = CAPTION_ACCENT,
+    font_id: EditorFontId | str | None = None,
 ) -> dict[str, object]:
     if template_id not in CAPTION_TEMPLATE_IDS:
         raise ValueError("지원하지 않는 자막 템플릿입니다.")
@@ -1330,35 +1449,37 @@ def compile_caption_render_spec(
         raise ValueError("자막 렌더 프레임레이트는 30fps여야 합니다.")
     if caption_placement not in {"lower", "center"}:
         raise ValueError("지원하지 않는 자막 위치입니다.")
-    layout = caption_layout(
-        video_aspect_ratio,
-        caption_placement=caption_placement,
-    )
-    safe_area = layout["caption"]
-    clipped_words = _clip_words(
-        words,
-        clip_start=clip_start,
-        clip_end=clip_end,
-        fps=fps,
-    )
-    clipped_words = _fit_display_words(
-        clipped_words,
-        template_id=template_id,
-        safe_area=safe_area,
-    )
-    if template_id == "pop":
-        cues = _pop_cues(clipped_words, safe_area=safe_area, fps=fps)
-        font_size = 92
-        outline = 8
-    else:
-        cues = _basic_or_highlight_cues(
-            clipped_words,
-            highlighted=template_id == "highlight",
-            safe_area=safe_area,
+    resolved_font_id = _caption_font_id(font_id)
+    with _caption_font_context(resolved_font_id):
+        layout = caption_layout(
+            video_aspect_ratio,
+            caption_placement=caption_placement,
+        )
+        safe_area = layout["caption"]
+        clipped_words = _clip_words(
+            words,
+            clip_start=clip_start,
+            clip_end=clip_end,
             fps=fps,
         )
-        font_size = 72
-        outline = 7
+        clipped_words = _fit_display_words(
+            clipped_words,
+            template_id=template_id,
+            safe_area=safe_area,
+        )
+        if template_id == "pop":
+            cues = _pop_cues(clipped_words, safe_area=safe_area, fps=fps)
+            font_size = 92
+            outline = 8
+        else:
+            cues = _basic_or_highlight_cues(
+                clipped_words,
+                highlighted=template_id == "highlight",
+                safe_area=safe_area,
+                fps=fps,
+            )
+            font_size = 72
+            outline = 7
     if not cues:
         raise TranscriptionError("선택한 쇼츠 구간에 표시할 자막이 없습니다.")
     overlap_count = _caption_cue_overlap_count(cues)
@@ -1376,12 +1497,7 @@ def compile_caption_render_spec(
         "timingLeadFrames": CAPTION_TIMING_LEAD_FRAMES,
         "layout": layout,
         "safeArea": safe_area,
-        "font": {
-            "fileId": CAPTION_FONT_PATH.name,
-            "sha256": _sha256(CAPTION_FONT_PATH),
-            "family": CAPTION_FONT_FAMILY,
-            "weight": 700,
-        },
+        "font": caption_font_spec(resolved_font_id),
         "style": {
             "fontSize": font_size,
             "textColor": CAPTION_TEXT,
@@ -1446,7 +1562,14 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
     if fps != CAPTION_FPS:
         raise RenderError("자막 렌더 프레임레이트가 올바르지 않습니다.")
     font = spec.get("font") or {}
-    if font.get("sha256") != _sha256(CAPTION_FONT_PATH):
+    if not isinstance(font, dict):
+        raise RenderError("자막 렌더 폰트 정보가 올바르지 않습니다.")
+    font_id = _caption_font_id(font.get("fontId"))
+    expected_font = caption_font_spec(font_id)
+    if any(
+        font.get(key) != expected_font[key]
+        for key in ("fileId", "sha256", "family", "weight")
+    ):
         raise RenderError("자막 렌더 폰트가 승인된 파일과 다릅니다.")
     style = spec.get("style") or {}
     text_color = str(style.get("textColor") or CAPTION_TEXT)

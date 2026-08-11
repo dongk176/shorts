@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 from .caption_templates import (
+    caption_font_spec,
     create_caption_ass,
     prepare_caption_fonts,
     reflow_caption_cues_for_clips,
@@ -61,10 +62,22 @@ EDITOR_FONT_FILES = {
     EditorFontId.NANUM_MYEONGJO: "NanumMyeongjo-Bold.ttf",
     EditorFontId.SUIT: "SUIT-Bold.woff2",
     EditorFontId.SPOQA_HAN_SANS_NEO: "SpoqaHanSansNeo-Bold.woff2",
+    EditorFontId.NOTO_SANS_KR: "NotoSansKR-Variable.ttf",
+    EditorFontId.NANUM_SQUARE_NEO: "NanumSquareNeo-Bold.ttf",
+    EditorFontId.SANDBOX_AGGRO: "SandboxAggro-Bold.ttf",
+    EditorFontId.JUA: "Jua-Regular.ttf",
+    EditorFontId.S_CORE_DREAM: "SCoreDream-ExtraBold.otf",
+    EditorFontId.CAFE24_ANEMONE: "Cafe24Anemone-Bold.woff",
+    EditorFontId.CAFE24_PRO_UP: "Cafe24ProUp-Regular.woff2",
+    EditorFontId.RIDI_BATANG: "RIDIBatang-Regular.woff",
+    EditorFontId.JALNAN_2: "Jalnan2-Regular.woff2",
+    EditorFontId.GODO: "Godo-Bold.ttf",
+    EditorFontId.GALMURI_9: "Galmuri9-Regular.ttf",
 }
 EDITOR_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
 EDITOR_FONT_DEFAULT_VARIATION_WEIGHTS = {
     EditorFontId.NOTO_SERIF_KR: 700,
+    EditorFontId.NOTO_SANS_KR: 700,
 }
 TIMED_OVERLAY_TRANSITION_FRAMES = 3
 TIMED_OVERLAY_CONTIGUOUS_TOLERANCE_SECONDS = 0.001
@@ -168,7 +181,7 @@ def load_editor_font(
     )
     variation_weight = (
         weight
-        if font_id is EditorFontId.NOTO_SERIF_KR and weight is not None
+        if font_id in EDITOR_FONT_DEFAULT_VARIATION_WEIGHTS and weight is not None
         else EDITOR_FONT_DEFAULT_VARIATION_WEIGHTS.get(font_id)
     )
     if variation_weight is not None:
@@ -289,6 +302,19 @@ def retime_editor_caption_spec(
     )
     offset_y = render_subtitles.offset_y if render_subtitles else 0.0
     scale = render_subtitles.scale if render_subtitles else 1.0
+    source_font = spec.get("font")
+    source_font_id = (
+        source_font.get("fontId")
+        if isinstance(source_font, dict)
+        else None
+    )
+    caption_font_id = (
+        render_subtitles.font_id
+        if render_subtitles and render_subtitles.font_id is not None
+        else source_font_id
+    )
+    if render_subtitles and render_subtitles.font_id is not None:
+        spec["font"] = caption_font_spec(render_subtitles.font_id)
 
     cue_edits = {
         edit.cue_index: edit.text
@@ -333,6 +359,7 @@ def retime_editor_caption_spec(
                 clip_windows=clip_windows,
                 cue_edits=cue_edits,
                 fps=fps,
+                font_id=caption_font_id,
             )
         else:
             # Schema-v3 probes and early stored specs predate per-word frame
@@ -1622,6 +1649,7 @@ class EditorDocumentRenderer:
                 )
                 caption_fonts_dir = prepare_caption_fonts(
                     work_dir / "caption-fonts",
+                    rendered_caption_spec,
                 )
         elif document.subtitles.enabled:
             subtitle_style = editor_subtitle_style(document)

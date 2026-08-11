@@ -885,6 +885,16 @@ class BatchWorker:
                         if isinstance(subtitle_template_snapshot, dict)
                         else "lower"
                     )
+                    snapshot_font = (
+                        subtitle_template_snapshot.get("font")
+                        if isinstance(subtitle_template_snapshot, dict)
+                        else None
+                    )
+                    caption_font_id = (
+                        snapshot_font.get("id")
+                        if isinstance(snapshot_font, dict)
+                        else None
+                    )
                     source_offset_seconds = (
                         float(range_start_seconds) if source_range_enabled else 0.0
                     )
@@ -918,6 +928,7 @@ class BatchWorker:
                                 video_aspect_ratio=aspect_ratio,
                                 caption_placement=caption_placement,
                                 accent_color=_preset_brand_color(job) or CAPTION_ACCENT,
+                                font_id=caption_font_id,
                             )
                         except (CaptionCompileError, TranscriptionError) as exc:
                             rejected_caption_clips += 1
@@ -971,6 +982,16 @@ class BatchWorker:
                         if isinstance(subtitle_template_snapshot, dict)
                         else "lower"
                     )
+                    snapshot_font = (
+                        subtitle_template_snapshot.get("font")
+                        if isinstance(subtitle_template_snapshot, dict)
+                        else None
+                    )
+                    caption_font_id = (
+                        snapshot_font.get("id")
+                        if isinstance(snapshot_font, dict)
+                        else None
+                    )
                     unavailable_timeline_indexes: list[int] = []
                     for index, timeline_clip in edit_timeline_clips.items():
                         absolute_timeline_clip = _offset_highlight_clip(
@@ -986,6 +1007,7 @@ class BatchWorker:
                                 video_aspect_ratio=aspect_ratio,
                                 caption_placement=caption_placement,
                                 accent_color=_preset_brand_color(job) or CAPTION_ACCENT,
+                                font_id=caption_font_id,
                             )
                         except (CaptionCompileError, TranscriptionError) as exc:
                             unavailable_timeline_indexes.append(index)

@@ -34,7 +34,7 @@ from shorts_worker.caption_templates import (
 from shorts_worker.config import Settings
 from shorts_worker.media import probe_media
 from shorts_worker.renderer import VideoRenderer, caption_video_layout
-from shorts_worker.schemas import TemplateId, TitleTextStyle, VideoAspectRatio
+from shorts_worker.schemas import EditorFontId, TemplateId, TitleTextStyle, VideoAspectRatio
 from shorts_worker.subtitles import TranscriptWord
 
 
@@ -188,6 +188,28 @@ def test_approved_font_is_same_pretendard_face_for_measurement_and_libass(
     assert font_lines, result.stderr[-2000:]
     assert any("Pretendard" in line for line in font_lines), font_lines
     assert not any("Pretendard" in line and "Noto" in line for line in font_lines)
+
+
+@pytest.mark.parametrize("font_id", list(EditorFontId))
+def test_every_editor_font_can_be_materialized_for_caption_rendering(
+    tmp_path: Path,
+    font_id: EditorFontId,
+) -> None:
+    spec = compile_caption_render_spec(
+        [_word("자막", 0.0, 0.25)],
+        template_id="highlight",
+        clip_start=0,
+        clip_end=0.3,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        font_id=font_id,
+    )
+    font_directory = prepare_caption_fonts(tmp_path / font_id.value, spec)
+    materialized = list(font_directory.glob("*.ttf"))
+
+    assert spec["font"]["fontId"] == font_id.value
+    assert len(materialized) == 1
+    assert materialized[0].stat().st_size > 0
+    assert create_caption_ass(spec, tmp_path / f"{font_id.value}.ass").is_file()
 
 
 def test_korean_unspaced_tokens_restore_an_eojeol_but_japanese_words_stay_intact() -> None:

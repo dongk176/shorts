@@ -104,6 +104,31 @@ def test_v3_font_files_are_byte_identical_in_web_and_worker() -> None:
         ).digest()
 
 
+def test_caption_editor_font_override_is_persisted_in_render_spec() -> None:
+    document = _document_v3_with_subtitle_layout()
+    assert document.render_spec is not None
+    assert document.render_spec.subtitles is not None
+    document.render_spec.subtitles.font_id = EditorFontId.JUA
+    original = compile_caption_render_spec(
+        [TranscriptWord(text="글씨체", start=1.2, end=1.8, provider="elevenlabs")],
+        template_id="highlight",
+        clip_start=0,
+        clip_end=6,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+    )
+
+    rendered = retime_editor_caption_spec(document, original)
+
+    assert rendered is not None
+    assert rendered["font"] == {
+        "fontId": "jua",
+        "fileId": "Jua-Regular.ttf",
+        "sha256": rendered["font"]["sha256"],
+        "family": "Jua",
+        "weight": 400,
+    }
+
+
 def test_v3_noto_serif_text_800_is_heavier_than_title_700() -> None:
     text = "후킹 제목과 추가 텍스트"
     title_font = load_editor_font(EditorFontId.NOTO_SERIF_KR, 72, weight=700)
