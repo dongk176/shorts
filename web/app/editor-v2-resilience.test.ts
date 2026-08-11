@@ -191,9 +191,51 @@ describe("editor v2 resilience", () => {
     expect(controlsSource).toContain("onPointerDown={(event) => {");
     expect(controlsSource).toContain("event.preventDefault();");
     expect(controlsSource).toContain("if (event.detail !== 0) return;");
-    expect(controlsSource).toContain("finishPendingEditorInteractions();");
+    expect(controlsSource).toContain(
+      "finishPendingEditorInteractionsForHistory()",
+    );
     expect(controlsSource).toContain("undoEditorEdit();");
     expect(controlsSource).toContain("redoEditorEdit();");
+  });
+
+  it("commits a pending caption transaction before global history or save", () => {
+    expect(editorSource).toContain(
+      "editorCaptionTextDraftChanged(",
+    );
+    expect(editorSource).toContain("|| hasPendingCaptionTextChange");
+    expect(editorSource).toContain("&& !hasPendingCaptionTextChange");
+    expect(editorSource).toContain(
+      "if (captionTextDraft && textInputTarget) return;",
+    );
+    expect(editorSource).toContain("const editorDocumentSubtitleLayout");
+    expect(editorSource).toContain("editorSubtitleLayoutWithCaptionDraft(");
+    expect(editorSource).toContain("hasInvalidCaptionTextDraft");
+    expect(editorSource).toContain(
+      "finishPendingEditorInteractionsForHistory()",
+    );
+    expect(editorSource).toContain(
+      "자막 문구는 비워둘 수 없습니다.",
+    );
+    expect(editorSource).toContain(
+      "finishPendingEditorInteractionsIncludingCaption();",
+    );
+    expect(editorSource).toContain("closeEditorAfterSavingCaptionDraft");
+    expect(editorSource).toContain("void saveEditorDraftNow().finally(onClose);");
+    expect(editorSource).toContain("onClick={openEditorApplyConfirmation}");
+  });
+
+  it("finishes caption copy before split, trim and outer range edits", () => {
+    for (const marker of [
+      "const splitCurrentEditorVideo = useCallback(() =>",
+      "const beginEditorVideoClipTrim = useCallback((",
+      'const startRangeInteraction = (handle: "start" | "end"',
+    ]) {
+      const start = editorSource.indexOf(marker);
+      expect(start).toBeGreaterThan(-1);
+      expect(editorSource.slice(start, start + 650)).toContain(
+        "finishPendingEditorInteractionsIncludingCaption();",
+      );
+    }
   });
 
   it("records outer range-handle trims as one video history action for the admin candidate", () => {

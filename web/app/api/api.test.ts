@@ -399,11 +399,10 @@ describe("range editing feature gate and snapshot", () => {
       ],
     }]);
     const tx = dbWithRows([{ id: shortId }], []);
-    Object.assign(db, {
-      begin: vi.fn(
-        (callback: (transaction: typeof tx) => unknown) => callback(tx),
-      ),
-    });
+    const begin = vi.fn(
+      (callback: (transaction: typeof tx) => unknown) => callback(tx),
+    );
+    Object.assign(db, { begin });
     mocks.getDb.mockReturnValue(db);
 
     const response = await applyRangeEdit(
@@ -1085,7 +1084,26 @@ describe("subtitle template edit isolation", () => {
     expect(channelAssetResponse.status).toBe(307);
   });
 
-  it("queues a subtitle-template v3 render only for the active admin canary", async () => {
+  it.each([
+    {
+      label: "queues a sparse source cue id for the active admin canary",
+      cueIndex: 7,
+      sourceCueIndexes: [7],
+      expectedStatus: 202,
+    },
+    {
+      label: "rejects a cue id that is absent from the source caption spec",
+      cueIndex: 6,
+      sourceCueIndexes: [7],
+      expectedStatus: 400,
+    },
+    {
+      label: "rejects a duplicate raw source cue id",
+      cueIndex: 7,
+      sourceCueIndexes: [7, 7],
+      expectedStatus: 400,
+    },
+  ])("$label", async ({ cueIndex, sourceCueIndexes, expectedStatus }) => {
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
     const candidateReleaseId = "5a5f9f4d-f59d-4ba3-a28a-9396ac8284a7";
     const requestId = "5253b207-cd49-45bc-8d83-69c2b781e21f";
@@ -1108,6 +1126,19 @@ describe("subtitle template edit isolation", () => {
       new URL("../../../test-fixtures/editor-document-v3.json", import.meta.url),
       "utf8",
     ));
+    document.renderSpec = {
+      ...document.renderSpec,
+      version: 2,
+      subtitles: {
+        centerX: 540,
+        offsetY: 0,
+        scale: 1,
+        cueEdits: [{
+          cueIndex,
+          text: "수정한 자막",
+        }],
+      },
+    };
     const db = dbWithRows(
       [adminV3Release],
       [{
@@ -1148,12 +1179,16 @@ describe("subtitle template edit isolation", () => {
             outlineColor: "#000000",
             outlineWidth: 8,
           },
-          cues: [{
-            startFrame: 0,
-            endFrame: 30,
+          cues: sourceCueIndexes.map((sourceCueIndex, sourceCuePosition) => ({
+            sourceCueIndex,
+            startFrame: sourceCuePosition * 30,
+            endFrame: (sourceCuePosition + 1) * 30,
             words: [{ text: "자막" }],
-            events: [{ startFrame: 0, endFrame: 30 }],
-          }],
+            events: [{
+              startFrame: sourceCuePosition * 30,
+              endFrame: (sourceCuePosition + 1) * 30,
+            }],
+          })),
         },
         channelThumbnailUrl: "https://example.com/channel.png",
         editorDocument: null,
@@ -1167,11 +1202,10 @@ describe("subtitle template edit isolation", () => {
       [{ id: shortId }],
       [],
     );
-    Object.assign(db, {
-      begin: vi.fn(
-        (callback: (transaction: typeof tx) => unknown) => callback(tx),
-      ),
-    });
+    const begin = vi.fn(
+      (callback: (transaction: typeof tx) => unknown) => callback(tx),
+    );
+    Object.assign(db, { begin });
     mocks.getDb.mockReturnValue(db);
 
     const response = await applyRangeEdit(
@@ -1188,7 +1222,14 @@ describe("subtitle template edit isolation", () => {
       { params: Promise.resolve({ shortId }) },
     );
 
-    expect(response.status).toBe(202);
+    expect(response.status).toBe(expectedStatus);
+    if (expectedStatus === 400) {
+      await expect(response.json()).resolves.toMatchObject({
+        code: "EDITOR_CAPTION_CUE_INVALID",
+      });
+      expect(begin).not.toHaveBeenCalled();
+      return;
+    }
     await expect(response.json()).resolves.toMatchObject({
       status: "rerendering",
       releaseId: candidateReleaseId,

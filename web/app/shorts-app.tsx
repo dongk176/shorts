@@ -56,14 +56,20 @@ import { contrastingTitleTextColor } from "@/lib/brand-color-contrast";
 import {
   CAPTION_ASS_PREVIEW_FONT_SCALE,
   captionRenderSpecForEditor,
-  type CaptionRenderCue,
   type CaptionRenderSpec,
 } from "@/lib/caption-render-spec";
 import {
   createEditorHighlightCaptionSpec,
+  editorCaptionTextDraftChanged,
+  editorCaptionTextDraftInvalid,
+  editorSubtitleLayoutWithCaptionDraft,
   editorCaptionVerticalOffsetBounds,
   measureEditorCaptionText,
+  resolveEditorCaptionTextEditTarget,
   retimeCaptionRenderSpecForEditor,
+  sanitizeEditorCaptionCueEdits,
+  updateEditorCaptionCueText,
+  type EditorCaptionTextDraft,
 } from "@/lib/editor-caption-preview";
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
@@ -198,6 +204,21 @@ import {
   type EditorChannelPreset,
 } from "@/lib/editor-channel-presets";
 import { resolveEditorHistoryShortcut } from "@/lib/editor-history-shortcuts";
+import {
+  cloneEditorCopyHistoryEntry,
+  cloneEditorCopySnapshot,
+  cloneEditorSubtitleLayout,
+  cloneEditorSubtitleSegments,
+  editorCopySnapshotsEqual,
+  editorCopySubtitleChanged,
+  editorCopyTitleChanged,
+  recordEditorCopyHistory,
+  redoEditorCopyHistory,
+  undoEditorCopyHistory,
+  type EditorCopyHistory,
+  type EditorCopySnapshot,
+  type EditorSubtitleSegment,
+} from "@/lib/editor-copy-history";
 import {
   cloneEditorDocumentSnapshot,
   createEditorDocumentSnapshot,
@@ -1665,15 +1686,6 @@ function SubtitleTemplatePreview({
   );
 }
 
-function captionRenderCueText(cue: CaptionRenderCue) {
-  return cue.words.reduce(
-    (text, word, wordIndex) => (
-      `${text}${wordIndex > 0 && word.spaceBefore ? " " : ""}${word.text}`
-    ),
-    "",
-  );
-}
-
 function CaptionTemplateEditorPreview({
   spec,
   currentTimeSeconds,
@@ -1691,8 +1703,8 @@ function CaptionTemplateEditorPreview({
   layout: EditorSubtitleLayout;
   onSelect: () => void;
   onPointerDown: PointerEventHandler<HTMLElement>;
-  onEditStart: (cueIndex: number, text: string) => void;
-  editing: { cueIndex: number; text: string } | null;
+  onEditStart: (sourceCueIndex: number) => void;
+  editing: { sourceCueIndex: number; text: string } | null;
   onEditingChange: (text: string) => void;
   onEditingCommit: () => void;
   onEditingCancel: () => void;
@@ -1729,20 +1741,16 @@ function CaptionTemplateEditorPreview({
   // ASS `bord` is an outward border, so two CSS pixels match one ASS border px.
   const previewStrokeWidth = spec.style.outlineWidth * layout.scale * 2;
   const accentColor = layout.accentColor || spec.style.accentColor;
-  const storedEdit = layout.cueEdits?.find(
-    (edit) => edit.cueIndex === cueIndex,
-  );
-  const displayedText = storedEdit?.text || captionRenderCueText(cue);
   const captionCenterY = (
     cue.centerY ?? (spec.safeArea.y + spec.safeArea.height / 2)
   ) + layout.offsetY;
   const beginTextEdit = (event: ReactMouseEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    onEditStart(cueIndex, displayedText);
+    onEditStart(cueIndex);
   };
 
-  if (editing?.cueIndex === cueIndex) {
+  if (editing?.sourceCueIndex === cueIndex) {
     return <div
       data-editor-caption-template-preview={spec.templateId}
       className="pointer-events-none absolute inset-0 z-[60]"
@@ -1750,8 +1758,10 @@ function CaptionTemplateEditorPreview({
       <textarea
         autoFocus
         aria-label="현재 자막 수정"
+        aria-invalid={editing.text.trim().length === 0}
         value={editing.text}
         maxLength={200}
+        required
         rows={2}
         onPointerDown={(event) => event.stopPropagation()}
         onChange={(event) => onEditingChange(event.target.value)}
@@ -2954,12 +2964,6 @@ function CommentRegenerationComparisonDialog({
   );
 }
 
-type EditorSubtitleSegment = {
-  start: number;
-  end: number;
-  text: string;
-};
-
 type EditTimeline = {
   url: string;
   expiresAt: string;
@@ -3008,25 +3012,6 @@ type EditorCommentReplaceHistory = {
   past: EditorCommentReplaceHistoryEntry[];
   future: EditorCommentReplaceHistoryEntry[];
 };
-type EditorCopySnapshot = {
-  title: string;
-  titleTextStyles: TitleTextStyle[];
-  titleFontScale: number;
-  channel: string;
-  channelThumbnailUrl: string | null;
-  channelThumbnailAssetKey: string | null;
-  subtitlesEnabled: boolean;
-  subtitleSegments: EditorSubtitleSegment[];
-  subtitleLayout: EditorSubtitleLayout;
-};
-type EditorCopyHistoryEntry = {
-  before: EditorCopySnapshot;
-  after: EditorCopySnapshot;
-};
-type EditorCopyHistory = {
-  past: EditorCopyHistoryEntry[];
-  future: EditorCopyHistoryEntry[];
-};
 type EditorTemplateSnapshot = {
   templateId: TemplateId;
   activeCustomTemplate: CustomTemplate | null;
@@ -3056,17 +3041,6 @@ const cloneEditorCommentDeleteHistoryEntry = (
 const cloneEditorComments = (comments: CommentOverlay[]) => (
   comments.map((comment) => ({ ...comment }))
 );
-const cloneEditorSubtitleSegments = (segments: EditorSubtitleSegment[]) => (
-  segments.map((segment) => ({ ...segment }))
-);
-const cloneEditorSubtitleLayout = (
-  layout: EditorSubtitleLayout,
-): EditorSubtitleLayout => ({
-  ...layout,
-  ...(layout.cueEdits
-    ? { cueEdits: layout.cueEdits.map((edit) => ({ ...edit })) }
-    : {}),
-});
 const editorCommentsChanged = (
   before: CommentOverlay[],
   after: CommentOverlay[],
@@ -3098,52 +3072,6 @@ const cloneEditorCommentReplaceHistoryEntry = (
     ? { visibleCommentAfter: entry.visibleCommentAfter }
     : {}),
 });
-const cloneEditorCopySnapshot = (
-  snapshot: EditorCopySnapshot,
-): EditorCopySnapshot => ({
-  title: snapshot.title,
-  titleTextStyles: snapshot.titleTextStyles.map((style) => ({ ...style })),
-  titleFontScale: snapshot.titleFontScale,
-  channel: snapshot.channel,
-  channelThumbnailUrl: snapshot.channelThumbnailUrl,
-  channelThumbnailAssetKey: snapshot.channelThumbnailAssetKey,
-  subtitlesEnabled: snapshot.subtitlesEnabled,
-  subtitleSegments: cloneEditorSubtitleSegments(snapshot.subtitleSegments),
-  subtitleLayout: cloneEditorSubtitleLayout(snapshot.subtitleLayout),
-});
-const cloneEditorCopyHistoryEntry = (
-  entry: EditorCopyHistoryEntry,
-): EditorCopyHistoryEntry => ({
-  before: cloneEditorCopySnapshot(entry.before),
-  after: cloneEditorCopySnapshot(entry.after),
-});
-const editorCopySnapshotsEqual = (
-  left: EditorCopySnapshot,
-  right: EditorCopySnapshot,
-) => (
-  left.title === right.title
-  && left.titleFontScale === right.titleFontScale
-  && left.channel === right.channel
-  && left.channelThumbnailUrl === right.channelThumbnailUrl
-  && left.channelThumbnailAssetKey === right.channelThumbnailAssetKey
-  && left.subtitlesEnabled === right.subtitlesEnabled
-  && JSON.stringify(left.subtitleSegments) === JSON.stringify(right.subtitleSegments)
-  && JSON.stringify(left.subtitleLayout) === JSON.stringify(right.subtitleLayout)
-  && JSON.stringify(left.titleTextStyles) === JSON.stringify(right.titleTextStyles)
-);
-const editorCopyTitleChanged = (entry: EditorCopyHistoryEntry) => (
-  entry.before.title !== entry.after.title
-  || entry.before.titleFontScale !== entry.after.titleFontScale
-  || JSON.stringify(entry.before.titleTextStyles)
-    !== JSON.stringify(entry.after.titleTextStyles)
-);
-const editorCopySubtitleChanged = (entry: EditorCopyHistoryEntry) => (
-  entry.before.subtitlesEnabled !== entry.after.subtitlesEnabled
-  || JSON.stringify(entry.before.subtitleSegments)
-  !== JSON.stringify(entry.after.subtitleSegments)
-  || JSON.stringify(entry.before.subtitleLayout)
-    !== JSON.stringify(entry.after.subtitleLayout)
-);
 const cloneEditorTemplateSnapshot = (
   snapshot: EditorTemplateSnapshot,
 ): EditorTemplateSnapshot => ({
@@ -4125,10 +4053,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [editingSubtitleIndex, setEditingSubtitleIndex] = useState<number | null>(
     null,
   );
-  const [captionTextDraft, setCaptionTextDraft] = useState<{
-    cueIndex: number;
-    text: string;
-  } | null>(null);
+  const [captionTextDraft, setCaptionTextDraft] = useState<
+    EditorCaptionTextDraft | null
+  >(null);
   const [commentEditRequest, setCommentEditRequest] = useState<{
     commentId: string;
     revision: number;
@@ -4446,6 +4373,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setActiveEditorSidebarTool(tool);
     setDesktopSidebarOpen(true);
   };
+  const editorDocumentSubtitleLayout = useMemo(
+    () => editorSubtitleLayoutWithCaptionDraft(
+      subtitleLayout,
+      captionTextDraft,
+    ),
+    [captionTextDraft, subtitleLayout],
+  );
   const editorDocumentSnapshot = useMemo(() => {
     const input: Parameters<typeof createEditorDocumentSnapshot>[0] = {
     sourceShortId: item.id,
@@ -4496,7 +4430,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     return editorRelease.documentVersion === 3
       ? createEditorDocumentSnapshotV3(
           input,
-          adminSubtitleEditingEnabled ? subtitleLayout : undefined,
+          adminSubtitleEditingEnabled
+            ? editorDocumentSubtitleLayout
+            : undefined,
           adminSubtitleLayoutEnabled,
         )
       : createEditorDocumentSnapshot(input);
@@ -4516,7 +4452,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     selectionEnd,
     selectionStart,
     segments,
-    subtitleLayout,
+    editorDocumentSubtitleLayout,
     subtitlesEnabled,
     templateId,
     title,
@@ -4621,30 +4557,6 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     editorGuideReady,
     overlayPreviewEnabled,
   ]);
-  useEffect(() => {
-    if (!overlayPreviewEnabled) return;
-    const handleEditorDraftShortcut = (event: KeyboardEvent) => {
-      if (
-        event.repeat
-        || event.altKey
-        || event.shiftKey
-        || (!event.metaKey && !event.ctrlKey)
-        || event.key.toLowerCase() !== "s"
-      ) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.isComposing) return;
-      void saveEditorDraftNow();
-    };
-    window.addEventListener("keydown", handleEditorDraftShortcut, true);
-    return () => window.removeEventListener(
-      "keydown",
-      handleEditorDraftShortcut,
-      true,
-    );
-  }, [overlayPreviewEnabled, saveEditorDraftNow]);
   useEffect(() => {
     if (
       !overlayPreviewEnabled
@@ -4827,6 +4739,19 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       offsetY: Math.max(bounds.min, Math.min(bounds.max, value.offsetY)),
     });
   }, [editableCaptionSourceSpec, updateEditorSubtitleLayout]);
+  useEffect(() => {
+    if (!editableCaptionSourceSpec) return;
+    const currentCueEdits = subtitleLayoutRef.current.cueEdits || [];
+    const cueEdits = sanitizeEditorCaptionCueEdits(
+      editableCaptionSourceSpec,
+      currentCueEdits,
+    );
+    if (JSON.stringify(cueEdits) === JSON.stringify(currentCueEdits)) return;
+    updateCaptionTemplateSubtitleLayout({
+      ...subtitleLayoutRef.current,
+      cueEdits,
+    });
+  }, [editableCaptionSourceSpec, updateCaptionTemplateSubtitleLayout]);
   const titleFontFamily = overlayPreviewEnabled
     ? renderSpec?.title.font.family || editorFontFamily(titleFontId)
     : undefined;
@@ -5415,14 +5340,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     before: EditorCopySnapshot,
     after: EditorCopySnapshot,
   ) => {
-    if (editorCopySnapshotsEqual(before, after)) return;
-    copyHistoryRef.current = {
-      past: [
-        ...copyHistoryRef.current.past,
-        cloneEditorCopyHistoryEntry({ before, after }),
-      ].slice(-100),
-      future: [],
-    };
+    const nextCopyHistory = recordEditorCopyHistory(
+      copyHistoryRef.current,
+      before,
+      after,
+    );
+    if (nextCopyHistory === copyHistoryRef.current) return;
+    copyHistoryRef.current = nextCopyHistory;
     overlayHistoryRef.current = {
       ...overlayHistoryRef.current,
       future: [],
@@ -6166,13 +6090,83 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     inlineEditingOverlay,
   ]);
 
-  const clearEditorOverlaySelection = useCallback(() => {
+  const beginEditorCaptionTextEdit = useCallback((
+    sourceCueIndex: number,
+  ) => {
+    if (!editableCaptionSourceSpec) return;
+    const target = resolveEditorCaptionTextEditTarget(
+      editableCaptionSourceSpec,
+      sourceCueIndex,
+      subtitleLayoutRef.current.cueEdits,
+    );
+    if (!target) return;
+    overlayDragCleanupRef.current?.();
     finishPendingEditorInteractions();
+    beginEditorCopyInteraction();
+    videoRef.current?.pause();
+    setActiveEditorSidebarTool("subtitle");
+    setDesktopSidebarOpen(true);
+    setCaptionTextDraft({
+      sourceCueIndex,
+      initialText: target.currentText,
+      originalText: target.originalText,
+      text: target.currentText,
+    });
+  }, [
+    beginEditorCopyInteraction,
+    editableCaptionSourceSpec,
+    finishPendingEditorInteractions,
+  ]);
+
+  const commitEditorCaptionTextEdit = useCallback(() => {
+    const draft = captionTextDraft;
+    setCaptionTextDraft(null);
+    if (!draft || !editableCaptionSourceSpec) {
+      finishEditorCopyInteraction();
+      return;
+    }
+    const currentCueEdits = subtitleLayoutRef.current.cueEdits || [];
+    const cueEdits = updateEditorCaptionCueText(
+      editableCaptionSourceSpec,
+      currentCueEdits,
+      draft.sourceCueIndex,
+      draft.text,
+    );
+    if (JSON.stringify(cueEdits) !== JSON.stringify(currentCueEdits)) {
+      updateCaptionTemplateSubtitleLayout({
+        ...subtitleLayoutRef.current,
+        cueEdits,
+      });
+    }
+    finishEditorCopyInteraction();
+  }, [
+    captionTextDraft,
+    editableCaptionSourceSpec,
+    finishEditorCopyInteraction,
+    updateCaptionTemplateSubtitleLayout,
+  ]);
+
+  const cancelEditorCaptionTextEdit = useCallback(() => {
+    setCaptionTextDraft(null);
+    finishEditorCopyInteraction();
+  }, [finishEditorCopyInteraction]);
+
+  const finishPendingEditorInteractionsIncludingCaption = useCallback(() => {
+    if (captionTextDraft) commitEditorCaptionTextEdit();
+    finishPendingEditorInteractions();
+  }, [
+    captionTextDraft,
+    commitEditorCaptionTextEdit,
+    finishPendingEditorInteractions,
+  ]);
+
+  const clearEditorOverlaySelection = useCallback(() => {
+    finishPendingEditorInteractionsIncludingCaption();
     setSelectedOverlay(null);
     setSelectedVideoClipId(null);
     setInlineEditingOverlay(null);
     setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
-  }, [finishPendingEditorInteractions]);
+  }, [finishPendingEditorInteractionsIncludingCaption]);
 
   const addEditorTextOverlay = useCallback(() => {
     if (!overlayPreviewEnabled || overlayLayoutRef.current.textOverlays.length >= EDITOR_TEXT_OVERLAY_LIMIT) {
@@ -6380,6 +6374,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
   const splitCurrentEditorVideo = useCallback(() => {
     if (!overlayPreviewEnabled || !editTimeline) return;
+    finishPendingEditorInteractionsIncludingCaption();
     const clips = cloneEditorVideoClips(videoClipsRef.current);
     const rightClipId = globalThis.crypto?.randomUUID
       ? `video-clip-${globalThis.crypto.randomUUID()}`
@@ -6399,6 +6394,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setInlineEditingOverlay(null);
   }, [
     editTimeline,
+    finishPendingEditorInteractionsIncludingCaption,
     overlayPreviewEnabled,
     recordEditorVideoStep,
   ]);
@@ -6416,6 +6412,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     ) {
       return;
     }
+    finishPendingEditorInteractionsIncludingCaption();
     const clips = cloneEditorVideoClips(videoClipsRef.current);
     const clipIndex = clips.findIndex((clip) => clip.id === clipId);
     const clip = clips[clipIndex];
@@ -6516,6 +6513,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     window.addEventListener("pointercancel", finish);
   }, [
     editTimeline,
+    finishPendingEditorInteractionsIncludingCaption,
     overlayPreviewEnabled,
     recordEditorVideoStep,
     seekEditorVideoSequence,
@@ -6523,6 +6521,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
   const deleteSelectedEditorVideoClip = useCallback(() => {
     if (!overlayPreviewEnabled || !selectedVideoClipId) return;
+    finishPendingEditorInteractionsIncludingCaption();
     const clipsBeforeDelete = cloneEditorVideoClips(videoClipsRef.current);
     const result = deleteEditorVideoClip(
       clipsBeforeDelete,
@@ -6542,6 +6541,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       Math.max(0, nextDuration - 0.001),
     ));
   }, [
+    finishPendingEditorInteractionsIncludingCaption,
     overlayPreviewEnabled,
     recordEditorVideoStep,
     seekEditorVideoSequence,
@@ -6550,6 +6550,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
   const resetEditorVideoCuts = useCallback(() => {
     if (!editTimeline) return;
+    finishPendingEditorInteractionsIncludingCaption();
     const clipsBeforeReset = cloneEditorVideoClips(videoClipsRef.current);
     const initialClips = createEditorVideoClips(
       editTimeline.initialStartSeconds - editTimeline.timelineStartSeconds,
@@ -6566,6 +6567,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     seekEditorVideoSequence(0);
   }, [
     editTimeline,
+    finishPendingEditorInteractionsIncludingCaption,
     recordEditorVideoStep,
     seekEditorVideoSequence,
   ]);
@@ -6647,14 +6649,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     } else if (action === "copy") {
       const copyChange = copyHistoryRef.current.past.at(-1);
       if (!copyChange) return;
-      applyEditorCopySnapshot(copyChange.before);
-      copyHistoryRef.current = {
-        past: copyHistoryRef.current.past.slice(0, -1),
-        future: [
-          cloneEditorCopyHistoryEntry(copyChange),
-          ...copyHistoryRef.current.future,
-        ],
-      };
+      const result = undoEditorCopyHistory(copyHistoryRef.current);
+      if (!result.snapshot) return;
+      copyHistoryRef.current = result.history;
+      applyEditorCopySnapshot(result.snapshot);
       setSelectedOverlay(
         editorCopyTitleChanged(copyChange)
           ? "title"
@@ -6753,16 +6751,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       setSelectedOverlay("comment");
       setInlineEditingOverlay(null);
     } else if (action === "copy") {
-      const [copyChange, ...futureCopyChanges] = copyHistoryRef.current.future;
+      const copyChange = copyHistoryRef.current.future[0];
       if (!copyChange) return;
-      applyEditorCopySnapshot(copyChange.after);
-      copyHistoryRef.current = {
-        past: [
-          ...copyHistoryRef.current.past,
-          cloneEditorCopyHistoryEntry(copyChange),
-        ],
-        future: futureCopyChanges,
-      };
+      const result = redoEditorCopyHistory(copyHistoryRef.current);
+      if (!result.snapshot) return;
+      copyHistoryRef.current = result.history;
+      applyEditorCopySnapshot(result.snapshot);
       setSelectedOverlay(
         editorCopyTitleChanged(copyChange)
           ? "title"
@@ -6815,14 +6809,116 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       copyInteractionStartRef.current,
       currentEditorCopySnapshot(),
     );
+  const hasPendingCaptionTextChange = Boolean(
+    captionTextDraft
+    && editorCaptionTextDraftChanged(
+      captionTextDraft.initialText,
+      captionTextDraft.text,
+    ),
+  );
+  const hasInvalidCaptionTextDraft = Boolean(
+    captionTextDraft
+    && editorCaptionTextDraftInvalid(
+      captionTextDraft.initialText,
+      captionTextDraft.text,
+    ),
+  );
   const canUndoEditorEdit = editorHistoryOrderRef.current.past.length > 0
     || hasPendingOverlayHistoryChange
     || hasPendingCommentTextChange
-    || hasPendingCopyChange;
+    || hasPendingCopyChange
+    || hasPendingCaptionTextChange
+    || hasInvalidCaptionTextDraft;
   const canRedoEditorEdit = editorHistoryOrderRef.current.future.length > 0
     && !hasPendingOverlayHistoryChange
     && !hasPendingCommentTextChange
-    && !hasPendingCopyChange;
+    && !hasPendingCopyChange
+    && !hasPendingCaptionTextChange
+    && !hasInvalidCaptionTextDraft;
+
+  const finishPendingEditorInteractionsForHistory = useCallback(() => {
+    if (hasInvalidCaptionTextDraft) {
+      cancelEditorCaptionTextEdit();
+      return false;
+    }
+    finishPendingEditorInteractionsIncludingCaption();
+    return true;
+  }, [
+    cancelEditorCaptionTextEdit,
+    finishPendingEditorInteractionsIncludingCaption,
+    hasInvalidCaptionTextDraft,
+  ]);
+
+  const rejectInvalidCaptionTextDraft = useCallback(() => {
+    if (!hasInvalidCaptionTextDraft) return false;
+    setError("자막 문구는 비워둘 수 없습니다. 자막을 숨기려면 자막 끄기를 사용해 주세요.");
+    return true;
+  }, [hasInvalidCaptionTextDraft]);
+
+  const preserveInvalidCaptionTextFocus = useCallback((
+    event: PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.button !== 0 || !hasInvalidCaptionTextDraft) return;
+    event.preventDefault();
+    rejectInvalidCaptionTextDraft();
+  }, [hasInvalidCaptionTextDraft, rejectInvalidCaptionTextDraft]);
+
+  useEffect(() => {
+    if (!overlayPreviewEnabled) return;
+    const handleEditorDraftShortcut = (event: KeyboardEvent) => {
+      if (
+        event.repeat
+        || event.altKey
+        || event.shiftKey
+        || (!event.metaKey && !event.ctrlKey)
+        || event.key.toLowerCase() !== "s"
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.isComposing) return;
+      if (rejectInvalidCaptionTextDraft()) return;
+      finishPendingEditorInteractionsIncludingCaption();
+      void saveEditorDraftNow();
+    };
+    window.addEventListener("keydown", handleEditorDraftShortcut, true);
+    return () => window.removeEventListener(
+      "keydown",
+      handleEditorDraftShortcut,
+      true,
+    );
+  }, [
+    finishPendingEditorInteractionsIncludingCaption,
+    overlayPreviewEnabled,
+    rejectInvalidCaptionTextDraft,
+    saveEditorDraftNow,
+  ]);
+
+  const closeEditorAfterSavingCaptionDraft = useCallback(() => {
+    if (rejectInvalidCaptionTextDraft()) return;
+    finishPendingEditorInteractionsIncludingCaption();
+    if (!adminSubtitleEditingEnabled) {
+      onClose();
+      return;
+    }
+    void saveEditorDraftNow().finally(onClose);
+  }, [
+    adminSubtitleEditingEnabled,
+    finishPendingEditorInteractionsIncludingCaption,
+    onClose,
+    rejectInvalidCaptionTextDraft,
+    saveEditorDraftNow,
+  ]);
+
+  const openEditorApplyConfirmation = useCallback(() => {
+    if (rejectInvalidCaptionTextDraft()) return;
+    finishPendingEditorInteractionsIncludingCaption();
+    setApplyConfirmationOpen(true);
+  }, [
+    finishPendingEditorInteractionsIncludingCaption,
+    rejectInvalidCaptionTextDraft,
+  ]);
 
   const setEditorCommentTheme = useCallback((theme: EditorCommentTheme) => {
     setSelectedOverlay("comment");
@@ -6974,7 +7070,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     event.preventDefault();
     event.stopPropagation();
     overlayDragCleanupRef.current?.();
-    finishPendingEditorInteractions();
+    finishPendingEditorInteractionsIncludingCaption();
     beginEditorScaleHistoryInteraction(selection);
 
     const captureTarget = event.currentTarget;
@@ -7025,7 +7121,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   }, [
     beginEditorScaleHistoryInteraction,
     finishEditorScaleHistoryInteraction,
-    finishPendingEditorInteractions,
+    finishPendingEditorInteractionsIncludingCaption,
     overlayPreviewEnabled,
     setEditorOverlayScale,
   ]);
@@ -7148,7 +7244,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     event.preventDefault();
     event.stopPropagation();
     overlayDragCleanupRef.current?.();
-    finishPendingEditorInteractions();
+    finishPendingEditorInteractionsIncludingCaption();
     beginEditorOverlayHistoryInteraction();
     setSelectedOverlay(layer);
     setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
@@ -7271,7 +7367,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   }, [
     beginEditorOverlayHistoryInteraction,
     finishEditorOverlayHistoryInteraction,
-    finishPendingEditorInteractions,
+    finishPendingEditorInteractionsIncludingCaption,
     overlayPreviewEnabled,
     resolveEditorOverlayDelta,
     updateEditorOverlayLayout,
@@ -7692,10 +7788,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           || commentTextInteractionStartRef.current !== null
           || overlayInteractionStartRef.current !== null
           || inlineEditingOverlay !== null;
+        if (captionTextDraft && textInputTarget) return;
         if (textInputTarget && !editorTextInteractionActive) return;
         event.preventDefault();
         event.stopPropagation();
-        finishPendingEditorInteractions();
+        if (!finishPendingEditorInteractionsForHistory()) return;
         if (historyShortcut === "undo") {
           undoEditorEdit();
         } else {
@@ -7757,13 +7854,14 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     return () => window.removeEventListener("keydown", handleOverlayKeyboard);
   }, [
     clearEditorOverlaySelection,
+    captionTextDraft,
     commentRegenerationComparison,
     commentRegenerationConfirmationOpen,
     deleteEditorComment,
     deleteSelectedEditorVideoClip,
     deleteSelectedEditorOverlay,
     editorFontApplySuggestion,
-    finishPendingEditorInteractions,
+    finishPendingEditorInteractionsForHistory,
     inlineEditingOverlay,
     layoutPreviewComment,
     nudgeSelectedEditorOverlay,
@@ -8035,7 +8133,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     ) {
       return;
     }
-    finishPendingEditorInteractions();
+    finishPendingEditorInteractionsIncludingCaption();
     const before = currentEditorTemplateSnapshot();
     const after: EditorTemplateSnapshot = {
       ...before,
@@ -8060,7 +8158,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     ) {
       return;
     }
-    finishPendingEditorInteractions();
+    finishPendingEditorInteractionsIncludingCaption();
     const before = currentEditorTemplateSnapshot();
     const after: EditorTemplateSnapshot = {
       ...before,
@@ -8091,65 +8189,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setSegments(next);
   };
 
-  const beginEditorCaptionTextEdit = useCallback((
-    cueIndex: number,
-    text: string,
-  ) => {
-    if (!editableCaptionSourceSpec) return;
-    overlayDragCleanupRef.current?.();
-    finishPendingEditorInteractions();
-    beginEditorCopyInteraction();
-    videoRef.current?.pause();
-    setActiveEditorSidebarTool("subtitle");
-    setDesktopSidebarOpen(true);
-    setCaptionTextDraft({ cueIndex, text });
-  }, [
-    beginEditorCopyInteraction,
-    editableCaptionSourceSpec,
-    finishPendingEditorInteractions,
-  ]);
-
-  const commitEditorCaptionTextEdit = useCallback(() => {
-    const draft = captionTextDraft;
-    setCaptionTextDraft(null);
-    if (!draft || !editableCaptionSourceSpec) {
-      finishEditorCopyInteraction();
-      return;
-    }
-    const cue = editableCaptionSourceSpec.cues[draft.cueIndex];
-    const text = draft.text.trim();
-    if (cue && text) {
-      const originalText = captionRenderCueText(cue);
-      const cueEdits = (subtitleLayoutRef.current.cueEdits || []).filter(
-        (edit) => edit.cueIndex !== draft.cueIndex,
-      );
-      if (text !== originalText) {
-        cueEdits.push({ cueIndex: draft.cueIndex, text });
-      }
-      updateCaptionTemplateSubtitleLayout({
-        ...subtitleLayoutRef.current,
-        cueEdits,
-      });
-    }
-    finishEditorCopyInteraction();
-  }, [
-    editableCaptionSourceSpec,
-    captionTextDraft,
-    finishEditorCopyInteraction,
-    updateCaptionTemplateSubtitleLayout,
-  ]);
-
-  const cancelEditorCaptionTextEdit = useCallback(() => {
-    setCaptionTextDraft(null);
-    finishEditorCopyInteraction();
-  }, [finishEditorCopyInteraction]);
-
   const toggleEditorSubtitles = useCallback(() => {
-    if (captionTextDraft) {
-      commitEditorCaptionTextEdit();
-    } else {
-      finishPendingEditorInteractions();
-    }
+    finishPendingEditorInteractionsIncludingCaption();
     beginEditorCopyInteraction();
     const enabled = !subtitlesEnabledRef.current;
     subtitlesEnabledRef.current = enabled;
@@ -8157,10 +8198,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     finishEditorCopyInteraction();
   }, [
     beginEditorCopyInteraction,
-    captionTextDraft,
-    commitEditorCaptionTextEdit,
     finishEditorCopyInteraction,
-    finishPendingEditorInteractions,
+    finishPendingEditorInteractionsIncludingCaption,
   ]);
 
   const beginEditorSubtitleDrag = useCallback((
@@ -8172,7 +8211,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     event.preventDefault();
     event.stopPropagation();
     overlayDragCleanupRef.current?.();
-    finishPendingEditorInteractions();
+    finishPendingEditorInteractionsIncludingCaption();
     beginEditorCopyInteraction();
     setActiveEditorSidebarTool("subtitle");
     setDesktopSidebarOpen(true);
@@ -8237,7 +8276,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     beginEditorCopyInteraction,
     editableCaptionSourceSpec,
     finishEditorCopyInteraction,
-    finishPendingEditorInteractions,
+    finishPendingEditorInteractionsIncludingCaption,
     updateCaptionTemplateSubtitleLayout,
   ]);
 
@@ -8580,6 +8619,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const startRangeInteraction = (handle: "start" | "end", event: PointerEvent<HTMLSpanElement>) => {
     if (event.button !== 0) return;
     if (!filmstripRef.current) return;
+    finishPendingEditorInteractionsIncludingCaption();
     videoRef.current?.pause();
     timelineScrubbingRef.current = false;
     rangeInteractionStartClipsRef.current = (
@@ -8616,6 +8656,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
   const startTimelineScrubbing = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
+    finishPendingEditorInteractionsIncludingCaption();
     if (videoCuttingEnabled) {
       const target = event.target;
       const clipId = target instanceof HTMLElement
@@ -9204,12 +9245,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                     ? "저장 실패"
                     : "자동 저장"}
             </span>}
-            <button type="button" onClick={onClose} className="editor-close-button" aria-label="편집기에서 나가기">나가기</button>
+            <button type="button" onPointerDown={preserveInvalidCaptionTextFocus} onClick={closeEditorAfterSavingCaptionDraft} className="editor-close-button" aria-label="편집기에서 나가기">나가기</button>
             <button
               type="button"
               data-editor-guide={overlayPreviewEnabled ? "editor-save" : undefined}
               disabled={(overlayPreviewEnabled && !editorSaveEnabled) || !editorValid || saving}
-              onClick={() => setApplyConfirmationOpen(true)}
+              onPointerDown={preserveInvalidCaptionTextFocus}
+              onClick={openEditorApplyConfirmation}
               className="editor-apply-button"
             >
               {overlayPreviewEnabled && !editorSaveEnabled
@@ -9251,12 +9293,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.preventDefault();
-              finishPendingEditorInteractions();
+              if (!finishPendingEditorInteractionsForHistory()) return;
               undoEditorEdit();
             }}
             onClick={(event) => {
               if (event.detail !== 0) return;
-              finishPendingEditorInteractions();
+              if (!finishPendingEditorInteractionsForHistory()) return;
               undoEditorEdit();
             }}
           >
@@ -9271,12 +9313,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.preventDefault();
-              finishPendingEditorInteractions();
+              if (!finishPendingEditorInteractionsForHistory()) return;
               redoEditorEdit();
             }}
             onClick={(event) => {
               if (event.detail !== 0) return;
-              finishPendingEditorInteractions();
+              if (!finishPendingEditorInteractionsForHistory()) return;
               redoEditorEdit();
             }}
           >
@@ -10830,7 +10872,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             </div>
           </details>
           {error && <p className="mt-4 text-sm font-semibold text-white">{error}</p>}
-          {!standalone && <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={(overlayPreviewEnabled && !editorSaveEnabled) || !editorValid || saving} onClick={() => setApplyConfirmationOpen(true)} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{overlayPreviewEnabled && !editorSaveEnabled ? "저장 잠금" : saving ? "처리 중..." : "영상에 적용"}</button></div>}
+          {!standalone && <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={onClose} className="h-11 rounded-lg border border-white/15 px-4 text-sm font-semibold">변경 취소</button><button disabled={(overlayPreviewEnabled && !editorSaveEnabled) || !editorValid || saving} onPointerDown={preserveInvalidCaptionTextFocus} onClick={openEditorApplyConfirmation} className="h-11 rounded-lg bg-white px-4 text-sm font-bold text-black disabled:opacity-40">{overlayPreviewEnabled && !editorSaveEnabled ? "저장 잠금" : saving ? "처리 중..." : "영상에 적용"}</button></div>}
           </div>
           </div>
         </section>

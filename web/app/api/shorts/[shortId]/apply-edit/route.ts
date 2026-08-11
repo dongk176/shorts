@@ -303,9 +303,19 @@ async function applyEditorDocument({
     if (
       requestedDocument.version === 3
       && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
-      && (requestedDocument.renderSpec.subtitles.cueEdits || []).some(
-        (edit) => edit.cueIndex >= captionRenderSpec.cues.length,
-      )
+      && (() => {
+        const sourceCueCounts = new Map<number, number>();
+        captionRenderSpec.cues.forEach((cue, cueIndex) => {
+          const sourceCueIndex = cue.sourceCueIndex ?? cueIndex;
+          sourceCueCounts.set(
+            sourceCueIndex,
+            (sourceCueCounts.get(sourceCueIndex) || 0) + 1,
+          );
+        });
+        return (requestedDocument.renderSpec.subtitles.cueEdits || []).some(
+          (edit) => sourceCueCounts.get(edit.cueIndex) !== 1,
+        );
+      })()
     ) {
       throw new HttpError(
         400,

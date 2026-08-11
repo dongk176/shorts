@@ -52,6 +52,11 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain('aria-label={`자막 포인트 색상 ${option.name}`}');
     expect(editorSource).toContain('title="드래그해서 이동 · 더블클릭해서 자막 수정"');
     expect(editorSource).toContain("onEditStart={beginEditorCaptionTextEdit}");
+    expect(editorSource).toContain("resolveEditorCaptionTextEditTarget(");
+    expect(editorSource).toContain("updateEditorCaptionCueText(");
+    expect(editorSource).not.toContain(
+      "editableCaptionSourceSpec.cues[draft.cueIndex]",
+    );
     expect(editorSource).toContain("onPointerDown={beginEditorSubtitleDrag}");
     expect(editorSource).toContain("subtitleOffsetBounds.max");
     expect(editorSource).toContain('spec.templateId === "pop"');
@@ -74,7 +79,7 @@ describe("admin editor subtitle layout", () => {
 
   it("sends a subtitle layout only through the admin v3 snapshot", () => {
     expect(editorSource).toContain(
-      "adminSubtitleEditingEnabled ? subtitleLayout : undefined",
+      "? editorDocumentSubtitleLayout",
     );
     const routeSource = source("./api/shorts/[shortId]/apply-edit/route.ts");
     expect(routeSource).toContain('release.channel !== "canary"');

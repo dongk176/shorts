@@ -6,7 +6,10 @@ import {
   type EditorFontId,
 } from "./editor-fonts";
 import type { VideoAspectRatio } from "./contracts";
-import type { EditorSubtitleCueEdit } from "./editor-render-spec";
+import type {
+  EditorSubtitleCueEdit,
+  EditorSubtitleLayout,
+} from "./editor-render-spec";
 import type { EditorVideoClip } from "./editor-video-cuts";
 import {
   EDITOR_RENDER_CANVAS,
@@ -28,6 +31,19 @@ type CaptionCue = CaptionRenderSpec["cues"][number];
 type CaptionWord = CaptionCue["words"][number];
 type CaptionTextMeasurer = (text: string, fontSize: number) => number;
 
+export type EditorCaptionTextEditTarget = {
+  sourceCueIndex: number;
+  originalText: string;
+  currentText: string;
+};
+
+export type EditorCaptionTextDraft = {
+  sourceCueIndex: number;
+  initialText: string;
+  originalText: string;
+  text: string;
+};
+
 const POP_SCALE = 1.12;
 const POP_SPACED_GAP = 6;
 const POP_UNSPACED_GAP = 0;
@@ -37,6 +53,132 @@ const SENTENCE_END = /[.!?。！？]+["'”’」』】）)]*$/u;
 const EXPRESSIVE_REPEAT = /(.)\1{5,}/gu;
 
 let captionMeasureContext: CanvasRenderingContext2D | null | undefined;
+
+export function editorCaptionCueSourceIndex(
+  cue: CaptionCue,
+  cueIndex: number,
+) {
+  return cue.sourceCueIndex ?? cueIndex;
+}
+
+export function editorCaptionCueText(cue: CaptionCue) {
+  return cue.words.reduce(
+    (text, word, wordIndex) => (
+      `${text}${wordIndex > 0 && word.spaceBefore ? " " : ""}${word.text}`
+    ),
+    "",
+  );
+}
+
+export function resolveEditorCaptionTextEditTarget(
+  spec: CaptionRenderSpec,
+  sourceCueIndex: number,
+  cueEdits: EditorSubtitleCueEdit[] = [],
+): EditorCaptionTextEditTarget | null {
+  const sourceCues = spec.cues.filter((cue, cueIndex) => (
+    editorCaptionCueSourceIndex(cue, cueIndex) === sourceCueIndex
+  ));
+  if (sourceCues.length !== 1) return null;
+  const [sourceCue] = sourceCues;
+  if (!sourceCue) return null;
+  const originalText = editorCaptionCueText(sourceCue);
+  const storedEdit = cueEdits.find((edit) => (
+    edit.cueIndex === sourceCueIndex
+  ));
+  return {
+    sourceCueIndex,
+    originalText,
+    currentText: storedEdit?.text || originalText,
+  };
+}
+
+export function editorCaptionTextDraftChanged(
+  initialText: string,
+  value: string,
+) {
+  const text = value.trim();
+  return text.length > 0 && text !== initialText.trim();
+}
+
+export function editorCaptionTextDraftInvalid(
+  initialText: string,
+  value: string,
+) {
+  return value !== initialText && value.trim().length === 0;
+}
+
+export function updateEditorCaptionCueEdits(
+  cueEdits: EditorSubtitleCueEdit[] = [],
+  sourceCueIndex: number,
+  originalText: string,
+  value: string,
+) {
+  const text = value.trim();
+  if (!text) return cueEdits.map((edit) => ({ ...edit }));
+  const next = cueEdits
+    .filter((edit) => edit.cueIndex !== sourceCueIndex)
+    .map((edit) => ({ ...edit }));
+  if (text !== originalText.trim()) {
+    next.push({ cueIndex: sourceCueIndex, text });
+  }
+  return next.sort((left, right) => left.cueIndex - right.cueIndex);
+}
+
+export function editorSubtitleLayoutWithCaptionDraft(
+  layout: EditorSubtitleLayout,
+  draft: EditorCaptionTextDraft | null,
+): EditorSubtitleLayout {
+  return draft
+    ? {
+        ...layout,
+        cueEdits: updateEditorCaptionCueEdits(
+          layout.cueEdits,
+          draft.sourceCueIndex,
+          draft.originalText,
+          draft.text,
+        ),
+      }
+    : layout;
+}
+
+export function sanitizeEditorCaptionCueEdits(
+  spec: CaptionRenderSpec,
+  cueEdits: EditorSubtitleCueEdit[] = [],
+) {
+  const sourceCueCounts = new Map<number, number>();
+  spec.cues.forEach((cue, cueIndex) => {
+    const sourceCueIndex = editorCaptionCueSourceIndex(cue, cueIndex);
+    sourceCueCounts.set(
+      sourceCueIndex,
+      (sourceCueCounts.get(sourceCueIndex) || 0) + 1,
+    );
+  });
+  return cueEdits
+    .filter((edit) => sourceCueCounts.get(edit.cueIndex) === 1)
+    .map((edit) => ({ ...edit }))
+    .sort((left, right) => left.cueIndex - right.cueIndex);
+}
+
+export function updateEditorCaptionCueText(
+  spec: CaptionRenderSpec,
+  cueEdits: EditorSubtitleCueEdit[] = [],
+  sourceCueIndex: number,
+  value: string,
+) {
+  const target = resolveEditorCaptionTextEditTarget(
+    spec,
+    sourceCueIndex,
+    cueEdits,
+  );
+  return target
+    ? updateEditorCaptionCueEdits(
+        cueEdits,
+        sourceCueIndex,
+        target.originalText,
+        value,
+      )
+    : cueEdits.map((edit) => ({ ...edit }));
+}
 
 function fallbackCaptionTextWidth(text: string, fontSize: number) {
   return Array.from(text).reduce((width, character) => {
