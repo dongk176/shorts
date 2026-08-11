@@ -241,6 +241,17 @@ describe("shorts MVP infrastructure", () => {
     ]));
   });
 
+  it("limits editor release tagging to verified definition name prefixes", () => {
+    const { editorCanary } = stacks("production");
+    const templateJson = JSON.stringify(editorCanary.toJSON());
+
+    expect(templateJson).toContain('"batch:TagResource"');
+    expect(templateJson).toContain("job-definition/shorts-mvp-editor-release-*");
+    expect(templateJson).toContain(
+      "job-definition/shorts-mvp-editor-test-release-*",
+    );
+  });
+
   it("enables verified paid Gemini processing only in production", () => {
     const testTemplate = JSON.stringify(stacks().compute.toJSON());
     const productionTemplate = JSON.stringify(stacks("production").compute.toJSON());

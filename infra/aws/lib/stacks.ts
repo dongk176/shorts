@@ -452,6 +452,23 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
       resources: ["*"],
     }));
     githubRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["batch:TagResource"],
+      resources: [
+        this.formatArn({
+          service: "batch",
+          resource: "job-definition",
+          resourceName: "shorts-mvp-editor-release-*",
+          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+        }),
+        this.formatArn({
+          service: "batch",
+          resource: "job-definition",
+          resourceName: "shorts-mvp-editor-test-release-*",
+          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+        }),
+      ],
+    }));
+    githubRole.addToPolicy(new iam.PolicyStatement({
       actions: ["batch:SubmitJob"],
       resources: [
         this.queue.attrJobQueueArn,
