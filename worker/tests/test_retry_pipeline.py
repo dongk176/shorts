@@ -24,6 +24,7 @@ from shorts_worker.worker_pipeline import (
     BatchWorker,
     ProjectTimelineTarget,
     _offset_highlight_clip,
+    _subtitle_template_timing_lead_frames,
     classify_full_source_download,
     project_source_window,
 )
@@ -1094,6 +1095,13 @@ def test_project_finishes_user_outputs_before_timeline_postprocessing() -> None:
     assert 0 <= render_index < finalize_index < timeline_index
 
 
+def test_caption_template_projects_capture_the_padded_edit_timeline() -> None:
+    source = inspect.getsource(BatchWorker.project)
+
+    assert "and not subtitle_template_id" not in source
+    assert "caption_editor_sources.get(index)" in source
+
+
 def test_deferred_timeline_retries_once_and_commits_after_upload(tmp_path) -> None:
     worker = _timeline_worker(tmp_path)
     calls = 0
@@ -1232,9 +1240,25 @@ def test_project_isolates_unavailable_or_uncompilable_caption_clips() -> None:
     assert "project_caption_clip_rejected" in source
     assert 'subtitle_template_snapshot.get("captionPlacement")' in source
     assert "caption_placement=caption_placement" in source
+    assert source.count(
+        "timing_lead_frames=caption_timing_lead_frames",
+    ) == 2
     assert "except (CaptionCompileError, TranscriptionError)" in source
     assert "len(compiled_clips) < required_minimum_count" in source
     assert "clips = [clip for clip, _spec in compiled_clips]" in source
+
+
+def test_subtitle_template_timing_lead_defaults_stable_and_accepts_admin() -> None:
+    assert _subtitle_template_timing_lead_frames(None) == 4
+    assert _subtitle_template_timing_lead_frames({}) == 4
+    assert _subtitle_template_timing_lead_frames({"timingLeadFrames": 4}) == 4
+    assert _subtitle_template_timing_lead_frames({"timingLeadFrames": 7}) == 7
+
+
+@pytest.mark.parametrize("value", [-1, 31, True, "7"])
+def test_subtitle_template_timing_lead_rejects_invalid_snapshot(value: object) -> None:
+    with pytest.raises(CaptionCompileError, match="선행 프레임"):
+        _subtitle_template_timing_lead_frames({"timingLeadFrames": value})
 
 
 def _initial_render_item() -> dict[str, object]:
@@ -1418,6 +1442,73 @@ def test_editor_document_rerender_promotes_one_atomic_snapshot(tmp_path) -> None
         "thumbnails/session-a/job-a/short-a.jpg",
         "edit-sources/clean.mp4",
     }
+
+
+def test_editor_document_rerender_forwards_trusted_caption_template_spec(
+    tmp_path,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    caption_spec = {
+        "schemaVersion": 3,
+        "templateId": "pop",
+        "fps": 30,
+        "cues": [],
+    }
+    item = worker.repository.get_short.return_value
+    item["subtitle_template_id"] = "pop"
+    item["caption_render_spec"] = caption_spec
+
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
+        is caption_spec
+    )
+
+
+def test_editor_document_rerender_uses_padded_caption_source_with_timeline(
+    tmp_path,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    editor_spec = {
+        "schemaVersion": 3,
+        "templateId": "pop",
+        "fps": 30,
+        "cues": [{"startFrame": 0}],
+    }
+    root_spec = {
+        "schemaVersion": 3,
+        "templateId": "pop",
+        "fps": 30,
+        "cues": [],
+        "editorSource": {
+            "timelineStartSeconds": 10,
+            "timelineEndSeconds": 20,
+            "spec": editor_spec,
+        },
+    }
+    item = worker.repository.get_short.return_value
+    item["subtitle_template_id"] = "pop"
+    item["caption_render_spec"] = root_spec
+
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
+        is editor_spec
+    )
+
+
+def test_editor_document_rerender_fails_closed_without_caption_template_spec(
+    tmp_path,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    worker.repository.get_short.return_value["subtitle_template_id"] = "highlight"
+
+    with pytest.raises(ValueError, match="원본 자막 렌더 정보를 찾을 수 없습니다"):
+        worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    worker.editor_renderer.render.assert_not_called()
 
 
 def test_editor_document_failure_releases_lock_after_final_attempt(

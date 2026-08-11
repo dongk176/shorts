@@ -248,6 +248,8 @@ class TitleTextStyle(BaseModel):
 
 EDITOR_DOCUMENT_VERSION = 2
 EDITOR_DOCUMENT_LATEST_VERSION = 3
+EDITOR_RENDER_SPEC_VERSION = 1
+EDITOR_RENDER_SPEC_LATEST_VERSION = 2
 EDITOR_CANVAS_WIDTH = 1080
 EDITOR_CANVAS_HEIGHT = 1920
 EDITOR_PRESET_COLORS = {
@@ -294,6 +296,17 @@ class EditorFontId(str, Enum):
     NANUM_MYEONGJO = "nanum-myeongjo"
     SUIT = "suit"
     SPOQA_HAN_SANS_NEO = "spoqa-han-sans-neo"
+    NOTO_SANS_KR = "noto-sans-kr"
+    NANUM_SQUARE_NEO = "nanum-square-neo"
+    SANDBOX_AGGRO = "sandbox-aggro"
+    JUA = "jua"
+    S_CORE_DREAM = "s-core-dream"
+    CAFE24_ANEMONE = "cafe24-anemone"
+    CAFE24_PRO_UP = "cafe24-pro-up"
+    RIDI_BATANG = "ridi-batang"
+    JALNAN_2 = "jalnan-2"
+    GODO = "godo"
+    GALMURI_9 = "galmuri-9"
 
 
 EDITOR_FONT_FILE_IDS = {
@@ -305,6 +318,17 @@ EDITOR_FONT_FILE_IDS = {
     EditorFontId.NANUM_MYEONGJO: "NanumMyeongjo-Bold.ttf",
     EditorFontId.SUIT: "SUIT-Bold.woff2",
     EditorFontId.SPOQA_HAN_SANS_NEO: "SpoqaHanSansNeo-Bold.woff2",
+    EditorFontId.NOTO_SANS_KR: "NotoSansKR-Variable.ttf",
+    EditorFontId.NANUM_SQUARE_NEO: "NanumSquareNeo-Bold.ttf",
+    EditorFontId.SANDBOX_AGGRO: "SandboxAggro-Bold.ttf",
+    EditorFontId.JUA: "Jua-Regular.ttf",
+    EditorFontId.S_CORE_DREAM: "SCoreDream-ExtraBold.otf",
+    EditorFontId.CAFE24_ANEMONE: "Cafe24Anemone-Bold.woff",
+    EditorFontId.CAFE24_PRO_UP: "Cafe24ProUp-Regular.woff2",
+    EditorFontId.RIDI_BATANG: "RIDIBatang-Regular.woff",
+    EditorFontId.JALNAN_2: "Jalnan2-Regular.woff2",
+    EditorFontId.GODO: "Godo-Bold.ttf",
+    EditorFontId.GALMURI_9: "Galmuri9-Regular.ttf",
 }
 EDITOR_FONT_STATIC_WEIGHTS = {
     EditorFontId.PRETENDARD: 700,
@@ -314,6 +338,20 @@ EDITOR_FONT_STATIC_WEIGHTS = {
     EditorFontId.NANUM_MYEONGJO: 700,
     EditorFontId.SUIT: 700,
     EditorFontId.SPOQA_HAN_SANS_NEO: 700,
+    EditorFontId.NANUM_SQUARE_NEO: 700,
+    EditorFontId.SANDBOX_AGGRO: 700,
+    EditorFontId.JUA: 400,
+    EditorFontId.S_CORE_DREAM: 800,
+    EditorFontId.CAFE24_ANEMONE: 700,
+    EditorFontId.CAFE24_PRO_UP: 400,
+    EditorFontId.RIDI_BATANG: 400,
+    EditorFontId.JALNAN_2: 400,
+    EditorFontId.GODO: 700,
+    EditorFontId.GALMURI_9: 400,
+}
+EDITOR_FONT_VARIABLE_IDS = {
+    EditorFontId.NOTO_SERIF_KR,
+    EditorFontId.NOTO_SANS_KR,
 }
 
 
@@ -333,7 +371,7 @@ class EditorResolvedFontFace(BaseModel):
             raise ValueError("editor render font file does not match font id")
         if self.requested_weight not in {700, 800}:
             raise ValueError("editor render requested font weight is invalid")
-        if self.font_id is EditorFontId.NOTO_SERIF_KR:
+        if self.font_id in EDITOR_FONT_VARIABLE_IDS:
             if (
                 self.variable_weight != self.requested_weight
                 or self.resolved_weight != self.requested_weight
@@ -382,6 +420,47 @@ class EditorRenderCommentSpec(BaseModel):
         return self
 
 
+class EditorSubtitleCueEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    cue_index: int = Field(alias="cueIndex", ge=0, le=1_999)
+    text: str = Field(min_length=1, max_length=200)
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("edited caption text cannot be empty")
+        return stripped
+
+
+class EditorRenderSubtitleSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    center_x: int = Field(alias="centerX", ge=540, le=540)
+    offset_y: float = Field(alias="offsetY", ge=-900, le=900)
+    scale: float = Field(ge=0.5, le=2)
+    font_id: EditorFontId | None = Field(default=None, alias="fontId")
+    accent_color: str | None = Field(
+        default=None,
+        alias="accentColor",
+        pattern=r"^#[0-9A-Fa-f]{6}$",
+    )
+    cue_edits: list[EditorSubtitleCueEdit] = Field(
+        default_factory=list,
+        alias="cueEdits",
+        max_length=2_000,
+    )
+
+    @model_validator(mode="after")
+    def validate_unique_cue_edits(self) -> EditorRenderSubtitleSpec:
+        indexes = [edit.cue_index for edit in self.cue_edits]
+        if len(indexes) != len(set(indexes)):
+            raise ValueError("edited caption cue indexes must be unique")
+        return self
+
+
 class EditorRenderTextSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -423,7 +502,10 @@ class EditorRenderVideoSpec(BaseModel):
 class EditorRenderSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    version: int = Field(ge=1, le=1)
+    version: int = Field(
+        ge=EDITOR_RENDER_SPEC_VERSION,
+        le=EDITOR_RENDER_SPEC_LATEST_VERSION,
+    )
     canvas: dict[str, int]
     fps: int = Field(ge=30, le=30)
     layer_order: list[str] = Field(alias="layerOrder", min_length=1, max_length=24)
@@ -432,11 +514,16 @@ class EditorRenderSpec(BaseModel):
     comments: list[EditorRenderCommentSpec] = Field(max_length=20)
     text_overlays: list[EditorRenderTextSpec] = Field(alias="textOverlays", max_length=20)
     video: EditorRenderVideoSpec
+    subtitles: EditorRenderSubtitleSpec | None = None
 
     @model_validator(mode="after")
     def validate_canvas(self) -> EditorRenderSpec:
         if self.canvas != {"width": 1080, "height": 1920}:
             raise ValueError("editor render canvas is invalid")
+        if self.version == 1 and self.subtitles is not None:
+            raise ValueError("editor renderSpec v1 cannot contain subtitle layout")
+        if self.version == 2 and self.subtitles is None:
+            raise ValueError("editor renderSpec v2 requires subtitle layout")
         return self
 
 

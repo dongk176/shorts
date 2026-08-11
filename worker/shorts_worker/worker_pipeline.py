@@ -18,11 +18,19 @@ from functools import cached_property
 from pathlib import Path
 from uuid import uuid4
 
-from .caption_templates import CAPTION_ACCENT, compile_caption_render_spec
+from .caption_templates import (
+    CAPTION_ACCENT,
+    CAPTION_STABLE_TIMING_LEAD_FRAMES,
+    compile_caption_render_spec,
+)
 from .channel_thumbnail import download_channel_thumbnail
 from .comment_generator import CommentClipInput, CommentGenerator
 from .config import Settings
-from .editor_renderer import EditorDocumentRenderer, retime_editor_subtitles
+from .editor_renderer import (
+    EditorDocumentRenderer,
+    editor_subtitle_render_mode,
+    retime_editor_subtitles,
+)
 from .errors import (
     BotCheckError,
     CaptionCompileError,
@@ -72,6 +80,7 @@ class ProjectTimelineTarget:
     slot_index: int
     clip: HighlightClip
     subtitles: list[SubtitleSegment]
+    caption_editor_source: dict[str, object] | None = None
 
 
 def edit_timeline_clip(
@@ -132,6 +141,19 @@ def _preset_brand_color(item: dict[str, object]) -> str | None:
     if isinstance(brand_color, str) and brand_color in BRAND_COLOR_VALUES:
         return brand_color
     return None
+
+
+def _subtitle_template_timing_lead_frames(snapshot: object) -> int:
+    if not isinstance(snapshot, dict) or "timingLeadFrames" not in snapshot:
+        return CAPTION_STABLE_TIMING_LEAD_FRAMES
+    value = snapshot["timingLeadFrames"]
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not 0 <= value <= 30
+    ):
+        raise CaptionCompileError("자막 선행 프레임 값이 올바르지 않습니다.")
+    return value
 
 
 def _log_event(event: str, **fields: object) -> None:
@@ -873,15 +895,33 @@ class BatchWorker:
                     },
                 )
                 caption_render_specs: dict[int, dict[str, object]] = {}
+                caption_editor_sources: dict[int, dict[str, object]] = {}
+                subtitle_template_snapshot = job.get("subtitle_template_snapshot")
+                caption_timing_lead_frames = (
+                    _subtitle_template_timing_lead_frames(
+                        subtitle_template_snapshot,
+                    )
+                    if subtitle_template_id
+                    else CAPTION_STABLE_TIMING_LEAD_FRAMES
+                )
                 if subtitle_template_id:
                     aspect_ratio = VideoAspectRatio(
                         str(job.get("video_aspect_ratio") or "1:1")
                     )
-                    subtitle_template_snapshot = job.get("subtitle_template_snapshot")
                     caption_placement = (
                         str(subtitle_template_snapshot.get("captionPlacement") or "lower")
                         if isinstance(subtitle_template_snapshot, dict)
                         else "lower"
+                    )
+                    snapshot_font = (
+                        subtitle_template_snapshot.get("font")
+                        if isinstance(subtitle_template_snapshot, dict)
+                        else None
+                    )
+                    caption_font_id = (
+                        snapshot_font.get("id")
+                        if isinstance(snapshot_font, dict)
+                        else None
                     )
                     source_offset_seconds = (
                         float(range_start_seconds) if source_range_enabled else 0.0
@@ -916,6 +956,8 @@ class BatchWorker:
                                 video_aspect_ratio=aspect_ratio,
                                 caption_placement=caption_placement,
                                 accent_color=_preset_brand_color(job) or CAPTION_ACCENT,
+                                font_id=caption_font_id,
+                                timing_lead_frames=caption_timing_lead_frames,
                             )
                         except (CaptionCompileError, TranscriptionError) as exc:
                             rejected_caption_clips += 1
@@ -955,8 +997,69 @@ class BatchWorker:
                     for index, clip in enumerate(clips, start=1)
                 } if (
                     getattr(self.settings, "edit_timeline_capture_enabled", False)
-                    and not subtitle_template_id
                 ) else {}
+                if subtitle_template_id and edit_timeline_clips:
+                    source_offset_seconds = (
+                        float(range_start_seconds) if source_range_enabled else 0.0
+                    )
+                    aspect_ratio = VideoAspectRatio(
+                        str(job.get("video_aspect_ratio") or "1:1")
+                    )
+                    caption_placement = (
+                        str(subtitle_template_snapshot.get("captionPlacement") or "lower")
+                        if isinstance(subtitle_template_snapshot, dict)
+                        else "lower"
+                    )
+                    snapshot_font = (
+                        subtitle_template_snapshot.get("font")
+                        if isinstance(subtitle_template_snapshot, dict)
+                        else None
+                    )
+                    caption_font_id = (
+                        snapshot_font.get("id")
+                        if isinstance(snapshot_font, dict)
+                        else None
+                    )
+                    unavailable_timeline_indexes: list[int] = []
+                    for index, timeline_clip in edit_timeline_clips.items():
+                        absolute_timeline_clip = _offset_highlight_clip(
+                            timeline_clip,
+                            source_offset_seconds,
+                        )
+                        try:
+                            timeline_spec = compile_caption_render_spec(
+                                transcript_words,
+                                template_id=subtitle_template_id,
+                                clip_start=absolute_timeline_clip.start_seconds,
+                                clip_end=absolute_timeline_clip.end_seconds,
+                                video_aspect_ratio=aspect_ratio,
+                                caption_placement=caption_placement,
+                                accent_color=_preset_brand_color(job) or CAPTION_ACCENT,
+                                font_id=caption_font_id,
+                                timing_lead_frames=caption_timing_lead_frames,
+                            )
+                        except (CaptionCompileError, TranscriptionError) as exc:
+                            unavailable_timeline_indexes.append(index)
+                            _log_event(
+                                "caption_edit_timeline_rejected",
+                                job_id=job_id,
+                                clip_index=index,
+                                error_type=type(exc).__name__,
+                            )
+                            continue
+                        caption_editor_sources[index] = {
+                            "timelineStartSeconds": round(
+                                absolute_timeline_clip.start_seconds,
+                                3,
+                            ),
+                            "timelineEndSeconds": round(
+                                absolute_timeline_clip.end_seconds,
+                                3,
+                            ),
+                            "spec": timeline_spec,
+                        }
+                    for index in unavailable_timeline_indexes:
+                        edit_timeline_clips.pop(index, None)
                 edit_timeline_subtitles = {
                     index: self._relative_subtitles(transcript, timeline_clip)
                     for index, timeline_clip in edit_timeline_clips.items()
@@ -1075,6 +1178,9 @@ class BatchWorker:
                                         slot_index=index,
                                         clip=timeline_clip,
                                         subtitles=edit_timeline_subtitles.get(index, []),
+                                        caption_editor_source=(
+                                            caption_editor_sources.get(index)
+                                        ),
                                     ))
                             else:
                                 extraction_failures += 1
@@ -1508,6 +1614,7 @@ class BatchWorker:
                     timeline_subtitles=[
                         item.model_dump() for item in target.subtitles
                     ],
+                    caption_editor_source=target.caption_editor_source,
                 )
             except Exception as exc:
                 # The database may have committed before the connection failed.
@@ -2664,12 +2771,53 @@ class BatchWorker:
                     or None,
                     work_dir / "channel-thumbnail.png",
                 )
+            caption_render_spec = item.get("caption_render_spec")
+            if item.get("subtitle_template_id") and not isinstance(
+                caption_render_spec,
+                dict,
+            ):
+                raise ValueError("원본 자막 렌더 정보를 찾을 수 없습니다.")
+            resolved_caption_render_spec = (
+                (
+                    editor_source["spec"]
+                    if captured_timeline_key
+                    and isinstance(
+                        editor_source := caption_render_spec.get("editorSource"),
+                        dict,
+                    )
+                    and isinstance(editor_source.get("spec"), dict)
+                    else caption_render_spec
+                )
+                if isinstance(caption_render_spec, dict)
+                else None
+            )
+            subtitle_render_mode = editor_subtitle_render_mode(
+                document,
+                resolved_caption_render_spec,
+            )
+            _log_event(
+                "editor_render_plan",
+                short_id=short_id,
+                document_version=document.version,
+                render_spec_version=(
+                    document.render_spec.version if document.render_spec else None
+                ),
+                template_id=document.template.id.value,
+                subtitle_render_mode=subtitle_render_mode,
+                subtitle_segment_count=len(document.subtitles.segments),
+                clip_count=len(document.video.clips),
+                channel_offset_x=document.overlays.offsets["channel"].x,
+                channel_offset_y=document.overlays.offsets["channel"].y,
+                channel_scale=document.overlays.scales["channel"],
+                layer_order=document.overlays.layer_order,
+            )
             output_path = self.editor_renderer.render(
                 clean_path=clean_path,
                 output_path=work_dir / "output.mp4",
                 document=document,
                 work_dir=work_dir,
                 channel_thumbnail_path=channel_thumbnail_path,
+                caption_render_spec=resolved_caption_render_spec,
             )
             thumbnail_path = work_dir / "thumbnail.jpg"
             self._thumbnail(output_path, thumbnail_path, work_dir)

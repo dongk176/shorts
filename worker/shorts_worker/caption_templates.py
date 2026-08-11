@@ -5,6 +5,8 @@ import io
 import re
 import unicodedata
 from collections.abc import Iterable, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -14,17 +16,61 @@ from fontTools.ttLib import TTFont
 from PIL import ImageFont
 
 from .errors import CaptionCompileError, RenderError, TranscriptionError
-from .schemas import VideoAspectRatio
+from .schemas import (
+    EDITOR_FONT_FILE_IDS,
+    EDITOR_FONT_STATIC_WEIGHTS,
+    EDITOR_FONT_VARIABLE_IDS,
+    EditorFontId,
+    VideoAspectRatio,
+)
 from .subtitles import TranscriptWord
 
 CAPTION_FPS = 30
-CAPTION_TIMING_LEAD_FRAMES = 4
+CAPTION_TIMING_LEAD_FRAMES = 7
+CAPTION_STABLE_TIMING_LEAD_FRAMES = 4
 CAPTION_TEMPLATE_IDS = frozenset({"basic", "highlight", "pop"})
 CAPTION_ACCENT = "#35E6E3"
 CAPTION_TEXT = "#FFFFFF"
 CAPTION_OUTLINE = "#080808"
-CAPTION_FONT_PATH = Path(__file__).parent / "assets" / "editor_fonts" / "Pretendard-Bold.woff2"
+CAPTION_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
+CAPTION_DEFAULT_FONT_ID = EditorFontId.PRETENDARD
+# Backward-compatible aliases for stored specs and existing integration probes.
+CAPTION_FONT_PATH = CAPTION_FONT_DIRECTORY / EDITOR_FONT_FILE_IDS[CAPTION_DEFAULT_FONT_ID]
 CAPTION_FONT_FAMILY = "Pretendard"
+CAPTION_FONT_FAMILIES = {
+    EditorFontId.PRETENDARD: "Pretendard",
+    EditorFontId.BLACK_HAN_SANS: "Black Han Sans",
+    EditorFontId.GMARKET_SANS: "Gmarket Sans TTF",
+    EditorFontId.DO_HYEON: "Do Hyeon",
+    EditorFontId.NOTO_SERIF_KR: "Noto Serif KR",
+    EditorFontId.NANUM_MYEONGJO: "NanumMyeongjo",
+    EditorFontId.SUIT: "SUIT",
+    EditorFontId.SPOQA_HAN_SANS_NEO: "Spoqa Han Sans Neo",
+    EditorFontId.NOTO_SANS_KR: "Noto Sans KR",
+    EditorFontId.NANUM_SQUARE_NEO: "NanumSquare Neo",
+    EditorFontId.SANDBOX_AGGRO: "SB Aggro",
+    EditorFontId.JUA: "Jua",
+    EditorFontId.S_CORE_DREAM: "S-Core Dream",
+    EditorFontId.CAFE24_ANEMONE: "Cafe24 Ohsquare",
+    EditorFontId.CAFE24_PRO_UP: "Cafe24 PRO UP",
+    EditorFontId.RIDI_BATANG: "RIDIBatang",
+    EditorFontId.JALNAN_2: "Jalnan 2",
+    EditorFontId.GODO: "Godo B",
+    EditorFontId.GALMURI_9: "Galmuri9",
+}
+_CAPTION_FONT_CONTEXT: ContextVar[EditorFontId] = ContextVar(
+    "caption_font_id",
+    default=CAPTION_DEFAULT_FONT_ID,
+)
+
+
+@contextmanager
+def _caption_font_context(font_id: EditorFontId):
+    token = _CAPTION_FONT_CONTEXT.set(font_id)
+    try:
+        yield
+    finally:
+        _CAPTION_FONT_CONTEXT.reset(token)
 CANVAS_WIDTH = 1080
 CANVAS_HEIGHT = 1920
 VIDEO_HEIGHTS = {
@@ -63,14 +109,49 @@ class _CaptionWord:
     end_frame: int
     space_before: bool
     source_indexes: tuple[int, ...]
+    speech_start_frame: int | None = None
+    speech_end_frame: int | None = None
 
 
-@lru_cache(maxsize=1)
-def _caption_ttf_bytes() -> bytes:
-    if not CAPTION_FONT_PATH.is_file():
-        raise RenderError("자막 폰트 파일을 찾지 못했습니다.")
+def _caption_font_id(value: object) -> EditorFontId:
+    if isinstance(value, EditorFontId):
+        return value
+    if value in {None, "", "pretendard-bold"}:
+        return CAPTION_DEFAULT_FONT_ID
     try:
-        font = TTFont(str(CAPTION_FONT_PATH), recalcBBoxes=False, recalcTimestamp=False)
+        return EditorFontId(str(value))
+    except ValueError as exc:
+        raise RenderError("승인되지 않은 자막 폰트입니다.") from exc
+
+
+def _caption_font_path(font_id: EditorFontId) -> Path:
+    path = CAPTION_FONT_DIRECTORY / EDITOR_FONT_FILE_IDS[font_id]
+    if not path.is_file():
+        raise RenderError("자막 폰트 파일을 찾지 못했습니다.")
+    return path
+
+
+def caption_font_spec(font_id: EditorFontId | str | None) -> dict[str, object]:
+    resolved = _caption_font_id(font_id)
+    path = _caption_font_path(resolved)
+    return {
+        "fontId": resolved.value,
+        "fileId": path.name,
+        "sha256": _sha256(path),
+        "family": CAPTION_FONT_FAMILIES[resolved],
+        "weight": (
+            700
+            if resolved in EDITOR_FONT_VARIABLE_IDS
+            else EDITOR_FONT_STATIC_WEIGHTS[resolved]
+        ),
+    }
+
+
+@lru_cache(maxsize=32)
+def _caption_ttf_bytes(font_id: EditorFontId) -> bytes:
+    font_path = _caption_font_path(font_id)
+    try:
+        font = TTFont(str(font_path), recalcBBoxes=False, recalcTimestamp=False)
         font.flavor = None
         output = io.BytesIO()
         font.save(output, reorderTables=False)
@@ -83,12 +164,22 @@ def _caption_ttf_bytes() -> bytes:
     return value
 
 
-@lru_cache(maxsize=32)
-def _font(size: int) -> ImageFont.FreeTypeFont:
+@lru_cache(maxsize=512)
+def _font_for_id(font_id: EditorFontId, size: int) -> ImageFont.FreeTypeFont:
     try:
-        return ImageFont.truetype(io.BytesIO(_caption_ttf_bytes()), size=size)
+        font = ImageFont.truetype(
+            io.BytesIO(_caption_ttf_bytes(font_id)),
+            size=size,
+        )
+        if font_id in EDITOR_FONT_VARIABLE_IDS:
+            font.set_variation_by_axes([700])
+        return font
     except OSError as exc:
         raise RenderError("자막 폰트를 불러오지 못했습니다.") from exc
+
+
+def _font(size: int) -> ImageFont.FreeTypeFont:
+    return _font_for_id(_CAPTION_FONT_CONTEXT.get(), size)
 
 
 def _measure(text: str, size: int) -> float:
@@ -103,20 +194,28 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def prepare_caption_fonts(directory: Path) -> Path:
-    """Materialize the approved WOFF2 as a libass-compatible TTF.
+def prepare_caption_fonts(
+    directory: Path,
+    spec: dict[str, object] | None = None,
+) -> Path:
+    """Materialize the approved source face as a libass-compatible font.
 
     Pillow/Freetype can read the source WOFF2 directly, while fontconfig builds
     used by libass do not consistently discover WOFF2 files in ``fontsdir``.
     The conversion is deterministic and local to the render work directory;
     the immutable render spec still identifies and hashes the approved WOFF2.
     """
-    if not CAPTION_FONT_PATH.is_file():
-        raise RenderError("자막 폰트 파일을 찾지 못했습니다.")
+    font_value = spec.get("font") if isinstance(spec, dict) else None
+    font_id = _caption_font_id(
+        font_value.get("fontId") if isinstance(font_value, dict) else None
+    )
+    _caption_font_path(font_id)
     directory.mkdir(parents=True, exist_ok=True)
-    output_path = directory / "Pretendard-Bold.ttf"
+    output_path = directory / Path(EDITOR_FONT_FILE_IDS[font_id]).with_suffix(
+        ".ttf"
+    ).name
     try:
-        output_path.write_bytes(_caption_ttf_bytes())
+        output_path.write_bytes(_caption_ttf_bytes(font_id))
     except OSError as exc:
         output_path.unlink(missing_ok=True)
         raise RenderError("자막 렌더 폰트를 준비하지 못했습니다.") from exc
@@ -277,6 +376,8 @@ def _clip_words(
                 end_frame=end_frame,
                 space_before=bool(selected) and word.space_before,
                 source_indexes=(source_index,),
+                speech_start_frame=source_start_frame,
+                speech_end_frame=source_end_frame,
             )
         )
     if not selected:
@@ -312,6 +413,16 @@ def _merge_unspaced_cjk_words(words: list[_CaptionWord]) -> list[_CaptionWord]:
                 end_frame=word.end_frame,
                 space_before=previous.space_before,
                 source_indexes=previous.source_indexes + word.source_indexes,
+                speech_start_frame=(
+                    previous.speech_start_frame
+                    if previous.speech_start_frame is not None
+                    else previous.start_frame
+                ),
+                speech_end_frame=(
+                    word.speech_end_frame
+                    if word.speech_end_frame is not None
+                    else word.end_frame
+                ),
             )
             continue
         merged.append(word)
@@ -406,6 +517,8 @@ def _split_caption_word(
                 end_frame=word.end_frame,
                 space_before=word.space_before,
                 source_indexes=word.source_indexes,
+                speech_start_frame=word.speech_start_frame,
+                speech_end_frame=word.speech_end_frame,
             )
         ]
 
@@ -436,6 +549,8 @@ def _split_caption_word(
                 end_frame=word.end_frame,
                 space_before=word.space_before,
                 source_indexes=word.source_indexes,
+                speech_start_frame=word.speech_start_frame,
+                speech_end_frame=word.speech_end_frame,
             )
         ]
 
@@ -453,6 +568,16 @@ def _split_caption_word(
             end_frame=(starts[index + 1] if index + 1 < len(starts) else word.end_frame),
             space_before=word.space_before if index == 0 else False,
             source_indexes=word.source_indexes,
+            speech_start_frame=(
+                word.speech_start_frame
+                if word.speech_start_frame is not None
+                else start
+            ),
+            speech_end_frame=(
+                word.speech_end_frame
+                if word.speech_end_frame is not None
+                else (starts[index + 1] if index + 1 < len(starts) else word.end_frame)
+            ),
         )
         for index, (piece, start) in enumerate(zip(pieces, starts, strict=True))
     ]
@@ -506,6 +631,8 @@ def _without_display_periods(words: Sequence[_CaptionWord]) -> list[_CaptionWord
                     end_frame=word.end_frame,
                     space_before=bool(cleaned) and word.space_before,
                     source_indexes=pending_source_indexes + word.source_indexes,
+                    speech_start_frame=word.speech_start_frame,
+                    speech_end_frame=word.speech_end_frame,
                 )
             )
             pending_start_frame = None
@@ -519,6 +646,8 @@ def _without_display_periods(words: Sequence[_CaptionWord]) -> list[_CaptionWord
                 end_frame=max(previous.end_frame, word.end_frame),
                 space_before=previous.space_before,
                 source_indexes=previous.source_indexes + word.source_indexes,
+                speech_start_frame=previous.speech_start_frame,
+                speech_end_frame=word.speech_end_frame,
             )
         else:
             pending_start_frame = (
@@ -656,14 +785,142 @@ def _event_ranges(
     ]
 
 
+def _caption_cue_overlap_count(cues: Sequence[dict[str, object]]) -> int:
+    return sum(
+        int(left.get("endFrame") or 0)
+        > int(right.get("startFrame") or 0)
+        for left, right in zip(cues[:-1], cues[1:], strict=True)
+    )
+
+
+def _compiled_cue_minimum_frames(cue: dict[str, object]) -> int:
+    events = cue.get("events")
+    if not isinstance(events, list) or not events:
+        raise CaptionCompileError("자막 이벤트가 올바르지 않습니다.")
+    return len(events) if all(
+        isinstance(event, dict) and "activeWordIndex" in event
+        for event in events
+    ) else 1
+
+
+def _retime_compiled_cue(
+    cue: dict[str, object],
+    *,
+    start_frame: int,
+    end_frame: int,
+) -> None:
+    if end_frame <= start_frame:
+        raise CaptionCompileError("자막 큐 경계가 올바르지 않습니다.")
+    events_value = cue.get("events")
+    if not isinstance(events_value, list) or not events_value:
+        raise CaptionCompileError("자막 이벤트가 올바르지 않습니다.")
+    events = [event for event in events_value if isinstance(event, dict)]
+    if len(events) != len(events_value):
+        raise CaptionCompileError("자막 이벤트가 올바르지 않습니다.")
+
+    if all("activeWordIndex" in event for event in events):
+        words_value = cue.get("words")
+        if not isinstance(words_value, list) or not words_value:
+            raise CaptionCompileError("자막 어절이 올바르지 않습니다.")
+        words: list[_CaptionWord] = []
+        for word_value in words_value:
+            if not isinstance(word_value, dict):
+                raise CaptionCompileError("자막 어절이 올바르지 않습니다.")
+            words.append(_CaptionWord(
+                text=str(word_value.get("text") or ""),
+                start_frame=int(word_value.get("startFrame") or 0),
+                end_frame=int(word_value.get("endFrame") or 0),
+                space_before=bool(word_value.get("spaceBefore")),
+                source_indexes=(),
+            ))
+        event_by_active_index = {
+            int(event["activeWordIndex"]): event
+            for event in events
+        }
+        ranges = _event_ranges(
+            words,
+            cue_start=start_frame,
+            cue_end=end_frame,
+        )
+        retimed_events: list[dict[str, object]] = []
+        for event_range in ranges:
+            active_index = int(event_range["activeWordIndex"])
+            source_event = event_by_active_index.get(active_index)
+            if source_event is None:
+                raise CaptionCompileError("자막 활성 어절이 올바르지 않습니다.")
+            retimed_events.append({**source_event, **event_range})
+        cue["events"] = retimed_events
+    else:
+        if len(events) != 1:
+            raise CaptionCompileError("기본 자막 이벤트가 올바르지 않습니다.")
+        cue["events"] = [{
+            **events[0],
+            "startFrame": start_frame,
+            "endFrame": end_frame,
+        }]
+    cue["startFrame"] = start_frame
+    cue["endFrame"] = end_frame
+
+
+def _normalize_caption_cue_handoffs(cues: list[dict[str, object]]) -> None:
+    """Keep the early next-cue entrance while removing cross-cue overlap.
+
+    Current caption words intentionally start seven frames before speech. An
+    editor reflow recompiles each immutable source cue independently, so that
+    lead can be restored after the original cross-cue boundary was serialized.
+    Prefer ending the previous cue at the next cue's early start. Only delay
+    the next cue when the previous cue needs its minimum one-frame-per-event
+    display window.
+    """
+    cues.sort(key=lambda cue: (
+        int(cue.get("startFrame") or 0),
+        int(cue.get("endFrame") or 0),
+    ))
+    for index in range(len(cues) - 1):
+        current = cues[index]
+        following = cues[index + 1]
+        current_end = int(current.get("endFrame") or 0)
+        following_start = int(following.get("startFrame") or 0)
+        if current_end <= following_start:
+            continue
+
+        current_start = int(current.get("startFrame") or 0)
+        earliest_handoff = (
+            current_start + _compiled_cue_minimum_frames(current)
+        )
+        handoff = max(following_start, earliest_handoff)
+        _retime_compiled_cue(
+            current,
+            start_frame=current_start,
+            end_frame=handoff,
+        )
+        if handoff <= following_start:
+            continue
+
+        following_end = max(
+            int(following.get("endFrame") or 0),
+            handoff + _compiled_cue_minimum_frames(following),
+        )
+        _retime_compiled_cue(
+            following,
+            start_frame=handoff,
+            end_frame=following_end,
+        )
+
+
 def _serialize_word(word: _CaptionWord) -> dict[str, object]:
-    return {
+    serialized: dict[str, object] = {
         "text": word.text,
         "startFrame": word.start_frame,
         "endFrame": word.end_frame,
         "spaceBefore": word.space_before,
         "sourceWordIndexes": list(word.source_indexes),
     }
+    if word.speech_start_frame is not None:
+        serialized["speechStartFrame"] = word.speech_start_frame
+    if word.speech_end_frame is not None:
+        serialized["speechEndFrame"] = word.speech_end_frame
+    return serialized
 
 
 def _basic_or_highlight_cues(
@@ -901,6 +1158,280 @@ def _pop_cues(
     return cues
 
 
+def rebuild_caption_cue_text(
+    cue: dict[str, object],
+    *,
+    text: str,
+    template_id: str,
+    safe_area: dict[str, int],
+    fps: int = CAPTION_FPS,
+) -> list[dict[str, object]]:
+    """Reflow one trusted cue while preserving its compiled frame window."""
+    if template_id not in {"highlight", "pop"}:
+        raise CaptionCompileError("편집할 수 없는 자막 템플릿입니다.")
+    if fps != CAPTION_FPS:
+        raise CaptionCompileError("편집 자막 프레임레이트가 올바르지 않습니다.")
+    start_frame = int(cue.get("startFrame") or 0)
+    end_frame = int(cue.get("endFrame") or 0)
+    frame_count = end_frame - start_frame
+    if frame_count < 1:
+        raise CaptionCompileError("편집 자막 표시 구간이 올바르지 않습니다.")
+    tokens = text.strip().split()
+    if not tokens:
+        raise CaptionCompileError("편집 자막 내용이 비어 있습니다.")
+
+    # Caption specs cap a cue at twenty words and animated templates require at
+    # least one output frame per word. Keep arbitrary user copy renderable by
+    # folding any overflow into the final timed word.
+    maximum_words = min(20, frame_count)
+    if len(tokens) > maximum_words:
+        tokens = [
+            *tokens[:maximum_words - 1],
+            " ".join(tokens[maximum_words - 1:]),
+        ] if maximum_words > 1 else [" ".join(tokens)]
+
+    weights = [max(1, len(token)) for token in tokens]
+    total_weight = sum(weights)
+    starts = [start_frame]
+    consumed_weight = weights[0]
+    for index in range(1, len(tokens)):
+        remaining = len(tokens) - index
+        desired = start_frame + round(frame_count * consumed_weight / total_weight)
+        starts.append(min(
+            end_frame - remaining,
+            max(starts[-1] + 1, desired),
+        ))
+        consumed_weight += weights[index]
+
+    words = [
+        _CaptionWord(
+            text=token,
+            start_frame=word_start,
+            end_frame=(starts[index + 1] if index + 1 < len(starts) else end_frame),
+            space_before=index > 0,
+            source_indexes=(),
+            speech_start_frame=word_start,
+            speech_end_frame=(
+                starts[index + 1] if index + 1 < len(starts) else end_frame
+            ),
+        )
+        for index, (token, word_start) in enumerate(zip(tokens, starts, strict=True))
+    ]
+    words = _fit_display_words(
+        words,
+        template_id=template_id,
+        safe_area=safe_area,
+    )
+    rebuilt = (
+        _pop_cues(words, safe_area=safe_area, fps=fps)
+        if template_id == "pop"
+        else _basic_or_highlight_cues(
+            words,
+            highlighted=True,
+            safe_area=safe_area,
+            fps=fps,
+        )
+    )
+    if not rebuilt:
+        raise CaptionCompileError("편집 자막을 다시 배치하지 못했습니다.")
+    return rebuilt
+
+
+def _reflow_caption_cues_for_clips(
+    cues: Sequence[dict[str, object]],
+    *,
+    template_id: str,
+    safe_area: dict[str, int],
+    clip_windows: Sequence[tuple[int, int, int]],
+    cue_edits: dict[int, str] | None = None,
+    fps: int = CAPTION_FPS,
+) -> list[dict[str, object]]:
+    """Recompile caption layout from the words retained by editor cuts.
+
+    Caption cues contain provider-derived word windows. Those words, rather
+    than the already-laid-out cue events, are the source of truth when a user
+    trims or removes video. Recompiling here prevents deleted words from
+    remaining visible and recalculates every gap and position after text edits.
+    """
+    if template_id not in CAPTION_TEMPLATE_IDS:
+        raise CaptionCompileError("편집할 수 없는 자막 템플릿입니다.")
+    if fps != CAPTION_FPS:
+        raise CaptionCompileError("편집 자막 프레임레이트가 올바르지 않습니다.")
+
+    # A plain split creates adjacent source clips. Treat them as one window so
+    # a word crossing the split point is not duplicated on both sides.
+    merged_windows: list[tuple[int, int, int]] = []
+    for clip_start, clip_end, output_start in clip_windows:
+        if clip_end <= clip_start:
+            continue
+        if (
+            merged_windows
+            and merged_windows[-1][1] == clip_start
+            and merged_windows[-1][2]
+            + merged_windows[-1][1]
+            - merged_windows[-1][0]
+            == output_start
+        ):
+            previous_start, _previous_end, previous_output = merged_windows[-1]
+            merged_windows[-1] = (previous_start, clip_end, previous_output)
+        else:
+            merged_windows.append((clip_start, clip_end, output_start))
+
+    edits = cue_edits or {}
+    rebuilt: list[dict[str, object]] = []
+    for cue_index, cue_value in enumerate(cues):
+        if not isinstance(cue_value, dict):
+            raise CaptionCompileError("원본 자막 큐가 올바르지 않습니다.")
+        source_cue_index = int(cue_value.get("sourceCueIndex", cue_index))
+        edited_text = edits.get(source_cue_index)
+        source_cues = (
+            rebuild_caption_cue_text(
+                cue_value,
+                text=edited_text,
+                template_id=template_id,
+                safe_area=safe_area,
+                fps=fps,
+            )
+            if edited_text is not None
+            else [cue_value]
+        )
+
+        for source_cue in source_cues:
+            words_value = source_cue.get("words")
+            if not isinstance(words_value, list):
+                raise CaptionCompileError("원본 자막 어절이 올바르지 않습니다.")
+            retained_by_window: list[list[_CaptionWord]] = [
+                [] for _window in merged_windows
+            ]
+            for word_value in words_value:
+                if not isinstance(word_value, dict):
+                    raise CaptionCompileError("원본 자막 어절이 올바르지 않습니다.")
+                if "startFrame" not in word_value or "endFrame" not in word_value:
+                    raise CaptionCompileError("원본 자막 어절 시간이 올바르지 않습니다.")
+                word_start = int(word_value["startFrame"])
+                word_end = int(word_value["endFrame"])
+                speech_start = int(word_value.get("speechStartFrame", word_start))
+                speech_end = int(word_value.get("speechEndFrame", word_end))
+                best_window: tuple[
+                    tuple[int, int, int],
+                    int,
+                    int,
+                    int,
+                    int,
+                    int,
+                ] | None = None
+                for window_index, (clip_start, clip_end, _output_start) in enumerate(
+                    merged_windows
+                ):
+                    spoken_visible_start = max(speech_start, clip_start)
+                    spoken_visible_end = min(speech_end, clip_end)
+                    if spoken_visible_end <= spoken_visible_start:
+                        continue
+                    visible_start = max(word_start, clip_start)
+                    visible_end = min(word_end, clip_end)
+                    if visible_end <= visible_start:
+                        continue
+                    score = (
+                        spoken_visible_end - spoken_visible_start,
+                        visible_end - visible_start,
+                        -window_index,
+                    )
+                    if best_window is None or score > best_window[0]:
+                        best_window = (
+                            score,
+                            window_index,
+                            visible_start,
+                            visible_end,
+                            spoken_visible_start,
+                            spoken_visible_end,
+                        )
+                if best_window is None:
+                    continue
+                (
+                    _score,
+                    window_index,
+                    visible_start,
+                    visible_end,
+                    spoken_visible_start,
+                    spoken_visible_end,
+                ) = best_window
+                clip_start, _clip_end, output_start = merged_windows[window_index]
+                retained = retained_by_window[window_index]
+                source_indexes_value = word_value.get("sourceWordIndexes")
+                source_indexes = (
+                    tuple(int(value) for value in source_indexes_value)
+                    if isinstance(source_indexes_value, list)
+                    else ()
+                )
+                retained.append(_CaptionWord(
+                    text=str(word_value.get("text") or ""),
+                    start_frame=output_start + visible_start - clip_start,
+                    end_frame=output_start + visible_end - clip_start,
+                    space_before=bool(retained) and bool(
+                        word_value.get("spaceBefore")
+                    ),
+                    source_indexes=source_indexes,
+                    speech_start_frame=(
+                        output_start + spoken_visible_start - clip_start
+                    ),
+                    speech_end_frame=(
+                        output_start + spoken_visible_end - clip_start
+                    ),
+                ))
+
+            for retained in retained_by_window:
+                if not retained:
+                    continue
+                retained = _fit_display_words(
+                    retained,
+                    template_id=template_id,
+                    safe_area=safe_area,
+                )
+                compiled = (
+                    _pop_cues(retained, safe_area=safe_area, fps=fps)
+                    if template_id == "pop"
+                    else _basic_or_highlight_cues(
+                        retained,
+                        highlighted=template_id == "highlight",
+                        safe_area=safe_area,
+                        fps=fps,
+                    )
+                )
+                for cue in compiled:
+                    cue["sourceCueIndex"] = source_cue_index
+                rebuilt.extend(compiled)
+
+    _normalize_caption_cue_handoffs(rebuilt)
+    overlap_count = _caption_cue_overlap_count(rebuilt)
+    if overlap_count:
+        raise CaptionCompileError(
+            f"편집 자막 큐 {overlap_count}개가 서로 겹칩니다."
+        )
+    return rebuilt
+
+
+def reflow_caption_cues_for_clips(
+    cues: Sequence[dict[str, object]],
+    *,
+    template_id: str,
+    safe_area: dict[str, int],
+    clip_windows: Sequence[tuple[int, int, int]],
+    cue_edits: dict[int, str] | None = None,
+    fps: int = CAPTION_FPS,
+    font_id: EditorFontId | str | None = None,
+) -> list[dict[str, object]]:
+    resolved_font_id = _caption_font_id(font_id)
+    with _caption_font_context(resolved_font_id):
+        return _reflow_caption_cues_for_clips(
+            cues,
+            template_id=template_id,
+            safe_area=safe_area,
+            clip_windows=clip_windows,
+            cue_edits=cue_edits,
+            fps=fps,
+        )
+
+
 def compile_caption_render_spec(
     words: Sequence[TranscriptWord],
     *,
@@ -911,6 +1442,8 @@ def compile_caption_render_spec(
     caption_placement: str = "lower",
     fps: int = CAPTION_FPS,
     accent_color: str = CAPTION_ACCENT,
+    font_id: EditorFontId | str | None = None,
+    timing_lead_frames: int = CAPTION_TIMING_LEAD_FRAMES,
 ) -> dict[str, object]:
     if template_id not in CAPTION_TEMPLATE_IDS:
         raise ValueError("지원하지 않는 자막 템플릿입니다.")
@@ -918,37 +1451,51 @@ def compile_caption_render_spec(
         raise ValueError("자막 렌더 프레임레이트는 30fps여야 합니다.")
     if caption_placement not in {"lower", "center"}:
         raise ValueError("지원하지 않는 자막 위치입니다.")
-    layout = caption_layout(
-        video_aspect_ratio,
-        caption_placement=caption_placement,
-    )
-    safe_area = layout["caption"]
-    clipped_words = _clip_words(
-        words,
-        clip_start=clip_start,
-        clip_end=clip_end,
-        fps=fps,
-    )
-    clipped_words = _fit_display_words(
-        clipped_words,
-        template_id=template_id,
-        safe_area=safe_area,
-    )
-    if template_id == "pop":
-        cues = _pop_cues(clipped_words, safe_area=safe_area, fps=fps)
-        font_size = 92
-        outline = 8
-    else:
-        cues = _basic_or_highlight_cues(
-            clipped_words,
-            highlighted=template_id == "highlight",
-            safe_area=safe_area,
-            fps=fps,
+    if (
+        isinstance(timing_lead_frames, bool)
+        or not isinstance(timing_lead_frames, int)
+        or not 0 <= timing_lead_frames <= 30
+    ):
+        raise ValueError("자막 선행 프레임 값이 올바르지 않습니다.")
+    resolved_font_id = _caption_font_id(font_id)
+    with _caption_font_context(resolved_font_id):
+        layout = caption_layout(
+            video_aspect_ratio,
+            caption_placement=caption_placement,
         )
-        font_size = 72
-        outline = 7
+        safe_area = layout["caption"]
+        clipped_words = _clip_words(
+            words,
+            clip_start=clip_start,
+            clip_end=clip_end,
+            fps=fps,
+            timing_lead_frames=timing_lead_frames,
+        )
+        clipped_words = _fit_display_words(
+            clipped_words,
+            template_id=template_id,
+            safe_area=safe_area,
+        )
+        if template_id == "pop":
+            cues = _pop_cues(clipped_words, safe_area=safe_area, fps=fps)
+            font_size = 92
+            outline = 8
+        else:
+            cues = _basic_or_highlight_cues(
+                clipped_words,
+                highlighted=template_id == "highlight",
+                safe_area=safe_area,
+                fps=fps,
+            )
+            font_size = 72
+            outline = 7
     if not cues:
         raise TranscriptionError("선택한 쇼츠 구간에 표시할 자막이 없습니다.")
+    overlap_count = _caption_cue_overlap_count(cues)
+    if overlap_count:
+        raise CaptionCompileError(
+            f"생성 자막 큐 {overlap_count}개가 서로 겹칩니다."
+        )
     return {
         "schemaVersion": 3,
         "templateId": template_id,
@@ -956,15 +1503,10 @@ def compile_caption_render_spec(
         "fps": fps,
         "clipStartSeconds": round(clip_start, 3),
         "clipEndSeconds": round(clip_end, 3),
-        "timingLeadFrames": CAPTION_TIMING_LEAD_FRAMES,
+        "timingLeadFrames": timing_lead_frames,
         "layout": layout,
         "safeArea": safe_area,
-        "font": {
-            "fileId": CAPTION_FONT_PATH.name,
-            "sha256": _sha256(CAPTION_FONT_PATH),
-            "family": CAPTION_FONT_FAMILY,
-            "weight": 700,
-        },
+        "font": caption_font_spec(resolved_font_id),
         "style": {
             "fontSize": font_size,
             "textColor": CAPTION_TEXT,
@@ -1029,12 +1571,20 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
     if fps != CAPTION_FPS:
         raise RenderError("자막 렌더 프레임레이트가 올바르지 않습니다.")
     font = spec.get("font") or {}
-    if font.get("sha256") != _sha256(CAPTION_FONT_PATH):
+    if not isinstance(font, dict):
+        raise RenderError("자막 렌더 폰트 정보가 올바르지 않습니다.")
+    font_id = _caption_font_id(font.get("fontId"))
+    expected_font = caption_font_spec(font_id)
+    if any(
+        font.get(key) != expected_font[key]
+        for key in ("fileId", "sha256", "family", "weight")
+    ):
         raise RenderError("자막 렌더 폰트가 승인된 파일과 다릅니다.")
     style = spec.get("style") or {}
     text_color = str(style.get("textColor") or CAPTION_TEXT)
     accent_color = str(style.get("accentColor") or CAPTION_ACCENT)
     outline_color = str(style.get("outlineColor") or CAPTION_OUTLINE)
+    ass_bold = -1 if int(font["weight"]) >= 700 else 0
     dialogues: list[str] = []
     for cue in spec.get("cues") or []:
         words = list(cue.get("words") or [])
@@ -1149,7 +1699,7 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
             (
                 f"Style: Default,{font['family']},72,{_ass_color(text_color)},"
                 f"{_ass_color(text_color)},{_ass_color(outline_color)},&HFF000000,"
-                "-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1"
+                f"{ass_bold},0,0,0,100,100,0,0,1,0,0,5,0,0,0,1"
             ),
             "",
             "[Events]",

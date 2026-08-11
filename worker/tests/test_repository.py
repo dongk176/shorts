@@ -382,7 +382,40 @@ def test_deferred_timeline_commit_only_updates_live_completed_project_output() -
     assert "j.status='completed'" in query
     assert parameters[0].endswith("/timeline-v1.mp4")
     assert parameters[3].obj == []
-    assert parameters[4] == "short-a"
+    assert parameters[4] is None
+    assert parameters[5] is None
+    assert parameters[6] == "short-a"
+
+
+def test_deferred_caption_timeline_commits_its_word_source_atomically() -> None:
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+    connection.execute.return_value.fetchone.return_value = {"id": "short-a"}
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+    editor_source = {
+        "timelineStartSeconds": 0,
+        "timelineEndSeconds": 70,
+        "spec": {"schemaVersion": 3, "cues": []},
+    }
+
+    assert repository.complete_project_timeline(
+        short_id="short-a",
+        timeline_key="edit-sources/timeline-v1.mp4",
+        timeline_start_seconds=0,
+        timeline_end_seconds=70,
+        timeline_subtitles=[],
+        caption_editor_source=editor_source,
+    )
+
+    query, parameters = connection.execute.call_args.args
+    assert "jsonb_set" in query
+    assert parameters[4].obj == editor_source
+    assert parameters[5].obj == editor_source
 
 
 def test_legacy_snapshot_rerender_promotes_edited_timeline_subtitles() -> None:

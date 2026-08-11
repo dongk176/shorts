@@ -9,6 +9,7 @@ from PIL import Image
 
 from .caption_templates import (
     CAPTION_FPS,
+    CAPTION_TIMING_LEAD_FRAMES,
     create_caption_ass,
     prepare_caption_fonts,
 )
@@ -270,6 +271,25 @@ def caption_video_layout(spec: dict[str, object]) -> VideoLayout:
     )
 
 
+def caption_title_text_styles(
+    caption_render_spec: dict[str, object] | None,
+    video_aspect_ratio: VideoAspectRatio,
+    title_text_styles: list[TitleTextStyle] | None,
+) -> list[TitleTextStyle] | None:
+    if caption_render_spec is None:
+        return title_text_styles
+    if video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL:
+        timing_lead_frames = caption_render_spec.get("timingLeadFrames")
+        if (
+            isinstance(timing_lead_frames, int)
+            and not isinstance(timing_lead_frames, bool)
+            and timing_lead_frames >= CAPTION_TIMING_LEAD_FRAMES
+        ):
+            return None
+        return title_text_styles or []
+    return []
+
+
 def lifted_comment_landscape_layout() -> VideoLayout:
     video_height = VIDEO_HEIGHTS[VideoAspectRatio.LANDSCAPE]
     centered_y = (CANVAS_HEIGHT - video_height) // 2
@@ -497,8 +517,10 @@ class VideoRenderer:
             top_height=layout.top_height,
             bottom_height=layout.bottom_height,
             overlay_mode=layout.overlay_mode,
-            title_text_styles=(
-                [] if caption_render_spec is not None else title_text_styles
+            title_text_styles=caption_title_text_styles(
+                caption_render_spec,
+                video_aspect_ratio,
+                title_text_styles,
             ),
             title_accent_color=(
                 title_accent_color
@@ -619,7 +641,10 @@ class VideoRenderer:
         if ass_path:
             fonts_dir = ""
             if caption_render_spec is not None:
-                caption_fonts_dir = prepare_caption_fonts(work_dir / "caption-fonts")
+                caption_fonts_dir = prepare_caption_fonts(
+                    work_dir / "caption-fonts",
+                    caption_render_spec,
+                )
                 fonts_dir = f":fontsdir='{_escape_filter_path(caption_fonts_dir)}'"
             filters.append(
                 f"[{video_label}]subtitles=filename='{_escape_filter_path(ass_path)}'"

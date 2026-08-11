@@ -9,27 +9,42 @@ from pathlib import Path
 import pytest
 from PIL import Image, ImageFont
 
+from shorts_worker.caption_templates import compile_caption_render_spec
 from shorts_worker.config import Settings
 from shorts_worker.editor_renderer import (
     EditorDocumentRenderer,
     EditorLayerAsset,
     _clamp_centered_layer_position,
     _draw_styled_title_content,
+    _editor_video_input_filter,
     _prepare_editor_layer_asset,
     _timed_overlay_enable_expression,
     _timed_overlay_input_filter,
+    create_editor_channel_layer,
     create_editor_comment_layers,
     create_editor_text_layer,
     create_editor_title_layer,
     editor_font_path,
+    editor_highlight_caption_spec,
+    editor_highlight_subtitles_enabled,
     editor_layer_order,
     editor_render_timeout_seconds,
+    editor_subtitle_render_mode,
+    editor_subtitle_style,
     editor_video_frame,
     load_editor_font,
+    retime_editor_caption_spec,
     retime_editor_subtitles,
     verify_editor_fonts,
 )
-from shorts_worker.schemas import EditorDocument, EditorFontId, EditorTextOverlay
+from shorts_worker.schemas import (
+    EditorDocument,
+    EditorFontId,
+    EditorTextOverlay,
+    TemplateId,
+    VideoAspectRatio,
+)
+from shorts_worker.subtitles import TranscriptWord
 
 pytestmark = pytest.mark.render
 
@@ -64,6 +79,25 @@ def _document_v3() -> EditorDocument:
     return EditorDocument.model_validate_json(V3_FIXTURE.read_text())
 
 
+def _document_v3_with_subtitle_layout(
+    *,
+    offset_y: int = -260,
+    scale: float = 1.5,
+    accent_color: str | None = None,
+    cue_edits: list[dict[str, object]] | None = None,
+) -> EditorDocument:
+    value = json.loads(V3_FIXTURE.read_text())
+    value["renderSpec"]["version"] = 2
+    value["renderSpec"]["subtitles"] = {
+        "centerX": 540,
+        "offsetY": offset_y,
+        "scale": scale,
+        **({"accentColor": accent_color} if accent_color else {}),
+        **({"cueEdits": cue_edits} if cue_edits else {}),
+    }
+    return EditorDocument.model_validate(value)
+
+
 def test_v3_font_files_are_byte_identical_in_web_and_worker() -> None:
     root = Path(__file__).resolve().parents[2]
     for font_id in EditorFontId:
@@ -73,6 +107,31 @@ def test_v3_font_files_are_byte_identical_in_web_and_worker() -> None:
         assert hashlib.sha256(worker_font.read_bytes()).digest() == hashlib.sha256(
             web_font.read_bytes()
         ).digest()
+
+
+def test_caption_editor_font_override_is_persisted_in_render_spec() -> None:
+    document = _document_v3_with_subtitle_layout()
+    assert document.render_spec is not None
+    assert document.render_spec.subtitles is not None
+    document.render_spec.subtitles.font_id = EditorFontId.JUA
+    original = compile_caption_render_spec(
+        [TranscriptWord(text="글씨체", start=1.2, end=1.8, provider="elevenlabs")],
+        template_id="highlight",
+        clip_start=0,
+        clip_end=6,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+    )
+
+    rendered = retime_editor_caption_spec(document, original)
+
+    assert rendered is not None
+    assert rendered["font"] == {
+        "fontId": "jua",
+        "fileId": "Jua-Regular.ttf",
+        "sha256": rendered["font"]["sha256"],
+        "family": "Jua",
+        "weight": 400,
+    }
 
 
 def test_v3_noto_serif_text_800_is_heavier_than_title_700() -> None:
@@ -103,6 +162,254 @@ def test_v3_text_layer_uses_authoritative_lines_and_weight(tmp_path: Path) -> No
     assert spec.text_overlays[0].end_frame == 75
 
 
+def test_admin_subtitle_layout_maps_to_ass_position_and_font_size() -> None:
+    legacy = editor_subtitle_style(_document_v3())
+    admin = editor_subtitle_style(
+        _document_v3_with_subtitle_layout(offset_y=-260, scale=1.5)
+    )
+
+    assert (legacy.margin_v, legacy.font_size) == (445, 48)
+    assert (admin.margin_v, admin.font_size) == (705, 72)
+
+
+def test_general_v3_subtitles_compile_to_highlight_cues() -> None:
+    document = _document_v3_with_subtitle_layout(
+        offset_y=120,
+        scale=0.75,
+        accent_color="#16A34A",
+        cue_edits=[{"cueIndex": 0, "text": "수정한 강조 자막"}],
+    )
+
+    source = editor_highlight_caption_spec(document)
+    assert source is not None
+    assert source["templateId"] == "highlight"
+    assert source["timingLeadFrames"] == 7
+    assert source["style"]["accentColor"] == "#16A34A"
+    assert [
+        event["activeWordIndex"]
+        for cue in source["cues"]
+        for event in cue["events"]
+    ] == [0, 1, 0]
+
+    rendered = retime_editor_caption_spec(document, source)
+    assert rendered is not None
+    assert rendered["style"]["fontSize"] == 54
+    assert rendered["style"]["accentColor"] == "#16A34A"
+    assert [
+        word["text"]
+        for word in rendered["cues"][0]["words"]
+    ] == ["수정한", "강조", "자막"]
+    assert all(
+        rendered["cues"][index]["endFrame"]
+        <= rendered["cues"][index + 1]["startFrame"]
+        for index in range(len(rendered["cues"]) - 1)
+    )
+
+
+def test_general_highlight_subtitles_require_admin_word_timing_marker() -> None:
+    assert editor_highlight_subtitles_enabled(
+        _document_v3_with_subtitle_layout()
+    )
+    assert not editor_highlight_subtitles_enabled(_document_v3())
+    assert not editor_highlight_subtitles_enabled(_document())
+
+
+def test_v3_subtitles_never_fall_back_to_deprecated_plain_ass() -> None:
+    assert editor_subtitle_render_mode(
+        _document_v3_with_subtitle_layout(),
+        None,
+    ) == "editor-highlight"
+    assert editor_subtitle_render_mode(_document_v3(), None) == "invalid-v3"
+    assert editor_subtitle_render_mode(_document(), None) == "legacy-v2"
+
+
+def test_comment_capture_channel_offset_matches_saved_editor_pixels(
+    tmp_path: Path,
+) -> None:
+    value = json.loads(V3_FIXTURE.read_text())
+    value["template"] = {
+        "id": "comment-capture",
+        "customTemplateId": None,
+        "presetVersion": 3,
+        "snapshot": {"presetVersion": 3},
+    }
+    value["overlays"]["offsets"]["channel"] = {"x": 0, "y": 0}
+    value["renderSpec"]["channel"]["offsetX"] = 0
+    value["renderSpec"]["channel"]["offsetY"] = 0
+    baseline = EditorDocument.model_validate(value)
+    baseline_path = create_editor_channel_layer(
+        baseline,
+        tmp_path / "channel-baseline.png",
+        None,
+    )
+
+    value["overlays"]["offsets"]["channel"] = {"x": 0, "y": -165}
+    value["renderSpec"]["channel"]["offsetY"] = -165
+    moved = EditorDocument.model_validate(value)
+    moved_path = create_editor_channel_layer(
+        moved,
+        tmp_path / "channel-moved.png",
+        None,
+    )
+
+    with Image.open(baseline_path) as image:
+        baseline_box = image.getchannel("A").getbbox()
+    with Image.open(moved_path) as image:
+        moved_box = image.getchannel("A").getbbox()
+    assert baseline_box is not None
+    assert moved_box is not None
+    assert moved_box[1] - baseline_box[1] == -165
+    assert moved_box[3] - baseline_box[3] == -165
+
+
+def test_admin_caption_template_layout_scales_and_retimes_trusted_pop_spec() -> None:
+    document = _document_v3_with_subtitle_layout(offset_y=-260, scale=1.5)
+    original = {
+        "schemaVersion": 3,
+        "templateId": "pop",
+        "fps": 30,
+        "safeArea": {"x": 120, "y": 1025, "width": 840, "height": 140},
+        "layout": {
+            "caption": {"x": 120, "y": 1025, "width": 840, "height": 140}
+        },
+        "style": {"fontSize": 92, "outlineWidth": 8},
+        "cues": [{
+            "startFrame": 30,
+            "endFrame": 150,
+            "words": [{
+                "text": "자막",
+                "fontSize": 92,
+                "centerX": 500,
+                "centerY": 1095,
+            }],
+            "events": [
+                {
+                    "startFrame": 30,
+                    "endFrame": 60,
+                    "activeWordIndex": 0,
+                    "positions": [{"centerX": 500, "centerY": 1095}],
+                },
+                {
+                    "startFrame": 120,
+                    "endFrame": 150,
+                    "activeWordIndex": 0,
+                    "positions": [{"centerX": 500, "centerY": 1095}],
+                },
+            ],
+        }],
+    }
+
+    rendered = retime_editor_caption_spec(document, original)
+
+    assert rendered is not None
+    assert original["style"] == {"fontSize": 92, "outlineWidth": 8}
+    assert rendered["style"] == {"fontSize": 138.0, "outlineWidth": 12.0}
+    assert rendered["safeArea"] == {
+        "x": -90.0,
+        "y": 730.0,
+        "width": 1260.0,
+        "height": 210.0,
+    }
+    cue = rendered["cues"][0]
+    assert cue["words"][0]["fontSize"] == 138.0
+    assert cue["words"][0]["centerX"] == 480.0
+    assert cue["words"][0]["centerY"] == 835.0
+    assert [
+        (event["startFrame"], event["endFrame"])
+        for event in cue["events"]
+    ] == [(0, 30), (45, 75)]
+    assert cue["events"][0]["positions"] == [
+        {"centerX": 480.0, "centerY": 835.0}
+    ]
+
+
+def test_admin_caption_template_layout_updates_highlight_font_and_y_only() -> None:
+    document = _document_v3_with_subtitle_layout(offset_y=120, scale=0.75)
+    spec = {
+        "schemaVersion": 3,
+        "templateId": "highlight",
+        "fps": 30,
+        "safeArea": {"x": 120, "y": 1025, "width": 840, "height": 140},
+        "style": {"fontSize": 72, "outlineWidth": 7},
+        "cues": [{
+            "startFrame": 30,
+            "endFrame": 60,
+            "fontSize": 72,
+            "scaleX": 100,
+            "centerX": 540,
+            "centerY": 1095,
+            "words": [{"text": "강조"}],
+            "lines": [[0]],
+            "events": [{
+                "startFrame": 30,
+                "endFrame": 60,
+                "activeWordIndex": 0,
+            }],
+        }],
+    }
+
+    rendered = retime_editor_caption_spec(document, spec)
+
+    assert rendered is not None
+    cue = rendered["cues"][0]
+    assert cue["fontSize"] == 54.0
+    assert cue["centerX"] == 540.0
+    assert cue["centerY"] == 1215.0
+    assert rendered["style"]["outlineWidth"] == 5.25
+
+
+def test_admin_caption_template_edits_point_color_text_and_bottom_position() -> None:
+    document = _document_v3_with_subtitle_layout(
+        offset_y=700,
+        scale=1,
+        accent_color="#16A34A",
+        cue_edits=[{"cueIndex": 0, "text": "바뀐 자막"}],
+    )
+    spec = {
+        "schemaVersion": 3,
+        "templateId": "pop",
+        "fps": 30,
+        "safeArea": {"x": 120, "y": 1025, "width": 840, "height": 140},
+        "style": {
+            "fontSize": 92,
+            "textColor": "#FFFFFF",
+            "accentColor": "#35E6E3",
+            "outlineColor": "#080808",
+            "outlineWidth": 8,
+        },
+        "cues": [{
+            "startFrame": 30,
+            "endFrame": 90,
+            "words": [{
+                "text": "원래",
+                "fontSize": 92,
+                "centerX": 540,
+                "centerY": 1095,
+            }],
+            "events": [{
+                "startFrame": 30,
+                "endFrame": 90,
+                "activeWordIndex": 0,
+                "positions": [{"centerX": 540, "centerY": 1095}],
+            }],
+        }],
+    }
+
+    rendered = retime_editor_caption_spec(document, spec)
+
+    assert rendered is not None
+    assert rendered["style"]["accentColor"] == "#16A34A"
+    assert [word["text"] for word in rendered["cues"][0]["words"]] == [
+        "바뀐",
+        "자막",
+    ]
+    assert all(
+        position["centerY"] == 1795.0
+        for event in rendered["cues"][0]["events"]
+        for position in event["positions"]
+    )
+
+
 def test_movable_overlay_positions_are_clamped_after_scaling() -> None:
     layer = Image.new("RGBA", (712, 160), (255, 255, 255, 255))
 
@@ -130,6 +437,24 @@ def test_title_line_boxes_match_the_browser_for_every_editor_font() -> None:
             custom_config=None,
         )
         assert content.height == 84 * 2 + 18
+
+
+def test_caption_editor_title_keeps_the_original_caption_accent() -> None:
+    document = _document_v3()
+    document.title.text = "첫 번째 제목\n두 번째 제목"
+    document.title.text_styles = []
+    assert document.render_spec is not None
+    document.render_spec.title.lines = ["첫 번째 제목", "두 번째 제목"]
+
+    content = _draw_styled_title_content(
+        document,
+        font_id=EditorFontId.PRETENDARD,
+        font_size=84,
+        custom_config=None,
+        title_accent_color="#16A34A",
+    )
+
+    assert (22, 163, 74, 255) in set(content.getdata())
 
 
 def test_title_layer_uses_every_selected_editor_font(tmp_path: Path) -> None:
@@ -207,6 +532,149 @@ def test_editor_video_frame_matches_browser_geometry_and_allows_crop() -> None:
     assert frame.y == 575
 
 
+def test_caption_editor_uses_the_server_authored_composition_layout(
+    tmp_path: Path,
+) -> None:
+    document = _document_v3()
+    caption_spec = compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="레이아웃",
+                start=0.2,
+                end=0.8,
+                provider="elevenlabs",
+            ),
+        ],
+        template_id="pop",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+    )
+    layout = caption_spec["layout"]
+
+    frame = editor_video_frame(document, caption_spec)
+    title_path = create_editor_title_layer(
+        document,
+        tmp_path / "caption-title.png",
+        caption_render_spec=caption_spec,
+    )
+    channel_path = create_editor_channel_layer(
+        document,
+        tmp_path / "caption-channel.png",
+        None,
+        caption_spec,
+    )
+
+    assert (frame.x, frame.y, frame.width, frame.height) == (
+        layout["video"]["x"],
+        layout["video"]["y"],
+        layout["video"]["width"],
+        layout["video"]["height"],
+    )
+    with Image.open(title_path) as title_image:
+        title_box = title_image.getchannel("A").getbbox()
+    with Image.open(channel_path) as channel_image:
+        channel_box = channel_image.getchannel("A").getbbox()
+    assert title_box is not None
+    assert channel_box is not None
+    assert title_box[3] <= layout["title"]["y"] + layout["title"]["height"]
+    assert (channel_box[1] + channel_box[3]) / 2 == pytest.approx(
+        layout["channel"]["y"] + layout["channel"]["height"] / 2,
+        abs=2,
+    )
+
+
+def test_full_vertical_caption_editor_draws_brand_background_on_both_title_rows(
+    tmp_path: Path,
+) -> None:
+    document = _document_v3()
+    document.render_spec = None
+    document.video.aspect_ratio = VideoAspectRatio.FULL_VERTICAL
+    document.title.text = "첫 번째 줄\n두 번째 줄"
+    document.title.text_styles = []
+    accent = "#F97316"
+    caption_spec = compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="자막",
+                start=0.2,
+                end=0.8,
+                provider="elevenlabs",
+            ),
+        ],
+        template_id="highlight",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.FULL_VERTICAL,
+        accent_color=accent,
+    )
+
+    title_path = create_editor_title_layer(
+        document,
+        tmp_path / "full-vertical-caption-title.png",
+        title_accent_color=accent,
+        caption_render_spec=caption_spec,
+    )
+
+    with Image.open(title_path).convert("RGBA") as image:
+        accent_rgba = (249, 115, 22, 255)
+        accent_rows = sorted({
+            y
+            for y in range(image.height)
+            for x in range(image.width)
+            if image.getpixel((x, y)) == accent_rgba
+        })
+    assert accent_rows
+    row_groups = 1 + sum(
+        current - previous > 1
+        for previous, current in zip(accent_rows, accent_rows[1:], strict=False)
+    )
+    assert row_groups == 2
+
+
+def test_v3_full_vertical_comment_video_uses_preview_contain_fit() -> None:
+    document = _document_v3()
+    document.template.id = TemplateId.COMMENT_CAPTURE
+    document.video.aspect_ratio = VideoAspectRatio.FULL_VERTICAL
+    frame = editor_video_frame(document)
+
+    value = _editor_video_input_filter(document, frame, 30)
+
+    assert "force_original_aspect_ratio=decrease" in value
+    assert f"pad={frame.width}:{frame.height}" in value
+    assert "crop=" not in value
+
+
+def test_v2_full_vertical_comment_video_keeps_existing_cover_fit() -> None:
+    document = _document()
+    document.template.id = TemplateId.COMMENT_CAPTURE
+    document.video.aspect_ratio = VideoAspectRatio.FULL_VERTICAL
+    frame = editor_video_frame(document)
+
+    value = _editor_video_input_filter(document, frame, 30)
+
+    assert "force_original_aspect_ratio=increase" in value
+    assert f"crop={frame.width}:{frame.height}" in value
+    assert "pad=" not in value
+
+
+def test_v3_custom_or_caption_comment_video_keeps_preview_cover_fit() -> None:
+    document = _document_v3()
+    document.template.id = TemplateId.COMMENT_CAPTURE
+    document.template.custom_template_id = "00000000-0000-4000-8000-000000000001"
+    document.video.aspect_ratio = VideoAspectRatio.FULL_VERTICAL
+    frame = editor_video_frame(document)
+
+    custom_value = _editor_video_input_filter(document, frame, 30)
+    document.template.custom_template_id = None
+    caption_value = _editor_video_input_filter(document, frame, 30, {})
+
+    assert "force_original_aspect_ratio=increase" in custom_value
+    assert "force_original_aspect_ratio=increase" in caption_value
+    assert "pad=" not in custom_value
+    assert "pad=" not in caption_value
+
+
 def test_editor_channel_is_always_rendered_as_the_front_layer() -> None:
     document = _document()
     document.overlays.layer_order = [
@@ -214,6 +682,23 @@ def test_editor_channel_is_always_rendered_as_the_front_layer() -> None:
         "video",
         "title",
         "comment",
+    ]
+
+    assert editor_layer_order(document) == [
+        "video",
+        "title",
+        "comment",
+        "channel",
+    ]
+
+
+def test_editor_hook_title_is_always_rendered_in_front_of_video() -> None:
+    document = _document()
+    document.overlays.layer_order = [
+        "title",
+        "comment",
+        "video",
+        "channel",
     ]
 
     assert editor_layer_order(document) == [
@@ -543,6 +1028,60 @@ def test_one_pixel_text_layout_wraps_without_clipping_the_glyphs(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
+def test_editor_sequence_pads_small_source_tail_drift_to_document_duration(
+    tmp_path: Path,
+) -> None:
+    timeline = tmp_path / "short-tail-timeline.mp4"
+    _run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=30",
+        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000",
+        "-t", "9.8", "-c:v", "libx264", "-preset", "ultrafast",
+        "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(timeline),
+    ])
+    value = json.loads(FIXTURE.read_text())
+    value["video"]["clips"] = [{
+        "id": "clip-tail",
+        "sourceStartSeconds": 1,
+        "sourceEndSeconds": 10,
+    }]
+    value["video"]["selectionStartSeconds"] = 11
+    value["video"]["selectionEndSeconds"] = 20
+    document = EditorDocument.model_validate(value)
+    renderer = EditorDocumentRenderer(Settings(
+        temp_dir=tmp_path / "temp",
+        ffmpeg_timeout_seconds=120,
+        ffmpeg_threads=2,
+        clean_clip_preset="ultrafast",
+        clean_clip_crf=28,
+    ))
+
+    clean = renderer.extract_sequence(
+        timeline_path=timeline,
+        output_path=tmp_path / "clean.mp4",
+        document=document,
+        work_dir=tmp_path / "cut-work",
+    )
+
+    probe = json.loads(_run([
+        "ffprobe", "-v", "error", "-show_streams", "-show_format",
+        "-of", "json", str(clean),
+    ]).stdout)
+    video = next(
+        stream for stream in probe["streams"] if stream["codec_type"] == "video"
+    )
+    audio = next(
+        stream for stream in probe["streams"] if stream["codec_type"] == "audio"
+    )
+    assert float(probe["format"]["duration"]) == pytest.approx(9, abs=0.08)
+    assert float(video["duration"]) == pytest.approx(9, abs=0.08)
+    assert float(audio["duration"]) == pytest.approx(9, abs=0.08)
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
 def test_editor_document_cuts_and_renders_browser_playable_vertical_mp4(
     tmp_path: Path,
 ) -> None:
@@ -659,6 +1198,9 @@ def test_editor_document_cuts_and_renders_browser_playable_vertical_mp4(
     assert audio["codec_name"] == "aac"
     assert float(probe["format"]["duration"]) == pytest.approx(3.5, abs=0.2)
     assert output.stat().st_size > 10_000
+    subtitle_ass = tmp_path / "render-work" / "editor-assets" / "subtitles.ass"
+    assert subtitle_ass.is_file()
+    assert "첫 번째 조각" in subtitle_ass.read_text(encoding="utf-8")
 
 
 @pytest.mark.skipif(
@@ -676,7 +1218,7 @@ def test_editor_document_v3_renders_at_authoritative_30fps(
         "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-shortest", str(timeline),
     ])
-    document = _document_v3()
+    document = _document_v3_with_subtitle_layout(offset_y=-260, scale=1.5)
     settings = Settings(
         temp_dir=tmp_path / "temp-v3",
         ffmpeg_timeout_seconds=120,
@@ -685,6 +1227,27 @@ def test_editor_document_v3_renders_at_authoritative_30fps(
         clean_clip_crf=28,
     )
     renderer = EditorDocumentRenderer(settings)
+    caption_spec = compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="첫자막",
+                start=1.05,
+                end=1.5,
+                provider="elevenlabs",
+            ),
+            TranscriptWord(
+                text="둘째자막",
+                start=4.05,
+                end=4.5,
+                provider="elevenlabs",
+            ),
+        ],
+        template_id="pop",
+        clip_start=0,
+        clip_end=10,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        caption_placement="center",
+    )
     clean = renderer.extract_sequence(
         timeline_path=timeline,
         output_path=tmp_path / "clean-v3.mp4",
@@ -697,7 +1260,11 @@ def test_editor_document_v3_renders_at_authoritative_30fps(
         document=document,
         work_dir=tmp_path / "render-work-v3",
         channel_thumbnail_path=None,
+        caption_render_spec=caption_spec,
     )
+    subtitle_ass = (
+        tmp_path / "render-work-v3" / "editor-assets" / "subtitles.ass"
+    ).read_text(encoding="utf-8")
     probe = json.loads(_run([
         "ffprobe", "-v", "error", "-show_streams", "-show_format",
         "-of", "json", str(output),
@@ -710,3 +1277,65 @@ def test_editor_document_v3_renders_at_authoritative_30fps(
     assert video["codec_name"] == "h264"
     assert video["avg_frame_rate"] == "30/1"
     assert float(probe["format"]["duration"]) == pytest.approx(3.5, abs=0.2)
+    assert "Style: Default,Pretendard,72," in subtitle_ass
+    assert r"\fs138.0" in subtitle_ass
+    assert r"\pos(" in subtitle_ass
+    assert "Noto Sans CJK KR" not in subtitle_ass
+    assert (
+        tmp_path / "render-work-v3" / "caption-fonts" / "Pretendard-Bold.ttf"
+    ).is_file()
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
+def test_general_v3_subtitles_render_as_highlight_ass(tmp_path: Path) -> None:
+    timeline = tmp_path / "timeline-general-highlight.mp4"
+    _run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24",
+        "-f", "lavfi", "-i", "sine=frequency=330:sample_rate=16000",
+        "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-shortest", str(timeline),
+    ])
+    document = _document_v3_with_subtitle_layout(
+        offset_y=120,
+        scale=0.75,
+        accent_color="#16A34A",
+    )
+    renderer = EditorDocumentRenderer(Settings(
+        temp_dir=tmp_path / "temp-general-highlight",
+        ffmpeg_timeout_seconds=120,
+        ffmpeg_threads=2,
+        clean_clip_preset="ultrafast",
+        clean_clip_crf=28,
+    ))
+    clean = renderer.extract_sequence(
+        timeline_path=timeline,
+        output_path=tmp_path / "clean-general-highlight.mp4",
+        document=document,
+        work_dir=tmp_path / "cut-general-highlight",
+    )
+    output = renderer.render(
+        clean_path=clean,
+        output_path=tmp_path / "output-general-highlight.mp4",
+        document=document,
+        work_dir=tmp_path / "render-general-highlight",
+        channel_thumbnail_path=None,
+        caption_render_spec=None,
+    )
+
+    subtitle_ass = (
+        tmp_path / "render-general-highlight" / "editor-assets" / "subtitles.ass"
+    ).read_text(encoding="utf-8")
+    assert output.stat().st_size > 10_000
+    assert subtitle_ass.count("Dialogue: 0,") >= 2
+    assert r"\pos(" in subtitle_ass
+    assert r"\1c&H004AA316&" in subtitle_ass
+    assert (
+        tmp_path
+        / "render-general-highlight"
+        / "caption-fonts"
+        / "Pretendard-Bold.ttf"
+    ).is_file()

@@ -11,13 +11,16 @@ from typing import Any
 import boto3
 from PIL import Image
 
+from .caption_templates import compile_caption_render_spec
 from .config import Settings
 from .editor_renderer import (
     EditorDocumentRenderer,
     editor_video_frame,
+    retime_editor_caption_spec,
     verify_editor_fonts,
 )
-from .schemas import EditorDocument
+from .schemas import EditorDocument, VideoAspectRatio
+from .subtitles import TranscriptWord
 
 FONT_IDS = (
     "pretendard",
@@ -167,7 +170,7 @@ def _render_spec(value: dict[str, Any]) -> dict[str, object]:
     comments = value["comments"]
     text_overlays = overlays["textOverlays"]
     return {
-        "version": 1,
+        "version": 2,
         "canvas": {"width": 1080, "height": 1920},
         "fps": 30,
         "layerOrder": list(overlays["layerOrder"]),
@@ -220,6 +223,11 @@ def _render_spec(value: dict[str, Any]) -> dict[str, object]:
             "offsetX": overlays["offsets"]["video"]["x"],
             "offsetY": overlays["offsets"]["video"]["y"],
             "scale": overlays["scales"]["video"],
+        },
+        "subtitles": {
+            "centerX": 540,
+            "offsetY": -260,
+            "scale": 1.5,
         },
     }
 
@@ -618,6 +626,36 @@ def _document(scenario: str = "baseline") -> EditorDocument:
     return EditorDocument.model_validate(value)
 
 
+def _pop_caption_render_spec() -> dict[str, object]:
+    """Build immutable source-timeline pop captions spanning every probe cut."""
+    words = [
+        TranscriptWord(text="팝형", start=0.55, end=0.95, provider="probe"),
+        TranscriptWord(
+            text="자막", start=1.05, end=1.45, provider="probe", space_before=True
+        ),
+        TranscriptWord(
+            text="위치", start=2.05, end=2.55, provider="probe", space_before=True
+        ),
+        TranscriptWord(
+            text="크기", start=4.10, end=4.80, provider="probe", space_before=True
+        ),
+        TranscriptWord(
+            text="렌더", start=6.05, end=6.55, provider="probe", space_before=True
+        ),
+        TranscriptWord(
+            text="검증", start=7.00, end=7.45, provider="probe", space_before=True
+        ),
+    ]
+    return compile_caption_render_spec(
+        words,
+        template_id="pop",
+        clip_start=0,
+        clip_end=10,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        caption_placement="center",
+    )
+
+
 def _green_video_bounds(frame_path: Path) -> tuple[int, int, int, int]:
     with Image.open(frame_path).convert("RGB") as image:
         pixels = image.load()
@@ -634,6 +672,42 @@ def _green_video_bounds(frame_path: Path) -> tuple[int, int, int, int]:
     if right < 0 or bottom < 0:
         raise RuntimeError("Rendered probe frame does not contain the video layer")
     return left, top, right + 1, bottom + 1
+
+
+def _caption_accent_pixel_count(
+    frame_path: Path,
+    safe_area: dict[str, object],
+) -> int:
+    left = max(0, floor(float(safe_area["x"]) - 40))
+    top = max(0, floor(float(safe_area["y"]) - 40))
+    right = min(1080, floor(float(safe_area["x"]) + float(safe_area["width"]) + 40))
+    bottom = min(1920, floor(float(safe_area["y"]) + float(safe_area["height"]) + 40))
+    count = 0
+    with Image.open(frame_path).convert("RGB") as image:
+        pixels = image.load()
+        for y in range(top, bottom):
+            for x in range(left, right):
+                red, green, blue = pixels[x, y]
+                if red <= 150 and green >= 150 and blue >= 150 and abs(green - blue) <= 80:
+                    count += 1
+    return count
+
+
+def _caption_event_active_at(
+    caption_render_spec: dict[str, object],
+    frame: int,
+) -> bool:
+    for cue in caption_render_spec.get("cues") or []:
+        if not isinstance(cue, dict):
+            continue
+        for event in cue.get("events") or []:
+            if (
+                isinstance(event, dict)
+                and int(event.get("startFrame") or 0) <= frame
+                and int(event.get("endFrame") or 0) > frame
+            ):
+                return True
+    return False
 
 
 def run_editor_release_probe() -> dict[str, Any]:
@@ -667,6 +741,13 @@ def run_editor_release_probe() -> dict[str, Any]:
     )
     verify_editor_fonts()
     document = _document(scenario)
+    caption_render_spec = _pop_caption_render_spec()
+    rendered_caption_spec = retime_editor_caption_spec(
+        document,
+        caption_render_spec,
+    )
+    if rendered_caption_spec is None:
+        raise RuntimeError("Pop caption probe has no events after timeline retiming")
     with tempfile.TemporaryDirectory(
         prefix="editor-release-probe-",
         dir=settings.temp_dir if settings.temp_dir.is_dir() else None,
@@ -713,7 +794,22 @@ def run_editor_release_probe() -> dict[str, Any]:
             document=document,
             work_dir=root / "render-work",
             channel_thumbnail_path=thumbnail,
+            caption_render_spec=caption_render_spec,
         )
+        subtitle_ass = (
+            root / "render-work" / "editor-assets" / "subtitles.ass"
+        ).read_text(encoding="utf-8")
+        if (
+            "Style: Default,Pretendard,72," not in subtitle_ass
+            or r"\pos(" not in subtitle_ass
+            or r"\fs138.0" not in subtitle_ass
+            or "Noto Sans CJK KR" in subtitle_ass
+        ):
+            raise RuntimeError("Probe did not render the trusted pop caption template")
+        if not (
+            root / "render-work" / "caption-fonts" / "Pretendard-Bold.ttf"
+        ).is_file():
+            raise RuntimeError("Probe did not materialize the approved caption font")
         probe = json.loads(_run([
             "ffprobe",
             "-v",
@@ -742,6 +838,9 @@ def run_editor_release_probe() -> dict[str, Any]:
 
         frame_path = root / "frame.png"
         geometry_sample_seconds = 1.0 if scenario == "comment-gaps" else 2.0
+        caption_sample_frame = floor(geometry_sample_seconds * 30 + 0.5)
+        if not _caption_event_active_at(rendered_caption_spec, caption_sample_frame):
+            raise RuntimeError("Pop caption probe sample does not contain an active event")
         _run([
             "ffmpeg",
             "-hide_banner",
@@ -756,7 +855,7 @@ def run_editor_release_probe() -> dict[str, Any]:
             "1",
             str(frame_path),
         ])
-        expected_frame = editor_video_frame(document)
+        expected_frame = editor_video_frame(document, caption_render_spec)
         observed = _green_video_bounds(frame_path)
         expected = (
             max(0, expected_frame.x),
@@ -772,6 +871,12 @@ def run_editor_release_probe() -> dict[str, Any]:
             raise RuntimeError(
                 f"Probe geometry drifted by {geometry_error}px (allowed: 2px)"
             )
+        safe_area = rendered_caption_spec.get("safeArea")
+        if not isinstance(safe_area, dict):
+            raise RuntimeError("Pop caption probe safe area is missing")
+        accent_pixels = _caption_accent_pixel_count(frame_path, safe_area)
+        if accent_pixels < 25:
+            raise RuntimeError("Rendered probe frame does not contain the pop caption accent")
         manifest = {
             "schemaVersion": 1,
             "scenario": scenario,
@@ -783,6 +888,8 @@ def run_editor_release_probe() -> dict[str, Any]:
                 "legacy-no-timeline": True,
                 "captured-timeline": True,
                 "editor-v2": True,
+                "subtitle-layout": True,
+                "caption-template-pop": True,
                 "ffprobe": True,
                 "frame-parity": True,
             },
@@ -791,6 +898,8 @@ def run_editor_release_probe() -> dict[str, Any]:
                 "legacy-no-timeline": "make-verify",
                 "captured-timeline": "make-verify",
                 "editor-v2": "synthetic-render",
+                "subtitle-layout": "synthetic-render-ass",
+                "caption-template-pop": "synthetic-render-frame",
                 "ffprobe": "synthetic-render",
                 "frame-parity": "synthetic-render",
             },
@@ -808,6 +917,11 @@ def run_editor_release_probe() -> dict[str, Any]:
                 "observedVideoBounds": observed,
                 "maximumErrorPixels": geometry_error,
             },
+            "captionTemplate": {
+                "templateId": "pop",
+                "accentPixels": accent_pixels,
+                "safeArea": safe_area,
+            },
             "fonts": list(FONT_IDS),
             "capabilities": {"subtitleEditing": True},
             "features": {
@@ -822,6 +936,12 @@ def run_editor_release_probe() -> dict[str, Any]:
                 else None,
                 "template": document.template.id.value,
                 "layerOrder": document.overlays.layer_order,
+                "subtitleLayout": document.render_spec.subtitles.model_dump(
+                    mode="json",
+                    by_alias=True,
+                )
+                if document.render_spec and document.render_spec.subtitles
+                else None,
             },
         }
         bucket = settings.s3_bucket

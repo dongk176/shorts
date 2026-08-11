@@ -13,6 +13,7 @@ from shorts_worker.renderer import (
     COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
     PRESET_SQUARE_CHANNEL_CENTER_Y,
     VideoRenderer,
+    caption_title_text_styles,
     create_comment_timeline_manifest,
     custom_video_geometry_filters,
     lifted_comment_landscape_layout,
@@ -25,12 +26,56 @@ from shorts_worker.schemas import (
     HighlightClip,
     TemplateId,
     TemplateTitleLayer,
+    TitleTextStyle,
     VideoAspectRatio,
     default_comment_overlays,
 )
 from shorts_worker.worker_pipeline import edit_timeline_clip
 
 pytestmark = pytest.mark.render
+
+
+def test_caption_title_background_defaults_only_for_full_vertical() -> None:
+    explicit = [TitleTextStyle(start=0, end=2, color="#FFFFFF")]
+    admin_spec: dict[str, object] = {
+        "templateId": "highlight",
+        "timingLeadFrames": 7,
+    }
+    stable_spec: dict[str, object] = {
+        "templateId": "highlight",
+        "timingLeadFrames": 4,
+    }
+
+    assert caption_title_text_styles(
+        None,
+        VideoAspectRatio.FULL_VERTICAL,
+        explicit,
+    ) == explicit
+    assert caption_title_text_styles(
+        admin_spec,
+        VideoAspectRatio.PORTRAIT,
+        explicit,
+    ) == []
+    assert caption_title_text_styles(
+        admin_spec,
+        VideoAspectRatio.FULL_VERTICAL,
+        explicit,
+    ) is None
+    assert caption_title_text_styles(
+        stable_spec,
+        VideoAspectRatio.FULL_VERTICAL,
+        explicit,
+    ) == explicit
+    assert caption_title_text_styles(
+        stable_spec,
+        VideoAspectRatio.FULL_VERTICAL,
+        None,
+    ) == []
+    assert caption_title_text_styles(
+        {"templateId": "highlight"},
+        VideoAspectRatio.FULL_VERTICAL,
+        None,
+    ) == []
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess[str]:

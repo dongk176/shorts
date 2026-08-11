@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
-from math import ceil
+from math import ceil, floor
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
+from .caption_templates import (
+    CAPTION_ACCENT,
+    CAPTION_FPS,
+    caption_font_spec,
+    compile_caption_render_spec,
+    create_caption_ass,
+    prepare_caption_fonts,
+    reflow_caption_cues_for_clips,
+)
 from .config import Settings
 from .errors import RenderError
 from .media import media_duration, probe_media, run_command, video_fps
@@ -16,8 +26,10 @@ from .overlays import (
     _title_style_runs,
     create_ass_subtitles,
     create_comment_panel,
+    ensure_title_text_background,
     wrap_korean_title,
 )
+from .renderer import VideoLayout, caption_video_layout
 from .schemas import (
     CustomTemplateConfig,
     EditorDocument,
@@ -26,8 +38,10 @@ from .schemas import (
     EditorTextOverlay,
     SubtitleSegment,
     TemplateId,
+    TitleTextStyle,
     VideoAspectRatio,
 )
+from .subtitles import TranscriptWord
 
 CANVAS_WIDTH = 1080
 CANVAS_HEIGHT = 1920
@@ -52,13 +66,27 @@ EDITOR_FONT_FILES = {
     EditorFontId.NANUM_MYEONGJO: "NanumMyeongjo-Bold.ttf",
     EditorFontId.SUIT: "SUIT-Bold.woff2",
     EditorFontId.SPOQA_HAN_SANS_NEO: "SpoqaHanSansNeo-Bold.woff2",
+    EditorFontId.NOTO_SANS_KR: "NotoSansKR-Variable.ttf",
+    EditorFontId.NANUM_SQUARE_NEO: "NanumSquareNeo-Bold.ttf",
+    EditorFontId.SANDBOX_AGGRO: "SandboxAggro-Bold.ttf",
+    EditorFontId.JUA: "Jua-Regular.ttf",
+    EditorFontId.S_CORE_DREAM: "SCoreDream-ExtraBold.otf",
+    EditorFontId.CAFE24_ANEMONE: "Cafe24Anemone-Bold.woff",
+    EditorFontId.CAFE24_PRO_UP: "Cafe24ProUp-Regular.woff2",
+    EditorFontId.RIDI_BATANG: "RIDIBatang-Regular.woff",
+    EditorFontId.JALNAN_2: "Jalnan2-Regular.woff2",
+    EditorFontId.GODO: "Godo-Bold.ttf",
+    EditorFontId.GALMURI_9: "Galmuri9-Regular.ttf",
 }
 EDITOR_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
 EDITOR_FONT_DEFAULT_VARIATION_WEIGHTS = {
     EditorFontId.NOTO_SERIF_KR: 700,
+    EditorFontId.NOTO_SANS_KR: 700,
 }
 TIMED_OVERLAY_TRANSITION_FRAMES = 3
 TIMED_OVERLAY_CONTIGUOUS_TOLERANCE_SECONDS = 0.001
+EDITOR_SUBTITLE_DEFAULT_MARGIN_V = 445
+EDITOR_SUBTITLE_DEFAULT_FONT_SIZE = 48
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +95,33 @@ class EditorVideoFrame:
     y: int
     width: int
     height: int
+
+
+@dataclass(frozen=True, slots=True)
+class EditorSubtitleStyle:
+    margin_v: int
+    font_size: int
+
+
+def editor_subtitle_style(document: EditorDocument) -> EditorSubtitleStyle:
+    render_subtitles = (
+        document.render_spec.subtitles
+        if document.render_spec and document.render_spec.version == 2
+        else None
+    )
+    if render_subtitles is None:
+        return EditorSubtitleStyle(
+            margin_v=EDITOR_SUBTITLE_DEFAULT_MARGIN_V,
+            font_size=EDITOR_SUBTITLE_DEFAULT_FONT_SIZE,
+        )
+    return EditorSubtitleStyle(
+        margin_v=round(
+            EDITOR_SUBTITLE_DEFAULT_MARGIN_V - render_subtitles.offset_y
+        ),
+        font_size=round(
+            EDITOR_SUBTITLE_DEFAULT_FONT_SIZE * render_subtitles.scale
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,7 +185,7 @@ def load_editor_font(
     )
     variation_weight = (
         weight
-        if font_id is EditorFontId.NOTO_SERIF_KR and weight is not None
+        if font_id in EDITOR_FONT_DEFAULT_VARIATION_WEIGHTS and weight is not None
         else EDITOR_FONT_DEFAULT_VARIATION_WEIGHTS.get(font_id)
     )
     if variation_weight is not None:
@@ -157,9 +212,28 @@ def _custom_template_config(document: EditorDocument) -> CustomTemplateConfig | 
     return CustomTemplateConfig.model_validate(config) if isinstance(config, dict) else None
 
 
-def editor_video_frame(document: EditorDocument) -> EditorVideoFrame:
+def _editor_caption_layout(
+    caption_render_spec: dict[str, object] | None,
+) -> VideoLayout | None:
+    return (
+        caption_video_layout(caption_render_spec)
+        if caption_render_spec is not None
+        else None
+    )
+
+
+def editor_video_frame(
+    document: EditorDocument,
+    caption_render_spec: dict[str, object] | None = None,
+) -> EditorVideoFrame:
     config = _custom_template_config(document)
-    if config is not None:
+    caption_layout = _editor_caption_layout(caption_render_spec)
+    if caption_layout is not None:
+        base_x = 0
+        base_y = caption_layout.video_y
+        base_width = CANVAS_WIDTH
+        base_height = caption_layout.video_height
+    elif config is not None:
         base_x = config.video.x
         base_y = config.video.y
         base_width = config.video.width
@@ -193,6 +267,35 @@ def editor_video_frame(document: EditorDocument) -> EditorVideoFrame:
     return EditorVideoFrame(x=x, y=y, width=width, height=height)
 
 
+def _editor_video_input_filter(
+    document: EditorDocument,
+    frame: EditorVideoFrame,
+    fps: float,
+    caption_render_spec: dict[str, object] | None = None,
+) -> str:
+    prefix = f"[0:v]setpts=PTS-STARTPTS,fps={fps:.3f},"
+    if (
+        document.version == 3
+        and document.template.id is TemplateId.COMMENT_CAPTURE
+        and document.template.custom_template_id is None
+        and document.video.aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+        and caption_render_spec is None
+    ):
+        # The V3 browser preview reserves a 4:5 comment frame but keeps an
+        # original 9:16 source fully visible with object-contain and black bars.
+        # Preserve that exact fit when composing the final video.
+        geometry = (
+            f"scale={frame.width}:{frame.height}:force_original_aspect_ratio=decrease,"
+            f"pad={frame.width}:{frame.height}:(ow-iw)/2:(oh-ih)/2:color=black,"
+        )
+    else:
+        geometry = (
+            f"scale={frame.width}:{frame.height}:force_original_aspect_ratio=increase,"
+            f"crop={frame.width}:{frame.height},"
+        )
+    return f"{prefix}{geometry}format=rgba[video_layer]"
+
+
 def retime_editor_subtitles(document: EditorDocument) -> list[SubtitleSegment]:
     retimed: list[SubtitleSegment] = []
     output_cursor = 0.0
@@ -209,6 +312,336 @@ def retime_editor_subtitles(document: EditorDocument) -> list[SubtitleSegment]:
             ))
         output_cursor += clip.source_end_seconds - clip.source_start_seconds
     return retimed
+
+
+def _editor_highlight_transcript_words(
+    segments: list[SubtitleSegment],
+) -> list[TranscriptWord]:
+    words: list[TranscriptWord] = []
+    for segment in sorted(segments, key=lambda item: (item.start, item.end)):
+        speech_start_frame = max(0, round(segment.start * CAPTION_FPS))
+        speech_end_frame = max(
+            speech_start_frame + 1,
+            round(segment.end * CAPTION_FPS),
+        )
+        available_frames = speech_end_frame - speech_start_frame
+        tokens = segment.text.split()
+        maximum_words = min(20, available_frames)
+        if len(tokens) > maximum_words:
+            tokens = (
+                [*tokens[: maximum_words - 1], " ".join(tokens[maximum_words - 1 :])]
+                if maximum_words > 1
+                else [" ".join(tokens)]
+            )
+        if not tokens or maximum_words < 1:
+            continue
+        weights = [max(1, len(token)) for token in tokens]
+        total_weight = sum(weights)
+        starts = [speech_start_frame]
+        consumed_weight = weights[0]
+        for index in range(1, len(tokens)):
+            remaining = len(tokens) - index
+            desired = speech_start_frame + round(
+                available_frames * consumed_weight / total_weight
+            )
+            starts.append(min(
+                speech_end_frame - remaining,
+                max(starts[-1] + 1, desired),
+            ))
+            consumed_weight += weights[index]
+        for index, token in enumerate(tokens):
+            start_frame = starts[index]
+            end_frame = starts[index + 1] if index + 1 < len(starts) else speech_end_frame
+            words.append(TranscriptWord(
+                text=token,
+                start=start_frame / CAPTION_FPS,
+                end=end_frame / CAPTION_FPS,
+                provider="editor-segment",
+                space_before=index > 0,
+            ))
+    return words
+
+
+def editor_highlight_caption_spec(
+    document: EditorDocument,
+) -> dict[str, object] | None:
+    words = _editor_highlight_transcript_words(document.subtitles.segments)
+    if not words:
+        return None
+    render_subtitles = (
+        document.render_spec.subtitles
+        if document.render_spec and document.render_spec.version == 2
+        else None
+    )
+    try:
+        return compile_caption_render_spec(
+            words,
+            template_id="highlight",
+            clip_start=0,
+            clip_end=(
+                document.video.timeline_end_seconds
+                - document.video.timeline_start_seconds
+            ),
+            video_aspect_ratio=document.video.aspect_ratio,
+            accent_color=(
+                render_subtitles.accent_color
+                if render_subtitles and render_subtitles.accent_color
+                else CAPTION_ACCENT
+            ),
+            font_id=(
+                render_subtitles.font_id
+                if render_subtitles and render_subtitles.font_id
+                else None
+            ),
+        )
+    except RenderError:
+        raise
+    except Exception as exc:
+        raise RenderError("일반 자막을 강조형으로 변환하지 못했습니다.") from exc
+
+
+def editor_highlight_subtitles_enabled(document: EditorDocument) -> bool:
+    return bool(
+        document.subtitles.enabled
+        and document.version == 3
+        and document.render_spec is not None
+        and document.render_spec.version == 2
+        and document.render_spec.subtitles is not None
+    )
+
+
+def editor_subtitle_render_mode(
+    document: EditorDocument,
+    caption_render_spec: dict[str, object] | None,
+) -> str:
+    """Choose one explicit subtitle renderer without silently changing styles."""
+    if not document.subtitles.enabled:
+        return "off"
+    if caption_render_spec is not None:
+        return "caption-template"
+    if editor_highlight_subtitles_enabled(document):
+        return "editor-highlight"
+    if document.version == 3:
+        # V3 documents are server-authored and must carry an authoritative
+        # subtitle render spec. Falling through to the old plain ASS renderer
+        # makes an unrelated, deprecated style appear in the final video.
+        return "invalid-v3"
+    return "legacy-v2"
+
+
+def retime_editor_caption_spec(
+    document: EditorDocument,
+    caption_render_spec: dict[str, object],
+) -> dict[str, object] | None:
+    """Apply trusted editor timing and layout to an immutable caption template."""
+    spec = deepcopy(caption_render_spec)
+    if int(spec.get("schemaVersion") or 0) != 3:
+        raise RenderError("원본 자막 렌더 사양 버전이 올바르지 않습니다.")
+    if str(spec.get("templateId") or "") not in {"basic", "highlight", "pop"}:
+        raise RenderError("원본 자막 렌더 템플릿이 올바르지 않습니다.")
+    fps = int(spec.get("fps") or 0)
+    if fps != 30:
+        raise RenderError("원본 자막 렌더 프레임레이트가 올바르지 않습니다.")
+
+    render_subtitles = (
+        document.render_spec.subtitles
+        if document.render_spec and document.render_spec.version == 2
+        else None
+    )
+    offset_y = render_subtitles.offset_y if render_subtitles else 0.0
+    scale = render_subtitles.scale if render_subtitles else 1.0
+    source_font = spec.get("font")
+    source_font_id = (
+        source_font.get("fontId")
+        if isinstance(source_font, dict)
+        else None
+    )
+    caption_font_id = (
+        render_subtitles.font_id
+        if render_subtitles and render_subtitles.font_id is not None
+        else source_font_id
+    )
+    if render_subtitles and render_subtitles.font_id is not None:
+        spec["font"] = caption_font_spec(render_subtitles.font_id)
+
+    cue_edits = {
+        edit.cue_index: edit.text
+        for edit in (render_subtitles.cue_edits if render_subtitles else [])
+    }
+
+    source_cues = spec.get("cues")
+    safe_area_value = spec.get("safeArea")
+    if not isinstance(source_cues, list) or not isinstance(safe_area_value, dict):
+        raise RenderError("원본 자막 편집 정보를 찾을 수 없습니다.")
+    safe_area = {
+        key: int(safe_area_value[key])
+        for key in ("x", "y", "width", "height")
+    }
+
+    clip_windows: list[tuple[int, int, int]] = []
+    output_cursor = 0
+    for clip in document.video.clips:
+        clip_start = floor(clip.source_start_seconds * fps + 0.5)
+        clip_end = floor(clip.source_end_seconds * fps + 0.5)
+        if clip_end <= clip_start:
+            continue
+        clip_windows.append((clip_start, clip_end, output_cursor))
+        output_cursor += clip_end - clip_start
+    supports_word_reflow = all(
+        isinstance(cue, dict)
+        and isinstance(cue.get("words"), list)
+        and all(
+            isinstance(word, dict)
+            and "startFrame" in word
+            and "endFrame" in word
+            for word in cue["words"]
+        )
+        for cue in source_cues
+    )
+    try:
+        if supports_word_reflow or cue_edits:
+            spec["cues"] = reflow_caption_cues_for_clips(
+                source_cues,
+                template_id=str(spec["templateId"]),
+                safe_area=safe_area,
+                clip_windows=clip_windows,
+                cue_edits=cue_edits,
+                fps=fps,
+                font_id=caption_font_id,
+            )
+        else:
+            # Schema-v3 probes and early stored specs predate per-word frame
+            # fields. Keep their immutable event layout compatible; every new
+            # generated caption spec takes the word-reflow path above.
+            legacy_cues: list[dict[str, object]] = []
+            for cue_value in source_cues:
+                if not isinstance(cue_value, dict):
+                    raise RenderError("원본 자막 큐가 올바르지 않습니다.")
+                events_value = cue_value.get("events")
+                if not isinstance(events_value, list):
+                    raise RenderError("원본 자막 이벤트가 올바르지 않습니다.")
+                retimed_events: list[dict[str, object]] = []
+                for clip_start, clip_end, output_start in clip_windows:
+                    for event_value in events_value:
+                        if not isinstance(event_value, dict):
+                            raise RenderError("원본 자막 이벤트가 올바르지 않습니다.")
+                        event_start = int(event_value.get("startFrame") or 0)
+                        event_end = int(event_value.get("endFrame") or 0)
+                        visible_start = max(event_start, clip_start)
+                        visible_end = min(event_end, clip_end)
+                        if visible_end <= visible_start:
+                            continue
+                        event = deepcopy(event_value)
+                        event["startFrame"] = (
+                            output_start + visible_start - clip_start
+                        )
+                        event["endFrame"] = output_start + visible_end - clip_start
+                        retimed_events.append(event)
+                if not retimed_events:
+                    continue
+                cue = deepcopy(cue_value)
+                cue["events"] = retimed_events
+                cue["startFrame"] = min(
+                    int(event["startFrame"]) for event in retimed_events
+                )
+                cue["endFrame"] = max(
+                    int(event["endFrame"]) for event in retimed_events
+                )
+                legacy_cues.append(cue)
+            spec["cues"] = legacy_cues
+    except Exception as exc:
+        if isinstance(exc, RenderError):
+            raise
+        raise RenderError("편집한 자막을 다시 배치하지 못했습니다.") from exc
+
+    def scaled_x(value: object) -> float:
+        return round(540 + (float(value) - 540) * scale, 3)
+
+    def shifted_y(value: object) -> float:
+        return round(float(value) + offset_y, 3)
+
+    style = spec.get("style")
+    if not isinstance(style, dict):
+        raise RenderError("원본 자막 스타일이 올바르지 않습니다.")
+    if render_subtitles and render_subtitles.accent_color:
+        style["accentColor"] = render_subtitles.accent_color
+    style["fontSize"] = round(float(style.get("fontSize") or 0) * scale, 3)
+    style["outlineWidth"] = round(
+        float(style.get("outlineWidth") or 0) * scale,
+        3,
+    )
+
+    for rectangle_key in ("safeArea",):
+        rectangle = spec.get(rectangle_key)
+        if not isinstance(rectangle, dict):
+            continue
+        original_width = float(rectangle.get("width") or 0)
+        original_height = float(rectangle.get("height") or 0)
+        original_center_x = float(rectangle.get("x") or 0) + original_width / 2
+        original_center_y = float(rectangle.get("y") or 0) + original_height / 2
+        rectangle["width"] = round(original_width * scale, 3)
+        rectangle["height"] = round(original_height * scale, 3)
+        rectangle["x"] = round(
+            scaled_x(original_center_x) - float(rectangle["width"]) / 2,
+            3,
+        )
+        rectangle["y"] = round(
+            original_center_y + offset_y - float(rectangle["height"]) / 2,
+            3,
+        )
+    layout = spec.get("layout")
+    if isinstance(layout, dict) and isinstance(layout.get("caption"), dict):
+        layout["caption"] = deepcopy(spec.get("safeArea"))
+
+    cues = spec.get("cues")
+    if not isinstance(cues, list):
+        raise RenderError("원본 자막 큐가 올바르지 않습니다.")
+
+    retimed_cues: list[dict[str, object]] = []
+    for cue_value in cues:
+        if not isinstance(cue_value, dict):
+            raise RenderError("원본 자막 큐가 올바르지 않습니다.")
+        cue = cue_value
+        words = cue.get("words")
+        events = cue.get("events")
+        if not isinstance(words, list) or not isinstance(events, list):
+            raise RenderError("원본 자막 이벤트가 올바르지 않습니다.")
+
+        if "centerX" in cue:
+            cue["centerX"] = scaled_x(cue["centerX"])
+        if "centerY" in cue:
+            cue["centerY"] = shifted_y(cue["centerY"])
+        if "fontSize" in cue:
+            cue["fontSize"] = round(float(cue["fontSize"]) * scale, 3)
+        for word_value in words:
+            if not isinstance(word_value, dict):
+                raise RenderError("원본 자막 어절이 올바르지 않습니다.")
+            if "fontSize" in word_value:
+                word_value["fontSize"] = round(
+                    float(word_value["fontSize"]) * scale,
+                    3,
+                )
+            if "centerX" in word_value:
+                word_value["centerX"] = scaled_x(word_value["centerX"])
+            if "centerY" in word_value:
+                word_value["centerY"] = shifted_y(word_value["centerY"])
+
+        for event in events:
+            if not isinstance(event, dict):
+                raise RenderError("원본 자막 이벤트가 올바르지 않습니다.")
+            positions = event.get("positions")
+            if isinstance(positions, list):
+                for position in positions:
+                    if not isinstance(position, dict):
+                        raise RenderError("원본 팝 자막 위치가 올바르지 않습니다.")
+                    position["centerX"] = scaled_x(position["centerX"])
+                    position["centerY"] = shifted_y(position["centerY"])
+        retimed_cues.append(cue)
+
+    if not retimed_cues:
+        return None
+    spec["cues"] = retimed_cues
+    return spec
 
 
 def _text_size(
@@ -301,6 +734,8 @@ def _draw_styled_title_content(
     font_id: EditorFontId,
     font_size: int,
     custom_config: CustomTemplateConfig | None,
+    title_accent_color: str | None = None,
+    title_text_styles: list[TitleTextStyle] | None = None,
 ) -> Image.Image:
     render_title = document.render_spec.title if document.render_spec else None
     lines = render_title.lines if render_title else wrap_korean_title(document.title.text)
@@ -326,11 +761,16 @@ def _draw_styled_title_content(
         gap = TITLE_LINE_GAP
         line_padding_x = max(1, round(font_size * 0.34))
         line_padding_y = max(1, round(font_size * 0.14))
+    resolved_title_text_styles = (
+        document.title.text_styles
+        if title_text_styles is None
+        else title_text_styles
+    )
     line_runs = [
         _title_style_runs(
             lines[index],
             indices[index],
-            document.title.text_styles,
+            resolved_title_text_styles,
         )
         for index in range(len(lines))
     ]
@@ -411,7 +851,7 @@ def _draw_styled_title_content(
         else:
             overlay_mode = document.video.aspect_ratio is VideoAspectRatio.FULL_VERTICAL
             default_color = (
-                style.accent
+                title_accent_color or style.accent
                 if index > 0
                 or (overlay_mode and document.template.id is not TemplateId.PAPER)
                 else style.primary
@@ -434,18 +874,27 @@ def _draw_styled_title_content(
 def create_editor_title_layer(
     document: EditorDocument,
     output_path: Path,
+    *,
+    title_accent_color: str | None = None,
+    caption_render_spec: dict[str, object] | None = None,
 ) -> Path:
     canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
     if not document.overlays.visible["title"]:
         canvas.save(output_path)
         return output_path
     config = _custom_template_config(document)
+    caption_layout = _editor_caption_layout(caption_render_spec)
     font_id = document.overlays.fonts["title"]
     render_title = document.render_spec.title if document.render_spec else None
     if render_title is not None:
         base_font_size = max(1, round(render_title.font_size))
         center_x = CANVAS_WIDTH / 2
-        if config is not None:
+        if caption_layout is not None:
+            panel_height = caption_layout.top_height
+            panel_top = caption_layout.top_y
+            bottom_margin = min(44, max(24, round(panel_height * 0.105)))
+            center_y = panel_top + panel_height - bottom_margin
+        elif config is not None:
             center_y = config.title.y
         else:
             aspect_ratio = document.video.aspect_ratio
@@ -511,11 +960,24 @@ def create_editor_title_layer(
         )
         center_x = CANVAS_WIDTH / 2
         center_y = panel_top + panel_height - bottom_margin
+    resolved_title_text_styles = None
+    if (
+        caption_render_spec is not None
+        and document.video.aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+    ):
+        style = TEMPLATE_STYLES[document.template.id]
+        resolved_title_text_styles = ensure_title_text_background(
+            document.title.text,
+            document.title.text_styles,
+            title_accent_color or style.background,
+        )
     content = _draw_styled_title_content(
         document,
         font_id=font_id,
         font_size=base_font_size,
         custom_config=config,
+        title_accent_color=title_accent_color,
+        title_text_styles=resolved_title_text_styles,
     )
     if config is None:
         center_y -= content.height / 2
@@ -548,14 +1010,27 @@ def create_editor_channel_layer(
     document: EditorDocument,
     output_path: Path,
     thumbnail_path: Path | None,
+    caption_render_spec: dict[str, object] | None = None,
 ) -> Path:
     canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (0, 0, 0, 0))
     if not document.overlays.visible["channel"]:
         canvas.save(output_path)
         return output_path
     config = _custom_template_config(document)
+    caption_layout = _editor_caption_layout(caption_render_spec)
     font_id = document.overlays.fonts["channel"]
-    if config is not None:
+    if caption_layout is not None:
+        base_font_size = 48
+        center_x = CANVAS_WIDTH / 2
+        center_y = caption_layout.bottom_y + caption_layout.bottom_height / 2
+        foreground = TEMPLATE_STYLES[document.template.id].channel
+        background = None
+        maximum_width = 760
+        avatar_size = 64
+        gap = 26
+        padding_x = 53
+        padding_y = 8
+    elif config is not None:
         base_font_size = config.channel.font_size
         center_x = config.channel.x
         center_y = config.channel.y
@@ -691,14 +1166,18 @@ def create_editor_channel_layer(
 
 
 def editor_layer_order(document: EditorDocument) -> list[str]:
-    return [
-        *(
-            layer_name
-            for layer_name in document.overlays.layer_order
-            if layer_name != "channel"
-        ),
-        "channel",
+    order = [
+        layer_name
+        for layer_name in document.overlays.layer_order
+        if layer_name != "channel"
     ]
+    if "video" in order and "title" in order:
+        video_index = order.index("video")
+        title_index = order.index("title")
+        if video_index > title_index:
+            order.pop(video_index)
+            order.insert(order.index("title"), "video")
+    return [*order, "channel"]
 
 
 def _wrap_overlay_text(
@@ -808,8 +1287,14 @@ def create_editor_text_layer(
     return output_path
 
 
-def _base_comment_y(document: EditorDocument) -> int:
+def _base_comment_y(
+    document: EditorDocument,
+    caption_render_spec: dict[str, object] | None = None,
+) -> int:
     config = _custom_template_config(document)
+    caption_layout = _editor_caption_layout(caption_render_spec)
+    if caption_layout is not None:
+        return caption_layout.video_y + caption_layout.video_height
     if config is not None:
         video_bottom = config.video.y + config.video.height
         if config.comment.docked_to_video and 720 <= video_bottom <= 1480:
@@ -833,6 +1318,7 @@ def _base_comment_y(document: EditorDocument) -> int:
 def create_editor_comment_layers(
     document: EditorDocument,
     directory: Path,
+    caption_render_spec: dict[str, object] | None = None,
 ) -> list[EditorLayerAsset]:
     if not document.overlays.visible["comment"]:
         return []
@@ -842,7 +1328,7 @@ def create_editor_comment_layers(
         or (config.comment.theme if config is not None else "dark")
     )
     size = config.comment.size if config is not None else "medium"
-    base_y = _base_comment_y(document)
+    base_y = _base_comment_y(document, caption_render_spec)
     assets: list[EditorLayerAsset] = []
     comments = sorted(document.comments, key=lambda item: item.start_seconds)
     output_duration = document.video.output_duration_seconds
@@ -1038,7 +1524,8 @@ class EditorDocumentRenderer:
             document.video.timeline_end_seconds
             - document.video.timeline_start_seconds
         )
-        if abs(timeline_duration - expected_duration) > max(0.2, expected_duration * 0.01):
+        timeline_drift_tolerance = max(0.2, expected_duration * 0.01)
+        if abs(timeline_duration - expected_duration) > timeline_drift_tolerance:
             raise RenderError("편집 타임라인 길이가 저장된 문서와 일치하지 않습니다.")
         has_audio = any(
             stream.get("codec_type") == "audio"
@@ -1058,11 +1545,40 @@ class EditorDocumentRenderer:
                     f"end={clip.source_end_seconds:.6f},asetpts=PTS-STARTPTS[a{index}]"
                 )
                 concat_inputs.append(f"[a{index}]")
+        raw_video_label = "sequence_video_raw"
+        raw_audio_label = "sequence_audio_raw"
         filters.append(
             "".join(concat_inputs)
             + f"concat=n={len(document.video.clips)}:v=1:a={1 if has_audio else 0}"
-            + ("[sequence_video][sequence_audio]" if has_audio else "[sequence_video]")
+            + (
+                f"[{raw_video_label}][{raw_audio_label}]"
+                if has_audio
+                else f"[{raw_video_label}]"
+            )
         )
+        # YouTube/container duration metadata can be a few frames longer than
+        # the captured edit timeline, especially when the source selection ends
+        # at the physical end of the video. The document is still authoritative
+        # for editor timing, so pad only within the already accepted timeline
+        # drift and trim both streams back to the exact requested duration.
+        # This keeps split clips, overlays, captions, and the persisted editor
+        # document on one clock instead of failing at 99% or shortening output.
+        target_duration = document.video.output_duration_seconds
+        timeline_fps = video_fps(probe)
+        max_tail_padding = min(1.0, timeline_drift_tolerance) + (2 / timeline_fps)
+        filters.append(
+            f"[{raw_video_label}]"
+            f"tpad=stop_mode=clone:stop_duration={max_tail_padding:.6f},"
+            f"trim=duration={target_duration:.6f},setpts=PTS-STARTPTS"
+            "[sequence_video]"
+        )
+        if has_audio:
+            filters.append(
+                f"[{raw_audio_label}]"
+                f"apad=pad_dur={max_tail_padding:.6f},"
+                f"atrim=duration={target_duration:.6f},asetpts=PTS-STARTPTS"
+                "[sequence_audio]"
+            )
         command = [
             "ffmpeg",
             "-hide_banner",
@@ -1106,8 +1622,10 @@ class EditorDocumentRenderer:
             or output_path.stat().st_size == 0
         ):
             raise RenderError("영상 조각을 이어 붙이지 못했습니다.")
-        rendered_duration = media_duration(probe_media(output_path, timeout=30))
-        if abs(rendered_duration - document.video.output_duration_seconds) > 0.12:
+        rendered_probe = probe_media(output_path, timeout=30)
+        rendered_duration = media_duration(rendered_probe)
+        duration_tolerance = max(0.05, (2 / video_fps(rendered_probe)) + 0.01)
+        if abs(rendered_duration - target_duration) > duration_tolerance:
             output_path.unlink(missing_ok=True)
             raise RenderError("편집한 영상 조각의 길이를 검증하지 못했습니다.")
         return output_path
@@ -1120,6 +1638,7 @@ class EditorDocumentRenderer:
         document: EditorDocument,
         work_dir: Path,
         channel_thumbnail_path: Path | None,
+        caption_render_spec: dict[str, object] | None = None,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         assets_dir = work_dir / "editor-assets"
@@ -1136,21 +1655,39 @@ class EditorDocumentRenderer:
             stream.get("codec_type") == "audio"
             for stream in probe.get("streams", [])
         )
-        frame = editor_video_frame(document)
+        frame = editor_video_frame(document, caption_render_spec)
         background_path = create_editor_background(
             document,
             assets_dir / "background.png",
         )
+        caption_style = (
+            caption_render_spec.get("style")
+            if isinstance(caption_render_spec, dict)
+            else None
+        )
+        original_caption_accent = (
+            str(caption_style.get("accentColor"))
+            if isinstance(caption_style, dict)
+            and isinstance(caption_style.get("accentColor"), str)
+            else None
+        )
         title_path = create_editor_title_layer(
             document,
             assets_dir / "title.png",
+            title_accent_color=original_caption_accent,
+            caption_render_spec=caption_render_spec,
         )
         channel_path = create_editor_channel_layer(
             document,
             assets_dir / "channel.png",
             channel_thumbnail_path,
+            caption_render_spec,
         )
-        comment_assets = create_editor_comment_layers(document, assets_dir)
+        comment_assets = create_editor_comment_layers(
+            document,
+            assets_dir,
+            caption_render_spec,
+        )
         render_text_specs = {
             item.id: item
             for item in (
@@ -1238,25 +1775,66 @@ class EditorDocumentRenderer:
             f"[1:v]setpts=PTS-STARTPTS,scale={CANVAS_WIDTH}:{CANVAS_HEIGHT},"
             f"fps={fps:.3f},"
             "format=rgba[scene0]",
-            (
-                f"[0:v]setpts=PTS-STARTPTS,fps={fps:.3f},"
-                f"scale={frame.width}:{frame.height}:force_original_aspect_ratio=increase,"
-                f"crop={frame.width}:{frame.height},format=rgba[video_layer]"
+            _editor_video_input_filter(
+                document,
+                frame,
+                fps,
+                caption_render_spec,
             ),
         ]
         current_label = "scene0"
         next_image_index = 2
-        subtitle_path = (
-            create_ass_subtitles(
+        caption_fonts_dir: Path | None = None
+        subtitle_path: Path | None = None
+        subtitle_render_mode = editor_subtitle_render_mode(
+            document,
+            caption_render_spec,
+        )
+        if subtitle_render_mode == "caption-template":
+            assert caption_render_spec is not None
+            rendered_caption_spec = retime_editor_caption_spec(
+                document,
+                caption_render_spec,
+            )
+            if rendered_caption_spec is not None:
+                subtitle_path = create_caption_ass(
+                    rendered_caption_spec,
+                    assets_dir / "subtitles.ass",
+                )
+                caption_fonts_dir = prepare_caption_fonts(
+                    work_dir / "caption-fonts",
+                    rendered_caption_spec,
+                )
+        elif subtitle_render_mode == "editor-highlight":
+            source_highlight_spec = editor_highlight_caption_spec(document)
+            rendered_caption_spec = (
+                retime_editor_caption_spec(document, source_highlight_spec)
+                if source_highlight_spec is not None
+                else None
+            )
+            if rendered_caption_spec is not None:
+                subtitle_path = create_caption_ass(
+                    rendered_caption_spec,
+                    assets_dir / "subtitles.ass",
+                )
+                caption_fonts_dir = prepare_caption_fonts(
+                    work_dir / "caption-fonts",
+                    rendered_caption_spec,
+                )
+        elif subtitle_render_mode == "legacy-v2":
+            subtitle_style = editor_subtitle_style(document)
+            subtitle_path = create_ass_subtitles(
                 retime_editor_subtitles(document),
                 clip_start=0,
                 clip_end=duration,
                 output_path=assets_dir / "subtitles.ass",
-                margin_v=445,
+                margin_v=subtitle_style.margin_v,
+                font_size=subtitle_style.font_size,
             )
-            if document.subtitles.enabled
-            else None
-        )
+        elif subtitle_render_mode == "invalid-v3":
+            raise RenderError(
+                "편집 자막 렌더 설정이 없습니다. 영상을 다시 열어 자막을 저장해주세요."
+            )
         subtitles_applied = False
 
         def apply_subtitles() -> None:
@@ -1264,10 +1842,15 @@ class EditorDocumentRenderer:
             if not subtitle_path or subtitles_applied:
                 return
             next_label = f"captioned{len(filters)}"
-            filters.append(
+            subtitle_filter = (
                 f"[{current_label}]subtitles=filename="
-                f"'{_escape_filter_path(subtitle_path)}'[{next_label}]"
+                f"'{_escape_filter_path(subtitle_path)}'"
             )
+            if caption_fonts_dir is not None:
+                subtitle_filter += (
+                    f":fontsdir='{_escape_filter_path(caption_fonts_dir)}'"
+                )
+            filters.append(f"{subtitle_filter}[{next_label}]")
             current_label = next_label
             subtitles_applied = True
 

@@ -28,11 +28,13 @@ from shorts_worker.caption_templates import (
     compile_caption_render_spec,
     create_caption_ass,
     prepare_caption_fonts,
+    rebuild_caption_cue_text,
+    reflow_caption_cues_for_clips,
 )
 from shorts_worker.config import Settings
 from shorts_worker.media import probe_media
 from shorts_worker.renderer import VideoRenderer, caption_video_layout
-from shorts_worker.schemas import TemplateId, TitleTextStyle, VideoAspectRatio
+from shorts_worker.schemas import EditorFontId, TemplateId, TitleTextStyle, VideoAspectRatio
 from shorts_worker.subtitles import TranscriptWord
 
 
@@ -188,6 +190,36 @@ def test_approved_font_is_same_pretendard_face_for_measurement_and_libass(
     assert not any("Pretendard" in line and "Noto" in line for line in font_lines)
 
 
+@pytest.mark.parametrize("font_id", list(EditorFontId))
+def test_every_editor_font_can_be_materialized_for_caption_rendering(
+    tmp_path: Path,
+    font_id: EditorFontId,
+) -> None:
+    spec = compile_caption_render_spec(
+        [_word("자막", 0.0, 0.25)],
+        template_id="highlight",
+        clip_start=0,
+        clip_end=0.3,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        font_id=font_id,
+    )
+    font_directory = prepare_caption_fonts(tmp_path / font_id.value, spec)
+    materialized = list(font_directory.glob("*.ttf"))
+
+    assert spec["font"]["fontId"] == font_id.value
+    assert len(materialized) == 1
+    assert materialized[0].stat().st_size > 0
+    ass_path = create_caption_ass(spec, tmp_path / f"{font_id.value}.ass")
+    assert ass_path.is_file()
+    style_line = next(
+        line
+        for line in ass_path.read_text(encoding="utf-8").splitlines()
+        if line.startswith("Style: Default,")
+    )
+    ass_bold = style_line.split(",")[7]
+    assert ass_bold == ("-1" if int(spec["font"]["weight"]) >= 700 else "0")
+
+
 def test_korean_unspaced_tokens_restore_an_eojeol_but_japanese_words_stay_intact() -> None:
     korean = _compile(
         [
@@ -341,12 +373,41 @@ def test_project_3204_pop_phrase_is_split_to_one_line_instead_of_failing() -> No
     )
 
 
-def test_caption_display_leads_provider_timing_by_four_frames() -> None:
+def test_caption_display_leads_provider_timing_by_seven_frames() -> None:
     spec = _compile([_word("먼저", 0.5, 0.8)], "basic", clip_end=1.0)
     word = spec["cues"][0]["words"][0]
+    assert spec["timingLeadFrames"] == 7
+    assert word["startFrame"] == round(0.5 * 30) - 7
+    assert word["endFrame"] == round(0.8 * 30)
+
+
+def test_caption_compile_preserves_stable_four_frame_timing() -> None:
+    spec = compile_caption_render_spec(
+        [_word("기존", 0.5, 0.8)],
+        template_id="highlight",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.FULL_VERTICAL,
+        timing_lead_frames=4,
+    )
+    word = spec["cues"][0]["words"][0]
+
     assert spec["timingLeadFrames"] == 4
     assert word["startFrame"] == round(0.5 * 30) - 4
     assert word["endFrame"] == round(0.8 * 30)
+
+
+@pytest.mark.parametrize("value", [-1, 31, True])
+def test_caption_compile_rejects_invalid_timing_lead_frames(value: object) -> None:
+    with pytest.raises(ValueError, match="선행 프레임"):
+        compile_caption_render_spec(
+            [_word("잘못", 0.5, 0.8)],
+            template_id="highlight",
+            clip_start=0,
+            clip_end=1,
+            video_aspect_ratio=VideoAspectRatio.FULL_VERTICAL,
+            timing_lead_frames=value,  # type: ignore[arg-type]
+        )
 
 
 def test_highlight_word_spacing_matches_regular_space_while_pop_stays_six_pixels(
@@ -634,12 +695,12 @@ def test_highlight_switches_on_the_exact_output_frame(tmp_path: Path) -> None:
     spec = _compile(
         [
             _word("LEFT", 0.0, 6 / 30),
-            # The approved four-frame lead advances the provider's frame-6
+            # The approved seven-frame lead advances the provider's frame-9
             # boundary to output frame 2.
-            _word("RIGHT", 6 / 30, 0.3, space_before=True),
+            _word("RIGHT", 9 / 30, 0.4, space_before=True),
         ],
         "highlight",
-        clip_end=0.3,
+        clip_end=0.4,
     )
     ass_path = create_caption_ass(spec, tmp_path / "boundary.ass")
     font_directory = prepare_caption_fonts(tmp_path / "fonts")
@@ -691,6 +752,72 @@ def test_highlight_switches_on_the_exact_output_frame(tmp_path: Path) -> None:
     frame_two_left, frame_two_right = accent_counts(frames / "03.png")
     assert frame_one_left > frame_one_right
     assert frame_two_right > frame_two_left
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is required")
+def test_pop_cue_handoff_never_draws_both_cues_on_the_boundary_frame(
+    tmp_path: Path,
+) -> None:
+    spec = _compile(
+        [
+            _word("BEFORE.", 0.1, 0.5),
+            _word("AFTER", 0.5, 0.8, space_before=True),
+        ],
+        "pop",
+        clip_end=1.0,
+    )
+    assert [(cue["startFrame"], cue["endFrame"]) for cue in spec["cues"]] == [
+        (0, 8),
+        (8, 24),
+    ]
+    for cue, center_y in zip(spec["cues"], (600, 900), strict=True):
+        for word in cue["words"]:
+            word["centerY"] = center_y
+        for event in cue["events"]:
+            for position in event["positions"]:
+                position["centerY"] = center_y
+
+    ass_path = create_caption_ass(spec, tmp_path / "pop-handoff.ass")
+    font_directory = prepare_caption_fonts(tmp_path / "fonts")
+    frames = tmp_path / "pop-handoff-frames"
+    frames.mkdir()
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=black:size=1080x1920:rate=30:duration=0.34",
+            "-vf",
+            f"subtitles=filename='{ass_path}':fontsdir='{font_directory}'",
+            "-frames:v",
+            "10",
+            str(frames / "%02d.png"),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "XDG_CACHE_HOME": str(tmp_path / "font-cache")},
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+
+    def visible_pixels(path: Path, top: int, bottom: int) -> int:
+        with Image.open(path).convert("RGB") as image:
+            return sum(
+                max(pixel) > 50
+                for pixel in image.crop((0, top, image.width, bottom)).getdata()
+            )
+
+    frame_before = frames / "08.png"
+    frame_handoff = frames / "09.png"
+    assert visible_pixels(frame_before, 500, 700) > 100
+    assert visible_pixels(frame_before, 800, 1000) == 0
+    assert visible_pixels(frame_handoff, 500, 700) == 0
+    assert visible_pixels(frame_handoff, 800, 1000) > 100
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is required")
@@ -1067,3 +1194,217 @@ def test_caption_spec_uses_selected_admin_brand_color() -> None:
         accent_color="#FF715E",
     )
     assert spec["style"]["accentColor"] == "#FF715E"
+
+
+def test_editor_cuts_recompile_from_retained_caption_words() -> None:
+    spec = compile_caption_render_spec(
+        [
+            _word("남김", 1.0, 1.3),
+            _word("삭제", 2.0, 2.3, space_before=True),
+            _word("다시남김", 3.0, 3.3, space_before=True),
+        ],
+        template_id="highlight",
+        clip_start=0.0,
+        clip_end=5.0,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        spec["cues"],
+        template_id="highlight",
+        safe_area=spec["safeArea"],
+        clip_windows=[(0, 54, 0), (78, 150, 54)],
+    )
+
+    rendered_words = [
+        word["text"]
+        for cue in cues
+        for word in cue["words"]
+    ]
+    assert "남김" in rendered_words
+    assert "다시남김" in rendered_words
+    assert "삭제" not in rendered_words
+    assert all(cue["sourceCueIndex"] >= 0 for cue in cues)
+
+
+def test_plain_split_does_not_duplicate_a_caption_word() -> None:
+    spec = compile_caption_render_spec(
+        [_word("경계단어", 0.8, 1.2)],
+        template_id="pop",
+        clip_start=0.0,
+        clip_end=2.0,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        spec["cues"],
+        template_id="pop",
+        safe_area=spec["safeArea"],
+        clip_windows=[(0, 30, 0), (30, 60, 30)],
+    )
+
+    assert [word["text"] for cue in cues for word in cue["words"]] == [
+        "경계단어"
+    ]
+
+
+def test_deleted_split_gap_assigns_a_crossing_word_to_one_clip_only() -> None:
+    spec = compile_caption_render_spec(
+        [_word("삭제경계단어", 0.8, 2.4)],
+        template_id="pop",
+        clip_start=0.0,
+        clip_end=3.0,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        spec["cues"],
+        template_id="pop",
+        safe_area=spec["safeArea"],
+        clip_windows=[(0, 30, 0), (60, 90, 30)],
+    )
+
+    assert [word["text"] for cue in cues for word in cue["words"]] == [
+        "삭제경계단어"
+    ]
+    assert all(
+        left["endFrame"] <= right["startFrame"]
+        for left, right in zip(cues[:-1], cues[1:], strict=True)
+    )
+
+
+def test_editor_reflow_ends_prior_pop_cue_at_next_early_start() -> None:
+    spec = compile_caption_render_spec(
+        [
+            _word("하나", 0.10, 0.30),
+            _word("둘", 0.30, 0.50, space_before=True),
+            _word("셋", 0.50, 1.00, space_before=True),
+            _word("넷", 1.00, 1.20, space_before=True),
+        ],
+        template_id="pop",
+        clip_start=0.0,
+        clip_end=2.0,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        spec["cues"],
+        template_id="pop",
+        safe_area=spec["safeArea"],
+        clip_windows=[(0, 60, 0)],
+    )
+
+    assert len(cues) == 2
+    first, second = cues
+    assert first["endFrame"] == second["startFrame"]
+    assert second["startFrame"] == (
+        second["words"][0]["speechStartFrame"]
+        - spec["timingLeadFrames"]
+    )
+    assert all(
+        left["endFrame"] <= right["startFrame"]
+        for left, right in zip(cues[:-1], cues[1:], strict=True)
+    )
+
+
+def test_editor_reflow_serializes_impossibly_fast_pop_cues() -> None:
+    spec = compile_caption_render_spec(
+        [
+            _word("어유,", 0.10, 0.20),
+            _word("어유,", 0.12, 0.23, space_before=True),
+            _word("어유.", 0.13, 0.24, space_before=True),
+            _word("진짜", 0.14, 0.30, space_before=True),
+        ],
+        template_id="pop",
+        clip_start=0.0,
+        clip_end=0.4,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        spec["cues"],
+        template_id="pop",
+        safe_area=spec["safeArea"],
+        clip_windows=[(0, 12, 0)],
+    )
+
+    assert cues
+    assert all(
+        left["endFrame"] <= right["startFrame"]
+        for left, right in zip(cues[:-1], cues[1:], strict=True)
+    )
+    assert all(
+        event["endFrame"] > event["startFrame"]
+        for cue in cues
+        for event in cue["events"]
+    )
+
+
+def test_edited_final_pop_word_reflows_into_a_standalone_cue() -> None:
+    spec = compile_caption_render_spec(
+        [
+            _word("하나", 0.0, 0.7),
+            _word("둘", 0.7, 1.3, space_before=True),
+            _word("셋", 1.3, 2.0, space_before=True),
+        ],
+        template_id="pop",
+        clip_start=0.0,
+        clip_end=2.0,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        spec["cues"],
+        template_id="pop",
+        safe_area=spec["safeArea"],
+        clip_windows=[(0, 60, 0)],
+        cue_edits={0: "하나 둘 마지막수정단어"},
+    )
+
+    assert [
+        [word["text"] for word in cue["words"]]
+        for cue in cues
+    ] == [["하나", "둘"], ["마지막수정단어"]]
+    assert all(
+        left["endFrame"] <= right["startFrame"]
+        for left, right in zip(cues[:-1], cues[1:], strict=True)
+    )
+
+
+def test_long_edited_pop_caption_reflows_without_word_overlap() -> None:
+    spec = compile_caption_render_spec(
+        [_word("원본", 0.2, 2.8)],
+        template_id="pop",
+        clip_start=0.0,
+        clip_end=3.0,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+    )
+    safe_area = spec["safeArea"]
+
+    cues = rebuild_caption_cue_text(
+        spec["cues"][0],
+        text=f"{'아주긴수정자막' * 12} 다음단어",
+        template_id="pop",
+        safe_area=safe_area,
+    )
+
+    assert cues
+    for cue in cues:
+        for event in cue["events"]:
+            active_index = event["activeWordIndex"]
+            positions = event["positions"]
+            left_edges: list[float] = []
+            right_edges: list[float] = []
+            for word_index, (word, position) in enumerate(
+                zip(cue["words"], positions, strict=True)
+            ):
+                scale = 1.12 if word_index == active_index else 1.0
+                width = _measure(word["text"], word["fontSize"]) * scale
+                left_edges.append(position["centerX"] - width / 2)
+                right_edges.append(position["centerX"] + width / 2)
+            assert min(left_edges) >= safe_area["x"] - 0.5
+            assert max(right_edges) <= safe_area["x"] + safe_area["width"] + 0.5
+            assert all(
+                left_edges[index] >= right_edges[index - 1] - 0.5
+                for index in range(1, len(left_edges))
+            )
