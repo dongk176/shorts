@@ -71,6 +71,15 @@ def _optional_trusted_project_target(prefix: str) -> tuple[str, str] | None:
     return definition, queue
 
 
+def _optional_trusted_project_definition(name: str) -> str | None:
+    definition = os.environ.get(name, "").strip()
+    if not definition:
+        return None
+    if not _BATCH_JOB_DEFINITION_ARN.fullmatch(definition):
+        raise RuntimeError(f"{name} is invalid")
+    return definition
+
+
 def _preset_brand_color(job: dict[str, Any]) -> str | None:
     snapshot = job.get("template_snapshot")
     if not isinstance(snapshot, dict):
@@ -115,6 +124,24 @@ def _project_dispatch_target(
         if uses_admin_template_candidate
         else None
     )
+    previous_subtitle_target = None
+    if uses_admin_template_candidate:
+        previous_subtitle_definition = _optional_trusted_project_definition(
+            "SUBTITLE_TEMPLATES_PREVIOUS_JOB_DEFINITION_ARN"
+        )
+        if previous_subtitle_definition:
+            if not subtitle_target:
+                raise RuntimeError(
+                    "Previous subtitle Job Definition requires the primary target"
+                )
+            if previous_subtitle_definition == subtitle_target[0]:
+                raise RuntimeError(
+                    "Previous subtitle Job Definition must differ from the primary target"
+                )
+            previous_subtitle_target = (
+                previous_subtitle_definition,
+                subtitle_target[1],
+            )
     allowed_targets = {
         (legacy_definition, legacy_queue): "legacy",
         (range_definition, range_queue): "source_range",
@@ -125,6 +152,7 @@ def _project_dispatch_target(
     for candidate_target, resource_tier in (
         (transcription_target, "elevenlabs_transcription"),
         (subtitle_target, "subtitle_templates"),
+        (previous_subtitle_target, "subtitle_templates"),
     ):
         if not candidate_target:
             continue

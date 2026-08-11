@@ -70,6 +70,8 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
         "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
         "shorts-mvp-elevenlabs-transcription-canary-production"
     )
+    os.environ.pop("SUBTITLE_TEMPLATES_PREVIOUS_JOB_DEFINITION_ARN", None)
+    os.environ.pop("SUBTITLE_TEMPLATES_PREVIOUS_BATCH_QUEUE_ARN", None)
     os.environ["RERENDER_JOB_DEFINITION"] = "rerender-definition:1"
     os.environ["EDITOR_STABLE_BATCH_QUEUE"] = "editor-stable-queue"
     os.environ["EDITOR_CANARY_BATCH_QUEUE"] = "editor-canary-queue"
@@ -785,6 +787,152 @@ def test_subtitle_template_project_and_resume_keep_the_exact_candidate_target() 
     assert first_request["timeout"] == resume_request["timeout"] == {
         "attemptDurationSeconds": 18000,
     }
+
+
+def test_subtitle_template_previous_definition_stays_allowed_on_primary_queue() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    previous_definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-subtitle-templates-previous-production:1"
+    )
+    os.environ[
+        "SUBTITLE_TEMPLATES_PREVIOUS_JOB_DEFINITION_ARN"
+    ] = previous_definition
+    os.environ["SUBTITLE_TEMPLATES_PREVIOUS_BATCH_QUEUE_ARN"] = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+        "must-never-be-used"
+    )
+    job = {
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "highlight",
+        "batch_job_definition": previous_definition,
+        "batch_job_queue": os.environ[
+            "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"
+        ],
+    }
+
+    assert module._project_dispatch_target(job, resume=True) == (
+        previous_definition,
+        os.environ["SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"],
+        "subtitle_templates",
+        225,
+    )
+
+
+@pytest.mark.parametrize(
+    "previous_definition",
+    [
+        "not-an-arn",
+        (
+            "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+            "missing-revision"
+        ),
+    ],
+)
+def test_subtitle_template_previous_definition_must_be_an_exact_arn(
+    previous_definition: str,
+) -> None:
+    module, _ = _load_lambda("batch_submitter")
+    os.environ[
+        "SUBTITLE_TEMPLATES_PREVIOUS_JOB_DEFINITION_ARN"
+    ] = previous_definition
+    job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "basic",
+        "batch_job_definition": os.environ[
+            "SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"
+        ],
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match="SUBTITLE_TEMPLATES_PREVIOUS_JOB_DEFINITION_ARN is invalid",
+    ):
+        module._project_dispatch_target(job, resume=False)
+
+
+def test_subtitle_template_previous_definition_must_not_match_primary() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    os.environ[
+        "SUBTITLE_TEMPLATES_PREVIOUS_JOB_DEFINITION_ARN"
+    ] = os.environ["SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"]
+    job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "pop",
+        "batch_job_definition": os.environ[
+            "SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"
+        ],
+    }
+
+    with pytest.raises(RuntimeError, match="must differ from the primary"):
+        module._project_dispatch_target(job, resume=False)
+
+
+def test_ordinary_project_cannot_use_previous_subtitle_definition() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    previous_definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-subtitle-templates-previous-production:1"
+    )
+    os.environ[
+        "SUBTITLE_TEMPLATES_PREVIOUS_JOB_DEFINITION_ARN"
+    ] = previous_definition
+    ordinary_job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "openai_stable",
+        "subtitle_template_id": None,
+        "batch_job_definition": previous_definition,
+        "batch_job_queue": os.environ[
+            "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"
+        ],
+    }
+
+    with pytest.raises(RuntimeError, match="Stored project Batch target is not trusted"):
+        module._project_dispatch_target(ordinary_job, resume=False)
+
+
+def test_invalid_previous_subtitle_definition_does_not_affect_ordinary_job() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    os.environ[
+        "SUBTITLE_TEMPLATES_PREVIOUS_JOB_DEFINITION_ARN"
+    ] = "not-an-arn"
+    ordinary_job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "openai_stable",
+        "subtitle_template_id": None,
+        "batch_job_definition": os.environ[
+            "LEGACY_PROJECT_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "LEGACY_PROJECT_BATCH_QUEUE_ARN"
+        ],
+    }
+
+    assert module._project_dispatch_target(ordinary_job, resume=False) == (
+        os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"],
+        os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"],
+        "legacy",
+        30,
+    )
 
 
 def test_regular_brand_color_project_uses_the_isolated_admin_target() -> None:
