@@ -94,7 +94,7 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
                 priority_class=priority_class,
             )
             project_jobs += 1
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - isolate one immutable target failure
             rows = rest(
                 "video_jobs",
                 query=f"select=aws_batch_job_id&id=eq.{job_id}&limit=1",
@@ -124,7 +124,16 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
                 },
                 prefer="return=representation",
             )
-            raise
+            # One stale or misconfigured immutable target must not strand the
+            # other project rows that this invocation already claimed. The
+            # failed row is pending again and will retry after configuration is
+            # corrected, while unrelated project/prepare/rerender work proceeds.
+            log_event(
+                "project_outbox_dispatch_failed",
+                job_id=job_id,
+                error_type=type(exc).__name__,
+            )
+            continue
     batches = rest(
         "rpc/claim_job_outbox",
         method="POST",

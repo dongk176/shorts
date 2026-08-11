@@ -2021,6 +2021,62 @@ def test_outbox_dispatcher_forwards_paid_priority_snapshot() -> None:
     }
 
 
+def test_outbox_dispatcher_isolates_one_untrusted_project_target() -> None:
+    module, aws_client = _load_lambda("outbox_dispatcher")
+    aws_client.invoke.side_effect = [
+        {
+            "FunctionError": "Unhandled",
+            "Payload": io.BytesIO(b'{"errorMessage":"untrusted target"}'),
+        },
+        {"Payload": io.BytesIO(b'{"batchJobId":"project-batch-b"}')},
+    ]
+
+    def rest(table: str, **_kwargs):
+        if table == "rpc/claim_project_job_outbox":
+            return [
+                {
+                    "outbox_id": "outbox-a",
+                    "job_id": "job-a",
+                    "route_id": "route-a",
+                    "priority_class": "free",
+                },
+                {
+                    "outbox_id": "outbox-b",
+                    "job_id": "job-b",
+                    "route_id": "route-b",
+                    "priority_class": "paid",
+                },
+            ]
+        if table == "video_jobs":
+            return [{"aws_batch_job_id": None}]
+        if table in {
+            "batch_submission_claims",
+            "rpc/claim_job_outbox",
+            "rpc/claim_short_outbox",
+        }:
+            return []
+        return []
+
+    module.rest = rest
+    module.patch = MagicMock()
+    module.log_event = MagicMock()
+
+    result = module.handler({}, None)
+
+    assert result["dispatchedProjects"] == 1
+    assert aws_client.invoke.call_count == 2
+    module.patch.assert_any_call("project_job_outbox", "id=eq.outbox-a", {
+        "status": "pending",
+        "dispatched_at": None,
+        "last_error": "Direct project Batch submission Lambda failed",
+    })
+    assert any(
+        call.args[0] == "project_outbox_dispatch_failed"
+        and call.kwargs["job_id"] == "job-a"
+        for call in module.log_event.call_args_list
+    )
+
+
 def test_outbox_dispatcher_submits_prepare_directly_without_sqs() -> None:
     module, aws_client = _load_lambda("outbox_dispatcher")
     aws_client.invoke.return_value = {

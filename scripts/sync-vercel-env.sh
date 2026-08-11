@@ -18,6 +18,14 @@ export CLOUDFRONT_KEY_PAIR_ID="$(bash ../scripts/stack-outputs.sh CloudFrontKeyP
 export CLOUDFRONT_PRIVATE_KEY_B64="$(base64 < ../.secrets/cloudfront-private.pem | tr -d '\n')"
 export AWS_REGION="${AWS_REGION:-ap-northeast-2}"
 export VIDEO_JOB_BACKEND="${VIDEO_JOB_BACKEND:-aws_batch}"
+export BATCH_SUBMITTER_FUNCTION_NAME="${BATCH_SUBMITTER_FUNCTION_NAME:-shorts-mvp-batch-submitter-production}"
+
+# The web persists an immutable Batch target with every project. Fail before
+# touching Vercel if those values differ from the submitter Lambda allowlist.
+node ../scripts/verify-project-batch-targets.mjs \
+  --env ../.env.local \
+  --lambda-function "$BATCH_SUBMITTER_FUNCTION_NAME" \
+  --region "$AWS_REGION"
 
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
@@ -35,6 +43,11 @@ for name in DATABASE_URL SUPABASE_URL SUPABASE_PUBLISHABLE_KEY YOUTUBE_API_KEY \
   GEMINI_COMMENT_MODEL GEMINI_OPENAI_BASE_URL \
   EDITOR_RENDERING_V2_ENABLED EDITOR_RENDERING_V2_GLOBAL_ENABLED \
   EDITOR_RENDERING_V2_TEST_USER_IDS \
+  LEGACY_PROJECT_JOB_DEFINITION_ARN LEGACY_PROJECT_BATCH_QUEUE_ARN \
+  SOURCE_RANGE_JOB_DEFINITION_ARN SOURCE_RANGE_BATCH_QUEUE_ARN \
+  ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN \
+  ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN \
+  SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN \
   VIDEO_JOB_BACKEND MVP_PLAN_ENFORCEMENT; do
   value="${!name:-}"
   [[ -n "$value" ]] || { echo "건너뜀(값 없음): $name"; continue; }

@@ -11,7 +11,11 @@
    Actions variables `AWS_WORKER_BUILD_ROLE_ARN`,
    `AWS_ECR_REPOSITORY_URI`, `EDITOR_RELEASE_ECR_REPOSITORY_URI`로
    등록한 뒤 해당 workflow를 한 번 수동 실행합니다.
-6. `vercel deploy --prod` 후 `scripts/verify-production.sh <url>`을 실행합니다.
+6. `scripts/sync-vercel-env.sh`를 실행합니다. 이 명령은 Vercel 값을 쓰기 전에
+   네 프로젝트 Batch 대상이 `shorts-mvp-batch-submitter-production` Lambda의
+   신뢰 ARN과 정확히 일치하고 각 Job Definition/queue가 ACTIVE 및
+   VALID/ENABLED 상태인지 검사하며, 하나라도 다르면 배포를 중단합니다.
+7. `vercel deploy --prod` 후 `scripts/verify-production.sh <url>`을 실행합니다.
 
 CloudFront private key는 `.secrets/cloudfront-private.pem`과 Vercel secret에만 둡니다. 분실 시 새 key pair/public key/key group을 배포하고 Vercel env를 교체합니다.
 

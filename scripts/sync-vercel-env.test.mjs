@@ -18,3 +18,21 @@ test("syncs both server-side editor release master switches", () => {
   assert.match(script, /EDITOR_RENDERING_V2_ENABLED/);
   assert.match(script, /EDITOR_RENDERING_V2_GLOBAL_ENABLED/);
 });
+
+test("verifies and syncs every immutable project Batch target", () => {
+  const guard = script.indexOf("verify-project-batch-targets.mjs");
+  const firstWrite = script.indexOf('vercel env add "$name"');
+  assert.ok(guard >= 0 && guard < firstWrite);
+  for (const name of [
+    "LEGACY_PROJECT_JOB_DEFINITION_ARN",
+    "LEGACY_PROJECT_BATCH_QUEUE_ARN",
+    "SOURCE_RANGE_JOB_DEFINITION_ARN",
+    "SOURCE_RANGE_BATCH_QUEUE_ARN",
+    "ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN",
+    "ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN",
+    "SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN",
+    "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN",
+  ]) {
+    assert.match(script, new RegExp(`\\b${name}\\b`));
+  }
+});
