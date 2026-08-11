@@ -1445,6 +1445,7 @@ def _editor_release_registration_event(
         "gitSha": "a" * 40,
         "uiVersion": 2,
         "documentVersion": document_version,
+        "subtitleEditingCapable": True,
         "imageDigest": f"sha256:{'b' * 64}",
         "productionJobDefinitionArn": (
             "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
@@ -1487,14 +1488,26 @@ def _editor_release_manifest(document_version: int = 2) -> dict[str, object]:
         "geometry": {"maximumErrorPixels": 2},
         "fonts": [
             "pretendard",
-            "black-han-sans",
-            "gmarket-sans",
+            "noto-sans-kr",
             "do-hyeon",
-            "noto-serif-kr",
-            "nanum-myeongjo",
+            "jua",
+            "jalnan-2",
+            "cafe24-anemone",
+            "cafe24-pro-up",
+            "sandbox-aggro",
+            "galmuri-9",
+            "black-han-sans",
+            "godo",
+            "gmarket-sans",
+            "nanum-square-neo",
+            "s-core-dream",
             "suit",
             "spoqa-han-sans-neo",
+            "noto-serif-kr",
+            "nanum-myeongjo",
+            "ridi-batang",
         ],
+        "capabilities": {"subtitleEditing": True},
     }
 
 
@@ -1608,6 +1621,11 @@ def test_editor_release_registrar_verifies_evidence_before_creating_candidate(
         "ffprobe",
         "frame-parity",
     }
+    release_post = next(
+        kwargs for table, kwargs in calls
+        if table == "editor_releases" and kwargs.get("method") == "POST"
+    )
+    assert release_post["body"]["subtitle_editing_capable"] is True
     state_patch = next(
         kwargs for table, kwargs in calls
         if table == "editor_release_state" and kwargs.get("method") == "PATCH"
@@ -1635,6 +1653,44 @@ def test_editor_release_registrar_rejects_critical_ecr_findings() -> None:
         assert str(error) == "ECR image has a critical vulnerability"
     else:
         raise AssertionError("critical image was accepted")
+
+
+def test_editor_release_registrar_requires_declared_subtitle_editing_capability() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    event = _editor_release_registration_event()
+    event.pop("subtitleEditingCapable")
+
+    with pytest.raises(
+        ValueError,
+        match="must declare subtitle editing capability",
+    ):
+        module.handler(event, None)
+
+
+def test_editor_release_registrar_rejects_incomplete_subtitle_evidence() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    manifest = _editor_release_manifest()
+    manifest["fonts"] = list(manifest["fonts"])[:-1]
+
+    with pytest.raises(RuntimeError, match="verify every bundled font"):
+        module._verify_manifest(
+            manifest,
+            git_sha="a" * 40,
+            digest=f"sha256:{'b' * 64}",
+            document_version=2,
+            subtitle_editing_capable=True,
+        )
+
+    manifest = _editor_release_manifest()
+    manifest["capabilities"] = {"subtitleEditing": False}
+    with pytest.raises(RuntimeError, match="subtitle editing capability"):
+        module._verify_manifest(
+            manifest,
+            git_sha="a" * 40,
+            digest=f"sha256:{'b' * 64}",
+            document_version=2,
+            subtitle_editing_capable=True,
+        )
 
 
 def test_editor_release_registrar_rejects_definition_contract_drift() -> None:
@@ -1709,6 +1765,7 @@ def test_editor_release_registration_retry_never_pauses_an_active_canary() -> No
                 "production_job_definition_arn": (
                     event["productionJobDefinitionArn"]
                 ),
+                "subtitle_editing_capable": True,
             }]
         if table == "editor_release_state" and kwargs.get("method") is None:
             return [{
@@ -1726,6 +1783,7 @@ def test_editor_release_registration_retry_never_pauses_an_active_canary() -> No
         production_definition_arn=str(event["productionJobDefinitionArn"]),
         artifact_uri=str(event["artifactUri"]),
         manifest=_editor_release_manifest(),
+        subtitle_editing_capable=True,
     )
 
     assert result == release_id
@@ -1733,6 +1791,38 @@ def test_editor_release_registration_retry_never_pauses_an_active_canary() -> No
         table == "editor_release_state" and kwargs.get("method") == "PATCH"
         for table, kwargs in calls
     )
+
+
+def test_existing_release_cannot_gain_subtitle_capability_after_registration() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    event = _editor_release_registration_event()
+
+    def rest(table: str, **kwargs):
+        if table == "editor_releases" and kwargs.get("method") is None:
+            return [{
+                "id": "7fd1c249-6cef-40f1-97d4-e4e6c837f60a",
+                "status": "canary_ready",
+                "ui_version": 2,
+                "document_version": 2,
+                "production_job_definition_arn": (
+                    event["productionJobDefinitionArn"]
+                ),
+                "subtitle_editing_capable": False,
+            }]
+        return None
+
+    module.rest = rest
+
+    with pytest.raises(RuntimeError, match="different immutable data"):
+        module._record_release(
+            event,
+            git_sha=str(event["gitSha"]),
+            digest=str(event["imageDigest"]),
+            production_definition_arn=str(event["productionJobDefinitionArn"]),
+            artifact_uri=str(event["artifactUri"]),
+            manifest=_editor_release_manifest(),
+            subtitle_editing_capable=True,
+        )
 
 
 def test_legacy_rerender_new_save_never_reuses_a_failed_batch_identity() -> None:

@@ -40,13 +40,24 @@ _REQUIRED_CHECKS = {
 _SUPPORTED_DOCUMENT_VERSIONS = {2, 3}
 _REQUIRED_FONTS = {
     "pretendard",
-    "black-han-sans",
-    "gmarket-sans",
+    "noto-sans-kr",
     "do-hyeon",
-    "noto-serif-kr",
-    "nanum-myeongjo",
+    "jua",
+    "jalnan-2",
+    "cafe24-anemone",
+    "cafe24-pro-up",
+    "sandbox-aggro",
+    "galmuri-9",
+    "black-han-sans",
+    "godo",
+    "gmarket-sans",
+    "nanum-square-neo",
+    "s-core-dream",
     "suit",
     "spoqa-han-sans-neo",
+    "noto-serif-kr",
+    "nanum-myeongjo",
+    "ridi-batang",
 }
 _CANDIDATE_VCPUS = "4"
 _CANDIDATE_FFMPEG_THREADS = "4"
@@ -217,6 +228,7 @@ def _verify_manifest(
     git_sha: str,
     digest: str,
     document_version: int,
+    subtitle_editing_capable: bool,
 ) -> None:
     if (
         manifest.get("schemaVersion") != 1
@@ -245,6 +257,15 @@ def _verify_manifest(
         raise RuntimeError("Editor release geometry exceeds the two-pixel tolerance")
     if set(manifest.get("fonts") or []) != _REQUIRED_FONTS:
         raise RuntimeError("Editor release did not verify every bundled font")
+    capabilities = manifest.get("capabilities")
+    if (
+        not isinstance(capabilities, dict)
+        or capabilities.get("subtitleEditing") is not subtitle_editing_capable
+        or not subtitle_editing_capable
+    ):
+        raise RuntimeError(
+            "Editor release did not verify the subtitle editing capability"
+        )
 
 
 def _verify_isolated_job(
@@ -274,10 +295,11 @@ def _record_release(
     production_definition_arn: str,
     artifact_uri: str,
     manifest: dict[str, Any],
+    subtitle_editing_capable: bool,
 ) -> str:
     existing = rest("editor_releases", query=(
         "select=id,status,ui_version,document_version,"
-        "production_job_definition_arn"
+        "production_job_definition_arn,subtitle_editing_capable"
         f"&git_sha=eq.{git_sha}&worker_image_digest=eq.{digest}&limit=1"
     )) or []
     if existing:
@@ -288,6 +310,8 @@ def _record_release(
             != int(event["documentVersion"])
             or release.get("production_job_definition_arn")
             != production_definition_arn
+            or release.get("subtitle_editing_capable")
+            is not subtitle_editing_capable
         ):
             raise RuntimeError("Existing release identity has different immutable data")
         if release.get("status") not in {
@@ -307,6 +331,7 @@ def _record_release(
                 "document_version": int(event["documentVersion"]),
                 "worker_image_digest": digest,
                 "production_job_definition_arn": production_definition_arn,
+                "subtitle_editing_capable": subtitle_editing_capable,
                 "status": "built",
             },
             prefer="return=representation",
@@ -404,11 +429,14 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     if not _ISOLATED_DEFINITION.fullmatch(isolated_definition_arn):
         raise ValueError("Isolated editor job definition is not trusted")
     document_version = int(event.get("documentVersion") or 0)
+    subtitle_editing_capable = event.get("subtitleEditingCapable") is True
     if (
         int(event.get("uiVersion") or 0) < 2
         or document_version not in _SUPPORTED_DOCUMENT_VERSIONS
     ):
         raise ValueError("Unsupported editor UI or document version")
+    if not subtitle_editing_capable:
+        raise ValueError("Editor release must declare subtitle editing capability")
 
     _verify_isolated_job(isolated_job_id, isolated_definition_arn)
     production_definition = _job_definition(production_definition_arn)
@@ -436,6 +464,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         git_sha=git_sha,
         digest=digest,
         document_version=document_version,
+        subtitle_editing_capable=subtitle_editing_capable,
     )
     release_id = _record_release(
         event,
@@ -444,6 +473,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         production_definition_arn=production_definition_arn,
         artifact_uri=artifact_uri,
         manifest=manifest,
+        subtitle_editing_capable=subtitle_editing_capable,
     )
     log_event(
         "editor_release_registered",
@@ -451,5 +481,6 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         git_sha=git_sha,
         image_digest=digest,
         isolated_batch_job_id=isolated_job_id,
+        subtitle_editing_capable=subtitle_editing_capable,
     )
     return {"releaseId": release_id, "status": "canary_ready"}

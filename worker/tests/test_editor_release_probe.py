@@ -7,7 +7,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from shorts_worker import editor_release_probe
-from shorts_worker.editor_renderer import editor_layer_order
+from shorts_worker.editor_renderer import editor_layer_order, retime_editor_caption_spec
+from shorts_worker.schemas import EditorFontId
 
 
 def test_probe_document_covers_all_supported_editor_fonts() -> None:
@@ -15,6 +16,14 @@ def test_probe_document_covers_all_supported_editor_fonts() -> None:
 
     assert document.version == 3
     assert document.render_spec is not None
+    assert document.render_spec.version == 2
+    assert document.render_spec.subtitles is not None
+    assert document.render_spec.subtitles.center_x == 540
+    assert document.render_spec.subtitles.offset_y == -260
+    assert document.render_spec.subtitles.scale == 1.5
+    assert set(editor_release_probe.FONT_IDS) == {
+        font_id.value for font_id in EditorFontId
+    }
     assert {overlay.font_id.value for overlay in document.overlays.text_overlays} == set(
         editor_release_probe.FONT_IDS
     )
@@ -97,6 +106,10 @@ def test_release_probe_renders_and_uploads_machine_verifiable_evidence(
     assert result["media"]["width"] == 1080
     assert result["media"]["height"] == 1920
     assert result["geometry"]["maximumErrorPixels"] <= 2
+    assert result["captionTemplate"]["templateId"] == "pop"
+    assert result["captionTemplate"]["accentPixels"] >= 25
+    assert result["capabilities"] == {"subtitleEditing": True}
+    assert set(result["fonts"]) == {font_id.value for font_id in EditorFontId}
     assert result["artifactUri"].endswith("/manifest.json")
     assert s3.upload_file.call_count == 2
     s3.put_object.assert_called_once()

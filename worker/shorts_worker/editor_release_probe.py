@@ -21,13 +21,24 @@ from .schemas import EditorDocument
 
 FONT_IDS = (
     "pretendard",
-    "black-han-sans",
-    "gmarket-sans",
+    "noto-sans-kr",
     "do-hyeon",
-    "noto-serif-kr",
-    "nanum-myeongjo",
+    "jua",
+    "jalnan-2",
+    "cafe24-anemone",
+    "cafe24-pro-up",
+    "sandbox-aggro",
+    "galmuri-9",
+    "black-han-sans",
+    "godo",
+    "gmarket-sans",
+    "nanum-square-neo",
+    "s-core-dream",
     "suit",
     "spoqa-han-sans-neo",
+    "noto-serif-kr",
+    "nanum-myeongjo",
+    "ridi-batang",
 )
 
 FONT_METADATA = {
@@ -36,20 +47,70 @@ FONT_METADATA = {
         '"Editor V3 Pretendard", sans-serif',
         700,
     ),
+    "noto-sans-kr": (
+        "NotoSansKR-Variable.ttf",
+        '"Editor V3 Noto Sans KR", sans-serif',
+        None,
+    ),
+    "do-hyeon": (
+        "DoHyeon-Regular.ttf",
+        '"Editor V3 Do Hyeon", sans-serif',
+        400,
+    ),
+    "jua": (
+        "Jua-Regular.ttf",
+        '"Editor V3 Jua", sans-serif',
+        400,
+    ),
+    "jalnan-2": (
+        "Jalnan2-Regular.woff2",
+        '"Editor V3 Jalnan 2", sans-serif',
+        400,
+    ),
+    "cafe24-anemone": (
+        "Cafe24Anemone-Bold.woff",
+        '"Editor V3 Cafe24 Anemone", sans-serif',
+        700,
+    ),
+    "cafe24-pro-up": (
+        "Cafe24ProUp-Regular.woff2",
+        '"Editor V3 Cafe24 Pro Up", sans-serif',
+        400,
+    ),
+    "sandbox-aggro": (
+        "SandboxAggro-Bold.ttf",
+        '"Editor V3 Sandbox Aggro", sans-serif',
+        700,
+    ),
+    "galmuri-9": (
+        "Galmuri9-Regular.ttf",
+        '"Editor V3 Galmuri 9", sans-serif',
+        400,
+    ),
     "black-han-sans": (
         "BlackHanSans-Regular.ttf",
         '"Editor V3 Black Han Sans", sans-serif',
         400,
+    ),
+    "godo": (
+        "Godo-Bold.ttf",
+        '"Editor V3 Godo", sans-serif',
+        700,
     ),
     "gmarket-sans": (
         "GmarketSans-Bold.ttf",
         '"Editor V3 Gmarket Sans", sans-serif',
         700,
     ),
-    "do-hyeon": (
-        "DoHyeon-Regular.ttf",
-        '"Editor V3 Do Hyeon", sans-serif',
-        400,
+    "nanum-square-neo": (
+        "NanumSquareNeo-Bold.ttf",
+        '"Editor V3 Nanum Square Neo", sans-serif',
+        700,
+    ),
+    "s-core-dream": (
+        "SCoreDream-ExtraBold.otf",
+        '"Editor V3 S-Core Dream", sans-serif',
+        800,
     ),
     "noto-serif-kr": (
         "NotoSerifKR-Variable.ttf",
@@ -66,6 +127,11 @@ FONT_METADATA = {
         "SpoqaHanSansNeo-Bold.woff2",
         '"Editor V3 Spoqa Han Sans Neo", sans-serif',
         700,
+    ),
+    "ridi-batang": (
+        "RIDIBatang-Regular.woff",
+        '"Editor V3 Ridi Batang", serif',
+        400,
     ),
 }
 
@@ -177,9 +243,15 @@ def _document(scenario: str = "baseline") -> EditorDocument:
             "fontId": font_id,
             "color": "#FFFFFF" if index % 2 == 0 else "#FFD84D",
             "effect": ("none", "outline", "shadow")[index % 3],
-            "offset": {"x": -270 + (index % 2) * 540, "y": -700 + index * 170},
-            "width": 360,
-            "scale": 0.7,
+            # Keep every approved font visible in the synthetic evidence.
+            # Nineteen overlays fit in a three-column, seven-row grid without
+            # crossing the 1080x1920 canvas bounds.
+            "offset": {
+                "x": -320 + (index % 3) * 320,
+                "y": -720 + (index // 3) * 240,
+            },
+            "width": 300,
+            "scale": 0.52,
             "startSeconds": 0,
             "endSeconds": 3.5,
         }
@@ -737,6 +809,7 @@ def run_editor_release_probe() -> dict[str, Any]:
                 "maximumErrorPixels": geometry_error,
             },
             "fonts": list(FONT_IDS),
+            "capabilities": {"subtitleEditing": True},
             "features": {
                 "clipCount": len(document.video.clips),
                 "commentCount": len(document.comments),

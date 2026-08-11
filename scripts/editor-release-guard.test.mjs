@@ -160,6 +160,11 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_URL/);
   assert.match(workflow, /EDITOR_TEST_SUPABASE_PROJECT_REF/);
   assert.match(workflow, /PRODUCTION_SUPABASE_PROJECT_REF/);
+  assert.match(
+    workflow,
+    /node scripts\/apply-supabase\.mjs \\\s+202607310003_editor_release_channels\.sql \\\s+202608010001_editor_render_canary_outbox\.sql \\\s+202608080001_subtitle_templates_admin_canary\.sql \\\s+202608110001_editor_subtitle_editing_capability\.sql/,
+  );
+  assert.doesNotMatch(workflow, /node scripts\/apply-supabase\.mjs\s*\n\s*$/m);
   assert.match(workflow, /EDITOR_RELEASE_ECR_REPOSITORY_URI/);
   assert.match(
     workflow,
@@ -167,6 +172,7 @@ test("release workflow promotes one tested digest without deploying the website"
   );
   assert.match(workflow, /uiVersion:3/);
   assert.match(workflow, /documentVersion:3/);
+  assert.match(workflow, /subtitleEditingCapable:true/);
   assert.doesNotMatch(workflow, /startsWith\(github\.ref/);
   assert.doesNotMatch(workflow, /\b(vercel deploy|cdk deploy)\b/);
 
@@ -191,6 +197,24 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(registrar, /ascii_downcase \| startswith\("aws:"\) \| not/);
   assert.doesNotMatch(registrar, /:latest/);
   assert.doesNotMatch(registrar, /docker\s+(build|push)/);
+});
+
+test("subtitle editing is an immutable verified release capability", async () => {
+  const migration = await source(
+    "supabase/migrations/202608110001_editor_subtitle_editing_capability.sql",
+  );
+
+  assert.match(
+    migration,
+    /add column if not exists subtitle_editing_capable boolean not null default false/,
+  );
+  assert.match(migration, /protect_editor_release_identity/);
+  assert.match(
+    migration,
+    /new\.subtitle_editing_capable[\s\S]*old\.subtitle_editing_capable/,
+  );
+  assert.doesNotMatch(migration, /\bupdate\s+shorts_mvp\.editor_releases\b/i);
+  assert.doesNotMatch(migration, /\bdrop\s+(table|column)\b/i);
 });
 
 test("candidate worker uses a pinned, scan-friendly image with render dependencies", async () => {

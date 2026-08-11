@@ -133,7 +133,14 @@ jobs:
               throw new Error("isolated Supabase identity check failed");
             }
           '
-          node scripts/apply-supabase.mjs
+          # Replaying every historical migration is unsafe after later schema
+          # changes alter old conflict keys. The isolated editor probe only
+          # needs the additive editor release, outbox, and caption contracts.
+          node scripts/apply-supabase.mjs \
+            202607310003_editor_release_channels.sql \
+            202608010001_editor_render_canary_outbox.sql \
+            202608080001_subtitle_templates_admin_canary.sql \
+            202608110001_editor_subtitle_editing_capability.sql
 
       - name: Register the isolated job definition at the tested digest
         id: isolated-definition
@@ -241,6 +248,7 @@ jobs:
                 gitSha:$gitSha,
                 uiVersion:3,
                 documentVersion:3,
+                subtitleEditingCapable:true,
                 imageDigest:$imageDigest,
                 productionJobDefinitionArn:$productionJobDefinitionArn,
                 isolatedJobDefinitionArn:$isolatedJobDefinitionArn,
