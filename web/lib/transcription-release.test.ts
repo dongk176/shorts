@@ -12,6 +12,7 @@ describe("ElevenLabs transcription release", () => {
       masterEnabled: false,
       featureEnabled: true,
       publicEnabled: true,
+      complianceApproved: true,
       isAdmin: true,
     });
     expect(access.enabled).toBe(false);
@@ -23,12 +24,14 @@ describe("ElevenLabs transcription release", () => {
       masterEnabled: true,
       featureEnabled: true,
       publicEnabled: false,
+      complianceApproved: false,
       isAdmin: true,
     });
     const member = resolveElevenLabsTranscriptionAccess({
       masterEnabled: true,
       featureEnabled: true,
       publicEnabled: false,
+      complianceApproved: false,
       isAdmin: false,
     });
     expect(admin.policy).toBe(ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY);
@@ -40,6 +43,7 @@ describe("ElevenLabs transcription release", () => {
       masterEnabled: true,
       featureEnabled: true,
       publicEnabled: true,
+      complianceApproved: true,
       isAdmin: false,
       suitePublicEnabled: true,
     }).policy).toBe(ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY);
@@ -50,9 +54,21 @@ describe("ElevenLabs transcription release", () => {
       masterEnabled: true,
       featureEnabled: true,
       publicEnabled: false,
+      complianceApproved: false,
       isAdmin: false,
       pilotEnabled: true,
     }).policy).toBe(ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY);
+  });
+
+  it("revokes public access immediately when compliance approval is off", () => {
+    expect(resolveElevenLabsTranscriptionAccess({
+      masterEnabled: true,
+      featureEnabled: true,
+      publicEnabled: true,
+      complianceApproved: false,
+      isAdmin: false,
+      suitePublicEnabled: true,
+    }).policy).toBe(OPENAI_STABLE_TRANSCRIPTION_POLICY);
   });
 
   it("marks only new ElevenLabs or Whisper candidate transcripts as word timed", () => {

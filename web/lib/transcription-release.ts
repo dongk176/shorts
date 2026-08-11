@@ -38,6 +38,7 @@ export type ElevenLabsTranscriptionAccess = {
   masterEnabled: boolean;
   featureEnabled: boolean;
   publicEnabled: boolean;
+  complianceApproved: boolean;
   isAdmin: boolean;
   pilotEnabled: boolean;
   suitePublicEnabled: boolean;
@@ -52,6 +53,7 @@ export function resolveElevenLabsTranscriptionAccess(input: {
   masterEnabled: boolean;
   featureEnabled: boolean;
   publicEnabled: boolean;
+  complianceApproved: boolean;
   isAdmin: boolean;
   pilotEnabled?: boolean;
   suitePublicEnabled?: boolean;
@@ -63,7 +65,11 @@ export function resolveElevenLabsTranscriptionAccess(input: {
     && (
       input.isAdmin
       || pilotEnabled
-      || (input.publicEnabled && suitePublicEnabled)
+      || (
+        input.publicEnabled
+        && suitePublicEnabled
+        && input.complianceApproved
+      )
     );
   return {
     ...input,
@@ -86,6 +92,9 @@ function accessFromRows(
     masterEnabled: masterSwitchEnabled(),
     featureEnabled: flags.get(ELEVENLABS_TRANSCRIPTION_FLAG_KEY) === true,
     publicEnabled: flags.get(ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY) === true,
+    complianceApproved: flags.get(
+      ELEVENLABS_PUBLIC_COMPLIANCE_APPROVED_FLAG_KEY,
+    ) === true,
     isAdmin: adminRows[0]?.isAdmin === true,
     pilotEnabled: release.channel === "canary"
       && subtitleEditingReleaseEnabled(release),
@@ -104,6 +113,7 @@ async function readAccess(
       masterEnabled: false,
       featureEnabled: false,
       publicEnabled: false,
+      complianceApproved: false,
       isAdmin: false,
       pilotEnabled: false,
       suitePublicEnabled: false,
@@ -114,7 +124,8 @@ async function readAccess(
     from shorts_mvp.runtime_feature_flags
     where flag_key in (
       ${ELEVENLABS_TRANSCRIPTION_FLAG_KEY},
-      ${ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY}
+      ${ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY},
+      ${ELEVENLABS_PUBLIC_COMPLIANCE_APPROVED_FLAG_KEY}
     )
     for share
   ` : await db`
@@ -122,7 +133,8 @@ async function readAccess(
     from shorts_mvp.runtime_feature_flags
     where flag_key in (
       ${ELEVENLABS_TRANSCRIPTION_FLAG_KEY},
-      ${ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY}
+      ${ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY},
+      ${ELEVENLABS_PUBLIC_COMPLIANCE_APPROVED_FLAG_KEY}
     )
   `;
   const adminRows = !userId ? [] : lock ? await db`

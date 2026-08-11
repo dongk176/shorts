@@ -187,9 +187,14 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           select stable_release_id,previous_stable_release_id,
             candidate_release_id,public_enabled,canary_enabled,
             coalesce((
-              select enabled
+              select count(*)=4
               from shorts_mvp.runtime_feature_flags
-              where flag_key='editor_subtitle_editing_public'
+              where enabled=true and flag_key in (
+                'editor_subtitle_editing_public',
+                'elevenlabs_transcription_public',
+                'subtitle_templates_public',
+                'elevenlabs_public_compliance_approved'
+              )
             ),false) as subtitle_suite_public_enabled
           from shorts_mvp.editor_release_state
           where singleton=true

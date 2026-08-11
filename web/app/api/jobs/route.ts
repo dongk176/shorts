@@ -33,7 +33,6 @@ import {
   lockSourceRangeReleaseAccess,
 } from "@/lib/source-range-release";
 import {
-  ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY,
   lockElevenLabsTranscriptionAccess,
 } from "@/lib/transcription-release";
 import { lockSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
@@ -238,17 +237,23 @@ export async function POST(request: Request) {
       const usesSubtitleSuiteCandidate = Boolean(
         input.subtitleTemplateId || input.brandColor,
       );
-      const transcriptionAccess = usesSubtitleSuiteCandidate
-        ? null
-        : await lockElevenLabsTranscriptionAccess(tx, session.userId);
-      const transcriptionPolicy = usesSubtitleSuiteCandidate
-        ? ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY
-        : transcriptionAccess!.policy;
+      const transcriptionAccess = await lockElevenLabsTranscriptionAccess(
+        tx,
+        session.userId,
+      );
+      if (usesSubtitleSuiteCandidate && !transcriptionAccess.enabled) {
+        throw new HttpError(
+          409,
+          "현재 계정에서는 자막 전사 기능을 사용할 수 없습니다.",
+          "SUBTITLE_SUITE_TRANSCRIPTION_DISABLED",
+        );
+      }
+      const transcriptionPolicy = transcriptionAccess.policy;
       const dispatchTarget = executionBackend !== "aws_batch"
         ? null
         : usesSubtitleSuiteCandidate
           ? subtitleTemplatesDispatchTarget()
-          : transcriptionAccess!.enabled
+          : transcriptionAccess.enabled
           ? elevenLabsTranscriptionDispatchTarget()
           : sourceRangeSelectionEnabled
             ? sourceRangeDispatchTarget()

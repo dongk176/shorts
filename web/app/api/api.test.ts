@@ -1497,12 +1497,19 @@ describe("job API security and idempotency", () => {
 
   it("pins an authorized subtitle template job to its isolated candidate", async () => {
     process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    process.env.ELEVENLABS_TRANSCRIPTION_ENABLED = "true";
     const db = dbWithRows([], [analysisRow]);
     const tx = dbWithRows(
       [],
       [
         { flagKey: "subtitle_templates", enabled: true },
         { flagKey: "subtitle_templates_public", enabled: false },
+      ],
+      [{ isAdmin: true }],
+      [
+        { flagKey: "elevenlabs_transcription", enabled: true },
+        { flagKey: "elevenlabs_transcription_public", enabled: false },
+        { flagKey: "elevenlabs_public_compliance_approved", enabled: false },
       ],
       [{ isAdmin: true }],
       [],
@@ -1553,12 +1560,19 @@ describe("job API security and idempotency", () => {
 
   it("pins an authorized regular brand-color job to the isolated admin candidate", async () => {
     process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    process.env.ELEVENLABS_TRANSCRIPTION_ENABLED = "true";
     const db = dbWithRows([], [analysisRow]);
     const tx = dbWithRows(
       [],
       [
         { flagKey: "subtitle_templates", enabled: true },
         { flagKey: "subtitle_templates_public", enabled: false },
+      ],
+      [{ isAdmin: true }],
+      [
+        { flagKey: "elevenlabs_transcription", enabled: true },
+        { flagKey: "elevenlabs_transcription_public", enabled: false },
+        { flagKey: "elevenlabs_public_compliance_approved", enabled: false },
       ],
       [{ isAdmin: true }],
       [],
@@ -1592,6 +1606,105 @@ describe("job API security and idempotency", () => {
       process.env.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN,
       process.env.SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN,
     ]));
+  });
+
+  it("fails closed when a subtitle candidate cannot use ElevenLabs transcription", async () => {
+    process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows(
+      [],
+      [
+        { flagKey: "subtitle_templates", enabled: true },
+        { flagKey: "subtitle_templates_public", enabled: false },
+      ],
+      [{ isAdmin: true }],
+      [],
+    );
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-minimal",
+      subtitleTemplateId: "highlight",
+      rightsConfirmed: true,
+      requestId: "e971dc3a-7bad-4b26-9e9f-cdba6fb87f24",
+    }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "SUBTITLE_SUITE_TRANSCRIPTION_DISABLED",
+    });
+    expect(tx.mock.calls.some(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes(
+        "insert into shorts_mvp.video_jobs",
+      ))).toBe(false);
+  });
+
+  it("fails closed for a public subtitle job when compliance approval is revoked", async () => {
+    process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    process.env.ELEVENLABS_TRANSCRIPTION_ENABLED = "true";
+    process.env.EDITOR_RENDERING_V2_ENABLED = "true";
+    process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = "true";
+    const stableReleaseId = "fb2172e5-fc37-4a8f-82ad-5c4db355d02d";
+    const publicReleaseRow = {
+      publicEnabled: true,
+      canaryEnabled: false,
+      runtimeEnabled: true,
+      testerEnabled: false,
+      userIsAdmin: false,
+      stableReleaseId,
+      stableUiVersion: 3,
+      stableDocumentVersion: 3,
+      stableStatus: "stable",
+      stableSubtitleEditingCapable: true,
+      candidateReleaseId: null,
+      candidateUiVersion: null,
+      candidateDocumentVersion: null,
+      candidateStatus: null,
+      candidateSubtitleEditingCapable: false,
+      subtitleEditingPublicEnabled: true,
+    };
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows(
+      [],
+      [
+        { flagKey: "subtitle_templates", enabled: true },
+        { flagKey: "subtitle_templates_public", enabled: true },
+      ],
+      [{ isAdmin: false }],
+      [publicReleaseRow],
+      [
+        { flagKey: "elevenlabs_transcription", enabled: true },
+        { flagKey: "elevenlabs_transcription_public", enabled: true },
+        { flagKey: "elevenlabs_public_compliance_approved", enabled: false },
+      ],
+      [{ isAdmin: false }],
+      [publicReleaseRow],
+    );
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-minimal",
+      subtitleTemplateId: "highlight",
+      rightsConfirmed: true,
+      requestId: "33a11fa2-4b6a-4468-ac16-af8ce1b2d35e",
+    }));
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "SUBTITLE_SUITE_TRANSCRIPTION_DISABLED",
+    });
+    expect(tx.mock.calls.some(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes(
+        "insert into shorts_mvp.video_jobs",
+      ))).toBe(false);
   });
 
   it("rejects the retired basic subtitle template before touching storage", async () => {
