@@ -6,6 +6,7 @@ import {
 import {
   cloneEditorDocumentSnapshot,
   createEditorDocumentSnapshot,
+  createEditorDocumentSnapshotV3,
   editorDocumentSnapshotsEqual,
 } from "./editor-document-snapshot";
 
@@ -169,5 +170,41 @@ describe("editor document snapshot", () => {
     expect(original.subtitles.segments[0].text).toBe("자막");
     expect(original.overlays.offsets.video.x).toBe(24);
     expect(editorDocumentSnapshotsEqual(original, cloned)).toBe(false);
+  });
+
+  it("keeps subtitle layout out of ordinary v2 while preserving it in admin v3", () => {
+    const ordinary = snapshot();
+    ordinary.subtitles.enabled = false;
+    const admin = createEditorDocumentSnapshotV3(ordinary, {
+      offsetY: -240,
+      scale: 1.35,
+      accentColor: "#16A34A",
+      cueEdits: [{ cueIndex: 2, text: "수정한 자막" }],
+    });
+
+    expect(ordinary.version).toBe(2);
+    expect("renderSpec" in ordinary).toBe(false);
+    expect(admin.subtitles.enabled).toBe(false);
+    expect(admin.renderSpec).toMatchObject({
+      version: 2,
+      subtitles: {
+        centerX: 540,
+        offsetY: -240,
+        scale: 1.35,
+        accentColor: "#16A34A",
+        cueEdits: [{ cueIndex: 2, text: "수정한 자막" }],
+      },
+    });
+
+    const cloned = cloneEditorDocumentSnapshot(admin);
+    expect(cloned).toEqual(admin);
+    expect(cloned.subtitles.enabled).toBe(false);
+    if (cloned.version !== 3 || cloned.renderSpec.version !== 2) {
+      throw new Error("admin subtitle render spec was not cloned");
+    }
+    cloned.renderSpec.subtitles.cueEdits![0].text = "별도 변경";
+    expect(admin.renderSpec.version).toBe(2);
+    if (admin.renderSpec.version !== 2) throw new Error("invalid test fixture");
+    expect(admin.renderSpec.subtitles.cueEdits?.[0].text).toBe("수정한 자막");
   });
 });

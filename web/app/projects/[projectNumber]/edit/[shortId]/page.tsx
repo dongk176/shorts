@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { parseCaptionRenderSpec } from "@/lib/caption-render-spec";
 import { getDb } from "@/lib/db";
 import { editorOverlayPreviewEnabled } from "@/lib/editor-overlay-preview-flag";
 import {
+  adminSubtitleLayoutReleaseEnabled,
   editorRenderingV2MasterEnabled,
   resolveEditorRelease,
   type EditorReleaseAssignment,
@@ -26,16 +28,6 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
   const projectNumber = Number(rawProjectNumber);
   if (!Number.isSafeInteger(projectNumber)) notFound();
   const db = getDb();
-  const subtitleTemplateShortRows = await db`
-    select s.id
-    from shorts_mvp.generated_shorts s
-    join shorts_mvp.video_jobs j on j.id=s.job_id
-    where s.id=${shortId}
-      and j.project_number=${projectNumber}
-      and s.subtitle_template_id is not null
-    limit 1
-  `;
-  if (subtitleTemplateShortRows[0]) notFound();
   const localOverlayPreviewEnabled = editorOverlayPreviewEnabled();
   let editorRelease: EditorReleaseAssignment = {
     channel: "legacy",
@@ -50,6 +42,25 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
       session.userId,
     );
   }
+  const adminSubtitleLayoutEnabled = adminSubtitleLayoutReleaseEnabled(
+    editorRelease,
+  );
+  const subtitleTemplateShortRows = await db`
+    select s.id,s.subtitle_template_id,s.caption_render_spec
+    from shorts_mvp.generated_shorts s
+    join shorts_mvp.video_jobs j on j.id=s.job_id
+    where s.id=${shortId}
+      and j.project_number=${projectNumber}
+    limit 1
+  `;
+  const subtitleTemplateShort = subtitleTemplateShortRows[0];
+  if (
+    subtitleTemplateShort?.subtitleTemplateId
+    && (
+      !adminSubtitleLayoutEnabled
+      || !parseCaptionRenderSpec(subtitleTemplateShort.captionRenderSpec)
+    )
+  ) notFound();
   const editorSaveEnabled = editorRelease.channel !== "legacy";
   return <ShortEditorPage
     projectNumber={projectNumber}

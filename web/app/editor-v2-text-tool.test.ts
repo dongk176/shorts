@@ -53,12 +53,16 @@ describe("editor v2 text tool", () => {
     expect(editorSource).toContain("선택한 텍스트 삭제");
   });
 
-  it("asks in a modal before applying any changed font to every selectable text", () => {
+  it("applies candidate fonts to one layer while preserving the stable apply-all prompt", () => {
     expect(editorSource).toContain("function EditorFontApplyDialog({");
     expect(editorSource).toContain("모든 텍스트에 적용할까요?");
-    expect(editorSource).toContain("현재 텍스트만");
-    expect(editorSource).toContain("모두 적용");
     expect(editorSource).toContain("applyEditorFontToSelectableText(");
+    expect(editorSource).toContain(
+      "!adminSubtitleLayoutEnabled && hasOtherFont",
+    );
+    expect(editorSource).toContain(
+      "overlayPreviewEnabled && !adminSubtitleLayoutEnabled",
+    );
     expect(editorSource).toContain("onChange={updateSelectedEditorTextFont}");
     expect(editorSource).toContain(
       'onChange={(fontId) => updateEditorFont("title", fontId)}',
@@ -70,12 +74,12 @@ describe("editor v2 text tool", () => {
 
   it("lets a hidden or visible channel layer be toggled from channel settings", () => {
     expect(editorSource).toContain("const toggleEditorChannelVisibility = () => {");
-    expect(editorSource).toContain('className="editor-channel-visibility-toggle"');
+    expect(editorSource).toContain('className="editor-visibility-toggle"');
     expect(editorSource).toContain('aria-pressed={renderOverlayLayout.visible.channel}');
     expect(editorSource).toContain('channel: visible');
     const styles = source("./editor-v2.css");
     expect(styles).toContain(
-      ".editor-v2-root .editor-channel-visibility-toggle",
+      ".editor-v2-root .editor-visibility-toggle",
     );
     expect(editorSource).toContain("forceVisible={overlayPreviewEnabled}");
     expect(editorSource).toContain(

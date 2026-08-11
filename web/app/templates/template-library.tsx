@@ -23,6 +23,10 @@ import {
 } from "@/lib/template-favorites";
 import { userFacingErrorMessage } from "@/lib/public-error";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
+import {
+  presetTemplateDisplayDescription,
+  presetTemplateDisplayName,
+} from "@/lib/admin-template-copy";
 
 type TemplateShowcase = {
   id: TemplateId;
@@ -265,11 +269,13 @@ export function TemplateLibrary({
   personalTemplates,
   authenticated,
   canUseCustomTemplates,
+  adminPresetNamesEnabled,
   initialFavoriteTemplateKeys,
 }: {
   personalTemplates: CustomTemplate[];
   authenticated: boolean;
   canUseCustomTemplates: boolean;
+  adminPresetNamesEnabled: boolean;
   initialFavoriteTemplateKeys: TemplateFavoriteKey[];
 }) {
   const [query, setQuery] = useState("");
@@ -278,6 +284,19 @@ export function TemplateLibrary({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
   const favoriteTemplateKeySet = useMemo(() => new Set(favoriteTemplateKeys), [favoriteTemplateKeys]);
+  const displayedPresetTemplates = useMemo(() => templates.map((template) => ({
+    ...template,
+    name: presetTemplateDisplayName(
+      template.id,
+      template.name,
+      adminPresetNamesEnabled,
+    ),
+    description: presetTemplateDisplayDescription(
+      template.id,
+      template.description,
+      adminPresetNamesEnabled,
+    ),
+  })), [adminPresetNamesEnabled]);
 
   const showToast = useCallback((message: string) => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
@@ -330,13 +349,13 @@ export function TemplateLibrary({
 
   const visibleTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
-    if (!normalizedQuery) return templates;
-    return templates.filter((template) => (
+    if (!normalizedQuery) return displayedPresetTemplates;
+    return displayedPresetTemplates.filter((template) => (
       `${template.name} ${template.description} ${template.category}`
         .toLocaleLowerCase("ko-KR")
         .includes(normalizedQuery)
     ));
-  }, [query]);
+  }, [displayedPresetTemplates, query]);
   const visiblePersonalTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
     if (!normalizedQuery) return personalTemplates;

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  adminSubtitleLayoutReleaseEnabled,
   editorRenderingV2Enabled,
   editorRenderingV2GlobalEnabled,
   editorRenderingV2MasterEnabled,
@@ -31,6 +32,27 @@ function releaseRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe("editor release gate", () => {
+  it("enables subtitle layout only for a v3 canary assignment", () => {
+    expect(adminSubtitleLayoutReleaseEnabled({
+      channel: "canary",
+      releaseId,
+      uiVersion: 3,
+      documentVersion: 3,
+    })).toBe(true);
+    expect(adminSubtitleLayoutReleaseEnabled({
+      channel: "stable",
+      releaseId,
+      uiVersion: 3,
+      documentVersion: 3,
+    })).toBe(false);
+    expect(adminSubtitleLayoutReleaseEnabled({
+      channel: "canary",
+      releaseId,
+      uiVersion: 2,
+      documentVersion: 2,
+    })).toBe(false);
+  });
+
   it("requires the server-side master switch", () => {
     expect(editorRenderingV2MasterEnabled({ NODE_ENV: "production" })).toBe(false);
     expect(editorRenderingV2MasterEnabled({

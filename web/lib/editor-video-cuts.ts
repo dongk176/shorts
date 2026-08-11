@@ -13,6 +13,12 @@ export type LocatedEditorVideoTime = {
 };
 
 export const EDITOR_VIDEO_MIN_CLIP_SECONDS = 0.15;
+export const EDITOR_VIDEO_PREVIEW_BOUNDARY_LEAD_SECONDS = 0.02;
+
+export type EditorVideoPlaybackBoundaryTransition = {
+  nextClipIndex: number;
+  seekSourceSeconds: number | null;
+};
 
 const roundSeconds = (value: number) => Math.round(value * 1_000) / 1_000;
 
@@ -87,6 +93,39 @@ export function editorVideoOutputTimeForSource(
     Math.min(editorVideoClipDuration(clip), sourceSeconds - clip.sourceStartSeconds),
   );
   return roundSeconds(precedingDuration + clipOffset);
+}
+
+export function editorVideoPlaybackBoundaryTransition(
+  clips: EditorVideoClip[],
+  activeClipIndex: number,
+  sourceSeconds: number,
+  boundaryLeadSeconds = 0,
+): EditorVideoPlaybackBoundaryTransition | null {
+  const clip = clips[activeClipIndex];
+  if (!clip) return null;
+  const nextClip = clips[activeClipIndex + 1];
+  const isContiguousSplit = Boolean(
+    nextClip
+    && Math.abs(nextClip.sourceStartSeconds - clip.sourceEndSeconds) <= 0.001,
+  );
+  const boundary = clip.sourceEndSeconds - (
+    isContiguousSplit ? 0 : Math.max(0, boundaryLeadSeconds)
+  );
+  if (sourceSeconds < boundary) return null;
+  if (nextClip) {
+    return {
+      nextClipIndex: activeClipIndex + 1,
+      seekSourceSeconds: isContiguousSplit
+        ? null
+        : nextClip.sourceStartSeconds,
+    };
+  }
+  const firstClip = clips[0];
+  if (!firstClip) return null;
+  return {
+    nextClipIndex: 0,
+    seekSourceSeconds: firstClip.sourceStartSeconds,
+  };
 }
 
 export function canSplitEditorVideoAtTime(

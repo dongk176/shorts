@@ -9,16 +9,21 @@ import {
   createEditorTextOverlay,
   createInitialEditorOverlayLayout,
   consolidateEditorTitleFontScale,
+  editorOverlayZIndex,
+  editorOverlayContainerStyle,
   editorOverlayLayoutsEqual,
   lockEditorTitleHorizontalOffset,
   moveEditorOverlayOrderItem,
+  normalizeEditorOverlayLayerOrder,
   normalizeEditorTitleScaleLayout,
   pinEditorChannelLayerOnTop,
+  pinEditorTitleAboveVideo,
   recordEditorOverlayHistory,
   redoEditorOverlayHistory,
   resetEditorOverlayGeometry,
   resizeEditorTextOverlayWidth,
   resizeCanvasRectFromCorner,
+  sanitizeEditorOverlayFontsForStable,
   snapCommentToVideoBottom,
   snapRectCenterToCanvas,
   snapRectToOverlayRects,
@@ -90,6 +95,21 @@ describe("editor overlay preview geometry", () => {
       title: "do-hyeon",
       channel: "noto-serif-kr",
     });
+  });
+
+  it("falls back to stable fonts when a canary draft is reopened on stable", () => {
+    const layout = createInitialEditorOverlayLayout();
+    layout.fonts = { title: "jua", channel: "suit" };
+    layout.textOverlays = [{
+      ...createEditorTextOverlay("first", 10),
+      fontId: "jalnan-2",
+    }];
+
+    const stable = sanitizeEditorOverlayFontsForStable(layout);
+
+    expect(stable.fonts).toEqual({ title: "pretendard", channel: "suit" });
+    expect(stable.textOverlays[0].fontId).toBe("pretendard");
+    expect(layout.fonts.title).toBe("jua");
   });
 
   it("maps client movement and rectangles to the 1080 by 1920 canvas", () => {
@@ -384,6 +404,69 @@ describe("editor overlay preview geometry", () => {
       "comment",
       "channel",
     ]);
+  });
+
+  it("pins the hook title only when the admin candidate requests it", () => {
+    expect(pinEditorTitleAboveVideo([
+      "title",
+      "comment",
+      "video",
+      "channel",
+    ])).toEqual([
+      "video",
+      "title",
+      "comment",
+      "channel",
+    ]);
+    expect(normalizeEditorOverlayLayerOrder([
+      "channel",
+      "title",
+      "video",
+      "comment",
+    ])).toEqual([
+      "video",
+      "title",
+      "comment",
+      "channel",
+    ]);
+    expect(editorOverlayZIndex([
+      "title",
+      "comment",
+      "video",
+      "channel",
+    ], "title")).toBeLessThan(editorOverlayZIndex([
+      "title",
+      "comment",
+      "video",
+      "channel",
+    ], "video"));
+    expect(editorOverlayZIndex([
+      "title",
+      "comment",
+      "video",
+      "channel",
+    ], "title", true)).toBeGreaterThan(editorOverlayZIndex([
+      "title",
+      "comment",
+      "video",
+      "channel",
+    ], "video", true));
+    expect(editorOverlayContainerStyle(20)).toEqual({
+      containerType: "inline-size",
+      zIndex: 20,
+    });
+  });
+
+  it("prevents title/video crossing only for the admin candidate", () => {
+    const order = ["video", "title", "comment", "channel"] as const;
+    expect(moveEditorOverlayOrderItem([...order], "video", "forward"))
+      .toEqual(["title", "video", "comment", "channel"]);
+    expect(moveEditorOverlayOrderItem([...order], "title", "backward"))
+      .toEqual(["title", "video", "comment", "channel"]);
+    expect(moveEditorOverlayOrderItem([...order], "video", "forward", undefined, true))
+      .toEqual(order);
+    expect(moveEditorOverlayOrderItem([...order], "title", "backward", undefined, true))
+      .toEqual(order);
   });
 
   it("clears redo history after a new edit and caps stored snapshots", () => {

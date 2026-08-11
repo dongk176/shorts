@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { putEditorChannelAsset } from "@/lib/aws";
 import { getBillingSummary } from "@/lib/billing";
+import {
+  captionRenderSpecForEditor,
+  parseCaptionRenderSpec,
+} from "@/lib/caption-render-spec";
 import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import {
@@ -11,8 +15,13 @@ import {
   type ValidatedEditorDocumentSnapshot,
 } from "@/lib/editor-document-contract";
 import type { EditorDocumentJsonObject } from "@/lib/editor-document-snapshot";
-import { createEditorRenderSpec } from "@/lib/editor-render-spec";
+import { isStableEditorFontId } from "@/lib/editor-fonts";
 import {
+  createEditorRenderSpec,
+  EDITOR_RENDER_SPEC_VERSION,
+} from "@/lib/editor-render-spec";
+import {
+  adminSubtitleLayoutReleaseEnabled,
   resolveRequestedEditorRelease,
   type EditorReleaseAssignment,
   type RequestedEditorRelease,
@@ -126,8 +135,10 @@ type EditorExistingRow = {
   startSeconds: number;
   endSeconds: number;
   subtitleTemplateId: string | null;
+  captionRenderSpec: unknown;
   channelThumbnailUrl: string | null;
   editorDocument: ValidatedEditorDocumentSnapshot | null;
+  wordTimedSubtitlesAvailable: boolean;
   onboardingWelcomeFunded: boolean;
 };
 
@@ -137,6 +148,16 @@ function editorSnapshotHash(document: ValidatedEditorDocumentSnapshot) {
 
 function sameTimelineSecond(left: number, right: number) {
   return Math.abs(left - right) <= RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS;
+}
+
+function usesOnlyStableEditorFonts(
+  document: ValidatedEditorDocumentSnapshot,
+) {
+  return isStableEditorFontId(document.overlays.fonts.title)
+    && isStableEditorFontId(document.overlays.fonts.channel)
+    && document.overlays.textOverlays.every((overlay) => (
+      isStableEditorFontId(overlay.fontId)
+    ));
 }
 
 async function applyEditorDocument({
@@ -167,6 +188,27 @@ async function applyEditorDocument({
       "EDITOR_RELEASE_VERSION_CONFLICT",
     );
   }
+  if (
+    release.channel !== "canary"
+    && !usesOnlyStableEditorFonts(requestedDocument)
+  ) {
+    throw new HttpError(
+      403,
+      "새 글씨체는 관리자 테스트 편집기에서만 사용할 수 있습니다.",
+      "EDITOR_FONT_CANARY_ONLY",
+    );
+  }
+  if (
+    requestedDocument.version === 3
+    && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+    && release.channel !== "canary"
+  ) {
+    throw new HttpError(
+      403,
+      "자막 위치와 크기 조절은 관리자 편집기에서만 사용할 수 있습니다.",
+      "EDITOR_SUBTITLE_LAYOUT_ADMIN_ONLY",
+    );
+  }
   const billing = await getBillingSummary(db, session.userId);
   assertPaidProjectActionAccess(billing, "edit");
   const existingRows = await db`
@@ -175,7 +217,17 @@ async function applyEditorDocument({
       s.video_aspect_ratio,s.edit_timeline_s3_key,
       s.edit_timeline_start_seconds,s.edit_timeline_end_seconds,
       s.clean_clip_s3_key,s.start_seconds,s.end_seconds,
-      s.subtitle_template_id,s.editor_document,j.channel_thumbnail_url,
+      s.subtitle_template_id,s.caption_render_spec,s.editor_document,j.channel_thumbnail_url,
+      (
+        j.transcription_policy='elevenlabs_primary_openai_fallback'
+        and (
+          j.transcription_provider_used='elevenlabs'
+          or (
+            j.transcription_provider_used in ('openai','mixed')
+            and lower(coalesce(j.transcription_model_used,'')) like '%whisper%'
+          )
+        )
+      ) as word_timed_subtitles_available,
       exists (
         select 1
         from shorts_mvp.usage_reservations reservation
@@ -209,12 +261,58 @@ async function applyEditorDocument({
   if (!existing) {
     throw new HttpError(404, "편집 가능한 쇼츠 영상을 찾을 수 없습니다.");
   }
-  if (existing.subtitleTemplateId) {
+  if (
+    existing.subtitleTemplateId
+    && !adminSubtitleLayoutReleaseEnabled(release)
+  ) {
     throw new HttpError(
       409,
       "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
       "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
     );
+  }
+  if (
+    requestedDocument.version === 3
+    && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+    && !existing.subtitleTemplateId
+    && !existing.wordTimedSubtitlesAvailable
+  ) {
+    throw new HttpError(
+      409,
+      "정확한 단어 타임스탬프가 없는 프로젝트에서는 자막을 편집할 수 없습니다.",
+      "EDITOR_WORD_TIMED_SUBTITLES_REQUIRED",
+    );
+  }
+  const storedCaptionRenderSpec = existing.subtitleTemplateId
+    ? parseCaptionRenderSpec(existing.captionRenderSpec)
+    : null;
+  const captionRenderSpec = storedCaptionRenderSpec
+    ? captionRenderSpecForEditor(storedCaptionRenderSpec)
+    : null;
+  if (existing.subtitleTemplateId) {
+    if (
+      !captionRenderSpec
+      || captionRenderSpec.templateId !== existing.subtitleTemplateId
+    ) {
+      throw new HttpError(
+        409,
+        "원본 자막 렌더 정보를 찾을 수 없습니다.",
+        "CAPTION_RENDER_SPEC_MISSING",
+      );
+    }
+    if (
+      requestedDocument.version === 3
+      && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+      && (requestedDocument.renderSpec.subtitles.cueEdits || []).some(
+        (edit) => edit.cueIndex >= captionRenderSpec.cues.length,
+      )
+    ) {
+      throw new HttpError(
+        400,
+        "수정할 자막 구간을 다시 선택해 주세요.",
+        "EDITOR_CAPTION_CUE_INVALID",
+      );
+    }
   }
   // Keep the idempotency fingerprint tied to the request the browser sent.
   // The trusted render document is normalized below (for example, an inline
@@ -413,6 +511,16 @@ async function applyEditorDocument({
         "EDITOR_RELEASE_CHANGED",
       );
     }
+    if (
+      existing.subtitleTemplateId
+      && !adminSubtitleLayoutReleaseEnabled(lockedRelease)
+    ) {
+      throw new HttpError(
+        409,
+        "자막 영상의 관리자 편집 권한이 변경되었습니다. 화면을 다시 열어 주세요.",
+        "EDITOR_RELEASE_CHANGED",
+      );
+    }
     persistedRelease = lockedRelease;
     const insertedRequest = await tx`
       insert into shorts_mvp.editor_render_requests (
@@ -446,7 +554,10 @@ async function applyEditorDocument({
         and s.user_id=${session.userId}
         and s.status='ready'
         and s.render_version=${document.baseRenderVersion}
-        and s.subtitle_template_id is null
+        and (
+          s.subtitle_template_id is null
+          or ${adminSubtitleLayoutReleaseEnabled(lockedRelease)}
+        )
         and s.deleted_at is null and s.expires_at>clock_timestamp()
         and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null
       returning s.id

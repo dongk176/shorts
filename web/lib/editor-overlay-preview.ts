@@ -5,6 +5,7 @@ import {
 } from "@/lib/template-config";
 import {
   DEFAULT_EDITOR_FONT_ID,
+  isStableEditorFontId,
   type EditorFontId,
 } from "@/lib/editor-fonts";
 
@@ -145,6 +146,48 @@ export function pinEditorChannelLayerOnTop(
   ];
 }
 
+export function pinEditorTitleAboveVideo(
+  order: EditorOverlayOrderItem[],
+): EditorOverlayOrderItem[] {
+  const videoIndex = order.indexOf("video");
+  const titleIndex = order.indexOf("title");
+  if (videoIndex < 0 || titleIndex < 0 || videoIndex < titleIndex) {
+    return [...order];
+  }
+  const next: EditorOverlayOrderItem[] = order.filter(
+    (item) => item !== "video",
+  );
+  next.splice(next.indexOf("title"), 0, "video");
+  return next;
+}
+
+export function normalizeEditorOverlayLayerOrder(
+  order: EditorOverlayOrderItem[],
+): EditorOverlayOrderItem[] {
+  return pinEditorChannelLayerOnTop(pinEditorTitleAboveVideo(order));
+}
+
+export function editorOverlayZIndex(
+  order: EditorOverlayOrderItem[],
+  item: EditorOverlayOrderItem,
+  pinTitleAboveVideo = false,
+): number {
+  const normalizedOrder = pinTitleAboveVideo
+    ? normalizeEditorOverlayLayerOrder(order)
+    : pinEditorChannelLayerOnTop(order);
+  const index = normalizedOrder.indexOf(item);
+  return 10 + Math.max(0, index) * 10;
+}
+
+export function editorOverlayContainerStyle(
+  zIndex: string | number | undefined,
+): { containerType: "inline-size"; zIndex: string | number | undefined } {
+  return {
+    containerType: "inline-size",
+    zIndex,
+  };
+}
+
 export function createEditorTextOverlay(
   id: string,
   durationSeconds: number,
@@ -165,6 +208,7 @@ export function createEditorTextOverlay(
 
 export function cloneEditorOverlayLayout(
   layout: EditorOverlayLayoutSnapshot,
+  pinTitleAboveVideo = false,
 ): EditorOverlayLayoutSnapshot {
   return {
     offsets: {
@@ -190,9 +234,32 @@ export function cloneEditorOverlayLayout(
       ...textOverlay,
       offset: { ...textOverlay.offset },
     })),
-    layerOrder: pinEditorChannelLayerOnTop(layout.layerOrder),
+    layerOrder: pinTitleAboveVideo
+      ? normalizeEditorOverlayLayerOrder(layout.layerOrder)
+      : pinEditorChannelLayerOnTop(layout.layerOrder),
     background: layout.background ? { ...layout.background } : null,
   };
+}
+
+export function sanitizeEditorOverlayFontsForStable(
+  layout: EditorOverlayLayoutSnapshot,
+): EditorOverlayLayoutSnapshot {
+  const next = cloneEditorOverlayLayout(layout);
+  next.fonts = {
+    title: isStableEditorFontId(next.fonts.title)
+      ? next.fonts.title
+      : DEFAULT_EDITOR_FONT_ID,
+    channel: isStableEditorFontId(next.fonts.channel)
+      ? next.fonts.channel
+      : DEFAULT_EDITOR_FONT_ID,
+  };
+  next.textOverlays = next.textOverlays.map((textOverlay) => ({
+    ...textOverlay,
+    fontId: isStableEditorFontId(textOverlay.fontId)
+      ? textOverlay.fontId
+      : DEFAULT_EDITOR_FONT_ID,
+  }));
+  return next;
 }
 
 export function clampEditorTitleFontScale(scale: number): number {
@@ -332,6 +399,7 @@ export function moveEditorOverlayOrderItem(
   item: EditorOverlayOrderItem,
   direction: "forward" | "backward",
   visibleOrder: EditorOverlayOrderItem[] = order,
+  pinTitleAboveVideo = false,
 ): EditorOverlayOrderItem[] {
   if (item === "channel") return order;
   const currentIndex = order.indexOf(item);
@@ -346,7 +414,9 @@ export function moveEditorOverlayOrderItem(
   if (nextIndex < 0) return order;
   const next = [...order];
   [next[currentIndex], next[nextIndex]] = [next[nextIndex], next[currentIndex]];
-  return next;
+  return pinTitleAboveVideo
+    ? normalizeEditorOverlayLayerOrder(next)
+    : pinEditorChannelLayerOnTop(next);
 }
 
 export function recordEditorOverlayHistory(

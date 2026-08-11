@@ -5,6 +5,7 @@ import {
   deleteEditorVideoClip,
   editorVideoDuration,
   editorVideoOutputTimeForSource,
+  editorVideoPlaybackBoundaryTransition,
   locateEditorVideoTime,
   splitEditorVideoAtTime,
 } from "./editor-video-cuts";
@@ -64,6 +65,35 @@ describe("editor video cuts", () => {
 
     expect(editorVideoOutputTimeForSource(clips, 1, 23)).toBe(8);
     expect(locateEditorVideoTime(clips, 5)?.sourceSeconds).toBe(20);
+  });
+
+  it("does not seek backward at a contiguous split boundary", () => {
+    const clips = [
+      { id: "a", sourceStartSeconds: 0, sourceEndSeconds: 5 },
+      { id: "b", sourceStartSeconds: 5, sourceEndSeconds: 10 },
+    ];
+
+    expect(editorVideoPlaybackBoundaryTransition(clips, 0, 5.08, 0.02))
+      .toEqual({ nextClipIndex: 1, seekSourceSeconds: null });
+  });
+
+  it("seeks directly across a deleted source range before it is displayed", () => {
+    const clips = [
+      { id: "a", sourceStartSeconds: 0, sourceEndSeconds: 5 },
+      { id: "b", sourceStartSeconds: 8, sourceEndSeconds: 10 },
+    ];
+
+    expect(editorVideoPlaybackBoundaryTransition(clips, 0, 4.985, 0.02))
+      .toEqual({ nextClipIndex: 1, seekSourceSeconds: 8 });
+  });
+
+  it("loops from the last clip without waiting for a sparse timeupdate", () => {
+    const clips = [
+      { id: "a", sourceStartSeconds: 3, sourceEndSeconds: 5 },
+    ];
+
+    expect(editorVideoPlaybackBoundaryTransition(clips, 0, 4.985, 0.02))
+      .toEqual({ nextClipIndex: 0, seekSourceSeconds: 3 });
   });
 
   it("keeps at least one video clip", () => {

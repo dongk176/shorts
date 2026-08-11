@@ -1,14 +1,41 @@
 import { fitPreviewTitleFont, wrapPreviewTitle } from "@/lib/title-preview";
 import {
+  editorFontIds,
   resolveEditorFontFace,
+  type EditorFontId,
   type ResolvedEditorFontFace,
 } from "@/lib/editor-fonts";
 import type { EditorDocumentSnapshotV2 } from "@/lib/editor-document-snapshot";
 import type { TemplatePresetColor } from "@/lib/template-config";
 
-export const EDITOR_RENDER_SPEC_VERSION = 1 as const;
+export const EDITOR_RENDER_SPEC_LEGACY_VERSION = 1 as const;
+export const EDITOR_RENDER_SPEC_VERSION = 2 as const;
 export const EDITOR_RENDER_CANVAS = { width: 1080, height: 1920 } as const;
 export const EDITOR_RENDER_FPS = 30 as const;
+export const EDITOR_SUBTITLE_DEFAULT_MARGIN_V = 445 as const;
+export const EDITOR_SUBTITLE_DEFAULT_FONT_SIZE = 48 as const;
+export const EDITOR_SUBTITLE_OFFSET_Y_MIN = -900 as const;
+export const EDITOR_SUBTITLE_OFFSET_Y_MAX = 900 as const;
+export const EDITOR_SUBTITLE_SCALE_MIN = 0.5 as const;
+export const EDITOR_SUBTITLE_SCALE_MAX = 2 as const;
+
+export type EditorSubtitleCueEdit = {
+  cueIndex: number;
+  text: string;
+};
+
+export type EditorSubtitleLayout = {
+  offsetY: number;
+  scale: number;
+  fontId?: EditorFontId;
+  accentColor?: string;
+  cueEdits?: EditorSubtitleCueEdit[];
+};
+
+export const DEFAULT_EDITOR_SUBTITLE_LAYOUT: Readonly<EditorSubtitleLayout> = {
+  offsetY: 0,
+  scale: 1,
+};
 
 export type EditorRenderTextLayerSpec = {
   id: string;
@@ -28,8 +55,7 @@ export type EditorRenderTextLayerSpec = {
   font: ResolvedEditorFontFace;
 };
 
-export type EditorRenderSpec = {
-  version: typeof EDITOR_RENDER_SPEC_VERSION;
+type EditorRenderSpecBase = {
   canvas: typeof EDITOR_RENDER_CANVAS;
   fps: typeof EDITOR_RENDER_FPS;
   layerOrder: string[];
@@ -60,6 +86,76 @@ export type EditorRenderSpec = {
     scale: number;
   };
 };
+
+export type EditorRenderSpecV1 = EditorRenderSpecBase & {
+  version: typeof EDITOR_RENDER_SPEC_LEGACY_VERSION;
+};
+
+export type EditorRenderSpecV2 = EditorRenderSpecBase & {
+  version: typeof EDITOR_RENDER_SPEC_VERSION;
+  subtitles: {
+    centerX: 540;
+    offsetY: number;
+    scale: number;
+    fontId?: EditorFontId;
+    accentColor?: string;
+    cueEdits?: EditorSubtitleCueEdit[];
+  };
+};
+
+export type EditorRenderSpec = EditorRenderSpecV1 | EditorRenderSpecV2;
+
+export function normalizeEditorSubtitleLayout(
+  value: EditorSubtitleLayout,
+): EditorSubtitleLayout {
+  const cueEdits = [...(value.cueEdits || [])]
+    .filter((edit) => (
+      Number.isInteger(edit.cueIndex)
+      && edit.cueIndex >= 0
+      && edit.cueIndex < 2_000
+      && edit.text.trim().length > 0
+      && edit.text.trim().length <= 200
+    ))
+    .sort((left, right) => left.cueIndex - right.cueIndex)
+    .filter((edit, index, values) => (
+      index === values.length - 1
+      || values[index + 1].cueIndex !== edit.cueIndex
+    ))
+    .map((edit) => ({
+      cueIndex: edit.cueIndex,
+      text: edit.text.trim(),
+    }));
+  const accentColor = /^#[0-9A-Fa-f]{6}$/.test(value.accentColor || "")
+    ? value.accentColor
+    : undefined;
+  const fontId = editorFontIds.includes(value.fontId as EditorFontId)
+    ? value.fontId
+    : undefined;
+  return {
+    offsetY: Math.max(
+      EDITOR_SUBTITLE_OFFSET_Y_MIN,
+      Math.min(EDITOR_SUBTITLE_OFFSET_Y_MAX, Math.round(value.offsetY)),
+    ),
+    ...(fontId ? { fontId } : {}),
+    scale: Math.max(
+      EDITOR_SUBTITLE_SCALE_MIN,
+      Math.min(
+        EDITOR_SUBTITLE_SCALE_MAX,
+        Math.round(value.scale * 100) / 100,
+      ),
+    ),
+    ...(accentColor ? { accentColor } : {}),
+    ...(cueEdits.length > 0 ? { cueEdits } : {}),
+  };
+}
+
+export function editorSubtitleLayoutFromRenderSpec(
+  renderSpec: EditorRenderSpec | null | undefined,
+): EditorSubtitleLayout {
+  return renderSpec?.version === EDITOR_RENDER_SPEC_VERSION
+    ? normalizeEditorSubtitleLayout(renderSpec.subtitles)
+    : { ...DEFAULT_EDITOR_SUBTITLE_LAYOUT };
+}
 
 function frameAt(seconds: number) {
   return Math.max(0, Math.round(seconds * EDITOR_RENDER_FPS));
@@ -110,7 +206,9 @@ export function createEditorRenderSpec(
     overlays: Omit<EditorDocumentSnapshotV2["overlays"], "layerOrder"> & {
       layerOrder: string[];
     };
+    renderSpec?: EditorRenderSpec;
   },
+  requestedSubtitleLayout?: EditorSubtitleLayout,
 ): EditorRenderSpec {
   const titleLines = wrapPreviewTitle(document.title.text);
   const snapshotConfig = document.template.snapshot?.config;
@@ -136,8 +234,11 @@ export function createEditorRenderSpec(
       ),
     ),
   );
-  return {
-    version: EDITOR_RENDER_SPEC_VERSION,
+  const subtitleLayout = requestedSubtitleLayout
+    || (document.renderSpec?.version === EDITOR_RENDER_SPEC_VERSION
+      ? document.renderSpec.subtitles
+      : null);
+  const base: EditorRenderSpecBase = {
     canvas: EDITOR_RENDER_CANVAS,
     fps: EDITOR_RENDER_FPS,
     layerOrder: [...document.overlays.layerOrder],
@@ -185,6 +286,23 @@ export function createEditorRenderSpec(
       offsetX: document.overlays.offsets.video.x,
       offsetY: document.overlays.offsets.video.y,
       scale: document.overlays.scales.video,
+    },
+  };
+  if (!subtitleLayout) {
+    return {
+      ...base,
+      version: EDITOR_RENDER_SPEC_LEGACY_VERSION,
+    };
+  }
+  const normalizedSubtitleLayout = normalizeEditorSubtitleLayout(
+    subtitleLayout,
+  );
+  return {
+    ...base,
+    version: EDITOR_RENDER_SPEC_VERSION,
+    subtitles: {
+      centerX: 540,
+      ...normalizedSubtitleLayout,
     },
   };
 }

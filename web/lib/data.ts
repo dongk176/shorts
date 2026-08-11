@@ -2,6 +2,8 @@ import type { Row, Sql } from "postgres";
 import type { GeneratedShort, Plan, VideoJob } from "@/lib/contracts";
 import { editorDocumentSnapshotSchema } from "@/lib/editor-document-contract";
 import type { EditorDocumentSnapshot } from "@/lib/editor-document-snapshot";
+import { parseCaptionRenderSpec } from "@/lib/caption-render-spec";
+import { hasWordTimedTranscription } from "@/lib/transcription-release";
 import { userFacingErrorMessage } from "@/lib/public-error";
 import type { MvpSession } from "@/lib/session";
 
@@ -59,7 +61,7 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       selection_length_adjustment, selection_repositioned,
       hook_title, highlight_reason, channel_display_name, subtitle_segments, subtitles_enabled,
       comment_overlays, template_id, custom_template_id, template_snapshot, video_aspect_ratio, title_font_scale, title_text_styles,
-      subtitle_template_id,
+      subtitle_template_id, caption_render_spec,
       title_text_styles_initialized, render_version,
       editor_document,
       rerender_progress, status, expires_at
@@ -105,6 +107,7 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       customTemplateId: row.customTemplateId || null,
       templateSnapshot: row.templateSnapshot || null,
       subtitleTemplateId: row.subtitleTemplateId || null,
+      captionRenderSpec: parseCaptionRenderSpec(row.captionRenderSpec),
       videoAspectRatio: row.videoAspectRatio || "1:1",
       titleFontScale: Number(row.titleFontScale),
       titleTextStyles: row.titleTextStyles || [],
@@ -210,6 +213,11 @@ async function mapJobs(db: Sql, rows: Row[]): Promise<VideoJob[]> {
     renderSuccessPercent: row.renderSuccessPercent == null
       ? null
       : Number(row.renderSuccessPercent),
+    wordTimedSubtitlesAvailable: hasWordTimedTranscription({
+      policy: row.transcriptionPolicy,
+      provider: row.transcriptionProviderUsed,
+      model: row.transcriptionModelUsed,
+    }),
     status: row.status,
     stage: row.stage,
     progress: row.progress,

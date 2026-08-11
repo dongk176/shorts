@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
   SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID,
   SUBTITLE_TEMPLATE_BRAND_COLOR,
   SUBTITLE_TEMPLATE_POP_WORD_GAP_PX,
@@ -11,6 +12,7 @@ import {
   subtitleTemplateLayout,
   subtitleTemplateOptions,
   subtitleTemplateStyleSnapshot,
+  subtitleTemplateTitleTextStyles,
 } from "./subtitle-templates";
 
 describe("subtitle template snapshot", () => {
@@ -27,7 +29,19 @@ describe("subtitle template snapshot", () => {
     expect(snapshot.color.active).toBe(SUBTITLE_TEMPLATE_BRAND_COLOR);
     expect(snapshot.schemaVersion).toBe(3);
     expect(snapshot.maxLines).toBe(1);
-    expect(snapshot.timingLeadFrames).toBe(SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES);
+    expect(STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES).toBe(4);
+    expect(SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES).toBe(7);
+    expect(snapshot.timingLeadFrames).toBe(
+      STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
+    );
+    expect(subtitleTemplateStyleSnapshot(
+      "highlight",
+      "9:16",
+      SUBTITLE_TEMPLATE_BRAND_COLOR,
+      "lower",
+      undefined,
+      SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
+    ).timingLeadFrames).toBe(SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES);
     expect(snapshot.safeArea).toEqual({ x: 120, y: 1430, width: 840, height: 140 });
     expect(snapshot.layout.title).toEqual({ x: 0, y: 96, width: 1080, height: 300 });
     expect(snapshot.layout).toEqual(subtitleTemplateLayout("9:16"));
@@ -40,6 +54,24 @@ describe("subtitle template snapshot", () => {
     });
     expect(snapshot.title.secondLineColor).toBe("#35E6E3");
     expect(snapshot.color.active).toBe(snapshot.title.secondLineColor);
+  });
+
+  it("adds a brand background to both hook-title rows only at 9:16", () => {
+    expect(subtitleTemplateTitleTextStyles(
+      "첫 줄\n둘째 줄",
+      "9:16",
+      "#F97316",
+    )).toEqual([{
+      start: 0,
+      end: 8,
+      color: "#000000",
+      backgroundColor: "#F97316",
+    }]);
+    expect(subtitleTemplateTitleTextStyles(
+      "첫 줄\n둘째 줄",
+      "4:5",
+      "#F97316",
+    )).toEqual([]);
   });
 
   it("uses a larger outline and bounded scale for the pop template", () => {
@@ -64,6 +96,22 @@ describe("subtitle template snapshot", () => {
     expect(snapshot.title.firstLineColor).toBe("#FFFFFF");
     expect(snapshot.title.secondLineColor).toBe("#FF715E");
     expect(snapshot.color.active).toBe("#FF715E");
+  });
+
+  it("persists the selected approved font in the render snapshot", () => {
+    const snapshot = subtitleTemplateStyleSnapshot(
+      "highlight",
+      "1:1",
+      "#FF715E",
+      "lower",
+      "jua",
+    );
+    expect(snapshot.font).toMatchObject({
+      id: "jua",
+      fileId: "Jua-Regular.ttf",
+      family: "Jua",
+      weight: 400,
+    });
   });
 
   it("uses the ratio-specific title, video, and caption positions", () => {

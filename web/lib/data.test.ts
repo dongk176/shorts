@@ -18,6 +18,42 @@ describe("generated shorts counter", () => {
 
 describe("generated short details", () => {
   it("maps the persisted Gemini highlight reason", async () => {
+    const captionRenderSpec = {
+      schemaVersion: 3,
+      templateId: "highlight",
+      captionPlacement: "center",
+      fps: 30,
+      timingLeadFrames: 4,
+      safeArea: { x: 120, y: 1025, width: 840, height: 140 },
+      font: {
+        fontId: "pretendard",
+        fileId: "Pretendard-Bold.woff2",
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+        family: "Pretendard",
+        weight: 700,
+      },
+      style: {
+        fontSize: 72,
+        textColor: "#FFFFFF",
+        accentColor: "#FFD84D",
+        outlineColor: "#080808",
+        outlineWidth: 7,
+      },
+      cues: [{
+        startFrame: 0,
+        endFrame: 30,
+        fontSize: 72,
+        centerX: 540,
+        centerY: 1095,
+        words: [{ text: "실제", spaceBefore: false }],
+        lines: [[0]],
+        events: [{
+          startFrame: 0,
+          endFrame: 30,
+          activeWordIndex: 0,
+        }],
+      }],
+    };
     const query = vi.fn()
       .mockReturnValueOnce(["job-a"])
       .mockResolvedValueOnce([{
@@ -40,6 +76,7 @@ describe("generated short details", () => {
         subtitlesEnabled: false,
         templateId: "dark-red",
         subtitleTemplateId: "highlight",
+        captionRenderSpec,
         videoAspectRatio: "9:16",
         titleFontScale: "1",
         titleTextStyles: [{ start: 0, end: 2, color: "#00FF00" }],
@@ -65,6 +102,7 @@ describe("generated short details", () => {
       selectionLengthAdjustment: "none",
       selectionRepositioned: true,
       subtitleTemplateId: "highlight",
+      captionRenderSpec,
     });
   });
 
@@ -170,6 +208,9 @@ describe("all projects", () => {
         sourceDurationSeconds: 600,
         outputLanguage: "ko",
         expectedShortCount: 12,
+        transcriptionPolicy: "elevenlabs_primary_openai_fallback",
+        transcriptionProviderUsed: "mixed",
+        transcriptionModelUsed: "scribe_v2+whisper-1",
         status: "completed",
         stage: "completed",
         progress: 100,
@@ -191,6 +232,7 @@ describe("all projects", () => {
       id: "job-a",
       projectNumber: 11,
       isExample: false,
+      wordTimedSubtitlesAvailable: true,
       expiresAt: "2026-08-19T00:00:00.000Z",
     }]);
   });

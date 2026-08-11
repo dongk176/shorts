@@ -196,6 +196,42 @@ describe("editor v2 resilience", () => {
     expect(controlsSource).toContain("redoEditorEdit();");
   });
 
+  it("records outer range-handle trims as one video history action for the admin candidate", () => {
+    const start = editorSource.indexOf("const startRangeInteraction = (");
+    const finish = editorSource.indexOf("const finishTimelineScrubbing = (");
+    expect(start).toBeGreaterThan(-1);
+    expect(finish).toBeGreaterThan(start);
+    expect(editorSource.slice(start, start + 900)).toContain(
+      "adminSubtitleLayoutEnabled && videoCuttingEnabled",
+    );
+    expect(editorSource.slice(finish, finish + 800)).toContain(
+      "recordEditorVideoStep(",
+    );
+  });
+
+  it("undoes the visibility change made while adding the first comment", () => {
+    const addStart = editorSource.indexOf("const addComment = () =>");
+    const addSource = editorSource.slice(addStart, addStart + 2_000);
+    expect(addStart).toBeGreaterThan(-1);
+    expect(addSource).toContain("visibleCommentBefore");
+    expect(addSource).toContain("{ before: visibleCommentBefore, after: true }");
+    expect(editorSource).toContain(
+      'typeof replacement.visibleCommentBefore === "boolean"',
+    );
+    expect(editorSource).toContain(
+      'typeof replacement.visibleCommentAfter === "boolean"',
+    );
+  });
+
+  it("removes text overlays outside a shortened output before applying", () => {
+    const saveStart = editorSource.indexOf("const save = async () =>");
+    const saveSource = editorSource.slice(saveStart, saveStart + 3_000);
+    expect(saveStart).toBeGreaterThan(-1);
+    expect(saveSource).toContain("fitTimedRangesToDurationFrames(");
+    expect(saveSource).toContain("retainedTextOverlayIds");
+    expect(saveSource).toContain('layer.startsWith("text:")');
+  });
+
   it("only deletes a draft when the user chooses to start over", () => {
     const entryChoiceStart = editorSource.indexOf(
       'if (entryChoice === "new")',
@@ -214,6 +250,24 @@ describe("editor v2 resilience", () => {
     expect(editorSource).toContain("editorVideoRetryCountRef.current >= 1");
     expect(editorSource).toContain("편집용 영상을 다시 연결하고 있어요");
     expect(editorSource).toContain("편집용 영상 연결이 끊어졌어요.");
+  });
+
+  it("checks admin candidate cut boundaries every frame while preserving stable playback", () => {
+    expect(editorSource).toContain(
+      "const advanceEditorVideoPlaybackBoundary = useCallback(",
+    );
+    expect(editorSource).toContain(
+      "window.requestAnimationFrame(checkPlaybackBoundary)",
+    );
+    expect(editorSource).toContain(
+      "editorVideoPlaybackBoundaryTransition(",
+    );
+    expect(editorSource).toContain(
+      "!adminSubtitleLayoutEnabled",
+    );
+    expect(editorSource).toContain(
+      "current >= clip.sourceEndSeconds - 0.03",
+    );
   });
 
   it("keeps draft status styling inside the v2 root", () => {

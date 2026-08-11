@@ -210,6 +210,7 @@ export type GeneratedShort = {
   commentOverlays: CommentOverlay[];
   subtitlesEnabled: boolean;
   subtitleTemplateId?: import("./subtitle-templates").SubtitleTemplateId | null;
+  captionRenderSpec?: import("./caption-render-spec").CaptionRenderSpec | null;
   templateId: TemplateId;
   customTemplateId?: string | null;
   templateSnapshot?: Record<string, unknown> | null;
@@ -239,6 +240,7 @@ export type VideoJob = {
   readyShortCount: number;
   failedShortCount: number;
   renderSuccessPercent: number | null;
+  wordTimedSubtitlesAvailable: boolean;
   status: string;
   stage: string;
   progress: number;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY,
+  hasWordTimedTranscription,
   OPENAI_STABLE_TRANSCRIPTION_POLICY,
   resolveElevenLabsTranscriptionAccess,
 } from "./transcription-release";
@@ -41,5 +42,33 @@ describe("ElevenLabs transcription release", () => {
       publicEnabled: true,
       isAdmin: false,
     }).policy).toBe(ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY);
+  });
+
+  it("marks only new ElevenLabs or Whisper candidate transcripts as word timed", () => {
+    expect(hasWordTimedTranscription({
+      policy: ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY,
+      provider: "elevenlabs",
+      model: "scribe_v2",
+    })).toBe(true);
+    expect(hasWordTimedTranscription({
+      policy: ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY,
+      provider: "openai",
+      model: "whisper-1",
+    })).toBe(true);
+    expect(hasWordTimedTranscription({
+      policy: ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY,
+      provider: "mixed",
+      model: "scribe_v2+whisper-1",
+    })).toBe(true);
+    expect(hasWordTimedTranscription({
+      policy: OPENAI_STABLE_TRANSCRIPTION_POLICY,
+      provider: "openai",
+      model: "whisper-1",
+    })).toBe(false);
+    expect(hasWordTimedTranscription({
+      policy: ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY,
+      provider: null,
+      model: null,
+    })).toBe(false);
   });
 });

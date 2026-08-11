@@ -145,7 +145,9 @@ describe("AI comment regeneration", () => {
     expect(editorSource).toContain("max-w-[760px]");
     expect(editorSource).not.toContain("생성 사용량 1분은 이미 반영되었어요.");
     expect(editorSource).toContain('"comment-replace"');
-    expect(editorSource).toContain("recordEditorCommentReplacement(before, after)");
+    expect(editorSource).toContain(
+      "recordEditorCommentReplacement(comparison.before, after)",
+    );
   });
 
   it("keeps generated comments pending until the user applies their choices", () => {

@@ -1,5 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { getDb } from "@/lib/db";
+import {
+  adminSubtitleLayoutReleaseEnabled,
+  editorRenderingV2MasterEnabled,
+  resolveEditorRelease,
+} from "@/lib/editor-rendering-release";
+import { requireMvpSession } from "@/lib/session";
 import { ProjectPage } from "../../shorts-app";
 
 export const dynamic = "force-dynamic";
@@ -27,5 +34,20 @@ export default async function ProjectNumberPage({
   const projectNumber = Number(rawProjectNumber);
   if (!Number.isSafeInteger(projectNumber)) notFound();
 
-  return <ProjectPage projectNumber={projectNumber} />;
+  let adminSubtitleLayoutEnabled = false;
+  if (editorRenderingV2MasterEnabled()) {
+    const session = await requireMvpSession();
+    const editorRelease = await resolveEditorRelease(
+      getDb(),
+      session.userId,
+    );
+    adminSubtitleLayoutEnabled = adminSubtitleLayoutReleaseEnabled(
+      editorRelease,
+    );
+  }
+
+  return <ProjectPage
+    projectNumber={projectNumber}
+    adminSubtitleLayoutEnabled={adminSubtitleLayoutEnabled}
+  />;
 }

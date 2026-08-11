@@ -12,6 +12,21 @@ export type TranscriptionPolicy =
   | typeof OPENAI_STABLE_TRANSCRIPTION_POLICY
   | typeof ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY;
 
+export function hasWordTimedTranscription(input: {
+  policy: unknown;
+  provider: unknown;
+  model: unknown;
+}) {
+  if (input.policy !== ELEVENLABS_FALLBACK_TRANSCRIPTION_POLICY) return false;
+  const provider = String(input.provider || "").trim().toLowerCase();
+  const model = String(input.model || "").trim().toLowerCase();
+  return provider === "elevenlabs"
+    || (
+      (provider === "openai" || provider === "mixed")
+      && model.includes("whisper")
+    );
+}
+
 export type ElevenLabsTranscriptionAccess = {
   enabled: boolean;
   masterEnabled: boolean;

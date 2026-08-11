@@ -13,6 +13,10 @@ const editPageSource = readFileSync(
   new URL("../app/projects/[projectNumber]/edit/[shortId]/page.tsx", import.meta.url),
   "utf8",
 );
+const projectPageSource = readFileSync(
+  new URL("../app/projects/[projectNumber]/page.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("subtitle template UI isolation", () => {
   it("mounts the test cards only behind the server capability", () => {
@@ -52,22 +56,36 @@ describe("subtitle template UI isolation", () => {
 
   it("omits the new request field unless capability and selection are both present", () => {
     expect(shortsAppSource).toContain(
-      "...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId, subtitleCaptionPlacement } : {})",
+      "...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId, subtitleCaptionPlacement, ...(brandColorSelectionEnabled ? { subtitleFontId } : {}) } : {})",
+    );
+    expect(shortsAppSource).toContain(
+      "{brandColorSelectionEnabled && subtitleTemplateId && (",
     );
     expect(shortsAppSource).toContain(
       "...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {})",
     );
   });
 
-  it("uses the fixed dark-minimal shell and disables editing for generated captions", () => {
+  it("keeps generated-caption editing behind the admin canary capability", () => {
     expect(shortsAppSource).toContain('setTemplateId("dark-minimal")');
     expect(shortsAppSource).toContain("자막 편집은 다음 단계에서 지원해요.");
-    expect(shortsAppSource).toContain("item.subtitleTemplateId");
+    expect(shortsAppSource).toContain(
+      "const subtitleEditorUnavailable = Boolean(",
+    );
+    expect(shortsAppSource).toContain("|| !item.captionRenderSpec");
+    expect(projectPageSource).toContain(
+      "adminSubtitleLayoutReleaseEnabled",
+    );
+    expect(projectPageSource).toContain(
+      "adminSubtitleLayoutEnabled={adminSubtitleLayoutEnabled}",
+    );
   });
 
-  it("fails closed when a generated caption edit URL is opened directly", () => {
+  it("fails closed when a non-canary user opens a generated caption edit URL", () => {
     expect(editPageSource).toContain("!uuidPattern.test(shortId)");
-    expect(editPageSource).toContain("and s.subtitle_template_id is not null");
-    expect(editPageSource).toContain("if (subtitleTemplateShortRows[0]) notFound();");
+    expect(editPageSource).toContain("s.caption_render_spec");
+    expect(editPageSource).toContain(
+      "!parseCaptionRenderSpec(subtitleTemplateShort.captionRenderSpec)",
+    );
   });
 });

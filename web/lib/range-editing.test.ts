@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   adjustTimedRange,
   clampTimelineSeconds,
+  fitTimedRangesToDurationFrames,
   roundTimelineHandleSeconds,
   scaleTimedRanges,
   snapTimedRangeHandle,
@@ -25,6 +26,19 @@ describe("range editing helpers", () => {
     ], 20, 30)).toEqual([
       { startSeconds: 0, endSeconds: 15, text: "첫 댓글" },
       { startSeconds: 15, endSeconds: 30, text: "둘째 댓글" },
+    ]);
+  });
+
+  it("drops timed overlays outside a cut and preserves one valid final frame", () => {
+    expect(fitTimedRangesToDurationFrames([
+      { id: "kept", startSeconds: 9.99, endSeconds: 12 },
+      { id: "removed", startSeconds: 12, endSeconds: 14 },
+    ], 10, 30)).toEqual([
+      {
+        id: "kept",
+        startSeconds: 299 / 30,
+        endSeconds: 10,
+      },
     ]);
   });
 

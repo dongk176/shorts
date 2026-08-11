@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, PointerEventHandler } from "react";
 import { COMMENT_CAPTURE_LANDSCAPE_LIFT_PX } from "@/lib/template-config";
 import type { TitleTextStyle, VideoAspectRatio } from "@/lib/contracts";
+import { editorOverlayContainerStyle } from "@/lib/editor-overlay-preview";
 import {
   fitPreviewTitleFont,
   styledTitleLineRuns,
@@ -49,11 +50,13 @@ export function TitleOverlayPreview({
   fontWeight = 700,
   resolvedLines,
   resolvedFontSize,
+  panelRect,
   keepPrimaryFirstLine = false,
   textStyles = [],
   liftLandscape = false,
   selected = false,
   editing = false,
+  elevateAboveVideo = false,
   movementStyle,
   onPointerDown,
   onEditStart,
@@ -70,11 +73,13 @@ export function TitleOverlayPreview({
   fontWeight?: number;
   resolvedLines?: string[];
   resolvedFontSize?: number;
+  panelRect?: { y: number; height: number };
   keepPrimaryFirstLine?: boolean;
   textStyles?: TitleTextStyle[];
   liftLandscape?: boolean;
   selected?: boolean;
   editing?: boolean;
+  elevateAboveVideo?: boolean;
   movementStyle?: CSSProperties;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
   onEditStart?: () => void;
@@ -87,7 +92,14 @@ export function TitleOverlayPreview({
   );
   const lineIndices = useMemo(() => titleLineCharacterIndices(title, lines), [lines, title]);
   const [fittedFontSize, setFittedFontSize] = useState(() => fitPreviewTitleFont(lines));
-  const layout = titlePanelLayout(videoAspectRatio, liftLandscape);
+  const layout = panelRect
+    ? {
+        top: `${(panelRect.y / 1920) * 100}%`,
+        height: `${(panelRect.height / 1920) * 100}%`,
+        panelHeight: panelRect.height,
+        overlay: panelRect.y > 0,
+      }
+    : titlePanelLayout(videoAspectRatio, liftLandscape);
   const bottomMargin = layout.panelHeight === 285 && !layout.overlay
     ? 12
     : Math.min(44, Math.max(24, Math.round(layout.panelHeight * 0.105)));
@@ -165,7 +177,12 @@ export function TitleOverlayPreview({
   const titleClassName = "absolute inset-x-0 flex flex-col items-center justify-end text-center font-bold";
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 overflow-visible" style={{ containerType: "inline-size" }}>
+    <div
+      className="pointer-events-none absolute inset-0 z-10 overflow-visible"
+      style={elevateAboveVideo
+        ? editorOverlayContainerStyle(movementStyle?.zIndex)
+        : { containerType: "inline-size" }}
+    >
       {onPointerDown
         ? <div className={`${titleClassName} overflow-visible`} style={panelStyle}>
             {editing && onEditValueChange && onEditEnd

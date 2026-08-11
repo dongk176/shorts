@@ -1,5 +1,12 @@
-import type { VideoAspectRatio } from "@/lib/contracts";
+import type { TitleTextStyle, VideoAspectRatio } from "@/lib/contracts";
+import {
+  DEFAULT_EDITOR_FONT_ID,
+  editorCaptionFontFamily,
+  resolveEditorFontFace,
+  type EditorFontId,
+} from "@/lib/editor-fonts";
 import type { TemplatePresetColor } from "@/lib/template-config";
+import { ensureTitleTextBackground } from "@/lib/title-text-style";
 
 export const subtitleTemplateIds = ["basic", "highlight", "pop"] as const;
 export type SubtitleTemplateId = typeof subtitleTemplateIds[number];
@@ -14,7 +21,8 @@ export type SubtitleCaptionPlacement = typeof subtitleCaptionPlacements[number];
 export const SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID = "dark-minimal" as const;
 export const SUBTITLE_TEMPLATE_BRAND_COLOR = "#35E6E3" as const;
 export const SUBTITLE_TEMPLATE_TITLE_SECOND_LINE_COLOR = "#35E6E3" as const;
-export const SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES = 4 as const;
+export const STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES = 4 as const;
+export const SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES = 7 as const;
 export const SUBTITLE_TEMPLATE_POP_WORD_GAP_PX = 6 as const;
 export const SUBTITLE_TEMPLATE_TITLE_FONT_SIZE_PX = 84 as const;
 export const SUBTITLE_TEMPLATE_TITLE_LINE_GAP_PX = 18 as const;
@@ -54,6 +62,18 @@ export const subtitleTemplateOptions: Array<{
   { id: "pop", name: "자막 팝형", description: "핵심 어절을 크고 리듬감 있게" },
   { id: "highlight", name: "자막 강조형", description: "말하는 어절만 브랜드 컬러로" },
 ];
+
+export function subtitleTemplateTitleTextStyles(
+  title: string,
+  videoAspectRatio: VideoAspectRatio,
+  brandColor: TemplatePresetColor,
+  currentStyles: TitleTextStyle[] = [],
+) {
+  if (videoAspectRatio !== "9:16") {
+    return currentStyles.map((style) => ({ ...style }));
+  }
+  return ensureTitleTextBackground(title, currentStyles, brandColor);
+}
 
 export function subtitleTemplateLayout(
   videoAspectRatio: VideoAspectRatio,
@@ -120,6 +140,8 @@ export function subtitleTemplateStyleSnapshot(
   videoAspectRatio: VideoAspectRatio,
   brandColor: TemplatePresetColor = SUBTITLE_TEMPLATE_BRAND_COLOR,
   captionPlacement: SubtitleCaptionPlacement = "lower",
+  fontId: EditorFontId = DEFAULT_EDITOR_FONT_ID,
+  timingLeadFrames: number = STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
 ) {
   const subtitleTemplateId = id;
   const pop = subtitleTemplateId === "pop";
@@ -128,6 +150,7 @@ export function subtitleTemplateStyleSnapshot(
     44,
     Math.max(24, Math.round(layout.title.height * 0.105)),
   );
+  const resolvedFont = resolveEditorFontFace(fontId, "title");
   return {
     schemaVersion: 3,
     subtitleTemplateId,
@@ -137,9 +160,10 @@ export function subtitleTemplateStyleSnapshot(
     videoAspectRatio,
     fps: 30,
     font: {
-      id: "pretendard-bold",
-      family: "Pretendard",
-      weight: 700,
+      id: resolvedFont.fontId,
+      fileId: resolvedFont.fileId,
+      family: editorCaptionFontFamily(resolvedFont.fontId),
+      weight: resolvedFont.resolvedWeight,
       sizePx: pop ? 92 : 72,
       minSizePx: pop ? 64 : 72,
     },
@@ -165,7 +189,7 @@ export function subtitleTemplateStyleSnapshot(
     maxWidthPx: 840,
     popScale: pop ? 1.12 : 1,
     wordGapPx: pop ? SUBTITLE_TEMPLATE_POP_WORD_GAP_PX : 0,
-    timingLeadFrames: SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
+    timingLeadFrames,
     layout,
     safeArea: layout.caption,
     cueBreak: pop

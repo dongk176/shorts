@@ -19,6 +19,7 @@ import {
 } from "@/lib/job-dispatch";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { apiError, HttpError } from "@/lib/http";
+import { editorFontIds } from "@/lib/editor-fonts";
 import { getInitialJobBackend } from "@/lib/job-backend";
 import {
   assertJobCreationAllowed,
@@ -38,6 +39,8 @@ import {
 } from "@/lib/transcription-release";
 import { lockSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
 import {
+  STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
+  SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
   SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID,
   subtitleCaptionPlacements,
   subtitleTemplateCreationIds,
@@ -66,6 +69,7 @@ const schema = z.object({
   rangeEndSeconds: z.number().finite().positive().optional(),
   subtitleTemplateId: z.enum(subtitleTemplateCreationIds).optional(),
   subtitleCaptionPlacement: z.enum(subtitleCaptionPlacements).optional(),
+  subtitleFontId: z.enum(editorFontIds).optional(),
   brandColor: z.enum(templatePresetColors).optional(),
 });
 
@@ -80,6 +84,9 @@ export async function POST(request: Request) {
     const input = schema.parse(await request.json());
     if (input.subtitleCaptionPlacement && !input.subtitleTemplateId) {
       throw new HttpError(400, "자막 위치는 자막 템플릿과 함께 선택해 주세요.");
+    }
+    if (input.subtitleFontId && !input.subtitleTemplateId) {
+      throw new HttpError(400, "자막 글씨체는 자막 템플릿과 함께 선택해 주세요.");
     }
     if (
       !input.subtitleTemplateId
@@ -192,11 +199,13 @@ export async function POST(request: Request) {
           "영상 구간 선택 기능이 일시 중지되었습니다. 링크를 다시 확인해 주세요.",
         );
       }
-      if (input.subtitleTemplateId || input.brandColor) {
+      let subtitleTemplateIsAdmin = false;
+      if (input.subtitleTemplateId || input.brandColor || input.subtitleFontId) {
         const subtitleTemplateAccess = await lockSubtitleTemplateAccess(
           tx,
           session.userId,
         );
+        subtitleTemplateIsAdmin = subtitleTemplateAccess.isAdmin;
         if (input.subtitleTemplateId && !subtitleTemplateAccess.enabled) {
           throw new HttpError(
             409,
@@ -208,6 +217,13 @@ export async function POST(request: Request) {
             403,
             "브랜드 컬러는 관리자 전용 기능입니다.",
             "ADMIN_BRAND_COLOR_REQUIRED",
+          );
+        }
+        if (input.subtitleFontId && (!subtitleTemplateAccess.enabled || !subtitleTemplateAccess.isAdmin)) {
+          throw new HttpError(
+            403,
+            "자막 글씨체 선택은 관리자 전용 기능입니다.",
+            "ADMIN_SUBTITLE_FONT_REQUIRED",
           );
         }
       }
@@ -232,7 +248,7 @@ export async function POST(request: Request) {
         );
       }
       const usesAdminTemplateCandidate = Boolean(
-        input.subtitleTemplateId || input.brandColor,
+        input.subtitleTemplateId || input.brandColor || input.subtitleFontId,
       );
       const transcriptionAccess = usesAdminTemplateCandidate
         ? null
@@ -299,6 +315,10 @@ export async function POST(request: Request) {
             resolvedVideoAspectRatio,
             input.brandColor,
             input.subtitleCaptionPlacement ?? "lower",
+            input.subtitleFontId,
+            subtitleTemplateIsAdmin
+              ? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES
+              : STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
           )
         : null;
       const limits = await tx`

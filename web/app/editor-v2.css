@@ -64,6 +64,166 @@
   font-weight: 700;
   font-display: swap;
 }
+@font-face {
+  font-family: "Editor V3 Noto Sans KR";
+  src: url("/fonts/editor/NotoSansKR-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Nanum Square Neo";
+  src: url("/fonts/editor/NanumSquareNeo-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Sandbox Aggro";
+  src: url("/fonts/editor/SandboxAggro-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Jua";
+  src: url("/fonts/editor/Jua-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 S-Core Dream";
+  src: url("/fonts/editor/SCoreDream-ExtraBold.otf") format("opentype");
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Cafe24 Anemone";
+  src: url("/fonts/editor/Cafe24Anemone-Bold.woff") format("woff");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Cafe24 Pro Up";
+  src: url("/fonts/editor/Cafe24ProUp-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Ridi Batang";
+  src: url("/fonts/editor/RIDIBatang-Regular.woff") format("woff");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Jalnan 2";
+  src: url("/fonts/editor/Jalnan2-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Godo";
+  src: url("/fonts/editor/Godo-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor V3 Galmuri 9";
+  src: url("/fonts/editor/Galmuri9-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+/*
+ * Font-picker previews use these display aliases on the template page and in
+ * the editor controls. Keep new aliases here so the approved legacy global
+ * stylesheet remains byte-for-byte unchanged.
+ */
+@font-face {
+  font-family: "Editor Noto Sans KR";
+  src: url("/fonts/editor/NotoSansKR-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor Nanum Square Neo";
+  src: url("/fonts/editor/NanumSquareNeo-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor Sandbox Aggro";
+  src: url("/fonts/editor/SandboxAggro-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor Jua";
+  src: url("/fonts/editor/Jua-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor S-Core Dream";
+  src: url("/fonts/editor/SCoreDream-ExtraBold.otf") format("opentype");
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor Cafe24 Anemone";
+  src: url("/fonts/editor/Cafe24Anemone-Bold.woff") format("woff");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor Cafe24 Pro Up";
+  src: url("/fonts/editor/Cafe24ProUp-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor Ridi Batang";
+  src: url("/fonts/editor/RIDIBatang-Regular.woff") format("woff");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor Jalnan 2";
+  src: url("/fonts/editor/Jalnan2-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor Godo";
+  src: url("/fonts/editor/Godo-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Editor Galmuri 9";
+  src: url("/fonts/editor/Galmuri9-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
 
 .editor-v2-root .editor-v2-text-tool-panel {
   padding-bottom: 24px;
@@ -600,7 +760,12 @@
   gap: 12px;
 }
 
-.editor-v2-root .editor-channel-visibility-toggle {
+.editor-v2-root .editor-subtitle-tool-panel .editor-tool-panel-header {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editor-v2-root .editor-visibility-toggle {
   display: inline-flex;
   min-height: 34px;
   flex: none;
@@ -616,7 +781,7 @@
   transition: border-color .18s,background .18s,color .18s;
 }
 
-.editor-v2-root .editor-channel-visibility-toggle > span {
+.editor-v2-root .editor-visibility-toggle > span {
   position: relative;
   width: 30px;
   height: 18px;
@@ -626,7 +791,7 @@
   transition: background .18s;
 }
 
-.editor-v2-root .editor-channel-visibility-toggle i {
+.editor-v2-root .editor-visibility-toggle i {
   position: absolute;
   top: 3px;
   left: 3px;
@@ -638,27 +803,27 @@
   transition: transform .2s cubic-bezier(.2,.8,.2,1);
 }
 
-.editor-v2-root .editor-channel-visibility-toggle[aria-pressed="true"] {
+.editor-v2-root .editor-visibility-toggle[aria-pressed="true"] {
   border-color: rgba(255,113,94,.42);
   background: rgba(255,113,94,.12);
   color: #fff;
 }
 
-.editor-v2-root .editor-channel-visibility-toggle[aria-pressed="true"] > span {
+.editor-v2-root .editor-visibility-toggle[aria-pressed="true"] > span {
   background: #ff715e;
 }
 
-.editor-v2-root .editor-channel-visibility-toggle[aria-pressed="true"] i {
+.editor-v2-root .editor-visibility-toggle[aria-pressed="true"] i {
   transform: translateX(12px);
 }
 
-.editor-v2-root .editor-channel-visibility-toggle:hover {
+.editor-v2-root .editor-visibility-toggle:hover {
   border-color: rgba(255,255,255,.34);
   background: rgba(255,255,255,.1);
   color: #fff;
 }
 
-.editor-v2-root .editor-channel-visibility-toggle:focus-visible {
+.editor-v2-root .editor-visibility-toggle:focus-visible {
   outline: 2px solid #fff;
   outline-offset: 2px;
 }

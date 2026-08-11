@@ -54,6 +54,48 @@ export function scaleTimedRanges<T extends { startSeconds: number; endSeconds: n
   }));
 }
 
+/**
+ * Keep timed overlays inside a shortened output while preserving a valid
+ * half-open frame window. Ranges that start after the new output are removed;
+ * a partially retained range is extended backwards by at most one frame when
+ * decimal seconds would otherwise round both edges onto the same frame.
+ */
+export function fitTimedRangesToDurationFrames<
+  T extends { startSeconds: number; endSeconds: number },
+>(
+  values: T[],
+  durationSeconds: number,
+  framesPerSecond: number,
+) {
+  if (
+    !Number.isFinite(durationSeconds)
+    || durationSeconds <= 0
+    || !Number.isFinite(framesPerSecond)
+    || framesPerSecond <= 0
+  ) {
+    return [];
+  }
+  const frameAt = (seconds: number) => Math.max(
+    0,
+    Math.round(seconds * framesPerSecond),
+  );
+  return values.flatMap((value) => {
+    if (value.startSeconds >= durationSeconds) return [];
+    const endSeconds = Math.min(durationSeconds, value.endSeconds);
+    const endFrame = frameAt(endSeconds);
+    if (endFrame <= 0) return [];
+    let startSeconds = Math.max(0, Math.min(endSeconds, value.startSeconds));
+    if (frameAt(startSeconds) >= endFrame) {
+      startSeconds = (endFrame - 1) / framesPerSecond;
+    }
+    return [{
+      ...value,
+      startSeconds,
+      endSeconds,
+    }];
+  });
+}
+
 export type TimedRangeAdjustment = "move" | "start" | "end";
 
 export function adjustTimedRange(
