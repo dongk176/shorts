@@ -38,7 +38,6 @@ import {
   validateInstallmentSelection,
 } from "@/lib/installments";
 import {
-  assertLocalManualCheckoutAccess,
   assertManualPaymentAvailable,
   oneTimePaymentMode,
 } from "@/lib/manual-payment-routing";
@@ -424,13 +423,8 @@ export async function POST(request: Request) {
       );
     }
     const isManualPackage = isPackageProduct && packagePaymentMode === "manual";
-    const localManualCheckout = isManualPackage
-      ? assertLocalManualCheckoutAccess(request, session, { mutation: true })
-      : false;
     if (isManualPackage) {
-      await assertManualPaymentAvailable(db, "package", {
-        localManualCheckout,
-      });
+      await assertManualPaymentAvailable(db, "package");
       paymentCredentialScope = "manual";
     } else {
       paymentCredentialScope = "default";
@@ -677,7 +671,6 @@ export async function POST(request: Request) {
       campaignId: requestedCampaignId,
       productKind: pricingV2Plan?.kind || "subscription",
       credentialScope: paymentCredentialScope,
-      localManualCheckout,
       issuer: isManualPackage
         ? requestedInstallmentIssuer
         : cardVerification

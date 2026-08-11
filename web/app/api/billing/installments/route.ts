@@ -5,8 +5,6 @@ import { ensureLocalDbReady, getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
 import { getActiveInstallmentOffer } from "@/lib/installments";
 import {
-  assertLocalManualCheckoutAccess,
-  isLocalManualCheckoutEnabled,
   oneTimePaymentMode,
   resolveOneTimePaymentFlow,
 } from "@/lib/manual-payment-routing";
@@ -15,7 +13,6 @@ import {
   pricingV2EarlyBirdCodes,
   pricingV2PlanCodes,
 } from "@/lib/pricing-v2";
-import { requireMvpSession } from "@/lib/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,12 +49,7 @@ export async function GET(request: Request) {
     const addon = query.addonCode ? await getAddonProduct(db, query.addonCode) : null;
     const productCode = plan?.code || addon?.code;
     const amountKrw = plan?.totalPriceKrw ?? addon?.priceKrw ?? 0;
-    const localManualCheckout = isLocalManualCheckoutEnabled()
-      ? assertLocalManualCheckoutAccess(request, await requireMvpSession())
-      : false;
-    const paymentFlow = await resolveOneTimePaymentFlow(db, productKind, {
-      localManualCheckout,
-    });
+    const paymentFlow = await resolveOneTimePaymentFlow(db, productKind);
     const credentialScope = oneTimePaymentMode(productKind) === "manual"
       ? "manual" as const
       : "default" as const;
@@ -66,7 +58,6 @@ export async function GET(request: Request) {
         amountKrw,
         issuer: query.issuer,
         credentialScope,
-        localManualCheckout,
       })
       : {
         credentialScope,

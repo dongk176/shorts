@@ -114,7 +114,6 @@ export async function getActiveInstallmentOffer(
     amountKrw: number;
     issuer?: string | null;
     credentialScope?: ThePayOneCredentialScope;
-    localManualCheckout?: boolean;
   },
 ): Promise<InstallmentOffer> {
   const credentialScope = input.credentialScope || "default";
@@ -154,17 +153,12 @@ export async function getActiveInstallmentOffer(
   const issuer = normalizeInstallmentIssuer(input.issuer);
   const amountKrw = Number.isSafeInteger(input.amountKrw) ? Math.max(0, input.amountKrw) : 0;
   const providerSupportedMonths = new Set<number>(
-    credentialScope === "manual" && input.localManualCheckout === true
-      ? Array.from(
-        { length: MANUAL_INSTALLMENT_MAX_MONTHS - 1 },
-        (_, index) => index + 2,
-      )
-      : capabilityRows
-        .map((row) => Number(row.installmentMonths))
-        .filter((months) => (
-          credentialScope !== "manual"
-          || months <= MANUAL_INSTALLMENT_MAX_MONTHS
-        )),
+    capabilityRows
+      .map((row) => Number(row.installmentMonths))
+      .filter((months) => (
+        credentialScope !== "manual"
+        || months <= MANUAL_INSTALLMENT_MAX_MONTHS
+      )),
   );
   const terms: InstallmentTerm[] = rows.map((row) => {
     const installmentMonths = Number(row.installmentMonths);
@@ -255,7 +249,6 @@ export async function validateInstallmentSelection(
     issuer?: string | null;
     productKind?: "subscription" | "package" | "addon";
     credentialScope?: ThePayOneCredentialScope;
-    localManualCheckout?: boolean;
   },
 ) {
   if (input.installmentMonths === 0) {
@@ -305,7 +298,6 @@ export async function validateInstallmentSelection(
     amountKrw: input.amountKrw,
     issuer: input.issuer,
     credentialScope: input.credentialScope,
-    localManualCheckout: input.localManualCheckout,
   });
   if (offer.campaignId !== (input.campaignId || null)) {
     throw new HttpError(

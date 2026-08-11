@@ -1,14 +1,6 @@
 import type { Sql, TransactionSql } from "postgres";
 import { HttpError } from "@/lib/http";
 import {
-  assertLocalPaymentMutation,
-  assertLocalPaymentTestHost,
-  assertPaymentTester,
-  isPaymentTestModeEnabled,
-  PaymentTestAccessError,
-} from "@/lib/payment-test";
-import type { MvpSession } from "@/lib/session";
-import {
   thePayOneAddonPaymentMode,
   thePayOnePackageBillingEnabled,
   thePayOnePackagePaymentMode,
@@ -24,37 +16,6 @@ export const MANUAL_PAYMENT_FLAG_KEYS = {
 } as const;
 
 type BillingDb = Sql | TransactionSql;
-
-export function isLocalManualCheckoutEnabled() {
-  return isPaymentTestModeEnabled()
-    && process.env.THEPAYONE_LOCAL_MANUAL_CHECKOUT_ENABLED === "true";
-}
-
-export function assertLocalManualCheckoutAccess(
-  request: Request,
-  session: MvpSession,
-  options: { mutation?: boolean } = {},
-) {
-  if (!isLocalManualCheckoutEnabled()) return false;
-  try {
-    if (options.mutation) {
-      assertLocalPaymentMutation(request);
-    } else {
-      assertLocalPaymentTestHost(request);
-    }
-    assertPaymentTester(session);
-    return true;
-  } catch (error) {
-    if (error instanceof PaymentTestAccessError) {
-      throw new HttpError(
-        error.status,
-        error.message,
-        error.errorCode || "LOCAL_MANUAL_CHECKOUT_FORBIDDEN",
-      );
-    }
-    throw error;
-  }
-}
 
 export function oneTimePaymentMode(
   productKind: ManualPaymentProductKind,
@@ -80,12 +41,10 @@ export async function manualPaymentRuntimeEnabled(
 export async function resolveOneTimePaymentFlow(
   db: BillingDb,
   productKind: ManualPaymentProductKind,
-  options: { localManualCheckout?: boolean } = {},
 ): Promise<OneTimePaymentFlow> {
   const mode = oneTimePaymentMode(productKind);
   if (mode !== "manual") return mode;
   if (!thePayOnePackageBillingEnabled()) return "disabled";
-  if (options.localManualCheckout) return "manual_direct";
   return await manualPaymentRuntimeEnabled(db, productKind)
     ? "manual_direct"
     : "disabled";
@@ -94,9 +53,8 @@ export async function resolveOneTimePaymentFlow(
 export async function assertManualPaymentAvailable(
   db: BillingDb,
   productKind: ManualPaymentProductKind,
-  options: { localManualCheckout?: boolean } = {},
 ) {
-  const flow = await resolveOneTimePaymentFlow(db, productKind, options);
+  const flow = await resolveOneTimePaymentFlow(db, productKind);
   if (flow === "manual_direct") return;
   const productLabel = productKind === "package" ? "패키지" : "추가시간";
   if (flow === "legacy") {

@@ -22,7 +22,6 @@ import {
   validateInstallmentSelection,
 } from "@/lib/installments";
 import {
-  assertLocalManualCheckoutAccess,
   assertManualPaymentAvailable,
   oneTimePaymentMode,
 } from "@/lib/manual-payment-routing";
@@ -177,14 +176,7 @@ export async function POST(request: Request) {
           "ADDON_MANUAL_CARD_REQUIRED",
         );
       }
-      const localManualCheckout = assertLocalManualCheckoutAccess(
-        request,
-        session,
-        { mutation: true },
-      );
-      await assertManualPaymentAvailable(db, "addon", {
-        localManualCheckout,
-      });
+      await assertManualPaymentAvailable(db, "addon");
       const requestedInstallmentMonths = body.installmentMonths;
       const requestedInstallmentIssuer = body.installmentIssuerCode || null;
       if (
@@ -205,7 +197,6 @@ export async function POST(request: Request) {
         issuer: requestedInstallmentIssuer,
         productKind: "addon",
         credentialScope: "manual",
-        localManualCheckout,
       });
       const merchantId = thePayOneMerchantId("manual");
       const terminalId = thePayOneTerminalId("manual");

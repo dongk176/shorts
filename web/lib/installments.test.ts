@@ -99,10 +99,10 @@ describe("installment campaigns", () => {
     expect(MANUAL_INSTALLMENT_MAX_MONTHS).toBe(6);
   });
 
-  it("keeps an explicitly gated local checkout within the same verified 6-month limit", async () => {
+  it("requires persisted provider capability for every manual installment", async () => {
     const verifiedSixMonthTerm = {
       ...kbThreeMonthTerm(),
-      id: "term-local-6",
+      id: "term-6-without-capability",
       benefitType: "partial_interest_free",
       installmentMonths: 6,
       customerPaidInstallments: 3,
@@ -121,9 +121,10 @@ describe("installment campaigns", () => {
     ]), {
       amountKrw: 288_000,
       credentialScope: "manual",
-      localManualCheckout: true,
     });
-    expect(offer.selectableMonths).toEqual([2, 3, 4, 5, 6]);
+    expect(offer.selectableMonths).toEqual([]);
+    expect(offer.terms.find((term) => term.installmentMonths === 6))
+      .toMatchObject({ providerSupported: false, selectable: false });
     expect(offer.terms.find((term) => term.installmentMonths === 12))
       .toMatchObject({ providerSupported: false, selectable: false });
 
@@ -139,13 +140,7 @@ describe("installment campaigns", () => {
       issuer: "국민카드",
       productKind: "package",
       credentialScope: "manual",
-      localManualCheckout: true,
-    })).resolves.toMatchObject({
-      snapshot: {
-        issuerCode: "kb",
-        installmentMonths: 6,
-      },
-    });
+    })).rejects.toMatchObject({ code: "INSTALLMENT_NOT_SUPPORTED" });
   });
 
   it("keeps subscriptions and non-manual add-ons cash-only", async () => {

@@ -17,6 +17,18 @@ const installmentsRoute = readFileSync(
   new URL("../app/api/billing/installments/route.ts", import.meta.url),
   "utf8",
 );
+const installmentsLibrary = readFileSync(
+  new URL("./installments.ts", import.meta.url),
+  "utf8",
+);
+const manualPaymentRouting = readFileSync(
+  new URL("./manual-payment-routing.ts", import.meta.url),
+  "utf8",
+);
+const vercelIgnore = readFileSync(
+  new URL("../../.vercelignore", import.meta.url),
+  "utf8",
+);
 const webhookRoute = readFileSync(
   new URL("../app/api/webhooks/thepayone/[secret]/route.ts", import.meta.url),
   "utf8",
@@ -73,19 +85,44 @@ describe("manual payment sensitive-data boundaries", () => {
     expect(migration).toContain("event_summary=event.event_summary-'last4'");
   });
 
-  it("rechecks the local tester gate in both real manual-charge routes", () => {
-    expect(installmentsRoute).toContain(
-      "assertLocalManualCheckoutAccess(request, await requireMvpSession())",
-    );
+  it("keeps local payment-test overrides out of production billing paths", () => {
+    for (const source of [
+      activateRoute,
+      addonRoute,
+      installmentsRoute,
+      installmentsLibrary,
+      manualPaymentRouting,
+    ]) {
+      expect(source).not.toContain("@/lib/payment-test");
+      expect(source).not.toContain("assertLocalManualCheckoutAccess");
+      expect(source).not.toContain("isLocalManualCheckoutEnabled");
+      expect(source).not.toContain("localManualCheckout");
+      expect(source).not.toContain("THEPAYONE_LOCAL_MANUAL_CHECKOUT_ENABLED");
+    }
+  });
+
+  it("keeps the shared runtime gate on every production manual-payment entrypoint", () => {
     expect(activateRoute).toContain(
-      "assertLocalManualCheckoutAccess(request, session, { mutation: true })",
+      'await assertManualPaymentAvailable(db, "package")',
     );
     expect(addonRoute).toContain(
-      "assertLocalManualCheckoutAccess(",
+      'await assertManualPaymentAvailable(db, "addon")',
     );
-    expect(addonRoute).toContain(
-      "{ mutation: true }",
+    expect(installmentsRoute).toContain(
+      "await resolveOneTimePaymentFlow(db, productKind)",
     );
+  });
+
+  it("excludes local payment helpers and generated caches from Vercel uploads", () => {
+    for (const pattern of [
+      "web/lib/payment-test.ts",
+      "**/.ruff_cache/**",
+      "**/.pytest_cache/**",
+      "infra/aws/cdk.out/**",
+      "infra/aws/cdk.context.json",
+    ]) {
+      expect(vercelIgnore).toContain(pattern);
+    }
   });
 
   it("forces debit and prepaid cards to cash and rechecks provider card type", () => {
