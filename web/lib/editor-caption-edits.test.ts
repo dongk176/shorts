@@ -56,6 +56,77 @@ const spec: CaptionRenderSpec = {
   }],
 };
 
+const project3781Spec: CaptionRenderSpec = {
+  ...spec,
+  cues: [{
+    sourceCueIndex: 2,
+    startFrame: 39,
+    endFrame: 66,
+    fontSize: 72,
+    centerX: 540,
+    centerY: 736,
+    words: [
+      {
+        text: "무너지고",
+        startFrame: 39,
+        endFrame: 56,
+        speechStartFrame: 46,
+        speechEndFrame: 56,
+      },
+      {
+        text: "있습니다",
+        startFrame: 52,
+        endFrame: 67,
+        speechStartFrame: 59,
+        speechEndFrame: 67,
+        spaceBefore: true,
+      },
+    ],
+    lines: [[0, 1]],
+    events: [
+      { startFrame: 39, endFrame: 56, activeWordIndex: 0 },
+      { startFrame: 56, endFrame: 66, activeWordIndex: 1 },
+    ],
+  }],
+};
+
+function captionWordFrames(retimed: CaptionRenderSpec | null) {
+  return retimed?.cues.flatMap((cue) => cue.words.map((word) => ({
+    text: word.text,
+    startFrame: word.startFrame,
+    endFrame: word.endFrame,
+  })));
+}
+
+function expectNoCaptionOverlap(
+  retimed: CaptionRenderSpec | null,
+  totalOutputFrames: number,
+) {
+  expect(retimed).not.toBeNull();
+  expect(retimed?.cues.every((cue, cueIndex, cues) => (
+    cue.startFrame >= 0
+    && cue.endFrame > cue.startFrame
+    && cue.endFrame <= totalOutputFrames
+    && (cueIndex === 0 || cues[cueIndex - 1].endFrame <= cue.startFrame)
+  ))).toBe(true);
+  expect(retimed?.cues.every((cue) => (
+    cue.words.every((word) => (
+      word.startFrame != null
+      && word.endFrame != null
+      && word.startFrame >= cue.startFrame
+      && word.endFrame > word.startFrame
+      && word.endFrame <= cue.endFrame
+    ))
+    && cue.events.every((event, eventIndex, events) => (
+      event.startFrame >= cue.startFrame
+      && event.endFrame > event.startFrame
+      && event.endFrame <= cue.endFrame
+      && event.endFrame <= totalOutputFrames
+      && (eventIndex === 0 || events[eventIndex - 1].endFrame <= event.startFrame)
+    ))
+  ))).toBe(true);
+}
+
 describe("editor caption text edits", () => {
   it("resolves and updates a sparse source cue id instead of an array offset", () => {
     const target = resolveEditorCaptionTextEditTarget(spec, 7);
@@ -138,20 +209,101 @@ describe("editor caption text edits", () => {
       7,
       "두 번째 수정",
     )).toEqual([{ cueIndex: 7, text: "두 번째 수정" }]);
+  });
 
-    const editedRetime = retimeCaptionRenderSpecForEditor(
+  it("keeps the complete #3781 cue edit after a leading trim and adjacent split", () => {
+    const retimed = retimeCaptionRenderSpecForEditor(
+      project3781Spec,
+      [
+        {
+          id: "before-adjacent-split",
+          sourceStartSeconds: 58 / 30,
+          sourceEndSeconds: 101 / 30,
+        },
+        {
+          id: "after-adjacent-split",
+          sourceStartSeconds: 101 / 30,
+          sourceEndSeconds: 1258 / 30,
+        },
+      ],
+      [{ cueIndex: 2, text: "무너지고 있습니다 파일럿" }],
+    );
+    const unsplit = retimeCaptionRenderSpecForEditor(
+      project3781Spec,
+      [{
+        id: "without-adjacent-split",
+        sourceStartSeconds: 58 / 30,
+        sourceEndSeconds: 1258 / 30,
+      }],
+      [{ cueIndex: 2, text: "무너지고 있습니다 파일럿" }],
+    );
+
+    expect(retimed?.cues.flatMap((cue) => cue.words.map((word) => word.text)))
+      .toEqual(["무너지고", "있습니다", "파일럿"]);
+    expect(captionWordFrames(retimed)).toEqual([
+      { text: "무너지고", startFrame: 0, endFrame: 3 },
+      { text: "있습니다", startFrame: 3, endFrame: 6 },
+      { text: "파일럿", startFrame: 6, endFrame: 8 },
+    ]);
+    expect(retimed).toEqual(unsplit);
+    expect(retimed?.cues.every((cue) => cue.sourceCueIndex === 2)).toBe(true);
+    expectNoCaptionOverlap(retimed, 1200);
+  });
+
+  it("keeps the complete cue edit after a trailing trim", () => {
+    const retimed = retimeCaptionRenderSpecForEditor(
+      spec,
+      [{ id: "trim-tail", sourceStartSeconds: 0, sourceEndSeconds: 50 / 30 }],
+      [{ cueIndex: 7, text: "하나 둘 셋 넷" }],
+    );
+
+    expect(retimed?.cues.flatMap((cue) => cue.words.map((word) => word.text)))
+      .toEqual(["하나", "둘", "셋", "넷"]);
+    expect(captionWordFrames(retimed)).toEqual([
+      { text: "하나", startFrame: 20, endFrame: 32 },
+      { text: "둘", startFrame: 32, endFrame: 38 },
+      { text: "셋", startFrame: 38, endFrame: 44 },
+      { text: "넷", startFrame: 44, endFrame: 50 },
+    ]);
+    expectNoCaptionOverlap(retimed, 50);
+  });
+
+  it("rebuilds a cue edit once across a disjoint deleted gap", () => {
+    const retimed = retimeCaptionRenderSpecForEditor(
       spec,
       [
-        { id: "first", sourceStartSeconds: 20 / 30, sourceEndSeconds: 35 / 30 },
-        { id: "second", sourceStartSeconds: 45 / 30, sourceEndSeconds: 2 },
+        {
+          id: "keep-before-gap",
+          sourceStartSeconds: 20 / 30,
+          sourceEndSeconds: 35 / 30,
+        },
+        {
+          id: "keep-after-gap",
+          sourceStartSeconds: 45 / 30,
+          sourceEndSeconds: 2,
+        },
       ],
       [{ cueIndex: 7, text: "하나 둘 셋 넷" }],
     );
-    expect(editedRetime?.cues.map((cue) => cue.sourceCueIndex))
-      .toEqual([7, 7]);
-    expect(editedRetime?.cues.flatMap((cue) => (
-      cue.words.map((word) => word.text)
-    ))).not.toContain("포션");
+
+    expect(retimed?.cues.flatMap((cue) => cue.words.map((word) => word.text)))
+      .toEqual(["하나", "둘", "셋", "넷"]);
+    expect(captionWordFrames(retimed)).toEqual([
+      { text: "하나", startFrame: 0, endFrame: 12 },
+      { text: "둘", startFrame: 12, endFrame: 18 },
+      { text: "셋", startFrame: 18, endFrame: 24 },
+      { text: "넷", startFrame: 24, endFrame: 30 },
+    ]);
+    expect(retimed?.cues.every((cue) => cue.sourceCueIndex === 7)).toBe(true);
+    expectNoCaptionOverlap(retimed, 30);
+  });
+
+  it("drops an edited cue when video clips remove it completely", () => {
+    expect(retimeCaptionRenderSpecForEditor(
+      spec,
+      [{ id: "after-cue", sourceStartSeconds: 2, sourceEndSeconds: 3 }],
+      [{ cueIndex: 7, text: "남으면 안 되는 수정" }],
+    )).toBeNull();
   });
 
   it("falls back to the array index for legacy specs without source ids", () => {

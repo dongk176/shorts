@@ -240,7 +240,7 @@ describe("editor caption preview timing", () => {
     );
   });
 
-  it("assigns a word crossing deleted split content to one output clip only", () => {
+  it("assigns an equal-overlap crossing word to the earliest output clip only", () => {
     const crossing: CaptionRenderSpec = {
       ...spec,
       cues: [{
@@ -259,12 +259,31 @@ describe("editor caption preview timing", () => {
     };
 
     const retimed = retimeCaptionRenderSpecForEditor(crossing, [
-      { id: "left", sourceStartSeconds: 0, sourceEndSeconds: 0.9 },
-      { id: "right", sourceStartSeconds: 2, sourceEndSeconds: 3 },
+      {
+        id: "left",
+        sourceStartSeconds: 20 / 30,
+        sourceEndSeconds: 35 / 30,
+      },
+      {
+        id: "right",
+        sourceStartSeconds: 55 / 30,
+        sourceEndSeconds: 70 / 30,
+      },
     ]);
 
     expect(retimed?.cues.flatMap((cue) => cue.words).map((word) => word.text))
       .toEqual(["경계단어"]);
+    expect(retimed?.cues[0]?.words[0]).toMatchObject({
+      startFrame: 0,
+      endFrame: 15,
+      speechStartFrame: 0,
+      speechEndFrame: 15,
+    });
+    expect(retimed?.cues[0]?.events).toEqual([{
+      startFrame: 0,
+      endFrame: 15,
+      activeWordIndex: 0,
+    }]);
   });
 
   it("serializes overlapping immutable cue handoffs in the preview", () => {

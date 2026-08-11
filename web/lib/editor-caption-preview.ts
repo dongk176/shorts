@@ -30,6 +30,11 @@ const frameAt = (seconds: number, fps: number) => (
 type CaptionCue = CaptionRenderSpec["cues"][number];
 type CaptionWord = CaptionCue["words"][number];
 type CaptionTextMeasurer = (text: string, fontSize: number) => number;
+type CaptionClipWindow = {
+  startFrame: number;
+  endFrame: number;
+  outputStartFrame: number;
+};
 
 export type EditorCaptionTextEditTarget = {
   sourceCueIndex: number;
@@ -833,6 +838,89 @@ function rebuildEditedCaptionCue(
   );
 }
 
+function retainCaptionCueWordsByClip(
+  cue: CaptionCue,
+  clipWindows: CaptionClipWindow[],
+) {
+  const retainedByClip = clipWindows.map(() => [] as CaptionWord[]);
+  for (let wordIndex = 0; wordIndex < cue.words.length; wordIndex += 1) {
+    const word = cue.words[wordIndex];
+    const activeEvents = cue.events.filter(
+      (event) => event.activeWordIndex === wordIndex,
+    );
+    const wordStartFrame = word.startFrame
+      ?? Math.min(...activeEvents.map((event) => event.startFrame), cue.startFrame);
+    const wordEndFrame = word.endFrame
+      ?? Math.max(...activeEvents.map((event) => event.endFrame), cue.endFrame);
+    const speechStartFrame = word.speechStartFrame ?? wordStartFrame;
+    const speechEndFrame = word.speechEndFrame ?? wordEndFrame;
+    let best: {
+      clipIndex: number;
+      spokenOverlap: number;
+      visibleOverlap: number;
+      spokenStart: number;
+      spokenEnd: number;
+      visibleStart: number;
+      visibleEnd: number;
+    } | null = null;
+    for (let clipIndex = 0; clipIndex < clipWindows.length; clipIndex += 1) {
+      const clip = clipWindows[clipIndex];
+      const spokenStart = Math.max(
+        speechStartFrame,
+        cue.startFrame,
+        clip.startFrame,
+      );
+      const spokenEnd = Math.min(
+        speechEndFrame,
+        cue.endFrame,
+        clip.endFrame,
+      );
+      const visibleStart = Math.max(
+        wordStartFrame,
+        cue.startFrame,
+        clip.startFrame,
+      );
+      const visibleEnd = Math.min(
+        wordEndFrame,
+        cue.endFrame,
+        clip.endFrame,
+      );
+      const candidate = {
+        clipIndex,
+        spokenOverlap: spokenEnd - spokenStart,
+        visibleOverlap: visibleEnd - visibleStart,
+        spokenStart,
+        spokenEnd,
+        visibleStart,
+        visibleEnd,
+      };
+      if (
+        candidate.spokenOverlap <= 0
+        || candidate.visibleOverlap <= 0
+        || (best
+          && candidate.spokenOverlap < best.spokenOverlap)
+        || (best
+          && candidate.spokenOverlap === best.spokenOverlap
+          && candidate.visibleOverlap <= best.visibleOverlap)
+      ) continue;
+      best = candidate;
+    }
+    if (!best) continue;
+    const selected = best;
+    const clip = clipWindows[selected.clipIndex];
+    const retained = retainedByClip[selected.clipIndex];
+    retained.push({
+      text: word.text,
+      startFrame: clip.outputStartFrame + selected.visibleStart - clip.startFrame,
+      endFrame: clip.outputStartFrame + selected.visibleEnd - clip.startFrame,
+      speechStartFrame: clip.outputStartFrame + selected.spokenStart - clip.startFrame,
+      speechEndFrame: clip.outputStartFrame + selected.spokenEnd - clip.startFrame,
+      spaceBefore: retained.length > 0 && word.spaceBefore,
+    });
+  }
+  return retainedByClip;
+}
+
 function cueMinimumFrames(cue: CaptionCue) {
   return cue.events.every((event) => event.activeWordIndex != null)
     ? cue.events.length
@@ -897,7 +985,7 @@ export function retimeCaptionRenderSpecForEditor(
   measure: CaptionTextMeasurer = measureEditorCaptionText,
 ): CaptionRenderSpec | null {
   let outputCursor = 0;
-  const unmergedWindows = clips.flatMap((clip) => {
+  const unmergedWindows: CaptionClipWindow[] = clips.flatMap((clip) => {
     const startFrame = frameAt(clip.sourceStartSeconds, spec.fps);
     const endFrame = frameAt(clip.sourceEndSeconds, spec.fps);
     if (endFrame <= startFrame) return [];
@@ -934,16 +1022,39 @@ export function retimeCaptionRenderSpecForEditor(
     const cue = spec.cues[cueIndex];
     const sourceCueIndex = cue.sourceCueIndex ?? cueIndex;
     const editedText = edits.get(sourceCueIndex);
-    const sourceCues = editedText == null
-      ? [cue]
-      : rebuildEditedCaptionCue(cue, editedText, spec, measure);
+    if (editedText != null) {
+      const retainedByClip = retainCaptionCueWordsByClip(cue, clipWindows);
+      const retainedWords = retainedByClip.flat();
+      if (retainedWords.length === 0) continue;
+      const retainedStartFrame = Math.min(
+        ...retainedWords.map((word) => word.startFrame ?? 0),
+      );
+      const retainedEndFrame = Math.max(
+        ...retainedWords.map((word) => word.endFrame ?? 0),
+      );
+      if (retainedEndFrame <= retainedStartFrame) continue;
+      const rebuiltCues = rebuildEditedCaptionCue(
+        {
+          ...cue,
+          startFrame: retainedStartFrame,
+          endFrame: retainedEndFrame,
+        },
+        editedText,
+        spec,
+        measure,
+      );
+      for (const rebuilt of rebuiltCues) {
+        cues.push({ ...rebuilt, sourceCueIndex });
+      }
+      continue;
+    }
+
+    const sourceCues = [cue];
     for (const sourceCue of sourceCues) {
-      const containingClip = editedText == null
-        ? clipWindows.find((clip) => (
-            clip.startFrame <= sourceCue.startFrame
-            && clip.endFrame >= sourceCue.endFrame
-          ))
-        : undefined;
+      const containingClip = clipWindows.find((clip) => (
+        clip.startFrame <= sourceCue.startFrame
+        && clip.endFrame >= sourceCue.endFrame
+      ));
       if (containingClip) {
         const offset = containingClip.outputStartFrame - containingClip.startFrame;
         cues.push({
@@ -973,67 +1084,11 @@ export function retimeCaptionRenderSpecForEditor(
         });
         continue;
       }
-      const retainedByClip = clipWindows.map(() => [] as CaptionWord[]);
-      for (let wordIndex = 0; wordIndex < sourceCue.words.length; wordIndex += 1) {
-        const word = sourceCue.words[wordIndex];
-        const activeEvents = sourceCue.events.filter(
-          (event) => event.activeWordIndex === wordIndex,
-        );
-        const wordStartFrame = word.startFrame
-          ?? Math.min(...activeEvents.map((event) => event.startFrame), sourceCue.startFrame);
-        const wordEndFrame = word.endFrame
-          ?? Math.max(...activeEvents.map((event) => event.endFrame), sourceCue.endFrame);
-        const speechStartFrame = word.speechStartFrame ?? wordStartFrame;
-        const speechEndFrame = word.speechEndFrame ?? wordEndFrame;
-        let best: {
-          clipIndex: number;
-          spokenOverlap: number;
-          visibleOverlap: number;
-          spokenStart: number;
-          spokenEnd: number;
-          visibleStart: number;
-          visibleEnd: number;
-        } | null = null;
-        for (let clipIndex = 0; clipIndex < clipWindows.length; clipIndex += 1) {
-          const clip = clipWindows[clipIndex];
-          const spokenStart = Math.max(speechStartFrame, clip.startFrame);
-          const spokenEnd = Math.min(speechEndFrame, clip.endFrame);
-          const visibleStart = Math.max(wordStartFrame, clip.startFrame);
-          const visibleEnd = Math.min(wordEndFrame, clip.endFrame);
-          const candidate = {
-            clipIndex,
-            spokenOverlap: spokenEnd - spokenStart,
-            visibleOverlap: visibleEnd - visibleStart,
-            spokenStart,
-            spokenEnd,
-            visibleStart,
-            visibleEnd,
-          };
-          if (
-            candidate.spokenOverlap <= 0
-            || candidate.visibleOverlap <= 0
-            || (best
-              && candidate.spokenOverlap < best.spokenOverlap)
-            || (best
-              && candidate.spokenOverlap === best.spokenOverlap
-              && candidate.visibleOverlap <= best.visibleOverlap)
-          ) continue;
-          best = candidate;
-        }
-        if (!best) continue;
-        const selected = best;
-        const clip = clipWindows[selected.clipIndex];
-        const retained = retainedByClip[selected.clipIndex];
-        retained.push({
-          text: word.text,
-          startFrame: clip.outputStartFrame + selected.visibleStart - clip.startFrame,
-          endFrame: clip.outputStartFrame + selected.visibleEnd - clip.startFrame,
-          speechStartFrame: clip.outputStartFrame + selected.spokenStart - clip.startFrame,
-          speechEndFrame: clip.outputStartFrame + selected.spokenEnd - clip.startFrame,
-          spaceBefore: retained.length > 0 && word.spaceBefore,
-        });
-      }
-      for (const retainedWords of retainedByClip) {
+      const retainedSourceWordsByClip = retainCaptionCueWordsByClip(
+        sourceCue,
+        clipWindows,
+      );
+      for (const retainedWords of retainedSourceWordsByClip) {
         if (retainedWords.length === 0) continue;
         const fitted = fitCaptionWords(
           retainedWords,
