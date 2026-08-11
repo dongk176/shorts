@@ -72,6 +72,39 @@ def _compile(
     )
 
 
+def _editable_caption_cue(
+    *,
+    source_cue_index: int = 2,
+    start_frame: int,
+    end_frame: int,
+    word_ranges: list[tuple[str, int, int]],
+) -> dict[str, object]:
+    return {
+        "sourceCueIndex": source_cue_index,
+        "startFrame": start_frame,
+        "endFrame": end_frame,
+        "words": [
+            {
+                "text": text,
+                "startFrame": word_start,
+                "endFrame": word_end,
+                "speechStartFrame": word_start,
+                "speechEndFrame": word_end,
+                **({"spaceBefore": True} if index else {}),
+            }
+            for index, (text, word_start, word_end) in enumerate(word_ranges)
+        ],
+        "events": [
+            {
+                "startFrame": word_start,
+                "endFrame": word_end,
+                "activeWordIndex": index,
+            }
+            for index, (_text, word_start, word_end) in enumerate(word_ranges)
+        ],
+    }
+
+
 @pytest.mark.parametrize("ratio", list(VideoAspectRatio))
 def test_caption_safe_area_matches_renderer_video_rect(
     ratio: VideoAspectRatio,
@@ -1248,6 +1281,58 @@ def test_plain_split_does_not_duplicate_a_caption_word() -> None:
     ]
 
 
+def test_edited_caption_adjacent_split_matches_unsplit_output() -> None:
+    cue = _editable_caption_cue(
+        source_cue_index=4,
+        start_frame=20,
+        end_frame=60,
+        word_ranges=[("앞", 20, 40), ("뒤", 40, 60)],
+    )
+    arguments = {
+        "template_id": "pop",
+        "safe_area": {"x": 120, "y": 666, "width": 840, "height": 140},
+        "cue_edits": {4: "하나 둘 셋 넷"},
+    }
+
+    unsplit = reflow_caption_cues_for_clips(
+        [cue],
+        clip_windows=[(20, 60, 0)],
+        **arguments,
+    )
+    adjacent_split = reflow_caption_cues_for_clips(
+        [cue],
+        clip_windows=[(20, 35, 0), (35, 60, 15)],
+        **arguments,
+    )
+
+    assert adjacent_split == unsplit
+
+
+def test_equal_overlap_crossing_word_prefers_earliest_clip() -> None:
+    cue = _editable_caption_cue(
+        source_cue_index=5,
+        start_frame=20,
+        end_frame=60,
+        word_ranges=[("경계단어", 20, 60)],
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        [cue],
+        template_id="pop",
+        safe_area={"x": 120, "y": 666, "width": 840, "height": 140},
+        clip_windows=[(20, 35, 0), (45, 60, 15)],
+    )
+
+    assert [word["text"] for cue in cues for word in cue["words"]] == [
+        "경계단어"
+    ]
+    assert [
+        (word["startFrame"], word["endFrame"])
+        for cue in cues
+        for word in cue["words"]
+    ] == [(0, 15)]
+
+
 def test_deleted_split_gap_assigns_a_crossing_word_to_one_clip_only() -> None:
     spec = compile_caption_render_spec(
         [_word("삭제경계단어", 0.8, 2.4)],
@@ -1271,6 +1356,141 @@ def test_deleted_split_gap_assigns_a_crossing_word_to_one_clip_only() -> None:
         left["endFrame"] <= right["startFrame"]
         for left, right in zip(cues[:-1], cues[1:], strict=True)
     )
+
+
+def test_edited_caption_rebuilds_full_text_after_leading_trim() -> None:
+    cue = _editable_caption_cue(
+        start_frame=39,
+        end_frame=66,
+        word_ranges=[("무너지고", 39, 52), ("있습니다", 52, 67)],
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        [cue],
+        template_id="pop",
+        safe_area={"x": 120, "y": 666, "width": 840, "height": 140},
+        clip_windows=[(58, 120, 0)],
+        cue_edits={2: "무너지고 있습니다 파일럿"},
+    )
+
+    assert [word["text"] for cue in cues for word in cue["words"]] == [
+        "무너지고",
+        "있습니다",
+        "파일럿",
+    ]
+    assert {cue["sourceCueIndex"] for cue in cues} == {2}
+    assert min(cue["startFrame"] for cue in cues) == 0
+    assert max(cue["endFrame"] for cue in cues) == 8
+    assert [
+        (word["startFrame"], word["endFrame"])
+        for cue in cues
+        for word in cue["words"]
+    ] == [(0, 3), (3, 6), (6, 8)]
+    assert all(
+        0 <= event["startFrame"] < event["endFrame"] <= 8
+        for cue in cues
+        for event in cue["events"]
+    )
+
+
+def test_edited_caption_rebuilds_full_text_after_trailing_trim() -> None:
+    cue = _editable_caption_cue(
+        start_frame=20,
+        end_frame=60,
+        word_ranges=[("앞", 20, 35), ("뒤", 35, 60)],
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        [cue],
+        template_id="pop",
+        safe_area={"x": 120, "y": 666, "width": 840, "height": 140},
+        clip_windows=[(0, 50, 0)],
+        cue_edits={2: "하나 둘 셋 넷"},
+    )
+
+    assert [word["text"] for cue in cues for word in cue["words"]] == [
+        "하나",
+        "둘",
+        "셋",
+        "넷",
+    ]
+    assert {cue["sourceCueIndex"] for cue in cues} == {2}
+    assert min(cue["startFrame"] for cue in cues) == 20
+    assert max(cue["endFrame"] for cue in cues) == 50
+    assert [
+        (word["startFrame"], word["endFrame"])
+        for cue in cues
+        for word in cue["words"]
+    ] == [(20, 32), (32, 38), (38, 44), (44, 50)]
+
+
+def test_edited_caption_rebuilds_once_across_disjoint_cuts() -> None:
+    cue = _editable_caption_cue(
+        source_cue_index=9,
+        start_frame=20,
+        end_frame=60,
+        word_ranges=[("왼쪽", 20, 35), ("삭제", 35, 45), ("오른쪽", 45, 60)],
+    )
+
+    cues = reflow_caption_cues_for_clips(
+        [cue],
+        template_id="pop",
+        safe_area={"x": 120, "y": 666, "width": 840, "height": 140},
+        clip_windows=[(20, 35, 0), (45, 60, 15)],
+        cue_edits={9: "하나 둘 셋 넷"},
+    )
+
+    assert [word["text"] for cue in cues for word in cue["words"]] == [
+        "하나",
+        "둘",
+        "셋",
+        "넷",
+    ]
+    assert {cue["sourceCueIndex"] for cue in cues} == {9}
+    assert min(cue["startFrame"] for cue in cues) == 0
+    assert max(cue["endFrame"] for cue in cues) == 30
+    assert [
+        (word["startFrame"], word["endFrame"])
+        for cue in cues
+        for word in cue["words"]
+    ] == [(0, 12), (12, 18), (18, 24), (24, 30)]
+    assert all(
+        0 <= event["startFrame"] < event["endFrame"] <= 30
+        for cue in cues
+        for event in cue["events"]
+    )
+
+
+def test_edited_caption_is_dropped_when_all_words_are_trimmed() -> None:
+    cue = _editable_caption_cue(
+        start_frame=10,
+        end_frame=40,
+        word_ranges=[("앞", 10, 20), ("뒤", 30, 40)],
+    )
+
+    assert reflow_caption_cues_for_clips(
+        [cue],
+        template_id="pop",
+        safe_area={"x": 120, "y": 666, "width": 840, "height": 140},
+        clip_windows=[(20, 30, 0)],
+        cue_edits={2: "삭제된 자막 수정"},
+    ) == []
+
+
+def test_edited_caption_is_dropped_without_clip_overlap() -> None:
+    cue = _editable_caption_cue(
+        start_frame=10,
+        end_frame=20,
+        word_ranges=[("원본", 10, 20)],
+    )
+
+    assert reflow_caption_cues_for_clips(
+        [cue],
+        template_id="pop",
+        safe_area={"x": 120, "y": 666, "width": 840, "height": 140},
+        clip_windows=[(30, 40, 0)],
+        cue_edits={2: "겹치지 않는 수정"},
+    ) == []
 
 
 def test_editor_reflow_ends_prior_pop_cue_at_next_early_start() -> None:

@@ -410,6 +410,102 @@ def test_admin_caption_template_edits_point_color_text_and_bottom_position() -> 
     )
 
 
+def test_caption_edit_rebuilds_after_leading_trim_in_renderer() -> None:
+    value = json.loads(V3_FIXTURE.read_text())
+    value["video"].update({
+        "clips": [{
+            "id": "project-3781-leading-trim",
+            "sourceStartSeconds": 58 / 30,
+            "sourceEndSeconds": 4,
+        }],
+        "timelineStartSeconds": 0,
+        "timelineEndSeconds": 4,
+        "selectionStartSeconds": 58 / 30,
+        "selectionEndSeconds": 4,
+    })
+    value["overlays"]["textOverlays"] = []
+    value["overlays"]["layerOrder"] = [
+        layer
+        for layer in value["overlays"]["layerOrder"]
+        if not layer.startswith("text:")
+    ]
+    value["renderSpec"]["version"] = 2
+    value["renderSpec"]["textOverlays"] = []
+    value["renderSpec"]["layerOrder"] = [
+        layer
+        for layer in value["renderSpec"]["layerOrder"]
+        if not layer.startswith("text:")
+    ]
+    value["renderSpec"]["subtitles"] = {
+        "centerX": 540,
+        "offsetY": 0,
+        "scale": 1,
+        "cueEdits": [{
+            "cueIndex": 2,
+            "text": "무너지고 있습니다 파일럿",
+        }],
+    }
+    document = EditorDocument.model_validate(value)
+    spec = {
+        "schemaVersion": 3,
+        "templateId": "pop",
+        "fps": 30,
+        "safeArea": {"x": 120, "y": 666, "width": 840, "height": 140},
+        "style": {
+            "fontSize": 92,
+            "textColor": "#FFFFFF",
+            "accentColor": "#35E6E3",
+            "outlineColor": "#080808",
+            "outlineWidth": 8,
+        },
+        "cues": [{
+            "sourceCueIndex": 2,
+            "startFrame": 39,
+            "endFrame": 66,
+            "words": [
+                {
+                    "text": "무너지고",
+                    "startFrame": 39,
+                    "endFrame": 52,
+                    "speechStartFrame": 39,
+                    "speechEndFrame": 52,
+                },
+                {
+                    "text": "있습니다",
+                    "startFrame": 52,
+                    "endFrame": 67,
+                    "speechStartFrame": 52,
+                    "speechEndFrame": 67,
+                    "spaceBefore": True,
+                },
+            ],
+            "events": [
+                {"startFrame": 39, "endFrame": 52, "activeWordIndex": 0},
+                {"startFrame": 52, "endFrame": 66, "activeWordIndex": 1},
+            ],
+        }],
+    }
+
+    rendered = retime_editor_caption_spec(document, spec)
+
+    assert rendered is not None
+    assert [
+        (word["text"], word["startFrame"], word["endFrame"])
+        for cue in rendered["cues"]
+        for word in cue["words"]
+    ] == [
+        ("무너지고", 0, 3),
+        ("있습니다", 3, 6),
+        ("파일럿", 6, 8),
+    ]
+    assert {cue["sourceCueIndex"] for cue in rendered["cues"]} == {2}
+    assert all(
+        0 <= event["startFrame"] < event["endFrame"] <= 8
+        for cue in rendered["cues"]
+        for event in cue["events"]
+    )
+
+
 def test_movable_overlay_positions_are_clamped_after_scaling() -> None:
     layer = Image.new("RGBA", (712, 160), (255, 255, 255, 255))
 
