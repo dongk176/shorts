@@ -37,7 +37,14 @@ pytestmark = pytest.mark.render
 
 def test_caption_title_background_defaults_only_for_full_vertical() -> None:
     explicit = [TitleTextStyle(start=0, end=2, color="#FFFFFF")]
-    spec: dict[str, object] = {"templateId": "highlight"}
+    admin_spec: dict[str, object] = {
+        "templateId": "highlight",
+        "timingLeadFrames": 7,
+    }
+    stable_spec: dict[str, object] = {
+        "templateId": "highlight",
+        "timingLeadFrames": 4,
+    }
 
     assert caption_title_text_styles(
         None,
@@ -45,15 +52,30 @@ def test_caption_title_background_defaults_only_for_full_vertical() -> None:
         explicit,
     ) == explicit
     assert caption_title_text_styles(
-        spec,
+        admin_spec,
         VideoAspectRatio.PORTRAIT,
         explicit,
     ) == []
     assert caption_title_text_styles(
-        spec,
+        admin_spec,
         VideoAspectRatio.FULL_VERTICAL,
         explicit,
     ) is None
+    assert caption_title_text_styles(
+        stable_spec,
+        VideoAspectRatio.FULL_VERTICAL,
+        explicit,
+    ) == explicit
+    assert caption_title_text_styles(
+        stable_spec,
+        VideoAspectRatio.FULL_VERTICAL,
+        None,
+    ) == []
+    assert caption_title_text_styles(
+        {"templateId": "highlight"},
+        VideoAspectRatio.FULL_VERTICAL,
+        None,
+    ) == []
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess[str]:

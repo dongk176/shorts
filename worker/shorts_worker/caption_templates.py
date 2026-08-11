@@ -27,6 +27,7 @@ from .subtitles import TranscriptWord
 
 CAPTION_FPS = 30
 CAPTION_TIMING_LEAD_FRAMES = 7
+CAPTION_STABLE_TIMING_LEAD_FRAMES = 4
 CAPTION_TEMPLATE_IDS = frozenset({"basic", "highlight", "pop"})
 CAPTION_ACCENT = "#35E6E3"
 CAPTION_TEXT = "#FFFFFF"
@@ -1442,6 +1443,7 @@ def compile_caption_render_spec(
     fps: int = CAPTION_FPS,
     accent_color: str = CAPTION_ACCENT,
     font_id: EditorFontId | str | None = None,
+    timing_lead_frames: int = CAPTION_TIMING_LEAD_FRAMES,
 ) -> dict[str, object]:
     if template_id not in CAPTION_TEMPLATE_IDS:
         raise ValueError("지원하지 않는 자막 템플릿입니다.")
@@ -1449,6 +1451,12 @@ def compile_caption_render_spec(
         raise ValueError("자막 렌더 프레임레이트는 30fps여야 합니다.")
     if caption_placement not in {"lower", "center"}:
         raise ValueError("지원하지 않는 자막 위치입니다.")
+    if (
+        isinstance(timing_lead_frames, bool)
+        or not isinstance(timing_lead_frames, int)
+        or not 0 <= timing_lead_frames <= 30
+    ):
+        raise ValueError("자막 선행 프레임 값이 올바르지 않습니다.")
     resolved_font_id = _caption_font_id(font_id)
     with _caption_font_context(resolved_font_id):
         layout = caption_layout(
@@ -1461,6 +1469,7 @@ def compile_caption_render_spec(
             clip_start=clip_start,
             clip_end=clip_end,
             fps=fps,
+            timing_lead_frames=timing_lead_frames,
         )
         clipped_words = _fit_display_words(
             clipped_words,
@@ -1494,7 +1503,7 @@ def compile_caption_render_spec(
         "fps": fps,
         "clipStartSeconds": round(clip_start, 3),
         "clipEndSeconds": round(clip_end, 3),
-        "timingLeadFrames": CAPTION_TIMING_LEAD_FRAMES,
+        "timingLeadFrames": timing_lead_frames,
         "layout": layout,
         "safeArea": safe_area,
         "font": caption_font_spec(resolved_font_id),
@@ -1575,6 +1584,7 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
     text_color = str(style.get("textColor") or CAPTION_TEXT)
     accent_color = str(style.get("accentColor") or CAPTION_ACCENT)
     outline_color = str(style.get("outlineColor") or CAPTION_OUTLINE)
+    ass_bold = -1 if int(font["weight"]) >= 700 else 0
     dialogues: list[str] = []
     for cue in spec.get("cues") or []:
         words = list(cue.get("words") or [])
@@ -1689,7 +1699,7 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
             (
                 f"Style: Default,{font['family']},72,{_ass_color(text_color)},"
                 f"{_ass_color(text_color)},{_ass_color(outline_color)},&HFF000000,"
-                "-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1"
+                f"{ass_bold},0,0,0,100,100,0,0,1,0,0,5,0,0,0,1"
             ),
             "",
             "[Events]",

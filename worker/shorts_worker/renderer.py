@@ -9,6 +9,7 @@ from PIL import Image
 
 from .caption_templates import (
     CAPTION_FPS,
+    CAPTION_TIMING_LEAD_FRAMES,
     create_caption_ass,
     prepare_caption_fonts,
 )
@@ -278,7 +279,14 @@ def caption_title_text_styles(
     if caption_render_spec is None:
         return title_text_styles
     if video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL:
-        return None
+        timing_lead_frames = caption_render_spec.get("timingLeadFrames")
+        if (
+            isinstance(timing_lead_frames, int)
+            and not isinstance(timing_lead_frames, bool)
+            and timing_lead_frames >= CAPTION_TIMING_LEAD_FRAMES
+        ):
+            return None
+        return title_text_styles or []
     return []
 
 

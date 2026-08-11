@@ -18,7 +18,11 @@ from functools import cached_property
 from pathlib import Path
 from uuid import uuid4
 
-from .caption_templates import CAPTION_ACCENT, compile_caption_render_spec
+from .caption_templates import (
+    CAPTION_ACCENT,
+    CAPTION_STABLE_TIMING_LEAD_FRAMES,
+    compile_caption_render_spec,
+)
 from .channel_thumbnail import download_channel_thumbnail
 from .comment_generator import CommentClipInput, CommentGenerator
 from .config import Settings
@@ -137,6 +141,19 @@ def _preset_brand_color(item: dict[str, object]) -> str | None:
     if isinstance(brand_color, str) and brand_color in BRAND_COLOR_VALUES:
         return brand_color
     return None
+
+
+def _subtitle_template_timing_lead_frames(snapshot: object) -> int:
+    if not isinstance(snapshot, dict) or "timingLeadFrames" not in snapshot:
+        return CAPTION_STABLE_TIMING_LEAD_FRAMES
+    value = snapshot["timingLeadFrames"]
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not 0 <= value <= 30
+    ):
+        raise CaptionCompileError("자막 선행 프레임 값이 올바르지 않습니다.")
+    return value
 
 
 def _log_event(event: str, **fields: object) -> None:
@@ -879,11 +896,18 @@ class BatchWorker:
                 )
                 caption_render_specs: dict[int, dict[str, object]] = {}
                 caption_editor_sources: dict[int, dict[str, object]] = {}
+                subtitle_template_snapshot = job.get("subtitle_template_snapshot")
+                caption_timing_lead_frames = (
+                    _subtitle_template_timing_lead_frames(
+                        subtitle_template_snapshot,
+                    )
+                    if subtitle_template_id
+                    else CAPTION_STABLE_TIMING_LEAD_FRAMES
+                )
                 if subtitle_template_id:
                     aspect_ratio = VideoAspectRatio(
                         str(job.get("video_aspect_ratio") or "1:1")
                     )
-                    subtitle_template_snapshot = job.get("subtitle_template_snapshot")
                     caption_placement = (
                         str(subtitle_template_snapshot.get("captionPlacement") or "lower")
                         if isinstance(subtitle_template_snapshot, dict)
@@ -933,6 +957,7 @@ class BatchWorker:
                                 caption_placement=caption_placement,
                                 accent_color=_preset_brand_color(job) or CAPTION_ACCENT,
                                 font_id=caption_font_id,
+                                timing_lead_frames=caption_timing_lead_frames,
                             )
                         except (CaptionCompileError, TranscriptionError) as exc:
                             rejected_caption_clips += 1
@@ -980,7 +1005,6 @@ class BatchWorker:
                     aspect_ratio = VideoAspectRatio(
                         str(job.get("video_aspect_ratio") or "1:1")
                     )
-                    subtitle_template_snapshot = job.get("subtitle_template_snapshot")
                     caption_placement = (
                         str(subtitle_template_snapshot.get("captionPlacement") or "lower")
                         if isinstance(subtitle_template_snapshot, dict)
@@ -1012,6 +1036,7 @@ class BatchWorker:
                                 caption_placement=caption_placement,
                                 accent_color=_preset_brand_color(job) or CAPTION_ACCENT,
                                 font_id=caption_font_id,
+                                timing_lead_frames=caption_timing_lead_frames,
                             )
                         except (CaptionCompileError, TranscriptionError) as exc:
                             unavailable_timeline_indexes.append(index)

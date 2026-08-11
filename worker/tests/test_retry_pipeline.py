@@ -24,6 +24,7 @@ from shorts_worker.worker_pipeline import (
     BatchWorker,
     ProjectTimelineTarget,
     _offset_highlight_clip,
+    _subtitle_template_timing_lead_frames,
     classify_full_source_download,
     project_source_window,
 )
@@ -1239,9 +1240,25 @@ def test_project_isolates_unavailable_or_uncompilable_caption_clips() -> None:
     assert "project_caption_clip_rejected" in source
     assert 'subtitle_template_snapshot.get("captionPlacement")' in source
     assert "caption_placement=caption_placement" in source
+    assert source.count(
+        "timing_lead_frames=caption_timing_lead_frames",
+    ) == 2
     assert "except (CaptionCompileError, TranscriptionError)" in source
     assert "len(compiled_clips) < required_minimum_count" in source
     assert "clips = [clip for clip, _spec in compiled_clips]" in source
+
+
+def test_subtitle_template_timing_lead_defaults_stable_and_accepts_admin() -> None:
+    assert _subtitle_template_timing_lead_frames(None) == 4
+    assert _subtitle_template_timing_lead_frames({}) == 4
+    assert _subtitle_template_timing_lead_frames({"timingLeadFrames": 4}) == 4
+    assert _subtitle_template_timing_lead_frames({"timingLeadFrames": 7}) == 7
+
+
+@pytest.mark.parametrize("value", [-1, 31, True, "7"])
+def test_subtitle_template_timing_lead_rejects_invalid_snapshot(value: object) -> None:
+    with pytest.raises(CaptionCompileError, match="선행 프레임"):
+        _subtitle_template_timing_lead_frames({"timingLeadFrames": value})
 
 
 def _initial_render_item() -> dict[str, object]:

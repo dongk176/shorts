@@ -209,7 +209,15 @@ def test_every_editor_font_can_be_materialized_for_caption_rendering(
     assert spec["font"]["fontId"] == font_id.value
     assert len(materialized) == 1
     assert materialized[0].stat().st_size > 0
-    assert create_caption_ass(spec, tmp_path / f"{font_id.value}.ass").is_file()
+    ass_path = create_caption_ass(spec, tmp_path / f"{font_id.value}.ass")
+    assert ass_path.is_file()
+    style_line = next(
+        line
+        for line in ass_path.read_text(encoding="utf-8").splitlines()
+        if line.startswith("Style: Default,")
+    )
+    ass_bold = style_line.split(",")[7]
+    assert ass_bold == ("-1" if int(spec["font"]["weight"]) >= 700 else "0")
 
 
 def test_korean_unspaced_tokens_restore_an_eojeol_but_japanese_words_stay_intact() -> None:
@@ -371,6 +379,35 @@ def test_caption_display_leads_provider_timing_by_seven_frames() -> None:
     assert spec["timingLeadFrames"] == 7
     assert word["startFrame"] == round(0.5 * 30) - 7
     assert word["endFrame"] == round(0.8 * 30)
+
+
+def test_caption_compile_preserves_stable_four_frame_timing() -> None:
+    spec = compile_caption_render_spec(
+        [_word("기존", 0.5, 0.8)],
+        template_id="highlight",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.FULL_VERTICAL,
+        timing_lead_frames=4,
+    )
+    word = spec["cues"][0]["words"][0]
+
+    assert spec["timingLeadFrames"] == 4
+    assert word["startFrame"] == round(0.5 * 30) - 4
+    assert word["endFrame"] == round(0.8 * 30)
+
+
+@pytest.mark.parametrize("value", [-1, 31, True])
+def test_caption_compile_rejects_invalid_timing_lead_frames(value: object) -> None:
+    with pytest.raises(ValueError, match="선행 프레임"):
+        compile_caption_render_spec(
+            [_word("잘못", 0.5, 0.8)],
+            template_id="highlight",
+            clip_start=0,
+            clip_end=1,
+            video_aspect_ratio=VideoAspectRatio.FULL_VERTICAL,
+            timing_lead_frames=value,  # type: ignore[arg-type]
+        )
 
 
 def test_highlight_word_spacing_matches_regular_space_while_pop_stays_six_pixels(
