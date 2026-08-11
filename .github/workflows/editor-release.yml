@@ -27,7 +27,7 @@ jobs:
     # Candidate verification must not require merging unverified editor code
     # into main, because a main push can reach production web users. Keep the
     # temporary release branch explicit rather than allowing arbitrary refs.
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/editor-v2-canary-release' || github.ref == 'refs/heads/codex/editor-v3-fidelity-canary-20260805'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/editor-v2-canary-release' || github.ref == 'refs/heads/codex/editor-v3-fidelity-canary-20260805' || github.ref == 'refs/heads/codex/admin-subtitle-layout-canary-20260810'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
