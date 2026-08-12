@@ -131,7 +131,6 @@ export function RefundPolicyV2Document({
       {!usesFirstCompletedJobPolicy && (
         <LegalSection title="제8조 이전 환불정책이 적용되는 주문">
           <p>결제 당시 환불정책 v1이 표시·기록된 주문에는 당시 정책의 경과일수 기준과 중도해지 위약금 기준을 적용합니다. 정책 변경을 기존 주문에 소급하여 불리하게 적용하지 않습니다.</p>
-          <p><Link href="/refund/versions/1" className={accentLink}>환불정책 v1</Link></p>
         </LegalSection>
       )}
 
