@@ -15,7 +15,6 @@ import {
   type ValidatedEditorDocumentSnapshot,
 } from "@/lib/editor-document-contract";
 import type { EditorDocumentJsonObject } from "@/lib/editor-document-snapshot";
-import { isStableEditorFontId } from "@/lib/editor-fonts";
 import {
   createEditorRenderSpec,
   EDITOR_RENDER_SPEC_VERSION,
@@ -150,16 +149,6 @@ function sameTimelineSecond(left: number, right: number) {
   return Math.abs(left - right) <= RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS;
 }
 
-function usesOnlyStableEditorFonts(
-  document: ValidatedEditorDocumentSnapshot,
-) {
-  return isStableEditorFontId(document.overlays.fonts.title)
-    && isStableEditorFontId(document.overlays.fonts.channel)
-    && document.overlays.textOverlays.every((overlay) => (
-      isStableEditorFontId(overlay.fontId)
-    ));
-}
-
 async function applyEditorDocument({
   shortId,
   requestId,
@@ -186,16 +175,6 @@ async function applyEditorDocument({
       409,
       "편집기가 업데이트되었습니다. 화면을 새로 연 뒤 다시 저장해 주세요.",
       "EDITOR_RELEASE_VERSION_CONFLICT",
-    );
-  }
-  if (
-    release.channel !== "canary"
-    && !usesOnlyStableEditorFonts(requestedDocument)
-  ) {
-    throw new HttpError(
-      403,
-      "새 글씨체는 관리자 테스트 편집기에서만 사용할 수 있습니다.",
-      "EDITOR_FONT_CANARY_ONLY",
     );
   }
   if (

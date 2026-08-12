@@ -97,7 +97,7 @@ describe("editor overlay preview geometry", () => {
     });
   });
 
-  it("falls back to stable fonts when a canary draft is reopened on stable", () => {
+  it("preserves every promoted font when a draft is reopened on stable", () => {
     const layout = createInitialEditorOverlayLayout();
     layout.fonts = { title: "jua", channel: "suit" };
     layout.textOverlays = [{
@@ -107,8 +107,8 @@ describe("editor overlay preview geometry", () => {
 
     const stable = sanitizeEditorOverlayFontsForStable(layout);
 
-    expect(stable.fonts).toEqual({ title: "pretendard", channel: "suit" });
-    expect(stable.textOverlays[0].fontId).toBe("pretendard");
+    expect(stable.fonts).toEqual({ title: "jua", channel: "suit" });
+    expect(stable.textOverlays[0].fontId).toBe("jalnan-2");
     expect(layout.fonts.title).toBe("jua");
   });
 

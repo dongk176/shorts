@@ -181,18 +181,29 @@ export const editorFontIds = editorFontOptions.map((font) => font.id) as [
   ...EditorFontId[],
 ];
 
-// Keep the currently promoted stable editor on the exact font contract it
-// already renders. The complete list above belongs to the administrator
-// canary until the matching worker image is promoted to stable.
+// The promoted v3 worker bundles and verifies every editor font above. Keep
+// the stable save contract identical to the picker so any visible font can be
+// rendered by the production worker.
 export const stableEditorFontIds = [
   "pretendard",
-  "black-han-sans",
-  "gmarket-sans",
+  "noto-sans-kr",
   "do-hyeon",
-  "noto-serif-kr",
-  "nanum-myeongjo",
+  "jua",
+  "jalnan-2",
+  "cafe24-anemone",
+  "cafe24-pro-up",
+  "sandbox-aggro",
+  "galmuri-9",
+  "black-han-sans",
+  "godo",
+  "gmarket-sans",
+  "nanum-square-neo",
+  "s-core-dream",
   "suit",
   "spoqa-han-sans-neo",
+  "noto-serif-kr",
+  "nanum-myeongjo",
+  "ridi-batang",
 ] as const satisfies readonly EditorFontId[];
 
 export type StableEditorFontId = (typeof stableEditorFontIds)[number];

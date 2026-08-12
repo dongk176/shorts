@@ -23,6 +23,10 @@ const rootLayout = readFileSync(
   new URL("../app/layout.tsx", import.meta.url),
   "utf8",
 );
+const applyEditRoute = readFileSync(
+  new URL("../app/api/shorts/[shortId]/apply-edit/route.ts", import.meta.url),
+  "utf8",
+);
 
 describe("editor fonts", () => {
   it("exposes the bundled commercially usable Korean font choices", () => {
@@ -30,23 +34,19 @@ describe("editor fonts", () => {
     expect(new Set(editorFontOptions.map((font) => font.id)).size).toBe(19);
   });
 
-  it("keeps the promoted stable editor on its original eight fonts", () => {
-    expect(stableEditorFontIds).toEqual([
-      "pretendard",
-      "black-han-sans",
-      "gmarket-sans",
-      "do-hyeon",
-      "noto-serif-kr",
-      "nanum-myeongjo",
-      "suit",
-      "spoqa-han-sans-neo",
-    ]);
+  it("allows every visible editor font in the promoted stable renderer", () => {
     expect(stableEditorFontOptions.map((font) => font.id))
-      .toEqual(stableEditorFontIds);
+      .toEqual(editorFontOptions.map((font) => font.id));
+    expect(stableEditorFontIds).toEqual(
+      editorFontOptions.map((font) => font.id),
+    );
     expect(isStableEditorFontId("pretendard")).toBe(true);
     expect(isStableEditorFontId("spoqa-han-sans-neo")).toBe(true);
-    expect(isStableEditorFontId("jua")).toBe(false);
+    expect(isStableEditorFontId("jua")).toBe(true);
+    expect(isStableEditorFontId("ridi-batang")).toBe(true);
     expect(isStableEditorFontId(null)).toBe(false);
+    expect(applyEditRoute).not.toContain("EDITOR_FONT_CANARY_ONLY");
+    expect(applyEditRoute).not.toContain("관리자 테스트 편집기");
   });
 
   it("uses Pretendard as the safe default", () => {
