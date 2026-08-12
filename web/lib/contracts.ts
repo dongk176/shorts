@@ -273,6 +273,7 @@ export type MvpState = {
   billing: BillingSummary;
   paymentMethodAction: PaymentMethodAction;
   usage: UsageSnapshot;
+  hasUsedSubtitleTemplates: boolean;
   recentJobs: VideoJob[];
 };
 

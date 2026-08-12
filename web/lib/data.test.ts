@@ -6,6 +6,7 @@ import {
   getPublicExampleJobs,
   getPublicExampleProjectByNumber,
   getShortsForJobs,
+  getSubtitleTemplateUsage,
 } from "./data";
 
 describe("generated shorts counter", () => {
@@ -13,6 +14,14 @@ describe("generated shorts counter", () => {
     const db = vi.fn().mockResolvedValue([{ value: "4327" }]) as unknown as Sql;
 
     await expect(getGeneratedShortCount(db)).resolves.toBe(4327);
+  });
+});
+
+describe("subtitle template usage", () => {
+  it("detects a previous subtitle-template job for onboarding", async () => {
+    const db = vi.fn().mockResolvedValue([{ hasUsed: true }]) as unknown as Sql;
+
+    await expect(getSubtitleTemplateUsage(db, "user-a")).resolves.toBe(true);
   });
 });
 

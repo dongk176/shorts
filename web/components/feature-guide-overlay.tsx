@@ -90,6 +90,10 @@ export function FeatureGuideOverlay({
   closeAriaLabel,
   tone = "coral",
   smoothTransitions = false,
+  onClose,
+  lastStepSecondaryLabel = "확인",
+  lastStepPrimaryLabel = "다시 보지 않기",
+  onLastStepPrimaryAction,
 }: {
   enabled: boolean;
   steps: readonly FeatureGuideStep[];
@@ -98,6 +102,10 @@ export function FeatureGuideOverlay({
   closeAriaLabel: string;
   tone?: FeatureGuideTone;
   smoothTransitions?: boolean;
+  onClose?: () => void;
+  lastStepSecondaryLabel?: string;
+  lastStepPrimaryLabel?: string;
+  onLastStepPrimaryAction?: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
@@ -143,7 +151,8 @@ export function FeatureGuideOverlay({
   const closeForSession = useCallback(() => {
     sessionClosedRef.current = true;
     setOpen(false);
-  }, []);
+    onClose?.();
+  }, [onClose]);
 
   const dismissPermanently = useCallback(() => {
     try {
@@ -152,7 +161,8 @@ export function FeatureGuideOverlay({
       // Closing the current guide still works if storage is unavailable.
     }
     closeForSession();
-  }, [closeForSession, storageKey]);
+    onLastStepPrimaryAction?.();
+  }, [closeForSession, onLastStepPrimaryAction, storageKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -409,14 +419,14 @@ export function FeatureGuideOverlay({
                   className="h-11 rounded-xl border border-white/15 bg-white/5 px-3 text-sm font-bold transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                   onClick={closeForSession}
                 >
-                  확인
+                  {lastStepSecondaryLabel}
                 </button>
                 <button
                   type="button"
                   className={`h-11 rounded-xl px-3 text-sm font-extrabold text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${toneStyles.dismissClassName}`}
                   onClick={dismissPermanently}
                 >
-                  다시 보지 않기
+                  {lastStepPrimaryLabel}
                 </button>
               </div>
             : <div className="mt-6 flex items-center justify-between gap-3">

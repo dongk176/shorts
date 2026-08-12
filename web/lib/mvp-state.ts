@@ -2,7 +2,11 @@ import type { User } from "@supabase/supabase-js";
 import { getBillingSummary } from "@/lib/billing";
 import { getPaymentMethodAction } from "@/lib/billing-payment-method-remediation";
 import type { MvpState } from "@/lib/contracts";
-import { getPublicMvpState, getRecentJobs } from "@/lib/data";
+import {
+  getPublicMvpState,
+  getRecentJobs,
+  getSubtitleTemplateUsage,
+} from "@/lib/data";
 import { getDb } from "@/lib/db";
 import { requireMvpSession } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
@@ -51,16 +55,24 @@ export async function loadMvpState(
       },
       billing: await getBillingSummary(db, null),
       paymentMethodAction: null,
+      hasUsedSubtitleTemplates: false,
       recentJobs: [],
     };
   }
 
   const session = await requireMvpSession(user);
-  const [usage, recentJobs, billing, paymentMethodAction] = await Promise.all([
+  const [
+    usage,
+    recentJobs,
+    billing,
+    paymentMethodAction,
+    hasUsedSubtitleTemplates,
+  ] = await Promise.all([
     getUsageSnapshot(db, session),
     getRecentJobs(db, session),
     getBillingSummary(db, session.userId),
     getPaymentMethodAction(db, session.userId),
+    getSubtitleTemplateUsage(db, session.userId),
   ]);
 
   return {
@@ -72,6 +84,7 @@ export async function loadMvpState(
     billing,
     paymentMethodAction,
     usage,
+    hasUsedSubtitleTemplates,
     recentJobs,
   };
 }

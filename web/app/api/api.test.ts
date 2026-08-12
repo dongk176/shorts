@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getDb: vi.fn(),
   usage: vi.fn(),
   recentJobs: vi.fn(),
+  subtitleTemplateUsage: vi.fn(),
   projectByNumber: vi.fn(),
   publicExampleByNumber: vi.fn(),
   publicState: vi.fn(),
@@ -48,6 +49,7 @@ vi.mock("@/lib/usage", async (importOriginal) => ({
 }));
 vi.mock("@/lib/data", () => ({
   getRecentJobs: mocks.recentJobs,
+  getSubtitleTemplateUsage: mocks.subtitleTemplateUsage,
   getProjectByNumber: mocks.projectByNumber,
   getPublicExampleProjectByNumber: mocks.publicExampleByNumber,
   getPublicExampleJobs: mocks.publicExamples,
@@ -223,6 +225,7 @@ beforeEach(() => {
   });
   mocks.usage.mockResolvedValue(usage);
   mocks.publicState.mockResolvedValue({ plans: [], generatedShortCount: 4321 });
+  mocks.subtitleTemplateUsage.mockResolvedValue(false);
   mocks.publicExamples.mockResolvedValue([{ id: "example-job", isExample: true }]);
   mocks.publicExampleByNumber.mockResolvedValue(null);
   mocks.authenticatedSession.mockImplementation(() => mocks.session());

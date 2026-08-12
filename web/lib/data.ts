@@ -33,6 +33,20 @@ export async function getGeneratedShortCount(db: Sql): Promise<number> {
   return Number(rows[0].value);
 }
 
+export async function getSubtitleTemplateUsage(
+  db: Sql,
+  userId: string | null,
+): Promise<boolean> {
+  const rows = await db`
+    select exists(
+      select 1
+      from shorts_mvp.video_jobs
+      where user_id=${userId} and subtitle_template_id is not null
+    ) as has_used
+  `;
+  return Boolean(rows[0]?.hasUsed);
+}
+
 let publicStateCache: {
   expiresAt: number;
   value: Promise<{ plans: Plan[]; generatedShortCount: number }>;

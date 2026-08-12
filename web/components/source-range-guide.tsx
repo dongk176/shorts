@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FeatureGuideOverlay } from "@/components/feature-guide-overlay";
 import {
   SOURCE_RANGE_GUIDE_STORAGE_KEY,
@@ -12,15 +12,33 @@ const NO_SCROLL_SETTLE_MS = 260;
 const SCROLL_MAX_WAIT_MS = 1_800;
 const INITIAL_SCROLL_GRACE_MS = 220;
 
-export function SourceRangeGuide({ enabled }: { enabled: boolean }) {
+export function SourceRangeGuide({
+  enabled,
+  onComplete,
+}: {
+  enabled: boolean;
+  onComplete?: () => void;
+}) {
   const [guideReady, setGuideReady] = useState(false);
+  const completionReportedRef = useRef(false);
+  const reportComplete = useCallback(() => {
+    if (completionReportedRef.current) return;
+    completionReportedRef.current = true;
+    onComplete?.();
+  }, [onComplete]);
 
   useEffect(() => {
     setGuideReady(false);
-    if (!enabled) return;
+    if (!enabled) {
+      completionReportedRef.current = false;
+      return;
+    }
 
     try {
-      if (window.localStorage.getItem(SOURCE_RANGE_GUIDE_STORAGE_KEY) === "1") return;
+      if (window.localStorage.getItem(SOURCE_RANGE_GUIDE_STORAGE_KEY) === "1") {
+        reportComplete();
+        return;
+      }
     } catch {
       // Local storage is optional. The guide can still run for this visit.
     }
@@ -103,7 +121,7 @@ export function SourceRangeGuide({ enabled }: { enabled: boolean }) {
       window.cancelAnimationFrame(seekFrame);
       cleanupScrollTracking();
     };
-  }, [enabled]);
+  }, [enabled, reportComplete]);
 
   return (
     <FeatureGuideOverlay
@@ -112,6 +130,7 @@ export function SourceRangeGuide({ enabled }: { enabled: boolean }) {
       storageKey={SOURCE_RANGE_GUIDE_STORAGE_KEY}
       closeAriaLabel="구간 선택 가이드 닫기"
       smoothTransitions
+      onClose={reportComplete}
     />
   );
 }

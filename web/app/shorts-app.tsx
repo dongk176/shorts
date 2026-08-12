@@ -32,6 +32,7 @@ import {
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { SourceRangeGuide } from "@/components/source-range-guide";
+import { SubtitleTemplateDiscoveryOverlay } from "@/components/subtitle-template-discovery-overlay";
 import { SubtitlePositionGuide } from "@/components/subtitle-position-guide";
 import { SupportInquiryWidget } from "@/components/support-inquiry-widget";
 import { TemplateCommentPreview } from "@/components/template-comment-prototype";
@@ -89,6 +90,10 @@ import {
 import { userFacingErrorMessage } from "@/lib/public-error";
 import { isIosDownloadDevice, shortDownloadFilename } from "@/lib/short-download";
 import { stateRetryDelayMs } from "@/lib/state-loading";
+import {
+  markSubtitleTemplateUsed,
+  SUBTITLE_TEMPLATE_DISCOVERY_DEFAULT_ID,
+} from "@/lib/subtitle-template-discovery";
 import {
   STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
   SUBTITLE_TEMPLATE_BRAND_COLOR,
@@ -12345,6 +12350,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [shortsEventGrantedSeconds, setShortsEventGrantedSeconds] = useState(0);
   const [scrollToAnalysis, setScrollToAnalysis] = useState(false);
   const [scrollToProjects, setScrollToProjects] = useState(false);
+  const [sourceRangeGuideComplete, setSourceRangeGuideComplete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollStarted = useRef(0);
@@ -12434,6 +12440,26 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setSubtitleCaptionPlacement("lower");
     }
   }, [subtitleTemplateSelectionEnabled]);
+
+  useEffect(() => {
+    setSourceRangeGuideComplete(Boolean(
+      analysis
+      && analysis.creationAllowed === true
+      && !sourceRangeSelectionEnabled
+    ));
+  }, [analysis, sourceRangeSelectionEnabled]);
+
+  const completeSourceRangeGuide = useCallback(() => {
+    setSourceRangeGuideComplete(true);
+  }, []);
+
+  const trySubtitleTemplate = useCallback(() => {
+    markSubtitleTemplateUsed();
+    setCustomTemplateId(null);
+    setTemplateId("dark-minimal");
+    setSubtitleCaptionPlacement("lower");
+    setSubtitleTemplateId(SUBTITLE_TEMPLATE_DISCOVERY_DEFAULT_ID);
+  }, []);
 
   useEffect(() => {
     if (!analysis) {
@@ -12695,6 +12721,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     setCreationRestrictionOpen(false);
     setCreationRestrictionReason(null);
     setLongSourceNoticeOpen(false);
+    setSourceRangeGuideComplete(false);
     if (!state?.user) {
       setLoginNext("/");
       setLoginOpen(true);
@@ -12881,6 +12908,19 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           && !longSourceNoticeOpen
           && !creationRestrictionOpen
         )}
+        onComplete={completeSourceRangeGuide}
+      />
+      <SubtitleTemplateDiscoveryOverlay
+        enabled={Boolean(
+          sourceRangeGuideComplete
+          && subtitleTemplateSelectionEnabled
+          && analysis?.creationAllowed === true
+          && stateLoadStatus === "ready"
+          && state?.hasUsedSubtitleTemplates === false
+          && !longSourceNoticeOpen
+          && !creationRestrictionOpen
+        )}
+        onTry={trySubtitleTemplate}
       />
       <main id="top" className={`relative mx-auto w-full max-w-6xl flex-1 px-5 pb-20 pt-7 sm:px-8 sm:pt-10 ${adminTemplateLayoutEnabled ? "flex flex-col gap-10" : "space-y-10"}`}>
       <div className={`home-generated-shorts-count ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`} aria-label={localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}>
@@ -13033,6 +13073,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             onBrandColorChange={setBrandColor}
             settingsBelowRail={adminTemplateLayoutEnabled}
             onSubtitleTemplateChange={(nextSubtitleTemplateId) => {
+              if (nextSubtitleTemplateId) markSubtitleTemplateUsed();
               setSubtitleTemplateId(nextSubtitleTemplateId);
               if (nextSubtitleTemplateId) {
                 setCustomTemplateId(null);
