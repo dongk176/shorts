@@ -9,8 +9,16 @@ const source = readFileSync(
   new URL("./popular-private-announcement.tsx", import.meta.url),
   "utf8",
 );
+const popularExplorerSource = readFileSync(
+  new URL("../app/실시간인기/popular-videos-explorer.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("popular private announcement", () => {
+  it("is not mounted on the popular videos page", () => {
+    expect(popularExplorerSource).not.toContain("PopularPrivateAnnouncement");
+  });
+
   it("shows only on mobile while the permanent preference is unset", () => {
     expect(shouldShowPopularPrivateAnnouncement({ mobile: true, dismissed: null })).toBe(true);
     expect(shouldShowPopularPrivateAnnouncement({ mobile: false, dismissed: null })).toBe(false);

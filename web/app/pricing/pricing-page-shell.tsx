@@ -6,6 +6,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import type { AuthProfile } from "@/lib/session";
 import { PricingClient, type PricingState } from "./pricing-client";
+import styles from "./pricing.module.css";
 
 export function PricingPageShell({
   user,
@@ -17,7 +18,7 @@ export function PricingPageShell({
   const [loginOpen, setLoginOpen] = useState(false);
 
   return (
-    <div className="app-shell site-chrome desktop-sidebar-layout pricing-page min-h-screen text-neutral-100">
+    <div className={`app-shell site-chrome desktop-sidebar-layout pricing-page min-h-screen text-neutral-100 ${styles.page}`}>
       <SiteHeader desktopSidebar>
         <AuthControls
           user={user}

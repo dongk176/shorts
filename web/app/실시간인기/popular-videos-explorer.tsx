@@ -4,7 +4,6 @@ import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PopularFiltersPlanOverlay } from "@/components/popular-filters-plan-overlay";
-import { PopularPrivateAnnouncement } from "@/components/popular-private-announcement";
 import type {
   PopularDiscoveryPeriod,
   PopularVideo,
@@ -1316,7 +1315,6 @@ export function PopularVideosExplorer({
         onConfirm={() => finishReusableGuide(false)}
         onDismiss={() => finishReusableGuide(true)}
       />
-      <PopularPrivateAnnouncement />
     </main>
   );
 }

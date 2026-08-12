@@ -1,3 +1,8 @@
+.page:global(.pricing-page) {
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
 .hero {
   max-width: 760px;
   margin-bottom: 48px;
