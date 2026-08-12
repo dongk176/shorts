@@ -440,8 +440,9 @@ export function getThePayOneConfig(
 }
 
 export function createPaymentTrackId(prefix: "AUTH" | "AUDT" | "PAY" | "REFUND") {
-  const timestamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
-  return `EC-${prefix}-${timestamp}-${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+  // Scheduled charges append a 14-digit execution timestamp and cap the final ID at 50 characters.
+  const date = new Date().toISOString().slice(2, 10).replaceAll("-", "");
+  return `EC-${prefix}-${date}-${randomUUID().replaceAll("-", "").slice(0, 16)}`;
 }
 
 export function normalizeCardNumber(value: string) {

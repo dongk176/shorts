@@ -4,6 +4,7 @@ import {
   chargeThePayOneCard,
   chargeThePayOneManualCard,
   chargeThePayOneRecurringCard,
+  createPaymentTrackId,
   decryptCardToken,
   encryptCardToken,
   parseThePayOneWebhook,
@@ -40,6 +41,15 @@ afterEach(() => {
 });
 
 describe("ThePayOne client", () => {
+  it("keeps track IDs within the recurring payment limit after the provider suffix", () => {
+    for (const prefix of ["AUTH", "AUDT", "PAY", "REFUND"] as const) {
+      const trackId = createPaymentTrackId(prefix);
+      expect(trackId).toMatch(new RegExp(`^EC-${prefix}-\\d{6}-[a-f0-9]{16}$`));
+      expect(trackId.length).toBeLessThanOrEqual(33);
+      expect(`${trackId}20260812080002`.length).toBeLessThanOrEqual(50);
+    }
+  });
+
   it("extracts a definite provider installment limit without treating other 9999 diagnostics as a limit", () => {
     expect(thePayOneInstallmentMaxMonths(
       "할부개월초과 / 할부기간은 6개월 이하로 이용하여 주시기 바랍니다.",
