@@ -13,4 +13,10 @@ describe("support inquiry widget", () => {
     expect(source).not.toContain('inquiryKind: "refund_request"');
     expect(source).not.toContain("/api/support/refundable-orders");
   });
+
+  it("keeps the floating language selector behind an open inquiry layer", () => {
+    expect(source).toContain('document.body.classList.add("support-inquiry-open")');
+    expect(source).toContain('document.body.classList.remove("support-inquiry-open")');
+    expect(source).toContain(".support-inquiry-open .language-selector-floating { display: none; }");
+  });
 });

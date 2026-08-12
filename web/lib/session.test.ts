@@ -55,6 +55,66 @@ describe("MVP session cookie", () => {
     });
   });
 
+  it("does not create or set a session while rendering a signed-out server page", async () => {
+    const set = vi.fn();
+    mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined), set });
+    const db = vi.fn();
+    mocks.getDb.mockReturnValue(db);
+
+    const { requireMvpSession } = await import("./session");
+    await expect(requireMvpSession(undefined, {
+      createIfMissing: false,
+    })).resolves.toEqual({
+      id: "",
+      selectedPlanCode: "free",
+      userId: null,
+      user: null,
+    });
+
+    expect(db).not.toHaveBeenCalled();
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it("returns authenticated page state without mutating cookies when the MVP cookie is missing", async () => {
+    const set = vi.fn();
+    mocks.cookies.mockResolvedValue({ get: vi.fn().mockReturnValue(undefined), set });
+    mocks.getAuthenticatedUser.mockResolvedValue({
+      id: "11111111-1111-4111-8111-111111111111",
+      email: "creator@example.com",
+      app_metadata: { provider: "google" },
+      user_metadata: {},
+    });
+    const db = vi.fn().mockResolvedValueOnce([{
+      id: "app-user",
+      selectedPlanCode: "standard",
+    }]);
+    mocks.getDb.mockReturnValue(db);
+
+    const { requireMvpSession } = await import("./session");
+    await expect(requireMvpSession(undefined, {
+      createIfMissing: false,
+    })).resolves.toMatchObject({
+      id: "",
+      userId: "app-user",
+      selectedPlanCode: "standard",
+    });
+
+    expect(db).toHaveBeenCalledOnce();
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it("rejects a signed-out authenticated read before touching the MVP cookie store", async () => {
+    const { requireAuthenticatedMvpSession } = await import("./session");
+
+    await expect(requireAuthenticatedMvpSession({
+      createIfMissing: false,
+    })).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(mocks.cookies).not.toHaveBeenCalled();
+    expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
   it("saves the Google profile and claims the current anonymous session", async () => {
     const set = vi.fn();
     const deleteCookie = vi.fn();

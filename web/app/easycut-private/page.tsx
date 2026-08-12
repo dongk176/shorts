@@ -12,16 +12,16 @@ const OPEN_CHAT_URL = "https://open.kakao.com/o/gBO91xHi";
 export const metadata: Metadata = createPageMetadata({
   title: "EASYCUT PRIVATE | 이지컷",
   description:
-    "퀄리티 높은 재사용 허용 영상과 쇼츠 제작 인사이트, 이지컷의 새로운 기능과 소식을 가장 먼저 만나는 Private Channel입니다.",
+    "활용하기 좋은 재사용 허용 영상과 쇼츠 제작 노하우, 이지컷의 새로운 기능과 소식을 가장 먼저 만나는 Private Channel입니다.",
   path: PAGE_PATH,
 });
 
 const privateBenefits = [
   {
     key: "source",
-    label: "영상 큐레이션",
+    label: "영상 추천",
     title: "바로 활용할 수 있는 좋은 소스",
-    description: "대표가 직접 고른 재사용 허용 영상을 선별해 공유합니다.",
+    description: "활용하기 좋은 재사용 허용 영상을 선별해 공유합니다.",
   },
   {
     key: "notes",
@@ -78,10 +78,7 @@ export default async function EasycutPrivatePage() {
   return (
     <div className="app-shell site-chrome desktop-sidebar-layout easycut-private-page flex min-h-screen flex-col text-neutral-100">
       <SiteHeader desktopSidebar>
-        <AuthControls
-          user={user ? authProfile(user) : null}
-          next={PAGE_PATH}
-        />
+        <AuthControls user={user ? authProfile(user) : null} next={PAGE_PATH} />
       </SiteHeader>
 
       <main className="relative flex flex-1 px-5 py-14 sm:px-8 sm:py-20">
@@ -94,7 +91,7 @@ export default async function EasycutPrivatePage() {
 
             <div className="mt-7 space-y-5 text-[15px] leading-7 text-[#aeb2b5] sm:text-base sm:leading-8">
               <p>
-                EASYCUT PRIVATE에서는 대표가 직접 고른 재사용 허용 영상부터 쇼츠 제작에 도움 되는 팁과 노하우까지 공유합니다.
+                EASYCUT PRIVATE에서는 활용하기 좋은 재사용 허용 영상부터 쇼츠 제작에 도움 되는 팁과 노하우까지 공유합니다.
               </p>
               <p>
                 새로운 기능, 업데이트, 주요 소식도 일반 공개 전에 가장 먼저 받아보실 수 있어요.

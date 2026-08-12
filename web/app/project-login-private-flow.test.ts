@@ -60,12 +60,14 @@ describe("EASYCUT PRIVATE entry", () => {
     expect(privatePage).toContain("채팅방 입장");
     expect(privatePage).not.toContain("E·C·P 입장");
     expect(privatePage).toContain("이지컷의 좋은 것들을");
-    expect(privatePage).toContain("대표가 직접 고른 재사용 허용 영상부터");
+    expect(privatePage).toContain("활용하기 좋은 재사용 허용 영상부터");
+    expect(privatePage).not.toContain("대표가 직접 고른");
     expect(privatePage).toContain("일반 공개 전에 가장 먼저 받아보실 수 있어요");
     expect(privatePage).toContain("여기서 먼저 확인해보세요");
     expect(privatePage).not.toContain("남들보다 한발 먼저,");
     expect(privatePage).toContain("PRIVATE에서 먼저 받아보는 것");
-    expect(privatePage).toContain("영상 큐레이션");
+    expect(privatePage).toContain("영상 추천");
+    expect(privatePage).not.toContain("영상 큐레이션");
     expect(privatePage).toContain("제작 노트");
     expect(privatePage).toContain("새 기능을 가장 먼저");
     expect(privatePage).toContain("text-white");

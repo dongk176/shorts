@@ -38,7 +38,7 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
     subtitleEditingPublicEnabled: false,
   };
   if (editorRenderingV2MasterEnabled()) {
-    const session = await requireMvpSession();
+    const session = await requireMvpSession(undefined, { createIfMissing: false });
     editorRelease = await resolveEditorRelease(
       db,
       session.userId,

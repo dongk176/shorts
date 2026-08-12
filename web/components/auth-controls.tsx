@@ -260,14 +260,12 @@ export function AuthControls({
   const label = user.displayName || user.loginId || user.email || t("auth.myAccount");
   return (
     <div className="flex items-center gap-2">
-      <Link
-        href="/account/activity"
-        className="hidden max-w-40 truncate rounded-md px-1.5 py-1 text-xs font-semibold text-neutral-300 transition hover:bg-white/[.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff8c7c]/70 sm:block"
+      <span
+        className="hidden max-w-40 truncate px-1.5 py-1 text-xs font-semibold text-neutral-300 sm:block"
         title={user.loginId || user.email || label}
-        aria-label={`${label} 사용내역 보기`}
       >
         {label}
-      </Link>
+      </span>
       <Link
         href="/settings"
         className="account-settings-link"

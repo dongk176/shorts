@@ -34,7 +34,7 @@ export default async function TemplatesPage() {
   let adminPresetNamesEnabled = false;
   let initialFavoriteTemplateKeys: TemplateFavoriteKey[] = [...DEFAULT_FAVORITE_TEMPLATE_KEYS];
   if (user) {
-    const session = await requireMvpSession(user);
+    const session = await requireMvpSession(user, { createIfMissing: false });
     const db = getDb();
     const [templateRows, favoriteRows, billing, subtitleTemplateAccess] = await Promise.all([
       db`

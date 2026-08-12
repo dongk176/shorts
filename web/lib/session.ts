@@ -29,6 +29,7 @@ export type MvpSession = {
 
 type SessionAccessOptions = {
   enforcePaymentMethodRemediation?: boolean;
+  createIfMissing?: boolean;
 };
 
 function hashToken(token: string) {
@@ -123,6 +124,14 @@ export async function requireMvpSession(
         user: null,
       };
     }
+    if (options.createIfMissing === false) {
+      return {
+        id: "",
+        selectedPlanCode: "free",
+        userId: null,
+        user: null,
+      };
+    }
     const created = await createStoredSession(db, cookieStore, null);
     return { id: created.id, selectedPlanCode: created.selectedPlanCode, userId: null, user: null };
   }
@@ -145,7 +154,14 @@ export async function requireMvpSession(
 
   const activeSession = existing?.userId === appUser.id
     ? existing
-    : await createStoredSession(db, cookieStore, appUser.id, appUser.selectedPlanCode);
+    : options.createIfMissing === false
+      ? {
+          id: "",
+          selectedPlanCode: appUser.selectedPlanCode,
+          userId: appUser.id,
+          lastSeenAt: new Date(0),
+        }
+      : await createStoredSession(db, cookieStore, appUser.id, appUser.selectedPlanCode);
 
   const result = {
     id: activeSession.id,
@@ -161,11 +177,14 @@ export async function requireMvpSession(
 
 export async function requireAuthenticatedMvpSession(options: {
   allowPaymentMethodRemediation?: boolean;
+  createIfMissing?: boolean;
 } = {}): Promise<MvpSession & { userId: string }> {
-  const session = await requireMvpSession(undefined, {
+  const authenticatedUser = await getAuthenticatedUser();
+  if (!authenticatedUser) throw new HttpError(401, "로그인이 필요합니다.");
+  const session = await requireMvpSession(authenticatedUser, {
     enforcePaymentMethodRemediation: !options.allowPaymentMethodRemediation,
+    createIfMissing: options.createIfMissing,
   });
-  if (!session.userId) throw new HttpError(401, "로그인이 필요합니다.");
   return session as MvpSession & { userId: string };
 }
 

@@ -60,7 +60,7 @@ export async function loadMvpState(
     };
   }
 
-  const session = await requireMvpSession(user);
+  const session = await requireMvpSession(user, { createIfMissing: false });
   const [
     usage,
     recentJobs,

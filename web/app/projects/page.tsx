@@ -22,7 +22,7 @@ export default async function ProjectsPage() {
   const user = await getAuthenticatedUser();
   const db = getDb();
   const projects = user
-    ? await getAllProjects(db, await requireMvpSession(user))
+    ? await getAllProjects(db, await requireMvpSession(user, { createIfMissing: false }))
     : await getPublicExampleJobs(db);
 
   return (

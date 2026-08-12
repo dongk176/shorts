@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { PopularFiltersPlanOverlay } from "@/components/popular-filters-plan-overlay";
+import { PopularPrivateAnnouncement } from "@/components/popular-private-announcement";
 import type {
   PopularDiscoveryPeriod,
   PopularVideo,
@@ -18,10 +19,25 @@ import { useI18n } from "@/lib/i18n/provider";
 import { userFacingErrorMessage } from "@/lib/public-error";
 
 const dataTypeOptions: Array<{ value: PopularVideoType; label: string }> = [
-  { value: "trending", label: "실시간 급상승" },
+  { value: "trending", label: "인기 급상승" },
   { value: "views", label: "조회수 상위" },
   { value: "reusable", label: "재사용 허용" },
 ];
+
+const mobileRankingButtonTone: Record<PopularVideoType, { selected: string; idle: string }> = {
+  trending: {
+    selected: "bg-[#ff715e] text-[#24100d] shadow-[inset_0_0_0_1px_rgba(255,255,255,.22),0_7px_22px_rgba(255,85,64,.22)]",
+    idle: "text-neutral-400 active:bg-white/[.05]",
+  },
+  views: {
+    selected: "bg-[#ffb4a8] text-[#2b1511] shadow-[inset_0_0_0_1px_rgba(255,255,255,.22),0_7px_22px_rgba(255,180,168,.18)]",
+    idle: "text-neutral-400 active:bg-white/[.05]",
+  },
+  reusable: {
+    selected: "bg-[#a078ff] text-[#181123] shadow-[inset_0_0_0_1px_rgba(255,255,255,.2),0_7px_22px_rgba(160,120,255,.2)]",
+    idle: "text-neutral-400 active:bg-white/[.05]",
+  },
+};
 
 const discoveryPeriodOptions: Array<{ value: PopularDiscoveryPeriod; labels: Record<SiteLocale, string> }> = [
   { value: "today", labels: { ko: "오늘 발견", en: "Found today", ja: "今日発見" } },
@@ -41,6 +57,126 @@ const categoryOptions: Array<{ value: PopularVideoCategory; label: string }> = [
 ];
 
 const reusableGuideDismissedKey = "easycut:reusable-license-guide-dismissed:v1";
+
+type MobilePopularFiltersDraft = {
+  category: PopularVideoCategory;
+  koreanOnly: boolean;
+  longFormOnly: boolean;
+  reusableOnly: boolean;
+};
+
+const mobileFilterCopy: Record<SiteLocale, {
+  ranking: string;
+  trending: string;
+  views: string;
+  reusableRanking: string;
+  category: string;
+  details: string;
+  title: string;
+  description: string;
+  additional: string;
+  korean: string;
+  koreanDescription: string;
+  longForm: string;
+  longFormDescription: string;
+  reusable: string;
+  reusableDescription: string;
+  reset: string;
+  apply: string;
+  close: string;
+  categories: Record<PopularVideoCategory, string>;
+}> = {
+  ko: {
+    ranking: "인기 기준",
+    trending: "인기 급상승",
+    views: "조회수 상위",
+    reusableRanking: "재사용 허용",
+    category: "카테고리",
+    details: "상세 조건",
+    title: "세부 설정",
+    description: "카테고리와 세부 조건을 선택한 뒤 한 번에 적용하세요.",
+    additional: "추가 조건",
+    korean: "한국어 영상만",
+    koreanDescription: "한국어로 된 영상만 모아봅니다.",
+    longForm: "롱폼만",
+    longFormDescription: "긴 형식의 영상만 표시합니다.",
+    reusable: "재사용 허용 영상만",
+    reusableDescription: "급상승·조회수 결과에서 재사용 허용 영상만 골라봅니다.",
+    reset: "초기화",
+    apply: "적용",
+    close: "필터 닫기",
+    categories: {
+      all: "전체",
+      entertainment: "엔터테인먼트",
+      gaming: "게임",
+      sports: "스포츠",
+      music: "음악",
+      news: "뉴스·정치",
+      science: "과학·기술",
+      howto: "요리·노하우",
+    },
+  },
+  en: {
+    ranking: "Ranking",
+    trending: "Trending",
+    views: "Most viewed",
+    reusableRanking: "Reuse allowed",
+    category: "Category",
+    details: "More filters",
+    title: "Details",
+    description: "Choose a category and conditions, then apply them together.",
+    additional: "Additional filters",
+    korean: "Korean only",
+    koreanDescription: "Show only videos in Korean.",
+    longForm: "Long-form only",
+    longFormDescription: "Show only long-form videos.",
+    reusable: "Reuse allowed only",
+    reusableDescription: "Narrow trending or most-viewed results to reusable videos.",
+    reset: "Reset",
+    apply: "Apply",
+    close: "Close filters",
+    categories: {
+      all: "All",
+      entertainment: "Entertainment",
+      gaming: "Gaming",
+      sports: "Sports",
+      music: "Music",
+      news: "News & politics",
+      science: "Science & tech",
+      howto: "How-to",
+    },
+  },
+  ja: {
+    ranking: "人気基準",
+    trending: "急上昇",
+    views: "再生回数順",
+    reusableRanking: "再利用可能",
+    category: "カテゴリー",
+    details: "詳細条件",
+    title: "詳細設定",
+    description: "カテゴリーと条件を選択して、一度に適用できます。",
+    additional: "追加条件",
+    korean: "韓国語のみ",
+    koreanDescription: "韓国語の動画のみ表示します。",
+    longForm: "長尺のみ",
+    longFormDescription: "長尺動画のみ表示します。",
+    reusable: "再利用可能のみ",
+    reusableDescription: "急上昇・再生回数順の結果を再利用可能な動画に絞ります。",
+    reset: "リセット",
+    apply: "適用",
+    close: "フィルターを閉じる",
+    categories: {
+      all: "すべて",
+      entertainment: "エンタメ",
+      gaming: "ゲーム",
+      sports: "スポーツ",
+      music: "音楽",
+      news: "ニュース・政治",
+      science: "科学・技術",
+      howto: "料理・ノウハウ",
+    },
+  },
+};
 
 function ReusableLicenseGuide({
   open,
@@ -237,6 +373,152 @@ function ReusableLicenseGuide({
         document.body,
       )}
     </div>
+  );
+}
+
+function MobilePopularFiltersSheet({
+  open,
+  locale,
+  draft,
+  onDraftChange,
+  onClose,
+  onReset,
+  onApply,
+}: {
+  open: boolean;
+  locale: SiteLocale;
+  draft: MobilePopularFiltersDraft;
+  onDraftChange: (draft: MobilePopularFiltersDraft) => void;
+  onClose: () => void;
+  onReset: () => void;
+  onApply: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const copy = mobileFilterCopy[locale];
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || !open || dialog.open) return;
+    dialog.showModal();
+    window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+  }, [open]);
+
+  if (!open) return null;
+
+  const detailOptions: Array<{
+    key: "koreanOnly" | "longFormOnly" | "reusableOnly";
+    label: string;
+    description: string;
+  }> = [
+    { key: "koreanOnly", label: copy.korean, description: copy.koreanDescription },
+    { key: "longFormOnly", label: copy.longForm, description: copy.longFormDescription },
+    { key: "reusableOnly", label: copy.reusable, description: copy.reusableDescription },
+  ];
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby="mobile-popular-filters-title"
+      aria-describedby="mobile-popular-filters-description"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      className="fixed inset-x-0 bottom-0 top-auto m-0 max-h-[92dvh] w-full max-w-none overflow-y-auto rounded-t-[30px] border border-b-0 border-white/10 bg-[#15191a] p-0 text-white shadow-[0_-24px_80px_rgba(0,0,0,.58)] backdrop:bg-black/75 backdrop:backdrop-blur-sm md:hidden"
+    >
+      <div className="mx-auto h-1.5 w-11 rounded-full bg-white/20" aria-hidden="true" />
+      <header className="flex items-start justify-between gap-5 px-5 pb-5 pt-5">
+        <div>
+          <h2 id="mobile-popular-filters-title" className="text-xl font-black tracking-[-.035em] text-white">
+            {copy.title}
+          </h2>
+          <p id="mobile-popular-filters-description" className="mt-1.5 text-xs font-semibold leading-5 text-neutral-400">
+            {copy.description}
+          </p>
+        </div>
+        <button
+          ref={closeButtonRef}
+          type="button"
+          aria-label={copy.close}
+          onClick={onClose}
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[.05] text-neutral-300 transition active:scale-95 active:bg-white/10"
+        >
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" />
+          </svg>
+        </button>
+      </header>
+
+      <div className="border-t border-white/[.07] px-5 py-5">
+        <fieldset>
+          <legend className="mb-3 text-sm font-black text-neutral-200">{copy.category}</legend>
+          <div className="grid grid-cols-2 gap-2.5">
+            {categoryOptions.map((option) => {
+              const selected = draft.category === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => onDraftChange({ ...draft, category: option.value })}
+                  className={`min-h-12 rounded-xl border px-3 text-sm font-extrabold transition active:scale-[.98] ${selected ? "border-violet-300/60 bg-violet-400/15 text-violet-50 shadow-[inset_0_0_0_1px_rgba(196,181,253,.08)]" : "border-white/10 bg-white/[.035] text-neutral-300 active:bg-white/[.07]"}`}
+                >
+                  {copy.categories[option.value]}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <fieldset className="mt-6">
+          <legend className="mb-3 text-sm font-black text-neutral-200">{copy.additional}</legend>
+          <div className="overflow-hidden rounded-2xl border border-white/[.08] bg-white/[.025]">
+            {detailOptions.map((option, index) => {
+              const checked = draft[option.key];
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  role="switch"
+                  aria-checked={checked}
+                  onClick={() => onDraftChange({ ...draft, [option.key]: !checked })}
+                  className={`flex min-h-[74px] w-full items-center justify-between gap-4 px-4 py-3 text-left transition active:bg-white/[.055] ${index ? "border-t border-white/[.07]" : ""}`}
+                >
+                  <span className="min-w-0">
+                    <strong className="block text-sm font-extrabold text-neutral-100">{option.label}</strong>
+                    <span className="mt-1 block text-[11px] font-semibold leading-[1.55] text-neutral-500">{option.description}</span>
+                  </span>
+                  <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${checked ? "bg-[#ff715e]" : "bg-white/15"}`} aria-hidden="true">
+                    <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`} />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+      </div>
+
+      <footer className="sticky bottom-0 grid grid-cols-[.8fr_1.2fr] gap-2.5 border-t border-white/[.08] bg-[#15191a]/95 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 backdrop-blur-xl">
+        <button
+          type="button"
+          onClick={onReset}
+          className="min-h-12 rounded-xl border border-white/15 bg-white/[.035] text-sm font-extrabold text-neutral-200 transition active:scale-[.98] active:bg-white/[.08]"
+        >
+          {copy.reset}
+        </button>
+        <button
+          type="button"
+          onClick={onApply}
+          className="min-h-12 rounded-xl bg-[#ff715e] text-sm font-black text-white shadow-[0_10px_28px_rgba(255,85,64,.22)] transition active:scale-[.98] active:bg-[#ff806f]"
+        >
+          {copy.apply}
+        </button>
+      </footer>
+    </dialog>
   );
 }
 
@@ -577,6 +859,13 @@ export function PopularVideosExplorer({
   const [planOverlayFeature, setPlanOverlayFeature] = useState<"filters" | "more">("filters");
   const [reusableGuideOpen, setReusableGuideOpen] = useState(false);
   const [filterInteractionId, setFilterInteractionId] = useState<string | null>(null);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [mobileFilterDraft, setMobileFilterDraft] = useState<MobilePopularFiltersDraft>({
+    category: "all",
+    koreanOnly: false,
+    longFormOnly: false,
+    reusableOnly: false,
+  });
   const loadMoreController = useRef<AbortController | null>(null);
   const pendingReusableAction = useRef<(() => void) | null>(null);
   const closePlanOverlay = useCallback(() => setPlanOverlayOpen(false), []);
@@ -698,6 +987,58 @@ export function PopularVideosExplorer({
     action?.();
   }, []);
 
+  const reusableFilterActive = dataType === "reusable" || reusableOnly;
+  const activeMobileFilterCount = Number(category !== "all") + Number(koreanOnly) + Number(longFormOnly) + Number(reusableFilterActive);
+  const filterCopy = mobileFilterCopy[locale];
+
+  const openMobileFilters = () => {
+    if (!canUseFilters) {
+      setPlanOverlayFeature("filters");
+      setPlanOverlayOpen(true);
+      return;
+    }
+    setMobileFilterDraft({
+      category,
+      koreanOnly,
+      longFormOnly,
+      reusableOnly: reusableFilterActive,
+    });
+    setMobileFiltersOpen(true);
+  };
+
+  const applyMobileFilters = () => {
+    const nextFilters = mobileFilterDraft;
+    const enablingReusable = nextFilters.reusableOnly && !reusableFilterActive;
+    setMobileFiltersOpen(false);
+
+    const commitMobileFilters = () => applyFilter(() => {
+      if (dataType === "reusable" && !nextFilters.reusableOnly) setDataType("views");
+      setCategory(nextFilters.category);
+      setKoreanOnly(nextFilters.koreanOnly);
+      setLongFormOnly(nextFilters.longFormOnly);
+      setReusableOnly(dataType === "reusable" ? false : nextFilters.reusableOnly);
+    });
+
+    if (enablingReusable) {
+      requestReusableFilter(commitMobileFilters);
+      return;
+    }
+    commitMobileFilters();
+  };
+
+  const applyMobileRanking = (nextType: PopularVideoType) => {
+    if (nextType === dataType) return;
+    const commitMobileRanking = () => applyFilter(() => {
+      setReusableOnly(false);
+      setDataType(nextType);
+    });
+    if (nextType === "reusable") {
+      requestReusableFilter(commitMobileRanking);
+      return;
+    }
+    commitMobileRanking();
+  };
+
   const requestMore = () => {
     if (!canUseFilters) {
       setPlanOverlayFeature("more");
@@ -716,16 +1057,12 @@ export function PopularVideosExplorer({
         <span className="pointer-events-none absolute left-[8%] top-5 -z-10 h-40 w-40 rounded-full bg-[#ff5540]/20 blur-[70px] sm:h-56 sm:w-56" aria-hidden="true" />
         <span className="pointer-events-none absolute right-[7%] top-14 -z-10 h-44 w-44 rounded-full bg-[#a078ff]/20 blur-[80px] sm:h-60 sm:w-60" aria-hidden="true" />
         <h1 className="hero-title"><span>실시간 인기</span></h1>
-        <p className="mt-5 max-w-2xl text-sm leading-7 text-[#d5aaa4] sm:text-base">
-          <span className="block">지금 떠오르는 영상을 놓치지 마세요.</span>
-          <strong className="block font-extrabold text-[#ff9b8d]">활성 구독 또는 기간 패키지로 원하는 영상만 빠르게 찾아보세요.</strong>
-        </p>
-        <p className="mt-6 text-xs font-semibold text-neutral-500" aria-live="polite"><span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.7)]" aria-hidden="true" /><span className="text-neutral-400">마지막 업데이트</span> {formatUpdatedAt(response?.updatedAt || null, locale)}</p>
+        <p className="mt-3 text-xs font-semibold text-neutral-500" aria-live="polite"><span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.7)]" aria-hidden="true" /><span className="text-neutral-400">마지막 업데이트</span> {formatUpdatedAt(response?.updatedAt || null, locale)}</p>
       </section>
 
-      <section className="relative z-30 -mx-2 mt-2 rounded-2xl border border-white/10 bg-[#15191a]/90 p-4 shadow-[0_16px_50px_rgba(0,0,0,.22)] backdrop-blur-2xl md:mx-0 md:p-5" aria-label="인기 영상 필터">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-base font-black text-white">필터</h2>
+      <section className="relative z-30 mt-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none !backdrop-blur-none md:mt-2 md:!rounded-2xl md:!border md:!border-white/10 md:!bg-[#15191a]/90 md:!p-5 md:!shadow-[0_16px_50px_rgba(0,0,0,.22)] md:!backdrop-blur-2xl" aria-label="인기 영상 필터">
+        <div className={`${canUseFilters ? "hidden md:flex" : "mb-4 flex"} items-center justify-end gap-3 md:mb-4 md:justify-between`}>
+          <h2 className="hidden text-base font-black text-white md:block">필터</h2>
           {!canUseFilters && (
             <button
               type="button"
@@ -743,7 +1080,62 @@ export function PopularVideosExplorer({
             </button>
           )}
         </div>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+
+        <div className="md:hidden">
+          <fieldset>
+            <legend className="sr-only">{filterCopy.ranking}</legend>
+            <div className="grid grid-cols-3 rounded-xl border border-white/10 bg-black/20 p-1">
+              {dataTypeOptions.map((option) => {
+                const selected = dataType === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={selected}
+                    aria-haspopup={canUseFilters ? undefined : "dialog"}
+                    onClick={() => applyMobileRanking(option.value)}
+                    className={`min-h-11 rounded-[10px] px-1 text-[14px] font-black tracking-[-.055em] transition active:scale-[.98] ${selected ? mobileRankingButtonTone[option.value].selected : mobileRankingButtonTone[option.value].idle}`}
+                  >
+                    {option.value === "trending"
+                      ? filterCopy.trending
+                      : option.value === "views"
+                        ? filterCopy.views
+                        : filterCopy.reusableRanking}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            onClick={openMobileFilters}
+            className={`mt-3 flex min-h-[58px] w-full items-center gap-3 rounded-xl border px-3.5 text-left transition active:scale-[.99] ${activeMobileFilterCount ? "border-[#ff8a78]/40 bg-[#ff8a78]/10 shadow-[inset_0_0_0_1px_rgba(255,138,120,.04)]" : "border-white/10 bg-black/20"}`}
+          >
+            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border text-[#202426] shadow-[inset_0_1px_0_rgba(255,255,255,.24)] ${activeMobileFilterCount ? "border-[#ff8a78] bg-[#ff8a78]" : "border-[#ff9b8d] bg-[#ff9b8d]"}`} aria-hidden="true">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 6h4M12 6h8M4 12h9M17 12h3M4 18h2M10 18h10" />
+                <circle cx="10" cy="6" r="2" />
+                <circle cx="15" cy="12" r="2" />
+                <circle cx="8" cy="18" r="2" />
+              </svg>
+            </span>
+            <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+              <strong className="shrink-0 text-sm font-black text-neutral-400">{filterCopy.title}</strong>
+              <span className="min-w-0 truncate text-right text-sm font-bold tracking-[-.025em] text-neutral-500">
+                {activeMobileFilterCount
+                  ? (locale === "ko" ? `${filterCopy.categories[category]} · ${activeMobileFilterCount}개 적용` : locale === "ja" ? `${filterCopy.categories[category]} · ${activeMobileFilterCount}件適用` : `${filterCopy.categories[category]} · ${activeMobileFilterCount} active`)
+                  : (locale === "ko" ? "전체 · 선택한 조건 없음" : locale === "ja" ? "すべて · 選択条件なし" : "All · No filters selected")}
+              </span>
+            </span>
+            <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-neutral-500" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="m9 18 6-6-6-6" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="hidden flex-col gap-4 md:flex md:flex-row md:items-end md:justify-between">
           <fieldset className="min-w-0">
             <legend className="mb-2 text-sm font-black text-neutral-200">인기 기준</legend>
             <div className="flex flex-wrap gap-2 pb-1">
@@ -828,9 +1220,9 @@ export function PopularVideosExplorer({
           </div>
         </div>
 
-        <fieldset className="mt-4 min-w-0 border-t border-white/[.07] pt-4">
+        <fieldset className="mt-4 hidden min-w-0 border-t border-white/[.07] pt-4 md:block">
           <legend className="mb-2 text-sm font-black text-neutral-200">카테고리</legend>
-          <div className="flex gap-2 overflow-x-auto pb-1 md:flex-wrap md:overflow-visible">
+          <div className="flex flex-wrap gap-2 pb-1">
             {categoryOptions.map((option) => (
               <button
                 key={option.value}
@@ -898,6 +1290,20 @@ export function PopularVideosExplorer({
           </div>
         </section>
       )}
+      <MobilePopularFiltersSheet
+        open={mobileFiltersOpen}
+        locale={locale}
+        draft={mobileFilterDraft}
+        onDraftChange={setMobileFilterDraft}
+        onClose={() => setMobileFiltersOpen(false)}
+        onReset={() => setMobileFilterDraft({
+          category: "all",
+          koreanOnly: false,
+          longFormOnly: false,
+          reusableOnly: false,
+        })}
+        onApply={applyMobileFilters}
+      />
       <PopularFiltersPlanOverlay
         open={planOverlayOpen}
         isAuthenticated={isAuthenticated}
@@ -910,6 +1316,7 @@ export function PopularVideosExplorer({
         onConfirm={() => finishReusableGuide(false)}
         onDismiss={() => finishReusableGuide(true)}
       />
+      <PopularPrivateAnnouncement />
     </main>
   );
 }

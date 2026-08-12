@@ -10,7 +10,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ t
   const user = await getAuthenticatedUser();
   const next = `/templates/${templateId}/edit`;
   if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(next)}`);
-  const session = await requireMvpSession(user);
+  const session = await requireMvpSession(user, { createIfMissing: false });
   const db = getDb();
   const rows = await db`
     select id, name, base_template_id, config, version, created_at, updated_at

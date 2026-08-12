@@ -13,6 +13,7 @@ const desktopSidebarPages = [
   "./settings/settings-page-content.tsx",
   "./실시간인기/popular-page-shell.tsx",
   "./easycut-private/page.tsx",
+  "./account/activity/page.tsx",
 ];
 
 const editorPages = [
@@ -57,5 +58,16 @@ describe("site sidebar isolation", () => {
     expect(sidebarStyles).toContain('nav-link[aria-current="page"]');
     expect(sidebarStyles).toContain("color: #fff;");
     expect(sidebarStyles).toContain("width: 22px;");
+  });
+
+  it("renders the signed-in nickname as text instead of an activity link", () => {
+    const controls = source("../components/auth-controls.tsx");
+    const nicknameBlock = controls.slice(
+      controls.indexOf("const label = user.displayName"),
+      controls.indexOf('href="/settings"'),
+    );
+
+    expect(nicknameBlock).toContain("<span");
+    expect(nicknameBlock).not.toContain('href="/account/activity"');
   });
 });

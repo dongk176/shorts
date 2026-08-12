@@ -42,6 +42,7 @@ afterEach(() => {
 
 describe("ThePayOne client", () => {
   it("keeps track IDs within the recurring payment limit after the provider suffix", () => {
+    expect(createPaymentTrackId("AUTH")).toHaveLength(31);
     for (const prefix of ["AUTH", "AUDT", "PAY", "REFUND"] as const) {
       const trackId = createPaymentTrackId(prefix);
       expect(trackId).toMatch(new RegExp(`^EC-${prefix}-\\d{6}-[a-f0-9]{16}$`));

@@ -144,6 +144,12 @@ export function SupportInquiryWidget({
     if (open && contentRef.current) contentRef.current.scrollTop = 0;
   }, [open, view]);
 
+  useEffect(() => {
+    if (!open && !result) return;
+    document.body.classList.add("support-inquiry-open");
+    return () => document.body.classList.remove("support-inquiry-open");
+  }, [open, result]);
+
   const closeAndRestoreFocus = () => {
     setOpen(false);
     window.requestAnimationFrame(() => triggerRef.current?.focus());
@@ -279,6 +285,7 @@ export function SupportInquiryWidget({
 
   return (
     <div className="support-inquiry-widget">
+      <style>{".support-inquiry-open .language-selector-floating { display: none; }"}</style>
       {open && (
         <section
           ref={panelRef}
