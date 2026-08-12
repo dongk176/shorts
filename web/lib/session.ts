@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import type { Sql, TransactionSql } from "postgres";
 import { getDb } from "@/lib/db";
+import { assertPaymentMethodRemediationAccess } from "@/lib/billing-payment-method-remediation";
 import { HttpError } from "@/lib/http";
 import { issueLoginWelcomeGrantIfEligible } from "@/lib/onboarding-welcome-grant";
 import { REFERRAL_COOKIE } from "@/lib/referral-policy";
@@ -24,6 +25,10 @@ export type MvpSession = {
   selectedPlanCode: string;
   userId: string | null;
   user: AuthProfile | null;
+};
+
+type SessionAccessOptions = {
+  enforcePaymentMethodRemediation?: boolean;
 };
 
 function hashToken(token: string) {
@@ -100,7 +105,10 @@ async function createStoredSession(
   return rows[0] as StoredSession;
 }
 
-export async function requireMvpSession(authenticatedUser?: User | null): Promise<MvpSession> {
+export async function requireMvpSession(
+  authenticatedUser?: User | null,
+  options: SessionAccessOptions = {},
+): Promise<MvpSession> {
   const cookieStore = await cookies();
   const token = cookieStore.get(MVP_SESSION_COOKIE)?.value;
   const db = getDb();
@@ -139,16 +147,24 @@ export async function requireMvpSession(authenticatedUser?: User | null): Promis
     ? existing
     : await createStoredSession(db, cookieStore, appUser.id, appUser.selectedPlanCode);
 
-  return {
+  const result = {
     id: activeSession.id,
     selectedPlanCode: appUser.selectedPlanCode,
     userId: appUser.id,
     user: profile,
   };
+  if (options.enforcePaymentMethodRemediation) {
+    await assertPaymentMethodRemediationAccess(db, appUser.id);
+  }
+  return result;
 }
 
-export async function requireAuthenticatedMvpSession(): Promise<MvpSession & { userId: string }> {
-  const session = await requireMvpSession();
+export async function requireAuthenticatedMvpSession(options: {
+  allowPaymentMethodRemediation?: boolean;
+} = {}): Promise<MvpSession & { userId: string }> {
+  const session = await requireMvpSession(undefined, {
+    enforcePaymentMethodRemediation: !options.allowPaymentMethodRemediation,
+  });
   if (!session.userId) throw new HttpError(401, "로그인이 필요합니다.");
   return session as MvpSession & { userId: string };
 }

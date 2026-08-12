@@ -6,6 +6,10 @@ import {
   syncCachedPlan,
 } from "@/lib/billing";
 import {
+  getReconcilableRemediationBySubscription,
+  legacyCardReconciliationEnabled,
+} from "@/lib/billing-payment-method-remediation";
+import {
   changeThePayOneCardStatus,
   createPaymentTrackId,
   decryptCardToken,
@@ -53,7 +57,92 @@ async function pauseSubscriptionSchedule(db: Sql, subscription: Record<string, u
   }
 }
 
+async function resumeSubscriptionSchedule(db: Sql, subscription: Record<string, unknown>) {
+  if (!subscription.paymentMethodId) return false;
+  const methods = await db`
+    select * from shorts_mvp.billing_payment_methods
+    where id=${subscription.paymentMethodId as string} and provider='thepayone' limit 1
+  `;
+  const method = methods[0];
+  if (!method) return false;
+  try {
+    const cardId = decryptCardToken({
+      ciphertext: method.billingKeyCiphertext,
+      iv: method.billingKeyIv,
+      tag: method.billingKeyTag,
+    }, method.id);
+    await changeThePayOneCardStatus(cardId, "사용", createPaymentTrackId("AUDT"));
+    await db`
+      update shorts_mvp.billing_payment_methods
+      set status='active',provider_schedule_status='active'
+      where id=${method.id}
+    `;
+    return true;
+  } catch {
+    await db`
+      update shorts_mvp.billing_payment_methods
+      set status='manual_review',provider_schedule_status='manual_review'
+      where id=${method.id}
+    `;
+    return false;
+  }
+}
+
 async function closeDueSubscription(db: Sql, subscription: Record<string, unknown>) {
+  const remediation = await getReconcilableRemediationBySubscription(
+    db,
+    subscription.id as string,
+  );
+  if (remediation) {
+    const paused = await pauseSubscriptionSchedule(db, subscription);
+    const expired = await db.begin(async (tx) => {
+      const updated = await tx`
+        update shorts_mvp.user_subscriptions
+        set status='expired',ended_at=now(),payment_method_id=null,
+          next_charge_at=null,next_retry_at=null,next_quota_at=null,grace_ends_at=null,
+          retry_count=0,provider_schedule_status=${paused ? "paused" : "manual_review"},
+          billing_review_status=${paused ? "clear" : "manual_review"},
+          billing_review_reason=${paused ? null : "REMEDIATION_NO_EVENT_PAUSE_FAILED"}
+        where id=${subscription.id as string} and status='active'
+          and payment_method_id=${remediation.legacyPaymentMethodId}
+          and current_period_end=${remediation.originalCurrentPeriodEnd}
+          and next_charge_at=${remediation.originalNextChargeAt}
+        returning id
+      `;
+      if (!updated[0]) return false;
+      await tx`
+        update shorts_mvp.app_users
+        set default_payment_method_id=null
+        where id=${subscription.userId as string}
+          and default_payment_method_id=${subscription.paymentMethodId as string}
+      `;
+      await tx`
+        update shorts_mvp.billing_payment_method_remediations
+        set state=${paused ? "expired" : "manual_review"},
+          resolution='provider_no_event',expired_at=now(),
+          last_error_code=${paused ? null : "REMEDIATION_NO_EVENT_PAUSE_FAILED"},
+          last_error_message=${paused ? null : "기존 정기결제 중지 결과를 확인하지 못했습니다."}
+        where id=${remediation.id}
+          and state in ('required','registering','awaiting_provider')
+      `;
+      await syncCachedPlan(tx, subscription.userId as string, "free");
+      return true;
+    });
+    if (!expired) {
+      const currentRows = await db`
+        select state from shorts_mvp.billing_payment_method_remediations
+        where id=${remediation.id}
+      `;
+      const providerRenewalWon = currentRows[0]?.state === "completed";
+      const restored = paused && providerRenewalWon
+        ? await resumeSubscriptionSchedule(db, subscription)
+        : false;
+      return restored
+        ? "renewal_won_no_event_race"
+        : providerRenewalWon ? "manual_review" : "remediation_already_closed";
+    }
+    return paused ? "remediation_expired_no_event" : "manual_review";
+  }
   const paused = await pauseSubscriptionSchedule(db, subscription);
   if (subscription.cancelAtPeriodEnd) {
     await db.begin(async (tx) => {
@@ -122,6 +211,86 @@ async function createDueAnnualQuota(db: Sql, subscriptionId: string) {
   return true;
 }
 
+async function reconcileStaleRemediationAttempt(
+  db: Sql,
+  attempt: Record<string, unknown>,
+) {
+  let newSchedulePaused = false;
+  if (attempt.issuedCardCiphertext && attempt.issuedCardIv && attempt.issuedCardTag) {
+    try {
+      const issuedCardId = decryptCardToken({
+        ciphertext: attempt.issuedCardCiphertext as string,
+        iv: attempt.issuedCardIv as string,
+        tag: attempt.issuedCardTag as string,
+      }, `remediation-attempt:${attempt.id as string}`);
+      newSchedulePaused = await changeThePayOneCardStatus(
+        issuedCardId,
+        "중지",
+        createPaymentTrackId("AUDT"),
+      ).then(() => true).catch(() => false);
+    } catch {
+      newSchedulePaused = false;
+    }
+  }
+
+  let oldScheduleRestored = attempt.status === "registering";
+  if (attempt.status === "registered" && attempt.oldSchedulePaused === true) {
+    try {
+      const legacyCardId = decryptCardToken({
+        ciphertext: attempt.legacyBillingKeyCiphertext as string,
+        iv: attempt.legacyBillingKeyIv as string,
+        tag: attempt.legacyBillingKeyTag as string,
+      }, attempt.legacyPaymentMethodId as string);
+      oldScheduleRestored = await changeThePayOneCardStatus(
+        legacyCardId,
+        "사용",
+        createPaymentTrackId("AUDT"),
+      ).then(() => true).catch(() => false);
+    } catch {
+      oldScheduleRestored = false;
+    }
+  }
+  const safelyCompensated = newSchedulePaused && oldScheduleRestored;
+  await db.begin(async (tx) => {
+    if (attempt.newPaymentMethodId) await tx`
+      update shorts_mvp.billing_payment_methods
+      set status=${newSchedulePaused ? "paused" : "manual_review"},
+        provider_schedule_status=${newSchedulePaused ? "paused" : "manual_review"}
+      where id=${attempt.newPaymentMethodId as string}
+    `;
+    if (oldScheduleRestored) await tx`
+      update shorts_mvp.billing_payment_methods
+      set status='active',provider_schedule_status='active'
+      where id=${attempt.legacyPaymentMethodId as string}
+    `;
+    await tx`
+      update shorts_mvp.billing_payment_method_remediation_attempts
+      set status=${safelyCompensated ? "compensated" : "manual_review"},
+        new_schedule_compensated=${newSchedulePaused},
+        failure_code='PROCESS_INTERRUPTED',failure_message='카드 등록 처리가 중단되었습니다.',
+        issued_card_ciphertext=case when ${newSchedulePaused} then null else issued_card_ciphertext end,
+        issued_card_iv=case when ${newSchedulePaused} then null else issued_card_iv end,
+        issued_card_tag=case when ${newSchedulePaused} then null else issued_card_tag end,
+        finished_at=now()
+      where id=${attempt.id as string} and status in ('registering','registered')
+    `;
+    await tx`
+      update shorts_mvp.billing_orders
+      set status=${safelyCompensated ? "failed" : "manual_review"},
+        failure_code='PROCESS_INTERRUPTED',failure_message='카드 등록 처리가 중단되었습니다.'
+      where id=${attempt.billingOrderId as string}
+        and status in ('processing','manual_review')
+    `;
+    await tx`
+      update shorts_mvp.billing_payment_method_remediations
+      set state=${safelyCompensated ? "required" : "manual_review"},claim_started_at=null,
+        last_error_code='PROCESS_INTERRUPTED',last_error_message='카드 등록 처리가 중단되었습니다.'
+      where id=${attempt.remediationId as string} and state='registering'
+    `;
+  });
+  return safelyCompensated ? "compensated" : "manual_review";
+}
+
 export async function processBillingRenewals(db: Sql) {
   const expiredCardVerifications = await cleanupExpiredBillingCardVerifications(db);
   const expiredCheckouts = await db`
@@ -136,6 +305,34 @@ export async function processBillingRenewals(db: Sql) {
     ) and updated_at < clock_timestamp()-interval '2 minutes'
     returning id
   `;
+  let staleRemediationAttempts = 0;
+  if (await legacyCardReconciliationEnabled(db)) {
+    const staleRows = await db`
+      select a.*,r.legacy_payment_method_id,
+        m.billing_key_ciphertext as legacy_billing_key_ciphertext,
+        m.billing_key_iv as legacy_billing_key_iv,
+        m.billing_key_tag as legacy_billing_key_tag
+      from shorts_mvp.billing_payment_method_remediation_attempts a
+      join shorts_mvp.billing_payment_method_remediations r on r.id=a.remediation_id
+      join shorts_mvp.billing_payment_methods m on m.id=r.legacy_payment_method_id
+      where a.status in ('registering','registered')
+        and a.updated_at < clock_timestamp()-interval '2 minutes'
+        and r.state='registering'
+      order by a.updated_at
+      limit 100
+    `;
+    for (const stale of staleRows) {
+      await reconcileStaleRemediationAttempt(db, stale);
+    }
+    await db`
+      update shorts_mvp.billing_payment_method_remediations
+      set state='awaiting_provider'
+      where enabled_at is not null and state='required'
+        and (original_next_charge_at at time zone 'Asia/Seoul')::date
+          <= (clock_timestamp() at time zone 'Asia/Seoul')::date
+    `;
+    staleRemediationAttempts = staleRows.length;
+  }
   const expiredPackageRows = await db`
     update shorts_mvp.user_subscriptions
     set status='expired',ended_at=clock_timestamp(),next_charge_at=null,
@@ -195,6 +392,7 @@ export async function processBillingRenewals(db: Sql) {
     expiredCardVerifications,
     expiredCheckouts: expiredCheckouts.length,
     interruptedForManualReview: interrupted.length,
+    staleRemediationAttempts,
     expiredPackages: expiredPackageRows.length,
     quotasCreated,
     processed: dueRows.length,

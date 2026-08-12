@@ -10,7 +10,9 @@ export const dynamic = "force-dynamic";
 export async function GET(_: Request, context: { params: Promise<{ jobId: string }> }) {
   try {
     const { jobId } = await context.params;
-    const session = await requireMvpSession();
+    const session = await requireMvpSession(undefined, {
+      enforcePaymentMethodRemediation: true,
+    });
     const db = getDb();
     const jobs = await getRecentJobs(db, session, jobId);
     if (!jobs[0]) throw new Error("작업을 찾을 수 없습니다.");

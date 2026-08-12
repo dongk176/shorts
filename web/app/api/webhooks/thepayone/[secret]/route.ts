@@ -9,10 +9,17 @@ import {
   getPaidPlan,
   syncCachedPlan,
 } from "@/lib/billing";
+import {
+  getReconcilableRemediationByMethod,
+  LEGACY_CARD_EXPECTED_AMOUNT_KRW,
+  type PaymentMethodRemediationRow,
+} from "@/lib/billing-payment-method-remediation";
 import { getDb } from "@/lib/db";
 import { setDefaultPaymentMethod } from "@/lib/default-payment-method";
 import {
   cardTokenHash,
+  changeThePayOneCardStatus,
+  createPaymentTrackId,
   isKnownThePayOneMerchantTerminal,
   parseThePayOneWebhook,
   thePayOneCardTypeAllowsInstallment,
@@ -221,6 +228,50 @@ async function processRecurring(
     return;
   }
   const plan = await getPaidPlan(db, subscription.planCode);
+  const remediation = await getReconcilableRemediationByMethod(
+    db,
+    method.id as string,
+  );
+  const chargeDueAt = subscription.nextChargeAt as Date | null;
+  const baseRecurringMatches = (
+    event.installmentMonths === 0
+    && cardTokenHash(event.cardId) === method.billingKeyHash
+    && event.merchantId === method.providerMerchantId
+    && event.terminalId === method.providerTerminalId
+  );
+  if (remediation) {
+    const snapshotMatches = (
+      subscription.id === remediation.subscriptionId
+      && subscription.planCode === remediation.expectedProductCode
+      && Number(plan.monthlyPriceKrw) === Number(remediation.expectedAmountKrw)
+      && chargeDueAt?.getTime() === remediation.originalNextChargeAt.getTime()
+      && (subscription.currentPeriodEnd as Date).getTime()
+        === remediation.originalCurrentPeriodEnd.getTime()
+      && Number(subscription.billingAnchorDay) === Number(remediation.billingAnchorDay)
+    );
+    if (!baseRecurringMatches || !snapshotMatches || !chargeDueAt) {
+      await setManualReview(eventId, "REMEDIATION_RECURRING_MISMATCH", null, subscription.id);
+      return;
+    }
+    if (chargeDueAt.getTime() > Date.now() + 72 * 60 * 60 * 1000) {
+      await setManualReview(eventId, "REMEDIATION_EVENT_TOO_EARLY", null, subscription.id);
+      return;
+    }
+    if (chargeDueAt.getTime() < Date.now() - 7 * 24 * 60 * 60 * 1000) {
+      await setManualReview(eventId, "REMEDIATION_EVENT_TOO_LATE", null, subscription.id);
+      return;
+    }
+    if (event.amount !== LEGACY_CARD_EXPECTED_AMOUNT_KRW) {
+      await processAbnormalRemediationRecurring(
+        eventId,
+        event,
+        method,
+        subscription,
+        remediation,
+      );
+      return;
+    }
+  }
   if (
     event.amount !== plan.monthlyPriceKrw
     || event.installmentMonths !== 0
@@ -229,7 +280,6 @@ async function processRecurring(
     await setManualReview(eventId, "RECURRING_PAYMENT_MISMATCH", null, subscription.id);
     return;
   }
-  const chargeDueAt = subscription.nextChargeAt as Date | null;
   const entitlementTail = subscription.currentPeriodEnd as Date;
   if (!chargeDueAt) {
     await setManualReview(eventId, "RECURRING_CHARGE_DATE_MISSING", null, subscription.id);
@@ -339,12 +389,105 @@ async function processRecurring(
         processing_result='subscription_renewed',processed_at=now()
       where id=${eventId}
     `;
+    if (remediation) {
+      await tx`
+        update shorts_mvp.billing_payment_methods
+        set registration_amount_krw=${LEGACY_CARD_EXPECTED_AMOUNT_KRW},
+          registration_billing_day=${remediation.billingAnchorDay}
+        where id=${method.id as string}
+      `;
+      await tx`
+        update shorts_mvp.billing_payment_method_remediations
+        set state='completed',resolution='provider_9900_renewal',completed_at=now(),
+          last_error_code=null,last_error_message=null
+        where id=${remediation.id}
+          and state in ('required','registering','awaiting_provider')
+      `;
+    }
     await setDefaultPaymentMethod(
       tx,
       subscription.userId as string,
       method.id as string,
     );
     await syncCachedPlan(tx, subscription.userId, plan.code);
+  });
+}
+
+async function processAbnormalRemediationRecurring(
+  eventId: string,
+  event: ThePayOneWebhookNotification,
+  method: Record<string, unknown>,
+  subscription: Record<string, unknown>,
+  remediation: PaymentMethodRemediationRow,
+) {
+  const db = getDb();
+  const zeroAmount = event.amount === 0;
+  const paused = await changeThePayOneCardStatus(
+    event.cardId,
+    "중지",
+    createPaymentTrackId("AUDT"),
+  ).then(() => true).catch(() => false);
+  const reason = zeroAmount
+    ? paused ? "provider_zero_event" : "PROVIDER_ZERO_EVENT_PAUSE_FAILED"
+    : paused ? "provider_wrong_amount" : "PROVIDER_WRONG_AMOUNT_PAUSE_FAILED";
+  await db.begin(async (tx) => {
+    const lockedRows = await tx`
+      select r.state,s.status,s.payment_method_id
+      from shorts_mvp.billing_payment_method_remediations r
+      join shorts_mvp.user_subscriptions s on s.id=r.subscription_id
+      where r.id=${remediation.id}
+      for update of r,s
+    `;
+    const locked = lockedRows[0];
+    if (!locked || !["required", "registering", "awaiting_provider"].includes(locked.state)) {
+      await tx`
+        update shorts_mvp.billing_payment_events
+        set subscription_id=${subscription.id as string},payment_method_id=${method.id as string},
+          validation_status='manual_review',processing_result='REMEDIATION_STATE_CHANGED',processed_at=now()
+        where id=${eventId}
+      `;
+      return;
+    }
+    await tx`
+      update shorts_mvp.billing_payment_methods
+      set status=${paused ? "paused" : "manual_review"},
+        provider_schedule_status=${paused ? "paused" : "manual_review"},
+        payer_tel_ciphertext=null,payer_tel_iv=null,payer_tel_tag=null
+      where id=${method.id as string}
+    `;
+    await tx`
+      update shorts_mvp.app_users
+      set default_payment_method_id=null
+      where id=${subscription.userId as string}
+        and default_payment_method_id=${method.id as string}
+    `;
+    await tx`
+      update shorts_mvp.user_subscriptions
+      set status='expired',ended_at=now(),payment_method_id=null,
+        next_charge_at=null,next_retry_at=null,next_quota_at=null,grace_ends_at=null,
+        retry_count=0,provider_schedule_status=${paused ? "paused" : "manual_review"},
+        billing_review_status=${paused && zeroAmount ? "clear" : "manual_review"},
+        billing_review_reason=${paused && zeroAmount ? null : reason},
+        last_provider_event_at=now()
+      where id=${subscription.id as string} and status in ('active','past_due')
+    `;
+    await tx`
+      update shorts_mvp.billing_payment_method_remediations
+      set state=${zeroAmount && paused ? "expired" : "manual_review"},
+        resolution=${zeroAmount ? "provider_zero_event" : "provider_wrong_amount"},
+        expired_at=${zeroAmount ? new Date() : null},
+        last_error_code=${zeroAmount && paused ? null : reason},
+        last_error_message=${zeroAmount && paused ? null : "기존 정기결제 결과를 수동으로 확인해야 합니다."}
+      where id=${remediation.id}
+    `;
+    await tx`
+      update shorts_mvp.billing_payment_events
+      set subscription_id=${subscription.id as string},payment_method_id=${method.id as string},
+        validation_status=${zeroAmount && paused ? "processed" : "manual_review"},
+        processing_result=${reason},processed_at=now()
+      where id=${eventId}
+    `;
+    await syncCachedPlan(tx, subscription.userId as string, "free");
   });
 }
 

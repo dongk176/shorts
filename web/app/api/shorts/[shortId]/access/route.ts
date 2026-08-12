@@ -11,7 +11,9 @@ export const dynamic = "force-dynamic";
 export async function GET(_: Request, context: { params: Promise<{ shortId: string }> }) {
   try {
     const { shortId } = await context.params;
-    const session = await requireMvpSession();
+    const session = await requireMvpSession(undefined, {
+      enforcePaymentMethodRemediation: true,
+    });
     const db = getDb();
     const rows = await db`
       select s.output_s3_key, s.thumbnail_s3_key, s.expires_at, s.render_version

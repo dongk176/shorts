@@ -143,6 +143,12 @@ export type BillingSummary = {
   retentionDays: number;
 };
 
+export type PaymentMethodAction = {
+  type: "legacy_recurring_reconfirmation";
+  remediationId: string;
+  state: "required" | "registering" | "awaiting_provider" | "manual_review" | "expired";
+} | null;
+
 export type YoutubeAnalysis = {
   analysisId: string;
   sourceRangeSelectionEnabled: boolean;
@@ -265,6 +271,7 @@ export type MvpState = {
   generatedShortCount: number;
   plans: Plan[];
   billing: BillingSummary;
+  paymentMethodAction: PaymentMethodAction;
   usage: UsageSnapshot;
   recentJobs: VideoJob[];
 };

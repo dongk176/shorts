@@ -67,6 +67,21 @@ export type AdminRefund = {
   processedAt: string | null;
 };
 
+export type RemediationMetrics = {
+  total: number;
+  required: number;
+  registering: number;
+  awaitingProvider: number;
+  completed: number;
+  expired: number;
+  manualReview: number;
+  staleRegistering: number;
+  snapshotChanged: number;
+  duplicateActiveSchedules: number;
+  claimsEnabled: boolean;
+  reconciliationEnabled: boolean;
+};
+
 const statusLabels: Record<string, string> = {
   pending: "대기",
   processing: "처리 중",
@@ -129,12 +144,14 @@ export function AdminBillingDashboard({
   initialFilters,
   initialHasMore,
   initialNextOffset,
+  remediationMetrics,
 }: {
   orders: AdminOrder[];
   refunds: AdminRefund[];
   initialFilters: { status: string; provider: string; query: string };
   initialHasMore: boolean;
   initialNextOffset: number;
+  remediationMetrics: RemediationMetrics | null;
 }) {
   const router = useRouter();
   const [loadedOrders, setLoadedOrders] = useState(orders);
@@ -319,6 +336,38 @@ export function AdminBillingDashboard({
 
   return (
     <div className="mt-7 grid gap-7">
+      {remediationMetrics && remediationMetrics.total > 0 && (
+        <section className="rounded-2xl border border-[#ff8c7c]/20 bg-[#151819] p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-black">기존 정기결제 카드 확인</h2>
+              <p className="mt-1 text-xs text-neutral-500">대상 {remediationMetrics.total.toLocaleString("ko-KR")}명 · 신규 카드 추가 {remediationMetrics.claimsEnabled ? "사용" : "중지"} · PG 결과 처리 {remediationMetrics.reconciliationEnabled ? "사용" : "중지"}</p>
+            </div>
+            {(remediationMetrics.staleRegistering > 0 || remediationMetrics.snapshotChanged > 0 || remediationMetrics.duplicateActiveSchedules > 0) && (
+              <span className="rounded-full bg-red-400/10 px-3 py-1 text-xs font-black text-red-200">즉시 확인 필요</span>
+            )}
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+            {[
+              ["확인 필요", remediationMetrics.required],
+              ["등록 중", remediationMetrics.registering],
+              ["PG 대기", remediationMetrics.awaitingProvider],
+              ["완료", remediationMetrics.completed],
+              ["만료", remediationMetrics.expired],
+              ["수동 확인", remediationMetrics.manualReview],
+              ["복수 활성", remediationMetrics.duplicateActiveSchedules],
+            ].map(([title, value]) => (
+              <div key={String(title)} className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
+                <p className="text-xs text-neutral-500">{title}</p>
+                <p className="mt-1 text-xl font-black text-white">{Number(value).toLocaleString("ko-KR")}</p>
+              </div>
+            ))}
+          </div>
+          {(remediationMetrics.staleRegistering > 0 || remediationMetrics.snapshotChanged > 0) && (
+            <p className="mt-4 text-xs font-bold text-amber-200">2분 이상 등록 중 {remediationMetrics.staleRegistering}건 · 결제일 스냅샷 변경 {remediationMetrics.snapshotChanged}건</p>
+          )}
+        </section>
+      )}
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-[#151819]">
         <div className="border-b border-white/10 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">

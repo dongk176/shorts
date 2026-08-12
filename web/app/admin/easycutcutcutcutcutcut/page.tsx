@@ -240,7 +240,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         `,
       ])
     : [[], [], [], [], []];
-  const [orderPage, refundRows] = tab === "billing"
+  const [orderPage, refundRows, remediationMetricRows] = tab === "billing"
     ? await Promise.all([
         loadAdminBillingOrders({
           filters: { status, provider, query },
@@ -256,8 +256,47 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           order by r.requested_at desc
           limit 50
         `,
+        db`
+          select
+            count(*)::integer as total,
+            count(*) filter (where r.state='required')::integer as required,
+            count(*) filter (where r.state='registering')::integer as registering,
+            count(*) filter (where r.state='awaiting_provider')::integer as awaiting_provider,
+            count(*) filter (where r.state='completed')::integer as completed,
+            count(*) filter (where r.state='expired')::integer as expired,
+            count(*) filter (where r.state='manual_review')::integer as manual_review,
+            count(*) filter (
+              where r.state='registering'
+                and r.claim_started_at<clock_timestamp()-interval '2 minutes'
+            )::integer as stale_registering,
+            count(*) filter (
+              where r.state in ('required','registering','awaiting_provider')
+                and (
+                  s.current_period_end<>r.original_current_period_end
+                  or s.next_charge_at<>r.original_next_charge_at
+                  or s.billing_anchor_day<>r.billing_anchor_day
+                )
+            )::integer as snapshot_changed,
+            count(*) filter (
+              where legacy.provider_schedule_status='active'
+                and replacement.provider_schedule_status='active'
+            )::integer as duplicate_active_schedules,
+            coalesce((
+              select enabled from shorts_mvp.runtime_feature_flags
+              where flag_key='legacy_recurring_card_claims'
+            ),false) as claims_enabled,
+            coalesce((
+              select enabled from shorts_mvp.runtime_feature_flags
+              where flag_key='legacy_recurring_card_reconciliation'
+            ),false) as reconciliation_enabled
+          from shorts_mvp.billing_payment_method_remediations r
+          join shorts_mvp.user_subscriptions s on s.id=r.subscription_id
+          join shorts_mvp.billing_payment_methods legacy on legacy.id=r.legacy_payment_method_id
+          left join shorts_mvp.billing_payment_methods replacement on replacement.id=r.new_payment_method_id
+          where r.campaign_key='legacy_easycut_pro_202608'
+        `,
       ])
-    : [{ orders: [], hasMore: false, nextOffset: 0 }, []];
+    : [{ orders: [], hasMore: false, nextOffset: 0 }, [], []];
   const [refundCaseRows, refundCaseMetricRows] = tab === "refunds"
     ? await Promise.all([
         db`
@@ -651,6 +690,20 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           initialFilters={{ status, provider, query }}
           initialHasMore={orderPage.hasMore}
           initialNextOffset={orderPage.nextOffset}
+          remediationMetrics={remediationMetricRows[0] ? {
+            total: Number(remediationMetricRows[0].total || 0),
+            required: Number(remediationMetricRows[0].required || 0),
+            registering: Number(remediationMetricRows[0].registering || 0),
+            awaitingProvider: Number(remediationMetricRows[0].awaitingProvider || 0),
+            completed: Number(remediationMetricRows[0].completed || 0),
+            expired: Number(remediationMetricRows[0].expired || 0),
+            manualReview: Number(remediationMetricRows[0].manualReview || 0),
+            staleRegistering: Number(remediationMetricRows[0].staleRegistering || 0),
+            snapshotChanged: Number(remediationMetricRows[0].snapshotChanged || 0),
+            duplicateActiveSchedules: Number(remediationMetricRows[0].duplicateActiveSchedules || 0),
+            claimsEnabled: Boolean(remediationMetricRows[0].claimsEnabled),
+            reconciliationEnabled: Boolean(remediationMetricRows[0].reconciliationEnabled),
+          } : null}
         />
       ) : tab === "refunds" ? (
         <AdminRefundsDashboard

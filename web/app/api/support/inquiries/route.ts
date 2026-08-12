@@ -26,7 +26,9 @@ function inquiryResponse(row: InquiryRow, status = 201) {
 export async function POST(request: Request) {
   try {
     const input = supportInquirySubmissionSchema.parse(await request.json());
-    const session = await requireMvpSession();
+    const session = await requireMvpSession(undefined, {
+      enforcePaymentMethodRemediation: true,
+    });
     if (input.inquiryKind === "refund_request" && !session.userId) {
       throw new HttpError(401, "결제 내역을 확인하려면 로그인이 필요합니다.", "AUTH_REQUIRED");
     }

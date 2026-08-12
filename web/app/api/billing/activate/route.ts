@@ -914,12 +914,14 @@ export async function POST(request: Request) {
           insert into shorts_mvp.billing_payment_methods (
             id,user_id,provider,billing_key_ciphertext,billing_key_iv,billing_key_tag,billing_key_hash,
             registration_order_id,registration_transaction_id,registration_result_code,
+            registration_amount_krw,registration_billing_day,
             provider_merchant_id,provider_terminal_id,provider_schedule_status,
             payer_tel_ciphertext,payer_tel_iv,payer_tel_tag,
             issuer_name,card_number_masked,card_last4,card_type,status
           ) values (
             ${paymentMethodId},${session.userId},'thepayone',${encrypted.ciphertext},${encrypted.iv},${encrypted.tag},
             ${cardTokenHash(registration.cardId)},${authTrackId},${registration.providerTransactionId},${registration.resultCode},
+            ${registrationAmount},${Number(billingDay)},
             ${merchantId},${expectedTerminalId},${billingCycle === "monthly" ? "active" : "none"},
             ${encryptedPhone.ciphertext},${encryptedPhone.iv},${encryptedPhone.tag},
             ${resolveStoredCardIssuer({

@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   wakeDispatcher: vi.fn(),
   deleteObjects: vi.fn(),
   billing: vi.fn(),
+  paymentMethodAction: vi.fn(),
   signedUrl: vi.fn(),
   shortDownloadUrl: vi.fn(),
   generateComments: vi.fn(),
@@ -35,6 +36,10 @@ vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/billing", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/billing")>()),
   getBillingSummary: mocks.billing,
+}));
+vi.mock("@/lib/billing-payment-method-remediation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/billing-payment-method-remediation")>()),
+  getPaymentMethodAction: mocks.paymentMethodAction,
 }));
 vi.mock("@/lib/supabase/server", () => ({ getAuthenticatedUser: mocks.authenticatedUser }));
 vi.mock("@/lib/usage", async (importOriginal) => ({
@@ -245,6 +250,7 @@ beforeEach(() => {
     cardNumberMasked: "12345678****1234", cardLast4: "1234",
     canCreateJobs: true, maxActiveJobs: 1, retentionDays: 7,
   });
+  mocks.paymentMethodAction.mockResolvedValue(null);
 });
 
 describe("range editing feature gate and snapshot", () => {

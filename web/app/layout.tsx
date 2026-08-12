@@ -5,11 +5,14 @@ import { FirebaseAnalytics } from "@/components/google-analytics";
 import { StructuredData } from "@/components/structured-data";
 import { LanguageSelector } from "@/components/language-selector";
 import { ProjectFeedbackOverlay } from "@/components/project-feedback-overlay";
+import { PaymentMethodRemediationGate } from "@/components/payment-method-remediation-gate";
 import { SidebarNavigationAnnouncement } from "@/components/sidebar-navigation-announcement";
 import { UserOnboardingOverlay } from "@/components/user-onboarding-overlay";
 import { WelcomeOverlayQueueProvider } from "@/components/welcome-overlay-queue";
 import { UsageProvider, type UsageState } from "@/components/usage-provider";
 import { getDb } from "@/lib/db";
+import { getPaymentMethodAction } from "@/lib/billing-payment-method-remediation";
+import type { PaymentMethodAction } from "@/lib/contracts";
 import { I18nProvider } from "@/lib/i18n/provider";
 import { getRequestMessages } from "@/lib/i18n/server";
 import { DEFAULT_DESCRIPTION, OG_IMAGE_PATH, SITE_NAME, SITE_URL } from "@/lib/seo";
@@ -78,6 +81,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     accountId: null,
     usage: null,
   };
+  let initialPaymentMethodAction: PaymentMethodAction = null;
   try {
     const authenticatedUser = await getAuthenticatedUser();
     if (authenticatedUser) {
@@ -89,18 +93,23 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         limit 1
       `;
       const appUserId = typeof appUserRows[0]?.id === "string" ? appUserRows[0].id : null;
-      initialUsageState = {
-        authenticated: true,
-        accountId: appUserId,
-        usage: appUserId
-          ? await getUsageSnapshot(db, {
+      const [usage, paymentMethodAction] = appUserId
+        ? await Promise.all([
+            getUsageSnapshot(db, {
               id: "",
               selectedPlanCode: "free",
               userId: appUserId,
               user: null,
-            })
-          : null,
+            }),
+            getPaymentMethodAction(db, appUserId),
+          ])
+        : [null, null];
+      initialUsageState = {
+        authenticated: true,
+        accountId: appUserId,
+        usage,
       };
+      initialPaymentMethodAction = paymentMethodAction;
     }
   } catch (error) {
     console.error("header_initial_usage_failed", {
@@ -157,6 +166,10 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               <EditorLaunchAnnouncementOverlay />
               <SidebarNavigationAnnouncement />
               <ProjectFeedbackOverlay />
+              <PaymentMethodRemediationGate
+                initialAction={initialPaymentMethodAction}
+                authenticated={initialUsageState.authenticated}
+              />
             </WelcomeOverlayQueueProvider>
           </UsageProvider>
           <FirebaseAnalytics

@@ -16,7 +16,9 @@ const schema = z.object({
 export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
-    const session = await requireMvpSession();
+    const session = await requireMvpSession(undefined, {
+      enforcePaymentMethodRemediation: true,
+    });
     const video = input.source === "popular"
       ? await getStoredPopularVideo(input.videoId) || await getStoredPopularSearchVideo(input.videoId)
       : await getStoredFreeVideo(input.videoId);
