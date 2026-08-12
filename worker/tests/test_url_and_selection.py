@@ -156,7 +156,11 @@ def test_invalid_clip_times_are_clamped_to_supported_range() -> None:
     )
     assert len(clips) == 1
     assert clips[0].start_seconds == 0
-    assert AI_CLIP_MIN_SECONDS <= clips[0].end_seconds - clips[0].start_seconds <= 60
+    assert (
+        AI_CLIP_MIN_SECONDS
+        <= clips[0].end_seconds - clips[0].start_seconds
+        <= AI_CLIP_MAX_SECONDS
+    )
     assert clips[0].end_seconds <= 100
 
 
@@ -248,23 +252,25 @@ def test_short_ai_clip_is_stably_expanded_between_thirty_and_forty_seconds() -> 
         [
             HighlightClip(start_seconds=10, end_seconds=20, hook_title="짧은 후보"),
             HighlightClip(start_seconds=100, end_seconds=145, hook_title="정상 후보"),
-            HighlightClip(start_seconds=200, end_seconds=290, hook_title="긴 후보"),
+            HighlightClip(start_seconds=200, end_seconds=290, hook_title="90초 후보"),
+            HighlightClip(start_seconds=400, end_seconds=600, hook_title="최대 초과 후보"),
         ],
         video_title="길이 검증",
-        duration_seconds=400,
-        required_count=3,
+        duration_seconds=700,
+        required_count=4,
         selection_provider="gemini",
         selection_model="gemini-2.5-flash-lite",
     )
     durations = [clip.end_seconds - clip.start_seconds for clip in clips]
     assert AI_CLIP_MIN_SECONDS <= durations[0] <= 40
-    assert durations[1:] == [45, AI_CLIP_MAX_SECONDS]
+    assert durations[1:] == [45, 90, AI_CLIP_MAX_SECONDS]
     assert clips[0].start_seconds < 10
     assert clips[0].end_seconds > 20
-    assert [clip.selection_raw_duration_seconds for clip in clips] == [10, 45, 90]
-    assert [clip.selection_candidate_index for clip in clips] == [1, 2, 3]
+    assert [clip.selection_raw_duration_seconds for clip in clips] == [10, 45, 90, 200]
+    assert [clip.selection_candidate_index for clip in clips] == [1, 2, 3, 4]
     assert [clip.selection_length_adjustment for clip in clips] == [
         "min_clamp",
+        "none",
         "none",
         "max_clamp",
     ]
@@ -429,7 +435,7 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     assert "쇼츠용 킬러 구간" in request["messages"][0]["content"]
     assert (
         "1. **길이 및 완결성**: 각 구간의 end_seconds - start_seconds를 계산한 값이 "
-        "30.000초 이상 60.000초 이하가 되도록 start_seconds와 end_seconds를 정할 것. "
+        "30.000초 이상 120.000초 이하가 되도록 start_seconds와 end_seconds를 정할 것. "
         "핵심 장면이 짧은 경우에는 해당 장면이 성립하는 앞의 상황과 직후의 반응 또는 "
         "결과까지 함께 포함하여 하나의 완결된 연속 구간으로 구성할 것."
         in request["messages"][0]["content"]
@@ -767,7 +773,12 @@ def test_selector_fallback_guarantees_minimum_for_largest_project(monkeypatch) -
     )
 
     assert len(clips) == 10
-    assert all(30 <= clip.end_seconds - clip.start_seconds <= 60 for clip in clips)
+    assert all(
+        AI_CLIP_MIN_SECONDS
+        <= clip.end_seconds - clip.start_seconds
+        <= AI_CLIP_MAX_SECONDS
+        for clip in clips
+    )
     assert all(
         overlap_seconds(left, right) <= 5.001
         for index, left in enumerate(clips)

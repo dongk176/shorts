@@ -80,14 +80,23 @@ jq \
       .jobDefinitions[0].containerProperties
       | .image = $image
       | .environment = (
-          .environment
-          | map(
+          (
+            .environment
+            | map(select(
+                .name != "GEMINI_TEXT_MODEL"
+                and .name != "GEMINI_COMMENT_MODEL"
+              ))
+            | map(
               if .name == "WORKER_IMAGE_TAG"
                 or .name == "WORKER_IMAGE_DIGEST"
               then .value = $imageDigest
               else .
               end
             )
+          ) + [
+            {name: "GEMINI_TEXT_MODEL", value: "gemini-3.5-flash-lite"},
+            {name: "GEMINI_COMMENT_MODEL", value: "gemini-2.5-flash-lite"}
+          ]
         )
     ),
     nodeProperties: .jobDefinitions[0].nodeProperties,
@@ -147,6 +156,10 @@ if ! jq -e \
   and (environment("WORKER_IMAGE_TAG")[0].value == $imageDigest)
   and (environment("WORKER_IMAGE_DIGEST") | length) == 1
   and (environment("WORKER_IMAGE_DIGEST")[0].value == $imageDigest)
+  and (environment("GEMINI_TEXT_MODEL") | length) == 1
+  and (environment("GEMINI_TEXT_MODEL")[0].value == "gemini-3.5-flash-lite")
+  and (environment("GEMINI_COMMENT_MODEL") | length) == 1
+  and (environment("GEMINI_COMMENT_MODEL")[0].value == "gemini-2.5-flash-lite")
 ' "$work_dir/registered.json" > /dev/null; then
   echo "registered subtitle Job Definition identity verification failed" >&2
   exit 2

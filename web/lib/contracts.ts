@@ -75,7 +75,7 @@ export const outputLanguages = ["ko", "en", "ja", "zh-CN", "es", "fr", "de", "pt
 export type OutputLanguage = (typeof outputLanguages)[number];
 
 export const AI_CLIP_MIN_SECONDS = 30;
-export const AI_CLIP_MAX_SECONDS = 60;
+export const AI_CLIP_MAX_SECONDS = 120;
 
 export const outputLanguageOptions: Array<{ code: OutputLanguage; label: string }> = [
   { code: "ko", label: "한국어" },

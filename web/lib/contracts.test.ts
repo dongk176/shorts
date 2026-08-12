@@ -22,7 +22,7 @@ describe("clip rules", () => {
   });
 
   it("uses the fixed AI-selected duration range", () => {
-    expect([AI_CLIP_MIN_SECONDS, AI_CLIP_MAX_SECONDS]).toEqual([30, 60]);
+    expect([AI_CLIP_MIN_SECONDS, AI_CLIP_MAX_SECONDS]).toEqual([30, 120]);
   });
 
   it.each([

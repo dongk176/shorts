@@ -38,6 +38,9 @@ function trustedTemplate() {
           { name: "FFMPEG_THREADS", value: "2" },
           { name: "WORKER_IMAGE_TAG", value: "stale-tag" },
           { name: "WORKER_IMAGE_DIGEST", value: oldDigest },
+          { name: "GEMINI_TEXT_MODEL", value: "gemini-2.5-flash-lite" },
+          { name: "GEMINI_TEXT_MODEL", value: "stale-duplicate" },
+          { name: "GEMINI_COMMENT_MODEL", value: "stale-comment-model" },
           { name: "UNCHANGED", value: "preserved" },
         ],
       },
@@ -150,8 +153,16 @@ test("subtitle candidate rewrites tag and digest while preserving the 8-vCPU con
       FFMPEG_THREADS: "2",
       WORKER_IMAGE_TAG: newDigest,
       WORKER_IMAGE_DIGEST: newDigest,
+      GEMINI_TEXT_MODEL: "gemini-3.5-flash-lite",
+      GEMINI_COMMENT_MODEL: "gemini-2.5-flash-lite",
       UNCHANGED: "preserved",
     },
+  );
+  assert.equal(
+    registered.containerProperties.environment.filter(
+      ({ name }) => name === "GEMINI_TEXT_MODEL",
+    ).length,
+    1,
   );
 });
 
