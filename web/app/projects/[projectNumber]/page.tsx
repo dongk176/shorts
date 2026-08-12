@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { ProjectLoginRequiredPage } from "@/components/project-login-gate";
+import { getAuthenticatedProjectPageAccess } from "@/lib/data";
 import { getDb } from "@/lib/db";
 import {
   subtitleEditingReleaseEnabled,
   editorRenderingV2MasterEnabled,
   resolveEditorRelease,
 } from "@/lib/editor-rendering-release";
-import { requireMvpSession } from "@/lib/session";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { ProjectPage } from "../../shorts-app";
 
 export const dynamic = "force-dynamic";
@@ -34,12 +36,24 @@ export default async function ProjectNumberPage({
   const projectNumber = Number(rawProjectNumber);
   if (!Number.isSafeInteger(projectNumber)) notFound();
 
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    return <ProjectLoginRequiredPage projectNumber={projectNumber} />;
+  }
+
+  const db = getDb();
+  const projectAccess = await getAuthenticatedProjectPageAccess(
+    db,
+    user.id,
+    projectNumber,
+  );
+  if (!projectAccess?.canAccess) notFound();
+
   let adminSubtitleLayoutEnabled = false;
   if (editorRenderingV2MasterEnabled()) {
-    const session = await requireMvpSession();
     const editorRelease = await resolveEditorRelease(
-      getDb(),
-      session.userId,
+      db,
+      projectAccess.appUserId,
     );
     adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(
       editorRelease,

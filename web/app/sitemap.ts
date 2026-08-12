@@ -8,6 +8,7 @@ const publicRoutes = [
   { path: "/templates", changeFrequency: "monthly", priority: 0.8 },
   { path: "/pricing", changeFrequency: "monthly", priority: 0.8 },
   { path: "/popular", changeFrequency: "daily", priority: 0.8 },
+  { path: "/easycut-private", changeFrequency: "weekly", priority: 0.8 },
   { path: "/compare/ai-shorts-tools", changeFrequency: "monthly", priority: 0.8 },
   { path: "/team", changeFrequency: "monthly", priority: 0.6 },
   { path: "/faq", changeFrequency: "monthly", priority: 0.6 },

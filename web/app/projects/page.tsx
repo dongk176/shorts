@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { AuthControls } from "@/components/auth-controls";
 import { ProjectCard } from "@/components/project-card";
+import { ProjectAuthControls } from "@/components/project-login-gate";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { getAllProjects, getPublicExampleJobs } from "@/lib/data";
@@ -30,7 +30,11 @@ export default async function ProjectsPage() {
       <div className="ambient ambient-coral" aria-hidden="true" />
       <div className="ambient ambient-violet" aria-hidden="true" />
       <SiteHeader desktopSidebar>
-        <AuthControls user={user ? authProfile(user) : null} next={PAGE_PATH} />
+        <ProjectAuthControls
+          user={user ? authProfile(user) : null}
+          next={PAGE_PATH}
+          autoOpen={!user}
+        />
       </SiteHeader>
       <main className="relative mx-auto w-full max-w-6xl flex-1 px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
         <div className="flex flex-col gap-6 border-b border-white/10 pb-8 sm:flex-row sm:items-end sm:justify-between">

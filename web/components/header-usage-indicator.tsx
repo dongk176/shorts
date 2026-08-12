@@ -55,7 +55,7 @@ export function HeaderUsageIndicator() {
       href="/pricing"
       aria-label={label}
       title={label}
-      className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[.035] px-2.5 text-xs font-extrabold tabular-nums text-neutral-200 transition hover:border-[#ff8c7c]/45 hover:bg-[#ff8c7c]/10 hover:text-white"
+      className="header-usage-indicator inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[.035] px-2.5 text-xs font-extrabold tabular-nums text-neutral-200 transition hover:border-[#ff8c7c]/45 hover:bg-[#ff8c7c]/10 hover:text-white"
     >
       <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 text-[#ff9b8d]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="8.5" />

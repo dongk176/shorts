@@ -187,6 +187,38 @@ export async function getProjectByNumber(
   return (await mapJobs(db, rows))[0] || null;
 }
 
+export async function getAuthenticatedProjectPageAccess(
+  db: Sql,
+  authUserId: string,
+  projectNumber: number,
+): Promise<{ appUserId: string; canAccess: boolean } | null> {
+  const rows = await db`
+    with matched_user as (
+      select id
+      from shorts_mvp.app_users
+      where auth_user_id=${authUserId}
+      limit 1
+    )
+    select
+      (select id from matched_user) as app_user_id,
+      exists(
+        select 1
+        from shorts_mvp.video_jobs
+        where project_number=${projectNumber}
+          and (
+            user_id=(select id from matched_user)
+            or (is_example and status='completed')
+          )
+      ) as can_access
+  `;
+  const appUserId = rows[0]?.appUserId;
+  if (typeof appUserId !== "string") return null;
+  return {
+    appUserId,
+    canAccess: Boolean(rows[0]?.canAccess),
+  };
+}
+
 export async function getPublicExampleJobs(db: Sql): Promise<VideoJob[]> {
   const rows = await db`
     select * from shorts_mvp.video_jobs

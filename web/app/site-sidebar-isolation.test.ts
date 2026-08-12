@@ -12,6 +12,7 @@ const desktopSidebarPages = [
   "./pricing/pricing-page-shell.tsx",
   "./settings/settings-page-content.tsx",
   "./실시간인기/popular-page-shell.tsx",
+  "./easycut-private/page.tsx",
 ];
 
 const editorPages = [
@@ -42,5 +43,19 @@ describe("site sidebar isolation", () => {
     const sidebarStyles = source("./site-sidebar.css");
     expect(sidebarStyles).not.toMatch(/\.editor-/);
     expect(sidebarStyles).not.toContain(".editor-v2-root");
+  });
+
+  it("uses compact icon navigation and a gradient active state", () => {
+    const header = source("../components/site-header.tsx");
+    const sidebarStyles = source("./site-sidebar.css");
+
+    expect(header).toContain("function NavigationIcon");
+    expect(header).toContain("site-nav-icon-frame");
+    expect(header).toContain("site-nav-icon");
+    expect(sidebarStyles).toContain("--site-sidebar-width: 224px");
+    expect(sidebarStyles).toContain("linear-gradient(100deg,rgba(91,68,210,.34),rgba(240,68,53,.28))");
+    expect(sidebarStyles).toContain('nav-link[aria-current="page"]');
+    expect(sidebarStyles).toContain("color: #fff;");
+    expect(sidebarStyles).toContain("width: 22px;");
   });
 });

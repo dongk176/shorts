@@ -108,6 +108,8 @@ body::-webkit-scrollbar {
 .brand-type { font-size: 18px; font-weight: 850; letter-spacing: -.04em; }
 .brand-type em { color: #ff7b69; font-style: italic; }
 .nav-link { transition: color .2s ease; }.nav-link:hover { color: #ffb4a8; }
+.site-header-primary > .easycut-private-nav { display: none; }
+@media (min-width: 1120px) { .site-header:not(.site-header-sidebar) .site-header-primary > .easycut-private-nav { display: inline-flex; } }
 .header-cta { border-radius: 999px; background: #f04435; padding: 10px 18px; font-size: 13px; font-weight: 750; color: white; box-shadow: 0 8px 24px rgba(240,68,53,.2); transition: transform .2s, box-shadow .2s; }.header-cta:hover { transform: translateY(-1px); box-shadow: 0 10px 30px rgba(240,68,53,.36); }
 .account-settings-link { display: grid; width: 100%; min-height: 44px; place-items: center; border: 0; border-radius: 0; color: #d9dcde; background: transparent; transition: color .2s,transform .2s; }
 .account-settings-link:hover,.account-settings-link[aria-current="page"] { color: #ffb4a8; background: transparent; }
@@ -198,6 +200,62 @@ html[lang="ja"] body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino
 .login-dialog { animation: login-dialog-enter .24s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes login-dialog-enter { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @media (prefers-reduced-motion: reduce) { .login-dialog { animation: none; } }
+.easycut-private-page { background: #101415; }
+@property --easycut-private-border-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.easycut-private-entry { --easycut-private-border-angle: 0deg; border: 1px solid transparent; background: linear-gradient(105deg,#9c65dc 0%,#bd5fc6 38%,#df617d 72%,#f06c5f 100%) padding-box,conic-gradient(from var(--easycut-private-border-angle),rgba(255,255,255,.12) 0deg,rgba(255,255,255,.12) 245deg,#fff 286deg,rgba(255,255,255,.22) 322deg,rgba(255,255,255,.12) 360deg) border-box; box-shadow: inset 0 1px 0 rgba(255,255,255,.18),0 14px 34px rgba(156,101,220,.22),0 8px 24px rgba(240,108,95,.13); text-shadow: 0 1px 10px rgba(36,18,47,.34); animation: easycut-private-border-orbit 3.2s linear infinite; transition: filter .25s ease,transform .25s ease,box-shadow .25s ease; }
+.easycut-private-entry:hover { filter: saturate(1.08) brightness(1.05); transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255,255,255,.22),0 18px 42px rgba(156,101,220,.27),0 10px 28px rgba(240,108,95,.19); }
+@keyframes easycut-private-border-orbit { to { --easycut-private-border-angle: 360deg; } }
+.easycut-private-board { margin-top: 62px; border-top: 1px solid rgba(255,255,255,.085); padding-top: 36px; }
+.easycut-private-board-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; }
+.easycut-private-board-heading h2 { color: #f1f2f2; font-size: clamp(1.2rem,2.2vw,1.55rem); font-weight: 900; letter-spacing: -.04em; }
+.easycut-private-board-heading p { max-width: 420px; color: #7f8588; font-size: 13px; line-height: 1.7; text-align: right; }
+.easycut-private-board-grid { display: grid; grid-template-areas: "source notes" "source updates"; grid-template-columns: minmax(0,1.08fr) minmax(0,.92fr); gap: 16px; margin-top: 28px; }
+.easycut-private-benefit { position: relative; display: grid; min-width: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.085); border-radius: 21px; background: rgba(25,28,30,.62); box-shadow: inset 0 1px 0 rgba(255,255,255,.025),0 18px 42px rgba(0,0,0,.12); transition: border-color .24s ease,background .24s ease,transform .24s ease; }
+.easycut-private-benefit::after { position: absolute; width: 180px; height: 180px; border-radius: 999px; background: currentColor; content: ""; filter: blur(88px); opacity: .055; pointer-events: none; }
+.easycut-private-benefit-icon { position: relative; z-index: 1; display: grid; width: 52px; height: 52px; flex: none; place-items: center; border: 1px solid color-mix(in srgb,currentColor 58%,transparent); border-radius: 16px; background: linear-gradient(145deg,color-mix(in srgb,currentColor 14%,#1b1e20),rgba(15,18,19,.78)); box-shadow: inset 0 1px 0 rgba(255,255,255,.08),0 10px 24px color-mix(in srgb,currentColor 10%,transparent); }
+.easycut-private-benefit-icon::after { position: absolute; inset: 5px; border: 1px solid rgba(255,255,255,.035); border-radius: 11px; content: ""; pointer-events: none; }
+.easycut-private-benefit-icon svg { position: relative; z-index: 1; width: 27px; height: 27px; fill: none; stroke: currentColor; stroke-width: 1.55; stroke-linecap: round; stroke-linejoin: round; }
+.easycut-private-benefit-icon .easycut-private-icon-soft { fill: currentColor; stroke: none; opacity: .15; }
+.easycut-private-benefit-icon .easycut-private-icon-solid { fill: currentColor; stroke: none; }
+.easycut-private-benefit-icon .easycut-private-icon-detail { fill: none; stroke: #171b1d; stroke-width: 1.35; }
+.easycut-private-benefit-copy { position: relative; z-index: 1; min-width: 0; }
+.easycut-private-benefit-copy > span { display: block; color: currentColor; font-size: 11px; font-weight: 850; letter-spacing: .04em; }
+.easycut-private-benefit-copy h3 { margin-top: 8px; color: #f1f2f3; font-size: 17px; font-weight: 880; letter-spacing: -.035em; word-break: keep-all; }
+.easycut-private-benefit-copy p { margin-top: 8px; color: #8f9598; font-size: 13px; line-height: 1.7; word-break: keep-all; }
+.easycut-private-benefit-source { grid-area: source; min-height: 284px; padding: 26px; color: #ff8e7e; background: linear-gradient(145deg,rgba(255,113,94,.075),rgba(25,28,30,.55) 46%,rgba(25,28,30,.72)); }
+.easycut-private-benefit-source::after { top: -70px; right: -50px; }
+.easycut-private-benefit-source .easycut-private-benefit-icon { width: 62px; height: 62px; border-radius: 18px; }
+.easycut-private-benefit-source .easycut-private-benefit-icon svg { width: 33px; height: 33px; }
+.easycut-private-source-preview { position: absolute; top: 26px; right: 26px; display: flex; align-items: center; padding-right: 22px; }
+.easycut-private-source-preview i { position: relative; display: block; width: 70px; aspect-ratio: 9/14; overflow: hidden; margin-right: -22px; border: 1px solid rgba(255,255,255,.13); border-radius: 13px; background: linear-gradient(155deg,rgba(255,142,126,.24),rgba(255,255,255,.04) 58%,rgba(0,0,0,.08)); box-shadow: -10px 13px 28px rgba(0,0,0,.24); transform: translateY(4px) rotate(-4deg); }
+.easycut-private-source-preview i:nth-child(2) { z-index: 1; background: linear-gradient(155deg,rgba(190,163,245,.2),rgba(255,255,255,.035) 58%,rgba(0,0,0,.08)); transform: translateY(-4px) rotate(1deg); }
+.easycut-private-source-preview i:nth-child(3) { z-index: 2; background: linear-gradient(155deg,rgba(111,203,176,.18),rgba(255,255,255,.035) 58%,rgba(0,0,0,.08)); transform: translateY(2px) rotate(5deg); }
+.easycut-private-source-preview i::before { position: absolute; top: 12px; right: 11px; width: 18px; height: 18px; border: 1px solid rgba(255,255,255,.32); border-radius: 999px; background: rgba(8,10,11,.28); content: ""; }
+.easycut-private-source-preview i::after { position: absolute; right: 11px; bottom: 13px; left: 11px; height: 3px; border-radius: 999px; background: rgba(255,255,255,.27); box-shadow: 0 -9px 0 rgba(255,255,255,.11); content: ""; }
+.easycut-private-benefit-source .easycut-private-benefit-copy { align-self: end; max-width: 390px; }
+.easycut-private-benefit-source .easycut-private-benefit-copy h3 { max-width: 320px; font-size: clamp(1.35rem,2.5vw,1.8rem); line-height: 1.2; }
+.easycut-private-benefit-source .easycut-private-benefit-copy p { max-width: 360px; margin-top: 12px; font-size: 14px; }
+.easycut-private-benefit-notes,.easycut-private-benefit-updates { grid-template-columns: 52px minmax(0,1fr); align-items: center; gap: 18px; min-height: 134px; padding: 20px 22px; }
+.easycut-private-benefit-notes { grid-area: notes; color: #bea3f5; }
+.easycut-private-benefit-notes::after { right: -90px; bottom: -110px; }
+.easycut-private-benefit-updates { grid-area: updates; color: #6fcbb0; }
+.easycut-private-benefit-updates::after { top: -100px; right: -80px; }
+.easycut-private-benefit:hover { border-color: color-mix(in srgb,currentColor 32%,transparent); background-color: rgba(30,33,35,.78); transform: translateY(-2px); }
+@media (max-width: 760px) {
+  .easycut-private-board { margin-top: 52px; padding-top: 30px; }
+  .easycut-private-board-heading { display: block; }
+  .easycut-private-board-heading p { margin-top: 9px; text-align: left; }
+  .easycut-private-board-grid { grid-template-areas: "source" "notes" "updates"; grid-template-columns: minmax(0,1fr); gap: 13px; margin-top: 24px; }
+  .easycut-private-benefit-source { min-height: 258px; padding: 23px; }
+  .easycut-private-source-preview { top: 23px; right: 23px; }
+  .easycut-private-benefit-source .easycut-private-benefit-copy h3 { font-size: 1.35rem; }
+  .easycut-private-benefit-notes,.easycut-private-benefit-updates { min-height: 132px; padding: 19px 20px; }
+}
+@media (max-width: 420px) {
+  .easycut-private-benefit-notes,.easycut-private-benefit-updates { grid-template-columns: 46px minmax(0,1fr); gap: 15px; }
+  .easycut-private-benefit-notes .easycut-private-benefit-icon,.easycut-private-benefit-updates .easycut-private-benefit-icon { width: 46px; height: 46px; border-radius: 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .easycut-private-entry { animation: none; }.easycut-private-entry,.easycut-private-benefit { transition: none; } }
 .paywall-plan-scroller { scrollbar-width: none; overscroll-behavior-x: contain; }
 .paywall-plan-scroller::-webkit-scrollbar { display: none; }
 @media (max-width: 640px) { .url-console { flex-direction: column; }.ai-button { width: 100%; }.hero-title { letter-spacing: -.045em; } }

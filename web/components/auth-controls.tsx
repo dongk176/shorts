@@ -48,11 +48,15 @@ export function AuthControls({
   next = "/",
   loginOpen: controlledLoginOpen,
   onLoginOpenChange,
+  dialogTitle,
+  dialogDescription,
 }: {
   user: AuthProfile | null;
   next?: string;
   loginOpen?: boolean;
   onLoginOpenChange?: (open: boolean) => void;
+  dialogTitle?: string;
+  dialogDescription?: string;
 }) {
   const { t } = useI18n();
   const [internalLoginOpen, setInternalLoginOpen] = useState(false);
@@ -144,9 +148,14 @@ export function AuthControls({
                 <div className="mb-7 text-[30px] font-black tracking-[-0.055em] text-[#ffb4a8]">
                   Easy <span className="italic text-[#ff715e]">Cut</span>
                 </div>
-                <h2 id="login-dialog-title" className="text-2xl font-extrabold tracking-[-0.025em] text-[#f3f5f6]">{t("auth.login")}</h2>
-                <p id="login-dialog-description" className="sr-only">
-                  {t("auth.dialogDescription")}
+                <h2 id="login-dialog-title" className="text-2xl font-extrabold tracking-[-0.025em] text-[#f3f5f6]">
+                  {dialogTitle || t("auth.login")}
+                </h2>
+                <p
+                  id="login-dialog-description"
+                  className={dialogDescription ? "mx-auto mt-3 max-w-[320px] text-sm leading-6 text-neutral-400" : "sr-only"}
+                >
+                  {dialogDescription || t("auth.dialogDescription")}
                 </p>
                 {loginMethod === "social" ? (
                   <div className="mt-8 space-y-4">
