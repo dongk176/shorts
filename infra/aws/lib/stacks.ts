@@ -768,6 +768,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         { name: "OPENAI_TRANSCRIBE_MODEL", value: "gpt-4o-mini-transcribe" },
         { name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", value: "gpt-5-nano" },
         { name: "OPENAI_COMMENT_FALLBACK_MODEL", value: "gpt-5-nano" },
+        { name: "GEMINI_TEXT_MODEL", value: "gemini-3.5-flash-lite" },
         { name: "GEMINI_COMMENT_MODEL", value: "gemini-2.5-flash-lite" },
         {
           name: "GEMINI_PAID_DATA_PROCESSING_CONFIRMED",
@@ -1562,6 +1563,7 @@ export class ShortsMvpSourceRangeStack extends cdk.Stack {
           { name: "OPENAI_TRANSCRIBE_MODEL", value: "gpt-4o-mini-transcribe" },
           { name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", value: "gpt-5-nano" },
           { name: "OPENAI_COMMENT_FALLBACK_MODEL", value: "gpt-5-nano" },
+          { name: "GEMINI_TEXT_MODEL", value: "gemini-3.5-flash-lite" },
           { name: "GEMINI_COMMENT_MODEL", value: "gemini-2.5-flash-lite" },
           { name: "GEMINI_PAID_DATA_PROCESSING_CONFIRMED", value: "true" },
           { name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", value: "30" },
@@ -1735,6 +1737,7 @@ export class ShortsMvpElevenLabsTranscriptionStack extends cdk.Stack {
           { name: "OPENAI_TRANSCRIBE_FALLBACK_MODEL", value: "whisper-1" },
           { name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", value: "gpt-5-nano" },
           { name: "OPENAI_COMMENT_FALLBACK_MODEL", value: "gpt-5-nano" },
+          { name: "GEMINI_TEXT_MODEL", value: "gemini-3.5-flash-lite" },
           { name: "GEMINI_COMMENT_MODEL", value: "gemini-2.5-flash-lite" },
           { name: "GEMINI_PAID_DATA_PROCESSING_CONFIRMED", value: "true" },
           { name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", value: "30" },

@@ -162,6 +162,8 @@ describe("ElevenLabs transcription stack", () => {
         Environment: Match.arrayWith([
           { Name: "ELEVENLABS_TRANSCRIBE_MODEL", Value: "scribe_v2" },
           { Name: "OPENAI_TRANSCRIBE_FALLBACK_MODEL", Value: "whisper-1" },
+          { Name: "GEMINI_TEXT_MODEL", Value: "gemini-3.5-flash-lite" },
+          { Name: "GEMINI_COMMENT_MODEL", Value: "gemini-2.5-flash-lite" },
           { Name: "PROJECT_RESOURCE_TIER", Value: "elevenlabs_transcription" },
         ]),
         ResourceRequirements: Match.arrayWith([
@@ -191,6 +193,8 @@ describe("source range stack", () => {
         LinuxParameters: { InitProcessEnabled: true },
         EphemeralStorage: { SizeInGiB: 80 },
         Environment: Match.arrayWith([
+          { Name: "GEMINI_TEXT_MODEL", Value: "gemini-3.5-flash-lite" },
+          { Name: "GEMINI_COMMENT_MODEL", Value: "gemini-2.5-flash-lite" },
           { Name: "PROJECT_RESOURCE_TIER", Value: "source_range" },
           { Name: "MAX_VIDEO_DURATION_SECONDS", Value: "14400" },
           { Name: "DOWNLOAD_TIMEOUT_SECONDS", Value: "14400" },
@@ -418,6 +422,7 @@ describe("shorts MVP infrastructure", () => {
           { Name: "OPENAI_TRANSCRIBE_MODEL", Value: "gpt-4o-mini-transcribe" },
           { Name: "OPENAI_HIGHLIGHT_FALLBACK_MODEL", Value: "gpt-5-nano" },
           { Name: "OPENAI_COMMENT_FALLBACK_MODEL", Value: "gpt-5-nano" },
+          { Name: "GEMINI_TEXT_MODEL", Value: "gemini-3.5-flash-lite" },
           { Name: "GEMINI_COMMENT_MODEL", Value: "gemini-2.5-flash-lite" },
           { Name: "OPENAI_TRANSCRIBE_CHUNK_SECONDS", Value: "30" },
           { Name: "OPENAI_TRANSCRIBE_MAX_WORKERS", Value: "4" },

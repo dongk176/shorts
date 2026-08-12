@@ -337,7 +337,7 @@ def test_gemini_defaults_match_ai_talk(monkeypatch) -> None:
 
     settings = Settings(gemini_api_key=None, openai_api_key=None)
 
-    assert settings.gemini_text_model == "gemini-2.5-flash-lite"
+    assert settings.gemini_text_model == "gemini-3.5-flash-lite"
     assert (
         settings.gemini_openai_base_url
         == "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -531,7 +531,7 @@ def test_gemini_success_does_not_call_openai_nano(monkeypatch) -> None:
 
     assert clips[0].reason == "Gemini success"
     assert clips[0].selection_provider == "gemini"
-    assert clips[0].selection_model == "gemini-2.5-flash-lite"
+    assert clips[0].selection_model == "gemini-3.5-flash-lite"
 
 
 def test_gemini_error_uses_openai_nano(monkeypatch) -> None:

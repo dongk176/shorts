@@ -104,11 +104,10 @@ class Settings:
     )
     gemini_text_model: str = field(
         default_factory=lambda: os.getenv("GEMINI_TEXT_MODEL")
-        or "gemini-2.5-flash-lite"
+        or "gemini-3.5-flash-lite"
     )
     gemini_comment_model: str = field(
         default_factory=lambda: os.getenv("GEMINI_COMMENT_MODEL")
-        or os.getenv("GEMINI_TEXT_MODEL")
         or "gemini-2.5-flash-lite"
     )
     gemini_openai_base_url: str = field(
