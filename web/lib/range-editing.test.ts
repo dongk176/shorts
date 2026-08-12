@@ -7,6 +7,7 @@ import {
   scaleTimedRanges,
   snapTimedRangeHandle,
   subtitlesForTimelineSelection,
+  timelinePointerDeltaSeconds,
 } from "./range-editing";
 
 describe("range editing helpers", () => {
@@ -76,6 +77,12 @@ describe("range editing helpers", () => {
     expect(roundTimelineHandleSeconds(870.03, 870.03, 990)).toBe(870.03);
     expect(roundTimelineHandleSeconds(989.97, 870.03, 989.97)).toBe(989.97);
     expect(clampTimelineSeconds(990.03, 870.03, 990)).toBe(990);
+  });
+
+  it("maps pointer pixels against the full shared timeline duration", () => {
+    expect(timelinePointerDeltaSeconds(120, 720, 60)).toBe(10);
+    expect(timelinePointerDeltaSeconds(-72, 720, 60)).toBe(-6);
+    expect(timelinePointerDeltaSeconds(120, 0, 60)).toBe(0);
   });
 
   it("snaps a resized overlay edge only inside the narrow threshold", () => {

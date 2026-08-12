@@ -10,6 +10,7 @@ import {
   adjustTimedRange,
   snapTimedRangeHandle,
   TIMED_RANGE_SNAP_THRESHOLD_PX,
+  timelinePointerDeltaSeconds,
   type TimedRangeAdjustment,
 } from "@/lib/range-editing";
 import { TEMPLATE_CANVAS } from "@/lib/template-config";
@@ -189,12 +190,14 @@ type ActiveTextRangeDrag = {
   captureTarget: HTMLButtonElement;
   adjustment: TimedRangeAdjustment;
   startClientX: number;
+  startClientY: number;
   width: number;
   initialRange: {
     startSeconds: number;
     endSeconds: number;
   };
   moved: boolean;
+  interactionStarted: boolean;
 };
 
 export function EditorTextTimeline({
@@ -208,6 +211,7 @@ export function EditorTextTimeline({
   onRangeChange,
   onSeek,
   onSelect,
+  onEdit,
   onInteractionStart,
   onInteractionEnd,
 }: {
@@ -221,12 +225,14 @@ export function EditorTextTimeline({
   onRangeChange: (range: { startSeconds: number; endSeconds: number }) => void;
   onSeek: (seconds: number) => void;
   onSelect: () => void;
+  onEdit: () => void;
   onInteractionStart: () => void;
   onInteractionEnd: () => void;
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<ActiveTextRangeDrag | null>(null);
+  const lastTouchActivationRef = useRef<number | null>(null);
   const safeDuration = Math.max(0.3, durationSeconds);
   const startSeconds = Math.max(0, Math.min(safeDuration, textOverlay.startSeconds));
   const endSeconds = Math.max(
@@ -285,17 +291,17 @@ export function EditorTextTimeline({
     event: PointerEvent<HTMLButtonElement>,
   ) => {
     if (event.button !== 0 || !trackRef.current) return;
-    onInteractionStart();
     dragRef.current = {
       pointerId: event.pointerId,
       captureTarget: event.currentTarget,
       adjustment,
       startClientX: event.clientX,
+      startClientY: event.clientY,
       width: trackRef.current.getBoundingClientRect().width,
       initialRange: { startSeconds, endSeconds },
       moved: false,
+      interactionStarted: false,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
     event.stopPropagation();
   };
 
@@ -303,11 +309,30 @@ export function EditorTextTimeline({
     const active = dragRef.current;
     if (!active || active.pointerId !== event.pointerId || active.width <= 0) return;
     const distance = event.clientX - active.startClientX;
-    if (!active.moved && Math.abs(distance) < 2) return;
-    active.moved = true;
+    const verticalDistance = event.clientY - active.startClientY;
+    if (!active.moved) {
+      if (Math.max(Math.abs(distance), Math.abs(verticalDistance)) < 5) return;
+      if (active.adjustment === "move" && event.pointerType !== "mouse") {
+        dragRef.current = null;
+        lastTouchActivationRef.current = null;
+        return;
+      }
+      if (Math.abs(verticalDistance) > Math.abs(distance)) {
+        dragRef.current = null;
+        lastTouchActivationRef.current = null;
+        return;
+      }
+      active.moved = true;
+      active.interactionStarted = true;
+      onSelect();
+      onInteractionStart();
+      if (!active.captureTarget.hasPointerCapture(active.pointerId)) {
+        active.captureTarget.setPointerCapture(active.pointerId);
+      }
+    }
     updateRange(
       active.adjustment,
-      distance / active.width * safeDuration,
+      timelinePointerDeltaSeconds(distance, active.width, safeDuration),
       active.initialRange,
       safeDuration * TIMED_RANGE_SNAP_THRESHOLD_PX / active.width,
     );
@@ -317,18 +342,38 @@ export function EditorTextTimeline({
   const finishDrag = (event: PointerEvent<HTMLDivElement>) => {
     const active = dragRef.current;
     if (!active || active.pointerId !== event.pointerId) return;
-    if (!active.moved) onSeek(active.initialRange.startSeconds);
     dragRef.current = null;
     if (active.captureTarget.hasPointerCapture(event.pointerId)) {
       active.captureTarget.releasePointerCapture(event.pointerId);
     }
-    onInteractionEnd();
+    if (active.interactionStarted) onInteractionEnd();
+    if (active.moved || event.type !== "pointerup") {
+      lastTouchActivationRef.current = null;
+      return;
+    }
+    if (event.pointerType !== "mouse") {
+      const previousActivation = lastTouchActivationRef.current;
+      if (
+        previousActivation !== null
+        && event.timeStamp - previousActivation <= 450
+      ) {
+        lastTouchActivationRef.current = null;
+        onEdit();
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      lastTouchActivationRef.current = event.timeStamp;
+    }
+    onSelect();
+    onSeek(active.initialRange.startSeconds);
   };
 
   const adjustWithKeyboard = (
     adjustment: TimedRangeAdjustment,
     direction: -1 | 1,
   ) => {
+    onSelect();
     onInteractionStart();
     updateRange(adjustment, direction * 0.1);
     onInteractionEnd();
@@ -339,8 +384,11 @@ export function EditorTextTimeline({
       ref={panelRef}
       className={`editor-text-timeline-panel${selected ? " is-selected" : ""}`}
       aria-label={`${textOverlay.text || "텍스트"} 노출 구간 편집`}
-      onPointerDownCapture={onSelect}
-      onFocusCapture={onSelect}
+      onDoubleClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onEdit();
+      }}
     >
       <span className="editor-text-timeline-label">텍스트</span>
       <div

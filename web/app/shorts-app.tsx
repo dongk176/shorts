@@ -83,6 +83,7 @@ import {
   scaleTimedRanges,
   snapTimedRangeHandle,
   TIMED_RANGE_SNAP_THRESHOLD_PX,
+  timelinePointerDeltaSeconds,
   type TimedRangeAdjustment,
 } from "@/lib/range-editing";
 import { userFacingErrorMessage } from "@/lib/public-error";
@@ -1705,7 +1706,10 @@ function CaptionTemplateEditorPreview({
   currentTimeSeconds: number;
   layout: EditorSubtitleLayout;
   onSelect: () => void;
-  onPointerDown: PointerEventHandler<HTMLElement>;
+  onPointerDown: (
+    event: PointerEvent<HTMLElement>,
+    cueIndex: number,
+  ) => void;
   onEditStart: (sourceCueIndex: number) => void;
   editing: { sourceCueIndex: number; text: string } | null;
   onEditingChange: (text: string) => void;
@@ -1816,7 +1820,10 @@ function CaptionTemplateEditorPreview({
           aria-label="팝형 자막 위치·크기·텍스트 편집"
           title="드래그해서 이동 · 더블클릭해서 자막 수정"
           className="pointer-events-auto absolute cursor-ns-resize touch-none whitespace-nowrap outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
-          onPointerDown={onPointerDown}
+          onPointerDown={(pointerEvent) => onPointerDown(
+            pointerEvent,
+            cueIndex,
+          )}
           onClick={onSelect}
           onDoubleClick={beginTextEdit}
           onKeyDown={(keyboardEvent) => {
@@ -1843,7 +1850,10 @@ function CaptionTemplateEditorPreview({
         aria-label="강조형 자막 위치·크기·텍스트 편집"
         title="드래그해서 이동 · 더블클릭해서 자막 수정"
         className="pointer-events-auto absolute cursor-ns-resize touch-none whitespace-nowrap text-center outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
-        onPointerDown={onPointerDown}
+        onPointerDown={(pointerEvent) => onPointerDown(
+          pointerEvent,
+          cueIndex,
+        )}
         onClick={onSelect}
         onDoubleClick={beginTextEdit}
         onKeyDown={(keyboardEvent) => {
@@ -3082,7 +3092,7 @@ const editorTemplateSnapshotsEqual = (
 const TIMELINE_THUMBNAIL_COUNT = 12;
 const EDITOR_COMMENT_SNAP_THRESHOLD_PX = 3;
 const EDITOR_OVERLAY_SNAP_THRESHOLD_PX = 3;
-const EDITOR_VIDEO_SIZE_SNAP_THRESHOLD_PX = 12;
+const EDITOR_VIDEO_SIZE_SNAP_THRESHOLD_PX = 4;
 const EDITOR_VIDEO_MIN_SCALE = 0.25;
 const EDITOR_VIDEO_MAX_SCALE = 2;
 const EDITOR_TEXT_LAYER_MIN_SCALE = 0.5;
@@ -3111,6 +3121,19 @@ const isEditorTextSelection = (
 const selectedEditorTextId = (selection: EditorOverlaySelection) => (
   isEditorTextSelection(selection) ? selection.slice("text:".length) : null
 );
+const editorSidebarToolForSelection = (
+  selection: EditorOverlaySelection,
+): EditorSidebarTool | null => {
+  if (isEditorTextSelection(selection)) return "text";
+  if (
+    selection === "title"
+    || selection === "comment"
+    || selection === "channel"
+  ) {
+    return selection;
+  }
+  return null;
+};
 
 function EditorSidebarSectionIcon({
   section,
@@ -3172,6 +3195,7 @@ const EDITOR_SIDEBAR_TOOLS = [
 const EDITOR_TIMELINE_ZOOM_MIN = 1;
 const EDITOR_TIMELINE_ZOOM_MAX = 3;
 const EDITOR_TIMELINE_ZOOM_STEP = 0.5;
+const EDITOR_TIMELINE_MOBILE_DEFAULT_ZOOM = 2;
 
 function EditorViewportZoomControl({
   label,
@@ -3313,11 +3337,13 @@ type CommentTimelineDrag = {
   commentId: string;
   adjustment: TimedRangeAdjustment;
   startClientX: number;
+  startClientY: number;
   width: number;
   initialRange: { startSeconds: number; endSeconds: number };
   previousEndSeconds: number;
   nextStartSeconds: number;
   moved: boolean;
+  rangeEditStarted: boolean;
 };
 
 function CommentTimelineEditor({
@@ -3329,6 +3355,7 @@ function CommentTimelineEditor({
   onSeek,
   onDelete,
   onSelect,
+  onEdit,
   onDeselect,
   onTextEditStart,
   onTextEditEnd,
@@ -3349,6 +3376,7 @@ function CommentTimelineEditor({
   onSeek: (seconds: number) => void;
   onDelete: (id: string) => void;
   onSelect: (id: string) => void;
+  onEdit: (id: string) => boolean;
   onDeselect: () => void;
   onTextEditStart: () => void;
   onTextEditEnd: () => void;
@@ -3514,16 +3542,13 @@ function CommentTimelineEditor({
   ) => {
     if (event.button !== 0 || !trackRef.current) return;
     const bounds = neighborBounds(comment.id);
-    onRangeEditStart();
-    onSelect(comment.id);
-    setSelectedCommentId(comment.id);
-    setEditingCommentId(null);
     dragRef.current = {
       pointerId: event.pointerId,
       captureTarget: event.currentTarget,
       commentId: comment.id,
       adjustment,
       startClientX: event.clientX,
+      startClientY: event.clientY,
       width: trackRef.current.getBoundingClientRect().width,
       initialRange: {
         startSeconds: comment.startSeconds,
@@ -3532,6 +3557,7 @@ function CommentTimelineEditor({
       previousEndSeconds: bounds.previousEndSeconds,
       nextStartSeconds: bounds.nextStartSeconds,
       moved: false,
+      rangeEditStarted: false,
     };
     event.stopPropagation();
   };
@@ -3540,14 +3566,34 @@ function CommentTimelineEditor({
     const active = dragRef.current;
     if (!active || active.pointerId !== event.pointerId || active.width <= 0) return;
     const distance = event.clientX - active.startClientX;
+    const verticalDistance = event.clientY - active.startClientY;
     if (!active.moved) {
-      if (Math.abs(distance) < 2) return;
+      if (Math.max(Math.abs(distance), Math.abs(verticalDistance)) < 5) return;
+      if (active.adjustment === "move" && event.pointerType !== "mouse") {
+        dragRef.current = null;
+        lastCommentActivationRef.current = null;
+        return;
+      }
+      if (Math.abs(verticalDistance) > Math.abs(distance)) {
+        dragRef.current = null;
+        lastCommentActivationRef.current = null;
+        return;
+      }
       active.moved = true;
+      active.rangeEditStarted = true;
+      onRangeEditStart();
+      onSelect(active.commentId);
+      setSelectedCommentId(active.commentId);
+      setEditingCommentId(null);
       if (!active.captureTarget.hasPointerCapture(active.pointerId)) {
         active.captureTarget.setPointerCapture(active.pointerId);
       }
     }
-    const deltaSeconds = distance / active.width * safeDuration;
+    const deltaSeconds = timelinePointerDeltaSeconds(
+      distance,
+      active.width,
+      safeDuration,
+    );
     const range = snapTimedRangeHandle(
       adjustTimedRange(
         active.initialRange,
@@ -3575,19 +3621,23 @@ function CommentTimelineEditor({
     if (active.captureTarget.hasPointerCapture(event.pointerId)) {
       active.captureTarget.releasePointerCapture(event.pointerId);
     }
-    onRangeEditEnd();
+    if (active.rangeEditStarted) onRangeEditEnd();
     if (active.moved || event.type !== "pointerup") return;
     const previousActivation = lastCommentActivationRef.current;
     const isDoubleActivation = previousActivation?.commentId === active.commentId
       && event.timeStamp - previousActivation.timestamp <= 450;
     if (isDoubleActivation) {
       lastCommentActivationRef.current = null;
+      if (onEdit(active.commentId)) return;
       const comment = orderedComments.find(
         (value) => value.id === active.commentId,
       );
       if (comment) openCommentTextEditor(comment, active.captureTarget);
       return;
     }
+    onSelect(active.commentId);
+    setSelectedCommentId(active.commentId);
+    setEditingCommentId(null);
     lastCommentActivationRef.current = {
       commentId: active.commentId,
       timestamp: event.timeStamp,
@@ -3979,6 +4029,27 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const activeRangeHandleRef = useRef<"start" | "end" | null>(null);
   const rangeInteractionStartClipsRef = useRef<EditorVideoClip[] | null>(null);
   const timelineScrubbingRef = useRef(false);
+  const mobileTimelinePointerRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    targetClipId: string | null;
+    moved: boolean;
+  } | null>(null);
+  const mobileOverlayActivationRef = useRef<{
+    selection: Exclude<EditorOverlaySelection, null>;
+    timestamp: number;
+  } | null>(null);
+  const mobileSubtitleActivationRef = useRef<{
+    key: string;
+    timestamp: number;
+  } | null>(null);
+  const mobileSubtitlePointerRef = useRef<{
+    key: string;
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+  } | null>(null);
   const overlayDragCleanupRef = useRef<(() => void) | null>(null);
   const videoClipTrimCleanupRef = useRef<(() => void) | null>(null);
   const [overlayLayout, setOverlayLayout] = useState(() => {
@@ -4028,6 +4099,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [selectedOverlay, setSelectedOverlay] = useState<EditorOverlaySelection>(
     overlayPreviewEnabled ? null : "video",
   );
+  const [selectedTimelineCommentId, setSelectedTimelineCommentId] = useState<
+    string | null
+  >(null);
   const [inlineEditingOverlay, setInlineEditingOverlay] = useState<
     "title" | `text:${string}` | null
   >(null);
@@ -4119,6 +4193,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     fontId: EditorFontId;
   } | null>(null);
   const [editorTimelineZoom, setEditorTimelineZoom] = useState(1);
+  useEffect(() => {
+    if (!window.matchMedia("(max-width: 640px)").matches) return;
+    setEditorTimelineZoom(EDITOR_TIMELINE_MOBILE_DEFAULT_ZOOM);
+  }, []);
   const updateEditorTimelineZoom = useCallback((nextZoom: number) => {
     const scrollArea = editorTimelineScrollAreaRef.current;
     if (scrollArea && scrollArea.scrollWidth > 0) {
@@ -4148,9 +4226,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     );
   }, [editorTimelineZoom]);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
-  const [mobileEditorBlocked, setMobileEditorBlocked] = useState<boolean | null>(
-    standalone ? null : false,
-  );
+  const [mobileEditorLayout, setMobileEditorLayout] = useState(false);
   const [editorGuideReady, setEditorGuideReady] = useState(false);
   useEffect(() => {
     if (!overlayPreviewEnabled) return;
@@ -4200,16 +4276,135 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   }, [titleFontScale]);
   useEffect(() => {
     if (selectedOverlay !== null) setSelectedVideoClipId(null);
+    if (selectedOverlay !== "comment") setSelectedTimelineCommentId(null);
   }, [selectedOverlay]);
   useEffect(() => {
     if (!overlayPreviewEnabled || selectedOverlay !== "title") return;
     setActiveEditorSidebarTool("title");
-    setDesktopSidebarOpen(true);
+    if (!window.matchMedia("(max-width: 640px)").matches) {
+      setDesktopSidebarOpen(true);
+    }
   }, [overlayPreviewEnabled, selectedOverlay]);
+  const openMobileEditorControlsForSelection = useCallback((
+    selection: EditorOverlaySelection,
+  ) => {
+    if (!window.matchMedia("(max-width: 640px)").matches) return false;
+    const tool = editorSidebarToolForSelection(selection);
+    if (!tool || selection === null) return false;
+    setSelectedOverlay(selection);
+    if (isEditorTextSelection(selection)) {
+      setExpandedEditorTextId(selectedEditorTextId(selection));
+    }
+    setActiveEditorSidebarTool(tool);
+    setDesktopSidebarOpen(true);
+    setMobileControlsOpen(true);
+    return true;
+  }, []);
+  const openMobileEditorControlsFromDoubleTap = useCallback((
+    selection: Exclude<EditorOverlaySelection, null>,
+    timeStamp: number,
+    pointerType: string,
+    moved: boolean,
+  ) => {
+    if (
+      pointerType === "mouse"
+      || !window.matchMedia("(max-width: 640px)").matches
+    ) {
+      return false;
+    }
+    if (moved) {
+      mobileOverlayActivationRef.current = null;
+      return false;
+    }
+    const previousActivation = mobileOverlayActivationRef.current;
+    if (
+      previousActivation?.selection === selection
+      && timeStamp - previousActivation.timestamp <= 450
+    ) {
+      mobileOverlayActivationRef.current = null;
+      return openMobileEditorControlsForSelection(selection);
+    }
+    mobileOverlayActivationRef.current = { selection, timestamp: timeStamp };
+    return false;
+  }, [openMobileEditorControlsForSelection]);
+  const activateMobileSubtitleFromDoubleTap = useCallback((
+    key: string,
+    timeStamp: number,
+    pointerType: string,
+    moved: boolean,
+    onActivate: () => void,
+  ) => {
+    if (
+      pointerType === "mouse"
+      || !window.matchMedia("(max-width: 640px)").matches
+    ) {
+      return false;
+    }
+    if (moved) {
+      mobileSubtitleActivationRef.current = null;
+      return false;
+    }
+    const previousActivation = mobileSubtitleActivationRef.current;
+    if (
+      previousActivation?.key === key
+      && timeStamp - previousActivation.timestamp <= 450
+    ) {
+      mobileSubtitleActivationRef.current = null;
+      onActivate();
+      return true;
+    }
+    mobileSubtitleActivationRef.current = { key, timestamp: timeStamp };
+    return false;
+  }, []);
+  const beginMobileSubtitleTap = useCallback((
+    key: string,
+    event: PointerEvent<HTMLElement>,
+  ) => {
+    if (
+      event.pointerType === "mouse"
+      || !window.matchMedia("(max-width: 640px)").matches
+    ) {
+      return;
+    }
+    mobileSubtitlePointerRef.current = {
+      key,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+    };
+  }, []);
+  const finishMobileSubtitleTap = useCallback((
+    key: string,
+    event: PointerEvent<HTMLElement>,
+    onActivate: () => void,
+  ) => {
+    const active = mobileSubtitlePointerRef.current;
+    if (
+      !active
+      || active.key !== key
+      || active.pointerId !== event.pointerId
+    ) {
+      return false;
+    }
+    mobileSubtitlePointerRef.current = null;
+    const moved = Math.max(
+      Math.abs(event.clientX - active.startClientX),
+      Math.abs(event.clientY - active.startClientY),
+    ) >= 5;
+    return activateMobileSubtitleFromDoubleTap(
+      key,
+      event.timeStamp,
+      event.pointerType,
+      moved,
+      onActivate,
+    );
+  }, [activateMobileSubtitleFromDoubleTap]);
   useEffect(() => {
     if (!overlayPreviewEnabled || selectedOverlay !== "channel") return;
     setActiveEditorSidebarTool("channel");
-    setDesktopSidebarOpen(true);
+    if (!window.matchMedia("(max-width: 640px)").matches) {
+      setDesktopSidebarOpen(true);
+    }
   }, [overlayPreviewEnabled, selectedOverlay]);
   useEffect(() => {
     if (
@@ -4220,7 +4415,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     }
     setExpandedEditorTextId(selectedEditorTextId(selectedOverlay));
     setActiveEditorSidebarTool("text");
-    setDesktopSidebarOpen(true);
+    if (!window.matchMedia("(max-width: 640px)").matches) {
+      setDesktopSidebarOpen(true);
+    }
   }, [overlayPreviewEnabled, selectedOverlay]);
   useEffect(() => {
     if (!overlayPreviewEnabled) return;
@@ -4323,6 +4520,21 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const toggleEditorSidebarTool = (
     tool: EditorSidebarTool,
   ) => {
+    if (window.matchMedia("(max-width: 640px)").matches) {
+      const toolAlreadyOpen = activeEditorSidebarTool === tool
+        && mobileControlsOpen;
+      if (tool === "channel" && overlayLayoutRef.current.visible.channel) {
+        setInlineEditingOverlay(null);
+        setSelectedOverlay("channel");
+      } else if (isEditorTextSelection(selectedOverlay) && tool !== "text") {
+        setInlineEditingOverlay(null);
+        setSelectedOverlay(null);
+      }
+      setActiveEditorSidebarTool(tool);
+      setDesktopSidebarOpen(!toolAlreadyOpen);
+      setMobileControlsOpen(!toolAlreadyOpen);
+      return;
+    }
     if (tool === "text") {
       if (activeEditorSidebarTool === tool) {
         setDesktopSidebarOpen((current) => !current);
@@ -6003,11 +6215,16 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
   const beginEditorTitleInlineEdit = useCallback(() => {
     if (!overlayPreviewEnabled) return;
+    if (openMobileEditorControlsForSelection("title")) return;
     overlayDragCleanupRef.current?.();
     beginEditorCopyInteraction();
     setSelectedOverlay("title");
     setInlineEditingOverlay("title");
-  }, [beginEditorCopyInteraction, overlayPreviewEnabled]);
+  }, [
+    beginEditorCopyInteraction,
+    openMobileEditorControlsForSelection,
+    overlayPreviewEnabled,
+  ]);
 
   const updateEditorTitleInlineValue = useCallback((value: string) => {
     const twoLines = value.split("\n").slice(0, 2).join("\n");
@@ -6028,12 +6245,17 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
   const beginEditorTextInlineEdit = useCallback((id: string) => {
     if (!overlayPreviewEnabled) return;
+    const selection = editorTextSelection(id);
+    if (openMobileEditorControlsForSelection(selection)) return;
     overlayDragCleanupRef.current?.();
     beginEditorOverlayHistoryInteraction();
-    const selection = editorTextSelection(id);
     setSelectedOverlay(selection);
     setInlineEditingOverlay(selection);
-  }, [beginEditorOverlayHistoryInteraction, overlayPreviewEnabled]);
+  }, [
+    beginEditorOverlayHistoryInteraction,
+    openMobileEditorControlsForSelection,
+    overlayPreviewEnabled,
+  ]);
 
   const updateEditorTextInlineValue = useCallback((
     id: string,
@@ -6144,6 +6366,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const clearEditorOverlaySelection = useCallback(() => {
     finishPendingEditorInteractionsIncludingCaption();
     setSelectedOverlay(null);
+    setSelectedTimelineCommentId(null);
     setSelectedVideoClipId(null);
     setInlineEditingOverlay(null);
     setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
@@ -6224,6 +6447,22 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setSelectedOverlay(null);
     setInlineEditingOverlay(null);
   }, [applyEditorOverlayLayout, recordEditorCommentDeletion]);
+
+  const deleteSelectedMobileLayout = useCallback(() => {
+    if (selectedOverlay === "comment" && selectedTimelineCommentId) {
+      deleteEditorComment(selectedTimelineCommentId);
+    } else {
+      deleteSelectedEditorOverlay();
+    }
+    setSelectedTimelineCommentId(null);
+    setMobileControlsOpen(false);
+    setDesktopSidebarOpen(false);
+  }, [
+    deleteEditorComment,
+    deleteSelectedEditorOverlay,
+    selectedOverlay,
+    selectedTimelineCommentId,
+  ]);
 
   const seekEditorVideoSequence = useCallback((
     outputSeconds: number,
@@ -6410,16 +6649,20 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     const pointerId = event.pointerId;
     const startClientX = event.clientX;
     const trackWidth = filmstripRef.current.getBoundingClientRect().width;
-    const initialDuration = editorVideoDuration(clips);
     const minimumSourceSeconds = clips[clipIndex - 1]?.sourceEndSeconds ?? 0;
     const maximumSourceSeconds = clips[clipIndex + 1]?.sourceStartSeconds
       ?? editTimeline.timelineEndSeconds - editTimeline.timelineStartSeconds;
     captureTarget.setPointerCapture(pointerId);
 
+    let animationFrameId: number | null = null;
+    let pendingClientX = event.clientX;
+
     const updateTrim = (clientX: number) => {
-      const deltaSeconds = (clientX - startClientX)
-        / Math.max(1, trackWidth)
-        * initialDuration;
+      const deltaSeconds = timelinePointerDeltaSeconds(
+        clientX - startClientX,
+        trackWidth,
+        timelineDuration,
+      );
       const nextClip = edge === "start"
         ? {
             ...clip,
@@ -6472,9 +6715,19 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     };
     const move = (moveEvent: globalThis.PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
-      updateTrim(moveEvent.clientX);
+      pendingClientX = moveEvent.clientX;
+      if (animationFrameId === null) {
+        animationFrameId = window.requestAnimationFrame(() => {
+          animationFrameId = null;
+          updateTrim(pendingClientX);
+        });
+      }
     };
     const cleanup = () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
@@ -6482,6 +6735,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     };
     const finish = (finishEvent: globalThis.PointerEvent) => {
       if (finishEvent.pointerId !== pointerId) return;
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+      if (finishEvent.type === "pointerup") {
+        updateTrim(finishEvent.clientX);
+      }
       if (captureTarget.hasPointerCapture(pointerId)) {
         captureTarget.releasePointerCapture(pointerId);
       }
@@ -6498,6 +6758,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     overlayPreviewEnabled,
     recordEditorVideoStep,
     seekEditorVideoSequence,
+    timelineDuration,
   ]);
 
   const deleteSelectedEditorVideoClip = useCallback(() => {
@@ -7067,13 +7328,22 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       const percentageRange = (
         EDITOR_TEXT_LAYER_MAX_SCALE - EDITOR_TEXT_LAYER_MIN_SCALE
       ) * 100;
-      const percentage = Math.round((
-        minimumPercentage + ratio * percentageRange
-      ) / 5) * 5;
+      const percentage = minimumPercentage + ratio * percentageRange;
       setEditorOverlayScale(selection, percentage / 100);
     };
 
+    let animationFrameId: number | null = null;
+    let pendingClientY = event.clientY;
+    const flushScale = () => {
+      animationFrameId = null;
+      updateScale(pendingClientY);
+    };
+
     const cleanup = () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
@@ -7086,10 +7356,17 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     };
     const move = (moveEvent: globalThis.PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
-      updateScale(moveEvent.clientY);
+      pendingClientY = moveEvent.clientY;
+      if (animationFrameId === null) {
+        animationFrameId = window.requestAnimationFrame(flushScale);
+      }
     };
     const finish = (finishEvent: globalThis.PointerEvent) => {
       if (finishEvent.pointerId !== pointerId) return;
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
       updateScale(finishEvent.clientY);
       cleanup();
       finishEditorScaleHistoryInteraction(selection);
@@ -7228,6 +7505,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     finishPendingEditorInteractionsIncludingCaption();
     beginEditorOverlayHistoryInteraction();
     setSelectedOverlay(layer);
+    setSelectedTimelineCommentId(layer === "comment" ? commentId || null : null);
     setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
     if (layer === "comment") videoRef.current?.pause();
 
@@ -7279,6 +7557,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       : [];
     const startClientX = event.clientX;
     const startClientY = event.clientY;
+    let moved = false;
     const startOffset = layer === "comment" && commentId
       ? overlayLayoutRef.current.commentOffsets?.[commentId]
         || overlayLayoutRef.current.offsets.comment
@@ -7297,9 +7576,15 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     };
     const move = (moveEvent: globalThis.PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
+      const clientDeltaX = moveEvent.clientX - startClientX;
+      const clientDeltaY = moveEvent.clientY - startClientY;
+      if (!moved && Math.max(Math.abs(clientDeltaX), Math.abs(clientDeltaY)) < 5) {
+        return;
+      }
+      moved = true;
       const rawDelta = clientDeltaToCanvas({
-        x: moveEvent.clientX - startClientX,
-        y: moveEvent.clientY - startClientY,
+        x: clientDeltaX,
+        y: clientDeltaY,
       }, canvasRect);
       const resolved = resolveEditorOverlayDelta({
         layer,
@@ -7340,6 +7625,22 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       cleanup();
       setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
       finishEditorOverlayHistoryInteraction();
+      if (
+        layer === "title"
+        || layer === "channel"
+        || (layer === "comment" && commentId)
+      ) {
+        if (finishEvent.type === "pointerup") {
+          openMobileEditorControlsFromDoubleTap(
+            layer,
+            finishEvent.timeStamp,
+            finishEvent.pointerType,
+            moved,
+          );
+        } else {
+          mobileOverlayActivationRef.current = null;
+        }
+      }
     };
     overlayDragCleanupRef.current = cleanup;
     window.addEventListener("pointermove", move);
@@ -7349,6 +7650,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     beginEditorOverlayHistoryInteraction,
     finishEditorOverlayHistoryInteraction,
     finishPendingEditorInteractionsIncludingCaption,
+    openMobileEditorControlsFromDoubleTap,
     overlayPreviewEnabled,
     resolveEditorOverlayDelta,
     updateEditorOverlayLayout,
@@ -7390,6 +7692,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     }, canvasRect);
     const startClientX = event.clientX;
     const startClientY = event.clientY;
+    let moved = false;
     const startOffset = textOverlay.offset;
 
     const cleanup = () => {
@@ -7405,9 +7708,15 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     };
     const move = (moveEvent: globalThis.PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
+      const clientDeltaX = moveEvent.clientX - startClientX;
+      const clientDeltaY = moveEvent.clientY - startClientY;
+      if (!moved && Math.max(Math.abs(clientDeltaX), Math.abs(clientDeltaY)) < 5) {
+        return;
+      }
+      moved = true;
       const rawDelta = clientDeltaToCanvas({
-        x: moveEvent.clientX - startClientX,
-        y: moveEvent.clientY - startClientY,
+        x: clientDeltaX,
+        y: clientDeltaY,
       }, canvasRect);
       const resolved = resolveEditorOverlayDelta({
         layer: "title",
@@ -7429,6 +7738,16 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       cleanup();
       setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
       finishEditorOverlayHistoryInteraction();
+      if (finishEvent.type === "pointerup") {
+        openMobileEditorControlsFromDoubleTap(
+          editorTextSelection(id),
+          finishEvent.timeStamp,
+          finishEvent.pointerType,
+          moved,
+        );
+      } else {
+        mobileOverlayActivationRef.current = null;
+      }
     };
     overlayDragCleanupRef.current = cleanup;
     window.addEventListener("pointermove", move);
@@ -7437,6 +7756,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   }, [
     beginEditorOverlayHistoryInteraction,
     finishEditorOverlayHistoryInteraction,
+    openMobileEditorControlsFromDoubleTap,
     overlayPreviewEnabled,
     resolveEditorOverlayDelta,
     updateEditorTextOverlay,
@@ -7569,7 +7889,15 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     const startClientX = event.clientX;
     const startClientY = event.clientY;
 
+    let animationFrameId: number | null = null;
+    let pendingClientX = event.clientX;
+    let pendingClientY = event.clientY;
+
     const cleanup = () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
@@ -7580,11 +7908,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         overlayDragCleanupRef.current = null;
       }
     };
-    const move = (moveEvent: globalThis.PointerEvent) => {
-      if (moveEvent.pointerId !== pointerId) return;
+    const updateSize = (clientX: number, clientY: number) => {
       const delta = clientDeltaToCanvas({
-        x: moveEvent.clientX - startClientX,
-        y: moveEvent.clientY - startClientY,
+        x: clientX - startClientX,
+        y: clientY - startClientY,
       }, canvasRect);
       const resized = resizeCanvasRectFromCorner({
         rect: startRect,
@@ -7633,8 +7960,24 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         videoHeightFitted: snapped.snapped.height,
       });
     };
+    const move = (moveEvent: globalThis.PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      pendingClientX = moveEvent.clientX;
+      pendingClientY = moveEvent.clientY;
+      if (animationFrameId === null) {
+        animationFrameId = window.requestAnimationFrame(() => {
+          animationFrameId = null;
+          updateSize(pendingClientX, pendingClientY);
+        });
+      }
+    };
     const finish = (finishEvent: globalThis.PointerEvent) => {
       if (finishEvent.pointerId !== pointerId) return;
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+      updateSize(finishEvent.clientX, finishEvent.clientY);
       cleanup();
       setOverlayGuides(EMPTY_EDITOR_OVERLAY_GUIDES);
       finishEditorOverlayHistoryInteraction();
@@ -7854,31 +8197,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   ]);
 
   useEffect(() => {
-    const detectMobileEditor = () => {
-      const mobileBrowser = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(
-        window.navigator.userAgent,
-      );
-      const iPadDesktopBrowser = window.navigator.platform === "MacIntel"
-        && window.navigator.maxTouchPoints > 1;
-      const compactTouchDevice = window.navigator.maxTouchPoints > 1
-        && window.matchMedia("(pointer: coarse)").matches
-        && window.matchMedia("(max-width: 1024px)").matches;
-      setMobileEditorBlocked(mobileBrowser || iPadDesktopBrowser || compactTouchDevice);
-    };
-
-    detectMobileEditor();
-    window.addEventListener("resize", detectMobileEditor);
-    return () => window.removeEventListener("resize", detectMobileEditor);
+    const narrowEditor = window.matchMedia("(max-width: 920px)");
+    const syncEditorLayout = () => setMobileEditorLayout(narrowEditor.matches);
+    syncEditorLayout();
+    narrowEditor.addEventListener("change", syncEditorLayout);
+    return () => narrowEditor.removeEventListener("change", syncEditorLayout);
   }, []);
-
-  useEffect(() => {
-    if (mobileEditorBlocked !== true) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [mobileEditorBlocked]);
 
   const refreshEditorVideoSource = useCallback(async (
     reason: "scheduled" | "error" | "manual",
@@ -8185,6 +8509,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 
   const beginEditorSubtitleDrag = useCallback((
     event: PointerEvent<HTMLElement>,
+    cueIndex: number,
   ) => {
     if (!editableCaptionSourceSpec || event.button !== 0) return;
     const canvas = editorCanvasRef.current;
@@ -8207,8 +8532,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       width: canvasClientRect.width,
       height: canvasClientRect.height,
     };
+    const startClientX = event.clientX;
     const startClientY = event.clientY;
     const startOffsetY = subtitleLayoutRef.current.offsetY;
+    let moved = false;
 
     const updatePosition = (clientY: number) => {
       const delta = clientDeltaToCanvas({
@@ -8241,33 +8568,75 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     };
     const move = (moveEvent: globalThis.PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
+      if (
+        !moved
+        && Math.max(
+          Math.abs(moveEvent.clientX - startClientX),
+          Math.abs(moveEvent.clientY - startClientY),
+        ) < 5
+      ) {
+        return;
+      }
+      moved = true;
       updatePosition(moveEvent.clientY);
     };
     const finish = (finishEvent: globalThis.PointerEvent) => {
       if (finishEvent.pointerId !== pointerId) return;
-      updatePosition(finishEvent.clientY);
+      if (moved && finishEvent.type === "pointerup") {
+        updatePosition(finishEvent.clientY);
+      }
       cleanup();
       finishEditorCopyInteraction();
+      if (finishEvent.type === "pointerup") {
+        activateMobileSubtitleFromDoubleTap(
+          `caption:${cueIndex}`,
+          finishEvent.timeStamp,
+          finishEvent.pointerType,
+          moved,
+          () => beginEditorCaptionTextEdit(cueIndex),
+        );
+      } else {
+        mobileSubtitleActivationRef.current = null;
+      }
     };
     overlayDragCleanupRef.current = cleanup;
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", finish);
     window.addEventListener("pointercancel", finish);
   }, [
+    activateMobileSubtitleFromDoubleTap,
     beginEditorCopyInteraction,
+    beginEditorCaptionTextEdit,
     editableCaptionSourceSpec,
     finishEditorCopyInteraction,
     finishPendingEditorInteractionsIncludingCaption,
     updateCaptionTemplateSubtitleLayout,
   ]);
 
-  const requestCommentTextEdit = (commentId: string) => {
+  const requestCommentTextEdit = (
+    commentId: string,
+    openControlsOnMobile = true,
+  ) => {
     setInlineEditingOverlay(null);
     setSelectedOverlay("comment");
+    setSelectedTimelineCommentId(commentId);
+    if (
+      openControlsOnMobile
+      && openMobileEditorControlsForSelection("comment")
+    ) {
+      return;
+    }
     setCommentEditRequest((current) => ({
       commentId,
       revision: (current?.revision || 0) + 1,
     }));
+  };
+
+  const editSelectedCommentContent = () => {
+    if (!selectedTimelineCommentId) return;
+    setMobileControlsOpen(false);
+    setDesktopSidebarOpen(false);
+    requestCommentTextEdit(selectedTimelineCommentId, false);
   };
 
   const updateCommentRange = (
@@ -8603,6 +8972,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     finishPendingEditorInteractionsIncludingCaption();
     videoRef.current?.pause();
     timelineScrubbingRef.current = false;
+    mobileTimelinePointerRef.current = null;
     rangeInteractionStartClipsRef.current = (
       adminSubtitleLayoutEnabled && videoCuttingEnabled
     )
@@ -8638,6 +9008,23 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const startTimelineScrubbing = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     finishPendingEditorInteractionsIncludingCaption();
+    if (window.matchMedia("(max-width: 640px)").matches) {
+      const target = event.target;
+      mobileTimelinePointerRef.current = {
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        targetClipId: target instanceof HTMLElement
+          ? target.closest<HTMLElement>("[data-editor-video-clip-id]")
+            ?.dataset.editorVideoClipId || null
+          : null,
+        moved: false,
+      };
+      rangeInteractionStartClipsRef.current = null;
+      activeRangeHandleRef.current = null;
+      timelineScrubbingRef.current = false;
+      return;
+    }
     if (videoCuttingEnabled) {
       const target = event.target;
       const clipId = target instanceof HTMLElement
@@ -8663,12 +9050,37 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       event.preventDefault();
       return;
     }
+    const mobilePointer = mobileTimelinePointerRef.current;
+    if (mobilePointer?.pointerId === event.pointerId) {
+      const distanceX = event.clientX - mobilePointer.startClientX;
+      const distanceY = event.clientY - mobilePointer.startClientY;
+      if (Math.max(Math.abs(distanceX), Math.abs(distanceY)) >= 5) {
+        mobilePointer.moved = true;
+      }
+      return;
+    }
     if (!timelineScrubbingRef.current) return;
     updatePlayheadFromPointer(event.clientX);
     event.preventDefault();
   };
 
+  const finishMobileTimelinePointer = (event: PointerEvent<HTMLDivElement>) => {
+    const mobilePointer = mobileTimelinePointerRef.current;
+    if (mobilePointer?.pointerId !== event.pointerId) return false;
+    mobileTimelinePointerRef.current = null;
+    if (event.type === "pointerup" && !mobilePointer.moved) {
+      if (videoCuttingEnabled) {
+        setSelectedVideoClipId(mobilePointer.targetClipId);
+        setSelectedOverlay(null);
+        setInlineEditingOverlay(null);
+      }
+      updatePlayheadFromPointer(event.clientX);
+    }
+    return true;
+  };
+
   const finishTimelineScrubbing = (event: PointerEvent<HTMLDivElement>) => {
+    if (finishMobileTimelinePointer(event)) return;
     const clipsBeforeRangeInteraction = rangeInteractionStartClipsRef.current;
     rangeInteractionStartClipsRef.current = null;
     activeRangeHandleRef.current = null;
@@ -8974,9 +9386,14 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         onTextChange={(id, text) => updateComment(id, { text })}
         onSeek={seekCommentTimeline}
         onDelete={deleteEditorComment}
-        onSelect={() => {
+        onSelect={(id) => {
           setInlineEditingOverlay(null);
+          setSelectedTimelineCommentId(id);
           setSelectedOverlay("comment");
+        }}
+        onEdit={(id) => {
+          setSelectedTimelineCommentId(id);
+          return openMobileEditorControlsForSelection("comment");
         }}
         onDeselect={clearEditorOverlaySelection}
         onTextEditStart={beginEditorCommentTextInteraction}
@@ -9014,6 +9431,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             onSelect={() => {
               if (inlineEditingOverlay !== null) finishEditorInlineEdit();
               setSelectedOverlay(selection);
+            }}
+            onEdit={() => {
+              openMobileEditorControlsForSelection(selection);
             }}
             onInteractionStart={beginEditorOverlayHistoryInteraction}
             onInteractionEnd={finishEditorOverlayHistoryInteraction}
@@ -9107,6 +9527,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const editorTimelineZoomStyle: CSSProperties | undefined = overlayPreviewEnabled
     ? { width: `${editorTimelineZoom * 100}%` }
     : undefined;
+  const selectedTimelineComment = selectedTimelineCommentId
+    ? comments.find((comment) => comment.id === selectedTimelineCommentId) || null
+    : null;
+  const selectedMobileLayoutTool = editorSidebarToolForSelection(
+    selectedOverlay,
+  );
+  const selectedMobileLayoutLabel = selectedLayerOrderLabel || "레이아웃";
 
   const editorContent = (
     <>
@@ -9165,7 +9592,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       />
       <DesktopEditorGuide
         enabled={standalone
-          && mobileEditorBlocked === false
+          && !mobileEditorLayout
           && !paidAccessBlocked
           && editorGuideReady
           && editorDraftLookupComplete
@@ -9181,23 +9608,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         overlayPreviewEnabled={overlayPreviewEnabled}
         editorSaveEnabled={editorSaveEnabled}
       />
-      {mobileEditorBlocked === true && <div
-        className="editor-mobile-blocker"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="editor-mobile-blocker-title"
-        aria-describedby="editor-mobile-blocker-description"
-      >
-        <section className="editor-mobile-blocker-card">
-          <span className="editor-mobile-blocker-label">PC 전용 편집 기능</span>
-          <h2 id="editor-mobile-blocker-title">데스크톱에서 편집해 주세요</h2>
-          <p id="editor-mobile-blocker-description">영상 구간과 댓글 타임라인을 정확하게 조정하려면 데스크톱 환경이 필요합니다.</p>
-          <button type="button" onClick={onClose}>프로젝트로 돌아가기</button>
-        </section>
-      </div>}
       <PaidProjectFeatureOverlay
         action="edit"
-        open={standalone && paidAccessBlocked && mobileEditorBlocked === false}
+        open={standalone && paidAccessBlocked}
       />
       {standalone && <header className="editor-topbar">
         <div className="editor-topbar-inner">
@@ -9208,6 +9621,29 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             </div>
           </div>
           <div className="editor-header-actions">
+            {overlayPreviewEnabled && <div
+              className="editor-mobile-history-actions"
+              aria-label="편집 기록"
+            >
+              <button
+                type="button"
+                aria-label="되돌리기"
+                disabled={!canUndoEditorEdit}
+                onClick={() => {
+                  if (!finishPendingEditorInteractionsForHistory()) return;
+                  undoEditorEdit();
+                }}
+              >↶</button>
+              <button
+                type="button"
+                aria-label="앞으로 가기"
+                disabled={!canRedoEditorEdit}
+                onClick={() => {
+                  if (!finishPendingEditorInteractionsForHistory()) return;
+                  redoEditorEdit();
+                }}
+              >↷</button>
+            </div>}
             {overlayPreviewEnabled && editorDraftLookupComplete && <span
               className={`editor-draft-status is-${editorDraftSaveState}`}
               role="status"
@@ -9226,7 +9662,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                     ? "저장 실패"
                     : "자동 저장"}
             </span>}
-            <button type="button" onPointerDown={preserveInvalidCaptionTextFocus} onClick={closeEditorAfterSavingCaptionDraft} className="editor-close-button" aria-label="편집기에서 나가기">나가기</button>
+            <button type="button" onPointerDown={preserveInvalidCaptionTextFocus} onClick={closeEditorAfterSavingCaptionDraft} className="editor-close-button" aria-label="편집기에서 나가기">
+              <span className="editor-close-icon" aria-hidden="true">×</span>
+              <span className="editor-close-label">나가기</span>
+            </button>
             <button
               type="button"
               data-editor-guide={overlayPreviewEnabled ? "editor-save" : undefined}
@@ -9239,7 +9678,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 ? "저장 잠금"
                 : saving
                   ? "적용 중..."
-                  : "영상에 적용"}
+                  : <>
+                      <span className="editor-apply-label-desktop">영상에 적용</span>
+                      <span className="editor-apply-label-mobile">영상에 적용</span>
+                    </>}
             </button>
           </div>
         </div>
@@ -9341,6 +9783,29 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           data-editor-overlay-canvas={overlayPreviewEnabled ? "" : undefined}
           data-editor-guide={overlayPreviewEnabled ? "preview-canvas" : undefined}
           className={standalone ? "editor-video-frame" : "aspect-[9/16] w-full overflow-hidden"}
+          onDoubleClickCapture={(event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            const textLayer = target.closest<HTMLElement>(
+              "[data-editor-text-overlay-id]",
+            );
+            const textId = textLayer?.dataset.editorTextOverlayId;
+            const layer = target.closest<HTMLElement>(
+              "[data-editor-overlay-layer]",
+            )?.dataset.editorOverlayLayer;
+            const selection = textId
+              ? editorTextSelection(textId)
+              : layer === "title"
+                || layer === "comment"
+                || layer === "channel"
+                ? layer
+                : null;
+            if (!selection || !openMobileEditorControlsForSelection(selection)) {
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+          }}
           style={{
             ...resolvedEditorCanvasBackground,
             containerType: "inline-size",
@@ -9657,6 +10122,25 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                   type="button"
                   className="block w-full cursor-text text-center"
                   title="더블클릭해서 자막 수정"
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    beginMobileSubtitleTap(
+                      `segment:${activeSubtitleIndex}`,
+                      event,
+                    );
+                  }}
+                  onPointerUp={(event) => {
+                    event.stopPropagation();
+                    finishMobileSubtitleTap(
+                      `segment:${activeSubtitleIndex}`,
+                      event,
+                      () => setEditingSubtitleIndex(activeSubtitleIndex),
+                    );
+                  }}
+                  onPointerCancel={() => {
+                    mobileSubtitlePointerRef.current = null;
+                    mobileSubtitleActivationRef.current = null;
+                  }}
                   onDoubleClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -9917,7 +10401,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               type="range"
               min={EDITOR_TEXT_LAYER_MIN_SCALE * 100}
               max={EDITOR_TEXT_LAYER_MAX_SCALE * 100}
-              step={5}
+              step={1}
               value={Math.round(scalableOverlayScale * 100)}
               aria-label={`${scalableOverlayLabel} 크기`}
               onPointerDown={(event) => beginEditorOverlayScaleDrag(
@@ -10033,6 +10517,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               </svg>}
         </button>}
         </div>
+        <div className="editor-preview-mobile-actions">
         <div className="editor-preview-transport" aria-label="미리보기 재생 및 화면 제어">
           <div className="editor-preview-time-group" aria-label="미리보기 재생 시간">
             <span>{formatPreciseTimestamp(displayedPreviewTime)}</span>
@@ -10112,13 +10597,14 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             분할
           </button>
         </div>}
+        </div>
         </section>
         <section className={standalone
           ? `editor-controls-pane${mobileControlsOpen ? " is-mobile-open" : ""}${overlayPreviewEnabled ? " has-editor-tool-rail" : ""}`
           : `editor-dialog-controls${overlayPreviewEnabled ? " has-editor-tool-rail" : ""}`}
         >
           {overlayPreviewEnabled && <nav
-            className="editor-tool-rail"
+            className={`editor-tool-rail${selectedMobileLayoutTool ? " has-mobile-selection" : ""}`}
             aria-label="편집 도구"
           >
             <div
@@ -10148,6 +10634,65 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               );
             })}
             </div>
+            {selectedMobileLayoutTool && <div
+              className={`editor-mobile-selection-actions${selectedOverlay === "comment" && selectedTimelineCommentId ? " has-comment-edit" : ""}`}
+              aria-label={`${selectedMobileLayoutLabel} 선택 작업`}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  openMobileEditorControlsForSelection(selectedOverlay);
+                }}
+              >
+                <span aria-hidden="true">
+                  <svg viewBox="0 0 20 20" fill="none">
+                    <path d="m4 14.5.6-3 7.8-7.8a1.6 1.6 0 0 1 2.3 0l1.6 1.6a1.6 1.6 0 0 1 0 2.3l-7.8 7.8-3 .6-1.5-1.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                    <path d="m11.5 4.6 3.9 3.9" stroke="currentColor" strokeWidth="1.5" />
+                  </svg>
+                </span>
+                수정
+              </button>
+              <button
+                type="button"
+                className="is-delete"
+                onClick={deleteSelectedMobileLayout}
+              >
+                <span aria-hidden="true">
+                  <svg viewBox="0 0 20 20" fill="none">
+                    <path d="M5.5 6.5h9l-.6 9H6.1l-.6-9ZM4 4.5h12M8 4.5V3.2h4v1.3M8.2 8.5v4.7M11.8 8.5v4.7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+                삭제
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearEditorOverlaySelection();
+                  setMobileControlsOpen(false);
+                  setDesktopSidebarOpen(false);
+                }}
+              >
+                <span aria-hidden="true">
+                  <svg viewBox="0 0 20 20" fill="none">
+                    <path d="m6 6 8 8M14 6l-8 8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                  </svg>
+                </span>
+                선택 해제
+              </button>
+              {selectedOverlay === "comment" && selectedTimelineCommentId && <button
+                type="button"
+                className="is-comment-edit"
+                onClick={editSelectedCommentContent}
+              >
+                <span aria-hidden="true">
+                  <svg viewBox="0 0 20 20" fill="none">
+                    <path d="M3.5 4.25h13v8.5H9l-4.25 3.1v-3.1H3.5v-8.5Z" stroke="currentColor" strokeWidth="1.45" strokeLinejoin="round" />
+                    <path d="m8 10.8.35-1.8 3.9-3.9 1.45 1.45-3.9 3.9-1.8.35Z" stroke="currentColor" strokeWidth="1.25" strokeLinejoin="round" />
+                  </svg>
+                </span>
+                댓글 내용 수정
+              </button>}
+            </div>}
           </nav>}
           <div
             id={overlayPreviewEnabled ? "editor-tool-detail" : undefined}
@@ -10155,8 +10700,26 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           >
           <div className="editor-controls-sheet-header">
             <span id="editor-title" className="sr-only">편집 설정</span>
-            <button type="button" className="editor-controls-sheet-toggle" aria-expanded={mobileControlsOpen} aria-controls="editor-controls-scroll" onClick={() => setMobileControlsOpen((current) => !current)}>
-              <span className="editor-controls-title">편집 설정</span>
+            <button
+              type="button"
+              className="editor-controls-sheet-toggle"
+              aria-expanded={mobileControlsOpen}
+              aria-controls="editor-controls-scroll"
+              onClick={() => {
+                setMobileControlsOpen((current) => {
+                  const next = !current;
+                  if (!next && window.matchMedia("(max-width: 640px)").matches) {
+                    setDesktopSidebarOpen(false);
+                  }
+                  return next;
+                });
+              }}
+            >
+              <span className="editor-controls-title">
+                {EDITOR_SIDEBAR_TOOLS.find((tool) => (
+                  tool.id === activeEditorSidebarTool
+                ))?.label || "편집 설정"}
+              </span>
               <span className="editor-controls-chevron" aria-hidden="true">
                 <svg viewBox="0 0 20 20" fill="none">
                   <path d="m5.5 12.25 4.5-4.5 4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -10584,6 +11147,28 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             <header className="editor-tool-panel-header">
               <strong>댓글</strong>
             </header>
+            {selectedTimelineComment && <div className="editor-selected-comment-setting">
+              <div className="editor-selected-comment-setting-heading">
+                <strong>선택한 댓글</strong>
+                <span>{selectedTimelineComment.text.length}/200</span>
+              </div>
+              <label>
+                <span>댓글 내용</span>
+                <textarea
+                  aria-label="선택한 댓글 내용 수정"
+                  value={selectedTimelineComment.text}
+                  maxLength={200}
+                  rows={3}
+                  spellCheck={false}
+                  onFocus={beginEditorCommentTextInteraction}
+                  onBlur={finishEditorCommentTextInteraction}
+                  onChange={(event) => updateComment(
+                    selectedTimelineComment.id,
+                    { text: event.target.value },
+                  )}
+                />
+              </label>
+            </div>}
             <fieldset className="editor-comment-theme-setting">
               <legend>댓글 모드</legend>
               <div>
@@ -10872,7 +11457,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             onChange={updateEditorTimelineZoom}
           />}
           <div ref={editorTimelineScrollAreaRef} className="editor-timeline-scroll-area">
-          <div className="editor-filmstrip-wrap" style={editorTimelineZoomStyle}>
+          <div
+            className="editor-timeline-shared-content"
+            style={editorTimelineZoomStyle}
+          >
+          <div className="editor-filmstrip-wrap">
             <div
               ref={filmstripRef}
               className="editor-filmstrip"
@@ -11039,11 +11628,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           </div>
           {(commentTimeline || textTimelines) && <div
             className="editor-overlay-timeline-lanes"
-            style={editorTimelineZoomStyle}
           >
             {commentTimeline}
             {textTimelines}
           </div>}
+          </div>
           </div>
           {!overlayPreviewEnabled && <div className="editor-range-actions">
             <button type="button" data-editor-guide="reset-range" onClick={() => { setSelectionStart(editTimeline.initialStartSeconds); setSelectionEnd(editTimeline.initialEndSeconds); seekTimeline(editTimeline.initialStartSeconds); }}>↺ 원본으로 되돌리기</button>
@@ -11067,11 +11656,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           />}
           <div ref={editorTimelineScrollAreaRef} className="editor-timeline-scroll-area">
           <div
-            className="editor-overlay-timeline-lanes"
+            className="editor-timeline-shared-content"
             style={editorTimelineZoomStyle}
           >
+          <div className="editor-overlay-timeline-lanes">
             {commentTimeline}
             {textTimelines}
+          </div>
           </div>
           </div>
           {!overlayPreviewEnabled && <div className="editor-range-actions">

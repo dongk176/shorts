@@ -18,6 +18,22 @@ export function roundTimelineHandleSeconds(value: number, minimum: number, maxim
   return clampTimelineSeconds(Math.round(value * 10) / 10, minimum, maximum);
 }
 
+export function timelinePointerDeltaSeconds(
+  distancePixels: number,
+  trackWidthPixels: number,
+  timelineDurationSeconds: number,
+) {
+  if (
+    !Number.isFinite(distancePixels)
+    || !Number.isFinite(trackWidthPixels)
+    || trackWidthPixels <= 0
+    || !Number.isFinite(timelineDurationSeconds)
+  ) {
+    return 0;
+  }
+  return distancePixels / trackWidthPixels * timelineDurationSeconds;
+}
+
 export function subtitlesForTimelineSelection(
   timelineSegments: TimelineSubtitle[],
   timelineStartSeconds: number,
