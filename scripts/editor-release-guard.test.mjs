@@ -168,6 +168,11 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(workflow, /EDITOR_RELEASE_ECR_REPOSITORY_URI/);
   assert.match(
     workflow,
+    /EDITOR_RELEASE_BUILD_ROLE_ARN: \$\{\{ vars\.EDITOR_RELEASE_BUILD_ROLE_ARN \}\}/,
+  );
+  assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
+  assert.match(
+    workflow,
     /github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/codex\/editor-v2-canary-release' \|\| github\.ref == 'refs\/heads\/codex\/editor-v3-fidelity-canary-20260805'/,
   );
   assert.match(workflow, /uiVersion:3/);
