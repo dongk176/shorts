@@ -6,24 +6,32 @@ const implementation = readFileSync(
   new URL("./google-analytics.tsx", import.meta.url),
   "utf8",
 );
+const layout = readFileSync(
+  new URL("../app/layout.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("Google Analytics measurement", () => {
-  it("initializes Firebase Analytics with cookieless measurement and no advertising signals", () => {
-    expect(implementation).toContain('import("firebase/analytics")');
-    expect(implementation).toContain("initializeAnalytics(app");
-    expect(implementation).toContain('analytics_storage: "denied"');
-    expect(implementation).toContain('ad_storage: "denied"');
-    expect(implementation).toContain('ad_user_data: "denied"');
-    expect(implementation).toContain('ad_personalization: "denied"');
-    expect(implementation).toContain('client.logEvent(client.analytics, "page_view"');
+  it("loads the Google tag directly and sends explicit page views", () => {
+    expect(implementation).toContain('from "next/script"');
+    expect(implementation).toContain("https://www.googletagmanager.com/gtag/js?id=");
+    expect(implementation).toContain('gtag("config", measurementId');
+    expect(implementation).toContain('ensureGtag()("event", "page_view"');
     expect(implementation).toContain("allow_google_signals: false");
     expect(implementation).toContain("allow_ad_personalization_signals: false");
     expect(implementation).toContain("send_page_view: false");
-    expect(implementation).not.toContain("clearLegacyAnalyticsState");
-    expect(implementation).not.toContain("선택 분석 쿠키 안내");
-    expect(implementation).not.toContain("ANALYTICS_CONSENT_KEY");
-    expect(implementation).not.toContain("consentLoaded");
-    expect(implementation).not.toContain('gtag("config"');
+    expect(implementation).not.toContain('import("firebase/analytics")');
+  });
+
+  it("grants analytics cookies while denying every advertising consent signal", () => {
+    expect(layout).toContain('strategy="beforeInteractive"');
+    expect(layout).toContain('analytics_storage:"granted"');
+    expect(layout).toContain('ad_storage:"denied"');
+    expect(layout).toContain('ad_user_data:"denied"');
+    expect(layout).toContain('ad_personalization:"denied"');
+    expect(layout).toContain('ads_data_redaction",true');
+    expect(layout).not.toContain("ANALYTICS_CONSENT_KEY");
+    expect(layout).not.toContain("consentLoaded");
   });
 
   it("queues gtag commands as Arguments objects so the Google tag processes them", () => {

@@ -1,9 +1,8 @@
 "use client";
 
-import type { FirebaseOptions } from "firebase/app";
-import type { Analytics } from "firebase/analytics";
+import Script from "next/script";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createGtagCommandQueue } from "@/lib/google-analytics-command-queue";
 
 declare global {
@@ -13,31 +12,10 @@ declare global {
   }
 }
 
-export type FirebaseAnalyticsConfig = {
-  apiKey?: string;
-  authDomain?: string;
-  projectId?: string;
-  storageBucket?: string;
-  messagingSenderId?: string;
-  appId?: string;
-  measurementId?: string;
-};
+const configuredMeasurementIds = new Set<string>();
 
-type FirebaseAnalyticsClient = {
-  analytics: Analytics;
-  logEvent: typeof import("firebase/analytics")["logEvent"];
-};
-
-const analyticsClients = new Map<string, Promise<FirebaseAnalyticsClient | null>>();
-
-export function isFirebaseAnalyticsConfig(
-  config: FirebaseAnalyticsConfig,
-): config is Required<FirebaseAnalyticsConfig> {
-  return (
-    Object.values(config).every((value) => typeof value === "string" && value.length > 0)
-    && Object.keys(config).length === 7
-    && /^G-[A-Z0-9]+$/.test(config.measurementId ?? "")
-  );
+function isGoogleAnalyticsMeasurementId(value?: string): value is string {
+  return typeof value === "string" && /^G-[A-Z0-9]+$/.test(value);
 }
 
 function ensureGtag() {
@@ -46,103 +24,53 @@ function ensureGtag() {
   return window.gtag;
 }
 
-function consentSettings() {
-  return {
-    analytics_storage: "denied" as const,
-    ad_storage: "denied" as const,
-    ad_user_data: "denied" as const,
-    ad_personalization: "denied" as const,
-  };
-}
+export function GoogleAnalyticsMeasurement({ measurementId }: { measurementId?: string }) {
+  const pathname = usePathname();
+  const [ready, setReady] = useState(false);
+  const lastPageLocationRef = useRef<string | null>(null);
 
-async function initializeFirebaseAnalytics(
-  config: Required<FirebaseAnalyticsConfig>,
-): Promise<FirebaseAnalyticsClient | null> {
-  const existingClient = analyticsClients.get(config.appId);
-  if (existingClient) return existingClient;
+  const configure = useCallback(() => {
+    if (!isGoogleAnalyticsMeasurementId(measurementId)) return;
 
-  const clientPromise = (async () => {
     const gtag = ensureGtag();
-    gtag("consent", "default", consentSettings());
-    gtag("set", "ads_data_redaction", true);
-
-    const [firebaseApp, firebaseAnalytics] = await Promise.all([
-      import("firebase/app"),
-      import("firebase/analytics"),
-    ]);
-    if (!(await firebaseAnalytics.isSupported())) return null;
-
-    const options: FirebaseOptions = config;
-    const app = firebaseApp.getApps().find((candidate) => candidate.options.appId === config.appId)
-      ?? firebaseApp.initializeApp(options, "easycut-analytics");
-    const analytics = firebaseAnalytics.initializeAnalytics(app, {
-      config: {
+    if (!configuredMeasurementIds.has(measurementId)) {
+      gtag("js", new Date());
+      gtag("config", measurementId, {
         send_page_view: false,
+        anonymize_ip: true,
         allow_google_signals: false,
         allow_ad_personalization_signals: false,
-      },
-    });
-    firebaseAnalytics.setConsent(consentSettings());
-
-    return { analytics, logEvent: firebaseAnalytics.logEvent };
-  })().catch((error: unknown) => {
-    console.error("firebase_analytics_initialization_failed", {
-      errorName: error instanceof Error ? error.name : "UnknownError",
-    });
-    return null;
-  });
-
-  analyticsClients.set(config.appId, clientPromise);
-  return clientPromise;
-}
-
-export function FirebaseAnalytics({ config }: { config: FirebaseAnalyticsConfig }) {
-  const pathname = usePathname();
-  const {
-    apiKey,
-    appId,
-    authDomain,
-    measurementId,
-    messagingSenderId,
-    projectId,
-    storageBucket,
-  } = config;
+      });
+      configuredMeasurementIds.add(measurementId);
+    }
+    setReady(true);
+  }, [measurementId]);
 
   useEffect(() => {
-    const currentConfig = {
-      apiKey,
-      appId,
-      authDomain,
-      measurementId,
-      messagingSenderId,
-      projectId,
-      storageBucket,
-    };
-    if (!isFirebaseAnalyticsConfig(currentConfig)) return;
-    let active = true;
+    if (!ready || !isGoogleAnalyticsMeasurementId(measurementId)) return;
 
-    void initializeFirebaseAnalytics(currentConfig).then((client) => {
-      if (!active || !client) return;
-      client.logEvent(client.analytics, "page_view", {
-        page_location: window.location.href,
-        page_path: pathname,
-        page_title: document.title,
-      });
+    const pageLocation = window.location.href;
+    if (lastPageLocationRef.current === pageLocation) return;
+
+    ensureGtag()("event", "page_view", {
+      page_location: pageLocation,
+      page_path: pathname,
+      page_title: document.title,
     });
+    lastPageLocationRef.current = pageLocation;
+  }, [measurementId, pathname, ready]);
 
-    return () => {
-      active = false;
-    };
-  }, [
-    apiKey,
-    appId,
-    authDomain,
-    measurementId,
-    messagingSenderId,
-    pathname,
-    projectId,
-    storageBucket,
-  ]);
+  if (!isGoogleAnalyticsMeasurementId(measurementId)) return null;
 
-  return null;
+  return (
+    <Script
+      id="easycut-google-analytics-loader"
+      src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`}
+      strategy="afterInteractive"
+      onReady={configure}
+      onError={() => {
+        console.error("google_analytics_script_load_failed");
+      }}
+    />
+  );
 }

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import Script from "next/script";
 import { EditorLaunchAnnouncementOverlay } from "@/components/editor-launch-announcement-overlay";
-import { FirebaseAnalytics } from "@/components/google-analytics";
+import { GoogleAnalyticsMeasurement } from "@/components/google-analytics";
 import { StructuredData } from "@/components/structured-data";
 import { LanguageSelector } from "@/components/language-selector";
 import { ProjectFeedbackOverlay } from "@/components/project-feedback-overlay";
@@ -76,6 +77,11 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   const { locale, messages } = await getRequestMessages();
+  const analyticsMeasurementId = process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID;
+  const analyticsEnabled = (
+    typeof analyticsMeasurementId === "string"
+    && /^G-[A-Z0-9]+$/.test(analyticsMeasurementId)
+  );
   let initialUsageState: UsageState = {
     authenticated: false,
     accountId: null,
@@ -153,6 +159,11 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 
   return (
     <html lang={locale}>
+      {analyticsEnabled ? (
+        <Script id="easycut-google-analytics-consent" strategy="beforeInteractive">
+          {`window.dataLayer=window.dataLayer||[];window.gtag=window.gtag||function(){window.dataLayer.push(arguments);};window.gtag("consent","default",{analytics_storage:"granted",ad_storage:"denied",ad_user_data:"denied",ad_personalization:"denied"});window.gtag("set","ads_data_redaction",true);`}
+        </Script>
+      ) : null}
       <body>
         <I18nProvider key={locale} locale={locale} messages={messages}>
           <StructuredData data={websiteData} />
@@ -172,17 +183,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               />
             </WelcomeOverlayQueueProvider>
           </UsageProvider>
-          <FirebaseAnalytics
-            config={{
-              apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-              authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-              projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-              storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-              messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-              appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-              measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
-            }}
-          />
+          <GoogleAnalyticsMeasurement measurementId={analyticsMeasurementId} />
           <LanguageSelector />
         </I18nProvider>
       </body>
