@@ -1332,6 +1332,69 @@ describe("job API security and idempotency", () => {
     expect(reservationCall?.slice(1)).toContain(1200);
   });
 
+  it("keeps a source-range job on its fixed candidate when ElevenLabs is public", async () => {
+    process.env.ELEVENLABS_TRANSCRIPTION_ENABLED = "true";
+    const db = dbWithRows(
+      [],
+      [{ ...analysisRow, durationSeconds: 7200, sourceRangeSelectionEnabled: true }],
+      [
+        { flagKey: "source_range_selection", enabled: true },
+        { flagKey: "source_range_selection_public", enabled: true },
+      ],
+      [{ isAdmin: false }],
+    );
+    const tx = dbWithRows(
+      [],
+      [
+        { flagKey: "source_range_selection", enabled: true },
+        { flagKey: "source_range_selection_public", enabled: true },
+      ],
+      [{ isAdmin: false }],
+      [
+        { flagKey: "elevenlabs_transcription", enabled: true },
+        { flagKey: "elevenlabs_transcription_public", enabled: true },
+        { flagKey: "elevenlabs_public_compliance_approved", enabled: true },
+      ],
+      [{ isAdmin: false }],
+      [],
+      [{ active: 0 }],
+      [{ projectNumber: 15 }],
+      [{ id: "reservation-source-range-public" }],
+      [],
+      [],
+    );
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rightsConfirmed: true,
+      requestId: "d24463f7-c0ba-4cc4-9b53-9a9d73108f80",
+      rangeStartSeconds: 300,
+      rangeEndSeconds: 540,
+    }));
+
+    expect(response.status).toBe(202);
+    const insertCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes(
+        "insert into shorts_mvp.video_jobs",
+      ));
+    expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
+      "openai_stable",
+      process.env.SOURCE_RANGE_JOB_DEFINITION_ARN,
+      process.env.SOURCE_RANGE_BATCH_QUEUE_ARN,
+    ]));
+    expect(insertCall?.slice(1)).not.toContain(
+      process.env.ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN,
+    );
+    expect(insertCall?.slice(1)).not.toContain(
+      process.env.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN,
+    );
+  });
+
   it("pins only an admitted admin job to the ElevenLabs candidate", async () => {
     process.env.ELEVENLABS_TRANSCRIPTION_ENABLED = "true";
     const db = dbWithRows([], [analysisRow]);

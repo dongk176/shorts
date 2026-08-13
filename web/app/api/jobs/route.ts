@@ -34,6 +34,7 @@ import {
 } from "@/lib/source-range-release";
 import {
   lockElevenLabsTranscriptionAccess,
+  OPENAI_STABLE_TRANSCRIPTION_POLICY,
 } from "@/lib/transcription-release";
 import { lockSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
 import {
@@ -241,23 +242,32 @@ export async function POST(request: Request) {
         tx,
         session.userId,
       );
-      if (usesSubtitleSuiteCandidate && !transcriptionAccess.enabled) {
+      if (
+        usesSubtitleSuiteCandidate
+        && !sourceRangeSelectionEnabled
+        && !transcriptionAccess.enabled
+      ) {
         throw new HttpError(
           409,
           "현재 계정에서는 자막 전사 기능을 사용할 수 없습니다.",
           "SUBTITLE_SUITE_TRANSCRIPTION_DISABLED",
         );
       }
-      const transcriptionPolicy = transcriptionAccess.policy;
-      const dispatchTarget = executionBackend !== "aws_batch"
-        ? null
-        : usesSubtitleSuiteCandidate
-          ? subtitleTemplatesDispatchTarget()
-          : transcriptionAccess.enabled
-          ? elevenLabsTranscriptionDispatchTarget()
-          : sourceRangeSelectionEnabled
-            ? sourceRangeDispatchTarget()
-            : null;
+      // A selected source window must stay on the source-range candidate.
+      // Sending it to another canary would bypass the selected-timeline fix.
+      const transcriptionPolicy = sourceRangeSelectionEnabled
+        ? OPENAI_STABLE_TRANSCRIPTION_POLICY
+        : transcriptionAccess.policy;
+      let dispatchTarget: ReturnType<typeof sourceRangeDispatchTarget> | null = null;
+      if (executionBackend === "aws_batch") {
+        if (sourceRangeSelectionEnabled) {
+          dispatchTarget = sourceRangeDispatchTarget();
+        } else if (usesSubtitleSuiteCandidate) {
+          dispatchTarget = subtitleTemplatesDispatchTarget();
+        } else if (transcriptionAccess.enabled) {
+          dispatchTarget = elevenLabsTranscriptionDispatchTarget();
+        }
+      }
       const concurrentExisting = await tx`
         select id, project_number, status from shorts_mvp.video_jobs
         where request_id=${input.requestId} and (
