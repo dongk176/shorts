@@ -248,7 +248,7 @@ def normalize_clips(
     selection_provider: str | None = None,
     selection_model: str | None = None,
 ) -> list[HighlightClip]:
-    """Clamp invalid LLM times and enforce at most five seconds of pairwise overlap."""
+    """Reject invalid AI times and enforce at most five seconds of pairwise overlap."""
     if duration_seconds <= 0 or required_count < 1:
         return []
     minimum_length = min(AI_CLIP_MIN_SECONDS, duration_seconds)
@@ -271,7 +271,13 @@ def normalize_clips(
             raw_end = float(candidate.end_seconds)
         except (TypeError, ValueError):
             return
-        if not math.isfinite(raw_start) or not math.isfinite(raw_end) or raw_end <= raw_start:
+        if (
+            not math.isfinite(raw_start)
+            or not math.isfinite(raw_end)
+            or raw_start < 0
+            or raw_end > duration_seconds
+            or raw_end <= raw_start
+        ):
             return
         raw_length = raw_end - raw_start
         if raw_length < minimum_length - 1e-6:
@@ -287,7 +293,13 @@ def normalize_clips(
         else:
             length = min(maximum_length, raw_length)
             desired_start = raw_start
-        start = _find_start(desired_start, length, accepted, 0, duration_seconds)
+        if record_raw_selection:
+            maximum_start = max(0.0, duration_seconds - length)
+            start = max(0.0, min(maximum_start, desired_start))
+            if not _fits(start, length, accepted, 0, duration_seconds):
+                return
+        else:
+            start = _find_start(desired_start, length, accepted, 0, duration_seconds)
         if start is None:
             return
         rounded_start = round(start, 3)
@@ -306,11 +318,22 @@ def normalize_clips(
             rounded_raw_start = None
             rounded_raw_end = None
             rounded_raw_duration = None
+        hook_title = (
+            _two_line_title(candidate.hook_title, output_language)
+            if record_raw_selection
+            else _fallback_title(
+                transcript or [],
+                rounded_start,
+                rounded_end,
+                len(accepted) + 1,
+                output_language,
+            )
+        )
         accepted.append(
             HighlightClip(
                 start_seconds=rounded_start,
                 end_seconds=rounded_end,
-                hook_title=_two_line_title(candidate.hook_title, output_language),
+                hook_title=hook_title,
                 reason=str(candidate.reason or ""),
                 viral_score=candidate.viral_score,
                 selection_raw_start_seconds=rounded_raw_start,

@@ -141,7 +141,7 @@ def test_edit_timeline_adds_at_most_thirty_seconds_at_each_boundary(
     assert timeline.hook_title == clip.hook_title
 
 
-def test_invalid_clip_times_are_clamped_to_supported_range() -> None:
+def test_out_of_range_ai_clip_is_rejected_and_replaced_without_its_title() -> None:
     clips = normalize_clips(
         [
             HighlightClip(
@@ -155,7 +155,9 @@ def test_invalid_clip_times_are_clamped_to_supported_range() -> None:
         required_count=1,
     )
     assert len(clips) == 1
-    assert clips[0].start_seconds == 0
+    assert clips[0].selection_provider == "deterministic"
+    assert clips[0].selection_raw_start_seconds is None
+    assert "원본 범위를 벗어난 후보" not in clips[0].hook_title
     assert (
         AI_CLIP_MIN_SECONDS
         <= clips[0].end_seconds - clips[0].start_seconds
@@ -164,7 +166,7 @@ def test_invalid_clip_times_are_clamped_to_supported_range() -> None:
     assert clips[0].end_seconds <= 100
 
 
-def test_overlapping_clips_are_repositioned_to_five_seconds_or_less() -> None:
+def test_overlapping_ai_clip_is_rejected_instead_of_moving_its_title() -> None:
     candidates = [
         HighlightClip(start_seconds=10, end_seconds=50, hook_title="첫 장면"),
         HighlightClip(start_seconds=20, end_seconds=60, hook_title="둘째 장면"),
@@ -178,7 +180,9 @@ def test_overlapping_clips_are_repositioned_to_five_seconds_or_less() -> None:
     assert len(clips) == 2
     assert overlap_seconds(clips[0], clips[1]) <= 5.001
     assert clips[0].selection_repositioned is False
-    assert clips[1].selection_repositioned is True
+    assert clips[0].selection_provider is None
+    assert clips[1].selection_provider == "deterministic"
+    assert "둘째 장면" not in clips[1].hook_title
 
 
 def test_viral_scores_rank_clips_without_restoring_timeline_order() -> None:
