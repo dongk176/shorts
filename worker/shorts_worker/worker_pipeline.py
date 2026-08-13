@@ -310,6 +310,90 @@ def _offset_highlight_clip(clip: HighlightClip, offset_seconds: float) -> Highli
     })
 
 
+def _relative_source_transcript(
+    transcript: list[SubtitleSegment],
+    *,
+    source_start_seconds: float,
+    duration_seconds: float,
+) -> list[SubtitleSegment]:
+    """Project absolute source timestamps onto a selected window starting at zero."""
+    if (
+        not math.isfinite(source_start_seconds)
+        or not math.isfinite(duration_seconds)
+        or source_start_seconds < 0
+        or duration_seconds <= 0
+    ):
+        raise IngestionError(
+            "영상 분석 시간축이 올바르지 않습니다.",
+            code="selection_timeline_invalid",
+        )
+    source_end_seconds = source_start_seconds + duration_seconds
+    projected: list[SubtitleSegment] = []
+    for segment in transcript:
+        start = max(source_start_seconds, segment.start)
+        end = min(source_end_seconds, segment.end)
+        if end <= start:
+            continue
+        relative_start = round(start - source_start_seconds, 3)
+        relative_end = round(end - source_start_seconds, 3)
+        if relative_end <= relative_start:
+            continue
+        projected.append(
+            SubtitleSegment(
+                start=relative_start,
+                end=relative_end,
+                text=segment.text,
+            )
+        )
+    return projected
+
+
+def _validate_clip_in_source_window(
+    clip: HighlightClip,
+    *,
+    source_start_seconds: float,
+    source_end_seconds: float,
+) -> HighlightClip:
+    """Fail closed when a selected clip cannot belong to the requested source window."""
+    values = (
+        source_start_seconds,
+        source_end_seconds,
+        clip.start_seconds,
+        clip.end_seconds,
+    )
+    raw_start = clip.selection_raw_start_seconds
+    raw_end = clip.selection_raw_end_seconds
+    raw_pair_is_valid = (raw_start is None and raw_end is None) or (
+        raw_start is not None
+        and raw_end is not None
+        and math.isfinite(raw_start)
+        and math.isfinite(raw_end)
+        and source_start_seconds - 0.001 <= raw_start < raw_end
+        and raw_end <= source_end_seconds + 0.001
+    )
+    if (
+        not all(math.isfinite(value) for value in values)
+        or source_end_seconds <= source_start_seconds
+        or clip.start_seconds < source_start_seconds - 0.001
+        or clip.end_seconds > source_end_seconds + 0.001
+        or clip.end_seconds <= clip.start_seconds
+        or not raw_pair_is_valid
+    ):
+        raise IngestionError(
+            "선택한 구간과 분석된 영상 구간이 일치하지 않습니다.",
+            code="selection_range_mismatch",
+            details={
+                "source_window_start_seconds": source_start_seconds,
+                "source_window_end_seconds": source_end_seconds,
+                "clip_start_seconds": clip.start_seconds,
+                "clip_end_seconds": clip.end_seconds,
+                "selection_raw_start_seconds": raw_start,
+                "selection_raw_end_seconds": raw_end,
+            },
+        )
+    return clip
+
+
 def project_source_window(
     *,
     source_duration_seconds: float,
@@ -563,7 +647,14 @@ class BatchWorker:
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
             transcript_segment_count=len(result.segments),
-            transcript_coverage_ratio=self._transcript_coverage(result.segments, duration_seconds),
+            transcript_coverage_ratio=self._transcript_coverage(
+                _relative_source_transcript(
+                    result.segments,
+                    source_start_seconds=start_seconds,
+                    duration_seconds=duration_seconds,
+                ),
+                duration_seconds,
+            ),
             language_code=result.language_code,
             fallback_chunk_count=result.fallback_chunk_count,
             fallback_audio_seconds=result.fallback_audio_seconds,
@@ -853,6 +944,17 @@ class BatchWorker:
                             else None
                         ),
                     )
+                source_offset_seconds = (
+                    float(range_start_seconds) if source_range_enabled else 0.0
+                )
+                source_window_end_seconds = (
+                    source_offset_seconds + selected_duration_seconds
+                )
+                selection_transcript = _relative_source_transcript(
+                    transcript,
+                    source_start_seconds=source_offset_seconds,
+                    duration_seconds=selected_duration_seconds,
+                )
                 if subtitle_template_id and not transcript_words:
                     raise TranscriptionError(
                         "자막 템플릿에 필요한 단어 타임스탬프가 비어 있습니다."
@@ -877,10 +979,16 @@ class BatchWorker:
                     clips = self.selector.select(
                         video_title=str(job["video_title"]),
                         duration_seconds=selected_duration_seconds,
-                        transcript=transcript,
+                        transcript=selection_transcript,
                         required_count=target_count,
                         output_language=OutputLanguage(str(job["output_language"])),
                     )[:target_count]
+                for clip in clips:
+                    _validate_clip_in_source_window(
+                        _offset_highlight_clip(clip, source_offset_seconds),
+                        source_start_seconds=source_offset_seconds,
+                        source_end_seconds=source_window_end_seconds,
+                    )
                 selection_seconds = time.monotonic() - selection_started_at
                 self.repository.merge_job_performance_metrics(
                     job_id,
@@ -922,9 +1030,6 @@ class BatchWorker:
                         snapshot_font.get("id")
                         if isinstance(snapshot_font, dict)
                         else None
-                    )
-                    source_offset_seconds = (
-                        float(range_start_seconds) if source_range_enabled else 0.0
                     )
                     compiled_clips: list[tuple[HighlightClip, dict[str, object]]] = []
                     rejected_caption_clips = 0
@@ -989,7 +1094,7 @@ class BatchWorker:
                         },
                     )
                 clip_subtitles = {
-                    index: self._relative_subtitles(transcript, clip)
+                    index: self._relative_subtitles(selection_transcript, clip)
                     for index, clip in enumerate(clips, start=1)
                 }
                 edit_timeline_clips = {
@@ -999,9 +1104,6 @@ class BatchWorker:
                     getattr(self.settings, "edit_timeline_capture_enabled", False)
                 ) else {}
                 if subtitle_template_id and edit_timeline_clips:
-                    source_offset_seconds = (
-                        float(range_start_seconds) if source_range_enabled else 0.0
-                    )
                     aspect_ratio = VideoAspectRatio(
                         str(job.get("video_aspect_ratio") or "1:1")
                     )
@@ -1061,7 +1163,7 @@ class BatchWorker:
                     for index in unavailable_timeline_indexes:
                         edit_timeline_clips.pop(index, None)
                 edit_timeline_subtitles = {
-                    index: self._relative_subtitles(transcript, timeline_clip)
+                    index: self._relative_subtitles(selection_transcript, timeline_clip)
                     for index, timeline_clip in edit_timeline_clips.items()
                 }
                 comments_by_clip: dict[int, list[dict[str, object]]] = {
@@ -1114,16 +1216,18 @@ class BatchWorker:
                     )
 
                 absolute_clips = {
-                    index: _offset_highlight_clip(
-                        clip,
-                        float(range_start_seconds) if source_range_enabled else 0.0,
+                    index: _validate_clip_in_source_window(
+                        _offset_highlight_clip(clip, source_offset_seconds),
+                        source_start_seconds=source_offset_seconds,
+                        source_end_seconds=source_window_end_seconds,
                     )
                     for index, clip in enumerate(clips, start=1)
                 }
                 absolute_timeline_clips = {
-                    index: _offset_highlight_clip(
-                        clip,
-                        float(range_start_seconds) if source_range_enabled else 0.0,
+                    index: _validate_clip_in_source_window(
+                        _offset_highlight_clip(clip, source_offset_seconds),
+                        source_start_seconds=source_offset_seconds,
+                        source_end_seconds=source_window_end_seconds,
                     )
                     for index, clip in edit_timeline_clips.items()
                 }

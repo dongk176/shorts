@@ -24,7 +24,9 @@ from shorts_worker.worker_pipeline import (
     BatchWorker,
     ProjectTimelineTarget,
     _offset_highlight_clip,
+    _relative_source_transcript,
     _subtitle_template_timing_lead_frames,
+    _validate_clip_in_source_window,
     classify_full_source_download,
     project_source_window,
 )
@@ -184,6 +186,60 @@ def test_selected_clips_are_shifted_once_to_full_source_absolute_times() -> None
     assert relative.start_seconds == 15
 
 
+def test_source_range_transcript_and_clip_use_one_relative_timeline() -> None:
+    absolute_transcript = [
+        SubtitleSegment(start=568.16, end=593.08, text="덴마크 케톤 다이어트"),
+        SubtitleSegment(start=866.1, end=897.0, text="선택 구간의 마지막 장면"),
+    ]
+
+    relative_transcript = _relative_source_transcript(
+        absolute_transcript,
+        source_start_seconds=568,
+        duration_seconds=329,
+    )
+    relative_clip = HighlightClip(
+        start_seconds=0.16,
+        end_seconds=25.08,
+        hook_title="덴마크 케톤 다이어트",
+        selection_raw_start_seconds=0.16,
+        selection_raw_end_seconds=25.08,
+    )
+    absolute_clip = _validate_clip_in_source_window(
+        _offset_highlight_clip(relative_clip, 568),
+        source_start_seconds=568,
+        source_end_seconds=897,
+    )
+
+    assert [(item.start, item.end) for item in relative_transcript] == [
+        (0.16, 25.08),
+        (298.1, 329.0),
+    ]
+    assert absolute_clip.start_seconds == 568.16
+    assert absolute_clip.end_seconds == 593.08
+    assert BatchWorker._relative_subtitles(relative_transcript, relative_clip) == [
+        SubtitleSegment(start=0, end=24.92, text="덴마크 케톤 다이어트")
+    ]
+
+
+def test_source_range_guard_rejects_a_second_offset() -> None:
+    already_absolute = HighlightClip(
+        start_seconds=568.16,
+        end_seconds=593.08,
+        hook_title="이미 원본 기준인 후보",
+        selection_raw_start_seconds=568.16,
+        selection_raw_end_seconds=593.08,
+    )
+
+    with pytest.raises(IngestionError) as caught:
+        _validate_clip_in_source_window(
+            _offset_highlight_clip(already_absolute, 568),
+            source_start_seconds=568,
+            source_end_seconds=897,
+        )
+
+    assert caught.value.code == "selection_range_mismatch"
+
+
 def test_source_range_project_never_passes_range_download_arguments() -> None:
     source = inspect.getsource(BatchWorker.project)
 
@@ -194,6 +250,7 @@ def test_source_range_project_never_passes_range_download_arguments() -> None:
     assert "range_end_seconds=" not in download_call
     assert 'download_status != "full_source_expected"' in source
     assert "limit_audio=source_range_enabled" in source
+    assert "transcript=selection_transcript" in source
 
 
 @contextmanager
