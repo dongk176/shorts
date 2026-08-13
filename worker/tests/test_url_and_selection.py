@@ -181,6 +181,73 @@ def test_overlapping_clips_are_repositioned_to_five_seconds_or_less() -> None:
     assert clips[1].selection_repositioned is True
 
 
+def test_viral_scores_rank_clips_without_restoring_timeline_order() -> None:
+    clips = normalize_clips(
+        [
+            HighlightClip(
+                start_seconds=200,
+                end_seconds=250,
+                hook_title="낮은 점수",
+                viral_score=70,
+            ),
+            HighlightClip(
+                start_seconds=500,
+                end_seconds=550,
+                hook_title="공동 최고 첫 후보",
+                viral_score=90,
+            ),
+            HighlightClip(
+                start_seconds=100,
+                end_seconds=150,
+                hook_title="공동 최고 둘째 후보",
+                viral_score=90,
+            ),
+            HighlightClip(
+                start_seconds=300,
+                end_seconds=370,
+                hook_title="중간 점수",
+                viral_score=80,
+            ),
+        ],
+        video_title="바이럴 순위 검증",
+        duration_seconds=600,
+        required_count=4,
+        selection_provider="gemini",
+        selection_model="gemini-3.5-flash-lite",
+    )
+
+    assert [clip.viral_score for clip in clips] == [90, 90, 80, 70]
+    assert [clip.selection_candidate_index for clip in clips] == [2, 3, 4, 1]
+    assert [clip.start_seconds for clip in clips] == [500, 100, 300, 200]
+    assert all(
+        AI_CLIP_MIN_SECONDS
+        <= clip.end_seconds - clip.start_seconds
+        <= AI_CLIP_MAX_SECONDS
+        for clip in clips
+    )
+    assert all(
+        overlap_seconds(left, right) <= 5.001
+        for index, left in enumerate(clips)
+        for right in clips[index + 1 :]
+    )
+
+
+def test_viral_score_component_ranges_are_strict() -> None:
+    with pytest.raises(ValueError):
+        HighlightCandidate(
+            start_seconds=10,
+            end_seconds=50,
+            hook_title_line1="점수 범위",
+            hook_title_line2="검증 후보",
+            reason="후킹 점수가 범위를 벗어납니다.",
+            hook_score=31,
+            completeness_score=20,
+            impact_score=20,
+            shareability_score=20,
+            density_score=10,
+        )
+
+
 @pytest.mark.parametrize(
     ("duration", "target", "minimum"),
     [
@@ -387,6 +454,11 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
                 hook_title_line1="Gemini가 고른",
                 hook_title_line2="핵심 장면의 반전",
                 reason="테스트 후보",
+                hook_score=27,
+                completeness_score=18,
+                impact_score=17,
+                shareability_score=16,
+                density_score=9,
             )
         ]
     )
@@ -433,6 +505,8 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     assert "타임스탬프 자막" in request["messages"][1]["content"]
     assert "탑티어 숏폼 기획자" in request["messages"][0]["content"]
     assert "쇼츠용 킬러 구간" in request["messages"][0]["content"]
+    assert "후보를 모두 비교한 뒤 다섯 점수의 합이 높은 순서" in request["messages"][0]["content"]
+    assert "영상에 등장하는 시간순으로 정렬하지 말 것" in request["messages"][0]["content"]
     assert (
         "1. **길이 및 완결성**: 각 구간의 end_seconds - start_seconds를 계산한 값이 "
         "30.000초 이상 120.000초 이하가 되도록 start_seconds와 end_seconds를 정할 것. "
@@ -449,6 +523,7 @@ def test_gemini_selector_requests_structured_highlights(monkeypatch) -> None:
     assert "예시" not in request["messages"][0]["content"]
     assert clips[0].hook_title == "Gemini가 고른\n핵심 장면의 반전"
     assert clips[0].reason == "테스트 후보"
+    assert clips[0].viral_score == 87
 
     english_messages = selector._selection_messages(
         video_title="English title test",

@@ -73,6 +73,7 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       selection_raw_start_seconds, selection_raw_end_seconds,
       selection_raw_duration_seconds, selection_candidate_index,
       selection_length_adjustment, selection_repositioned,
+      viral_score,
       hook_title, highlight_reason, channel_display_name, subtitle_segments, subtitles_enabled,
       comment_overlays, template_id, custom_template_id, template_snapshot, video_aspect_ratio, title_font_scale, title_text_styles,
       subtitle_template_id, caption_render_spec,
@@ -111,6 +112,7 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       selectionRepositioned: row.selectionRepositioned == null
         ? null
         : Boolean(row.selectionRepositioned),
+      viralScore: row.viralScore == null ? null : Number(row.viralScore),
       hookTitle: row.hookTitle,
       highlightReason: row.highlightReason || "",
       channelDisplayName: row.channelDisplayName,

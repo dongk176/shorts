@@ -312,6 +312,7 @@ def normalize_clips(
                 end_seconds=rounded_end,
                 hook_title=_two_line_title(candidate.hook_title, output_language),
                 reason=str(candidate.reason or ""),
+                viral_score=candidate.viral_score,
                 selection_raw_start_seconds=rounded_raw_start,
                 selection_raw_end_seconds=rounded_raw_end,
                 selection_raw_duration_seconds=rounded_raw_duration,
@@ -322,7 +323,16 @@ def normalize_clips(
                 selection_repositioned=rounded_start != round(raw_start, 3),
             )
         )
-    for candidate_index, candidate in enumerate(candidates, start=1):
+    ranked_candidates = sorted(
+        enumerate(candidates, start=1),
+        key=lambda item: (
+            item[1].viral_score
+            if item[1].viral_score is not None
+            else -1
+        ),
+        reverse=True,
+    )
+    for candidate_index, candidate in ranked_candidates:
         accept(
             candidate,
             candidate_index=candidate_index,
@@ -344,7 +354,7 @@ def normalize_clips(
                 model=None,
                 record_raw_selection=False,
             )
-    return sorted(accepted, key=lambda clip: clip.start_seconds)
+    return accepted
 
 
 class TranscriptSelector:
@@ -388,6 +398,19 @@ class TranscriptSelector:
             "2. 텐션 극대화: 갈등, 반전 또는 감정이 최고조에 달해 몰입감이 압도적인 순간\n"
             "3. 공감과 실용성: 저장하고 다시 보고 싶을 만큼 직관적이고 뼈 때리는 정보가 "
             "요약된 구간\n\n"
+            "[바이럴 점수]\n"
+            "- 각 후보를 아래 다섯 항목으로 냉정하게 평가하고 정수 점수를 반환할 것.\n"
+            "- hook_score: 시작 2~3초 안에 시선을 붙잡는 힘, 0~30점.\n"
+            "- completeness_score: 이 구간만 봐도 이해되고 자연스럽게 끝나는 완결성, 0~20점.\n"
+            "- impact_score: 반전, 갈등, 감정 또는 정보가 주는 충격, 0~20점.\n"
+            "- shareability_score: 댓글, 공유 또는 저장을 유발할 가능성, 0~20점.\n"
+            "- density_score: 침묵이나 불필요한 설명 없이 핵심이 이어지는 밀도, 0~10점.\n"
+            "- 다섯 점수의 합이 90~100점이면 영상 전체에서 손꼽히는 압도적인 구간, "
+            "80~89점이면 바로 쇼츠로 쓸 만큼 강력한 구간, 70~79점이면 충분히 흥미롭지만 "
+            "약점이 있는 구간, 60~69점이면 평범하거나 맥락 의존적인 구간으로 평가할 것.\n"
+            "- 대부분의 후보에 높은 점수를 반복하지 말고 전체 점수 범위를 적극적으로 사용할 것.\n"
+            "- 후보를 모두 비교한 뒤 다섯 점수의 합이 높은 순서로 clips 배열에 배치할 것. "
+            "영상에 등장하는 시간순으로 정렬하지 말 것.\n\n"
             "[구간 분할 규칙]\n"
             "1. **길이 및 완결성**: 각 구간의 end_seconds - start_seconds를 계산한 값이 "
             f"{AI_CLIP_MIN_SECONDS:.3f}초 이상 {AI_CLIP_MAX_SECONDS:.3f}초 이하가 되도록 "
@@ -449,6 +472,13 @@ class TranscriptSelector:
                 end_seconds=candidate.end_seconds,
                 hook_title=f"{candidate.hook_title_line1}\n{candidate.hook_title_line2}",
                 reason=candidate.reason,
+                viral_score=(
+                    candidate.hook_score
+                    + candidate.completeness_score
+                    + candidate.impact_score
+                    + candidate.shareability_score
+                    + candidate.density_score
+                ),
             )
             for candidate in parsed.clips
         ]

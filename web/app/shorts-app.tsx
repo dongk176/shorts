@@ -11968,9 +11968,17 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
             const script = item.subtitleSegments.map((segment) => segment.text).join(" ") || "추출된 스크립트가 없습니다.";
             return (
               <article key={item.id} className="short-result-card">
-                <div className="short-result-heading">
+                <div className="short-result-heading flex-wrap">
                   <span>#{index + 1}</span>
-                  <h2>{item.hookTitle}</h2>
+                  <h2 className="min-w-0 flex-1">{item.hookTitle}</h2>
+                  {item.viralScore != null && (
+                    <span
+                      className="ml-auto whitespace-nowrap rounded-full border border-violet-400/30 bg-violet-400/10 px-2.5 py-1.5 !text-xs font-extrabold !tracking-tight !text-violet-200 max-[760px]:ml-0 max-[760px]:!text-[11px]"
+                      title="대본을 바탕으로 AI가 예측한 점수입니다"
+                    >
+                      AI 바이럴 점수 {item.viralScore}/100
+                    </span>
+                  )}
                 </div>
                 <div className="short-result-layout">
                   <div className="short-video-column">

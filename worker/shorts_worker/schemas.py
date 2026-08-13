@@ -1029,6 +1029,7 @@ class HighlightClip(BaseModel):
     end_seconds: float
     hook_title: str = Field(min_length=1, max_length=MAX_HOOK_TITLE_CHARS)
     reason: str = Field(default="", max_length=1000)
+    viral_score: int | None = Field(default=None, ge=0, le=100)
     selection_raw_start_seconds: float | None = None
     selection_raw_end_seconds: float | None = None
     selection_raw_duration_seconds: float | None = None
@@ -1057,6 +1058,11 @@ class HighlightCandidate(BaseModel):
     hook_title_line1: str = Field(min_length=1, max_length=MAX_HOOK_TITLE_CHARS // 2)
     hook_title_line2: str = Field(min_length=1, max_length=MAX_HOOK_TITLE_CHARS // 2)
     reason: str = Field(min_length=1, max_length=500)
+    hook_score: int = Field(ge=0, le=30)
+    completeness_score: int = Field(ge=0, le=20)
+    impact_score: int = Field(ge=0, le=20)
+    shareability_score: int = Field(ge=0, le=20)
+    density_score: int = Field(ge=0, le=10)
 
     @field_validator("hook_title_line1", "hook_title_line2", mode="before")
     @classmethod

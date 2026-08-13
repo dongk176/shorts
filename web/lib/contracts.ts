@@ -209,6 +209,7 @@ export type GeneratedShort = {
   selectionCandidateIndex?: number | null;
   selectionLengthAdjustment?: "none" | "min_clamp" | "max_clamp" | null;
   selectionRepositioned?: boolean | null;
+  viralScore?: number | null;
   hookTitle: string;
   highlightReason: string;
   channelDisplayName: string;

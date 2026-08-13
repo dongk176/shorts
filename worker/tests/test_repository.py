@@ -230,7 +230,7 @@ def test_inline_route_rotation_migration_locks_and_excludes_attempted_routes() -
 def test_pending_short_uses_one_database_clock_for_creation_and_expiry() -> None:
     implementation = inspect.getsource(WorkerRepository.add_pending_short)
 
-    assert "file_size_bytes, created_at," in implementation
+    assert "file_size_bytes, viral_score, created_at," in implementation
     assert "now()," in implementation
     assert "now() + make_interval(days => least(greatest(%s::integer, 1), 30))" in implementation
     assert "expires_at: Any" not in implementation
@@ -280,12 +280,14 @@ def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> 
         timeline_subtitles=[],
         retention_days=30,
         shard_index=0,
+        viral_score=87,
     )
 
     insert_call = connection.execute.call_args_list[2]
     assert "created_at" in insert_call.args[0]
     assert "now() + make_interval" in insert_call.args[0]
     assert "selection_raw_start_seconds" in insert_call.args[0]
+    assert "viral_score=excluded.viral_score" in insert_call.args[0]
     assert "edit_timeline_s3_key" in insert_call.args[0]
     assert "selection_length_adjustment=excluded.selection_length_adjustment" in insert_call.args[0]
     assert insert_call.args[0].count("%s") == len(insert_call.args[1])
@@ -293,6 +295,7 @@ def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> 
     # rows keep all caption fields empty and subtitles disabled.
     assert insert_call.args[1][19:22] == (None, None, None)
     assert insert_call.args[1][23] is False
+    assert insert_call.args[1][-3] == 87
     assert insert_call.args[1][-2] == 30
 
 
@@ -594,6 +597,21 @@ def test_selection_observability_migration_stays_in_shorts_schema() -> None:
     assert "selection_model" in migration
     assert "selection_length_adjustment" in migration
     assert "selection_repositioned" in migration
+    assert "public." not in migration
+
+
+def test_viral_score_migration_stays_nullable_and_in_shorts_schema() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202608130001_generated_short_viral_score.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "shorts_mvp.generated_shorts" in migration
+    assert "viral_score smallint" in migration
+    assert "viral_score is null or viral_score between 0 and 100" in migration
+    assert "not null" not in migration
     assert "public." not in migration
 
 

@@ -899,6 +899,7 @@ class WorkerRepository:
         retention_days: int,
         shard_index: int,
         caption_render_spec: dict[str, Any] | None = None,
+        viral_score: int | None = None,
     ) -> bool:
         with self.connect() as connection, connection.transaction():
             locked_job = connection.execute(
@@ -936,11 +937,11 @@ class WorkerRepository:
                   edit_timeline_start_seconds, edit_timeline_end_seconds,
                   edit_timeline_subtitle_segments, edit_timeline_version,
                   initial_start_seconds, initial_end_seconds,
-                  output_s3_key, thumbnail_s3_key, file_size_bytes, created_at,
+                  output_s3_key, thumbnail_s3_key, file_size_bytes, viral_score, created_at,
                   expires_at, status, render_shard_index, render_progress
                 ) values (
                   %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,null,null,null,
+                  %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,null,null,null,%s,
                   now(),
                   now() + make_interval(days => least(greatest(%s::integer, 1), 30)),
                   'rendering',%s,0
@@ -964,6 +965,7 @@ class WorkerRepository:
                   end,
                   hook_title=excluded.hook_title,
                   highlight_reason=excluded.highlight_reason,
+                  viral_score=excluded.viral_score,
                   selection_raw_start_seconds=excluded.selection_raw_start_seconds,
                   selection_raw_end_seconds=excluded.selection_raw_end_seconds,
                   selection_raw_duration_seconds=excluded.selection_raw_duration_seconds,
@@ -1021,6 +1023,7 @@ class WorkerRepository:
                     1 if timeline_key else None,
                     start_seconds,
                     end_seconds,
+                    viral_score,
                     retention_days,
                     shard_index,
                 ),

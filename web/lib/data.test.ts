@@ -78,6 +78,7 @@ describe("generated short details", () => {
         selectionCandidateIndex: 2,
         selectionLengthAdjustment: "none",
         selectionRepositioned: true,
+        viralScore: "87",
         hookTitle: "후킹 제목",
         highlightReason: "반전이 드러나는 핵심 발언이 포함된 구간입니다.",
         channelDisplayName: "채널",
@@ -110,6 +111,7 @@ describe("generated short details", () => {
       selectionCandidateIndex: 2,
       selectionLengthAdjustment: "none",
       selectionRepositioned: true,
+      viralScore: 87,
       subtitleTemplateId: "highlight",
       captionRenderSpec,
     });

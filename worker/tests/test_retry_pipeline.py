@@ -461,6 +461,7 @@ def test_prepare_persists_full_source_timestamps_and_generates_template_comments
             selection_model="gemini-2.5-flash-lite",
             selection_length_adjustment="min_clamp",
             selection_repositioned=False,
+            viral_score=87,
         )
     ]
     generated_comments = [{"text": "AI 댓글", "startSeconds": 0, "endSeconds": 3}]
@@ -490,6 +491,7 @@ def test_prepare_persists_full_source_timestamps_and_generates_template_comments
     assert pending_kwargs["selection_model"] == "gemini-2.5-flash-lite"
     assert pending_kwargs["selection_length_adjustment"] == "min_clamp"
     assert pending_kwargs["selection_repositioned"] is False
+    assert pending_kwargs["viral_score"] == 87
     if expects_comment_generation:
         worker.comment_generator.generate.assert_called_once()
         comment_input = worker.comment_generator.generate.call_args.args[0][0]
