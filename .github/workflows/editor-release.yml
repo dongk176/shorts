@@ -13,7 +13,7 @@ concurrency:
 
 env:
   AWS_REGION: ap-northeast-2
-  AWS_WORKER_BUILD_ROLE_ARN: ${{ vars.AWS_WORKER_BUILD_ROLE_ARN }}
+  EDITOR_RELEASE_BUILD_ROLE_ARN: ${{ vars.EDITOR_RELEASE_BUILD_ROLE_ARN }}
   EDITOR_RELEASE_ECR_REPOSITORY_URI: ${{ vars.EDITOR_RELEASE_ECR_REPOSITORY_URI }}
   EDITOR_TEST_JOB_QUEUE: ${{ vars.EDITOR_TEST_JOB_QUEUE || 'shorts-mvp-editor-test' }}
   EDITOR_TEST_TEMPLATE_JOB_DEFINITION: ${{ vars.EDITOR_TEST_TEMPLATE_JOB_DEFINITION || 'shorts-mvp-editor-test-template' }}
@@ -65,7 +65,7 @@ jobs:
 
       - name: Validate release configuration
         run: |
-          test -n "$AWS_WORKER_BUILD_ROLE_ARN"
+          test -n "$EDITOR_RELEASE_BUILD_ROLE_ARN"
           test -n "$EDITOR_RELEASE_ECR_REPOSITORY_URI"
           test -n "$EDITOR_TEST_JOB_QUEUE"
           test -n "$EDITOR_TEST_TEMPLATE_JOB_DEFINITION"
@@ -78,7 +78,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.AWS_WORKER_BUILD_ROLE_ARN }}
+          role-to-assume: ${{ env.EDITOR_RELEASE_BUILD_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: aws-actions/amazon-ecr-login@v2

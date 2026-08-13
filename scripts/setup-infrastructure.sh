@@ -128,6 +128,9 @@ bash scripts/sync-vercel-env.sh
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   gh variable set AWS_WORKER_BUILD_ROLE_ARN --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
     --body "$(bash scripts/stack-outputs.sh GithubWorkerBuildRoleArn Compute)"
+  gh variable set EDITOR_RELEASE_BUILD_ROLE_ARN \
+    --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
+    --body "$(bash scripts/stack-outputs.sh EditorReleaseBuildRoleArn EditorCanary)"
   gh variable set AWS_ECR_REPOSITORY_URI --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
     --body "$(bash scripts/stack-outputs.sh WorkerRepositoryUri Foundation)"
   gh variable set EDITOR_RELEASE_ECR_REPOSITORY_URI \

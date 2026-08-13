@@ -38,6 +38,10 @@ test("pins the legacy rerender image separately from new worker deployments", ()
 test("publishes editor release workflow variables only from the matching stacks", () => {
   assert.match(
     script,
+    /EDITOR_RELEASE_BUILD_ROLE_ARN[\s\S]*EditorReleaseBuildRoleArn EditorCanary/,
+  );
+  assert.match(
+    script,
     /EDITOR_RELEASE_ECR_REPOSITORY_URI[\s\S]*EditorReleaseRepositoryUri Foundation/,
   );
   assert.match(

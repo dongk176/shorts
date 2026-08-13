@@ -50,6 +50,8 @@ timeline mismatch.
   `selection_range_mismatch`.
 - Full worker test suite passes, including synthetic FFmpeg/ffprobe rendering.
 - Immutable image scan reports no critical findings.
+- The editor release workflow assumes the dedicated editor release build role,
+  not the rolling worker deployment role.
 - Run a production canary with a non-zero range start and compare requested,
   raw selection, extracted media, subtitle, and title timelines.
 - Keep the feature switch off until the canary passes; on failure, retain the

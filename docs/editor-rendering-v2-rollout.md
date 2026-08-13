@@ -49,7 +49,7 @@ workflow는 Vercel, CDK, 운영 DB를 자동 배포하지 않는다.
 
 `Verify editor release candidate` workflow에 다음 값이 필요하다.
 
-- variable: `AWS_WORKER_BUILD_ROLE_ARN`,
+- variable: `EDITOR_RELEASE_BUILD_ROLE_ARN`,
   `EDITOR_RELEASE_ECR_REPOSITORY_URI`
 - variable: `EDITOR_TEST_JOB_QUEUE`,
   `EDITOR_TEST_TEMPLATE_JOB_DEFINITION`,
