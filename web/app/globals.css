@@ -878,6 +878,7 @@ video {
 .short-result-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 22px; }
 .short-result-heading span { flex: none; color: #a078ff; font-size: 22px; font-weight: 850; letter-spacing: -.035em; }
 .short-result-heading h2 { color: white; font-size: clamp(20px,2.3vw,28px); line-height: 1.25; font-weight: 850; letter-spacing: -.035em; }
+.short-result-heading .viral-score-badge { margin-left: auto; border: 1px solid rgba(160,120,255,.26); border-radius: 5px; padding: 5px 8px; background: rgba(160,120,255,.08); color: #cdbdff; font-size: 12px; font-weight: 800; line-height: 1; letter-spacing: -.015em; white-space: nowrap; }
 .short-result-layout { display: grid; grid-template-columns: 260px minmax(0,1fr); align-items: start; gap: 28px; padding-left: 42px; }
 .short-video-column { min-width: 0; }
 .short-video-shell { position: relative; aspect-ratio: 9/16; width: 100%; overflow: hidden; border: 1px solid rgba(255,255,255,.11); border-radius: 13px; background: black; box-shadow: 0 22px 48px rgba(0,0,0,.34); }
@@ -1121,9 +1122,10 @@ body:has(.editor-page) .language-selector-floating { display: none; }
   .workspace-header .workspace-button { min-height: 42px; padding: 0 11px; }
   .short-results-list { padding: 4px 18px 44px; }
   .short-result-card { padding: 24px 0 32px; }
-  .short-result-heading { margin-bottom: 18px; }
+  .short-result-heading { display: grid; grid-template-columns: max-content minmax(0,1fr); align-items: baseline; column-gap: 10px; row-gap: 8px; margin-bottom: 18px; }
   .short-result-heading span { font-size: 19px; }
   .short-result-heading h2 { font-size: 20px; }
+  .short-result-heading .viral-score-badge { grid-column: 2; justify-self: start; margin-left: 0; font-size: 11px; }
   .short-result-layout { grid-template-columns: 1fr; gap: 22px; padding-left: 0; }
   .short-video-column { width: min(250px,100%); margin: 0 auto; }
   .short-detail-column { min-height: 0; }
