@@ -162,7 +162,11 @@ describe("MVP session cookie", () => {
         avatarUrl: "https://example.com/avatar.png",
       },
     });
-    expect(transaction).toHaveBeenCalledTimes(8);
+    expect(transaction).toHaveBeenCalledTimes(9);
+    expect(transaction.mock.calls.some(([strings]) => (
+      Array.from(strings as TemplateStringsArray).join("?")
+        .includes("creator_project_share_visitors")
+    ))).toBe(true);
     expect(mocks.issueLoginWelcomeGrantIfEligible)
       .toHaveBeenCalledWith(db, "app-user");
     expect(errorSpy).toHaveBeenCalledWith("login_welcome_grant_failed", {
@@ -208,6 +212,44 @@ describe("MVP session cookie", () => {
     expect(set).not.toHaveBeenCalled();
   });
 
+  it("does not count an existing application user as a creator-project signup", async () => {
+    mocks.cookies.mockResolvedValue({
+      get: vi.fn().mockReturnValue({ value: "anonymous-token" }),
+      set: vi.fn(),
+      delete: vi.fn(),
+    });
+    const transaction = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: "app-user", selectedPlanCode: "free" }])
+      .mockResolvedValueOnce([{ selectedPlanCode: "free" }])
+      .mockResolvedValue([]);
+    const db = vi.fn().mockResolvedValueOnce([{
+      id: "anonymous-session",
+      selectedPlanCode: "free",
+      userId: null,
+      lastSeenAt: new Date(),
+    }]);
+    Object.assign(db, {
+      begin: vi.fn((callback: (tx: typeof transaction) => unknown) => callback(transaction)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const { claimMvpSession } = await import("./session");
+    await claimMvpSession({
+      id: "11111111-1111-4111-8111-111111111111",
+      email: "existing@example.com",
+      app_metadata: { provider: "google" },
+      user_metadata: {},
+      last_sign_in_at: "2026-08-14T01:00:00.000Z",
+    } as never);
+
+    expect(transaction).toHaveBeenCalledTimes(9);
+    expect(transaction.mock.calls.some(([strings]) => (
+      Array.from(strings as TemplateStringsArray).join("?")
+        .includes("creator_project_share_visitors")
+    ))).toBe(false);
+  });
+
   it("attributes a valid first-click only when the application user is newly created", async () => {
     const deleteCookie = vi.fn();
     mocks.cookies.mockResolvedValue({
@@ -248,7 +290,14 @@ describe("MVP session cookie", () => {
       last_sign_in_at: "2026-07-28T01:00:00.000Z",
     } as never);
 
-    expect(transaction).toHaveBeenCalledTimes(11);
+    expect(transaction).toHaveBeenCalledTimes(12);
+    const conversionSql = transaction.mock.calls
+      .map(([strings]) => Array.from(strings as TemplateStringsArray).join("?"))
+      .find((statement) => statement.includes("creator_project_share_visitors"));
+    expect(conversionSql).toContain("visitor.mvp_session_id=?");
+    expect(conversionSql).toContain("visitor.last_cta_clicked_at >= clock_timestamp()");
+    expect(conversionSql).toContain("order by visitor.last_cta_clicked_at desc");
+    expect(conversionSql).toContain("limit 1");
     expect(mocks.issueLoginWelcomeGrantIfEligible)
       .toHaveBeenCalledWith(db, "app-user");
     expect(deleteCookie).toHaveBeenCalledWith("easycut_referral");

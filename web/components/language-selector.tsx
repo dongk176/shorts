@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { siteLocales, type SiteLocale } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
@@ -14,6 +14,7 @@ const languageLabels: Record<SiteLocale, string> = {
 
 export function LanguageSelector() {
   const router = useRouter();
+  const pathname = usePathname();
   const { locale, t } = useI18n();
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -37,6 +38,8 @@ export function LanguageSelector() {
     document.addEventListener("pointerdown", closeOnOutsidePointer);
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
   }, [open, selectedLocale]);
+
+  if (/^\/creator-project(?:\/|$)/.test(pathname)) return null;
 
   async function changeLocale(nextLocale: SiteLocale) {
     if (nextLocale === locale || pendingLocale) return;

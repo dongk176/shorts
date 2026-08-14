@@ -10,6 +10,7 @@ export const reservedReferralSlugs = new Set([
   "auth",
   "billing",
   "compare",
+  "creator-project",
   "faq",
   "partner",
   "payment-test",

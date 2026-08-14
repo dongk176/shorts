@@ -3,6 +3,7 @@
 import Script from "next/script";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { analyticsSafePathname } from "@/lib/analytics-path";
 import { createGtagCommandQueue } from "@/lib/google-analytics-command-queue";
 
 declare global {
@@ -49,12 +50,15 @@ export function GoogleAnalyticsMeasurement({ measurementId }: { measurementId?: 
   useEffect(() => {
     if (!ready || !isGoogleAnalyticsMeasurementId(measurementId)) return;
 
-    const pageLocation = window.location.href;
+    const safePathname = analyticsSafePathname(pathname);
+    const pageLocation = safePathname === pathname
+      ? window.location.href
+      : `${window.location.origin}${safePathname}`;
     if (lastPageLocationRef.current === pageLocation) return;
 
     ensureGtag()("event", "page_view", {
       page_location: pageLocation,
-      page_path: pathname,
+      page_path: safePathname,
       page_title: document.title,
     });
     lastPageLocationRef.current = pageLocation;

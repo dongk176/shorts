@@ -50,6 +50,9 @@ export function AuthControls({
   onLoginOpenChange,
   dialogTitle,
   dialogDescription,
+  triggerLabel,
+  triggerClassName,
+  onLoginTrigger,
 }: {
   user: AuthProfile | null;
   next?: string;
@@ -57,6 +60,9 @@ export function AuthControls({
   onLoginOpenChange?: (open: boolean) => void;
   dialogTitle?: string;
   dialogDescription?: string;
+  triggerLabel?: string;
+  triggerClassName?: string;
+  onLoginTrigger?: () => void;
 }) {
   const { t } = useI18n();
   const [internalLoginOpen, setInternalLoginOpen] = useState(false);
@@ -115,8 +121,15 @@ export function AuthControls({
   if (!user) {
     return (
       <>
-        <button type="button" className="header-cta" onClick={() => setLoginOpen(true)}>
-          {t("auth.login")} <span aria-hidden="true">→</span>
+        <button
+          type="button"
+          className={triggerClassName || "header-cta"}
+          onClick={() => {
+            onLoginTrigger?.();
+            setLoginOpen(true);
+          }}
+        >
+          {triggerLabel || t("auth.login")} <span aria-hidden="true">→</span>
         </button>
         {loginOpen && createPortal(
           <div

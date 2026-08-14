@@ -4,6 +4,7 @@ import { requireAdminUser } from "@/lib/admin";
 import { loadAdminBillingOrders } from "@/lib/admin-billing-orders";
 import { loadAdminMembers } from "@/lib/admin-members";
 import { loadAdminOverview } from "@/lib/admin-overview";
+import { loadAdminCreatorProjectShares } from "@/lib/creator-project-shares";
 import { ensureAdminDbReady, getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { createNoIndexMetadata } from "@/lib/seo";
@@ -21,6 +22,7 @@ import {
 import { AdminMembersDashboard } from "./admin-members-dashboard";
 import { AdminManagedAccountsSection } from "./admin-managed-accounts-section";
 import { AdminInstallmentsDashboard } from "./admin-installments-dashboard";
+import { AdminCreatorProjects } from "./admin-creator-projects";
 import { AdminRuntimeSettings } from "./admin-runtime-settings";
 import { AdminShortsEventSetting } from "./admin-shorts-event-setting";
 import {
@@ -107,6 +109,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     "inquiries",
     "feedback",
     "onboarding",
+    "creator-projects",
     "settings",
     "installments",
     "editor-releases",
@@ -155,6 +158,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     runtimeSettingRows,
     eventRuntimeSettingRows,
     overview,
+    creatorProjectShares,
   ] = await Promise.all([
     tab === "settings" ? db`
         select feature_flag.enabled,feature_flag.updated_at,administrator.email as updated_by_email
@@ -174,6 +178,9 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         limit 1
       ` : Promise.resolve([]),
     loadAdminOverview(),
+    tab === "creator-projects"
+      ? loadAdminCreatorProjectShares(admin.id)
+      : Promise.resolve([]),
   ]);
   const [
     editorReleaseStateRows,
@@ -758,6 +765,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           discoverySourceCounts={onboardingDiscoverySourceCounts}
           query={query}
         />
+      ) : tab === "creator-projects" ? (
+        <AdminCreatorProjects shares={creatorProjectShares} />
       ) : tab === "editor-releases" ? (
         <AdminEditorReleases
           masterEnvironmentEnabled={editorRenderingV2MasterEnabled()}

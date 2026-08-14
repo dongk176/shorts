@@ -11,6 +11,7 @@ export type AdminTab =
   | "inquiries"
   | "feedback"
   | "onboarding"
+  | "creator-projects"
   | "settings"
   | "editor-releases"
   | "installments";
@@ -55,6 +56,7 @@ type IconName =
   | "inquiries"
   | "feedback"
   | "onboarding"
+  | "creator-projects"
   | "settings"
   | "editor-releases"
   | "installments";
@@ -80,6 +82,7 @@ const navigationGroups: Array<{
       { tab: "inquiries", label: "고객 문의", icon: "inquiries" },
       { tab: "feedback", label: "제품 피드백", icon: "feedback" },
       { tab: "onboarding", label: "온보딩 분석", icon: "onboarding" },
+      { tab: "creator-projects", label: "크리에이터 프로젝트", icon: "creator-projects" },
     ],
   },
   {
@@ -100,6 +103,7 @@ const pageCopy: Record<AdminTab, { eyebrow: string; title: string }> = {
   inquiries: { eyebrow: "Support / Inquiries", title: "고객 문의" },
   feedback: { eyebrow: "Insights / Feedback", title: "제품 피드백" },
   onboarding: { eyebrow: "Insights / Onboarding", title: "온보딩 분석" },
+  "creator-projects": { eyebrow: "Growth / Creator outreach", title: "크리에이터 프로젝트" },
   settings: { eyebrow: "System / Runtime", title: "운영 설정" },
   "editor-releases": { eyebrow: "System / Editor releases", title: "편집기 릴리스" },
   installments: { eyebrow: "Commerce / Installments", title: "할부 혜택" },
@@ -140,6 +144,9 @@ function AdminIcon({ name, className }: { name: IconName; className?: string }) 
   }
   if (name === "onboarding") {
     return <svg {...common}><path d="M5 20V10m7 10V4m7 16v-7" /><path d="m3 7 6-4 5 4 7-5" /></svg>;
+  }
+  if (name === "creator-projects") {
+    return <svg {...common}><path d="M8 7h8M8 11h5" /><rect x="3" y="3" width="18" height="14" rx="3" /><path d="m9 17-2 4 5-4" /><path d="m16 14 4 4m0-4-4 4" /></svg>;
   }
   if (name === "settings") {
     return <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></svg>;

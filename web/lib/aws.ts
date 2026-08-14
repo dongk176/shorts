@@ -118,6 +118,50 @@ export async function getShortDownloadUrl(
   });
 }
 
+export async function getShortPlaybackAccess({
+  outputKey,
+  thumbnailKey,
+  expiresAt,
+}: {
+  outputKey: string;
+  thumbnailKey: string | null;
+  expiresAt: Date;
+}) {
+  if (!/^outputs\/[A-Za-z0-9/_-]+\.mp4$/.test(outputKey)) {
+    throw new Error("재생할 수 없는 영상 경로입니다.");
+  }
+  if (
+    thumbnailKey
+    && !/^thumbnails\/[A-Za-z0-9/_-]+\.jpg$/.test(thumbnailKey)
+  ) {
+    throw new Error("재생할 수 없는 썸네일 경로입니다.");
+  }
+  const domain = process.env.CLOUDFRONT_DOMAIN;
+  const keyPairId = process.env.CLOUDFRONT_KEY_PAIR_ID;
+  const privateKey = await cloudFrontPrivateKey();
+  if (!domain || !keyPairId || !privateKey) {
+    throw new Error("CloudFront Signed URL 설정이 완료되지 않았습니다.");
+  }
+  const signedUntil = new Date(Math.min(
+    Date.now() + 15 * 60_000,
+    expiresAt.getTime(),
+  ));
+  if (signedUntil.getTime() <= Date.now()) {
+    throw new Error("영상 재생 링크가 만료되었습니다.");
+  }
+  const sign = (key: string) => getCloudFrontSignedUrl({
+    url: `https://${domain}/${key}`,
+    keyPairId,
+    privateKey,
+    dateLessThan: signedUntil.toISOString(),
+  });
+  return {
+    url: sign(outputKey),
+    posterUrl: thumbnailKey ? sign(thumbnailKey) : null,
+    expiresAt: signedUntil.toISOString(),
+  };
+}
+
 export async function wakeOutboxDispatcher() {
   const functionArn = process.env.AWS_OUTBOX_DISPATCHER_FUNCTION_ARN;
   if (!functionArn) throw new Error("AWS_OUTBOX_DISPATCHER_FUNCTION_ARN이 설정되지 않았습니다.");

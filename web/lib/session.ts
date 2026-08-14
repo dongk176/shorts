@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import type { Sql, TransactionSql } from "postgres";
 import { getDb } from "@/lib/db";
 import { assertPaymentMethodRemediationAccess } from "@/lib/billing-payment-method-remediation";
+import { CREATOR_PROJECT_SHARE_ATTRIBUTION_DAYS } from "@/lib/creator-project-shares";
 import { HttpError } from "@/lib/http";
 import { issueLoginWelcomeGrantIfEligible } from "@/lib/onboarding-welcome-grant";
 import { REFERRAL_COOKIE } from "@/lib/referral-policy";
@@ -279,6 +280,30 @@ export async function claimMvpSession(authenticatedUser: User): Promise<MvpSessi
       set user_id=${appUser.id}, selected_plan_code=${appUser.selectedPlanCode}
       where id=${activeSession.id} and (user_id is null or user_id=${appUser.id})
     `;
+    if (newlyCreated) {
+      await tx`
+        with candidate as (
+          select visitor.id
+          from shorts_mvp.creator_project_share_visitors visitor
+          where visitor.mvp_session_id=${activeSession.id}
+            and visitor.converted_at is null
+            and visitor.last_cta_clicked_at is not null
+            and visitor.last_cta_clicked_at >= clock_timestamp()
+              - ${CREATOR_PROJECT_SHARE_ATTRIBUTION_DAYS} * interval '1 day'
+          order by visitor.last_cta_clicked_at desc
+          limit 1
+          for update
+        )
+        update shorts_mvp.creator_project_share_visitors visitor
+        set converted_user_id=${appUser.id},converted_at=clock_timestamp()
+        where visitor.id=(select id from candidate)
+          and not exists (
+            select 1
+            from shorts_mvp.creator_project_share_visitors attributed
+            where attributed.converted_user_id=${appUser.id}
+          )
+      `;
+    }
     await tx`update shorts_mvp.youtube_analyses set user_id=${appUser.id} where mvp_session_id=${activeSession.id} and user_id is null`;
     await tx`update shorts_mvp.video_jobs set user_id=${appUser.id} where mvp_session_id=${activeSession.id} and user_id is null`;
     await tx`update shorts_mvp.generated_shorts set user_id=${appUser.id} where mvp_session_id=${activeSession.id} and user_id is null`;
