@@ -153,8 +153,8 @@ export default function RefundPolicyPage() {
       <LegalSection title="제8조 환불 신청 및 처리">
         <p>
           환불은{" "}
-          <a href="mailto:artiroom176@gmail.com" className={accentLink}>
-            artiroom176@gmail.com
+          <a href="mailto:easycut@easycut.co.kr" className={accentLink}>
+            easycut@easycut.co.kr
           </a>
           으로 계정 이메일, 주문번호, 결제일·금액, 상품명과 신청 사유를 보내야 합니다.
           구독 해지, 계정 삭제 또는 일반 문의만으로는 환불 신청이 완료되지 않습니다.
@@ -209,8 +209,8 @@ export default function RefundPolicyPage() {
               <tr>
                 <th>문의</th>
                 <td>
-                  <a href="mailto:artiroom176@gmail.com" className={accentLink}>
-                    artiroom176@gmail.com
+                  <a href="mailto:easycut@easycut.co.kr" className={accentLink}>
+                    easycut@easycut.co.kr
                   </a>
                   {" "}·{" "}
                   <a href="tel:010-4836-2874" className={accentLink}>

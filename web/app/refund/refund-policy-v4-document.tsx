@@ -15,8 +15,8 @@ export const refundPolicyV4Translations: { en: LegalTranslation; ja: LegalTransl
       { title: "4. AI output", paragraphs: ["AI output varies with input and model behavior. If the service processes normally and supplies a result, dissatisfaction with wording, accuracy, style, mood, editing preferences, or input quality does not by itself qualify for a refund."] },
       { title: "5. Technical issues", paragraphs: ["For technical issues, we first reprocess the job, restore deducted time or credits, or provide an equivalent service. We review a monetary refund only for duplicate payment, failure to grant a paid entitlement, or a company-system failure that cannot be remedied by reprocessing or restoring usage."] },
       { title: "6. Subscription cancellation and promotions", paragraphs: ["Cancelling a recurring plan stops future renewal but does not automatically refund the current paid period after use or digital supply begins. Free trials, bonuses, coupons, promotions, and event allowances have no cash value and are not refundable or transferable."] },
-      { title: "7. How to request review", paragraphs: ["If you believe you qualify under this policy, email artiroom176@gmail.com within seven days of payment. Include your account email, payment date and amount, transaction or order number, a detailed reason, and supporting material.", "Submitting a request does not guarantee approval. We review payment and service records, including computation start, usage deductions, result supply, editing, export, and download activity. Missing information may delay or pause review."] },
-      { title: "8. Records and business information", paragraphs: ["We may retain payment, usage reservation and deduction, job processing, result supply, editing, export, download, and refund-review records for service operation and dispute handling.", "Business: Artiroom · Representative: Kim Dong-min · Business registration no. 638-04-03590 · Mail-order business report no. 2025-Seoul Mapo-2971 · Address: 40, Seongsan-ro 8-gil, Mapo-gu, Seoul · Contact: artiroom176@gmail.com / +82-10-4836-2874"] },
+      { title: "7. How to request review", paragraphs: ["If you believe you qualify under this policy, email easycut@easycut.co.kr within seven days of payment. Include your account email, payment date and amount, transaction or order number, a detailed reason, and supporting material.", "Submitting a request does not guarantee approval. We review payment and service records, including computation start, usage deductions, result supply, editing, export, and download activity. Missing information may delay or pause review."] },
+      { title: "8. Records and business information", paragraphs: ["We may retain payment, usage reservation and deduction, job processing, result supply, editing, export, download, and refund-review records for service operation and dispute handling.", "Business: Artiroom · Representative: Kim Dong-min · Business registration no. 638-04-03590 · Mail-order business report no. 2025-Seoul Mapo-2971 · Address: 40, Seongsan-ro 8-gil, Mapo-gu, Seoul · Contact: easycut@easycut.co.kr / +82-10-4836-2874"] },
     ],
   },
   ja: {
@@ -30,8 +30,8 @@ export const refundPolicyV4Translations: { en: LegalTranslation; ja: LegalTransl
       { title: "4. AIの結果", paragraphs: ["AI結果は入力とモデルの処理によって異なります。正常に処理・提供された場合、表現、正確性、スタイル、雰囲気、編集上の好み、入力品質への不満だけでは返金対象になりません。"] },
       { title: "5. 技術的な問題", paragraphs: ["技術的問題には、再処理、差し引かれた時間・クレジットの復元、または同等サービスの再提供を優先します。重複決済、利用権未付与、再処理・利用量復元でも解決できない当社システム障害に限り金銭返金を審査します。"] },
       { title: "6. 定期決済の解約と特典", paragraphs: ["定期決済の解約は次回更新を停止するもので、利用またはデジタル提供開始後の当月料金を自動返金するものではありません。無料体験、ボーナス、クーポン、プロモーション、イベント利用枠には現金価値がなく、返金・譲渡できません。"] },
-      { title: "7. 返金審査の申請方法", paragraphs: ["本ポリシー上の対象に該当すると考える場合は、決済日から7日以内にartiroom176@gmail.comへご連絡ください。アカウントメール、決済日・金額、取引・注文番号、具体的理由、確認資料を記載してください。", "申請だけで返金が承認されるものではありません。演算開始、利用量差引き、結果提供、編集、書き出し、ダウンロード等の記録を確認します。不足情報がある場合は審査を保留できます。"] },
-      { title: "8. 記録と事業者情報", paragraphs: ["サービス運営と紛争対応のため、決済、利用量予約・差引き、処理、結果提供、編集、書き出し、ダウンロード、返金審査の記録を保管する場合があります。", "商号：アティルーム · 代表：キム・ドンミン · 事業者登録番号：638-04-03590 · 通信販売業届出番号：2025-ソウル麻浦-2971 · 住所：ソウル特別市麻浦区城山路8ギル40 · 連絡先：artiroom176@gmail.com / +82-10-4836-2874"] },
+      { title: "7. 返金審査の申請方法", paragraphs: ["本ポリシー上の対象に該当すると考える場合は、決済日から7日以内にeasycut@easycut.co.krへご連絡ください。アカウントメール、決済日・金額、取引・注文番号、具体的理由、確認資料を記載してください。", "申請だけで返金が承認されるものではありません。演算開始、利用量差引き、結果提供、編集、書き出し、ダウンロード等の記録を確認します。不足情報がある場合は審査を保留できます。"] },
+      { title: "8. 記録と事業者情報", paragraphs: ["サービス運営と紛争対応のため、決済、利用量予約・差引き、処理、結果提供、編集、書き出し、ダウンロード、返金審査の記録を保管する場合があります。", "商号：アティルーム · 代表：キム・ドンミン · 事業者登録番号：638-04-03590 · 通信販売業届出番号：2025-ソウル麻浦-2971 · 住所：ソウル特別市麻浦区城山路8ギル40 · 連絡先：easycut@easycut.co.kr / +82-10-4836-2874"] },
     ],
   },
 };
@@ -105,7 +105,7 @@ export function RefundPolicyV4Document() {
       <LegalSection title="제7조 환불 요청 방법">
         <p>본 정책에 따라 환불 대상에 해당한다고 판단되는 경우, <strong className="text-white">결제일로부터 7일 이내</strong>에 아래 이메일로 환불 검토를 요청해 주세요.</p>
         <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/[.03] p-5 sm:p-6">
-          <p><strong className="inline-block w-24 text-white">이메일</strong><a href="mailto:artiroom176@gmail.com" className={accentLink}>artiroom176@gmail.com</a></p>
+          <p><strong className="inline-block w-24 text-white">이메일</strong><a href="mailto:easycut@easycut.co.kr" className={accentLink}>easycut@easycut.co.kr</a></p>
           <p><strong className="inline-block w-24 text-white">필수 정보</strong>가입 이메일, 결제 일시·금액, 거래·주문번호, 구체적인 환불 사유, 확인 자료</p>
         </div>
         <p>환불 요청을 접수하는 것만으로 환불이 승인되는 것은 아닙니다. 회사는 AI 연산 시작, 이용 시간 예약·차감, 결과물 생성·제공·편집·다운로드 등 결제 및 서비스 이용 기록을 확인하여 환불 가능 여부를 검토합니다.</p>
@@ -121,7 +121,7 @@ export function RefundPolicyV4Document() {
             <tr><th>사업자등록번호</th><td>638-04-03590</td></tr>
             <tr><th>통신판매업 신고번호</th><td>2025-서울마포-2971</td></tr>
             <tr><th>주소</th><td>서울특별시 마포구 성산로8길 40</td></tr>
-            <tr><th>문의</th><td><a href="mailto:artiroom176@gmail.com" className={accentLink}>artiroom176@gmail.com</a> · <a href="tel:010-4836-2874" className={accentLink}>010-4836-2874</a></td></tr>
+            <tr><th>문의</th><td><a href="mailto:easycut@easycut.co.kr" className={accentLink}>easycut@easycut.co.kr</a> · <a href="tel:010-4836-2874" className={accentLink}>010-4836-2874</a></td></tr>
           </tbody></table>
         </div>
       </LegalSection>

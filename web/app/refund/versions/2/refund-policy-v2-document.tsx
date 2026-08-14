@@ -150,7 +150,7 @@ export function RefundPolicyV2Document({
       </LegalSection>
 
       <LegalSection title={`${usesFirstCompletedJobPolicy ? "제11조" : "제12조"} 환불 신청 방법`}>
-        <p>환불은 <a href="mailto:artiroom176@gmail.com" className={accentLink}>artiroom176@gmail.com</a>으로 신청해야 하며, 구독 해지 또는 패키지 종료 예약만으로 환불 신청이 접수되지는 않습니다.</p>
+        <p>환불은 <a href="mailto:easycut@easycut.co.kr" className={accentLink}>easycut@easycut.co.kr</a>으로 신청해야 하며, 구독 해지 또는 패키지 종료 예약만으로 환불 신청이 접수되지는 않습니다.</p>
         <p>계정 이메일, 결제일·금액, 상품명, 주문번호와 환불 사유를 보내야 합니다. 회사는 본인·결제·사용 내역 확인에 필요한 최소한의 자료를 요청할 수 있습니다.</p>
       </LegalSection>
 
@@ -178,7 +178,7 @@ export function RefundPolicyV2Document({
             <tr><th>사업자등록번호</th><td>638-04-03590</td></tr>
             <tr><th>통신판매업 신고번호</th><td>2025-서울마포-2971</td></tr>
             <tr><th>주소</th><td>서울특별시 마포구 성산로8길 40</td></tr>
-            <tr><th>문의</th><td><a href="mailto:artiroom176@gmail.com" className={accentLink}>artiroom176@gmail.com</a> · <a href="tel:010-4836-2874" className={accentLink}>010-4836-2874</a></td></tr>
+            <tr><th>문의</th><td><a href="mailto:easycut@easycut.co.kr" className={accentLink}>easycut@easycut.co.kr</a> · <a href="tel:010-4836-2874" className={accentLink}>010-4836-2874</a></td></tr>
           </tbody></table>
         </div>
       </LegalSection>

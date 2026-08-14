@@ -69,7 +69,7 @@ export function PurchaseTermsV2Document({
             <tr><th>사업자등록번호</th><td>638-04-03590</td></tr>
             <tr><th>통신판매업 신고번호</th><td>2025-서울마포-2971</td></tr>
             <tr><th>주소</th><td>서울특별시 마포구 성산로8길 40</td></tr>
-            <tr><th>고객센터</th><td>010-4836-2874 · artiroom176@gmail.com · 평일 14:00~19:00</td></tr>
+            <tr><th>고객센터</th><td>010-4836-2874 · easycut@easycut.co.kr · 평일 14:00~19:00</td></tr>
           </tbody></table>
         </div>
       </LegalSection>
@@ -143,7 +143,7 @@ export function PurchaseTermsV2Document({
       <LegalSection title="제10조 약관 변경, 분쟁 해결 및 문의">
         <p>회사는 관계 법령을 위반하지 않는 범위에서 본 약관을 변경할 수 있습니다. 이용자에게 불리한 중요한 변경은 시행 전에 서비스 화면 또는 전자문서로 안내합니다.</p>
         <p>본 약관은 대한민국 법령에 따라 해석됩니다. 분쟁이 발생하면 당사자 간 협의를 통해 해결하며, 해결되지 않는 경우 관계 법령이 정한 절차와 관할 법원에 따릅니다.</p>
-        <p>구매 및 환불 문의: <a href="mailto:artiroom176@gmail.com" className={accentLink}>artiroom176@gmail.com</a> · <a href="tel:010-4836-2874" className={accentLink}>010-4836-2874</a> · 평일 14:00~19:00</p>
+        <p>구매 및 환불 문의: <a href="mailto:easycut@easycut.co.kr" className={accentLink}>easycut@easycut.co.kr</a> · <a href="tel:010-4836-2874" className={accentLink}>010-4836-2874</a> · 평일 14:00~19:00</p>
       </LegalSection>
     </LegalDocument>
   );

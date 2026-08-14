@@ -140,7 +140,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         contactPoint: {
           "@type": "ContactPoint",
           telephone: "+82-10-4836-2874",
-          email: "artiroom176@gmail.com",
+          email: "easycut@easycut.co.kr",
           contactType: "customer support",
           availableLanguage: ["Korean", "English", "Japanese"],
         },

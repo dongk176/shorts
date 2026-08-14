@@ -87,7 +87,7 @@ export default function PurchaseTermsPage() {
               <tr><th>주소</th><td>서울특별시 마포구 성산로8길 40</td></tr>
               <tr>
                 <th>고객센터</th>
-                <td>010-4836-2874 · artiroom176@gmail.com · 평일 14:00~19:00</td>
+                <td>010-4836-2874 · easycut@easycut.co.kr · 평일 14:00~19:00</td>
               </tr>
             </tbody>
           </table>
@@ -287,8 +287,8 @@ export default function PurchaseTermsPage() {
         </p>
         <p>
           구매 및 환불 문의:{" "}
-          <a href="mailto:artiroom176@gmail.com" className={accentLink}>
-            artiroom176@gmail.com
+          <a href="mailto:easycut@easycut.co.kr" className={accentLink}>
+            easycut@easycut.co.kr
           </a>{" "}
           ·{" "}
           <a href="tel:010-4836-2874" className={accentLink}>010-4836-2874</a>

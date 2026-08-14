@@ -31,7 +31,7 @@ export default function PartnerTermsPage() {
         <p>자기추천, 허위 가입, 반복 결제·환불, 오해를 유발하는 광고, 스팸 및 서비스 신뢰를 훼손하는 행위를 금지합니다. 회사는 확인이 필요한 수익을 보류하고 신규 귀속을 일시정지할 수 있으며, 종료 전 발생한 정당한 확정 수익은 보존합니다.</p>
       </LegalSection>
       <LegalSection title="6. 문의">
-        <p>수익·정산·계정 문의는 <a href="mailto:artiroom176@gmail.com">artiroom176@gmail.com</a>으로 보내 주세요. 거래와 정산 내역이 일치하지 않으면 확인에 필요한 주문 시각과 화면 내역을 함께 제출할 수 있습니다.</p>
+        <p>수익·정산·계정 문의는 <a href="mailto:easycut@easycut.co.kr">easycut@easycut.co.kr</a>으로 보내 주세요. 거래와 정산 내역이 일치하지 않으면 확인에 필요한 주문 시각과 화면 내역을 함께 제출할 수 있습니다.</p>
       </LegalSection>
     </LegalDocument>
   );
