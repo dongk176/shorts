@@ -19,25 +19,8 @@ export type JobCompletionEmailSender = (
 const MAX_ATTEMPTS = 5;
 const RETRY_MINUTES = [1, 5, 15, 60] as const;
 
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[character] || character);
-}
-
-function greetingName(displayName: string | null, email: string) {
-  const value = displayName?.trim() || email.split("@", 1)[0]?.trim() || "고객";
-  return value.slice(0, 80);
-}
-
 export function jobCompletionEmailHtml(claim: JobCompletionEmailClaim) {
   const projectUrl = absoluteUrl(`/projects/${claim.projectNumber}`);
-  const name = escapeHtml(greetingName(claim.displayName, claim.recipientEmail));
-  const title = escapeHtml(claim.videoTitle.slice(0, 200));
   return `<!doctype html>
 <html lang="ko">
   <head>
@@ -54,10 +37,9 @@ export function jobCompletionEmailHtml(claim: JobCompletionEmailClaim) {
               <td style="padding:36px 32px">
                 <p style="margin:0 0 24px;color:#ef4444;font-size:14px;font-weight:800;letter-spacing:.08em">EASY CUT</p>
                 <h1 style="margin:0;color:#18181b;font-size:28px;line-height:1.35;letter-spacing:-.03em">쇼츠 작업이 완료됐어요!</h1>
-                <p style="margin:18px 0 0;color:#52525b;font-size:16px;line-height:1.75">${name}님이 요청하신 쇼츠를 모두 준비했습니다.</p>
+                <p style="margin:18px 0 0;color:#52525b;font-size:16px;line-height:1.75">요청하신 쇼츠를 모두 준비했습니다.</p>
                 <div style="margin:24px 0;padding:18px 20px;border-radius:14px;background:#f4f4f5">
-                  <p style="margin:0 0 6px;color:#71717a;font-size:12px;font-weight:700">프로젝트 #${claim.projectNumber}</p>
-                  <p style="margin:0;color:#27272a;font-size:15px;font-weight:700;line-height:1.6">${title}</p>
+                  <p style="margin:0;color:#27272a;font-size:15px;font-weight:700">프로젝트 #${claim.projectNumber}</p>
                 </div>
                 <a href="${projectUrl}" style="display:block;padding:15px 22px;border-radius:12px;background:#18181b;color:#ffffff;font-size:15px;font-weight:800;text-align:center;text-decoration:none">완성된 쇼츠 확인하기</a>
                 <p style="margin:28px 0 0;color:#a1a1aa;font-size:12px;line-height:1.7">이 메일은 이지컷에서 직접 요청하신 작업 완료 알림입니다.</p>
@@ -72,12 +54,10 @@ export function jobCompletionEmailHtml(claim: JobCompletionEmailClaim) {
 }
 
 export function jobCompletionEmailText(claim: JobCompletionEmailClaim) {
-  const name = greetingName(claim.displayName, claim.recipientEmail);
   return [
-    `${name}님, 쇼츠 작업이 완료됐어요!`,
+    "쇼츠 작업이 완료됐어요!",
     "",
     `프로젝트 #${claim.projectNumber}`,
-    claim.videoTitle,
     "",
     `완성된 쇼츠 확인하기: ${absoluteUrl(`/projects/${claim.projectNumber}`)}`,
     "",

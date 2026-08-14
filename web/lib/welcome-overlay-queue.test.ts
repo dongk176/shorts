@@ -11,13 +11,15 @@ describe("welcome overlay queue", () => {
       "existing-welcome",
       "sidebar-navigation",
       "shorts-event",
+      "marketing-email",
       "feedback",
       "done",
     ]);
     expect(nextWelcomeOverlayStage("onboarding")).toBe("existing-welcome");
     expect(nextWelcomeOverlayStage("existing-welcome")).toBe("sidebar-navigation");
-    expect(nextWelcomeOverlayStage("sidebar-navigation")).toBe("feedback");
-    expect(nextWelcomeOverlayStage("shorts-event")).toBe("feedback");
+    expect(nextWelcomeOverlayStage("sidebar-navigation")).toBe("marketing-email");
+    expect(nextWelcomeOverlayStage("shorts-event")).toBe("marketing-email");
+    expect(nextWelcomeOverlayStage("marketing-email")).toBe("feedback");
     expect(nextWelcomeOverlayStage("feedback")).toBe("done");
   });
 });

@@ -5,6 +5,7 @@ import { EditorLaunchAnnouncementOverlay } from "@/components/editor-launch-anno
 import { GoogleAnalyticsMeasurement } from "@/components/google-analytics";
 import { StructuredData } from "@/components/structured-data";
 import { LanguageSelector } from "@/components/language-selector";
+import { MarketingEmailPreferenceOverlay } from "@/components/marketing-email-preference-overlay";
 import { ProjectFeedbackOverlay } from "@/components/project-feedback-overlay";
 import { PaymentMethodRemediationGate } from "@/components/payment-method-remediation-gate";
 import { SidebarNavigationAnnouncement } from "@/components/sidebar-navigation-announcement";
@@ -176,6 +177,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               <UserOnboardingOverlay />
               <EditorLaunchAnnouncementOverlay />
               <SidebarNavigationAnnouncement />
+              <MarketingEmailPreferenceOverlay />
               <ProjectFeedbackOverlay />
               <PaymentMethodRemediationGate
                 initialAction={initialPaymentMethodAction}

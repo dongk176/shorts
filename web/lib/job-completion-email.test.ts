@@ -2,6 +2,7 @@ import type { Sql } from "postgres";
 import { describe, expect, it, vi } from "vitest";
 import {
   jobCompletionEmailHtml,
+  jobCompletionEmailText,
   processJobCompletionEmailNotifications,
   type JobCompletionEmailClaim,
 } from "@/lib/job-completion-email";
@@ -23,12 +24,16 @@ function sqlWithRows(...responses: unknown[][]) {
 }
 
 describe("job completion email", () => {
-  it("escapes user-controlled content and links to the owned project", () => {
+  it("includes only the project number and owned-project link", () => {
     const html = jobCompletionEmailHtml(claim);
-    expect(html).toContain("테스트 &lt;사용자&gt;");
-    expect(html).toContain("완성된 &lt;쇼츠&gt; &amp; 테스트");
+    const text = jobCompletionEmailText(claim);
+    expect(html).toContain("프로젝트 #12");
     expect(html).toContain("https://www.easycut.co.kr/projects/12");
     expect(html).not.toContain("테스트 <사용자>");
+    expect(html).not.toContain("완성된 &lt;쇼츠&gt;");
+    expect(html).toContain("직접 요청하신 작업 완료 알림");
+    expect(text).not.toContain(claim.displayName || "");
+    expect(text).not.toContain(claim.videoTitle);
   });
 
   it("marks a claimed notification sent after provider acceptance", async () => {

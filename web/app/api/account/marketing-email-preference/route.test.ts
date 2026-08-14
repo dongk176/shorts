@@ -45,106 +45,101 @@ afterEach(() => {
   else process.env.RESEND_FROM_EMAIL = originalFromEmail;
 });
 
-describe("completion email preference API", () => {
-  it("prompts only an onboarding v2 account when infrastructure is configured", async () => {
+describe("marketing email preference API", () => {
+  it("prompts only after an onboarding v2 account completes a project", async () => {
     mocks.getDb.mockReturnValue(sqlWithRows([{
       email: "owner@example.com",
-      notificationEmail: null,
-      completionEmailStatus: null,
+      marketingEmail: null,
       marketingEmailStatus: null,
-      onboardingVersion: 2,
-      completedJobCount: 2,
-      nextPromptCompletedJobCount: null,
-    }]));
-
-    const response = await GET();
-    await expect(response.json()).resolves.toMatchObject({
-      available: true,
-      status: "not_asked",
-      marketingStatus: "not_asked",
-      promptDue: true,
-    });
-  });
-
-  it("never prompts an existing onboarding v1 account", async () => {
-    mocks.getDb.mockReturnValue(sqlWithRows([{
-      email: "owner@example.com",
-      onboardingVersion: 1,
-      completedJobCount: 10,
-    }]));
-
-    const response = await GET();
-    await expect(response.json()).resolves.toMatchObject({
-      available: true,
-      promptDue: false,
-    });
-  });
-
-  it("skips the prompt and rejects mutation when email infrastructure is disabled", async () => {
-    delete process.env.RESEND_API_KEY;
-    delete process.env.RESEND_FROM_EMAIL;
-    mocks.getDb.mockReturnValue(sqlWithRows([{
-      email: "owner@example.com",
       onboardingVersion: 2,
       completedJobCount: 1,
     }]));
 
-    const getResponse = await GET();
-    await expect(getResponse.json()).resolves.toMatchObject({
-      available: false,
-      promptDue: false,
+    const response = await GET();
+    await expect(response.json()).resolves.toMatchObject({
+      available: true,
+      eligible: true,
+      status: "not_asked",
+      email: "owner@example.com",
+      promptDue: true,
+      completedJobCount: 1,
     });
-
-    const postResponse = await POST(new Request(
-      "http://localhost/api/account/completion-email-preference",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "enabled",
-          marketingStatus: "declined",
-        }),
-      },
-    ));
-    expect(postResponse.status).toBe(503);
   });
 
-  it("stores explicit v2 choices without defaulting marketing consent", async () => {
+  it("does not prompt before completion or for legacy onboarding", async () => {
+    mocks.getDb
+      .mockReturnValueOnce(sqlWithRows([{
+        email: "owner@example.com",
+        onboardingVersion: 2,
+        completedJobCount: 0,
+      }]))
+      .mockReturnValueOnce(sqlWithRows([{
+        email: "owner@example.com",
+        onboardingVersion: 1,
+        completedJobCount: 10,
+      }]));
+
+    await expect((await GET()).json()).resolves.toMatchObject({
+      eligible: true,
+      promptDue: false,
+    });
+    await expect((await GET()).json()).resolves.toMatchObject({
+      eligible: false,
+      promptDue: false,
+    });
+  });
+
+  it("stores an explicit advertising choice without changing completion mail", async () => {
     const db = mutationDb(
       [{
         email: "owner@example.com",
-        notificationEmail: null,
+        marketingEmail: null,
         onboardingVersion: 2,
       }],
-      [{
-        completionEmailStatus: "enabled",
-        marketingEmailStatus: "declined",
-      }],
+      [{ marketingEmailStatus: "enabled" }],
       [],
     );
     mocks.getDb.mockReturnValue(db);
 
     const response = await POST(new Request(
-      "http://localhost/api/account/completion-email-preference",
+      "http://localhost/api/account/marketing-email-preference",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status: "enabled",
-          marketingStatus: "declined",
+          email: "Promos@Example.com",
         }),
       },
     ));
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      available: true,
       status: "enabled",
-      marketingStatus: "declined",
+      email: "promos@example.com",
       promptDue: false,
     });
-    expect(db.sql.mock.calls[0][0].join("?")).toContain(
-      "for update of account",
-    );
+    const mutationSource = db.sql.mock.calls
+      .map((call) => String(call[0].join("?")))
+      .join("\n");
+    expect(mutationSource).not.toContain("job_completion_email_notifications");
+    expect(db.sql.mock.calls.flat()).toContain("promos@example.com");
+    expect(db.sql.mock.calls.flat()).toContain("2026-08-14-v2");
+  });
+
+  it("rejects preference changes when email delivery is unavailable", async () => {
+    delete process.env.RESEND_API_KEY;
+    delete process.env.RESEND_FROM_EMAIL;
+
+    const response = await POST(new Request(
+      "http://localhost/api/account/marketing-email-preference",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "declined" }),
+      },
+    ));
+
+    expect(response.status).toBe(503);
   });
 });
