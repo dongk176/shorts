@@ -8,11 +8,6 @@ const migration = readFileSync(
   ),
   "utf8",
 );
-const refundRoute = readFileSync(
-  new URL("../app/api/admin/billing/refunds/route.ts", import.meta.url),
-  "utf8",
-);
-
 describe("paid and complimentary usage accounting", () => {
   it("records an explicit funding source derived from the billing order", () => {
     expect(migration).toContain("add column if not exists funding_source text");
@@ -29,10 +24,4 @@ describe("paid and complimentary usage accounting", () => {
     );
   });
 
-  it("keeps refund usage checks scoped to the matching paid order", () => {
-    expect(refundRoute).toContain("g.funding_source='paid'");
-    expect(refundRoute).toContain("funding_source='paid'");
-    expect(refundRoute).toContain("g.billing_order_id=${order.id}");
-    expect(refundRoute).toContain("billing_order_id=${order.id}");
-  });
 });

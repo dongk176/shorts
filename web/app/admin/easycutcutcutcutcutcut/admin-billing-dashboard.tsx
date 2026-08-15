@@ -3,12 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  adminRefundReasonCodes,
-  adminRefundReasonLabel,
-  quoteFirstCompletedJobRefund,
-  type AdminRefundReasonCode,
-} from "@/lib/refund-policy";
-import {
   adminPaymentDetailParts,
   adminPaymentFailureLabel,
   adminPaymentFlowLabel,
@@ -159,14 +153,9 @@ export function AdminBillingDashboard({
   const [nextOrderOffset, setNextOrderOffset] = useState(initialNextOffset);
   const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
-  const [refundOrder, setRefundOrder] = useState<AdminOrder | null>(null);
   const [manualReviewOrder, setManualReviewOrder] = useState<AdminOrder | null>(null);
-  const [manualReviewTransactionId, setManualReviewTransactionId] = useState("");
   const [manualReviewNote, setManualReviewNote] = useState("");
   const [manualReviewRequestId, setManualReviewRequestId] = useState("");
-  const [refundAmount, setRefundAmount] = useState(0);
-  const [refundReasonCode, setRefundReasonCode] = useState<AdminRefundReasonCode>("customer_early_termination");
-  const [refundReason, setRefundReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -216,92 +205,16 @@ export function AdminBillingDashboard({
     }
   };
 
-  const openRefund = (order: AdminOrder) => {
-    setRefundOrder(order);
-    setRefundAmount(order.amountKrw - order.refundedAmountKrw - order.reservedRefundKrw);
-    setRefundReasonCode(order.kind === "addon"
-      ? "statutory_withdrawal_unused"
-      : "customer_early_termination");
-    setRefundReason("");
-    setMessage(null);
-  };
-
   const openManualReview = (order: AdminOrder) => {
     setManualReviewOrder(order);
-    setManualReviewTransactionId(order.providerTransactionId || "");
     setManualReviewNote("");
     setManualReviewRequestId(crypto.randomUUID());
     setMessage(null);
   };
 
-  const remainingRefundable = refundOrder
-    ? refundOrder.amountKrw - refundOrder.refundedAmountKrw - refundOrder.reservedRefundKrw
-    : 0;
-  const firstCompletedJobQuote = refundOrder
-    && refundReasonCode === "customer_early_termination"
-    ? quoteFirstCompletedJobRefund({
-      actualPaymentKrw: refundOrder.amountKrw,
-      refundedOrReservedKrw: refundOrder.refundedAmountKrw + refundOrder.reservedRefundKrw,
-      prepaidMonths: refundOrder.prepaidMonths,
-      firstJobCompleted: Boolean(refundOrder.firstCompletedJobAt),
-    })
-    : null;
-  const effectiveRefundAmount = refundReasonCode === "customer_early_termination"
-    ? firstCompletedJobQuote?.refundAmountKrw || 0
-    : refundReasonCode === "goodwill"
-      ? refundAmount
-      : remainingRefundable;
-
-  const submitRefund = async () => {
-    if (!refundOrder || submitting) return;
-    if (!window.confirm(`${refundOrder.email}의 주문에서 ${money(effectiveRefundAmount)}을 실제 카드 환불하시겠습니까?`)) return;
-    setSubmitting(true);
-    setMessage(null);
-    try {
-      const response = await fetch("/api/admin/billing/refunds", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({
-          requestId: crypto.randomUUID(),
-          orderId: refundOrder.id,
-          amountKrw: effectiveRefundAmount,
-          reasonCode: refundReasonCode,
-          reason: refundReason,
-        }),
-      });
-      const result = await response.json() as {
-        detail?: string;
-        entitlementRequiresReview?: boolean;
-        entitlementActionStatus?: string;
-        amountKrw?: number;
-      };
-      if (!response.ok) throw new Error(result.detail || "환불 요청에 실패했습니다.");
-      setMessage(result.entitlementRequiresReview
-        ? "환불이 승인되었습니다. 구독 권한 상태를 별도로 확인해 주세요."
-        : result.entitlementActionStatus === "scheduled_end"
-          ? "환불이 승인되었습니다. 현재 사용 월 종료일까지 이용권을 유지한 뒤 자동 종료합니다."
-          : "환불 승인과 이용권 처리가 완료되었습니다.");
-      setRefundOrder(null);
-      router.refresh();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "환불 요청에 실패했습니다.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const submitManualReview = async (
-    action: "no_approval" | "refund_approved",
-  ) => {
+  const submitManualReview = async () => {
     if (!manualReviewOrder || submitting || !manualReviewRequestId) return;
-    const confirmation = action === "no_approval"
-      ? "PG 승인 없음 확인"
-      : "PG 승인 확인 및 전액취소";
-    const prompt = action === "no_approval"
-      ? `${manualReviewOrder.orderId}에 더페이원 승인 내역이 없음을 확인했습니까?`
-      : `${manualReviewOrder.orderId}의 ${money(manualReviewOrder.amountKrw)} 승인을 지금 전액취소합니까?`;
-    if (!window.confirm(prompt)) return;
+    if (!window.confirm(`${manualReviewOrder.orderId}에 더페이원 승인 내역이 없음을 확인했습니까?`)) return;
     setSubmitting(true);
     setMessage(null);
     try {
@@ -310,21 +223,16 @@ export function AdminBillingDashboard({
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
         body: JSON.stringify({
-          action,
+          action: "no_approval",
           requestId: manualReviewRequestId,
           orderId: manualReviewOrder.id,
-          providerTransactionId: action === "refund_approved"
-            ? manualReviewTransactionId.trim()
-            : undefined,
           note: manualReviewNote,
-          confirmation,
+          confirmation: "PG 승인 없음 확인",
         }),
       });
       const result = await response.json() as { detail?: string };
       if (!response.ok) throw new Error(result.detail || "PG 대조 결과 처리에 실패했습니다.");
-      setMessage(action === "no_approval"
-        ? "PG 승인 없음으로 종결했습니다. 고객 권한은 지급되지 않았습니다."
-        : "PG 원승인을 전액취소했습니다. 고객 권한은 지급되지 않았습니다.");
+      setMessage("PG 승인 없음으로 종결했습니다. 고객 권한은 지급되지 않았습니다.");
       setManualReviewOrder(null);
       router.refresh();
     } catch (error) {
@@ -397,14 +305,9 @@ export function AdminBillingDashboard({
             </tr></thead>
             <tbody className="divide-y divide-white/[.06]">
               {loadedOrders.map((order) => {
-                const refundable = order.amountKrw - order.refundedAmountKrw - order.reservedRefundKrw;
                 const paymentFlow = adminPaymentFlowLabel(order);
                 const paymentDetails = adminPaymentDetailParts(order);
                 const paymentFailure = adminPaymentFailureLabel(order);
-                const canRefund = order.provider === "thepayone"
-                  && order.status === "succeeded"
-                  && Boolean(order.providerTransactionId)
-                  && refundable > 0;
                 const canResolveManualReview = order.provider === "thepayone"
                   && ["manual_review", "unknown"].includes(order.status)
                   && order.refundStatus === "none";
@@ -427,7 +330,7 @@ export function AdminBillingDashboard({
                   <td className="px-5 py-4 text-right">
                     {canResolveManualReview
                       ? <button type="button" onClick={() => openManualReview(order)} className="rounded-lg border border-amber-300/40 px-3 py-2 text-xs font-black text-amber-200">PG 대조 처리</button>
-                      : <button type="button" disabled={!canRefund} onClick={() => openRefund(order)} className="rounded-lg border border-[#ff8c7c]/40 px-3 py-2 text-xs font-black text-[#ff9b8d] disabled:cursor-not-allowed disabled:border-white/10 disabled:text-neutral-700">{canRefund ? "환불" : order.provider === "nicepay" ? "수동 확인" : "환불 불가"}</button>}
+                      : <span className="inline-block rounded-lg border border-white/10 px-3 py-2 text-xs font-bold text-neutral-500">PG에서 직접 처리</span>}
                   </td>
                 </tr>;
               })}
@@ -474,49 +377,20 @@ export function AdminBillingDashboard({
             <button type="button" onClick={() => setManualReviewOrder(null)} className="rounded-lg px-3 py-2 text-neutral-400 hover:bg-white/[.06]">닫기</button>
           </div>
           <p className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/[.07] px-4 py-3 text-xs font-bold leading-5 text-amber-100">더페이원 관리자에서 주문번호·금액·arti02 거래를 먼저 조회하세요. 승인 여부가 확인되기 전에는 고객 권한을 지급하지 않습니다.</p>
+          <p className="mt-3 rounded-xl border border-white/10 bg-white/[.03] px-4 py-3 text-xs font-bold leading-5 text-neutral-300">승인 또는 환불이 필요한 거래는 PG 관리자에서 직접 처리하세요. 이 화면에서는 실제 결제 취소를 실행하지 않습니다.</p>
           <dl className="mt-4 grid grid-cols-[92px_1fr] gap-2 rounded-2xl bg-black/20 p-4 text-sm">
             <dt className="text-neutral-500">주문</dt><dd className="break-all font-mono text-xs">{manualReviewOrder.orderId}</dd>
             <dt className="text-neutral-500">고객</dt><dd className="font-bold">{manualReviewOrder.email}</dd>
             <dt className="text-neutral-500">금액</dt><dd className="font-black">{money(manualReviewOrder.amountKrw)}</dd>
             <dt className="text-neutral-500">현재 상태</dt><dd className="font-bold text-amber-200">{label(manualReviewOrder.status)}</dd>
           </dl>
-          <label className="mt-4 block text-sm font-bold">PG 승인 거래번호
-            <input value={manualReviewTransactionId} onChange={(event) => setManualReviewTransactionId(event.target.value)} maxLength={128} placeholder="승인이 있을 때만 입력" autoComplete="off" className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 font-mono outline-none placeholder:text-neutral-600 focus:border-amber-300" />
-          </label>
           <label className="mt-4 block text-sm font-bold">대조 메모
             <textarea value={manualReviewNote} onChange={(event) => setManualReviewNote(event.target.value)} maxLength={400} rows={3} placeholder="확인 시각과 PG 조회 결과" className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-black/20 p-4 outline-none placeholder:text-neutral-600 focus:border-amber-300" />
           </label>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <button type="button" disabled={submitting || manualReviewNote.trim().length < 2} onClick={() => void submitManualReview("no_approval")} className="min-h-12 rounded-xl border border-white/15 px-4 py-3 text-sm font-black disabled:cursor-not-allowed disabled:opacity-40">{submitting ? "처리 중..." : "승인 없음으로 종결"}</button>
-            <button type="button" disabled={submitting || manualReviewTransactionId.trim().length < 4 || manualReviewNote.trim().length < 2} onClick={() => void submitManualReview("refund_approved")} className="min-h-12 rounded-xl bg-[#ff806f] px-4 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{submitting ? "처리 중..." : "승인 확인 후 전액취소"}</button>
+          <div className="mt-6">
+            <button type="button" disabled={submitting || manualReviewNote.trim().length < 2} onClick={() => void submitManualReview()} className="min-h-12 w-full rounded-xl border border-white/15 px-4 py-3 text-sm font-black disabled:cursor-not-allowed disabled:opacity-40">{submitting ? "처리 중..." : "승인 없음으로 종결"}</button>
           </div>
           {manualReviewOrder.providerTransactionId && <p className="mt-3 text-xs leading-5 text-amber-200/80">주문에는 승인 거래번호가 기록되어 있습니다. PG 관리자에서 해당 번호와 주문번호 모두 승인 없음으로 확인한 경우에만 ‘승인 없음’으로 종결하세요.</p>}
-        </div>
-      </div>}
-
-      {refundOrder && <div className="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="refund-title">
-        <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#191c1d] p-6 shadow-2xl">
-          <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-[#ff9585]">Actual card refund</p><h3 id="refund-title" className="mt-2 text-xl font-black">실제 카드 환불</h3></div><button type="button" onClick={() => setRefundOrder(null)} className="rounded-lg px-3 py-2 text-neutral-400 hover:bg-white/[.06]">닫기</button></div>
-          <dl className="mt-5 grid grid-cols-[100px_1fr] gap-2 rounded-2xl bg-black/20 p-4 text-sm"><dt className="text-neutral-500">고객</dt><dd className="font-bold">{refundOrder.email}</dd><dt className="text-neutral-500">주문</dt><dd className="break-all font-mono text-xs">{refundOrder.orderId}</dd><dt className="text-neutral-500">잔여 가능액</dt><dd className="font-black">{money(remainingRefundable)}</dd><dt className="text-neutral-500">환불 정책</dt><dd className="font-bold">첫 작업 완료 기준</dd><dt className="text-neutral-500">첫 작업</dt><dd className={refundOrder.firstCompletedJobAt ? "font-black text-amber-300" : "font-bold text-emerald-300"}>{refundOrder.firstCompletedJobAt ? `완료 · ${date(refundOrder.firstCompletedJobAt)}` : "완료 기록 없음"}</dd><dt className="text-neutral-500">유료 필터</dt><dd className={refundOrder.popularFilterUsageCount > 0 ? "font-black text-amber-300" : "font-bold text-emerald-300"}>{refundOrder.popularFilterUsageCount > 0 ? `${refundOrder.popularFilterUsageCount}회 · 최근 ${date(refundOrder.popularFilterLastUsedAt)}` : "사용 이력 없음"}</dd></dl>
-          {refundOrder.popularFilterUsageCount > 0 && refundReasonCode === "statutory_withdrawal_unused" && <p role="alert" className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/[.07] px-4 py-3 text-xs font-bold leading-5 text-amber-100">서버가 유료 필터 결과를 제공한 기록이 있어 ‘7일 이내 미사용 전액환불’로 처리할 수 없습니다. 고객 귀책 중도해지 또는 예외 환불 여부를 확인해 주세요.</p>}
-          <label className="mt-5 block text-sm font-bold">환불 유형
-            <select value={refundReasonCode} onChange={(event) => setRefundReasonCode(event.target.value as AdminRefundReasonCode)} className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-[#151819] px-4 outline-none focus:border-[#ff8c7c]">
-              {adminRefundReasonCodes
-                .filter((code) => refundOrder.kind !== "addon" || code !== "customer_early_termination")
-                .map((code) => <option key={code} value={code}>{adminRefundReasonLabel(code)}</option>)}
-            </select>
-          </label>
-          {firstCompletedJobQuote && <dl className="mt-4 grid grid-cols-[150px_1fr] gap-2 rounded-2xl border border-[#ff8c7c]/20 bg-[#ff8c7c]/[.06] p-4 text-sm">
-            <dt className="text-neutral-400">첫 작업 완료</dt><dd className="text-right font-bold">{firstCompletedJobQuote.firstJobCompleted ? "완료 · 1개월 공제" : "미완료 · 공제 없음"}</dd>
-            <dt className="text-neutral-400">1개월분</dt><dd className="text-right font-bold">{money(firstCompletedJobQuote.monthlyDeductionKrw)}</dd>
-            <dt className="text-white">정책 환불액</dt><dd className="text-right font-black text-[#ffb4a8]">{money(firstCompletedJobQuote.refundAmountKrw)}</dd>
-          </dl>}
-          <label className="mt-4 block text-sm font-bold">환불 금액
-            <input type="number" min={1} max={remainingRefundable} readOnly={refundReasonCode !== "goodwill"} value={effectiveRefundAmount} onChange={(event) => setRefundAmount(Number(event.target.value))} className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-lg font-black outline-none read-only:cursor-not-allowed read-only:text-neutral-400 focus:border-[#ff8c7c]" />
-          </label>
-          <label className="mt-4 block text-sm font-bold">환불 사유<textarea value={refundReason} onChange={(event) => setRefundReason(event.target.value)} maxLength={500} rows={4} placeholder="고객 요청, 중복 결제 등 구체적인 사유" className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-black/20 p-4 outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]" /></label>
-          <p className="mt-4 text-xs leading-5 text-amber-200/80">서버가 이 주문의 이용권으로 첫 작업이 완료됐는지 다시 확인합니다. 완료됐다면 실 결제금액의 1개월분만 공제하고, 완료 기록이 없으면 1개월분을 공제하지 않습니다. 이 버튼은 더페이원 실제 환불 API를 호출합니다.</p>
-          <div className="mt-6 flex gap-3"><button type="button" onClick={() => setRefundOrder(null)} className="h-12 flex-1 rounded-xl border border-white/10 font-bold">취소</button><button type="button" disabled={submitting || effectiveRefundAmount < 1 || effectiveRefundAmount > remainingRefundable || refundReason.trim().length < 2} onClick={() => void submitRefund()} className="h-12 flex-1 rounded-xl bg-[#ff806f] font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{submitting ? "처리 중..." : "환불 실행"}</button></div>
         </div>
       </div>}
     </div>
