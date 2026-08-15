@@ -607,11 +607,9 @@ function isProjectExpired(job: VideoJob) {
   return Boolean(job.expiresAt && new Date(job.expiresAt).getTime() <= Date.now());
 }
 
-function CountUpNumber({ value, initialValue }: { value: number; initialValue?: number }) {
+function CountUpNumber({ value }: { value: number }) {
   const target = Math.max(0, Math.floor(value));
-  const startingValue = initialValue === undefined
-    ? target > 0 ? 1 : 0
-    : Math.max(0, Math.floor(initialValue));
+  const startingValue = target > 0 ? 1 : 0;
   const [displayedValue, setDisplayedValue] = useState(startingValue);
   const displayedValueRef = useRef(startingValue);
 
@@ -12933,7 +12931,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <main id="top" className={`relative mx-auto w-full max-w-6xl flex-1 px-5 pb-20 pt-7 sm:px-8 sm:pt-10 ${adminTemplateLayoutEnabled ? "flex flex-col gap-10" : "space-y-10"}`}>
       <div className={`home-generated-shorts-count ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`} aria-label={localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}>
         <strong aria-busy={stateLoadStatus === "loading"}>
-          <CountUpNumber value={state?.generatedShortCount ?? 14_259} initialValue={14_259} />
+          <CountUpNumber value={state?.generatedShortCount ?? 14_259} />
         </strong>
         <p>{localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}</p>
       </div>
