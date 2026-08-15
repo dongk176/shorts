@@ -25,8 +25,8 @@
 - `job_outbox`, `dispatch_batches`, `dispatch_batch_items`: Prepare 제출과 Array child 매핑
 - `batch_submission_claims`: SQS 중복 전달과 Batch 제출 응답 유실 중복 방지
 - `short_outbox`: 재렌더 제출
-- `ingestion_route_slots`: `webshare-01`~`webshare-20` 중앙 다운로드 lease와 cooldown; endpoint/인증정보는 저장하지 않음
-- `ingestion_attempts`, `ingestion_circuit`: route별 수집 결과와 1분 회로 차단
+- `ingestion_route_slots`: `webshare-01`~`webshare-20` 중앙 다운로드 lease, cooldown, IP 교체 뒤 품질 집계 기준시각; endpoint/인증정보는 저장하지 않음
+- `ingestion_attempts`, `ingestion_circuit`: route별 수집 결과와 1분 회로 차단. `ingestion_success_priority`가 활성화되면 최근 24시간의 최신 20회 결과를 우수(5회 이상·25% 이상), 신규/미확인(5회 미만), 저성능(성공은 있으나 25% 미만), 실패(5회 이상·성공 없음) 순으로 배정하고 같은 등급에서는 가장 오래 사용하지 않은 route부터 순환한다.
 - `usage_grants`: 월 기본 제공량과 90일 애드온, 무료·보너스 사용량의 예약·소진 잔량. `credited_seconds`와 `carried_seconds`로 신규 지급과 업그레이드 이월을 분리하고, 생성 열 `funding_source`로 결제 주문이 연결된 `paid`와 그 외 `complimentary`를 명시
 - `usage_grant_allocations`: 작업 예약이 어떤 grant에서 몇 초를 사용했는지 기록
 - `usage_reservations`: queued/running 원본 초와 grant allocation 전이 기준
@@ -36,6 +36,8 @@
 - `job_events`: stage 변경 이벤트
 
 적용은 `npm run db:migrate`입니다. 서버와 Worker는 schema-qualified SQL만 사용합니다. Cleanup Lambda에서 PostgREST를 쓸 경우 Supabase API exposed schemas에 `shorts_mvp`를 추가하되, schema/table 권한은 service role에만 유지합니다.
+
+Webshare IP를 교체할 때는 두 운영 Secret의 `INGESTION_PROXY_ROUTES_JSON`을 같은 값으로 동기화하고 해당 route가 임대 중이 아닌지 확인한 뒤 service role로 `reset_ingestion_route_quality(route_id)`를 호출합니다. 이 함수는 과거 시도 기록을 삭제하지 않고 새 IP에 사용할 품질 집계 기준시각만 갱신합니다.
 
 이지컷 프로는 최초 더페이원 승인 시각부터 유료기간을 시작하고, 자동 승인 결과 통지마다 기본시간 60분을 지급하면서 기존 Pro 이용기간 끝에 1개월을 추가합니다. 최종 해지 시 PG 일정을 즉시 중지하되 이미 결제한 이용기간은 유지합니다. 다시 구독하면 저장 카드를 확인해 즉시 결제하고 60분을 지급하며, 남은 이용기간 끝에 1개월을 추가한 뒤 기존 자동결제 일정을 재활성화합니다. 기간 패키지는 승인일부터 독립된 3·6·12개월 이용기간을 시작하고, 활성 상태인 동안 매월 상품별 시간을 지급하며 자동결제하지 않습니다. 스타터·전문가의 기간별 각 상품은 계정당 한 번만 구매할 수 있고, 서로 다른 상품을 구매한 경우 각 기간과 월 지급 일정을 독립적으로 보존합니다. 기존 주문은 환불정책 v1, 신규 주문은 v2로 기록하여 계산 기준을 소급 변경하지 않습니다. v2 패키지는 완료 월과 현재 사용 월을 계약 월단가로 정산하고, 현재 사용 월을 공제한 경우 월말 예약 종료, 현재 월 미사용 환불은 즉시 종료로 기록합니다. 모든 시각은 DB에 UTC `timestamptz`로 저장합니다.
 

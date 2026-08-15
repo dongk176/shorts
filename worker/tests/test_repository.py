@@ -227,6 +227,67 @@ def test_inline_route_rotation_migration_locks_and_excludes_attempted_routes() -
     assert "public." not in migration
 
 
+def test_ingestion_success_priority_migration_is_additive_private_and_rollbackable() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202608150001_ingestion_success_priority.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "add column if not exists quality_reset_at timestamptz" in migration
+    assert "'ingestion_success_priority',\n  false," in migration
+    assert "create or replace function shorts_mvp.ingestion_route_quality" in migration
+    assert "create or replace function shorts_mvp.reset_ingestion_route_quality" in migration
+    assert "where s.route_id=p_route_id\n    and s.leased_job_id is null" in migration
+    assert "revoke all on function shorts_mvp.ingestion_route_quality" in migration
+    assert "revoke all on function shorts_mvp.reset_ingestion_route_quality" in migration
+    assert "from public, anon, authenticated" in migration
+    assert "public." not in migration
+
+
+def test_ingestion_success_priority_uses_one_recent_quality_contract_everywhere() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202608150001_ingestion_success_priority.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "now() - interval '24 hours'" in migration
+    assert "order by a.created_at desc,a.id desc\n    limit 20" in migration
+    assert "when sampled >= 5 and successful * 4 >= sampled then 0" in migration
+    assert "when sampled < 5 then 1" in migration
+    assert "when successful > 0 then 2" in migration
+    assert "else 3" in migration
+    assert migration.count(
+        "cross join lateral shorts_mvp.ingestion_route_quality(s.route_id) quality"
+    ) == 3
+    assert migration.count(
+        "case when success_priority_enabled then quality.quality_tier else 0 end"
+    ) == 3
+    assert "create or replace function shorts_mvp.claim_job_outbox" in migration
+    assert "create or replace function shorts_mvp.claim_project_job_outbox" in migration
+    assert "create or replace function shorts_mvp.rotate_ingestion_route" in migration
+
+
+def test_ingestion_success_priority_preserves_route_safety_and_ten_route_cap() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202608150001_ingestion_success_priority.sql"
+    ).read_text(encoding="utf-8")
+
+    assert migration.count("for update of s skip locked") == 3
+    assert "p_excluded_route_ids" in migration
+    assert "and not (s.route_id = any" in migration
+    assert migration.count("s.leased_job_id is null") >= 7
+    assert "coalesce(s.cooldown_until,'-infinity'::timestamptz)" in migration
+    assert "and j.attempt_count < 10" in migration
+    assert BatchWorker.MAX_INLINE_INGESTION_ROUTES == 10
+
+
 def test_pending_short_uses_one_database_clock_for_creation_and_expiry() -> None:
     implementation = inspect.getsource(WorkerRepository.add_pending_short)
 
