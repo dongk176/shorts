@@ -3,31 +3,27 @@ import type { Sql } from "postgres";
 import { getProjectFeedbackPromptStatus } from "./project-feedback-store";
 
 describe("project feedback reward eligibility", () => {
-  it("does not let a free onboarding project expand into the 30-minute reward", async () => {
+  it("allows feedback after a free onboarding project", async () => {
     const db = vi.fn().mockResolvedValue([{
       completedProjectCount: 1,
       submitted: false,
       lastDeferredPromptCompletionCount: null,
       completedProjectCountAtLastDeferral: null,
-      hasOnboardingWelcomeGrant: true,
-      hasPaymentHistory: false,
     }]) as unknown as Sql;
 
     await expect(getProjectFeedbackPromptStatus(db, "user-free")).resolves.toMatchObject({
-      eligible: false,
+      eligible: true,
       completedProjectCount: 1,
-      promptCompletionCount: null,
+      promptCompletionCount: 1,
     });
   });
 
-  it("restores normal feedback eligibility after a successful payment", async () => {
+  it("keeps paid users eligible under the same completion threshold", async () => {
     const db = vi.fn().mockResolvedValue([{
       completedProjectCount: 1,
       submitted: false,
       lastDeferredPromptCompletionCount: null,
       completedProjectCountAtLastDeferral: null,
-      hasOnboardingWelcomeGrant: true,
-      hasPaymentHistory: true,
     }]) as unknown as Sql;
 
     await expect(getProjectFeedbackPromptStatus(db, "user-paid")).resolves.toMatchObject({
