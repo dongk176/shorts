@@ -1,13 +1,36 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { createNoIndexMetadata } from "@/lib/seo";
+import { absoluteUrl, createNoIndexMetadata, SITE_NAME } from "@/lib/seo";
 import { PartnerApplicationForm } from "./partner-application-form";
 
-export const metadata: Metadata = createNoIndexMetadata(
-  "EASYCUT PARTNER 1기 신청",
-  "이지컷 파트너 1기 신청 페이지입니다.",
-);
+const pageTitle = "EASYCUT PARTNER 1기 신청";
+const pageDescription = "이지컷을 함께 소개하고 수익을 만들 파트너 1기를 모집합니다.";
+const previewImage = "/easycut-partner-1-og.png";
+
+export const metadata: Metadata = {
+  ...createNoIndexMetadata(pageTitle, pageDescription),
+  openGraph: {
+    type: "website",
+    locale: "ko_KR",
+    url: absoluteUrl("/partner/apply"),
+    siteName: SITE_NAME,
+    title: pageTitle,
+    description: pageDescription,
+    images: [{
+      url: previewImage,
+      width: 1200,
+      height: 630,
+      alt: "EASY CUT 파트너 1기 모집 · 10명 한정",
+    }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: pageTitle,
+    description: pageDescription,
+    images: [previewImage],
+  },
+};
 
 const highlights = [
   { label: "모집 인원", value: "10명", note: "첫 기수 소규모 운영" },
