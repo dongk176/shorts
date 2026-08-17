@@ -84,8 +84,14 @@ const phoneSchema = z.string()
 
 const secureChannelUrlSchema = z.string()
   .trim()
-  .url()
+  .min(3)
   .max(2048)
+  .transform((value) => {
+    if (/^http:\/\//i.test(value)) return value.replace(/^http:\/\//i, "https://");
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return value;
+    return `https://${value.replace(/^\/+/, "")}`;
+  })
+  .pipe(z.string().url())
   .refine((value) => {
     try {
       return new URL(value).protocol === "https:";
@@ -105,7 +111,7 @@ export const partnerApplicationSubmissionSchema = z.object({
     .transform((values) => [...new Set(values)]),
   channelUrl: secureChannelUrlSchema,
   audienceSize: z.enum(partnerApplicationAudienceSizes),
-  promotionPlan: z.string().trim().min(20).max(1000),
+  promotionPlan: z.string().trim().min(5).max(1000),
   incomeGoal: z.enum(partnerApplicationIncomeGoals),
   disclosureAgreed: z.literal(true),
   antiAbuseAgreed: z.literal(true),
@@ -119,9 +125,9 @@ const partnerApplicationValidationMessages: Record<string, string> = {
   email: "사용 가능한 이메일 주소를 입력해 주세요.",
   phone: "연락 가능한 전화번호를 숫자 8~20자리로 입력해 주세요.",
   channelTypes: "운영 중인 채널을 하나 이상 선택해 주세요.",
-  channelUrl: "대표 채널 주소를 https://로 시작하는 전체 링크로 입력해 주세요.",
+  channelUrl: "대표 채널 주소나 링크를 입력해 주세요. https://는 생략해도 됩니다.",
   audienceSize: "채널 규모를 선택해 주세요.",
-  promotionPlan: "이지컷을 소개할 방법을 20자 이상 입력해 주세요.",
+  promotionPlan: "이지컷을 소개할 방법을 5자 이상 간단히 입력해 주세요.",
   incomeGoal: "원하는 월 수익을 선택해 주세요.",
   disclosureAgreed: "추천·제휴 관계 표시 원칙에 동의해 주세요.",
   antiAbuseAgreed: "부정 홍보 방지 원칙에 동의해 주세요.",

@@ -21,7 +21,7 @@ create table if not exists shorts_mvp.partner_applications (
   audience_size text not null check (audience_size in (
     'under_1000','1000_5000','5000_10000','10000_50000','over_50000'
   )),
-  promotion_plan text not null check (char_length(promotion_plan) between 20 and 1000),
+  promotion_plan text not null check (char_length(promotion_plan) between 5 and 1000),
   income_goal text not null check (income_goal in (
     'under_100','over_300','over_1000'
   )),

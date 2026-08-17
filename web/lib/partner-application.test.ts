@@ -32,10 +32,18 @@ describe("partner application", () => {
     expect(partnerApplicationReferenceCode(validApplication.requestId)).toBe("PA-DA3F5F2E");
   });
 
-  it("requires secure channel URLs and every explicit consent", () => {
-    expect(partnerApplicationSubmissionSchema.safeParse({
+  it("normalizes loose channel URLs and requires every explicit consent", () => {
+    expect(partnerApplicationSubmissionSchema.parse({
       ...validApplication,
       channelUrl: "http://example.com/channel",
+    }).channelUrl).toBe("https://example.com/channel");
+    expect(partnerApplicationSubmissionSchema.parse({
+      ...validApplication,
+      channelUrl: "instagram.com/easycut",
+    }).channelUrl).toBe("https://instagram.com/easycut");
+    expect(partnerApplicationSubmissionSchema.safeParse({
+      ...validApplication,
+      channelUrl: "ftp://example.com/channel",
     }).success).toBe(false);
     expect(partnerApplicationSubmissionSchema.safeParse({
       ...validApplication,
@@ -54,21 +62,21 @@ describe("partner application", () => {
     }).success).toBe(false);
     expect(partnerApplicationSubmissionSchema.safeParse({
       ...validApplication,
-      promotionPlan: "짧은 설명",
+      promotionPlan: "짧음",
     }).success).toBe(false);
   });
 
   it("returns a specific mobile-friendly validation message", () => {
     expect(partnerApplicationValidationError({
       ...validApplication,
-      channelUrl: "instagram.com/easycut",
+      channelUrl: "채널 주소 아님",
     })).toEqual({
       field: "channelUrl",
-      message: "대표 채널 주소를 https://로 시작하는 전체 링크로 입력해 주세요.",
+      message: "대표 채널 주소나 링크를 입력해 주세요. https://는 생략해도 됩니다.",
     });
     expect(partnerApplicationValidationError({
       ...validApplication,
-      promotionPlan: "짧은 설명",
+      promotionPlan: "짧음",
     })?.field).toBe("promotionPlan");
     expect(partnerApplicationValidationError(validApplication)).toBeNull();
   });

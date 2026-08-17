@@ -236,12 +236,12 @@ export function PartnerApplicationForm() {
           <input
             required
             name="channelUrl"
-            type="url"
+            type="text"
             inputMode="url"
-            placeholder="https://"
+            placeholder="youtube.com/@mychannel"
             className={inputClassName}
           />
-          <p className="mt-2 text-[11px] leading-5 text-neutral-600">가장 활발하게 운영 중인 링크 하나면 충분합니다.</p>
+          <p className="mt-2 text-[11px] leading-5 text-neutral-600">가장 활발한 링크 하나면 충분하며, https://는 생략해도 자동으로 붙습니다.</p>
         </FormSection>
 
         <FormSection number="06" title="채널 규모는 어느 정도인가요?" required>
@@ -256,14 +256,14 @@ export function PartnerApplicationForm() {
         <FormSection
           number="07"
           title="이지컷을 어떻게 소개해보고 싶나요?"
-          description="소개할 대상과 채널, 홍보 방식을 간단히 적어주세요."
+          description="한두 문장 정도로 편하게 적어주세요."
           required
         >
           <textarea
             required
             name="promotionPlan"
             rows={5}
-            minLength={20}
+            minLength={5}
             maxLength={500}
             placeholder="예: 영상 제작에 관심 있는 유튜브 구독자에게 실제 사용 후기를 쇼츠와 커뮤니티 글로 소개하고 싶습니다."
             className={`${inputClassName} min-h-32 resize-y py-3.5 leading-6`}
@@ -388,4 +388,4 @@ function ConsentCheckbox({ name, children }: { name: string; children: React.Rea
 }
 
 const inputClassName =
-  "min-h-12 w-full rounded-xl border border-white/[.1] bg-[#101315] px-4 text-sm text-neutral-100 outline-none transition placeholder:text-neutral-700 hover:border-white/[.16] focus:border-[#ff9585]/55 focus:ring-4 focus:ring-[#ff715e]/[.07]";
+  "min-h-12 w-full rounded-xl border border-white/[.1] bg-[#101315] px-4 text-base text-neutral-100 outline-none transition placeholder:text-neutral-700 hover:border-white/[.16] focus:border-[#ff9585]/55 focus:ring-4 focus:ring-[#ff715e]/[.07] sm:text-sm";
