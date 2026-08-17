@@ -99,6 +99,21 @@ export function monthlyUpgradeBaseGrantSeconds(input: {
   return targetPlanSeconds + currentBaseUnconsumedSeconds;
 }
 
+/**
+ * A replaced Easycut Pro payment is refunded in full, so none of its remaining
+ * allowance may be carried into the newly purchased package.
+ */
+export function retainedUpgradeCarryoverSeconds(input: {
+  replacesEasycutPro: boolean;
+  currentBaseUnconsumedSeconds: number;
+}) {
+  const currentBaseUnconsumedSeconds = Math.max(
+    0,
+    Math.floor(input.currentBaseUnconsumedSeconds),
+  );
+  return input.replacesEasycutPro ? 0 : currentBaseUnconsumedSeconds;
+}
+
 export function classifySubscriptionChange(input: {
   currentPlanCode: PaidPlanCode;
   currentBillingCycle: BillingCycle;

@@ -16,6 +16,7 @@ import {
   classifySubscriptionChange,
   monthlyUpgradeBaseGrantSeconds,
   quoteSubscriptionChange,
+  retainedUpgradeCarryoverSeconds,
   shouldPauseRecurringPaymentMethod,
   type SubscriptionChangeQuote,
 } from "@/lib/billing-change";
@@ -1393,9 +1394,13 @@ export async function POST(request: Request) {
             (total, grant) => total + Number(grant.reservedSeconds || 0),
             0,
           );
+          const retainedBaseSeconds = retainedUpgradeCarryoverSeconds({
+            replacesEasycutPro,
+            currentBaseUnconsumedSeconds: carriedBaseSeconds,
+          });
           const upgradedBaseGrantSeconds = monthlyUpgradeBaseGrantSeconds({
             targetPlanSeconds: plan.monthlySourceSeconds,
-            currentBaseUnconsumedSeconds: replacesEasycutPro ? 0 : carriedBaseSeconds,
+            currentBaseUnconsumedSeconds: retainedBaseSeconds,
           });
           await tx`
             update shorts_mvp.usage_grants set status='revoked'
@@ -1416,7 +1421,7 @@ export async function POST(request: Request) {
             ),
             totalSeconds: upgradedBaseGrantSeconds,
             creditedSeconds: plan.monthlySourceSeconds,
-            carriedSeconds: carriedBaseSeconds,
+            carriedSeconds: retainedBaseSeconds,
             carryUntilSubscriptionEnd: isPricingV2PackageCode(plan.code),
           });
           if (typedBaseGrants.length > 0 && reservedBaseSeconds > 0 && upgradedBaseGrantSeconds > 0) {

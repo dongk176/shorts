@@ -4,6 +4,7 @@ import { requireAdminUser } from "@/lib/admin";
 import { loadAdminBillingOrders } from "@/lib/admin-billing-orders";
 import { loadAdminMembers } from "@/lib/admin-members";
 import { loadAdminOverview } from "@/lib/admin-overview";
+import { loadAdminPartnerApplications } from "@/lib/admin-partner-applications";
 import { loadAdminCreatorProjectShares } from "@/lib/creator-project-shares";
 import { ensureAdminDbReady, getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
@@ -37,6 +38,7 @@ import {
   type AdminEditorReleaseTester,
 } from "./admin-editor-releases";
 import { AdminReferralsSection } from "./admin-referrals-section";
+import { AdminPartnerApplicationsDashboard } from "./admin-partner-applications-dashboard";
 import {
   AdminRefundsDashboard,
   type AdminRefundCase,
@@ -106,6 +108,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     "members",
     "managed-accounts",
     "referrals",
+    "partner-applications",
     "inquiries",
     "feedback",
     "onboarding",
@@ -153,7 +156,18 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const inquiryKind = ["general", "refund_request"].includes(requestedInquiryKind)
     ? requestedInquiryKind
     : "all";
+  const requestedPartnerApplicationStatus = first(params.partnerApplicationStatus);
+  const partnerApplicationStatus = ["open", "all", "new", "reviewing", "contacted", "accepted", "rejected"].includes(requestedPartnerApplicationStatus)
+    ? requestedPartnerApplicationStatus
+    : "open";
   const db = getDb();
+  const partnerApplicationPage = tab === "partner-applications"
+    ? await loadAdminPartnerApplications({ query, status: partnerApplicationStatus })
+    : {
+        applications: [],
+        metrics: { totalCount: 0, newCount: 0, reviewingCount: 0, contactedCount: 0, acceptedCount: 0 },
+        schemaReady: true,
+      };
   const [
     runtimeSettingRows,
     eventRuntimeSettingRows,
@@ -735,6 +749,13 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         <AdminManagedAccountsSection />
       ) : tab === "referrals" ? (
         <AdminReferralsSection />
+      ) : tab === "partner-applications" ? (
+        <AdminPartnerApplicationsDashboard
+          applications={partnerApplicationPage.applications}
+          metrics={partnerApplicationPage.metrics}
+          schemaReady={partnerApplicationPage.schemaReady}
+          initialFilters={{ query, status: partnerApplicationStatus }}
+        />
       ) : tab === "inquiries" ? (
         <AdminInquiriesDashboard
           inquiries={inquiries}

@@ -8,6 +8,7 @@ export type AdminTab =
   | "members"
   | "managed-accounts"
   | "referrals"
+  | "partner-applications"
   | "inquiries"
   | "feedback"
   | "onboarding"
@@ -53,6 +54,7 @@ type IconName =
   | "members"
   | "accounts"
   | "referrals"
+  | "partner-applications"
   | "inquiries"
   | "feedback"
   | "onboarding"
@@ -79,6 +81,7 @@ const navigationGroups: Array<{
       { tab: "members", label: "회원 관리", icon: "members" },
       { tab: "managed-accounts", label: "발급 계정", icon: "accounts" },
       { tab: "referrals", label: "레퍼럴", icon: "referrals" },
+      { tab: "partner-applications", label: "파트너 신청", icon: "partner-applications" },
       { tab: "inquiries", label: "고객 문의", icon: "inquiries" },
       { tab: "feedback", label: "제품 피드백", icon: "feedback" },
       { tab: "onboarding", label: "온보딩 분석", icon: "onboarding" },
@@ -100,6 +103,7 @@ const pageCopy: Record<AdminTab, { eyebrow: string; title: string }> = {
   members: { eyebrow: "Customers / Members", title: "회원 관리" },
   "managed-accounts": { eyebrow: "Customers / Accounts", title: "발급 계정" },
   referrals: { eyebrow: "Growth / Referrals", title: "레퍼럴 운영" },
+  "partner-applications": { eyebrow: "Growth / Partner applications", title: "파트너 신청" },
   inquiries: { eyebrow: "Support / Inquiries", title: "고객 문의" },
   feedback: { eyebrow: "Insights / Feedback", title: "제품 피드백" },
   onboarding: { eyebrow: "Insights / Onboarding", title: "온보딩 분석" },
@@ -135,6 +139,9 @@ function AdminIcon({ name, className }: { name: IconName; className?: string }) 
   }
   if (name === "referrals") {
     return <svg {...common}><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /><path d="m8.2 10.8 7.6-3.6m-7.6 6 7.6 3.6" /></svg>;
+  }
+  if (name === "partner-applications") {
+    return <svg {...common}><rect x="4" y="3" width="16" height="18" rx="3" /><path d="M8 8h8M8 12h5M8 16h3" /><path d="m15 16 1.5 1.5L19 15" /></svg>;
   }
   if (name === "inquiries") {
     return <svg {...common}><path d="M20 15a4 4 0 0 1-4 4H8l-5 2V8a4 4 0 0 1 4-4h9a4 4 0 0 1 4 4Z" /><path d="M8 9h8M8 13h5" /></svg>;
