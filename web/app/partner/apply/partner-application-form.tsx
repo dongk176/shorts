@@ -10,6 +10,7 @@ import {
   partnerApplicationChannelTypes,
   partnerApplicationIncomeGoals,
   partnerApplicationIncomeLabels,
+  partnerApplicationValidationError,
   type PartnerApplicationChannelType,
 } from "@/lib/partner-application";
 
@@ -26,6 +27,24 @@ const incomeOptions = [
   { value: partnerApplicationIncomeGoals[1], amount: partnerApplicationIncomeLabels.over_300, description: "꾸준한 수익 채널로" },
   { value: partnerApplicationIncomeGoals[2], amount: partnerApplicationIncomeLabels.over_1000, description: "본격적인 파트너 활동" },
 ];
+
+function createRequestId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  if (typeof globalThis.crypto?.getRandomValues === "function") {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0"));
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
+}
 
 export function PartnerApplicationForm() {
   const [channelTypes, setChannelTypes] = useState<PartnerApplicationChannelType[]>([]);
@@ -45,30 +64,40 @@ export function PartnerApplicationForm() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting) return;
-    setSubmitting(true);
     setErrorMessage(null);
-    const data = new FormData(event.currentTarget);
-    requestIdRef.current ||= crypto.randomUUID();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    requestIdRef.current ||= createRequestId();
+    const payload = {
+      requestId: requestIdRef.current,
+      displayName: data.get("displayName"),
+      email: data.get("email"),
+      phone: data.get("phone"),
+      channelTypes,
+      channelUrl: data.get("channelUrl"),
+      audienceSize: data.get("audienceSize"),
+      promotionPlan: data.get("promotionPlan"),
+      incomeGoal: data.get("incomeGoal"),
+      disclosureAgreed: data.get("disclosureAgreed") === "on",
+      antiAbuseAgreed: data.get("antiAbuseAgreed") === "on",
+      privacyAgreed: data.get("privacyAgreed") === "on",
+      consentVersion: PARTNER_APPLICATION_CONSENT_VERSION,
+    };
+    const validationError = partnerApplicationValidationError(payload);
+    if (validationError) {
+      setErrorMessage(validationError.message);
+      const control = form.querySelector<HTMLElement>(`[name="${validationError.field}"]`);
+      control?.closest("fieldset")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      control?.focus({ preventScroll: true });
+      return;
+    }
+    setSubmitting(true);
     try {
       const response = await fetch("/api/partner/applications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({
-          requestId: requestIdRef.current,
-          displayName: data.get("displayName"),
-          email: data.get("email"),
-          phone: data.get("phone"),
-          channelTypes,
-          channelUrl: data.get("channelUrl"),
-          audienceSize: data.get("audienceSize"),
-          promotionPlan: data.get("promotionPlan"),
-          incomeGoal: data.get("incomeGoal"),
-          disclosureAgreed: data.get("disclosureAgreed") === "on",
-          antiAbuseAgreed: data.get("antiAbuseAgreed") === "on",
-          privacyAgreed: data.get("privacyAgreed") === "on",
-          consentVersion: PARTNER_APPLICATION_CONSENT_VERSION,
-        }),
+        body: JSON.stringify(payload),
       });
       const result = await response.json() as {
         detail?: string;
@@ -129,6 +158,7 @@ export function PartnerApplicationForm() {
   return (
     <form
       onSubmit={handleSubmit}
+      noValidate
       className="overflow-hidden rounded-[26px] border border-white/[.1] bg-[#171a1c]/95 shadow-[0_30px_100px_rgba(0,0,0,.35)]"
     >
       <div className="border-b border-[#ff9585]/15 bg-gradient-to-r from-[#ff715e]/10 via-transparent to-[#a078ff]/10 px-5 py-3 text-center text-[11px] font-bold text-[#ffb1a5] sm:px-8">
@@ -233,6 +263,7 @@ export function PartnerApplicationForm() {
             required
             name="promotionPlan"
             rows={5}
+            minLength={20}
             maxLength={500}
             placeholder="예: 영상 제작에 관심 있는 유튜브 구독자에게 실제 사용 후기를 쇼츠와 커뮤니티 글로 소개하고 싶습니다."
             className={`${inputClassName} min-h-32 resize-y py-3.5 leading-6`}
@@ -289,7 +320,7 @@ export function PartnerApplicationForm() {
 
       <div className="bg-black/20 px-5 py-6 sm:px-8 sm:py-8">
         {errorMessage ? (
-          <p role="alert" className="mb-4 rounded-xl border border-red-300/15 bg-red-400/[.07] px-4 py-3 text-center text-xs font-bold leading-5 text-red-200">
+          <p role="alert" aria-live="polite" className="mb-4 rounded-xl border border-red-300/15 bg-red-400/[.07] px-4 py-3 text-center text-xs font-bold leading-5 text-red-200">
             {errorMessage}
           </p>
         ) : null}

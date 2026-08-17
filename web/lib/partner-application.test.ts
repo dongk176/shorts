@@ -4,6 +4,7 @@ import {
   PARTNER_APPLICATION_CONSENT_VERSION,
   partnerApplicationReferenceCode,
   partnerApplicationSubmissionSchema,
+  partnerApplicationValidationError,
 } from "./partner-application";
 
 const validApplication = {
@@ -55,6 +56,32 @@ describe("partner application", () => {
       ...validApplication,
       promotionPlan: "짧은 설명",
     }).success).toBe(false);
+  });
+
+  it("returns a specific mobile-friendly validation message", () => {
+    expect(partnerApplicationValidationError({
+      ...validApplication,
+      channelUrl: "instagram.com/easycut",
+    })).toEqual({
+      field: "channelUrl",
+      message: "대표 채널 주소를 https://로 시작하는 전체 링크로 입력해 주세요.",
+    });
+    expect(partnerApplicationValidationError({
+      ...validApplication,
+      promotionPlan: "짧은 설명",
+    })?.field).toBe("promotionPlan");
+    expect(partnerApplicationValidationError(validApplication)).toBeNull();
+  });
+
+  it("does not depend exclusively on randomUUID in mobile webviews", () => {
+    const formSource = readFileSync(
+      new URL("../app/partner/apply/partner-application-form.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(formSource).toContain("globalThis.crypto?.randomUUID");
+    expect(formSource).toContain("globalThis.crypto?.getRandomValues");
+    expect(formSource).toContain("noValidate");
+    expect(formSource).toContain("partnerApplicationValidationError(payload)");
   });
 
   it("keeps the public endpoint same-origin, idempotent and rate limited", () => {

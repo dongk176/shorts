@@ -86,7 +86,13 @@ const secureChannelUrlSchema = z.string()
   .trim()
   .url()
   .max(2048)
-  .refine((value) => new URL(value).protocol === "https:", {
+  .refine((value) => {
+    try {
+      return new URL(value).protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, {
     message: "채널 주소는 https://로 시작해야 합니다.",
   });
 
@@ -106,6 +112,35 @@ export const partnerApplicationSubmissionSchema = z.object({
   privacyAgreed: z.literal(true),
   consentVersion: z.literal(PARTNER_APPLICATION_CONSENT_VERSION),
 });
+
+const partnerApplicationValidationMessages: Record<string, string> = {
+  requestId: "접수번호를 만들지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.",
+  displayName: "이름 또는 활동명을 입력해 주세요.",
+  email: "사용 가능한 이메일 주소를 입력해 주세요.",
+  phone: "연락 가능한 전화번호를 숫자 8~20자리로 입력해 주세요.",
+  channelTypes: "운영 중인 채널을 하나 이상 선택해 주세요.",
+  channelUrl: "대표 채널 주소를 https://로 시작하는 전체 링크로 입력해 주세요.",
+  audienceSize: "채널 규모를 선택해 주세요.",
+  promotionPlan: "이지컷을 소개할 방법을 20자 이상 입력해 주세요.",
+  incomeGoal: "원하는 월 수익을 선택해 주세요.",
+  disclosureAgreed: "추천·제휴 관계 표시 원칙에 동의해 주세요.",
+  antiAbuseAgreed: "부정 홍보 방지 원칙에 동의해 주세요.",
+  privacyAgreed: "파트너 심사를 위한 개인정보 수집·이용에 동의해 주세요.",
+  consentVersion: "동의 정보를 확인하지 못했습니다. 페이지를 새로고침해 주세요.",
+};
+
+export function partnerApplicationValidationError(input: unknown) {
+  const result = partnerApplicationSubmissionSchema.safeParse(input);
+  if (result.success) return null;
+  const field = typeof result.error.issues[0]?.path[0] === "string"
+    ? String(result.error.issues[0].path[0])
+    : "form";
+  return {
+    field,
+    message: partnerApplicationValidationMessages[field]
+      || "필수 입력 항목을 다시 확인해 주세요.",
+  };
+}
 
 export function partnerApplicationReferenceCode(id: string) {
   return `PA-${id.slice(0, 8).toUpperCase()}`;
