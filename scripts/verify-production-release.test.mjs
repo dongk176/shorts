@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   PROTECTED_APP_ROUTES,
+  compareManifestRoutes,
   validateManifestRoutes,
   validateTrackedFiles,
 } from "./verify-production-release.mjs";
@@ -28,4 +29,18 @@ test("production release guard requires protected routes and forbids publishing 
   ]);
   assert.deepEqual(invalid.missingProtected, ["/page"]);
   assert.deepEqual(invalid.includedForbidden, ["/content-calendar/page"]);
+});
+
+test("production release guard rejects any unexpected route addition or removal", () => {
+  assert.deepEqual(
+    compareManifestRoutes(PROTECTED_APP_ROUTES, [...PROTECTED_APP_ROUTES]),
+    { added: [], removed: [] },
+  );
+  assert.deepEqual(
+    compareManifestRoutes(
+      [...PROTECTED_APP_ROUTES.slice(1), "/content-calendar/page"],
+      PROTECTED_APP_ROUTES,
+    ),
+    { added: ["/content-calendar/page"], removed: [PROTECTED_APP_ROUTES[0]] },
+  );
 });

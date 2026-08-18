@@ -21,7 +21,7 @@ lint:
 
 build:
 	cd web && npm run build
-	cd infra/aws && npm run synth
+	node scripts/synth-production-infrastructure.mjs
 
 verify: lint test build
 

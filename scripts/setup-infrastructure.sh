@@ -31,6 +31,18 @@ for command in aws git openssl node npm; do
 done
 aws sts get-caller-identity >/dev/null
 
+PRODUCTION_WORKER_RELEASE_FILE="${PRODUCTION_WORKER_RELEASE_FILE:-$ROOT/production-worker-release.json}"
+if [[ "$ENVIRONMENT" == "production" ]]; then
+  while IFS='=' read -r release_name release_value; do
+    [[ -n "$release_name" && -n "$release_value" ]] || continue
+    export "$release_name=$release_value"
+  done < <(node scripts/production-worker-release.mjs env "$PRODUCTION_WORKER_RELEASE_FILE")
+  node scripts/verify-production-worker-release.mjs \
+    --release "$PRODUCTION_WORKER_RELEASE_FILE" \
+    --lambda-function shorts-mvp-batch-submitter-production \
+    --region "$REGION"
+fi
+
 echo "Supabase schema migration을 먼저 적용합니다."
 npm run db:migrate
 
@@ -118,6 +130,18 @@ deploy_args=(
   -c "githubOrg=${GITHUB_ORG:-dongk176}"
   -c "githubRepo=${GITHUB_REPO:-shorts}"
 )
+if [[ "$ENVIRONMENT" == "production" ]]; then
+  deploy_args+=(
+    -c "legacyProjectJobDefinitionArn=$LEGACY_PROJECT_JOB_DEFINITION_ARN"
+    -c "legacyProjectBatchQueueArn=$LEGACY_PROJECT_BATCH_QUEUE_ARN"
+    -c "sourceRangeJobDefinitionArn=$SOURCE_RANGE_JOB_DEFINITION_ARN"
+    -c "sourceRangeBatchQueueArn=$SOURCE_RANGE_BATCH_QUEUE_ARN"
+    -c "elevenLabsTranscriptionJobDefinitionArn=$ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN"
+    -c "elevenLabsTranscriptionBatchQueueArn=$ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN"
+    -c "subtitleTemplatesJobDefinitionArn=$SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"
+    -c "subtitleTemplatesBatchQueueArn=$SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"
+  )
+fi
 if [[ ${#context_args[@]} -gt 0 ]]; then
   deploy_args+=("${context_args[@]}")
 fi

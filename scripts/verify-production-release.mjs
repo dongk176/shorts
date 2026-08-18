@@ -10,6 +10,12 @@ export const PROTECTED_APP_ROUTES = [
   "/guidebook/page",
   "/pricing/page",
   "/projects/page",
+  "/account/activity/page",
+  "/billing/checkout/page",
+  "/billing/success/page",
+  "/purchase-terms/page",
+  "/refund/page",
+  "/settings/page",
   "/admin/easycutcutcutcutcutcut/page",
   "/projects/[projectNumber]/edit/[shortId]/page",
 ];
@@ -49,6 +55,15 @@ export function validateManifestRoutes(routeNames) {
   };
 }
 
+export function compareManifestRoutes(candidateRouteNames, baselineRouteNames) {
+  const candidate = new Set(candidateRouteNames);
+  const baseline = new Set(baselineRouteNames);
+  return {
+    added: [...candidate].filter((route) => !baseline.has(route)).sort(),
+    removed: [...baseline].filter((route) => !candidate.has(route)).sort(),
+  };
+}
+
 function git(args) {
   return execFileSync("git", args, { encoding: "utf8" }).trim();
 }
@@ -57,10 +72,14 @@ function parseArgs(argv) {
   const options = {
     base: "",
     manifest: "web/.next/server/app-paths-manifest.json",
+    baselineManifest: "",
   };
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] === "--base") options.base = argv[index + 1] || "";
     if (argv[index] === "--manifest") options.manifest = argv[index + 1] || options.manifest;
+    if (argv[index] === "--baseline-manifest") {
+      options.baselineManifest = argv[index + 1] || "";
+    }
   }
   if (!options.base) throw new Error("--base <현재 운영 Git SHA>가 필요합니다.");
   return options;
@@ -88,6 +107,22 @@ export function runReleaseVerification(argv = process.argv.slice(2)) {
   }
   if (manifestResult.includedForbidden.length) {
     throw new Error(`개발 중인 콘텐츠 캘린더 경로가 빌드되어 배포를 중단합니다.\n${manifestResult.includedForbidden.join("\n")}`);
+  }
+  if (options.baselineManifest) {
+    const baselineManifest = JSON.parse(
+      readFileSync(resolve(options.baselineManifest), "utf8"),
+    );
+    const routeDiff = compareManifestRoutes(
+      Object.keys(manifest),
+      Object.keys(baselineManifest),
+    );
+    if (routeDiff.added.length || routeDiff.removed.length) {
+      throw new Error([
+        "현재 운영과 후보의 경로 목록이 달라 배포를 중단합니다.",
+        ...routeDiff.added.map((route) => `추가: ${route}`),
+        ...routeDiff.removed.map((route) => `삭제: ${route}`),
+      ].join("\n"));
+    }
   }
 
   const changedFiles = git(["diff", "--name-status", `${options.base}...HEAD`]);

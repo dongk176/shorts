@@ -35,6 +35,20 @@ test("pins the legacy rerender image separately from new worker deployments", ()
   assert.match(script, /aws ecr put-image/);
 });
 
+test("fails closed against the committed production Worker release before infrastructure mutation", () => {
+  const releaseGuard = script.indexOf("verify-production-worker-release.mjs");
+  const migration = script.indexOf("npm run db:migrate");
+  assert.ok(releaseGuard >= 0 && releaseGuard < migration);
+  for (const context of [
+    "legacyProjectJobDefinitionArn",
+    "sourceRangeJobDefinitionArn",
+    "elevenLabsTranscriptionJobDefinitionArn",
+    "subtitleTemplatesJobDefinitionArn",
+  ]) {
+    assert.match(script, new RegExp(`-c "${context}=`));
+  }
+});
+
 test("publishes editor release workflow variables only from the matching stacks", () => {
   assert.match(
     script,

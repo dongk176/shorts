@@ -8,19 +8,22 @@ export function PurchaseTermsV2Document({
   version = 2,
 }: {
   archived?: boolean;
-  version?: 2 | 3 | 4 | 5 | 6;
+  version?: 2 | 3 | 4 | 5 | 6 | 7;
 }) {
   const usesFirstCompletedJobPolicy = version >= 3;
   const supportsOneTimeInstallments = version >= 4;
   const usesRefundReviewPolicy = version >= 5;
   const usesSelectedSourceRangePolicy = version >= 6;
+  const supportsImmediateProPackageReplacement = version >= 7;
   return (
     <LegalDocument
       eyebrow="Purchase Terms"
       title="유료서비스 구매약관"
       description="본 약관은 Easy Cut의 월간 구독, 기간 패키지 및 추가 처리시간 구매에 적용되는 결제·제공 조건을 정합니다. 결제 전 상품, 금액, 적용일과 환불 규정을 함께 확인해 주세요."
       effectiveDate={archived
-        ? `${version === 6 ? "2026년 8월 5일 · 구매약관 v6" : version === 5 ? "2026년 8월 3일 · 구매약관 v5" : version === 4 ? "2026년 7월 30일 · 구매약관 v4" : version === 3 ? "2026년 7월 28일 · 구매약관 v3" : "2026년 7월 26일 · 구매약관 v2"} (보관본)`
+        ? `${version === 7 ? "2026년 8월 18일 · 구매약관 v7" : version === 6 ? "2026년 8월 5일 · 구매약관 v6" : version === 5 ? "2026년 8월 3일 · 구매약관 v5" : version === 4 ? "2026년 7월 30일 · 구매약관 v4" : version === 3 ? "2026년 7월 28일 · 구매약관 v3" : "2026년 7월 26일 · 구매약관 v2"} (보관본)`
+        : supportsImmediateProPackageReplacement
+          ? "2026년 8월 18일 개정 · 구매약관 v7"
         : usesSelectedSourceRangePolicy
           ? "2026년 8월 5일 개정 · 구매약관 v6"
         : usesRefundReviewPolicy
@@ -110,7 +113,12 @@ export function PurchaseTermsV2Document({
       </LegalSection>
 
       <LegalSection title="제6조 상품 변경">
-        <p>이지컷 프로 이용 중 기간 패키지를 선택하면 현재 월간 결제기간 종료일로 변경이 예약됩니다. 예약 시 새 결제나 환불은 발생하지 않으며, 현재 기간이 끝난 뒤 요금제 페이지에서 패키지 결제를 완료하면 새 상품이 적용됩니다.</p>
+        <p>{supportsImmediateProPackageReplacement
+          ? "이지컷 프로 이용 중 기간 패키지를 구매하면 패키지 총액을 먼저 승인한 뒤 현재 Pro 원결제 9,900원의 전액취소가 확인되어야 패키지로 즉시 전환됩니다. 전환이 완료되면 Pro 자동결제 일정과 기존 Pro 기본 처리시간은 종료되고, 패키지 이용기간과 첫 처리시간은 패키지 승인 시점부터 시작됩니다."
+          : "이지컷 프로 이용 중 기간 패키지를 선택하면 현재 월간 결제기간 종료일로 변경이 예약됩니다. 예약 시 새 결제나 환불은 발생하지 않으며, 현재 기간이 끝난 뒤 요금제 페이지에서 패키지 결제를 완료하면 새 상품이 적용됩니다."}</p>
+        {supportsImmediateProPackageReplacement && (
+          <p>기존 Pro 원결제의 전액취소를 확인하지 못하면 패키지 승인을 전액취소하고 기존 Pro 이용권을 유지합니다. 승인 또는 취소 결과를 확정할 수 없는 경우에는 패키지를 자동 활성화하지 않고 결제대행사 거래를 확인한 뒤 처리합니다.</p>
+        )}
         <p>스타터·전문가의 3·6·12개월 기간 패키지는 각 상품별로 계정당 한 번만 구매할 수 있습니다. 이미 구매한 상품과 다른 기간 또는 등급의 패키지는 각각 한 번씩 추가 구매할 수 있으며, 각 패키지는 결제 승인일부터 독립적인 이용기간을 시작하고 월별 처리시간을 합산해 지급합니다. 패키지 이용 중에는 이지컷 프로 월간 구독을 추가할 수 없습니다. 별도로 구매한 추가 처리시간은 표시된 유효기간까지 유지됩니다.</p>
         <p>{supportsOneTimeInstallments ? "기간 패키지와 추가 처리시간의 총 결제금액이 5만원 이상인 경우 카드사 캠페인과 결제대행사 지원 조건에 따라 결제 화면에서 할부를 선택할 수 있습니다. 결제 화면에 선택 항목으로 표시되지 않은 할부개월은 이용할 수 없습니다." : "기간 패키지를 포함한 모든 카드 결제는 일시불로만 제공되며, 결제 화면에서 할부를 선택할 수 없습니다."}</p>
       </LegalSection>

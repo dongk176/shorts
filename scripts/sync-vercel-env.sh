@@ -20,6 +20,17 @@ export AWS_REGION="${AWS_REGION:-ap-northeast-2}"
 export VIDEO_JOB_BACKEND="${VIDEO_JOB_BACKEND:-aws_batch}"
 export BATCH_SUBMITTER_FUNCTION_NAME="${BATCH_SUBMITTER_FUNCTION_NAME:-shorts-mvp-batch-submitter-production}"
 
+PRODUCTION_WORKER_RELEASE_FILE="${PRODUCTION_WORKER_RELEASE_FILE:-$ROOT/production-worker-release.json}"
+while IFS='=' read -r release_name release_value; do
+  [[ -n "$release_name" && -n "$release_value" ]] || continue
+  export "$release_name=$release_value"
+done < <(node ../scripts/production-worker-release.mjs env "$PRODUCTION_WORKER_RELEASE_FILE")
+
+node ../scripts/verify-production-worker-release.mjs \
+  --release "$PRODUCTION_WORKER_RELEASE_FILE" \
+  --lambda-function "$BATCH_SUBMITTER_FUNCTION_NAME" \
+  --region "$AWS_REGION"
+
 # The web persists an immutable Batch target with every project. Fail before
 # touching Vercel if those values differ from the submitter Lambda allowlist.
 node ../scripts/verify-project-batch-targets.mjs \
@@ -35,6 +46,7 @@ for name in DATABASE_URL SUPABASE_URL SUPABASE_PUBLISHABLE_KEY YOUTUBE_API_KEY \
   NEXT_PUBLIC_TOSS_CLIENT_KEY TOSS_SECRET_KEY TOSS_BILLING_KEY_ENCRYPTION_KEY \
   TOSS_WEBHOOK_SECRET CRON_SECRET \
   THEPAYONE_BILLING_ENABLED THEPAYONE_MID THEPAYONE_TERMINAL_ID THEPAYONE_PAY_KEY \
+  THEPAYONE_PACKAGE_PAYMENT_MODE THEPAYONE_ADDON_PAYMENT_MODE \
   THEPAYONE_PACKAGE_BILLING_ENABLED THEPAYONE_PACKAGE_MID \
   THEPAYONE_PACKAGE_TERMINAL_ID THEPAYONE_PACKAGE_PAY_KEY \
   THEPAYONE_API_BASE_URL THEPAYONE_WEBHOOK_BASE_URL THEPAYONE_WEBHOOK_SECRET \

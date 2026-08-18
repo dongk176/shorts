@@ -4,8 +4,8 @@
 
 1. `aws sts get-caller-identity`가 대상 계정인지 확인합니다.
 2. `VERCEL_TEAM_SLUG`, `VERCEL_PROJECT_NAME`, `AWS_REGION=ap-northeast-2`를 설정합니다.
-3. 변경을 main에 커밋하고 `Build and publish worker` workflow가 해당 커밋 SHA 이미지를 게시할 때까지 기다립니다.
-4. `npm run infra:setup`으로 그 SHA에 고정된 Job Definition과 server secrets를 적용합니다.
+3. 현재 승격된 운영 커밋의 후속 커밋만 main에 반영합니다. Worker를 변경하지 않는 릴리스는 `production-worker-release.json`의 기존 검증 digest를 재사용합니다.
+4. Worker 변경 릴리스에서만 `Build and publish worker` workflow와 격리 검증을 거쳐 새 digest와 네 Job Definition을 `production-worker-release.json`에 기록합니다. `npm run infra:setup`은 이 파일이 없거나 Lambda·Batch 실제값과 다르면 운영 배포를 중단합니다.
 5. 최초 환경이라면 CDK 출력의 `GithubWorkerBuildRoleArn`,
    `WorkerRepositoryUri`, `EditorReleaseRepositoryUri`를 각각 GitHub
    Actions variables `AWS_WORKER_BUILD_ROLE_ARN`,
@@ -15,7 +15,10 @@
    네 프로젝트 Batch 대상이 `shorts-mvp-batch-submitter-production` Lambda의
    신뢰 ARN과 정확히 일치하고 각 Job Definition/queue가 ACTIVE 및
    VALID/ENABLED 상태인지 검사하며, 하나라도 다르면 배포를 중단합니다.
-7. `vercel deploy --prod` 후 `scripts/verify-production.sh <url>`을 실행합니다.
+7. 현재 운영 커밋과 후보의 route manifest를 `scripts/verify-production-release.mjs --base <운영 SHA> --baseline-manifest <운영 manifest>`로 비교합니다.
+8. `vercel deploy --prod --skip-domain`으로 무별칭 운영 후보를 만든 뒤 핵심 경로와 UI를 검증합니다.
+9. 검증한 후보를 `vercel promote <후보 URL>`로 재빌드 없이 승격하고 `scripts/verify-production.sh <운영 URL>`을 실행합니다.
+10. `node scripts/verify-production-worker-release.mjs`와 `node scripts/audit-production-billing.mjs --since <점검 시작 시각> --env-file <운영 env 파일>`으로 Worker drift와 결제 불일치를 확인합니다.
 
 CloudFront private key는 `.secrets/cloudfront-private.pem`과 Vercel secret에만 둡니다. 분실 시 새 key pair/public key/key group을 배포하고 Vercel env를 교체합니다.
 

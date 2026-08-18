@@ -17,6 +17,14 @@ function stacks(environment = "test") {
     vercelProjectName: "shorts",
     workerImageTag: "test-worker-image",
     legacyRerenderImageTag: "legacy-worker-image",
+    legacyProjectJobDefinitionArn:
+      "arn:aws:batch:ap-northeast-2:123456789012:job-definition/legacy-project:1",
+    legacyProjectBatchQueueArn:
+      "arn:aws:batch:ap-northeast-2:123456789012:job-queue/legacy-project",
+    sourceRangeJobDefinitionArn:
+      "arn:aws:batch:ap-northeast-2:123456789012:job-definition/source-range:1",
+    sourceRangeBatchQueueArn:
+      "arn:aws:batch:ap-northeast-2:123456789012:job-queue/source-range",
     elevenLabsTranscriptionJobDefinitionArn:
       "arn:aws:batch:ap-northeast-2:123456789012:job-definition/elevenlabs-canary:1",
     elevenLabsTranscriptionBatchQueueArn:

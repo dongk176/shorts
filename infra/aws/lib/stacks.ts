@@ -1248,6 +1248,18 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       environment: lambdaEnvironment,
     });
     const batchSubmitterFunctionName = `shorts-mvp-batch-submitter-${props.environment}`;
+    const legacyProjectJobDefinitionArn = String(
+      this.node.tryGetContext("legacyProjectJobDefinitionArn") || "",
+    ).trim();
+    const legacyProjectBatchQueueArn = String(
+      this.node.tryGetContext("legacyProjectBatchQueueArn") || "",
+    ).trim();
+    const sourceRangeJobDefinitionArn = String(
+      this.node.tryGetContext("sourceRangeJobDefinitionArn") || "",
+    ).trim();
+    const sourceRangeBatchQueueArn = String(
+      this.node.tryGetContext("sourceRangeBatchQueueArn") || "",
+    ).trim();
     const elevenLabsJobDefinitionArn = String(
       this.node.tryGetContext("elevenLabsTranscriptionJobDefinitionArn") || "",
     ).trim();
@@ -1281,6 +1293,26 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         "Subtitle template target must use a new immutable Job Definition",
       );
     }
+    if (props.environment === "production") {
+      const requiredProductionTargets = {
+        legacyProjectJobDefinitionArn,
+        legacyProjectBatchQueueArn,
+        sourceRangeJobDefinitionArn,
+        sourceRangeBatchQueueArn,
+        elevenLabsJobDefinitionArn,
+        elevenLabsBatchQueueArn,
+        subtitleTemplatesJobDefinitionArn,
+        subtitleTemplatesBatchQueueArn,
+      };
+      const missingTargets = Object.entries(requiredProductionTargets)
+        .filter(([, value]) => !value)
+        .map(([name]) => name);
+      if (missingTargets.length > 0) {
+        throw new Error(
+          `Production Batch targets must be explicitly pinned: ${missingTargets.join(", ")}`,
+        );
+      }
+    }
     const batchSubmitter = new lambda.Function(this, "BatchSubmitterFunction", {
       functionName: batchSubmitterFunctionName,
       runtime: lambda.Runtime.PYTHON_3_12,
@@ -1292,24 +1324,14 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       reservedConcurrentExecutions: 10,
       environment: {
         ...lambdaEnvironment,
-        LEGACY_PROJECT_JOB_DEFINITION_ARN: String(
-          this.node.tryGetContext("legacyProjectJobDefinitionArn")
-          || projectHeavyDefinition.ref,
-        ),
-        LEGACY_PROJECT_BATCH_QUEUE_ARN: String(
-          this.node.tryGetContext("legacyProjectBatchQueueArn")
-          || projectQueue.ref,
-        ),
-        SOURCE_RANGE_JOB_DEFINITION_ARN: String(
-          this.node.tryGetContext("sourceRangeJobDefinitionArn")
-          || this.node.tryGetContext("legacyProjectJobDefinitionArn")
-          || projectHeavyDefinition.ref,
-        ),
-        SOURCE_RANGE_BATCH_QUEUE_ARN: String(
-          this.node.tryGetContext("sourceRangeBatchQueueArn")
-          || this.node.tryGetContext("legacyProjectBatchQueueArn")
-          || projectQueue.ref,
-        ),
+        LEGACY_PROJECT_JOB_DEFINITION_ARN:
+          legacyProjectJobDefinitionArn || projectHeavyDefinition.ref,
+        LEGACY_PROJECT_BATCH_QUEUE_ARN:
+          legacyProjectBatchQueueArn || projectQueue.ref,
+        SOURCE_RANGE_JOB_DEFINITION_ARN:
+          sourceRangeJobDefinitionArn || legacyProjectJobDefinitionArn || projectHeavyDefinition.ref,
+        SOURCE_RANGE_BATCH_QUEUE_ARN:
+          sourceRangeBatchQueueArn || legacyProjectBatchQueueArn || projectQueue.ref,
         ...(elevenLabsJobDefinitionArn ? {
           ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN:
             elevenLabsJobDefinitionArn,
