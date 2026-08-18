@@ -36,6 +36,12 @@ def main() -> None:
     pull.add_argument("--once", action="store_true")
     pull.add_argument("--max-jobs", type=int, default=0)
     pull.add_argument("--idle-timeout", type=float, default=0)
+    ingestion_probe = subparsers.add_parser(
+        "ingestion-probe",
+        help="download one second through one configured route without creating a project",
+    )
+    ingestion_probe.add_argument("--video-id", required=True)
+    ingestion_probe.add_argument("--route-id", required=True)
     args = parser.parse_args()
     if args.command == "editor-release-probe":
         from .editor_release_probe import run_editor_release_probe
@@ -96,6 +102,8 @@ def main() -> None:
                 return
             else:
                 time.sleep(max(1.0, args.poll_seconds))
+    elif args.command == "ingestion-probe":
+        worker.ingestion.probe_media_access(args.video_id, args.route_id)
 
 
 if __name__ == "__main__":

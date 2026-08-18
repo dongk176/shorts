@@ -4,6 +4,7 @@ import json
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -11,7 +12,9 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -22,7 +25,7 @@ from .errors import (
     RetryExhaustedIngestionError,
 )
 from .schemas import MAX_CHANNEL_NAME_CHARS
-from .url_validation import validate_youtube_url
+from .url_validation import VIDEO_ID_RE, validate_youtube_url
 
 MAX_ACQUISITION_ATTEMPTS = 20
 MAX_RECORDED_FAILURE_REASONS = 10
@@ -31,6 +34,10 @@ RETRY_DELAY_JITTER_RATIO = 0.2
 MAX_CONFIGURED_EGRESS_ROUTES = 32
 MAX_WARP_EGRESS_ROUTES = 4
 DEFAULT_BOT_CHECK_ROUTE_COOLDOWN_SECONDS = 15.0
+PO_TOKEN_PROVIDER_PACKAGE = "bgutil-ytdlp-pot-provider"
+PO_TOKEN_PROVIDER_VERSION = "1.3.1"
+PO_TOKEN_PROVIDER_HOME = Path("/opt/bgutil-ytdlp-pot-provider/server")
+PO_TOKEN_PLAYER_CLIENT = "mweb"
 _ROUTE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 _SUPPORTED_PROXY_SCHEMES = frozenset({"http", "https", "socks5", "socks5h"})
 _SUPPORTED_EGRESS_MODES = frozenset({"auto", "webshare_isp", "warp"})
@@ -70,6 +77,40 @@ _URL_PATTERN = re.compile(r"(?i)\b(?:https?|socks5h?)://\S+")
 _SENSITIVE_VALUE_PATTERN = re.compile(
     r"(?i)\b(authorization|cookie|password|proxy|token)\s*[:=]\s*(?:bearer\s+)?\S+"
 )
+
+
+def _po_token_enabled() -> bool:
+    raw_value = os.environ.get("YOUTUBE_PO_TOKEN_ENABLED", "").strip().lower()
+    if raw_value in {"", "0", "false", "no", "off"}:
+        return False
+    if raw_value in {"1", "true", "yes", "on"}:
+        return True
+    raise ValueError("YOUTUBE_PO_TOKEN_ENABLED must be a boolean value")
+
+
+def _validate_po_token_runtime() -> None:
+    try:
+        installed_version = version(PO_TOKEN_PROVIDER_PACKAGE)
+    except PackageNotFoundError as exc:
+        raise RuntimeError("YouTube PO Token provider plugin is not installed") from exc
+    if installed_version != PO_TOKEN_PROVIDER_VERSION:
+        raise RuntimeError("YouTube PO Token provider plugin version is not pinned")
+
+    node_path = shutil.which("node")
+    provider_script = PO_TOKEN_PROVIDER_HOME / "build" / "generate_once.js"
+    if not node_path or not provider_script.is_file():
+        raise RuntimeError("YouTube PO Token provider runtime is incomplete")
+
+    result = subprocess.run(
+        [node_path, str(provider_script), "--version"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+        shell=False,
+    )
+    if result.returncode != 0 or result.stdout.strip() != PO_TOKEN_PROVIDER_VERSION:
+        raise RuntimeError("YouTube PO Token provider runtime failed its version check")
 
 
 def _log_ingestion_event(event: str, **fields: object) -> None:
@@ -333,6 +374,14 @@ class YtDlpIngestionProvider(IngestionProvider):
         self.timeout_seconds = timeout_seconds
         self.max_attempts = max(1, min(MAX_ACQUISITION_ATTEMPTS, int(max_attempts)))
         self.retry_backoff_seconds = max(0.0, float(retry_backoff_seconds))
+        self.po_token_enabled = _po_token_enabled()
+        if self.po_token_enabled:
+            _validate_po_token_runtime()
+            _log_ingestion_event(
+                "youtube_po_token_enabled",
+                provider="bgutil_script",
+                player_client=PO_TOKEN_PLAYER_CLIENT,
+            )
         if bot_check_cooldown_seconds is None:
             raw_cooldown = os.environ.get("INGESTION_BOT_CHECK_COOLDOWN_SECONDS") or os.environ.get(
                 "WARP_BOT_CHECK_COOLDOWN_SECONDS", str(DEFAULT_BOT_CHECK_ROUTE_COOLDOWN_SECONDS)
@@ -451,9 +500,8 @@ class YtDlpIngestionProvider(IngestionProvider):
             failure_reason=_failure_reason(error),
         )
 
-    @staticmethod
-    def _base_args() -> list[str]:
-        return [
+    def _base_args(self) -> list[str]:
+        args = [
             sys.executable,
             "-m",
             "yt_dlp",
@@ -470,6 +518,16 @@ class YtDlpIngestionProvider(IngestionProvider):
             "--file-access-retries",
             "1",
         ]
+        if self.po_token_enabled:
+            args.extend(
+                [
+                    "--extractor-args",
+                    f"youtube:player_client={PO_TOKEN_PLAYER_CLIENT}",
+                    "--extractor-args",
+                    f"youtubepot-bgutilscript:server_home={PO_TOKEN_PROVIDER_HOME}",
+                ]
+            )
+        return args
 
     def _run(
         self,
@@ -751,6 +809,46 @@ class YtDlpIngestionProvider(IngestionProvider):
 
     def analyze_url(self, youtube_url: str) -> VideoMetadata:
         return self._metadata_from_info(self._extract_info(youtube_url, asset="metadata"))
+
+    def probe_media_access(self, video_id: str, route_id: str) -> None:
+        if not VIDEO_ID_RE.fullmatch(video_id):
+            raise ValueError("probe video id must be an 11-character YouTube id")
+        route = self._acquire_route(
+            job_id=None,
+            asset="probe",
+            attempt=1,
+            required_route_id=route_id,
+        )
+        normalized, _ = validate_youtube_url(
+            f"https://www.youtube.com/watch?v={video_id}"
+        )
+        with TemporaryDirectory(prefix="easycut-ingestion-probe-") as temporary_directory:
+            output_template = Path(temporary_directory) / "probe.%(ext)s"
+            self._run_for_route(
+                [
+                    *self._base_args(),
+                    "--format",
+                    "b[height<=360]/b",
+                    "--download-sections",
+                    "*0-1",
+                    "--merge-output-format",
+                    "mp4",
+                    "--output",
+                    str(output_template),
+                    normalized,
+                ],
+                timeout=min(self.timeout_seconds, 120),
+                route=route,
+                job_id=None,
+                asset="probe",
+                attempt=1,
+            )
+        _log_ingestion_event(
+            "ingestion_probe_succeeded",
+            route_id=route.route_id if route else None,
+            egress_class=route.egress_class if route else None,
+            po_token_enabled=self.po_token_enabled,
+        )
 
     def _download_video_once(
         self,

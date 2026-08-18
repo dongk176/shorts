@@ -15,9 +15,11 @@
   or contracted proxy paths for routing and failover.
 - Fail over on connection errors, bot challenges, or 429s. Payment,
   geographic, or DRM restrictions must fail closed and must never trigger
-  identity, cookie, token, proxy, IP, region, or client rotation. Bot challenges
-  and 429s may be retried up to 10 times.
-- Never pass YouTube account credentials, account cookies, or browser profiles to workers.
+  identity, cookie, token, proxy, region, or client rotation. Bot challenges
+  and 429s may be retried.
+- Never pass YouTube account credentials, account cookies, browser profiles, or
+  account-bound tokens to workers. A feature-gated, per-video Proof-of-Origin
+  attestation provider may be used for public videos without account material.
 - Never invoke user-derived commands with a shell. Pass argument arrays to
   subprocesses and keep timeouts enabled.
 - Resolve served paths beneath `storage/`; never use user input as a filename.

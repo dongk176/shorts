@@ -32,8 +32,9 @@ def _fake_success(args: list[str], info: dict[str, object]) -> subprocess.Comple
     return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
 
 
-def test_yt_dlp_retries_are_bounded_for_fast_route_failover() -> None:
-    args = YtDlpIngestionProvider._base_args()
+def test_yt_dlp_retries_are_bounded_for_fast_route_failover(monkeypatch) -> None:
+    monkeypatch.delenv("YOUTUBE_PO_TOKEN_ENABLED", raising=False)
+    args = YtDlpIngestionProvider()._base_args()
 
     assert args[args.index("--socket-timeout") + 1] == "15"
     for option in (
@@ -43,6 +44,83 @@ def test_yt_dlp_retries_are_bounded_for_fast_route_failover() -> None:
         "--file-access-retries",
     ):
         assert args[args.index(option) + 1] == "1"
+
+
+def test_po_token_is_disabled_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("YOUTUBE_PO_TOKEN_ENABLED", raising=False)
+
+    args = YtDlpIngestionProvider()._base_args()
+
+    assert "--extractor-args" not in args
+    assert not any("cookie" in value.lower() for value in args)
+
+
+def test_po_token_uses_mweb_without_account_credentials(monkeypatch) -> None:
+    monkeypatch.setenv("YOUTUBE_PO_TOKEN_ENABLED", "true")
+    monkeypatch.setattr("shorts_worker.ingestion._validate_po_token_runtime", lambda: None)
+
+    args = YtDlpIngestionProvider()._base_args()
+
+    extractor_args = [
+        args[index + 1]
+        for index, value in enumerate(args)
+        if value == "--extractor-args"
+    ]
+    assert extractor_args == [
+        "youtube:player_client=mweb",
+        (
+            "youtubepot-bgutilscript:"
+            "server_home=/opt/bgutil-ytdlp-pot-provider/server"
+        ),
+    ]
+    assert not any("cookie" in value.lower() for value in args)
+
+
+def test_po_token_rejects_invalid_feature_flag(monkeypatch) -> None:
+    monkeypatch.setenv("YOUTUBE_PO_TOKEN_ENABLED", "sometimes")
+
+    with pytest.raises(ValueError, match="must be a boolean"):
+        YtDlpIngestionProvider()
+
+
+def test_media_probe_uses_one_route_and_one_second(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "INGESTION_PROXY_ROUTES_JSON",
+        json.dumps(
+            [
+                {
+                    "id": "probe-route",
+                    "proxy_url": "http://proxy.invalid:8080",
+                    "egress_class": "contracted_proxy",
+                }
+            ]
+        ),
+    )
+    provider = YtDlpIngestionProvider()
+    calls: list[tuple[list[str], object]] = []
+
+    def fake_run_for_route(args, **kwargs):
+        calls.append((args, kwargs["route"]))
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(provider, "_run_for_route", fake_run_for_route)
+
+    provider.probe_media_access("dQw4w9WgXcQ", "probe-route")
+
+    assert len(calls) == 1
+    args, route = calls[0]
+    assert args[args.index("--download-sections") + 1] == "*0-1"
+    assert args[-1] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    assert route.route_id == "probe-route"
+
+
+def test_media_probe_rejects_invalid_video_id(monkeypatch) -> None:
+    monkeypatch.delenv("INGESTION_PROXY_ROUTES_JSON", raising=False)
+
+    with pytest.raises(ValueError, match="11-character"):
+        YtDlpIngestionProvider().probe_media_access("too-short", "probe-route")
 
 
 def test_youtube_bot_challenge_does_not_recommend_cookie_bypass(monkeypatch) -> None:
