@@ -15,6 +15,7 @@ from shorts_worker.errors import (
 from shorts_worker.ingestion import (
     MAX_RECORDED_FAILURE_REASONS,
     RETRY_DELAY_BASE_SECONDS,
+    YOUTUBE_DOWNLOAD_FORMAT,
     VideoMetadata,
     YtDlpIngestionProvider,
 )
@@ -83,7 +84,7 @@ def test_po_token_rejects_invalid_feature_flag(monkeypatch) -> None:
         YtDlpIngestionProvider()
 
 
-def test_media_probe_uses_one_route_and_one_second(
+def test_media_probe_uses_one_route_and_production_format(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(
@@ -111,9 +112,48 @@ def test_media_probe_uses_one_route_and_one_second(
 
     assert len(calls) == 1
     args, route = calls[0]
-    assert args[args.index("--download-sections") + 1] == "*0-1"
+    assert "--verbose" in args
+    assert args[args.index("--format") + 1] == YOUTUBE_DOWNLOAD_FORMAT
+    assert args[args.index("--download-sections") + 1] == "*0-10"
     assert args[-1] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     assert route.route_id == "probe-route"
+
+
+def test_media_probe_logs_po_token_state_without_token_value(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("YOUTUBE_PO_TOKEN_ENABLED", "true")
+    monkeypatch.setattr("shorts_worker.ingestion._validate_po_token_runtime", lambda: None)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                "[debug] PO Token Providers: bgutil:script-node-1.3.1\n"
+                "Generating a gvs PO Token\n"
+                "Using challenge from the homepage (patched)\n"
+                "Retrieved a gvs PO Token: secret-token-value"
+            ),
+            stderr="",
+        ),
+    )
+
+    YtDlpIngestionProvider()._run(["yt-dlp"], asset="probe")
+
+    output = capsys.readouterr().out
+    diagnostic = next(
+        json.loads(line)
+        for line in output.splitlines()
+        if '"event":"youtube_po_token_diagnostic"' in line
+    )
+    assert diagnostic["provider_registered"] is True
+    assert diagnostic["gvs_token_requested"] is True
+    assert diagnostic["gvs_token_retrieved"] is True
+    assert diagnostic["homepage_challenge_used"] is True
+    assert "secret-token-value" not in output
 
 
 def test_media_probe_rejects_invalid_video_id(monkeypatch) -> None:

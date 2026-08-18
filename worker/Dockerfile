@@ -11,8 +11,8 @@ RUN apk add --no-cache \
         pixman-dev \
         python3
 
-ADD --checksum=sha256:5d4c54f9c5e75f3dcb48c906a5f8b860f57ee125b83f025e43362ab332695c3e \
-    https://codeload.github.com/Brainicism/bgutil-ytdlp-pot-provider/tar.gz/7608dd51ee813b48cf9a6d68c6e42cb197ce10e0 \
+ADD --checksum=sha256:cbc8c2e54126ec38f4c2a278b3cab685d337cadc3e7f09762116e3b28be18b5f \
+    https://codeload.github.com/Brainicism/bgutil-ytdlp-pot-provider/tar.gz/fbe4ed47f3b63cf061f1158f18f74bcc90e54033 \
     /tmp/bgutil-ytdlp-pot-provider.tar.gz
 RUN mkdir -p /opt/bgutil-ytdlp-pot-provider \
     && tar -xzf /tmp/bgutil-ytdlp-pot-provider.tar.gz \

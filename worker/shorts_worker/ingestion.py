@@ -38,6 +38,11 @@ PO_TOKEN_PROVIDER_PACKAGE = "bgutil-ytdlp-pot-provider"
 PO_TOKEN_PROVIDER_VERSION = "1.3.1"
 PO_TOKEN_PROVIDER_HOME = Path("/opt/bgutil-ytdlp-pot-provider/server")
 PO_TOKEN_PLAYER_CLIENT = "mweb"
+YOUTUBE_DOWNLOAD_FORMAT = (
+    "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/"
+    "b[height<=1080][ext=mp4]/"
+    "bv*[height<=1080]+ba/b[height<=1080]"
+)
 _ROUTE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 _SUPPORTED_PROXY_SCHEMES = frozenset({"http", "https", "socks5", "socks5h"})
 _SUPPORTED_EGRESS_MODES = frozenset({"auto", "webshare_isp", "warp"})
@@ -128,6 +133,17 @@ def _safe_upstream_reason(output: str) -> str:
     reason = _URL_PATTERN.sub("[url]", reason)
     reason = _SENSITIVE_VALUE_PATTERN.sub(lambda match: f"{match.group(1)}=[redacted]", reason)
     return reason[:500]
+
+
+def _po_token_diagnostic(output: str) -> dict[str, bool]:
+    normalized = " ".join(output.lower().split())
+    return {
+        "provider_registered": "po token providers:" in normalized
+        and "bgutil" in normalized,
+        "gvs_token_requested": "generating a gvs po token" in normalized,
+        "gvs_token_retrieved": "retrieved a gvs po token" in normalized,
+        "homepage_challenge_used": "using challenge from the homepage" in normalized,
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -595,6 +611,16 @@ class YtDlpIngestionProvider(IngestionProvider):
                     details=failure_context,
                 ) from exc
 
+            if asset == "probe" and self.po_token_enabled:
+                diagnostic_output = "\n".join(
+                    part for part in (result.stdout, result.stderr) if part
+                )
+                _log_ingestion_event(
+                    "youtube_po_token_diagnostic",
+                    route_id=selected_route.route_id if selected_route else None,
+                    **_po_token_diagnostic(diagnostic_output),
+                )
+
             if result.returncode == 0:
                 return result
 
@@ -827,17 +853,18 @@ class YtDlpIngestionProvider(IngestionProvider):
             self._run_for_route(
                 [
                     *self._base_args(),
+                    "--verbose",
                     "--format",
-                    "b[height<=360]/b",
+                    YOUTUBE_DOWNLOAD_FORMAT,
                     "--download-sections",
-                    "*0-1",
+                    "*0-10",
                     "--merge-output-format",
                     "mp4",
                     "--output",
                     str(output_template),
                     normalized,
                 ],
-                timeout=min(self.timeout_seconds, 120),
+                timeout=min(self.timeout_seconds, 180),
                 route=route,
                 job_id=None,
                 asset="probe",
@@ -848,6 +875,8 @@ class YtDlpIngestionProvider(IngestionProvider):
             route_id=route.route_id if route else None,
             egress_class=route.egress_class if route else None,
             po_token_enabled=self.po_token_enabled,
+            format_profile="production_1080p_video_audio",
+            probe_seconds=10,
         )
 
     def _download_video_once(
@@ -866,11 +895,7 @@ class YtDlpIngestionProvider(IngestionProvider):
             [
                 *self._base_args(),
                 "--format",
-                (
-                    "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/"
-                    "b[height<=1080][ext=mp4]/"
-                    "bv*[height<=1080]+ba/b[height<=1080]"
-                ),
+                YOUTUBE_DOWNLOAD_FORMAT,
                 "--merge-output-format",
                 "mp4",
                 "--write-info-json",
@@ -1055,11 +1080,7 @@ class YtDlpIngestionProvider(IngestionProvider):
             [
                 *self._base_args(),
                 "--format",
-                (
-                    "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/"
-                    "b[height<=1080][ext=mp4]/"
-                    "bv*[height<=1080]+ba/b[height<=1080]"
-                ),
+                YOUTUBE_DOWNLOAD_FORMAT,
                 "--merge-output-format",
                 "mp4",
                 "--output",
