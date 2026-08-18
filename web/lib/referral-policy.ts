@@ -64,6 +64,81 @@ export function calculateReferralCommission(
   return Math.floor(net * Math.trunc(commissionRateBps) / 10_000);
 }
 
+export type ReferralCommissionInstallment = {
+  installmentNumber: number;
+  installmentCount: number;
+  grossAmountKrw: number;
+  recognizedAmountKrw: number;
+  scheduledCommissionAmountKrw: number;
+  commissionAmountKrw: number;
+  earnedAt: Date;
+  availableAt: Date;
+};
+
+export function addReferralKstMonths(value: Date, months: number) {
+  const offsetMs = 9 * 60 * 60 * 1_000;
+  const local = new Date(value.getTime() + offsetMs);
+  const year = local.getUTCFullYear();
+  const targetMonth = local.getUTCMonth() + Math.trunc(months);
+  const anchorDay = local.getUTCDate();
+  const lastDay = new Date(Date.UTC(year, targetMonth + 1, 0)).getUTCDate();
+  const shifted = new Date(Date.UTC(
+    year,
+    targetMonth,
+    Math.min(anchorDay, lastDay),
+    local.getUTCHours(),
+    local.getUTCMinutes(),
+    local.getUTCSeconds(),
+    local.getUTCMilliseconds(),
+  ));
+  return new Date(shifted.getTime() - offsetMs);
+}
+
+export function calculateReferralCommissionInstallments(input: {
+  amountKrw: number;
+  refundedAmountKrw: number;
+  commissionRateBps: number;
+  recognitionMonths: number;
+  approvedAt: Date;
+}): ReferralCommissionInstallment[] {
+  const amountKrw = Math.max(0, Math.trunc(input.amountKrw));
+  const refundedAmountKrw = Math.min(
+    amountKrw,
+    Math.max(0, Math.trunc(input.refundedAmountKrw)),
+  );
+  const commissionRateBps = Math.max(0, Math.trunc(input.commissionRateBps));
+  const installmentCount = Math.min(12, Math.max(1, Math.trunc(input.recognitionMonths)));
+  const baseGross = Math.floor(amountKrw / installmentCount);
+  const netTotal = amountKrw - refundedAmountKrw;
+
+  return Array.from({ length: installmentCount }, (_, index) => {
+    const installmentNumber = index + 1;
+    const grossBefore = baseGross * index;
+    const grossAmountKrw = installmentNumber === installmentCount
+      ? amountKrw - grossBefore
+      : baseGross;
+    const grossAfter = grossBefore + grossAmountKrw;
+    const netBefore = Math.min(netTotal, grossBefore);
+    const netAfter = Math.min(netTotal, grossAfter);
+    const earnedAt = addReferralKstMonths(input.approvedAt, index);
+
+    return {
+      installmentNumber,
+      installmentCount,
+      grossAmountKrw,
+      recognizedAmountKrw: netAfter - netBefore,
+      scheduledCommissionAmountKrw:
+        Math.floor(grossAfter * commissionRateBps / 10_000)
+        - Math.floor(grossBefore * commissionRateBps / 10_000),
+      commissionAmountKrw:
+        Math.floor(netAfter * commissionRateBps / 10_000)
+        - Math.floor(netBefore * commissionRateBps / 10_000),
+      earnedAt,
+      availableAt: new Date(earnedAt.getTime() + 7 * 24 * 60 * 60 * 1_000),
+    };
+  });
+}
+
 export function maskedReferralEmail(value: string | null | undefined) {
   const email = value?.trim() || "";
   const separator = email.indexOf("@");

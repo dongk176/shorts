@@ -42,30 +42,70 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       if (payout.status !== "draft") {
         throw new HttpError(409, "대기 중인 정산만 처리할 수 있습니다.");
       }
+      await tx`
+        select partner.id
+        from shorts_mvp.referral_partners partner
+        where partner.id=${payout.partnerId}
+        for update
+      `;
+      await tx`
+        select installment.id
+        from shorts_mvp.referral_payout_items item
+        join shorts_mvp.referral_commission_installments installment
+          on installment.id=item.installment_id
+        where item.payout_id=${payoutId}
+        order by installment.earned_at,installment.id
+        for update of installment
+      `;
       let finalAmountKrw = Number(payout.amountKrw);
       if (body.action === "paid") {
         const balanceRows = await tx`
           select
             coalesce((
-              select sum(c.commission_amount_krw)
-              from shorts_mvp.referral_commissions c
-              where c.partner_id=${payout.partnerId} and c.available_at<=now()
+              select sum(greatest(
+                installment.commission_amount_krw-coalesce((
+                  select sum(other_item.amount_krw)
+                  from shorts_mvp.referral_payout_items other_item
+                  join shorts_mvp.referral_payouts other_payout
+                    on other_payout.id=other_item.payout_id
+                  where other_item.installment_id=installment.id
+                    and other_item.payout_id<>${payoutId}
+                    and other_payout.status in ('draft','paid')
+                ),0),
+                0
+              ))
+              from shorts_mvp.referral_payout_items current_item
+              join shorts_mvp.referral_commission_installments installment
+                on installment.id=current_item.installment_id
+              where current_item.payout_id=${payoutId}
+                and installment.available_at<=clock_timestamp()
+            ),0)::bigint as item_payable,
+            coalesce((
+              select sum(installment.commission_amount_krw)
+              from shorts_mvp.referral_commission_installments installment
+              join shorts_mvp.referral_commissions commission
+                on commission.id=installment.commission_id
+              where commission.partner_id=${payout.partnerId}
+                and installment.available_at<=clock_timestamp()
             ),0)::bigint
             - coalesce((
-              select sum(p.amount_krw)
-              from shorts_mvp.referral_payouts p
-              where p.partner_id=${payout.partnerId} and p.status='paid'
+              select sum(other_payout.amount_krw)
+              from shorts_mvp.referral_payouts other_payout
+              where other_payout.partner_id=${payout.partnerId}
+                and other_payout.status='paid'
             ),0)::bigint
             - coalesce((
-              select sum(p.amount_krw)
-              from shorts_mvp.referral_payouts p
-              where p.partner_id=${payout.partnerId} and p.status='draft'
-                and p.id<>${payoutId}
-            ),0)::bigint as payable_now
+              select sum(other_payout.amount_krw)
+              from shorts_mvp.referral_payouts other_payout
+              where other_payout.partner_id=${payout.partnerId}
+                and other_payout.status='draft'
+                and other_payout.id<>${payoutId}
+            ),0)::bigint as global_payable
         `;
         finalAmountKrw = Math.min(
           Number(payout.amountKrw),
-          Math.max(0, Number(balanceRows[0]?.payableNow || 0)),
+          Math.max(0, Number(balanceRows[0]?.itemPayable || 0)),
+          Math.max(0, Number(balanceRows[0]?.globalPayable || 0)),
         );
         if (finalAmountKrw <= 0) {
           throw new HttpError(
@@ -74,6 +114,87 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
             "PAYOUT_BALANCE_REVERSED",
           );
         }
+        await tx`
+          with capacities as (
+            select
+              current_item.installment_id,
+              installment.earned_at,
+              greatest(
+                installment.commission_amount_krw-coalesce((
+                  select sum(other_item.amount_krw)
+                  from shorts_mvp.referral_payout_items other_item
+                  join shorts_mvp.referral_payouts other_payout
+                    on other_payout.id=other_item.payout_id
+                  where other_item.installment_id=installment.id
+                    and other_item.payout_id<>${payoutId}
+                    and other_payout.status in ('draft','paid')
+                ),0),
+                0
+              )::integer as capacity
+            from shorts_mvp.referral_payout_items current_item
+            join shorts_mvp.referral_commission_installments installment
+              on installment.id=current_item.installment_id
+            where current_item.payout_id=${payoutId}
+          ), ranked as (
+            select *,coalesce(sum(capacity) over (
+              order by earned_at,installment_id
+              rows between unbounded preceding and 1 preceding
+            ),0)::bigint as allocated_before
+            from capacities
+          )
+          delete from shorts_mvp.referral_payout_items item
+          using ranked
+          where item.payout_id=${payoutId}
+            and item.installment_id=ranked.installment_id
+            and (
+              ranked.capacity<=0
+              or ranked.allocated_before>=${finalAmountKrw}
+            )
+        `;
+        await tx`
+          with capacities as (
+            select
+              current_item.installment_id,
+              installment.earned_at,
+              greatest(
+                installment.commission_amount_krw-coalesce((
+                  select sum(other_item.amount_krw)
+                  from shorts_mvp.referral_payout_items other_item
+                  join shorts_mvp.referral_payouts other_payout
+                    on other_payout.id=other_item.payout_id
+                  where other_item.installment_id=installment.id
+                    and other_item.payout_id<>${payoutId}
+                    and other_payout.status in ('draft','paid')
+                ),0),
+                0
+              )::integer as capacity
+            from shorts_mvp.referral_payout_items current_item
+            join shorts_mvp.referral_commission_installments installment
+              on installment.id=current_item.installment_id
+            where current_item.payout_id=${payoutId}
+          ), ranked as (
+            select *,coalesce(sum(capacity) over (
+              order by earned_at,installment_id
+              rows between unbounded preceding and 1 preceding
+            ),0)::bigint as allocated_before
+            from capacities
+          )
+          update shorts_mvp.referral_payout_items item
+          set amount_krw=least(
+            ranked.capacity,
+            greatest(${finalAmountKrw}-ranked.allocated_before,0)
+          )::integer
+          from ranked
+          where item.payout_id=${payoutId}
+            and item.installment_id=ranked.installment_id
+            and ranked.capacity>0
+            and ranked.allocated_before<${finalAmountKrw}
+        `;
+      } else {
+        await tx`
+          delete from shorts_mvp.referral_payout_items
+          where payout_id=${payoutId}
+        `;
       }
       await tx`
         update shorts_mvp.referral_payouts

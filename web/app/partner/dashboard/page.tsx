@@ -84,7 +84,15 @@ export default async function PartnerDashboardPage({ searchParams }: PageProps) 
         coalesce(sum(c.gross_amount_krw),0)::bigint as gross_sales,
         coalesce(sum(c.refunded_amount_krw),0)::bigint as refunds,
         coalesce(sum(c.gross_amount_krw-c.refunded_amount_krw),0)::bigint as net_sales,
-        coalesce(sum(c.commission_amount_krw),0)::bigint as commission
+        coalesce((
+          select sum(installment.commission_amount_krw)
+          from shorts_mvp.referral_commission_installments installment
+          join shorts_mvp.referral_commissions period_commission
+            on period_commission.id=installment.commission_id
+          where period_commission.partner_id=${session.partnerId}
+            and installment.earned_at>=${from}::date at time zone 'Asia/Seoul'
+            and installment.earned_at<(${to}::date+1) at time zone 'Asia/Seoul'
+        ),0)::bigint as commission
       from shorts_mvp.referral_commissions c
       join shorts_mvp.billing_orders o on o.id=c.billing_order_id
       where c.partner_id=${session.partnerId}
@@ -93,29 +101,70 @@ export default async function PartnerDashboardPage({ searchParams }: PageProps) 
     `,
     db`
       select
-        coalesce(sum(commission_amount_krw) filter (where available_at>now()),0)::bigint as pending,
-        coalesce(sum(commission_amount_krw) filter (where available_at<=now()),0)::bigint
+        coalesce(sum(greatest(
+          installment.commission_amount_krw-coalesce(allocated.amount_krw,0),
+          0
+        )) filter (
+          where installment.earned_at<=clock_timestamp()
+            and installment.available_at>clock_timestamp()
+        ),0)::bigint as pending,
+        coalesce(sum(greatest(
+          installment.commission_amount_krw-coalesce(allocated.amount_krw,0),
+          0
+        )) filter (
+          where installment.earned_at>clock_timestamp()
+        ),0)::bigint as future,
+        coalesce(sum(installment.commission_amount_krw) filter (
+          where installment.available_at<=clock_timestamp()
+        ),0)::bigint
           - coalesce((
             select sum(amount_krw) from shorts_mvp.referral_payouts
-            where partner_id=${session.partnerId} and status='paid'
+            where partner_id=${session.partnerId} and status in ('draft','paid')
           ),0)::bigint as available,
         coalesce((
           select sum(amount_krw) from shorts_mvp.referral_payouts
           where partner_id=${session.partnerId} and status='paid'
         ),0)::bigint as paid
-      from shorts_mvp.referral_commissions
-      where partner_id=${session.partnerId}
+      from shorts_mvp.referral_commission_installments installment
+      join shorts_mvp.referral_commissions commission
+        on commission.id=installment.commission_id
+      left join lateral (
+        select sum(item.amount_krw)::bigint as amount_krw
+        from shorts_mvp.referral_payout_items item
+        join shorts_mvp.referral_payouts payout on payout.id=item.payout_id
+        where item.installment_id=installment.id
+          and payout.status in ('draft','paid')
+      ) allocated on true
+      where commission.partner_id=${session.partnerId}
     `,
     db`
-      select c.id,c.gross_amount_krw,c.refunded_amount_krw,c.commission_amount_krw,
-        c.commission_rate_bps,c.available_at,o.product_code,o.approved_at,u.email
-      from shorts_mvp.referral_commissions c
-      join shorts_mvp.billing_orders o on o.id=c.billing_order_id
-      left join shorts_mvp.app_users u on u.id=c.user_id
-      where c.partner_id=${session.partnerId}
-        and o.approved_at>=${from}::date at time zone 'Asia/Seoul'
-        and o.approved_at<(${to}::date+1) at time zone 'Asia/Seoul'
-      order by o.approved_at desc
+      select installment.id,installment.installment_number,installment.installment_count,
+        installment.gross_amount_krw as installment_gross_amount_krw,
+        installment.recognized_amount_krw,installment.commission_amount_krw,
+        installment.earned_at,installment.available_at,
+        commission.gross_amount_krw,commission.refunded_amount_krw,
+        commission.commission_rate_bps,orders.product_code,orders.approved_at,account.email,
+        coalesce(allocation.draft_amount_krw,0)::bigint as draft_amount_krw,
+        coalesce(allocation.paid_amount_krw,0)::bigint as paid_amount_krw
+      from shorts_mvp.referral_commission_installments installment
+      join shorts_mvp.referral_commissions commission
+        on commission.id=installment.commission_id
+      join shorts_mvp.billing_orders orders on orders.id=commission.billing_order_id
+      left join shorts_mvp.app_users account on account.id=commission.user_id
+      left join lateral (
+        select
+          sum(item.amount_krw) filter (where payout.status='draft')::bigint
+            as draft_amount_krw,
+          sum(item.amount_krw) filter (where payout.status='paid')::bigint
+            as paid_amount_krw
+        from shorts_mvp.referral_payout_items item
+        join shorts_mvp.referral_payouts payout on payout.id=item.payout_id
+        where item.installment_id=installment.id
+      ) allocation on true
+      where commission.partner_id=${session.partnerId}
+        and installment.earned_at>=${from}::date at time zone 'Asia/Seoul'
+        and installment.earned_at<(${to}::date+1) at time zone 'Asia/Seoul'
+      order by installment.earned_at desc,orders.approved_at desc
       limit 200
     `,
     db`
@@ -163,6 +212,7 @@ export default async function PartnerDashboardPage({ searchParams }: PageProps) 
     netSalesKrw: Number(sales.netSales || 0),
     periodCommissionKrw: Number(sales.commission || 0),
     pendingKrw: Number(balance.pending || 0),
+    futureKrw: Number(balance.future || 0),
     availableKrw: Number(balance.available || 0),
     paidKrw: Number(balance.paid || 0),
   };
@@ -171,10 +221,17 @@ export default async function PartnerDashboardPage({ searchParams }: PageProps) 
     memberEmail: maskedReferralEmail(row.email),
     productCode: row.productCode,
     approvedAt: iso(row.approvedAt)!,
+    earnedAt: iso(row.earnedAt)!,
+    installmentNumber: Number(row.installmentNumber),
+    installmentCount: Number(row.installmentCount),
     grossAmountKrw: Number(row.grossAmountKrw),
     refundedAmountKrw: Number(row.refundedAmountKrw),
+    installmentGrossAmountKrw: Number(row.installmentGrossAmountKrw),
+    recognizedAmountKrw: Number(row.recognizedAmountKrw),
     commissionAmountKrw: Number(row.commissionAmountKrw),
     commissionRateBps: Number(row.commissionRateBps),
+    draftAmountKrw: Number(row.draftAmountKrw || 0),
+    paidAmountKrw: Number(row.paidAmountKrw || 0),
     availableAt: iso(row.availableAt)!,
     isAvailable: row.availableAt instanceof Date
       ? row.availableAt.getTime() <= Date.now()

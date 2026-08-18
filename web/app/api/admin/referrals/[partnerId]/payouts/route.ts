@@ -22,6 +22,9 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       requireAdminUser(),
       request.json().then((value) => payoutSchema.parse(value)),
     ]);
+    if (body.periodEnd < body.periodStart) {
+      throw new HttpError(400, "정산 종료일은 시작일보다 빠를 수 없습니다.", "INVALID_PAYOUT_PERIOD");
+    }
     const result = await getDb().begin(async (tx) => {
       const existing = await tx`
         select id,amount_krw,status from shorts_mvp.referral_payouts
@@ -40,22 +43,69 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       if (!partner.accountNumberCiphertext) {
         throw new HttpError(409, "파트너 정산 계좌가 등록되지 않았습니다.", "PAYOUT_PROFILE_REQUIRED");
       }
+      await tx`
+        select installment.id
+        from shorts_mvp.referral_commission_installments installment
+        join shorts_mvp.referral_commissions commission
+          on commission.id=installment.commission_id
+        where commission.partner_id=${partnerId}
+          and installment.available_at<=clock_timestamp()
+          and (installment.earned_at at time zone 'Asia/Seoul')::date
+            between ${body.periodStart}::date and ${body.periodEnd}::date
+        order by installment.earned_at,installment.id
+        for update of installment
+      `;
       const balanceRows = await tx`
+        with installment_allocations as (
+          select item.installment_id,sum(item.amount_krw)::bigint as amount_krw
+          from shorts_mvp.referral_payout_items item
+          join shorts_mvp.referral_payouts payout on payout.id=item.payout_id
+          where payout.status in ('draft','paid')
+          group by item.installment_id
+        )
         select
           coalesce((
-            select sum(c.commission_amount_krw)
-            from shorts_mvp.referral_commissions c
-            where c.partner_id=${partnerId} and c.available_at<=now()
+            select sum(greatest(
+              installment.commission_amount_krw-coalesce(allocation.amount_krw,0),
+              0
+            ))
+            from shorts_mvp.referral_commission_installments installment
+            join shorts_mvp.referral_commissions commission
+              on commission.id=installment.commission_id
+            left join installment_allocations allocation
+              on allocation.installment_id=installment.id
+            where commission.partner_id=${partnerId}
+              and installment.available_at<=clock_timestamp()
+              and (installment.earned_at at time zone 'Asia/Seoul')::date
+                between ${body.periodStart}::date and ${body.periodEnd}::date
+          ),0)::bigint as period_outstanding,
+          coalesce((
+            select sum(installment.commission_amount_krw)
+            from shorts_mvp.referral_commission_installments installment
+            join shorts_mvp.referral_commissions commission
+              on commission.id=installment.commission_id
+            where commission.partner_id=${partnerId}
+              and installment.available_at<=clock_timestamp()
           ),0)::bigint
           - coalesce((
-            select sum(p.amount_krw)
-            from shorts_mvp.referral_payouts p
-            where p.partner_id=${partnerId} and p.status in ('draft','paid')
-          ),0)::bigint as outstanding
+            select sum(payout.amount_krw)
+            from shorts_mvp.referral_payouts payout
+            where payout.partner_id=${partnerId}
+              and payout.status in ('draft','paid')
+          ),0)::bigint as global_outstanding
       `;
-      const outstanding = Number(balanceRows[0]?.outstanding || 0);
+      const periodOutstanding = Number(balanceRows[0]?.periodOutstanding || 0);
+      const globalOutstanding = Number(balanceRows[0]?.globalOutstanding || 0);
+      const outstanding = Math.min(
+        Math.max(0, periodOutstanding),
+        Math.max(0, globalOutstanding),
+      );
       if (outstanding <= 0) {
-        throw new HttpError(409, "현재 생성할 수 있는 정산 금액이 없습니다.", "NO_PAYOUT_BALANCE");
+        throw new HttpError(
+          409,
+          "선택한 기간에 현재 지급할 수 있는 월별 수익이 없습니다.",
+          "NO_PAYOUT_BALANCE",
+        );
       }
       const payouts = await tx`
         insert into shorts_mvp.referral_payouts (
@@ -74,6 +124,47 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         returning id,amount_krw,status
       `;
       await tx`
+        with candidates as (
+          select
+            installment.id,
+            installment.earned_at,
+            greatest(
+              installment.commission_amount_krw-coalesce((
+                select sum(item.amount_krw)
+                from shorts_mvp.referral_payout_items item
+                join shorts_mvp.referral_payouts active_payout
+                  on active_payout.id=item.payout_id
+                where item.installment_id=installment.id
+                  and active_payout.status in ('draft','paid')
+              ),0),
+              0
+            )::integer as remaining
+          from shorts_mvp.referral_commission_installments installment
+          join shorts_mvp.referral_commissions commission
+            on commission.id=installment.commission_id
+          where commission.partner_id=${partnerId}
+            and installment.available_at<=clock_timestamp()
+            and (installment.earned_at at time zone 'Asia/Seoul')::date
+              between ${body.periodStart}::date and ${body.periodEnd}::date
+        ), ranked as (
+          select *,coalesce(sum(remaining) over (
+            order by earned_at,id
+            rows between unbounded preceding and 1 preceding
+          ),0)::bigint as allocated_before
+          from candidates
+          where remaining>0
+        )
+        insert into shorts_mvp.referral_payout_items (
+          payout_id,installment_id,amount_krw
+        )
+        select
+          ${payouts[0].id},id,
+          least(remaining,greatest(${outstanding}-allocated_before,0))::integer
+        from ranked
+        where allocated_before<${outstanding}
+          and least(remaining,greatest(${outstanding}-allocated_before,0))>0
+      `;
+      await tx`
         insert into shorts_mvp.referral_partner_audit_logs (
           request_id,partner_id,actor_type,actor_admin_user_id,action,
           entity_type,entity_id,metadata
@@ -82,6 +173,8 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           'referral_payout',${payouts[0].id},
           ${tx.json({
             amountKrw: outstanding,
+            periodOutstandingKrw: periodOutstanding,
+            globalOutstandingKrw: globalOutstanding,
             periodStart: body.periodStart,
             periodEnd: body.periodEnd,
           })}
