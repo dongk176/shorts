@@ -703,20 +703,20 @@ def test_retryable_extractor_failure_rotates_inline_to_the_next_route(tmp_path) 
     )
 
 
-def test_inline_rotation_can_try_all_ten_configured_routes(tmp_path) -> None:
+def test_inline_rotation_can_try_all_twenty_configured_routes(tmp_path) -> None:
     worker = _worker(tmp_path, AssertionError("replaced below"))
-    worker.ingestion.configured_route_count = 10
+    worker.ingestion.configured_route_count = 20
     worker.ingestion.egress_class_for.return_value = "webshare_isp"
     successful_bundle = DownloadedAssetBundle(
         metadata=VideoMetadata("dQw4w9WgXcQ", "테스트 영상", "채널", "", 120),
         video_path=tmp_path / "source.mp4",
     )
     worker.ingestion.download_bundle.side_effect = [
-        *(BotCheckError("bot check") for _ in range(9)),
+        *(BotCheckError("bot check") for _ in range(19)),
         successful_bundle,
     ]
     worker.repository.rotate_ingestion_route.side_effect = [
-        f"webshare-{index:02d}" for index in range(2, 11)
+        f"webshare-{index:02d}" for index in range(2, 21)
     ]
 
     bundle, route_id = worker._download_with_inline_route_rotation(
@@ -728,14 +728,14 @@ def test_inline_rotation_can_try_all_ten_configured_routes(tmp_path) -> None:
     )
 
     assert bundle is successful_bundle
-    assert route_id == "webshare-10"
+    assert route_id == "webshare-20"
     assert [
         call.kwargs["route_id"]
         for call in worker.ingestion.download_bundle.call_args_list
-    ] == [f"webshare-{index:02d}" for index in range(1, 11)]
-    assert worker.repository.rotate_ingestion_route.call_count == 9
+    ] == [f"webshare-{index:02d}" for index in range(1, 21)]
+    assert worker.repository.rotate_ingestion_route.call_count == 19
     worker.repository.release_ingestion_route.assert_called_once_with(
-        "job-a", "webshare-10", result="success", cooldown_seconds=0
+        "job-a", "webshare-20", result="success", cooldown_seconds=0
     )
     worker.repository.retry_job.assert_not_called()
 
