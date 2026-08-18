@@ -24,7 +24,7 @@ from .errors import (
 from .schemas import MAX_CHANNEL_NAME_CHARS
 from .url_validation import validate_youtube_url
 
-MAX_ACQUISITION_ATTEMPTS = 10
+MAX_ACQUISITION_ATTEMPTS = 20
 MAX_RECORDED_FAILURE_REASONS = 10
 RETRY_DELAY_BASE_SECONDS = (5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0, 60.0)
 RETRY_DELAY_JITTER_RATIO = 0.2
@@ -850,7 +850,7 @@ class YtDlpIngestionProvider(IngestionProvider):
                     metadata=metadata,
                     path=path,
                     attempt_count=attempt,
-                    failed_attempt_count=len(failure_reasons),
+                    failed_attempt_count=attempt - 1,
                     failure_reasons=tuple(failure_reasons),
                 )
                 _log_ingestion_event(

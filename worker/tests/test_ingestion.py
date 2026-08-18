@@ -13,6 +13,7 @@ from shorts_worker.errors import (
     RetryExhaustedIngestionError,
 )
 from shorts_worker.ingestion import (
+    MAX_RECORDED_FAILURE_REASONS,
     RETRY_DELAY_BASE_SECONDS,
     VideoMetadata,
     YtDlpIngestionProvider,
@@ -483,7 +484,7 @@ def test_media_data_forbidden_with_content_restriction_remains_terminal(
     assert type(caught.value) is IngestionError
 
 
-def test_media_data_forbidden_retries_exactly_ten_times(
+def test_media_data_forbidden_retries_exactly_twenty_times(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.delenv("WARP_PROXY_URL", raising=False)
@@ -520,10 +521,10 @@ def test_media_data_forbidden_retries_exactly_ten_times(
             job_id="job-a",
         )
 
-    assert calls == 10
+    assert calls == 20
 
 
-def test_video_work_retries_at_most_ten_times_and_records_reasons(
+def test_video_work_retries_at_most_twenty_times_and_records_reasons(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
 ) -> None:
     provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
@@ -534,7 +535,7 @@ def test_video_work_retries_at_most_ten_times_and_records_reasons(
     def download_once(*_args, **_kwargs):
         nonlocal attempts
         attempts += 1
-        if attempts < 10:
+        if attempts < 20:
             raise RetryableIngestionError("connection reset")
         return VideoMetadata("dQw4w9WgXcQ", "title", "channel", "", 120), video_path
 
@@ -548,16 +549,16 @@ def test_video_work_retries_at_most_ten_times_and_records_reasons(
     )
 
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert attempts == 10
-    assert result.attempt_count == 10
-    assert result.failed_attempt_count == 9
-    assert len(result.failure_reasons) == 9
+    assert attempts == 20
+    assert result.attempt_count == 20
+    assert result.failed_attempt_count == 19
+    assert len(result.failure_reasons) == MAX_RECORDED_FAILURE_REASONS
     assert events[0]["asset"] == "video"
     assert events[0]["failure_reason"].endswith("connection reset")
     assert events[-1]["event"] == "ingestion_work_completed"
 
 
-def test_video_work_stops_after_tenth_temporary_failure(
+def test_video_work_stops_after_twentieth_temporary_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
@@ -578,7 +579,33 @@ def test_video_work_stops_after_tenth_temporary_failure(
             job_id="job-a",
         )
 
-    assert attempts == 10
+    assert attempts == 20
+
+
+def test_video_work_shares_twenty_attempt_budget_across_retryable_categories(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
+    attempts = 0
+
+    def download_once(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts % 2:
+            raise BotCheckError("HTTP Error 429: Too Many Requests")
+        raise RetryableIngestionError("proxy connection refused")
+
+    monkeypatch.setattr(provider, "_download_video_once", download_once)
+
+    with pytest.raises(RetryExhaustedIngestionError):
+        provider._download_video_work(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "dQw4w9WgXcQ",
+            tmp_path,
+            job_id="job-a",
+        )
+
+    assert attempts == 20
 
 
 def test_retry_delays_use_the_staged_schedule_with_twenty_percent_jitter(
@@ -606,7 +633,7 @@ def test_retry_delays_use_the_staged_schedule_with_twenty_percent_jitter(
     "message",
     ["Sign in to confirm you're not a bot", "HTTP Error 429: Too Many Requests"],
 )
-def test_video_work_retries_bot_checks_independently_until_tenth_attempt(
+def test_video_work_retries_bot_checks_until_twentieth_attempt(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, message: str
 ) -> None:
     provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
@@ -617,7 +644,7 @@ def test_video_work_retries_bot_checks_independently_until_tenth_attempt(
     def download_once(*_args, **_kwargs):
         nonlocal attempts
         attempts += 1
-        if attempts < 10:
+        if attempts < 20:
             raise BotCheckError(message)
         return VideoMetadata("dQw4w9WgXcQ", "title", "channel", "", 120), video_path
 
@@ -630,13 +657,13 @@ def test_video_work_retries_bot_checks_independently_until_tenth_attempt(
         job_id="job-a",
     )
 
-    assert attempts == 10
-    assert result.attempt_count == 10
-    assert result.failed_attempt_count == 9
+    assert attempts == 20
+    assert result.attempt_count == 20
+    assert result.failed_attempt_count == 19
     assert all(reason.startswith("BotCheckError:") for reason in result.failure_reasons)
 
 
-def test_video_work_fails_after_tenth_bot_check(
+def test_video_work_fails_after_twentieth_bot_check(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
 ) -> None:
     provider = YtDlpIngestionProvider(retry_backoff_seconds=0)
@@ -658,7 +685,7 @@ def test_video_work_fails_after_tenth_bot_check(
         )
 
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert attempts == 10
+    assert attempts == 20
     assert events[-1]["event"] == "ingestion_work_exhausted"
     assert events[-1]["error_type"] == "BotCheckError"
 
@@ -719,7 +746,7 @@ def test_multi_warp_routes_wait_for_cooldown_instead_of_failing(
     assert "127.0.0.1" not in events
 
 
-def test_multi_warp_video_keeps_ten_attempt_budget_across_cooldown_waits(
+def test_multi_warp_video_keeps_twenty_attempt_budget_across_cooldown_waits(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     routes = [
@@ -750,7 +777,7 @@ def test_multi_warp_video_keeps_ten_attempt_budget_across_cooldown_waits(
 
     def fake_run(args: list[str], **_kwargs):
         calls.append(args)
-        if len(calls) < 10:
+        if len(calls) < 20:
             return subprocess.CompletedProcess(
                 args=args,
                 returncode=1,
@@ -768,10 +795,10 @@ def test_multi_warp_video_keeps_ten_attempt_budget_across_cooldown_waits(
         job_id="job-a",
     )
 
-    assert len(calls) == 10
-    assert result.attempt_count == 10
-    assert result.failed_attempt_count == 9
-    assert waits == [pytest.approx(10), pytest.approx(10)]
+    assert len(calls) == 20
+    assert result.attempt_count == 20
+    assert result.failed_attempt_count == 19
+    assert waits == [pytest.approx(10)] * 4
 
 
 def test_centrally_assigned_webshare_route_uses_only_that_proxy(
