@@ -284,7 +284,8 @@ import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 import { currentClientLocale, localizeApiError, localizeAuthError } from "@/lib/i18n/errors";
 import { messagesByLocale } from "@/lib/i18n/messages";
 import { useI18n } from "@/lib/i18n/provider";
-import { localizedValue } from "@/lib/i18n/config";
+import { localizedValue, type SiteLocale } from "@/lib/i18n/config";
+import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
 import { homeAnalysisHeaderOffset } from "@/lib/home-analysis-scroll";
 import { publishUsageSnapshot } from "@/lib/usage-client";
 import {
@@ -577,14 +578,33 @@ const terminalStatuses = new Set(["completed", "failed", "expired", "deleted"]);
 const LOGIN_OVERLAY_DELAY_MS = 1_000;
 const PROJECT_REVEAL_STORAGE_PREFIX = "easycut:project-reveal:v1:";
 
-function formatDuration(seconds: number) {
+function formatDuration(seconds: number, locale: SiteLocale = "ko") {
   const value = Math.max(0, Math.round(seconds));
   const hours = Math.floor(value / 3600);
   const minutes = Math.floor((value % 3600) / 60);
   const rest = value % 60;
+  if (locale === "en") {
+    if (hours) return `${hours}h ${minutes}m`;
+    if (minutes) return `${minutes}m ${rest}s`;
+    return `${rest}s`;
+  }
+  if (locale === "ja") {
+    if (hours) return `${hours}時間 ${minutes}分`;
+    if (minutes) return `${minutes}分 ${rest}秒`;
+    return `${rest}秒`;
+  }
   if (hours) return `${hours}시간 ${minutes}분`;
   if (minutes) return `${minutes}분 ${rest}초`;
   return `${rest}초`;
+}
+
+function localizedProjectFailure(value: string, locale: SiteLocale) {
+  if (locale === "ko") return value;
+  const translated = translateLegacyText(value, locale);
+  if (!/[가-힣]/.test(translated)) return translated;
+  return locale === "en"
+    ? "This project could not be completed. Please try again."
+    : "プロジェクトを完了できませんでした。もう一度お試しください。";
 }
 
 function formatTimestamp(seconds: number) {
@@ -9621,7 +9641,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
           <div className="editor-header-project">
             <span className="editor-header-project-number">{projectNumber ? `프로젝트 #${projectNumber}` : "영상 편집"}</span>
             <div className="editor-header-title-row">
-              <h1>{projectLabel || "제목 없는 영상"}</h1>
+              <h1 data-i18n-skip={Boolean(projectLabel) || undefined}>{projectLabel || "제목 없는 영상"}</h1>
             </div>
           </div>
           <div className="editor-header-actions">
@@ -11688,6 +11708,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
 }
 
 function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = false }: { job: VideoJob; access: ProjectActionAccess; onBack: () => void; adminSubtitleLayoutEnabled?: boolean }) {
+  const { locale } = useI18n();
   const [playbackAssets, setPlaybackAssets] = useState<Record<string, {
     url: string;
     posterUrl: string | null;
@@ -11880,7 +11901,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
   if (!selected) {
     const projectExpired = isProjectExpired(job);
     const message = job.status === "failed" && job.errorMessage
-      ? job.errorMessage
+      ? localizedProjectFailure(job.errorMessage, locale)
       : !terminalStatuses.has(job.status)
         ? "쇼츠를 생성하고 있습니다. 완료되는 대로 이 화면에 표시됩니다."
         : projectExpired || job.status === "expired" || job.status === "deleted"
@@ -11908,7 +11929,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
   return (
     <div className="project-workspace">
       <header className="workspace-header">
-        <div className="min-w-0"><button data-project-guide="back" onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 프로젝트 /{job.projectNumber}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
+        <div className="min-w-0"><button data-project-guide="back" onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 프로젝트 /{job.projectNumber}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 data-i18n-skip className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
         <button data-project-guide="bulk-download" disabled={job.isExample || !downloadableItems.length} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={downloadAll} className="workspace-button workspace-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-40">{iosDownloadDevice ? "↓ 쇼츠별 다운로드 안내" : "↓ 모든 쇼츠 다운로드"}</button>
       </header>
       <ProjectActionGuide
@@ -11948,7 +11969,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
       />
       {job.status === "failed" && job.errorMessage && (
         <div role="alert" className="mx-4 mt-4 whitespace-pre-line rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm leading-6 text-red-200 sm:mx-6">
-          {job.errorMessage}
+          {localizedProjectFailure(job.errorMessage, locale)}
         </div>
       )}
       <main className="short-results-workspace">
@@ -11969,7 +11990,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
               <article key={item.id} className="short-result-card">
                 <div className="short-result-heading">
                   <span>#{index + 1}</span>
-                  <h2 className="min-w-0 flex-1">{item.hookTitle}</h2>
+                  <h2 data-i18n-skip className="min-w-0 flex-1">{item.hookTitle}</h2>
                   {item.viralScore != null && (
                     <span
                       className="viral-score-badge"
@@ -11983,7 +12004,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                   <div className="short-video-column">
                     <div className="short-video-shell">
                       {itemUrl ? <video key={shortPlaybackVersionKey(item)} src={itemUrl} poster={itemAsset?.posterUrl || undefined} controls={!itemIsRerendering} controlsList="nodownload" playsInline preload="metadata" onError={() => refreshPlaybackAccess(item)} className={itemIsRerendering ? "grayscale" : ""} /> : <div className="short-video-placeholder">영상 준비 중</div>}
-                      <span className="short-duration-badge">{formatDuration(item.durationSeconds)}</span>
+                      <span className="short-duration-badge">{formatDuration(item.durationSeconds, locale)}</span>
                       {itemIsRerendering && <EstimatedProcessingOverlay operationKey={`rerender:${item.id}:${item.renderVersion}`} durationSeconds={item.durationSeconds} rerender minimumProgress={item.rerenderProgress} />}
                     </div>
                     <div className="short-result-actions">
@@ -11995,7 +12016,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                             target="_blank"
                             rel="noopener noreferrer"
                             className="tool-button short-edit-button flex items-center justify-center"
-                            aria-label={`${item.hookTitle} 새 탭에서 편집하기`}
+                            aria-label={locale === "ko" ? `${item.hookTitle} 새 탭에서 편집하기` : locale === "en" ? `Edit ${item.hookTitle} in a new tab` : `${item.hookTitle}を新しいタブで編集`}
                             onClick={(event) => {
                               const draft = editorDraftsByShortId[item.id];
                               if (!draft) return;
@@ -12009,7 +12030,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                       {job.isExample || itemIsRerendering || item.status !== "ready"
                         ? <button disabled title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} className="tool-button short-download-button disabled:cursor-not-allowed disabled:opacity-40">↓ 다운로드</button>
                         : access.canDownload
-                          ? <a data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download={shortDownloadFilename(item.hookTitle)} className="tool-button short-download-button flex items-center justify-center" aria-label={`${item.hookTitle} 다운로드`}>↓ 다운로드</a>
+                          ? <a data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} href={`/api/shorts/${encodeURIComponent(item.id)}/download`} download={shortDownloadFilename(item.hookTitle)} className="tool-button short-download-button flex items-center justify-center" aria-label={locale === "ko" ? `${item.hookTitle} 다운로드` : locale === "en" ? `Download ${item.hookTitle}` : `${item.hookTitle}をダウンロード`}>↓ 다운로드</a>
                           : <button data-project-guide={item.id === guideDownloadShortId ? "download" : undefined} type="button" onClick={() => setDownloadPaywallOpen(true)} className="tool-button short-download-button">↓ 다운로드</button>}
                     </div>
                     {subtitleEditorUnavailable && (
@@ -12021,11 +12042,11 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                     )}
                   </div>
                   <div className="short-detail-column">
-                    <div className="short-highlight-note"><strong>✦ AI 하이라이트</strong><p>{item.highlightReason.trim()}</p></div>
+                    <div className="short-highlight-note"><strong>✦ AI 하이라이트</strong><p data-i18n-skip>{item.highlightReason.trim()}</p></div>
                     <div className="short-source-range"><span>원본 영상 타임라인</span><strong>◷ {formatTimestamp(item.startSeconds)} ~ {formatTimestamp(item.endSeconds)}</strong></div>
                     <section className="short-script-panel">
                       <h3>스크립트</h3>
-                      <p>{script}</p>
+                      <p data-i18n-skip>{script}</p>
                     </section>
                   </div>
                 </div>

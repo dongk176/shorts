@@ -15,6 +15,7 @@ import {
 } from "@/lib/creation-progress";
 import type { SiteLocale } from "@/lib/i18n/config";
 import { formatSeoulDate } from "@/lib/i18n/format";
+import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
 import { useI18n } from "@/lib/i18n/provider";
 
 const terminalStatuses = new Set(["completed", "failed", "expired", "deleted"]);
@@ -41,6 +42,15 @@ function formatDuration(seconds: number, locale: SiteLocale) {
 
 function isProjectExpired(job: VideoJob) {
   return Boolean(job.expiresAt && new Date(job.expiresAt).getTime() <= Date.now());
+}
+
+function localizedProjectErrorMessage(value: string, locale: SiteLocale) {
+  if (locale === "ko") return value;
+  const translated = translateLegacyText(value, locale);
+  if (!/[가-힣]/.test(translated)) return translated;
+  return locale === "en"
+    ? "This project could not be completed. Please try again."
+    : "プロジェクトを完了できませんでした。もう一度お試しください。";
 }
 
 function ProgressRing({ progress }: { progress: number }) {
@@ -197,7 +207,7 @@ export function ProjectCard({ job }: { job: VideoJob }) {
           {(!isProcessing || rerenderingShort) && <span>{locale === "ko" ? `쇼츠 ${readyCount || job.shorts.length}개` : locale === "en" ? `${readyCount || job.shorts.length} Shorts` : `ショート動画 ${readyCount || job.shorts.length}件`}</span>}
           <span>{formatSeoulDate(job.createdAt, locale)}</span>
         </div>
-        {job.status === "failed" && job.errorMessage && <p className="mt-3 line-clamp-3 whitespace-pre-line text-xs leading-5 text-red-300">{job.errorMessage}</p>}
+        {job.status === "failed" && job.errorMessage && <p className="mt-3 line-clamp-3 whitespace-pre-line text-xs leading-5 text-red-300">{localizedProjectErrorMessage(job.errorMessage, locale)}</p>}
       </div>
     </Link>
   );

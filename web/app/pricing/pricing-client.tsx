@@ -860,9 +860,11 @@ export function PricingClient({
                   </div>
                   <h3>{product.displayName}</h3>
                   <div className={styles.activeProductBenefit}>
-                    <strong>
-                      매월 {priceFormatter.format(Math.floor(product.monthlySourceSeconds / 60))}분
-                    </strong>
+                    <strong>{locale === "ko"
+                      ? `매월 ${priceFormatter.format(Math.floor(product.monthlySourceSeconds / 60))}분`
+                      : locale === "en"
+                        ? `${priceFormatter.format(Math.floor(product.monthlySourceSeconds / 60))} min/month`
+                        : `毎月${priceFormatter.format(Math.floor(product.monthlySourceSeconds / 60))}分`}</strong>
                     <span>원본 영상 처리</span>
                   </div>
                   <p>{scheduleLabel}</p>

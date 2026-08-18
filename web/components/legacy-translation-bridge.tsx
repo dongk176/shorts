@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect } from "react";
-import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
+import { translateLegacyDocumentTitle, translateLegacyText } from "@/lib/i18n/legacy-phrases";
 import type { SiteLocale } from "@/lib/i18n/config";
 
-const translatedAttributes = ["aria-label", "placeholder", "title", "alt"] as const;
+const translatedAttributes = ["aria-label", "placeholder", "title", "alt", "data-tooltip"] as const;
 
 function shouldSkip(node: Node) {
   const element = node.nodeType === Node.ELEMENT_NODE
@@ -51,7 +51,11 @@ export function LegacyTranslationBridge({ locale }: { locale: SiteLocale }) {
   useEffect(() => {
     if (locale === "ko") return;
     translateTree(document.body, locale);
-    document.title = translateLegacyText(document.title, locale);
+    const translateTitle = () => {
+      const translated = translateLegacyDocumentTitle(document.title, locale);
+      if (translated !== document.title) document.title = translated;
+    };
+    translateTitle();
     const observer = new MutationObserver((mutations) => {
       // The locale picker updates <html lang> before router.refresh(). Ignore
       // mutations queued for the previous locale so they cannot overwrite the
@@ -63,7 +67,12 @@ export function LegacyTranslationBridge({ locale }: { locale: SiteLocale }) {
       }
     });
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-    return () => observer.disconnect();
+    const titleObserver = new MutationObserver(translateTitle);
+    titleObserver.observe(document.head, { childList: true, subtree: true, characterData: true });
+    return () => {
+      observer.disconnect();
+      titleObserver.disconnect();
+    };
   }, [locale]);
 
   return null;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { translateLegacyText } from "./legacy-phrases";
+import { translateLegacyDocumentTitle, translateLegacyText } from "./legacy-phrases";
 
 describe("legacy UI translations", () => {
   it("translates representative customer-facing controls in English and Japanese", () => {
@@ -46,6 +46,18 @@ describe("legacy UI translations", () => {
     expect(translateLegacyText("쇼츠가 정상적으로 생성되지 못했습니다. 사용량은 다시 복구되었습니다. 다시 시도해주세요.", "en")).toBe(
       "Shorts could not be created. Your usage was restored. Please try again.",
     );
+    expect(translateLegacyText("프로젝트 #4835", "en")).toBe("Project #4835");
+    expect(translateLegacyText("← 프로젝트 /4835", "ja")).toBe("← プロジェクト /4835");
+    expect(translateLegacyText("쇼츠 4개", "en")).toBe("4 Shorts");
+    expect(translateLegacyText("바이럴 점수 97/100", "ja")).toBe("バイラルスコア 97/100");
+    expect(translateLegacyText("1분 1초", "en")).toBe("1m 1s");
+    expect(translateLegacyText("영상 조각 1 선택", "en")).toBe("Select video clip 1");
+    expect(translateLegacyText("완성된 쇼츠를 내 스타일로 다듬어 보세요", "en")).toBe(
+      "Customize your finished Short",
+    );
+    expect(translateLegacyText("왼쪽 메뉴에서 모양을 조정하세요", "ja")).toBe(
+      "左側のメニューで見た目を調整",
+    );
   });
 
   it("does not translate arbitrary Korean content or source-video metadata", () => {
@@ -54,5 +66,11 @@ describe("legacy UI translations", () => {
     expect(translateLegacyText(videoTitle, "en")).toBe(videoTitle);
     expect(translateLegacyText(channelName, "ja")).toBe(channelName);
     expect(translateLegacyText(`${videoTitle} 다운로드`, "en")).toBe(`${videoTitle} Download`);
+  });
+
+  it("switches a known page title directly between non-Korean locales", () => {
+    expect(translateLegacyDocumentTitle("AIショート動画の料金・プラン | Easy Cut", "en")).toBe(
+      "AI Shorts Pricing & Plans | Easy Cut",
+    );
   });
 });

@@ -405,6 +405,8 @@ const phrases: readonly Phrase[] = [
   ["내 결제·사용 내역", "My payments & usage", "決済・利用履歴"],
   ["내 결제 내역", "Payment history", "決済履歴"],
   ["내 사용 내역", "Usage history", "利用履歴"],
+  ["결제, 환불, 시간 지급과 작업별 사용·복구 기록을 확인할 수 있습니다.", "Review payments, refunds, time grants, and usage or restoration records for each job.", "決済、返金、時間付与、処理ごとの利用・復元履歴を確認できます。"],
+  ["Easy Cut 계정 활동 내역", "Easy Cut account activity", "Easy Cutアカウント履歴"],
   ["결제 방식", "Payment method", "支払い方法"],
   ["일시불", "One-time payment", "一括払い"],
   ["이번 달 무이자 혜택 보기", "View this month's interest-free offers", "今月の無利息特典を見る"],
@@ -657,6 +659,55 @@ const phrases: readonly Phrase[] = [
   ["프로젝트 계속 보기", "Continue to project", "プロジェクトを続ける"],
   ["편집 가이드 닫기", "Close editing guide", "編集ガイドを閉じる"],
   ["프로젝트 가이드 닫기", "Close project guide", "プロジェクトガイドを閉じる"],
+  ["쇼츠 편집", "Shorts editing", "ショート動画編集"],
+  ["완성된 쇼츠를 내 스타일로 다듬어 보세요", "Customize your finished Short", "完成したショート動画を自分らしく仕上げましょう"],
+  ["‘편집하기’를 누르면 새 탭에서 제목, 자막, 템플릿과 영상 구간을 조정한 뒤 다시 렌더링할 수 있어요.", "Select Edit to adjust the title, captions, template, and video range in a new tab, then render it again.", "「編集」を選ぶと、新しいタブでタイトル、字幕、テンプレート、動画範囲を調整して再レンダリングできます。"],
+  ["개별 저장", "Save individually", "個別保存"],
+  ["필요한 쇼츠만 바로 다운로드하세요", "Download only the Shorts you need", "必要なショート動画だけをダウンロード"],
+  ["각 쇼츠 아래의 ‘다운로드’를 누르면 해당 영상 하나만 기기에 저장할 수 있어요.", "Select Download below a Short to save only that video to your device.", "各ショート動画の下にある「ダウンロード」を選ぶと、その動画だけを端末に保存できます。"],
+  ["한 번에 저장", "Save all at once", "まとめて保存"],
+  ["완성된 쇼츠를 한꺼번에 받을 수 있어요", "Download all finished Shorts at once", "完成したショート動画をまとめてダウンロード"],
+  ["상단 버튼으로 다운로드 가능한 쇼츠를 모두 저장하세요. 기기에서 여러 파일 저장을 제한하면 쇼츠별 다운로드 방법을 안내해 드려요.", "Use the top button to save every available Short. If your device limits multiple downloads, we'll show you how to download each one.", "上部のボタンでダウンロード可能なショート動画をすべて保存できます。端末で複数ファイルの保存が制限されている場合は、個別のダウンロード方法をご案内します。"],
+  ["다른 프로젝트로 돌아갈 수 있어요", "Return to another project", "別のプロジェクトに戻れます"],
+  ["왼쪽 위 프로젝트 경로를 누르면 지금까지 만든 프로젝트 목록으로 돌아갑니다.", "Select the project path at the top left to return to your project list.", "左上のプロジェクトパスを選ぶと、これまでに作成したプロジェクト一覧に戻ります。"],
+  ["프로젝트 가이드 완료", "Project guide complete", "プロジェクトガイド完了"],
+  ["이제 완성된 쇼츠를 활용해 보세요", "Your finished Shorts are ready to use", "完成したショート動画を活用しましょう"],
+  ["확인을 누르면 다음 프로젝트에서도 가이드를 다시 볼 수 있어요. 더 이상 필요하지 않다면 다시 보지 않기를 선택해 주세요.", "Select Confirm to see this guide again on your next project, or choose Don't show again if you no longer need it.", "「確認」を選ぶと次のプロジェクトでもガイドを表示できます。不要な場合は「今後表示しない」を選んでください。"],
+  ["스타일 설정", "Style settings", "スタイル設定"],
+  ["왼쪽 메뉴에서 모양을 조정하세요", "Adjust the look from the left menu", "左側のメニューで見た目を調整"],
+  ["왼쪽 도구 모음에서 원하는 설정을 하나 골라 세부 사이드바를 열고, 글꼴과 색상·배경·템플릿을 한곳에서 조정하세요.", "Choose a setting from the left toolbar, then adjust fonts, colors, backgrounds, and templates in the detail panel.", "左側のツールバーから設定を選び、詳細パネルでフォント、色、背景、テンプレートを調整できます。"],
+  ["오버레이 추가", "Add overlays", "オーバーレイ追加"],
+  ["댓글과 텍스트를 추가하세요", "Add comments and text", "コメントとテキストを追加"],
+  ["‘+ 댓글’은 새 댓글 오버레이를, ‘+ 텍스트’는 자유롭게 꾸밀 수 있는 문구를 영상 위에 추가합니다.", "Use + Comment to add a comment overlay, or + Text to add freely styled text over the video.", "「+ コメント」でコメントを、「+ テキスト」で自由に装飾できる文言を動画上に追加します。"],
+  ["직접 편집", "Edit directly", "直接編集"],
+  ["화면에서 요소를 바로 선택하세요", "Select elements directly on the canvas", "画面上で要素を直接選択"],
+  ["미리보기의 영상과 오버레이를 클릭해 선택하고 끌어서 옮기세요. 제목과 추가 텍스트는 더블클릭하면 바로 수정할 수 있어요.", "Select and drag the video or overlays in the preview. Double-click titles and added text to edit them directly.", "プレビュー内の動画やオーバーレイを選択してドラッグできます。タイトルと追加テキストはダブルクリックで直接編集できます。"],
+  ["아래에서 영상과 오버레이 길이를 맞추세요", "Adjust video and overlay timing below", "下で動画とオーバーレイの長さを調整"],
+  ["영상 조각과 댓글·추가 텍스트의 바를 선택하세요. 바를 끌어 옮기고 양끝 핸들로 노출 구간을 조정할 수 있어요.", "Select a video clip, comment, or text bar. Drag the bar to move it, or use the end handles to adjust its display range.", "動画クリップ、コメント、追加テキストのバーを選択します。バーをドラッグして移動し、両端のハンドルで表示範囲を調整できます。"],
+  ["영상 분할", "Split video", "動画を分割"],
+  ["필요한 지점에서 영상을 나누세요", "Split the video where needed", "必要な位置で動画を分割"],
+  ["재생 위치에서 ‘분할’을 누르면 영상이 두 조각으로 나뉩니다. 필요 없는 조각을 선택해 따로 삭제할 수 있어요.", "Select Split at the playhead to divide the video into two clips. You can select and delete any clip you do not need.", "再生位置で「分割」を選ぶと動画が2つに分かれます。不要なクリップは個別に選択して削除できます。"],
+  ["편집 기록", "Edit history", "編集履歴"],
+  ["실수해도 바로 되돌릴 수 있어요", "Undo mistakes instantly", "操作をすぐに元に戻せます"],
+  ["상단 버튼이나 ⌘Z·Ctrl+Z로 되돌리고, Shift를 함께 누르면 앞으로 갈 수 있어요.", "Use the top buttons or ⌘Z/Ctrl+Z to undo. Add Shift to redo.", "上部のボタンまたは⌘Z・Ctrl+Zで元に戻し、Shiftを加えるとやり直せます。"],
+  ["편집 저장", "Save edits", "編集を保存"],
+  ["편집이 끝나면 여기서 저장하세요", "Save here when you're done", "編集が終わったらここで保存"],
+  ["‘영상에 적용’을 누르면 편집한 내용으로 재렌더링이 시작됩니다. 완료되면 프로젝트에서 새 영상을 확인하고 다운로드할 수 있어요.", "Select Apply to video to render your edits. When it finishes, you can review and download the new video from the project.", "「動画に適用」を選ぶと編集内容で再レンダリングが始まります。完了後、プロジェクトで新しい動画を確認してダウンロードできます。"],
+  ["편집 가이드 완료", "Editing guide complete", "編集ガイド完了"],
+  ["이제 직접 편집해 보세요", "You're ready to edit", "編集を始めましょう"],
+  ["왼쪽에서 스타일을 고르고, 화면에서 요소를 편집하고, 아래 타임라인에서 시간을 다듬으면 됩니다.", "Choose a style on the left, edit elements on the canvas, and fine-tune timing in the timeline below.", "左側でスタイルを選び、画面上で要素を編集し、下のタイムラインで時間を調整できます。"],
+  ["자동 저장", "Autosave", "自動保存"],
+  ["분할", "Split", "分割"],
+  ["후킹 제목", "Hook title", "フックタイトル"],
+  ["제목 오버레이 선택 및 세로 이동", "Select and move title overlay vertically", "タイトルオーバーレイを選択して上下に移動"],
+  ["채널명 오버레이 선택 및 이동", "Select and move channel-name overlay", "チャンネル名オーバーレイを選択して移動"],
+  ["미리보기 재생 및 화면 제어", "Preview playback and display controls", "プレビュー再生と画面操作"],
+  ["미리보기 재생 시간", "Preview playback time", "プレビュー再生時間"],
+  ["미리보기 빠른 편집", "Quick preview editing", "プレビューのクイック編集"],
+  ["영상 자르기", "Trim video", "動画をトリミング"],
+  ["오버레이 확대", "Overlay zoom", "オーバーレイ拡大"],
+  ["오버레이 축소", "Zoom overlay out", "オーバーレイを縮小"],
+  ["오버레이 확대 비율", "Overlay zoom level", "オーバーレイ拡大率"],
   ["매우 만족", "Very satisfied", "とても満足"],
   ["매우 불만족", "Very dissatisfied", "とても不満"],
   ["보내는 중...", "Sending...", "送信中..."],
@@ -964,6 +1015,43 @@ function withOriginalWhitespace(original: string, translated: string) {
 function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) {
   const trimmed = value.trim();
   const translateKnown = (source: string) => phraseMaps[locale].get(source) || source;
+  const projectNumberMatch = /^프로젝트 #(\d+)$/.exec(trimmed);
+  if (projectNumberMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `Project #${projectNumberMatch[1]}`
+      : `プロジェクト #${projectNumberMatch[1]}`);
+  }
+  const projectPathMatch = /^← 프로젝트 \/(\d+)$/.exec(trimmed);
+  if (projectPathMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `← Project /${projectPathMatch[1]}`
+      : `← プロジェクト /${projectPathMatch[1]}`);
+  }
+  const shortsCountMatch = /^쇼츠 (\d+)개$/.exec(trimmed);
+  if (shortsCountMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `${shortsCountMatch[1]} Shorts`
+      : `ショート動画 ${shortsCountMatch[1]}件`);
+  }
+  const viralScoreMatch = /^바이럴 점수 (\d+)\/100$/.exec(trimmed);
+  if (viralScoreMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `Viral score ${viralScoreMatch[1]}/100`
+      : `バイラルスコア ${viralScoreMatch[1]}/100`);
+  }
+  const durationMatch = /^(?:(\d+)시간 )?(?:(\d+)분 )?(\d+)초$/.exec(trimmed);
+  if (durationMatch) {
+    const parts = locale === "en"
+      ? [durationMatch[1] && `${durationMatch[1]}h`, durationMatch[2] && `${durationMatch[2]}m`, `${durationMatch[3]}s`]
+      : [durationMatch[1] && `${durationMatch[1]}時間`, durationMatch[2] && `${durationMatch[2]}分`, `${durationMatch[3]}秒`];
+    return withOriginalWhitespace(value, parts.filter(Boolean).join(" "));
+  }
+  const videoClipMatch = /^영상 조각 (\d+) 선택$/.exec(trimmed);
+  if (videoClipMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `Select video clip ${videoClipMatch[1]}`
+      : `動画クリップ${videoClipMatch[1]}を選択`);
+  }
   const guidebookPageMatch = /^(.+) 가이드북 (\d+)페이지$/.exec(trimmed);
   if (guidebookPageMatch) {
     return withOriginalWhitespace(value, locale === "en"
@@ -1162,6 +1250,14 @@ export function translateLegacyText(value: string, locale: SiteLocale) {
   const exact = phraseMaps[locale].get(value.trim());
   if (exact) return withOriginalWhitespace(value, exact);
   return translateDynamicText(value, locale) || value;
+}
+
+export function translateLegacyDocumentTitle(value: string, locale: SiteLocale) {
+  if (locale === "ko") return value;
+  const trimmed = value.trim();
+  const phrase = phrases.find(([ko, en, ja]) => trimmed === ko || trimmed === en || trimmed === ja);
+  if (!phrase) return translateLegacyText(value, locale);
+  return withOriginalWhitespace(value, locale === "en" ? phrase[1] : phrase[2]);
 }
 
 export function hasLegacyPhrase(locale: Exclude<SiteLocale, "ko">, source: string) {
