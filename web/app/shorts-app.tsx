@@ -74,6 +74,7 @@ import {
 } from "@/lib/editor-caption-preview";
 import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
+import { isConversionMaintenanceActive } from "@/lib/conversion-maintenance";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
 import {
   adjustTimedRange,
@@ -12359,6 +12360,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [sourceRangeGuideComplete, setSourceRangeGuideComplete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conversionMaintenanceOpen, setConversionMaintenanceOpen] = useState(false);
   const pollStarted = useRef(0);
   const loginOpenTimer = useRef<number | null>(null);
   const stateLoadInFlight = useRef<Promise<void> | null>(null);
@@ -12423,6 +12425,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const closeShortsEventParticipation = useCallback(() => {
     setShortsEventParticipationOpen(false);
   }, []);
+  const closeConversionMaintenance = useCallback(() => {
+    setConversionMaintenanceOpen(false);
+  }, []);
   const openLoginAfterDelay = useCallback((next: string) => {
     if (loginOpenTimer.current !== null) return;
     setLoginNext(next);
@@ -12439,6 +12444,12 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       window.clearTimeout(loginOpenTimer.current);
     }
   }, []);
+
+  useEffect(() => {
+    if (!conversionMaintenanceOpen) return;
+    const timer = window.setTimeout(closeConversionMaintenance, 3_200);
+    return () => window.clearTimeout(timer);
+  }, [closeConversionMaintenance, conversionMaintenanceOpen]);
 
   useEffect(() => {
     if (!subtitleTemplateSelectionEnabled) {
@@ -12721,6 +12732,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
 
   const analyze = async (event: FormEvent) => {
     event.preventDefault();
+    if (isConversionMaintenanceActive()) {
+      setConversionMaintenanceOpen(true);
+      return;
+    }
     setError(null);
     setRightsConfirmed(false);
     setRightsConfirmationAttention(false);
@@ -12883,6 +12898,14 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         open={shortsEventParticipationOpen}
         grantedSeconds={shortsEventGrantedSeconds}
         onClose={closeShortsEventParticipation}
+      />
+      <NoticeDialog
+        open={conversionMaintenanceOpen}
+        dialogId="conversion-maintenance"
+        title="서비스 점검 중입니다"
+        description="더 안정적인 서비스를 위해 잠시 점검하고 있어요. 오후 12:40부터 다시 이용할 수 있습니다."
+        variant="info"
+        onClose={closeConversionMaintenance}
       />
       <NoticeDialog
         open={creationRestrictionOpen && Boolean(creationRestrictionReason)}
