@@ -11929,7 +11929,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
   return (
     <div className="project-workspace">
       <header className="workspace-header">
-        <div className="min-w-0"><button data-project-guide="back" onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">← 프로젝트 /{job.projectNumber}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 data-i18n-skip className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">쇼츠 {job.shorts.length}개</span></div></div>
+        <div className="min-w-0"><button data-project-guide="back" onClick={onBack} className="text-xs font-semibold text-neutral-400 hover:text-white">{locale === "ko" ? `← 프로젝트 /${job.projectNumber}` : locale === "en" ? `← Project /${job.projectNumber}` : `← プロジェクト /${job.projectNumber}`}</button><div className="mt-1 flex min-w-0 items-center gap-3"><h1 data-i18n-skip className="truncate text-base font-bold">{job.videoTitle}</h1>{job.isExample && <span className="shrink-0 rounded bg-red-500/15 px-2 py-1 text-[11px] font-extrabold text-red-300">예시 작업 · 읽기 전용</span>}<span className="shrink-0 text-xs text-neutral-500">{locale === "ko" ? `쇼츠 ${job.shorts.length}개` : locale === "en" ? `${job.shorts.length} Shorts` : `ショート動画 ${job.shorts.length}件`}</span></div></div>
         <button data-project-guide="bulk-download" disabled={job.isExample || !downloadableItems.length} title={job.isExample ? "예시 작업은 다운로드할 수 없습니다." : undefined} onClick={downloadAll} className="workspace-button workspace-button-primary shrink-0 disabled:cursor-not-allowed disabled:opacity-40">{iosDownloadDevice ? "↓ 쇼츠별 다운로드 안내" : "↓ 모든 쇼츠 다운로드"}</button>
       </header>
       <ProjectActionGuide
@@ -11996,7 +11996,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                       className="viral-score-badge"
                       title="대본을 바탕으로 AI가 예측한 점수입니다"
                     >
-                      바이럴 점수 {item.viralScore}/100
+                      {locale === "ko" ? `바이럴 점수 ${item.viralScore}/100` : locale === "en" ? `Viral score ${item.viralScore}/100` : `バイラルスコア ${item.viralScore}/100`}
                     </span>
                   )}
                 </div>

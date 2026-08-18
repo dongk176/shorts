@@ -72,5 +72,8 @@ describe("legacy UI translations", () => {
     expect(translateLegacyDocumentTitle("AIショート動画の料金・プラン | Easy Cut", "en")).toBe(
       "AI Shorts Pricing & Plans | Easy Cut",
     );
+    expect(translateLegacyDocumentTitle("내 결제·사용 내역 | 이지컷", "en")).toBe(
+      "My payments & usage | Easy Cut",
+    );
   });
 });

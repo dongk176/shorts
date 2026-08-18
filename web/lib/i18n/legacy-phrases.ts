@@ -403,6 +403,7 @@ const phrases: readonly Phrase[] = [
   ["다시 시도", "Try again", "もう一度試す"],
   ["내 사용내역 보기", "View my activity", "利用履歴を見る"],
   ["내 결제·사용 내역", "My payments & usage", "決済・利用履歴"],
+  ["내 결제·사용 내역 | 이지컷", "My payments & usage | Easy Cut", "決済・利用履歴 | Easy Cut"],
   ["내 결제 내역", "Payment history", "決済履歴"],
   ["내 사용 내역", "Usage history", "利用履歴"],
   ["결제, 환불, 시간 지급과 작업별 사용·복구 기록을 확인할 수 있습니다.", "Review payments, refunds, time grants, and usage or restoration records for each job.", "決済、返金、時間付与、処理ごとの利用・復元履歴を確認できます。"],

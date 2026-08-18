@@ -91,6 +91,12 @@ function localizedProductName(value: unknown, locale: SiteLocale) {
   if (locale === "ko") return source;
   const translated = translateLegacyText(source, locale);
   if (translated !== source) return translated;
+  const earlyBirdMatch = /^(Easy Cut )?얼리버드 추가 ([\d,]+)분$/.exec(source);
+  if (earlyBirdMatch) {
+    return locale === "en"
+      ? `Easy Cut early-bird additional time · ${earlyBirdMatch[2]} min`
+      : `Easy Cut 早割追加時間・${earlyBirdMatch[2]}分`;
+  }
   const match = /^(Easy Cut )?(스타터|전문가) 패키지 (\d+)개월$/.exec(source);
   if (!match) return source;
   const tier = match[2] === "스타터"
