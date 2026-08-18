@@ -19,6 +19,33 @@ describe("legacy UI translations", () => {
     );
     expect(translateLegacyText("유튜브 링크 입력", "en")).toBe("Paste a YouTube link");
     expect(translateLegacyText("다시 결제하기", "ja")).toBe("もう一度支払う");
+    expect(translateLegacyText("쇼츠 수익화 7가지 방법 다운로드", "en")).toBe(
+      "7 ways to monetize Shorts Download",
+    );
+    expect(translateLegacyText("쇼츠 수익화 7가지 방법 표지", "ja")).toBe(
+      "ショート動画を収益化する7つの方法 表紙",
+    );
+    expect(translateLegacyText("다크 자주 쓰는 템플릿에서 해제", "en")).toBe(
+      "Dark Remove from favorites",
+    );
+    expect(translateLegacyText("어떤 영상을 쇼츠로 만들어야 할까? 가이드북 3페이지", "en")).toBe(
+      "Which videos should you turn into Shorts? guidebook · Page 3",
+    );
+    expect(translateLegacyText("이 전자책을 2번 더 다운로드할 수 있습니다.", "ja")).toBe(
+      "この電子書籍はあと2回ダウンロードできます。",
+    );
+    expect(translateLegacyText("1~3페이지 미리보기 · 전체 36페이지", "en")).toBe(
+      "Preview pages 1–3 · 36 pages total",
+    );
+    expect(translateLegacyText("원본 영상 처리", "en")).toBe("Source-video processing");
+    expect(translateLegacyText("10분 영상 기준", "ja")).toBe("10分動画基準");
+    expect(translateLegacyText(" · 원본 영상 처리", "en")).toBe(" · Source-video processing");
+    expect(translateLegacyText(" · 10분 영상 기준", "en")).toBe(" · Based on a 10-minute video");
+    expect(translateLegacyText("AI 쇼츠 제작 자주 묻는 질문", "en")).toBe("AI Shorts FAQ");
+    expect(translateLegacyText("이지컷·알파컷·피카클립", "ja")).toBe("Easy Cut・AlphaCut・FikaClip");
+    expect(translateLegacyText("쇼츠가 정상적으로 생성되지 못했습니다. 사용량은 다시 복구되었습니다. 다시 시도해주세요.", "en")).toBe(
+      "Shorts could not be created. Your usage was restored. Please try again.",
+    );
   });
 
   it("does not translate arbitrary Korean content or source-video metadata", () => {
@@ -26,5 +53,6 @@ describe("legacy UI translations", () => {
     const channelName = "동민의 영상 채널";
     expect(translateLegacyText(videoTitle, "en")).toBe(videoTitle);
     expect(translateLegacyText(channelName, "ja")).toBe(channelName);
+    expect(translateLegacyText(`${videoTitle} 다운로드`, "en")).toBe(`${videoTitle} Download`);
   });
 });

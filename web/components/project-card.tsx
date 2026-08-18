@@ -191,7 +191,7 @@ export function ProjectCard({ job }: { job: VideoJob }) {
           : <EstimatedProcessingOverlay operationKey={`create:${job.id}`} durationSeconds={job.sourceDurationSeconds} createdAt={job.createdAt} job={job} />)}
       </div>
       <div className="p-4">
-        <h3 className="line-clamp-1 text-sm font-bold text-white">{job.videoTitle}</h3>
+        <h3 data-i18n-skip className="line-clamp-1 text-sm font-bold text-white">{job.videoTitle}</h3>
         <div className="mt-3 flex items-center justify-between text-xs text-neutral-500">
           <span className={projectExpired ? "text-neutral-500" : rerenderingShort ? "text-violet-300" : job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-neutral-400"}>{projectExpired ? `● ${locale === "ko" ? "만료됨" : locale === "en" ? "Expired" : "期限切れ"}` : rerenderingShort ? `● ${locale === "ko" ? "수정 반영 중" : locale === "en" ? "Applying edits" : "編集を反映中"}` : job.status === "completed" ? `● ${locale === "ko" ? "완료" : locale === "en" ? "Complete" : "完了"}` : job.status === "failed" ? `● ${locale === "ko" ? "생성 실패" : locale === "en" ? "Creation failed" : "作成に失敗"}` : job.status === "retry_waiting" ? `● ${locale === "ko" ? "원본 영상을 준비하고 있습니다" : locale === "en" ? "Preparing source video" : "元動画を準備中"}` : `● ${processingLabel(job, locale)}`}</span>
           {(!isProcessing || rerenderingShort) && <span>{locale === "ko" ? `쇼츠 ${readyCount || job.shorts.length}개` : locale === "en" ? `${readyCount || job.shorts.length} Shorts` : `ショート動画 ${readyCount || job.shorts.length}件`}</span>}

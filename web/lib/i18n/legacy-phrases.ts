@@ -12,6 +12,11 @@ const phrases: readonly Phrase[] = [
   ["AI 쇼츠 제작 자주 묻는 질문 | 이지컷", "AI Shorts FAQ | Easy Cut", "AIショート動画作成 よくある質問 | Easy Cut"],
   ["AI 쇼츠 만들기: 유튜브 영상으로 쇼츠 자동 제작 | 이지컷", "Create AI Shorts from YouTube Videos | Easy Cut", "YouTube動画からAIショート動画を自動作成 | Easy Cut"],
   ["AI 쇼츠 제작 툴 비교: 이지컷·알파컷·피카클립", "AI Shorts Tool Comparison: Easy Cut, AlphaCut & FikaClip", "AIショート動画ツール比較：Easy Cut・AlphaCut・FikaClip"],
+  ["어떤 영상을 쇼츠로 만들어야 할까? | 이지컷 가이드북", "Which Videos Should You Turn into Shorts? | Easy Cut Guidebook", "どんな動画をショート動画にするべき？ | Easy Cutガイドブック"],
+  ["유료서비스 구매약관 | Easy Cut", "Purchase Terms | Easy Cut", "有料サービス購入規約 | Easy Cut"],
+  ["EASYCUT PRIVATE | 이지컷", "EASYCUT PRIVATE | Easy Cut", "EASYCUT PRIVATE | Easy Cut"],
+  ["레퍼럴 파트너 운영 약관 | 이지컷", "Referral Partner Terms | Easy Cut", "紹介パートナー運営規約 | Easy Cut"],
+  ["결제 실패 | 이지컷", "Payment Failed | Easy Cut", "決済失敗 | Easy Cut"],
   ["이용약관 | 이지컷", "Terms of Service | Easy Cut", "利用規約 | Easy Cut"],
   ["개인정보처리방침 | 이지컷", "Privacy Policy | Easy Cut", "プライバシーポリシー | Easy Cut"],
   ["취소 및 환불 정책 | 이지컷", "Cancellation & Refund Policy | Easy Cut", "キャンセル・返金ポリシー | Easy Cut"],
@@ -419,12 +424,16 @@ const phrases: readonly Phrase[] = [
   ["로그인 후 자주 쓰는 템플릿을 저장할 수 있습니다.", "Sign in to save favorite templates.", "ログインするとお気に入りのテンプレートを保存できます。"],
   ["댓글 캡처", "Comment capture", "コメントキャプチャー"],
   ["다크 레드", "Dark red", "ダークレッド"],
+  ["다크", "Dark", "ダーク"],
   ["화이트 옐로", "White yellow", "ホワイトイエロー"],
+  ["화이트", "White", "ホワイト"],
   ["다크 미니멀", "Dark minimal", "ダークミニマル"],
   ["페이퍼", "Paper", "ペーパー"],
   ["댓글 반응을 활용해 시청 흐름을 이어가는 구성", "Use comment reactions to keep viewers engaged", "コメント反応で視聴の流れをつなぐ構成"],
   ["강한 레드 포인트로 핵심을 각인하는 구성", "Emphasize the key point with a bold red accent", "強い赤のアクセントで要点を印象づける構成"],
+  ["어두운 배경과 선택한 브랜드 컬러로 핵심을 각인하는 구성", "Emphasize the key point with a dark background and your brand color", "暗い背景と選択したブランドカラーで要点を印象づける構成"],
   ["밝고 친근하게 내용을 전달하는 구성", "Deliver the message in a bright, friendly style", "明るく親しみやすく内容を伝える構成"],
+  ["밝은 배경과 선택한 브랜드 컬러로 내용을 전달하는 구성", "Deliver the message with a bright background and your brand color", "明るい背景と選択したブランドカラーで内容を伝える構成"],
   ["장식을 덜어내고 영상에 집중하는 구성", "A minimal layout that keeps focus on the video", "装飾を抑えて動画に集中する構成"],
   ["차분하고 신뢰감 있게 이야기를 전하는 구성", "Tell the story with a calm, credible look", "落ち着きと信頼感のある見た目で伝える構成"],
   ["소셜", "Social", "ソーシャル"],
@@ -761,6 +770,8 @@ const phrases: readonly Phrase[] = [
   ["요청 시간 초과", "Request timed out", "リクエストがタイムアウトしました"],
   ["원본 영상 권리 확인", "Confirm source-video rights", "元動画の権利確認"],
   ["원본 영상 타임라인", "Source video timeline", "元動画のタイムライン"],
+  ["원본 영상 처리", "Source-video processing", "元動画処理"],
+  ["· 원본 영상 처리", "· Source-video processing", "· 元動画処理"],
   ["원본 영상에 자막이 없을 때", "When the source has no captions", "元動画に字幕がない場合"],
   ["위", "Top", "上"],
   ["이 브라우저에 임시 저장 · ⌘S 또는 Ctrl+S로 지금 저장", "Temporarily saved in this browser · Press ⌘S or Ctrl+S to save now", "このブラウザに一時保存・⌘SまたはCtrl+Sで今すぐ保存"],
@@ -772,6 +783,8 @@ const phrases: readonly Phrase[] = [
   ["이미지 파일을 선택해 주세요.", "Choose an image file.", "画像ファイルを選択してください。"],
   ["이미지를 불러오지 못했습니다.", "Could not load the image.", "画像を読み込めませんでした。"],
   ["이미지를 처리하지 못했습니다.", "Could not process the image.", "画像を処理できませんでした。"],
+  ["10분 영상 기준", "Based on a 10-minute video", "10分動画基準"],
+  ["· 10분 영상 기준", "· Based on a 10-minute video", "· 10分動画基準"],
   ["이전 자막 형식은 새 편집기에서 지원하지 않습니다.", "The new editor does not support the legacy caption format.", "新しいエディターは以前の字幕形式に対応していません。"],
   ["이전 자막 형식은 새 편집기에서 지원하지 않아요.", "The new editor does not support the legacy caption format.", "新しいエディターは以前の字幕形式に対応していません。"],
   ["자막", "Captions", "字幕"],
@@ -840,6 +853,22 @@ const phrases: readonly Phrase[] = [
   ["숏폼 전략 가이드 PDF 미제공", "Short-form strategy guide PDF not included", "ショート動画戦略ガイドPDFは対象外"],
   ["숏폼 전략 가이드 전자책", "Short-form strategy e-books", "ショート動画戦略ガイド電子書籍"],
   ["활성 기간 패키지 이용자는 모든 전자책 원본을 다운로드할 수 있습니다. 각 전자책은 3페이지까지 미리 볼 수 있습니다.", "Users with an active term package can download every full e-book. Each e-book can be previewed through page 3.", "有効な期間パッケージ利用者は、すべての電子書籍の原本をダウンロードできます。各電子書籍は3ページまでプレビューできます。"],
+  ["전자책 목록 이동", "E-book navigation", "電子書籍の移動"],
+  ["이전 전자책 보기", "View previous e-book", "前の電子書籍を見る"],
+  ["다음 전자책 보기", "View next e-book", "次の電子書籍を見る"],
+  ["전자책 미리보기 목록", "E-book preview list", "電子書籍プレビュー一覧"],
+  ["전자책 미리보기 닫기", "Close e-book preview", "電子書籍プレビューを閉じる"],
+  ["다운로드 준비 중...", "Preparing download...", "ダウンロードを準備中..."],
+  ["4페이지부터 잠김", "Locked from page 4", "4ページ目以降はロックされています"],
+  ["4페이지부터 잠겨 있어요", "Pages are locked from page 4", "4ページ目以降はロックされています"],
+  ["기간 패키지 구매 시 원본 PDF를 다운로드할 수 있습니다.", "Purchase a term package to download the full PDF.", "期間パッケージを購入すると元のPDFをダウンロードできます。"],
+  ["기간 패키지 확인하기", "View term packages", "期間パッケージを見る"],
+  ["남은 다운로드", "Downloads remaining", "残りのダウンロード回数"],
+  ["전자책을 다운로드하지 못했습니다. 잠시 후 다시 시도해 주세요.", "Could not download the e-book. Please try again shortly.", "電子書籍をダウンロードできませんでした。少し待ってからもう一度お試しください。"],
+  ["원본 PDF 다운로드를 시작했습니다.", "The full PDF download has started.", "元のPDFのダウンロードを開始しました。"],
+  ["이 전자책의 다운로드 가능 횟수를 모두 사용했습니다.", "You have used all downloads available for this e-book.", "この電子書籍のダウンロード可能回数をすべて使用しました。"],
+  ["전자책 다운로드 완료", "E-book download complete", "電子書籍のダウンロード完了"],
+  ["다운로드할 수 없습니다", "Unable to download", "ダウンロードできません"],
   ["쇼츠 수익화 7가지 방법", "7 ways to monetize Shorts", "ショート動画を収益化する7つの方法"],
   ["유튜브·릴스·틱톡 동시 공략법", "A combined YouTube, Reels & TikTok strategy", "YouTube・Reels・TikTok同時攻略法"],
   ["쇼츠 저작권 생존 가이드", "Shorts copyright survival guide", "ショート動画著作権サバイバルガイド"],
@@ -864,6 +893,18 @@ const phrases: readonly Phrase[] = [
   ["Easy Cut 실전 가이드 · 8페이지", "Easy Cut Practical Guide · 8 pages", "Easy Cut実践ガイド · 8ページ"],
   ["한 채널을 한 카테고리, 한 주제, 한 크리에이터로 좁혀 오래 운영할 수 있는 쇼츠 채널의 방향을 정해보세요.", "Focus each channel on one category, one topic, and one creator to build a Shorts channel you can sustain.", "1つのチャンネルを1カテゴリー・1テーマ・1クリエイターに絞り、長く運営できるショート動画チャンネルの方向性を決めましょう。"],
   ["쇼츠 채널 운영 가이드 8페이지", "Eight-page Shorts channel guide", "ショート動画チャンネル運営ガイド8ページ"],
+  ["쇼츠가 정상적으로 생성되지 못했습니다. 사용량은 다시 복구되었습니다. 다시 시도해주세요.", "Shorts could not be created. Your usage was restored. Please try again.", "ショート動画を作成できませんでした。利用時間は復元されました。もう一度お試しください。"],
+  ["쇼츠를 준비하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", "An error occurred while preparing the Shorts. Please try again shortly.", "ショート動画の準備中にエラーが発生しました。少し待ってからもう一度お試しください。"],
+  ["쇼츠 영상을 만드는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", "An error occurred while creating the Shorts video. Please try again shortly.", "ショート動画の作成中にエラーが発生しました。少し待ってからもう一度お試しください。"],
+  ["쇼츠 제작 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", "An error occurred while creating Shorts. Please try again shortly.", "ショート動画の作成中にエラーが発生しました。少し待ってからもう一度お試しください。"],
+  ["영상에서 사람의 목소리를 찾지 못해 쇼츠를 생성할 수 없습니다. 사용량은 다시 복구되었습니다.", "Shorts could not be created because no human voice was detected. Your usage was restored.", "人の声を検出できなかったためショート動画を作成できませんでした。利用時間は復元されました。"],
+  ["영상을 가져오지 못했습니다. 영상이 공개 상태인지, 로그인·연령·지역 제한이 없는지, 삭제되거나 비공개 처리되지 않았는지 확인한 뒤 다시 시도해 주세요.", "Could not retrieve the video. Confirm that it is public, available without sign-in, age, or region restrictions, and has not been deleted or made private, then try again.", "動画を取得できませんでした。公開状態で、ログイン・年齢・地域制限がなく、削除または非公開になっていないことを確認してから、もう一度お試しください。"],
+  ["사용자 요청으로 작업을 취소했습니다.", "The job was canceled at the user's request.", "ユーザーのリクエストにより処理をキャンセルしました。"],
+  ["중복 요청이 확인되어 최신 작업만 계속 진행합니다.", "A duplicate request was detected, so only the latest job will continue.", "重複リクエストが確認されたため、最新の処理のみ続行します。"],
+  ["YouTube 자동 요청 제한이 확인되어 안전 정책에 따라 작업을 중단했습니다.", "YouTube automated-request limits were detected, so the job was stopped under the safety policy.", "YouTubeの自動リクエスト制限を検出したため、安全ポリシーに従って処理を停止しました。"],
+  ["YouTube가 현재 서버의 자동 요청을 제한했습니다. 로그인 정보나 쿠키를 이용한 우회는 지원하지 않습니다. 잠시 후 다시 시도하거나 다른 사용 허가된 공개 영상을 이용해 주세요.", "YouTube is limiting automated requests from the server. Bypassing this with sign-in information or cookies is not supported. Please try again later or use another permitted public video.", "YouTubeが現在サーバーからの自動リクエストを制限しています。ログイン情報やCookieを使った回避には対応していません。しばらくしてから再試行するか、利用許可のある別の公開動画をご利用ください。"],
+  ["프록시 연결 오류로 다운로드할 수 없습니다.", "The download failed because of a proxy connection error.", "プロキシ接続エラーのためダウンロードできませんでした。"],
+  ["AWS Batch 작업 설정이 완료되지 않았습니다.", "AWS Batch job configuration is incomplete.", "AWS Batchジョブの設定が完了していません。"],
   ["이지컷의 좋은 것들을", "The best of Easy Cut,", "Easy Cutの良い情報を"],
   ["조금 먼저 공유합니다.", "shared a little earlier.", "少し早くお届けします。"],
   ["EASYCUT PRIVATE에서는 활용하기 좋은 재사용 허용 영상부터 쇼츠 제작에 도움 되는 팁과 노하우까지 공유합니다.", "EASYCUT PRIVATE shares reusable video finds plus practical tips and know-how for creating Shorts.", "EASYCUT PRIVATEでは、活用しやすい再利用可能動画からショート動画制作のヒントやノウハウまで共有します。"],
@@ -883,6 +924,12 @@ const phrases: readonly Phrase[] = [
   ["새로운 기능과 주요 소식을 일반 공개 전에 알려드립니다.", "Hear about new features and important news before public release.", "新機能や重要なお知らせを一般公開前にお伝えします。"],
 
   ["이지컷의 쇼츠 AI 기능, 사용할 수 있는 영상과 생성 결과 편집에 관한 주요 답변을 확인하세요.", "Find answers about Easy Cut's Shorts AI, supported videos, and editing generated results.", "Easy Cutのショート動画AI、使用できる動画、生成結果の編集に関する主な回答をご確認ください。"],
+  ["AI 쇼츠 제작 자주 묻는 질문", "AI Shorts FAQ", "AIショート動画作成 よくある質問"],
+  ["이지컷·알파컷·피카클립", "Easy Cut · AlphaCut · FikaClip", "Easy Cut・AlphaCut・FikaClip"],
+  ["이지컷:", "Easy Cut:", "Easy Cut："],
+  ["알파컷:", "AlphaCut:", "AlphaCut："],
+  ["피카클립:", "FikaClip:", "FikaClip："],
+  ["및 현재 서비스 공개 기능", "and currently published service features", "および現在公開中のサービス機能"],
   ["이지컷 AI 쇼츠 제작 질문과 답변", "Easy Cut AI Shorts questions and answers", "Easy Cut AIショート動画の質問と回答"],
   ["서비스별 기능과 제공량은 비교 페이지에서 확인하고, 계정·결제 관련 문의는 고객센터로 보내주세요.", "Compare features and allowances on the comparison page, or contact support about accounts and payments.", "サービス別の機能と提供量は比較ページで確認し、アカウントや決済についてはカスタマーサポートへお問い合わせください。"],
 
@@ -916,6 +963,56 @@ function withOriginalWhitespace(original: string, translated: string) {
 
 function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) {
   const trimmed = value.trim();
+  const translateKnown = (source: string) => phraseMaps[locale].get(source) || source;
+  const guidebookPageMatch = /^(.+) 가이드북 (\d+)페이지$/.exec(trimmed);
+  if (guidebookPageMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `${translateKnown(guidebookPageMatch[1])} guidebook · Page ${guidebookPageMatch[2]}`
+      : `${translateKnown(guidebookPageMatch[1])} ガイドブック ${guidebookPageMatch[2]}ページ`);
+  }
+  const templateFavoriteMatch = /^(.+) (자주 쓰는 템플릿으로 저장|자주 쓰는 템플릿에서 해제)$/.exec(trimmed);
+  if (templateFavoriteMatch) {
+    return withOriginalWhitespace(value, `${translateKnown(templateFavoriteMatch[1])} ${translateKnown(templateFavoriteMatch[2])}`);
+  }
+  const labeledUiMatch = /^(.+) (쇼츠 미리보기|다운로드|미리보기 열기|표지)$/.exec(trimmed);
+  if (labeledUiMatch) {
+    const suffix = labeledUiMatch[2] === "쇼츠 미리보기"
+      ? (locale === "en" ? "Shorts preview" : "ショート動画プレビュー")
+      : labeledUiMatch[2] === "다운로드"
+        ? (locale === "en" ? "Download" : "ダウンロード")
+        : labeledUiMatch[2] === "미리보기 열기"
+          ? (locale === "en" ? "Open preview" : "プレビューを開く")
+          : (locale === "en" ? "cover" : "表紙");
+    return withOriginalWhitespace(value, `${translateKnown(labeledUiMatch[1])} ${suffix}`);
+  }
+  const ebookPreviewSummaryMatch = /^(\d+)~(\d+)페이지 미리보기 · 전체 (\d+)페이지$/.exec(trimmed);
+  if (ebookPreviewSummaryMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `Preview pages ${ebookPreviewSummaryMatch[1]}–${ebookPreviewSummaryMatch[2]} · ${ebookPreviewSummaryMatch[3]} pages total`
+      : `${ebookPreviewSummaryMatch[1]}〜${ebookPreviewSummaryMatch[2]}ページをプレビュー · 全${ebookPreviewSummaryMatch[3]}ページ`);
+  }
+  const labeledPageMatch = /^(.+) (\d+)페이지$/.exec(trimmed);
+  if (labeledPageMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `${translateKnown(labeledPageMatch[1])} · Page ${labeledPageMatch[2]}`
+      : `${translateKnown(labeledPageMatch[1])} ${labeledPageMatch[2]}ページ`);
+  }
+  const ebookRemainingMatch = /^이 전자책을 (\d+)번 더 다운로드할 수 있습니다\.$/.exec(trimmed);
+  if (ebookRemainingMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `You can download this e-book ${ebookRemainingMatch[1]} more times.`
+      : `この電子書籍はあと${ebookRemainingMatch[1]}回ダウンロードできます。`);
+  }
+  const previewCounterMatch = /^\/ (\d+) 미리보기$/.exec(trimmed);
+  if (previewCounterMatch) {
+    return withOriginalWhitespace(value, locale === "en" ? `/ ${previewCounterMatch[1]} preview` : `/ ${previewCounterMatch[1]} プレビュー`);
+  }
+  const ingestionDetailMatch = /^"?영상을 가져오지 못했습니다\..*(?:Sign in to confirm|로그인이 필요하지 않은지).*$/.exec(trimmed);
+  if (ingestionDetailMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? "Could not retrieve the video. Confirm that it is public and available without sign-in, then try again."
+      : "動画を取得できませんでした。公開状態でログイン不要であることを確認してから、もう一度お試しください。");
+  }
   const monthMatch = /^(\d+)개월$/.exec(trimmed);
   if (monthMatch) {
     return withOriginalWhitespace(value, locale === "en" ? `${monthMatch[1]} months` : `${monthMatch[1]}か月`);
@@ -1055,6 +1152,8 @@ function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) 
   }
   const pageMatch = /^(\d+)페이지$/.exec(trimmed);
   if (pageMatch) return withOriginalWhitespace(value, locale === "en" ? `Page ${pageMatch[1]}` : `${pageMatch[1]}ページ`);
+  const timesMatch = /^(\d+)회$/.exec(trimmed);
+  if (timesMatch) return withOriginalWhitespace(value, locale === "en" ? `${timesMatch[1]} times` : `${timesMatch[1]}回`);
   return null;
 }
 
