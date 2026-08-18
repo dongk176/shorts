@@ -826,11 +826,11 @@ function CustomerReviews() {
                     <div className="customer-review-stars" role="img" aria-label={localizedValue(locale, { ko: `별점 5점 만점에 ${review.rating}점`, en: `${review.rating} out of 5 stars`, ja: `5点満点中${review.rating}点` })}>
                       {[0, 1, 2, 3, 4].map((star) => <span key={star} className={star < review.rating ? "" : "is-empty"} aria-hidden="true">★</span>)}
                     </div>
-                    <blockquote>{review.review}</blockquote>
+                    <blockquote data-i18n-skip>{review.review}</blockquote>
                     <footer>
-                      <span className="customer-review-avatar" aria-hidden="true">{review.name.slice(0, 1)}</span>
+                      <span data-i18n-skip className="customer-review-avatar" aria-hidden="true">{review.name.slice(0, 1)}</span>
                       <span>
-                        <strong>{review.name}</strong>
+                        <strong data-i18n-skip>{review.name}</strong>
                         <small>{localizedValue(locale, {
                           ko: review.role,
                           en: review.role === "전업 크리에이터" ? "Full-time creator" : review.role === "영상 편집자" ? "Video editor" : review.role === "마케터 / 대행사" ? "Marketer / agency" : "Professional with a side project",

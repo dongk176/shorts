@@ -17,10 +17,10 @@ import { formatNumber } from "@/lib/i18n/format";
 import { useI18n } from "@/lib/i18n/provider";
 import { userFacingErrorMessage } from "@/lib/public-error";
 
-const dataTypeOptions: Array<{ value: PopularVideoType; label: string }> = [
-  { value: "trending", label: "인기 급상승" },
-  { value: "views", label: "조회수 상위" },
-  { value: "reusable", label: "재사용 허용" },
+const dataTypeOptions: Array<{ value: PopularVideoType }> = [
+  { value: "trending" },
+  { value: "views" },
+  { value: "reusable" },
 ];
 
 const mobileRankingButtonTone: Record<PopularVideoType, { selected: string; idle: string }> = {
@@ -44,15 +44,15 @@ const discoveryPeriodOptions: Array<{ value: PopularDiscoveryPeriod; labels: Rec
   { value: "all", labels: { ko: "전체 인기", en: "All popular", ja: "全期間の人気" } },
 ];
 
-const categoryOptions: Array<{ value: PopularVideoCategory; label: string }> = [
-  { value: "all", label: "전체" },
-  { value: "entertainment", label: "엔터테인먼트" },
-  { value: "gaming", label: "게임" },
-  { value: "sports", label: "스포츠" },
-  { value: "music", label: "음악" },
-  { value: "news", label: "뉴스·정치" },
-  { value: "science", label: "과학·기술" },
-  { value: "howto", label: "요리·노하우" },
+const categoryOptions: Array<{ value: PopularVideoCategory }> = [
+  { value: "all" },
+  { value: "entertainment" },
+  { value: "gaming" },
+  { value: "sports" },
+  { value: "music" },
+  { value: "news" },
+  { value: "science" },
+  { value: "howto" },
 ];
 
 const reusableGuideDismissedKey = "easycut:reusable-license-guide-dismissed:v1";
@@ -174,6 +174,80 @@ const mobileFilterCopy: Record<SiteLocale, {
       science: "科学・技術",
       howto: "料理・ノウハウ",
     },
+  },
+};
+
+const popularUiCopy: Record<SiteLocale, {
+  lastUpdated: string;
+  filters: string;
+  activePlanOnly: string;
+  koreanOnly: string;
+  longFormOnly: string;
+  reusableOnly: string;
+  longFormOnlyAria: string;
+  reusableOnlyAria: string;
+  categoryAria: (label: string) => string;
+  countLoading: string;
+  loadFailed: string;
+  retry: string;
+  loadMore: string;
+  loadingMore: string;
+  loadMoreFailed: string;
+  nextResults: string;
+  noResults: string;
+  noResultsDescription: string;
+  reusableBadge: string;
+  openActions: (rank: number, title: string) => string;
+  closeActions: string;
+  actions: (title: string) => string;
+  thumbnail: (title: string) => string;
+  openYoutube: string;
+  copying: string;
+  copyLink: string;
+  copyError: string;
+  loadingVideos: string;
+}> = {
+  ko: {
+    lastUpdated: "마지막 업데이트", filters: "필터", activePlanOnly: "활성 이용권 전용",
+    koreanOnly: "한국어만", longFormOnly: "롱폼만", reusableOnly: "재사용 허용만",
+    longFormOnlyAria: "롱폼만 보기", reusableOnlyAria: "재사용 허용 영상만 보기",
+    categoryAria: (label) => `${label} 카테고리`, countLoading: "개수 확인 중",
+    loadFailed: "인기 영상을 불러오지 못했습니다", retry: "다시 시도", loadMore: "더 보기",
+    loadingMore: "추가 영상 불러오는 중...", loadMoreFailed: "추가 영상을 불러오지 못했습니다.", nextResults: "다음 결과 확인",
+    noResults: "조건에 맞는 영상이 없습니다",
+    noResultsDescription: "인기 기준, 언어, 카테고리, 영상 길이 또는 재사용 허용 조건을 변경해 보세요.",
+    reusableBadge: "재사용 허용", openActions: (rank, title) => `${rank}위 ${title} 작업 메뉴 열기`,
+    closeActions: "영상 작업 메뉴 닫기", actions: (title) => `${title} 작업`,
+    thumbnail: (title) => `${title} 썸네일`, openYoutube: "유튜브로", copying: "복사 중...",
+    copyLink: "링크 복사", copyError: "영상 링크를 복사하지 못했습니다.", loadingVideos: "인기 영상을 불러오는 중",
+  },
+  en: {
+    lastUpdated: "Last updated", filters: "Filters", activePlanOnly: "Active plan only",
+    koreanOnly: "Korean only", longFormOnly: "Long-form only", reusableOnly: "Reuse allowed only",
+    longFormOnlyAria: "Show long-form videos only", reusableOnlyAria: "Show reusable videos only",
+    categoryAria: (label) => `${label} category`, countLoading: "Checking count",
+    loadFailed: "Could not load trending videos", retry: "Try again", loadMore: "Show more",
+    loadingMore: "Loading more videos...", loadMoreFailed: "Could not load more videos.", nextResults: "Check next results",
+    noResults: "No videos match these filters",
+    noResultsDescription: "Try changing the ranking, language, category, duration, or reuse filter.",
+    reusableBadge: "Reuse allowed", openActions: (rank, title) => `Open actions for #${rank} ${title}`,
+    closeActions: "Close video actions", actions: (title) => `Actions for ${title}`,
+    thumbnail: (title) => `${title} thumbnail`, openYoutube: "Open YouTube", copying: "Copying...",
+    copyLink: "Copy link", copyError: "Could not copy the video link.", loadingVideos: "Loading trending videos",
+  },
+  ja: {
+    lastUpdated: "最終更新", filters: "フィルター", activePlanOnly: "有効なプラン限定",
+    koreanOnly: "韓国語のみ", longFormOnly: "長尺のみ", reusableOnly: "再利用可能のみ",
+    longFormOnlyAria: "長尺動画のみ表示", reusableOnlyAria: "再利用可能な動画のみ表示",
+    categoryAria: (label) => `${label}カテゴリー`, countLoading: "件数を確認中",
+    loadFailed: "人気動画を読み込めませんでした", retry: "もう一度試す", loadMore: "さらに表示",
+    loadingMore: "さらに動画を読み込み中...", loadMoreFailed: "追加の動画を読み込めませんでした。", nextResults: "次の結果を確認",
+    noResults: "条件に一致する動画がありません",
+    noResultsDescription: "人気基準、言語、カテゴリー、動画の長さ、再利用条件を変更してみてください。",
+    reusableBadge: "再利用可能", openActions: (rank, title) => `${rank}位 ${title} の操作メニューを開く`,
+    closeActions: "動画の操作メニューを閉じる", actions: (title) => `${title} の操作`,
+    thumbnail: (title) => `${title}のサムネイル`, openYoutube: "YouTubeで開く", copying: "コピー中...",
+    copyLink: "リンクをコピー", copyError: "動画リンクをコピーできませんでした。", loadingVideos: "人気動画を読み込み中",
   },
 };
 
@@ -758,6 +832,7 @@ function VideoCard({ video, rank, active, onOpen, onClose }: {
   onClose: () => void;
 }) {
   const { locale } = useI18n();
+  const uiCopy = popularUiCopy[locale];
   const youtubeUrl = `https://www.youtube.com/watch?v=${video.videoId}`;
   const [copying, setCopying] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
@@ -770,7 +845,7 @@ function VideoCard({ video, rank, active, onOpen, onClose }: {
       await navigator.clipboard.writeText(youtubeUrl);
       window.location.assign("/");
     } catch (cause) {
-      setCopyError(userFacingErrorMessage(cause, "영상 링크를 복사하지 못했습니다."));
+      setCopyError(userFacingErrorMessage(cause, uiCopy.copyError));
       setCopying(false);
     }
   };
@@ -779,7 +854,7 @@ function VideoCard({ video, rank, active, onOpen, onClose }: {
     <article className="popular-video-card group relative flex min-w-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#191c1e]/90 shadow-[0_18px_50px_rgba(0,0,0,.18)] transition duration-200 hover:-translate-y-1 hover:border-[#d0bcff]/40 hover:shadow-[0_22px_60px_rgba(0,0,0,.28)]">
       <button
         type="button"
-        aria-label={`${rank}위 ${video.title} 작업 메뉴 열기`}
+        aria-label={uiCopy.openActions(rank, video.title)}
         aria-expanded={active}
         aria-controls={`video-actions-${video.videoId}`}
         tabIndex={active ? -1 : 0}
@@ -787,28 +862,28 @@ function VideoCard({ video, rank, active, onOpen, onClose }: {
         className="absolute inset-0 z-10 rounded-2xl"
       />
       <div className="relative aspect-video overflow-hidden bg-[#0b0f10]">
-        <Image src={video.thumbnailUrl} alt={`${video.title} 썸네일`} fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw" priority={rank === 1} unoptimized className="object-cover transition duration-300 group-hover:scale-[1.025]" />
+        <Image src={video.thumbnailUrl} alt={uiCopy.thumbnail(video.title)} fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw" priority={rank === 1} unoptimized className="object-cover transition duration-300 group-hover:scale-[1.025]" />
         <span className="absolute left-2.5 top-2.5 grid min-w-9 place-items-center rounded-lg bg-[#f04435] px-2 py-1.5 text-sm font-black text-white shadow-lg">{rank}</span>
-        {video.license === "creativeCommon" && <span className="absolute right-2.5 top-2.5 inline-flex rounded-full border border-violet-200/40 bg-violet-950/85 px-2.5 py-1 text-[10px] font-black tracking-wide text-violet-100 shadow-lg backdrop-blur-sm">재사용 허용</span>}
+        {video.license === "creativeCommon" && <span className="absolute right-2.5 top-2.5 inline-flex rounded-full border border-violet-200/40 bg-violet-950/85 px-2.5 py-1 text-[10px] font-black tracking-wide text-violet-100 shadow-lg backdrop-blur-sm">{uiCopy.reusableBadge}</span>}
         <span className="absolute bottom-2.5 right-2.5 rounded-md bg-black/85 px-2 py-1 text-xs font-bold tabular-nums text-white backdrop-blur-sm">{formatDuration(video.durationSeconds)}</span>
         <span className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/40 to-transparent" aria-hidden="true" />
       </div>
       <div className="flex flex-1 flex-col p-4">
-        <h2 className="line-clamp-2 min-h-11 text-[15px] font-extrabold leading-[1.45] tracking-[-.015em] text-white">{video.title}</h2>
-        <p className="mt-2 truncate text-[13px] font-semibold text-neutral-400">{video.channelName}</p>
+        <h2 data-i18n-skip className="line-clamp-2 min-h-11 text-[15px] font-extrabold leading-[1.45] tracking-[-.015em] text-white">{video.title}</h2>
+        <p data-i18n-skip className="mt-2 truncate text-[13px] font-semibold text-neutral-400">{video.channelName}</p>
         <div className="mt-3 flex items-center gap-2 text-[13px] font-semibold text-neutral-400">
           <span>{locale === "ko" ? "조회수" : locale === "en" ? "Views" : "再生回数"} {formatViews(video.viewCount, locale)}</span><span aria-hidden="true">·</span><span>{formatPublishedAt(video.publishedAt, locale)}</span>
         </div>
       </div>
       {active && (
         <div id={`video-actions-${video.videoId}`} className="absolute inset-0 z-20 grid place-items-center bg-[#0b0f10]/88 p-5 backdrop-blur-md">
-          <button type="button" tabIndex={-1} aria-label="영상 작업 메뉴 닫기" onClick={onClose} className="absolute inset-0 cursor-default" />
-          <div className="relative z-10 grid w-full max-w-48 gap-3" role="group" aria-label={`${video.title} 작업`}>
+          <button type="button" tabIndex={-1} aria-label={uiCopy.closeActions} onClick={onClose} className="absolute inset-0 cursor-default" />
+          <div className="relative z-10 grid w-full max-w-48 gap-3" role="group" aria-label={uiCopy.actions(video.title)}>
             <a href={youtubeUrl} target="_blank" rel="noopener noreferrer" className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#f04435] px-4 text-sm font-extrabold text-white shadow-[0_10px_30px_rgba(240,68,53,.28)] transition hover:bg-[#ff5b4b]">
-              유튜브로 <span aria-hidden="true">↗</span>
+              {uiCopy.openYoutube} <span aria-hidden="true">↗</span>
             </a>
             <button type="button" disabled={copying} onClick={() => void copyLinkAndGoHome()} className="min-h-12 rounded-xl border border-white/15 bg-white/[.08] px-4 text-sm font-extrabold text-white transition hover:border-violet-300/50 hover:bg-violet-400/15 disabled:cursor-wait disabled:opacity-60">
-              {copying ? "복사 중..." : "링크 복사"}
+              {copying ? uiCopy.copying : uiCopy.copyLink}
             </button>
             {copyError && <p role="alert" className="text-center text-xs font-semibold leading-5 text-red-300">{copyError}</p>}
           </div>
@@ -819,8 +894,9 @@ function VideoCard({ video, rank, active, onOpen, onClose }: {
 }
 
 function LoadingSkeleton() {
+  const { locale } = useI18n();
   return (
-    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-label="인기 영상을 불러오는 중" aria-busy="true">
+    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-label={popularUiCopy[locale].loadingVideos} aria-busy="true">
       {Array.from({ length: 8 }, (_, index) => (
         <div key={index} className="overflow-hidden rounded-2xl border border-white/[.07] bg-[#191c1e]/70">
           <div className="aspect-video animate-pulse bg-white/[.07]" />
@@ -841,6 +917,8 @@ export function PopularVideosExplorer({
   onRequireLogin: () => void;
 }) {
   const { locale } = useI18n();
+  const uiCopy = popularUiCopy[locale];
+  const filterCopy = mobileFilterCopy[locale];
   const [dataType, setDataType] = useState<PopularVideoType>("trending");
   const [koreanOnly, setKoreanOnly] = useState(false);
   const [longFormOnly, setLongFormOnly] = useState(false);
@@ -891,22 +969,26 @@ export function PopularVideosExplorer({
       .then(async (result) => {
         if (!result.ok) {
           const body = await result.json().catch(() => ({})) as { detail?: string };
-          throw new Error(body.detail || "인기 영상을 불러오지 못했습니다.");
+          throw new Error(body.detail || uiCopy.loadFailed);
         }
         return result.json() as Promise<PopularVideoResponse>;
       })
       .then((result) => setResponse(result))
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(userFacingErrorMessage(cause, "인기 영상을 불러오지 못했습니다."));
+        setError(userFacingErrorMessage(cause, uiCopy.loadFailed));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, longFormOnly, reusableOnly, retryCount]);
+  }, [category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed]);
 
-  const selectedType = dataTypeOptions.find((option) => option.value === dataType) || dataTypeOptions[0];
+  const selectedTypeLabel = dataType === "trending"
+    ? filterCopy.trending
+    : dataType === "views"
+      ? filterCopy.views
+      : filterCopy.reusableRanking;
 
   const loadMore = async () => {
     if (!response?.nextCursor || loadingMore) return;
@@ -920,7 +1002,7 @@ export function PopularVideosExplorer({
       const result = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
       if (!result.ok) {
         const body = await result.json().catch(() => ({})) as { detail?: string };
-        throw new Error(body.detail || "추가 영상을 불러오지 못했습니다.");
+        throw new Error(body.detail || uiCopy.loadMoreFailed);
       }
       const next = await result.json() as PopularVideoResponse;
       setResponse((current) => {
@@ -938,7 +1020,7 @@ export function PopularVideosExplorer({
       });
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
-      setLoadMoreError(userFacingErrorMessage(cause, "추가 영상을 불러오지 못했습니다."));
+      setLoadMoreError(userFacingErrorMessage(cause, uiCopy.loadMoreFailed));
     } finally {
       if (!controller.signal.aborted) setLoadingMore(false);
     }
@@ -988,8 +1070,6 @@ export function PopularVideosExplorer({
 
   const reusableFilterActive = dataType === "reusable" || reusableOnly;
   const activeMobileFilterCount = Number(category !== "all") + Number(koreanOnly) + Number(longFormOnly) + Number(reusableFilterActive);
-  const filterCopy = mobileFilterCopy[locale];
-
   const openMobileFilters = () => {
     if (!canUseFilters) {
       setPlanOverlayFeature("filters");
@@ -1056,12 +1136,12 @@ export function PopularVideosExplorer({
         <span className="pointer-events-none absolute left-[8%] top-5 -z-10 h-40 w-40 rounded-full bg-[#ff5540]/20 blur-[70px] sm:h-56 sm:w-56" aria-hidden="true" />
         <span className="pointer-events-none absolute right-[7%] top-14 -z-10 h-44 w-44 rounded-full bg-[#a078ff]/20 blur-[80px] sm:h-60 sm:w-60" aria-hidden="true" />
         <h1 className="hero-title"><span>실시간 인기</span></h1>
-        <p className="mt-3 text-xs font-semibold text-neutral-500" aria-live="polite"><span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.7)]" aria-hidden="true" /><span className="text-neutral-400">마지막 업데이트</span> {formatUpdatedAt(response?.updatedAt || null, locale)}</p>
+        <p className="mt-3 text-xs font-semibold text-neutral-500" aria-live="polite"><span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.7)]" aria-hidden="true" /><span className="text-neutral-400">{uiCopy.lastUpdated}</span> {formatUpdatedAt(response?.updatedAt || null, locale)}</p>
       </section>
 
       <section className="relative z-30 mt-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none !backdrop-blur-none md:mt-2 md:!rounded-2xl md:!border md:!border-white/10 md:!bg-[#15191a]/90 md:!p-5 md:!shadow-[0_16px_50px_rgba(0,0,0,.22)] md:!backdrop-blur-2xl" aria-label="인기 영상 필터">
         <div className={`${canUseFilters ? "hidden md:flex" : "mb-4 flex"} items-center justify-end gap-3 md:mb-4 md:justify-between`}>
-          <h2 className="hidden text-base font-black text-white md:block">필터</h2>
+          <h2 className="hidden text-base font-black text-white md:block">{uiCopy.filters}</h2>
           {!canUseFilters && (
             <button
               type="button"
@@ -1075,7 +1155,7 @@ export function PopularVideosExplorer({
                 <rect x="5" y="10" width="14" height="10" rx="2" />
                 <path d="M8 10V7a4 4 0 0 1 8 0v3" />
               </svg>
-              활성 이용권 전용
+              {uiCopy.activePlanOnly}
             </button>
           )}
         </div>
@@ -1136,7 +1216,7 @@ export function PopularVideosExplorer({
 
         <div className="hidden flex-col gap-4 md:flex md:flex-row md:items-end md:justify-between">
           <fieldset className="min-w-0">
-            <legend className="mb-2 text-sm font-black text-neutral-200">인기 기준</legend>
+            <legend className="mb-2 text-sm font-black text-neutral-200">{filterCopy.ranking}</legend>
             <div className="flex flex-wrap gap-2 pb-1">
               {dataTypeOptions.map((option) => {
                 const reusable = option.value === "reusable";
@@ -1152,7 +1232,7 @@ export function PopularVideosExplorer({
                         : applyFilter(() => setDataType(option.value))}
                       className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition ${dataType === option.value ? "border-[#ff715e] bg-[#ff715e]/15 text-[#ffd0c9] shadow-[0_0_18px_rgba(255,85,64,.1)]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
                     >
-                      {option.label}
+                      {option.value === "trending" ? filterCopy.trending : option.value === "views" ? filterCopy.views : filterCopy.reusableRanking}
                     </button>
                     {reusable && (
                       <div
@@ -1184,12 +1264,12 @@ export function PopularVideosExplorer({
               <span className={`relative h-5 w-9 rounded-full transition ${koreanOnly ? "bg-emerald-400" : "bg-white/15"}`} aria-hidden="true">
                 <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${koreanOnly ? "left-[18px]" : "left-0.5"}`} />
               </span>
-              한국어만
+              {uiCopy.koreanOnly}
             </button>
             <button
               type="button"
               role="switch"
-              aria-label="롱폼만 보기"
+              aria-label={uiCopy.longFormOnlyAria}
               aria-checked={longFormOnly}
               aria-haspopup={canUseFilters ? undefined : "dialog"}
               onClick={() => applyFilter(() => setLongFormOnly((current) => !current))}
@@ -1198,13 +1278,13 @@ export function PopularVideosExplorer({
               <span className={`relative h-5 w-9 rounded-full transition ${longFormOnly ? "bg-[#ff715e]" : "bg-white/15"}`} aria-hidden="true">
                 <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${longFormOnly ? "left-[18px]" : "left-0.5"}`} />
               </span>
-              롱폼만
+              {uiCopy.longFormOnly}
             </button>
             {dataType !== "reusable" && (
               <button
                 type="button"
                 role="switch"
-                aria-label="재사용 허용 영상만 보기"
+                aria-label={uiCopy.reusableOnlyAria}
                 aria-checked={reusableOnly}
                 aria-haspopup={canUseFilters ? undefined : "dialog"}
                 onClick={() => requestReusableFilter(() => applyFilter(() => setReusableOnly((current) => !current)))}
@@ -1213,26 +1293,26 @@ export function PopularVideosExplorer({
                 <span className={`relative h-5 w-9 rounded-full transition ${reusableOnly ? "bg-violet-400" : "bg-white/15"}`} aria-hidden="true">
                   <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${reusableOnly ? "left-[18px]" : "left-0.5"}`} />
                 </span>
-                재사용 허용만
+                {uiCopy.reusableOnly}
               </button>
             )}
           </div>
         </div>
 
         <fieldset className="mt-4 hidden min-w-0 border-t border-white/[.07] pt-4 md:block">
-          <legend className="mb-2 text-sm font-black text-neutral-200">카테고리</legend>
+          <legend className="mb-2 text-sm font-black text-neutral-200">{filterCopy.category}</legend>
           <div className="flex flex-wrap gap-2 pb-1">
             {categoryOptions.map((option) => (
               <button
                 key={option.value}
                 type="button"
-                aria-label={`${option.label} 카테고리`}
+                aria-label={uiCopy.categoryAria(filterCopy.categories[option.value])}
                 aria-pressed={category === option.value}
                 aria-haspopup={canUseFilters ? undefined : "dialog"}
                 onClick={() => applyFilter(() => setCategory(option.value))}
                 className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition ${category === option.value ? "border-violet-300/60 bg-violet-400/15 text-violet-50 shadow-[0_0_18px_rgba(160,120,255,.1)]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
               >
-                {option.label}
+                {filterCopy.categories[option.value]}
               </button>
             ))}
           </div>
@@ -1241,8 +1321,8 @@ export function PopularVideosExplorer({
 
       <div className="mb-5 mt-8 flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-black tracking-[-.025em] text-white">{selectedType.label}</h2>
-          <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? formatNumber(displayedTotalCount, locale) : `${formatNumber(displayedTotalCount, locale)}件`) : "개수 확인 중"}</p>
+          <h2 className="text-xl font-black tracking-[-.025em] text-white">{selectedTypeLabel}</h2>
+          <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? formatNumber(displayedTotalCount, locale) : `${formatNumber(displayedTotalCount, locale)}件`) : uiCopy.countLoading}</p>
         </div>
         <DiscoveryPeriodDropdown
           value={discoveryPeriod}
@@ -1255,7 +1335,7 @@ export function PopularVideosExplorer({
 
       {loading ? <LoadingSkeleton /> : error ? (
         <section role="alert" className="grid min-h-64 place-items-center rounded-2xl border border-red-400/20 bg-red-950/15 px-6 py-12 text-center">
-          <div><div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-red-400/10 text-xl text-red-300" aria-hidden="true">!</div><h2 className="mt-4 text-lg font-extrabold">인기 영상을 불러오지 못했습니다</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-red-200/75">{error}</p><button type="button" onClick={() => setRetryCount((value) => value + 1)} className="mt-6 rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-200">다시 시도</button></div>
+          <div><div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-red-400/10 text-xl text-red-300" aria-hidden="true">!</div><h2 className="mt-4 text-lg font-extrabold">{uiCopy.loadFailed}</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-red-200/75">{error}</p><button type="button" onClick={() => setRetryCount((value) => value + 1)} className="mt-6 rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-200">{uiCopy.retry}</button></div>
         </section>
       ) : response?.items.length ? (
         <div>
@@ -1268,7 +1348,7 @@ export function PopularVideosExplorer({
                 onClick={requestMore}
                 className="min-h-12 rounded-xl border border-white/15 bg-white/[.06] px-7 text-sm font-extrabold text-white transition hover:border-[#d0bcff]/50 hover:bg-violet-400/10 disabled:cursor-wait disabled:opacity-60"
               >
-                {loadingMore ? "추가 영상 불러오는 중..." : "더 보기"}
+                {loadingMore ? uiCopy.loadingMore : uiCopy.loadMore}
               </button>
               {loadMoreError && <p role="alert" className="text-center text-xs font-semibold text-red-300">{loadMoreError}</p>}
             </div>
@@ -1278,11 +1358,11 @@ export function PopularVideosExplorer({
         <section className="grid min-h-64 place-items-center rounded-2xl border border-white/[.08] bg-white/[.025] px-6 py-12 text-center">
           <div>
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-violet-400/10 text-xl text-violet-200" aria-hidden="true">⌕</div>
-            <h2 className="mt-4 text-lg font-extrabold">조건에 맞는 영상이 없습니다</h2>
-            <p className="mt-2 text-sm leading-6 text-neutral-500">인기 기준, 언어, 카테고리, 영상 길이 또는 재사용 허용 조건을 변경해 보세요.</p>
+            <h2 className="mt-4 text-lg font-extrabold">{uiCopy.noResults}</h2>
+            <p className="mt-2 text-sm leading-6 text-neutral-500">{uiCopy.noResultsDescription}</p>
             {response?.nextCursor && (
               <button type="button" disabled={loadingMore} onClick={requestMore} className="mt-6 min-h-12 rounded-xl border border-white/15 bg-white/[.06] px-7 text-sm font-extrabold text-white transition hover:border-[#d0bcff]/50 hover:bg-violet-400/10 disabled:cursor-wait disabled:opacity-60">
-                {loadingMore ? "추가 영상 불러오는 중..." : "다음 결과 확인"}
+                {loadingMore ? uiCopy.loadingMore : uiCopy.nextResults}
               </button>
             )}
             {loadMoreError && <p role="alert" className="mt-3 text-center text-xs font-semibold text-red-300">{loadMoreError}</p>}

@@ -36,6 +36,17 @@ describe("popular mobile filters", () => {
     expect(source).toContain('if (dataType === "reusable" && !nextFilters.reusableOnly) setDataType("views")');
   });
 
+  it("uses the same localized copy for desktop and mobile controls", () => {
+    expect(source).toContain("const popularUiCopy");
+    expect(source).toContain("{uiCopy.koreanOnly}");
+    expect(source).toContain("{uiCopy.longFormOnly}");
+    expect(source).toContain("{uiCopy.reusableOnly}");
+    expect(source).toContain("{filterCopy.categories[option.value]}");
+    expect(source).toContain("data-i18n-skip");
+    expect(source).not.toContain('aria-label={`${option.label} 카테고리`}');
+    expect(source).not.toContain("Array<{ value: PopularVideoType; label: string }>");
+  });
+
   it("does not render the removed subscription promotion copy", () => {
     expect(source).not.toContain("활성 구독 또는 기간 패키지로 원하는 영상만 빠르게 찾아보세요.");
     expect(source).not.toContain("지금 떠오르는 영상을 놓치지 마세요.");

@@ -22,6 +22,8 @@ import {
   type TemplateFavoriteKey,
 } from "@/lib/template-favorites";
 import { userFacingErrorMessage } from "@/lib/public-error";
+import { formatLocale } from "@/lib/i18n/config";
+import { useI18n } from "@/lib/i18n/provider";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
 import {
   presetTemplateDisplayDescription,
@@ -146,23 +148,22 @@ function ReactionIcon({ down = false }: { down?: boolean }) {
   );
 }
 
-function formatCompactKoreanCount(value: number) {
-  const compact = (amount: number) => Number.isInteger(amount) ? String(amount) : amount.toFixed(1);
-  if (value >= 10_000) return `${compact(Math.floor(value / 1_000) / 10)}만`;
-  if (value >= 1_000) return `${compact(Math.floor(value / 100) / 10)}천`;
-  return value.toLocaleString("ko-KR");
-}
-
 function CommentCaptureCard({ comment }: { comment: CommentOverlay }) {
+  const { locale } = useI18n();
+  const compactCount = new Intl.NumberFormat(formatLocale(locale), {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(comment.likeCount);
+  const ageLabel = locale === "ko" ? comment.ageLabel : locale === "en" ? "5 months ago" : "5か月前";
   return (
     <div className="w-full pb-[0.6cqw] pl-[4.4cqw] pr-[2.8cqw] pt-[4.5cqw] text-left text-white" style={{ backgroundColor: COMMENT_BACKGROUND_COLOR }}>
       <div className="flex items-start gap-[2.7cqw]">
-        <div className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.65cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
+        <div data-i18n-skip className="grid h-[8.6cqw] w-[8.6cqw] shrink-0 place-items-center rounded-full text-[3.7cqw] font-bold text-white blur-[0.65cqw]" style={{ background: comment.avatarColor }}>{comment.initial}</div>
         <div className="min-w-0 flex-1">
-          <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight text-neutral-100 blur-[0.52cqw]">@{comment.nickname} <span className="font-normal text-neutral-400">{comment.ageLabel}</span></div>
-          <p className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap font-normal leading-[1.28] text-white/95 blur-[0.05cqw]" style={{ fontSize: `${COMMENT_CAPTURE_BODY_FONT_CQW}cqw` }}>{comment.text}</p>
+          <div className="w-fit max-w-[74cqw] truncate text-[3.45cqw] font-bold leading-tight text-neutral-100 blur-[0.52cqw]"><span data-i18n-skip>@{comment.nickname}</span> <span className="font-normal text-neutral-400">{ageLabel}</span></div>
+          <p data-i18n-skip className="mt-[1.5cqw] line-clamp-2 whitespace-pre-wrap font-normal leading-[1.28] text-white/95 blur-[0.05cqw]" style={{ fontSize: `${COMMENT_CAPTURE_BODY_FONT_CQW}cqw` }}>{comment.text}</p>
           <div className="mt-[2.1cqw] flex items-center gap-[1.25cqw] text-[3.4cqw] text-neutral-300/80 blur-[0.035cqw]">
-            <ReactionIcon /><span>{formatCompactKoreanCount(comment.likeCount)}</span>
+            <ReactionIcon /><span>{compactCount}</span>
             <span className="ml-[2.2cqw]"><ReactionIcon down /></span>
             <span className="ml-[3cqw] text-[3.25cqw] text-neutral-200">답글</span>
           </div>

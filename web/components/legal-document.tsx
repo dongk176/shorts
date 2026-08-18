@@ -16,7 +16,16 @@ export type LegalTranslation = {
 
 function localizedEffectiveDate(value: string, locale: "ko" | "en" | "ja") {
   if (locale === "ko") return value;
-  const match = /^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일$/.exec(value.trim());
+  const trimmed = value.trim();
+  const revisedMatch = /^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일 개정 · 구매약관 v(\d+)$/.exec(trimmed);
+  if (revisedMatch) {
+    const formatted = new Intl.DateTimeFormat(formatLocale(locale), { dateStyle: "long", timeZone: "UTC" })
+      .format(new Date(Date.UTC(Number(revisedMatch[1]), Number(revisedMatch[2]) - 1, Number(revisedMatch[3]))));
+    return locale === "en"
+      ? `Revised ${formatted} · Purchase Terms v${revisedMatch[4]}`
+      : `${formatted}改定 · 購入規約 v${revisedMatch[4]}`;
+  }
+  const match = /^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일$/.exec(trimmed);
   if (!match) return value;
   return new Intl.DateTimeFormat(formatLocale(locale), { dateStyle: "long", timeZone: "UTC" })
     .format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))));

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LegalDocument, LegalSection } from "@/components/legal-document";
+import { purchaseTermsV7Translations } from "@/lib/i18n/legal-translations";
 
 const accentLink = "font-bold text-[#ff8c7c] underline underline-offset-4";
 
@@ -33,6 +34,7 @@ export function PurchaseTermsV2Document({
         : usesFirstCompletedJobPolicy
           ? "2026년 7월 28일 개정 · 구매약관 v3"
           : "2026년 7월 26일 개정 · 구매약관 v2"}
+      translations={version === 7 ? purchaseTermsV7Translations : undefined}
     >
       {archived && (
         <p className="rounded-2xl border border-white/10 bg-white/[.035] p-4 text-sm leading-7 text-neutral-300">

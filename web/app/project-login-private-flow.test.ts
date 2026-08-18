@@ -47,7 +47,7 @@ describe("EASYCUT PRIVATE entry", () => {
     const sidebarStyles = source("./site-sidebar.css");
 
     expect(usageIndicator).toContain("header-usage-indicator");
-    expect(usageIndicator).toContain("남은 사용량 {displayedMinutes}분");
+    expect(usageIndicator).toContain('t("common.remainingMinutes", { minutes: displayedMinutes })');
     expect(sidebarStyles).toContain(".site-header-sidebar .header-usage-indicator span");
     expect(sidebarStyles).toContain("display: inline;");
   });

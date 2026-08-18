@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useUsageState } from "@/components/usage-provider";
+import { useI18n } from "@/lib/i18n/provider";
 
 function wholeMinutes(seconds: number) {
   return Math.max(0, Math.floor(seconds / 60));
@@ -10,6 +11,7 @@ function wholeMinutes(seconds: number) {
 
 export function HeaderUsageIndicator() {
   const usageState = useUsageState();
+  const { t } = useI18n();
   const targetMinutes = usageState.usage
     ? wholeMinutes(usageState.usage.remainingSeconds)
     : 0;
@@ -48,7 +50,7 @@ export function HeaderUsageIndicator() {
   }, [targetMinutes]);
 
   if (!usageState.authenticated || !usageState.usage) return null;
-  const label = `남은 사용량 ${displayedMinutes}분`;
+  const label = t("common.remainingMinutes", { minutes: displayedMinutes });
 
   return (
     <Link
@@ -61,7 +63,7 @@ export function HeaderUsageIndicator() {
         <circle cx="12" cy="12" r="8.5" />
         <path d="M12 7.5V12l3 2" />
       </svg>
-      <span className="hidden whitespace-nowrap lg:inline">남은 사용량 {displayedMinutes}분</span>
+      <span className="hidden whitespace-nowrap lg:inline">{label}</span>
     </Link>
   );
 }

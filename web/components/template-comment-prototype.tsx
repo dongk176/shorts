@@ -1,5 +1,7 @@
 import type { CSSProperties, PointerEventHandler } from "react";
 import type { CommentOverlay } from "@/lib/contracts";
+import { formatLocale } from "@/lib/i18n/config";
+import { useI18n } from "@/lib/i18n/provider";
 import { COMMENT_BACKGROUND_COLOR } from "@/lib/template-config";
 
 export type TemplateCommentTheme = "dark" | "light";
@@ -10,13 +12,6 @@ const sizeScale: Record<TemplateCommentSize, number> = {
   medium: 1,
   large: 1.16,
 };
-
-function compactKoreanCount(value: number) {
-  const compact = (amount: number) => Number.isInteger(amount) ? String(amount) : amount.toFixed(1);
-  if (value >= 10_000) return `${compact(Math.floor(value / 1_000) / 10)}만`;
-  if (value >= 1_000) return `${compact(Math.floor(value / 100) / 10)}천`;
-  return value.toLocaleString("ko-KR");
-}
 
 function ReactionIcon({ kind, color }: { kind: "like" | "dislike"; color: string }) {
   return (
@@ -57,35 +52,40 @@ function TemplateCommentContents({
   identityBlur,
   comment,
 }: ReturnType<typeof commentAppearance> & { comment?: CommentOverlay }) {
+  const { locale } = useI18n();
   const initial = comment?.initial || "소";
   const nickname = comment?.nickname || "소담기록24";
-  const ageLabel = comment?.ageLabel || "2시간 전";
+  const ageLabel = comment?.ageLabel || (locale === "ko" ? "2시간 전" : locale === "en" ? "2 hours ago" : "2時間前");
   const text = comment?.text || "잠깐 보려고 눌렀는데 어느새 끝까지 다 봤네 ㅋㅋ";
   const likeCount = comment?.likeCount ?? 121;
+  const formattedLikeCount = new Intl.NumberFormat(formatLocale(locale), {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(likeCount);
   return <span className="flex min-w-0 items-start" style={{ gap: canvasWidth(2.5) }}>
     <span
       aria-hidden="true"
       className="grid shrink-0 place-items-center rounded-full bg-[#d84572] font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.18)]"
       style={{ width: canvasWidth(9.4), height: canvasWidth(9.4), fontSize: canvasWidth(3.6), filter: identityBlur, backgroundColor: comment?.avatarColor || "#d84572" }}
     >
-      {initial}
+      <span data-i18n-skip>{initial}</span>
     </span>
     <span className="min-w-0 flex-1">
       <span className="flex items-center font-semibold" style={{ gap: canvasWidth(1.5), fontSize: canvasWidth(3.15), color: foreground, filter: identityBlur }}>
-        <span>{nickname}</span>
+        <span data-i18n-skip>{nickname}</span>
         <span aria-hidden="true">·</span>
-        <span>{ageLabel}</span>
+        <span data-i18n-skip={Boolean(comment)}>{ageLabel}</span>
       </span>
       <span
         className="block break-keep font-medium leading-[1.42] tracking-[-.02em]"
         style={{ marginTop: canvasWidth(1.2), fontSize: canvasWidth(3.62), color: foreground }}
       >
-        {text}
+        <span data-i18n-skip>{text}</span>
       </span>
       <span className="flex items-center font-semibold" style={{ marginTop: canvasWidth(2.1), gap: canvasWidth(4.2), fontSize: canvasWidth(3.1), color: muted }}>
         <span className="flex items-center" style={{ gap: canvasWidth(1.35) }}>
           <span style={{ width: canvasWidth(4.1), height: canvasWidth(4.1) }}><ReactionIcon kind="like" color={foreground} /></span>
-          <span>{compactKoreanCount(likeCount)}</span>
+          <span>{formattedLikeCount}</span>
         </span>
         <span style={{ width: canvasWidth(4.1), height: canvasWidth(4.1) }}><ReactionIcon kind="dislike" color={foreground} /></span>
         <span>답글</span>

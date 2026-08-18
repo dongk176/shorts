@@ -38,7 +38,9 @@ describe("package installment UI", () => {
 
   it("advertises and preselects the matching package installment only when supported", () => {
     expect(pricingSource).toContain("paymentFlow === \"manual_direct\"");
-    expect(pricingSource).toContain("${plan.name} ${packageMonths}개월 할부결제");
+    expect(pricingSource).toContain("${tierName} ${packageMonths}개월 할부결제");
+    expect(pricingSource).toContain("Pay for ${tierName} in ${packageMonths} installments");
+    expect(pricingSource).toContain("${tierName}を${packageMonths}回払いで決済");
     expect(pricingSource).toContain("할부 최대 ${maximumInstallmentMonths}개월");
     expect(pricingSource).toContain("preferredInstallmentMonths");
     expect(checkoutSource).toContain("preferredInstallmentMonths");

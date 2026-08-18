@@ -10,6 +10,8 @@ import { billingPostJson, purchaseAddonWithSavedCard } from "@/lib/billing-clien
 import type { MvpState } from "@/lib/contracts";
 import { billingSupportsEbookDownloads } from "@/lib/ebook-entitlements";
 import { userFacingErrorMessage } from "@/lib/public-error";
+import type { SiteLocale } from "@/lib/i18n/config";
+import { useI18n } from "@/lib/i18n/provider";
 import {
   getPricingV2Package,
   getPricingV2Plan,
@@ -202,6 +204,19 @@ function isPackagePlanCode(code: string): code is PackagePlanCode {
   return code === "starter" || code === "expert";
 }
 
+function packageTierName(code: PackagePlanCode, locale: SiteLocale) {
+  if (code === "starter") return locale === "ko" ? "스타터 패키지" : locale === "en" ? "Starter package" : "スターターパッケージ";
+  return locale === "ko" ? "전문가 패키지" : locale === "en" ? "Expert package" : "エキスパートパッケージ";
+}
+
+function monthLabel(months: number, locale: SiteLocale) {
+  return locale === "ko" ? `${months}개월` : locale === "en" ? `${months} months` : `${months}か月`;
+}
+
+function minuteLabel(minutes: number | string, locale: SiteLocale) {
+  return locale === "ko" ? `${minutes}분` : locale === "en" ? `${minutes} min` : `${minutes}分`;
+}
+
 function featureContent(text: string, strong?: string) {
   if (!strong) return text;
   const [before, after = ""] = text.split(strong);
@@ -251,6 +266,7 @@ export function PricingClient({
   onRequireLogin: () => void;
 }) {
   const { refreshUsage } = useUsageState();
+  const { locale } = useI18n();
   const [previewMessage, setPreviewMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -338,26 +354,49 @@ export function PricingClient({
       installmentOffer?.paymentFlow === "manual_direct"
       && installmentOffer.selectableMonths.includes(packageMonths)
     );
+    const tierName = packageTierName(plan.code, locale);
+    const localizedMonthlyMinutes = locale === "ko"
+      ? `매월 ${priceFormatter.format(monthlyMinutes)}분`
+      : locale === "en"
+        ? `${priceFormatter.format(monthlyMinutes)} min/month`
+        : `毎月${priceFormatter.format(monthlyMinutes)}分`;
+    const localizedTotalShorts = locale === "ko"
+      ? `쇼츠 약 ${priceFormatter.format(totalShorts)}개`
+      : locale === "en"
+        ? `About ${priceFormatter.format(totalShorts)} Shorts`
+        : `ショート動画約${priceFormatter.format(totalShorts)}本`;
     return {
       ...plan,
-      eyebrow: `${packagePrice.discountPercent}% 할인`,
+      eyebrow: locale === "ko" ? `${packagePrice.discountPercent}% 할인` : locale === "en" ? `${packagePrice.discountPercent}% off` : `${packagePrice.discountPercent}%割引`,
       checkoutPlanCode: packagePrice.code,
       price: `₩${priceFormatter.format(packagePrice.monthlyPriceKrw)}`,
       billing: installmentOffer?.paymentFlow === "manual_direct"
         && maximumInstallmentMonths > 0
-        ? `이용기간 ${packageMonths}개월 · 총 ₩${priceFormatter.format(packagePrice.totalPriceKrw)} · 할부 최대 ${maximumInstallmentMonths}개월`
-        : `${packageMonths}개월 총 ₩${priceFormatter.format(packagePrice.totalPriceKrw)}`,
+        ? locale === "ko"
+          ? `이용기간 ${packageMonths}개월 · 총 ₩${priceFormatter.format(packagePrice.totalPriceKrw)} · 할부 최대 ${maximumInstallmentMonths}개월`
+          : locale === "en"
+            ? `${packageMonths}-month term · ₩${priceFormatter.format(packagePrice.totalPriceKrw)} total · up to ${maximumInstallmentMonths} installments`
+            : `利用期間${packageMonths}か月 · 合計₩${priceFormatter.format(packagePrice.totalPriceKrw)} · 最大${maximumInstallmentMonths}回払い`
+        : locale === "ko"
+          ? `${packageMonths}개월 총 ₩${priceFormatter.format(packagePrice.totalPriceKrw)}`
+          : locale === "en"
+            ? `${packageMonths} months · ₩${priceFormatter.format(packagePrice.totalPriceKrw)} total`
+            : `${packageMonths}か月 · 合計₩${priceFormatter.format(packagePrice.totalPriceKrw)}`,
       cta: supportsMatchingInstallments
-        ? `${plan.name} ${packageMonths}개월 할부결제`
-        : `${plan.name} ${packageMonths}개월 선택`,
+        ? locale === "ko" ? `${tierName} ${packageMonths}개월 할부결제` : locale === "en" ? `Pay for ${tierName} in ${packageMonths} installments` : `${tierName}を${packageMonths}回払いで決済`
+        : locale === "ko" ? `${tierName} ${packageMonths}개월 선택` : locale === "en" ? `Choose ${tierName} · ${packageMonths} months` : `${tierName}・${packageMonths}か月を選択`,
       features: [
         {
-          text: `원본 영상 처리시간 · 매월 ${priceFormatter.format(monthlyMinutes)}분 × ${packageMonths}개월`,
-          strong: `매월 ${priceFormatter.format(monthlyMinutes)}분`,
+          text: locale === "ko"
+            ? `원본 영상 처리시간 · ${localizedMonthlyMinutes} × ${packageMonths}개월`
+            : locale === "en"
+              ? `Source-video processing · ${localizedMonthlyMinutes} × ${packageMonths} months`
+              : `元動画処理時間 · ${localizedMonthlyMinutes} × ${packageMonths}か月`,
+          strong: localizedMonthlyMinutes,
         },
         {
-          text: `쇼츠 약 ${priceFormatter.format(totalShorts)}개 · ${packageMonths}개월`,
-          strong: `쇼츠 약 ${priceFormatter.format(totalShorts)}개`,
+          text: `${localizedTotalShorts} · ${monthLabel(packageMonths, locale)}`,
+          strong: localizedTotalShorts,
         },
         ...plan.features.slice(2),
       ],
@@ -380,13 +419,13 @@ export function PricingClient({
     (product) => getPricingV2Plan(product.planCode)?.kind === "package",
   ) || activePricingProduct?.kind === "package";
   const comparisonRows = [
-    { label: "월 원본 영상 처리시간", values: ["60분", "200분", "600분"] },
+    { label: "월 원본 영상 처리시간", values: [minuteLabel(60, locale), minuteLabel(200, locale), minuteLabel(600, locale)] },
     {
       label: "예상 쇼츠 제작량",
       values: [
-        "약 48개/월",
-        `약 ${priceFormatter.format(160 * packageMonths)}개/${packageMonths}개월`,
-        `약 ${priceFormatter.format(480 * packageMonths)}개/${packageMonths}개월`,
+        locale === "ko" ? "약 48개/월" : locale === "en" ? "About 48/month" : "約48本/月",
+        locale === "ko" ? `약 ${priceFormatter.format(160 * packageMonths)}개/${packageMonths}개월` : locale === "en" ? `About ${priceFormatter.format(160 * packageMonths)}/${packageMonths} months` : `約${priceFormatter.format(160 * packageMonths)}本/${packageMonths}か月`,
+        locale === "ko" ? `약 ${priceFormatter.format(480 * packageMonths)}개/${packageMonths}개월` : locale === "en" ? `About ${priceFormatter.format(480 * packageMonths)}/${packageMonths} months` : `約${priceFormatter.format(480 * packageMonths)}本/${packageMonths}か月`,
       ],
     },
     { label: "동시 작업", values: ["1개", "2개", "3개"] },
@@ -395,7 +434,7 @@ export function PricingClient({
     { label: "전략 가이드 PDF", values: ["미제공", "제공", "제공"] },
     {
       label: "결제 방식",
-      values: ["매월 자동결제", `${packageMonths}개월 패키지`, `${packageMonths}개월 패키지`],
+      values: ["매월 자동결제", locale === "ko" ? `${packageMonths}개월 패키지` : locale === "en" ? `${packageMonths}-month package` : `${packageMonths}か月パッケージ`, locale === "ko" ? `${packageMonths}개월 패키지` : locale === "en" ? `${packageMonths}-month package` : `${packageMonths}か月パッケージ`],
     },
   ];
 
@@ -859,7 +898,7 @@ export function PricingClient({
                 className={packageMonths === months ? styles.packageTermActive : ""}
                 onClick={() => setPackageMonths(months)}
               >
-                {months}개월
+                {monthLabel(months, locale)}
               </button>
             ))}
           </div>
@@ -895,9 +934,9 @@ export function PricingClient({
                 product.popular ? styles.earlyBirdPopular : ""
               } ${product.accent === "violet" ? styles.earlyBirdViolet : ""}`}
             >
-              <span className={styles.discountBadge}>{product.discount}% 할인</span>
+              <span className={styles.discountBadge}>{locale === "ko" ? `${product.discount}% 할인` : locale === "en" ? `${product.discount}% off` : `${product.discount}%割引`}</span>
               <p>얼리버드</p>
-              <h3>{priceFormatter.format(product.minutes)}분</h3>
+              <h3>{minuteLabel(priceFormatter.format(product.minutes), locale)}</h3>
               <span className={styles.originalPrice}>₩{priceFormatter.format(product.originalPrice)}</span>
               <strong>₩{priceFormatter.format(product.salePrice)}</strong>
               <button
