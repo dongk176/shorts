@@ -76,9 +76,9 @@ export async function POST(request: Request) {
         limit 1
       `;
       const firstJob = firstJobRows[0] || null;
-      const prepaidMonths = order.billingCycle === "yearly"
-        ? Number(order.prepaidMonths || 12)
-        : 1;
+      const prepaidMonths = Number(
+        order.prepaidMonths || (order.billingCycle === "yearly" ? 12 : 1),
+      );
       const reservedRows = await tx`
         select (
           coalesce((
@@ -118,11 +118,15 @@ export async function POST(request: Request) {
       if (plannedRefundKrw > maximumRemainingKrw) {
         throw new HttpError(409, "남은 환불 가능 금액을 초과했습니다.");
       }
+      if (body.billingAction !== "none" && order.provider !== "thepayone") {
+        throw new HttpError(409, "토스 주문은 토스 구독 관리에서 자동결제를 해지해 주세요.");
+      }
       if (body.billingAction !== "none" && order.billingCycle !== "monthly") {
-        throw new HttpError(409, "자동결제 중지는 월간 구독 주문에서만 선택할 수 있습니다.");
+        throw new HttpError(409, "자동결제 중지는 더페이원 월간 구독 주문에서만 선택할 수 있습니다.");
       }
       if (
-        order.billingCycle === "monthly"
+        order.provider === "thepayone"
+        && order.billingCycle === "monthly"
         && body.entitlementAction !== "none"
         && body.billingAction === "none"
       ) {

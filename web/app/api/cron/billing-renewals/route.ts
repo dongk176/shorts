@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { processBillingRenewals } from "@/lib/billing-renewals";
 import { getDb } from "@/lib/db";
+import { processTossBillingRenewals } from "@/lib/toss-billing-renewals";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,12 +20,31 @@ export async function GET(request: Request) {
   if (!secret || !provided || !safeSecretEqual(secret, provided)) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
+  const db = getDb();
+  const failedEngines: Array<"legacy" | "toss"> = [];
+  let legacy: Awaited<ReturnType<typeof processBillingRenewals>> | null = null;
+  let toss: Awaited<ReturnType<typeof processTossBillingRenewals>> | null = null;
+
   try {
-    return NextResponse.json(await processBillingRenewals(getDb()));
+    legacy = await processBillingRenewals(db);
   } catch (error) {
-    console.error("billing_renewal_cron_failed", {
+    failedEngines.push("legacy");
+    console.error("legacy_billing_renewal_cron_failed", {
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
-    return NextResponse.json({ detail: "Billing renewal failed" }, { status: 500 });
   }
+
+  try {
+    toss = await processTossBillingRenewals(db);
+  } catch (error) {
+    failedEngines.push("toss");
+    console.error("toss_billing_renewal_cron_failed", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+  }
+
+  return NextResponse.json(
+    { legacy, toss, failedEngines },
+    { status: failedEngines.length > 0 ? 500 : 200 },
+  );
 }

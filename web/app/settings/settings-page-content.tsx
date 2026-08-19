@@ -261,9 +261,11 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
     return () => controller.abort();
   }, []);
 
-  const activeMonthlySubscription = billing?.activeProducts.find((product) =>
-    !product.planCode.startsWith("starter_") && !product.planCode.startsWith("expert_")
-  );
+  const activeMonthlySubscription = billing?.paymentProvider === "thepayone"
+    ? billing.activeProducts.find((product) =>
+        product.planCode === "easycut_pro_v2" && product.billingCycle === "monthly"
+      )
+    : undefined;
 
   async function signOut(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -323,7 +325,7 @@ export function SettingsPageContent({ user }: { user: AuthProfile | null }) {
                 icon={<svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 19V9m5 10V5m5 14v-7m5 7V3" /></svg>}
               />
               <SettingLink
-                href="/pricing"
+                href="/settings/plan"
                 title={t("settings.managePlan")}
                 description={t("settings.managePlanDescription")}
                 icon={<svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18m-13 5h3" /></svg>}

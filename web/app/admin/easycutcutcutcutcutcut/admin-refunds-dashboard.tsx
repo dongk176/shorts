@@ -178,9 +178,10 @@ export function AdminRefundsDashboard({
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const selectedPrepaidMonths = selectedOrder?.billingCycle === "yearly"
-    ? Number(selectedOrder.prepaidMonths || 12)
-    : 1;
+  const selectedPrepaidMonths = Number(
+    selectedOrder?.prepaidMonths
+      || (selectedOrder?.billingCycle === "yearly" ? 12 : 1),
+  );
   const selectedQuote = selectedOrder ? quoteFirstCompletedJobRefund({
     actualPaymentKrw: Number(selectedOrder.amountKrw),
     refundedOrReservedKrw: Number(selectedOrder.refundedAmountKrw || 0),
@@ -217,7 +218,7 @@ export function AdminRefundsDashboard({
     setReasonCode(order.kind === "addon" ? "statutory_withdrawal_unused" : "customer_early_termination");
     setRefundAction("policy_refund");
     setManualRefundKrw(0);
-    if (order.billingCycle === "monthly") {
+    if (order.provider === "thepayone" && order.billingCycle === "monthly") {
       setBillingAction("pause_now_keep_until_period_end");
       setEntitlementAction("end_at_current_period");
     } else {
@@ -254,7 +255,9 @@ export function AdminRefundsDashboard({
       setSearchQuery("");
       setReasonDetail("");
       setAdminNote("");
-      setMessage("환불 건을 미처리 상태로 추가했습니다. 실제 카드 환불은 실행되지 않았습니다.");
+      setMessage(selectedOrder.provider === "toss"
+        ? "토스 환불 건을 등록했습니다. 상세 관리에서 실제 카드 환불을 실행할 수 있습니다."
+        : "환불 건을 미처리 상태로 추가했습니다. 실제 카드 환불은 실행되지 않았습니다.");
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "환불 건을 추가하지 못했습니다.");
@@ -325,6 +328,39 @@ export function AdminRefundsDashboard({
     }
   };
 
+  const executeTossPaymentRefund = async () => {
+    if (!editing || editing.provider !== "toss" || submitting) return;
+    const confirmed = window.confirm(
+      `토스 카드에 ${money(editing.plannedRefundKrw)}을 실제로 환불합니다. 이 작업은 결제사에 즉시 전송됩니다. 계속하시겠습니까?`,
+    );
+    if (!confirmed) return;
+    setSubmitting(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/admin/refunds/cases/${editing.id}/payment-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ confirmation: "토스 환불 실행" }),
+      });
+      const result = await response.json() as { state?: string; detail?: string };
+      if (!response.ok) throw new Error(result.detail || "토스 카드 환불에 실패했습니다.");
+      setEditing(null);
+      setMessage(
+        result.state === "succeeded" || result.state === "already_succeeded"
+          ? "토스 실제 카드 환불을 완료했습니다."
+          : "토스 환불 결과를 상점관리자에서 직접 확인해 주세요.",
+      );
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "토스 카드 환불에 실패했습니다.");
+      setEditing(null);
+      router.refresh();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const copyGuide = async (refundCase: AdminRefundCase) => {
     const copy = buildRefundGuide({
       customerName: refundCase.displayName,
@@ -374,7 +410,7 @@ export function AdminRefundsDashboard({
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-black">환불 관리</h2>
-              <p className="mt-1 text-xs text-neutral-500">상태 변경은 관리 기록만 바꾸며 실제 카드 환불과 연동되지 않습니다.</p>
+              <p className="mt-1 text-xs text-neutral-500">토스 결제는 실제 카드 환불을 실행할 수 있으며, 더페이원은 기존 수동 관리 방식을 유지합니다.</p>
             </div>
             <div className="flex w-full flex-wrap gap-2 xl:w-auto">
               <form className="flex flex-1 flex-wrap gap-2 xl:flex-none" method="get">
@@ -494,11 +530,11 @@ export function AdminRefundsDashboard({
                   <label className="text-sm font-bold">환불 금액 방식<select value={refundAction} onChange={(event) => setRefundAction(event.target.value as AdminRefundAction)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundActions.map((action) => <option key={action} value={action}>{action === "policy_refund" ? "첫 작업 기준 자동 계산" : action === "manual_amount" ? "금액 직접 입력" : "환불 없음"}</option>)}</select></label>
                   {refundAction === "manual_amount" ? <label className="text-sm font-bold">직접 입력 환불액<input type="number" min={1} max={Number(selectedOrder.amountKrw) - Number(selectedOrder.refundedAmountKrw)} value={manualRefundKrw} onChange={(event) => setManualRefundKrw(Number(event.target.value))} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3" /></label> : null}
                 </div>
-                <label className="text-sm font-bold">자동결제 처리<select value={billingAction} onChange={(event) => setBillingAction(event.target.value as AdminRefundBillingAction)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundBillingActions.map((action) => <option key={action} value={action} disabled={action !== "none" && selectedOrder.billingCycle !== "monthly"}>{billingActionLabels[action]}</option>)}</select></label>
+                <label className="text-sm font-bold">자동결제 처리<select value={billingAction} onChange={(event) => setBillingAction(event.target.value as AdminRefundBillingAction)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundBillingActions.map((action) => <option key={action} value={action} disabled={action !== "none" && (selectedOrder.provider !== "thepayone" || selectedOrder.billingCycle !== "monthly")}>{billingActionLabels[action]}</option>)}</select></label>
                 <label className="text-sm font-bold">이용권 처리<select value={entitlementAction} onChange={(event) => setEntitlementAction(event.target.value as AdminRefundEntitlementAction)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundEntitlementActions.map((action) => <option key={action} value={action}>{entitlementActionLabels[action]}</option>)}</select></label>
                 <label className="text-sm font-bold lg:col-span-2">환불 사유<textarea required minLength={2} maxLength={1000} rows={3} value={reasonDetail} onChange={(event) => setReasonDetail(event.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 p-3" /></label>
                 <label className="text-sm font-bold lg:col-span-2">관리자 메모<textarea maxLength={2000} rows={2} value={adminNote} onChange={(event) => setAdminNote(event.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 p-3" /></label>
-                <p className="text-xs leading-5 text-amber-200 lg:col-span-2">이 단계는 미처리 환불 건만 등록합니다. 카드 환불이나 구독·이용권 변경은 실행하지 않습니다.</p>
+                <p className="text-xs leading-5 text-amber-200 lg:col-span-2">{selectedOrder.provider === "toss" ? "이 단계에서는 환불 건만 등록합니다. 등록 후 상세 관리에서 실제 토스 카드 환불을 실행하세요." : "이 단계는 미처리 환불 건만 등록합니다. 카드 환불이나 구독·이용권 변경은 실행하지 않습니다."}</p>
                 <button type="button" disabled={submitting || reasonDetail.trim().length < 2 || (refundAction === "manual_amount" && manualRefundKrw < 1)} onClick={() => void createCase()} className="h-12 rounded-xl bg-[#ff806f] font-black text-white disabled:opacity-40 lg:col-span-2">{submitting ? "등록 중..." : "미처리 환불 건 등록"}</button>
               </div>
             ) : null}
@@ -521,18 +557,31 @@ export function AdminRefundsDashboard({
               <dt className="text-neutral-500">이용권</dt><dd>{entitlementActionLabels[editing.entitlementAction]}{editing.entitlementEffectiveAt ? ` · ${date(editing.entitlementEffectiveAt)}` : ""}</dd>
             </dl>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm font-bold">업무 상태<select value={editingStatus} onChange={(event) => setEditingStatus(event.target.value as AdminRefundCaseStatus)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundCaseStatuses.map((status) => <option key={status} value={status}>{caseStatusLabels[status]}</option>)}</select></label>
-              <label className="text-sm font-bold">결제 환불 기록<select value={editingPaymentStatus} onChange={(event) => setEditingPaymentStatus(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{Object.entries(paymentStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-              <label className="text-sm font-bold sm:col-span-2">PG·카드사 확인번호<input maxLength={200} value={editingProviderReference} onChange={(event) => setEditingProviderReference(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3" /></label>
+              <label className="text-sm font-bold">업무 상태<select value={editingStatus} onChange={(event) => setEditingStatus(event.target.value as AdminRefundCaseStatus)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{adminRefundCaseStatuses.map((status) => <option key={status} value={status} disabled={editing.provider === "toss" && status === "completed" && editing.paymentStatus !== "completed"}>{caseStatusLabels[status]}</option>)}</select></label>
+              {editing.provider === "toss" ? (
+                <div className="text-sm font-bold">결제 환불 상태<div className="mt-2 flex h-11 items-center rounded-xl border border-white/10 bg-black/20 px-3 text-neutral-300">{paymentStatusLabels[editing.paymentStatus] || editing.paymentStatus}</div></div>
+              ) : (
+                <label className="text-sm font-bold">결제 환불 기록<select value={editingPaymentStatus} onChange={(event) => setEditingPaymentStatus(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#191c1d] px-3">{Object.entries(paymentStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+              )}
+              {editing.provider === "toss" ? (
+                <div className="text-sm font-bold sm:col-span-2">PG·카드사 확인번호<div className="mt-2 min-h-11 break-all rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-xs text-neutral-400">{editing.providerReference || "실제 환불 후 자동 기록됩니다."}</div></div>
+              ) : (
+                <label className="text-sm font-bold sm:col-span-2">PG·카드사 확인번호<input maxLength={200} value={editingProviderReference} onChange={(event) => setEditingProviderReference(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3" /></label>
+              )}
               <label className="text-sm font-bold sm:col-span-2">관리자 메모<textarea maxLength={2000} rows={4} value={editingNote} onChange={(event) => setEditingNote(event.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 p-3" /></label>
             </div>
-            <div className="mt-5 rounded-2xl border border-sky-300/20 bg-sky-300/[.06] p-4 text-xs font-bold leading-5 text-sky-100">
-              업무 상태와 결제 환불 기록을 저장해도 더페이원 호출, 카드 환불, 결제금액 변경은 일어나지 않습니다.
-            </div>
+            <div className="mt-5 rounded-2xl border border-sky-300/20 bg-sky-300/[.06] p-4 text-xs font-bold leading-5 text-sky-100">{editing.provider === "toss" ? "토스 환불 상태와 확인번호는 실제 카드 환불 결과로만 자동 기록됩니다." : "업무 상태와 결제 환불 기록을 저장해도 더페이원 호출, 카드 환불, 결제금액 변경은 일어나지 않습니다."}</div>
             <div className="mt-5 flex flex-wrap gap-3">
-              <button type="button" disabled={submitting} onClick={() => void updateCase()} className="h-11 flex-1 rounded-xl bg-white px-4 text-sm font-black text-black disabled:opacity-40">상태만 저장</button>
+              <button type="button" disabled={submitting} onClick={() => void updateCase()} className="h-11 flex-1 rounded-xl bg-white px-4 text-sm font-black text-black disabled:opacity-40">{editing.provider === "toss" ? "업무 상태 저장" : "상태만 저장"}</button>
               <button type="button" onClick={() => void copyGuide(editing)} className="h-11 rounded-xl border border-sky-300/20 px-4 text-sm font-black text-sky-100">안내 메일 복사</button>
             </div>
+            {editing.provider === "toss" ? (
+              <div className="mt-5 border-t border-white/10 pt-5">
+                <p className="text-sm font-black">토스 실제 카드 환불</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">환불 요청은 중복 실행되지 않도록 고정된 요청 번호로 처리됩니다.</p>
+                <button type="button" disabled={submitting || editing.paymentStatus !== "not_started" || editing.plannedRefundKrw < 1} onClick={() => void executeTossPaymentRefund()} className="mt-3 h-11 rounded-xl bg-[#ff806f] px-4 text-sm font-black text-white disabled:opacity-40">{editing.paymentStatus === "completed" ? "토스 환불 완료" : editing.paymentStatus === "submitted" || editing.paymentStatus === "manual_review" ? "환불 결과 확인 필요" : "토스 카드 환불 실행"}</button>
+              </div>
+            ) : null}
             {(editing.billingAction !== "none" || editing.entitlementAction !== "none") ? (
               <div className="mt-5 border-t border-white/10 pt-5">
                 <p className="text-sm font-black">구독·이용권 별도 실행</p>

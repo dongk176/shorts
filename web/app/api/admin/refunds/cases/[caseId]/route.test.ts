@@ -46,11 +46,13 @@ describe("administrator refund case status API", () => {
     const tx = Object.assign(vi.fn(async (strings: TemplateStringsArray) => {
       const statement = strings.join("?");
       statements.push(statement);
-      if (statement.includes("select *") && statement.includes("admin_refund_cases")) {
+      if (statement.includes("select c.*") && statement.includes("admin_refund_cases")) {
         return [{
           id: caseId,
           status: "in_progress",
           paymentStatus: "submitted",
+          provider: "thepayone",
+          providerReference: null,
         }];
       }
       if (statement.includes("update shorts_mvp.admin_refund_cases")) {
@@ -77,7 +79,41 @@ describe("administrator refund case status API", () => {
     expect(statements.some((statement) => statement.includes("admin_refund_cases"))).toBe(true);
     expect(statements.some((statement) => statement.includes("admin_refund_case_events"))).toBe(true);
     expect(statements.some((statement) => statement.includes("admin_audit_logs"))).toBe(true);
-    expect(statements.some((statement) => statement.includes("billing_orders"))).toBe(false);
+    expect(statements.some((statement) => statement.includes("update shorts_mvp.billing_orders"))).toBe(false);
     expect(statements.some((statement) => statement.includes("admin_billing_refunds"))).toBe(false);
+  });
+
+  it("rejects a manual Toss payment-status override", async () => {
+    const statements: string[] = [];
+    const tx = Object.assign(vi.fn(async (strings: TemplateStringsArray) => {
+      const statement = strings.join("?");
+      statements.push(statement);
+      if (statement.includes("select c.*") && statement.includes("admin_refund_cases")) {
+        return [{
+          id: caseId,
+          status: "open",
+          paymentStatus: "not_started",
+          provider: "toss",
+          providerReference: null,
+          billingAction: "none",
+          entitlementAction: "none",
+          serviceActionStatus: "not_started",
+        }];
+      }
+      return [];
+    }), {
+      json: (value: unknown) => value,
+    });
+    const db = Object.assign(vi.fn(), {
+      begin: vi.fn(async (callback: (sql: typeof tx) => Promise<unknown>) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await PATCH(request(), {
+      params: Promise.resolve({ caseId }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(statements.some((statement) => statement.includes("update shorts_mvp.admin_refund_cases"))).toBe(false);
   });
 });

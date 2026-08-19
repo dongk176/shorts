@@ -40,19 +40,53 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     const db = getDb();
     const rows = await db.begin(async (tx) => {
       const currentRows = await tx`
-        select *
-        from shorts_mvp.admin_refund_cases
-        where id=${caseId}
-        for update
+        select c.*,o.provider
+        from shorts_mvp.admin_refund_cases c
+        join shorts_mvp.billing_orders o on o.id=c.billing_order_id
+        where c.id=${caseId}
+        for update of c,o
       `;
       const current = currentRows[0];
       if (!current) throw new HttpError(404, "환불 건을 찾을 수 없습니다.");
 
+      if (current.provider === "toss") {
+        const suppliedReference = body.providerReference || null;
+        const storedReference = current.providerReference || null;
+        if (
+          body.paymentStatus !== current.paymentStatus
+          || suppliedReference !== storedReference
+        ) {
+          throw new HttpError(
+            409,
+            "토스 환불 상태와 확인번호는 실제 카드 환불 결과로만 변경할 수 있습니다.",
+          );
+        }
+        if (
+          body.status === "completed"
+          && (
+            current.paymentStatus !== "completed"
+            || (
+              (current.billingAction !== "none" || current.entitlementAction !== "none")
+              && current.serviceActionStatus !== "succeeded"
+            )
+          )
+        ) {
+          throw new HttpError(409, "실제 환불과 선택한 이용권 처리를 먼저 완료해 주세요.");
+        }
+      }
+
+      const paymentStatus = current.provider === "toss"
+        ? current.paymentStatus
+        : body.paymentStatus;
+      const providerReference = current.provider === "toss"
+        ? current.providerReference || null
+        : body.providerReference || null;
+
       const updated = await tx`
         update shorts_mvp.admin_refund_cases
         set status=${body.status},
-          payment_status=${body.paymentStatus},
-          provider_reference=${body.providerReference || null},
+          payment_status=${paymentStatus},
+          provider_reference=${providerReference},
           admin_note=${body.adminNote || null},
           assigned_to_user_id=${admin.id},
           completed_at=case
@@ -74,8 +108,9 @@ export async function PATCH(request: Request, { params }: RouteContext) {
           ${current.status},${body.status},${body.adminNote || null},
           ${tx.json({
             previousPaymentStatus: current.paymentStatus,
-            paymentStatus: body.paymentStatus,
-            providerReference: body.providerReference || null,
+            paymentStatus,
+            providerReference,
+            provider: current.provider,
           })}
         )
       `;
@@ -88,16 +123,18 @@ export async function PATCH(request: Request, { params }: RouteContext) {
             previousStatus: current.status,
             status: body.status,
             previousPaymentStatus: current.paymentStatus,
-            paymentStatus: body.paymentStatus,
-            providerReference: body.providerReference || null,
+            paymentStatus,
+            providerReference,
+            provider: current.provider,
           })}
         )
       `;
       return updated;
     });
 
-    // This endpoint intentionally updates only the operational case. It never
-    // calls a payment provider or mutates billing_orders refund totals.
+    // This endpoint intentionally updates only the operational case. Toss
+    // payment fields are immutable here and can only be changed by the
+    // provider-backed payment-action endpoint.
     return NextResponse.json({ ok: true, refundCase: rows[0] });
   } catch (error) {
     return apiError(error, "환불 건 상태를 변경하지 못했습니다.");

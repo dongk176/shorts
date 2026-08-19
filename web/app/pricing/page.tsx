@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { getBillingSummary } from "@/lib/billing";
+import { resolveBillingCustomerCohort } from "@/lib/billing-cohort";
 import { getDb } from "@/lib/db";
-import { authProfile } from "@/lib/session";
+import { authProfile, requireMvpSession } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
+import { getTossBillingState, type TossBillingState } from "@/lib/toss-billing-state";
 import { createPageMetadata } from "@/lib/seo";
 import { PricingPageShell } from "./pricing-page-shell";
 
@@ -16,18 +18,25 @@ export default async function PricingPage() {
   const user = await getAuthenticatedUser();
   const profile = user ? authProfile(user) : null;
   let initialState = null;
+  let tossExperience = false;
+  let initialTossState: TossBillingState | null = null;
   try {
     const db = getDb();
-    const appUserRows = user
-      ? await db`
-          select id from shorts_mvp.app_users
-          where auth_user_id=${user.id}
-          limit 1
-        `
-      : [];
-    const appUserId = typeof appUserRows[0]?.id === "string"
-      ? appUserRows[0].id
+    const session = user
+      ? await requireMvpSession(user, { createIfMissing: false })
       : null;
+    const appUserId = session?.userId ?? null;
+    const cohort = appUserId
+      ? await resolveBillingCustomerCohort(appUserId, db)
+      : null;
+    tossExperience = cohort?.cohort === "toss_v1" && cohort.persisted;
+    if (tossExperience && session?.userId) {
+      initialTossState = await getTossBillingState({
+        userId: session.userId,
+        session: session as typeof session & { userId: string },
+        db,
+      });
+    }
     initialState = {
       user: profile,
       billing: await getBillingSummary(db, appUserId),
@@ -37,5 +46,12 @@ export default async function PricingPage() {
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
   }
-  return <PricingPageShell user={profile} initialState={initialState} />;
+  return (
+    <PricingPageShell
+      user={profile}
+      initialState={initialState}
+      tossExperience={tossExperience}
+      initialTossState={initialTossState}
+    />
+  );
 }

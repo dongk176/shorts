@@ -125,7 +125,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const status = ["pending", "processing", "succeeded", "failed", "unknown", "manual_review", "canceled", "expired"].includes(requestedStatus)
     ? requestedStatus
     : "all";
-  const provider = ["nicepay", "thepayone"].includes(requestedProvider) ? requestedProvider : "all";
+  const provider = ["nicepay", "thepayone", "toss"].includes(requestedProvider) ? requestedProvider : "all";
   const requestedRefundStatus = first(params.refundStatus);
   const refundCaseStatus = ["unprocessed", "in_progress", "completed", "manual_review", "closed"].includes(requestedRefundStatus)
     ? requestedRefundStatus

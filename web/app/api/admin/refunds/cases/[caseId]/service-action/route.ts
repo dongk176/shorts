@@ -77,6 +77,8 @@ export async function POST(request: Request, { params }: RouteContext) {
         throw new HttpError(409, "연결된 구독이나 패키지 이용권을 찾을 수 없습니다.");
       }
       if (
+        subscription.paymentProvider === "thepayone"
+        &&
         subscription.billingCycle === "monthly"
         && refundCase.entitlementAction !== "none"
         && refundCase.billingAction === "none"

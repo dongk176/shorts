@@ -5,15 +5,21 @@ import { AuthControls } from "@/components/auth-controls";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import type { AuthProfile } from "@/lib/session";
+import type { TossBillingState } from "@/lib/toss-billing-state";
 import { PricingClient, type PricingState } from "./pricing-client";
+import { TossPricingClient } from "./toss-pricing-client";
 import styles from "./pricing.module.css";
 
 export function PricingPageShell({
   user,
   initialState,
+  tossExperience,
+  initialTossState,
 }: {
   user: AuthProfile | null;
   initialState: PricingState | null;
+  tossExperience: boolean;
+  initialTossState: TossBillingState | null;
 }) {
   const [loginOpen, setLoginOpen] = useState(false);
 
@@ -28,10 +34,14 @@ export function PricingPageShell({
         />
       </SiteHeader>
       <main className="pricing-main">
-        <PricingClient
-          initialState={initialState}
-          onRequireLogin={() => setLoginOpen(true)}
-        />
+        {tossExperience ? (
+          <TossPricingClient initialState={initialTossState} />
+        ) : (
+          <PricingClient
+            initialState={initialState}
+            onRequireLogin={() => setLoginOpen(true)}
+          />
+        )}
       </main>
       <SiteFooter />
     </div>
