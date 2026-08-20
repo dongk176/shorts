@@ -913,10 +913,13 @@ export function PricingClient({
           </div>
         </div>
         <div className={`${styles.planGrid} ${hasActivePackage ? styles.packageOnlyGrid : ""}`}>
-          {!hasActivePackage && renderPlanCard(displayedPlans[0])}
-          <div className={styles.packageGroup}>
-            {displayedPlans.slice(1).map(renderPlanCard)}
-          </div>
+          {hasActivePackage ? (
+            <div className={styles.packageGroup}>
+              {displayedPlans.slice(1).map(renderPlanCard)}
+            </div>
+          ) : (
+            displayedPlans.map(renderPlanCard)
+          )}
         </div>
           </section>
         </>

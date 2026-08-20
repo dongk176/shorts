@@ -219,9 +219,9 @@
 .planGrid {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  gap: 88px;
-  align-items: start;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  align-items: stretch;
   margin-bottom: 96px;
 }
 
@@ -232,12 +232,19 @@
   margin-left: auto;
 }
 
-.packageOnlyGrid .packageGroup::before {
-  display: none;
+.planCard {
+  height: 100%;
+  min-height: 0;
 }
 
-.planCard {
-  min-height: 0;
+.planGrid :global(.pricing-card-popular),
+.localPlanGrid :global(.pricing-card-popular) {
+  transform: none;
+}
+
+.planGrid :global(.pricing-card-popular:hover),
+.localPlanGrid :global(.pricing-card-popular:hover) {
+  transform: translateY(-7px);
 }
 
 .localPlanSkeleton {
@@ -328,23 +335,11 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .packageGroup::before {
-  content: "";
-  position: absolute;
-  top: 18px;
-  bottom: 18px;
-  left: -45px;
-  width: 2px;
-  background: linear-gradient(
-    180deg,
-    transparent,
-    rgba(255, 255, 255, .34) 50%,
-    transparent
-  );
-  pointer-events: none;
+  display: none;
 }
 
 .planEyebrow {
@@ -427,6 +422,7 @@
 
 .planCta {
   width: 100%;
+  margin-top: auto;
 }
 
 :global(.pricing-cta).planCtaPending {
@@ -682,21 +678,6 @@
 
   .planCard {
     min-height: 0;
-  }
-
-  .packageGroup::before {
-    top: auto;
-    right: 0;
-    bottom: -37px;
-    left: 0;
-    width: auto;
-    height: 2px;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      rgba(255, 255, 255, .34) 50%,
-      transparent
-    );
   }
 
   .earlyBirdGrid {
