@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useUsageState } from "@/components/usage-provider";
 
 type Status =
   | { kind: "loading" }
@@ -9,6 +11,8 @@ type Status =
   | { kind: "error"; message: string };
 
 export function TossCheckoutSuccessClient() {
+  const router = useRouter();
+  const { refreshUsage } = useUsageState();
   const [status, setStatus] = useState<Status>({ kind: "loading" });
 
   useEffect(() => {
@@ -34,13 +38,16 @@ export function TossCheckoutSuccessClient() {
     }).then(async (response) => {
       const payload = await response.json().catch(() => ({})) as { remainingSeconds?: number; detail?: string };
       if (!response.ok) throw new Error(payload.detail || "결제를 완료하지 못했습니다.");
-      setStatus({ kind: "success", remainingMinutes: Math.max(0, Math.floor((payload.remainingSeconds ?? 0) / 60)) });
+      const remainingMinutes = Math.max(0, Math.floor((payload.remainingSeconds ?? 0) / 60));
+      await refreshUsage().catch(() => undefined);
+      router.refresh();
+      setStatus({ kind: "success", remainingMinutes });
     }).catch((cause) => {
       if (controller.signal.aborted) return;
       setStatus({ kind: "error", message: cause instanceof Error ? cause.message : "결제를 완료하지 못했습니다." });
     });
     return () => controller.abort();
-  }, []);
+  }, [refreshUsage, router]);
 
   return (
     <main className="grid min-h-screen place-items-center bg-[#101415] px-5 py-12 text-neutral-100">
@@ -56,13 +63,13 @@ export function TossCheckoutSuccessClient() {
             <h1 className="text-3xl font-black tracking-tight">구독이 시작되었습니다</h1>
             <p className="mt-4 text-base font-bold text-neutral-200">남은 사용량 {status.remainingMinutes}분</p>
             <p className="mt-2 text-sm leading-7 text-neutral-400">등록한 카드로 다음 결제일에 자동 결제됩니다.</p>
-            <Link href="/projects" className="mt-8 grid min-h-13 place-items-center rounded-2xl bg-gradient-to-r from-[#f84b3f] to-[#8b5cf6] text-sm font-black text-white">쇼츠 만들기</Link>
+            <Link href="/" className="mt-8 flex min-h-[56px] items-center justify-center rounded-2xl bg-gradient-to-r from-[#f84b3f] to-[#8b5cf6] px-5 text-base font-black text-white">쇼츠 만들기</Link>
           </>
         ) : (
           <>
             <h1 className="text-3xl font-black tracking-tight">결제를 완료하지 못했습니다</h1>
             <p className="mt-4 text-sm leading-7 text-red-200">{status.message}</p>
-            <Link href="/pricing" className="mt-8 grid min-h-13 place-items-center rounded-2xl border border-white/12 text-sm font-black text-white">요금제로 돌아가기</Link>
+            <Link href="/pricing" className="mt-8 flex min-h-[56px] items-center justify-center rounded-2xl border border-white/12 px-5 text-base font-black text-white">요금제로 돌아가기</Link>
           </>
         )}
       </section>

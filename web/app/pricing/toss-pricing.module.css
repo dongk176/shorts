@@ -5,6 +5,15 @@
   padding: 88px 28px 110px;
 }
 
+:global(.app-shell .pricing-main) > section.root {
+  border: 0;
+  border-radius: 0;
+  padding: 88px 28px 110px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
 .hero h1 {
   color: #f5f5f5;
   font-size: clamp(36px, 5vw, 64px);
@@ -54,15 +63,17 @@
 .cards {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
   gap: 22px;
 }
 
 .card {
   position: relative;
   display: flex;
-  min-height: 660px;
+  height: 100%;
+  min-height: 0;
   flex-direction: column;
-  padding: 34px 32px 28px;
+  padding: 26px 28px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 28px;
   background: rgba(25, 28, 30, 0.9);
@@ -90,29 +101,29 @@
   top: -20px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 10px 24px;
+  padding: 10px 21px;
   border-radius: 999px;
   background: #f84b3f;
   color: #fff;
   box-shadow: 0 10px 26px rgba(248, 75, 63, 0.28);
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 950;
   white-space: nowrap;
 }
 
 .subtitle {
-  min-height: 42px;
-  margin-top: 7px;
+  min-height: 18px;
+  margin-top: 3px;
   color: #a3a3a3;
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .price {
   display: flex;
   align-items: flex-end;
   gap: 7px;
-  margin-top: 28px;
+  margin-top: 18px;
 }
 
 .price b {
@@ -128,30 +139,55 @@
   font-size: 14px;
 }
 
-.discountLine {
-  display: flex;
-  align-items: center;
-  min-height: 34px;
-  margin-top: 12px;
+.billing {
+  min-height: 24px;
+  padding-top: 8px;
+  color: #8f9395;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
 }
 
-.discountLine strong {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 5px 11px;
-  border: 1px solid rgba(255, 133, 117, 0.28);
-  border-radius: 999px;
-  background: rgba(248, 75, 63, 0.1);
-  color: #ff9385;
+.discountTag {
+  position: absolute;
+  z-index: 5;
+  top: -13px;
+  right: -10px;
+  width: fit-content;
+  padding: 10px 16px 10px 26px;
+  border: 1px solid rgba(255, 226, 160, 0.74);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ffe6a8, #ff8f70);
+  clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 0 50%);
+  color: #39170f;
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.28));
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 950;
+  transform: rotate(3deg);
+}
+
+.discountTag::before {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(51, 25, 17, 0.42);
+  content: "";
+  transform: translateY(-50%);
+}
+
+.discountTagViolet {
+  border-color: rgba(225, 208, 255, 0.72);
+  background: linear-gradient(135deg, #eadcff, #a982ff);
+  color: #25153c;
 }
 
 .card ul {
   display: grid;
-  gap: 16px;
-  margin: 28px 0 26px;
+  gap: 8px;
+  margin: 10px 0 16px;
   padding: 0;
   color: #dedede;
   font-size: 14px;
@@ -160,8 +196,8 @@
 
 .card li {
   display: flex;
-  gap: 11px;
-  line-height: 1.45;
+  gap: 9px;
+  line-height: 1.35;
 }
 
 .card li span {
@@ -404,6 +440,10 @@
     padding: 56px 18px 80px;
   }
 
+  :global(.app-shell .pricing-main) > section.root {
+    padding: 56px 18px 80px;
+  }
+
   .hero h1 {
     font-size: 39px;
   }
@@ -432,8 +472,8 @@
   }
 
   .card {
-    min-height: 620px;
-    padding: 32px 26px 25px;
+    min-height: 0;
+    padding: 24px 22px;
   }
 
   .starter {

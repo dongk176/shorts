@@ -1,7 +1,9 @@
 "use client";
 
 import Script from "next/script";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useUsageState } from "@/components/usage-provider";
 import type { TossBillingState } from "@/lib/toss-billing-state";
 import type { TossCatalogPlan, TossContractMonths } from "@/lib/toss-subscription";
 import styles from "./toss-pricing.module.css";
@@ -86,6 +88,8 @@ function subtitle(plan: TossCatalogPlan) {
 }
 
 export function TossPricingClient({ initialState }: { initialState: TossBillingState | null }) {
+  const router = useRouter();
+  const { refreshUsage } = useUsageState();
   const [state, setState] = useState(initialState);
   const [months, setMonths] = useState<TossContractMonths>(6);
   const [sdkReady, setSdkReady] = useState(false);
@@ -171,6 +175,7 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
       if (selection.action === "cancel_pending") {
         await postJson("/api/billing/toss/subscription/change/cancel", {});
         await refresh();
+        router.refresh();
         setSelection(null);
         setResult({ title: "변경 예약이 취소되었습니다", detail: "현재 이용 중인 플랜이 그대로 유지됩니다." });
         return;
@@ -179,7 +184,12 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
         "/api/billing/toss/subscription/change",
         { targetPlanCode: selection.plan.code },
       );
-      await refresh();
+      if (response.state === "scheduled") {
+        await refresh();
+      } else {
+        await Promise.all([refresh(), refreshUsage()]);
+      }
+      router.refresh();
       const selectedName = selection.plan.displayName;
       setSelection(null);
       if (response.state === "scheduled") {
@@ -248,11 +258,16 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
             const pending = state.subscription?.scheduledPlan?.code === plan.code;
             return (
               <article key={plan.code} className={`${styles.card} ${styles[plan.tier]} ${pending ? styles.pending : ""}`}>
-                {plan.tier === "starter" ? <strong className={styles.recommended}>가장 합리적</strong> : null}
+                {plan.tier === "starter" && plan.contractMonths === 6 ? <strong className={styles.recommended}>가장 합리적</strong> : null}
+                {plan.discountPercent ? (
+                  <strong className={`${styles.discountTag} ${plan.tier === "expert" ? styles.discountTagViolet : ""}`}>
+                    {plan.discountPercent}% 할인
+                  </strong>
+                ) : null}
                 <h2>{plan.displayName}</h2>
                 <p className={styles.subtitle}>{subtitle(plan)}</p>
                 <div className={styles.price}><b>₩{won(plan.monthlyEquivalentKrw)}</b><span>/월</span></div>
-                {plan.discountPercent ? <div className={styles.discountLine}><strong>{plan.discountPercent}% 할인</strong></div> : null}
+                <p className={styles.billing}>{plan.contractMonths}개월 총 ₩{won(plan.priceKrw)}</p>
                 <ul>
                   {features(plan).map((feature, index) => (
                     <li key={feature} className={index === 5 && !plan.guidebookIncluded ? styles.muted : ""}>
