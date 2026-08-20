@@ -25,7 +25,11 @@ declare global {
 }
 
 type DialogAction = "subscribe" | "immediate" | "scheduled" | "cancel_pending";
-type Selection = { plan: TossCatalogPlan; action: DialogAction };
+type Selection = {
+  plan: TossCatalogPlan;
+  action: DialogAction;
+  chargeAmountKrw: number | null;
+};
 type ApiError = { detail?: string; message?: string; code?: string };
 
 const TIER_ORDER = { easycut_pro: 0, starter: 1, expert: 2 } as const;
@@ -93,6 +97,14 @@ function subtitle(plan: TossCatalogPlan) {
   return "대량 제작과 운영을 위한 최대 플랜";
 }
 
+function capabilitySummary(plan: TossCatalogPlan) {
+  return [
+    `매월 ${Math.floor(plan.monthlyQuotaSeconds / 60)}분`,
+    `동시 작업 ${plan.maxActiveJobs}개`,
+    `가이드북 ${plan.guidebookIncluded ? "포함" : "미포함"}`,
+  ].join(" · ");
+}
+
 function mobileOrderClass(plan: TossCatalogPlan) {
   if (plan.tier === "starter") return styles.mobilePlanStarter;
   if (plan.tier === "expert") return styles.mobilePlanExpert;
@@ -151,14 +163,20 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
     setError(null);
     setConsent(false);
     if (state.subscription?.scheduledPlan?.code === plan.code) {
-      setSelection({ plan, action: "cancel_pending" });
+      setSelection({ plan, action: "cancel_pending", chargeAmountKrw: null });
       return;
     }
     if (state.subscription?.plan.code === plan.code) return;
-    const quoted = state.actions?.find((action) => action.planCode === plan.code)?.action;
+    const quote = state.actions?.find((action) => action.planCode === plan.code);
+    const action = !state.subscription
+      ? "subscribe"
+      : quote?.action === "immediate" ? "immediate" : "scheduled";
     setSelection({
       plan,
-      action: !state.subscription ? "subscribe" : quoted === "immediate" ? "immediate" : "scheduled",
+      action,
+      chargeAmountKrw: action === "immediate"
+        ? quote?.chargeAmountKrw ?? null
+        : plan.priceKrw,
     });
   }
 
@@ -381,20 +399,44 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
                       ? `${selection.plan.displayName} 플랜 구독을 시작할까요?`
                       : `${selection.plan.displayName} 플랜으로 전환할까요?`}
               </p>
-              <div className={styles.localPlanSummary}>
-                <div className={styles.localPlanSummaryCopy}>
-                  <strong>{selection.plan.displayName}</strong>
-                  <span>
-                    {selection.action === "cancel_pending"
-                      ? "예약된 플랜 변경을 취소합니다"
-                      : selection.action === "scheduled"
-                        ? "현재 구독 종료 후 적용됩니다"
-                        : selection.action === "subscribe"
-                          ? "카드 등록과 결제 후 바로 이용할 수 있습니다"
-                          : "등록된 카드로 결제 후 바로 적용됩니다"}
-                  </span>
+              {selection.action === "cancel_pending" ? (
+                <div className={styles.localPlanSummary}>
+                  <div className={styles.localPlanSummaryCopy}>
+                    <strong>{selection.plan.displayName} {selection.plan.contractMonths}개월</strong>
+                    <span>예약을 취소하면 현재 플랜이 그대로 유지됩니다.</span>
+                  </div>
                 </div>
-              </div>
+              ) : state.subscription ? (
+                <div className={styles.localPlanTransition}>
+                  <div className={styles.localPlanTransitionItem}>
+                    <small>현재</small>
+                    <strong>{state.subscription.plan.displayName} {state.subscription.plan.contractMonths}개월</strong>
+                    <span>{capabilitySummary(state.subscription.plan)}</span>
+                  </div>
+                  <span className={styles.localPlanTransitionArrow} aria-hidden="true">→</span>
+                  <div className={`${styles.localPlanTransitionItem} ${styles.localPlanTransitionNext}`}>
+                    <small>{selection.action === "scheduled" ? "다음 플랜" : "변경 후"}</small>
+                    <strong>{selection.plan.displayName} {selection.plan.contractMonths}개월</strong>
+                    <span>{capabilitySummary(selection.plan)}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className={styles.localPlanSummary}>
+                  <div className={styles.localPlanSummaryCopy}>
+                    <strong>{selection.plan.displayName} {selection.plan.contractMonths}개월</strong>
+                    <span>{capabilitySummary(selection.plan)}</span>
+                  </div>
+                </div>
+              )}
+              {selection.action !== "cancel_pending" ? (
+                <p className={styles.localPaymentNote}>
+                  {selection.action === "scheduled" && state.subscription
+                    ? `${date(state.subscription.currentPeriodEnd)} 등록 카드 결제 후 시작 · ${won(selection.chargeAmountKrw ?? selection.plan.priceKrw)}원`
+                    : selection.action === "immediate"
+                      ? `등록 카드로 ${selection.chargeAmountKrw === null ? "최종 확인 금액" : `${won(selection.chargeAmountKrw)}원`} 결제 후 바로 전환됩니다.`
+                      : `카드 등록과 ${won(selection.chargeAmountKrw ?? selection.plan.priceKrw)}원 결제 후 바로 시작됩니다.`}
+                </p>
+              ) : null}
               {selection.action !== "cancel_pending" ? (
                 <label className={styles.localConsent}>
                   <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />

@@ -27,6 +27,13 @@ describe("stored card display", () => {
     })).toBe("하나카드");
   });
 
+  it("does not expose a numeric provider issuer code and uses the stored BIN", () => {
+    expect(resolveStoredCardIssuer({
+      issuer: "11",
+      cardNumberMasked: "43368900****310*",
+    })).toBe("하나카드");
+  });
+
   it("does not expose a generic provider label when the issuer is unknown", () => {
     expect(resolveStoredCardIssuer({
       issuer: "기타",

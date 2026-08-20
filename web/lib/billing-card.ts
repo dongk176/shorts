@@ -25,7 +25,11 @@ const issuerByBin6: Record<string, string> = {
 
 function normalizedIssuerCandidate(value: string | null | undefined) {
   const candidate = value?.trim() || "";
-  if (!candidate || /^(?:기타|other|unknown|etc\.?)$/i.test(candidate)) return null;
+  if (
+    !candidate
+    || /^\d+$/.test(candidate)
+    || /^(?:기타|other|unknown|etc\.?)$/i.test(candidate)
+  ) return null;
   const alias = issuerAliases.find(([pattern]) => pattern.test(candidate));
   return alias?.[1] || candidate;
 }

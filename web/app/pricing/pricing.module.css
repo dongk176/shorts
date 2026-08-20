@@ -327,6 +327,7 @@
 }
 
 .packagePlanCard {
+  min-height: 442px;
   overflow: visible;
 }
 
@@ -422,11 +423,12 @@
 
 .planCta {
   width: 100%;
+  height: 48px;
+  min-height: 48px;
   margin-top: auto;
 }
 
 :global(.pricing-cta).planCtaPending {
-  min-height: 62px;
   border-color: rgba(255, 143, 128, .72);
   background:
     linear-gradient(110deg, rgba(240, 68, 53, .2), rgba(143, 94, 255, .22)),
@@ -1134,6 +1136,70 @@
   line-height: 1.45;
 }
 
+.localPlanTransition {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.localPlanTransitionItem {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 14px;
+  padding: 15px;
+  background: rgba(255, 255, 255, .018);
+}
+
+.localPlanTransitionNext {
+  border-color: rgba(167, 139, 250, .26);
+  background: linear-gradient(120deg, rgba(240, 68, 53, .07), rgba(143, 94, 255, .09));
+}
+
+.localPlanTransitionItem small {
+  color: #777d7f;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .08em;
+}
+
+.localPlanTransitionNext small {
+  color: #b9a5ff;
+}
+
+.localPlanTransitionItem strong {
+  overflow: hidden;
+  color: #eef0f0;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: -.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.localPlanTransitionItem span {
+  color: #8f9597;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.localPlanTransitionArrow {
+  align-self: center;
+  color: #6f7577;
+  font-size: 17px;
+}
+
+.localPaymentNote {
+  margin: 14px 2px 0;
+  color: #858b8d;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
 .localConsent {
   display: flex;
   align-items: flex-start;
@@ -1321,6 +1387,15 @@
 
   .localPlanSummary {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .localPlanTransition {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .localPlanTransitionArrow {
+    justify-self: center;
+    transform: rotate(90deg);
   }
 
   .localDialogActions {
