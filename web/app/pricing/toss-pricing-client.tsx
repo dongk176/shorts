@@ -111,7 +111,15 @@ function mobileOrderClass(plan: TossCatalogPlan) {
   return styles.mobilePlanPro;
 }
 
-export function TossPricingClient({ initialState }: { initialState: TossBillingState | null }) {
+export function TossPricingClient({
+  initialState,
+  guestCatalog,
+  onRequireLogin,
+}: {
+  initialState: TossBillingState | null;
+  guestCatalog: TossCatalogPlan[] | null;
+  onRequireLogin: () => void;
+}) {
   const router = useRouter();
   const { refreshUsage } = useUsageState();
   const [state, setState] = useState(initialState);
@@ -133,9 +141,9 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
   }, []);
 
   useEffect(() => {
-    if (initialState) return;
+    if (initialState || guestCatalog) return;
     refresh().catch((cause) => setError(cause instanceof Error ? cause.message : "요금제 정보를 불러오지 못했습니다."));
-  }, [initialState, refresh]);
+  }, [guestCatalog, initialState, refresh]);
 
   useEffect(() => {
     if (!selection && !result) return;
@@ -154,11 +162,16 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
     };
   }, [busy, result, selection]);
 
-  const plans = useMemo(() => (state?.catalog ?? [])
+  const plans = useMemo(() => (state?.catalog ?? guestCatalog ?? [])
     .filter((plan) => plan.contractMonths === months)
-    .sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]), [months, state]);
+    .sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]), [guestCatalog, months, state]);
+  const loading = !state && !guestCatalog;
 
   function choose(plan: TossCatalogPlan) {
+    if (guestCatalog) {
+      onRequireLogin();
+      return;
+    }
     if (!state) return;
     setError(null);
     setConsent(false);
@@ -251,18 +264,20 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
 
   return (
     <>
-      <Script
-        src="https://js.tosspayments.com/v2/standard"
-        strategy="afterInteractive"
-        onReady={() => {
-          setSdkReady(true);
-          setError(null);
-        }}
-        onError={() => {
-          setSdkReady(false);
-          setError("결제창을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.");
-        }}
-      />
+      {!guestCatalog ? (
+        <Script
+          src="https://js.tosspayments.com/v2/standard"
+          strategy="afterInteractive"
+          onReady={() => {
+            setSdkReady(true);
+            setError(null);
+          }}
+          onError={() => {
+            setSdkReady(false);
+            setError("결제창을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.");
+          }}
+        />
+      ) : null}
 
       <section className={`hero pricing-hero ${styles.hero}`}>
         <h1><span>필요한 만큼 선택하세요</span></h1>
@@ -291,9 +306,9 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
         id="pricing-plans"
         className={`pricing-grid ${styles.localPlanGrid}`}
         aria-label={`${months}개월 정기 구독 요금제`}
-        aria-busy={!state}
+        aria-busy={loading}
       >
-        {!state && ["pro", "starter", "expert"].map((plan) => (
+        {loading && ["pro", "starter", "expert"].map((plan) => (
           <article
             key={plan}
             className={`pricing-card ${styles.planCard} ${styles.localPlanCard} ${styles.localPlanSkeleton} ${

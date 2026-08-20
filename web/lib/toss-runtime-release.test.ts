@@ -33,6 +33,12 @@ describe("Toss billing release safeguards", () => {
     expect(successClient).toContain("다시 결제하지 마세요");
   });
 
+  it("keeps the successful checkout screen focused on usage and creation", () => {
+    expect(successClient).toContain("남은 사용량");
+    expect(successClient).toContain("쇼츠 만들기");
+    expect(successClient).not.toContain("등록한 카드로 다음 결제일에 자동 결제됩니다.");
+  });
+
   it("turning off approvals also turns off assignments and renewals", () => {
     expect(runtimeAction).toContain("parsed.flag === TOSS_RUNTIME_CHARGES_FLAG && !parsed.enabled");
     expect(runtimeAction).toContain("where flag_key in (");

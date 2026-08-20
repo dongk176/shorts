@@ -4,7 +4,13 @@ import { resolveBillingCustomerCohort } from "@/lib/billing-cohort";
 import { getDb } from "@/lib/db";
 import { authProfile, requireMvpSession } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
-import { getTossBillingState, type TossBillingState } from "@/lib/toss-billing-state";
+import { loadTossBillingRuntimeState } from "@/lib/toss-billing-runtime";
+import {
+  getTossBillingState,
+  publicTossCatalog,
+  type TossBillingState,
+} from "@/lib/toss-billing-state";
+import type { TossCatalogPlan } from "@/lib/toss-subscription";
 import { createPageMetadata } from "@/lib/seo";
 import { PricingPageShell } from "./pricing-page-shell";
 
@@ -20,22 +26,27 @@ export default async function PricingPage() {
   let initialState = null;
   let tossExperience = false;
   let initialTossState: TossBillingState | null = null;
+  let guestTossCatalog: TossCatalogPlan[] | null = null;
   try {
     const db = getDb();
     const session = user
       ? await requireMvpSession(user, { createIfMissing: false })
       : null;
     const appUserId = session?.userId ?? null;
-    const cohort = appUserId
-      ? await resolveBillingCustomerCohort(appUserId, db)
-      : null;
-    tossExperience = cohort?.cohort === "toss_v1" && cohort.persisted;
-    if (tossExperience && session?.userId) {
-      initialTossState = await getTossBillingState({
-        userId: session.userId,
-        session: session as typeof session & { userId: string },
-        db,
-      });
+    if (!user) {
+      const runtime = await loadTossBillingRuntimeState(db);
+      tossExperience = runtime.effective.assignments && runtime.effective.charges;
+      if (tossExperience) guestTossCatalog = publicTossCatalog();
+    } else if (appUserId) {
+      const cohort = await resolveBillingCustomerCohort(appUserId, db);
+      tossExperience = cohort.cohort === "toss_v1" && cohort.persisted;
+      if (tossExperience && session?.userId) {
+        initialTossState = await getTossBillingState({
+          userId: session.userId,
+          session: session as typeof session & { userId: string },
+          db,
+        });
+      }
     }
     initialState = {
       user: profile,
@@ -52,6 +63,7 @@ export default async function PricingPage() {
       initialState={initialState}
       tossExperience={tossExperience}
       initialTossState={initialTossState}
+      guestTossCatalog={guestTossCatalog}
     />
   );
 }

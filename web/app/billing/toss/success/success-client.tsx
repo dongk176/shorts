@@ -143,7 +143,6 @@ export function TossCheckoutSuccessClient() {
           <>
             <h1 className="text-3xl font-black tracking-tight">구독이 시작되었습니다</h1>
             <p className="mt-4 text-base font-bold text-neutral-200">남은 사용량 {status.remainingMinutes}분</p>
-            <p className="mt-2 text-sm leading-7 text-neutral-400">등록한 카드로 다음 결제일에 자동 결제됩니다.</p>
             <Link href="/" className="mt-8 flex min-h-[56px] items-center justify-center rounded-2xl bg-gradient-to-r from-[#f84b3f] to-[#8b5cf6] px-5 text-base font-black text-white">쇼츠 만들기</Link>
           </>
         ) : (
