@@ -68,6 +68,22 @@ export function tossBillingSecretKey() {
   return requiredAny("TOSS_BILLING_SECRET_KEY", "TOSS_SECRET_KEY");
 }
 
+export function tossBillingCheckoutKeys() {
+  const clientKey = tossBillingClientKey();
+  const secretKey = tossBillingSecretKey();
+  if (!/^(?:live|test)_ck_/.test(clientKey) || !/^(?:live|test)_sk_/.test(secretKey)) {
+    throw new TossBillingConfigurationError(
+      "토스 자동결제용 API 개별 연동 키가 설정되지 않았습니다.",
+    );
+  }
+  if (clientKey.startsWith("live_") !== secretKey.startsWith("live_")) {
+    throw new TossBillingConfigurationError(
+      "토스 자동결제 클라이언트 키와 시크릿 키의 환경이 일치하지 않습니다.",
+    );
+  }
+  return { clientKey, secretKey };
+}
+
 export function tossBillingApiBaseUrl() {
   return "https://api.tosspayments.com";
 }

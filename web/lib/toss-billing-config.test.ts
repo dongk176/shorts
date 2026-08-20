@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  tossBillingCheckoutKeys,
   tossBillingClientKey,
   tossBillingSecretKey,
 } from "./toss-billing-config";
@@ -34,5 +35,24 @@ describe("toss billing configuration", () => {
 
     expect(tossBillingClientKey()).toBe("legacy-client");
     expect(tossBillingSecretKey()).toBe("legacy-secret");
+  });
+
+  it("accepts an individual billing API key pair", () => {
+    enableBilling();
+    vi.stubEnv("NEXT_PUBLIC_TOSS_BILLING_CLIENT_KEY", "live_ck_example");
+    vi.stubEnv("TOSS_BILLING_SECRET_KEY", "live_sk_example");
+
+    expect(tossBillingCheckoutKeys()).toEqual({
+      clientKey: "live_ck_example",
+      secretKey: "live_sk_example",
+    });
+  });
+
+  it("rejects a general payment widget key for billing", () => {
+    enableBilling();
+    vi.stubEnv("NEXT_PUBLIC_TOSS_BILLING_CLIENT_KEY", "live_gck_example");
+    vi.stubEnv("TOSS_BILLING_SECRET_KEY", "live_gsk_example");
+
+    expect(() => tossBillingCheckoutKeys()).toThrow("API 개별 연동 키");
   });
 });

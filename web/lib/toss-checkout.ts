@@ -5,7 +5,7 @@ import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import {
   assertTossBillingChargesEnabled,
-  tossBillingClientKey,
+  tossBillingCheckoutKeys,
 } from "@/lib/toss-billing-config";
 import {
   registerTossBillingKey,
@@ -101,6 +101,9 @@ export async function prepareTossCheckout(input: {
   requestId?: string;
 }) {
   assertTossBillingChargesEnabled();
+  // Validate the complete billing key pair before persisting an intent. This
+  // prevents an unusable card-registration request from being left behind.
+  const { clientKey } = tossBillingCheckoutKeys();
   const db = input.db ?? getDb();
   const plan = tossPlan(input.targetPlanCode);
   const requestId = input.requestId ?? randomUUID();
@@ -150,7 +153,7 @@ export async function prepareTossCheckout(input: {
   return {
     requestId: prepared.requestId,
     customerKey: prepared.providerCustomerKey,
-    clientKey: tossBillingClientKey(),
+    clientKey,
     orderName: `${plan.displayName} 구독`,
     plan: {
       code: plan.code,

@@ -23,7 +23,7 @@ declare global {
 
 type DialogAction = "subscribe" | "immediate" | "scheduled" | "cancel_pending";
 type Selection = { plan: TossCatalogPlan; action: DialogAction };
-type ApiError = { detail?: string };
+type ApiError = { detail?: string; message?: string; code?: string };
 
 const TIER_ORDER = { easycut_pro: 0, starter: 1, expert: 2 } as const;
 
@@ -43,9 +43,28 @@ async function postJson<T>(url: string, body: Record<string, unknown>): Promise<
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const payload = await response.json().catch(() => ({})) as T & ApiError;
-  if (!response.ok) throw new Error(payload.detail || "요청을 완료하지 못했습니다.");
+  const text = await response.text();
+  let payload: T & ApiError;
+  try {
+    payload = (text ? JSON.parse(text) : {}) as T & ApiError;
+  } catch {
+    throw new Error(response.ok
+      ? "결제 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요."
+      : "결제 준비를 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+  }
+  if (!response.ok) {
+    throw new Error(payload.detail || payload.message || "결제 준비를 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+  }
   return payload;
+}
+
+function errorMessage(cause: unknown) {
+  if (cause instanceof Error && cause.message.trim()) return cause.message;
+  if (cause && typeof cause === "object") {
+    const message = (cause as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return "결제창을 열지 못했습니다. 잠시 후 다시 시도해 주세요.";
 }
 
 function features(plan: TossCatalogPlan) {
@@ -176,7 +195,7 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
         setResult({ title: `${selectedName}로 전환이 완료되었습니다`, detail: `남은 사용량 ${remaining}분` });
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "요청을 완료하지 못했습니다.");
+      setError(errorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -247,7 +266,13 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
                   disabled={current || busy}
                   onClick={() => choose(plan)}
                 >
-                  {current ? "이용 중" : pending ? "이 플랜으로 변경 예약됨" : `${plan.displayName}로 전환하기`}
+                  {current
+                    ? "이용 중"
+                    : pending
+                      ? "이 플랜으로 변경 예약됨"
+                      : state.subscription
+                        ? `${plan.displayName}로 전환하기`
+                        : `${plan.displayName} 구독 시작하기`}
                 </button>
               </article>
             );
@@ -261,13 +286,21 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
         }}>
           <section role="dialog" aria-modal="true" aria-labelledby="plan-dialog-title" className={styles.dialog}>
             <button type="button" aria-label="닫기" className={styles.close} onClick={() => setSelection(null)}>×</button>
-            <h2 id="plan-dialog-title">{selection.action === "cancel_pending" ? "변경 예약을 취소할까요?" : "플랜 전환 확인하기"}</h2>
+            <h2 id="plan-dialog-title">
+              {selection.action === "cancel_pending"
+                ? "변경 예약을 취소할까요?"
+                : selection.action === "subscribe"
+                  ? "구독 시작 확인하기"
+                  : "플랜 전환 확인하기"}
+            </h2>
             <p>
               {selection.action === "cancel_pending"
                 ? `${selection.plan.displayName} 변경 예약을 취소하고 현재 플랜을 유지합니다.`
                 : selection.action === "scheduled" && state.subscription
                   ? `현재 구독 혜택은 ${date(state.subscription.currentPeriodEnd)}까지 유지됩니다.\n그 다음 결제일부터 ${selection.plan.displayName} 플랜이 적용됩니다.`
-                  : `${selection.plan.displayName} 플랜으로 전환할까요?`}
+                  : selection.action === "subscribe"
+                    ? `${selection.plan.displayName} 플랜을 시작할까요?`
+                    : `${selection.plan.displayName} 플랜으로 전환할까요?`}
             </p>
             <div className={styles.planSummary}>
               <strong>{selection.plan.displayName}</strong>
@@ -283,7 +316,13 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
             <footer>
               <button type="button" onClick={() => setSelection(null)} disabled={busy}>취소</button>
               <button type="button" className={styles.primary} onClick={() => void confirm()} disabled={busy || (selection.action !== "cancel_pending" && !consent)}>
-                {busy ? "처리 중" : selection.action === "cancel_pending" ? "예약 취소" : "전환 확인"}
+                {busy
+                  ? "처리 중"
+                  : selection.action === "cancel_pending"
+                    ? "예약 취소"
+                    : selection.action === "subscribe"
+                      ? "구독 시작"
+                      : "전환 확인"}
               </button>
             </footer>
           </section>
