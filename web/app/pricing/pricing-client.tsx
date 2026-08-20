@@ -259,9 +259,11 @@ function AnimatedMinuteCredit({ minutes }: { minutes: number }) {
 }
 
 export function PricingClient({
+  ancillaryOnly = false,
   initialState,
   onRequireLogin,
 }: {
+  ancillaryOnly?: boolean;
   initialState: PricingState | null;
   onRequireLogin: () => void;
 }) {
@@ -307,6 +309,7 @@ export function PricingClient({
   }, [initialState]);
 
   useEffect(() => {
+    if (ancillaryOnly) return;
     const controller = new AbortController();
     const packageCodes = (["starter", "expert"] as const)
       .map((tier) => getPricingV2Package(tier, packageMonths)?.code)
@@ -327,7 +330,7 @@ export function PricingClient({
       ));
     }).catch(() => undefined);
     return () => controller.abort();
-  }, [packageMonths]);
+  }, [ancillaryOnly, packageMonths]);
 
   async function reloadState() {
     const response = await fetch("/api/mvp/state", {
@@ -789,6 +792,8 @@ export function PricingClient({
     );
   }
 
+  if (!stateLoaded && ancillaryOnly) return null;
+
   if (!stateLoaded) {
     return (
       <>
@@ -820,15 +825,17 @@ export function PricingClient({
 
   return (
     <>
-      <section className={`hero pricing-hero ${styles.hero}`}>
-        <h1>
-          <span>얼리버드 할인으로</span><br />
-          <span className="pricing-hero-accent">패키지 상품을 만나보세요</span>
-        </h1>
-      </section>
+      {!ancillaryOnly && (
+        <>
+          <section className={`hero pricing-hero ${styles.hero}`}>
+            <h1>
+              <span>얼리버드 할인으로</span><br />
+              <span className="pricing-hero-accent">패키지 상품을 만나보세요</span>
+            </h1>
+          </section>
 
-      {activeProducts.length > 0 && (
-        <section className={styles.activeProductsSection} aria-label="활성 이용 상품">
+          {activeProducts.length > 0 && (
+            <section className={styles.activeProductsSection} aria-label="활성 이용 상품">
           <div className={styles.activeProductsGrid}>
             {activeProducts.map((product, index) => {
               const pricingProduct = getPricingV2Plan(product.planCode);
@@ -885,10 +892,10 @@ export function PricingClient({
               );
             })}
           </div>
-        </section>
-      )}
+            </section>
+          )}
 
-      <section id="pricing-plans" className={styles.planSection} aria-label="요금제 선택">
+          <section id="pricing-plans" className={styles.planSection} aria-label="요금제 선택">
         <div className={`${styles.planToolbar} ${hasActivePackage ? styles.packageOnlyToolbar : ""}`}>
           <span>패키지 이용기간</span>
           <div className={styles.packageTermPicker} role="group" aria-label="패키지 이용기간">
@@ -911,12 +918,17 @@ export function PricingClient({
             {displayedPlans.slice(1).map(renderPlanCard)}
           </div>
         </div>
-      </section>
+          </section>
+        </>
+      )}
 
       <EbookPreviewRail
         canDownload={Boolean(state && billingSupportsEbookDownloads(state.billing))}
+        description={ancillaryOnly
+          ? "활성 스타터·전문가 이용자는 전자책 원본을 다운로드할 수 있습니다.\n누구나 각 전자책을 3페이지까지 미리 볼 수 있습니다."
+          : undefined}
         onChoosePackage={() => {
-          document.getElementById("pricing-plans")?.scrollIntoView({
+          document.getElementById(ancillaryOnly ? "toss-pricing-plans" : "pricing-plans")?.scrollIntoView({
             behavior: "smooth",
             block: "start",
           });
@@ -956,7 +968,8 @@ export function PricingClient({
         </p>
       </section>
 
-      <section className="pricing-comparison" aria-labelledby="pricing-two-comparison">
+      {!ancillaryOnly && (
+        <section className="pricing-comparison" aria-labelledby="pricing-two-comparison">
         <div className="pricing-section-heading">
           <h2 id="pricing-two-comparison">상품 한눈에 보기</h2>
         </div>
@@ -987,7 +1000,8 @@ export function PricingClient({
             </tbody>
           </table>
         </div>
-      </section>
+        </section>
+      )}
 
       {planCheckout && (
         <PlanCheckoutOverlay

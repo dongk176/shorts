@@ -26,6 +26,8 @@ describe("ebook download entitlements", () => {
     ["starter_3m", "yearly", true],
     ["starter_6m", "yearly", true],
     ["expert_12m", "yearly", true],
+    ["starter_6m", "monthly", true],
+    ["expert_12m", "monthly", true],
   ] as const)("maps an active %s %s product to %s", (planCode, billingCycle, expected) => {
     expect(billingSupportsEbookDownloads({
       activeProducts: [{

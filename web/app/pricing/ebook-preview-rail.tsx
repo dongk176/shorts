@@ -64,9 +64,11 @@ async function downloadErrorMessage(response: Response) {
 export function EbookPreviewRail({
   canDownload,
   onChoosePackage,
+  description = "활성 기간 패키지 이용자는 모든 전자책 원본을 다운로드할 수 있습니다. 각 전자책은 3페이지까지 미리 볼 수 있습니다.",
 }: {
   canDownload: boolean;
   onChoosePackage: () => void;
+  description?: string;
 }) {
   const [activeBook, setActiveBook] = useState<Ebook | null>(null);
   const [downloadingSlug, setDownloadingSlug] = useState<string | null>(null);
@@ -188,7 +190,7 @@ export function EbookPreviewRail({
         <div className="ebook-rail-heading">
           <div>
             <h2 id="ebook-preview-heading">숏폼 전략 가이드 전자책</h2>
-            <p>활성 기간 패키지 이용자는 모든 전자책 원본을 다운로드할 수 있습니다. 각 전자책은 3페이지까지 미리 볼 수 있습니다.</p>
+            <p style={{ whiteSpace: "pre-line" }}>{description}</p>
           </div>
           <div className="ebook-rail-actions" aria-label="전자책 목록 이동">
             <button type="button" onClick={() => scrollRail(-1)} aria-label="이전 전자책 보기">

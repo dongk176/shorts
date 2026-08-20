@@ -35,7 +35,14 @@ export function PricingPageShell({
       </SiteHeader>
       <main className="pricing-main">
         {tossExperience ? (
-          <TossPricingClient initialState={initialTossState} />
+          <>
+            <TossPricingClient initialState={initialTossState} />
+            <PricingClient
+              ancillaryOnly
+              initialState={initialState}
+              onRequireLogin={() => setLoginOpen(true)}
+            />
+          </>
         ) : (
           <PricingClient
             initialState={initialState}

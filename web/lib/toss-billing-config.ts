@@ -8,10 +8,14 @@ function enabled(name: string) {
   return process.env[name]?.trim().toLowerCase() === "true";
 }
 
-function required(name: string) {
-  const value = process.env[name]?.trim();
+function requiredAny(...names: string[]) {
+  const value = names
+    .map((name) => process.env[name]?.trim())
+    .find((candidate): candidate is string => Boolean(candidate));
   if (!value) {
-    throw new TossBillingConfigurationError(`${name} 환경변수가 설정되지 않았습니다.`);
+    throw new TossBillingConfigurationError(
+      `${names.join(" 또는 ")} 환경변수가 설정되지 않았습니다.`,
+    );
   }
   return value;
 }
@@ -53,12 +57,15 @@ export function assertTossBillingRenewalsEnabled() {
 
 export function tossBillingClientKey() {
   assertTossBillingEnabled();
-  return required("NEXT_PUBLIC_TOSS_BILLING_CLIENT_KEY");
+  return requiredAny(
+    "NEXT_PUBLIC_TOSS_BILLING_CLIENT_KEY",
+    "NEXT_PUBLIC_TOSS_CLIENT_KEY",
+  );
 }
 
 export function tossBillingSecretKey() {
   assertTossBillingChargesEnabled();
-  return required("TOSS_BILLING_SECRET_KEY");
+  return requiredAny("TOSS_BILLING_SECRET_KEY", "TOSS_SECRET_KEY");
 }
 
 export function tossBillingApiBaseUrl() {

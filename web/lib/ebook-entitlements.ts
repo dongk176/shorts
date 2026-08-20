@@ -19,11 +19,8 @@ export function billingSupportsEbookDownloads(
   billing: FeatureEntitlementBilling,
 ) {
   return hasManagedFeatureAccess(billing) || billing.activeProducts.some((product) =>
-    product.billingCycle === "yearly"
-    && (
-      product.planCode.startsWith("starter_")
-      || product.planCode.startsWith("expert_")
-    )
+    product.planCode.startsWith("starter_")
+    || product.planCode.startsWith("expert_")
   );
 }
 

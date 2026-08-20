@@ -113,6 +113,7 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
 
   function choose(plan: TossCatalogPlan) {
     if (!state) return;
+    setError(null);
     if (state.subscription?.scheduledPlan?.code === plan.code) {
       setConsent(false);
       setSelection({ plan, action: "cancel_pending" });
@@ -155,7 +156,7 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
         setResult({ title: "변경 예약이 취소되었습니다", detail: "현재 이용 중인 플랜이 그대로 유지됩니다." });
         return;
       }
-      const response = await postJson<{ state: string; remainingSeconds?: number }>(
+      const response = await postJson<{ state: string; remainingSeconds?: number; effectiveAt?: string }>(
         "/api/billing/toss/subscription/change",
         { targetPlanCode: selection.plan.code },
       );
@@ -163,9 +164,12 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
       const selectedName = selection.plan.displayName;
       setSelection(null);
       if (response.state === "scheduled") {
+        const effectiveAt = response.effectiveAt ?? state?.subscription?.currentPeriodEnd;
         setResult({
           title: `${selectedName}로 변경 예약되었습니다`,
-          detail: "현재 구독 혜택은 계약 기간까지 유지됩니다.\n그 다음 결제일부터 새 요금제가 적용됩니다.",
+          detail: effectiveAt
+            ? `현재 구독 혜택은 ${date(effectiveAt)}까지 유지됩니다.\n그 다음 결제일부터 새 요금제가 적용됩니다.`
+            : "현재 구독 혜택은 계약 기간까지 유지됩니다.\n그 다음 결제일부터 새 요금제가 적용됩니다.",
         });
       } else {
         const remaining = Math.max(0, Math.floor((response.remainingSeconds ?? 0) / 60));
@@ -190,13 +194,24 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
 
   return (
     <>
-      <Script src="https://js.tosspayments.com/v2/standard" strategy="afterInteractive" onReady={() => setSdkReady(true)} />
-      <section className={styles.root}>
+      <Script
+        src="https://js.tosspayments.com/v2/standard"
+        strategy="afterInteractive"
+        onReady={() => {
+          setSdkReady(true);
+          setError(null);
+        }}
+        onError={() => {
+          setSdkReady(false);
+          setError("결제창을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.");
+        }}
+      />
+      <section id="toss-pricing-plans" className={styles.root}>
         <header className={styles.hero}>
           <h1>필요한 만큼 선택하세요</h1>
           <div className={styles.termRow}>
-            <span>이용 기간</span>
-            <div className={styles.termPicker} role="group" aria-label="이용 기간">
+            <span>결제 주기</span>
+            <div className={styles.termPicker} role="group" aria-label="결제 주기">
               {([1, 6, 12] as const).map((term) => (
                 <button key={term} type="button" aria-pressed={months === term} onClick={() => setMonths(term)}>
                   {term}개월
@@ -212,17 +227,13 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
           {plans.map((plan) => {
             const current = state.subscription?.plan.code === plan.code;
             const pending = state.subscription?.scheduledPlan?.code === plan.code;
-            const action = state.actions?.find((item) => item.planCode === plan.code)?.action;
             return (
               <article key={plan.code} className={`${styles.card} ${styles[plan.tier]} ${pending ? styles.pending : ""}`}>
                 {plan.tier === "starter" ? <strong className={styles.recommended}>가장 합리적</strong> : null}
                 <h2>{plan.displayName}</h2>
                 <p className={styles.subtitle}>{subtitle(plan)}</p>
                 <div className={styles.price}><b>₩{won(plan.monthlyEquivalentKrw)}</b><span>/월</span></div>
-                <div className={styles.discountLine}>
-                  <span>{plan.contractMonths}개월 이용</span>
-                  {plan.discountPercent ? <strong>{plan.discountPercent}% 할인</strong> : <strong>기본 요금</strong>}
-                </div>
+                {plan.discountPercent ? <div className={styles.discountLine}><strong>{plan.discountPercent}% 할인</strong></div> : null}
                 <ul>
                   {features(plan).map((feature, index) => (
                     <li key={feature} className={index === 5 && !plan.guidebookIncluded ? styles.muted : ""}>
@@ -238,7 +249,6 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
                 >
                   {current ? "이용 중" : pending ? "이 플랜으로 변경 예약됨" : `${plan.displayName}로 전환하기`}
                 </button>
-                {action === "scheduled" && !pending && !current ? <p className={styles.cardHint}>다음 결제일부터 적용됩니다.</p> : null}
               </article>
             );
           })}
@@ -284,10 +294,10 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
         <div className={styles.overlay} onMouseDown={(event) => {
           if (event.target === event.currentTarget) setResult(null);
         }}>
-          <section role="status" aria-live="polite" className={styles.dialog}>
+          <section role="dialog" aria-modal="true" aria-labelledby="plan-result-title" className={styles.dialog}>
             <button type="button" aria-label="닫기" className={styles.close} onClick={() => setResult(null)}>×</button>
-            <h2>{result.title}</h2>
-            <p className={styles.resultDetail}>{result.detail}</p>
+            <h2 id="plan-result-title">{result.title}</h2>
+            <p role="status" aria-live="polite" className={styles.resultDetail}>{result.detail}</p>
             <footer><button type="button" className={styles.primary} onClick={() => setResult(null)}>확인</button></footer>
           </section>
         </div>
