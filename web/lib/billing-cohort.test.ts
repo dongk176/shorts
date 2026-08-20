@@ -66,6 +66,25 @@ describe("billing customer cohort", () => {
     })).toBe("legacy_thepayone");
   });
 
+  it("keeps a current legacy entitlement out of Toss even without a saved payment method", () => {
+    expect(cohortForBillingEvidence({
+      hasHistoricalNonTossPayment: false,
+      hasHistoricalNonTossSubscription: true,
+      hasHistoricalNonTossPaymentMethod: false,
+      assignmentEnabled: true,
+    })).toBe("legacy_thepayone");
+  });
+
+  it("keeps an active legacy base grant out of Toss", () => {
+    expect(cohortForBillingEvidence({
+      hasHistoricalNonTossPayment: false,
+      hasHistoricalNonTossSubscription: false,
+      hasHistoricalNonTossPaymentMethod: false,
+      hasActiveLegacyBaseGrant: true,
+      assignmentEnabled: true,
+    })).toBe("legacy_thepayone");
+  });
+
   it("admits never-paid customers only while assignment is explicitly enabled", () => {
     expect(cohortForBillingEvidence({
       hasHistoricalNonTossPayment: false,

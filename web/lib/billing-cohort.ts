@@ -39,6 +39,7 @@ export function cohortForBillingEvidence(input: {
   hasHistoricalNonTossPayment: boolean;
   hasHistoricalNonTossSubscription: boolean;
   hasHistoricalNonTossPaymentMethod: boolean;
+  hasActiveLegacyBaseGrant?: boolean;
   assignmentEnabled: boolean;
 }): BillingCustomerCohort {
   if (input.existing) return input.existing.cohort;
@@ -47,6 +48,7 @@ export function cohortForBillingEvidence(input: {
     input.hasHistoricalNonTossPayment
     || input.hasHistoricalNonTossSubscription
     || input.hasHistoricalNonTossPaymentMethod
+    || input.hasActiveLegacyBaseGrant
   ) {
     return "legacy_thepayone";
   }
@@ -121,25 +123,38 @@ export async function resolveBillingCustomerCohort(
             select 1
             from shorts_mvp.user_subscriptions subscription
             where subscription.user_id=${userId}
-              and subscription.payment_method_id is not null
               and coalesce(subscription.payment_provider,'thepayone')<>'toss'
+              and (
+                subscription.payment_method_id is not null
+                or subscription.status in ('pending','trialing','active','past_due')
+              )
           ) as has_historical_non_toss_subscription,
           exists (
             select 1
             from shorts_mvp.billing_payment_methods payment_method
             where payment_method.user_id=${userId}
               and payment_method.provider<>'toss'
-          ) as has_historical_non_toss_payment_method
+          ) as has_historical_non_toss_payment_method,
+          exists (
+            select 1
+            from shorts_mvp.usage_grants usage_grant
+            where usage_grant.user_id=${userId}
+              and usage_grant.kind='base'
+              and usage_grant.status='active'
+              and usage_grant.expires_at>now()
+          ) as has_active_legacy_base_grant
       `;
       const evidence = evidenceRows[0] as {
         hasHistoricalNonTossPayment: boolean;
         hasHistoricalNonTossSubscription: boolean;
         hasHistoricalNonTossPaymentMethod: boolean;
+        hasActiveLegacyBaseGrant: boolean;
       };
       const cohort = cohortForBillingEvidence({
         hasHistoricalNonTossPayment: evidence.hasHistoricalNonTossPayment,
         hasHistoricalNonTossSubscription: evidence.hasHistoricalNonTossSubscription,
         hasHistoricalNonTossPaymentMethod: evidence.hasHistoricalNonTossPaymentMethod,
+        hasActiveLegacyBaseGrant: evidence.hasActiveLegacyBaseGrant,
         assignmentEnabled: true,
       });
       const providerCustomerKey = cohort === "toss_v1"
@@ -151,7 +166,9 @@ export async function resolveBillingCustomerCohort(
           ? "historical_non_toss_subscription_payment"
           : evidence.hasHistoricalNonTossSubscription
             ? "historical_non_toss_subscription"
-            : "historical_non_toss_payment_method";
+            : evidence.hasHistoricalNonTossPaymentMethod
+              ? "historical_non_toss_payment_method"
+              : "active_legacy_base_grant";
       const inserted = await tx`
         insert into shorts_mvp.billing_customer_cohorts (
           user_id,cohort,provider_customer_key,source_reason
