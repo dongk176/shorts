@@ -1,7 +1,9 @@
 import { setTimeout as delay } from "node:timers/promises";
 import {
+  assertTossBillingEnabled,
   assertTossBillingChargesEnabled,
   tossBillingApiBaseUrl,
+  tossBillingApiSecretKey,
   tossBillingSecretKey,
 } from "@/lib/toss-billing-config";
 
@@ -144,15 +146,19 @@ async function tossRequest(input: {
   idempotencyKey?: string;
   timeoutMs?: number;
   mutationMayHaveCompleted?: boolean;
+  requiresCharges?: boolean;
 }) {
-  assertTossBillingChargesEnabled();
+  if (input.requiresCharges) assertTossBillingChargesEnabled();
+  else assertTossBillingEnabled();
   const controller = new AbortController();
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const timeout = delay(timeoutMs, undefined, { signal: controller.signal })
     .then(() => controller.abort())
     .catch(() => undefined);
   const headers = new Headers({
-    Authorization: basicAuthorization(tossBillingSecretKey()),
+    Authorization: basicAuthorization(
+      input.requiresCharges ? tossBillingSecretKey() : tossBillingApiSecretKey(),
+    ),
     "Content-Type": "application/json",
   });
   if (input.idempotencyKey) headers.set("Idempotency-Key", input.idempotencyKey);
@@ -237,6 +243,7 @@ export async function issueTossBillingKey(input: {
     method: "POST",
     body: { authKey: input.authKey, customerKey: input.customerKey },
     mutationMayHaveCompleted: true,
+    requiresCharges: true,
   });
   if (!value || typeof value !== "object") {
     throw new TossBillingApiError({
@@ -287,6 +294,7 @@ export async function chargeTossBilling(input: {
     idempotencyKey: input.idempotencyKey,
     timeoutMs: CHARGE_TIMEOUT_MS,
     mutationMayHaveCompleted: true,
+    requiresCharges: true,
   }));
 }
 

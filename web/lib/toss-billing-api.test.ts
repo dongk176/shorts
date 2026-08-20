@@ -3,6 +3,7 @@ import {
   cancelTossPayment,
   chargeTossBilling,
   deleteTossBillingKey,
+  getTossPaymentByOrderId,
   issueTossBillingKey,
   TossBillingApiError,
 } from "./toss-billing-api";
@@ -103,6 +104,26 @@ describe("Toss billing API", () => {
       cancelReason: "고객 요청",
       cancelAmount: 20_000,
     });
+  });
+
+  it("keeps read-only reconciliation available while new charges are stopped", async () => {
+    vi.stubEnv("TOSS_BILLING_CHARGES_ENABLED", "false");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(payment()), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(getTossPaymentByOrderId("EC-TOSS-ORDER-1")).resolves.toMatchObject({
+      status: "DONE",
+    });
+    await expect(chargeTossBilling({
+      billingKey: "billing-key",
+      customerKey: "EC_random_customer",
+      amountKrw: 9_900,
+      orderId: "EC-TOSS-ORDER-2",
+      orderName: "이지컷 프로",
+      idempotencyKey: "idem-charge-disabled",
+    })).rejects.toThrow("토스 빌링 청구 기능이 활성화되지 않았습니다");
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("marks transport failures as an unknown mutation outcome", async () => {

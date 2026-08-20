@@ -6,6 +6,10 @@
   "outputDirectory": "web/.next",
   "crons": [
     {
+      "path": "/api/cron/toss-checkout-reconciliation",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/youtube-daily",
       "schedule": "0 8 * * *"
     },

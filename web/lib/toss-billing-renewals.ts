@@ -3,9 +3,9 @@ import type { Sql, TransactionSql } from "postgres";
 import { addKstMonths, createBillingOrderId, syncCachedPlan } from "@/lib/billing";
 import { assertPersistedTossBillingCustomer } from "@/lib/billing-cohort";
 import {
-  tossBillingRenewalsEnabled,
   tossBillingSecretKey,
 } from "@/lib/toss-billing-config";
+import { tossRuntimeRenewalsEnabled } from "@/lib/toss-billing-runtime";
 import {
   executeRecordedTossCharge,
   reconcileUnknownTossPayment,
@@ -701,7 +701,7 @@ export async function processTossBillingRenewals(
   db: Sql,
   options: { now?: Date } = {},
 ): Promise<TossBillingRenewalResult> {
-  if (!tossBillingRenewalsEnabled()) {
+  if (!(await tossRuntimeRenewalsEnabled(db))) {
     return {
       enabled: false,
       scanned: 0,

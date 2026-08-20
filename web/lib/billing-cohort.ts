@@ -5,6 +5,7 @@ import {
   tossBillingCohortAssignmentEnabled,
   tossBillingEnabled,
 } from "@/lib/toss-billing-config";
+import { tossRuntimeAssignmentsEnabled } from "@/lib/toss-billing-runtime";
 
 export type BillingCustomerCohort = "legacy_thepayone" | "toss_v1";
 
@@ -104,6 +105,9 @@ export async function resolveBillingCustomerCohort(
       await tx`select pg_advisory_xact_lock(hashtextextended(${userId},0))`;
       const lockedExisting = await existingCohort(tx, userId);
       if (lockedExisting) return lockedExisting;
+      if (!(await tossRuntimeAssignmentsEnabled(tx))) {
+        return fallback("runtime_cohort_assignment_disabled");
+      }
 
       const evidenceRows = await tx`
         select

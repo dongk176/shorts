@@ -3,12 +3,13 @@ import type { Sql, TransactionSql } from "postgres";
 import { assertPersistedTossBillingCustomer } from "@/lib/billing-cohort";
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
+import { tossBillingCheckoutKeys } from "@/lib/toss-billing-config";
+import { reconcileUnknownTossPayment } from "@/lib/toss-billing-ledger";
+import { assertTossRuntimeChargesEnabled } from "@/lib/toss-billing-runtime";
 import {
-  assertTossBillingChargesEnabled,
-  tossBillingCheckoutKeys,
-} from "@/lib/toss-billing-config";
-import {
+  fulfillTossInitialOrder,
   registerTossBillingKey,
+  retireFailedTossInitialAttempt,
   startTossSubscription,
   type TossSubscriptionMutationResult,
 } from "@/lib/toss-billing-service";
@@ -27,6 +28,19 @@ type CheckoutIntentRow = {
   subscriptionId: string | null;
   resultSummary: Record<string, unknown> | null;
   expiresAt: Date;
+};
+
+type InitialCheckoutAttemptRow = {
+  billingOrderId: string | null;
+  subscriptionId: string | null;
+  transactionId: string | null;
+  transactionStatus: string | null;
+  fulfillmentStatus: string | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  nextRetryAt: Date | null;
+  transactionRequestedAt: Date | null;
+  transactionUpdatedAt: Date | null;
 };
 
 export type TossCheckoutResult = {
@@ -94,17 +108,261 @@ async function checkoutIntent(
   return rows[0] as CheckoutIntentRow | undefined;
 }
 
+async function initialCheckoutAttempt(
+  db: BillingDb,
+  userId: string,
+  requestId: string,
+) {
+  const rows = await db`
+    select billing_order.id as billing_order_id,
+      billing_order.subscription_id,
+      transaction.id as transaction_id,
+      transaction.status as transaction_status,
+      transaction.fulfillment_status,
+      transaction.failure_code,
+      transaction.failure_message,
+      transaction.next_retry_at,
+      transaction.requested_at as transaction_requested_at,
+      transaction.updated_at as transaction_updated_at
+    from shorts_mvp.billing_toss_checkout_intents intent
+    left join shorts_mvp.billing_orders billing_order
+      on billing_order.request_id=intent.request_id
+     and billing_order.user_id=intent.user_id
+     and billing_order.kind='subscription_initial'
+     and billing_order.provider='toss'
+    left join lateral (
+      select id,status,fulfillment_status,failure_code,failure_message,
+        next_retry_at,requested_at,updated_at
+      from shorts_mvp.billing_toss_transactions
+      where billing_order_id=billing_order.id and transaction_type='payment'
+      order by created_at desc
+      limit 1
+    ) transaction on true
+    where intent.request_id=${requestId} and intent.user_id=${userId}
+    limit 1
+  `;
+  return rows[0] as InitialCheckoutAttemptRow | undefined;
+}
+
+export type TossInitialCheckoutStatus =
+  | { state: "succeeded"; subscriptionId: string; planCode: TossPlanCode; remainingSeconds: number }
+  | { state: "failed"; message: string }
+  | { state: "pending" }
+  | { state: "manual_review" };
+
+export function initialAttemptDueForLookup(attempt: InitialCheckoutAttemptRow, now: Date) {
+  if (attempt.transactionStatus === "unknown") {
+    return !attempt.nextRetryAt || attempt.nextRetryAt <= now;
+  }
+  return attempt.transactionStatus === "processing"
+    && Boolean(attempt.transactionUpdatedAt)
+    && attempt.transactionUpdatedAt!.getTime() <= now.getTime() - 120_000;
+}
+
+export function checkoutIntentStatusForResult(
+  state: TossSubscriptionMutationResult["state"],
+) {
+  if (state === "succeeded") return "succeeded" as const;
+  if (state === "failed") return "failed" as const;
+  return "manual_review" as const;
+}
+
+export function tossCheckoutHttpStatus(state: TossSubscriptionMutationResult["state"]) {
+  if (state === "reconciliation_required") return 202;
+  if (state === "failed") return 402;
+  return 200;
+}
+
+async function finishFailedInitialCheckout(input: {
+  db: Sql;
+  intent: CheckoutIntentRow;
+  attempt: InitialCheckoutAttemptRow;
+  retire?: typeof retireFailedTossInitialAttempt;
+}) {
+  await (input.retire ?? retireFailedTossInitialAttempt)({
+    userId: input.intent.userId,
+    subscriptionId: input.attempt.subscriptionId,
+    db: input.db,
+  });
+  const message = input.attempt.failureMessage
+    || "카드 승인이 완료되지 않았습니다. 결제수단을 확인하고 다시 시도해 주세요.";
+  await input.db`
+    update shorts_mvp.billing_toss_checkout_intents
+    set status='failed',subscription_id=coalesce(subscription_id,${input.attempt.subscriptionId}),
+      result_summary=${input.db.json({ state: "failed" })},
+      failure_code=${input.attempt.failureCode || "TOSS_PAYMENT_FAILED"},
+      failure_message=${message.slice(0, 300)},completed_at=clock_timestamp()
+    where id=${input.intent.id} and user_id=${input.intent.userId} and status<>'succeeded'
+  `;
+  return { state: "failed", message } as const;
+}
+
+export async function reconcileTossInitialCheckout(input: {
+  userId: string;
+  requestId: string;
+  db?: Sql;
+  lookup?: Parameters<typeof reconcileUnknownTossPayment>[0]["lookup"];
+  reconcile?: typeof reconcileUnknownTossPayment;
+  fulfill?: typeof fulfillTossInitialOrder;
+  retire?: typeof retireFailedTossInitialAttempt;
+  now?: Date;
+}): Promise<TossInitialCheckoutStatus> {
+  const db = input.db ?? getDb();
+  const now = input.now ?? new Date();
+  const intent = await checkoutIntent(db, input.userId, input.requestId);
+  if (!intent) {
+    throw new HttpError(404, "결제 요청을 찾지 못했습니다.", "TOSS_CHECKOUT_NOT_FOUND");
+  }
+  if (intent.status === "succeeded") {
+    const result = resultFromSummary(intent);
+    if (result.state !== "succeeded") return { state: "manual_review" };
+    return {
+      state: "succeeded",
+      subscriptionId: result.subscriptionId,
+      planCode: result.planCode,
+      remainingSeconds: result.remainingSeconds ?? 0,
+    };
+  }
+  if (intent.status === "failed" || intent.status === "expired") {
+    return {
+      state: "failed",
+      message: "카드 승인이 완료되지 않았습니다. 결제수단을 확인하고 다시 시도해 주세요.",
+    };
+  }
+
+  let attempt = await initialCheckoutAttempt(db, input.userId, input.requestId);
+  if (!attempt?.transactionId) {
+    return intent.status === "manual_review" ? { state: "manual_review" } : { state: "pending" };
+  }
+  if (
+    attempt.transactionStatus === "unknown"
+    && attempt.transactionRequestedAt
+    && attempt.transactionRequestedAt.getTime() <= now.getTime() - 30 * 60_000
+  ) {
+    await db`
+      update shorts_mvp.billing_toss_checkout_intents
+      set status='manual_review',failure_code='TOSS_CHECKOUT_RECONCILIATION_ESCALATED',
+        failure_message='결제 결과가 장시간 확정되지 않아 직접 확인이 필요합니다.'
+      where id=${intent.id} and user_id=${input.userId} and status<>'succeeded'
+    `;
+    return { state: "manual_review" };
+  }
+  if (initialAttemptDueForLookup(attempt, now)) {
+    await (input.reconcile ?? reconcileUnknownTossPayment)({
+      transactionId: attempt.transactionId,
+      db,
+      lookup: input.lookup,
+    });
+    attempt = await initialCheckoutAttempt(db, input.userId, input.requestId);
+    if (!attempt?.transactionId) return { state: "manual_review" };
+  }
+
+  if (attempt.transactionStatus === "failed") {
+    return finishFailedInitialCheckout({ db, intent, attempt, retire: input.retire });
+  }
+  if (attempt.transactionStatus !== "succeeded" || !attempt.billingOrderId) {
+    return { state: "pending" };
+  }
+  if (attempt.fulfillmentStatus === "manual_review") {
+    return { state: "manual_review" };
+  }
+  try {
+    const result = await (input.fulfill ?? fulfillTossInitialOrder)({
+      userId: input.userId,
+      billingOrderId: attempt.billingOrderId,
+      db,
+    });
+    const summary = {
+      state: result.state,
+      subscriptionId: result.subscriptionId,
+      planCode: result.planCode,
+      remainingSeconds: result.remainingSeconds,
+    };
+    await db`
+      update shorts_mvp.billing_toss_checkout_intents
+      set status='succeeded',subscription_id=${result.subscriptionId},
+        result_summary=${db.json(summary)},failure_code=null,failure_message=null,
+        completed_at=clock_timestamp()
+      where id=${intent.id} and user_id=${input.userId} and status<>'succeeded'
+    `;
+    return summary;
+  } catch {
+    await db`
+      update shorts_mvp.billing_toss_checkout_intents
+      set status='manual_review',subscription_id=coalesce(subscription_id,${attempt.subscriptionId}),
+        failure_code='TOSS_FULFILLMENT_RECONCILIATION_REQUIRED',
+        failure_message='승인된 결제의 구독 반영을 직접 확인해야 합니다.'
+      where id=${intent.id} and user_id=${input.userId} and status<>'succeeded'
+    `;
+    return { state: "manual_review" };
+  }
+}
+
+export async function processTossInitialCheckoutReconciliations(
+  db: Sql,
+  options: { now?: Date; limit?: number } = {},
+) {
+  const now = options.now ?? new Date();
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  const rows = await db`
+    select distinct intent.user_id,intent.request_id
+    from shorts_mvp.billing_toss_checkout_intents intent
+    join shorts_mvp.billing_orders billing_order
+      on billing_order.request_id=intent.request_id
+     and billing_order.user_id=intent.user_id
+     and billing_order.kind='subscription_initial'
+     and billing_order.provider='toss'
+    join shorts_mvp.billing_toss_transactions transaction
+      on transaction.billing_order_id=billing_order.id
+     and transaction.transaction_type='payment'
+    where intent.status='manual_review'
+      and coalesce(intent.failure_code,'')<>'TOSS_CHECKOUT_RECONCILIATION_ESCALATED'
+      and (
+        transaction.status='succeeded'
+        or (transaction.status='unknown'
+          and coalesce(transaction.next_retry_at,transaction.updated_at)<=${now})
+        or (transaction.status='processing'
+          and transaction.updated_at<=${new Date(now.getTime() - 120_000)})
+      )
+    order by intent.request_id
+    limit ${limit}
+  `;
+  const results: TossInitialCheckoutStatus[] = [];
+  for (const row of rows) {
+    try {
+      results.push(await reconcileTossInitialCheckout({
+        userId: String(row.userId),
+        requestId: String(row.requestId),
+        db,
+        now,
+      }));
+    } catch {
+      results.push({ state: "manual_review" });
+    }
+  }
+  return {
+    scanned: rows.length,
+    succeeded: results.filter((result) => result.state === "succeeded").length,
+    failed: results.filter((result) => result.state === "failed").length,
+    pending: results.filter((result) => result.state === "pending").length,
+    manualReview: results.filter((result) => result.state === "manual_review").length,
+  };
+}
+
 export async function prepareTossCheckout(input: {
   userId: string;
   targetPlanCode: TossPlanCode;
   db?: Sql;
   requestId?: string;
 }) {
-  assertTossBillingChargesEnabled();
+  const db = input.db ?? getDb();
+  await assertTossRuntimeChargesEnabled(db);
+  // A known provider decline is safe to close and must not strand the customer
+  // behind the one-current-subscription constraint.
+  await retireFailedTossInitialAttempt({ userId: input.userId, db });
   // Validate the complete billing key pair before persisting an intent. This
   // prevents an unusable card-registration request from being left behind.
   const { clientKey } = tossBillingCheckoutKeys();
-  const db = input.db ?? getDb();
   const plan = tossPlan(input.targetPlanCode);
   const requestId = input.requestId ?? randomUUID();
   const expiresAt = new Date(Date.now() + 15 * 60 * 1_000);
@@ -165,21 +423,6 @@ export async function prepareTossCheckout(input: {
   };
 }
 
-function checkoutFailure(error: unknown) {
-  if (error instanceof HttpError) {
-    return {
-      status: error.status >= 500 ? "manual_review" : "failed",
-      code: error.code,
-      message: error.message,
-    } as const;
-  }
-  return {
-    status: "manual_review",
-    code: "TOSS_CHECKOUT_UNCERTAIN",
-    message: "결제 처리 결과를 직접 확인해야 합니다.",
-  } as const;
-}
-
 export async function completeTossCheckout(input: {
   userId: string;
   requestId: string;
@@ -187,8 +430,8 @@ export async function completeTossCheckout(input: {
   authKey: string;
   db?: Sql;
 }) {
-  assertTossBillingChargesEnabled();
   const db = input.db ?? getDb();
+  await assertTossRuntimeChargesEnabled(db);
   let intent = await db.begin(async (tx) => {
     const cohort = await lockCheckoutCustomer(tx, input.userId);
     const row = await checkoutIntent(tx, input.userId, input.requestId, true);
@@ -264,24 +507,65 @@ export async function completeTossCheckout(input: {
       planCode: result.planCode,
       ...(result.state === "succeeded" ? { remainingSeconds: result.remainingSeconds } : {}),
     };
-    const status = result.state === "succeeded" ? "succeeded" : "manual_review";
+    const status = checkoutIntentStatusForResult(result.state);
     await db`
       update shorts_mvp.billing_toss_checkout_intents
       set status=${status},subscription_id=${result.subscriptionId},
-        result_summary=${db.json(summary)},completed_at=case when ${status}='succeeded'
+        result_summary=${db.json(summary)},completed_at=case when ${status} in ('succeeded','failed')
           then clock_timestamp() else completed_at end,
-        failure_code=case when ${status}='succeeded' then null else 'TOSS_CHECKOUT_RECONCILIATION_REQUIRED' end,
-        failure_message=case when ${status}='succeeded' then null else '결제 결과를 직접 확인해야 합니다.' end
+        failure_code=case
+          when ${status}='succeeded' then null
+          when ${status}='failed' then 'TOSS_PAYMENT_FAILED'
+          else 'TOSS_CHECKOUT_RECONCILIATION_REQUIRED'
+        end,
+        failure_message=case
+          when ${status}='succeeded' then null
+          when ${status}='failed' then '카드 승인이 완료되지 않았습니다.'
+          else '결제 결과를 직접 확인해야 합니다.'
+        end
       where id=${intent.id} and user_id=${input.userId}
     `;
+    if (result.state === "failed") {
+      await retireFailedTossInitialAttempt({
+        userId: input.userId,
+        subscriptionId: result.subscriptionId,
+        db,
+      });
+    }
     return summary;
   } catch (error) {
-    const failure = checkoutFailure(error);
+    const attempt = await initialCheckoutAttempt(db, input.userId, input.requestId);
+    if (attempt?.transactionStatus === "failed") {
+      return finishFailedInitialCheckout({ db, intent, attempt });
+    }
+    if (!attempt?.transactionId) {
+      const message = error instanceof Error
+        ? error.message
+        : "카드등록을 완료하지 못했습니다. 다시 시도해 주세요.";
+      await db`
+        update shorts_mvp.billing_toss_checkout_intents
+        set status='failed',failure_code='TOSS_PAYMENT_METHOD_REGISTRATION_FAILED',
+          failure_message=${message.slice(0, 300)},completed_at=clock_timestamp()
+        where id=${intent.id} and user_id=${input.userId} and status<>'succeeded'
+      `;
+      throw new HttpError(
+        409,
+        "카드등록을 완료하지 못했습니다. 다시 시도해 주세요.",
+        "TOSS_PAYMENT_METHOD_REGISTRATION_FAILED",
+      );
+    }
     await db`
       update shorts_mvp.billing_toss_checkout_intents
-      set status=${failure.status},failure_code=${failure.code},failure_message=${failure.message.slice(0, 300)}
+      set status='manual_review',subscription_id=coalesce(subscription_id,${attempt.subscriptionId}),
+        failure_code='TOSS_CHECKOUT_RECONCILIATION_REQUIRED',
+        failure_message='결제 처리 결과를 다시 확인하고 있습니다.'
       where id=${intent.id} and user_id=${input.userId} and status<>'succeeded'
     `;
-    throw error;
+    if (!attempt.subscriptionId) throw error;
+    return {
+      state: "reconciliation_required" as const,
+      subscriptionId: attempt.subscriptionId,
+      planCode: intent.targetPlanCode,
+    };
   }
 }

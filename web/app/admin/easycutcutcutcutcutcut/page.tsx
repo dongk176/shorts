@@ -25,6 +25,7 @@ import { AdminManagedAccountsSection } from "./admin-managed-accounts-section";
 import { AdminInstallmentsDashboard } from "./admin-installments-dashboard";
 import { AdminCreatorProjects } from "./admin-creator-projects";
 import { AdminRuntimeSettings } from "./admin-runtime-settings";
+import { AdminTossBillingSettings } from "./admin-toss-billing-settings";
 import { AdminShortsEventSetting } from "./admin-shorts-event-setting";
 import {
   AdminShell,
@@ -69,6 +70,7 @@ import {
   SHORTS_THANK_YOU_EVENT_FLAG_KEY,
   shortsThankYouEventEnabled,
 } from "@/lib/shorts-thank-you-event";
+import { loadTossBillingRuntimeState } from "@/lib/toss-billing-runtime";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = createNoIndexMetadata(
@@ -171,6 +173,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
   const [
     runtimeSettingRows,
     eventRuntimeSettingRows,
+    tossBillingRuntimeState,
     overview,
     creatorProjectShares,
   ] = await Promise.all([
@@ -191,6 +194,9 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         where feature_flag.flag_key=${SHORTS_THANK_YOU_EVENT_FLAG_KEY}
         limit 1
       ` : Promise.resolve([]),
+    tab === "settings"
+      ? loadTossBillingRuntimeState(db)
+      : Promise.resolve(null),
     loadAdminOverview(),
     tab === "creator-projects"
       ? loadAdminCreatorProjectShares(admin.id)
@@ -813,6 +819,9 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         />
       ) : tab === "settings" ? (
         <>
+          {tossBillingRuntimeState ? (
+            <AdminTossBillingSettings initialState={tossBillingRuntimeState} />
+          ) : null}
           <AdminRuntimeSettings
             initialEnabled={Boolean(runtimeSettingRows[0]?.enabled)}
             environmentEnabled={onboardingWelcomeGrantEnabled()}

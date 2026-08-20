@@ -21,6 +21,7 @@ import {
 } from "@/lib/toss-billing-ledger";
 import {
   classifyTossSubscriptionChange,
+  isTossPlanCode,
   quoteImmediateTossChange,
   tossPlan,
   type TossCatalogPlan,
@@ -348,6 +349,70 @@ async function loadCurrentTossSubscription(
   return rows[0] as TossSubscriptionRow | undefined;
 }
 
+async function retireFailedTossInitialAttemptLocked(input: {
+  db: BillingDb;
+  userId: string;
+  subscription: TossSubscriptionRow;
+}) {
+  if (input.subscription.status !== "pending") return false;
+  const attemptRows = await input.db`
+    select o.kind,o.status,
+      coalesce(array_agg(t.status order by t.created_at)
+        filter (where t.id is not null),array[]::text[]) as ledger_statuses,
+      coalesce(array_agg(t.fulfillment_status order by t.created_at)
+        filter (where t.id is not null),array[]::text[]) as fulfillment_statuses
+    from shorts_mvp.billing_orders o
+    left join shorts_mvp.billing_toss_transactions t
+      on t.billing_order_id=o.id and t.transaction_type='payment'
+    where o.subscription_id=${input.subscription.id} and o.provider='toss'
+    group by o.id,o.kind,o.status,o.created_at
+    order by o.created_at desc
+    limit 1
+  `;
+  const attempt = attemptRows[0] as {
+    kind: string | null;
+    status: string | null;
+    ledgerStatuses: string[];
+    fulfillmentStatuses: string[];
+  } | undefined;
+  if (!attempt || !canRetireFailedTossInitialAttempt({
+    subscriptionStatus: input.subscription.status,
+    orderKind: attempt.kind,
+    orderStatus: attempt.status,
+    ledgerStatuses: attempt.ledgerStatuses,
+    fulfillmentStatuses: attempt.fulfillmentStatuses,
+  })) return false;
+  const updated = await input.db`
+    update shorts_mvp.user_subscriptions
+    set status='expired',ended_at=clock_timestamp(),next_charge_at=null,
+      next_retry_at=null,next_quota_at=null,grace_ends_at=null,retry_count=0,
+      provider_schedule_status='disposed',updated_at=clock_timestamp()
+    where id=${input.subscription.id} and user_id=${input.userId}
+      and payment_provider='toss' and status='pending'
+  `;
+  return updated.count > 0;
+}
+
+export async function retireFailedTossInitialAttempt(input: {
+  userId: string;
+  subscriptionId?: string | null;
+  db?: Sql;
+}) {
+  const db = input.db ?? getDb();
+  return db.begin(async (tx) => {
+    await lockTossCustomer(tx, input.userId);
+    const current = await loadCurrentTossSubscription(tx, input.userId, true);
+    if (!current || (input.subscriptionId && current.id !== input.subscriptionId)) {
+      return false;
+    }
+    return retireFailedTossInitialAttemptLocked({
+      db: tx,
+      userId: input.userId,
+      subscription: current,
+    });
+  });
+}
+
 async function createPendingTossOrder(input: {
   db: TransactionSql;
   userId: string;
@@ -471,45 +536,11 @@ async function prepareInitialPurchase(input: {
     }
 
     let current = await loadCurrentTossSubscription(tx, input.userId, true);
-    if (current?.status === "pending") {
-      const attemptRows = await tx`
-        select o.kind,o.status,
-          coalesce(array_agg(t.status order by t.created_at)
-            filter (where t.id is not null),array[]::text[]) as ledger_statuses,
-          coalesce(array_agg(t.fulfillment_status order by t.created_at)
-            filter (where t.id is not null),array[]::text[]) as fulfillment_statuses
-        from shorts_mvp.billing_orders o
-        left join shorts_mvp.billing_toss_transactions t
-          on t.billing_order_id=o.id and t.transaction_type='payment'
-        where o.subscription_id=${current.id} and o.provider='toss'
-        group by o.id,o.kind,o.status,o.created_at
-        order by o.created_at desc
-        limit 1
-      `;
-      const attempt = attemptRows[0] as {
-        kind: string | null;
-        status: string | null;
-        ledgerStatuses: string[];
-        fulfillmentStatuses: string[];
-      } | undefined;
-      if (attempt && canRetireFailedTossInitialAttempt({
-        subscriptionStatus: current.status,
-        orderKind: attempt.kind,
-        orderStatus: attempt.status,
-        ledgerStatuses: attempt.ledgerStatuses,
-        fulfillmentStatuses: attempt.fulfillmentStatuses,
-      })) {
-        await tx`
-          update shorts_mvp.user_subscriptions
-          set status='expired',ended_at=clock_timestamp(),next_charge_at=null,
-            next_retry_at=null,next_quota_at=null,grace_ends_at=null,retry_count=0,
-            provider_schedule_status='disposed',updated_at=clock_timestamp()
-          where id=${current.id} and user_id=${input.userId}
-            and payment_provider='toss' and status='pending'
-        `;
-        current = undefined;
-      }
-    }
+    if (current && await retireFailedTossInitialAttemptLocked({
+      db: tx,
+      userId: input.userId,
+      subscription: current,
+    })) current = undefined;
     if (current) {
       throw new HttpError(409, "이미 이용 중인 토스 구독이 있습니다.", "TOSS_SUBSCRIPTION_ALREADY_EXISTS");
     }
@@ -697,6 +728,79 @@ async function applyTossEntitlement(input: {
       "TOSS_FULFILLMENT_RECONCILIATION_REQUIRED",
     );
   }
+}
+
+export async function fulfillTossInitialOrder(input: {
+  userId: string;
+  billingOrderId: string;
+  db?: Sql;
+}) {
+  const db = input.db ?? getDb();
+  const rows = await db`
+    select id,user_id,subscription_id,payment_method_id,order_id,request_id,
+      amount_krw,order_name,product_code,kind,provider
+    from shorts_mvp.billing_orders
+    where id=${input.billingOrderId} and user_id=${input.userId}
+    limit 1
+  `;
+  const row = rows[0] as {
+    id: string;
+    userId: string;
+    subscriptionId: string | null;
+    paymentMethodId: string | null;
+    orderId: string;
+    requestId: string | null;
+    amountKrw: number;
+    orderName: string;
+    productCode: string;
+    kind: string;
+    provider: string;
+  } | undefined;
+  if (
+    !row
+    || row.userId !== input.userId
+    || row.kind !== "subscription_initial"
+    || row.provider !== "toss"
+    || !row.subscriptionId
+    || !row.paymentMethodId
+    || !row.requestId
+    || !isTossPlanCode(row.productCode)
+  ) {
+    throw new HttpError(
+      409,
+      "최초 구독 결제 정보를 확인하지 못했습니다.",
+      "TOSS_INITIAL_ORDER_INVALID",
+    );
+  }
+  const plan = tossPlan(row.productCode);
+  if (Number(row.amountKrw) !== plan.priceKrw) {
+    throw new HttpError(
+      409,
+      "최초 구독 결제 금액을 확인하지 못했습니다.",
+      "TOSS_INITIAL_ORDER_AMOUNT_MISMATCH",
+    );
+  }
+  const remainingSeconds = await applyTossEntitlement({
+    db,
+    userId: input.userId,
+    prepared: {
+      billingOrderId: row.id,
+      subscriptionId: row.subscriptionId,
+      paymentMethodId: row.paymentMethodId,
+      providerOrderId: row.orderId,
+      requestId: row.requestId,
+      amountKrw: Number(row.amountKrw),
+      orderName: row.orderName,
+      targetPlanCode: row.productCode,
+    },
+    replaceExistingGrant: false,
+  });
+  return {
+    state: "succeeded" as const,
+    subscriptionId: row.subscriptionId,
+    planCode: row.productCode,
+    remainingSeconds,
+  };
 }
 
 async function runPreparedCharge(input: {

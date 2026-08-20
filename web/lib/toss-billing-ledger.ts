@@ -1,5 +1,6 @@
 import type { Sql, TransactionSql } from "postgres";
 import { getDb } from "@/lib/db";
+import { assertTossRuntimeChargesEnabled } from "@/lib/toss-billing-runtime";
 import { assertPersistedTossBillingCustomer } from "@/lib/billing-cohort";
 import {
   cancelTossPayment,
@@ -628,6 +629,7 @@ export async function executeRecordedTossCharge(input: {
   charge?: typeof chargeTossBilling;
 }): Promise<TossRecordedChargeResult> {
   const db = input.db ?? getDb();
+  await assertTossRuntimeChargesEnabled(db);
   const claimed = await claimPaymentAttempt({
     db,
     userId: input.userId,

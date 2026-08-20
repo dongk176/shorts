@@ -65,6 +65,11 @@ export function tossBillingClientKey() {
 
 export function tossBillingSecretKey() {
   assertTossBillingChargesEnabled();
+  return tossBillingApiSecretKey();
+}
+
+export function tossBillingApiSecretKey() {
+  assertTossBillingEnabled();
   return requiredAny("TOSS_BILLING_SECRET_KEY", "TOSS_SECRET_KEY");
 }
 

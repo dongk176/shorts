@@ -1,31 +1,26 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { assertBillingMutationRequest } from "@/lib/billing-request";
+import { reconcileTossInitialCheckout } from "@/lib/toss-checkout";
 import { apiError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
-import { completeTossCheckout, tossCheckoutHttpStatus } from "@/lib/toss-checkout";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const schema = z.object({
-  requestId: z.string().uuid(),
-  customerKey: z.string().min(10).max(100),
-  authKey: z.string().min(10).max(500),
-}).strict();
+const schema = z.object({ requestId: z.string().uuid() }).strict();
 
 export async function POST(request: Request) {
   try {
     assertBillingMutationRequest(request);
     const input = schema.parse(await request.json());
     const session = await requireAuthenticatedMvpSession();
-    const result = await completeTossCheckout({ userId: session.userId, ...input });
-    const status = tossCheckoutHttpStatus(result.state);
-    return NextResponse.json(result, {
-      status,
-      headers: { "Cache-Control": "no-store" },
+    const result = await reconcileTossInitialCheckout({
+      userId: session.userId,
+      requestId: input.requestId,
     });
+    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return apiError(error, "결제를 완료하지 못했습니다.");
+    return apiError(error, "결제 상태를 확인하지 못했습니다.");
   }
 }
