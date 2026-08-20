@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import Script from "next/script";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useUsageState } from "@/components/usage-provider";
 import type { TossBillingState } from "@/lib/toss-billing-state";
 import type { TossCatalogPlan, TossContractMonths } from "@/lib/toss-subscription";
-import styles from "./toss-pricing.module.css";
+import styles from "./pricing.module.css";
 
 declare global {
   interface Window {
@@ -34,7 +35,12 @@ function won(value: number) {
 }
 
 function date(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric" }).format(new Date(value));
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "Asia/Seoul",
+  }).format(new Date(value));
 }
 
 async function postJson<T>(url: string, body: Record<string, unknown>): Promise<T> {
@@ -87,6 +93,12 @@ function subtitle(plan: TossCatalogPlan) {
   return "대량 제작과 운영을 위한 최대 플랜";
 }
 
+function mobileOrderClass(plan: TossCatalogPlan) {
+  if (plan.tier === "starter") return styles.mobilePlanStarter;
+  if (plan.tier === "expert") return styles.mobilePlanExpert;
+  return styles.mobilePlanPro;
+}
+
 export function TossPricingClient({ initialState }: { initialState: TossBillingState | null }) {
   const router = useRouter();
   const { refreshUsage } = useUsageState();
@@ -97,7 +109,7 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ title: string; detail: string } | null>(null);
+  const [result, setResult] = useState<{ title: string; detail: string; remainingMinutes?: number } | null>(null);
 
   const refresh = useCallback(async () => {
     const response = await fetch("/api/billing/toss/state", {
@@ -137,14 +149,13 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
   function choose(plan: TossCatalogPlan) {
     if (!state) return;
     setError(null);
+    setConsent(false);
     if (state.subscription?.scheduledPlan?.code === plan.code) {
-      setConsent(false);
       setSelection({ plan, action: "cancel_pending" });
       return;
     }
     if (state.subscription?.plan.code === plan.code) return;
     const quoted = state.actions?.find((action) => action.planCode === plan.code)?.action;
-    setConsent(false);
     setSelection({
       plan,
       action: !state.subscription ? "subscribe" : quoted === "immediate" ? "immediate" : "scheduled",
@@ -157,7 +168,9 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
     setError(null);
     try {
       if (selection.action === "subscribe") {
-        if (!sdkReady || !window.TossPayments) throw new Error("결제창을 준비하고 있습니다. 잠시 후 다시 시도해 주세요.");
+        if (!sdkReady || !window.TossPayments) {
+          throw new Error("결제창을 준비하고 있습니다. 잠시 후 다시 시도해 주세요.");
+        }
         const prepared = await postJson<{
           clientKey: string;
           customerKey: string;
@@ -177,7 +190,10 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
         await refresh();
         router.refresh();
         setSelection(null);
-        setResult({ title: "변경 예약이 취소되었습니다", detail: "현재 이용 중인 플랜이 그대로 유지됩니다." });
+        setResult({
+          title: "변경 예약이 취소되었습니다",
+          detail: "현재 이용 중인 플랜이 그대로 유지됩니다.",
+        });
         return;
       }
       const response = await postJson<{ state: string; remainingSeconds?: number; effectiveAt?: string }>(
@@ -201,24 +217,18 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
             : "현재 구독 혜택은 계약 기간까지 유지됩니다.\n그 다음 결제일부터 새 요금제가 적용됩니다.",
         });
       } else {
-        const remaining = Math.max(0, Math.floor((response.remainingSeconds ?? 0) / 60));
-        setResult({ title: `${selectedName}로 전환이 완료되었습니다`, detail: `남은 사용량 ${remaining}분` });
+        const remainingMinutes = Math.max(0, Math.floor((response.remainingSeconds ?? 0) / 60));
+        setResult({
+          title: `${selectedName}로 전환이 완료되었습니다`,
+          detail: `남은 사용량 ${remainingMinutes}분`,
+          remainingMinutes,
+        });
       }
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
       setBusy(false);
     }
-  }
-
-  if (!state) {
-    return (
-      <section className={styles.loading} aria-busy="true">
-        <div className={styles.loadingTitle} />
-        <div className={styles.loadingCards}><i /><i /><i /></div>
-        {error ? <p role="alert" className={styles.pageError}>{error}</p> : null}
-      </section>
-    );
   }
 
   return (
@@ -235,124 +245,210 @@ export function TossPricingClient({ initialState }: { initialState: TossBillingS
           setError("결제창을 불러오지 못했습니다. 잠시 후 새로고침해 주세요.");
         }}
       />
-      <section id="toss-pricing-plans" className={styles.root}>
-        <header className={styles.hero}>
-          <h1>필요한 만큼 선택하세요</h1>
-          <div className={styles.termRow}>
-            <span>결제 주기</span>
-            <div className={styles.termPicker} role="group" aria-label="결제 주기">
-              {([1, 6, 12] as const).map((term) => (
-                <button key={term} type="button" aria-pressed={months === term} onClick={() => setMonths(term)}>
-                  {term}개월
-                </button>
-              ))}
-            </div>
-          </div>
-        </header>
 
-        {error ? <p role="alert" className={styles.pageError}>{error}</p> : null}
-
-        <div className={styles.cards}>
-          {plans.map((plan) => {
-            const current = state.subscription?.plan.code === plan.code;
-            const pending = state.subscription?.scheduledPlan?.code === plan.code;
-            return (
-              <article key={plan.code} className={`${styles.card} ${styles[plan.tier]} ${pending ? styles.pending : ""}`}>
-                {plan.tier === "starter" && plan.contractMonths === 6 ? <strong className={styles.recommended}>가장 합리적</strong> : null}
-                {plan.discountPercent ? (
-                  <strong className={`${styles.discountTag} ${plan.tier === "expert" ? styles.discountTagViolet : ""}`}>
-                    {plan.discountPercent}% 할인
-                  </strong>
-                ) : null}
-                <h2>{plan.displayName}</h2>
-                <p className={styles.subtitle}>{subtitle(plan)}</p>
-                <div className={styles.price}><b>₩{won(plan.monthlyEquivalentKrw)}</b><span>/월</span></div>
-                <p className={styles.billing}>{plan.contractMonths}개월 총 ₩{won(plan.priceKrw)}</p>
-                <ul>
-                  {features(plan).map((feature, index) => (
-                    <li key={feature} className={index === 5 && !plan.guidebookIncluded ? styles.muted : ""}>
-                      <span aria-hidden="true">{index === 5 && !plan.guidebookIncluded ? "–" : "✓"}</span>{feature}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  className={`${styles.selectButton} ${pending ? styles.pendingButton : ""}`}
-                  disabled={current || busy}
-                  onClick={() => choose(plan)}
-                >
-                  {current
-                    ? "이용 중"
-                    : pending
-                      ? "이 플랜으로 변경 예약됨"
-                      : state.subscription
-                        ? `${plan.displayName}로 전환하기`
-                        : `${plan.displayName} 구독 시작하기`}
-                </button>
-              </article>
-            );
-          })}
-        </div>
+      <section className={`hero pricing-hero ${styles.hero}`}>
+        <h1><span>필요한 만큼 선택하세요</span></h1>
       </section>
 
-      {selection ? (
-        <div className={styles.overlay} onMouseDown={(event) => {
+      {error ? <div className={styles.localError} role="alert">{error}</div> : null}
+
+      <div className={`${styles.planToolbar} ${styles.localPlanToolbar}`}>
+        <span>결제 주기</span>
+        <div className={`${styles.packageTermPicker} ${styles.localTermPicker}`} role="group" aria-label="구독 결제 주기">
+          {([1, 6, 12] as const).map((term) => (
+            <button
+              key={term}
+              type="button"
+              aria-pressed={months === term}
+              className={months === term ? styles.packageTermActive : ""}
+              onClick={() => setMonths(term)}
+            >
+              {term}개월
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <section
+        id="pricing-plans"
+        className={`pricing-grid ${styles.localPlanGrid}`}
+        aria-label={`${months}개월 정기 구독 요금제`}
+        aria-busy={!state}
+      >
+        {!state && ["pro", "starter", "expert"].map((plan) => (
+          <article
+            key={plan}
+            className={`pricing-card ${styles.planCard} ${styles.localPlanCard} ${styles.localPlanSkeleton} ${
+              plan === "starter"
+                ? styles.mobilePlanStarter
+                : plan === "expert"
+                  ? styles.mobilePlanExpert
+                  : styles.mobilePlanPro
+            }`}
+            aria-hidden="true"
+          >
+            <span className={styles.localPlanSkeletonName} />
+            <strong className={styles.localPlanSkeletonPrice} />
+            <i className={styles.localPlanSkeletonBilling} />
+            <i className={styles.localPlanSkeletonDescription} />
+            <div className={styles.localPlanSkeletonFeatures}><i /><i /><i /><i /><i /><i /></div>
+            <span className={styles.localPlanSkeletonButton} />
+          </article>
+        ))}
+
+        {plans.map((plan) => {
+          const current = state?.subscription?.plan.code === plan.code;
+          const pending = state?.subscription?.scheduledPlan?.code === plan.code;
+          const cardClass = plan.tier === "starter"
+            ? "pricing-card-popular"
+            : plan.tier === "expert" ? "pricing-card-pro" : "";
+          return (
+            <article
+              key={plan.code}
+              className={`pricing-card ${cardClass} ${styles.planCard} ${styles.localPlanCard} ${styles.packagePlanCard} ${mobileOrderClass(plan)}`}
+            >
+              {plan.tier === "starter" && plan.contractMonths === 6 ? (
+                <span className={`pricing-badge ${styles.localReasonableBadge}`}>가장 합리적</span>
+              ) : null}
+              {plan.tier === "starter" && plan.contractMonths === 12 ? (
+                <span className="pricing-badge">최대 할인</span>
+              ) : null}
+              {plan.discountPercent > 0 ? (
+                <span className={`${styles.planEyebrow} ${styles.discountEyebrow} ${
+                  plan.tier === "expert" ? styles.discountEyebrowViolet : ""
+                }`}>
+                  {plan.discountPercent}% 할인
+                </span>
+              ) : null}
+              <div className="pricing-plan-name"><h2>{plan.displayName}</h2></div>
+              <p className={styles.localPlanDescription}>{subtitle(plan)}</p>
+              <div className={`pricing-price ${styles.localPlanPrice}`}>
+                <strong>₩{won(plan.monthlyEquivalentKrw)}</strong><span>/월</span>
+              </div>
+              <p className="pricing-billing">{plan.contractMonths}개월 총 ₩{won(plan.priceKrw)}</p>
+              <ul>
+                {features(plan).map((feature, index) => (
+                  <li key={feature} className={index === 5 && !plan.guidebookIncluded ? "pricing-feature-unavailable" : ""}>
+                    <span>{index === 5 && !plan.guidebookIncluded ? "–" : "✓"}</span>
+                    <span>{index === 0 ? <strong>{feature.replace(" 원본 영상 처리", "")}</strong> : feature}{index === 0 ? " 원본 영상 처리" : ""}</span>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                disabled={busy || current}
+                className={`pricing-cta ${plan.tier === "starter" ? "pricing-cta-primary" : ""} ${styles.planCta} ${pending ? styles.planCtaPending : ""}`}
+                onClick={() => choose(plan)}
+              >
+                {current
+                  ? "이용 중"
+                  : pending ? (
+                    <span className={styles.planCtaPendingContent}>
+                      <span className={styles.planCtaPendingIndicator} aria-hidden="true" />
+                      <span className={styles.planCtaPendingCopy}><strong>이 플랜으로 변경 예약됨</strong></span>
+                    </span>
+                  ) : state?.subscription
+                    ? `${plan.displayName}로 전환하기`
+                    : `${plan.displayName} 구독 시작하기`}
+              </button>
+            </article>
+          );
+        })}
+      </section>
+
+      {selection && state ? (
+        <div className={styles.localDialogBackdrop} role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget && !busy) setSelection(null);
         }}>
-          <section role="dialog" aria-modal="true" aria-labelledby="plan-dialog-title" className={styles.dialog}>
-            <button type="button" aria-label="닫기" className={styles.close} onClick={() => setSelection(null)}>×</button>
-            <h2 id="plan-dialog-title">
-              {selection.action === "cancel_pending"
-                ? "변경 예약을 취소할까요?"
-                : selection.action === "subscribe"
-                  ? "구독 시작 확인하기"
-                  : "플랜 전환 확인하기"}
-            </h2>
-            <p>
-              {selection.action === "cancel_pending"
-                ? `${selection.plan.displayName} 변경 예약을 취소하고 현재 플랜을 유지합니다.`
-                : selection.action === "scheduled" && state.subscription
-                  ? `현재 구독 혜택은 ${date(state.subscription.currentPeriodEnd)}까지 유지됩니다.\n그 다음 결제일부터 ${selection.plan.displayName} 플랜이 적용됩니다.`
+          <section role="dialog" aria-modal="true" aria-labelledby="plan-dialog-title" className={styles.localDialog}>
+            <div className={styles.localDialogHeader}>
+              <h2 id="plan-dialog-title">
+                {selection.action === "cancel_pending"
+                  ? "변경 예약 취소하기"
                   : selection.action === "subscribe"
-                    ? `${selection.plan.displayName} 플랜을 시작할까요?`
-                    : `${selection.plan.displayName} 플랜으로 전환할까요?`}
-            </p>
-            <div className={styles.planSummary}>
-              <strong>{selection.plan.displayName}</strong>
-              <span>매월 {Math.round(selection.plan.monthlyQuotaSeconds / 60)}분</span>
+                    ? "구독 시작 확인하기"
+                    : "플랜 전환 확인하기"}
+              </h2>
+              <button type="button" aria-label="닫기" disabled={busy} onClick={() => setSelection(null)}>×</button>
             </div>
-            {selection.action !== "cancel_pending" ? (
-              <label className={styles.consent}>
-                <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-                <span><a href="/purchase-terms" target="_blank">구매약관</a> 및 <a href="/refund" target="_blank">취소·환불 정책</a>에 동의합니다.</span>
-              </label>
-            ) : null}
-            {error ? <p role="alert" className={styles.dialogError}>{error}</p> : null}
-            <footer>
-              <button type="button" onClick={() => setSelection(null)} disabled={busy}>취소</button>
-              <button type="button" className={styles.primary} onClick={() => void confirm()} disabled={busy || (selection.action !== "cancel_pending" && !consent)}>
+            <div className={styles.localDialogBody}>
+              <p className={styles.localDialogLead}>
+                {selection.action === "cancel_pending"
+                  ? `${selection.plan.displayName} 플랜 변경 예약을 취소할까요?`
+                  : selection.action === "scheduled" && state.subscription
+                    ? `${selection.plan.displayName} 플랜으로 전환할까요?`
+                    : selection.action === "subscribe"
+                      ? `${selection.plan.displayName} 플랜 구독을 시작할까요?`
+                      : `${selection.plan.displayName} 플랜으로 전환할까요?`}
+              </p>
+              <div className={styles.localPlanSummary}>
+                <div className={styles.localPlanSummaryCopy}>
+                  <strong>{selection.plan.displayName}</strong>
+                  <span>
+                    {selection.action === "cancel_pending"
+                      ? "예약된 플랜 변경을 취소합니다"
+                      : selection.action === "scheduled"
+                        ? "현재 구독 종료 후 적용됩니다"
+                        : selection.action === "subscribe"
+                          ? "카드 등록과 결제 후 바로 이용할 수 있습니다"
+                          : "등록된 카드로 결제 후 바로 적용됩니다"}
+                  </span>
+                </div>
+              </div>
+              {selection.action !== "cancel_pending" ? (
+                <label className={styles.localConsent}>
+                  <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
+                  <span>
+                    <Link href="/purchase-terms" target="_blank">구매약관</Link> 및{" "}
+                    <Link href="/refund" target="_blank">취소·환불 정책</Link>에 동의합니다.
+                  </span>
+                </label>
+              ) : null}
+              {error ? <div className={styles.localError} role="alert">{error}</div> : null}
+            </div>
+            <div className={styles.localDialogActions}>
+              <button type="button" disabled={busy} onClick={() => setSelection(null)}>취소</button>
+              <button
+                type="button"
+                disabled={busy || (selection.action !== "cancel_pending" && !consent)}
+                onClick={() => void confirm()}
+              >
                 {busy
-                  ? "처리 중"
+                  ? "처리 중..."
                   : selection.action === "cancel_pending"
                     ? "예약 취소"
                     : selection.action === "subscribe"
-                      ? "구독 시작"
-                      : "전환 확인"}
+                      ? "구독 확인"
+                      : selection.action === "scheduled"
+                        ? "변경 예약"
+                        : "전환 확인"}
               </button>
-            </footer>
+            </div>
           </section>
         </div>
       ) : null}
 
       {result ? (
-        <div className={styles.overlay} onMouseDown={(event) => {
+        <div className={styles.localDialogBackdrop} role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setResult(null);
         }}>
-          <section role="dialog" aria-modal="true" aria-labelledby="plan-result-title" className={styles.dialog}>
-            <button type="button" aria-label="닫기" className={styles.close} onClick={() => setResult(null)}>×</button>
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="plan-result-title"
+            className={`${styles.localDialog} ${styles.localResultDialog}`}
+          >
             <h2 id="plan-result-title">{result.title}</h2>
-            <p role="status" aria-live="polite" className={styles.resultDetail}>{result.detail}</p>
-            <footer><button type="button" className={styles.primary} onClick={() => setResult(null)}>확인</button></footer>
+            {typeof result.remainingMinutes === "number" ? (
+              <p className={styles.localResultUsage}>
+                남은 사용량 <strong>{won(result.remainingMinutes)}분</strong>
+              </p>
+            ) : (
+              <p className={styles.localResultSchedule}>
+                {result.detail.split("\n").map((line) => <span key={line}>{line}</span>)}
+              </p>
+            )}
+            <button type="button" className={styles.localResultConfirm} onClick={() => setResult(null)}>확인</button>
           </section>
         </div>
       ) : null}
