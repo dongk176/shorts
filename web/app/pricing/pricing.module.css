@@ -115,13 +115,19 @@
 }
 
 :global(.app-shell .pricing-main) > section.planSection,
-:global(.app-shell .pricing-main) > section.earlyBirdSection {
+:global(.app-shell .pricing-main) > section.earlyBirdSection,
+:global(.app-shell .pricing-main) > section.activeProductsSection {
   border: 0;
   border-radius: 0;
   padding: 0;
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;
+}
+
+.activeProductsSection {
+  width: min(920px, 100%);
+  margin: -10px auto 52px;
 }
 
 @media (max-width: 720px) {
@@ -150,6 +156,114 @@
   .skeletonPackageGrid article:nth-child(2) {
     display: none;
   }
+}
+
+.activeProductsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 14px;
+}
+
+.activeProductCard {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(100, 216, 146, .24);
+  border-radius: 20px;
+  padding: 22px 24px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(100, 216, 146, .1), transparent 40%),
+    rgba(24, 28, 29, .88);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .2);
+}
+
+.activePackageCard {
+  border-color: rgba(255, 143, 128, .28);
+  background:
+    radial-gradient(circle at 100% 0, rgba(255, 113, 94, .13), transparent 42%),
+    rgba(24, 28, 29, .88);
+}
+
+.activeProductTopline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #858a8c;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.activeProductBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #aef0c8;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.activeProductBadge i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #64d892;
+  box-shadow: 0 0 10px rgba(100, 216, 146, .75);
+}
+
+.activeProductCard h3 {
+  margin-top: 13px;
+  color: #fff;
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: -.035em;
+}
+
+.activeProductBenefit {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.activeProductBenefit strong {
+  color: #f1f3f3;
+  font-size: 21px;
+  font-weight: 950;
+  letter-spacing: -.035em;
+}
+
+.activeProductBenefit span,
+.activeProductCard > p {
+  color: #8f9496;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.activeProductCard > p {
+  margin-top: 8px;
+}
+
+.subscriptionAction {
+  min-height: 38px;
+  margin-top: 18px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 10px;
+  padding: 0 14px;
+  color: #d9dddd;
+  font-size: 11px;
+  font-weight: 850;
+  transition: border-color .2s, background .2s, color .2s;
+}
+
+.subscriptionAction:hover {
+  border-color: rgba(255, 143, 128, .5);
+  color: #ffb0a5;
+  background: rgba(255, 113, 94, .07);
+}
+
+.subscriptionAction:disabled {
+  cursor: not-allowed;
+  opacity: .45;
 }
 
 .planSection {
@@ -410,6 +524,10 @@
 
 .planCard ul {
   flex: none;
+}
+
+.planGrid .planCard ul {
+  margin-bottom: 24px;
 }
 
 .planCard :global(.pricing-billing) {
@@ -693,6 +811,15 @@
 @media (max-width: 520px) {
   .hero {
     margin-bottom: 38px;
+  }
+
+  .activeProductsSection {
+    margin-top: -8px;
+    margin-bottom: 42px;
+  }
+
+  .activeProductCard {
+    padding: 20px;
   }
 
   .planToolbar {
