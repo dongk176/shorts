@@ -47,6 +47,32 @@ for (const file of migrationFiles) {
 }
 
 const sql = postgres(process.env.DATABASE_URL, { max: 1, connect_timeout: 15, idle_timeout: 5 });
+const concurrentIndexPattern = /\bcreate\s+(?:unique\s+)?index\s+concurrently\b/i;
+
+async function applyMigration(file, migration) {
+  if (!concurrentIndexPattern.test(migration)) {
+    await sql.unsafe(migration, [], { prepare: false });
+    return;
+  }
+
+  if (/\b(?:begin|commit|rollback)\s*;/i.test(migration)) {
+    throw new Error(`${file}의 concurrent index migration에는 명시적 transaction을 사용할 수 없습니다.`);
+  }
+
+  // postgres.js sends a multi-statement unsafe query as one implicit
+  // transaction. PostgreSQL intentionally rejects CREATE INDEX CONCURRENTLY
+  // in that shape, so run this narrowly-scoped migration one statement at a
+  // time on the same connection. Concurrent-index migration files must remain
+  // simple DDL/SET statements and are guarded above against transaction blocks.
+  const statements = migration
+    .split(/;\s*(?:\r?\n|$)/)
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+  for (const statement of statements) {
+    await sql.unsafe(statement, [], { prepare: false });
+  }
+}
+
 const publicObjects = async () => sql`
   select n.nspname as schema_name, c.relname as object_name, c.relkind::text as object_type
   from pg_catalog.pg_class c
@@ -65,7 +91,7 @@ try {
   for (const file of migrationFiles) {
     process.stdout.write(`Supabase migration 적용: ${file}\n`);
     const migration = fs.readFileSync(path.join(migrationDirectory, file), "utf8");
-    await sql.unsafe(migration, [], { prepare: false });
+    await applyMigration(file, migration);
   }
   const after = JSON.stringify(await publicObjects());
   if (before !== after) throw new Error("migration 적용 중 public schema 객체가 변경되었습니다.");

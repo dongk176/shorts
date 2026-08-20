@@ -10,6 +10,18 @@ test("forwards selected migration filenames to the migration runner", () => {
   assert.match(wrapper, /node scripts\/apply-supabase\.mjs "\$@"/);
 });
 
+test("runs concurrent index migrations outside an implicit transaction", () => {
+  const runner = fs.readFileSync(
+    new URL("./apply-supabase.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(runner, /concurrentIndexPattern/);
+  assert.match(runner, /split\(\/;\\s\*/);
+  assert.match(runner, /for \(const statement of statements\)/);
+  assert.match(runner, /await sql\.unsafe\(statement/);
+  assert.match(runner, /begin\|commit\|rollback/);
+});
+
 function creationBlockCodes(file) {
   const migration = fs.readFileSync(
     new URL(`../supabase/migrations/${file}`, import.meta.url),
