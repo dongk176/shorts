@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { getBillingSummary } from "@/lib/billing";
-import { resolveBillingCustomerCohort } from "@/lib/billing-cohort";
+import {
+  resolveBillingCustomerCohort,
+  shouldUseTossBillingExperience,
+} from "@/lib/billing-cohort";
 import { getDb } from "@/lib/db";
 import { authProfile, requireMvpSession } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
@@ -39,7 +42,7 @@ export default async function PricingPage() {
       if (tossExperience) guestTossCatalog = publicTossCatalog();
     } else if (appUserId) {
       const cohort = await resolveBillingCustomerCohort(appUserId, db);
-      tossExperience = cohort.cohort === "toss_v1" && cohort.persisted;
+      tossExperience = shouldUseTossBillingExperience(cohort);
       if (tossExperience && session?.userId) {
         initialTossState = await getTossBillingState({
           userId: session.userId,

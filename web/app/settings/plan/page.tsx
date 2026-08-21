@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getBillingSummary } from "@/lib/billing";
-import { resolveBillingCustomerCohort } from "@/lib/billing-cohort";
+import {
+  resolveBillingCustomerCohort,
+  shouldUseTossBillingExperience,
+} from "@/lib/billing-cohort";
 import { getDb } from "@/lib/db";
 import { requireMvpSession } from "@/lib/session";
 import { authProfile } from "@/lib/session";
@@ -20,7 +23,7 @@ export default async function PlanManagementPage() {
   if (!session.userId) redirect("/settings");
   const db = getDb();
   const cohort = await resolveBillingCustomerCohort(session.userId, db);
-  if (cohort.cohort === "toss_v1" && cohort.persisted) {
+  if (shouldUseTossBillingExperience(cohort)) {
     const state = await getTossBillingState({
       userId: session.userId,
       session: session as typeof session & { userId: string },

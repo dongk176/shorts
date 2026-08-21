@@ -22,14 +22,21 @@ export type PersistedTossBillingCustomer = BillingCohortResolution & {
   persisted: true;
 };
 
+export const LEGACY_ROUTED_TOSS_SOURCE_REASON_PREFIX = "legacy_route_";
+
+export function shouldUseTossBillingExperience(
+  resolution: BillingCohortResolution,
+): resolution is PersistedTossBillingCustomer {
+  return resolution.cohort === "toss_v1"
+    && resolution.persisted
+    && Boolean(resolution.providerCustomerKey)
+    && !resolution.reason.startsWith(LEGACY_ROUTED_TOSS_SOURCE_REASON_PREFIX);
+}
+
 export function requirePersistedTossBillingCustomer(
   resolution: BillingCohortResolution,
 ): PersistedTossBillingCustomer {
-  if (
-    resolution.cohort !== "toss_v1"
-    || !resolution.persisted
-    || !resolution.providerCustomerKey
-  ) {
+  if (!shouldUseTossBillingExperience(resolution)) {
     throw new Error("Toss billing is not allowed for this customer");
   }
   return resolution as PersistedTossBillingCustomer;

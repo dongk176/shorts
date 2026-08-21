@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cohortForBillingEvidence,
   requirePersistedTossBillingCustomer,
+  shouldUseTossBillingExperience,
 } from "@/lib/billing-cohort";
 
 describe("billing customer cohort", () => {
@@ -43,6 +44,19 @@ describe("billing customer cohort", () => {
       persisted: false,
       reason: "classification_failed_closed",
     })).toThrow("Toss billing is not allowed");
+  });
+
+  it("keeps explicitly legacy-routed unpaid customers out of Toss", () => {
+    const legacyRouted = {
+      cohort: "toss_v1" as const,
+      providerCustomerKey: "EC_customer_2",
+      persisted: true as const,
+      reason: "legacy_route_card_review_20260821",
+    };
+
+    expect(shouldUseTossBillingExperience(legacyRouted)).toBe(false);
+    expect(() => requirePersistedTossBillingCustomer(legacyRouted))
+      .toThrow("Toss billing is not allowed");
   });
 
   it("routes every historical subscriber to ThePayOne", () => {
