@@ -1,11 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE,
   PROTECTED_APP_ROUTES,
   compareManifestRoutes,
+  parseArgs,
   validateManifestRoutes,
   validateTrackedFiles,
 } from "./verify-production-release.mjs";
+
+test("production release guard requires an exact baseline manifest", () => {
+  assert.throws(
+    () => parseArgs(["--base", "abc123"]),
+    /--baseline-manifest/,
+  );
+  assert.equal(
+    parseArgs([
+      "--base",
+      "abc123",
+      "--baseline-manifest",
+      "/tmp/production-manifest.json",
+    ]).baselineManifest,
+    "/tmp/production-manifest.json",
+  );
+});
 
 test("production release guard rejects the isolated content calendar", () => {
   assert.deepEqual(
@@ -42,5 +60,21 @@ test("production release guard rejects any unexpected route addition or removal"
       PROTECTED_APP_ROUTES,
     ),
     { added: ["/content-calendar/page"], removed: [PROTECTED_APP_ROUTES[0]] },
+  );
+  assert.deepEqual(
+    compareManifestRoutes(
+      [...PROTECTED_APP_ROUTES, ...ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE],
+      PROTECTED_APP_ROUTES,
+      ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE,
+    ),
+    { added: [], removed: [] },
+  );
+  assert.deepEqual(
+    compareManifestRoutes(
+      [...PROTECTED_APP_ROUTES, "/api/unexpected/route"],
+      PROTECTED_APP_ROUTES,
+      ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE,
+    ),
+    { added: ["/api/unexpected/route"], removed: [] },
   );
 });

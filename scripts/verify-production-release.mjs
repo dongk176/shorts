@@ -18,6 +18,17 @@ export const PROTECTED_APP_ROUTES = [
   "/settings/page",
   "/admin/easycutcutcutcutcutcut/page",
   "/projects/[projectNumber]/edit/[shortId]/page",
+  "/api/file-upload/sessions/route",
+  "/api/file-upload/sessions/[sessionId]/route",
+  "/api/projects/[projectNumber]/source-thumbnail/route",
+];
+
+// These routes are the only intentional additions relative to the currently
+// promoted production manifest. Everything else must still fail closed.
+export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  "/api/file-upload/sessions/route",
+  "/api/file-upload/sessions/[sessionId]/route",
+  "/api/projects/[projectNumber]/source-thumbnail/route",
 ];
 
 export const FORBIDDEN_PRODUCTION_PATHS = [
@@ -55,11 +66,18 @@ export function validateManifestRoutes(routeNames) {
   };
 }
 
-export function compareManifestRoutes(candidateRouteNames, baselineRouteNames) {
+export function compareManifestRoutes(
+  candidateRouteNames,
+  baselineRouteNames,
+  allowedAdditions = [],
+) {
   const candidate = new Set(candidateRouteNames);
   const baseline = new Set(baselineRouteNames);
+  const allowed = new Set(allowedAdditions);
   return {
-    added: [...candidate].filter((route) => !baseline.has(route)).sort(),
+    added: [...candidate]
+      .filter((route) => !baseline.has(route) && !allowed.has(route))
+      .sort(),
     removed: [...baseline].filter((route) => !candidate.has(route)).sort(),
   };
 }
@@ -68,7 +86,7 @@ function git(args) {
   return execFileSync("git", args, { encoding: "utf8" }).trim();
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const options = {
     base: "",
     manifest: "web/.next/server/app-paths-manifest.json",
@@ -82,6 +100,9 @@ function parseArgs(argv) {
     }
   }
   if (!options.base) throw new Error("--base <현재 운영 Git SHA>가 필요합니다.");
+  if (!options.baselineManifest) {
+    throw new Error("--baseline-manifest <현재 운영 경로 manifest>가 필요합니다.");
+  }
   return options;
 }
 
@@ -108,21 +129,20 @@ export function runReleaseVerification(argv = process.argv.slice(2)) {
   if (manifestResult.includedForbidden.length) {
     throw new Error(`개발 중인 콘텐츠 캘린더 경로가 빌드되어 배포를 중단합니다.\n${manifestResult.includedForbidden.join("\n")}`);
   }
-  if (options.baselineManifest) {
-    const baselineManifest = JSON.parse(
-      readFileSync(resolve(options.baselineManifest), "utf8"),
-    );
-    const routeDiff = compareManifestRoutes(
-      Object.keys(manifest),
-      Object.keys(baselineManifest),
-    );
-    if (routeDiff.added.length || routeDiff.removed.length) {
-      throw new Error([
-        "현재 운영과 후보의 경로 목록이 달라 배포를 중단합니다.",
-        ...routeDiff.added.map((route) => `추가: ${route}`),
-        ...routeDiff.removed.map((route) => `삭제: ${route}`),
-      ].join("\n"));
-    }
+  const baselineManifest = JSON.parse(
+    readFileSync(resolve(options.baselineManifest), "utf8"),
+  );
+  const routeDiff = compareManifestRoutes(
+    Object.keys(manifest),
+    Object.keys(baselineManifest),
+    ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE,
+  );
+  if (routeDiff.added.length || routeDiff.removed.length) {
+    throw new Error([
+      "현재 운영과 후보의 경로 목록이 달라 배포를 중단합니다.",
+      ...routeDiff.added.map((route) => `추가: ${route}`),
+      ...routeDiff.removed.map((route) => `삭제: ${route}`),
+    ].join("\n"));
   }
 
   const changedFiles = git(["diff", "--name-status", `${options.base}...HEAD`]);

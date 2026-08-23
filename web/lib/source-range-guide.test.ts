@@ -48,9 +48,9 @@ describe("source range guide", () => {
   });
 
   it("uses a source player only on the isolated range-selection path", () => {
-    expect(shortsAppSource).toContain("const sourceVideoEmbedUrl = sourceRangeSelectionEnabled && analysis");
+    expect(shortsAppSource).toContain("const sourceVideoEmbedUrl = !uploadSourceActive && sourceRangeSelectionEnabled && analysis");
     expect(shortsAppSource).toContain("youtubePrivacyEnhancedEmbedUrl(analysis.videoId)");
     expect(shortsAppSource).toContain("{sourceVideoEmbedUrl ? (");
-    expect(shortsAppSource).toContain('<Image src={analysis.thumbnailUrl} alt="영상 썸네일"');
+    expect(shortsAppSource).toContain('<Image src={selectedSource.thumbnailUrl} alt="영상 썸네일"');
   });
 });

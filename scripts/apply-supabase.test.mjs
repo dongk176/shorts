@@ -107,3 +107,57 @@ test("subtitle template canary is additive, disabled, and schema isolated", () =
   assert.match(migration, /'subtitle_templates_public',[\s\S]*false/);
   assert.doesNotMatch(migration, /\b(?:create|alter|drop)\s+(?:table|function)\s+public\./i);
 });
+
+test("file upload control plane is additive, private, and disabled by default", () => {
+  const migration = fs.readFileSync(
+    new URL(
+      "../supabase/migrations/202608230003_file_upload_admin_control_plane.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const validation = fs.readFileSync(
+    new URL(
+      "../supabase/migrations/202608230004_file_upload_admin_control_plane_validate.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(migration, /add column if not exists source_type text not null default 'youtube'/);
+  assert.match(migration, /check \(source_type in \('youtube','upload'\)\) not valid/);
+  assert.match(migration, /create table if not exists shorts_mvp\.upload_sessions/);
+  for (const field of [
+    "job_id", "user_id", "request_id", "token_hash", "expected_bytes",
+    "expires_at", "claimed_at", "consumed_at", "original_filename",
+    "declared_content_type", "probe_metadata", "source_thumbnail_s3_key",
+    "source_deleted_at", "heartbeat_at", "failure_reason",
+  ]) {
+    assert.match(migration, new RegExp(`\\b${field}\\b`), `${field} is missing`);
+  }
+  assert.match(migration, /upload_sessions enable row level security/);
+  assert.match(migration, /revoke all on shorts_mvp\.upload_sessions from anon, authenticated/);
+  assert.match(migration, /'file_upload',[\s\S]*false/);
+  assert.match(migration, /'file_upload_public',[\s\S]*false/);
+  assert.match(validation, /validate constraint video_jobs_source_type_check/);
+  assert.doesNotMatch(migration, /insert into shorts_mvp\.(?:video_jobs|usage_reservations|project_job_outbox)/i);
+  assert.doesNotMatch(migration, /alter column (?:youtube_url|youtube_video_id) drop not null/i);
+  assert.doesNotMatch(migration, /\b(?:create|alter|drop)\s+(?:table|function)\s+public\./i);
+});
+
+test("file upload idempotency binds request ids to immutable intents", () => {
+  const migration = fs.readFileSync(
+    new URL(
+      "../supabase/migrations/202608230008_file_upload_intent_hash.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(migration, /alter table shorts_mvp\.upload_sessions/);
+  assert.match(migration, /add column if not exists intent_hash text/);
+  assert.match(migration, /alter column intent_hash set not null/);
+  assert.match(migration, /intent_hash ~ '\^\[0-9a-f\]\{64\}\$'/);
+  assert.doesNotMatch(migration, /shorts_mvp\.(?:video_jobs|generated_shorts|usage_events)/);
+  assert.doesNotMatch(migration, /\b(?:create|alter|drop)\s+(?:table|function)\s+public\./i);
+});

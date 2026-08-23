@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   deleteObjects: vi.fn(),
   billing: vi.fn(),
   paymentMethodAction: vi.fn(),
+  fileUploadAccess: vi.fn(),
   signedUrl: vi.fn(),
   shortDownloadUrl: vi.fn(),
   generateComments: vi.fn(),
@@ -41,6 +42,9 @@ vi.mock("@/lib/billing", async (importOriginal) => ({
 vi.mock("@/lib/billing-payment-method-remediation", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/billing-payment-method-remediation")>()),
   getPaymentMethodAction: mocks.paymentMethodAction,
+}));
+vi.mock("@/lib/file-upload-release", () => ({
+  getFileUploadReleaseAccess: mocks.fileUploadAccess,
 }));
 vi.mock("@/lib/supabase/server", () => ({ getAuthenticatedUser: mocks.authenticatedUser }));
 vi.mock("@/lib/usage", async (importOriginal) => ({
@@ -227,6 +231,7 @@ beforeEach(() => {
   mocks.publicState.mockResolvedValue({ plans: [], generatedShortCount: 4321 });
   mocks.subtitleTemplateUsage.mockResolvedValue(false);
   mocks.publicExamples.mockResolvedValue([{ id: "example-job", isExample: true }]);
+  mocks.fileUploadAccess.mockResolvedValue({ adminEnabled: false });
   mocks.publicExampleByNumber.mockResolvedValue(null);
   mocks.authenticatedSession.mockImplementation(() => mocks.session());
   mocks.authenticatedUser.mockResolvedValue({ id: "auth-a" });
@@ -1255,7 +1260,7 @@ describe("subtitle template edit isolation", () => {
 });
 
 describe("MVP state visibility", () => {
-  it("hides all projects until the visitor signs in", async () => {
+  it("returns public example projects before the visitor signs in", async () => {
     mocks.authenticatedUser.mockResolvedValue(null);
     mocks.publicState.mockResolvedValue({
       plans: [{ code: "free", displayName: "Free", monthlySourceSeconds: 0, retentionDays: 1, monthlyPriceKrw: 0, yearlyPriceKrw: 0, maxActiveJobs: 0 }],
@@ -1267,12 +1272,13 @@ describe("MVP state visibility", () => {
     await expect(response.json()).resolves.toMatchObject({
       sessionId: null,
       user: null,
-      recentJobs: [],
+      capabilities: { fileUpload: false },
+      recentJobs: [{ id: "example-job", isExample: true }],
     });
     expect(mocks.session).not.toHaveBeenCalled();
     expect(mocks.usage).not.toHaveBeenCalled();
     expect(mocks.recentJobs).not.toHaveBeenCalled();
-    expect(mocks.publicExamples).not.toHaveBeenCalled();
+    expect(mocks.publicExamples).toHaveBeenCalledWith(expect.anything());
   });
 
   it("returns only the authenticated user's project query result", async () => {
@@ -1280,7 +1286,10 @@ describe("MVP state visibility", () => {
     mocks.recentJobs.mockResolvedValue([{ id: "job-a" }]);
     const response = await getMvpState();
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ recentJobs: [{ id: "job-a" }] });
+    await expect(response.json()).resolves.toMatchObject({
+      capabilities: { fileUpload: false },
+      recentJobs: [{ id: "job-a" }],
+    });
     expect(mocks.recentJobs).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ userId: "user-a" }));
   });
 });

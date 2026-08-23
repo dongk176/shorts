@@ -29,6 +29,7 @@ export async function GET(
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId}
+        and j.user_deleted_at is null
         and (
           (${session.userId}::uuid is not null and s.user_id=${session.userId})
           or (

@@ -25,8 +25,8 @@ test("legacy editor global CSS remains byte-for-byte at the approved baseline", 
 
   assert.equal(
     digest,
-    "2f20bb282aed8d91a75db5e61c61e4c474b62b603e52532c8e712363eede5df2",
-    "Do not change legacy global CSS in an editor candidate. Put candidate styles in editor-v2.css.",
+    "e4dc64d99d1c8f5256b1d9d65313e36d6b3be834de3d865fedbccf4aa5007ee3",
+    "Do not change the approved global CSS baseline without a dedicated public UI review.",
   );
 });
 

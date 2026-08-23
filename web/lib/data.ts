@@ -145,7 +145,7 @@ export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: st
   const rows = onlyJobId
     ? await db`
         select * from shorts_mvp.video_jobs
-        where id = ${onlyJobId} and (
+        where id = ${onlyJobId} and user_deleted_at is null and (
           (${session.userId}::uuid is not null and user_id=${session.userId})
           or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
           or (is_example and status='completed')
@@ -153,7 +153,7 @@ export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: st
       `
     : await db`
         select * from shorts_mvp.video_jobs
-        where ((${session.userId}::uuid is not null and user_id=${session.userId})
+        where user_deleted_at is null and ((${session.userId}::uuid is not null and user_id=${session.userId})
           or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
           or (is_example and status='completed'))
         order by is_example desc, created_at desc limit 10
@@ -164,7 +164,7 @@ export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: st
 export async function getAllProjects(db: Sql, session: MvpSession): Promise<VideoJob[]> {
   const rows = await db`
     select * from shorts_mvp.video_jobs
-    where ((${session.userId}::uuid is not null and user_id=${session.userId})
+    where user_deleted_at is null and ((${session.userId}::uuid is not null and user_id=${session.userId})
       or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
       or (is_example and status='completed'))
     order by is_example desc, created_at desc
@@ -179,7 +179,7 @@ export async function getProjectByNumber(
 ): Promise<VideoJob | null> {
   const rows = await db`
     select * from shorts_mvp.video_jobs
-    where project_number=${projectNumber} and (
+    where project_number=${projectNumber} and user_deleted_at is null and (
       (${session.userId}::uuid is not null and user_id=${session.userId})
       or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
       or (is_example and status='completed')
@@ -207,6 +207,7 @@ export async function getAuthenticatedProjectPageAccess(
         select 1
         from shorts_mvp.video_jobs
         where project_number=${projectNumber}
+          and user_deleted_at is null
           and (
             user_id=(select id from matched_user)
             or (is_example and status='completed')
@@ -224,7 +225,7 @@ export async function getAuthenticatedProjectPageAccess(
 export async function getPublicExampleJobs(db: Sql): Promise<VideoJob[]> {
   const rows = await db`
     select * from shorts_mvp.video_jobs
-    where is_example and status='completed'
+    where is_example and status='completed' and user_deleted_at is null
     order by created_at desc limit 10
   `;
   return mapJobs(db, rows);
@@ -237,6 +238,7 @@ export async function getPublicExampleProjectByNumber(
   const rows = await db`
     select * from shorts_mvp.video_jobs
     where project_number=${projectNumber} and is_example and status='completed'
+      and user_deleted_at is null
     limit 1
   `;
   return (await mapJobs(db, rows))[0] || null;

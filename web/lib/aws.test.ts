@@ -8,7 +8,11 @@ vi.mock("@aws-sdk/cloudfront-signer", () => ({
   getSignedUrl: mocks.cloudFrontSignedUrl,
 }));
 
-import { getShortDownloadUrl, latestJobDefinitionName } from "@/lib/aws";
+import {
+  getProjectSourceThumbnailUrl,
+  getShortDownloadUrl,
+  latestJobDefinitionName,
+} from "@/lib/aws";
 
 describe("getShortDownloadUrl", () => {
   beforeEach(() => {
@@ -75,5 +79,47 @@ describe("latestJobDefinitionName", () => {
   it("keeps an unversioned job definition name", () => {
     expect(latestJobDefinitionName("shorts-mvp-short-production"))
       .toBe("shorts-mvp-short-production");
+  });
+});
+
+describe("getProjectSourceThumbnailUrl", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-29T00:00:00.000Z"));
+    vi.stubEnv("CLOUDFRONT_DOMAIN", "cdn.example.com");
+    vi.stubEnv("CLOUDFRONT_KEY_PAIR_ID", "key-pair");
+    vi.stubEnv(
+      "CLOUDFRONT_PRIVATE_KEY_B64",
+      Buffer.from("private-key").toString("base64"),
+    );
+    mocks.cloudFrontSignedUrl.mockReturnValue("https://cdn.example.com/signed");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it("signs only a thumbnails jpg URL for at most fifteen minutes", async () => {
+    await expect(getProjectSourceThumbnailUrl({
+      key: "thumbnails/session/job/source.jpg",
+      expiresAt: null,
+    })).resolves.toBe("https://cdn.example.com/signed");
+
+    expect(mocks.cloudFrontSignedUrl).toHaveBeenCalledWith({
+      url: "https://cdn.example.com/thumbnails/session/job/source.jpg",
+      keyPairId: "key-pair",
+      privateKey: "private-key",
+      dateLessThan: "2026-07-29T00:15:00.000Z",
+    });
+  });
+
+  it("rejects paths outside the private thumbnail namespace", async () => {
+    await expect(getProjectSourceThumbnailUrl({
+      key: "../outputs/private/source.jpg",
+      expiresAt: null,
+    })).rejects.toThrow("재생할 수 없는 원본 썸네일 경로입니다.");
+    expect(mocks.cloudFrontSignedUrl).not.toHaveBeenCalled();
   });
 });

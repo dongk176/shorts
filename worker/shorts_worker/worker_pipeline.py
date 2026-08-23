@@ -5,6 +5,7 @@ import math
 import os
 import resource
 import shutil
+import stat
 import sys
 import tempfile
 import threading
@@ -72,6 +73,12 @@ BRAND_COLOR_VALUES = frozenset({
     "#F97316", "#FFD84D", "#8BFF5A", "#16A34A", "#35E6E3", "#3B82F6",
     "#2563EB", "#A78BFA", "#DB2777",
 })
+
+UPLOAD_SOURCE_MIN_DURATION_SECONDS = 180.0
+UPLOAD_SOURCE_RANGE_MIN_DURATION_SECONDS = 240.0
+UPLOAD_SOURCE_RANGE_MAX_DURATION_SECONDS = 3600.0
+UPLOAD_SOURCE_MAX_DURATION_SECONDS = 10_800.0
+UPLOAD_SOURCE_MAX_BYTES = 5 * 1024 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -266,6 +273,11 @@ def _render_queue_delay_seconds() -> float | None:
     return round(max(0.0, (datetime.now(UTC) - submitted).total_seconds()), 3)
 
 
+def full_source_duration_tolerance_seconds(reference_seconds: float) -> float:
+    """Bound browser/container duration drift to the existing 2–5 second rule."""
+    return max(2.0, min(5.0, reference_seconds * 0.02))
+
+
 def classify_full_source_download(
     *,
     source_duration_seconds: float,
@@ -283,7 +295,7 @@ def classify_full_source_download(
         return "unexpected_duration"
 
     full_distance = abs(downloaded_duration_seconds - source_duration_seconds)
-    full_tolerance = max(2.0, min(5.0, source_duration_seconds * 0.02))
+    full_tolerance = full_source_duration_tolerance_seconds(source_duration_seconds)
     return "full_source_expected" if full_distance <= full_tolerance else "unexpected_duration"
 
 
@@ -428,6 +440,80 @@ def project_source_window(
         raise IngestionError(
             "저장된 영상 선택 구간이 유효하지 않습니다.",
             code="ingestion_range_invalid",
+        )
+    return range_end_seconds - range_start_seconds
+
+
+def uploaded_project_source_window(
+    *,
+    source_duration_seconds: float,
+    declared_source_duration_seconds: float | None = None,
+    source_range_enabled: bool,
+    range_start_seconds: float | None,
+    range_end_seconds: float | None,
+) -> float:
+    """Validate the isolated upload path without widening the YouTube limits.
+
+    Uploaded originals may be between three minutes and three hours. Originals
+    shorter than four minutes are used in full; every longer original must carry
+    an explicit four-to-sixty-minute analysis range.
+    """
+    declared_duration_seconds = (
+        source_duration_seconds
+        if declared_source_duration_seconds is None
+        else declared_source_duration_seconds
+    )
+    if (
+        not math.isfinite(source_duration_seconds)
+        or source_duration_seconds < UPLOAD_SOURCE_MIN_DURATION_SECONDS
+        or source_duration_seconds > UPLOAD_SOURCE_MAX_DURATION_SECONDS
+        or not math.isfinite(declared_duration_seconds)
+        or classify_full_source_download(
+            source_duration_seconds=declared_duration_seconds,
+            downloaded_duration_seconds=source_duration_seconds,
+        )
+        != "full_source_expected"
+    ):
+        raise IngestionError(
+            "업로드한 원본 영상 길이가 허용된 범위를 벗어났습니다.",
+            code="upload_source_duration_invalid",
+        )
+
+    duration_tolerance = full_source_duration_tolerance_seconds(
+        declared_duration_seconds
+    )
+    if not source_range_enabled:
+        # The control plane derives this flag from browser metadata before
+        # rounding the display duration. A few-frame ffprobe crossover at 4m
+        # remains a whole-source upload, but a genuinely longer source cannot
+        # use this compatibility path.
+        if (
+            source_duration_seconds
+            > UPLOAD_SOURCE_RANGE_MIN_DURATION_SECONDS + duration_tolerance
+        ):
+            raise IngestionError(
+                "4분 미만 업로드 영상은 전체 구간만 사용할 수 있습니다.",
+                code="upload_range_invalid",
+            )
+        return source_duration_seconds
+
+    if (
+        range_start_seconds is None
+        or range_end_seconds is None
+        or not all(math.isfinite(value) for value in (
+            range_start_seconds,
+            range_end_seconds,
+        ))
+        or range_start_seconds < 0
+        or range_end_seconds > source_duration_seconds + duration_tolerance
+        or range_end_seconds - range_start_seconds
+        < UPLOAD_SOURCE_RANGE_MIN_DURATION_SECONDS
+        or range_end_seconds - range_start_seconds
+        > UPLOAD_SOURCE_RANGE_MAX_DURATION_SECONDS
+    ):
+        raise IngestionError(
+            "업로드 영상의 선택 구간은 4분에서 60분 사이여야 합니다.",
+            code="upload_range_invalid",
         )
     return range_end_seconds - range_start_seconds
 
@@ -724,7 +810,91 @@ class BatchWorker:
     def initial(self, job_id: str, *, attempt_override: int | None = None) -> None:
         self.prepare(job_id, attempt_override=attempt_override)
 
-    def project(self, job_id: str, *, resume: bool = False) -> None:
+    def _borrow_uploaded_source(
+        self,
+        prepared_source: Path,
+        work_dir: Path,
+    ) -> tuple[Path, dict[str, object], float, int]:
+        """Create a task-local snapshot while leaving receiver ownership intact.
+
+        The receiver owns and deletes ``prepared_source`` and must keep it
+        immutable until this call returns. The project worker only creates a
+        fixed-name hard link beneath its private work directory, falling back
+        to a byte-for-byte copy when the paths are on different filesystems.
+        Project cleanup therefore never recursively touches the receiver path.
+        """
+        candidate = Path(prepared_source)
+        if candidate.is_symlink():
+            raise IngestionError(
+                "업로드 원본 경로가 올바르지 않습니다.",
+                code="upload_source_path_invalid",
+            )
+        try:
+            resolved = candidate.resolve(strict=True)
+            temp_root = Path(self.settings.temp_dir).resolve(strict=True)
+            resolved.relative_to(temp_root)
+            source_stat = resolved.stat()
+        except (OSError, RuntimeError, ValueError):
+            raise IngestionError(
+                "업로드 원본 경로가 올바르지 않습니다.",
+                code="upload_source_path_invalid",
+            ) from None
+        if not stat.S_ISREG(source_stat.st_mode):
+            raise IngestionError(
+                "업로드 원본은 일반 파일이어야 합니다.",
+                code="upload_source_not_regular_file",
+            )
+        source_bytes = source_stat.st_size
+        if source_bytes <= 0 or source_bytes > UPLOAD_SOURCE_MAX_BYTES:
+            raise IngestionError(
+                "업로드 원본 파일 크기가 허용된 범위를 벗어났습니다.",
+                code="upload_source_size_invalid",
+            )
+
+        snapshot_dir = work_dir / "source"
+        snapshot_dir.mkdir(parents=True, exist_ok=False)
+        snapshot = snapshot_dir / "uploaded-source.media"
+        try:
+            os.link(resolved, snapshot, follow_symlinks=False)
+        except OSError:
+            shutil.copyfile(resolved, snapshot, follow_symlinks=False)
+        snapshot_stat = snapshot.stat()
+        if (
+            not stat.S_ISREG(snapshot_stat.st_mode)
+            or snapshot_stat.st_size != source_bytes
+        ):
+            raise IngestionError(
+                "업로드 원본 파일을 안전하게 준비하지 못했습니다.",
+                code="upload_source_snapshot_invalid",
+            )
+
+        source_probe = probe_media(snapshot)
+        streams = source_probe.get("streams")
+        if not isinstance(streams, list) or not any(
+            isinstance(stream, dict) and stream.get("codec_type") == "video"
+            for stream in streams
+        ):
+            raise IngestionError(
+                "업로드 원본에서 영상 트랙을 찾지 못했습니다.",
+                code="upload_source_video_missing",
+            )
+        if not any(
+            isinstance(stream, dict) and stream.get("codec_type") == "audio"
+            for stream in streams
+        ):
+            raise IngestionError(
+                "업로드 원본에서 음성 트랙을 찾지 못했습니다.",
+                code="upload_source_audio_missing",
+            )
+        return snapshot, source_probe, media_duration(source_probe), source_bytes
+
+    def project(
+        self,
+        job_id: str,
+        *,
+        resume: bool = False,
+        prepared_source: Path | None = None,
+    ) -> None:
         """Run one pipeline-v2 project inside a single Fargate task."""
         job = self.repository.get_job(job_id)
         if not job:
@@ -793,7 +963,13 @@ class BatchWorker:
             return
 
         work_dir: Path | None = None
-        route_id = str(job.get("ingestion_route_id") or "").strip() or None
+        source_type = str(job.get("source_type") or "youtube")
+        is_uploaded_source = source_type == "upload"
+        route_id = (
+            None
+            if is_uploaded_source
+            else str(job.get("ingestion_route_id") or "").strip() or None
+        )
         route_download_started = False
         preparation_finished = False
         try:
@@ -806,110 +982,243 @@ class BatchWorker:
                     raise TranscriptionError(
                         "OPENAI_API_KEY가 없어 필수 전사를 시작할 수 없습니다."
                     )
-                if not route_id:
-                    raise IngestionError(
-                        "프로젝트에 원본 다운로드 경로가 할당되지 않았습니다.",
-                        code="ingestion_route_missing",
-                    )
-                source_duration_seconds = float(job["source_duration_seconds"])
-                source_range_enabled = bool(job.get("source_range_selection_enabled"))
-                range_start_seconds = (
-                    float(job["range_start_seconds"])
-                    if source_range_enabled and job.get("range_start_seconds") is not None
-                    else None
-                )
-                range_end_seconds = (
-                    float(job["range_end_seconds"])
-                    if source_range_enabled and job.get("range_end_seconds") is not None
-                    else None
-                )
-                selected_duration_seconds = project_source_window(
-                    source_duration_seconds=source_duration_seconds,
-                    source_range_enabled=source_range_enabled,
-                    range_start_seconds=range_start_seconds,
-                    range_end_seconds=range_end_seconds,
-                    max_source_duration_seconds=self.settings.max_video_duration_seconds,
-                )
-                route_download_started = True
-                download_started_at = time.monotonic()
-                with PhaseResourceMonitor(self.settings.task_vcpus) as download_resources:
-                    bundle, successful_route_id = self._download_with_inline_route_rotation(
-                        job_id=job_id,
-                        job_attempt=int(claimed["attempt_count"]),
-                        youtube_url=str(job["youtube_url"]),
-                        destination=work_dir / "source",
-                        initial_route_id=route_id,
-                    )
-                    source = bundle.video_path
-                    source_probe = probe_media(source)
-                    downloaded_duration_seconds = media_duration(source_probe)
-                self.repository.record_ingestion_result(
-                    job_id,
-                    "success",
-                    route_id=successful_route_id,
-                    egress_class=(
-                        self.ingestion.egress_class_for(successful_route_id)
-                        if successful_route_id else None
-                    ),
-                    job_attempt=int(claimed["attempt_count"]),
-                )
-                download_seconds = time.monotonic() - download_started_at
-                source_bytes = source.stat().st_size
                 normalized_source_start_seconds = 0.0
-                download_status = classify_full_source_download(
-                    source_duration_seconds=source_duration_seconds,
-                    downloaded_duration_seconds=downloaded_duration_seconds,
-                )
-                observed_duration_seconds = downloaded_duration_seconds
-                observed_media_bytes = source_bytes or None
-                self.repository.record_source_download_observation(
-                    job_id,
-                    status=download_status,
-                    duration_seconds=observed_duration_seconds,
-                    media_bytes=observed_media_bytes,
-                    normalized_source_start_seconds=normalized_source_start_seconds,
-                )
-                job["normalized_source_start_seconds"] = normalized_source_start_seconds
-                _log_event(
-                    "source_download_observed",
-                    job_id=job_id,
-                    source_range_enabled=source_range_enabled,
-                    source_duration_seconds=source_duration_seconds,
-                    selected_duration_seconds=(
-                        selected_duration_seconds
-                    ),
-                    normalized_duration_seconds=downloaded_duration_seconds,
-                    raw_duration_seconds=observed_duration_seconds,
-                    raw_media_bytes=observed_media_bytes,
-                    status=download_status,
-                )
-                if (
-                    bundle.metadata.video_id != job["youtube_video_id"]
-                    or bundle.metadata.duration_seconds > self.settings.max_video_duration_seconds
-                    or download_status != "full_source_expected"
-                ):
-                    raise IngestionError(
-                        "다운로드한 원본 영상의 검증에 실패했습니다.",
-                        code="ingestion_source_validation_failed",
+
+                if is_uploaded_source:
+                    if prepared_source is None:
+                        raise IngestionError(
+                            "업로드 원본 파일이 준비되지 않았습니다.",
+                            code="upload_source_missing",
+                        )
+                    declared_source_duration_seconds = float(
+                        job["source_duration_seconds"]
                     )
-                self.repository.merge_job_performance_metrics(
-                    job_id,
-                    {
-                        "download": {
-                            **download_resources.metrics,
-                            "seconds": round(download_seconds, 3),
-                            "bytes": source_bytes,
-                            "durationSeconds": round(downloaded_duration_seconds, 3),
-                            "rawBytes": observed_media_bytes,
-                            "rawDurationSeconds": round(observed_duration_seconds, 3),
-                            "normalizedSourceStartSeconds": normalized_source_start_seconds,
-                            "selectedStartSeconds": range_start_seconds,
-                            "selectedEndSeconds": range_end_seconds,
-                            "selectedDurationSeconds": round(selected_duration_seconds, 3),
-                            "status": download_status,
-                        }
-                    },
-                )
+                    source_range_enabled = bool(
+                        job.get("source_range_selection_enabled")
+                    )
+                    range_start_seconds = (
+                        float(job["range_start_seconds"])
+                        if source_range_enabled
+                        and job.get("range_start_seconds") is not None
+                        else None
+                    )
+                    range_end_seconds = (
+                        float(job["range_end_seconds"])
+                        if source_range_enabled
+                        and job.get("range_end_seconds") is not None
+                        else None
+                    )
+                    acquisition_started_at = time.monotonic()
+                    with PhaseResourceMonitor(
+                        self.settings.task_vcpus
+                    ) as acquisition_resources:
+                        (
+                            source,
+                            source_probe,
+                            observed_duration_seconds,
+                            source_bytes,
+                        ) = self._borrow_uploaded_source(prepared_source, work_dir)
+                    download_status = classify_full_source_download(
+                        source_duration_seconds=declared_source_duration_seconds,
+                        downloaded_duration_seconds=observed_duration_seconds,
+                    )
+                    observed_media_bytes = source_bytes
+                    self.repository.record_source_download_observation(
+                        job_id,
+                        status=download_status,
+                        duration_seconds=observed_duration_seconds,
+                        media_bytes=observed_media_bytes,
+                        normalized_source_start_seconds=normalized_source_start_seconds,
+                    )
+                    if download_status != "full_source_expected":
+                        raise IngestionError(
+                            "업로드한 원본 영상 길이가 확인된 정보와 일치하지 않습니다.",
+                            code="upload_source_duration_mismatch",
+                        )
+                    source_duration_seconds = observed_duration_seconds
+                    selected_duration_seconds = uploaded_project_source_window(
+                        source_duration_seconds=source_duration_seconds,
+                        declared_source_duration_seconds=(
+                            declared_source_duration_seconds
+                        ),
+                        source_range_enabled=source_range_enabled,
+                        range_start_seconds=range_start_seconds,
+                        range_end_seconds=range_end_seconds,
+                    )
+                    acquisition_seconds = time.monotonic() - acquisition_started_at
+                    job["normalized_source_start_seconds"] = (
+                        normalized_source_start_seconds
+                    )
+                    _log_event(
+                        "uploaded_source_observed",
+                        job_id=job_id,
+                        source_range_enabled=source_range_enabled,
+                        source_duration_seconds=source_duration_seconds,
+                        selected_duration_seconds=selected_duration_seconds,
+                        media_bytes=observed_media_bytes,
+                        status=download_status,
+                    )
+                    self.repository.merge_job_performance_metrics(
+                        job_id,
+                        {
+                            "download": {
+                                **acquisition_resources.metrics,
+                                "sourceType": "upload",
+                                "transfer": "receiver_snapshot",
+                                "seconds": round(acquisition_seconds, 3),
+                                "bytes": source_bytes,
+                                "durationSeconds": round(source_duration_seconds, 3),
+                                "rawBytes": observed_media_bytes,
+                                "rawDurationSeconds": round(
+                                    observed_duration_seconds,
+                                    3,
+                                ),
+                                "normalizedSourceStartSeconds": (
+                                    normalized_source_start_seconds
+                                ),
+                                "selectedStartSeconds": range_start_seconds,
+                                "selectedEndSeconds": range_end_seconds,
+                                "selectedDurationSeconds": round(
+                                    selected_duration_seconds,
+                                    3,
+                                ),
+                                "status": download_status,
+                            }
+                        },
+                    )
+                else:
+                    if prepared_source is not None:
+                        raise IngestionError(
+                            "링크 프로젝트에는 업로드 원본 경로를 사용할 수 없습니다.",
+                            code="upload_source_not_allowed",
+                        )
+                    if not route_id:
+                        raise IngestionError(
+                            "프로젝트에 원본 다운로드 경로가 할당되지 않았습니다.",
+                            code="ingestion_route_missing",
+                        )
+                    source_duration_seconds = float(job["source_duration_seconds"])
+                    source_range_enabled = bool(
+                        job.get("source_range_selection_enabled")
+                    )
+                    range_start_seconds = (
+                        float(job["range_start_seconds"])
+                        if source_range_enabled
+                        and job.get("range_start_seconds") is not None
+                        else None
+                    )
+                    range_end_seconds = (
+                        float(job["range_end_seconds"])
+                        if source_range_enabled
+                        and job.get("range_end_seconds") is not None
+                        else None
+                    )
+                    selected_duration_seconds = project_source_window(
+                        source_duration_seconds=source_duration_seconds,
+                        source_range_enabled=source_range_enabled,
+                        range_start_seconds=range_start_seconds,
+                        range_end_seconds=range_end_seconds,
+                        max_source_duration_seconds=(
+                            self.settings.max_video_duration_seconds
+                        ),
+                    )
+                    route_download_started = True
+                    download_started_at = time.monotonic()
+                    with PhaseResourceMonitor(
+                        self.settings.task_vcpus
+                    ) as download_resources:
+                        bundle, successful_route_id = (
+                            self._download_with_inline_route_rotation(
+                                job_id=job_id,
+                                job_attempt=int(claimed["attempt_count"]),
+                                youtube_url=str(job["youtube_url"]),
+                                destination=work_dir / "source",
+                                initial_route_id=route_id,
+                            )
+                        )
+                        source = bundle.video_path
+                        source_probe = probe_media(source)
+                        downloaded_duration_seconds = media_duration(source_probe)
+                    self.repository.record_ingestion_result(
+                        job_id,
+                        "success",
+                        route_id=successful_route_id,
+                        egress_class=(
+                            self.ingestion.egress_class_for(successful_route_id)
+                            if successful_route_id else None
+                        ),
+                        job_attempt=int(claimed["attempt_count"]),
+                    )
+                    download_seconds = time.monotonic() - download_started_at
+                    source_bytes = source.stat().st_size
+                    download_status = classify_full_source_download(
+                        source_duration_seconds=source_duration_seconds,
+                        downloaded_duration_seconds=downloaded_duration_seconds,
+                    )
+                    observed_duration_seconds = downloaded_duration_seconds
+                    observed_media_bytes = source_bytes or None
+                    self.repository.record_source_download_observation(
+                        job_id,
+                        status=download_status,
+                        duration_seconds=observed_duration_seconds,
+                        media_bytes=observed_media_bytes,
+                        normalized_source_start_seconds=(
+                            normalized_source_start_seconds
+                        ),
+                    )
+                    job["normalized_source_start_seconds"] = (
+                        normalized_source_start_seconds
+                    )
+                    _log_event(
+                        "source_download_observed",
+                        job_id=job_id,
+                        source_range_enabled=source_range_enabled,
+                        source_duration_seconds=source_duration_seconds,
+                        selected_duration_seconds=selected_duration_seconds,
+                        normalized_duration_seconds=downloaded_duration_seconds,
+                        raw_duration_seconds=observed_duration_seconds,
+                        raw_media_bytes=observed_media_bytes,
+                        status=download_status,
+                    )
+                    if (
+                        bundle.metadata.video_id != job["youtube_video_id"]
+                        or bundle.metadata.duration_seconds
+                        > self.settings.max_video_duration_seconds
+                        or download_status != "full_source_expected"
+                    ):
+                        raise IngestionError(
+                            "다운로드한 원본 영상의 검증에 실패했습니다.",
+                            code="ingestion_source_validation_failed",
+                        )
+                    self.repository.merge_job_performance_metrics(
+                        job_id,
+                        {
+                            "download": {
+                                **download_resources.metrics,
+                                "seconds": round(download_seconds, 3),
+                                "bytes": source_bytes,
+                                "durationSeconds": round(
+                                    downloaded_duration_seconds,
+                                    3,
+                                ),
+                                "rawBytes": observed_media_bytes,
+                                "rawDurationSeconds": round(
+                                    observed_duration_seconds,
+                                    3,
+                                ),
+                                "normalizedSourceStartSeconds": (
+                                    normalized_source_start_seconds
+                                ),
+                                "selectedStartSeconds": range_start_seconds,
+                                "selectedEndSeconds": range_end_seconds,
+                                "selectedDurationSeconds": round(
+                                    selected_duration_seconds,
+                                    3,
+                                ),
+                                "status": download_status,
+                            }
+                        },
+                    )
 
                 self.repository.stage(job_id, "transcribing", 28, "영상 내용을 분석하고 있습니다.")
                 transcription_started_at = time.monotonic()
@@ -2549,11 +2858,17 @@ class BatchWorker:
 
     def _cleanup_initial_objects(self, job: dict[str, object]) -> None:
         prefix = f"{job['mvp_session_id']}/{job['id']}/"
-        for storage_prefix in (
+        storage_prefixes = [
             f"outputs/{prefix}",
             f"edit-sources/{prefix}",
-            f"thumbnails/{prefix}",
-        ):
+        ]
+        # Upload projects own a receiver-derived ``source.jpg`` under the job
+        # thumbnail prefix. It remains the project-card image through failure
+        # retention; pre-render project cleanup has no generated thumbnails to
+        # remove from this prefix.
+        if str(job.get("source_type") or "youtube") != "upload":
+            storage_prefixes.append(f"thumbnails/{prefix}")
+        for storage_prefix in storage_prefixes:
             try:
                 self.storage.delete_prefix(storage_prefix)
             except Exception:

@@ -162,6 +162,47 @@ export async function getShortPlaybackAccess({
   };
 }
 
+export async function getProjectSourceThumbnailUrl({
+  key,
+  expiresAt,
+}: {
+  key: string;
+  expiresAt: Date | string | null;
+}) {
+  if (
+    !/^thumbnails\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\/[A-Za-z0-9][A-Za-z0-9_-]{0,127}\.jpg$/.test(
+      key,
+    )
+  ) {
+    throw new Error("재생할 수 없는 원본 썸네일 경로입니다.");
+  }
+  const domain = process.env.CLOUDFRONT_DOMAIN;
+  const keyPairId = process.env.CLOUDFRONT_KEY_PAIR_ID;
+  const privateKey = await cloudFrontPrivateKey();
+  if (!domain || !keyPairId || !privateKey) {
+    throw new Error("CloudFront Signed URL 설정이 완료되지 않았습니다.");
+  }
+  const retentionDeadline = expiresAt === null
+    ? Number.POSITIVE_INFINITY
+    : new Date(expiresAt).getTime();
+  const signedUntilMs = Math.min(Date.now() + 15 * 60_000, retentionDeadline);
+  if (!Number.isFinite(signedUntilMs) && signedUntilMs !== Number.POSITIVE_INFINITY) {
+    throw new Error("원본 썸네일 보관 기간이 올바르지 않습니다.");
+  }
+  const effectiveSignedUntil = Number.isFinite(signedUntilMs)
+    ? signedUntilMs
+    : Date.now() + 15 * 60_000;
+  if (effectiveSignedUntil <= Date.now()) {
+    throw new Error("원본 썸네일 링크가 만료되었습니다.");
+  }
+  return getCloudFrontSignedUrl({
+    url: `https://${domain}/${key}`,
+    keyPairId,
+    privateKey,
+    dateLessThan: new Date(effectiveSignedUntil).toISOString(),
+  });
+}
+
 export async function wakeOutboxDispatcher() {
   const functionArn = process.env.AWS_OUTBOX_DISPATCHER_FUNCTION_ARN;
   if (!functionArn) throw new Error("AWS_OUTBOX_DISPATCHER_FUNCTION_ARN이 설정되지 않았습니다.");

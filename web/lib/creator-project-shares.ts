@@ -92,6 +92,7 @@ export async function loadCreatorProjectShare(
     from shorts_mvp.creator_project_shares share
     join shorts_mvp.video_jobs job on job.id=share.job_id
     where share.token_hash=${creatorProjectShareTokenHash(token)}
+      and job.user_deleted_at is null
     limit 1
   `;
   const row = rows[0];
@@ -150,6 +151,7 @@ async function findActiveShare(db: Db, token: string) {
     where share.token_hash=${creatorProjectShareTokenHash(token)}
       and share.revoked_at is null
       and share.expires_at>clock_timestamp()
+      and job.user_deleted_at is null
       and job.status='completed'
       and job.is_example=false
       and exists (
@@ -310,6 +312,7 @@ export async function findCreatorShareMedia(
     where share.token_hash=${creatorProjectShareTokenHash(token)}
       and share.revoked_at is null
       and share.expires_at>clock_timestamp()
+      and job.user_deleted_at is null
       and job.status='completed'
       and job.is_example=false
       and short.id=${shortId}

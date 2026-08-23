@@ -80,7 +80,7 @@ export function BackgroundShowcase() {
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let previousTime = performance.now();
-    let scrollRemainder = 0;
+    let animationFrame = 0;
     let initialized = false;
 
     const normalizePosition = () => {
@@ -100,8 +100,7 @@ export function BackgroundShowcase() {
       }
     };
 
-    const animate = () => {
-      const currentTime = performance.now();
+    const animate = (currentTime: number) => {
       normalizePosition();
       const elapsed = Math.min(currentTime - previousTime, 64);
       previousTime = currentTime;
@@ -112,21 +111,18 @@ export function BackgroundShowcase() {
         && !desktopPausedRef.current
         && currentTime >= resumeAtRef.current
       ) {
-        const distance = scrollRemainder + elapsed * AUTO_SCROLL_PIXELS_PER_SECOND / 1_000;
-        const wholePixels = Math.floor(distance);
-        scrollRemainder = distance - wholePixels;
-        rail.scrollLeft += wholePixels;
+        rail.scrollLeft += elapsed * AUTO_SCROLL_PIXELS_PER_SECOND / 1_000;
       }
-
+      animationFrame = window.requestAnimationFrame(animate);
     };
 
     const resizeObserver = new ResizeObserver(normalizePosition);
     resizeObserver.observe(rail);
     normalizePosition();
-    const timer = window.setInterval(animate, 16);
+    animationFrame = window.requestAnimationFrame(animate);
 
     return () => {
-      window.clearInterval(timer);
+      window.cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
     };
   }, []);

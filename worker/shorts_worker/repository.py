@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 import os
 from collections.abc import Iterator
@@ -56,6 +57,424 @@ class WorkerRepository:
                 """,
                 (job_id,),
             ).fetchone()
+
+    def claim_upload_session(
+        self,
+        upload_session_id: str,
+        presented_token_hash: str,
+        content_length: int,
+    ) -> dict[str, Any]:
+        """Atomically consume one upload token after every release check.
+
+        The raw bearer token never reaches this repository. Only its lowercase
+        SHA-256 hex digest is compared with the stored digest.
+        """
+        with self.connect() as connection, connection.transaction():
+            row = connection.execute(
+                """
+                select
+                  us.id,us.mvp_session_id,us.user_id,us.job_id,us.status,
+                  us.token_hash,us.expected_bytes,us.declared_content_type,
+                  us.declared_duration_seconds,us.range_start_seconds,
+                  us.range_end_seconds,us.expires_at,
+                  us.expires_at<=clock_timestamp() as is_expired,
+                  u.is_admin,j.status as job_status,j.source_type,
+                  j.execution_backend,j.pipeline_version,
+                  j.source_range_selection_enabled
+                from shorts_mvp.upload_sessions us
+                join shorts_mvp.app_users u on u.id=us.user_id
+                join shorts_mvp.video_jobs j on j.id=us.job_id
+                  and j.user_id=us.user_id
+                  and j.mvp_session_id=us.mvp_session_id
+                where us.id=%s
+                for update of us
+                """,
+                (upload_session_id,),
+            ).fetchone()
+            if not row:
+                return {"claim_result": "not_found"}
+
+            expected_token_hash = str(row.get("token_hash") or "")
+            if (
+                len(presented_token_hash) != 64
+                or len(expected_token_hash) != 64
+                or not hmac.compare_digest(
+                    presented_token_hash.lower(),
+                    expected_token_hash.lower(),
+                )
+            ):
+                return {"claim_result": "not_found"}
+
+            flag_rows = connection.execute(
+                """
+                select flag_key,enabled
+                from shorts_mvp.runtime_feature_flags
+                where flag_key='file_upload'
+                for share
+                """
+            ).fetchall()
+            flags = {
+                str(item["flag_key"]): bool(item["enabled"])
+                for item in flag_rows
+            }
+            result = {
+                key: value for key, value in row.items() if key != "token_hash"
+            }
+            # This release is a hard admin-only canary.  Deliberately do not
+            # consult ``file_upload_public`` here: turning that future flag on
+            # must not make this receiver reachable by regular users.
+            if not flags.get("file_upload", False) or not bool(row.get("is_admin")):
+                return {**result, "claim_result": "forbidden"}
+            if str(row.get("status")) != "awaiting_upload":
+                return {**result, "claim_result": "reused"}
+            if bool(row.get("is_expired")):
+                connection.execute(
+                    """
+                    update shorts_mvp.upload_sessions
+                    set status='expired',failure_code='upload_session_expired',
+                        failure_reason='업로드 세션이 만료되었습니다.'
+                    where id=%s and status='awaiting_upload'
+                    """,
+                    (upload_session_id,),
+                )
+                return {**result, "claim_result": "expired"}
+            if (
+                str(row.get("job_status")) != "uploading"
+                or str(row.get("source_type")) != "upload"
+                or str(row.get("execution_backend")) != "upload_service"
+                or int(row.get("pipeline_version") or 0) != 2
+            ):
+                return {**result, "claim_result": "invalid_job"}
+            if content_length != int(row["expected_bytes"]):
+                connection.execute(
+                    """
+                    update shorts_mvp.upload_sessions
+                    set status='failed',claimed_at=coalesce(claimed_at,clock_timestamp()),
+                        consumed_at=coalesce(consumed_at,clock_timestamp()),
+                        received_bytes=0,heartbeat_at=clock_timestamp(),
+                        failure_code='upload_size_mismatch',
+                        failure_reason='선언한 파일 크기와 요청 크기가 일치하지 않습니다.'
+                    where id=%s and status='awaiting_upload'
+                    """,
+                    (upload_session_id,),
+                )
+                return {**result, "claim_result": "size_mismatch"}
+
+            claimed = connection.execute(
+                """
+                update shorts_mvp.upload_sessions
+                set status='claimed',claimed_at=clock_timestamp(),
+                    consumed_at=clock_timestamp(),heartbeat_at=clock_timestamp(),
+                    received_bytes=0,failure_code=null,failure_reason=null
+                where id=%s and status='awaiting_upload'
+                returning claimed_at,consumed_at
+                """,
+                (upload_session_id,),
+            ).fetchone()
+            if not claimed:
+                return {**result, "claim_result": "reused"}
+            return {**result, **claimed, "claim_result": "claimed"}
+
+    def heartbeat_upload_session(
+        self,
+        upload_session_id: str,
+        received_bytes: int,
+    ) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                update shorts_mvp.upload_sessions
+                set heartbeat_at=clock_timestamp(),received_bytes=%s
+                where id=%s and status='claimed'
+                  and %s between 0 and expected_bytes
+                returning id
+                """,
+                (received_bytes, upload_session_id, received_bytes),
+            ).fetchone()
+            return bool(row)
+
+    def record_upload_intake(
+        self,
+        upload_session_id: str,
+        job_id: str,
+        *,
+        received_bytes: int,
+        duration_seconds: float,
+        probe_metadata: dict[str, object],
+        thumbnail_key: str,
+    ) -> bool:
+        with self.connect() as connection, connection.transaction():
+            session = connection.execute(
+                """
+                update shorts_mvp.upload_sessions
+                set received_bytes=%s,probe_metadata=%s,
+                    source_thumbnail_s3_key=%s,heartbeat_at=clock_timestamp()
+                where id=%s and job_id=%s and status='claimed'
+                  and %s=expected_bytes
+                returning id
+                """,
+                (
+                    received_bytes,
+                    Jsonb(probe_metadata),
+                    thumbnail_key,
+                    upload_session_id,
+                    job_id,
+                    received_bytes,
+                ),
+            ).fetchone()
+            if not session:
+                return False
+            job = connection.execute(
+                """
+                update shorts_mvp.video_jobs
+                set status='queued',stage='queued',progress=greatest(progress,5),
+                    downloaded_media_duration_seconds=%s,
+                    downloaded_media_bytes=%s,
+                    normalized_source_start_seconds=0,
+                    range_download_status='full_source_expected',
+                    range_download_verified_at=clock_timestamp(),
+                    heartbeat_at=clock_timestamp()
+                where id=%s and source_type='upload'
+                  and execution_backend='upload_service' and status='uploading'
+                returning id
+                """,
+                (duration_seconds, received_bytes, job_id),
+            ).fetchone()
+            if not job:
+                # Abort the transaction so the session cannot retain a
+                # thumbnail key while the corresponding job stayed uploading.
+                raise RuntimeError("upload job intake transition was lost")
+            return True
+
+    def fail_upload_session(
+        self,
+        upload_session_id: str,
+        job_id: str,
+        *,
+        error_code: str,
+        message: str,
+        expired: bool = False,
+        source_deleted: bool = True,
+    ) -> bool:
+        """Fail an intake after its local source is physically gone.
+
+        ``finalize_project_job`` owns the idempotent reservation release and
+        usage event, so retries cannot release or refund the same job twice.
+        """
+        with self.connect() as connection, connection.transaction():
+            updated = connection.execute(
+                """
+                update shorts_mvp.upload_sessions
+                set status=case when %s then 'expired' else 'failed' end,
+                    failure_code=%s,failure_reason=%s,
+                    source_deleted_at=case
+                      when %s then coalesce(source_deleted_at,clock_timestamp())
+                      else source_deleted_at
+                    end,
+                    heartbeat_at=clock_timestamp()
+                where id=%s and job_id=%s and status<>'completed'
+                returning id
+                """,
+                (
+                    expired,
+                    error_code[:100],
+                    message[:1000],
+                    source_deleted,
+                    upload_session_id,
+                    job_id,
+                ),
+            ).fetchone()
+            connection.execute(
+                "select * from shorts_mvp.finalize_project_job(%s,%s,%s)",
+                (job_id, error_code[:100], message[:1000]),
+            ).fetchone()
+            # The shared finalizer may stamp this field before an upload
+            # receiver has removed its separately-owned raw file. Correct the
+            # upload marker after the physical cleanup result is known.
+            connection.execute(
+                """
+                update shorts_mvp.video_jobs
+                set source_deleted_at=case
+                      when %s then clock_timestamp() else null
+                    end
+                where id=%s and source_type='upload'
+                """,
+                (source_deleted, job_id),
+            )
+            return bool(updated)
+
+    def complete_upload_session(
+        self,
+        upload_session_id: str,
+        job_id: str,
+    ) -> bool:
+        """Record completion only after receiver-owned source cleanup."""
+        with self.connect() as connection, connection.transaction():
+            row = connection.execute(
+                """
+                update shorts_mvp.upload_sessions us
+                set status='completed',completed_at=coalesce(completed_at,clock_timestamp()),
+                    source_deleted_at=coalesce(source_deleted_at,clock_timestamp()),
+                    heartbeat_at=clock_timestamp(),failure_code=null,failure_reason=null
+                where us.id=%s and us.job_id=%s and us.status='claimed'
+                  and exists (
+                    select 1 from shorts_mvp.video_jobs j
+                    where j.id=us.job_id and j.status='completed'
+                  )
+                returning id
+                """,
+                (upload_session_id, job_id),
+            ).fetchone()
+            if row:
+                connection.execute(
+                    """
+                    update shorts_mvp.video_jobs
+                    set source_deleted_at=clock_timestamp()
+                    where id=%s and source_type='upload' and status='completed'
+                    """,
+                    (job_id,),
+                )
+            return bool(row)
+
+    def claim_abandoned_upload_sessions(
+        self,
+        *,
+        stale_after_seconds: int,
+        active_upload_session_id: str | None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Atomically retire expired or abandoned upload sessions.
+
+        The status transition happens while the candidate rows are locked, so
+        an awaiting token cannot be claimed after the sweeper selects it.  Raw
+        source deletion is intentionally a separate receiver step; this method
+        never stamps ``source_deleted_at``.
+        """
+        bounded_stale_seconds = max(30, min(86_400, stale_after_seconds))
+        bounded_limit = max(1, min(100, limit))
+        with self.connect() as connection, connection.transaction():
+            rows = connection.execute(
+                """
+                with candidates as (
+                  select us.id,us.job_id,us.mvp_session_id,us.status as previous_status,
+                         us.source_thumbnail_s3_key
+                  from shorts_mvp.upload_sessions us
+                  where (
+                    (us.status='awaiting_upload'
+                      and us.expires_at<=clock_timestamp())
+                    or (us.status='claimed'
+                      and coalesce(us.heartbeat_at,us.claimed_at,us.created_at)
+                        < clock_timestamp()-(%s * interval '1 second'))
+                    or (us.status in ('expired','failed')
+                      and us.source_deleted_at is null
+                      and coalesce(us.heartbeat_at,us.created_at)
+                        < clock_timestamp()-(%s * interval '1 second'))
+                  )
+                    and (%s::uuid is null or us.id<>%s::uuid)
+                  order by us.created_at
+                  for update skip locked
+                  limit %s
+                )
+                update shorts_mvp.upload_sessions us
+                set status=case
+                      when candidates.previous_status='awaiting_upload'
+                        then 'expired'
+                      when candidates.previous_status='claimed'
+                        then 'failed'
+                      else us.status
+                    end,
+                    failure_code=case
+                      when candidates.previous_status='awaiting_upload'
+                        then 'upload_session_expired'
+                      when candidates.previous_status='claimed'
+                        then 'upload_receiver_stale'
+                      else us.failure_code
+                    end,
+                    failure_reason=case
+                      when candidates.previous_status='awaiting_upload'
+                        then '업로드 세션이 만료되었습니다.'
+                      when candidates.previous_status='claimed'
+                        then '업로드 수신 작업이 중단되었습니다.'
+                      else us.failure_reason
+                    end,
+                    heartbeat_at=clock_timestamp()
+                from candidates
+                where us.id=candidates.id
+                returning us.id,us.job_id,us.mvp_session_id,
+                          candidates.previous_status,us.source_thumbnail_s3_key
+                """,
+                (
+                    bounded_stale_seconds,
+                    bounded_stale_seconds,
+                    active_upload_session_id,
+                    active_upload_session_id,
+                    bounded_limit,
+                ),
+            ).fetchall()
+            return list(rows)
+
+    def finalize_abandoned_upload_source_cleanup(
+        self,
+        upload_session_id: str,
+        job_id: str,
+        *,
+        previous_status: str,
+    ) -> dict[str, Any] | None:
+        """Finalize usage only after receiver raw-source cleanup succeeded."""
+        expired = previous_status in {"awaiting_upload", "expired"}
+        failure_code = (
+            "upload_session_expired" if expired else "upload_receiver_stale"
+        )
+        failure_message = (
+            "업로드 세션이 만료되었습니다."
+            if expired
+            else "업로드 수신 작업이 중단되었습니다."
+        )
+        with self.connect() as connection, connection.transaction():
+            finalized = connection.execute(
+                "select * from shorts_mvp.finalize_project_job(%s,%s,%s)",
+                (job_id, failure_code, failure_message),
+            ).fetchone()
+            final_status = (
+                str(finalized.get("final_status"))
+                if finalized and finalized.get("final_status")
+                else "failed"
+            )
+            connection.execute(
+                """
+                update shorts_mvp.video_jobs
+                set source_deleted_at=clock_timestamp()
+                where id=%s and source_type='upload'
+                """,
+                (job_id,),
+            )
+            row = connection.execute(
+                """
+                update shorts_mvp.upload_sessions
+                set source_deleted_at=coalesce(source_deleted_at,clock_timestamp()),
+                    status=case when %s='completed' then 'completed' else status end,
+                    completed_at=case
+                      when %s='completed' then coalesce(completed_at,clock_timestamp())
+                      else completed_at
+                    end,
+                    failure_code=case when %s='completed' then null else failure_code end,
+                    failure_reason=case when %s='completed' then null else failure_reason end,
+                    heartbeat_at=clock_timestamp()
+                where id=%s and job_id=%s
+                  and status in ('expired','failed')
+                  and source_deleted_at is null
+                returning id
+                """,
+                (
+                    final_status,
+                    final_status,
+                    final_status,
+                    final_status,
+                    upload_session_id,
+                    job_id,
+                ),
+            ).fetchone()
+            return {**(finalized or {}), "final_status": final_status} if row else None
 
     def get_dispatch_job(self, dispatch_batch_id: str, array_index: int) -> str | None:
         with self.connect() as connection:

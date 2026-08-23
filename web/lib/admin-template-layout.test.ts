@@ -63,7 +63,7 @@ describe("authorized subtitle template layout", () => {
   it("hides the source usage copy from admins while preserving it for users", () => {
     expect(shortsAppSource).toContain("{!adminTemplateLayoutEnabled && (");
     expect(shortsAppSource).toContain(
-      "원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {selectedPlannedShortCount}개",
+      "원본 영상 {formatDuration(selectedSource.durationSeconds)} · 예상 쇼츠 {selectedPlannedShortCount}개",
     );
     expect(shortsAppSource).toContain(
       "`선택한 ${formatDuration(selectedSourceDurationSeconds)}만 사용량으로 계산됩니다.`",

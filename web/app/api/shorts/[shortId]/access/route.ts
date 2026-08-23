@@ -19,7 +19,7 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
       select s.output_s3_key, s.thumbnail_s3_key, s.expires_at, s.render_version
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
-      where s.id=${shortId} and (
+      where s.id=${shortId} and j.user_deleted_at is null and (
         j.is_example
         or (${session.userId}::uuid is not null and s.user_id=${session.userId})
         or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})

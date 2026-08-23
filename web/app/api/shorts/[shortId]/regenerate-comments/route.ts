@@ -89,6 +89,7 @@ export async function POST(
         from shorts_mvp.generated_shorts generated_short
         join shorts_mvp.video_jobs job on job.id=generated_short.job_id
         where generated_short.id=${shortId}
+          and job.user_deleted_at is null
           and generated_short.user_id=${session.userId}
           and not job.is_example
           and generated_short.deleted_at is null

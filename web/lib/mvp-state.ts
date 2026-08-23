@@ -3,11 +3,13 @@ import { getBillingSummary } from "@/lib/billing";
 import { getPaymentMethodAction } from "@/lib/billing-payment-method-remediation";
 import type { MvpState } from "@/lib/contracts";
 import {
+  getPublicExampleJobs,
   getPublicMvpState,
   getRecentJobs,
   getSubtitleTemplateUsage,
 } from "@/lib/data";
 import { getDb } from "@/lib/db";
+import { getFileUploadReleaseAccess } from "@/lib/file-upload-release";
 import { requireMvpSession } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import {
@@ -32,6 +34,10 @@ export async function loadMvpState(
     const selectedPlan = plans.find((plan) => plan.code === selectedPlanCode);
     if (!selectedPlan) throw new Error("기본 플랜 정보를 찾을 수 없습니다.");
     const { start, next } = currentKstPeriod();
+    const [billing, recentJobs] = await Promise.all([
+      getBillingSummary(db, null),
+      getPublicExampleJobs(db),
+    ]);
 
     return {
       sessionId: null,
@@ -53,10 +59,11 @@ export async function loadMvpState(
         nextResetAt: next.toISOString(),
         enforcementEnabled: isPlanEnforcementEnabled(),
       },
-      billing: await getBillingSummary(db, null),
+      billing,
       paymentMethodAction: null,
+      capabilities: { fileUpload: false },
       hasUsedSubtitleTemplates: false,
-      recentJobs: [],
+      recentJobs,
     };
   }
 
@@ -67,12 +74,14 @@ export async function loadMvpState(
     billing,
     paymentMethodAction,
     hasUsedSubtitleTemplates,
+    fileUploadAccess,
   ] = await Promise.all([
     getUsageSnapshot(db, session),
     getRecentJobs(db, session),
     getBillingSummary(db, session.userId),
     getPaymentMethodAction(db, session.userId),
     getSubtitleTemplateUsage(db, session.userId),
+    getFileUploadReleaseAccess(db, session.userId),
   ]);
 
   return {
@@ -84,6 +93,7 @@ export async function loadMvpState(
     billing,
     paymentMethodAction,
     usage,
+    capabilities: { fileUpload: fileUploadAccess.adminEnabled },
     hasUsedSubtitleTemplates,
     recentJobs,
   };

@@ -9,6 +9,10 @@ import {
   ShortsMvpFoundationStack,
   ShortsMvpSourceRangeStack,
 } from "../lib/stacks";
+import {
+  fileUploadCanaryIncluded,
+  ShortsMvpFileUploadCanaryStack,
+} from "../lib/file-upload-stack";
 
 const app = new cdk.App();
 const environment = app.node.tryGetContext("environment") || process.env.DEPLOY_ENV || "production";
@@ -82,6 +86,14 @@ if (
     { env, environment },
   );
   stacks.push({ stack: transcriptionCanary, tagEnvironment: environment });
+}
+if (fileUploadCanaryIncluded(app.node.tryGetContext("includeFileUpload"))) {
+  const fileUploadCanary = new ShortsMvpFileUploadCanaryStack(
+    app,
+    `ShortsMvpFileUploadCanary-${environment}`,
+    { env, environment },
+  );
+  stacks.push({ stack: fileUploadCanary, tagEnvironment: environment });
 }
 
 for (const { stack, tagEnvironment } of stacks) {

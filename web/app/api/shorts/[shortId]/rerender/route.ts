@@ -47,7 +47,8 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
         ) as onboarding_welcome_funded
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
-      where s.id=${shortId} and not j.is_example and (
+      where s.id=${shortId} and not j.is_example
+        and j.user_deleted_at is null and (
         (${session.userId}::uuid is not null and s.user_id=${session.userId})
         or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
       ) and s.deleted_at is null
@@ -86,7 +87,8 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
             s.video_aspect_ratio, s.title_font_scale::text, s.title_text_styles::text,
             s.title_text_styles_initialized::text))
         from shorts_mvp.video_jobs j
-        where s.id=${shortId} and j.id=s.job_id and not j.is_example and (
+        where s.id=${shortId} and j.id=s.job_id and not j.is_example
+          and j.user_deleted_at is null and (
           (${session.userId}::uuid is not null and s.user_id=${session.userId})
           or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
         )

@@ -287,6 +287,12 @@ import { useI18n } from "@/lib/i18n/provider";
 import { localizedValue, type SiteLocale } from "@/lib/i18n/config";
 import { translateLegacyText } from "@/lib/i18n/legacy-phrases";
 import { homeAnalysisHeaderOffset } from "@/lib/home-analysis-scroll";
+import {
+  DirectUploadError,
+  inspectUploadVideo,
+  uploadFileDirectly,
+  type InspectedUploadVideo,
+} from "@/lib/file-upload-client";
 import { publishUsageSnapshot } from "@/lib/usage-client";
 import {
   billableSelectedSourceSeconds,
@@ -721,7 +727,7 @@ function CustomerReviews() {
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let previousTime = performance.now();
-    let scrollRemainder = 0;
+    let animationFrame = 0;
     let initialized = false;
 
     const normalizePosition = () => {
@@ -741,8 +747,7 @@ function CustomerReviews() {
       }
     };
 
-    const animate = () => {
-      const currentTime = performance.now();
+    const animate = (currentTime: number) => {
       normalizePosition();
       const elapsed = Math.min(currentTime - previousTime, 64);
       previousTime = currentTime;
@@ -751,22 +756,18 @@ function CustomerReviews() {
         !reducedMotion.matches
         && !interactionActiveRef.current
       ) {
-        const distance = scrollRemainder
-          + elapsed * CUSTOMER_REVIEW_SCROLL_PIXELS_PER_SECOND / 1_000;
-        const wholePixels = Math.floor(distance);
-        scrollRemainder = distance - wholePixels;
-        rail.scrollLeft += wholePixels;
+        rail.scrollLeft += elapsed * CUSTOMER_REVIEW_SCROLL_PIXELS_PER_SECOND / 1_000;
       }
-
+      animationFrame = window.requestAnimationFrame(animate);
     };
 
     const resizeObserver = new ResizeObserver(normalizePosition);
     resizeObserver.observe(rail);
     normalizePosition();
-    const timer = window.setInterval(animate, 16);
+    animationFrame = window.requestAnimationFrame(animate);
 
     return () => {
-      window.clearInterval(timer);
+      window.cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
     };
   }, []);
@@ -12182,6 +12183,17 @@ function initialActiveJob(state: MvpState | null) {
   return running || rerendering || state.recentJobs[0] || null;
 }
 
+function recentJobsWithPendingProject(recentJobs: VideoJob[], pendingJob: VideoJob) {
+  const withoutPending = recentJobs.filter((job) => job.id !== pendingJob.id);
+  const firstActualIndex = withoutPending.findIndex((job) => !job.isExample);
+  if (firstActualIndex < 0) return [...withoutPending, pendingJob];
+  return [
+    ...withoutPending.slice(0, firstActualIndex),
+    pendingJob,
+    ...withoutPending.slice(firstActualIndex),
+  ];
+}
+
 function SourceRangeSelector({
   sourceDurationSeconds,
   startSeconds,
@@ -12350,8 +12362,15 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     initialState ? "ready" : "loading",
   );
   const [stateLoadError, setStateLoadError] = useState<string | null>(null);
+  const [sourceMode, setSourceMode] = useState<"youtube" | "upload">("youtube");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [analysis, setAnalysis] = useState<YoutubeAnalysis | null>(null);
+  const [uploadVideo, setUploadVideo] = useState<InspectedUploadVideo | null>(null);
+  const [uploadInspectionBusy, setUploadInspectionBusy] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const uploadAbortController = useRef<AbortController | null>(null);
+  const uploadRequestId = useRef<string | null>(null);
+  const uploadRequestIntentKey = useRef<string | null>(null);
   const [sourceRangeStartSeconds, setSourceRangeStartSeconds] = useState(0);
   const [sourceRangeEndSeconds, setSourceRangeEndSeconds] = useState(0);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
@@ -12390,22 +12409,51 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const rightsCheckboxRef = useRef<HTMLInputElement>(null);
   const projectsSectionRef = useRef<HTMLElement>(null);
   const initializedSourceRangeAnalysisId = useRef<string | null>(null);
+  const uploadFileInputRef = useRef<HTMLInputElement>(null);
   const activeJobId = activeJob?.id;
   const activeJobStatus = activeJob?.status;
   const activeJobHasRerendering = Boolean(activeJob?.shorts.some((item) => item.status === "rerendering"));
   const hasBackgroundWork = Boolean(state?.recentJobs.some((job) => !terminalStatuses.has(job.status) || job.shorts.some((item) => item.status === "rerendering")));
-  const analysisCreationBlocked = Boolean(analysis && analysis.creationAllowed !== true);
-  const sourceRangeSelectionEnabled = analysis?.sourceRangeSelectionEnabled === true;
-  const subtitleTemplateSelectionEnabled = analysis?.subtitleTemplateSelectionEnabled === true;
-  const brandColorSelectionEnabled = analysis?.brandColorSelectionEnabled === true;
+  const uploadModeEnabled = state?.capabilities.fileUpload === true;
+  const uploadSourceActive = sourceMode === "upload" && uploadModeEnabled && uploadVideo !== null;
+  const selectedSource = useMemo(() => sourceMode === "upload" ? uploadSourceActive ? {
+      key: `upload:${uploadVideo.file.name}:${uploadVideo.file.size}:${uploadVideo.file.lastModified}`,
+      title: uploadVideo.title,
+      channelName: "업로드한 영상",
+      channelThumbnailUrl: null,
+      thumbnailUrl: uploadVideo.thumbnailDataUrl,
+      durationSeconds: uploadVideo.durationSeconds,
+      creationAllowed: true,
+    } : null : analysis ? {
+      key: `youtube:${analysis.analysisId}`,
+      title: analysis.title,
+      channelName: analysis.channelName,
+      channelThumbnailUrl: analysis.channelThumbnailUrl,
+      thumbnailUrl: analysis.thumbnailUrl,
+      durationSeconds: analysis.durationSeconds,
+      creationAllowed: analysis.creationAllowed,
+    } : null,
+  [analysis, sourceMode, uploadSourceActive, uploadVideo]);
+  const analysisCreationBlocked = Boolean(
+    selectedSource && selectedSource.creationAllowed !== true,
+  );
+  const sourceRangeSelectionEnabled = uploadSourceActive
+    ? uploadVideo.durationSeconds >= MIN_SELECTED_SOURCE_SECONDS
+    : analysis?.sourceRangeSelectionEnabled === true;
+  const subtitleTemplateSelectionEnabled = uploadSourceActive
+    ? true
+    : analysis?.subtitleTemplateSelectionEnabled === true;
+  const brandColorSelectionEnabled = uploadSourceActive
+    ? true
+    : analysis?.brandColorSelectionEnabled === true;
   const adminCompactSourceRangeEnabled = brandColorSelectionEnabled;
   const adminTemplateLayoutEnabled = brandColorSelectionEnabled;
-  const sourceVideoEmbedUrl = sourceRangeSelectionEnabled && analysis
+  const sourceVideoEmbedUrl = !uploadSourceActive && sourceRangeSelectionEnabled && analysis
     ? youtubePrivacyEnhancedEmbedUrl(analysis.videoId)
     : null;
   const selectedSourceDurationSeconds = sourceRangeSelectionEnabled
     ? Math.max(0, sourceRangeEndSeconds - sourceRangeStartSeconds)
-    : analysis?.durationSeconds || 0;
+    : selectedSource?.durationSeconds || 0;
   const selectedSourceUsageSeconds = selectedSourceDurationSeconds > 0
     ? billableSelectedSourceSeconds(selectedSourceDurationSeconds)
     : 0;
@@ -12415,16 +12463,16 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     && selectedSourceUsageSeconds > state.usage.remainingSeconds,
   );
   const sourceRangeIsValid = !sourceRangeSelectionEnabled || Boolean(
-    analysis
+    selectedSource
     && sourceRangeStartSeconds >= 0
-    && sourceRangeEndSeconds <= analysis.durationSeconds
+    && sourceRangeEndSeconds <= selectedSource.durationSeconds
     && selectedSourceDurationSeconds >= MIN_SELECTED_SOURCE_SECONDS
     && selectedSourceDurationSeconds <= MAX_SELECTED_SOURCE_SECONDS
     && !selectedSourceExceedsUsage,
   );
   const selectedPlannedShortCount = sourceRangeSelectionEnabled
     ? expectedShortCount(selectedSourceDurationSeconds)
-    : analysis?.expectedShortCount || 0;
+    : selectedSource ? expectedShortCount(selectedSource.durationSeconds) : 0;
   const activeJobCount = state?.recentJobs.filter((job) => !terminalStatuses.has(job.status)).length || 0;
   const planEnforcementEnabled = state?.usage.enforcementEnabled ?? true;
   const canUseCustomTemplates = Boolean(state && billingSupportsCustomTemplates(state.billing));
@@ -12464,7 +12512,20 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     if (loginOpenTimer.current !== null) {
       window.clearTimeout(loginOpenTimer.current);
     }
+    uploadAbortController.current?.abort();
+    uploadRequestId.current = null;
+    uploadRequestIntentKey.current = null;
   }, []);
+
+  useEffect(() => {
+    if (uploadModeEnabled || sourceMode !== "upload") return;
+    uploadAbortController.current?.abort();
+    uploadRequestId.current = null;
+    uploadRequestIntentKey.current = null;
+    setSourceMode("youtube");
+    setUploadVideo(null);
+    setUploadProgress(null);
+  }, [sourceMode, uploadModeEnabled]);
 
   useEffect(() => {
     if (!conversionMaintenanceOpen) return;
@@ -12481,11 +12542,11 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
 
   useEffect(() => {
     setSourceRangeGuideComplete(Boolean(
-      analysis
-      && analysis.creationAllowed === true
+      selectedSource
+      && selectedSource.creationAllowed === true
       && !sourceRangeSelectionEnabled
     ));
-  }, [analysis, sourceRangeSelectionEnabled]);
+  }, [selectedSource, sourceRangeSelectionEnabled]);
 
   const completeSourceRangeGuide = useCallback(() => {
     setSourceRangeGuideComplete(true);
@@ -12500,30 +12561,35 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   }, []);
 
   useEffect(() => {
-    if (!analysis) {
+    if (!selectedSource) {
       initializedSourceRangeAnalysisId.current = null;
       setSourceRangeStartSeconds(0);
       setSourceRangeEndSeconds(0);
       return;
     }
-    if (!analysis.sourceRangeSelectionEnabled) {
-      initializedSourceRangeAnalysisId.current = analysis.analysisId;
+    if (!sourceRangeSelectionEnabled) {
+      initializedSourceRangeAnalysisId.current = selectedSource.key;
       setSourceRangeStartSeconds(0);
-      setSourceRangeEndSeconds(analysis.durationSeconds);
+      setSourceRangeEndSeconds(selectedSource.durationSeconds);
       return;
     }
-    if (initializedSourceRangeAnalysisId.current === analysis.analysisId) return;
-    initializedSourceRangeAnalysisId.current = analysis.analysisId;
+    if (initializedSourceRangeAnalysisId.current === selectedSource.key) return;
+    initializedSourceRangeAnalysisId.current = selectedSource.key;
     const availableSeconds = state?.usage.enforcementEnabled
       ? state.usage.remainingSeconds
       : MAX_SELECTED_SOURCE_SECONDS;
     setSourceRangeStartSeconds(0);
     setSourceRangeEndSeconds(Math.min(
-      analysis.durationSeconds,
+      selectedSource.durationSeconds,
       availableSeconds,
       MAX_SELECTED_SOURCE_SECONDS,
     ));
-  }, [analysis, state?.usage.enforcementEnabled, state?.usage.remainingSeconds]);
+  }, [
+    selectedSource,
+    sourceRangeSelectionEnabled,
+    state?.usage.enforcementEnabled,
+    state?.usage.remainingSeconds,
+  ]);
 
   const loadState = useCallback(async () => {
     if (stateLoadInFlight.current) return stateLoadInFlight.current;
@@ -12658,7 +12724,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   }, []);
 
   useEffect(() => {
-    if (!scrollToAnalysis || !analysis) return;
+    if (!scrollToAnalysis || !selectedSource) return;
     let scrollFrame = 0;
     const layoutFrame = window.requestAnimationFrame(() => {
       scrollFrame = window.requestAnimationFrame(() => {
@@ -12687,7 +12753,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       window.cancelAnimationFrame(layoutFrame);
       window.cancelAnimationFrame(scrollFrame);
     };
-  }, [adminTemplateLayoutEnabled, analysis, scrollToAnalysis]);
+  }, [adminTemplateLayoutEnabled, scrollToAnalysis, selectedSource]);
 
   useEffect(() => {
     if (!scrollToProjects || !state?.recentJobs.length) return;
@@ -12751,8 +12817,60 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     }
   };
 
+  const chooseSourceMode = (nextMode: "youtube" | "upload") => {
+    if (nextMode === "upload" && !uploadModeEnabled) return;
+    if (nextMode === sourceMode) return;
+    uploadAbortController.current?.abort();
+    uploadRequestId.current = null;
+    uploadRequestIntentKey.current = null;
+    setSourceMode(nextMode);
+    setUploadProgress(null);
+    setRightsConfirmed(false);
+    setRightsConfirmationAttention(false);
+    setCreationRestrictionOpen(false);
+    setCreationRestrictionReason(null);
+    setLongSourceNoticeOpen(false);
+    setSourceRangeGuideComplete(false);
+    setScrollToAnalysis(false);
+    setError(null);
+  };
+
+  const prepareSelectedUpload = async (file: File) => {
+    if (!file || !uploadModeEnabled) return;
+    uploadAbortController.current?.abort();
+    uploadRequestId.current = null;
+    uploadRequestIntentKey.current = null;
+    setUploadInspectionBusy(true);
+    setUploadProgress(null);
+    setUploadVideo(null);
+    setRightsConfirmed(false);
+    setRightsConfirmationAttention(false);
+    setError(null);
+    try {
+      const inspected = await inspectUploadVideo(file);
+      setUploadVideo(inspected);
+      setSourceRangeGuideComplete(inspected.durationSeconds < MIN_SELECTED_SOURCE_SECONDS);
+      setScrollToAnalysis(true);
+      if (inspected.durationSeconds > 60 * 60) {
+        setLongSourceNoticeOpen(true);
+        setScrollToAnalysis(false);
+      }
+    } catch (cause) {
+      setError(userFacingErrorMessage(cause, "영상 정보를 확인하지 못했습니다."));
+    } finally {
+      setUploadInspectionBusy(false);
+    }
+  };
+
+  const inspectSelectedUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) void prepareSelectedUpload(file);
+  };
+
   const analyze = async (event: FormEvent) => {
     event.preventDefault();
+    if (sourceMode !== "youtube") return;
     if (isConversionMaintenanceActive()) {
       setConversionMaintenanceOpen(true);
       return;
@@ -12799,6 +12917,222 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       }
     }
     finally { setBusy(false); }
+  };
+
+  const createUploadJob = async () => {
+    if (!uploadSourceActive || !uploadVideo || !selectedSource) return;
+    if (!rightsConfirmed) {
+      setError(null);
+      setRightsConfirmationAttention(true);
+      rightsConfirmationRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      rightsCheckboxRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    if (!sourceRangeIsValid) {
+      setError(selectedSourceExceedsUsage
+        ? "선택한 구간이 남은 원본 영상 처리시간을 초과합니다."
+        : "사용할 영상 구간은 4분부터 60분까지 선택해 주세요.");
+      return;
+    }
+    if (!state?.user || !uploadModeEnabled) {
+      setError("파일 업로드 권한을 다시 확인해 주세요.");
+      return;
+    }
+    if (
+      state.usage.enforcementEnabled
+      && !state.billing.canCreateJobs
+      && !shortsEventRewardAvailable
+    ) {
+      window.location.href = "/pricing";
+      return;
+    }
+    if (activeJobBlocksCreation) {
+      setConcurrentJobNoticeOpen(true);
+      return;
+    }
+
+    const controller = new AbortController();
+    uploadAbortController.current = controller;
+    const intentKey = JSON.stringify([
+      uploadVideo.file.name,
+      uploadVideo.contentType,
+      uploadVideo.file.size,
+      uploadVideo.durationSeconds,
+      uploadVideo.width,
+      uploadVideo.height,
+      sourceRangeSelectionEnabled ? sourceRangeStartSeconds : 0,
+      sourceRangeSelectionEnabled ? sourceRangeEndSeconds : uploadVideo.durationSeconds,
+      templateId,
+      canUseCustomTemplates ? customTemplateId : null,
+      effectiveVideoAspectRatio,
+      outputLanguage,
+      subtitleTemplateSelectionEnabled ? subtitleTemplateId : null,
+      subtitleTemplateSelectionEnabled && subtitleTemplateId
+        ? subtitleCaptionPlacement
+        : null,
+      brandColorSelectionEnabled && !customTemplateId ? brandColor : null,
+      true,
+    ]);
+    if (uploadRequestIntentKey.current !== intentKey) {
+      uploadRequestId.current = crypto.randomUUID();
+      uploadRequestIntentKey.current = intentKey;
+    }
+    uploadRequestId.current ||= crypto.randomUUID();
+    const requestId = uploadRequestId.current;
+    let uploadSessionId: string | null = null;
+    setBusy(true);
+    setUploadProgress(0);
+    setError(null);
+    try {
+      const value = await requestJson<{
+        jobId: string;
+        projectNumber: number;
+        uploadSessionId: string;
+        uploadUrl: string;
+        token: string;
+        expiresAt: string;
+        usage: UsageSnapshot;
+      }>("/api/file-upload/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          requestId,
+          file: {
+            name: uploadVideo.file.name,
+            contentType: uploadVideo.contentType,
+            sizeBytes: uploadVideo.file.size,
+            durationSeconds: uploadVideo.durationSeconds,
+            width: uploadVideo.width,
+            height: uploadVideo.height,
+            // Browser media APIs cannot reliably expose audio tracks for every
+            // supported container. The isolated receiver always verifies this
+            // declaration with ffprobe before any AI work starts.
+            hasAudio: true,
+          },
+          rangeStartSeconds: sourceRangeSelectionEnabled ? sourceRangeStartSeconds : 0,
+          rangeEndSeconds: sourceRangeSelectionEnabled
+            ? sourceRangeEndSeconds
+            : uploadVideo.durationSeconds,
+          templateId,
+          customTemplateId: canUseCustomTemplates ? customTemplateId : null,
+          videoAspectRatio: effectiveVideoAspectRatio,
+          outputLanguage,
+          rightsConfirmed,
+          ...(subtitleTemplateSelectionEnabled && subtitleTemplateId
+            ? { subtitleTemplateId, subtitleCaptionPlacement }
+            : {}),
+          ...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {}),
+        }),
+      }, 30_000);
+      uploadSessionId = value.uploadSessionId;
+      const pendingJob: VideoJob = {
+        id: value.jobId,
+        projectNumber: value.projectNumber,
+        isExample: false,
+        videoTitle: uploadVideo.title,
+        channelName: "업로드한 영상",
+        channelThumbnailUrl: null,
+        thumbnailUrl: uploadVideo.thumbnailDataUrl,
+        sourceDurationSeconds: uploadVideo.durationSeconds,
+        outputLanguage,
+        expectedShortCount: selectedPlannedShortCount,
+        plannedShortCount: selectedPlannedShortCount,
+        readyShortCount: 0,
+        failedShortCount: 0,
+        renderSuccessPercent: null,
+        wordTimedSubtitlesAvailable: false,
+        status: "uploading",
+        stage: "uploading",
+        progress: SIMULATED_PROGRESS_START,
+        stageCompletedCount: 0,
+        stageTotalCount: 0,
+        errorMessage: null,
+        createdAt: new Date().toISOString(),
+        expiresAt: null,
+        shorts: [],
+      };
+      setState((current) => current ? {
+        ...current,
+        usage: value.usage,
+        recentJobs: recentJobsWithPendingProject(current.recentJobs, pendingJob),
+      } : current);
+      publishUsageSnapshot(value.usage);
+      setActiveJob(pendingJob);
+      setScrollToProjects(true);
+      pollStarted.current = Date.now();
+
+      await uploadFileDirectly({
+        file: uploadVideo.file,
+        uploadUrl: value.uploadUrl,
+        bearerToken: value.token,
+        signal: controller.signal,
+        onProgress: (progress) => setUploadProgress(progress.percent),
+      });
+      setUploadProgress(100);
+      setUploadVideo(null);
+      setRightsConfirmed(false);
+      setRightsConfirmationAttention(false);
+      setSubtitleTemplateId(null);
+      setSubtitleCaptionPlacement("lower");
+      setScrollToAnalysis(false);
+      uploadRequestId.current = null;
+      uploadRequestIntentKey.current = null;
+      await loadState().catch(() => undefined);
+    } catch (cause) {
+      let abortConfirmed = false;
+      if (uploadSessionId) {
+        const abortResponse = await fetch(`/api/file-upload/sessions/${encodeURIComponent(uploadSessionId)}`, {
+          method: "DELETE",
+          cache: "no-store",
+        }).catch(() => undefined);
+        abortConfirmed = abortResponse?.ok === true;
+      }
+      const definitiveControlFailure = cause instanceof HttpRequestError
+        && (
+          [400, 401, 402, 403, 404, 410, 413, 422].includes(cause.status)
+          || cause.code === "FILE_UPLOAD_INTENT_MISMATCH"
+          || cause.code === "FILE_UPLOAD_REQUEST_NOT_ACTIVE"
+        );
+      const definitiveReceiverFailure = cause instanceof DirectUploadError
+        && [400, 401, 403, 404, 410, 413, 415, 422].includes(cause.status);
+      const explicitlyAborted = cause instanceof DOMException
+        && cause.name === "AbortError";
+      // A lost POST response may happen after the server committed the job.
+      // Keep the same request ID for ambiguous network/5xx/409 outcomes so a
+      // retry cannot create a second reservation or duplicate project.
+      if (
+        uploadRequestId.current === requestId
+        && (
+          abortConfirmed
+          || definitiveControlFailure
+          || definitiveReceiverFailure
+          || explicitlyAborted
+        )
+      ) {
+        uploadRequestId.current = null;
+        uploadRequestIntentKey.current = null;
+      }
+      setUploadProgress(null);
+      await loadState().catch(() => undefined);
+      if (!explicitlyAborted) {
+        if (cause instanceof HttpRequestError && cause.status === 402) {
+          window.location.href = "/pricing";
+        } else if (
+          cause instanceof HttpRequestError
+          && cause.message.includes("현재 처리 중인 작업")
+        ) {
+          setConcurrentJobNoticeOpen(true);
+        } else {
+          setError(userFacingErrorMessage(cause, "영상 업로드를 시작하지 못했습니다."));
+        }
+      }
+    } finally {
+      if (uploadAbortController.current === controller) {
+        uploadAbortController.current = null;
+      }
+      setBusy(false);
+    }
   };
 
   const createJob = async () => {
@@ -12865,7 +13199,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         setShortsEventParticipationOpen(true);
       }
       const pendingJob: VideoJob = { id: value.jobId, projectNumber: value.projectNumber, isExample: false, videoTitle: analysis.title, channelName: analysis.channelName, channelThumbnailUrl: analysis.channelThumbnailUrl, thumbnailUrl: analysis.thumbnailUrl, sourceDurationSeconds: analysis.durationSeconds, outputLanguage, expectedShortCount: selectedPlannedShortCount, plannedShortCount: selectedPlannedShortCount, readyShortCount: 0, failedShortCount: 0, renderSuccessPercent: null, wordTimedSubtitlesAvailable: false, status: "queued", stage: "queued", progress: SIMULATED_PROGRESS_START, stageCompletedCount: 0, stageTotalCount: 0, errorMessage: null, createdAt: new Date().toISOString(), expiresAt: null, shorts: [] };
-      setState((current) => current ? { ...current, usage: value.usage, recentJobs: [pendingJob, ...current.recentJobs.filter((job) => job.id !== pendingJob.id)] } : current);
+      setState((current) => current ? { ...current, usage: value.usage, recentJobs: recentJobsWithPendingProject(current.recentJobs, pendingJob) } : current);
       publishUsageSnapshot(value.usage);
       setActiveJob(pendingJob);
       setScrollToProjects(true);
@@ -12931,7 +13265,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <NoticeDialog
         open={creationRestrictionOpen && Boolean(creationRestrictionReason)}
         dialogId="creation-restriction"
-        title={analysis?.creationAllowed === false ? "영상 이용 제한 안내" : "영상을 확인해 주세요"}
+        title={!uploadSourceActive && analysis?.creationAllowed === false ? "영상 이용 제한 안내" : "영상을 확인해 주세요"}
         description={creationRestrictionReason || "이 영상은 이용 제한이 확인된 영상입니다."}
         onClose={closeCreationRestriction}
       />
@@ -12954,7 +13288,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <SourceRangeGuide
         enabled={Boolean(
           sourceRangeSelectionEnabled
-          && analysis?.creationAllowed === true
+          && selectedSource?.creationAllowed === true
           && !longSourceNoticeOpen
           && !creationRestrictionOpen
         )}
@@ -12964,7 +13298,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         enabled={Boolean(
           sourceRangeGuideComplete
           && subtitleTemplateSelectionEnabled
-          && analysis?.creationAllowed === true
+          && selectedSource?.creationAllowed === true
           && stateLoadStatus === "ready"
           && state?.hasUsedSubtitleTemplates === false
           && !longSourceNoticeOpen
@@ -12979,24 +13313,101 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         </strong>
         <p>{localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}</p>
       </div>
-      <section className={`hero mx-auto flex max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
+      <section className={`hero mx-auto flex w-full max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
         <h1 className="hero-title">{t("home.heroLine1")}<br /><span>{t("home.heroLine2")}</span></h1>
-        <p className="mt-5 max-w-2xl text-sm leading-6 text-[#d5aaa4] sm:text-base">{t("home.heroDescription")}</p>
-        <form id="workspace" onSubmit={analyze} className="url-console mt-10 w-full max-w-3xl">
-          <div className="relative flex-1">
-            <span className="absolute inset-y-0 left-4 flex items-center text-xl text-[#d7aaa4]" aria-hidden="true">↗</span>
-            <input type="url" value={youtubeUrl} onChange={(event) => { setYoutubeUrl(event.target.value); setRightsConfirmed(false); setRightsConfirmationAttention(false); }} placeholder={t("home.youtubePlaceholder")} className="url-input" aria-label={t("home.youtubeLabel")} />
-            <button type="button" onClick={() => void pasteYoutubeUrl()} className="paste-button" aria-label={t("home.pasteLabel")} title={t("home.paste")}><svg viewBox="0 0 24 24" width="19" height="19" fill="none" aria-hidden="true"><path d="M9 5.5h6M9.5 3h5a1 1 0 0 1 1 1v3h-7V4a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/><path d="M8 5H6.75A1.75 1.75 0 0 0 5 6.75v12.5C5 20.216 5.784 21 6.75 21h10.5A1.75 1.75 0 0 0 19 19.25V6.75A1.75 1.75 0 0 0 17.25 5H16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
+        {uploadModeEnabled ? (
+          <div className="mt-8 grid w-full max-w-3xl grid-cols-2 gap-2" role="tablist" aria-label="원본 영상 입력 방식">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={sourceMode === "youtube"}
+              onClick={() => chooseSourceMode("youtube")}
+              className={`h-[52px] rounded-xl border text-sm font-extrabold transition ${sourceMode === "youtube" ? "border-[#ff715e] bg-[#ff715e] text-white" : "border-white/15 bg-black/20 text-neutral-400 hover:border-white/30 hover:text-white"}`}
+            >
+              <span className="inline-flex items-center gap-2"><span aria-hidden="true">↗</span> 유튜브 링크</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={sourceMode === "upload"}
+              onClick={() => chooseSourceMode("upload")}
+              className={`h-[52px] rounded-xl border text-sm font-extrabold transition ${sourceMode === "upload" ? "border-[#ff715e] bg-[#ff715e] text-white" : "border-white/15 bg-black/20 text-neutral-400 hover:border-white/30 hover:text-white"}`}
+            >
+              <span className="inline-flex items-center gap-2"><span aria-hidden="true">⇧</span> 파일 업로드</span>
+            </button>
           </div>
-          <button disabled={busy} className="ai-button">{busy ? t("home.checking") : t("home.convert")}<span aria-hidden="true">✦</span></button>
-        </form>
-        <p className="mt-3 text-xs font-medium text-neutral-500">{t("home.sourceDurationHint")}</p>
-        {state?.user && planEnforcementEnabled && <div className="mt-6 flex flex-wrap items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[.035] px-5 py-3 text-xs text-neutral-400"><strong className="text-white">{state.billing.planCode.toUpperCase()}</strong><span>{t("home.baseMinutes", { minutes: Math.floor(state.usage.baseRemainingSeconds / 60) })}</span><span>{t("home.addonMinutes", { minutes: Math.floor(state.usage.addonRemainingSeconds / 60) })}</span><Link href="/pricing" className="font-bold text-[#ff9b8d]">{t("home.subscription")}</Link></div>}
+        ) : null}
+        {sourceMode === "youtube" ? (
+          <>
+            <form id="workspace" onSubmit={analyze} className={`url-console w-full max-w-3xl ${uploadModeEnabled ? "mt-3" : "mt-8"}`}>
+              <div className="relative flex-1">
+                <span className="absolute inset-y-0 left-4 flex items-center text-xl text-[#d7aaa4]" aria-hidden="true">↗</span>
+                <input type="url" value={youtubeUrl} onChange={(event) => { setYoutubeUrl(event.target.value); setRightsConfirmed(false); setRightsConfirmationAttention(false); }} placeholder={t("home.youtubePlaceholder")} className="url-input" aria-label={t("home.youtubeLabel")} />
+                <button type="button" onClick={() => void pasteYoutubeUrl()} className="paste-button" aria-label={t("home.pasteLabel")} title={t("home.paste")}><svg viewBox="0 0 24 24" width="19" height="19" fill="none" aria-hidden="true"><path d="M9 5.5h6M9.5 3h5a1 1 0 0 1 1 1v3h-7V4a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/><path d="M8 5H6.75A1.75 1.75 0 0 0 5 6.75v12.5C5 20.216 5.784 21 6.75 21h10.5A1.75 1.75 0 0 0 19 19.25V6.75A1.75 1.75 0 0 0 17.25 5H16" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
+              </div>
+              <button disabled={busy} className="ai-button">{busy ? t("home.checking") : t("home.convert")}</button>
+            </form>
+            <p className="mt-3 text-xs font-medium text-neutral-500">{t("home.sourceDurationHint")}</p>
+          </>
+        ) : (
+          <div className="mt-3 w-full max-w-3xl">
+            <input
+              ref={uploadFileInputRef}
+              type="file"
+              accept="video/mp4,video/quicktime,video/x-m4v,video/webm,video/x-matroska,.mp4,.mov,.m4v,.webm,.mkv"
+              className="sr-only"
+              onChange={inspectSelectedUpload}
+            />
+            <button
+              type="button"
+              disabled={busy || uploadInspectionBusy}
+              onClick={() => uploadFileInputRef.current?.click()}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                const file = event.dataTransfer.files[0];
+                if (file) void prepareSelectedUpload(file);
+              }}
+              className="group relative block min-h-64 w-full overflow-hidden rounded-2xl border border-dashed border-[#ff8f7f]/55 bg-[#ff715e]/[.055] text-left transition hover:border-[#ff8f7f] disabled:cursor-wait disabled:opacity-65"
+            >
+              {uploadVideo ? (
+                <>
+                  <Image src={uploadVideo.thumbnailDataUrl} alt="선택한 영상 썸네일" fill unoptimized className="object-cover" />
+                  <span className="absolute inset-0 bg-black/55" aria-hidden="true" />
+                  <span className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
+                    <strong className="max-w-full truncate text-xl font-black text-white">{uploadVideo.file.name}</strong>
+                    <span className="mt-2 text-sm font-bold text-[#ffc1b8]">
+                      {(uploadVideo.file.size / 1024 / 1024).toFixed(1)}MB · {formatDuration(uploadVideo.durationSeconds)} · 영상 정보 확인 완료
+                    </span>
+                    <span className="mt-4 rounded-xl border border-white/20 bg-black/40 px-4 py-2 text-xs font-bold text-white">다른 영상 선택</span>
+                  </span>
+                </>
+              ) : (
+                <span className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
+                  <span className="text-4xl" aria-hidden="true">▰</span>
+                  <strong className="mt-5 text-lg font-extrabold text-white">동영상 파일을 끌어놓거나 클릭하여 선택하세요</strong>
+                  <span className="mt-3 text-xs font-medium text-neutral-400">MP4, MOV, M4V, WEBM, MKV · 최대 5GB · 3분~3시간</span>
+                  {uploadInspectionBusy ? <span className="mt-4 font-bold text-[#ff9b8d]">영상 정보를 확인하고 있습니다…</span> : null}
+                </span>
+              )}
+              {uploadProgress !== null ? (
+                <span className="absolute inset-x-4 bottom-4 overflow-hidden rounded-full bg-black/55 p-1">
+                  <span className="block h-2 rounded-full bg-[#ff715e] transition-[width]" style={{ width: `${uploadProgress}%` }} />
+                  <span className="mt-1 block text-center text-[11px] font-black text-white">원본 업로드 {uploadProgress}%</span>
+                </span>
+              ) : null}
+            </button>
+            <p className="mt-3 text-xs font-medium text-neutral-500">파일은 마지막 생성 버튼을 누를 때 전용 처리 서버로 직접 전송됩니다.</p>
+          </div>
+        )}
       </section>
-      {state?.user && state.recentJobs.length ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28">
+      {state?.recentJobs.length ? <section id="results" ref={projectsSectionRef} className="scroll-mt-24 sm:scroll-mt-28">
         <div className="mb-5 flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-2">
-            <h2 className="text-2xl font-bold">{t("home.projects")}</h2>
+            <h2 className="text-2xl font-bold">{state.user ? t("home.projects") : t("home.exampleProjects")}</h2>
             <span className="text-sm text-neutral-500">({state.recentJobs.length})</span>
           </div>
           <Link href="/projects" className="inline-flex min-h-10 shrink-0 items-center rounded-xl border border-white/10 px-4 text-sm font-bold text-neutral-200 transition hover:border-white/25 hover:bg-white/[.06] hover:text-white">
@@ -13009,7 +13420,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <BackgroundShowcase />
       {error && <div role="alert" className="rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-200">{error}</div>}
       {stateLoadStatus === "error" && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-900 bg-amber-950/40 p-4 text-sm text-amber-100"><div><p>{t("home.serviceLoadError")}</p>{stateLoadError && <p className="mt-1 text-xs text-amber-300">{stateLoadError}</p>}</div><button type="button" onClick={retryStateLoad} className="rounded-lg border border-amber-300/30 px-3 py-2 font-semibold">{t("common.retry")}</button></div>}
-      {analysis && (
+      {selectedSource && (
         <section
           id="shorts-settings"
           ref={analysisSectionRef}
@@ -13028,7 +13439,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               <div className="aspect-video w-full shrink-0 overflow-hidden bg-black sm:w-72">
                 <iframe
                   src={sourceVideoEmbedUrl}
-                  title={`${analysis.title} 원본 영상 플레이어`}
+                  title={`${selectedSource.title} 원본 영상 플레이어`}
                   className="h-full w-full border-0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   referrerPolicy="strict-origin-when-cross-origin"
@@ -13036,20 +13447,20 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                 />
               </div>
             ) : (
-              <Image src={analysis.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" />
+              <Image src={selectedSource.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" />
             )}
             <div className="p-5">
-              <h2 className="text-lg font-bold">{analysis.title}</h2>
-              <p className="mt-2 text-sm text-neutral-400">{analysis.channelName}</p>
+              <h2 className="text-lg font-bold">{selectedSource.title}</h2>
+              <p className="mt-2 text-sm text-neutral-400">{selectedSource.channelName}</p>
               {!adminTemplateLayoutEnabled && (
                 <>
-                  <p className="mt-4 text-sm">원본 영상 {formatDuration(analysis.durationSeconds)} · 예상 쇼츠 {selectedPlannedShortCount}개</p>
+                  <p className="mt-4 text-sm">원본 영상 {formatDuration(selectedSource.durationSeconds)} · 예상 쇼츠 {selectedPlannedShortCount}개</p>
                   <p className="mt-1 text-xs text-neutral-500">{sourceRangeSelectionEnabled
                     ? planEnforcementEnabled
                       ? `선택한 ${formatDuration(selectedSourceDurationSeconds)}만 사용량으로 계산됩니다.`
                       : `선택한 ${formatDuration(selectedSourceDurationSeconds)}만 전사·분석됩니다.`
                     : planEnforcementEnabled
-                      ? `전체 영상 길이 ${formatDuration(analysis.durationSeconds)}가 사용량으로 계산됩니다.`
+                      ? `전체 영상 길이 ${formatDuration(selectedSource.durationSeconds)}가 사용량으로 계산됩니다.`
                       : "현재는 플랜 처리시간 차감 없이 생성됩니다."}</p>
                 </>
               )}
@@ -13058,7 +13469,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           {sourceRangeSelectionEnabled && (
             <>
               <SourceRangeSelector
-                sourceDurationSeconds={analysis.durationSeconds}
+                sourceDurationSeconds={selectedSource.durationSeconds}
                 startSeconds={sourceRangeStartSeconds}
                 endSeconds={sourceRangeEndSeconds}
                 usageSeconds={selectedSourceUsageSeconds}
@@ -13071,7 +13482,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                   Math.min(seconds, sourceRangeEndSeconds - MIN_SELECTED_SOURCE_SECONDS),
                 ))}
                 onEndChange={(seconds) => setSourceRangeEndSeconds(Math.min(
-                  analysis.durationSeconds,
+                  selectedSource.durationSeconds,
                   sourceRangeStartSeconds + MAX_SELECTED_SOURCE_SECONDS,
                   Math.max(seconds, sourceRangeStartSeconds + MIN_SELECTED_SOURCE_SECONDS),
                 ))}
@@ -13081,7 +13492,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                     : MAX_SELECTED_SOURCE_SECONDS;
                   setSourceRangeStartSeconds(0);
                   setSourceRangeEndSeconds(Math.min(
-                    analysis.durationSeconds,
+                    selectedSource.durationSeconds,
                     availableSeconds,
                     MAX_SELECTED_SOURCE_SECONDS,
                   ));
@@ -13108,8 +13519,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             }}
             videoAspectRatio={effectiveVideoAspectRatio}
             onVideoAspectRatioChange={setVideoAspectRatio}
-            channelName={analysis.channelName}
-            channelThumbnailUrl={analysis.channelThumbnailUrl}
+            channelName={selectedSource.channelName}
+            channelThumbnailUrl={selectedSource.channelThumbnailUrl}
             personalTemplates={personalTemplates}
             favoriteTemplateKeys={favoriteTemplateKeys}
             customTemplateId={canUseCustomTemplates ? customTemplateId : null}
@@ -13140,7 +13551,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               }
             }}
           />
-          {analysisCreationBlocked && (
+          {analysisCreationBlocked && analysis && (
             <button type="button" onClick={() => { setCreationRestrictionReason(analysis.creationBlockReason || "영상 이용 제한을 확인했습니다."); setCreationRestrictionOpen(true); }} className="min-h-11 w-full rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100 transition hover:bg-red-500/15">
               생성 불가 사유 보기
             </button>
@@ -13168,7 +13579,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               </span>
             </span>
           </label>
-          <button disabled={analysisCreationBlocked || !sourceRangeIsValid || busy || stateLoadStatus !== "ready"} onClick={() => void createJob()} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
+          <button disabled={analysisCreationBlocked || !sourceRangeIsValid || busy || stateLoadStatus !== "ready"} onClick={() => void (uploadSourceActive ? createUploadJob() : createJob())} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
               {loginPromptPending && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
               {analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs || shortsEventRewardAvailable ? t("home.create") : t("home.choosePlan")}

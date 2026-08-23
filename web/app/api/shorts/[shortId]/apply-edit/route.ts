@@ -230,6 +230,7 @@ async function applyEditorDocument({
     from shorts_mvp.generated_shorts s
     join shorts_mvp.video_jobs j on j.id=s.job_id
     where s.id=${shortId} and not j.is_example
+      and j.user_deleted_at is null
       and s.user_id=${session.userId}
       and s.deleted_at is null and s.expires_at>clock_timestamp()
       and s.output_s3_key is not null
@@ -540,6 +541,7 @@ async function applyEditorDocument({
         render_error_code=null,render_error_message=null
       from shorts_mvp.video_jobs j
       where s.id=${shortId} and j.id=s.job_id and not j.is_example
+        and j.user_deleted_at is null
         and s.user_id=${session.userId}
         and s.status='ready'
         and s.render_version=${document.baseRenderVersion}
@@ -637,7 +639,8 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
           ) as onboarding_welcome_funded
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
-      where s.id=${shortId} and not j.is_example and (
+      where s.id=${shortId} and not j.is_example
+        and j.user_deleted_at is null and (
         (${session.userId}::uuid is not null and s.user_id=${session.userId})
         or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
       ) and s.deleted_at is null and s.expires_at > now()
@@ -794,7 +797,8 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
           pending_render_hash=md5(${snapshotJson}::jsonb::text),
           rerender_batch_job_id=null, render_error_code=null, render_error_message=null
         from shorts_mvp.video_jobs j
-        where s.id=${shortId} and j.id=s.job_id and not j.is_example and (
+        where s.id=${shortId} and j.id=s.job_id and not j.is_example
+          and j.user_deleted_at is null and (
           (${session.userId}::uuid is not null and s.user_id=${session.userId})
           or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
         ) and s.status='ready' and s.deleted_at is null and s.expires_at > now()
