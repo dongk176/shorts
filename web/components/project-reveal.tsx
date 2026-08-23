@@ -58,7 +58,7 @@ const projectRevealCopy: Record<SiteLocale, {
     defaultReason: "시청 흐름에서 핵심이 되는 장면을 쇼츠 구간으로 선정했습니다.", silentScene: "대사가 없는 장면의 영상 흐름을 유지했습니다.", noScript: "추출된 스크립트가 없습니다.", noComments: "이 템플릿은 댓글 오버레이를 사용하지 않습니다.",
     hookTitle: "후킹 제목", selectionReason: "선정 이유", subtitleTiming: "자막 타이밍", commentOverlay: "댓글 오버레이", fullScript: "전체 스크립트", aiHighlight: "✦ AI 하이라이트", subtitleTimingSetup: "자막 타이밍 구성",
     dialog: "쇼츠 제작 결과 공개", viewResults: "바로 결과 보기", discoveredCount: (count) => `${count}개의 쇼츠 구간을`, discovered: "발견했습니다", shortComplete: "쇼츠 완성",
-    thumbnail: (title) => `${title} 유튜브 썸네일`, sourceVideo: "원본 영상", completedCount: (count) => `${count}개의 쇼츠가 완성됐습니다`,
+    thumbnail: (title) => `${title} 원본 영상 썸네일`, sourceVideo: "원본 영상", completedCount: (count) => `${count}개의 쇼츠가 완성됐습니다`,
   },
   en: {
     assemblyComplete: "Finished video checked", assemblyWithComment: "Assembling the title, reason, captions, and comments", assemblyWithScript: "Assembling the title, reason, captions, and script",
@@ -69,7 +69,7 @@ const projectRevealCopy: Record<SiteLocale, {
     defaultReason: "This key moment was selected as a Shorts segment based on the viewing flow.", silentScene: "The visual flow of this scene was preserved because it has no dialogue.", noScript: "No script was extracted.", noComments: "This template does not use a comment overlay.",
     hookTitle: "Hook title", selectionReason: "Selection reason", subtitleTiming: "Caption timing", commentOverlay: "Comment overlay", fullScript: "Full script", aiHighlight: "✦ AI highlight", subtitleTimingSetup: "Caption timing",
     dialog: "Shorts creation results", viewResults: "View results now", discoveredCount: (count) => `${count} Shorts segments`, discovered: "discovered", shortComplete: "Short complete",
-    thumbnail: (title) => `YouTube thumbnail for ${title}`, sourceVideo: "source video", completedCount: (count) => `${count} Shorts are ready`,
+    thumbnail: (title) => `Source video thumbnail for ${title}`, sourceVideo: "source video", completedCount: (count) => `${count} Shorts are ready`,
   },
   ja: {
     assemblyComplete: "完成動画を確認しました", assemblyWithComment: "タイトル・理由・字幕・コメントを構成しています", assemblyWithScript: "タイトル・理由・字幕・スクリプトを構成しています",
@@ -80,7 +80,7 @@ const projectRevealCopy: Record<SiteLocale, {
     defaultReason: "視聴の流れで重要となる場面をショート動画区間として選びました。", silentScene: "セリフのない場面の映像の流れを維持しました。", noScript: "抽出されたスクリプトはありません。", noComments: "このテンプレートはコメントオーバーレイを使用しません。",
     hookTitle: "フックタイトル", selectionReason: "選定理由", subtitleTiming: "字幕タイミング", commentOverlay: "コメントオーバーレイ", fullScript: "全スクリプト", aiHighlight: "✦ AIハイライト", subtitleTimingSetup: "字幕タイミングの構成",
     dialog: "ショート動画作成結果", viewResults: "結果をすぐ見る", discoveredCount: (count) => `${count}件のショート区間を`, discovered: "見つけました", shortComplete: "ショート完成",
-    thumbnail: (title) => `${title}のYouTubeサムネイル`, sourceVideo: "元動画", completedCount: (count) => `${count}件のショート動画が完成しました`,
+    thumbnail: (title) => `${title}の元動画サムネイル`, sourceVideo: "元動画", completedCount: (count) => `${count}件のショート動画が完成しました`,
   },
 };
 
@@ -569,7 +569,7 @@ export function ProjectReveal({
                   unoptimized
                   className="object-cover"
                 />
-                <span>YOUTUBE ORIGINAL</span>
+                <span>ORIGINAL VIDEO</span>
               </div>
               <div className="project-reveal-source-copy">
                 <div className="project-reveal-channel-line">
