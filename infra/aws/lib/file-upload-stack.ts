@@ -388,6 +388,7 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
     const listener = loadBalancer.addListener("HttpListener", {
       port: 80,
       protocol: elbv2.ApplicationProtocol.HTTP,
+      open: false,
       defaultAction: elbv2.ListenerAction.fixedResponse(403, {
         contentType: "application/json",
         messageBody: '{"detail":"Forbidden"}',

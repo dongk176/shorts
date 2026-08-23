@@ -182,6 +182,13 @@ describe("isolated file upload canary stack", () => {
   it("keeps the ALB private and requires both CloudFront identity checks", () => {
     const template = stackTemplate();
 
+    for (const securityGroup of Object.values(
+      template.findResources("AWS::EC2::SecurityGroup"),
+    )) {
+      expect(JSON.stringify(securityGroup.Properties?.SecurityGroupIngress || []))
+        .not.toContain("0.0.0.0/0");
+    }
+
     template.resourceCountIs("AWS::EC2::SecurityGroupIngress", 2);
     template.hasResourceProperties("AWS::EC2::SecurityGroupIngress", {
       SourcePrefixListId: "pl-1234abcd",
