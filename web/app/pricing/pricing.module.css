@@ -1100,7 +1100,7 @@
 }
 
 .localPlanPrice strong {
-  font-size: clamp(2.25rem, 4.5vw, 3rem);
+  font-size: clamp(2.5rem, 4.1vw, 2.75rem);
 }
 
 .localTermPicker {

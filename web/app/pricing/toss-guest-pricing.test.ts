@@ -56,7 +56,7 @@ describe("guest Toss pricing", () => {
     expect(tossSource).toContain("하나카드는 아직 결제할 수 없어요");
   });
 
-  it("adds mobile CTA breathing room and enlarges checkout summaries", () => {
+  it("keeps plan prices balanced across mobile and desktop and enlarges checkout summaries", () => {
     expect(pricingStyles).toMatch(
       /@media \(max-width: 900px\)[\s\S]*?\.localPlanCard \.planCta\s*\{\s*margin-top:\s*24px;/,
     );
@@ -65,7 +65,7 @@ describe("guest Toss pricing", () => {
     expect(pricingStyles).toMatch(/\.localPlanTransitionItem strong\s*\{[^}]*font-size:\s*14px;/);
     expect(pricingStyles).toMatch(/\.localPaymentNote\s*\{[^}]*font-size:\s*13px;/);
     expect(pricingStyles).toMatch(
-      /\.localPlanPrice strong\s*\{[^}]*font-size:\s*clamp\(2\.25rem,\s*4\.5vw,\s*3rem\);/,
+      /\.localPlanPrice strong\s*\{[^}]*font-size:\s*clamp\(2\.5rem,\s*4\.1vw,\s*2\.75rem\);/,
     );
   });
 
