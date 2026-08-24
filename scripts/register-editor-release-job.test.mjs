@@ -22,6 +22,7 @@ const accountId = "181651591905";
 const region = "ap-northeast-2";
 const templateName = "shorts-mvp-project-heavy-fargate-production";
 const templateArn = `arn:aws:batch:${region}:${accountId}:job-definition/${templateName}:27`;
+const ingestionTemplateArn = `arn:aws:batch:${region}:${accountId}:job-definition/shorts-mvp-subtitle-pot-release:11`;
 const releaseSha = "c".repeat(40);
 const candidateName = `shorts-mvp-unified-template-subtitles-${releaseSha.slice(0, 12)}-4vcpu`;
 const candidateArn = `arn:aws:batch:${region}:${accountId}:job-definition/${candidateName}:1`;
@@ -66,19 +67,55 @@ function projectHeavyTemplate() {
   };
 }
 
-async function runRegistration(template, templateDefinition = templateName) {
+function trustedIngestionTemplate() {
+  return {
+    jobDefinitionArn: ingestionTemplateArn,
+    jobDefinitionName: "shorts-mvp-subtitle-pot-release",
+    revision: 11,
+    status: "ACTIVE",
+    type: "container",
+    platformCapabilities: ["FARGATE"],
+    containerProperties: {
+      environment: [
+        { name: "DOWNLOAD_TIMEOUT_SECONDS", value: "14400" },
+        { name: "YOUTUBE_PO_TOKEN_ENABLED", value: "true" },
+        { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
+        { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "30" },
+        { name: "MAX_VIDEO_DURATION_SECONDS", value: "3600" },
+        { name: "INGESTION_UNRELATED", value: "not-copied" },
+      ],
+      secrets: [
+        {
+          name: "INGESTION_PROXY_ROUTES_JSON",
+          valueFrom: "secret:trusted-proxy-routes",
+        },
+        { name: "UNRELATED_SECRET", valueFrom: "secret:not-copied" },
+      ],
+    },
+  };
+}
+
+async function runRegistration(
+  template,
+  templateDefinition = templateName,
+  ingestionTemplate = trustedIngestionTemplate(),
+) {
   const directory = await mkdtemp(join(tmpdir(), "editor-release-job-test-"));
   const binDirectory = join(directory, "bin");
   const templatePath = join(directory, "template.json");
+  const ingestionTemplatePath = join(directory, "ingestion-template.json");
   const capturePath = join(directory, "registered-input.json");
   const awsPath = join(binDirectory, "aws");
   await mkdir(binDirectory);
   await writeFile(templatePath, JSON.stringify(template));
+  await writeFile(ingestionTemplatePath, JSON.stringify(ingestionTemplate));
   await writeFile(awsPath, `#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == "batch" && "$2" == "describe-job-definitions" ]]; then
   if [[ " $* " == *" --job-definition-name "* ]]; then
     printf 'None\\n'
+  elif [[ " $* " == *" $MOCK_INGESTION_TEMPLATE_DEFINITION "* ]]; then
+    cat "$MOCK_INGESTION_TEMPLATE_JSON"
   elif [[ " $* " == *" $MOCK_TEMPLATE_DEFINITION "* ]]; then
     cat "$MOCK_TEMPLATE_JSON"
   elif [[ " $* " == *" $MOCK_CANDIDATE_ARN "* ]]; then
@@ -106,6 +143,7 @@ fi
     scriptPath,
     "unified-template-subtitles",
     templateDefinition,
+    ingestionTemplateArn,
   ], {
     cwd: dirname(scriptPath),
     encoding: "utf8",
@@ -118,6 +156,8 @@ fi
       EDITOR_RELEASE_IMAGE_DIGEST: imageDigest,
       MOCK_TEMPLATE_DEFINITION: templateDefinition,
       MOCK_TEMPLATE_JSON: templatePath,
+      MOCK_INGESTION_TEMPLATE_DEFINITION: ingestionTemplateArn,
+      MOCK_INGESTION_TEMPLATE_JSON: ingestionTemplatePath,
       MOCK_CANDIDATE_ARN: candidateArn,
       MOCK_REGISTER_CAPTURE: capturePath,
     },
@@ -171,6 +211,21 @@ test("clones the project-heavy initial-render contract at the tested digest", as
     1,
   );
   assert.deepEqual(
+    registered.containerProperties.secrets.find(
+      ({ name }) => name === "INGESTION_PROXY_ROUTES_JSON",
+    ),
+    {
+      name: "INGESTION_PROXY_ROUTES_JSON",
+      valueFrom: "secret:trusted-proxy-routes",
+    },
+  );
+  assert.equal(
+    registered.containerProperties.secrets.some(
+      ({ name }) => name === "UNRELATED_SECRET",
+    ),
+    false,
+  );
+  assert.deepEqual(
     Object.fromEntries(registered.containerProperties.environment.map(
       ({ name, value }) => [name, value],
     )),
@@ -181,7 +236,17 @@ test("clones the project-heavy initial-render contract at the tested digest", as
       WORKER_IMAGE_DIGEST: imageDigest,
       TASK_VCPUS: "4",
       FFMPEG_THREADS: "4",
+      DOWNLOAD_TIMEOUT_SECONDS: "14400",
+      YOUTUBE_PO_TOKEN_ENABLED: "true",
+      INGESTION_EGRESS_MODE: "webshare_isp",
+      INGESTION_BOT_CHECK_COOLDOWN_SECONDS: "30",
     },
+  );
+  assert.equal(
+    registered.containerProperties.environment.some(
+      ({ name }) => name === "MAX_VIDEO_DURATION_SECONDS",
+    ),
+    false,
   );
   assert.deepEqual(registered.tags, {});
 });
@@ -216,6 +281,29 @@ test("fails closed when proxy, 30GB storage, or 7200-second timeout is missing",
     const { registered, result } = await runRegistration(template);
     assert.equal(result.status, 2);
     assert.match(result.stderr, /trusted project-heavy contract/);
+    assert.equal(registered, null);
+  }
+});
+
+test("fails closed when the trusted ingestion template lacks PoToken or proxy settings", async () => {
+  for (const mutate of [
+    (template) => {
+      template.containerProperties.environment = template.containerProperties.environment
+        .filter(({ name }) => name !== "YOUTUBE_PO_TOKEN_ENABLED");
+    },
+    (template) => {
+      template.containerProperties.secrets = [];
+    },
+  ]) {
+    const ingestionTemplate = trustedIngestionTemplate();
+    mutate(ingestionTemplate);
+    const { registered, result } = await runRegistration(
+      projectHeavyTemplate(),
+      templateName,
+      ingestionTemplate,
+    );
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /trusted ingestion Job Definition/);
     assert.equal(registered, null);
   }
 });

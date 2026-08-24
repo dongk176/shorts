@@ -250,10 +250,14 @@ jobs:
           EDITOR_RELEASE_GIT_SHA: ${{ github.sha }}
           EDITOR_RELEASE_IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
+          ingestion_template="$(
+            node -e 'const release=require("./production-worker-release.json"); process.stdout.write(release.targets.subtitleTemplates.jobDefinitionArn)'
+          )"
           output="$(
             scripts/register-editor-release-job.sh \
               unified-template-subtitles \
-              "$UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION"
+              "$UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION" \
+              "$ingestion_template"
           )"
           echo "$output"
           echo "$output" >> "$GITHUB_OUTPUT"

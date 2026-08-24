@@ -38,6 +38,10 @@ ARN이어야 합니다. 템플릿 입력
 `UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION`은
 `shorts-mvp-project-heavy-fargate-production` 이름 또는 그 정의의
 revision-pinned ARN만 허용합니다.
+등록 단계는 `production-worker-release.json`의 revision-pinned
+`subtitleTemplates.jobDefinitionArn`에서 PoToken, 다운로드 제한, 기존 수집
+프록시 secret을 검증해 복제합니다. 동일 이미지의 기존 후보라도 이 수집
+계약이 다르면 재사용하지 않고 새 revision을 등록합니다.
 
 후보 workflow는 queue를 만들거나 선택하지 않습니다. 최초 생성 카나리는
 기존 수집 프록시 네트워크를 사용하면서 일반 프로젝트 queue(priority 20)보다

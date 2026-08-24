@@ -3,6 +3,7 @@ set -euo pipefail
 
 release_kind="${1:?usage: register-editor-release-job.sh production|isolated|unified-template-subtitles}"
 template_definition="${2:?template job definition is required}"
+ingestion_template_definition="${3:-${UNIFIED_TEMPLATE_SUBTITLES_INGESTION_TEMPLATE_JOB_DEFINITION:-}}"
 repository_uri="${EDITOR_RELEASE_ECR_REPOSITORY_URI:?EDITOR_RELEASE_ECR_REPOSITORY_URI is required}"
 git_sha="${EDITOR_RELEASE_GIT_SHA:?EDITOR_RELEASE_GIT_SHA is required}"
 image_digest="${EDITOR_RELEASE_IMAGE_DIGEST:?EDITOR_RELEASE_IMAGE_DIGEST is required}"
@@ -40,6 +41,11 @@ case "$release_kind" in
     fi
     if [[ ! "$repository_uri" =~ ^[0-9]{12}\.dkr\.ecr\.${region}\.amazonaws\.com/[A-Za-z0-9._/-]+$ ]]; then
       echo "EDITOR_RELEASE_ECR_REPOSITORY_URI must be an exact private ECR repository URI" >&2
+      exit 2
+    fi
+    ingestion_template_arn_pattern="^arn:aws:batch:${region}:[0-9]{12}:job-definition/[^:]+:[1-9][0-9]*$"
+    if [[ ! "$ingestion_template_definition" =~ $ingestion_template_arn_pattern ]]; then
+      echo "unified template subtitles require a revision-pinned trusted ingestion Job Definition ARN" >&2
       exit 2
     fi
     ;;
@@ -90,6 +96,56 @@ validate_unified_contract() {
   fi
 }
 
+validate_unified_ingestion_template() {
+  local source_file="$1"
+  if ! jq -e '
+    def environment($name):
+      [.containerProperties.environment[]? | select(.name == $name)];
+    def secrets($name):
+      [.containerProperties.secrets[]? | select(.name == $name)];
+    .type == "container"
+    and ((.platformCapabilities // []) | index("FARGATE") != null)
+    and (environment("YOUTUBE_PO_TOKEN_ENABLED") | length) == 1
+    and (environment("YOUTUBE_PO_TOKEN_ENABLED")[0].value == "true")
+    and (environment("INGESTION_EGRESS_MODE") | length) == 1
+    and (environment("INGESTION_EGRESS_MODE")[0].value == "webshare_isp")
+    and (environment("INGESTION_BOT_CHECK_COOLDOWN_SECONDS") | length) == 1
+    and (environment("DOWNLOAD_TIMEOUT_SECONDS") | length) == 1
+    and (secrets("INGESTION_PROXY_ROUTES_JSON") | length) == 1
+  ' "$source_file" >/dev/null; then
+    echo "trusted ingestion Job Definition is missing the production YouTube contract" >&2
+    exit 2
+  fi
+}
+
+matches_unified_ingestion_contract() {
+  local candidate_file="$1"
+  local ingestion_file="$2"
+  jq -e -s '
+    .[0] as $candidate
+    | .[1] as $ingestion
+    | def environment($document; $name):
+        [$document.containerProperties.environment[]? | select(.name == $name)];
+      def secrets($document; $name):
+        [$document.containerProperties.secrets[]? | select(.name == $name)];
+      all(
+        [
+          "DOWNLOAD_TIMEOUT_SECONDS",
+          "YOUTUBE_PO_TOKEN_ENABLED",
+          "INGESTION_EGRESS_MODE",
+          "INGESTION_BOT_CHECK_COOLDOWN_SECONDS"
+        ][];
+        environment($candidate; .) == environment($ingestion; .)
+      )
+      and (
+        (environment($candidate; "MAX_VIDEO_DURATION_SECONDS") | length) == 0
+        or environment($candidate; "MAX_VIDEO_DURATION_SECONDS")[0].value == "3600"
+      )
+      and secrets($candidate; "INGESTION_PROXY_ROUTES_JSON")
+        == secrets($ingestion; "INGESTION_PROXY_ROUTES_JSON")
+  ' "$candidate_file" "$ingestion_file" >/dev/null
+}
+
 emit_definition_arn() {
   local definition_arn="$1"
   if [[ "$release_kind" == "unified-template-subtitles" ]]; then
@@ -107,6 +163,16 @@ emit_definition_arn() {
 
 task_dir="$(mktemp -d)"
 trap 'rm -rf "$task_dir"' EXIT
+
+if [[ "$release_kind" == "unified-template-subtitles" ]]; then
+  aws batch describe-job-definitions \
+    --region "$region" \
+    --status ACTIVE \
+    --job-definitions "$ingestion_template_definition" \
+    --query "jobDefinitions[0]" \
+    --output json > "$task_dir/ingestion-template.json"
+  validate_unified_ingestion_template "$task_dir/ingestion-template.json"
+fi
 
 existing_arn="$(
   aws batch describe-job-definitions \
@@ -130,9 +196,17 @@ if [[ -n "$existing_arn" && "$existing_arn" != "None" ]]; then
       "$candidate_vcpus" \
       "$candidate_ffmpeg_threads" \
       "${repository_uri}@${image_digest}"
+    if matches_unified_ingestion_contract \
+      "$task_dir/existing.json" \
+      "$task_dir/ingestion-template.json"; then
+      emit_definition_arn "$existing_arn"
+      exit 0
+    fi
+    echo "existing unified-template definition has stale ingestion settings; registering a new revision" >&2
+  else
+    emit_definition_arn "$existing_arn"
+    exit 0
   fi
-  emit_definition_arn "$existing_arn"
-  exit 0
 fi
 
 if [[ "$release_kind" == "unified-template-subtitles" ]]; then
@@ -205,7 +279,42 @@ jq \
         ]
     )
   | with_entries(select(.value != null))' \
-  "$task_dir/template.json" > "$task_dir/register.json"
+  "$task_dir/template.json" > "$task_dir/register-base.json"
+
+if [[ "$release_kind" == "unified-template-subtitles" ]]; then
+  jq -s '
+    .[0] as $candidate
+    | .[1] as $ingestion
+    | [
+        "DOWNLOAD_TIMEOUT_SECONDS",
+        "YOUTUBE_PO_TOKEN_ENABLED",
+        "INGESTION_EGRESS_MODE",
+        "INGESTION_BOT_CHECK_COOLDOWN_SECONDS"
+      ] as $trustedEnvironmentNames
+    | [
+        $ingestion.containerProperties.environment[]?
+        | select(.name as $name | $trustedEnvironmentNames | index($name))
+      ] as $trustedEnvironment
+    | [
+        $ingestion.containerProperties.secrets[]?
+        | select(.name == "INGESTION_PROXY_ROUTES_JSON")
+      ] as $trustedProxySecret
+    | $candidate
+    | .containerProperties.environment=(
+        [.containerProperties.environment[]?
+          | select(.name as $name | $trustedEnvironmentNames | index($name) | not)]
+        + $trustedEnvironment
+      )
+    | .containerProperties.secrets=(
+        [.containerProperties.secrets[]?
+          | select(.name != "INGESTION_PROXY_ROUTES_JSON")]
+        + $trustedProxySecret
+      )
+  ' "$task_dir/register-base.json" "$task_dir/ingestion-template.json" \
+    > "$task_dir/register.json"
+else
+  cp "$task_dir/register-base.json" "$task_dir/register.json"
+fi
 
 if [[ "$release_kind" == "unified-template-subtitles" ]]; then
   validate_unified_contract \
@@ -214,6 +323,9 @@ if [[ "$release_kind" == "unified-template-subtitles" ]]; then
     "$candidate_vcpus" \
     "$candidate_ffmpeg_threads" \
     "${repository_uri}@${image_digest}"
+  matches_unified_ingestion_contract \
+    "$task_dir/register.json" \
+    "$task_dir/ingestion-template.json"
 fi
 
 registered_arn="$(
@@ -236,5 +348,8 @@ if [[ "$release_kind" == "unified-template-subtitles" ]]; then
     "$candidate_vcpus" \
     "$candidate_ffmpeg_threads" \
     "${repository_uri}@${image_digest}"
+  matches_unified_ingestion_contract \
+    "$task_dir/registered.json" \
+    "$task_dir/ingestion-template.json"
 fi
 emit_definition_arn "$registered_arn"

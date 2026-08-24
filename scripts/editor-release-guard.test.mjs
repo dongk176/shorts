@@ -167,6 +167,10 @@ test("release workflow promotes one tested digest without deploying the website"
     workflow,
     /register-editor-release-job\.sh \\\s+unified-template-subtitles \\\s+"\$UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION"/,
   );
+  assert.match(
+    workflow,
+    /release\.targets\.subtitleTemplates\.jobDefinitionArn/,
+  );
   assert.match(workflow, /editor-release-probe/);
   assert.match(workflow, /make verify/);
   assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_URL/);
@@ -219,6 +223,8 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(registrar, /unified-template-subtitles\)/);
   assert.match(registrar, /shorts-mvp-project-heavy-fargate-production/);
   assert.match(registrar, /INGESTION_PROXY_ROUTES_JSON/);
+  assert.match(registrar, /YOUTUBE_PO_TOKEN_ENABLED/);
+  assert.match(registrar, /trusted ingestion Job Definition/);
   assert.match(registrar, /ephemeralStorage\.sizeInGiB == 30/);
   assert.match(registrar, /attemptDurationSeconds == 7200/);
   assert.match(
