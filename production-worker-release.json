@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "environment": "production",
+  "workerSourceGitSha": "f8623974c7528ce9142af63d8f4d925df55f2641",
+  "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:2e8685bf5324645f9133dafeabecb06352c6a205c1e11f36cbf4d55844e53840",
+  "imageDigest": "sha256:2e8685bf5324645f9133dafeabecb06352c6a205c1e11f36cbf4d55844e53840",
+  "ingestionAttemptBudget": 20,
+  "batchRetryAttempts": 1,
+  "targets": {
+    "legacyProject": {
+      "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-project-heavy-pot-f862397-production:1",
+      "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-project-fargate-production"
+    },
+    "sourceRange": {
+      "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-source-range-pot-f862397-production:1",
+      "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-source-range-production"
+    },
+    "elevenLabsTranscription": {
+      "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-elevenlabs-pot-f862397-production:1",
+      "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-elevenlabs-transcription-canary-production"
+    },
+    "subtitleTemplates": {
+      "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-subtitle-pot-f862397-production:1",
+      "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-elevenlabs-transcription-canary-production"
+    }
+  }
+}

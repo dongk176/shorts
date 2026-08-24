@@ -1,0 +1,77 @@
+import type { Metadata } from "next";
+import { getBillingSummary } from "@/lib/billing";
+import { getDb } from "@/lib/db";
+import { billingSupportsPopularFilters } from "@/lib/popular-entitlements";
+import { authProfile } from "@/lib/session";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
+import { createPageMetadata } from "@/lib/seo";
+import { PopularPageShell } from "./popular-page-shell";
+
+export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = createPageMetadata({
+  title: "유튜브 실시간 인기 영상·쇼츠 소재 찾기 | 이지컷",
+  description: "지금 떠오르는 유튜브 인기 영상을 확인하고 재사용, 길이, 카테고리별로 쇼츠 소재를 찾아보세요.",
+  path: "/popular",
+});
+
+export default async function PopularVideosPage() {
+  const user = await getAuthenticatedUser();
+  let canUseFilters = false;
+  if (user) {
+    try {
+      const db = getDb();
+      const appUserRows = await db`
+        select account.id,(
+          (
+            account.manual_service_access_until > clock_timestamp()
+            and not exists (
+              select 1
+              from shorts_mvp.managed_login_accounts managed
+              where managed.app_user_id=account.id
+            )
+          )
+          or exists (
+            select 1
+            from shorts_mvp.managed_login_accounts managed
+            where managed.app_user_id=account.id
+              and managed.is_active=true
+              and managed.popular_filter_enabled=true
+          )
+        ) as has_direct_popular_filter_access,
+        (
+          select managed.popular_filter_enabled
+          from shorts_mvp.managed_login_accounts managed
+          where managed.app_user_id=account.id and managed.is_active=true
+          limit 1
+        ) as managed_popular_filter_override
+        from shorts_mvp.app_users account
+        where account.auth_user_id=${user.id}
+        limit 1
+      `;
+      const appUserId = typeof appUserRows[0]?.id === "string"
+        ? appUserRows[0].id
+        : null;
+      if (appUserId) {
+        canUseFilters = billingSupportsPopularFilters(
+          await getBillingSummary(db, appUserId),
+          Boolean(appUserRows[0]?.hasDirectPopularFilterAccess),
+          appUserRows[0]?.managedPopularFilterOverride === null
+            || appUserRows[0]?.managedPopularFilterOverride === undefined
+            ? null
+            : Boolean(appUserRows[0].managedPopularFilterOverride),
+        );
+      }
+    } catch (error) {
+      console.error("popular_filter_access_load_failed", {
+        errorName: error instanceof Error ? error.name : "UnknownError",
+      });
+    }
+  }
+  return (
+    <PopularPageShell
+      user={user ? authProfile(user) : null}
+      canUseFilters={canUseFilters}
+    />
+  );
+}

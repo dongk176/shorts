@@ -1,0 +1,19 @@
+{
+  "name": "shorts-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix web run dev",
+    "lint": "npm --prefix web run lint && worker/.venv/bin/ruff check worker infra/aws/lambda",
+    "typecheck": "npm --prefix web run typecheck",
+    "test": "node --test scripts/*.test.mjs && npm --prefix web run test && npm --prefix web run typecheck && worker/.venv/bin/python -m pytest -q worker/tests",
+    "build": "npm --prefix web run build",
+    "infra:synth": "npm --prefix infra/aws run synth",
+    "infra:setup": "bash scripts/setup-infrastructure.sh",
+    "db:migrate": "bash scripts/apply-supabase.sh",
+    "db:backfill-project-owner": "node scripts/backfill-project-owner.mjs",
+    "db:seed-legacy-card-remediations": "node scripts/seed-legacy-recurring-card-remediations.mjs",
+    "db:test": "node scripts/test-supabase.mjs",
+    "verify": "bash scripts/verify-local.sh"
+  }
+}

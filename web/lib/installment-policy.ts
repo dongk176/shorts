@@ -1,0 +1,1 @@
+export const MANUAL_INSTALLMENT_MAX_MONTHS = 6;

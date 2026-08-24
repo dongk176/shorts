@@ -1,0 +1,27 @@
+.manual-checkout-field-enter {
+  animation: manual-checkout-field-enter .34s cubic-bezier(.2,.8,.2,1) backwards;
+}
+
+@keyframes manual-checkout-field-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 639px) {
+  .manual-checkout-field-enter { animation: none; }
+  .thepayone-payment-content { overscroll-behavior: contain; }
+}
+
+@media (min-width: 640px) {
+  .thepayone-payment-dialog:has([data-card-issuer-trigger][aria-expanded="true"]) {
+    min-height: min(36rem,calc(100dvh - 4rem));
+  }
+
+  .thepayone-payment-dialog:has([data-card-issuer-trigger][aria-expanded="true"]) .thepayone-payment-content {
+    padding-top: 4.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .manual-checkout-field-enter { animation: none; }
+}

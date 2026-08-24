@@ -1,0 +1,38 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+const editorSource = readFileSync(new URL("./template-editor.tsx", import.meta.url), "utf8");
+const librarySource = readFileSync(new URL("./template-library.tsx", import.meta.url), "utf8");
+const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const newPageSource = readFileSync(new URL("./new/page.tsx", import.meta.url), "utf8");
+const previewSource = readFileSync(
+  new URL("../../components/custom-template-canvas-preview.tsx", import.meta.url),
+  "utf8",
+);
+
+describe("unified template subtitle admin canary", () => {
+  it("keeps every new subtitle surface behind the server-authorized canary prop", () => {
+    expect(pageSource).toContain("unifiedSubtitleCanaryEnabled = subtitleTemplateAccess.unifiedEnabled");
+    expect(librarySource).toContain("if (!unifiedSubtitleCanaryEnabled) return []");
+    expect(editorSource).toContain("unifiedSubtitleCanaryEnabled && isTemplateConfigV5(config)");
+    expect(previewSource).toContain("showUnifiedSubtitle && isTemplateConfigV5(config)");
+  });
+
+  it("opens pop and highlight presets in the ordinary personal template editor", () => {
+    expect(librarySource).toContain('id: "subtitle-pop"');
+    expect(librarySource).toContain('id: "subtitle-highlight"');
+    expect(librarySource).toContain("/templates/new?preset=${preset.id}");
+    expect(newPageSource).toContain("createUnifiedSubtitleTemplateConfig(subtitleVariant)");
+    expect(newPageSource).toContain("if (preset && (!subtitleVariant || !unifiedSubtitleCanaryEnabled)) notFound()");
+  });
+
+  it("offers the agreed saveable subtitle controls while fixing horizontal position", () => {
+    expect(editorSource).toContain('subtitle: "자막"');
+    expect(editorSource).toContain('aria-label="자막 폰트"');
+    expect(editorSource).toContain('aria-label="후킹 제목 폰트"');
+    expect(editorSource).toContain("max={120}");
+    expect(editorSource).toContain("next.subtitle.x = TEMPLATE_CANVAS.width / 2");
+    expect(editorSource).toContain("next.subtitle.accentColor = color");
+    expect(editorSource).toContain("next.subtitle.visible = !next.subtitle.visible");
+  });
+});

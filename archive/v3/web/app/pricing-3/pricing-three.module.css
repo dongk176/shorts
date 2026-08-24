@@ -1,0 +1,196 @@
+.planSection {
+  margin-top: 0;
+  margin-bottom: 96px;
+}
+
+.multiplierPicker {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.multiplierPicker button {
+  min-width: 96px;
+}
+
+.productGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 88px;
+  align-items: stretch;
+}
+
+.proCard,
+.packageCard {
+  height: 100%;
+}
+
+.popularCard,
+.popularCard:hover {
+  transform: none;
+}
+
+.proCard ul {
+  flex: none;
+}
+
+.productGrid > div {
+  align-items: stretch;
+}
+
+.productGrid ul {
+  margin-bottom: 24px;
+}
+
+.cardCta {
+  margin-top: auto;
+}
+
+.packageCard li strong {
+  color: #f1f3f3;
+  font-weight: 850;
+}
+
+.totalPrice {
+  margin-top: 26px;
+}
+
+.planFootnote {
+  margin-top: 24px;
+  color: var(--pricing-muted);
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.beforePurchase {
+  margin-bottom: 96px;
+}
+
+:global(.app-shell .pricing-main) > section.beforePurchase {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.noticeGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.noticeGrid article {
+  position: relative;
+  overflow: hidden;
+  min-height: 250px;
+  border: 1px solid var(--pricing-border);
+  border-radius: 22px;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(255, 113, 94, .09), transparent 42%),
+    rgba(25, 28, 30, .67);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .16);
+}
+
+.noticeGrid article:nth-child(3) {
+  background:
+    radial-gradient(circle at 100% 0, rgba(160, 120, 255, .12), transparent 42%),
+    rgba(25, 28, 30, .67);
+}
+
+.noticeGrid article > span {
+  color: #ff8f80;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .14em;
+}
+
+.noticeGrid article:nth-child(3) > span {
+  color: var(--pricing-purple-soft);
+}
+
+.noticeGrid h3 {
+  margin-top: 18px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -.025em;
+}
+
+.noticeGrid p {
+  margin-top: 14px;
+  color: #9a9ea0;
+  font-size: 12px;
+  line-height: 1.75;
+}
+
+.noticeGrid a {
+  display: inline-flex;
+  margin-top: 20px;
+  color: #ff9b8d;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.legalNote {
+  margin-top: 20px;
+  border: 1px solid rgba(255, 197, 96, .16);
+  border-radius: 14px;
+  padding: 13px 16px;
+  color: #d6c39c;
+  background: rgba(255, 197, 96, .045);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.7;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .productGrid {
+    grid-template-columns: 1fr;
+    max-width: 520px;
+    margin: 0 auto;
+    gap: 72px;
+  }
+
+  .productGrid :global(.pricing-card) {
+    min-height: 0;
+  }
+
+  .productGrid > :global(.pricing-card) {
+    order: 1;
+  }
+
+  .noticeGrid {
+    grid-template-columns: 1fr;
+    max-width: 520px;
+    margin: 0 auto;
+  }
+
+  .noticeGrid article {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .planSection {
+    margin-top: 0;
+    margin-bottom: 72px;
+  }
+
+  .multiplierPicker {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .multiplierPicker button {
+    min-width: 0;
+  }
+
+  .beforePurchase {
+    margin-bottom: 72px;
+  }
+}

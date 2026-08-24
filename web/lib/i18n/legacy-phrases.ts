@@ -1,0 +1,1266 @@
+import type { SiteLocale } from "./config";
+
+type Phrase = readonly [ko: string, en: string, ja: string];
+
+// Legacy page copy is kept here while the product moves to semantic message keys.
+// User-provided and generated content is intentionally excluded from this table.
+const phrases: readonly Phrase[] = [
+  ["AI 쇼츠 자동 제작 | 유튜브 링크로 숏폼 만들기 - 이지컷", "AI Shorts Maker | Turn YouTube Links into Short Videos - Easy Cut", "AIショート動画自動作成 | YouTubeリンクからショート動画へ - Easy Cut"],
+  ["AI 쇼츠 제작 요금제·가격 | 이지컷", "AI Shorts Pricing & Plans | Easy Cut", "AIショート動画の料金・プラン | Easy Cut"],
+  ["AI 쇼츠 템플릿 라이브러리 | 이지컷", "AI Shorts Template Library | Easy Cut", "AIショート動画テンプレートライブラリ | Easy Cut"],
+  ["유튜브 실시간 인기 영상·쇼츠 소재 찾기 | 이지컷", "Trending YouTube Videos & Shorts Ideas | Easy Cut", "YouTubeリアルタイム人気動画・ショート素材 | Easy Cut"],
+  ["AI 쇼츠 제작 자주 묻는 질문 | 이지컷", "AI Shorts FAQ | Easy Cut", "AIショート動画作成 よくある質問 | Easy Cut"],
+  ["AI 쇼츠 만들기: 유튜브 영상으로 쇼츠 자동 제작 | 이지컷", "Create AI Shorts from YouTube Videos | Easy Cut", "YouTube動画からAIショート動画を自動作成 | Easy Cut"],
+  ["AI 쇼츠 제작 툴 비교: 이지컷·알파컷·피카클립", "AI Shorts Tool Comparison: Easy Cut, AlphaCut & FikaClip", "AIショート動画ツール比較：Easy Cut・AlphaCut・FikaClip"],
+  ["어떤 영상을 쇼츠로 만들어야 할까? | 이지컷 가이드북", "Which Videos Should You Turn into Shorts? | Easy Cut Guidebook", "どんな動画をショート動画にするべき？ | Easy Cutガイドブック"],
+  ["유료서비스 구매약관 | Easy Cut", "Purchase Terms | Easy Cut", "有料サービス購入規約 | Easy Cut"],
+  ["EASYCUT PRIVATE | 이지컷", "EASYCUT PRIVATE | Easy Cut", "EASYCUT PRIVATE | Easy Cut"],
+  ["레퍼럴 파트너 운영 약관 | 이지컷", "Referral Partner Terms | Easy Cut", "紹介パートナー運営規約 | Easy Cut"],
+  ["결제 실패 | 이지컷", "Payment Failed | Easy Cut", "決済失敗 | Easy Cut"],
+  ["이용약관 | 이지컷", "Terms of Service | Easy Cut", "利用規約 | Easy Cut"],
+  ["개인정보처리방침 | 이지컷", "Privacy Policy | Easy Cut", "プライバシーポリシー | Easy Cut"],
+  ["취소 및 환불 정책 | 이지컷", "Cancellation & Refund Policy | Easy Cut", "キャンセル・返金ポリシー | Easy Cut"],
+  ["고객센터·사업자 정보 | 이지컷", "Support & Business Information | Easy Cut", "サポート・事業者情報 | Easy Cut"],
+  ["내 프로젝트", "My projects", "マイプロジェクト"],
+  ["만든 쇼츠와 현재 처리 상태를 한곳에서 확인할 수 있습니다.", "View your Shorts and their current processing status in one place.", "作成したショート動画と現在の処理状況をまとめて確認できます。"],
+  ["새 쇼츠 만들기", "Create new Shorts", "新しいショート動画を作成"],
+  ["로그인하고 내 프로젝트도 확인하세요", "Log in to view your projects", "ログインしてプロジェクトを確認"],
+  ["아래 예시 작업은 바로 둘러볼 수 있고, 로그인하면 직접 만든 프로젝트도 함께 관리할 수 있습니다.", "Browse the examples below now, or log in to manage your own projects.", "下のサンプルはすぐに閲覧できます。ログインすると自分のプロジェクトも管理できます。"],
+  ["로그인하기", "Log in", "ログイン"],
+  ["전체 프로젝트", "All projects", "すべてのプロジェクト"],
+  ["예시 작업", "Examples", "サンプル"],
+  ["아직 만든 프로젝트가 없어요", "You haven't created a project yet", "まだプロジェクトがありません"],
+  ["유튜브 링크 하나로 첫 쇼츠 프로젝트를 만들어 보세요.", "Create your first Shorts project with one YouTube link.", "YouTubeリンクひとつで最初のショート動画を作成しましょう。"],
+  ["첫 프로젝트 만들기", "Create first project", "最初のプロジェクトを作成"],
+  ["공개된 예시 작업을 준비하고 있습니다.", "Public examples are being prepared.", "公開サンプルを準備しています。"],
+  ["프로젝트로 돌아가기", "Back to projects", "プロジェクトに戻る"],
+  ["프로젝트를 불러오는 중입니다.", "Loading project.", "プロジェクトを読み込んでいます。"],
+  ["프로젝트를 불러오지 못했습니다.", "Could not load the project.", "プロジェクトを読み込めませんでした。"],
+  ["프로젝트를 찾을 수 없습니다.", "Project not found.", "プロジェクトが見つかりません。"],
+  ["프로젝트 목록", "Project list", "プロジェクト一覧"],
+  ["처리 중", "Processing", "処理中"],
+  ["처리 중...", "Processing...", "処理中..."],
+  ["작업을 시작하고 있습니다", "Starting the job", "処理を開始しています"],
+  ["준비 중...", "Preparing...", "準備中..."],
+  ["완료", "Complete", "完了"],
+  ["생성 실패", "Creation failed", "作成に失敗"],
+  ["만료됨", "Expired", "期限切れ"],
+  ["수정 반영 중", "Applying edits", "編集を反映中"],
+  ["편집하기", "Edit", "編集"],
+  ["다운로드", "Download", "ダウンロード"],
+  ["모든 쇼츠 다운로드", "Download all Shorts", "すべてのショート動画をダウンロード"],
+  ["다시 실행", "Run again", "再実行"],
+  ["작업 상태 확인 실패", "Could not check job status", "処理状況を確認できませんでした"],
+  ["작업 생성 실패", "Could not create the job", "処理を作成できませんでした"],
+
+  ["템플릿 라이브러리", "Template library", "テンプレートライブラリ"],
+  ["템플릿 검색", "Search templates", "テンプレートを検索"],
+  ["전체 템플릿 보기", "View all templates", "すべてのテンプレートを見る"],
+  ["전체", "All", "すべて"],
+  ["기본", "Default", "基本"],
+  ["내가 저장한 템플릿", "My saved templates", "保存したテンプレート"],
+  ["나의 템플릿", "My templates", "マイテンプレート"],
+  ["내 템플릿", "My template", "マイテンプレート"],
+  ["커스텀 템플릿", "Custom template", "カスタムテンプレート"],
+  ["새 템플릿 만들기", "Create template", "テンプレートを作成"],
+  ["템플릿 편집", "Edit template", "テンプレートを編集"],
+  ["템플릿 이름", "Template name", "テンプレート名"],
+  ["템플릿 이름을 입력해 주세요.", "Enter a template name.", "テンプレート名を入力してください。"],
+  ["템플릿 저장", "Save template", "テンプレートを保存"],
+  ["저장 중...", "Saving...", "保存中..."],
+  ["저장됨", "Saved", "保存済み"],
+  ["템플릿을 저장했습니다. 홈의 템플릿 선택에서도 바로 사용할 수 있습니다.", "Template saved. It is now available from the template picker on Home.", "テンプレートを保存しました。ホームのテンプレート選択ですぐに使用できます。"],
+  ["템플릿을 저장하지 못했습니다.", "Could not save the template.", "テンプレートを保存できませんでした。"],
+  ["템플릿을 불러오지 못했습니다.", "Could not load templates.", "テンプレートを読み込めませんでした。"],
+  ["검색 결과가 없습니다.", "No results found.", "検索結果がありません。"],
+  ["자주 쓰는 템플릿", "Favorite templates", "よく使うテンプレート"],
+  ["자주 쓰는 템플릿으로 저장", "Add to favorites", "よく使うテンプレートに追加"],
+  ["자주 쓰는 템플릿에서 해제", "Remove from favorites", "よく使うテンプレートから削除"],
+  ["자주 쓰는 템플릿에 등록되었습니다.", "Added to favorites.", "よく使うテンプレートに追加しました。"],
+  ["자주 쓰는 템플릿에서 해제되었습니다.", "Removed from favorites.", "よく使うテンプレートから削除しました。"],
+  ["자주 쓰는 템플릿은 최대 4개까지 등록할 수 있습니다.", "You can save up to four favorite templates.", "よく使うテンプレートは最大4件まで登録できます。"],
+  ["자주 쓰는 템플릿을 저장하지 못했습니다.", "Could not update favorite templates.", "よく使うテンプレートを保存できませんでした。"],
+  ["저장한 커스텀 템플릿은 STANDARD·PRO 플랜에서 사용할 수 있어요.", "Saved custom templates are available on STANDARD and PRO plans.", "保存したカスタムテンプレートはSTANDARD・PROプランで利用できます。"],
+  ["요금제 보기", "View pricing", "料金プランを見る"],
+  ["템플릿 편집은 데스크톱에서 이용해 주세요", "Please edit templates on desktop", "テンプレート編集はデスクトップでご利用ください"],
+  ["1024px 이상의 화면에서 위치 이동과 크기 조절을 정확하게 사용할 수 있습니다.", "Use a screen at least 1024px wide for precise positioning and resizing.", "位置移動とサイズ調整には1024px以上の画面をご利用ください。"],
+  ["라이브러리", "Library", "ライブラリ"],
+  ["미리보기", "Preview", "プレビュー"],
+  ["제목 스타일", "Title style", "タイトルスタイル"],
+  ["제목 글자 크기", "Title size", "タイトルサイズ"],
+  ["글자 크기", "Text size", "文字サイズ"],
+  ["글자색", "Text color", "文字色"],
+  ["텍스트 배경색", "Text background", "テキスト背景色"],
+  ["화면 비율", "Aspect ratio", "アスペクト比"],
+  ["채널 이름", "Channel name", "チャンネル名"],
+  ["채널명 스타일", "Channel style", "チャンネル名スタイル"],
+  ["댓글 추가", "Add comment", "コメントを追加"],
+  ["자동 자막 표시", "Show automatic captions", "自動字幕を表示"],
+  ["켜짐", "On", "オン"],
+  ["꺼짐", "Off", "オフ"],
+
+  ["실시간 인기", "Trending now", "リアルタイム人気"],
+  ["지금 떠오르는 영상을 놓치지 마세요.", "Don't miss the videos trending right now.", "今注目されている動画を見逃さないでください。"],
+  ["활성 구독 또는 기간 패키지로 원하는 영상만 빠르게 찾아보세요.", "Use an active subscription or term package to quickly find the right videos.", "有効なサブスクリプションまたは期間パッケージで、目的の動画をすばやく見つけましょう。"],
+  ["필터", "Filters", "フィルター"],
+  ["활성 이용권 전용", "Active plan only", "有効なプラン限定"],
+  ["실시간 인기 필터 이용 안내", "Trending filter access", "リアルタイム人気フィルターのご案内"],
+  ["해당 기능은 구독 또는 기간 패키지가 활성화되어 있을 때 사용할 수 있어요.", "This feature is available while a subscription or term package is active.", "この機能は、サブスクリプションまたは期間パッケージが有効な場合に利用できます。"],
+  ["해당 기능은 로그인 후 구독 또는 기간 패키지가 활성화되어 있을 때 사용할 수 있어요.", "Sign in and activate a subscription or term package to use this feature.", "ログイン後、サブスクリプションまたは期間パッケージが有効な場合に利用できます。"],
+  ["인기 영상을 불러오는 중", "Loading trending videos", "人気動画を読み込み中"],
+  ["인기 영상을 불러오지 못했습니다", "Could not load trending videos", "人気動画を読み込めませんでした"],
+  ["인기 영상 필터", "Trending video filters", "人気動画フィルター"],
+  ["인기 기준", "Ranking", "人気基準"],
+  ["조회수 상위", "Most viewed", "再生回数順"],
+  ["카테고리", "Category", "カテゴリー"],
+  ["언어", "Language", "言語"],
+  ["영상 길이", "Video length", "動画の長さ"],
+  ["재사용 허용", "Reuse allowed", "再利用可"],
+  ["재사용 허용 영상만 보기", "Show reusable videos only", "再利用可能な動画のみ表示"],
+  ["조건에 맞는 영상이 없습니다", "No videos match these filters", "条件に一致する動画がありません"],
+  ["인기 기준, 언어, 카테고리, 영상 길이 또는 재사용 허용 조건을 변경해 보세요.", "Try changing the ranking, language, category, duration, or reuse filter.", "人気基準、言語、カテゴリー、動画の長さ、再利用条件を変更してみてください。"],
+  ["추가 영상 불러오는 중...", "Loading more videos...", "さらに動画を読み込み中..."],
+  ["추가 영상을 불러오지 못했습니다.", "Could not load more videos.", "追加の動画を読み込めませんでした。"],
+  ["조회수", "Views", "再生回数"],
+  ["게시일", "Published", "公開日"],
+  ["전체 보기", "View all", "すべて見る"],
+
+  ["나에게 맞는 요금제를 선택해 보세요.", "Choose the plan that fits you.", "自分に合ったプランを選びましょう。"],
+  ["내게 맞는 플랜을 선택하세요", "Choose the right plan for you", "自分に合うプランを選択"],
+  ["가장 많이 선택", "Most popular", "一番人気"],
+  ["가장 인기 있는 플랜", "Most popular plan", "最も人気のプラン"],
+  ["월간", "Monthly", "月間"],
+  ["연간", "Annual", "年間"],
+  ["월 결제", "Monthly billing", "月払い"],
+  ["연 결제", "Annual billing", "年払い"],
+  ["현재 플랜", "Current plan", "現在のプラン"],
+  ["지금 시작하기", "Get started", "今すぐ始める"],
+  ["플랜 업그레이드가 필요해요", "Plan upgrade required", "プランのアップグレードが必要です"],
+  ["플랜 한눈에 보기", "Plans at a glance", "プラン比較"],
+  ["기능·제공량 비교표", "Feature and allowance comparison", "機能・提供量の比較"],
+  ["처리시간", "Processing time", "処理時間"],
+  ["프로젝트 보관", "Project retention", "プロジェクト保存期間"],
+  ["동시 작업", "Concurrent jobs", "同時処理"],
+  ["추가 처리시간", "Additional processing time", "追加処理時間"],
+  ["추가 시간 구매", "Buy additional time", "追加時間を購入"],
+  ["활성 구독자만 구매 가능", "Available to active subscribers", "有効な登録者のみ購入可能"],
+  ["구독 관리", "Manage subscription", "サブスクリプション管理"],
+  ["결제 주기", "Billing cycle", "請求サイクル"],
+  ["다음 결제일", "Next payment", "次回支払日"],
+  ["결제 카드", "Payment card", "支払いカード"],
+  ["결제수단 변경", "Change payment method", "支払い方法を変更"],
+  ["기간 말에 해지", "Cancel at period end", "期間終了時に解約"],
+  ["해지 예약 취소", "Undo scheduled cancellation", "解約予約を取り消す"],
+  ["다음 갱신 때 변경", "Change at next renewal", "次回更新時に変更"],
+  ["다음 결제일부터 새 플랜이 적용됩니다.", "The new plan starts on your next billing date.", "次回の支払日から新しいプランが適用されます。"],
+  ["결제 화면을 준비하고 있습니다...", "Preparing checkout...", "決済画面を準備しています..."],
+  ["결제 결과를 확인하고 있습니다...", "Checking payment result...", "決済結果を確認しています..."],
+  ["결제 완료", "Payment complete", "支払い完了"],
+  ["결제 실패", "Payment failed", "支払い失敗"],
+  ["결제가 완료되었습니다", "Payment completed", "支払いが完了しました"],
+  ["결제가 취소되었습니다", "Payment canceled", "支払いがキャンセルされました"],
+  ["결제를 완료하지 못했습니다", "Could not complete payment", "支払いを完了できませんでした"],
+  ["Easy Cut으로 이동", "Go to Easy Cut", "Easy Cutへ移動"],
+  ["다시 로그인하고 이동", "Log in again and continue", "再ログインして続行"],
+  ["가격 페이지로 돌아가기", "Back to pricing", "料金ページに戻る"],
+  ["취소하고 가격 페이지로 돌아가기", "Cancel and return to pricing", "キャンセルして料金ページに戻る"],
+  ["구독 결제 카드 등록", "Register subscription card", "サブスクリプションカード登録"],
+  ["정기결제 카드 변경", "Change recurring payment card", "定期支払いカードを変更"],
+  ["이름", "Name", "氏名"],
+  ["이메일", "Email", "メール"],
+  ["휴대전화", "Phone", "携帯電話"],
+  ["카드번호 16자리", "16-digit card number", "16桁のカード番号"],
+  ["유효기간 월", "Expiry month", "有効期限（月）"],
+  ["유효기간 연도", "Expiry year", "有効期限（年）"],
+  ["생년월일 / 사업자번호", "Date of birth / business number", "生年月日／事業者番号"],
+  ["비밀번호 앞 2자리", "First 2 digits of card PIN", "カード暗証番号の先頭2桁"],
+  ["나이스페이 처리 중...", "Processing with NICEPAY...", "NICEPAYで処理中..."],
+  ["빌링키 발급 후 구독 시작", "Issue billing key and subscribe", "請求キーを発行して登録"],
+  ["새 카드로 변경", "Use new card", "新しいカードに変更"],
+
+  ["AI 쇼츠 제작", "AI Shorts creation", "AIショート動画作成"],
+  ["자주 묻는 질문", "Frequently asked questions", "よくある質問"],
+  ["더 확인하고 싶은 내용이 있나요?", "Want to learn more?", "さらに確認したいことはありますか？"],
+  ["AI 쇼츠 툴 비교", "Compare AI Shorts tools", "AIショート動画ツールを比較"],
+  ["고객센터", "Customer support", "カスタマーサポート"],
+  ["고객 지원", "Customer support", "カスタマーサポート"],
+  ["서비스 이용, 결제, 개인정보 및 계정 관련 문의를 아래 연락처로 보내주세요.", "Contact us below with questions about the service, payments, privacy, or your account.", "サービス、支払い、プライバシー、アカウントに関するお問い合わせは下記までお送りください。"],
+  ["평일 14:00 ~ 19:00", "Weekdays 14:00–19:00 KST", "平日 14:00〜19:00（KST）"],
+  ["주말과 공휴일에 접수된 문의는 다음 영업일 운영시간부터 순차적으로 답변합니다.", "Requests received on weekends or holidays are answered from the next business day.", "週末・祝日に受け付けたお問い合わせは、翌営業日から順次回答します。"],
+  ["다음으로 확인할 내용", "What to explore next", "次に確認する内容"],
+  ["유튜브 영상으로", "Turn YouTube videos into", "YouTube動画から"],
+  ["AI 쇼츠 만드는 방법", "How to create AI Shorts", "AIショート動画を作る方法"],
+  ["유튜브 영상으로 AI 쇼츠 만드는 방법", "How to create AI Shorts from YouTube videos", "YouTube動画からAIショート動画を作る方法"],
+  ["직접 제작했거나 이용 권한을 가진 공개 YouTube 영상의 URL을 붙여 넣습니다.", "Paste the URL of a public YouTube video you created or are authorized to use.", "自分で制作した、または利用権限のある公開YouTube動画のURLを貼り付けます。"],
+  ["AI 하이라이트 분석", "AI highlight analysis", "AIハイライト分析"],
+  ["긴 영상을 처음부터 다시 보지 않아도 핵심 장면을 자동으로 선별합니다.", "AI selects key moments without making you rewatch the entire video.", "長い動画を最初から見直さなくても、重要な場面を自動で選びます。"],
+  ["제목·자막 편집", "Edit titles and captions", "タイトル・字幕編集"],
+  ["자유롭게 편집하고 다운로드", "Edit freely and download", "自由に編集してダウンロード"],
+  ["긴 영상에서 핵심 구간을 찾고 제목, 자막, 비율과 템플릿을 적용해 짧은 숏폼으로 완성하는 과정을 확인하세요.", "See how to find key moments in long videos and turn them into short-form content with titles, captions, aspect ratios, and templates.", "長い動画から重要な場面を見つけ、タイトル・字幕・画面比率・テンプレートを適用してショート動画に仕上げる流れをご覧ください。"],
+  ["유튜브 영상을 AI 쇼츠로 만드는 방법", "How to turn YouTube videos into AI Shorts", "YouTube動画をAIショート動画にする方法"],
+  ["복잡한 영상 편집 타임라인 없이 링크 입력부터 쇼츠 완성까지 세 단계로 진행합니다.", "Go from pasting a link to finished Shorts in three steps, without a complicated editing timeline.", "複雑な編集タイムラインを使わず、リンク入力からショート動画の完成まで3ステップで進めます。"],
+  ["유튜브 링크 입력", "Paste a YouTube link", "YouTubeリンクを入力"],
+  ["쇼츠 AI가 영상의 맥락과 몰입 구간을 분석해 30~60초 후보를 찾습니다.", "The Shorts AI analyzes context and engaging moments to find 30–60 second candidates.", "ショート動画AIが文脈と注目区間を分析し、30〜60秒の候補を見つけます。"],
+  ["편집하고 다운로드", "Edit and download", "編集してダウンロード"],
+  ["후킹 제목, 자막, 화면 비율과 템플릿을 확인하고 완성된 쇼츠를 내려받습니다.", "Review the hook title, captions, aspect ratio, and template, then download the finished Shorts.", "フックタイトル、字幕、画面比率、テンプレートを確認し、完成したショート動画をダウンロードします。"],
+  ["쇼츠 자동 제작에 필요한 기능을 한곳에", "Everything you need to create Shorts automatically", "ショート動画の自動作成に必要な機能をひとつに"],
+  ["이지컷은 하이라이트 탐색부터 제목, 자막, 비율, 템플릿과 다운로드까지 한 흐름으로 연결합니다.", "Easy Cut connects highlight discovery, titles, captions, aspect ratios, templates, and downloads in one workflow.", "Easy Cutは、ハイライト検出からタイトル、字幕、画面比率、テンプレート、ダウンロードまでをひとつの流れでつなぎます。"],
+  ["AI 하이라이트 추출", "AI highlight extraction", "AIハイライト抽出"],
+  ["30~60초 쇼츠 제작", "Create 30–60 second Shorts", "30〜60秒のショート動画作成"],
+  ["YouTube Shorts, 릴스, 틱톡에 활용하기 좋은 짧은 클립으로 만듭니다.", "Create short clips suited for YouTube Shorts, Reels, and TikTok.", "YouTube Shorts、リール、TikTokに使いやすい短いクリップを作成します。"],
+  ["후킹 제목·자동 자막", "Hook titles and automatic captions", "フックタイトル・自動字幕"],
+  ["영상 맥락에 맞는 제목과 자막 초안을 만들고 결과 화면에서 수정할 수 있습니다.", "Generate title and caption drafts that fit the video's context, then edit them on the results screen.", "動画の文脈に合うタイトルと字幕の下書きを作成し、結果画面で編集できます。"],
+  ["5가지 화면 비율", "5 aspect ratios", "5種類の画面比率"],
+  ["16:9, 5:4, 1:1, 4:5, 9:16 비율 중 콘텐츠에 맞는 화면을 선택합니다.", "Choose the aspect ratio that fits your content: 16:9, 5:4, 1:1, 4:5, or 9:16.", "16:9、5:4、1:1、4:5、9:16からコンテンツに合う画面比率を選べます。"],
+  ["4가지 쇼츠 템플릿", "4 Shorts templates", "4種類のショート動画テンプレート"],
+  ["다크 레드, 화이트 옐로, 다크 미니멀, 페이퍼 스타일을 제공합니다.", "Choose from Dark Red, White Yellow, Dark Minimal, and Paper styles.", "ダークレッド、ホワイトイエロー、ダークミニマル、ペーパースタイルを用意しています。"],
+  ["8개 제목 언어", "8 title languages", "8言語のタイトル"],
+  ["한국어·영어·일본어·중국어·스페인어·프랑스어·독일어·포르투갈어 제목을 지원합니다.", "Generate titles in Korean, English, Japanese, Chinese, Spanish, French, German, and Portuguese.", "韓国語、英語、日本語、中国語、スペイン語、フランス語、ドイツ語、ポルトガル語のタイトルに対応しています。"],
+  ["하나의 롱폼을 여러 숏폼 콘텐츠로", "Turn one long-form video into multiple short-form clips", "1本の長尺動画から複数のショートコンテンツへ"],
+  ["요금제 확인하기 →", "View pricing →", "料金プランを確認 →"],
+  ["인터뷰·대담", "Interviews and conversations", "インタビュー・対談"],
+  ["핵심 답변과 인상적인 발언을 짧은 쇼츠로 재활용하세요.", "Repurpose key answers and memorable remarks into short clips.", "重要な回答や印象的な発言を短いショート動画として再活用できます。"],
+  ["강의·교육", "Lectures and education", "講義・教育"],
+  ["긴 설명에서 바로 써볼 수 있는 지식과 팁을 짧게 전달하세요.", "Share practical knowledge and tips from long explanations in a concise format.", "長い説明から、すぐに使える知識やヒントを短く届けられます。"],
+  ["팟캐스트", "Podcasts", "ポッドキャスト"],
+  ["대화의 흐름을 살린 하이라이트로 새로운 시청자를 만나세요.", "Reach new viewers with highlights that preserve the flow of the conversation.", "会話の流れを活かしたハイライトで新しい視聴者に届けられます。"],
+  ["정보 콘텐츠", "Informational content", "情報コンテンツ"],
+  ["뉴스, 리뷰, 노하우 영상의 핵심 내용을 여러 개의 숏폼으로 확장하세요.", "Expand key points from news, reviews, and how-to videos into multiple short-form clips.", "ニュース、レビュー、ノウハウ動画の要点を複数のショートコンテンツに展開できます。"],
+  ["서비스 이용에 관한 답변과 AI 쇼츠 제작 도구별 차이도 별도 페이지에서 확인할 수 있습니다.", "You can also find answers about the service and compare AI Shorts tools on separate pages.", "サービスに関する回答やAIショート動画ツールの違いも、各ページで確認できます。"],
+
+  ["AI 쇼츠 제작 툴 비교", "AI Shorts tool comparison", "AIショート動画ツール比較"],
+  ["롱폼 영상을 짧은 쇼츠로 바꾸는 서비스마다 잘 맞는 제작 방식이 다릅니다. 이 페이지는 우열을 정하기보다 각 서비스의 공식 공개정보와 선택 기준을 같은 항목으로 정리합니다.", "Each service for turning long-form videos into Shorts fits a different workflow. This page organizes official public information and selection criteria by the same categories, rather than ranking the services.", "長尺動画をショート動画に変換するサービスには、それぞれ得意な制作方法があります。このページでは優劣ではなく、各サービスの公式公開情報と選択基準を同じ項目で整理します。"],
+  ["공개정보 최종 확인일: 2026년 7월 26일", "Public information last reviewed: July 26, 2026", "公開情報の最終確認日：2026年7月26日"],
+  ["서비스별로 잘 맞는 활용 방식", "Best-fit workflows by service", "サービス別に適した活用方法"],
+  ["이지컷(Easy Cut)", "Easy Cut", "Easy Cut"],
+  ["YouTube URL 중심의 간단한 흐름, 5가지 비율, 8개 제목 언어와 상품별 동시 작업 수가 필요한 경우 잘 맞습니다.", "A good fit when you want a simple YouTube URL workflow, five aspect ratios, titles in eight languages, and plan-based concurrent jobs.", "YouTube URL中心のシンプルな流れ、5種類の画面比率、8言語のタイトル、プラン別の同時処理数が必要な場合に適しています。"],
+  ["알파컷(AlphaCut)", "AlphaCut", "AlphaCut"],
+  ["YouTube 링크와 파일 업로드, 무음 구간 제거·화자 트래킹 등 공식 안내 기능이 필요한 경우 잘 맞습니다.", "A good fit when you need officially listed features such as YouTube links, file uploads, silence removal, and speaker tracking.", "YouTubeリンク、ファイルアップロード、無音区間の削除、話者トラッキングなど、公式に案内されている機能が必要な場合に適しています。"],
+  ["피카클립(FikaClip)", "FikaClip", "FikaClip"],
+  ["원본 분량보다 월 숏폼 제작 횟수 중심으로 플랜을 비교하고, 영상 업로드 정보까지 함께 확인하려는 경우 잘 맞습니다.", "A good fit when you compare plans by monthly short-form output rather than source duration and also want video upload information.", "元動画の長さではなく月間のショート動画作成回数を中心にプランを比較し、動画アップロード情報も確認したい場合に適しています。"],
+  ["이지컷 리뉴얼 요금제", "Updated Easy Cut pricing", "Easy Cutの新料金プラン"],
+  ["전체 요금제 보기 →", "View all plans →", "すべての料金プランを見る →"],
+  ["월간 구독과 3·6·12개월 패키지 중 제작량과 이용기간에 맞춰 선택할 수 있습니다.", "Choose a monthly subscription or a 3-, 6-, or 12-month package based on your production volume and usage period.", "制作量と利用期間に合わせて、月額サブスクリプションまたは3・6・12か月パッケージを選べます。"],
+  ["월 9,900원 · 매월 자동결제", "KRW 9,900/month · Auto-renews monthly", "月額9,900ウォン・毎月自動決済"],
+  ["필요한 기간만 월 단위로 시작할 수 있는 구독 상품입니다.", "A subscription you can start monthly for only as long as you need.", "必要な期間だけ月単位で始められるサブスクリプションです。"],
+  ["꾸준히 쇼츠를 제작하는 크리에이터를 위한 기간 패키지입니다.", "A term package for creators who produce Shorts consistently.", "継続的にショート動画を制作するクリエイター向けの期間パッケージです。"],
+  ["제작량이 많은 크리에이터와 운영팀을 위한 기간 패키지입니다.", "A term package for high-volume creators and production teams.", "制作量の多いクリエイターや運営チーム向けの期間パッケージです。"],
+  ["패키지는 선택한 기간의 총액을 결제하며, 표시된 월 금액은 비교를 위한 월 환산액입니다.", "Packages are charged in full for the selected term; the monthly amount shown is an equivalent for comparison.", "パッケージは選択期間の総額を支払い、表示される月額は比較用の月換算額です。"],
+  ["활성 이용권 보유자는 얼리버드 추가시간도 선택할 수 있습니다:", "Active-plan users can also choose early-bird additional time:", "有効な利用権をお持ちの方は早割の追加時間も選べます："],
+  [". 각 상품은 계정당 한 번 구매할 수 있고 구매일로부터 90일간 유효합니다.", ". Each product can be purchased once per account and is valid for 90 days from purchase.", "。各商品は1アカウントにつき1回購入でき、購入日から90日間有効です。"],
+  ["가격과 기능은 변경될 수 있으므로 결제 전 공식 페이지를 확인하세요.", "Prices and features may change, so check the official page before purchase.", "価格や機能は変更される場合があるため、購入前に公式ページをご確認ください。"],
+  ["비교 항목", "Comparison", "比較項目"],
+  ["이지컷", "Easy Cut", "Easy Cut"],
+  ["알파컷", "AlphaCut", "AlphaCut"],
+  ["피카클립", "FikaClip", "FikaClip"],
+  ["대표 입력 방식", "Primary input", "主な入力方法"],
+  ["공개 YouTube URL", "Public YouTube URL", "公開YouTube URL"],
+  ["YouTube 링크·파일 업로드", "YouTube link and file upload", "YouTubeリンク・ファイルアップロード"],
+  ["기존 영상 기반", "Existing video", "既存動画ベース"],
+  ["이용량 기준", "Usage unit", "利用量の基準"],
+  ["원본 영상 처리시간", "Source video processing time", "元動画の処理時間"],
+  ["숏폼 제작 횟수", "Short-form output count", "ショート動画の作成回数"],
+  ["공개 플랜 제공량", "Published plan allowance", "公開プランの提供量"],
+  ["월 60·200·600분", "60, 200, or 600 min/month", "月60・200・600分"],
+  ["월 50·150·450분", "50, 150, or 450 min/month", "月50・150・450分"],
+  ["월 5·15·50회", "5, 15, or 50 outputs/month", "月5・15・50回"],
+  ["유료 플랜 월간 결제", "Paid plan monthly price", "有料プランの月額"],
+  ["월 9,900원 또는 기간 패키지", "KRW 9,900/month or term package", "月額9,900ウォンまたは期間パッケージ"],
+  ["월 6,900·19,800·57,900원", "KRW 6,900 / 19,800 / 57,900 per month", "月額6,900・19,800・57,900ウォン"],
+  ["월 6,900·12,900·34,900원", "KRW 6,900 / 12,900 / 34,900 per month", "月額6,900・12,900・34,900ウォン"],
+  ["하이라이트 자동 추출", "Automatic highlight extraction", "ハイライト自動抽出"],
+  ["제목·자막·표시명 수정", "Edit title, captions, and display name", "タイトル・字幕・表示名の編集"],
+  ["제목·길이·비율 조절 안내", "Title, length, and ratio controls", "タイトル・長さ・比率の調整案内"],
+  ["AI 제목 추천·텍스트·자막 편집", "AI title suggestions and text/caption editing", "AIタイトル提案・テキスト・字幕編集"],
+  ["5종: 16:9~9:16", "5 options: 16:9–9:16", "5種類：16:9〜9:16"],
+  ["비율 조절 안내", "Ratio controls", "比率調整の案内"],
+  ["비율·스타일 설정", "Ratio and style settings", "比率・スタイル設定"],
+  ["템플릿", "Templates", "テンプレート"],
+  ["4종", "4 options", "4種類"],
+  ["비디오·채널 스타일 템플릿", "Video and channel style templates", "動画・チャンネルスタイルのテンプレート"],
+  ["전 유료 상품 30일", "30 days on all paid plans", "全有料プランで30日"],
+  ["멤버십 편집 30일 안내", "30-day membership editing period", "メンバーシップ編集30日の案内"],
+  ["공식 페이지에서 최신 정보 확인", "Check the official page for current details", "公式ページで最新情報を確認"],
+  ["상품별 1·2·3개", "1, 2, or 3 by plan", "プラン別に1・2・3件"],
+  ["서비스별 상품과 기능은 수시로 바뀔 수 있습니다. 표에 구체적인 정보가 없는 항목은 미지원이라는 뜻이 아니며, 각 서비스의 공식 페이지에서 최신 내용을 확인해 주세요.", "Plans and features may change at any time. Missing detail in the table does not mean a feature is unsupported; check each service's official page for current information.", "各サービスの商品や機能は随時変更される場合があります。表に具体的な情報がない項目は未対応という意味ではありません。各サービスの公式ページで最新情報をご確認ください。"],
+  ["나에게 맞는 서비스를 고를 때 볼 것", "What to consider when choosing a service", "自分に合うサービスを選ぶポイント"],
+  ["처리시간으로 계획하고 싶다면", "If you plan by processing time", "処理時間で計画したい場合"],
+  ["영상 분량을 기준으로 월 작업량을 계산한다면 원본 처리시간을 제공량으로 표시하는 이지컷과 알파컷을 함께 살펴볼 수 있습니다.", "If you calculate monthly workload by video duration, compare Easy Cut and AlphaCut, which publish allowances in source processing time.", "動画の長さで月間作業量を計算する場合は、元動画の処理時間を提供量として表示するEasy CutとAlphaCutを比較できます。"],
+  ["제작 횟수로 관리하고 싶다면", "If you manage by output count", "作成回数で管理したい場合"],
+  ["매달 필요한 결과 수가 명확하다면 숏폼 제작 횟수를 기준으로 플랜을 안내하는 피카클립이 직관적일 수 있습니다.", "If you know how many outputs you need each month, FikaClip's output-count-based plans may be easier to understand.", "毎月必要な成果物の数が明確なら、ショート動画の作成回数を基準にしたFikaClipのプランが分かりやすい場合があります。"],
+  ["여러 작업을 동시에 돌린다면", "If you run several jobs at once", "複数の処理を同時に進める場合"],
+  ["운영팀이라면 각 서비스의 동시 작업 한도와 프로젝트 보관기간을 공식 페이지에서 함께 확인하는 것이 좋습니다.", "Production teams should compare each service's concurrent-job limits and project retention period on its official page.", "運営チームは、各サービスの同時処理上限とプロジェクト保存期間を公式ページで併せて確認するとよいでしょう。"],
+  ["비교표보다 중요한 실제 테스트", "A real test matters more than a comparison table", "比較表より重要な実際のテスト"],
+  ["같은 한국어 인터뷰나 강의 영상을 각 서비스에 넣고 하이라이트 구간, 자막 수정량, 제작 시간과 결과 개수를 직접 비교하는 것이 가장 정확합니다. 영상 유형과 편집 기준에 따라 결과는 달라질 수 있습니다.", "The most accurate approach is to process the same Korean interview or lecture in each service and compare highlight selection, caption edits, production time, and output count. Results vary by video type and editing criteria.", "同じ韓国語のインタビューや講義動画を各サービスで処理し、ハイライト区間、字幕の修正量、制作時間、成果物数を直接比較するのが最も正確です。結果は動画の種類や編集基準によって異なります。"],
+  ["비교 출처", "Comparison sources", "比較情報の出典"],
+  ["공식 요금제", "Official pricing", "公式料金プラン"],
+  ["공식 홈페이지", "Official website", "公式サイト"],
+  ["공식 서비스 가이드", "Official service guide", "公式サービスガイド"],
+  ["알파컷(AlphaCut)과 피카클립(FikaClip)은 각 소유자의 상표입니다. 이지컷은 두 서비스와 제휴하거나 공식적으로 연관되어 있지 않습니다. 각 서비스에는 서로 다른 강점과 적합한 사용 방식이 있으며, 본 비교는 공개정보를 이해하기 쉽게 정리한 참고 자료입니다. 특정 서비스의 우열이나 동일한 결과를 보장하지 않습니다.", "AlphaCut and FikaClip are trademarks of their respective owners. Easy Cut is not affiliated with or officially connected to either service. Each service has different strengths and use cases; this comparison is a reference summary of public information and does not rank services or guarantee identical results.", "AlphaCutとFikaClipは各所有者の商標です。Easy Cutは両サービスと提携または公式に関係していません。各サービスには異なる強みと適した使い方があり、本比較は公開情報を分かりやすく整理した参考資料です。特定サービスの優劣や同一の結果を保証するものではありません。"],
+  ["내 영상에 맞는지 직접 확인해보세요", "See how it works with your own video", "自分の動画に合うか確認してみましょう"],
+  ["권리를 보유한 YouTube 영상 링크를 입력하면 예상 쇼츠 개수와 템플릿을 확인한 뒤 제작을 시작할 수 있습니다.", "Paste a YouTube link you have rights to, review the estimated number of Shorts and templates, then start creating.", "権利を保有するYouTube動画のリンクを入力し、予想ショート数とテンプレートを確認してから制作を開始できます。"],
+  ["이지컷으로 쇼츠 만들기", "Create Shorts with Easy Cut", "Easy Cutでショート動画を作成"],
+
+  ["요금제로 돌아가기", "Back to pricing", "料金プランに戻る"],
+  ["구독 시작하기", "Start subscription", "サブスクリプションを開始"],
+  ["가격 페이지에서 플랜과 결제 주기를 다시 선택해 주세요.", "Please choose a plan and billing cycle again on the pricing page.", "料金ページでプランと支払い周期をもう一度選択してください。"],
+  ["플랜 다시 선택하기", "Choose a plan again", "プランを選び直す"],
+  ["처리 완료", "Completed", "処理完了"],
+  ["구독이 시작되었습니다. 지금부터 Easy Cut의 모든 플랜 기능을 이용할 수 있습니다.", "Your subscription has started. You can now use all features included in your Easy Cut plan.", "サブスクリプションが開始されました。Easy Cutプランのすべての機能を利用できます。"],
+  ["확인 필요", "Action required", "確認が必要です"],
+  ["카드 정보와 이용 한도를 확인한 뒤 다시 시도해 주세요. 문제가 계속되면 고객센터로 문의해 주세요.", "Check your card details and available limit, then try again. If the issue continues, contact customer support.", "カード情報と利用限度額を確認して、もう一度お試しください。問題が続く場合はカスタマーサポートへお問い合わせください。"],
+  ["다시 결제하기", "Try payment again", "もう一度支払う"],
+  ["고객센터 문의", "Contact support", "サポートに問い合わせる"],
+  ["파트너 로그인", "Partner login", "パートナーログイン"],
+  ["어드민에서 발급받은 아이디와 비밀번호를 입력해 주세요.", "Enter the ID and password issued by the administrator.", "管理者から発行されたIDとパスワードを入力してください。"],
+  ["로그인 아이디", "Login ID", "ログインID"],
+  ["비밀번호", "Password", "パスワード"],
+  ["로그인 중…", "Logging in…", "ログイン中…"],
+  ["로그인", "Log in", "ログイン"],
+  ["로그인에 실패했습니다.", "Login failed.", "ログインに失敗しました。"],
+  ["레퍼럴 파트너 운영 약관", "Referral Partner Terms", "紹介パートナー運営規約"],
+
+  ["이용약관", "Terms of Service", "利用規約"],
+  ["개인정보처리방침", "Privacy Policy", "プライバシーポリシー"],
+  ["취소 및 환불 정책", "Cancellation and Refund Policy", "キャンセル・返金ポリシー"],
+  ["취소 및 환불", "Cancellation & refunds", "キャンセル・返金"],
+  ["시행일", "Effective date", "施行日"],
+  ["목적 및 적용", "Purpose and scope", "目的と適用"],
+  ["계정 및 로그인", "Accounts and login", "アカウントとログイン"],
+  ["서비스 이용 조건", "Service conditions", "サービス利用条件"],
+  ["콘텐츠 권리와 이용자의 책임", "Content rights and user responsibility", "コンテンツ権利と利用者の責任"],
+  ["금지 행위", "Prohibited conduct", "禁止行為"],
+  ["AI 생성 결과", "AI-generated results", "AI生成結果"],
+  ["요금제와 결제", "Plans and payments", "プランと支払い"],
+  ["보관 및 삭제", "Retention and deletion", "保存と削除"],
+  ["서비스의 변경·중단", "Service changes and interruptions", "サービスの変更・中断"],
+  ["이용 제한 및 계약 해지", "Usage restrictions and termination", "利用制限と契約終了"],
+  ["책임의 제한", "Limitation of liability", "責任の制限"],
+  ["개인정보 보호", "Privacy protection", "個人情報保護"],
+  ["준거법 및 분쟁 해결", "Governing law and disputes", "準拠法と紛争解決"],
+  ["목적 및 적용 범위", "Purpose and scope", "目的と適用範囲"],
+  ["용어의 뜻", "Definitions", "用語の定義"],
+  ["상품별 결제 및 제공 기준", "Payment and delivery by product", "商品別の支払い・提供基準"],
+  ["구독 해지 예약과 자동갱신 중단", "Scheduled cancellation and stopping renewal", "解約予約と自動更新の停止"],
+  ["플랜 변경과 결제 실패", "Plan changes and payment failures", "プラン変更と支払い失敗"],
+  ["청약철회와 전액 환불", "Withdrawal and full refunds", "撤回と全額返金"],
+  ["사용 후 중도 해지 및 부분 환불", "Early termination and partial refunds after use", "利用開始後の中途解約・一部返金"],
+  ["청약철회 또는 환불이 제한되는 경우", "When withdrawal or refunds are restricted", "撤回・返金が制限される場合"],
+  ["표시·광고와 다른 제공 또는 서비스 하자", "Service defects or differences from advertised service", "表示・広告との差異またはサービス不備"],
+  ["추가 처리시간의 환불 및 만료", "Refunds and expiry of additional time", "追加処理時間の返金・有効期限"],
+  ["중복 결제·과오금·결제 도용", "Duplicate, mistaken, or unauthorized payments", "重複・過誤・不正利用された支払い"],
+  ["약관 위반과 회사의 계약 해지", "Terms violations and termination by the company", "規約違反と当社による契約終了"],
+  ["환불 신청 방법", "How to request a refund", "返金申請方法"],
+  ["약관의 변경 및 문의", "Changes and inquiries", "規約変更・お問い合わせ"],
+  ["환불 방법과 처리 기간", "Refund method and processing period", "返金方法・処理期間"],
+  ["기록, 입증 및 부정 환불 방지", "Records, evidence, and refund abuse prevention", "記録・立証・不正返金の防止"],
+  ["사업자 정보", "Business information", "事業者情報"],
+  ["정책 변경, 준거 기준 및 분쟁 해결", "Policy changes, governing standards, and disputes", "ポリシー変更・準拠基準・紛争解決"],
+  ["사업자 및 환불 담당자 정보", "Business and refund contact information", "事業者・返金担当者情報"],
+  ["개인정보의 처리 목적", "Purposes of processing personal information", "個人情報の処理目的"],
+  ["처리하는 개인정보 항목", "Personal information processed", "処理する個人情報の項目"],
+  ["개인정보의 처리 및 보유 기간", "Processing and retention period", "個人情報の処理・保有期間"],
+  ["개인정보의 제3자 제공", "Sharing with third parties", "第三者提供"],
+  ["처리업무의 위탁 및 외부 서비스 이용", "Processors and external services", "処理委託・外部サービス利用"],
+  ["AI를 이용한 데이터 처리", "Data processing using AI", "AIを利用したデータ処理"],
+  ["개인정보의 파기 절차 및 방법", "Deletion procedures and methods", "個人情報の破棄手順・方法"],
+  ["쿠키의 사용", "Use of cookies", "Cookieの使用"],
+  ["이용자의 권리와 행사 방법", "User rights and how to exercise them", "利用者の権利と行使方法"],
+  ["개인정보의 안전성 확보 조치", "Security measures", "安全管理措置"],
+  ["만 14세 미만 아동", "Children under 14", "14歳未満の児童"],
+  ["개인정보 보호책임자 및 문의", "Privacy officer and inquiries", "個人情報保護責任者・お問い合わせ"],
+  ["처리방침의 변경", "Policy changes", "ポリシーの変更"],
+  ["청약철회", "Right of withdrawal", "撤回権"],
+  ["중도 해지", "Early termination", "中途解約"],
+  ["환불", "Refund", "返金"],
+  ["환불 문의", "Refund request", "返金に関するお問い合わせ"],
+  ["사업자 정보", "Business information", "事業者情報"],
+  ["대표", "Representative", "代表"],
+  ["전화", "Phone", "電話"],
+  ["주소", "Address", "住所"],
+
+  ["영상 이용 제한 안내", "Video usage restriction", "動画利用制限のお知らせ"],
+  ["이 영상은 이용 제한이 확인된 영상입니다.", "This video has a usage restriction.", "この動画には利用制限があります。"],
+  ["이 영상은 쇼츠로 만들 수 없습니다.", "This video cannot be turned into Shorts.", "この動画からショート動画を作成できません。"],
+  ["생성 불가 사유 보기", "View restriction details", "作成できない理由を見る"],
+  ["동시 작업 한도에 도달했어요", "Concurrent job limit reached", "同時処理の上限に達しました"],
+  ["제목 언어", "Title language", "タイトル言語"],
+  ["중국어(간체)", "Chinese (Simplified)", "中国語（簡体字）"],
+  ["스페인어", "Spanish", "スペイン語"],
+  ["프랑스어", "French", "フランス語"],
+  ["독일어", "German", "ドイツ語"],
+  ["포르투갈어(브라질)", "Portuguese (Brazil)", "ポルトガル語（ブラジル）"],
+  ["원본 영상", "Source video", "元動画"],
+  ["예상 쇼츠", "Estimated Shorts", "予想ショート動画"],
+  ["영상 썸네일", "Video thumbnail", "動画サムネイル"],
+  ["템플릿 선택", "Choose a template", "テンプレートを選択"],
+  ["영상 비율", "Video aspect ratio", "動画のアスペクト比"],
+  ["쇼츠 생성하기", "Create Shorts", "ショート動画を作成"],
+  ["로그인 후 쇼츠 생성하기", "Log in to create Shorts", "ログインしてショート動画を作成"],
+  ["플랜 선택하고 쇼츠 만들기", "Choose a plan to create Shorts", "プランを選んでショート動画を作成"],
+  ["쇼츠 생성 불가", "Shorts unavailable", "ショート動画を作成できません"],
+  ["로그인 확인 중...", "Checking login...", "ログインを確認中..."],
+  ["다시 시도", "Try again", "もう一度試す"],
+  ["내 사용내역 보기", "View my activity", "利用履歴を見る"],
+  ["내 결제·사용 내역", "My payments & usage", "決済・利用履歴"],
+  ["내 결제·사용 내역 | 이지컷", "My payments & usage | Easy Cut", "決済・利用履歴 | Easy Cut"],
+  ["내 결제 내역", "Payment history", "決済履歴"],
+  ["내 사용 내역", "Usage history", "利用履歴"],
+  ["결제, 환불, 시간 지급과 작업별 사용·복구 기록을 확인할 수 있습니다.", "Review payments, refunds, time grants, and usage or restoration records for each job.", "決済、返金、時間付与、処理ごとの利用・復元履歴を確認できます。"],
+  ["Easy Cut 계정 활동 내역", "Easy Cut account activity", "Easy Cutアカウント履歴"],
+  ["결제 방식", "Payment method", "支払い方法"],
+  ["일시불", "One-time payment", "一括払い"],
+  ["이번 달 무이자 혜택 보기", "View this month's interest-free offers", "今月の無利息特典を見る"],
+  ["이번 달 무이자 할부", "This month's interest-free installments", "今月の無利息分割払い"],
+  ["예상 부분환불액", "Estimated partial refund", "一部返金予定額"],
+  ["PG 지원 확인 중", "PG support pending", "PG対応確認中"],
+  ["카드사·상품·회원 정책에 따라 실제 적용 결과가 달라질 수 있으며 최종 조건은 카드사 승인 결과를 따릅니다.", "Actual terms may vary by card issuer, product, and member policy. Final terms follow the issuer's approval result.", "カード会社・商品・会員条件により実際の適用結果が異なる場合があり、最終条件はカード会社の承認結果に従います。"],
+  ["기존 플랜의 미사용 기간에 해당하는 금액은 업그레이드 완료 후 3영업일 이내 원 결제수단으로 부분환불 처리됩니다. 카드사 반영 시점은 다를 수 있습니다.", "The unused portion of your previous plan will be partially refunded to the original payment method within 3 business days after the upgrade. Posting time may vary by issuer.", "旧プランの未使用期間分は、アップグレード完了後3営業日以内に元のお支払い方法へ一部返金されます。カード会社への反映時期は異なる場合があります。"],
+
+  // Remaining customer-facing copy on legacy template, pricing, discovery,
+  // guide, and account-adjacent surfaces. User and generated content must not
+  // be added here; those nodes opt out with data-i18n-skip.
+  ["다음 쇼츠의 시작점을 선택하세요.", "Choose where your next Short begins.", "次のショート動画の始まりを選んでください。"],
+  ["새 템플릿", "New template", "新しいテンプレート"],
+  ["빈 화면에서 직접 디자인하기", "Design from scratch", "白紙からデザイン"],
+  ["유료 플랜에서 직접 디자인하기", "Design your own on a paid plan", "有料プランで自由にデザイン"],
+  ["로그인 후 자주 쓰는 템플릿을 저장할 수 있습니다.", "Sign in to save favorite templates.", "ログインするとお気に入りのテンプレートを保存できます。"],
+  ["댓글 캡처", "Comment capture", "コメントキャプチャー"],
+  ["다크 레드", "Dark red", "ダークレッド"],
+  ["다크", "Dark", "ダーク"],
+  ["화이트 옐로", "White yellow", "ホワイトイエロー"],
+  ["화이트", "White", "ホワイト"],
+  ["다크 미니멀", "Dark minimal", "ダークミニマル"],
+  ["페이퍼", "Paper", "ペーパー"],
+  ["댓글 반응을 활용해 시청 흐름을 이어가는 구성", "Use comment reactions to keep viewers engaged", "コメント反応で視聴の流れをつなぐ構成"],
+  ["강한 레드 포인트로 핵심을 각인하는 구성", "Emphasize the key point with a bold red accent", "強い赤のアクセントで要点を印象づける構成"],
+  ["어두운 배경과 선택한 브랜드 컬러로 핵심을 각인하는 구성", "Emphasize the key point with a dark background and your brand color", "暗い背景と選択したブランドカラーで要点を印象づける構成"],
+  ["밝고 친근하게 내용을 전달하는 구성", "Deliver the message in a bright, friendly style", "明るく親しみやすく内容を伝える構成"],
+  ["밝은 배경과 선택한 브랜드 컬러로 내용을 전달하는 구성", "Deliver the message with a bright background and your brand color", "明るい背景と選択したブランドカラーで内容を伝える構成"],
+  ["장식을 덜어내고 영상에 집중하는 구성", "A minimal layout that keeps focus on the video", "装飾を抑えて動画に集中する構成"],
+  ["차분하고 신뢰감 있게 이야기를 전하는 구성", "Tell the story with a calm, credible look", "落ち着きと信頼感のある見た目で伝える構成"],
+  ["소셜", "Social", "ソーシャル"],
+  ["정보", "Information", "情報"],
+  ["교육", "Education", "教育"],
+  ["뉴스", "News", "ニュース"],
+  ["스토리", "Story", "ストーリー"],
+  ["놓치면 후회할", "Don't miss", "見逃し厳禁"],
+  ["핵심 한 가지", "One key takeaway", "重要ポイント"],
+  ["댓글 반응과 함께", "With viewer reactions", "コメント反応と一緒に"],
+  ["시청 지속시간 상승", "Keep viewers watching", "視聴維持率アップ"],
+  ["지금 꼭 알아야 할", "What you need to know", "今知っておきたい"],
+  ["생각보다 쉬운", "Easier than you think", "思ったより簡単"],
+  ["놓치기 쉬운", "Easy to miss", "見逃しやすい"],
+  ["결정적 순간", "The decisive moment", "決定的な瞬間"],
+  ["오늘 바로 쓰는", "Use it today", "今日から使える"],
+  ["핵심 방법", "Key method", "重要な方法"],
+  ["답글", "Reply", "返信"],
+  ["댓글 미리보기", "Comment preview", "コメントプレビュー"],
+  ["댓글 레이어 선택 및 세로 이동", "Select and move the comment layer vertically", "コメントレイヤーを選択して上下に移動"],
+  ["배경", "Background", "背景"],
+  ["단색 배경", "Solid background", "単色背景"],
+  ["이미지 배경", "Image background", "画像背景"],
+  ["배경 없음", "No background", "背景なし"],
+  ["편집 레이어", "Editing layers", "編集レイヤー"],
+  ["레이어 표시", "Show layer", "レイヤー表示"],
+  ["영상 프레임", "Video frame", "動画フレーム"],
+  ["영상 크기 조절", "Resize video", "動画サイズを調整"],
+  ["세로 위치", "Vertical position", "縦位置"],
+  ["실행 취소", "Undo", "元に戻す"],
+  ["색상 전체 보기", "Show all colors", "すべての色を表示"],
+  ["색상 접기", "Collapse colors", "色を閉じる"],
+  ["접기", "Collapse", "閉じる"],
+  ["작게", "Smaller", "小さく"],
+  ["크게", "Larger", "大きく"],
+  ["다크 모드", "Dark mode", "ダークモード"],
+  ["화이트 모드", "Light mode", "ライトモード"],
+  ["내 템플릿으로 저장", "Save as my template", "マイテンプレートとして保存"],
+  ["← 라이브러리", "← Library", "← ライブラリ"],
+  ["↶ 되돌리기", "↶ Undo", "↶ 元に戻す"],
+  ["↷ 복구하기", "↷ Redo", "↷ やり直す"],
+  ["1행 제목", "Title line 1", "タイトル1行目"],
+  ["2행 제목", "Title line 2", "タイトル2行目"],
+  ["댓글", "Comment", "コメント"],
+  ["댓글 레이아웃", "Comment layout", "コメントレイアウト"],
+  ["댓글 모드", "Comment mode", "コメントモード"],
+  ["댓글 카드 크기가 바뀌어도 채널명은 항상 카드 아래로 자동 정렬됩니다.", "The channel name stays aligned below the card even when the comment card is resized.", "コメントカードのサイズを変更しても、チャンネル名は常にカードの下に自動配置されます。"],
+  ["댓글 크기", "Comment size", "コメントサイズ"],
+  ["두 모드 모두 가로 여백 없이 캔버스 너비 전체를 채우며 모서리는 각지게 유지합니다.", "Both modes fill the full canvas width without side margins and keep square corners.", "どちらのモードも左右の余白なしでキャンバス幅いっぱいに表示し、角は直角のままです。"],
+  ["렌더링 적용", "Applied to render", "レンダリングに適用"],
+  ["미리보기에서 직접 선택하거나 아래 레이어를 고르세요.", "Select directly in the preview or choose a layer below.", "プレビューで直接選択するか、下のレイヤーを選んでください。"],
+  ["배경색", "Background color", "背景色"],
+  ["슬라이더를 쓰거나 댓글 카드를 끌어 영상 하단 가까이 가져가 보세요.", "Use the slider or drag the comment card closer to the bottom of the video.", "スライダーを使うかコメントカードをドラッグして、動画の下部に近づけてください。"],
+  ["없음", "None", "なし"],
+  ["영상", "Video", "動画"],
+  ["영상 하단에 맞춤", "Align to video bottom", "動画下端に合わせる"],
+  ["영상 하단에 자석처럼 붙어 있습니다.", "Snapped to the bottom of the video.", "動画の下端にスナップしています。"],
+  ["예시 문구는 편집용으로 고정되며, 저장한 모드·크기·위치가 실제 댓글에 적용됩니다.", "Sample text stays fixed for editing; the saved mode, size, and position are applied to actual comments.", "サンプル文は編集用に固定され、保存したモード・サイズ・位置が実際のコメントに適用されます。"],
+  ["완성 영상과 같은 9:16 비율로 배경을 비교하세요.", "Compare backgrounds in the same 9:16 ratio as the finished video.", "完成動画と同じ9:16比率で背景を比較してください。"],
+  ["왼쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.", "Review changes live in the preview on the left.", "左側のプレビューで変更内容をリアルタイムに確認できます。"],
+  ["저장하면 댓글 카드와 채널명 배치가 완성 영상에도 같은 설정으로 적용됩니다.", "When saved, the comment card and channel-name layout are applied to the finished video.", "保存すると、コメントカードとチャンネル名の配置が完成動画にも同じ設定で適用されます。"],
+  ["제목", "Title", "タイトル"],
+  ["채널명", "Channel name", "チャンネル名"],
+  ["크기를 바꾸면 프로필·문구·반응 버튼과 안쪽 여백이 함께 줄고, 카드 높이도 내용에 맞춰 자동 조절됩니다.", "Resizing scales the profile, text, reaction buttons, and padding together; card height adjusts to the content.", "サイズを変更するとプロフィール、文言、リアクションボタン、内側余白が一緒に縮小し、カードの高さも内容に合わせて自動調整されます。"],
+  ["템플릿 라이브러리로", "Go to template library", "テンプレートライブラリへ"],
+  ["템플릿 커스텀", "Custom template", "テンプレートカスタム"],
+  ["프레임을 끌어 이동하고 오른쪽 아래 핸들로 비율을 유지한 채 크기를 조절하세요.", "Drag the frame to move it and use the bottom-right handle to resize while preserving its ratio.", "フレームをドラッグして移動し、右下のハンドルで比率を維持したままサイズを調整してください。"],
+  ["템플릿에 고정", "Locked by template", "テンプレートに固定"],
+  ["브랜드 컬러", "Brand color", "ブランドカラー"],
+  ["브랜드 컬러 더 보기", "Show more brand colors", "ブランドカラーをもっと見る"],
+  ["더 많은 브랜드 컬러 보기", "Show more brand colors", "ブランドカラーをもっと見る"],
+  ["전체 브랜드 컬러", "All brand colors", "すべてのブランドカラー"],
+  ["결제창 닫기", "Close payment window", "決済画面を閉じる"],
+  ["더페이원 결제", "ThePayOne payment", "ThePayOne決済"],
+  ["오버레이 닫기", "Close overlay", "オーバーレイを閉じる"],
+  ["[필수]", "[Required]", "［必須］"],
+  ["[필수] 구매약관 및 취소·환불 규정 동의", "[Required] Agree to the Purchase Terms and Cancellation & Refund Policy", "［必須］購入規約およびキャンセル・返金規定に同意"],
+  ["취소·환불 규정", "Cancellation & Refund Policy", "キャンセル・返金規定"],
+  ["카드사", "Card issuer", "カード会社"],
+  ["카드사를 선택해 주세요", "Select a card issuer", "カード会社を選択してください"],
+  ["신용카드", "Credit card", "クレジットカード"],
+  ["일시불 결제", "One-time payment", "一括払い"],
+  ["체크·선불카드", "Debit or prepaid card", "デビット・プリペイドカード"],
+  ["카드 종류", "Card type", "カード種類"],
+  ["할부 선택 가능", "Installments available", "分割払いを選択可能"],
+  ["무이자", "Interest-free", "無利息"],
+  ["보기", "View", "表示"],
+  ["부분 무이자", "Partial interest-free", "一部無利息"],
+  ["이번 달 할부 혜택", "This month's installment offers", "今月の分割払い特典"],
+  ["전체 카드사 혜택 조건", "All card-issuer offer terms", "全カード会社の特典条件"],
+  ["카드사별 이번 달 전체 혜택", "All offers by card issuer this month", "カード会社別の今月の全特典"],
+  ["할부 혜택은 5만원 이상 결제부터 적용됩니다.", "Installment offers apply to payments of KRW 50,000 or more.", "分割払い特典は5万ウォン以上の決済に適用されます。"],
+  ["현재 결제금액에 적용되는 카드사 혜택은 없습니다. 일반 할부는 결제 방식에서 선택할 수 있습니다.", "No card-issuer offer applies to this amount. Standard installments can still be selected under payment method.", "現在の決済額に適用されるカード会社特典はありません。通常の分割払いは決済方法から選択できます。"],
+  ["현재 이 결제에서 선택 가능한 할부가 없습니다.", "No installment option is available for this payment.", "この決済で選択できる分割払いはありません。"],
+  ["현재 진행 중인 무이자 혜택은 없습니다. 일반 할부는 선택할 수 있으며 이자는 카드사 정책에 따라 적용됩니다.", "There are no current interest-free offers. Standard installments are available, with interest determined by the card issuer.", "現在、無利息特典はありません。通常の分割払いは選択でき、利息はカード会社の条件に従います。"],
+  ["현재 진행 중인 할부 혜택이 없습니다.", "There are no current installment offers.", "現在、分割払い特典はありません。"],
+  ["현재 진행 중인 할부 혜택이 없습니다. 일시불로 결제해 주세요.", "There are no current installment offers. Please pay in full.", "現在、分割払い特典はありません。一括払いをご利用ください。"],
+  ["현재 진행 중인 혜택 없음", "No current offers", "現在利用できる特典はありません"],
+
+  ["얼리버드 할인으로", "Save with early-bird pricing", "早割価格で"],
+  ["패키지 상품을 만나보세요", "Explore our package plans", "パッケージプランをご覧ください"],
+  ["이용 중", "Active", "利用中"],
+  ["기간 패키지", "Term packages", "期間パッケージ"],
+  ["원본 영상 처리", "Source video processing", "元動画の処理"],
+  ["패키지 이용기간", "Package term", "パッケージ利用期間"],
+  ["가장 합리적", "Best value", "最もお得"],
+  ["스타터 패키지", "Starter package", "スターターパッケージ"],
+  ["전문가 패키지", "Expert package", "エキスパートパッケージ"],
+  ["이지컷 프로", "Easy Cut Pro", "Easy Cut Pro"],
+  ["꾸준히 제작하는 크리에이터를 위한 구성입니다.", "Built for creators who publish consistently.", "継続的に制作するクリエイター向けの構成です。"],
+  ["대량 제작자와 운영팀을 위한 최대 용량입니다.", "Maximum capacity for high-volume creators and teams.", "大量制作するクリエイターや運営チーム向けの最大容量です。"],
+  ["모든 핵심 기능을 가볍게 시작하세요.", "Start easily with every core feature.", "すべての主要機能を手軽に始めましょう。"],
+  ["이지컷 프로 선택", "Choose Easy Cut Pro", "Easy Cut Proを選択"],
+  ["스타터 패키지 선택", "Choose Starter", "スターターパッケージを選択"],
+  ["전문가 패키지 선택", "Choose Expert", "エキスパートパッケージを選択"],
+  ["구매", "Buy", "購入"],
+  ["이미 구매함", "Already purchased", "購入済み"],
+  ["매월 자동결제", "Monthly auto-renewal", "毎月自動決済"],
+  ["월간 구독", "Monthly subscription", "月額サブスクリプション"],
+  ["월 60분", "60 min/month", "月60分"],
+  ["/월", "/month", "/月"],
+  ["월 원본 영상 처리시간", "Monthly source-video processing", "月間元動画処理時間"],
+  ["예상 쇼츠 제작량", "Estimated Shorts output", "ショート動画の推定作成数"],
+  ["연장된 이용기간", "Extended access period", "延長された利用期間"],
+  ["현재 이용기간 종료일", "Current period ends", "現在の利用期間終了日"],
+  ["요금제 선택", "Choose a plan", "料金プランを選択"],
+  ["활성 이용 상품", "Active product", "利用中の商品"],
+  ["결제 정보 확인하기", "Review payment details", "決済情報を確認"],
+  ["결제를 확인해 주세요", "Review your payment", "決済内容をご確認ください"],
+  ["결제 중...", "Processing payment...", "決済処理中..."],
+  ["결제를 진행하고 있습니다...", "Processing your payment...", "決済を処理しています..."],
+  ["새로운 남은 사용량을 확인하고 있습니다.", "Checking your updated remaining time.", "更新後の残り時間を確認しています。"],
+  ["추가시간 충전 완료", "Additional time added", "追加時間のチャージ完了"],
+  ["추가시간은 구매일부터 90일 동안 사용할 수 있습니다.", "Additional time is valid for 90 days from purchase.", "追加時間は購入日から90日間利用できます。"],
+  ["개인카드는 생년월일 6자리, 법인카드는 사업자번호 10자리를 입력해 주세요.", "For a personal card, enter your 6-digit birth date; for a corporate card, enter the 10-digit business number.", "個人カードは生年月日6桁、法人カードは事業者番号10桁を入力してください。"],
+  ["결제 연락처는 암호화해 저장하며, 다음 추가 시간 결제에서 다시 입력하지 않도록 사용합니다.", "Payment contact details are encrypted and reused so you do not need to enter them again for a future additional-time purchase.", "決済連絡先は暗号化して保存し、次回の追加時間購入時に再入力せず利用できるようにします。"],
+  ["결제 카드 변경하기", "Change payment card", "決済カードを変更"],
+  ["결제자 정보", "Payer information", "支払者情報"],
+  ["결제하고 시작하기", "Pay and get started", "支払って開始"],
+  ["구독 결제 정보", "Subscription payment details", "サブスクリプション決済情報"],
+  ["변경 금액 계산 중...", "Calculating change amount...", "変更金額を計算中..."],
+  ["새 카드를 정기결제 수단으로 등록하는 데 동의합니다.", "I agree to register this card for recurring payments.", "このカードを定期決済手段として登録することに同意します。"],
+  ["새 플랜으로 변경하기", "Change to the new plan", "新しいプランに変更"],
+  ["생년월일 6자리 또는 사업자번호 10자리", "6-digit birth date or 10-digit business number", "生年月日6桁または事業者番号10桁"],
+  ["생년월일 또는 사업자번호", "Date of birth or business number", "生年月日または事業者番号"],
+  ["신용카드 일시불", "Credit card · pay in full", "クレジットカード一括払い"],
+  ["앞으로 정기결제에 사용할 새 카드 정보를 입력해 주세요. 카드 확인이 완료되면 바로 변경됩니다.", "Enter the new card to use for recurring payments. It will be changed as soon as verification is complete.", "今後の定期決済に使用する新しいカード情報を入力してください。確認が完了するとすぐに変更されます。"],
+  ["연간 구독 갱신하기", "Renew annual subscription", "年間サブスクリプションを更新"],
+  ["월간 구독 안내", "Monthly subscription information", "月額サブスクリプションのご案内"],
+  ["월간 구독에는 아래 혜택이 포함되지 않습니다.", "The monthly subscription does not include the following benefits.", "月額サブスクリプションには以下の特典は含まれません。"],
+  ["전자책", "E-books", "電子書籍"],
+  ["정기결제를 완료하지 못했습니다.", "Could not complete the recurring payment.", "定期決済を完了できませんでした。"],
+  ["카드 비밀번호 앞 2자리", "First 2 digits of card PIN", "カード暗証番号の先頭2桁"],
+  ["카드 정보", "Card information", "カード情報"],
+  ["카드번호", "Card number", "カード番号"],
+  ["패키지 구매하기", "Purchase package", "パッケージを購入"],
+  ["플랜 변경 금액을 불러오지 못했습니다.", "Could not load the plan-change amount.", "プラン変更金額を読み込めませんでした。"],
+  ["현재 이용 중인 연간 플랜을 갱신합니다. 결제가 완료되면 기존 만료일 다음 날부터 1년 연장됩니다.", "Renew your current annual plan. After payment, it is extended for one year from the day after the current expiry date.", "現在利用中の年間プランを更新します。決済完了後、現在の有効期限の翌日から1年間延長されます。"],
+  ["홍길동", "Hong Gil-dong", "ホン・ギルドン"],
+  ["휴대전화 번호", "Phone number", "携帯電話番号"],
+  ["6자리 또는 10자리", "6 or 10 digits", "6桁または10桁"],
+  ["결제 결과를 확정하지 못했습니다. 중복 결제를 막기 위해 새 주문으로 다시 결제하지 마세요. 같은 화면에서 다시 확인하면 기존 요청 ID로만 조회·처리됩니다.", "We could not confirm the payment result. To prevent duplicate charges, do not place a new order. Check again on this screen; only the existing request ID will be queried and processed.", "決済結果を確定できませんでした。重複決済を防ぐため、新しい注文で再決済しないでください。この画面で再確認すると、既存のリクエストIDのみ照会・処理されます。"],
+  ["결제 불가", "Payment unavailable", "決済できません"],
+  ["결제 옵션 확인 시간이 초과되었습니다. 다시 불러와 주세요.", "Payment-option lookup timed out. Please reload.", "決済オプションの確認がタイムアウトしました。再読み込みしてください。"],
+  ["결제 옵션 확인 중...", "Checking payment options...", "決済オプションを確認中..."],
+  ["결제 옵션을 불러오지 못했습니다.", "Could not load payment options.", "決済オプションを読み込めませんでした。"],
+  ["결제 옵션을 확인하고 있습니다", "Checking payment options", "決済オプションを確認しています"],
+  ["결제 옵션을 확인하고 있습니다. 잠시 후 다시 눌러 주세요.", "Checking payment options. Please try again shortly.", "決済オプションを確認しています。少し待ってからもう一度押してください。"],
+  ["결제 옵션을 확인하고 있습니다...", "Checking payment options...", "決済オプションを確認しています..."],
+  ["결제 정보 확인", "Review payment details", "決済情報を確認"],
+  ["결제금액을 불러오지 못했습니다.", "Could not load the payment amount.", "決済金額を読み込めませんでした。"],
+  ["결제를 완료하지 못했습니다.", "Could not complete payment.", "決済を完了できませんでした。"],
+  ["결제정보 확인 중...", "Reviewing payment details...", "決済情報を確認中..."],
+  ["구매약관 및 취소·환불 규정에 동의해 주세요.", "Please agree to the Purchase Terms and Cancellation & Refund Policy.", "購入規約およびキャンセル・返金規定に同意してください。"],
+  ["기존 프로 이용권을 유지했습니다", "Your existing Pro plan was kept", "既存のProプランを維持しました"],
+  ["다음", "Next", "次へ"],
+  ["등록 카드 사용", "Use saved card", "登録済みカードを使用"],
+  ["생년월일 6자리 또는 사업자번호 10자리를 입력해 주세요.", "Enter a 6-digit birth date or 10-digit business number.", "生年月日6桁または事業者番号10桁を入力してください。"],
+  ["승인 여부를 확인해 주세요", "Check authorization status", "承認状況をご確認ください"],
+  ["유효기간 연도를 두 자리로 입력해 주세요.", "Enter the 2-digit expiry year.", "有効期限の年を2桁で入力してください。"],
+  ["유효기간 월을 두 자리로 입력해 주세요.", "Enter the 2-digit expiry month.", "有効期限の月を2桁で入力してください。"],
+  ["이전", "Back", "戻る"],
+  ["일반 할부 · 이자 발생 가능", "Standard installments · Interest may apply", "通常分割・利息が発生する場合があります"],
+  ["일시불로 결제", "Pay in full", "一括払いで決済"],
+  ["추가시간", "Additional time", "追加時間"],
+  ["카드 비밀번호 앞 2자리를 입력해 주세요.", "Enter the first 2 digits of the card PIN.", "カード暗証番号の先頭2桁を入力してください。"],
+  ["카드 정보를 확인하지 못했습니다. 입력값을 다시 확인해 주세요.", "Could not verify the card. Check the details and try again.", "カード情報を確認できませんでした。入力内容をもう一度確認してください。"],
+  ["카드 정보를 확인해 주세요", "Check your card information", "カード情報をご確認ください"],
+  ["카드 종류를 선택해 주세요.", "Select a card type.", "カード種類を選択してください。"],
+  ["카드를 확인하고 있습니다...", "Verifying card...", "カードを確認中..."],
+  ["카드번호 16자리를 확인해 주세요.", "Check the 16-digit card number.", "16桁のカード番号を確認してください。"],
+  ["카드사를 먼저 선택해 주세요", "Select a card issuer first", "先にカード会社を選択してください"],
+  ["카드사를 선택해 주세요.", "Select a card issuer.", "カード会社を選択してください。"],
+  ["패키지", "Package", "パッケージ"],
+  ["패키지 이용기간과 할부 안내", "Package term and installment details", "パッケージ期間と分割払いのご案内"],
+  ["할부 개월수를 다시 선택해 주세요", "Choose the installment term again", "分割回数を選び直してください"],
+  ["할부 혜택을 다시 불러오지 못했습니다.", "Could not reload installment offers.", "分割払い特典を再読み込みできませんでした。"],
+  ["할부 혜택이 변경되었습니다", "Installment offer changed", "分割払い特典が変更されました"],
+  ["현재 결제를 진행할 수 없습니다", "This payment cannot be processed", "現在この決済は処理できません"],
+  ["휴대전화 번호 10~11자리를 입력해 주세요.", "Enter a 10- or 11-digit phone number.", "携帯電話番号を10〜11桁で入力してください。"],
+  ["Easy Cut 고객", "Easy Cut customer", "Easy Cutのお客様"],
+  ["새 카드 등록 또는 결제를 완료하지 못했습니다.", "Could not register the new card or complete payment.", "新しいカードの登録または決済を完了できませんでした。"],
+  ["카드를 등록하고 결제하고 있습니다...", "Registering the card and processing payment...", "カードを登録して決済処理中..."],
+  ["결제수단 추가", "Add payment method", "決済手段を追加"],
+  ["결제수단을 추가하지 못했습니다.", "Could not add the payment method.", "決済手段を追加できませんでした。"],
+  ["숫자만 입력", "Numbers only", "数字のみ入力"],
+  ["추가하고 있어요...", "Adding...", "追加中..."],
+  ["등록 카드", "Saved card", "登録済みカード"],
+  ["선택된 카드", "Selected card", "選択したカード"],
+  ["현재 결제창 미지원", "Not supported in this checkout", "現在の決済画面では未対応"],
+  ["렌더링", "Rendering", "レンダリング中"],
+  ["쇼츠 장면을 찾고 있습니다", "Finding Shorts moments", "ショート動画の場面を検出中"],
+  ["쇼츠를 생성하고 있습니다", "Creating Shorts", "ショート動画を作成中"],
+  ["영상 내용을 분석하고 있습니다", "Analyzing video content", "動画内容を分析中"],
+  ["오늘 만료", "Expires today", "本日有効期限"],
+  ["원본 영상을 다운로드하고 있습니다", "Downloading source video", "元動画をダウンロード中"],
+  ["원본 영상을 준비하고 있습니다", "Preparing source video", "元動画を準備中"],
+  ["편집용 영상 준비", "Preparing edit video", "編集用動画を準備中"],
+  ["다운로드 기능을 이용하려면\n활성 유료 이용권이 필요합니다.", "An active paid plan is required\nto use downloads.", "ダウンロード機能には\n有効な有料プランが必要です。"],
+  ["편집", "Edit", "編集"],
+  ["프로젝트 계속 보기", "Continue to project", "プロジェクトを続ける"],
+  ["편집 가이드 닫기", "Close editing guide", "編集ガイドを閉じる"],
+  ["프로젝트 가이드 닫기", "Close project guide", "プロジェクトガイドを閉じる"],
+  ["쇼츠 편집", "Shorts editing", "ショート動画編集"],
+  ["완성된 쇼츠를 내 스타일로 다듬어 보세요", "Customize your finished Short", "完成したショート動画を自分らしく仕上げましょう"],
+  ["‘편집하기’를 누르면 새 탭에서 제목, 자막, 템플릿과 영상 구간을 조정한 뒤 다시 렌더링할 수 있어요.", "Select Edit to adjust the title, captions, template, and video range in a new tab, then render it again.", "「編集」を選ぶと、新しいタブでタイトル、字幕、テンプレート、動画範囲を調整して再レンダリングできます。"],
+  ["개별 저장", "Save individually", "個別保存"],
+  ["필요한 쇼츠만 바로 다운로드하세요", "Download only the Shorts you need", "必要なショート動画だけをダウンロード"],
+  ["각 쇼츠 아래의 ‘다운로드’를 누르면 해당 영상 하나만 기기에 저장할 수 있어요.", "Select Download below a Short to save only that video to your device.", "各ショート動画の下にある「ダウンロード」を選ぶと、その動画だけを端末に保存できます。"],
+  ["한 번에 저장", "Save all at once", "まとめて保存"],
+  ["완성된 쇼츠를 한꺼번에 받을 수 있어요", "Download all finished Shorts at once", "完成したショート動画をまとめてダウンロード"],
+  ["상단 버튼으로 다운로드 가능한 쇼츠를 모두 저장하세요. 기기에서 여러 파일 저장을 제한하면 쇼츠별 다운로드 방법을 안내해 드려요.", "Use the top button to save every available Short. If your device limits multiple downloads, we'll show you how to download each one.", "上部のボタンでダウンロード可能なショート動画をすべて保存できます。端末で複数ファイルの保存が制限されている場合は、個別のダウンロード方法をご案内します。"],
+  ["다른 프로젝트로 돌아갈 수 있어요", "Return to another project", "別のプロジェクトに戻れます"],
+  ["왼쪽 위 프로젝트 경로를 누르면 지금까지 만든 프로젝트 목록으로 돌아갑니다.", "Select the project path at the top left to return to your project list.", "左上のプロジェクトパスを選ぶと、これまでに作成したプロジェクト一覧に戻ります。"],
+  ["프로젝트 가이드 완료", "Project guide complete", "プロジェクトガイド完了"],
+  ["이제 완성된 쇼츠를 활용해 보세요", "Your finished Shorts are ready to use", "完成したショート動画を活用しましょう"],
+  ["확인을 누르면 다음 프로젝트에서도 가이드를 다시 볼 수 있어요. 더 이상 필요하지 않다면 다시 보지 않기를 선택해 주세요.", "Select Confirm to see this guide again on your next project, or choose Don't show again if you no longer need it.", "「確認」を選ぶと次のプロジェクトでもガイドを表示できます。不要な場合は「今後表示しない」を選んでください。"],
+  ["스타일 설정", "Style settings", "スタイル設定"],
+  ["왼쪽 메뉴에서 모양을 조정하세요", "Adjust the look from the left menu", "左側のメニューで見た目を調整"],
+  ["왼쪽 도구 모음에서 원하는 설정을 하나 골라 세부 사이드바를 열고, 글꼴과 색상·배경·템플릿을 한곳에서 조정하세요.", "Choose a setting from the left toolbar, then adjust fonts, colors, backgrounds, and templates in the detail panel.", "左側のツールバーから設定を選び、詳細パネルでフォント、色、背景、テンプレートを調整できます。"],
+  ["오버레이 추가", "Add overlays", "オーバーレイ追加"],
+  ["댓글과 텍스트를 추가하세요", "Add comments and text", "コメントとテキストを追加"],
+  ["‘+ 댓글’은 새 댓글 오버레이를, ‘+ 텍스트’는 자유롭게 꾸밀 수 있는 문구를 영상 위에 추가합니다.", "Use + Comment to add a comment overlay, or + Text to add freely styled text over the video.", "「+ コメント」でコメントを、「+ テキスト」で自由に装飾できる文言を動画上に追加します。"],
+  ["직접 편집", "Edit directly", "直接編集"],
+  ["화면에서 요소를 바로 선택하세요", "Select elements directly on the canvas", "画面上で要素を直接選択"],
+  ["미리보기의 영상과 오버레이를 클릭해 선택하고 끌어서 옮기세요. 제목과 추가 텍스트는 더블클릭하면 바로 수정할 수 있어요.", "Select and drag the video or overlays in the preview. Double-click titles and added text to edit them directly.", "プレビュー内の動画やオーバーレイを選択してドラッグできます。タイトルと追加テキストはダブルクリックで直接編集できます。"],
+  ["아래에서 영상과 오버레이 길이를 맞추세요", "Adjust video and overlay timing below", "下で動画とオーバーレイの長さを調整"],
+  ["영상 조각과 댓글·추가 텍스트의 바를 선택하세요. 바를 끌어 옮기고 양끝 핸들로 노출 구간을 조정할 수 있어요.", "Select a video clip, comment, or text bar. Drag the bar to move it, or use the end handles to adjust its display range.", "動画クリップ、コメント、追加テキストのバーを選択します。バーをドラッグして移動し、両端のハンドルで表示範囲を調整できます。"],
+  ["영상 분할", "Split video", "動画を分割"],
+  ["필요한 지점에서 영상을 나누세요", "Split the video where needed", "必要な位置で動画を分割"],
+  ["재생 위치에서 ‘분할’을 누르면 영상이 두 조각으로 나뉩니다. 필요 없는 조각을 선택해 따로 삭제할 수 있어요.", "Select Split at the playhead to divide the video into two clips. You can select and delete any clip you do not need.", "再生位置で「分割」を選ぶと動画が2つに分かれます。不要なクリップは個別に選択して削除できます。"],
+  ["편집 기록", "Edit history", "編集履歴"],
+  ["실수해도 바로 되돌릴 수 있어요", "Undo mistakes instantly", "操作をすぐに元に戻せます"],
+  ["상단 버튼이나 ⌘Z·Ctrl+Z로 되돌리고, Shift를 함께 누르면 앞으로 갈 수 있어요.", "Use the top buttons or ⌘Z/Ctrl+Z to undo. Add Shift to redo.", "上部のボタンまたは⌘Z・Ctrl+Zで元に戻し、Shiftを加えるとやり直せます。"],
+  ["편집 저장", "Save edits", "編集を保存"],
+  ["편집이 끝나면 여기서 저장하세요", "Save here when you're done", "編集が終わったらここで保存"],
+  ["‘영상에 적용’을 누르면 편집한 내용으로 재렌더링이 시작됩니다. 완료되면 프로젝트에서 새 영상을 확인하고 다운로드할 수 있어요.", "Select Apply to video to render your edits. When it finishes, you can review and download the new video from the project.", "「動画に適用」を選ぶと編集内容で再レンダリングが始まります。完了後、プロジェクトで新しい動画を確認してダウンロードできます。"],
+  ["편집 가이드 완료", "Editing guide complete", "編集ガイド完了"],
+  ["이제 직접 편집해 보세요", "You're ready to edit", "編集を始めましょう"],
+  ["왼쪽에서 스타일을 고르고, 화면에서 요소를 편집하고, 아래 타임라인에서 시간을 다듬으면 됩니다.", "Choose a style on the left, edit elements on the canvas, and fine-tune timing in the timeline below.", "左側でスタイルを選び、画面上で要素を編集し、下のタイムラインで時間を調整できます。"],
+  ["자동 저장", "Autosave", "自動保存"],
+  ["분할", "Split", "分割"],
+  ["후킹 제목", "Hook title", "フックタイトル"],
+  ["제목 오버레이 선택 및 세로 이동", "Select and move title overlay vertically", "タイトルオーバーレイを選択して上下に移動"],
+  ["채널명 오버레이 선택 및 이동", "Select and move channel-name overlay", "チャンネル名オーバーレイを選択して移動"],
+  ["미리보기 재생 및 화면 제어", "Preview playback and display controls", "プレビュー再生と画面操作"],
+  ["미리보기 재생 시간", "Preview playback time", "プレビュー再生時間"],
+  ["미리보기 빠른 편집", "Quick preview editing", "プレビューのクイック編集"],
+  ["영상 자르기", "Trim video", "動画をトリミング"],
+  ["오버레이 확대", "Overlay zoom", "オーバーレイ拡大"],
+  ["오버레이 축소", "Zoom overlay out", "オーバーレイを縮小"],
+  ["오버레이 확대 비율", "Overlay zoom level", "オーバーレイ拡大率"],
+  ["매우 만족", "Very satisfied", "とても満足"],
+  ["매우 불만족", "Very dissatisfied", "とても不満"],
+  ["보내는 중...", "Sending...", "送信中..."],
+  ["선택 사항", "Optional", "任意"],
+  ["요청을 처리하지 못했습니다.", "Could not process the request.", "リクエストを処理できませんでした。"],
+  ["자유롭게 적어주세요.", "Tell us anything you'd like.", "自由にご記入ください。"],
+  ["피드백 보내고 30분 받기", "Send feedback and get 30 minutes", "フィードバック送信で30分獲得"],
+  ["피드백을 보내지 못했습니다.", "Could not send feedback.", "フィードバックを送信できませんでした。"],
+  ["하나만 선택해 주세요.", "Choose one option.", "1つ選択してください。"],
+  ["더블클릭해서 텍스트 수정", "Double-click to edit text", "ダブルクリックしてテキストを編集"],
+  ["추가한 텍스트 선택 및 이동", "Select and move added text", "追加テキストを選択・移動"],
+  ["추가한 텍스트 오른쪽 폭 조절", "Resize added text from the right", "追加テキストの右幅を調整"],
+  ["추가한 텍스트 왼쪽 폭 조절", "Resize added text from the left", "追加テキストの左幅を調整"],
+  ["추가한 텍스트 직접 편집", "Edit added text directly", "追加テキストを直接編集"],
+  ["텍스트", "Text", "テキスト"],
+  ["텍스트 노출 구간 이동", "Move text display range", "テキスト表示区間を移動"],
+  ["텍스트 시작점 조절", "Adjust text start", "テキスト開始点を調整"],
+  ["텍스트 종료점 조절", "Adjust text end", "テキスト終了点を調整"],
+  ["← 프로젝트로 돌아가기", "← Back to project", "← プロジェクトに戻る"],
+  ["↓ 다운로드", "↓ Download", "↓ ダウンロード"],
+  ["↓ 모든 쇼츠 다운로드", "↓ Download all Shorts", "↓ すべてのショート動画をダウンロード"],
+  ["↓ 쇼츠별 다운로드 안내", "↓ Per-Short download instructions", "↓ ショート動画別ダウンロード案内"],
+  ["↺ 원본으로 되돌리기", "↺ Restore original", "↺ 元に戻す"],
+  ["+ 댓글", "+ Comment", "+ コメント"],
+  ["✎ 편집 준비 중", "✎ Preparing editor", "✎ 編集を準備中"],
+  ["✎ 편집하기", "✎ Edit", "✎ 編集"],
+  ["✦ AI 하이라이트", "✦ AI highlight", "✦ AIハイライト"],
+  ["10MB 이하 이미지를 선택해 주세요.", "Choose an image up to 10 MB.", "10MB以下の画像を選択してください。"],
+  ["강조형 자막", "Emphasis captions", "強調字幕"],
+  ["강조형 자막 위치·크기·텍스트 편집", "Edit emphasis-caption position, size, and text", "強調字幕の位置・サイズ・テキストを編集"],
+  ["글자를 선택하면 선택한 부분만, 선택하지 않으면 제목 전체의 색상이 바뀝니다.", "Select text to recolor only that part; without a selection, the entire title changes color.", "文字を選択するとその部分だけ、選択しない場合はタイトル全体の色が変わります。"],
+  ["글자색 전체 보기", "Show all text colors", "文字色をすべて表示"],
+  ["글자색 접기", "Collapse text colors", "文字色を閉じる"],
+  ["기본 댓글 템플릿에서는 세로형과 세로 꽉참 비율을 사용할 수 없어요. 내 템플릿에서는 모든 비율을 사용할 수 있습니다.", "The default comment template does not support portrait or full-height portrait ratios. Custom templates support all ratios.", "標準コメントテンプレートでは縦型と縦全面比率を使用できません。マイテンプレートではすべての比率を利用できます。"],
+  ["긴 영상일수록 더 많은 하이라이트를 찾을 수 있어요.", "Longer videos can produce more highlights.", "長い動画ほど多くのハイライトを見つけられます。"],
+  ["길이가 긴 영상은 처리시간이\n조금 더 걸릴 수 있어요", "Longer videos may take\na little more time to process", "長い動画は処理に\n少し時間がかかる場合があります"],
+  ["나가기", "Exit", "終了"],
+  ["내 채널명 추가", "Add my channel name", "自分のチャンネル名を追加"],
+  ["내용", "Content", "内容"],
+  ["내용 없는 댓글", "Empty comment", "内容のないコメント"],
+  ["대본을 바탕으로 AI가 예측한 점수입니다", "AI-predicted score based on the transcript", "台本をもとにAIが予測したスコアです"],
+  ["댓글 내용", "Comment text", "コメント内容"],
+  ["댓글 내용과 노출 구간을 다시 확인해 주세요.", "Check the comment text and display range.", "コメント内容と表示区間を確認してください。"],
+  ["댓글 내용과 노출 구간이 비어 있거나 서로 겹치지 않도록 조정해 주세요.", "Make sure comment text and display ranges are not empty or overlapping.", "コメント内容と表示区間が空、または互いに重ならないよう調整してください。"],
+  ["댓글 노출 구간 편집", "Edit comment display range", "コメント表示区間を編集"],
+  ["댓글 비교 닫기", "Close comment comparison", "コメント比較を閉じる"],
+  ["댓글 생성 중...", "Generating comments...", "コメント生成中..."],
+  ["댓글 설정", "Comment settings", "コメント設定"],
+  ["댓글 위치 일괄 적용", "Apply comment position to all", "コメント位置を一括適用"],
+  ["댓글을 재생성하지 못했습니다. 잠시 후 다시 시도해 주세요.", "Could not regenerate comments. Please try again shortly.", "コメントを再生成できませんでした。少し待ってからもう一度お試しください。"],
+  ["더블클릭해서 댓글 수정", "Double-click to edit comment", "ダブルクリックしてコメントを編集"],
+  ["더블클릭해서 수정", "Double-click to edit", "ダブルクリックして編集"],
+  ["더블클릭해서 자막 수정", "Double-click to edit caption", "ダブルクリックして字幕を編集"],
+  ["되돌리기", "Undo", "元に戻す"],
+  ["되돌리기 (Ctrl/⌘ + Z)", "Undo (Ctrl/⌘ + Z)", "元に戻す（Ctrl/⌘ + Z）"],
+  ["드래그해서 이동 · 더블클릭해서 자막 수정", "Drag to move · Double-click to edit caption", "ドラッグして移動・ダブルクリックして字幕を編集"],
+  ["레이아웃", "Layout", "レイアウト"],
+  ["레이어 순서", "Layer order", "レイヤー順"],
+  ["로컬 오버레이 미리보기에서는 영상 저장 요청을 보내지 않습니다.", "The local overlay preview does not send a video-save request.", "ローカルのオーバーレイプレビューでは動画保存リクエストを送信しません。"],
+  ["링크 복사 및 붙여넣기", "Copy and paste a link", "リンクをコピーして貼り付け"],
+  ["맨앞 고정", "Pin to front", "最前面に固定"],
+  ["미리보기 빠른 편집", "Quick preview editing", "プレビューのクイック編集"],
+  ["미리보기 일시정지", "Pause preview", "プレビューを一時停止"],
+  ["미리보기 재생", "Play preview", "プレビューを再生"],
+  ["미리보기 재생 및 화면 제어", "Preview playback and display controls", "プレビュー再生・画面操作"],
+  ["미리보기 재생 시간", "Preview playback time", "プレビュー再生時間"],
+  ["미리보기 화면", "Preview screen", "プレビュー画面"],
+  ["변경 취소", "Discard changes", "変更を破棄"],
+  ["보관 기간이 끝나 이 프로젝트의 쇼츠를 볼 수 없습니다.", "This project's Shorts are no longer available because the retention period ended.", "保存期間が終了したため、このプロジェクトのショート動画は表示できません。"],
+  ["보이기", "Show", "表示"],
+  ["비어 있거나 올바르지 않은 자막을 다시 확인해 주세요.", "Check for empty or invalid captions.", "空または無効な字幕を確認してください。"],
+  ["사용할 영상 구간", "Video range to use", "使用する動画区間"],
+  ["사용할 영상 구간은 4분부터 60분까지 선택해 주세요.", "Choose a video range from 4 to 60 minutes.", "使用する動画区間は4〜60分で選択してください。"],
+  ["사용할 영상 끝 지점", "Video range end", "使用区間の終了点"],
+  ["사용할 영상 시작 지점", "Video range start", "使用区間の開始点"],
+  ["삭제", "Delete", "削除"],
+  ["서버에 연결하지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.", "Could not connect to the server. Check your network and try again.", "サーバーに接続できませんでした。ネットワークを確認してもう一度お試しください。"],
+  ["서비스 점검 중입니다", "Service maintenance in progress", "サービスメンテナンス中です"],
+  ["선택한 구간이 남은 원본 영상 처리시간을 초과합니다.", "The selected range exceeds your remaining source-video processing time.", "選択した区間が残りの元動画処理時間を超えています。"],
+  ["선택한 댓글", "Selected comment", "選択したコメント"],
+  ["선택한 댓글 내용 수정", "Edit selected comment", "選択したコメントを編集"],
+  ["선택한 영상 조각 뒷부분 조절", "Adjust end of selected clip", "選択した動画クリップの終端を調整"],
+  ["선택한 영상 조각 앞부분 조절", "Adjust start of selected clip", "選択した動画クリップの始端を調整"],
+  ["쇼츠 작업을 시작하지 못했습니다.", "Could not start the Shorts job.", "ショート動画の処理を開始できませんでした。"],
+  ["쇼츠로 만들고 싶은 유튜브 영상 링크를 복사해 붙여넣으세요.", "Copy and paste the YouTube video link you want to turn into Shorts.", "ショート動画にしたいYouTube動画のリンクをコピーして貼り付けてください。"],
+  ["쇼츠를 생성하고 있습니다. 완료되는 대로 이 화면에 표시됩니다.", "Creating Shorts. They will appear here as soon as they are ready.", "ショート動画を作成中です。完了次第この画面に表示されます。"],
+  ["쇼츠별로 바로 저장해 주세요", "Save each Short directly", "ショート動画ごとに保存してください"],
+  ["숨기기", "Hide", "非表示"],
+  ["스크립트", "Script", "スクリプト"],
+  ["시작", "Start", "開始"],
+  ["시작 시각", "Start time", "開始時刻"],
+  ["아래", "Bottom", "下"],
+  ["아직 생성된 쇼츠가 없습니다.", "No Shorts have been created yet.", "まだショート動画が作成されていません。"],
+  ["앞으로 가기", "Redo", "やり直す"],
+  ["앞으로 가기 (Ctrl/⌘ + Shift + Z)", "Redo (Ctrl/⌘ + Shift + Z)", "やり直す（Ctrl/⌘ + Shift + Z）"],
+  ["영상 구간을 다시 확인해 주세요.", "Check the video range.", "動画区間を確認してください。"],
+  ["영상 및 댓글 구간 선택", "Select video and comment ranges", "動画・コメント区間を選択"],
+  ["영상 이용 제한을 확인했습니다.", "Video usage restriction confirmed.", "動画利用制限を確認しました。"],
+  ["영상 자르기", "Trim video", "動画をトリミング"],
+  ["영상 조각 타임라인", "Video clip timeline", "動画クリップのタイムライン"],
+  ["영상 준비 중", "Preparing video", "動画を準備中"],
+  ["영상과 타임라인을 불러오는 중입니다.", "Loading video and timeline.", "動画とタイムラインを読み込み中です。"],
+  ["영상에 맞는 위치를 고르면 미리보기에 바로 반영돼요.", "Choose a position for the video and see it in the preview immediately.", "動画に合う位置を選ぶと、すぐにプレビューへ反映されます。"],
+  ["영상에 적용", "Apply to video", "動画に適用"],
+  ["영상을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.", "Could not verify the video. Please try again shortly.", "動画を確認できませんでした。少し待ってからもう一度お試しください。"],
+  ["영상을 확인해 주세요", "Check the video", "動画をご確認ください"],
+  ["예시 작업 · 읽기 전용", "Example project · Read only", "サンプルプロジェクト・閲覧のみ"],
+  ["예시 작업은 다운로드할 수 없습니다.", "Example projects cannot be downloaded.", "サンプルプロジェクトはダウンロードできません。"],
+  ["예시 작업은 편집할 수 없습니다.", "Example projects cannot be edited.", "サンプルプロジェクトは編集できません。"],
+  ["오버레이", "Overlay", "オーバーレイ"],
+  ["요청 시간 초과", "Request timed out", "リクエストがタイムアウトしました"],
+  ["원본 영상 권리 확인", "Confirm source-video rights", "元動画の権利確認"],
+  ["원본 영상 타임라인", "Source video timeline", "元動画のタイムライン"],
+  ["원본 영상 처리", "Source-video processing", "元動画処理"],
+  ["· 원본 영상 처리", "· Source-video processing", "· 元動画処理"],
+  ["원본 영상에 자막이 없을 때", "When the source has no captions", "元動画に字幕がない場合"],
+  ["위", "Top", "上"],
+  ["이 브라우저에 임시 저장 · ⌘S 또는 Ctrl+S로 지금 저장", "Temporarily saved in this browser · Press ⌘S or Ctrl+S to save now", "このブラウザに一時保存・⌘SまたはCtrl+Sで今すぐ保存"],
+  ["이 브라우저에 채널명을 저장하지 못했습니다. 저장 공간을 확인해 주세요.", "Could not save the channel name in this browser. Check available storage.", "このブラウザにチャンネル名を保存できませんでした。保存容量を確認してください。"],
+  ["이미지 바꾸기", "Change image", "画像を変更"],
+  ["이미지 선택", "Choose image", "画像を選択"],
+  ["이미지 준비 중...", "Preparing image...", "画像を準備中..."],
+  ["이미지 크기를 확인하지 못했습니다.", "Could not check image dimensions.", "画像サイズを確認できませんでした。"],
+  ["이미지 파일을 선택해 주세요.", "Choose an image file.", "画像ファイルを選択してください。"],
+  ["이미지를 불러오지 못했습니다.", "Could not load the image.", "画像を読み込めませんでした。"],
+  ["이미지를 처리하지 못했습니다.", "Could not process the image.", "画像を処理できませんでした。"],
+  ["10분 영상 기준", "Based on a 10-minute video", "10分動画基準"],
+  ["· 10분 영상 기준", "· Based on a 10-minute video", "· 10分動画基準"],
+  ["이전 자막 형식은 새 편집기에서 지원하지 않습니다.", "The new editor does not support the legacy caption format.", "新しいエディターは以前の字幕形式に対応していません。"],
+  ["이전 자막 형식은 새 편집기에서 지원하지 않아요.", "The new editor does not support the legacy caption format.", "新しいエディターは以前の字幕形式に対応していません。"],
+  ["자막", "Captions", "字幕"],
+  ["자막 글씨체", "Caption font", "字幕フォント"],
+  ["자막 끄기", "Turn captions off", "字幕をオフ"],
+  ["자막 내용, 색상, 위치와 크기 설정", "Caption text, color, position, and size", "字幕の内容・色・位置・サイズ設定"],
+  ["자막 문구는 비워둘 수 없습니다. 자막을 숨기려면 자막 끄기를 사용해 주세요.", "Caption text cannot be empty. Use Turn captions off to hide captions.", "字幕文は空にできません。字幕を非表示にするには「字幕をオフ」を使用してください。"],
+  ["자막 세로 위치", "Caption vertical position", "字幕の縦位置"],
+  ["자막 위치", "Caption position", "字幕位置"],
+  ["자막 위치 선택", "Choose caption position", "字幕位置を選択"],
+  ["자막 켜기", "Turn captions on", "字幕をオン"],
+  ["자막 크기", "Caption size", "字幕サイズ"],
+  ["자막 표시 설정", "Caption display settings", "字幕表示設定"],
+  ["재생", "Play", "再生"],
+  ["재생성할 댓글을 먼저 추가해 주세요.", "Add a comment before regenerating.", "再生成するコメントを先に追加してください。"],
+  ["저장 실패", "Save failed", "保存に失敗"],
+  ["저장 잠금", "Save locked", "保存ロック"],
+  ["저장하기에는 이미지 용량이 너무 큽니다.", "The image is too large to save.", "画像が大きすぎて保存できません。"],
+  ["저장하지 못했습니다.", "Could not save.", "保存できませんでした。"],
+  ["저장한 내 채널명", "Saved channel name", "保存したチャンネル名"],
+  ["저장할 편집 내용을 다시 확인해 주세요.", "Check the edits before saving.", "保存する編集内容を確認してください。"],
+  ["적용 중...", "Applying...", "適用中..."],
+  ["적용 중인 내 템플릿", "Applied custom template", "適用中のマイテンプレート"],
+  ["전체 편집 가능 범위", "Full editable range", "編集可能な全範囲"],
+  ["전체보기", "Full screen", "全体表示"],
+  ["전체보기 종료", "Exit full screen", "全体表示を終了"],
+  ["정지", "Pause", "一時停止"],
+  ["종료", "End", "終了"],
+  ["종료 시각", "End time", "終了時刻"],
+  ["중앙", "Center", "中央"],
+  ["최소 4분 이상 선택해야 쇼츠를 만들 수 있습니다.", "Select at least 4 minutes to create Shorts.", "ショート動画を作成するには4分以上選択してください。"],
+  ["최종 영상 시작 시간", "Final video start time", "最終動画の開始時間"],
+  ["최종 영상 종료 시간", "Final video end time", "最終動画の終了時間"],
+  ["최종 영상은 1초 이상이어야 합니다.", "The final video must be at least 1 second long.", "最終動画は1秒以上である必要があります。"],
+  ["최종 영상의 제목·영상·하단 구성을 미리 확인하세요.", "Preview the final video's title, video, and lower layout.", "最終動画のタイトル・動画・下部構成をプレビューしてください。"],
+  ["추가한 텍스트 목록", "Added text list", "追加テキスト一覧"],
+  ["추가한 텍스트 타임라인", "Added text timeline", "追加テキストのタイムライン"],
+  ["추출된 스크립트가 없습니다.", "No transcript is available.", "抽出されたスクリプトがありません。"],
+  ["편집 기록", "Edit history", "編集履歴"],
+  ["편집 도구", "Editing tools", "編集ツール"],
+  ["편집 사이드바 닫기", "Close editing sidebar", "編集サイドバーを閉じる"],
+  ["편집 사이드바 열기", "Open editing sidebar", "編集サイドバーを開く"],
+  ["편집 설정", "Editing settings", "編集設定"],
+  ["편집기 준비 중", "Preparing editor", "エディターを準備中"],
+  ["편집기를 열 수 없습니다.", "Could not open the editor.", "エディターを開けませんでした。"],
+  ["편집기를 준비하고 있습니다…", "Preparing editor…", "エディターを準備中…"],
+  ["편집기를 준비하고 있어요", "Preparing editor", "エディターを準備中"],
+  ["편집기에서 나가기", "Exit editor", "エディターを終了"],
+  ["편집용 영상 연결이 끊어졌어요.", "The editing-video connection was lost.", "編集用動画の接続が切れました。"],
+  ["편집용 영상을 재생하지 못했습니다. 잠시 후 다시 열어 주세요.", "Could not play the editing video. Please reopen it shortly.", "編集用動画を再生できませんでした。少し待ってから開き直してください。"],
+  ["편집용 영상을 준비하지 못했습니다.", "Could not prepare the editing video.", "編集用動画を準備できませんでした。"],
+  ["편집용 영상이 준비된 뒤 다시 시도해 주세요.", "Try again after the editing video is ready.", "編集用動画の準備完了後にもう一度お試しください。"],
+  ["편집할 쇼츠를 불러오지 못했습니다.", "Could not load the Short to edit.", "編集するショート動画を読み込めませんでした。"],
+  ["편집할 수 없는 쇼츠입니다.", "This Short cannot be edited.", "このショート動画は編集できません。"],
+  ["폰트", "Font", "フォント"],
+  ["프로젝트를 여는 중", "Opening project", "プロジェクトを開いています"],
+  ["한 작업에서 최대 60분까지 선택할 수 있습니다.", "You can select up to 60 minutes per job.", "1回の処理で最大60分まで選択できます。"],
+  ["현재 편집기 릴리스에서는 이 자막을 편집할 수 없어요.", "This caption cannot be edited in the current editor release.", "現在のエディターではこの字幕を編集できません。"],
+  ["현재 편집기에서는 이 자막 영상을 편집할 수 없습니다.", "This captioned video cannot be edited in the current editor.", "現在のエディターではこの字幕動画を編集できません。"],
+  ["확인하고 계속", "Confirm and continue", "確認して続行"],
+  ["AI로 댓글 재생성", "Regenerate comments with AI", "AIでコメントを再生成"],
+  ["iPhone과 iPad는 여러 파일의 자동 저장을 제한합니다. 아래 각 쇼츠의 다운로드 버튼을 누르면 파일 앱의 다운로드 폴더에 안전하게 저장됩니다.", "iPhone and iPad limit automatic saving of multiple files. Use each Short's download button below to save safely to the Files app's Downloads folder.", "iPhoneとiPadでは複数ファイルの自動保存が制限されます。各ショート動画のダウンロードボタンを押すと、ファイルアプリのダウンロードフォルダに保存されます。"],
+  ["프로젝트 30일 보관", "Projects stored for 30 days", "プロジェクトを30日間保存"],
+  ["실시간 인기 필터 제공", "Trending filters included", "リアルタイム人気フィルター付き"],
+  ["숏폼 전략 가이드 PDF 다운로드", "Short-form strategy guide PDF", "ショート動画戦略ガイドPDF"],
+  ["숏폼 전략 가이드 PDF 미제공", "Short-form strategy guide PDF not included", "ショート動画戦略ガイドPDFは対象外"],
+  ["숏폼 전략 가이드 전자책", "Short-form strategy e-books", "ショート動画戦略ガイド電子書籍"],
+  ["활성 기간 패키지 이용자는 모든 전자책 원본을 다운로드할 수 있습니다. 각 전자책은 3페이지까지 미리 볼 수 있습니다.", "Users with an active term package can download every full e-book. Each e-book can be previewed through page 3.", "有効な期間パッケージ利用者は、すべての電子書籍の原本をダウンロードできます。各電子書籍は3ページまでプレビューできます。"],
+  ["전자책 목록 이동", "E-book navigation", "電子書籍の移動"],
+  ["이전 전자책 보기", "View previous e-book", "前の電子書籍を見る"],
+  ["다음 전자책 보기", "View next e-book", "次の電子書籍を見る"],
+  ["전자책 미리보기 목록", "E-book preview list", "電子書籍プレビュー一覧"],
+  ["전자책 미리보기 닫기", "Close e-book preview", "電子書籍プレビューを閉じる"],
+  ["다운로드 준비 중...", "Preparing download...", "ダウンロードを準備中..."],
+  ["4페이지부터 잠김", "Locked from page 4", "4ページ目以降はロックされています"],
+  ["4페이지부터 잠겨 있어요", "Pages are locked from page 4", "4ページ目以降はロックされています"],
+  ["기간 패키지 구매 시 원본 PDF를 다운로드할 수 있습니다.", "Purchase a term package to download the full PDF.", "期間パッケージを購入すると元のPDFをダウンロードできます。"],
+  ["기간 패키지 확인하기", "View term packages", "期間パッケージを見る"],
+  ["남은 다운로드", "Downloads remaining", "残りのダウンロード回数"],
+  ["전자책을 다운로드하지 못했습니다. 잠시 후 다시 시도해 주세요.", "Could not download the e-book. Please try again shortly.", "電子書籍をダウンロードできませんでした。少し待ってからもう一度お試しください。"],
+  ["원본 PDF 다운로드를 시작했습니다.", "The full PDF download has started.", "元のPDFのダウンロードを開始しました。"],
+  ["이 전자책의 다운로드 가능 횟수를 모두 사용했습니다.", "You have used all downloads available for this e-book.", "この電子書籍のダウンロード可能回数をすべて使用しました。"],
+  ["전자책 다운로드 완료", "E-book download complete", "電子書籍のダウンロード完了"],
+  ["다운로드할 수 없습니다", "Unable to download", "ダウンロードできません"],
+  ["쇼츠 수익화 7가지 방법", "7 ways to monetize Shorts", "ショート動画を収益化する7つの方法"],
+  ["유튜브·릴스·틱톡 동시 공략법", "A combined YouTube, Reels & TikTok strategy", "YouTube・Reels・TikTok同時攻略法"],
+  ["쇼츠 저작권 생존 가이드", "Shorts copyright survival guide", "ショート動画著作権サバイバルガイド"],
+  ["숏폼 수익화 실전 가이드", "Practical short-form monetization guide", "ショート動画収益化実践ガイド"],
+  ["조회수 터지는 쇼츠의 공식", "The formula for high-view Shorts", "再生回数が伸びるショート動画の公式"],
+  ["조회수가 안 나오는 쇼츠 진단서", "Why your Shorts are not getting views", "再生回数が伸びないショート動画の診断書"],
+  ["클릭을 부르는 쇼츠 제목 300선", "300 Shorts titles that earn clicks", "クリックを呼ぶショート動画タイトル300選"],
+  ["얼리버드 특가 할인", "Early-bird special", "早割セール"],
+  ["계정당 한 번씩만 구매할 수 있는 특별 상품입니다.", "A special offer available once per product per account.", "商品ごとに1アカウント1回のみ購入できる特別商品です。"],
+  ["얼리버드", "Early bird", "早割"],
+  ["활성 이용권 보유자만 구매 가능 · 상품별 계정당 1회 · 구매일로부터 90일 유효 · 다른 할인과 중복 불가", "Active-plan users only · once per product per account · valid for 90 days from purchase · cannot be combined with other discounts", "有効な利用権保有者のみ · 商品ごとに1アカウント1回 · 購入日から90日間有効 · 他の割引との併用不可"],
+  ["상품 한눈에 보기", "Products at a glance", "商品一覧"],
+  ["구분", "Feature", "区分"],
+  ["스타터", "Starter", "スターター"],
+  ["전문가", "Expert", "エキスパート"],
+  ["실시간 인기 필터", "Trending filters", "リアルタイム人気フィルター"],
+  ["전략 가이드 PDF", "Strategy guide PDF", "戦略ガイドPDF"],
+  ["제공", "Included", "提供"],
+  ["미제공", "Not included", "対象外"],
+
+  ["어떤 영상을 쇼츠로 만들어야 할까?", "Which videos should you turn into Shorts?", "どんな動画をショート動画にするべき？"],
+  ["Easy Cut 실전 가이드 · 8페이지", "Easy Cut Practical Guide · 8 pages", "Easy Cut実践ガイド · 8ページ"],
+  ["한 채널을 한 카테고리, 한 주제, 한 크리에이터로 좁혀 오래 운영할 수 있는 쇼츠 채널의 방향을 정해보세요.", "Focus each channel on one category, one topic, and one creator to build a Shorts channel you can sustain.", "1つのチャンネルを1カテゴリー・1テーマ・1クリエイターに絞り、長く運営できるショート動画チャンネルの方向性を決めましょう。"],
+  ["쇼츠 채널 운영 가이드 8페이지", "Eight-page Shorts channel guide", "ショート動画チャンネル運営ガイド8ページ"],
+  ["쇼츠가 정상적으로 생성되지 못했습니다. 사용량은 다시 복구되었습니다. 다시 시도해주세요.", "Shorts could not be created. Your usage was restored. Please try again.", "ショート動画を作成できませんでした。利用時間は復元されました。もう一度お試しください。"],
+  ["쇼츠를 준비하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", "An error occurred while preparing the Shorts. Please try again shortly.", "ショート動画の準備中にエラーが発生しました。少し待ってからもう一度お試しください。"],
+  ["쇼츠 영상을 만드는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", "An error occurred while creating the Shorts video. Please try again shortly.", "ショート動画の作成中にエラーが発生しました。少し待ってからもう一度お試しください。"],
+  ["쇼츠 제작 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", "An error occurred while creating Shorts. Please try again shortly.", "ショート動画の作成中にエラーが発生しました。少し待ってからもう一度お試しください。"],
+  ["영상에서 사람의 목소리를 찾지 못해 쇼츠를 생성할 수 없습니다. 사용량은 다시 복구되었습니다.", "Shorts could not be created because no human voice was detected. Your usage was restored.", "人の声を検出できなかったためショート動画を作成できませんでした。利用時間は復元されました。"],
+  ["영상을 가져오지 못했습니다. 영상이 공개 상태인지, 로그인·연령·지역 제한이 없는지, 삭제되거나 비공개 처리되지 않았는지 확인한 뒤 다시 시도해 주세요.", "Could not retrieve the video. Confirm that it is public, available without sign-in, age, or region restrictions, and has not been deleted or made private, then try again.", "動画を取得できませんでした。公開状態で、ログイン・年齢・地域制限がなく、削除または非公開になっていないことを確認してから、もう一度お試しください。"],
+  ["사용자 요청으로 작업을 취소했습니다.", "The job was canceled at the user's request.", "ユーザーのリクエストにより処理をキャンセルしました。"],
+  ["중복 요청이 확인되어 최신 작업만 계속 진행합니다.", "A duplicate request was detected, so only the latest job will continue.", "重複リクエストが確認されたため、最新の処理のみ続行します。"],
+  ["YouTube 자동 요청 제한이 확인되어 안전 정책에 따라 작업을 중단했습니다.", "YouTube automated-request limits were detected, so the job was stopped under the safety policy.", "YouTubeの自動リクエスト制限を検出したため、安全ポリシーに従って処理を停止しました。"],
+  ["YouTube가 현재 서버의 자동 요청을 제한했습니다. 로그인 정보나 쿠키를 이용한 우회는 지원하지 않습니다. 잠시 후 다시 시도하거나 다른 사용 허가된 공개 영상을 이용해 주세요.", "YouTube is limiting automated requests from the server. Bypassing this with sign-in information or cookies is not supported. Please try again later or use another permitted public video.", "YouTubeが現在サーバーからの自動リクエストを制限しています。ログイン情報やCookieを使った回避には対応していません。しばらくしてから再試行するか、利用許可のある別の公開動画をご利用ください。"],
+  ["프록시 연결 오류로 다운로드할 수 없습니다.", "The download failed because of a proxy connection error.", "プロキシ接続エラーのためダウンロードできませんでした。"],
+  ["AWS Batch 작업 설정이 완료되지 않았습니다.", "AWS Batch job configuration is incomplete.", "AWS Batchジョブの設定が完了していません。"],
+  ["이지컷의 좋은 것들을", "The best of Easy Cut,", "Easy Cutの良い情報を"],
+  ["조금 먼저 공유합니다.", "shared a little earlier.", "少し早くお届けします。"],
+  ["EASYCUT PRIVATE에서는 활용하기 좋은 재사용 허용 영상부터 쇼츠 제작에 도움 되는 팁과 노하우까지 공유합니다.", "EASYCUT PRIVATE shares reusable video finds plus practical tips and know-how for creating Shorts.", "EASYCUT PRIVATEでは、活用しやすい再利用可能動画からショート動画制作のヒントやノウハウまで共有します。"],
+  ["새로운 기능, 업데이트, 주요 소식도 일반 공개 전에 가장 먼저 받아보실 수 있어요.", "Get new features, updates, and important news before the public release.", "新機能、アップデート、重要なお知らせも一般公開前にいち早く受け取れます。"],
+  ["이지컷을 제대로 활용하고 싶다면, 여기서 먼저 확인해보세요.", "If you want to get more from Easy Cut, start here.", "Easy Cutをもっと活用したい方は、まずこちらをご確認ください。"],
+  ["채팅방 입장", "Join the chat", "チャットに参加"],
+  ["PRIVATE에서 먼저 받아보는 것", "What you get first in PRIVATE", "PRIVATEで先に受け取れるもの"],
+  ["필요한 정보만 골라, 일반 공개보다 조금 먼저 전해드립니다.", "We select useful information and share it before the public release.", "必要な情報を厳選し、一般公開より少し早くお届けします。"],
+  ["영상 추천", "Video picks", "動画おすすめ"],
+  ["바로 활용할 수 있는 좋은 소스", "Useful sources ready to use", "すぐ活用できる良質な素材"],
+  ["활용하기 좋은 재사용 허용 영상을 선별해 공유합니다.", "We curate reusable videos that are practical to work with.", "活用しやすい再利用可能動画を厳選して共有します。"],
+  ["제작 노트", "Production notes", "制作ノート"],
+  ["쇼츠를 더 잘 만드는 방법", "Create better Shorts", "より良いショート動画の作り方"],
+  ["제작과 운영에 바로 적용할 수 있는 팁과 노하우를 전해드립니다.", "Get tips and know-how you can apply directly to production and channel operations.", "制作と運営にすぐ活かせるヒントやノウハウをお届けします。"],
+  ["업데이트", "Updates", "アップデート"],
+  ["새 기능을 가장 먼저", "New features first", "新機能をいち早く"],
+  ["새로운 기능과 주요 소식을 일반 공개 전에 알려드립니다.", "Hear about new features and important news before public release.", "新機能や重要なお知らせを一般公開前にお伝えします。"],
+
+  ["이지컷의 쇼츠 AI 기능, 사용할 수 있는 영상과 생성 결과 편집에 관한 주요 답변을 확인하세요.", "Find answers about Easy Cut's Shorts AI, supported videos, and editing generated results.", "Easy Cutのショート動画AI、使用できる動画、生成結果の編集に関する主な回答をご確認ください。"],
+  ["AI 쇼츠 제작 자주 묻는 질문", "AI Shorts FAQ", "AIショート動画作成 よくある質問"],
+  ["이지컷·알파컷·피카클립", "Easy Cut · AlphaCut · FikaClip", "Easy Cut・AlphaCut・FikaClip"],
+  ["이지컷:", "Easy Cut:", "Easy Cut："],
+  ["알파컷:", "AlphaCut:", "AlphaCut："],
+  ["피카클립:", "FikaClip:", "FikaClip："],
+  ["및 현재 서비스 공개 기능", "and currently published service features", "および現在公開中のサービス機能"],
+  ["이지컷 AI 쇼츠 제작 질문과 답변", "Easy Cut AI Shorts questions and answers", "Easy Cut AIショート動画の質問と回答"],
+  ["서비스별 기능과 제공량은 비교 페이지에서 확인하고, 계정·결제 관련 문의는 고객센터로 보내주세요.", "Compare features and allowances on the comparison page, or contact support about accounts and payments.", "サービス別の機能と提供量は比較ページで確認し、アカウントや決済についてはカスタマーサポートへお問い合わせください。"],
+
+  ["필터 이용 전 확인", "Before using this filter", "フィルター利用前の確認"],
+  ["영상의 라이선스를 직접 확인해 주세요", "Check the video's license yourself", "動画のライセンスを必ずご確認ください"],
+  ["크리에이티브 커먼즈", "Creative Commons", "クリエイティブ・コモンズ"],
+  ["다시 보지 않기", "Don't show again", "今後表示しない"],
+  ["크리에이티브 커먼즈(CC BY) 영상이란?", "What is a Creative Commons (CC BY) video?", "クリエイティブ・コモンズ（CC BY）動画とは？"],
+  ["원작자가 다른 사람이 영상을 사용할 수 있도록 허용한 콘텐츠입니다.", "It is content the creator has allowed others to use.", "原作者が他の人による動画の利用を許可したコンテンツです。"],
+  ["출처와 저작자를 표시하면", "If you credit the source and creator,", "出典と著作者を表示すれば"],
+  ["영상을 편집하거나 재사용할 수 있습니다.", "you may edit or reuse the video.", "動画を編集・再利用できます。"],
+  ["단, 영상 제목, 저작자, 원본 링크, 라이선스 정보를 반드시 표시해야 합니다.", "You must still display the video title, creator, original link, and license information.", "ただし、動画タイトル、著作者、元リンク、ライセンス情報を必ず表示してください。"],
+  ["YouTube의 CC BY 표시 영상", "Videos marked CC BY on YouTube", "YouTubeでCC BYと表示された動画"],
+  ["실제 의미는 “YouTube에서 CC BY로 표시됨”입니다. 이용자는 제목·저작자·URL·CC BY 라이선스를 표시해야 하며, 제3자 음악·방송 화면 등의 권리도 별도로 확인해야 합니다.", "This means only that YouTube marks the video as CC BY. You must credit the title, creator, URL, and CC BY license and separately verify rights in music, broadcasts, and other third-party material.", "これはYouTube上でCC BYと表示されていることのみを意味します。タイトル、著作者、URL、CC BYライセンスを表示し、第三者の音楽や放送映像等の権利も別途確認してください。"],
+  ["닫기", "Close", "閉じる"],
+  ["확인", "Confirm", "確認"],
+  ["저장", "Save", "保存"],
+  ["취소", "Cancel", "キャンセル"],
+] as const;
+
+const phraseMaps: Record<Exclude<SiteLocale, "ko">, Map<string, string>> = {
+  en: new Map(phrases.map(([ko, en]) => [ko, en])),
+  ja: new Map(phrases.map(([ko, , ja]) => [ko, ja])),
+};
+
+function withOriginalWhitespace(original: string, translated: string) {
+  const leading = original.match(/^\s*/)?.[0] || "";
+  const trailing = original.match(/\s*$/)?.[0] || "";
+  return `${leading}${translated}${trailing}`;
+}
+
+function translateDynamicText(value: string, locale: Exclude<SiteLocale, "ko">) {
+  const trimmed = value.trim();
+  const translateKnown = (source: string) => phraseMaps[locale].get(source) || source;
+  const projectNumberMatch = /^프로젝트 #(\d+)$/.exec(trimmed);
+  if (projectNumberMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `Project #${projectNumberMatch[1]}`
+      : `プロジェクト #${projectNumberMatch[1]}`);
+  }
+  const projectPathMatch = /^← 프로젝트 \/(\d+)$/.exec(trimmed);
+  if (projectPathMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `← Project /${projectPathMatch[1]}`
+      : `← プロジェクト /${projectPathMatch[1]}`);
+  }
+  const shortsCountMatch = /^쇼츠 (\d+)개$/.exec(trimmed);
+  if (shortsCountMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `${shortsCountMatch[1]} Shorts`
+      : `ショート動画 ${shortsCountMatch[1]}件`);
+  }
+  const viralScoreMatch = /^바이럴 점수 (\d+)\/100$/.exec(trimmed);
+  if (viralScoreMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `Viral score ${viralScoreMatch[1]}/100`
+      : `バイラルスコア ${viralScoreMatch[1]}/100`);
+  }
+  const durationMatch = /^(?:(\d+)시간 )?(?:(\d+)분 )?(\d+)초$/.exec(trimmed);
+  if (durationMatch) {
+    const parts = locale === "en"
+      ? [durationMatch[1] && `${durationMatch[1]}h`, durationMatch[2] && `${durationMatch[2]}m`, `${durationMatch[3]}s`]
+      : [durationMatch[1] && `${durationMatch[1]}時間`, durationMatch[2] && `${durationMatch[2]}分`, `${durationMatch[3]}秒`];
+    return withOriginalWhitespace(value, parts.filter(Boolean).join(" "));
+  }
+  const videoClipMatch = /^영상 조각 (\d+) 선택$/.exec(trimmed);
+  if (videoClipMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `Select video clip ${videoClipMatch[1]}`
+      : `動画クリップ${videoClipMatch[1]}を選択`);
+  }
+  const guidebookPageMatch = /^(.+) 가이드북 (\d+)페이지$/.exec(trimmed);
+  if (guidebookPageMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `${translateKnown(guidebookPageMatch[1])} guidebook · Page ${guidebookPageMatch[2]}`
+      : `${translateKnown(guidebookPageMatch[1])} ガイドブック ${guidebookPageMatch[2]}ページ`);
+  }
+  const templateFavoriteMatch = /^(.+) (자주 쓰는 템플릿으로 저장|자주 쓰는 템플릿에서 해제)$/.exec(trimmed);
+  if (templateFavoriteMatch) {
+    return withOriginalWhitespace(value, `${translateKnown(templateFavoriteMatch[1])} ${translateKnown(templateFavoriteMatch[2])}`);
+  }
+  const labeledUiMatch = /^(.+) (쇼츠 미리보기|다운로드|미리보기 열기|표지)$/.exec(trimmed);
+  if (labeledUiMatch) {
+    const suffix = labeledUiMatch[2] === "쇼츠 미리보기"
+      ? (locale === "en" ? "Shorts preview" : "ショート動画プレビュー")
+      : labeledUiMatch[2] === "다운로드"
+        ? (locale === "en" ? "Download" : "ダウンロード")
+        : labeledUiMatch[2] === "미리보기 열기"
+          ? (locale === "en" ? "Open preview" : "プレビューを開く")
+          : (locale === "en" ? "cover" : "表紙");
+    return withOriginalWhitespace(value, `${translateKnown(labeledUiMatch[1])} ${suffix}`);
+  }
+  const ebookPreviewSummaryMatch = /^(\d+)~(\d+)페이지 미리보기 · 전체 (\d+)페이지$/.exec(trimmed);
+  if (ebookPreviewSummaryMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `Preview pages ${ebookPreviewSummaryMatch[1]}–${ebookPreviewSummaryMatch[2]} · ${ebookPreviewSummaryMatch[3]} pages total`
+      : `${ebookPreviewSummaryMatch[1]}〜${ebookPreviewSummaryMatch[2]}ページをプレビュー · 全${ebookPreviewSummaryMatch[3]}ページ`);
+  }
+  const labeledPageMatch = /^(.+) (\d+)페이지$/.exec(trimmed);
+  if (labeledPageMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `${translateKnown(labeledPageMatch[1])} · Page ${labeledPageMatch[2]}`
+      : `${translateKnown(labeledPageMatch[1])} ${labeledPageMatch[2]}ページ`);
+  }
+  const ebookRemainingMatch = /^이 전자책을 (\d+)번 더 다운로드할 수 있습니다\.$/.exec(trimmed);
+  if (ebookRemainingMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `You can download this e-book ${ebookRemainingMatch[1]} more times.`
+      : `この電子書籍はあと${ebookRemainingMatch[1]}回ダウンロードできます。`);
+  }
+  const previewCounterMatch = /^\/ (\d+) 미리보기$/.exec(trimmed);
+  if (previewCounterMatch) {
+    return withOriginalWhitespace(value, locale === "en" ? `/ ${previewCounterMatch[1]} preview` : `/ ${previewCounterMatch[1]} プレビュー`);
+  }
+  const ingestionDetailMatch = /^"?영상을 가져오지 못했습니다\..*(?:Sign in to confirm|로그인이 필요하지 않은지).*$/.exec(trimmed);
+  if (ingestionDetailMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? "Could not retrieve the video. Confirm that it is public and available without sign-in, then try again."
+      : "動画を取得できませんでした。公開状態でログイン不要であることを確認してから、もう一度お試しください。");
+  }
+  const monthMatch = /^(\d+)개월$/.exec(trimmed);
+  if (monthMatch) {
+    return withOriginalWhitespace(value, locale === "en" ? `${monthMatch[1]} months` : `${monthMatch[1]}か月`);
+  }
+  const discountMatch = /^(\d+)% 할인$/.exec(trimmed);
+  if (discountMatch) {
+    return withOriginalWhitespace(value, locale === "en" ? `${discountMatch[1]}% off` : `${discountMatch[1]}%割引`);
+  }
+  const monthlyMinutesMatch = /^매월 ([\d,]+)분$/.exec(trimmed);
+  if (monthlyMinutesMatch) {
+    return withOriginalWhitespace(value, locale === "en" ? `${monthlyMinutesMatch[1]} min/month` : `毎月${monthlyMinutesMatch[1]}分`);
+  }
+  const packagePriceLineMatch = /^(\d+)개월 총 ([\d,]+)원 \(월 환산 ([\d,]+)원\)$/.exec(trimmed);
+  if (packagePriceLineMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `${packagePriceLineMatch[1]} months · KRW ${packagePriceLineMatch[2]} total (KRW ${packagePriceLineMatch[3]}/month equivalent)`
+      : `${packagePriceLineMatch[1]}か月 · 合計${packagePriceLineMatch[2]}ウォン（月換算${packagePriceLineMatch[3]}ウォン）`);
+  }
+  const earlyBirdSummaryMatch = /^활성 이용권 보유자는 얼리버드 추가시간도 선택할 수 있습니다: (.+)\. 각 상품은 계정당 한 번 구매할 수 있고 구매일로부터 90일간 유효합니다\.$/.exec(trimmed);
+  if (earlyBirdSummaryMatch) {
+    const summary = earlyBirdSummaryMatch[1].replace(/([\d,]+)분 ([\d,]+)원/g, (_match, minutes: string, price: string) => (
+      locale === "en" ? `${minutes} min for KRW ${price}` : `${minutes}分 ${price}ウォン`
+    ));
+    return withOriginalWhitespace(value, locale === "en"
+      ? `Active-plan users can also choose early-bird additional time: ${summary}. Each product can be purchased once per account and is valid for 90 days from purchase.`
+      : `有効な利用権をお持ちの方は早割の追加時間も選べます：${summary}。各商品は1アカウントにつき1回購入でき、購入日から90日間有効です。`);
+  }
+  const compactEarlyBirdMatch = /^([\d,]+)분 ([\d,]+)원(?: · [\d,]+분 [\d,]+원)+$/.exec(trimmed);
+  if (compactEarlyBirdMatch) {
+    return withOriginalWhitespace(value, trimmed.replace(/([\d,]+)분 ([\d,]+)원/g, (_match, minutes: string, price: string) => (
+      locale === "en" ? `${minutes} min for KRW ${price}` : `${minutes}分 ${price}ウォン`
+    )));
+  }
+  const packageNameMatch = /^(스타터|전문가) 패키지 (\d+)개월$/.exec(trimmed);
+  if (packageNameMatch) {
+    const tier = packageNameMatch[1] === "스타터"
+      ? (locale === "en" ? "Starter" : "スターター")
+      : (locale === "en" ? "Expert" : "エキスパート");
+    return withOriginalWhitespace(value, locale === "en"
+      ? `${tier} package · ${packageNameMatch[2]} months`
+      : `${tier}パッケージ・${packageNameMatch[2]}か月`);
+  }
+  const packageInstallmentMatch = /^(스타터|전문가) 패키지 (\d+)개월 할부결제$/.exec(trimmed);
+  if (packageInstallmentMatch) {
+    const tier = packageInstallmentMatch[1] === "스타터"
+      ? (locale === "en" ? "Starter" : "スターター")
+      : (locale === "en" ? "Expert" : "エキスパート");
+    return withOriginalWhitespace(value, locale === "en"
+      ? `Pay for the ${tier} package in ${packageInstallmentMatch[2]} installments`
+      : `${tier}パッケージを${packageInstallmentMatch[2]}回払いで決済`);
+  }
+  const availableUntilMatch = /^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.까지 이용$/.exec(trimmed);
+  if (availableUntilMatch) {
+    const date = `${availableUntilMatch[1]}-${availableUntilMatch[2].padStart(2, "0")}-${availableUntilMatch[3].padStart(2, "0")}`;
+    return withOriginalWhitespace(value, locale === "en" ? `Available until ${date}` : `${date}まで利用可能`);
+  }
+  const packageTermSummaryMatch = /^이용기간 (\d+)개월 · 총 ₩([\d,]+) · 할부 최대 (\d+)개월$/.exec(trimmed);
+  if (packageTermSummaryMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `${packageTermSummaryMatch[1]}-month term · ₩${packageTermSummaryMatch[2]} total · up to ${packageTermSummaryMatch[3]} installments`
+      : `利用期間${packageTermSummaryMatch[1]}か月 · 合計₩${packageTermSummaryMatch[2]} · 最大${packageTermSummaryMatch[3]}回払い`);
+  }
+  const packageMinutesMatch = /^원본 영상 처리시간 · 매월 ([\d,]+)분 × (\d+)개월$/.exec(trimmed);
+  if (packageMinutesMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `Source-video processing · ${packageMinutesMatch[1]} min/month × ${packageMinutesMatch[2]} months`
+      : `元動画処理時間 · 毎月${packageMinutesMatch[1]}分 × ${packageMinutesMatch[2]}か月`);
+  }
+  const subscriptionMinutesMatch = /^매월 자동결제 · 월 ([\d,]+)분$/.exec(trimmed);
+  if (subscriptionMinutesMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `Monthly auto-renewal · ${subscriptionMinutesMatch[1]} min/month`
+      : `毎月自動決済 · 月${subscriptionMinutesMatch[1]}分`);
+  }
+  const sourceMinutesMatch = /^월 ([\d,]+)분 · 원본 영상 처리$/.exec(trimmed);
+  if (sourceMinutesMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `${sourceMinutesMatch[1]} min/month · source-video processing`
+      : `月${sourceMinutesMatch[1]}分 · 元動画処理`);
+  }
+  const shortsEstimateMatch = /^쇼츠 약 ([\d,]+)개(?: · 10분 영상 기준)?$/.exec(trimmed);
+  if (shortsEstimateMatch) {
+    const suffix = trimmed.includes("10분 영상 기준")
+      ? (locale === "en" ? " · based on 10-minute videos" : " · 10分動画基準")
+      : "";
+    return withOriginalWhitespace(value, locale === "en"
+      ? `About ${shortsEstimateMatch[1]} Shorts${suffix}`
+      : `ショート動画約${shortsEstimateMatch[1]}本${suffix}`);
+  }
+  const concurrentMatch = /^동시 작업 (\d+)개$/.exec(trimmed);
+  if (concurrentMatch) return withOriginalWhitespace(value, locale === "en" ? `${concurrentMatch[1]} concurrent jobs` : `同時処理${concurrentMatch[1]}件`);
+  const installmentMatch = /^(\d+)개월 할부$/.exec(trimmed);
+  if (installmentMatch) {
+    return withOriginalWhitespace(
+      value,
+      locale === "en" ? `${installmentMatch[1]}-month installments` : `${installmentMatch[1]}回払い`,
+    );
+  }
+  const partialRefundMatch = /^([\d,]+원)은 영업일 \+?3일 이내에 원 결제수단으로 부분환불 처리됩니다\. 카드사 반영 시점은 다를 수 있습니다\.(.*)$/.exec(trimmed);
+  if (partialRefundMatch) {
+    return withOriginalWhitespace(value, locale === "en"
+      ? `${partialRefundMatch[1]} will be partially refunded to the original payment method within 3 business days. Posting time may vary by issuer.${partialRefundMatch[2]}`
+      : `${partialRefundMatch[1]}は3営業日以内に元のお支払い方法へ一部返金されます。カード会社への反映時期は異なる場合があります。${partialRefundMatch[2]}`);
+  }
+  const articleMatch = /^제(\d+)조\s+(.+)$/.exec(trimmed);
+  if (articleMatch) {
+    const translatedTitle = phraseMaps[locale].get(articleMatch[2]);
+    if (translatedTitle) {
+      return withOriginalWhitespace(value, locale === "en"
+        ? `Article ${articleMatch[1]}. ${translatedTitle}`
+        : `第${articleMatch[1]}条 ${translatedTitle}`);
+    }
+  }
+  const numberedHeadingMatch = /^(\d+)\.\s+(.+)$/.exec(trimmed);
+  if (numberedHeadingMatch) {
+    const translatedTitle = phraseMaps[locale].get(numberedHeadingMatch[2]);
+    if (translatedTitle) return withOriginalWhitespace(value, `${numberedHeadingMatch[1]}. ${translatedTitle}`);
+  }
+  const itemMatch = /^(\d+)개$/.exec(trimmed);
+  if (itemMatch) return withOriginalWhitespace(value, locale === "en" ? itemMatch[1] : `${itemMatch[1]}件`);
+  const minuteMatch = /^(\d+)분$/.exec(trimmed);
+  if (minuteMatch) return withOriginalWhitespace(value, locale === "en" ? `${minuteMatch[1]} min` : `${minuteMatch[1]}分`);
+  const dayMatch = /^(\d+)일$/.exec(trimmed);
+  if (dayMatch) return withOriginalWhitespace(value, locale === "en" ? `${dayMatch[1]} days` : `${dayMatch[1]}日`);
+  const agoMatch = /^(\d+)시간 전$/.exec(trimmed);
+  if (agoMatch) return withOriginalWhitespace(value, locale === "en" ? `${agoMatch[1]} hours ago` : `${agoMatch[1]}時間前`);
+  const monthAgoMatch = /^(\d+)개월 전$/.exec(trimmed);
+  if (monthAgoMatch) return withOriginalWhitespace(value, locale === "en" ? `${monthAgoMatch[1]} months ago` : `${monthAgoMatch[1]}か月前`);
+  const compactCountMatch = /^([\d.]+)(천|만)$/.exec(trimmed);
+  if (compactCountMatch) {
+    if (compactCountMatch[2] === "천") {
+      return withOriginalWhitespace(value, `${compactCountMatch[1]}${locale === "en" ? "K" : "千"}`);
+    }
+    return withOriginalWhitespace(value, locale === "en"
+      ? `${Number(compactCountMatch[1]) * 10}K`
+      : `${compactCountMatch[1]}万`);
+  }
+  const pageMatch = /^(\d+)페이지$/.exec(trimmed);
+  if (pageMatch) return withOriginalWhitespace(value, locale === "en" ? `Page ${pageMatch[1]}` : `${pageMatch[1]}ページ`);
+  const timesMatch = /^(\d+)회$/.exec(trimmed);
+  if (timesMatch) return withOriginalWhitespace(value, locale === "en" ? `${timesMatch[1]} times` : `${timesMatch[1]}回`);
+  return null;
+}
+
+export function translateLegacyText(value: string, locale: SiteLocale) {
+  if (locale === "ko" || !/[가-힣]/.test(value)) return value;
+  const exact = phraseMaps[locale].get(value.trim());
+  if (exact) return withOriginalWhitespace(value, exact);
+  return translateDynamicText(value, locale) || value;
+}
+
+export function translateLegacyDocumentTitle(value: string, locale: SiteLocale) {
+  if (locale === "ko") return value;
+  const trimmed = value.trim();
+  const phrase = phrases.find(([ko, en, ja]) => trimmed === ko || trimmed === en || trimmed === ja);
+  if (!phrase) return translateLegacyText(value, locale);
+  return withOriginalWhitespace(value, locale === "en" ? phrase[1] : phrase[2]);
+}
+
+export function hasLegacyPhrase(locale: Exclude<SiteLocale, "ko">, source: string) {
+  return phraseMaps[locale].has(source);
+}

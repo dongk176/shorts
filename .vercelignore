@@ -1,0 +1,15 @@
+# Local-only payment integration test surfaces must never enter a Vercel artifact.
+web/app/payment-test/**
+web/app/api/payment-test/**
+web/lib/payment-test.ts
+web/lib/payment-test-package-orders.ts
+web/lib/payment-test.test.ts
+
+# Local TypeScript build cache is not product source.
+web/tsconfig.tsbuildinfo
+
+# Generated local verification and infrastructure artifacts are not product source.
+**/.ruff_cache/**
+**/.pytest_cache/**
+infra/aws/cdk.out/**
+infra/aws/cdk.context.json

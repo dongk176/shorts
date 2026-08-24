@@ -1,0 +1,1400 @@
+"use client";
+
+import Image from "next/image";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { PopularFiltersPlanOverlay } from "@/components/popular-filters-plan-overlay";
+import type {
+  PopularDiscoveryPeriod,
+  PopularVideo,
+  PopularVideoCategory,
+  PopularVideoResponse,
+  PopularVideoType,
+} from "@/lib/youtube-popular";
+import type { SiteLocale } from "@/lib/i18n/config";
+import { formatLocale } from "@/lib/i18n/config";
+import { formatNumber } from "@/lib/i18n/format";
+import { useI18n } from "@/lib/i18n/provider";
+import { userFacingErrorMessage } from "@/lib/public-error";
+
+const dataTypeOptions: Array<{ value: PopularVideoType }> = [
+  { value: "trending" },
+  { value: "views" },
+  { value: "reusable" },
+];
+
+const mobileRankingButtonTone: Record<PopularVideoType, { selected: string; idle: string }> = {
+  trending: {
+    selected: "bg-[#ff715e] text-[#24100d] shadow-[inset_0_0_0_1px_rgba(255,255,255,.22),0_7px_22px_rgba(255,85,64,.22)]",
+    idle: "text-neutral-400 active:bg-white/[.05]",
+  },
+  views: {
+    selected: "bg-[#ffb4a8] text-[#2b1511] shadow-[inset_0_0_0_1px_rgba(255,255,255,.22),0_7px_22px_rgba(255,180,168,.18)]",
+    idle: "text-neutral-400 active:bg-white/[.05]",
+  },
+  reusable: {
+    selected: "bg-[#a078ff] text-[#181123] shadow-[inset_0_0_0_1px_rgba(255,255,255,.2),0_7px_22px_rgba(160,120,255,.2)]",
+    idle: "text-neutral-400 active:bg-white/[.05]",
+  },
+};
+
+const discoveryPeriodOptions: Array<{ value: PopularDiscoveryPeriod; labels: Record<SiteLocale, string> }> = [
+  { value: "today", labels: { ko: "오늘 발견", en: "Found today", ja: "今日発見" } },
+  { value: "week", labels: { ko: "최근 7일", en: "Last 7 days", ja: "直近7日" } },
+  { value: "all", labels: { ko: "전체 인기", en: "All popular", ja: "全期間の人気" } },
+];
+
+const categoryOptions: Array<{ value: PopularVideoCategory }> = [
+  { value: "all" },
+  { value: "entertainment" },
+  { value: "gaming" },
+  { value: "sports" },
+  { value: "music" },
+  { value: "news" },
+  { value: "science" },
+  { value: "howto" },
+];
+
+const reusableGuideDismissedKey = "easycut:reusable-license-guide-dismissed:v1";
+
+type MobilePopularFiltersDraft = {
+  category: PopularVideoCategory;
+  koreanOnly: boolean;
+  longFormOnly: boolean;
+  reusableOnly: boolean;
+};
+
+const mobileFilterCopy: Record<SiteLocale, {
+  ranking: string;
+  trending: string;
+  views: string;
+  reusableRanking: string;
+  category: string;
+  details: string;
+  title: string;
+  description: string;
+  additional: string;
+  korean: string;
+  koreanDescription: string;
+  longForm: string;
+  longFormDescription: string;
+  reusable: string;
+  reusableDescription: string;
+  reset: string;
+  apply: string;
+  close: string;
+  categories: Record<PopularVideoCategory, string>;
+}> = {
+  ko: {
+    ranking: "인기 기준",
+    trending: "인기 급상승",
+    views: "조회수 상위",
+    reusableRanking: "재사용 허용",
+    category: "카테고리",
+    details: "상세 조건",
+    title: "세부 설정",
+    description: "카테고리와 세부 조건을 선택한 뒤 한 번에 적용하세요.",
+    additional: "추가 조건",
+    korean: "한국어 영상만",
+    koreanDescription: "한국어로 된 영상만 모아봅니다.",
+    longForm: "롱폼만",
+    longFormDescription: "긴 형식의 영상만 표시합니다.",
+    reusable: "재사용 허용 영상만",
+    reusableDescription: "급상승·조회수 결과에서 재사용 허용 영상만 골라봅니다.",
+    reset: "초기화",
+    apply: "적용",
+    close: "필터 닫기",
+    categories: {
+      all: "전체",
+      entertainment: "엔터테인먼트",
+      gaming: "게임",
+      sports: "스포츠",
+      music: "음악",
+      news: "뉴스·정치",
+      science: "과학·기술",
+      howto: "요리·노하우",
+    },
+  },
+  en: {
+    ranking: "Ranking",
+    trending: "Trending",
+    views: "Most viewed",
+    reusableRanking: "Reuse allowed",
+    category: "Category",
+    details: "More filters",
+    title: "Details",
+    description: "Choose a category and conditions, then apply them together.",
+    additional: "Additional filters",
+    korean: "Korean only",
+    koreanDescription: "Show only videos in Korean.",
+    longForm: "Long-form only",
+    longFormDescription: "Show only long-form videos.",
+    reusable: "Reuse allowed only",
+    reusableDescription: "Narrow trending or most-viewed results to reusable videos.",
+    reset: "Reset",
+    apply: "Apply",
+    close: "Close filters",
+    categories: {
+      all: "All",
+      entertainment: "Entertainment",
+      gaming: "Gaming",
+      sports: "Sports",
+      music: "Music",
+      news: "News & politics",
+      science: "Science & tech",
+      howto: "How-to",
+    },
+  },
+  ja: {
+    ranking: "人気基準",
+    trending: "急上昇",
+    views: "再生回数順",
+    reusableRanking: "再利用可能",
+    category: "カテゴリー",
+    details: "詳細条件",
+    title: "詳細設定",
+    description: "カテゴリーと条件を選択して、一度に適用できます。",
+    additional: "追加条件",
+    korean: "韓国語のみ",
+    koreanDescription: "韓国語の動画のみ表示します。",
+    longForm: "長尺のみ",
+    longFormDescription: "長尺動画のみ表示します。",
+    reusable: "再利用可能のみ",
+    reusableDescription: "急上昇・再生回数順の結果を再利用可能な動画に絞ります。",
+    reset: "リセット",
+    apply: "適用",
+    close: "フィルターを閉じる",
+    categories: {
+      all: "すべて",
+      entertainment: "エンタメ",
+      gaming: "ゲーム",
+      sports: "スポーツ",
+      music: "音楽",
+      news: "ニュース・政治",
+      science: "科学・技術",
+      howto: "料理・ノウハウ",
+    },
+  },
+};
+
+const popularUiCopy: Record<SiteLocale, {
+  lastUpdated: string;
+  filters: string;
+  activePlanOnly: string;
+  koreanOnly: string;
+  longFormOnly: string;
+  reusableOnly: string;
+  longFormOnlyAria: string;
+  reusableOnlyAria: string;
+  categoryAria: (label: string) => string;
+  countLoading: string;
+  loadFailed: string;
+  retry: string;
+  loadMore: string;
+  loadingMore: string;
+  loadMoreFailed: string;
+  nextResults: string;
+  noResults: string;
+  noResultsDescription: string;
+  reusableBadge: string;
+  openActions: (rank: number, title: string) => string;
+  closeActions: string;
+  actions: (title: string) => string;
+  thumbnail: (title: string) => string;
+  openYoutube: string;
+  copying: string;
+  copyLink: string;
+  copyError: string;
+  loadingVideos: string;
+}> = {
+  ko: {
+    lastUpdated: "마지막 업데이트", filters: "필터", activePlanOnly: "활성 이용권 전용",
+    koreanOnly: "한국어만", longFormOnly: "롱폼만", reusableOnly: "재사용 허용만",
+    longFormOnlyAria: "롱폼만 보기", reusableOnlyAria: "재사용 허용 영상만 보기",
+    categoryAria: (label) => `${label} 카테고리`, countLoading: "개수 확인 중",
+    loadFailed: "인기 영상을 불러오지 못했습니다", retry: "다시 시도", loadMore: "더 보기",
+    loadingMore: "추가 영상 불러오는 중...", loadMoreFailed: "추가 영상을 불러오지 못했습니다.", nextResults: "다음 결과 확인",
+    noResults: "조건에 맞는 영상이 없습니다",
+    noResultsDescription: "인기 기준, 언어, 카테고리, 영상 길이 또는 재사용 허용 조건을 변경해 보세요.",
+    reusableBadge: "재사용 허용", openActions: (rank, title) => `${rank}위 ${title} 작업 메뉴 열기`,
+    closeActions: "영상 작업 메뉴 닫기", actions: (title) => `${title} 작업`,
+    thumbnail: (title) => `${title} 썸네일`, openYoutube: "유튜브로", copying: "복사 중...",
+    copyLink: "링크 복사", copyError: "영상 링크를 복사하지 못했습니다.", loadingVideos: "인기 영상을 불러오는 중",
+  },
+  en: {
+    lastUpdated: "Last updated", filters: "Filters", activePlanOnly: "Active plan only",
+    koreanOnly: "Korean only", longFormOnly: "Long-form only", reusableOnly: "Reuse allowed only",
+    longFormOnlyAria: "Show long-form videos only", reusableOnlyAria: "Show reusable videos only",
+    categoryAria: (label) => `${label} category`, countLoading: "Checking count",
+    loadFailed: "Could not load trending videos", retry: "Try again", loadMore: "Show more",
+    loadingMore: "Loading more videos...", loadMoreFailed: "Could not load more videos.", nextResults: "Check next results",
+    noResults: "No videos match these filters",
+    noResultsDescription: "Try changing the ranking, language, category, duration, or reuse filter.",
+    reusableBadge: "Reuse allowed", openActions: (rank, title) => `Open actions for #${rank} ${title}`,
+    closeActions: "Close video actions", actions: (title) => `Actions for ${title}`,
+    thumbnail: (title) => `${title} thumbnail`, openYoutube: "Open YouTube", copying: "Copying...",
+    copyLink: "Copy link", copyError: "Could not copy the video link.", loadingVideos: "Loading trending videos",
+  },
+  ja: {
+    lastUpdated: "最終更新", filters: "フィルター", activePlanOnly: "有効なプラン限定",
+    koreanOnly: "韓国語のみ", longFormOnly: "長尺のみ", reusableOnly: "再利用可能のみ",
+    longFormOnlyAria: "長尺動画のみ表示", reusableOnlyAria: "再利用可能な動画のみ表示",
+    categoryAria: (label) => `${label}カテゴリー`, countLoading: "件数を確認中",
+    loadFailed: "人気動画を読み込めませんでした", retry: "もう一度試す", loadMore: "さらに表示",
+    loadingMore: "さらに動画を読み込み中...", loadMoreFailed: "追加の動画を読み込めませんでした。", nextResults: "次の結果を確認",
+    noResults: "条件に一致する動画がありません",
+    noResultsDescription: "人気基準、言語、カテゴリー、動画の長さ、再利用条件を変更してみてください。",
+    reusableBadge: "再利用可能", openActions: (rank, title) => `${rank}位 ${title} の操作メニューを開く`,
+    closeActions: "動画の操作メニューを閉じる", actions: (title) => `${title} の操作`,
+    thumbnail: (title) => `${title}のサムネイル`, openYoutube: "YouTubeで開く", copying: "コピー中...",
+    copyLink: "リンクをコピー", copyError: "動画リンクをコピーできませんでした。", loadingVideos: "人気動画を読み込み中",
+  },
+};
+
+function ReusableLicenseGuide({
+  open,
+  onConfirm,
+  onDismiss,
+}: {
+  open: boolean;
+  onConfirm: () => void;
+  onDismiss: () => void;
+}) {
+  const confirmButton = useRef<HTMLButtonElement>(null);
+  const creativeCommonsTrigger = useRef<HTMLButtonElement>(null);
+  const creativeCommonsExplainer = useRef<HTMLDivElement>(null);
+  const [creativeCommonsExplainerOpen, setCreativeCommonsExplainerOpen] = useState(false);
+  const [creativeCommonsExplainerPosition, setCreativeCommonsExplainerPosition] = useState({
+    left: 16,
+    top: 16,
+    width: 360,
+    above: false,
+  });
+
+  const positionCreativeCommonsExplainer = useCallback(() => {
+    const trigger = creativeCommonsTrigger.current;
+    if (!trigger) return;
+    const triggerRect = trigger.getBoundingClientRect();
+    const edgeGap = 16;
+    const popoverGap = 12;
+    const width = Math.min(360, window.innerWidth - edgeGap * 2);
+    const left = Math.min(
+      window.innerWidth - width - edgeGap,
+      Math.max(edgeGap, triggerRect.left + triggerRect.width / 2 - width / 2),
+    );
+    const spaceBelow = window.innerHeight - triggerRect.bottom;
+    const above = spaceBelow < 250 && triggerRect.top > spaceBelow;
+    setCreativeCommonsExplainerPosition({
+      left,
+      top: above ? triggerRect.top - popoverGap : triggerRect.bottom + popoverGap,
+      width,
+      above,
+    });
+  }, []);
+
+  const openCreativeCommonsExplainer = useCallback(() => {
+    positionCreativeCommonsExplainer();
+    setCreativeCommonsExplainerOpen(true);
+  }, [positionCreativeCommonsExplainer]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    confirmButton.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setCreativeCommonsExplainerOpen(false);
+        onConfirm();
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+      previousFocus?.focus();
+    };
+  }, [onConfirm, open]);
+
+  useEffect(() => {
+    if (!creativeCommonsExplainerOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node
+        && !creativeCommonsTrigger.current?.contains(event.target)
+        && !creativeCommonsExplainer.current?.contains(event.target)
+      ) {
+        setCreativeCommonsExplainerOpen(false);
+      }
+    };
+    window.addEventListener("resize", positionCreativeCommonsExplainer);
+    document.addEventListener("scroll", positionCreativeCommonsExplainer, true);
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    return () => {
+      window.removeEventListener("resize", positionCreativeCommonsExplainer);
+      document.removeEventListener("scroll", positionCreativeCommonsExplainer, true);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+    };
+  }, [creativeCommonsExplainerOpen, positionCreativeCommonsExplainer]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] grid place-items-center overflow-y-auto bg-black/75 px-4 py-8 backdrop-blur-sm" role="presentation">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reusable-guide-title"
+        aria-describedby="reusable-guide-description"
+        className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-white/10 bg-[#181a1b] shadow-[0_28px_100px_rgba(0,0,0,.65)]"
+      >
+        <div className="border-b border-white/[.07] px-6 py-6 sm:px-8">
+          <div className="flex items-start gap-4">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-violet-400/15 text-violet-200" aria-hidden="true">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 10v6M12 7h.01" />
+              </svg>
+            </span>
+            <div>
+              <p className="text-xs font-black uppercase tracking-[.14em] text-violet-300">필터 이용 전 확인</p>
+              <h2 id="reusable-guide-title" className="mt-1.5 text-xl font-black tracking-[-.035em] text-white sm:text-2xl">
+                영상의 라이선스를 직접 확인해 주세요
+              </h2>
+            </div>
+          </div>
+          <div className="mt-5">
+            <p id="reusable-guide-description" className="text-sm font-medium leading-6 text-neutral-300">
+              재사용 허용 필터는 YouTube에서{" "}
+              <button
+                ref={creativeCommonsTrigger}
+                type="button"
+                aria-expanded={creativeCommonsExplainerOpen}
+                aria-controls="creative-commons-explainer"
+                onMouseEnter={openCreativeCommonsExplainer}
+                onFocus={openCreativeCommonsExplainer}
+                onClick={openCreativeCommonsExplainer}
+                className="rounded-sm font-extrabold text-[#3ea6ff] underline decoration-[#3ea6ff]/45 underline-offset-2 transition hover:text-[#70bdff] hover:decoration-[#70bdff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#70bdff]"
+              >
+                크리에이티브 커먼즈
+              </button>
+              로 표시된 영상을 선별합니다. 게시자가 라이선스를 변경하거나 제3자 권리가 포함될 수 있으므로, 사용 직전에 원본 영상에서 최신 표시를 다시 확인하세요.
+              정확한 라이선스 확인은 데스크톱에서 진행해 주세요.
+            </p>
+          </div>
+        </div>
+
+        <div className="px-6 py-6 sm:px-8">
+          <ol className="space-y-3 text-sm font-semibold leading-6 text-neutral-200">
+            <li className="flex gap-3"><span className="text-violet-300">1.</span><span>원본 영상을 YouTube에서 엽니다.</span></li>
+            <li className="flex gap-3"><span className="text-violet-300">2.</span><span>영상 설명의 <strong className="font-black text-white">더보기</strong>를 선택합니다.</span></li>
+            <li className="flex gap-3"><span className="text-violet-300">3.</span><span>설명 최하단의 <strong className="font-black text-white">라이선스</strong> 항목을 확인합니다.</span></li>
+          </ol>
+
+          <div className="mt-5 overflow-hidden rounded-2xl border border-white/10 bg-[#242424]" aria-label="YouTube 라이선스 표시 예시">
+            <div className="flex items-center gap-4 px-4 py-4 sm:px-5">
+              <span className="w-20 shrink-0 text-xs font-semibold text-neutral-400">라이선스</span>
+              <span className="text-xs font-bold leading-5 text-[#3ea6ff] sm:text-sm">크리에이티브 커먼즈 저작자 표시 라이선스 (재사용 허용)</span>
+            </div>
+          </div>
+          <p className="mt-3 text-xs font-medium leading-5 text-neutral-500">
+            위 화면은 확인 위치를 설명하기 위해 재구성한 예시이며 실제 YouTube 화면이 아닙니다. 음악, 방송 화면, 인물·상표 등 별도 권리는 직접 확인해야 합니다.
+          </p>
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-white/[.07] bg-black/10 px-6 py-5 sm:flex-row sm:justify-end sm:px-8">
+          <button type="button" onClick={() => {
+            setCreativeCommonsExplainerOpen(false);
+            onDismiss();
+          }} className="min-h-11 rounded-xl border border-white/15 px-5 text-sm font-extrabold text-neutral-200 transition hover:border-white/30 hover:bg-white/[.06] hover:text-white">
+            다시 보지 않기
+          </button>
+          <button ref={confirmButton} type="button" onClick={() => {
+            setCreativeCommonsExplainerOpen(false);
+            onConfirm();
+          }} className="min-h-11 rounded-xl bg-[#ff715e] px-6 text-sm font-black text-white shadow-[0_10px_28px_rgba(255,85,64,.22)] transition hover:bg-[#ff806f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff9b8d]">
+            확인
+          </button>
+        </div>
+      </section>
+      {creativeCommonsExplainerOpen && createPortal(
+        <div
+          ref={creativeCommonsExplainer}
+          id="creative-commons-explainer"
+          role="tooltip"
+          style={{
+            left: creativeCommonsExplainerPosition.left,
+            top: creativeCommonsExplainerPosition.top,
+            width: creativeCommonsExplainerPosition.width,
+          }}
+          className={`fixed z-[120] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border border-[#3ea6ff]/35 bg-[#172431] p-4 text-left shadow-[0_24px_70px_rgba(0,0,0,.65)] sm:p-5 ${creativeCommonsExplainerPosition.above ? "-translate-y-full" : ""}`}
+        >
+          <strong className="block text-sm font-black text-white sm:text-base">
+            크리에이티브 커먼즈(CC BY) 영상이란?
+          </strong>
+          <div className="mt-3 space-y-3 text-xs font-semibold leading-5 text-neutral-200 sm:text-sm sm:leading-6">
+            <p>원작자가 다른 사람이 영상을 사용할 수 있도록 허용한 콘텐츠입니다.</p>
+            <p>
+              출처와 저작자를 표시하면
+              <br />
+              영상을 편집하거나 재사용할 수 있습니다.
+            </p>
+            <p>단, 영상 제목, 저작자, 원본 링크, 라이선스 정보를 반드시 표시해야 합니다.</p>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+function MobilePopularFiltersSheet({
+  open,
+  locale,
+  draft,
+  onDraftChange,
+  onClose,
+  onReset,
+  onApply,
+}: {
+  open: boolean;
+  locale: SiteLocale;
+  draft: MobilePopularFiltersDraft;
+  onDraftChange: (draft: MobilePopularFiltersDraft) => void;
+  onClose: () => void;
+  onReset: () => void;
+  onApply: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const copy = mobileFilterCopy[locale];
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || !open || dialog.open) return;
+    dialog.showModal();
+    window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+  }, [open]);
+
+  if (!open) return null;
+
+  const detailOptions: Array<{
+    key: "koreanOnly" | "longFormOnly" | "reusableOnly";
+    label: string;
+    description: string;
+  }> = [
+    { key: "koreanOnly", label: copy.korean, description: copy.koreanDescription },
+    { key: "longFormOnly", label: copy.longForm, description: copy.longFormDescription },
+    { key: "reusableOnly", label: copy.reusable, description: copy.reusableDescription },
+  ];
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby="mobile-popular-filters-title"
+      aria-describedby="mobile-popular-filters-description"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      className="fixed inset-x-0 bottom-0 top-auto m-0 max-h-[92dvh] w-full max-w-none overflow-y-auto rounded-t-[30px] border border-b-0 border-white/10 bg-[#15191a] p-0 text-white shadow-[0_-24px_80px_rgba(0,0,0,.58)] backdrop:bg-black/75 backdrop:backdrop-blur-sm md:hidden"
+    >
+      <div className="mx-auto h-1.5 w-11 rounded-full bg-white/20" aria-hidden="true" />
+      <header className="flex items-start justify-between gap-5 px-5 pb-5 pt-5">
+        <div>
+          <h2 id="mobile-popular-filters-title" className="text-xl font-black tracking-[-.035em] text-white">
+            {copy.title}
+          </h2>
+          <p id="mobile-popular-filters-description" className="mt-1.5 text-xs font-semibold leading-5 text-neutral-400">
+            {copy.description}
+          </p>
+        </div>
+        <button
+          ref={closeButtonRef}
+          type="button"
+          aria-label={copy.close}
+          onClick={onClose}
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[.05] text-neutral-300 transition active:scale-95 active:bg-white/10"
+        >
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="m6 6 12 12M18 6 6 18" />
+          </svg>
+        </button>
+      </header>
+
+      <div className="border-t border-white/[.07] px-5 py-5">
+        <fieldset>
+          <legend className="mb-3 text-sm font-black text-neutral-200">{copy.category}</legend>
+          <div className="grid grid-cols-2 gap-2.5">
+            {categoryOptions.map((option) => {
+              const selected = draft.category === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => onDraftChange({ ...draft, category: option.value })}
+                  className={`min-h-12 rounded-xl border px-3 text-sm font-extrabold transition active:scale-[.98] ${selected ? "border-violet-300/60 bg-violet-400/15 text-violet-50 shadow-[inset_0_0_0_1px_rgba(196,181,253,.08)]" : "border-white/10 bg-white/[.035] text-neutral-300 active:bg-white/[.07]"}`}
+                >
+                  {copy.categories[option.value]}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <fieldset className="mt-6">
+          <legend className="mb-3 text-sm font-black text-neutral-200">{copy.additional}</legend>
+          <div className="overflow-hidden rounded-2xl border border-white/[.08] bg-white/[.025]">
+            {detailOptions.map((option, index) => {
+              const checked = draft[option.key];
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  role="switch"
+                  aria-checked={checked}
+                  onClick={() => onDraftChange({ ...draft, [option.key]: !checked })}
+                  className={`flex min-h-[74px] w-full items-center justify-between gap-4 px-4 py-3 text-left transition active:bg-white/[.055] ${index ? "border-t border-white/[.07]" : ""}`}
+                >
+                  <span className="min-w-0">
+                    <strong className="block text-sm font-extrabold text-neutral-100">{option.label}</strong>
+                    <span className="mt-1 block text-[11px] font-semibold leading-[1.55] text-neutral-500">{option.description}</span>
+                  </span>
+                  <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${checked ? "bg-[#ff715e]" : "bg-white/15"}`} aria-hidden="true">
+                    <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`} />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+      </div>
+
+      <footer className="sticky bottom-0 grid grid-cols-[.8fr_1.2fr] gap-2.5 border-t border-white/[.08] bg-[#15191a]/95 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 backdrop-blur-xl">
+        <button
+          type="button"
+          onClick={onReset}
+          className="min-h-12 rounded-xl border border-white/15 bg-white/[.035] text-sm font-extrabold text-neutral-200 transition active:scale-[.98] active:bg-white/[.08]"
+        >
+          {copy.reset}
+        </button>
+        <button
+          type="button"
+          onClick={onApply}
+          className="min-h-12 rounded-xl bg-[#ff715e] text-sm font-black text-white shadow-[0_10px_28px_rgba(255,85,64,.22)] transition active:scale-[.98] active:bg-[#ff806f]"
+        >
+          {copy.apply}
+        </button>
+      </footer>
+    </dialog>
+  );
+}
+
+function formatDuration(seconds: number) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = Math.floor(seconds % 60);
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`
+    : `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
+function formatViews(value: number, locale: SiteLocale) {
+  const count = new Intl.NumberFormat(formatLocale(locale), { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  return locale === "ko" ? `${count}회` : locale === "en" ? count : `${count}回`;
+}
+
+function formatPublishedAt(value: string, locale: SiteLocale) {
+  const elapsedDays = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000));
+  if (locale === "en") {
+    if (elapsedDays === 0) return "Today";
+    if (elapsedDays < 7) return `${elapsedDays}d ago`;
+    if (elapsedDays < 30) return `${Math.floor(elapsedDays / 7)}w ago`;
+    if (elapsedDays < 365) return `${Math.floor(elapsedDays / 30)}mo ago`;
+    return `${Math.floor(elapsedDays / 365)}y ago`;
+  }
+  if (locale === "ja") {
+    if (elapsedDays === 0) return "今日";
+    if (elapsedDays < 7) return `${elapsedDays}日前`;
+    if (elapsedDays < 30) return `${Math.floor(elapsedDays / 7)}週間前`;
+    if (elapsedDays < 365) return `${Math.floor(elapsedDays / 30)}か月前`;
+    return `${Math.floor(elapsedDays / 365)}年前`;
+  }
+  if (elapsedDays === 0) return "오늘";
+  if (elapsedDays < 7) return `${elapsedDays}일 전`;
+  if (elapsedDays < 30) return `${Math.floor(elapsedDays / 7)}주 전`;
+  if (elapsedDays < 365) return `${Math.floor(elapsedDays / 30)}개월 전`;
+  return `${Math.floor(elapsedDays / 365)}년 전`;
+}
+
+function formatUpdatedAt(value: string | null, locale: SiteLocale) {
+  if (!value) return locale === "ko" ? "업데이트 확인 중" : locale === "en" ? "Checking update" : "更新を確認中";
+  return new Intl.DateTimeFormat(formatLocale(locale), {
+    timeZone: "Asia/Seoul",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}
+
+function discoveryPeriodOptionLabel(
+  period: (typeof discoveryPeriodOptions)[number],
+  count: number | undefined,
+  locale: SiteLocale,
+) {
+  if (count === undefined) return period.labels[locale];
+  const formattedCount = formatNumber(count, locale);
+  return `${period.labels[locale]} ${formattedCount}${locale === "ko" ? "개" : locale === "ja" ? "件" : ""}`;
+}
+
+function DiscoveryPeriodDropdown({
+  value,
+  counts,
+  locale,
+  disabled,
+  onChange,
+}: {
+  value: PopularDiscoveryPeriod;
+  counts: PopularVideoResponse["periodCounts"];
+  locale: SiteLocale;
+  disabled: boolean;
+  onChange: (value: PopularDiscoveryPeriod) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const selectedIndex = Math.max(
+    0,
+    discoveryPeriodOptions.findIndex((option) => option.value === value),
+  );
+  const selected = discoveryPeriodOptions[selectedIndex];
+  const listboxId = "popular-discovery-period-listbox";
+
+  const focusOption = useCallback((index: number) => {
+    const itemCount = discoveryPeriodOptions.length;
+    const nextIndex = (index + itemCount) % itemCount;
+    optionRefs.current[nextIndex]?.focus();
+  }, []);
+
+  const openAndFocus = (index: number) => {
+    if (disabled) return;
+    setOpen(true);
+    window.requestAnimationFrame(() => focusOption(index));
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listboxId : undefined}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            openAndFocus(selectedIndex + 1);
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            openAndFocus(selectedIndex - 1);
+          }
+        }}
+        className="group flex min-h-11 min-w-36 items-center justify-between gap-3 rounded-xl border border-violet-300/30 bg-[#1d2022] py-2.5 pl-3.5 pr-3 text-left text-sm font-extrabold text-violet-50 shadow-[0_10px_30px_rgba(0,0,0,.16)] outline-none transition hover:border-violet-300/55 focus-visible:border-violet-300/70 focus-visible:ring-2 focus-visible:ring-violet-300/20 disabled:cursor-wait disabled:opacity-60"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-4 w-4 shrink-0 text-violet-200" aria-hidden="true">
+            <circle cx="10" cy="10" r="7" />
+            <path d="M10 6v4l2.5 1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="truncate">
+            {discoveryPeriodOptionLabel(selected, counts?.[selected.value], locale)}
+          </span>
+        </span>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className={`h-4 w-4 shrink-0 text-violet-200 transition ${open ? "rotate-180" : ""}`} aria-hidden="true">
+          <path d="m6 8 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label={locale === "ko" ? "영상 발견 기간" : locale === "en" ? "Video discovery period" : "動画の発見期間"}
+          className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-violet-300/25 bg-[#202326] p-1.5 shadow-[0_22px_60px_rgba(0,0,0,.55)]"
+        >
+          {discoveryPeriodOptions.map((period, index) => {
+            const selectedOption = period.value === value;
+            return (
+              <button
+                key={period.value}
+                ref={(element) => {
+                  optionRefs.current[index] = element;
+                }}
+                type="button"
+                role="option"
+                aria-selected={selectedOption}
+                onClick={() => {
+                  setOpen(false);
+                  triggerRef.current?.focus();
+                  if (!selectedOption) onChange(period.value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    focusOption(index + 1);
+                  } else if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    focusOption(index - 1);
+                  } else if (event.key === "Home") {
+                    event.preventDefault();
+                    focusOption(0);
+                  } else if (event.key === "End") {
+                    event.preventDefault();
+                    focusOption(discoveryPeriodOptions.length - 1);
+                  }
+                }}
+                className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 text-left text-sm font-bold outline-none transition focus-visible:ring-2 focus-visible:ring-violet-300/40 ${selectedOption ? "bg-violet-400/15 text-violet-50" : "text-neutral-200 hover:bg-white/[.07] hover:text-white"}`}
+              >
+                <span>{discoveryPeriodOptionLabel(period, counts?.[period.value], locale)}</span>
+                {selectedOption && (
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 shrink-0 text-violet-200" aria-hidden="true">
+                    <path d="m5.5 10 3 3 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function popularVideoParams(
+  type: PopularVideoType,
+  category: PopularVideoCategory,
+  reusable: boolean,
+  longForm: boolean,
+  korean: boolean,
+  discoveryPeriod: PopularDiscoveryPeriod,
+  cursor?: string,
+  interactionId?: string,
+) {
+  const params = new URLSearchParams({
+    type,
+    category,
+    reusable: String(reusable),
+    longForm: String(longForm),
+    korean: String(korean),
+  });
+  params.set("period", discoveryPeriod);
+  if (cursor) params.set("cursor", cursor);
+  if (interactionId) params.set("interactionId", interactionId);
+  return params;
+}
+
+function VideoCard({ video, rank, active, onOpen, onClose }: {
+  video: PopularVideo;
+  rank: number;
+  active: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+}) {
+  const { locale } = useI18n();
+  const uiCopy = popularUiCopy[locale];
+  const youtubeUrl = `https://www.youtube.com/watch?v=${video.videoId}`;
+  const [copying, setCopying] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
+
+  const copyLinkAndGoHome = async () => {
+    if (copying) return;
+    setCopying(true);
+    setCopyError(null);
+    try {
+      await navigator.clipboard.writeText(youtubeUrl);
+      window.location.assign("/");
+    } catch (cause) {
+      setCopyError(userFacingErrorMessage(cause, uiCopy.copyError));
+      setCopying(false);
+    }
+  };
+
+  return (
+    <article className="popular-video-card group relative flex min-w-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#191c1e]/90 shadow-[0_18px_50px_rgba(0,0,0,.18)] transition duration-200 hover:-translate-y-1 hover:border-[#d0bcff]/40 hover:shadow-[0_22px_60px_rgba(0,0,0,.28)]">
+      <button
+        type="button"
+        aria-label={uiCopy.openActions(rank, video.title)}
+        aria-expanded={active}
+        aria-controls={`video-actions-${video.videoId}`}
+        tabIndex={active ? -1 : 0}
+        onClick={onOpen}
+        className="absolute inset-0 z-10 rounded-2xl"
+      />
+      <div className="relative aspect-video overflow-hidden bg-[#0b0f10]">
+        <Image src={video.thumbnailUrl} alt={uiCopy.thumbnail(video.title)} fill sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw" priority={rank === 1} unoptimized className="object-cover transition duration-300 group-hover:scale-[1.025]" />
+        <span className="absolute left-2.5 top-2.5 grid min-w-9 place-items-center rounded-lg bg-[#f04435] px-2 py-1.5 text-sm font-black text-white shadow-lg">{rank}</span>
+        {video.license === "creativeCommon" && <span className="absolute right-2.5 top-2.5 inline-flex rounded-full border border-violet-200/40 bg-violet-950/85 px-2.5 py-1 text-[10px] font-black tracking-wide text-violet-100 shadow-lg backdrop-blur-sm">{uiCopy.reusableBadge}</span>}
+        <span className="absolute bottom-2.5 right-2.5 rounded-md bg-black/85 px-2 py-1 text-xs font-bold tabular-nums text-white backdrop-blur-sm">{formatDuration(video.durationSeconds)}</span>
+        <span className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/40 to-transparent" aria-hidden="true" />
+      </div>
+      <div className="flex flex-1 flex-col p-4">
+        <h2 data-i18n-skip className="line-clamp-2 min-h-11 text-[15px] font-extrabold leading-[1.45] tracking-[-.015em] text-white">{video.title}</h2>
+        <p data-i18n-skip className="mt-2 truncate text-[13px] font-semibold text-neutral-400">{video.channelName}</p>
+        <div className="mt-3 flex items-center gap-2 text-[13px] font-semibold text-neutral-400">
+          <span>{locale === "ko" ? "조회수" : locale === "en" ? "Views" : "再生回数"} {formatViews(video.viewCount, locale)}</span><span aria-hidden="true">·</span><span>{formatPublishedAt(video.publishedAt, locale)}</span>
+        </div>
+      </div>
+      {active && (
+        <div id={`video-actions-${video.videoId}`} className="absolute inset-0 z-20 grid place-items-center bg-[#0b0f10]/88 p-5 backdrop-blur-md">
+          <button type="button" tabIndex={-1} aria-label={uiCopy.closeActions} onClick={onClose} className="absolute inset-0 cursor-default" />
+          <div className="relative z-10 grid w-full max-w-48 gap-3" role="group" aria-label={uiCopy.actions(video.title)}>
+            <a href={youtubeUrl} target="_blank" rel="noopener noreferrer" className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#f04435] px-4 text-sm font-extrabold text-white shadow-[0_10px_30px_rgba(240,68,53,.28)] transition hover:bg-[#ff5b4b]">
+              {uiCopy.openYoutube} <span aria-hidden="true">↗</span>
+            </a>
+            <button type="button" disabled={copying} onClick={() => void copyLinkAndGoHome()} className="min-h-12 rounded-xl border border-white/15 bg-white/[.08] px-4 text-sm font-extrabold text-white transition hover:border-violet-300/50 hover:bg-violet-400/15 disabled:cursor-wait disabled:opacity-60">
+              {copying ? uiCopy.copying : uiCopy.copyLink}
+            </button>
+            {copyError && <p role="alert" className="text-center text-xs font-semibold leading-5 text-red-300">{copyError}</p>}
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function LoadingSkeleton() {
+  const { locale } = useI18n();
+  return (
+    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" aria-label={popularUiCopy[locale].loadingVideos} aria-busy="true">
+      {Array.from({ length: 8 }, (_, index) => (
+        <div key={index} className="overflow-hidden rounded-2xl border border-white/[.07] bg-[#191c1e]/70">
+          <div className="aspect-video animate-pulse bg-white/[.07]" />
+          <div className="space-y-3 p-4"><div className="h-4 animate-pulse rounded bg-white/[.08]" /><div className="h-4 w-4/5 animate-pulse rounded bg-white/[.08]" /><div className="h-3 w-2/5 animate-pulse rounded bg-white/[.06]" /></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function PopularVideosExplorer({
+  canUseFilters,
+  isAuthenticated,
+  onRequireLogin,
+}: {
+  canUseFilters: boolean;
+  isAuthenticated: boolean;
+  onRequireLogin: () => void;
+}) {
+  const { locale } = useI18n();
+  const uiCopy = popularUiCopy[locale];
+  const filterCopy = mobileFilterCopy[locale];
+  const [dataType, setDataType] = useState<PopularVideoType>("trending");
+  const [koreanOnly, setKoreanOnly] = useState(false);
+  const [longFormOnly, setLongFormOnly] = useState(false);
+  const [reusableOnly, setReusableOnly] = useState(false);
+  const [discoveryPeriod, setDiscoveryPeriod] = useState<PopularDiscoveryPeriod>("all");
+  const [category, setCategory] = useState<PopularVideoCategory>("all");
+  const [response, setResponse] = useState<PopularVideoResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+  const [planOverlayOpen, setPlanOverlayOpen] = useState(false);
+  const [planOverlayFeature, setPlanOverlayFeature] = useState<"filters" | "more">("filters");
+  const [reusableGuideOpen, setReusableGuideOpen] = useState(false);
+  const [filterInteractionId, setFilterInteractionId] = useState<string | null>(null);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [mobileFilterDraft, setMobileFilterDraft] = useState<MobilePopularFiltersDraft>({
+    category: "all",
+    koreanOnly: false,
+    longFormOnly: false,
+    reusableOnly: false,
+  });
+  const loadMoreController = useRef<AbortController | null>(null);
+  const pendingReusableAction = useRef<(() => void) | null>(null);
+  const closePlanOverlay = useCallback(() => setPlanOverlayOpen(false), []);
+
+  useEffect(() => {
+    if (!activeVideoId) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setActiveVideoId(null);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [activeVideoId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadMoreController.current?.abort();
+    setLoading(true);
+    setLoadingMore(false);
+    setLoadMoreError(null);
+    setError(null);
+    setResponse(null);
+    const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, undefined, filterInteractionId || undefined)}`;
+    fetch(endpoint, { cache: "no-store", signal: controller.signal })
+      .then(async (result) => {
+        if (!result.ok) {
+          const body = await result.json().catch(() => ({})) as { detail?: string };
+          throw new Error(body.detail || uiCopy.loadFailed);
+        }
+        return result.json() as Promise<PopularVideoResponse>;
+      })
+      .then((result) => setResponse(result))
+      .catch((cause: unknown) => {
+        if (cause instanceof DOMException && cause.name === "AbortError") return;
+        setError(userFacingErrorMessage(cause, uiCopy.loadFailed));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [category, dataType, discoveryPeriod, filterInteractionId, koreanOnly, locale, longFormOnly, reusableOnly, retryCount, uiCopy.loadFailed]);
+
+  const selectedTypeLabel = dataType === "trending"
+    ? filterCopy.trending
+    : dataType === "views"
+      ? filterCopy.views
+      : filterCopy.reusableRanking;
+
+  const loadMore = async () => {
+    if (!response?.nextCursor || loadingMore) return;
+    const controller = new AbortController();
+    loadMoreController.current?.abort();
+    loadMoreController.current = controller;
+    setLoadingMore(true);
+    setLoadMoreError(null);
+    try {
+      const endpoint = `/api/youtube/popular?${popularVideoParams(dataType, category, reusableOnly, longFormOnly, koreanOnly, discoveryPeriod, response.nextCursor)}`;
+      const result = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
+      if (!result.ok) {
+        const body = await result.json().catch(() => ({})) as { detail?: string };
+        throw new Error(body.detail || uiCopy.loadMoreFailed);
+      }
+      const next = await result.json() as PopularVideoResponse;
+      setResponse((current) => {
+        if (!current) return next;
+        const videos = new Map(current.items.map((video) => [video.videoId, video]));
+        for (const video of next.items) videos.set(video.videoId, video);
+        return {
+          items: Array.from(videos.values()),
+          updatedAt: current.updatedAt,
+          totalCount: next.totalCount ?? current.totalCount,
+          periodCounts: next.periodCounts ?? current.periodCounts,
+          reusablePeriodCounts: next.reusablePeriodCounts ?? current.reusablePeriodCounts,
+          nextCursor: next.nextCursor,
+        };
+      });
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      setLoadMoreError(userFacingErrorMessage(cause, uiCopy.loadMoreFailed));
+    } finally {
+      if (!controller.signal.aborted) setLoadingMore(false);
+    }
+  };
+
+  const applyFilter = (update: () => void) => {
+    if (!canUseFilters) {
+      setPlanOverlayFeature("filters");
+      setPlanOverlayOpen(true);
+      return;
+    }
+    setFilterInteractionId(crypto.randomUUID());
+    update();
+    setActiveVideoId(null);
+  };
+
+  const requestReusableFilter = (action: () => void) => {
+    if (!isAuthenticated) {
+      action();
+      return;
+    }
+    try {
+      if (window.localStorage.getItem(reusableGuideDismissedKey) === "1") {
+        action();
+        return;
+      }
+    } catch {
+      // Storage can be unavailable in privacy-focused browser modes.
+    }
+    pendingReusableAction.current = action;
+    setReusableGuideOpen(true);
+  };
+
+  const finishReusableGuide = useCallback((dismissPermanently: boolean) => {
+    if (dismissPermanently) {
+      try {
+        window.localStorage.setItem(reusableGuideDismissedKey, "1");
+      } catch {
+        // The current action should continue even when the preference cannot be stored.
+      }
+    }
+    setReusableGuideOpen(false);
+    const action = pendingReusableAction.current;
+    pendingReusableAction.current = null;
+    action?.();
+  }, []);
+
+  const reusableFilterActive = dataType === "reusable" || reusableOnly;
+  const activeMobileFilterCount = Number(category !== "all") + Number(koreanOnly) + Number(longFormOnly) + Number(reusableFilterActive);
+  const openMobileFilters = () => {
+    if (!canUseFilters) {
+      setPlanOverlayFeature("filters");
+      setPlanOverlayOpen(true);
+      return;
+    }
+    setMobileFilterDraft({
+      category,
+      koreanOnly,
+      longFormOnly,
+      reusableOnly: reusableFilterActive,
+    });
+    setMobileFiltersOpen(true);
+  };
+
+  const applyMobileFilters = () => {
+    const nextFilters = mobileFilterDraft;
+    const enablingReusable = nextFilters.reusableOnly && !reusableFilterActive;
+    setMobileFiltersOpen(false);
+
+    const commitMobileFilters = () => applyFilter(() => {
+      if (dataType === "reusable" && !nextFilters.reusableOnly) setDataType("views");
+      setCategory(nextFilters.category);
+      setKoreanOnly(nextFilters.koreanOnly);
+      setLongFormOnly(nextFilters.longFormOnly);
+      setReusableOnly(dataType === "reusable" ? false : nextFilters.reusableOnly);
+    });
+
+    if (enablingReusable) {
+      requestReusableFilter(commitMobileFilters);
+      return;
+    }
+    commitMobileFilters();
+  };
+
+  const applyMobileRanking = (nextType: PopularVideoType) => {
+    if (nextType === dataType) return;
+    const commitMobileRanking = () => applyFilter(() => {
+      setReusableOnly(false);
+      setDataType(nextType);
+    });
+    if (nextType === "reusable") {
+      requestReusableFilter(commitMobileRanking);
+      return;
+    }
+    commitMobileRanking();
+  };
+
+  const requestMore = () => {
+    if (!canUseFilters) {
+      setPlanOverlayFeature("more");
+      setPlanOverlayOpen(true);
+      return;
+    }
+    void loadMore();
+  };
+
+  const periodCounts = response?.periodCounts ?? response?.reusablePeriodCounts;
+  const displayedTotalCount = response?.totalCount ?? response?.items.length;
+
+  return (
+    <main className="relative mx-auto w-full max-w-6xl px-5 pb-24 pt-7 sm:px-8 sm:pt-10">
+      <section className="hero relative isolate mx-auto flex max-w-4xl flex-col items-center px-4 pb-2 text-center sm:pb-3">
+        <span className="pointer-events-none absolute left-[8%] top-5 -z-10 h-40 w-40 rounded-full bg-[#ff5540]/20 blur-[70px] sm:h-56 sm:w-56" aria-hidden="true" />
+        <span className="pointer-events-none absolute right-[7%] top-14 -z-10 h-44 w-44 rounded-full bg-[#a078ff]/20 blur-[80px] sm:h-60 sm:w-60" aria-hidden="true" />
+        <h1 className="hero-title"><span>실시간 인기</span></h1>
+        <p className="mt-3 text-xs font-semibold text-neutral-500" aria-live="polite"><span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.7)]" aria-hidden="true" /><span className="text-neutral-400">{uiCopy.lastUpdated}</span> {formatUpdatedAt(response?.updatedAt || null, locale)}</p>
+      </section>
+
+      <section className="relative z-30 mt-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none !backdrop-blur-none md:mt-2 md:!rounded-2xl md:!border md:!border-white/10 md:!bg-[#15191a]/90 md:!p-5 md:!shadow-[0_16px_50px_rgba(0,0,0,.22)] md:!backdrop-blur-2xl" aria-label="인기 영상 필터">
+        <div className={`${canUseFilters ? "hidden md:flex" : "mb-4 flex"} items-center justify-end gap-3 md:mb-4 md:justify-between`}>
+          <h2 className="hidden text-base font-black text-white md:block">{uiCopy.filters}</h2>
+          {!canUseFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setPlanOverlayFeature("filters");
+                setPlanOverlayOpen(true);
+              }}
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-[#ff9b8d]/25 bg-[#ff715e]/10 px-3 text-[11px] font-black text-[#ffc4bb] transition hover:border-[#ff9b8d]/45 hover:bg-[#ff715e]/15"
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <rect x="5" y="10" width="14" height="10" rx="2" />
+                <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+              </svg>
+              {uiCopy.activePlanOnly}
+            </button>
+          )}
+        </div>
+
+        <div className="md:hidden">
+          <fieldset>
+            <legend className="sr-only">{filterCopy.ranking}</legend>
+            <div className="grid grid-cols-3 rounded-xl border border-white/10 bg-black/20 p-1">
+              {dataTypeOptions.map((option) => {
+                const selected = dataType === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={selected}
+                    aria-haspopup={canUseFilters ? undefined : "dialog"}
+                    onClick={() => applyMobileRanking(option.value)}
+                    className={`min-h-11 rounded-[10px] px-1 text-[14px] font-black tracking-[-.055em] transition active:scale-[.98] ${selected ? mobileRankingButtonTone[option.value].selected : mobileRankingButtonTone[option.value].idle}`}
+                  >
+                    {option.value === "trending"
+                      ? filterCopy.trending
+                      : option.value === "views"
+                        ? filterCopy.views
+                        : filterCopy.reusableRanking}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            onClick={openMobileFilters}
+            className={`mt-3 flex min-h-[58px] w-full items-center gap-3 rounded-xl border px-3.5 text-left transition active:scale-[.99] ${activeMobileFilterCount ? "border-[#ff8a78]/40 bg-[#ff8a78]/10 shadow-[inset_0_0_0_1px_rgba(255,138,120,.04)]" : "border-white/10 bg-black/20"}`}
+          >
+            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border text-[#202426] shadow-[inset_0_1px_0_rgba(255,255,255,.24)] ${activeMobileFilterCount ? "border-[#ff8a78] bg-[#ff8a78]" : "border-[#ff9b8d] bg-[#ff9b8d]"}`} aria-hidden="true">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 6h4M12 6h8M4 12h9M17 12h3M4 18h2M10 18h10" />
+                <circle cx="10" cy="6" r="2" />
+                <circle cx="15" cy="12" r="2" />
+                <circle cx="8" cy="18" r="2" />
+              </svg>
+            </span>
+            <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+              <strong className="shrink-0 text-sm font-black text-neutral-400">{filterCopy.title}</strong>
+              <span className="min-w-0 truncate text-right text-sm font-bold tracking-[-.025em] text-neutral-500">
+                {activeMobileFilterCount
+                  ? (locale === "ko" ? `${filterCopy.categories[category]} · ${activeMobileFilterCount}개 적용` : locale === "ja" ? `${filterCopy.categories[category]} · ${activeMobileFilterCount}件適用` : `${filterCopy.categories[category]} · ${activeMobileFilterCount} active`)
+                  : (locale === "ko" ? "전체 · 선택한 조건 없음" : locale === "ja" ? "すべて · 選択条件なし" : "All · No filters selected")}
+              </span>
+            </span>
+            <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-neutral-500" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="m9 18 6-6-6-6" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="hidden flex-col gap-4 md:flex md:flex-row md:items-end md:justify-between">
+          <fieldset className="min-w-0">
+            <legend className="mb-2 text-sm font-black text-neutral-200">{filterCopy.ranking}</legend>
+            <div className="flex flex-wrap gap-2 pb-1">
+              {dataTypeOptions.map((option) => {
+                const reusable = option.value === "reusable";
+                return (
+                  <div key={option.value} className={reusable ? "group/reusable relative shrink-0" : "shrink-0"}>
+                    <button
+                      type="button"
+                      aria-pressed={dataType === option.value}
+                      aria-haspopup={canUseFilters ? undefined : "dialog"}
+                      aria-describedby={reusable ? "reusable-filter-help" : undefined}
+                      onClick={() => reusable
+                        ? requestReusableFilter(() => applyFilter(() => setDataType(option.value)))
+                        : applyFilter(() => setDataType(option.value))}
+                      className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition ${dataType === option.value ? "border-[#ff715e] bg-[#ff715e]/15 text-[#ffd0c9] shadow-[0_0_18px_rgba(255,85,64,.1)]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
+                    >
+                      {option.value === "trending" ? filterCopy.trending : option.value === "views" ? filterCopy.views : filterCopy.reusableRanking}
+                    </button>
+                    {reusable && (
+                      <div
+                        id="reusable-filter-help"
+                        role="tooltip"
+                        className="pointer-events-none invisible absolute left-1/2 top-full z-50 mt-3 w-[min(24rem,calc(100vw-3rem))] -translate-x-1/2 rounded-xl border border-violet-300/25 bg-[#25212d] p-4 text-left text-xs font-semibold leading-5 text-violet-50 opacity-0 shadow-[0_20px_55px_rgba(0,0,0,.5)] transition group-hover/reusable:visible group-hover/reusable:opacity-100 group-focus-within/reusable:visible group-focus-within/reusable:opacity-100"
+                      >
+                        <strong className="block text-sm font-black text-white">YouTube의 CC BY 표시 영상</strong>
+                        <span className="mt-2 block">
+                          실제 의미는 “YouTube에서 CC BY로 표시됨”입니다. 이용자는 제목·저작자·URL·CC BY 라이선스를 표시해야 하며, 제3자 음악·방송 화면 등의 권리도 별도로 확인해야 합니다.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <div className="flex flex-wrap gap-2 self-start sm:justify-end sm:self-auto">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={koreanOnly}
+              aria-haspopup={canUseFilters ? undefined : "dialog"}
+              onClick={() => applyFilter(() => setKoreanOnly((current) => !current))}
+              className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${koreanOnly ? "border-emerald-300/60 bg-emerald-400/15 text-emerald-50" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-white/30 hover:text-white"}`}
+            >
+              <span className={`relative h-5 w-9 rounded-full transition ${koreanOnly ? "bg-emerald-400" : "bg-white/15"}`} aria-hidden="true">
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${koreanOnly ? "left-[18px]" : "left-0.5"}`} />
+              </span>
+              {uiCopy.koreanOnly}
+            </button>
+            <button
+              type="button"
+              role="switch"
+              aria-label={uiCopy.longFormOnlyAria}
+              aria-checked={longFormOnly}
+              aria-haspopup={canUseFilters ? undefined : "dialog"}
+              onClick={() => applyFilter(() => setLongFormOnly((current) => !current))}
+              className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${longFormOnly ? "border-[#ff8b7c]/60 bg-[#ff715e]/15 text-[#ffd0c9]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
+            >
+              <span className={`relative h-5 w-9 rounded-full transition ${longFormOnly ? "bg-[#ff715e]" : "bg-white/15"}`} aria-hidden="true">
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${longFormOnly ? "left-[18px]" : "left-0.5"}`} />
+              </span>
+              {uiCopy.longFormOnly}
+            </button>
+            {dataType !== "reusable" && (
+              <button
+                type="button"
+                role="switch"
+                aria-label={uiCopy.reusableOnlyAria}
+                aria-checked={reusableOnly}
+                aria-haspopup={canUseFilters ? undefined : "dialog"}
+                onClick={() => requestReusableFilter(() => applyFilter(() => setReusableOnly((current) => !current)))}
+                className={`flex shrink-0 items-center gap-2.5 rounded-full border px-3.5 py-2.5 text-sm font-extrabold transition ${reusableOnly ? "border-violet-300/60 bg-violet-400/15 text-violet-50" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
+              >
+                <span className={`relative h-5 w-9 rounded-full transition ${reusableOnly ? "bg-violet-400" : "bg-white/15"}`} aria-hidden="true">
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${reusableOnly ? "left-[18px]" : "left-0.5"}`} />
+                </span>
+                {uiCopy.reusableOnly}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <fieldset className="mt-4 hidden min-w-0 border-t border-white/[.07] pt-4 md:block">
+          <legend className="mb-2 text-sm font-black text-neutral-200">{filterCopy.category}</legend>
+          <div className="flex flex-wrap gap-2 pb-1">
+            {categoryOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-label={uiCopy.categoryAria(filterCopy.categories[option.value])}
+                aria-pressed={category === option.value}
+                aria-haspopup={canUseFilters ? undefined : "dialog"}
+                onClick={() => applyFilter(() => setCategory(option.value))}
+                className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition ${category === option.value ? "border-violet-300/60 bg-violet-400/15 text-violet-50 shadow-[0_0_18px_rgba(160,120,255,.1)]" : "border-white/15 bg-white/[.025] text-neutral-200 hover:border-violet-300/45 hover:text-white"}`}
+              >
+                {filterCopy.categories[option.value]}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      </section>
+
+      <div className="mb-5 mt-8 flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-black tracking-[-.025em] text-white">{selectedTypeLabel}</h2>
+          <p className="mt-1 text-xs font-bold tabular-nums text-neutral-500" aria-live="polite">{!loading && response && displayedTotalCount !== undefined ? (locale === "ko" ? `${formatNumber(displayedTotalCount, locale)}개` : locale === "en" ? formatNumber(displayedTotalCount, locale) : `${formatNumber(displayedTotalCount, locale)}件`) : uiCopy.countLoading}</p>
+        </div>
+        <DiscoveryPeriodDropdown
+          value={discoveryPeriod}
+          counts={periodCounts}
+          locale={locale}
+          disabled={loading}
+          onChange={(period) => applyFilter(() => setDiscoveryPeriod(period))}
+        />
+      </div>
+
+      {loading ? <LoadingSkeleton /> : error ? (
+        <section role="alert" className="grid min-h-64 place-items-center rounded-2xl border border-red-400/20 bg-red-950/15 px-6 py-12 text-center">
+          <div><div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-red-400/10 text-xl text-red-300" aria-hidden="true">!</div><h2 className="mt-4 text-lg font-extrabold">{uiCopy.loadFailed}</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-red-200/75">{error}</p><button type="button" onClick={() => setRetryCount((value) => value + 1)} className="mt-6 rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-200">{uiCopy.retry}</button></div>
+        </section>
+      ) : response?.items.length ? (
+        <div>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{response.items.map((video, index) => <VideoCard key={video.videoId} video={video} rank={index + 1} active={activeVideoId === video.videoId} onOpen={() => setActiveVideoId(video.videoId)} onClose={() => setActiveVideoId(null)} />)}</div>
+          {response.nextCursor && (
+            <div className="mt-10 flex flex-col items-center gap-3">
+              <button
+                type="button"
+                disabled={loadingMore}
+                onClick={requestMore}
+                className="min-h-12 rounded-xl border border-white/15 bg-white/[.06] px-7 text-sm font-extrabold text-white transition hover:border-[#d0bcff]/50 hover:bg-violet-400/10 disabled:cursor-wait disabled:opacity-60"
+              >
+                {loadingMore ? uiCopy.loadingMore : uiCopy.loadMore}
+              </button>
+              {loadMoreError && <p role="alert" className="text-center text-xs font-semibold text-red-300">{loadMoreError}</p>}
+            </div>
+          )}
+        </div>
+      ) : (
+        <section className="grid min-h-64 place-items-center rounded-2xl border border-white/[.08] bg-white/[.025] px-6 py-12 text-center">
+          <div>
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-violet-400/10 text-xl text-violet-200" aria-hidden="true">⌕</div>
+            <h2 className="mt-4 text-lg font-extrabold">{uiCopy.noResults}</h2>
+            <p className="mt-2 text-sm leading-6 text-neutral-500">{uiCopy.noResultsDescription}</p>
+            {response?.nextCursor && (
+              <button type="button" disabled={loadingMore} onClick={requestMore} className="mt-6 min-h-12 rounded-xl border border-white/15 bg-white/[.06] px-7 text-sm font-extrabold text-white transition hover:border-[#d0bcff]/50 hover:bg-violet-400/10 disabled:cursor-wait disabled:opacity-60">
+                {loadingMore ? uiCopy.loadingMore : uiCopy.nextResults}
+              </button>
+            )}
+            {loadMoreError && <p role="alert" className="mt-3 text-center text-xs font-semibold text-red-300">{loadMoreError}</p>}
+          </div>
+        </section>
+      )}
+      <MobilePopularFiltersSheet
+        open={mobileFiltersOpen}
+        locale={locale}
+        draft={mobileFilterDraft}
+        onDraftChange={setMobileFilterDraft}
+        onClose={() => setMobileFiltersOpen(false)}
+        onReset={() => setMobileFilterDraft({
+          category: "all",
+          koreanOnly: false,
+          longFormOnly: false,
+          reusableOnly: false,
+        })}
+        onApply={applyMobileFilters}
+      />
+      <PopularFiltersPlanOverlay
+        open={planOverlayOpen}
+        isAuthenticated={isAuthenticated}
+        feature={planOverlayFeature}
+        onClose={closePlanOverlay}
+        onRequireLogin={onRequireLogin}
+      />
+      <ReusableLicenseGuide
+        open={reusableGuideOpen}
+        onConfirm={() => finishReusableGuide(false)}
+        onDismiss={() => finishReusableGuide(true)}
+      />
+    </main>
+  );
+}

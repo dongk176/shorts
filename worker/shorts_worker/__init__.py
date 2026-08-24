@@ -1,0 +1,2 @@
+"""Shorts Maker backend package."""
+

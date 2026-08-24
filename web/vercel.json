@@ -1,0 +1,22 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/cron/toss-checkout-reconciliation",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/job-completion-emails",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/youtube-daily",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/billing-renewals",
+      "schedule": "7 * * * *"
+    }
+  ]
+}
