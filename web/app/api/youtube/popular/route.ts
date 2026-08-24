@@ -155,6 +155,13 @@ export async function GET(request: Request) {
     return response;
   } catch (error) {
     if (error instanceof HttpError) return apiError(error);
+    console.error("popular_videos_load_failed", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      errorCode: error instanceof Error
+        && error.message === "POPULAR_FILTER_ENTITLEMENT_SOURCE_MISSING"
+        ? "POPULAR_FILTER_ENTITLEMENT_SOURCE_MISSING"
+        : null,
+    });
     const detail = error instanceof PopularSnapshotUnavailableError
       || error instanceof PopularSearchSnapshotUnavailableError
       ? error.message

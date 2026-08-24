@@ -349,11 +349,14 @@ describe("popular YouTube API route", () => {
   });
 
   it("does not deliver paid results when the usage evidence cannot be stored", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.getPopularSearchVideos.mockResolvedValue({
       items: [],
       updatedAt: "2026-07-26T00:00:00.000Z",
     });
-    mocks.recordPopularFilterUsage.mockRejectedValue(new Error("audit unavailable"));
+    mocks.recordPopularFilterUsage.mockRejectedValue(
+      new Error("POPULAR_FILTER_ENTITLEMENT_SOURCE_MISSING"),
+    );
 
     const response = await GET(new Request(
       "http://localhost/api/youtube/popular?type=views",
@@ -363,5 +366,10 @@ describe("popular YouTube API route", () => {
     await expect(response.json()).resolves.toEqual({
       detail: "인기 영상을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
     });
+    expect(consoleError).toHaveBeenCalledWith("popular_videos_load_failed", {
+      errorName: "Error",
+      errorCode: "POPULAR_FILTER_ENTITLEMENT_SOURCE_MISSING",
+    });
+    consoleError.mockRestore();
   });
 });
