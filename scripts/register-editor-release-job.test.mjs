@@ -81,6 +81,8 @@ function trustedIngestionTemplate() {
         { name: "YOUTUBE_PO_TOKEN_ENABLED", value: "true" },
         { name: "INGESTION_EGRESS_MODE", value: "webshare_isp" },
         { name: "INGESTION_BOT_CHECK_COOLDOWN_SECONDS", value: "30" },
+        { name: "ELEVENLABS_TRANSCRIBE_MODEL", value: "scribe_v2" },
+        { name: "OPENAI_TRANSCRIBE_FALLBACK_MODEL", value: "whisper-1" },
         { name: "MAX_VIDEO_DURATION_SECONDS", value: "3600" },
         { name: "INGESTION_UNRELATED", value: "not-copied" },
       ],
@@ -89,6 +91,7 @@ function trustedIngestionTemplate() {
           name: "INGESTION_PROXY_ROUTES_JSON",
           valueFrom: "secret:trusted-proxy-routes",
         },
+        { name: "ELEVENLABS_API_KEY", valueFrom: "secret:elevenlabs" },
         { name: "UNRELATED_SECRET", valueFrom: "secret:not-copied" },
       ],
     },
@@ -226,6 +229,12 @@ test("clones the project-heavy initial-render contract at the tested digest", as
     false,
   );
   assert.deepEqual(
+    registered.containerProperties.secrets.find(
+      ({ name }) => name === "ELEVENLABS_API_KEY",
+    ),
+    { name: "ELEVENLABS_API_KEY", valueFrom: "secret:elevenlabs" },
+  );
+  assert.deepEqual(
     Object.fromEntries(registered.containerProperties.environment.map(
       ({ name, value }) => [name, value],
     )),
@@ -240,6 +249,8 @@ test("clones the project-heavy initial-render contract at the tested digest", as
       YOUTUBE_PO_TOKEN_ENABLED: "true",
       INGESTION_EGRESS_MODE: "webshare_isp",
       INGESTION_BOT_CHECK_COOLDOWN_SECONDS: "30",
+      ELEVENLABS_TRANSCRIBE_MODEL: "scribe_v2",
+      OPENAI_TRANSCRIBE_FALLBACK_MODEL: "whisper-1",
     },
   );
   assert.equal(
@@ -285,7 +296,7 @@ test("fails closed when proxy, 30GB storage, or 7200-second timeout is missing",
   }
 });
 
-test("fails closed when the trusted ingestion template lacks PoToken or proxy settings", async () => {
+test("fails closed when the trusted ingestion template lacks YouTube or transcription settings", async () => {
   for (const mutate of [
     (template) => {
       template.containerProperties.environment = template.containerProperties.environment
@@ -293,6 +304,14 @@ test("fails closed when the trusted ingestion template lacks PoToken or proxy se
     },
     (template) => {
       template.containerProperties.secrets = [];
+    },
+    (template) => {
+      template.containerProperties.secrets = template.containerProperties.secrets
+        .filter(({ name }) => name !== "ELEVENLABS_API_KEY");
+    },
+    (template) => {
+      template.containerProperties.environment = template.containerProperties.environment
+        .filter(({ name }) => name !== "ELEVENLABS_TRANSCRIBE_MODEL");
     },
   ]) {
     const ingestionTemplate = trustedIngestionTemplate();

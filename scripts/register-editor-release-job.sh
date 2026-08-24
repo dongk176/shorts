@@ -111,9 +111,12 @@ validate_unified_ingestion_template() {
     and (environment("INGESTION_EGRESS_MODE")[0].value == "webshare_isp")
     and (environment("INGESTION_BOT_CHECK_COOLDOWN_SECONDS") | length) == 1
     and (environment("DOWNLOAD_TIMEOUT_SECONDS") | length) == 1
+    and (environment("ELEVENLABS_TRANSCRIBE_MODEL") | length) == 1
+    and (environment("OPENAI_TRANSCRIBE_FALLBACK_MODEL") | length) == 1
     and (secrets("INGESTION_PROXY_ROUTES_JSON") | length) == 1
+    and (secrets("ELEVENLABS_API_KEY") | length) == 1
   ' "$source_file" >/dev/null; then
-    echo "trusted ingestion Job Definition is missing the production YouTube contract" >&2
+    echo "trusted ingestion Job Definition is missing the production YouTube or transcription contract" >&2
     exit 2
   fi
 }
@@ -133,7 +136,9 @@ matches_unified_ingestion_contract() {
           "DOWNLOAD_TIMEOUT_SECONDS",
           "YOUTUBE_PO_TOKEN_ENABLED",
           "INGESTION_EGRESS_MODE",
-          "INGESTION_BOT_CHECK_COOLDOWN_SECONDS"
+          "INGESTION_BOT_CHECK_COOLDOWN_SECONDS",
+          "ELEVENLABS_TRANSCRIBE_MODEL",
+          "OPENAI_TRANSCRIBE_FALLBACK_MODEL"
         ][];
         environment($candidate; .) == environment($ingestion; .)
       )
@@ -143,6 +148,8 @@ matches_unified_ingestion_contract() {
       )
       and secrets($candidate; "INGESTION_PROXY_ROUTES_JSON")
         == secrets($ingestion; "INGESTION_PROXY_ROUTES_JSON")
+      and secrets($candidate; "ELEVENLABS_API_KEY")
+        == secrets($ingestion; "ELEVENLABS_API_KEY")
   ' "$candidate_file" "$ingestion_file" >/dev/null
 }
 
@@ -202,7 +209,7 @@ if [[ -n "$existing_arn" && "$existing_arn" != "None" ]]; then
       emit_definition_arn "$existing_arn"
       exit 0
     fi
-    echo "existing unified-template definition has stale ingestion settings; registering a new revision" >&2
+    echo "existing unified-template definition has stale ingestion or transcription settings; registering a new revision" >&2
   else
     emit_definition_arn "$existing_arn"
     exit 0
@@ -289,7 +296,9 @@ if [[ "$release_kind" == "unified-template-subtitles" ]]; then
         "DOWNLOAD_TIMEOUT_SECONDS",
         "YOUTUBE_PO_TOKEN_ENABLED",
         "INGESTION_EGRESS_MODE",
-        "INGESTION_BOT_CHECK_COOLDOWN_SECONDS"
+        "INGESTION_BOT_CHECK_COOLDOWN_SECONDS",
+        "ELEVENLABS_TRANSCRIBE_MODEL",
+        "OPENAI_TRANSCRIBE_FALLBACK_MODEL"
       ] as $trustedEnvironmentNames
     | [
         $ingestion.containerProperties.environment[]?
@@ -297,8 +306,8 @@ if [[ "$release_kind" == "unified-template-subtitles" ]]; then
       ] as $trustedEnvironment
     | [
         $ingestion.containerProperties.secrets[]?
-        | select(.name == "INGESTION_PROXY_ROUTES_JSON")
-      ] as $trustedProxySecret
+        | select(.name == "INGESTION_PROXY_ROUTES_JSON" or .name == "ELEVENLABS_API_KEY")
+      ] as $trustedRuntimeSecrets
     | $candidate
     | .containerProperties.environment=(
         [.containerProperties.environment[]?
@@ -307,8 +316,8 @@ if [[ "$release_kind" == "unified-template-subtitles" ]]; then
       )
     | .containerProperties.secrets=(
         [.containerProperties.secrets[]?
-          | select(.name != "INGESTION_PROXY_ROUTES_JSON")]
-        + $trustedProxySecret
+          | select(.name != "INGESTION_PROXY_ROUTES_JSON" and .name != "ELEVENLABS_API_KEY")]
+        + $trustedRuntimeSecrets
       )
   ' "$task_dir/register-base.json" "$task_dir/ingestion-template.json" \
     > "$task_dir/register.json"
