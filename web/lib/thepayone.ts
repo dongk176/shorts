@@ -440,9 +440,16 @@ export function getThePayOneConfig(
 }
 
 export function createPaymentTrackId(prefix: "AUTH" | "AUDT" | "PAY" | "REFUND") {
-  // Scheduled charges append a 14-digit execution timestamp and cap the final ID at 50 characters.
+  // Scheduled charges append HHmmss and cap the final ID at 50 characters.
   const date = new Date().toISOString().slice(2, 10).replaceAll("-", "");
   return `EC-${prefix}-${date}-${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+}
+
+export function thePayOneRecurringTrackIdBase(trackId: string) {
+  if (trackId.length <= 6) return null;
+  const executionTime = trackId.slice(-6);
+  if (!/^(?:[01]\d|2[0-3])[0-5]\d[0-5]\d$/.test(executionTime)) return null;
+  return trackId.slice(0, -6);
 }
 
 export function normalizeCardNumber(value: string) {
@@ -956,10 +963,12 @@ function webhookString(params: URLSearchParams, key: string, maxLength: number, 
 }
 
 export function parseThePayOneWebhook(rawBody: string): ThePayOneWebhookNotification {
-  if (Buffer.byteLength(rawBody, "utf8") > 32 * 1024 || !rawBody.startsWith("response=")) {
+  if (Buffer.byteLength(rawBody, "utf8") > 32 * 1024 || !rawBody) {
     throw new ThePayOneError("더페이원 결과 통지 본문이 올바르지 않습니다.", "INVALID_WEBHOOK");
   }
-  const encoded = rawBody.slice("response=".length);
+  const encoded = rawBody.startsWith("response=")
+    ? rawBody.slice("response=".length)
+    : rawBody;
   let params = new URLSearchParams(encoded);
   if (!params.get("trxId") || !params.get("trackId")) {
     let decoded: string;

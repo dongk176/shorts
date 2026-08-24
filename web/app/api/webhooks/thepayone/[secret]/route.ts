@@ -24,7 +24,9 @@ import {
   parseThePayOneWebhook,
   thePayOneCardTypeAllowsInstallment,
   thePayOneCredentialScopeForMerchantTerminal,
+  thePayOneRecurringTrackIdBase,
   thePayOneWebhookSecret,
+  ThePayOneError,
   type ThePayOneWebhookNotification,
 } from "@/lib/thepayone";
 
@@ -52,6 +54,24 @@ function secureEqual(expected: string, actual: string) {
   const expectedBytes = Buffer.from(expected);
   const actualBytes = Buffer.from(actual);
   return expectedBytes.length === actualBytes.length && timingSafeEqual(expectedBytes, actualBytes);
+}
+
+function webhookBodyShape(rawBody: string) {
+  const wrapped = rawBody.startsWith("response=");
+  const encoded = wrapped ? rawBody.slice("response=".length) : rawBody;
+  let params = new URLSearchParams(encoded);
+  if (!params.get("trxId") || !params.get("trackId")) {
+    try {
+      params = new URLSearchParams(decodeURIComponent(encoded.replace(/\+/g, "%20")));
+    } catch {
+      // The parser will return the generic invalid-notification response.
+    }
+  }
+  const fields = [...new Set(params.keys())]
+    .filter((key) => /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(key))
+    .sort()
+    .slice(0, 64);
+  return { wrapped, fields };
 }
 
 function eventSummary(
@@ -666,15 +686,25 @@ export async function POST(
     return reject(415, "Unsupported content type");
   }
 
+  const rawBody = await request.text();
   let event: ThePayOneWebhookNotification;
   try {
-    event = parseThePayOneWebhook(await request.text());
-  } catch {
+    event = parseThePayOneWebhook(rawBody);
+  } catch (error) {
+    const shape = webhookBodyShape(rawBody);
+    console.warn("thepayone_webhook_invalid", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      errorCode: error instanceof ThePayOneError ? error.resultCode : "INVALID_WEBHOOK",
+      contentType: contentType.split(";", 1)[0],
+      bodyBytes: Buffer.byteLength(rawBody, "utf8"),
+      wrapped: shape.wrapped,
+      fields: shape.fields,
+    });
     return reject(400, "Invalid notification");
   }
 
   const db = getDb();
-  const eventId = randomUUID();
+  let eventId = randomUUID();
   let eventCredentialScope: "default" | "manual" | "package" | null = null;
   try {
     eventCredentialScope = thePayOneCredentialScopeForMerchantTerminal(
@@ -685,18 +715,72 @@ export async function POST(
     // The event is still recorded for fraud/reconciliation review without a card reference.
   }
   const includeStoredCardReference = eventCredentialScope === "default";
+  const eventCardHash = includeStoredCardReference ? cardTokenHash(event.cardId) : null;
   const inserted = await db`
     insert into shorts_mvp.billing_payment_events (
       id,provider,provider_transaction_id,merchant_id,terminal_id,track_id,card_id_hash,
-      transaction_type,amount_krw,event_summary
+      transaction_type,amount_krw,event_summary,validation_status,processing_result
     ) values (
       ${eventId},'thepayone',${event.transactionId},${event.merchantId},${event.terminalId},
-      ${event.trackId},${includeStoredCardReference ? cardTokenHash(event.cardId) : null},
+      ${event.trackId},${eventCardHash},
       ${event.transactionType},${event.amount},
-      ${JSON.stringify(eventSummary(event, includeStoredCardReference))}::jsonb
+      ${JSON.stringify(eventSummary(event, includeStoredCardReference))}::jsonb,
+      'received','processing'
     ) on conflict (provider,provider_transaction_id) do nothing returning id
   `;
-  if (!inserted[0]) return ack();
+  if (!inserted[0]) {
+    const existingRows = await db`
+      select * from shorts_mvp.billing_payment_events
+      where provider='thepayone' and provider_transaction_id=${event.transactionId}
+      limit 1
+    `;
+    const existing = existingRows[0];
+    if (!existing) return reject(503, "Notification unavailable");
+    eventId = existing.id;
+    const duplicateMismatch = existing.merchantId !== event.merchantId
+      || existing.terminalId !== event.terminalId
+      || existing.trackId !== event.trackId
+      || existing.transactionType !== event.transactionType
+      || Number(existing.amountKrw) !== event.amount
+      || Boolean(existing.cardIdHash && existing.cardIdHash !== eventCardHash);
+    if (duplicateMismatch) {
+      if (existing.validationStatus !== "processed") await db`
+        update shorts_mvp.billing_payment_events
+        set validation_status='manual_review',processing_result='DUPLICATE_TRANSACTION_MISMATCH',
+          processed_at=now()
+        where id=${eventId}
+      `;
+      console.warn("thepayone_webhook_duplicate_mismatch", { eventId });
+      return ack();
+    }
+    if (existing.validationStatus === "processed") return ack();
+    const retryableResult = existing.processingResult === null
+      ? existing.validationStatus === "received" || existing.validationStatus === "validated"
+      : [
+          "processing",
+          "WEBHOOK_PROCESSING_FAILED",
+          "UNMATCHED_TRACK_ID",
+          "ADDON_GRANT_FAILED",
+        ].includes(existing.processingResult);
+    if (!retryableResult) return ack();
+    const claimed = await db`
+      update shorts_mvp.billing_payment_events
+      set validation_status='received',processing_result='processing',processed_at=null
+      where id=${eventId}
+        and (
+          (processing_result is null and validation_status in ('received','validated'))
+          or processing_result in (
+            'WEBHOOK_PROCESSING_FAILED','UNMATCHED_TRACK_ID','ADDON_GRANT_FAILED'
+          )
+          or (
+            processing_result='processing'
+            and updated_at < clock_timestamp()-interval '2 minutes'
+          )
+        )
+      returning id
+    `;
+    if (!claimed[0]) return reject(503, "Notification processing");
+  }
 
   try {
     if (!isKnownThePayOneMerchantTerminal(event.merchantId, event.terminalId)) {
@@ -754,11 +838,7 @@ export async function POST(
         where id=${order.id}
       `;
       if (order.kind === "addon") {
-        try {
-          await processAddon(eventId, event, order);
-        } catch {
-          await setManualReview(eventId, "ADDON_GRANT_FAILED", order.id, order.subscriptionId);
-        }
+        await processAddon(eventId, event, order);
         return ack();
       }
       if (order.status === "succeeded") {
@@ -779,11 +859,20 @@ export async function POST(
       return ack();
     }
 
-    const methods = await db`
-      select * from shorts_mvp.billing_payment_methods
-      where provider='thepayone' and registration_order_id=${event.trackId}
-      order by created_at desc limit 1
-    `;
+    const recurringTrackIdBase = thePayOneRecurringTrackIdBase(event.trackId);
+    const methods = recurringTrackIdBase
+      ? await db`
+          select * from shorts_mvp.billing_payment_methods
+          where provider='thepayone'
+            and registration_order_id in (${event.trackId},${recurringTrackIdBase})
+          order by (registration_order_id=${event.trackId}) desc,created_at desc
+          limit 1
+        `
+      : await db`
+          select * from shorts_mvp.billing_payment_methods
+          where provider='thepayone' and registration_order_id=${event.trackId}
+          order by created_at desc limit 1
+        `;
     if (!methods[0]) {
       await setManualReview(eventId, "UNMATCHED_TRACK_ID");
       return ack();
@@ -795,9 +884,14 @@ export async function POST(
     `;
     await processRecurring(eventId, event, methods[0]);
     return ack();
-  } catch {
+  } catch (error) {
     await setManualReview(eventId, "WEBHOOK_PROCESSING_FAILED").catch(() => undefined);
-    return ack();
+    console.error("thepayone_webhook_processing_failed", {
+      eventId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      transactionIdHash: cardTokenHash(event.transactionId),
+    });
+    return reject(503, "Notification processing failed");
   }
 }
 

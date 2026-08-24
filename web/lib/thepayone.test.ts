@@ -12,6 +12,7 @@ import {
   refundThePayOnePayment,
   registerThePayOneCard,
   revokeThePayOneCard,
+  thePayOneRecurringTrackIdBase,
   thePayOneCredentialScopeForPackage,
   thePayOneCredentialScopeForMerchantTerminal,
   thePayOneCardTypeAllowsInstallment,
@@ -47,8 +48,15 @@ describe("ThePayOne client", () => {
       const trackId = createPaymentTrackId(prefix);
       expect(trackId).toMatch(new RegExp(`^EC-${prefix}-\\d{6}-[a-f0-9]{16}$`));
       expect(trackId.length).toBeLessThanOrEqual(33);
-      expect(`${trackId}20260812080002`.length).toBeLessThanOrEqual(50);
+      expect(`${trackId}235959`.length).toBeLessThanOrEqual(50);
     }
+  });
+
+  it("extracts only a valid HHmmss suffix from a scheduled recurring track ID", () => {
+    const stored = "EC-AUTH-260725-0123456789abcdef0123";
+    expect(thePayOneRecurringTrackIdBase(`${stored}134418`)).toBe(stored);
+    expect(thePayOneRecurringTrackIdBase(`${stored}246060`)).toBeNull();
+    expect(thePayOneRecurringTrackIdBase(stored)).toBeNull();
   });
 
   it("extracts a definite provider installment limit without treating other 9999 diagnostics as a limit", () => {
@@ -610,6 +618,31 @@ describe("cardId protection", () => {
 });
 
 describe("ThePayOne result notification", () => {
+  it("parses the provider's flat form payload without a response= wrapper", () => {
+    const parsed = parseThePayOneWebhook(
+      "last4=*017&rootTrxId=&authCd=30006532&tmnId=terminal-1"
+      + "&regDate=2026%2F08%2F21+13%3A44%3A21.342&trxType=pay"
+      + "&prodName=Easy+Cut+Pro&amount=9900&trackId=EC-SUB-TEST"
+      + "&trxId=T260821000001&regDay=20260821&trxDay=20260821&regTime=134418"
+      + "&installment=00&cardId=card_test_token&mchtId=merchant-1",
+    );
+    expect(parsed).toMatchObject({
+      merchantId: "merchant-1",
+      terminalId: "terminal-1",
+      transactionId: "T260821000001",
+      trackId: "EC-SUB-TEST",
+      transactionType: "pay",
+      amount: 9_900,
+      cardId: "card_test_token",
+      last4: null,
+      authCode: "30006532",
+      transactionDay: "20260821",
+      registeredDay: "20260821",
+      registeredTime: "134418",
+      installmentMonths: 0,
+    });
+  });
+
   it("parses the documented response= nested query format", () => {
     const parsed = parseThePayOneWebhook(
       "response=mchtId=merchant-1&tmnId=terminal-1&trxId=T260722000001&trackId=EC-ADD-1"
