@@ -13316,24 +13316,30 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <section className={`hero mx-auto flex w-full max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
         <h1 className="hero-title">{t("home.heroLine1")}<br /><span>{t("home.heroLine2")}</span></h1>
         {uploadModeEnabled ? (
-          <div className="mt-8 grid w-full max-w-3xl grid-cols-2 gap-2" role="tablist" aria-label="원본 영상 입력 방식">
+          <div className="source-input-mode mt-8 w-full max-w-3xl" role="tablist" aria-label="원본 영상 입력 방식">
             <button
               type="button"
               role="tab"
               aria-selected={sourceMode === "youtube"}
               onClick={() => chooseSourceMode("youtube")}
-              className={`h-[52px] rounded-xl border text-sm font-extrabold transition ${sourceMode === "youtube" ? "border-[#ff715e] bg-[#ff715e] text-white" : "border-white/15 bg-black/20 text-neutral-400 hover:border-white/30 hover:text-white"}`}
+              className="source-input-mode-tab"
             >
-              <span className="inline-flex items-center gap-2"><span aria-hidden="true">↗</span> 유튜브 링크</span>
+              <svg viewBox="0 0 24 24" width="21" height="21" fill="none" aria-hidden="true">
+                <path d="M9.7 13.8a4 4 0 0 0 5.66 0l2.83-2.83a4 4 0 0 0-5.66-5.66l-1.62 1.62M14.3 10.2a4 4 0 0 0-5.66 0l-2.83 2.83a4 4 0 1 0 5.66 5.66l1.62-1.62" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+              유튜브 링크
             </button>
             <button
               type="button"
               role="tab"
               aria-selected={sourceMode === "upload"}
               onClick={() => chooseSourceMode("upload")}
-              className={`h-[52px] rounded-xl border text-sm font-extrabold transition ${sourceMode === "upload" ? "border-[#ff715e] bg-[#ff715e] text-white" : "border-white/15 bg-black/20 text-neutral-400 hover:border-white/30 hover:text-white"}`}
+              className="source-input-mode-tab"
             >
-              <span className="inline-flex items-center gap-2"><span aria-hidden="true">⇧</span> 파일 업로드</span>
+              <svg viewBox="0 0 24 24" width="21" height="21" fill="none" aria-hidden="true">
+                <path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M5 13v5.25A2.75 2.75 0 0 0 7.75 21h8.5A2.75 2.75 0 0 0 19 18.25V13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              파일 업로드
             </button>
           </div>
         ) : null}
@@ -13371,36 +13377,39 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                 const file = event.dataTransfer.files[0];
                 if (file) void prepareSelectedUpload(file);
               }}
-              className="group relative block min-h-64 w-full overflow-hidden rounded-2xl border border-dashed border-[#ff8f7f]/55 bg-[#ff715e]/[.055] text-left transition hover:border-[#ff8f7f] disabled:cursor-wait disabled:opacity-65"
+              className={`source-upload-dropzone ${uploadVideo ? "has-file has-thumbnail" : ""} ${busy || uploadInspectionBusy ? "is-busy" : ""}`}
             >
               {uploadVideo ? (
                 <>
-                  <Image src={uploadVideo.thumbnailDataUrl} alt="선택한 영상 썸네일" fill unoptimized className="object-cover" />
-                  <span className="absolute inset-0 bg-black/55" aria-hidden="true" />
-                  <span className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-                    <strong className="max-w-full truncate text-xl font-black text-white">{uploadVideo.file.name}</strong>
-                    <span className="mt-2 text-sm font-bold text-[#ffc1b8]">
-                      {(uploadVideo.file.size / 1024 / 1024).toFixed(1)}MB · {formatDuration(uploadVideo.durationSeconds)} · 영상 정보 확인 완료
-                    </span>
-                    <span className="mt-4 rounded-xl border border-white/20 bg-black/40 px-4 py-2 text-xs font-bold text-white">다른 영상 선택</span>
+                  <Image src={uploadVideo.thumbnailDataUrl} alt="선택한 영상 썸네일" fill unoptimized className="source-upload-thumbnail" />
+                  <strong className="source-upload-title">{uploadVideo.file.name}</strong>
+                  <span className="source-upload-selected-meta">
+                    {(uploadVideo.file.size / 1024 / 1024).toFixed(1)}MB · {formatDuration(uploadVideo.durationSeconds)} · 영상 정보 확인 완료
                   </span>
+                  <span className="source-upload-reselect">다른 영상 선택</span>
                 </>
               ) : (
-                <span className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
-                  <span className="text-4xl" aria-hidden="true">▰</span>
-                  <strong className="mt-5 text-lg font-extrabold text-white">동영상 파일을 끌어놓거나 클릭하여 선택하세요</strong>
-                  <span className="mt-3 text-xs font-medium text-neutral-400">MP4, MOV, M4V, WEBM, MKV · 최대 5GB · 3분~3시간</span>
-                  {uploadInspectionBusy ? <span className="mt-4 font-bold text-[#ff9b8d]">영상 정보를 확인하고 있습니다…</span> : null}
-                </span>
+                <>
+                  <span className="source-upload-folder" aria-hidden="true">
+                    <svg viewBox="0 0 56 48" width="56" height="48" fill="none">
+                      <path d="M4.5 12.5A4.5 4.5 0 0 1 9 8h12l5 5h21a4.5 4.5 0 0 1 4.5 4.5v22A4.5 4.5 0 0 1 47 44H9a4.5 4.5 0 0 1-4.5-4.5v-27Z" fill="url(#admin-upload-folder-fill)" stroke="currentColor" strokeWidth="2" />
+                      <defs><linearGradient id="admin-upload-folder-fill" x1="7" y1="9" x2="48" y2="44" gradientUnits="userSpaceOnUse"><stop stopColor="#FF715E"/><stop offset=".52" stopColor="#FFB4A8"/><stop offset="1" stopColor="#A078FF"/></linearGradient></defs>
+                    </svg>
+                  </span>
+                  <strong className="source-upload-title">동영상 파일을 드래그하거나 클릭하여 선택하세요</strong>
+                  <span className="source-upload-warning">페이지를 새로고침하면 선택한 파일이 취소됩니다.</span>
+                  <span className="source-upload-meta">지원 형식: MP4, MOV, M4V, WEBM, MKV</span>
+                  <span className="source-upload-meta">파일 제한: 최대 5GB · 3분~3시간 영상</span>
+                  {uploadInspectionBusy ? <span className="source-upload-feedback">영상 정보를 확인하고 있습니다…</span> : null}
+                </>
               )}
               {uploadProgress !== null ? (
-                <span className="absolute inset-x-4 bottom-4 overflow-hidden rounded-full bg-black/55 p-1">
-                  <span className="block h-2 rounded-full bg-[#ff715e] transition-[width]" style={{ width: `${uploadProgress}%` }} />
-                  <span className="mt-1 block text-center text-[11px] font-black text-white">원본 업로드 {uploadProgress}%</span>
+                <span className="source-upload-progress">
+                  <span className="source-upload-progress-value" style={{ width: `${uploadProgress}%` }} />
+                  <span className="source-upload-progress-label">원본 업로드 {uploadProgress}%</span>
                 </span>
               ) : null}
             </button>
-            <p className="mt-3 text-xs font-medium text-neutral-500">파일은 마지막 생성 버튼을 누를 때 전용 처리 서버로 직접 전송됩니다.</p>
           </div>
         )}
       </section>
