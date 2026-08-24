@@ -506,6 +506,7 @@ const phrases: readonly Phrase[] = [
   ["프레임을 끌어 이동하고 오른쪽 아래 핸들로 비율을 유지한 채 크기를 조절하세요.", "Drag the frame to move it and use the bottom-right handle to resize while preserving its ratio.", "フレームをドラッグして移動し、右下のハンドルで比率を維持したままサイズを調整してください。"],
   ["템플릿에 고정", "Locked by template", "テンプレートに固定"],
   ["브랜드 컬러", "Brand color", "ブランドカラー"],
+  ["커스텀 템플릿에 저장된 색상이 적용됩니다.", "The colors saved in the custom template will be used.", "カスタムテンプレートに保存された色が適用されます。"],
   ["브랜드 컬러 더 보기", "Show more brand colors", "ブランドカラーをもっと見る"],
   ["더 많은 브랜드 컬러 보기", "Show more brand colors", "ブランドカラーをもっと見る"],
   ["전체 브랜드 컬러", "All brand colors", "すべてのブランドカラー"],

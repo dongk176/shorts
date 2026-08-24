@@ -46,6 +46,10 @@ describe("subtitle template UI isolation", () => {
     expect(shortsAppSource).toContain("snapshot.title.secondLineColor");
     expect(shortsAppSource).toContain("brandColorSelectionEnabled");
     expect(shortsAppSource).toContain("<BrandColorPicker");
+    expect(shortsAppSource).toContain("disabled={Boolean(customTemplateId)}");
+    expect(shortsAppSource).toContain(
+      'disabledReason="커스텀 템플릿에 저장된 색상이 적용됩니다."',
+    );
     expect(shortsAppSource).toContain("template-picker-rail");
     expect(shortsAppSource).toContain("이게 바로 ");
     expect(shortsAppSource).not.toContain("이게 바로 ");

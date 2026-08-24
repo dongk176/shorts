@@ -10,18 +10,28 @@ import { compactBrandColorOptions } from "@/lib/brand-color-picker-options";
 export function BrandColorPicker({
   value,
   onChange,
+  disabled = false,
+  disabledReason,
 }: {
   value: TemplatePresetColor;
   onChange: (value: TemplatePresetColor) => void;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
   const [open, setOpen] = useState(false);
   const pickerId = useId();
+  const disabledReasonId = `${pickerId}-disabled-reason`;
   const rootRef = useRef<HTMLDivElement>(null);
   const selected = templatePresetColorOptions.find((option) => option.color === value);
   const displayedCompactOptions = compactBrandColorOptions(value);
+  const expanded = open && !disabled;
 
   useEffect(() => {
-    if (!open) return;
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  useEffect(() => {
+    if (!expanded) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -34,7 +44,7 @@ export function BrandColorPicker({
       document.removeEventListener("pointerdown", closeOnOutsidePointer);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [open]);
+  }, [expanded]);
 
   const colorButton = (
     option: (typeof templatePresetColorOptions)[number],
@@ -44,6 +54,7 @@ export function BrandColorPicker({
     <button
       key={option.color}
       type="button"
+      disabled={disabled}
       aria-label={`${option.name} 브랜드 컬러`}
       aria-pressed={value === option.color}
       title={option.name}
@@ -51,7 +62,7 @@ export function BrandColorPicker({
         onChange(option.color);
         if (!compact) setOpen(false);
       }}
-      className={`relative h-7 w-7 shrink-0 rounded-full border transition hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${value === option.color ? "border-white shadow-[0_0_0_3px_rgba(255,255,255,.2)]" : "border-white/20"} ${className}`}
+      className={`relative h-7 w-7 shrink-0 rounded-full border transition hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:hover:scale-100 ${value === option.color ? "border-white shadow-[0_0_0_3px_rgba(255,255,255,.2)]" : "border-white/20"} ${className}`}
       style={{ backgroundColor: option.color }}
     >
       {value === option.color && (
@@ -61,9 +72,13 @@ export function BrandColorPicker({
   );
 
   return (
-    <fieldset className="w-full min-w-0">
+    <fieldset
+      disabled={disabled}
+      aria-describedby={disabled && disabledReason ? disabledReasonId : undefined}
+      className="w-full min-w-0"
+    >
       <legend className="sr-only">브랜드 컬러</legend>
-      <div ref={rootRef} className="relative grid min-w-0 grid-cols-[72px_minmax(0,1fr)] items-center gap-3">
+      <div ref={rootRef} className={`relative grid min-w-0 grid-cols-[72px_minmax(0,1fr)] items-center gap-3 transition-opacity ${disabled ? "opacity-[.45]" : ""}`}>
         <span className="w-[72px] shrink-0 text-xs font-semibold text-neutral-400">브랜드 컬러</span>
         <div className="flex min-w-0 max-w-full items-center gap-2">
           {displayedCompactOptions.map((option, index) => colorButton(
@@ -75,18 +90,19 @@ export function BrandColorPicker({
           ))}
           <button
             type="button"
+            disabled={disabled}
             aria-label="브랜드 컬러 더 보기"
-            aria-expanded={open}
+            aria-expanded={expanded}
             aria-controls={pickerId}
             title="더 많은 브랜드 컬러 보기"
             onClick={() => setOpen((current) => !current)}
             className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/15 bg-white/[.06] text-base font-bold leading-none text-white transition hover:border-white/35 hover:bg-white/[.11]"
           >
-            {open ? "−" : "+"}
+            {expanded ? "−" : "+"}
           </button>
           <span className="hidden truncate text-[11px] font-semibold text-neutral-500 sm:block">{selected?.name}</span>
         </div>
-        {open && (
+        {expanded && (
           <div
             id={pickerId}
             role="group"
@@ -97,6 +113,11 @@ export function BrandColorPicker({
           </div>
         )}
       </div>
+      {disabled && disabledReason && (
+        <p id={disabledReasonId} className="mt-2 text-[11px] font-semibold leading-4 text-amber-200/80">
+          {disabledReason}
+        </p>
+      )}
     </fieldset>
   );
 }

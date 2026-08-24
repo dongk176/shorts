@@ -75,6 +75,24 @@ describe("template execution snapshot", () => {
     expect(access).not.toHaveBeenCalled();
   });
 
+  it("rejects a separate brand color before loading a personal template", async () => {
+    const db = dbWithRows();
+    const access = vi.fn();
+
+    await expect(resolveTemplateExecutionSnapshot(db as never, {
+      userId: "8b849e2a-4339-4607-b705-8496265bf576",
+      templateId: "dark-red",
+      customTemplateId: "3e5cd85c-03db-4f04-9854-c39b74486172",
+      videoAspectRatio: "9:16",
+      brandColor: "#FF715E",
+    }, access)).rejects.toMatchObject({
+      status: 400,
+      message: "내 템플릿에는 브랜드 컬러를 별도로 적용할 수 없습니다.",
+    });
+    expect(db).not.toHaveBeenCalled();
+    expect(access).not.toHaveBeenCalled();
+  });
+
   it("requires strict canary access even when saved subtitles are hidden", async () => {
     const config = upgradeTemplateConfigToV5(createDefaultTemplateConfig());
     config.subtitle.visible = false;

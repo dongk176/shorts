@@ -2084,7 +2084,12 @@ function TemplatePicker({
         onChange={onVideoAspectRatioChange}
       />
       {brandColorSelectionEnabled && (
-        <BrandColorPicker value={brandColor} onChange={onBrandColorChange} />
+        <BrandColorPicker
+          value={brandColor}
+          onChange={onBrandColorChange}
+          disabled={Boolean(customTemplateId)}
+          disabledReason="커스텀 템플릿에 저장된 색상이 적용됩니다."
+        />
       )}
     </div>
   );
