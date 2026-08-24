@@ -69,6 +69,15 @@ describe("guest Toss pricing", () => {
     );
   });
 
+  it("keeps the maximum-discount badge the same size as the best-value badge", () => {
+    expect(tossSource).toContain(
+      '<span className={`pricing-badge ${styles.localReasonableBadge}`}>가장 합리적</span>',
+    );
+    expect(tossSource).toContain(
+      '<span className={`pricing-badge ${styles.localReasonableBadge}`}>최대 할인</span>',
+    );
+  });
+
   it("gives the primary dialog action twice the width of cancel", () => {
     expect(pricingStyles).toMatch(
       /\.localDialogActions\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(86px,\s*1fr\)\s+minmax\(0,\s*2fr\);/,

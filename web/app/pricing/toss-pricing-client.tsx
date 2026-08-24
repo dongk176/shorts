@@ -343,7 +343,7 @@ export function TossPricingClient({
                 <span className={`pricing-badge ${styles.localReasonableBadge}`}>가장 합리적</span>
               ) : null}
               {plan.tier === "starter" && plan.contractMonths === 12 ? (
-                <span className="pricing-badge">최대 할인</span>
+                <span className={`pricing-badge ${styles.localReasonableBadge}`}>최대 할인</span>
               ) : null}
               {plan.discountPercent > 0 ? (
                 <span className={`${styles.planEyebrow} ${styles.discountEyebrow} ${
