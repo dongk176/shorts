@@ -41,11 +41,24 @@ test("fails closed against the committed production Worker release before infras
   assert.ok(releaseGuard >= 0 && releaseGuard < migration);
   for (const context of [
     "legacyProjectJobDefinitionArn",
+    "legacyProjectBatchQueueArn",
     "sourceRangeJobDefinitionArn",
+    "sourceRangeBatchQueueArn",
     "elevenLabsTranscriptionJobDefinitionArn",
+    "elevenLabsTranscriptionBatchQueueArn",
     "subtitleTemplatesJobDefinitionArn",
+    "subtitleTemplatesBatchQueueArn",
+    "unifiedTemplateSubtitlesJobDefinitionArn",
+    "unifiedTemplateSubtitlesBatchQueueArn",
   ]) {
     assert.match(script, new RegExp(`-c "${context}=`));
+  }
+  for (const name of [
+    "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN",
+    "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN",
+  ]) {
+    const required = script.indexOf(`\${${name}:?${name} is required in production}`);
+    assert.ok(required >= 0 && required < migration);
   }
 });
 

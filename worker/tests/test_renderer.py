@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from shorts_worker.caption_templates import compile_caption_render_spec
 from shorts_worker.config import Settings
 from shorts_worker.renderer import (
     COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
@@ -30,6 +31,7 @@ from shorts_worker.schemas import (
     VideoAspectRatio,
     default_comment_overlays,
 )
+from shorts_worker.subtitles import TranscriptWord
 from shorts_worker.worker_pipeline import edit_timeline_clip
 
 pytestmark = pytest.mark.render
@@ -536,7 +538,7 @@ def test_custom_video_geometry_uses_saved_pixels_without_rounding() -> None:
                 "accentBackgroundColor": None,
             },
             "subtitle": {
-                "visible": False,
+                "visible": True,
                 "x": 540,
                 "y": 1400,
                 "maxWidth": 900,
@@ -558,6 +560,7 @@ def test_custom_video_geometry_uses_saved_pixels_without_rounding() -> None:
 
     scale, overlay = custom_video_geometry_filters(config.video, fps=29.97)
 
+    assert config.subtitle.visible is False
     assert "scale=800:450" in scale
     assert "crop=800:450" in scale
     assert overlay == "[base][custom_video]overlay=x=137:y=601:shortest=1[with_video]"
@@ -585,7 +588,22 @@ def test_custom_title_layer_upgrades_a_legacy_shared_background() -> None:
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
-def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("template_id", "subtitles_enabled", "expected_comment_inputs"),
+    [
+        (TemplateId.COMMENT_CAPTURE, False, 1),
+        (TemplateId.COMMENT_CAPTURE, True, 1),
+        # Legacy non-comment custom configs may carry a visible default
+        # comment layer. They must retain the stable no-comment behavior.
+        (TemplateId.DARK_MINIMAL, False, 0),
+    ],
+)
+def test_custom_color_template_renders_to_vertical_mp4(
+    tmp_path: Path,
+    template_id: TemplateId,
+    subtitles_enabled: bool,
+    expected_comment_inputs: int,
+) -> None:
     clean = tmp_path / "clean.mp4"
     _run(
         [
@@ -609,7 +627,7 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
     )
     config = CustomTemplateConfig.model_validate(
         {
-            "schemaVersion": 4,
+            "schemaVersion": 5,
             "background": {"kind": "color", "color": "#16A34A"},
             "video": {
                 "aspectRatio": "16:9",
@@ -625,6 +643,7 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
                 "y": 260,
                 "maxWidth": 900,
                 "fontSize": 72,
+                "fontId": "paperlogy",
                 "primaryColor": "#FFFFFF",
                 "accentColor": "#FF4D4F",
                 "primaryBackgroundColor": "#16A34A",
@@ -632,12 +651,14 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
             },
             "subtitle": {
                 "visible": True,
+                "variant": "highlight",
                 "x": 540,
                 "y": 1400,
                 "maxWidth": 900,
                 "fontSize": 48,
+                "fontId": "paperlogy",
                 "color": "#FFFFFF",
-                "backgroundColor": "#000000",
+                "accentColor": "#FFD84D",
             },
             "channel": {
                 "visible": True,
@@ -659,6 +680,33 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
     )
     output = tmp_path / "custom.mp4"
     render_metrics: dict[str, object] = {}
+    caption_spec = compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="통합",
+                start=0.1,
+                end=0.45,
+                provider="elevenlabs",
+            ),
+            TranscriptWord(
+                text="자막",
+                start=0.45,
+                end=0.8,
+                provider="elevenlabs",
+                space_before=True,
+            ),
+        ],
+        template_id=config.subtitle.variant,
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        caption_center_y=config.subtitle.y,
+        caption_max_width=config.subtitle.max_width,
+        font_id=config.subtitle.font_id,
+        font_size=config.subtitle.font_size,
+        text_color=config.subtitle.color,
+        accent_color=config.subtitle.accent_color,
+    )
 
     VideoRenderer(
         Settings(temp_dir=tmp_path / "temp", ffmpeg_timeout_seconds=120)
@@ -667,9 +715,9 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
         output_path=output,
         title="개인 템플릿\n렌더링 확인",
         channel_name="테스트 채널",
-        template_id=TemplateId.COMMENT_CAPTURE,
+        template_id=template_id,
         transcript=[],
-        subtitles_enabled=False,
+        subtitles_enabled=subtitles_enabled,
         work_dir=tmp_path / "work",
         prefix="custom",
         comment_overlays=[
@@ -686,21 +734,30 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
             )
         ],
         custom_template_config=config,
+        caption_render_spec=caption_spec,
         metrics_callback=render_metrics.update,
     )
-    assert render_metrics["commentInputCount"] == 1
+    assert render_metrics["commentInputCount"] == expected_comment_inputs
+    caption_ass = tmp_path / "work" / "subtitles" / "custom_caption.ass"
+    assert caption_ass.is_file() is subtitles_enabled
+    if subtitles_enabled:
+        assert "Paperlogy" in caption_ass.read_text(encoding="utf-8")
+        assert "\\pos(540,1400)" in caption_ass.read_text(encoding="utf-8")
     with Image.open(
         tmp_path / "work" / "overlays" / "custom_custom_channel.png"
     ).convert("RGBA") as channel_layer:
         assert channel_layer.getbbox() is not None
-    with Image.open(
+    comment_gap = (
         tmp_path
         / "work"
         / "overlays"
         / "comment-timeline"
         / "custom_comment_gap.png"
-    ).convert("RGBA") as gap_layer:
-        assert gap_layer.getbbox() is None
+    )
+    assert comment_gap.is_file() is (expected_comment_inputs == 1)
+    if expected_comment_inputs == 1:
+        with Image.open(comment_gap).convert("RGBA") as gap_layer:
+            assert gap_layer.getbbox() is None
 
     probe = json.loads(
         _run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(output)]).stdout
@@ -739,7 +796,13 @@ def test_custom_color_template_renders_to_vertical_mp4(tmp_path: Path) -> None:
         assert is_video(image.getpixel((540, 600)))
         assert is_video(image.getpixel((540, 1049)))
         assert not is_video(image.getpixel((540, 1050)))
-        assert all(channel >= 245 for channel in image.getpixel((10, 1060)))
+        background_pixel = image.getpixel((10, 1060))
+        if template_id is TemplateId.COMMENT_CAPTURE:
+            assert all(channel >= 245 for channel in background_pixel)
+        else:
+            assert abs(background_pixel[0] - 0x16) <= 8
+            assert abs(background_pixel[1] - 0xA3) <= 8
+            assert abs(background_pixel[2] - 0x4A) <= 8
 
     rendered_gap_frame = tmp_path / "custom-gap-frame.png"
     _run(

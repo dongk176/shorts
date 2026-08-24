@@ -58,6 +58,7 @@ _REQUIRED_FONTS = {
     "noto-serif-kr",
     "nanum-myeongjo",
     "ridi-batang",
+    "paperlogy",
 }
 _CANDIDATE_VCPUS = "4"
 _CANDIDATE_FFMPEG_THREADS = "4"

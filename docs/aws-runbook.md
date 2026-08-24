@@ -12,7 +12,7 @@
    `AWS_ECR_REPOSITORY_URI`, `EDITOR_RELEASE_ECR_REPOSITORY_URI`로
    등록한 뒤 해당 workflow를 한 번 수동 실행합니다.
 6. `scripts/sync-vercel-env.sh`를 실행합니다. 이 명령은 Vercel 값을 쓰기 전에
-   네 프로젝트 Batch 대상이 `shorts-mvp-batch-submitter-production` Lambda의
+   다섯 프로젝트 Batch 대상이 `shorts-mvp-batch-submitter-production` Lambda의
    신뢰 ARN과 정확히 일치하고 각 Job Definition/queue가 ACTIVE 및
    VALID/ENABLED 상태인지 검사하며, 하나라도 다르면 배포를 중단합니다.
 7. 현재 운영 커밋과 후보의 route manifest를 `scripts/verify-production-release.mjs --base <운영 SHA> --baseline-manifest <운영 manifest>`로 비교합니다.
@@ -27,6 +27,81 @@ CloudFront private key는 `.secrets/cloudfront-private.pem`과 Vercel secret에�
 불변 digest, 운영 내부 카나리, 관리자 승격 순서는
 [편집기 v2 안전 테스트·승격](editor-rendering-v2-rollout.md)을 따릅니다.
 후보 workflow는 Vercel·CDK·운영 DB를 자동 배포하지 않습니다.
+
+## 통합 템플릿 자막 최초 생성 후보
+
+`Verify editor release candidate` workflow는 검증한 단일 이미지 digest로
+기존 재렌더 후보와 별도로 최초 생성용 Job Definition을 등록합니다. Workflow
+summary와 등록 step output의
+`UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN`은 revision까지 포함한 정확한
+ARN이어야 합니다. 템플릿 입력
+`UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION`은
+`shorts-mvp-project-heavy-fargate-production` 이름 또는 그 정의의
+revision-pinned ARN만 허용합니다.
+
+후보 workflow는 queue를 만들거나 선택하지 않습니다. 최초 생성 카나리는
+기존 수집 프록시 네트워크를 사용하면서 일반 프로젝트 queue(priority 20)보다
+낮은 `shorts-mvp-prepare-production` queue(priority 10)를 공유합니다. 편집기
+격리 queue는 재렌더용 HTTPS/DB 송신만 허용하므로 링크 수집 대상으로 쓰지
+않습니다. 이름을 환경변수에 넣지 말고 다음 읽기 전용 확인으로 실제 정확
+ARN을 얻습니다.
+
+```sh
+approved_queue_name=shorts-mvp-prepare-production
+UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN="$(
+  aws batch describe-job-queues \
+    --region ap-northeast-2 \
+    --job-queues "$approved_queue_name" \
+    --query 'jobQueues[?status==`VALID` && state==`ENABLED`]|[0].jobQueueArn' \
+    --output text
+)"
+case "$UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN" in
+  arn:aws:batch:ap-northeast-2:????????????:job-queue/*) ;;
+  *) echo "approved Batch queue exact ARN 확인 실패" >&2; exit 2 ;;
+esac
+```
+
+Workflow 실행 전 위 exact ARN을 GitHub Actions variable
+`UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN`에 등록합니다. 템플릿을 이름이
+아닌 revision으로 고정하려면 project-heavy exact ARN을
+`UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION` variable에 등록합니다.
+둘 다 기존 리소스를 가리킬 뿐 workflow가 queue를 생성하지는 않습니다.
+
+Workflow가 출력한 정확 Job Definition ARN과 위 queue ARN을 각각
+`UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN`,
+`UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN`으로 배포 환경에 넣습니다. 기존
+네 definition 중 하나를 재사용하면 안 되며 queue 공유만 허용됩니다.
+`scripts/verify-project-batch-targets.mjs`가 다섯 definition의 격리, 웹과 제출
+Lambda의 exact pair 일치, ACTIVE/VALID/ENABLED 상태를 모두 확인한 뒤에만
+Vercel 동기화를 진행합니다.
+
+### v5 카나리 활성화 순서
+
+1. 운영에는 추가형
+   `202608240002_unified_template_subtitles_canary_flag.sql`만 적용하고 새
+   플래그가 `false`인지 확인합니다. 기존 자막·편집·전사 공개 플래그는
+   변경하지 않습니다.
+2. 깨끗한 후보 브랜치에서 workflow를 실행해 재렌더 정의와 최초 생성 정의가
+   동일한 이미지 digest인지 확인합니다.
+3. 위의 정확한 최초 생성 definition/queue pair를 Batch submitter와 Vercel에
+   동기화합니다. 독립 플래그가 꺼져 있으므로 이 단계에서 v5 요청은 없습니다.
+4. 웹을 alias 없는 후보 URL에 배포하고 `/`, `/guidebook`, `/pricing`, 관리자
+   페이지, 편집기 경로, `/templates`를 확인합니다. 일반 계정과 비관리자
+   tester에서 v5 카드와 API가 모두 차단되어야 합니다.
+5. 검증한 동일 배포를 재빌드 없이 승격합니다. 그 뒤 자막 편집 capability가
+   있는 candidate release를 시작하고 지정된 관리자 계정만 tester로 등록합니다.
+6. 관리자 화면에서 `통합 자막 카나리 켜기`를 실행합니다. 링크 생성과 로컬
+   업로드, 편집 재렌더를 검증한 뒤 전체 공개 없이 멈춥니다.
+
+로컬 직접 업로드는 `NODE_ENV`가 production이 아니고,
+`UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ENABLED=true`이며 receiver가
+`localhost`, `127.0.0.1`, `[::1]` 중 하나일 때만 허용됩니다. 운영 업로드
+receiver로 바꾸거나 production에서 이 예외를 켜지 않습니다.
+
+문제가 생기면 관리자 화면에서 `통합 자막 카나리 중단`을 실행해
+`unified_template_subtitles_canary=false`로 만듭니다. 기존
+`subtitle_templates`와 공개 플래그, 이미 시작된 정상 작업, 저장된 DB 행은
+건드리지 않습니다.
 
 ## Failed/stale jobs
 

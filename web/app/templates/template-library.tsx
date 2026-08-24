@@ -13,7 +13,9 @@ import {
   COMMENT_CAPTURE_LANDSCAPE_LIFT_PX,
   COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
   PRESET_SQUARE_CHANNEL_CENTER_Y,
+  createUnifiedSubtitleTemplateConfig,
   type CustomTemplate,
+  type UnifiedSubtitleVariant,
 } from "@/lib/template-config";
 import {
   customTemplateFavoriteKey,
@@ -105,6 +107,37 @@ const templates: readonly TemplateShowcase[] = [
     channel: "#363636",
   },
 ] as const;
+
+const unifiedSubtitlePresets: readonly {
+  id: `subtitle-${UnifiedSubtitleVariant}`;
+  variant: UnifiedSubtitleVariant;
+  name: string;
+  description: string;
+}[] = [
+  { id: "subtitle-pop", variant: "pop", name: "자막 팝형", description: "핵심 어절을 크고 리듬감 있게" },
+  { id: "subtitle-highlight", variant: "highlight", name: "자막 강조형", description: "말하는 어절을 포인트 색으로" },
+] as const;
+
+const unifiedSubtitlePreviewTemplates = {
+  pop: {
+    id: "subtitle-pop",
+    name: "자막 팝형",
+    baseTemplateId: "dark-minimal",
+    config: createUnifiedSubtitleTemplateConfig("pop"),
+    version: 1,
+    createdAt: "",
+    updatedAt: "",
+  },
+  highlight: {
+    id: "subtitle-highlight",
+    name: "자막 강조형",
+    baseTemplateId: "dark-minimal",
+    config: createUnifiedSubtitleTemplateConfig("highlight"),
+    version: 1,
+    createdAt: "",
+    updatedAt: "",
+  },
+} satisfies Record<UnifiedSubtitleVariant, CustomTemplate>;
 
 const templateCommentSample: CommentOverlay = {
   id: "template-comment-sample",
@@ -262,8 +295,13 @@ function EmptyTemplateCard({ authenticated, canUseCustomTemplates }: { authentic
   );
 }
 
-function CustomTemplatePreview({ template }: { template: CustomTemplate }) {
-  return <CustomTemplateCanvasPreview template={template} firstLine="놓치면 후회할" secondLine="핵심 한 가지" channelLabel="Easy Cut" />;
+function CustomTemplatePreview({ template, showUnifiedSubtitle = false }: { template: CustomTemplate; showUnifiedSubtitle?: boolean }) {
+  return <CustomTemplateCanvasPreview template={template} firstLine="놓치면 후회할" secondLine="핵심 한 가지" channelLabel="Easy Cut" showUnifiedSubtitle={showUnifiedSubtitle} />;
+}
+
+function UnifiedSubtitlePresetPreview({ preset }: { preset: (typeof unifiedSubtitlePresets)[number] }) {
+  const template = unifiedSubtitlePreviewTemplates[preset.variant];
+  return <CustomTemplatePreview template={template} showUnifiedSubtitle />;
 }
 
 export function TemplateLibrary({
@@ -271,12 +309,14 @@ export function TemplateLibrary({
   authenticated,
   canUseCustomTemplates,
   adminPresetNamesEnabled,
+  unifiedSubtitleCanaryEnabled,
   initialFavoriteTemplateKeys,
 }: {
   personalTemplates: CustomTemplate[];
   authenticated: boolean;
   canUseCustomTemplates: boolean;
   adminPresetNamesEnabled: boolean;
+  unifiedSubtitleCanaryEnabled: boolean;
   initialFavoriteTemplateKeys: TemplateFavoriteKey[];
 }) {
   const [query, setQuery] = useState("");
@@ -362,6 +402,16 @@ export function TemplateLibrary({
     if (!normalizedQuery) return personalTemplates;
     return personalTemplates.filter((template) => template.name.toLocaleLowerCase("ko-KR").includes(normalizedQuery));
   }, [personalTemplates, query]);
+  const visibleUnifiedSubtitlePresets = useMemo(() => {
+    if (!unifiedSubtitleCanaryEnabled) return [];
+    const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
+    if (!normalizedQuery) return unifiedSubtitlePresets;
+    return unifiedSubtitlePresets.filter((preset) => (
+      `${preset.name} ${preset.description} 자막`
+        .toLocaleLowerCase("ko-KR")
+        .includes(normalizedQuery)
+    ));
+  }, [query, unifiedSubtitleCanaryEnabled]);
 
   return (
     <div className="mx-auto w-full max-w-[1040px]">
@@ -391,7 +441,7 @@ export function TemplateLibrary({
           return (
             <article key={template.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#ff715e]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#ff715e]/50 hover:shadow-[0_20px_55px_rgba(255,113,94,.09)]">
               <Link href={canUseCustomTemplates ? `/templates/${template.id}/edit` : "/pricing"} className="flex flex-1 flex-col">
-                <div className="flex flex-1 items-center justify-center px-2 py-4"><CustomTemplatePreview template={template} /></div>
+                <div className="flex flex-1 items-center justify-center px-2 py-4"><CustomTemplatePreview template={template} showUnifiedSubtitle={unifiedSubtitleCanaryEnabled} /></div>
                 <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4"><div className="min-w-0"><h2 data-i18n-skip className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">내가 저장한 템플릿</p></div><span className="shrink-0 rounded-full border border-[#ff715e]/20 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></div>
               </Link>
               <TemplateFavoriteButton
@@ -403,6 +453,22 @@ export function TemplateLibrary({
             </article>
           );
         })}
+        {visibleUnifiedSubtitlePresets.map((preset) => (
+          <article key={preset.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#35e6e3]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#35e6e3]/50 hover:shadow-[0_20px_55px_rgba(53,230,227,.08)]">
+            <Link
+              href={!authenticated
+                ? `/auth/sign-in?next=${encodeURIComponent(`/templates/new?preset=${preset.id}`)}`
+                : canUseCustomTemplates ? `/templates/new?preset=${preset.id}` : "/pricing"}
+              className="flex flex-1 flex-col"
+            >
+              <div className="flex flex-1 items-center justify-center px-2 py-4"><UnifiedSubtitlePresetPreview preset={preset} /></div>
+              <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4">
+                <div className="min-w-0"><h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{preset.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">{preset.description}</p></div>
+                <span className="shrink-0 rounded-full border border-[#35e6e3]/20 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">카나리</span>
+              </div>
+            </Link>
+          </article>
+        ))}
         {visibleTemplates.map((template) => {
           const templateKey = presetTemplateFavoriteKey(template.id);
           return (
@@ -435,7 +501,7 @@ export function TemplateLibrary({
         })}
       </div>
 
-      {visibleTemplates.length === 0 && visiblePersonalTemplates.length === 0 && (
+      {visibleTemplates.length === 0 && visiblePersonalTemplates.length === 0 && visibleUnifiedSubtitlePresets.length === 0 && (
         <div className="rounded-2xl border border-white/[.08] bg-white/[.02] px-6 py-16 text-center">
           <p className="font-bold text-neutral-300">검색 결과가 없습니다.</p>
           <button type="button" onClick={() => setQuery("")} className="mt-3 text-sm font-bold text-[#ff9b8d] hover:text-[#ffb4a8]">전체 템플릿 보기</button>

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import secrets
-from enum import Enum
+from enum import StrEnum
 from math import floor
 from uuid import uuid4
 
@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .fallback_comments import select_fallback_comment_texts
 
 
-class TemplateId(str, Enum):
+class TemplateId(StrEnum):
     DARK_RED = "dark-red"
     WHITE_YELLOW = "white-yellow"
     DARK_MINIMAL = "dark-minimal"
@@ -18,12 +18,35 @@ class TemplateId(str, Enum):
     COMMENT_CAPTURE = "comment-capture"
 
 
-class VideoAspectRatio(str, Enum):
+class VideoAspectRatio(StrEnum):
     LANDSCAPE = "16:9"
     LANDSCAPE_FIVE_FOUR = "5:4"
     SQUARE = "1:1"
     PORTRAIT = "4:5"
     FULL_VERTICAL = "9:16"
+
+
+class EditorFontId(StrEnum):
+    PRETENDARD = "pretendard"
+    BLACK_HAN_SANS = "black-han-sans"
+    GMARKET_SANS = "gmarket-sans"
+    DO_HYEON = "do-hyeon"
+    NOTO_SERIF_KR = "noto-serif-kr"
+    NANUM_MYEONGJO = "nanum-myeongjo"
+    SUIT = "suit"
+    SPOQA_HAN_SANS_NEO = "spoqa-han-sans-neo"
+    NOTO_SANS_KR = "noto-sans-kr"
+    NANUM_SQUARE_NEO = "nanum-square-neo"
+    SANDBOX_AGGRO = "sandbox-aggro"
+    JUA = "jua"
+    S_CORE_DREAM = "s-core-dream"
+    CAFE24_ANEMONE = "cafe24-anemone"
+    CAFE24_PRO_UP = "cafe24-pro-up"
+    RIDI_BATANG = "ridi-batang"
+    JALNAN_2 = "jalnan-2"
+    GODO = "godo"
+    GALMURI_9 = "galmuri-9"
+    PAPERLOGY = "paperlogy"
 
 
 class TemplateBackground(BaseModel):
@@ -82,6 +105,29 @@ class TemplateTextLayer(BaseModel):
     )
 
 
+class TemplateSubtitleLayer(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    visible: bool
+    variant: str = Field(default="highlight", pattern=r"^(highlight|pop)$")
+    x: int = Field(default=540, ge=540, le=540)
+    y: int = Field(ge=0, le=1920)
+    max_width: int = Field(alias="maxWidth", ge=180, le=1080)
+    font_id: EditorFontId = Field(default=EditorFontId.PRETENDARD, alias="fontId")
+    font_size: int = Field(alias="fontSize", ge=24, le=120)
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    accent_color: str = Field(
+        default="#35E6E3",
+        alias="accentColor",
+        pattern=r"^#[0-9A-Fa-f]{6}$",
+    )
+    background_color: str | None = Field(
+        default=None,
+        alias="backgroundColor",
+        pattern=r"^#[0-9A-Fa-f]{6}$",
+    )
+
+
 class TemplateTitleLayer(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -90,6 +136,7 @@ class TemplateTitleLayer(BaseModel):
     y: int = Field(ge=0, le=1920)
     max_width: int = Field(alias="maxWidth", ge=180, le=1080)
     font_size: int = Field(alias="fontSize", ge=24, le=96)
+    font_id: EditorFontId | None = Field(default=None, alias="fontId")
     primary_color: str = Field(alias="primaryColor", pattern=r"^#[0-9A-Fa-f]{6}$")
     accent_color: str = Field(alias="accentColor", pattern=r"^#[0-9A-Fa-f]{6}$")
     primary_background_color: str | None = Field(
@@ -124,20 +171,43 @@ class TemplateCommentLayer(BaseModel):
 class CustomTemplateConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    schema_version: int = Field(alias="schemaVersion", ge=1, le=4)
+    schema_version: int = Field(alias="schemaVersion", ge=1, le=5)
     background: TemplateBackground
     video: TemplateVideoLayer
     title: TemplateTitleLayer
-    subtitle: TemplateTextLayer
+    subtitle: TemplateSubtitleLayer
     channel: TemplateTextLayer
     comment: TemplateCommentLayer
 
     @model_validator(mode="before")
     @classmethod
     def upgrade_comment_layer(cls, value: object) -> object:
-        if not isinstance(value, dict) or "comment" in value:
+        if not isinstance(value, dict):
             return value
         upgraded = dict(value)
+        schema_version = upgraded.get("schemaVersion")
+        subtitle = upgraded.get("subtitle")
+        if (
+            schema_version == 5
+            and isinstance(subtitle, dict)
+            and "backgroundColor" in subtitle
+        ):
+            raise ValueError("template v5 subtitle backgroundColor is unsupported")
+        if isinstance(subtitle, dict) and schema_version in {1, 2, 3, 4}:
+            legacy_font_size = subtitle.get("fontSize", 24)
+            if not isinstance(legacy_font_size, int | float):
+                legacy_font_size = 24
+            upgraded["subtitle"] = {
+                **subtitle,
+                "visible": False,
+                "variant": "highlight",
+                "x": 540,
+                "fontId": "pretendard",
+                "fontSize": max(24, round(legacy_font_size)),
+                "accentColor": "#35E6E3",
+            }
+        if "comment" in upgraded:
+            return upgraded
         video = upgraded.get("video")
         y = 1392
         if isinstance(video, dict):
@@ -154,8 +224,21 @@ class CustomTemplateConfig(BaseModel):
         }
         return upgraded
 
+    @model_validator(mode="after")
+    def validate_v5_fonts(self) -> CustomTemplateConfig:
+        if self.schema_version == 5 and self.title.font_id is None:
+            raise ValueError("template v5 title requires fontId")
+        if self.schema_version == 5:
+            subtitle_height = max(140, self.subtitle.font_size + 32)
+            if (
+                self.subtitle.y - subtitle_height / 2 < 0
+                or self.subtitle.y + subtitle_height / 2 > 1920
+            ):
+                raise ValueError("template v5 subtitle exceeds canvas")
+        return self
 
-class OutputLanguage(str, Enum):
+
+class OutputLanguage(StrEnum):
     KO = "ko"
     EN = "en"
     JA = "ja"
@@ -249,7 +332,7 @@ class TitleTextStyle(BaseModel):
 EDITOR_DOCUMENT_VERSION = 2
 EDITOR_DOCUMENT_LATEST_VERSION = 3
 EDITOR_RENDER_SPEC_VERSION = 1
-EDITOR_RENDER_SPEC_LATEST_VERSION = 2
+EDITOR_RENDER_SPEC_LATEST_VERSION = 3
 EDITOR_CANVAS_WIDTH = 1080
 EDITOR_CANVAS_HEIGHT = 1920
 EDITOR_PRESET_COLORS = {
@@ -287,28 +370,6 @@ EDITOR_STOCK_BACKGROUND_IDS = {
 }
 
 
-class EditorFontId(str, Enum):
-    PRETENDARD = "pretendard"
-    BLACK_HAN_SANS = "black-han-sans"
-    GMARKET_SANS = "gmarket-sans"
-    DO_HYEON = "do-hyeon"
-    NOTO_SERIF_KR = "noto-serif-kr"
-    NANUM_MYEONGJO = "nanum-myeongjo"
-    SUIT = "suit"
-    SPOQA_HAN_SANS_NEO = "spoqa-han-sans-neo"
-    NOTO_SANS_KR = "noto-sans-kr"
-    NANUM_SQUARE_NEO = "nanum-square-neo"
-    SANDBOX_AGGRO = "sandbox-aggro"
-    JUA = "jua"
-    S_CORE_DREAM = "s-core-dream"
-    CAFE24_ANEMONE = "cafe24-anemone"
-    CAFE24_PRO_UP = "cafe24-pro-up"
-    RIDI_BATANG = "ridi-batang"
-    JALNAN_2 = "jalnan-2"
-    GODO = "godo"
-    GALMURI_9 = "galmuri-9"
-
-
 EDITOR_FONT_FILE_IDS = {
     EditorFontId.PRETENDARD: "Pretendard-Bold.woff2",
     EditorFontId.BLACK_HAN_SANS: "BlackHanSans-Regular.ttf",
@@ -329,6 +390,7 @@ EDITOR_FONT_FILE_IDS = {
     EditorFontId.JALNAN_2: "Jalnan2-Regular.woff2",
     EditorFontId.GODO: "Godo-Bold.ttf",
     EditorFontId.GALMURI_9: "Galmuri9-Regular.ttf",
+    EditorFontId.PAPERLOGY: "Paperlogy-7Bold.ttf",
 }
 EDITOR_FONT_STATIC_WEIGHTS = {
     EditorFontId.PRETENDARD: 700,
@@ -348,6 +410,7 @@ EDITOR_FONT_STATIC_WEIGHTS = {
     EditorFontId.JALNAN_2: 400,
     EditorFontId.GODO: 700,
     EditorFontId.GALMURI_9: 400,
+    EditorFontId.PAPERLOGY: 700,
 }
 EDITOR_FONT_VARIABLE_IDS = {
     EditorFontId.NOTO_SERIF_KR,
@@ -447,6 +510,11 @@ class EditorRenderSubtitleSpec(BaseModel):
         alias="accentColor",
         pattern=r"^#[0-9A-Fa-f]{6}$",
     )
+    font_size: float | None = Field(default=None, alias="fontSize", ge=24, le=120)
+    color: str | None = Field(
+        default=None,
+        pattern=r"^#[0-9A-Fa-f]{6}$",
+    )
     cue_edits: list[EditorSubtitleCueEdit] = Field(
         default_factory=list,
         alias="cueEdits",
@@ -522,8 +590,14 @@ class EditorRenderSpec(BaseModel):
             raise ValueError("editor render canvas is invalid")
         if self.version == 1 and self.subtitles is not None:
             raise ValueError("editor renderSpec v1 cannot contain subtitle layout")
-        if self.version == 2 and self.subtitles is None:
-            raise ValueError("editor renderSpec v2 requires subtitle layout")
+        if self.version in {2, 3} and self.subtitles is None:
+            raise ValueError("editor renderSpec subtitle layout is required")
+        if self.version == 3 and (
+            self.subtitles is None
+            or self.subtitles.font_size is None
+            or self.subtitles.color is None
+        ):
+            raise ValueError("editor renderSpec v3 requires subtitle style")
         return self
 
 

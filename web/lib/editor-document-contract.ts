@@ -12,6 +12,7 @@ import {
   createEditorRenderSpec,
   EDITOR_RENDER_FPS,
   EDITOR_RENDER_SPEC_LEGACY_VERSION,
+  EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION,
   EDITOR_RENDER_SPEC_VERSION,
   EDITOR_SUBTITLE_OFFSET_Y_MAX,
   EDITOR_SUBTITLE_OFFSET_Y_MIN,
@@ -159,7 +160,7 @@ const renderSpecV1Schema = renderSpecBaseSchema.extend({
   version: z.literal(EDITOR_RENDER_SPEC_LEGACY_VERSION),
 }).strict();
 const renderSpecV2Schema = renderSpecBaseSchema.extend({
-  version: z.literal(EDITOR_RENDER_SPEC_VERSION),
+  version: z.literal(EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION),
   subtitles: z.object({
     centerX: z.literal(540),
     offsetY: finiteNumber
@@ -176,9 +177,30 @@ const renderSpecV2Schema = renderSpecBaseSchema.extend({
     }).strict()).max(2_000).optional(),
   }).strict(),
 }).strict();
+const renderSpecV3Schema = renderSpecBaseSchema.extend({
+  version: z.literal(EDITOR_RENDER_SPEC_VERSION),
+  subtitles: z.object({
+    centerX: z.literal(540),
+    offsetY: finiteNumber
+      .min(EDITOR_SUBTITLE_OFFSET_Y_MIN)
+      .max(EDITOR_SUBTITLE_OFFSET_Y_MAX),
+    scale: finiteNumber
+      .min(EDITOR_SUBTITLE_SCALE_MIN)
+      .max(EDITOR_SUBTITLE_SCALE_MAX),
+    fontId: z.enum(editorFontIds).optional(),
+    fontSize: finiteNumber.min(24).max(120),
+    color: hexColorSchema,
+    accentColor: hexColorSchema.optional(),
+    cueEdits: z.array(z.object({
+      cueIndex: z.number().int().min(0).max(1_999),
+      text: z.string().trim().min(1).max(200),
+    }).strict()).max(2_000).optional(),
+  }).strict(),
+}).strict();
 const renderSpecSchema = z.discriminatedUnion("version", [
   renderSpecV1Schema,
   renderSpecV2Schema,
+  renderSpecV3Schema,
 ]);
 
 const editorDocumentSnapshotBaseSchema = z.object({

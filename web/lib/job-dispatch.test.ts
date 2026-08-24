@@ -3,6 +3,7 @@ import {
   elevenLabsTranscriptionDispatchTarget,
   sourceRangeDispatchTarget,
   subtitleTemplatesDispatchTarget,
+  unifiedTemplateSubtitlesDispatchTarget,
 } from "./job-dispatch";
 
 afterEach(() => vi.unstubAllEnvs());
@@ -56,5 +57,31 @@ describe("project dispatch target", () => {
       jobQueueArn:
         "arn:aws:batch:ap-northeast-2:181651591905:job-queue/elevenlabs-canary",
     });
+  });
+
+  it("keeps unified v5 template jobs on a separate immutable target", () => {
+    vi.stubEnv(
+      "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN",
+      "arn:aws:batch:ap-northeast-2:181651591905:job-definition/unified-template-subtitles:1",
+    );
+    vi.stubEnv(
+      "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN",
+      "arn:aws:batch:ap-northeast-2:181651591905:job-queue/unified-template-subtitles",
+    );
+
+    expect(unifiedTemplateSubtitlesDispatchTarget()).toEqual({
+      jobDefinitionArn:
+        "arn:aws:batch:ap-northeast-2:181651591905:job-definition/unified-template-subtitles:1",
+      jobQueueArn:
+        "arn:aws:batch:ap-northeast-2:181651591905:job-queue/unified-template-subtitles",
+    });
+  });
+
+  it("fails closed when the unified v5 target is not configured", () => {
+    vi.stubEnv("UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN", "");
+    vi.stubEnv("UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN", "");
+    expect(() => unifiedTemplateSubtitlesDispatchTarget()).toThrow(
+      "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN",
+    );
   });
 });

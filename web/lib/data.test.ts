@@ -63,7 +63,7 @@ describe("generated short details", () => {
         }],
       }],
     };
-    const query = vi.fn()
+    const queryMock = vi.fn()
       .mockReturnValueOnce(["job-a"])
       .mockResolvedValueOnce([{
         id: "short-a",
@@ -87,6 +87,7 @@ describe("generated short details", () => {
         templateId: "dark-red",
         subtitleTemplateId: "highlight",
         captionRenderSpec,
+        wordTimedSubtitlesAvailable: true,
         videoAspectRatio: "9:16",
         titleFontScale: "1",
         titleTextStyles: [{ start: 0, end: 2, color: "#00FF00" }],
@@ -94,7 +95,8 @@ describe("generated short details", () => {
         rerenderProgress: 100,
         status: "ready",
         expiresAt: new Date("2026-08-01T00:00:00.000Z"),
-      }]) as unknown as Sql;
+      }]);
+    const query = queryMock as unknown as Sql;
 
     const shorts = await getShortsForJobs(query, ["job-a"]);
 
@@ -114,7 +116,14 @@ describe("generated short details", () => {
       viralScore: 87,
       subtitleTemplateId: "highlight",
       captionRenderSpec,
+      wordTimedSubtitlesAvailable: true,
     });
+    const queryText = Array.from(
+      queryMock.mock.calls[1][0] as TemplateStringsArray,
+    ).join("");
+    expect(queryText).toContain("jsonb_array_elements(transcript.words) word");
+    expect(queryText).toContain("generated_shorts.edit_timeline_start_seconds");
+    expect(queryText).toContain("generated_shorts.edit_timeline_end_seconds");
   });
 
   it("maps a permanent short without an expiry timestamp", async () => {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   productionWorkerCdkContext,
@@ -52,6 +53,22 @@ test("maps the same release targets to the production CDK context", () => {
   assert.equal(
     context.legacyProjectJobDefinitionArn,
     release.targets.legacyProject.jobDefinitionArn,
+  );
+});
+
+test("production synth supplies a non-persisted fifth candidate target", () => {
+  const source = readFileSync(
+    new URL("./synth-production-infrastructure.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /unifiedTemplateSubtitlesJobDefinitionArn/);
+  assert.match(
+    source,
+    /job-definition\/unified-template-subtitles-local-synth:1/,
+  );
+  assert.match(
+    source,
+    /job-queue\/shorts-mvp-prepare-production/,
   );
 });
 

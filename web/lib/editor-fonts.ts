@@ -100,6 +100,15 @@ export const editorFontOptions = [
     fileName: "Godo-Bold.ttf",
     staticWeight: 700,
   },
+  {
+    id: "paperlogy",
+    label: "페이퍼로지",
+    family: '"Editor Paperlogy", "Noto Sans KR", sans-serif',
+    renderFamily: '"Editor V3 Paperlogy", sans-serif',
+    captionFamily: "Paperlogy",
+    fileName: "Paperlogy-7Bold.ttf",
+    staticWeight: 700,
+  },
   // 정돈된 산스와 명조 계열은 탐색 우선순위를 낮춥니다.
   {
     id: "gmarket-sans",
@@ -181,9 +190,9 @@ export const editorFontIds = editorFontOptions.map((font) => font.id) as [
   ...EditorFontId[],
 ];
 
-// The promoted v3 worker bundles and verifies every editor font above. Keep
-// the stable save contract identical to the picker so any visible font can be
-// rendered by the production worker.
+// Keep this list limited to fonts already bundled in the stable worker. New
+// candidate-only fonts stay in editorFontOptions so the strict canary editor
+// and v5 template editor can use them without exposing them to stable users.
 export const stableEditorFontIds = [
   "pretendard",
   "noto-sans-kr",

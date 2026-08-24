@@ -29,6 +29,7 @@ from .comment_generator import CommentClipInput, CommentGenerator
 from .config import Settings
 from .editor_renderer import (
     EditorDocumentRenderer,
+    editor_highlight_subtitles_enabled,
     editor_subtitle_render_mode,
     retime_editor_subtitles,
 )
@@ -53,6 +54,7 @@ from .schemas import (
     OutputLanguage,
     SubtitleSegment,
     TemplateId,
+    TemplateSubtitleLayer,
     TitleTextStyle,
     VideoAspectRatio,
     fallback_comment_overlays,
@@ -77,6 +79,40 @@ BRAND_COLOR_VALUES = frozenset({
 UPLOAD_SOURCE_MIN_DURATION_SECONDS = 180.0
 UPLOAD_SOURCE_RANGE_MIN_DURATION_SECONDS = 240.0
 UPLOAD_SOURCE_RANGE_MAX_DURATION_SECONDS = 3600.0
+
+
+def _stored_transcript_words(value: object) -> list[TranscriptWord]:
+    if not isinstance(value, list):
+        return []
+    words: list[TranscriptWord] = []
+    for raw in value:
+        if not isinstance(raw, dict):
+            raise ValueError("저장된 단어 타임스탬프 형식이 올바르지 않습니다.")
+        text = str(raw.get("text") or "").strip()
+        try:
+            start = float(raw["start"])
+            end = float(raw["end"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "저장된 단어 타임스탬프 형식이 올바르지 않습니다."
+            ) from exc
+        if not text or not math.isfinite(start) or not math.isfinite(end):
+            raise ValueError("저장된 단어 타임스탬프 형식이 올바르지 않습니다.")
+        if start < 0 or end <= start:
+            raise ValueError("저장된 단어 타임스탬프 범위가 올바르지 않습니다.")
+        words.append(TranscriptWord(
+            text=text,
+            start=start,
+            end=end,
+            provider=str(raw.get("provider") or "stored"),
+            speaker_id=(
+                str(raw["speakerId"])
+                if raw.get("speakerId") is not None
+                else None
+            ),
+            space_before=raw.get("spaceBefore") is True,
+        ))
+    return words
 UPLOAD_SOURCE_MAX_DURATION_SECONDS = 10_800.0
 UPLOAD_SOURCE_MAX_BYTES = 5 * 1024 * 1024 * 1024
 
@@ -114,6 +150,26 @@ def _custom_template_config(item: dict[str, object]) -> CustomTemplateConfig | N
         return None
     config = snapshot.get("config")
     return CustomTemplateConfig.model_validate(config) if isinstance(config, dict) else None
+
+
+def _unified_template_subtitle(
+    item: dict[str, object],
+) -> TemplateSubtitleLayer | None:
+    config = _custom_template_config(item)
+    return config.subtitle if config is not None and config.schema_version == 5 else None
+
+
+def _caption_compile_options(
+    subtitle: TemplateSubtitleLayer | None,
+) -> dict[str, object]:
+    if subtitle is None:
+        return {}
+    return {
+        "caption_center_y": subtitle.y,
+        "caption_max_width": subtitle.max_width,
+        "font_size": subtitle.font_size,
+        "text_color": subtitle.color,
+    }
 
 
 def _preset_comment_channel_below(item: dict[str, object]) -> bool:
@@ -1223,7 +1279,20 @@ class BatchWorker:
                 self.repository.stage(job_id, "transcribing", 28, "영상 내용을 분석하고 있습니다.")
                 transcription_started_at = time.monotonic()
                 transcription_observation: dict[str, object] = {}
-                subtitle_template_id = str(job.get("subtitle_template_id") or "")
+                unified_template_subtitle = _unified_template_subtitle(job)
+                stored_subtitle_template_id = str(
+                    job.get("subtitle_template_id") or ""
+                )
+                subtitle_template_id = (
+                    unified_template_subtitle.variant
+                    if unified_template_subtitle is not None
+                    else stored_subtitle_template_id
+                )
+                subtitle_template_enabled = (
+                    unified_template_subtitle.visible
+                    if unified_template_subtitle is not None
+                    else bool(stored_subtitle_template_id)
+                )
                 transcript_words: list[TranscriptWord] = []
                 transcription_unavailable_ranges: list[tuple[float, float]] = []
                 if (
@@ -1369,9 +1438,20 @@ class BatchWorker:
                                 clip_end=absolute_clip.end_seconds,
                                 video_aspect_ratio=aspect_ratio,
                                 caption_placement=caption_placement,
-                                accent_color=_preset_brand_color(job) or CAPTION_ACCENT,
-                                font_id=caption_font_id,
+                                accent_color=(
+                                    unified_template_subtitle.accent_color
+                                    if unified_template_subtitle is not None
+                                    else _preset_brand_color(job) or CAPTION_ACCENT
+                                ),
+                                font_id=(
+                                    unified_template_subtitle.font_id
+                                    if unified_template_subtitle is not None
+                                    else caption_font_id
+                                ),
                                 timing_lead_frames=caption_timing_lead_frames,
+                                **_caption_compile_options(
+                                    unified_template_subtitle
+                                ),
                             )
                         except (CaptionCompileError, TranscriptionError) as exc:
                             rejected_caption_clips += 1
@@ -1445,9 +1525,20 @@ class BatchWorker:
                                 clip_end=absolute_timeline_clip.end_seconds,
                                 video_aspect_ratio=aspect_ratio,
                                 caption_placement=caption_placement,
-                                accent_color=_preset_brand_color(job) or CAPTION_ACCENT,
-                                font_id=caption_font_id,
+                                accent_color=(
+                                    unified_template_subtitle.accent_color
+                                    if unified_template_subtitle is not None
+                                    else _preset_brand_color(job) or CAPTION_ACCENT
+                                ),
+                                font_id=(
+                                    unified_template_subtitle.font_id
+                                    if unified_template_subtitle is not None
+                                    else caption_font_id
+                                ),
                                 timing_lead_frames=caption_timing_lead_frames,
+                                **_caption_compile_options(
+                                    unified_template_subtitle
+                                ),
                             )
                         except (CaptionCompileError, TranscriptionError) as exc:
                             unavailable_timeline_indexes.append(index)
@@ -1575,6 +1666,7 @@ class BatchWorker:
                                 subtitles=clip_subtitles[index],
                                 comments=comments_by_clip.get(index, []),
                                 caption_render_spec=caption_render_specs.get(index),
+                                caption_enabled=subtitle_template_enabled,
                             ): index
                             for index, _clip in enumerate(clips, start=1)
                         }
@@ -1756,6 +1848,7 @@ class BatchWorker:
         subtitles: list[SubtitleSegment],
         comments: list[dict[str, object]],
         caption_render_spec: dict[str, object] | None = None,
+        caption_enabled: bool | None = None,
     ) -> tuple[str, Path, dict[str, object]] | None:
         started_at = time.monotonic()
         short_id = str(uuid4())
@@ -1807,7 +1900,7 @@ class BatchWorker:
                 selection_repositioned=clip.selection_repositioned,
                 viral_score=clip.viral_score,
                 subtitles=[item.model_dump() for item in subtitles],
-                comment_overlays=[] if caption_render_spec else comments,
+                comment_overlays=comments,
                 clean_key=clean_key,
                 timeline_key=None,
                 timeline_start_seconds=None,
@@ -1816,6 +1909,7 @@ class BatchWorker:
                 retention_days=int(job["retention_days"]),
                 shard_index=0,
                 caption_render_spec=caption_render_spec,
+                subtitles_enabled=caption_enabled,
             )
             if not inserted:
                 raise RuntimeError("작업 제한 시간이 종료되었습니다.")
@@ -3193,11 +3287,6 @@ class BatchWorker:
                     work_dir / "channel-thumbnail.png",
                 )
             caption_render_spec = item.get("caption_render_spec")
-            if item.get("subtitle_template_id") and not isinstance(
-                caption_render_spec,
-                dict,
-            ):
-                raise ValueError("원본 자막 렌더 정보를 찾을 수 없습니다.")
             resolved_caption_render_spec = (
                 (
                     editor_source["spec"]
@@ -3212,6 +3301,46 @@ class BatchWorker:
                 if isinstance(caption_render_spec, dict)
                 else None
             )
+            caption_overlay_only = False
+            if (
+                resolved_caption_render_spec is None
+                and editor_highlight_subtitles_enabled(document)
+                and document.render_spec is not None
+                and document.render_spec.version == 3
+                and "transcript_words" in item
+            ):
+                transcript_words = _stored_transcript_words(
+                    item.get("transcript_words")
+                )
+                if not transcript_words:
+                    raise ValueError(
+                        "정확한 단어 타임스탬프가 없어 자막을 켤 수 없습니다."
+                    )
+                render_subtitles = document.render_spec.subtitles
+                assert render_subtitles is not None
+                resolved_caption_render_spec = compile_caption_render_spec(
+                    transcript_words,
+                    template_id="highlight",
+                    clip_start=document.video.timeline_start_seconds,
+                    clip_end=document.video.timeline_end_seconds,
+                    video_aspect_ratio=document.video.aspect_ratio,
+                    accent_color=(
+                        render_subtitles.accent_color or CAPTION_ACCENT
+                    ),
+                    font_id=render_subtitles.font_id,
+                    font_size=(
+                        round(render_subtitles.font_size)
+                        if render_subtitles.font_size is not None
+                        else None
+                    ),
+                    text_color=render_subtitles.color or "#FFFFFF",
+                    timing_lead_frames=CAPTION_STABLE_TIMING_LEAD_FRAMES,
+                )
+                if not resolved_caption_render_spec.get("cues"):
+                    raise ValueError(
+                        "선택한 영상 구간에서 단어 타임스탬프를 찾을 수 없습니다."
+                    )
+                caption_overlay_only = True
             subtitle_render_mode = editor_subtitle_render_mode(
                 document,
                 resolved_caption_render_spec,
@@ -3239,6 +3368,7 @@ class BatchWorker:
                 work_dir=work_dir,
                 channel_thumbnail_path=channel_thumbnail_path,
                 caption_render_spec=resolved_caption_render_spec,
+                caption_overlay_only=caption_overlay_only,
             )
             thumbnail_path = work_dir / "thumbnail.jpg"
             self._thumbnail(output_path, thumbnail_path, work_dir)
@@ -3426,6 +3556,14 @@ class BatchWorker:
                 fixed_preset_channel=_preset_fixed_channel_position(render_item),
                 title_text_styles=title_text_styles,
                 custom_template_config=_custom_template_config(render_item),
+                caption_render_spec=(
+                    dict(caption_spec)
+                    if isinstance(
+                        (caption_spec := render_item.get("caption_render_spec")),
+                        dict,
+                    )
+                    else None
+                ),
                 title_accent_color=_preset_brand_color(render_item),
             )
             thumbnail_path = work_dir / "thumbnail.jpg"

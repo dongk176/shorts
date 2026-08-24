@@ -35,7 +35,16 @@ test("verifies and syncs every immutable project Batch target", () => {
     "ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN",
     "SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN",
     "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN",
+    "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN",
+    "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN",
   ]) {
     assert.match(script, new RegExp(`\\b${name}\\b`));
+  }
+  for (const name of [
+    "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN",
+    "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN",
+  ]) {
+    const required = script.indexOf(`\${${name}:?${name} is required}`);
+    assert.ok(required >= 0 && required < guard && required < firstWrite);
   }
 });

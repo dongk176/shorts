@@ -31,7 +31,8 @@ vi.mock("@/lib/usage", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/usage")>()),
   getUsageSnapshot: mocks.usageSnapshot,
 }));
-vi.mock("@/lib/subtitle-template-release", () => ({
+vi.mock("@/lib/subtitle-template-release", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/subtitle-template-release")>()),
   lockSubtitleTemplateAccess: mocks.subtitleAccess,
 }));
 vi.mock("@/lib/transcription-release", async (importOriginal) => ({
@@ -49,6 +50,10 @@ import {
   fileUploadIntentHash,
   fileUploadTokenHash,
 } from "@/lib/file-upload-control";
+import {
+  createDefaultTemplateConfig,
+  upgradeTemplateConfigToV5,
+} from "@/lib/template-config";
 import { GET, POST } from "./route";
 
 const SESSION_ID = "7bf704e2-f151-45a5-9939-69d2a62b22aa";
@@ -186,6 +191,8 @@ function query(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("NODE_ENV", "test");
+  vi.stubEnv("UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ENABLED", "");
   vi.stubEnv("FILE_UPLOAD_RECEIVER_URL", "https://receiver.example.com/base");
   vi.stubEnv("FILE_UPLOAD_RECEIVER_ALLOWED_HOSTS", "receiver.example.com");
   vi.stubEnv("FILE_UPLOAD_TOKEN_SECRET", TOKEN_SECRET);
@@ -194,7 +201,10 @@ beforeEach(() => {
   mocks.lockedReleaseAccess.mockResolvedValue({ enabled: true, adminEnabled: true });
   mocks.billingSummary.mockResolvedValue(billing);
   mocks.usageSnapshot.mockResolvedValue(usage);
-  mocks.subtitleAccess.mockResolvedValue({ enabled: true });
+  mocks.subtitleAccess.mockResolvedValue({
+    enabled: true,
+    unifiedEnabled: true,
+  });
   mocks.transcriptionAccess.mockResolvedValue({
     enabled: true,
     policy: "elevenlabs_primary_openai_fallback",
@@ -320,6 +330,130 @@ describe("file upload job control plane", () => {
     ]));
     expect(JSON.stringify(sessionInsert?.values)).not.toContain(body.token);
     expect(queries.some((entry) => entry.sql.includes("project_job_outbox"))).toBe(false);
+  });
+
+  it("stores the same trusted hidden-caption v5 snapshot without legacy subtitle fields", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ENABLED", "true");
+    vi.stubEnv("FILE_UPLOAD_RECEIVER_URL", "https://127.0.0.1:4443/base");
+    vi.stubEnv("FILE_UPLOAD_RECEIVER_ALLOWED_HOSTS", "127.0.0.1");
+    const customTemplateId = "35aa2b2e-e7df-48d7-9dbc-2b6224c4ffef";
+    const config = upgradeTemplateConfigToV5(
+      createDefaultTemplateConfig("comment-capture"),
+    );
+    config.subtitle = {
+      ...config.subtitle,
+      visible: false,
+      variant: "highlight",
+      y: 1_260,
+      maxWidth: 800,
+      fontId: "paperlogy",
+      fontSize: 76,
+      color: "#FFFFFF",
+      accentColor: "#35E6E3",
+    };
+    const { db, queries } = transactionDb({
+      projectNumber: 988,
+      customTemplate: {
+        id: customTemplateId,
+        name: "업로드 통합 자막",
+        baseTemplateId: "comment-capture",
+        config,
+        version: 1,
+      },
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await POST(jsonRequest({
+      ...validBody,
+      customTemplateId,
+      templateId: "dark-red",
+    }));
+
+    expect(
+      response.status,
+      JSON.stringify(await response.clone().json()),
+    ).toBe(201);
+    const jobInsert = query(queries, "insert into shorts_mvp.video_jobs");
+    expect(jobInsert?.values).toEqual(expect.arrayContaining([
+      "comment-capture",
+      customTemplateId,
+      expect.objectContaining({
+        id: customTemplateId,
+        config: expect.objectContaining({ schemaVersion: 5 }),
+      }),
+      "highlight",
+      expect.objectContaining({
+        schemaVersion: 4,
+        enabled: false,
+        subtitleTemplateId: "highlight",
+        font: expect.objectContaining({ id: "paperlogy", sizePx: 76 }),
+      }),
+      "elevenlabs_primary_openai_fallback",
+    ]));
+    expect(mocks.subtitleAccess).toHaveBeenCalledWith(expect.anything(), USER_ID);
+    expect(mocks.transcriptionAccess).toHaveBeenCalledWith(expect.anything(), USER_ID);
+  });
+
+  it("rejects a v5 upload when the strict subtitle canary is unavailable", async () => {
+    const customTemplateId = "35aa2b2e-e7df-48d7-9dbc-2b6224c4ffef";
+    const config = upgradeTemplateConfigToV5(createDefaultTemplateConfig());
+    const { db, queries } = transactionDb({
+      customTemplate: {
+        id: customTemplateId,
+        name: "차단된 통합 자막",
+        baseTemplateId: "dark-minimal",
+        config,
+        version: 1,
+      },
+    });
+    mocks.getDb.mockReturnValue(db);
+    mocks.subtitleAccess.mockResolvedValueOnce({
+      enabled: false,
+      unifiedEnabled: false,
+    });
+
+    const response = await POST(jsonRequest({
+      ...validBody,
+      customTemplateId,
+    }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "UNIFIED_TEMPLATE_SUBTITLE_CANARY_REQUIRED",
+    });
+    expect(query(queries, "insert into shorts_mvp.video_jobs")).toBeUndefined();
+  });
+
+  it("blocks a v5 upload from a non-loopback receiver before writing a job", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ENABLED", "true");
+    const customTemplateId = "35aa2b2e-e7df-48d7-9dbc-2b6224c4ffef";
+    const config = upgradeTemplateConfigToV5(createDefaultTemplateConfig());
+    const { db, queries } = transactionDb({
+      customTemplate: {
+        id: customTemplateId,
+        name: "원격 차단 통합 자막",
+        baseTemplateId: "dark-minimal",
+        config,
+        version: 1,
+      },
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await POST(jsonRequest({
+      ...validBody,
+      customTemplateId,
+    }));
+
+    expect(
+      response.status,
+      JSON.stringify(await response.clone().json()),
+    ).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ONLY",
+    });
+    expect(query(queries, "insert into shorts_mvp.video_jobs")).toBeUndefined();
   });
 
   it("reissues the identical token and URL for an idempotent request without reserving twice", async () => {

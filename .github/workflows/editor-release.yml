@@ -18,6 +18,8 @@ env:
   EDITOR_TEST_JOB_QUEUE: ${{ vars.EDITOR_TEST_JOB_QUEUE || 'shorts-mvp-editor-test' }}
   EDITOR_TEST_TEMPLATE_JOB_DEFINITION: ${{ vars.EDITOR_TEST_TEMPLATE_JOB_DEFINITION || 'shorts-mvp-editor-test-template' }}
   EDITOR_PRODUCTION_TEMPLATE_JOB_DEFINITION: ${{ vars.EDITOR_PRODUCTION_TEMPLATE_JOB_DEFINITION || 'shorts-mvp-rerender-fargate-production' }}
+  UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION: ${{ vars.UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION || 'shorts-mvp-project-heavy-fargate-production' }}
+  UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN: ${{ vars.UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN }}
   EDITOR_RELEASE_REGISTRAR_FUNCTION: ${{ vars.EDITOR_RELEASE_REGISTRAR_FUNCTION || 'shorts-mvp-editor-release-registrar-production' }}
   EDITOR_TEST_SUPABASE_PROJECT_REF: ${{ vars.EDITOR_TEST_SUPABASE_PROJECT_REF }}
   PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.PRODUCTION_SUPABASE_PROJECT_REF }}
@@ -27,7 +29,7 @@ jobs:
     # Candidate verification must not require merging unverified editor code
     # into main, because a main push can reach production web users. Keep the
     # temporary release branch explicit rather than allowing arbitrary refs.
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/editor-v2-canary-release' || github.ref == 'refs/heads/codex/editor-v3-fidelity-canary-20260805' || github.ref == 'refs/heads/codex/fix-source-range-timeline-1035d96'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/editor-v2-canary-release' || github.ref == 'refs/heads/codex/editor-v3-fidelity-canary-20260805' || github.ref == 'refs/heads/codex/fix-source-range-timeline-1035d96' || github.ref == 'refs/heads/codex/unified-template-subtitles-admin-canary-20260824'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -70,6 +72,9 @@ jobs:
           test -n "$EDITOR_TEST_JOB_QUEUE"
           test -n "$EDITOR_TEST_TEMPLATE_JOB_DEFINITION"
           test -n "$EDITOR_PRODUCTION_TEMPLATE_JOB_DEFINITION"
+          test -n "$UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION"
+          test -n "$UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
+          [[ "$UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN" =~ ^arn:aws:batch:${AWS_REGION}:[0-9]{12}:job-queue/shorts-mvp-prepare-production$ ]]
           test -n "$EDITOR_RELEASE_REGISTRAR_FUNCTION"
           test -n "$EDITOR_TEST_SUPABASE_PROJECT_REF"
           test -n "$PRODUCTION_SUPABASE_PROJECT_REF"
@@ -151,7 +156,8 @@ jobs:
             202607310003_editor_release_channels.sql \
             202608010001_editor_render_canary_outbox.sql \
             202608080001_subtitle_templates_admin_canary.sql \
-            202608110001_editor_subtitle_editing_capability.sql
+            202608110001_editor_subtitle_editing_capability.sql \
+            202608240002_unified_template_subtitles_canary_flag.sql
 
       - name: Register the isolated job definition at the tested digest
         id: isolated-definition
@@ -237,6 +243,34 @@ jobs:
           )"
           echo "$output"
           echo "$output" >> "$GITHUB_OUTPUT"
+
+      - name: Register the unified-template first-generation definition without rebuilding
+        id: unified-template-subtitles-definition
+        env:
+          EDITOR_RELEASE_GIT_SHA: ${{ github.sha }}
+          EDITOR_RELEASE_IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          output="$(
+            scripts/register-editor-release-job.sh \
+              unified-template-subtitles \
+              "$UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION"
+          )"
+          echo "$output"
+          echo "$output" >> "$GITHUB_OUTPUT"
+
+      - name: Record the exact unified-template Batch target
+        env:
+          UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN: ${{ steps.unified-template-subtitles-definition.outputs.unified_template_subtitles_job_definition_arn }}
+        run: |
+          test -n "$UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"
+          {
+            echo "### Unified template subtitle canary target"
+            echo
+            echo "- Job Definition: \`$UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN\`"
+            echo "- Job Queue: \`$UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN\`"
+            echo
+            echo "Keep the independent runtime flag off until this exact pair is configured and verified."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Register the verified candidate for administrator approval
         env:

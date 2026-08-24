@@ -11,7 +11,10 @@ import {
   ShortsMvpSourceRangeStack,
 } from "../lib/stacks";
 
-function stacks(environment = "test") {
+function stacks(
+  environment = "test",
+  contextOverrides: Record<string, string> = {},
+) {
   const app = new cdk.App({ context: {
     vercelTeamSlug: "team",
     vercelProjectName: "shorts",
@@ -33,6 +36,11 @@ function stacks(environment = "test") {
       "arn:aws:batch:ap-northeast-2:123456789012:job-definition/subtitle-canary:2",
     subtitleTemplatesBatchQueueArn:
       "arn:aws:batch:ap-northeast-2:123456789012:job-queue/elevenlabs-canary",
+    unifiedTemplateSubtitlesJobDefinitionArn:
+      "arn:aws:batch:ap-northeast-2:123456789012:job-definition/unified-template-subtitles:3",
+    unifiedTemplateSubtitlesBatchQueueArn:
+      "arn:aws:batch:ap-northeast-2:123456789012:job-queue/unified-template-subtitles",
+    ...contextOverrides,
   } });
   const env = { account: "123456789012", region: "ap-northeast-2" };
   const editorRepositoryStack = new ShortsMvpEditorReleaseRepositoryStack(
@@ -262,6 +270,23 @@ describe("shorts MVP infrastructure", () => {
     expect(templateJson).toContain(
       "job-definition/shorts-mvp-editor-test-release-*",
     );
+  });
+
+  it("trusts editor release builds from main and the exact subtitle candidate only", () => {
+    const { editorCanary } = stacks("production");
+    const roles = editorCanary.findResources("AWS::IAM::Role");
+    const editorReleaseRole = Object.entries(roles).find(([logicalId]) => (
+      logicalId.startsWith("EditorReleaseBuildRole")
+    ))?.[1];
+    const subject = editorReleaseRole?.Properties?.AssumeRolePolicyDocument
+      ?.Statement?.[0]?.Condition?.StringLike
+      ?.["token.actions.githubusercontent.com:sub"];
+
+    expect(subject).toEqual([
+      "repo:dongk176/shorts:ref:refs/heads/main",
+      "repo:dongk176/shorts:ref:refs/heads/codex/unified-template-subtitles-admin-canary-20260824",
+    ]);
+    expect(JSON.stringify(subject)).not.toContain("codex/*");
   });
 
   it("enables verified paid Gemini processing only in production", () => {
@@ -586,6 +611,10 @@ describe("shorts MVP infrastructure", () => {
             "arn:aws:batch:ap-northeast-2:123456789012:job-definition/subtitle-canary:2",
           SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN:
             "arn:aws:batch:ap-northeast-2:123456789012:job-queue/elevenlabs-canary",
+          UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN:
+            "arn:aws:batch:ap-northeast-2:123456789012:job-definition/unified-template-subtitles:3",
+          UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN:
+            "arn:aws:batch:ap-northeast-2:123456789012:job-queue/unified-template-subtitles",
         }),
       },
     });
@@ -600,6 +629,30 @@ describe("shorts MVP infrastructure", () => {
     compute.hasResourceProperties("AWS::Events::Rule", {
       ScheduleExpression: "rate(1 minute)",
     });
+  });
+
+  it("requires the unified template target to be paired and revision-pinned", () => {
+    expect(() => stacks("test", {
+      unifiedTemplateSubtitlesBatchQueueArn: "",
+    })).toThrow("must be configured together");
+    expect(() => stacks("test", {
+      unifiedTemplateSubtitlesJobDefinitionArn:
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/unified-template-subtitles",
+    })).toThrow("exact revision-pinned ARN");
+  });
+
+  it("keeps the unified template Job Definition isolated", () => {
+    expect(() => stacks("test", {
+      unifiedTemplateSubtitlesJobDefinitionArn:
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/subtitle-canary:2",
+    })).toThrow("separate immutable Job Definition");
+  });
+
+  it("requires the pinned unified target in production", () => {
+    expect(() => stacks("production", {
+      unifiedTemplateSubtitlesJobDefinitionArn: "",
+      unifiedTemplateSubtitlesBatchQueueArn: "",
+    })).toThrow("unifiedTemplateSubtitlesJobDefinitionArn");
   });
 
   it("does not create wildcard IAM actions", () => {

@@ -8,40 +8,45 @@ function source(path: string) {
 describe("admin editor subtitle layout", () => {
   const editorSource = source("./shorts-app.tsx");
 
-  it("shows the subtitle tool only for word-timed capable v3 releases", () => {
+  it("shows the canary subtitle tool and disables only unsupported legacy activation", () => {
     expect(editorSource).toContain(
       "subtitleEditingReleaseEnabled(\n    editorRelease,\n  )",
     );
     expect(editorSource).toContain('{ id: "subtitle", label: "자막" }');
     expect(editorSource).toContain(
-      "const adminSubtitleEditingEnabled = adminSubtitleLayoutEnabled\n    && wordTimedSubtitlesAvailable",
+      "const adminSubtitleEditingEnabled = adminSubtitleLayoutEnabled\n    && (wordTimedSubtitlesAvailable || Boolean(captionTemplateEditorSpec))",
     );
     expect(editorSource).toContain(
-      'tool.id !== "subtitle"\n              || adminSubtitleEditingEnabled',
+      'tool.id !== "subtitle"\n              || subtitleToolVisible',
     );
     expect(editorSource).toContain(
-      "wordTimedSubtitlesAvailable={project.wordTimedSubtitlesAvailable}",
+      "wordTimedSubtitlesAvailable={item.wordTimedSubtitlesAvailable}",
     );
     expect(editorSource).toContain("const toggleEditorSubtitles = useCallback(() => {");
-    expect(editorSource).not.toContain(
-      "const toggleEditorSubtitles = useCallback(() => {\n    if (!captionTemplateEditorSpec) return;",
+    expect(editorSource).toContain(
+      "if (!subtitlesEnabledRef.current && !editableCaptionSourceSpec) return;",
     );
     expect(editorSource).toContain('aria-label={subtitlesEnabled ? "자막 끄기" : "자막 켜기"}');
+    expect(editorSource).toContain(
+      "disabled={unifiedSubtitleLayoutEnabled",
+    );
     expect(editorSource).toContain("subtitlesEnabledRef.current = enabled");
     expect(editorSource).toContain("subtitlesEnabled: subtitlesEnabledRef.current");
     expect(editorSource).toContain("createEditorHighlightCaptionSpec(");
     expect(editorSource).toContain("const editableCaptionSourceSpec = captionTemplateEditorSpec");
-    expect(editorSource).toContain("기존 전사 자막이");
+    expect(editorSource).toContain("유효한 단어 타이밍이 없어 새 자막을 켤 수 없습니다");
     expect(editorSource).toContain(
       "!overlayPreviewEnabled && !captionTemplateEditorSpec",
     );
     expect(editorSource).toContain(
       "const subtitleEditorUnavailable = Boolean(",
     );
-    expect(editorSource).toContain("|| !item.captionRenderSpec");
+    expect(editorSource).toContain(
+      "(!item.captionRenderSpec && !item.wordTimedSubtitlesAvailable)",
+    );
     const editPageSource = source("./projects/[projectNumber]/edit/[shortId]/page.tsx");
     expect(editPageSource).toContain(
-      "!parseCaptionRenderSpec(subtitleTemplateShort.captionRenderSpec)",
+      "isUnifiedTemplateSubtitleSnapshot(",
     );
   });
 
@@ -50,8 +55,18 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain('aria-label="자막 크기"');
     expect(editorSource).toContain("data-editor-caption-template-preview");
     expect(editorSource).toContain('aria-label={`자막 포인트 색상 ${option.name}`}');
-    expect(editorSource).toContain('title="드래그해서 이동 · 더블클릭해서 자막 수정"');
+    expect(editorSource).toContain('aria-label={`자막 일반 글자색 ${option.name}`}');
+    expect(editorSource).toContain('"드래그해서 이동 · 더블클릭해서 자막 수정"');
     expect(editorSource).toContain("onEditStart={beginEditorCaptionTextEdit}");
+    expect(editorSource).toContain(
+      "textEditingEnabled={captionTextEditingEnabled}",
+    );
+    expect(editorSource).toContain(
+      "const dynamicWordTimedSubtitleEditing = unifiedSubtitleLayoutEnabled",
+    );
+    expect(editorSource).toContain(
+      "정확한 자막 구간이 저장되지 않은 영상에서는 문구 편집을 지원하지 않습니다.",
+    );
     expect(editorSource).toContain("resolveEditorCaptionTextEditTarget(");
     expect(editorSource).toContain("updateEditorCaptionCueText(");
     expect(editorSource).not.toContain(
@@ -65,7 +80,9 @@ describe("admin editor subtitle layout", () => {
       "음성보다 {editableCaptionSourceSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES}프레임 먼저 표시",
     );
     expect(editorSource).toContain("* CAPTION_ASS_PREVIEW_FONT_SCALE");
-    expect(editorSource).toContain("spec.style.outlineWidth * layout.scale * 2");
+    expect(editorSource).toContain("spec.style.outlineWidth * captionScale * 2");
+    expect(editorSource).toContain("min={24}");
+    expect(editorSource).toContain("max={120}");
     expect(editorSource).toContain("subtitleLayout.cueEdits");
     expect(editorSource).toContain("document.fonts.load");
     expect(editorSource).not.toContain("visibleEditedWords");
@@ -88,5 +105,11 @@ describe("admin editor subtitle layout", () => {
     expect(routeSource).toContain("CAPTION_RENDER_SPEC_MISSING");
     expect(routeSource).toContain("word_timed_subtitles_available");
     expect(routeSource).toContain("EDITOR_WORD_TIMED_SUBTITLES_REQUIRED");
+    expect(routeSource).toContain(
+      "EDITOR_DYNAMIC_CAPTION_TEXT_EDIT_UNSUPPORTED",
+    );
+    expect(routeSource).toContain("db.json(requestedClipWindows)");
+    expect(routeSource).toContain("clip->'sourceStartSeconds'");
+    expect(routeSource).toContain("!existing.subtitlesEnabled");
   });
 });

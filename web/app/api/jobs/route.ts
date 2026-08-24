@@ -14,8 +14,10 @@ import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import {
   elevenLabsTranscriptionDispatchTarget,
+  type ProjectDispatchTarget,
   sourceRangeDispatchTarget,
   subtitleTemplatesDispatchTarget,
+  unifiedTemplateSubtitlesDispatchTarget,
 } from "@/lib/job-dispatch";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { apiError, HttpError } from "@/lib/http";
@@ -45,9 +47,11 @@ import {
   subtitleTemplateStyleSnapshot,
 } from "@/lib/subtitle-templates";
 import { billableSourceSeconds, getUsageSnapshot } from "@/lib/usage";
-import { templateSnapshotFromRow } from "@/lib/custom-templates";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
 import { templatePresetColors } from "@/lib/template-config";
+import {
+  resolveTemplateExecutionSnapshot,
+} from "@/lib/template-execution-snapshot";
 import { assertSupportedSourceVideoDuration } from "@/lib/source-video";
 import {
   issueShortsThankYouEventGrantIfEligible,
@@ -234,30 +238,38 @@ export async function POST(request: Request) {
           "브랜드 컬러 테스트 작업을 안전한 전용 워커에 연결하지 못했습니다.",
         );
       }
-      const usesSubtitleSuiteCandidate = Boolean(
+      const usesLegacySubtitleSuiteCandidate = Boolean(
         input.subtitleTemplateId || input.brandColor,
       );
-      const transcriptionAccess = await lockElevenLabsTranscriptionAccess(
-        tx,
-        session.userId,
-      );
-      if (usesSubtitleSuiteCandidate && !transcriptionAccess.enabled) {
-        throw new HttpError(
-          409,
-          "현재 계정에서는 자막 전사 기능을 사용할 수 없습니다.",
-          "SUBTITLE_SUITE_TRANSCRIPTION_DISABLED",
+      let transcriptionAccess: Awaited<ReturnType<
+        typeof lockElevenLabsTranscriptionAccess
+      >> | null = null;
+      let dispatchTarget: ProjectDispatchTarget | null = null;
+      if (!input.customTemplateId) {
+        transcriptionAccess = await lockElevenLabsTranscriptionAccess(
+          tx,
+          session.userId,
         );
+        if (
+          usesLegacySubtitleSuiteCandidate
+          && !transcriptionAccess.enabled
+        ) {
+          throw new HttpError(
+            409,
+            "현재 계정에서는 자막 전사 기능을 사용할 수 없습니다.",
+            "SUBTITLE_SUITE_TRANSCRIPTION_DISABLED",
+          );
+        }
+        dispatchTarget = executionBackend !== "aws_batch"
+          ? null
+          : usesLegacySubtitleSuiteCandidate
+            ? subtitleTemplatesDispatchTarget()
+            : transcriptionAccess.enabled
+              ? elevenLabsTranscriptionDispatchTarget()
+              : sourceRangeSelectionEnabled
+                ? sourceRangeDispatchTarget()
+                : null;
       }
-      const transcriptionPolicy = transcriptionAccess.policy;
-      const dispatchTarget = executionBackend !== "aws_batch"
-        ? null
-        : usesSubtitleSuiteCandidate
-          ? subtitleTemplatesDispatchTarget()
-          : transcriptionAccess.enabled
-          ? elevenLabsTranscriptionDispatchTarget()
-          : sourceRangeSelectionEnabled
-            ? sourceRangeDispatchTarget()
-            : null;
       const concurrentExisting = await tx`
         select id, project_number, status from shorts_mvp.video_jobs
         where request_id=${input.requestId} and (
@@ -272,36 +284,63 @@ export async function POST(request: Request) {
           status: concurrentExisting[0].status,
         };
       }
-      let resolvedTemplateId = input.templateId;
-      let resolvedVideoAspectRatio = input.videoAspectRatio;
-      let templateSnapshot:
-        | ReturnType<typeof templateSnapshotFromRow>
-        | { presetVersion: 2 | 3 }
-        | null = null;
       shortsThankYouEventReward =
         await issueShortsThankYouEventGrantIfEligible(tx, session.userId);
       const billing = await getBillingSummary(tx, session.userId);
       if (input.customTemplateId) {
-        if (input.brandColor) {
-          throw new HttpError(400, "내 템플릿에는 브랜드 컬러를 별도로 적용할 수 없습니다.");
-        }
         assertCustomTemplateAccess(billing);
-        const customTemplates = await tx`
-          select id, name, base_template_id, config, version
-          from shorts_mvp.custom_templates
-          where id=${input.customTemplateId} and user_id=${session.userId}
-          limit 1
-        `;
-        if (!customTemplates[0]) throw new HttpError(404, "선택한 개인 템플릿을 찾을 수 없습니다.");
-        templateSnapshot = templateSnapshotFromRow(customTemplates[0]);
-        resolvedTemplateId = templateSnapshot.baseTemplateId;
-        resolvedVideoAspectRatio = templateSnapshot.config.video.aspectRatio;
-      } else {
-        templateSnapshot = {
-          presetVersion: 3,
-          ...(input.brandColor ? { brandColor: input.brandColor } : {}),
-        };
       }
+      const resolvedExecution = await resolveTemplateExecutionSnapshot(tx, {
+        userId: session.userId,
+        templateId: input.templateId,
+        customTemplateId: input.customTemplateId,
+        videoAspectRatio: input.videoAspectRatio,
+        brandColor: input.brandColor,
+      });
+      const usesUnifiedTemplateSubtitleCandidate =
+        resolvedExecution.usesUnifiedTemplateSubtitleCanary;
+      if (
+        usesUnifiedTemplateSubtitleCandidate
+        && executionBackend !== "aws_batch"
+      ) {
+        throw new HttpError(
+          503,
+          "통합 템플릿 자막 테스트 작업을 안전한 전용 워커에 연결하지 못했습니다.",
+        );
+      }
+      if (!transcriptionAccess) {
+        transcriptionAccess = await lockElevenLabsTranscriptionAccess(
+          tx,
+          session.userId,
+        );
+      }
+      const usesSubtitleSuiteCandidate = usesLegacySubtitleSuiteCandidate
+        || usesUnifiedTemplateSubtitleCandidate;
+      if (usesSubtitleSuiteCandidate && !transcriptionAccess.enabled) {
+        throw new HttpError(
+          409,
+          "현재 계정에서는 자막 전사 기능을 사용할 수 없습니다.",
+          "SUBTITLE_SUITE_TRANSCRIPTION_DISABLED",
+        );
+      }
+      const transcriptionPolicy = transcriptionAccess.policy;
+      if (input.customTemplateId) {
+        dispatchTarget = executionBackend !== "aws_batch"
+          ? null
+          : usesUnifiedTemplateSubtitleCandidate
+            ? unifiedTemplateSubtitlesDispatchTarget()
+            : usesLegacySubtitleSuiteCandidate
+              ? subtitleTemplatesDispatchTarget()
+              : transcriptionAccess.enabled
+                ? elevenLabsTranscriptionDispatchTarget()
+                : sourceRangeSelectionEnabled
+                  ? sourceRangeDispatchTarget()
+                  : null;
+      }
+      const resolvedTemplateId = resolvedExecution.resolvedTemplateId;
+      const resolvedVideoAspectRatio =
+        resolvedExecution.resolvedVideoAspectRatio;
+      const templateSnapshot = resolvedExecution.templateSnapshot;
       const subtitleTemplateSnapshot = input.subtitleTemplateId
         ? subtitleTemplateStyleSnapshot(
             input.subtitleTemplateId,
@@ -313,7 +352,7 @@ export async function POST(request: Request) {
               ? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES
               : STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
           )
-        : null;
+        : resolvedExecution.subtitleTemplateSnapshot;
       const limits = await tx`
         with scoped_jobs as (
           select status,error_code,heartbeat_at

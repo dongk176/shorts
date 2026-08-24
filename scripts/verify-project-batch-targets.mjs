@@ -5,11 +5,15 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export const PROJECT_TARGET_PREFIXES = [
+export const STABLE_PROJECT_TARGET_PREFIXES = [
   "LEGACY_PROJECT",
   "SOURCE_RANGE",
   "ELEVENLABS_TRANSCRIPTION",
   "SUBTITLE_TEMPLATES",
+];
+export const PROJECT_TARGET_PREFIXES = [
+  ...STABLE_PROJECT_TARGET_PREFIXES,
+  "UNIFIED_TEMPLATE_SUBTITLES",
 ];
 
 const JOB_DEFINITION_ARN = /^arn:aws:batch:([a-z0-9-]+):([0-9]{12}):job-definition\/[^:]+:[1-9][0-9]*$/;
@@ -50,12 +54,15 @@ function requiredTargetValue(environment, name, pattern) {
   return value;
 }
 
-export function projectBatchTargets(environment) {
+export function projectBatchTargets(
+  environment,
+  prefixes = PROJECT_TARGET_PREFIXES,
+) {
   const targets = {};
   const identities = new Set();
   const definitions = new Set();
 
-  for (const prefix of PROJECT_TARGET_PREFIXES) {
+  for (const prefix of prefixes) {
     const definitionName = `${prefix}_JOB_DEFINITION_ARN`;
     const queueName = `${prefix}_BATCH_QUEUE_ARN`;
     const definition = requiredTargetValue(
@@ -86,12 +93,16 @@ export function projectBatchTargets(environment) {
   return targets;
 }
 
-export function compareProjectBatchTargets(webEnvironment, lambdaEnvironment) {
-  const webTargets = projectBatchTargets(webEnvironment);
-  const lambdaTargets = projectBatchTargets(lambdaEnvironment);
+export function compareProjectBatchTargets(
+  webEnvironment,
+  lambdaEnvironment,
+  prefixes = PROJECT_TARGET_PREFIXES,
+) {
+  const webTargets = projectBatchTargets(webEnvironment, prefixes);
+  const lambdaTargets = projectBatchTargets(lambdaEnvironment, prefixes);
   const mismatches = [];
 
-  for (const prefix of PROJECT_TARGET_PREFIXES) {
+  for (const prefix of prefixes) {
     if (webTargets[prefix].definition !== lambdaTargets[prefix].definition) {
       mismatches.push(`${prefix}_JOB_DEFINITION_ARN`);
     }
@@ -109,7 +120,12 @@ export function compareProjectBatchTargets(webEnvironment, lambdaEnvironment) {
   return webTargets;
 }
 
-export function validateActiveBatchResources(targets, definitionRows, queueRows) {
+export function validateActiveBatchResources(
+  targets,
+  definitionRows,
+  queueRows,
+  prefixes = PROJECT_TARGET_PREFIXES,
+) {
   const activeDefinitions = new Set(
     definitionRows
       .filter((row) => row?.status === "ACTIVE")
@@ -121,7 +137,7 @@ export function validateActiveBatchResources(targets, definitionRows, queueRows)
       .map((row) => row.jobQueueArn),
   );
   const failures = [];
-  for (const prefix of PROJECT_TARGET_PREFIXES) {
+  for (const prefix of prefixes) {
     if (!activeDefinitions.has(targets[prefix].definition)) {
       failures.push(`${prefix}_JOB_DEFINITION_ARN is not ACTIVE`);
     }

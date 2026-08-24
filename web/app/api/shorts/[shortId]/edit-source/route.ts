@@ -11,6 +11,11 @@ import {
 import { apiError, HttpError } from "@/lib/http";
 import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
+import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import {
+  assertUnifiedTemplateSubtitleCanaryAccess,
+  isUnifiedTemplateSubtitleSnapshot,
+} from "@/lib/template-execution-snapshot";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +27,8 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
     const billing = await getBillingSummary(db, session.userId);
     assertPaidProjectActionAccess(billing, "edit");
     const rows = await db`
-      select s.clean_clip_s3_key, s.expires_at, s.subtitle_template_id
+      select s.clean_clip_s3_key, s.expires_at, s.subtitle_template_id,
+        s.subtitle_template_snapshot
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and not j.is_example
@@ -33,17 +39,21 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
         and s.status in ('ready', 'rerendering') and s.deleted_at is null and s.expires_at > now()
     `;
     if (!rows[0]) throw new Error("편집용 영상을 찾을 수 없습니다.");
-    if (
-      rows[0].subtitleTemplateId
-      && !subtitleEditingReleaseEnabled(
+    if (rows[0].subtitleTemplateId) {
+      if (!subtitleEditingReleaseEnabled(
         await resolveEditorRelease(db, session.userId),
-      )
-    ) {
-      throw new HttpError(
-        409,
-        "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
-        "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
-      );
+      )) {
+        throw new HttpError(
+          409,
+          "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
+          "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+        );
+      }
+      if (isUnifiedTemplateSubtitleSnapshot(rows[0].subtitleTemplateSnapshot)) {
+        assertUnifiedTemplateSubtitleCanaryAccess(
+          await getSubtitleTemplateAccess(db, session.userId),
+        );
+      }
     }
     const domain = process.env.CLOUDFRONT_DOMAIN;
     const keyPairId = process.env.CLOUDFRONT_KEY_PAIR_ID;

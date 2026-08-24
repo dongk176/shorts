@@ -46,3 +46,16 @@ export function subtitleTemplatesDispatchTarget(): ProjectDispatchTarget {
     ),
   };
 }
+
+export function unifiedTemplateSubtitlesDispatchTarget(): ProjectDispatchTarget {
+  return {
+    jobDefinitionArn: requiredArn(
+      "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN",
+      JOB_DEFINITION_ARN,
+    ),
+    jobQueueArn: requiredArn(
+      "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN",
+      JOB_QUEUE_ARN,
+    ),
+  };
+}

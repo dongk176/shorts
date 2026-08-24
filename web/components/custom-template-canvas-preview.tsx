@@ -1,4 +1,5 @@
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
+import { TemplateSubtitlePreview } from "@/components/template-subtitle-preview";
 import { TemplateCommentPreview } from "@/components/template-comment-prototype";
 import {
   customCanvasWidth,
@@ -6,7 +7,8 @@ import {
   customCommentLayerY,
   customVideoFrameStyle,
 } from "@/lib/custom-template-preview-layout";
-import { stockBackgrounds, TEMPLATE_CANVAS, type CustomTemplate } from "@/lib/template-config";
+import { editorFontFamily, resolveEditorFontFace } from "@/lib/editor-fonts";
+import { isTemplateConfigV5, stockBackgrounds, TEMPLATE_CANVAS, type CustomTemplate } from "@/lib/template-config";
 
 function previewBackground(template: CustomTemplate) {
   const background = template.config.background;
@@ -58,13 +60,18 @@ export function CustomTemplateCanvasPreview({
   firstLine,
   secondLine,
   channelLabel,
+  showUnifiedSubtitle = false,
 }: {
   template: CustomTemplate;
   firstLine: string;
   secondLine: string;
   channelLabel: string;
+  showUnifiedSubtitle?: boolean;
 }) {
   const config = template.config;
+  const unifiedConfig = showUnifiedSubtitle && isTemplateConfigV5(config)
+    ? config
+    : null;
   const commentLayerEnabled = template.baseTemplateId === "comment-capture";
   const commentY = customCommentLayerY(config);
   return (
@@ -76,7 +83,16 @@ export function CustomTemplateCanvasPreview({
       <div className="absolute bg-neutral-700" style={customVideoFrameStyle(config.video)}>
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
       </div>
-      <CustomTemplateTitlePreview title={config.title} firstLine={firstLine} secondLine={secondLine} />
+      <CustomTemplateTitlePreview
+        title={config.title}
+        firstLine={firstLine}
+        secondLine={secondLine}
+        fontFamily={unifiedConfig ? editorFontFamily(unifiedConfig.title.fontId) : undefined}
+        fontWeight={unifiedConfig ? resolveEditorFontFace(unifiedConfig.title.fontId, "title").resolvedWeight : undefined}
+      />
+      {unifiedConfig
+        ? <TemplateSubtitlePreview subtitle={unifiedConfig.subtitle} />
+        : null}
       {commentLayerEnabled
         ? <div className="absolute inset-x-0 z-40" style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>
             {config.comment.visible && <TemplateCommentPreview theme={config.comment.theme} size={config.comment.size} />}

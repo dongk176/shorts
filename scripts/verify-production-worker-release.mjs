@@ -12,6 +12,7 @@ import {
 import {
   compareProjectBatchTargets,
   projectBatchTargets,
+  STABLE_PROJECT_TARGET_PREFIXES,
   validateActiveBatchResources,
 } from "./verify-project-batch-targets.mjs";
 
@@ -29,7 +30,12 @@ export function validateWorkerAttemptBudget(ingestionSource, pipelineSource, exp
 }
 
 export function validateReleasedDefinitions(release, targets, definitionRows, queueRows) {
-  validateActiveBatchResources(targets, definitionRows, queueRows);
+  validateActiveBatchResources(
+    targets,
+    definitionRows,
+    queueRows,
+    STABLE_PROJECT_TARGET_PREFIXES,
+  );
   const byArn = new Map(definitionRows.map((row) => [row.jobDefinitionArn, row]));
   const failures = [];
   for (const [prefix, target] of Object.entries(targets)) {
@@ -77,7 +83,11 @@ export function runProductionWorkerVerification(argv = process.argv.slice(2)) {
     "--region", options.region,
     "--query", "Environment.Variables",
   ]);
-  const targets = compareProjectBatchTargets(releaseEnvironment, lambdaEnvironment);
+  const targets = compareProjectBatchTargets(
+    releaseEnvironment,
+    lambdaEnvironment,
+    STABLE_PROJECT_TARGET_PREFIXES,
+  );
   const definitions = Object.values(targets).map(({ definition }) => definition);
   const queues = [...new Set(Object.values(targets).map(({ queue }) => queue))];
   const definitionRows = awsJson([
@@ -91,7 +101,12 @@ export function runProductionWorkerVerification(argv = process.argv.slice(2)) {
     "--region", options.region,
     "--job-queues", ...queues,
   ]).jobQueues || [];
-  validateReleasedDefinitions(release, projectBatchTargets(releaseEnvironment), definitionRows, queueRows);
+  validateReleasedDefinitions(
+    release,
+    projectBatchTargets(releaseEnvironment, STABLE_PROJECT_TARGET_PREFIXES),
+    definitionRows,
+    queueRows,
+  );
 
   const repositoryName = release.imageUri
     .slice(release.imageUri.indexOf("/") + 1, release.imageUri.indexOf("@"));

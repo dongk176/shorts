@@ -10,6 +10,10 @@ import {
 } from "@/lib/data";
 import { getDb } from "@/lib/db";
 import { getFileUploadReleaseAccess } from "@/lib/file-upload-release";
+import {
+  getSubtitleTemplateAccess,
+  unifiedTemplateSubtitleLocalUploadEnabled,
+} from "@/lib/subtitle-template-release";
 import { requireMvpSession } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import {
@@ -61,7 +65,11 @@ export async function loadMvpState(
       },
       billing,
       paymentMethodAction: null,
-      capabilities: { fileUpload: false },
+      capabilities: {
+        fileUpload: false,
+        unifiedTemplateSubtitles: false,
+        unifiedTemplateSubtitleLocalUpload: false,
+      },
       hasUsedSubtitleTemplates: false,
       recentJobs,
     };
@@ -75,6 +83,7 @@ export async function loadMvpState(
     paymentMethodAction,
     hasUsedSubtitleTemplates,
     fileUploadAccess,
+    subtitleTemplateAccess,
   ] = await Promise.all([
     getUsageSnapshot(db, session),
     getRecentJobs(db, session),
@@ -82,6 +91,7 @@ export async function loadMvpState(
     getPaymentMethodAction(db, session.userId),
     getSubtitleTemplateUsage(db, session.userId),
     getFileUploadReleaseAccess(db, session.userId),
+    getSubtitleTemplateAccess(db, session.userId),
   ]);
 
   return {
@@ -93,7 +103,15 @@ export async function loadMvpState(
     billing,
     paymentMethodAction,
     usage,
-    capabilities: { fileUpload: fileUploadAccess.adminEnabled },
+    capabilities: {
+      fileUpload: fileUploadAccess.adminEnabled,
+      unifiedTemplateSubtitles: subtitleTemplateAccess.unifiedEnabled,
+      unifiedTemplateSubtitleLocalUpload:
+        unifiedTemplateSubtitleLocalUploadEnabled({
+          strictAccessEnabled: subtitleTemplateAccess.unifiedEnabled,
+          fileUploadAdminEnabled: fileUploadAccess.adminEnabled,
+        }),
+    },
     hasUsedSubtitleTemplates,
     recentJobs,
   };

@@ -12,6 +12,11 @@ import { apiError, HttpError } from "@/lib/http";
 import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { rangeEditingEnabled } from "@/lib/range-editing";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
+import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import {
+  assertUnifiedTemplateSubtitleCanaryAccess,
+  isUnifiedTemplateSubtitleSnapshot,
+} from "@/lib/template-execution-snapshot";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +34,7 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
         s.edit_timeline_end_seconds, s.edit_timeline_subtitle_segments,
         s.edit_timeline_version, s.start_seconds, s.end_seconds,
         s.initial_start_seconds, s.initial_end_seconds, s.subtitle_segments,
-        s.expires_at, s.subtitle_template_id
+        s.expires_at, s.subtitle_template_id, s.subtitle_template_snapshot
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and not j.is_example
@@ -41,17 +46,21 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
         and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null
     `;
     if (!rows[0]) throw new HttpError(404, "이 쇼츠에는 편집 가능한 영상이 없습니다.");
-    if (
-      rows[0].subtitleTemplateId
-      && !subtitleEditingReleaseEnabled(
+    if (rows[0].subtitleTemplateId) {
+      if (!subtitleEditingReleaseEnabled(
         await resolveEditorRelease(db, session.userId),
-      )
-    ) {
-      throw new HttpError(
-        409,
-        "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
-        "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
-      );
+      )) {
+        throw new HttpError(
+          409,
+          "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
+          "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+        );
+      }
+      if (isUnifiedTemplateSubtitleSnapshot(rows[0].subtitleTemplateSnapshot)) {
+        assertUnifiedTemplateSubtitleCanaryAccess(
+          await getSubtitleTemplateAccess(db, session.userId),
+        );
+      }
     }
 
     const row = rows[0];

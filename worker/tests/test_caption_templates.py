@@ -72,6 +72,39 @@ def _compile(
     )
 
 
+def test_v5_template_caption_style_compiles_to_the_immutable_render_spec() -> None:
+    spec = compile_caption_render_spec(
+        [
+            _word("통합", 0.1, 0.45),
+            _word("자막", 0.45, 0.9, space_before=True),
+        ],
+        template_id="highlight",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        caption_center_y=1320,
+        caption_max_width=760,
+        font_id=EditorFontId.PAPERLOGY,
+        font_size=88,
+        text_color="#F3F0E9",
+        accent_color="#FFD84D",
+    )
+
+    assert spec["schemaVersion"] == 3
+    assert spec["font"]["fontId"] == "paperlogy"
+    assert spec["font"]["fileId"] == "Paperlogy-7Bold.ttf"
+    assert spec["style"]["fontSize"] == 88
+    assert spec["style"]["textColor"] == "#F3F0E9"
+    assert spec["style"]["accentColor"] == "#FFD84D"
+    assert spec["safeArea"] == {
+        "x": 160,
+        "y": 1250,
+        "width": 760,
+        "height": 140,
+    }
+    assert all(cue["centerY"] == 1320 for cue in spec["cues"])
+
+
 def _editable_caption_cue(
     *,
     source_cue_index: int = 2,

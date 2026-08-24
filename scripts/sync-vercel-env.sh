@@ -5,6 +5,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/web"
 source ../scripts/load-env.sh
 load_env_file ../.env.local
+: "${UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN:?UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN is required}"
+: "${UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN:?UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN is required}"
 command -v vercel >/dev/null 2>&1 || { echo "vercel CLI가 필요합니다." >&2; exit 2; }
 vercel whoami >/dev/null
 if [[ ! -f .vercel/project.json ]]; then
@@ -63,6 +65,8 @@ for name in DATABASE_URL SUPABASE_URL SUPABASE_PUBLISHABLE_KEY YOUTUBE_API_KEY \
   ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN \
   ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN \
   SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN \
+  UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN \
+  UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN \
   VIDEO_JOB_BACKEND MVP_PLAN_ENFORCEMENT; do
   value="${!name:-}"
   [[ -n "$value" ]] || { echo "건너뜀(값 없음): $name"; continue; }

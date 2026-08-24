@@ -567,9 +567,13 @@ class WorkerRepository:
         with self.connect() as connection:
             return connection.execute(
                 """
-                select s.*, j.channel_thumbnail_url
+                select s.*, j.channel_thumbnail_url,
+                  transcript.words as transcript_words,
+                  transcript.source_offset_seconds as transcript_source_offset_seconds
                 from shorts_mvp.generated_shorts s
                 join shorts_mvp.video_jobs j on j.id=s.job_id
+                left join shorts_mvp.job_transcripts transcript
+                  on transcript.job_id=s.job_id
                 where s.id=%s and s.deleted_at is null and s.expires_at > now()
                   and s.status='rerendering'
                 """,
@@ -1318,6 +1322,7 @@ class WorkerRepository:
         retention_days: int,
         shard_index: int,
         caption_render_spec: dict[str, Any] | None = None,
+        subtitles_enabled: bool | None = None,
         viral_score: int | None = None,
     ) -> bool:
         with self.connect() as connection, connection.transaction():
@@ -1428,7 +1433,11 @@ class WorkerRepository:
                     ),
                     Jsonb(caption_render_spec) if caption_render_spec else None,
                     Jsonb(subtitles),
-                    bool(caption_render_spec),
+                    (
+                        bool(caption_render_spec)
+                        if subtitles_enabled is None
+                        else subtitles_enabled
+                    ),
                     Jsonb(comment_overlays),
                     job["template_id"],
                     job.get("custom_template_id"),

@@ -9,7 +9,6 @@ import {
   templateIds,
   videoAspectRatios,
 } from "@/lib/contracts";
-import { templateSnapshotFromRow } from "@/lib/custom-templates";
 import { getDb } from "@/lib/db";
 import {
   FILE_UPLOAD_CONTROL_BODY_MAX_BYTES,
@@ -44,9 +43,16 @@ import {
   subtitleTemplateCreationIds,
   subtitleTemplateStyleSnapshot,
 } from "@/lib/subtitle-templates";
-import { lockSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import {
+  lockSubtitleTemplateAccess,
+  unifiedTemplateSubtitleLocalUploadEnabled,
+} from "@/lib/subtitle-template-release";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
 import { templatePresetColors } from "@/lib/template-config";
+import {
+  resolveTemplateExecutionSnapshot,
+  type ResolvedTemplateExecutionSnapshot,
+} from "@/lib/template-execution-snapshot";
 import { lockElevenLabsTranscriptionAccess } from "@/lib/transcription-release";
 import { billableSourceSeconds, getUsageSnapshot } from "@/lib/usage";
 
@@ -383,8 +389,41 @@ export async function POST(request: Request) {
         );
       }
 
+      const customTemplateBilling = input.customTemplateId
+        ? await getBillingSummary(tx, session.userId)
+        : null;
+      if (customTemplateBilling) {
+        assertCustomTemplateAccess(customTemplateBilling);
+      }
+      let resolvedExecution: ResolvedTemplateExecutionSnapshot | null = null;
+      if (input.customTemplateId) {
+        resolvedExecution = await resolveTemplateExecutionSnapshot(tx, {
+          userId: session.userId,
+          templateId: input.templateId,
+          customTemplateId: input.customTemplateId,
+          videoAspectRatio: input.videoAspectRatio,
+          brandColor: input.brandColor,
+        });
+        if (
+          resolvedExecution.usesUnifiedTemplateSubtitleCanary
+          && !unifiedTemplateSubtitleLocalUploadEnabled({
+            strictAccessEnabled: true,
+            fileUploadAdminEnabled: lockedAccess.adminEnabled,
+            receiverBaseUrl: receiver.receiverBaseUrl,
+          })
+        ) {
+          throw new HttpError(
+            409,
+            "통합 템플릿 자막 직접 업로드는 로컬 테스트 환경에서만 사용할 수 있습니다.",
+            "UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ONLY",
+          );
+        }
+      }
+
       const usesSubtitleSuiteCandidate = Boolean(
-        input.subtitleTemplateId || input.brandColor,
+        input.subtitleTemplateId
+          || input.brandColor
+          || resolvedExecution?.usesUnifiedTemplateSubtitleCanary,
       );
       const transcriptionAccess = await lockElevenLabsTranscriptionAccess(
         tx,
@@ -401,39 +440,19 @@ export async function POST(request: Request) {
       // Match the stable link path's preflight grant ordering so the usage
       // snapshot and reservation see the same eligible balance.
       await issueShortsThankYouEventGrantIfEligible(tx, session.userId);
-      const billing = await getBillingSummary(tx, session.userId);
-      let resolvedTemplateId = input.templateId;
-      let resolvedVideoAspectRatio = input.videoAspectRatio;
-      let templateSnapshot:
-        | ReturnType<typeof templateSnapshotFromRow>
-        | { presetVersion: 3; brandColor?: string }
-        | null = null;
-      if (input.customTemplateId) {
-        if (input.brandColor) {
-          throw new HttpError(
-            400,
-            "내 템플릿에는 브랜드 컬러를 별도로 적용할 수 없습니다.",
-          );
-        }
-        assertCustomTemplateAccess(billing);
-        const customTemplates = await tx`
-          select id,name,base_template_id,config,version
-          from shorts_mvp.custom_templates
-          where id=${input.customTemplateId} and user_id=${session.userId}
-          limit 1
-        `;
-        if (!customTemplates[0]) {
-          throw new HttpError(404, "선택한 개인 템플릿을 찾을 수 없습니다.");
-        }
-        templateSnapshot = templateSnapshotFromRow(customTemplates[0]);
-        resolvedTemplateId = templateSnapshot.baseTemplateId;
-        resolvedVideoAspectRatio = templateSnapshot.config.video.aspectRatio;
-      } else {
-        templateSnapshot = {
-          presetVersion: 3,
-          ...(input.brandColor ? { brandColor: input.brandColor } : {}),
-        };
-      }
+      const billing = customTemplateBilling
+        ?? await getBillingSummary(tx, session.userId);
+      resolvedExecution ??= await resolveTemplateExecutionSnapshot(tx, {
+        userId: session.userId,
+        templateId: input.templateId,
+        customTemplateId: input.customTemplateId,
+        videoAspectRatio: input.videoAspectRatio,
+        brandColor: input.brandColor,
+      });
+      const resolvedTemplateId = resolvedExecution.resolvedTemplateId;
+      const resolvedVideoAspectRatio =
+        resolvedExecution.resolvedVideoAspectRatio;
+      const templateSnapshot = resolvedExecution.templateSnapshot;
 
       const subtitleTemplateSnapshot = input.subtitleTemplateId
         ? subtitleTemplateStyleSnapshot(
@@ -446,7 +465,7 @@ export async function POST(request: Request) {
               ? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES
               : STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
           )
-        : null;
+        : resolvedExecution.subtitleTemplateSnapshot;
 
       const limits = await tx`
         select count(*)::int as active

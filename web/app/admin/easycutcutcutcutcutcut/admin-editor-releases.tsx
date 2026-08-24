@@ -9,6 +9,7 @@ import {
   recordEditorReleaseCanaryCheck,
   removeEditorReleaseTester,
   rollbackEditorRelease,
+  setUnifiedTemplateSubtitleCanary,
   startEditorReleaseCanary,
 } from "./editor-release-actions";
 
@@ -56,6 +57,7 @@ type Props = {
   publicEnabled: boolean;
   canaryEnabled: boolean;
   subtitleSuitePublicEnabled: boolean;
+  unifiedTemplateSubtitleCanaryEnabled: boolean;
   stableReleaseId: string | null;
   previousStableReleaseId: string | null;
   candidateReleaseId: string | null;
@@ -123,6 +125,7 @@ export function AdminEditorReleases({
   publicEnabled,
   canaryEnabled,
   subtitleSuitePublicEnabled,
+  unifiedTemplateSubtitleCanaryEnabled,
   stableReleaseId,
   previousStableReleaseId,
   candidateReleaseId,
@@ -273,6 +276,32 @@ export function AdminEditorReleases({
           })}
           className="rounded-xl bg-sky-300 px-4 py-2.5 text-sm font-black text-sky-950 disabled:opacity-40"
         >{subtitleSuitePublicEnabled ? "자막 기능 공개됨" : "자막 기능 전체 공개"}</button>}
+        {canaryEnabled
+          && candidate?.subtitleEditingCapable
+          && !unifiedTemplateSubtitleCanaryEnabled
+          && <button
+            type="button"
+            disabled={pending || !masterEnvironmentEnabled}
+            onClick={() => setConfirmation({
+              title: "통합 템플릿 자막 카나리를 켤까요?",
+              description: "지정된 관리자 테스트 계정만 v5 템플릿 자막을 사용할 수 있습니다. 기존 공개 자막 기능에는 영향을 주지 않습니다.",
+              confirmLabel: "통합 자막 카나리 켜기",
+              action: () => setUnifiedTemplateSubtitleCanary(true),
+            })}
+            className="rounded-xl bg-violet-300 px-4 py-2.5 text-sm font-black text-violet-950 disabled:opacity-40"
+          >통합 자막 카나리 켜기</button>}
+        {unifiedTemplateSubtitleCanaryEnabled && <button
+          type="button"
+          disabled={pending}
+          onClick={() => setConfirmation({
+            title: "통합 템플릿 자막 카나리만 중단할까요?",
+            description: "새 v5 템플릿 요청만 즉시 차단합니다. 기존 공개 자막 기능과 진행 중인 정상 작업은 유지됩니다.",
+            confirmLabel: "통합 자막 카나리 중단",
+            danger: true,
+            action: () => setUnifiedTemplateSubtitleCanary(false),
+          })}
+          className="rounded-xl border border-violet-300/30 bg-violet-400/10 px-4 py-2.5 text-sm font-bold text-violet-100 disabled:opacity-40"
+        >통합 자막 카나리 중단</button>}
       </div>
       {canaryEnabled && candidate && !promotionReady && <p className="mt-3 text-xs leading-5 text-amber-100/80">
         모든 격리·운영 카나리 검사가 통과하고 성공 렌더가 1건 이상이며,

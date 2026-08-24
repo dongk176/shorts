@@ -9,6 +9,7 @@ import {
   resolveEditorRelease,
 } from "@/lib/editor-rendering-release";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
+import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
 import { ProjectPage } from "../../shorts-app";
 
 export const dynamic = "force-dynamic";
@@ -50,18 +51,20 @@ export default async function ProjectNumberPage({
   if (!projectAccess?.canAccess) notFound();
 
   let adminSubtitleLayoutEnabled = false;
+  let unifiedTemplateSubtitleCanaryEnabled = false;
   if (editorRenderingV2MasterEnabled()) {
-    const editorRelease = await resolveEditorRelease(
-      db,
-      projectAccess.appUserId,
-    );
-    adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(
-      editorRelease,
-    );
+    const [editorRelease, subtitleAccess] = await Promise.all([
+      resolveEditorRelease(db, projectAccess.appUserId),
+      getSubtitleTemplateAccess(db, projectAccess.appUserId),
+    ]);
+    adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(editorRelease);
+    unifiedTemplateSubtitleCanaryEnabled = subtitleAccess.unifiedEnabled
+      && adminSubtitleLayoutEnabled;
   }
 
   return <ProjectPage
     projectNumber={projectNumber}
     adminSubtitleLayoutEnabled={adminSubtitleLayoutEnabled}
+    unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled}
   />;
 }

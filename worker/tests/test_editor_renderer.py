@@ -16,6 +16,7 @@ from shorts_worker.editor_renderer import (
     EditorLayerAsset,
     _clamp_centered_layer_position,
     _draw_styled_title_content,
+    _editor_caption_composition_spec,
     _editor_video_input_filter,
     _prepare_editor_layer_asset,
     _timed_overlay_enable_expression,
@@ -38,6 +39,7 @@ from shorts_worker.editor_renderer import (
     verify_editor_fonts,
 )
 from shorts_worker.schemas import (
+    CustomTemplateConfig,
     EditorDocument,
     EditorFontId,
     EditorTextOverlay,
@@ -98,6 +100,210 @@ def _document_v3_with_subtitle_layout(
     return EditorDocument.model_validate(value)
 
 
+def _document_v3_with_absolute_subtitle_style(
+    *,
+    font_size: int = 96,
+    color: str = "#F3F0E9",
+) -> EditorDocument:
+    value = json.loads(V3_FIXTURE.read_text())
+    value["renderSpec"]["version"] = 3
+    value["renderSpec"]["subtitles"] = {
+        "centerX": 540,
+        "offsetY": -180,
+        "scale": 1,
+        "fontId": "paperlogy",
+        "fontSize": font_size,
+        "color": color,
+        "accentColor": "#FFD84D",
+        "cueEdits": [],
+    }
+    return EditorDocument.model_validate(value)
+
+
+def _v5_custom_template_config() -> dict[str, object]:
+    return {
+        "schemaVersion": 5,
+        "background": {"kind": "color", "color": "#16A34A"},
+        "video": {
+            "aspectRatio": "16:9",
+            "x": 140,
+            "y": 600,
+            "width": 800,
+            "height": 450,
+            "fit": "cover",
+        },
+        "title": {
+            "visible": True,
+            "x": 360,
+            "y": 260,
+            "maxWidth": 600,
+            "fontSize": 72,
+            "fontId": "pretendard",
+            "primaryColor": "#FFFFFF",
+            "accentColor": "#FF4D4F",
+            "primaryBackgroundColor": "#16A34A",
+            "accentBackgroundColor": "#2563EB",
+        },
+        "subtitle": {
+            "visible": True,
+            "variant": "highlight",
+            "x": 540,
+            "y": 250,
+            "maxWidth": 900,
+            "fontId": "paperlogy",
+            "fontSize": 48,
+            "color": "#FFFFFF",
+            "accentColor": "#FFD84D",
+        },
+        "channel": {
+            "visible": True,
+            "x": 720,
+            "y": 1700,
+            "maxWidth": 600,
+            "fontSize": 42,
+            "color": "#3B82F6",
+            "backgroundColor": None,
+        },
+        "comment": {
+            "visible": True,
+            "theme": "light",
+            "size": "small",
+            "y": 1120,
+            "dockedToVideo": False,
+        },
+    }
+
+
+def test_v5_custom_template_rejects_subtitle_background_field() -> None:
+    config = _v5_custom_template_config()
+    subtitle = config["subtitle"]
+    assert isinstance(subtitle, dict)
+    subtitle["backgroundColor"] = None
+
+    with pytest.raises(ValueError, match="backgroundColor"):
+        CustomTemplateConfig.model_validate(config)
+
+
+def _document_v3_with_v5_custom_template() -> EditorDocument:
+    value = json.loads(V3_FIXTURE.read_text())
+    value["template"] = {
+        "id": "comment-capture",
+        "customTemplateId": "00000000-0000-4000-8000-000000000001",
+        "presetVersion": 3,
+        "snapshot": {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "v5 editor rerender",
+            "baseTemplateId": "comment-capture",
+            "version": 1,
+            "config": _v5_custom_template_config(),
+        },
+    }
+    value["title"].update({"text": "커스텀 재렌더", "textStyles": []})
+    value["channel"]["displayName"] = "v5 채널"
+    value["video"] = {
+        "clips": [{
+            "id": "clip-v5",
+            "sourceStartSeconds": 0,
+            "sourceEndSeconds": 1,
+        }],
+        "aspectRatio": "16:9",
+        "timelineStartSeconds": 0,
+        "timelineEndSeconds": 1,
+        "selectionStartSeconds": 0,
+        "selectionEndSeconds": 1,
+    }
+    value["subtitles"] = {
+        "enabled": True,
+        "segments": [{"start": 0.1, "end": 0.8, "text": "통합 자막"}],
+    }
+    value["comments"] = [{
+        "id": "comment-v5",
+        "startSeconds": 0,
+        "endSeconds": 1,
+        "text": "자막과 함께 렌더되는 댓글",
+        "initial": "댓",
+        "avatarColor": "#2674C8",
+        "nickname": "댓글검증",
+        "likeCount": 321,
+        "ageLabel": "방금 전",
+    }]
+    value["overlays"].update({
+        "commentOffsets": {"comment-v5": {"x": 0, "y": 0}},
+        "textOverlays": [],
+        "layerOrder": ["video", "title", "comment", "channel"],
+        "commentTheme": None,
+        "background": {"kind": "color", "color": "#16A34A"},
+    })
+    value["overlays"]["visible"].update({
+        "title": True,
+        "comment": True,
+        "channel": True,
+    })
+    value["overlays"]["offsets"] = {
+        layer: {"x": 0, "y": 0}
+        for layer in ("video", "title", "comment", "channel")
+    }
+    value["overlays"]["scales"] = {"video": 1, "title": 1, "channel": 1}
+    value["renderSpec"].update({
+        "version": 3,
+        "layerOrder": ["video", "title", "comment", "channel"],
+        "comments": [{
+            "id": "comment-v5",
+            "offsetY": 0,
+            "startFrame": 0,
+            "endFrame": 30,
+        }],
+        "textOverlays": [],
+        "subtitles": {
+            "centerX": 540,
+            "offsetY": 0,
+            "scale": 1,
+            "fontId": "paperlogy",
+            "fontSize": 48,
+            "color": "#FFFFFF",
+            "accentColor": "#FFD84D",
+            "cueEdits": [],
+        },
+    })
+    value["renderSpec"]["title"].update({
+        "lines": ["커스텀 재렌더"],
+        "fontSize": 72,
+    })
+    value["renderSpec"]["video"] = {"offsetX": 0, "offsetY": 0, "scale": 1}
+    return EditorDocument.model_validate(value)
+
+
+def _v5_custom_caption_spec() -> dict[str, object]:
+    return compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="통합",
+                start=0.1,
+                end=0.45,
+                provider="elevenlabs",
+            ),
+            TranscriptWord(
+                text="자막",
+                start=0.45,
+                end=0.8,
+                provider="elevenlabs",
+                space_before=True,
+            ),
+        ],
+        template_id="highlight",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        caption_center_y=250,
+        caption_max_width=900,
+        font_id=EditorFontId.PAPERLOGY,
+        font_size=48,
+        text_color="#FFFFFF",
+        accent_color="#FFD84D",
+        background_color="#000000",
+    )
+
+
 def test_v3_font_files_are_byte_identical_in_web_and_worker() -> None:
     root = Path(__file__).resolve().parents[2]
     for font_id in EditorFontId:
@@ -132,6 +338,34 @@ def test_caption_editor_font_override_is_persisted_in_render_spec() -> None:
         "family": "Jua",
         "weight": 400,
     }
+
+
+def test_editor_render_spec_v3_applies_absolute_caption_size_and_color_once() -> None:
+    document = _document_v3_with_absolute_subtitle_style()
+    original = compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="편집",
+                start=1.2,
+                end=1.8,
+                provider="elevenlabs",
+            )
+        ],
+        template_id="highlight",
+        clip_start=0,
+        clip_end=6,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        font_size=72,
+    )
+
+    rendered = retime_editor_caption_spec(document, original)
+
+    assert rendered is not None
+    assert rendered["font"]["fontId"] == "paperlogy"
+    assert rendered["style"]["fontSize"] == 96
+    assert rendered["style"]["textColor"] == "#F3F0E9"
+    assert rendered["style"]["accentColor"] == "#FFD84D"
+    assert all(cue["fontSize"] == 96 for cue in rendered["cues"])
 
 
 def test_v3_noto_serif_text_800_is_heavier_than_title_700() -> None:
@@ -678,6 +912,80 @@ def test_caption_editor_uses_the_server_authored_composition_layout(
         layout["channel"]["y"] + layout["channel"]["height"] / 2,
         abs=2,
     )
+
+
+def test_dynamic_v3_caption_is_overlay_only_for_preset_geometry() -> None:
+    document = _document_v3()
+    caption_spec = compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="동적",
+                start=0.2,
+                end=0.8,
+                provider="elevenlabs",
+            ),
+        ],
+        template_id="highlight",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+    )
+
+    overlay_only_spec = _editor_caption_composition_spec(
+        caption_spec,
+        caption_overlay_only=True,
+    )
+    stored_legacy_spec = _editor_caption_composition_spec(
+        caption_spec,
+        caption_overlay_only=False,
+    )
+
+    assert overlay_only_spec is None
+    assert stored_legacy_spec is caption_spec
+    assert editor_video_frame(document, overlay_only_spec) == editor_video_frame(document)
+    assert editor_video_frame(document, stored_legacy_spec) != editor_video_frame(document)
+
+
+def test_v5_custom_editor_geometry_ignores_caption_composition(
+    tmp_path: Path,
+) -> None:
+    document = _document_v3_with_v5_custom_template()
+    caption_spec = _v5_custom_caption_spec()
+
+    frame = editor_video_frame(document, caption_spec)
+    title_path = create_editor_title_layer(
+        document,
+        tmp_path / "v5-title.png",
+        caption_render_spec=caption_spec,
+    )
+    channel_path = create_editor_channel_layer(
+        document,
+        tmp_path / "v5-channel.png",
+        None,
+        caption_spec,
+    )
+    comment_assets = create_editor_comment_layers(
+        document,
+        tmp_path / "v5-comments",
+        caption_spec,
+    )
+
+    assert (frame.x, frame.y, frame.width, frame.height) == (140, 600, 800, 450)
+    with Image.open(title_path) as title_image:
+        title_box = title_image.getchannel("A").getbbox()
+    with Image.open(channel_path) as channel_image:
+        channel_box = channel_image.getchannel("A").getbbox()
+    assert title_box is not None
+    assert channel_box is not None
+    assert (title_box[0] + title_box[2]) / 2 == pytest.approx(360, abs=2)
+    assert (title_box[1] + title_box[3]) / 2 == pytest.approx(260, abs=2)
+    assert (channel_box[0] + channel_box[2]) / 2 == pytest.approx(720, abs=2)
+    assert (channel_box[1] + channel_box[3]) / 2 == pytest.approx(1700, abs=2)
+    assert len(comment_assets) == 1
+    with Image.open(comment_assets[0].path) as comment_image:
+        comment_box = comment_image.getchannel("A").getbbox()
+    assert comment_box is not None
+    assert comment_box[1] == 1120
 
 
 def test_full_vertical_caption_editor_draws_brand_background_on_both_title_rows(
@@ -1380,6 +1688,80 @@ def test_editor_document_v3_renders_at_authoritative_30fps(
     assert (
         tmp_path / "render-work-v3" / "caption-fonts" / "Pretendard-Bold.ttf"
     ).is_file()
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
+def test_v5_custom_editor_rerender_keeps_video_caption_and_comment_geometry(
+    tmp_path: Path,
+) -> None:
+    clean = tmp_path / "v5-clean.mp4"
+    _run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "color=c=red:size=640x360:rate=30",
+        "-f", "lavfi", "-i", "sine=frequency=330:sample_rate=16000",
+        "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-shortest", str(clean),
+    ])
+    document = _document_v3_with_v5_custom_template()
+    renderer = EditorDocumentRenderer(Settings(
+        temp_dir=tmp_path / "v5-temp",
+        ffmpeg_timeout_seconds=120,
+        ffmpeg_threads=2,
+        clean_clip_preset="ultrafast",
+        clean_clip_crf=28,
+    ))
+    output = renderer.render(
+        clean_path=clean,
+        output_path=tmp_path / "v5-output.mp4",
+        document=document,
+        work_dir=tmp_path / "v5-render-work",
+        channel_thumbnail_path=None,
+        caption_render_spec=_v5_custom_caption_spec(),
+    )
+
+    probe = json.loads(_run([
+        "ffprobe", "-v", "error", "-show_streams", "-show_format",
+        "-of", "json", str(output),
+    ]).stdout)
+    video = next(
+        stream for stream in probe["streams"] if stream["codec_type"] == "video"
+    )
+    assert (video["width"], video["height"]) == (1080, 1920)
+    assert video["avg_frame_rate"] == "30/1"
+    assert float(probe["format"]["duration"]) == pytest.approx(1, abs=0.12)
+    assert output.stat().st_size > 10_000
+
+    assets = tmp_path / "v5-render-work" / "editor-assets"
+    subtitle_ass = (assets / "subtitles.ass").read_text(encoding="utf-8")
+    assert "Paperlogy" in subtitle_ass
+    assert r"\pos(540.0,250.0)" in subtitle_ass
+    with Image.open(assets / "comment-layer-00.png") as comment_image:
+        comment_box = comment_image.getchannel("A").getbbox()
+    assert comment_box is not None
+    assert comment_box[1] == 1120
+
+    rendered_frame = tmp_path / "v5-frame.png"
+    _run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-ss", "0.2", "-i", str(output), "-frames:v", "1",
+        str(rendered_frame),
+    ])
+    with Image.open(rendered_frame).convert("RGB") as image:
+
+        def is_video(pixel: tuple[int, int, int]) -> bool:
+            return pixel[0] > pixel[1] * 1.5 and pixel[0] > pixel[2] * 1.5
+
+        assert not is_video(image.getpixel((139, 800)))
+        assert is_video(image.getpixel((140, 800)))
+        assert is_video(image.getpixel((939, 800)))
+        assert not is_video(image.getpixel((940, 800)))
+        assert not is_video(image.getpixel((540, 599)))
+        assert is_video(image.getpixel((540, 600)))
+        assert is_video(image.getpixel((540, 1049)))
+        assert not is_video(image.getpixel((540, 1050)))
 
 
 @pytest.mark.skipif(

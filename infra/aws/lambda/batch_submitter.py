@@ -29,6 +29,7 @@ _BATCH_QUEUE_ARN = re.compile(
     r"^arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-queue/[^/]+$"
 )
 _SUBTITLE_TEMPLATE_IDS = {"basic", "highlight", "pop"}
+_UNIFIED_TEMPLATE_SUBTITLE_ORIGIN = "unified-template-v5"
 _BRAND_COLOR_VALUES = {
     "#040404", "#000000", "#111111", "#1B1B1E", "#353438", "#64748B",
     "#FFFFFF", "#F3F0E9", "#E32626", "#FF4D4F", "#FF715E", "#FFB4A8",
@@ -90,6 +91,25 @@ def _preset_brand_color(job: dict[str, Any]) -> str | None:
     return None
 
 
+def _uses_unified_template_v5(job: dict[str, Any]) -> bool:
+    template_snapshot = job.get("template_snapshot")
+    if not isinstance(template_snapshot, dict):
+        return False
+    config = template_snapshot.get("config")
+    if not isinstance(config, dict):
+        return False
+    schema_version = config.get("schemaVersion")
+    if not isinstance(schema_version, int) or schema_version != 5:
+        return False
+    subtitle_snapshot = job.get("subtitle_template_snapshot")
+    if not isinstance(subtitle_snapshot, dict):
+        raise TypeError("Unified template subtitle snapshot is invalid")
+    origin = subtitle_snapshot.get("origin")
+    if origin != _UNIFIED_TEMPLATE_SUBTITLE_ORIGIN:
+        raise RuntimeError("Unified template subtitle origin is invalid")
+    return True
+
+
 def _project_dispatch_target(
     job: dict[str, Any], *, resume: bool
 ) -> tuple[str, str, str, int]:
@@ -116,12 +136,18 @@ def _project_dispatch_target(
     uses_admin_template_candidate = (
         subtitle_template_id is not None or brand_color is not None
     )
+    uses_unified_template_candidate = _uses_unified_template_v5(job)
     # A partially configured subtitle candidate must never stop an ordinary
     # legacy/source-range submission. Parse this optional target only after the
     # stored job itself proves it is a caption-template job.
     subtitle_target = (
         _optional_trusted_project_target("SUBTITLE_TEMPLATES")
         if uses_admin_template_candidate
+        else None
+    )
+    unified_template_target = (
+        _optional_trusted_project_target("UNIFIED_TEMPLATE_SUBTITLES")
+        if uses_unified_template_candidate
         else None
     )
     previous_subtitle_target = None
@@ -153,6 +179,7 @@ def _project_dispatch_target(
         (transcription_target, "elevenlabs_transcription"),
         (subtitle_target, "subtitle_templates"),
         (previous_subtitle_target, "subtitle_templates"),
+        (unified_template_target, "unified_template_subtitles"),
     ):
         if not candidate_target:
             continue
@@ -178,6 +205,13 @@ def _project_dispatch_target(
         raise RuntimeError(
             "Admin template candidate requires the word-timed transcription policy"
         )
+    if (
+        uses_unified_template_candidate
+        and transcription_policy != "elevenlabs_primary_openai_fallback"
+    ):
+        raise RuntimeError(
+            "Unified template candidate requires the word-timed transcription policy"
+        )
 
     if stored_definition or stored_queue:
         resource_tier = allowed_targets.get((stored_definition, stored_queue))
@@ -190,7 +224,9 @@ def _project_dispatch_target(
                     "Ordinary job cannot use the admin template candidate target"
                 )
             expected_candidate_tier = None
-            if uses_admin_template_candidate:
+            if uses_unified_template_candidate:
+                expected_candidate_tier = "unified_template_subtitles"
+            elif uses_admin_template_candidate:
                 expected_candidate_tier = "subtitle_templates"
             elif transcription_policy == "elevenlabs_primary_openai_fallback":
                 expected_candidate_tier = "elevenlabs_transcription"
@@ -203,6 +239,7 @@ def _project_dispatch_target(
                 and resource_tier in {
                     "elevenlabs_transcription",
                     "subtitle_templates",
+                    "unified_template_subtitles",
                 }
             ):
                 raise RuntimeError(
@@ -226,6 +263,10 @@ def _project_dispatch_target(
             return legacy_definition, legacy_queue, "legacy", estimated_seconds
         raise RuntimeError("Stored project Batch target is not trusted")
 
+    if uses_unified_template_candidate:
+        raise RuntimeError(
+            "Unified template candidate is missing its pinned Batch target"
+        )
     if uses_admin_template_candidate:
         raise RuntimeError(
             "Admin template candidate is missing its pinned Batch target"
@@ -255,6 +296,35 @@ def _priority_share_identifier(priority_class: object, *values: object) -> str:
 
 def _scheduling_priority(priority_class: object) -> int:
     return 1000 if _priority_class(priority_class) == "paid" else 0
+
+
+def _project_scheduling_overrides(
+    job_queue: str,
+    resource_tier: str,
+    priority_class: object,
+    *identity_values: object,
+) -> dict[str, object]:
+    # The unified v5 initial-render definition runs on the existing Prepare
+    # queue, which intentionally has no fair-share scheduling policy. Keep
+    # every established project payload unchanged and omit these fields only
+    # for the trusted unified tier on its exact configured queue.
+    configured_unified_queue = os.environ.get(
+        "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN",
+        "",
+    ).strip()
+    if (
+        resource_tier == "unified_template_subtitles"
+        and _BATCH_QUEUE_ARN.fullmatch(configured_unified_queue)
+        and job_queue == configured_unified_queue
+    ):
+        return {}
+    return {
+        "shareIdentifier": _priority_share_identifier(
+            priority_class,
+            *identity_values,
+        ),
+        "schedulingPriorityOverride": _scheduling_priority(priority_class),
+    }
 
 
 def _rerender_scheduling_overrides(
@@ -380,7 +450,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
             "mvp_session_id,user_id,preparation_finished_at,planned_short_count,"
             "clip_length_option,batch_job_definition,batch_job_queue,"
             "source_range_selection_enabled,transcription_policy,subtitle_template_id,"
-            "template_snapshot,"
+            "template_snapshot,subtitle_template_snapshot,"
             "dispatch_priority_class"
             f"&id=eq.{encoded_job_id}&limit=1"
         )) or []
@@ -422,11 +492,12 @@ def _submit(payload: dict[str, Any]) -> str | None:
             jobName=f"shorts-project-{job_id}-{suffix}",
             jobQueue=job_queue,
             jobDefinition=job_definition,
-            shareIdentifier=_priority_share_identifier(
+            **_project_scheduling_overrides(
+                job_queue,
+                resource_tier,
                 priority_class,
                 job.get("user_id"), job.get("mvp_session_id"), job_id
             ),
-            schedulingPriorityOverride=_scheduling_priority(priority_class),
             containerOverrides=_render_container_overrides(command),
             retryStrategy={"attempts": 1},
             timeout={
@@ -436,6 +507,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
                         "source_range",
                         "elevenlabs_transcription",
                         "subtitle_templates",
+                        "unified_template_subtitles",
                     }
                     else 7200
                 )

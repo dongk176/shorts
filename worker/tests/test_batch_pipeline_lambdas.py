@@ -70,6 +70,14 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
         "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
         "shorts-mvp-elevenlabs-transcription-canary-production"
     )
+    os.environ["UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"] = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-unified-template-subtitles-canary-production:1"
+    )
+    os.environ["UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"] = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+        "shorts-mvp-prepare-production"
+    )
     os.environ.pop("SUBTITLE_TEMPLATES_PREVIOUS_JOB_DEFINITION_ARN", None)
     os.environ.pop("SUBTITLE_TEMPLATES_PREVIOUS_BATCH_QUEUE_ARN", None)
     os.environ["RERENDER_JOB_DEFINITION"] = "rerender-definition:1"
@@ -497,6 +505,16 @@ def test_project_submission_uses_eight_vcpu_definition_with_idempotent_key() -> 
     assert result == "project-batch-a"
     request, submission_key = module._submit_once.call_args.args
     assert submission_key == "project:job-a:0"
+    assert list(request) == [
+        "jobName",
+        "jobQueue",
+        "jobDefinition",
+        "shareIdentifier",
+        "schedulingPriorityOverride",
+        "containerOverrides",
+        "retryStrategy",
+        "timeout",
+    ]
     assert request["jobQueue"] == os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
     assert request["jobDefinition"] == os.environ[
         "LEGACY_PROJECT_JOB_DEFINITION_ARN"
@@ -674,6 +692,47 @@ def test_source_range_project_and_resume_keep_the_exact_candidate_target() -> No
     assert first_request["timeout"] == resume_request["timeout"] == {
         "attemptDurationSeconds": 18000,
     }
+    for request in (first_request, resume_request):
+        assert request["shareIdentifier"].startswith("freeuser")
+        assert request["schedulingPriorityOverride"] == 0
+
+
+def test_project_scheduling_overrides_only_omit_for_exact_unified_queue() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    unified_queue = os.environ[
+        "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
+    ]
+    expected = {
+        "shareIdentifier": module._priority_share_identifier(
+            "paid", "admin-a", "session-a", "job-a"
+        ),
+        "schedulingPriorityOverride": 1000,
+    }
+
+    assert module._project_scheduling_overrides(
+        unified_queue,
+        "unified_template_subtitles",
+        "paid",
+        "admin-a",
+        "session-a",
+        "job-a",
+    ) == {}
+    assert module._project_scheduling_overrides(
+        unified_queue,
+        "legacy",
+        "paid",
+        "admin-a",
+        "session-a",
+        "job-a",
+    ) == expected
+    assert module._project_scheduling_overrides(
+        os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"],
+        "unified_template_subtitles",
+        "paid",
+        "admin-a",
+        "session-a",
+        "job-a",
+    ) == expected
 
 
 def test_elevenlabs_project_and_resume_keep_the_exact_candidate_target() -> None:
@@ -729,6 +788,9 @@ def test_elevenlabs_project_and_resume_keep_the_exact_candidate_target() -> None
     assert first_request["timeout"] == resume_request["timeout"] == {
         "attemptDurationSeconds": 18000,
     }
+    for request in (first_request, resume_request):
+        assert request["shareIdentifier"].startswith("freeuser")
+        assert request["schedulingPriorityOverride"] == 0
 
 
 def test_subtitle_template_project_and_resume_keep_the_exact_candidate_target() -> None:
@@ -787,6 +849,266 @@ def test_subtitle_template_project_and_resume_keep_the_exact_candidate_target() 
     assert first_request["timeout"] == resume_request["timeout"] == {
         "attemptDurationSeconds": 18000,
     }
+    for request in (first_request, resume_request):
+        assert request["shareIdentifier"].startswith("freeuser")
+        assert request["schedulingPriorityOverride"] == 0
+
+
+def test_unified_template_project_and_resume_keep_the_exact_candidate_target() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    base_job = {
+        "id": "job-unified-template",
+        "pipeline_version": 2,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "admin-a",
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "pop",
+        "template_snapshot": {
+            "id": "template-v5",
+            "config": {"schemaVersion": 5},
+            "version": 1,
+        },
+        "subtitle_template_snapshot": {
+            "schemaVersion": 4,
+            "origin": "unified-template-v5",
+        },
+        "batch_job_definition": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
+        ],
+    }
+    module._submit_once = MagicMock(
+        side_effect=["unified-first", "unified-resume"]
+    )
+    module.patch = MagicMock()
+    module.rest = MagicMock(return_value=[{
+        **base_job,
+        "status": "queued",
+        "project_resume_count": 0,
+        "preparation_finished_at": None,
+    }])
+
+    assert module._submit({
+        "kind": "project", "jobId": "job-unified-template",
+    }) == "unified-first"
+    first_request = module._submit_once.call_args_list[0].args[0]
+
+    module.rest = MagicMock(return_value=[{
+        **base_job,
+        "status": "rendering",
+        "project_resume_count": 1,
+        "preparation_finished_at": "2026-08-24T00:00:00+00:00",
+    }])
+    assert module._submit({
+        "kind": "project_resume", "jobId": "job-unified-template",
+    }) == "unified-resume"
+    resume_request = module._submit_once.call_args_list[1].args[0]
+
+    assert first_request["jobDefinition"] == resume_request["jobDefinition"] == (
+        os.environ["UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"]
+    )
+    assert first_request["jobQueue"] == resume_request["jobQueue"] == (
+        os.environ["UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"]
+    )
+    assert first_request["timeout"] == resume_request["timeout"] == {
+        "attemptDurationSeconds": 18000,
+    }
+    for request in (first_request, resume_request):
+        assert "shareIdentifier" not in request
+        assert "schedulingPriorityOverride" not in request
+
+
+@pytest.mark.parametrize(
+    "template_snapshot",
+    [
+        None,
+        {"config": {"schemaVersion": 4}},
+        {"config": {"schemaVersion": "5"}},
+        {"config": {"version": 5}},
+    ],
+)
+def test_unified_target_rejects_jobs_without_the_canonical_v5_marker(
+    template_snapshot: dict[str, object] | None,
+) -> None:
+    module, _ = _load_lambda("batch_submitter")
+    job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "pop",
+        "template_snapshot": template_snapshot,
+        "subtitle_template_snapshot": {"origin": "unified-template-v5"},
+        "batch_job_definition": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
+        ],
+    }
+
+    with pytest.raises(RuntimeError, match="not trusted"):
+        module._project_dispatch_target(job, resume=False)
+
+
+@pytest.mark.parametrize(
+    "subtitle_snapshot",
+    [
+        {},
+        {"origin": "legacy-caption"},
+    ],
+)
+def test_unified_target_rejects_a_missing_or_mismatched_origin_marker(
+    subtitle_snapshot: dict[str, object],
+) -> None:
+    module, _ = _load_lambda("batch_submitter")
+    job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "pop",
+        "template_snapshot": {"config": {"schemaVersion": 5}},
+        "subtitle_template_snapshot": subtitle_snapshot,
+        "batch_job_definition": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
+        ],
+    }
+
+    with pytest.raises(RuntimeError, match="origin is invalid"):
+        module._project_dispatch_target(job, resume=False)
+
+
+def test_unified_target_rejects_a_missing_subtitle_snapshot() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "pop",
+        "template_snapshot": {"config": {"schemaVersion": 5}},
+        "subtitle_template_snapshot": None,
+        "batch_job_definition": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
+        ],
+    }
+
+    with pytest.raises(TypeError, match="subtitle snapshot is invalid"):
+        module._project_dispatch_target(job, resume=False)
+
+
+@pytest.mark.parametrize(
+    "legacy_job",
+    [
+        {
+            "transcription_policy": "openai_stable",
+            "subtitle_template_id": None,
+            "template_snapshot": {"presetVersion": 3},
+        },
+        {
+            "transcription_policy": "elevenlabs_primary_openai_fallback",
+            "subtitle_template_id": "highlight",
+            "template_snapshot": {"presetVersion": 3},
+        },
+    ],
+)
+def test_ordinary_and_legacy_caption_jobs_cannot_forge_the_unified_target(
+    legacy_job: dict[str, object],
+) -> None:
+    module, _ = _load_lambda("batch_submitter")
+    job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        **legacy_job,
+        "batch_job_definition": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
+        ],
+    }
+
+    with pytest.raises(RuntimeError, match="not trusted"):
+        module._project_dispatch_target(job, resume=False)
+
+
+@pytest.mark.parametrize("target_prefix", ["LEGACY_PROJECT", "SUBTITLE_TEMPLATES"])
+def test_v5_jobs_cannot_forge_an_ordinary_or_legacy_caption_target(
+    target_prefix: str,
+) -> None:
+    module, _ = _load_lambda("batch_submitter")
+    job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "highlight",
+        "template_snapshot": {"config": {"schemaVersion": 5}},
+        "subtitle_template_snapshot": {"origin": "unified-template-v5"},
+        "batch_job_definition": os.environ[
+            f"{target_prefix}_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[f"{target_prefix}_BATCH_QUEUE_ARN"],
+    }
+
+    with pytest.raises(RuntimeError, match="exact immutable Batch target"):
+        module._project_dispatch_target(job, resume=False)
+
+
+def test_invalid_unified_target_is_ignored_for_an_ordinary_job_but_blocks_v5() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    stored_unified_definition = os.environ[
+        "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"
+    ]
+    stored_unified_queue = os.environ[
+        "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
+    ]
+    os.environ["UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"] = "not-an-arn"
+    os.environ["UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"] = ""
+    ordinary_job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "openai_stable",
+        "subtitle_template_id": None,
+        "batch_job_definition": os.environ[
+            "LEGACY_PROJECT_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"],
+    }
+
+    assert module._project_dispatch_target(ordinary_job, resume=False) == (
+        os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"],
+        os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"],
+        "legacy",
+        30,
+    )
+
+    unified_job = {
+        **ordinary_job,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "pop",
+        "template_snapshot": {"config": {"schemaVersion": 5}},
+        "subtitle_template_snapshot": {"origin": "unified-template-v5"},
+        "batch_job_definition": stored_unified_definition,
+        "batch_job_queue": stored_unified_queue,
+    }
+    with pytest.raises(RuntimeError, match="UNIFIED_TEMPLATE_SUBTITLES project"):
+        module._project_dispatch_target(unified_job, resume=False)
 
 
 def test_subtitle_template_previous_definition_stays_allowed_on_primary_queue() -> None:
@@ -1654,6 +1976,7 @@ def _editor_release_manifest(document_version: int = 2) -> dict[str, object]:
             "noto-serif-kr",
             "nanum-myeongjo",
             "ridi-batang",
+            "paperlogy",
         ],
         "capabilities": {"subtitleEditing": True},
     }

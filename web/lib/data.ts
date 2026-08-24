@@ -4,6 +4,7 @@ import { editorDocumentSnapshotSchema } from "@/lib/editor-document-contract";
 import type { EditorDocumentSnapshot } from "@/lib/editor-document-snapshot";
 import { parseCaptionRenderSpec } from "@/lib/caption-render-spec";
 import { hasWordTimedTranscription } from "@/lib/transcription-release";
+import { isUnifiedTemplateSubtitleSnapshot } from "@/lib/template-execution-snapshot";
 import { userFacingErrorMessage } from "@/lib/public-error";
 import type { MvpSession } from "@/lib/session";
 
@@ -76,7 +77,42 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       viral_score,
       hook_title, highlight_reason, channel_display_name, subtitle_segments, subtitles_enabled,
       comment_overlays, template_id, custom_template_id, template_snapshot, video_aspect_ratio, title_font_scale, title_text_styles,
-      subtitle_template_id, caption_render_spec,
+      subtitle_template_id, subtitle_template_snapshot, caption_render_spec,
+      exists (
+        select 1
+        from shorts_mvp.job_transcripts transcript
+        cross join lateral jsonb_array_elements(transcript.words) word
+        where transcript.job_id=generated_shorts.job_id
+          and jsonb_array_length(transcript.words)>0
+          and not exists (
+            select 1
+            from jsonb_array_elements(transcript.words) candidate
+            where jsonb_typeof(candidate->'text') is distinct from 'string'
+              or btrim(candidate->>'text')=''
+              or jsonb_typeof(candidate->'start') is distinct from 'number'
+              or jsonb_typeof(candidate->'end') is distinct from 'number'
+              or case
+                when jsonb_typeof(candidate->'start')='number'
+                  and jsonb_typeof(candidate->'end')='number'
+                then (candidate->>'start')::numeric<0
+                  or (candidate->>'end')::numeric<=(candidate->>'start')::numeric
+                else true
+              end
+          )
+          and case
+            when jsonb_typeof(word->'start')='number'
+              and jsonb_typeof(word->'end')='number'
+            then (word->>'end')::numeric > coalesce(
+              generated_shorts.edit_timeline_start_seconds,
+              generated_shorts.start_seconds
+            )
+              and (word->>'start')::numeric < coalesce(
+                generated_shorts.edit_timeline_end_seconds,
+                generated_shorts.end_seconds
+              )
+            else false
+          end
+      ) as word_timed_subtitles_available,
       title_text_styles_initialized, render_version,
       editor_document,
       rerender_progress, status, expires_at
@@ -123,7 +159,13 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       customTemplateId: row.customTemplateId || null,
       templateSnapshot: row.templateSnapshot || null,
       subtitleTemplateId: row.subtitleTemplateId || null,
+      unifiedTemplateSubtitle: isUnifiedTemplateSubtitleSnapshot(
+        row.subtitleTemplateSnapshot,
+      ),
       captionRenderSpec: parseCaptionRenderSpec(row.captionRenderSpec),
+      wordTimedSubtitlesAvailable: Boolean(
+        row.wordTimedSubtitlesAvailable,
+      ),
       videoAspectRatio: row.videoAspectRatio || "1:1",
       titleFontScale: Number(row.titleFontScale),
       titleTextStyles: row.titleTextStyles || [],
@@ -178,7 +220,29 @@ export async function getProjectByNumber(
   projectNumber: number,
 ): Promise<VideoJob | null> {
   const rows = await db`
-    select * from shorts_mvp.video_jobs
+    select job.*,
+      exists (
+        select 1
+        from shorts_mvp.job_transcripts transcript
+        where transcript.job_id=job.id
+          and jsonb_array_length(transcript.words)>0
+          and not exists (
+            select 1
+            from jsonb_array_elements(transcript.words) word
+            where jsonb_typeof(word->'text') is distinct from 'string'
+              or btrim(word->>'text')=''
+              or jsonb_typeof(word->'start') is distinct from 'number'
+              or jsonb_typeof(word->'end') is distinct from 'number'
+              or case
+                when jsonb_typeof(word->'start')='number'
+                  and jsonb_typeof(word->'end')='number'
+                then (word->>'start')::numeric<0
+                  or (word->>'end')::numeric<=(word->>'start')::numeric
+                else true
+              end
+          )
+      ) as valid_word_timing_available
+    from shorts_mvp.video_jobs job
     where project_number=${projectNumber} and user_deleted_at is null and (
       (${session.userId}::uuid is not null and user_id=${session.userId})
       or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
@@ -263,11 +327,13 @@ async function mapJobs(db: Sql, rows: Row[]): Promise<VideoJob[]> {
     renderSuccessPercent: row.renderSuccessPercent == null
       ? null
       : Number(row.renderSuccessPercent),
-    wordTimedSubtitlesAvailable: hasWordTimedTranscription({
-      policy: row.transcriptionPolicy,
-      provider: row.transcriptionProviderUsed,
-      model: row.transcriptionModelUsed,
-    }),
+    wordTimedSubtitlesAvailable: typeof row.validWordTimingAvailable === "boolean"
+      ? row.validWordTimingAvailable
+      : hasWordTimedTranscription({
+          policy: row.transcriptionPolicy,
+          provider: row.transcriptionProviderUsed,
+          model: row.transcriptionModelUsed,
+        }),
     status: row.status,
     stage: row.stage,
     progress: row.progress,

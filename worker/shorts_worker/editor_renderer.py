@@ -77,6 +77,7 @@ EDITOR_FONT_FILES = {
     EditorFontId.JALNAN_2: "Jalnan2-Regular.woff2",
     EditorFontId.GODO: "Godo-Bold.ttf",
     EditorFontId.GALMURI_9: "Galmuri9-Regular.ttf",
+    EditorFontId.PAPERLOGY: "Paperlogy-7Bold.ttf",
 }
 EDITOR_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
 EDITOR_FONT_DEFAULT_VARIATION_WEIGHTS = {
@@ -106,7 +107,7 @@ class EditorSubtitleStyle:
 def editor_subtitle_style(document: EditorDocument) -> EditorSubtitleStyle:
     render_subtitles = (
         document.render_spec.subtitles
-        if document.render_spec and document.render_spec.version == 2
+        if document.render_spec and document.render_spec.version in {2, 3}
         else None
     )
     if render_subtitles is None:
@@ -119,7 +120,10 @@ def editor_subtitle_style(document: EditorDocument) -> EditorSubtitleStyle:
             EDITOR_SUBTITLE_DEFAULT_MARGIN_V - render_subtitles.offset_y
         ),
         font_size=round(
-            EDITOR_SUBTITLE_DEFAULT_FONT_SIZE * render_subtitles.scale
+            render_subtitles.font_size
+            if document.render_spec and document.render_spec.version == 3
+            and render_subtitles.font_size is not None
+            else EDITOR_SUBTITLE_DEFAULT_FONT_SIZE * render_subtitles.scale
         ),
     )
 
@@ -214,7 +218,19 @@ def _custom_template_config(document: EditorDocument) -> CustomTemplateConfig | 
 
 def _editor_caption_layout(
     caption_render_spec: dict[str, object] | None,
+    *,
+    custom_template_config: CustomTemplateConfig | None = None,
 ) -> VideoLayout | None:
+    # Template v5 owns every non-caption layer's base geometry. The caption
+    # render spec is still authoritative for the subtitle layer itself, but it
+    # must not restore the legacy full-width video/title/channel composition
+    # during an editor re-render. Keep the old composition behavior for
+    # non-custom and legacy custom documents.
+    if (
+        custom_template_config is not None
+        and custom_template_config.schema_version == 5
+    ):
+        return None
     return (
         caption_video_layout(caption_render_spec)
         if caption_render_spec is not None
@@ -222,12 +238,24 @@ def _editor_caption_layout(
     )
 
 
+def _editor_caption_composition_spec(
+    caption_render_spec: dict[str, object] | None,
+    *,
+    caption_overlay_only: bool,
+) -> dict[str, object] | None:
+    """Keep dynamic v3 captions from changing an existing template's geometry."""
+    return None if caption_overlay_only else caption_render_spec
+
+
 def editor_video_frame(
     document: EditorDocument,
     caption_render_spec: dict[str, object] | None = None,
 ) -> EditorVideoFrame:
     config = _custom_template_config(document)
-    caption_layout = _editor_caption_layout(caption_render_spec)
+    caption_layout = _editor_caption_layout(
+        caption_render_spec,
+        custom_template_config=config,
+    )
     if caption_layout is not None:
         base_x = 0
         base_y = caption_layout.video_y
@@ -370,7 +398,7 @@ def editor_highlight_caption_spec(
         return None
     render_subtitles = (
         document.render_spec.subtitles
-        if document.render_spec and document.render_spec.version == 2
+        if document.render_spec and document.render_spec.version in {2, 3}
         else None
     )
     try:
@@ -393,6 +421,16 @@ def editor_highlight_caption_spec(
                 if render_subtitles and render_subtitles.font_id
                 else None
             ),
+            font_size=(
+                round(render_subtitles.font_size)
+                if render_subtitles and render_subtitles.font_size is not None
+                else None
+            ),
+            text_color=(
+                render_subtitles.color
+                if render_subtitles and render_subtitles.color
+                else "#FFFFFF"
+            ),
         )
     except RenderError:
         raise
@@ -405,7 +443,7 @@ def editor_highlight_subtitles_enabled(document: EditorDocument) -> bool:
         document.subtitles.enabled
         and document.version == 3
         and document.render_spec is not None
-        and document.render_spec.version == 2
+        and document.render_spec.version in {2, 3}
         and document.render_spec.subtitles is not None
     )
 
@@ -445,11 +483,25 @@ def retime_editor_caption_spec(
 
     render_subtitles = (
         document.render_spec.subtitles
-        if document.render_spec and document.render_spec.version == 2
+        if document.render_spec and document.render_spec.version in {2, 3}
         else None
     )
     offset_y = render_subtitles.offset_y if render_subtitles else 0.0
     scale = render_subtitles.scale if render_subtitles else 1.0
+    render_spec_version = document.render_spec.version if document.render_spec else 1
+    source_style = spec.get("style")
+    if not isinstance(source_style, dict):
+        raise RenderError("원본 자막 스타일이 올바르지 않습니다.")
+    source_font_size = float(source_style.get("fontSize") or 0)
+    if source_font_size <= 0:
+        raise RenderError("원본 자막 글자 크기가 올바르지 않습니다.")
+    target_font_size = (
+        float(render_subtitles.font_size)
+        if render_spec_version == 3
+        and render_subtitles is not None
+        and render_subtitles.font_size is not None
+        else source_font_size * scale
+    )
     source_font = spec.get("font")
     source_font_id = (
         source_font.get("fontId")
@@ -498,8 +550,9 @@ def retime_editor_caption_spec(
         )
         for cue in source_cues
     )
+    reflowed_cues = supports_word_reflow or bool(cue_edits)
     try:
-        if supports_word_reflow or cue_edits:
+        if reflowed_cues:
             spec["cues"] = reflow_caption_cues_for_clips(
                 source_cues,
                 template_id=str(spec["templateId"]),
@@ -508,6 +561,11 @@ def retime_editor_caption_spec(
                 cue_edits=cue_edits,
                 fps=fps,
                 font_id=caption_font_id,
+                font_size=round(
+                    target_font_size
+                    if render_spec_version == 3
+                    else source_font_size
+                ),
             )
         else:
             # Schema-v3 probes and early stored specs predate per-word frame
@@ -565,9 +623,17 @@ def retime_editor_caption_spec(
         raise RenderError("원본 자막 스타일이 올바르지 않습니다.")
     if render_subtitles and render_subtitles.accent_color:
         style["accentColor"] = render_subtitles.accent_color
-    style["fontSize"] = round(float(style.get("fontSize") or 0) * scale, 3)
+    if render_subtitles and render_subtitles.color:
+        style["textColor"] = render_subtitles.color
+    style["fontSize"] = round(target_font_size, 3)
+    font_geometry_scale = (
+        1.0
+        if render_spec_version == 3 and reflowed_cues
+        else target_font_size / source_font_size
+    )
     style["outlineWidth"] = round(
-        float(style.get("outlineWidth") or 0) * scale,
+        float(style.get("outlineWidth") or 0)
+        * (target_font_size / source_font_size),
         3,
     )
 
@@ -612,13 +678,16 @@ def retime_editor_caption_spec(
         if "centerY" in cue:
             cue["centerY"] = shifted_y(cue["centerY"])
         if "fontSize" in cue:
-            cue["fontSize"] = round(float(cue["fontSize"]) * scale, 3)
+            cue["fontSize"] = round(
+                float(cue["fontSize"]) * font_geometry_scale,
+                3,
+            )
         for word_value in words:
             if not isinstance(word_value, dict):
                 raise RenderError("원본 자막 어절이 올바르지 않습니다.")
             if "fontSize" in word_value:
                 word_value["fontSize"] = round(
-                    float(word_value["fontSize"]) * scale,
+                    float(word_value["fontSize"]) * font_geometry_scale,
                     3,
                 )
             if "centerX" in word_value:
@@ -743,7 +812,9 @@ def _draw_styled_title_content(
     font = load_editor_font(font_id, font_size, weight=font_weight)
     probe = Image.new("RGBA", (CANVAS_WIDTH, 500), (0, 0, 0, 0))
     draw = ImageDraw.Draw(probe)
-    if custom_config is not None and render_title is None:
+    if custom_config is not None and (
+        render_title is None or custom_config.schema_version == 5
+    ):
         while (
             font_size > 20
             and max(_text_size(draw, line, font)[0] for line in lines)
@@ -883,10 +954,17 @@ def create_editor_title_layer(
         canvas.save(output_path)
         return output_path
     config = _custom_template_config(document)
-    caption_layout = _editor_caption_layout(caption_render_spec)
+    caption_layout = _editor_caption_layout(
+        caption_render_spec,
+        custom_template_config=config,
+    )
     font_id = document.overlays.fonts["title"]
     render_title = document.render_spec.title if document.render_spec else None
-    if render_title is not None:
+    if config is not None and config.schema_version == 5:
+        base_font_size = max(1, round(config.title.font_size * document.title.font_scale))
+        center_x = config.title.x
+        center_y = config.title.y
+    elif render_title is not None:
         base_font_size = max(1, round(render_title.font_size))
         center_x = CANVAS_WIDTH / 2
         if caption_layout is not None:
@@ -963,6 +1041,7 @@ def create_editor_title_layer(
     resolved_title_text_styles = None
     if (
         caption_render_spec is not None
+        and not (config is not None and config.schema_version == 5)
         and document.video.aspect_ratio is VideoAspectRatio.FULL_VERTICAL
     ):
         style = TEMPLATE_STYLES[document.template.id]
@@ -1017,7 +1096,10 @@ def create_editor_channel_layer(
         canvas.save(output_path)
         return output_path
     config = _custom_template_config(document)
-    caption_layout = _editor_caption_layout(caption_render_spec)
+    caption_layout = _editor_caption_layout(
+        caption_render_spec,
+        custom_template_config=config,
+    )
     font_id = document.overlays.fonts["channel"]
     if caption_layout is not None:
         base_font_size = 48
@@ -1292,7 +1374,10 @@ def _base_comment_y(
     caption_render_spec: dict[str, object] | None = None,
 ) -> int:
     config = _custom_template_config(document)
-    caption_layout = _editor_caption_layout(caption_render_spec)
+    caption_layout = _editor_caption_layout(
+        caption_render_spec,
+        custom_template_config=config,
+    )
     if caption_layout is not None:
         return caption_layout.video_y + caption_layout.video_height
     if config is not None:
@@ -1639,6 +1724,7 @@ class EditorDocumentRenderer:
         work_dir: Path,
         channel_thumbnail_path: Path | None,
         caption_render_spec: dict[str, object] | None = None,
+        caption_overlay_only: bool = False,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         assets_dir = work_dir / "editor-assets"
@@ -1655,7 +1741,11 @@ class EditorDocumentRenderer:
             stream.get("codec_type") == "audio"
             for stream in probe.get("streams", [])
         )
-        frame = editor_video_frame(document, caption_render_spec)
+        caption_composition_spec = _editor_caption_composition_spec(
+            caption_render_spec,
+            caption_overlay_only=caption_overlay_only,
+        )
+        frame = editor_video_frame(document, caption_composition_spec)
         background_path = create_editor_background(
             document,
             assets_dir / "background.png",
@@ -1674,19 +1764,21 @@ class EditorDocumentRenderer:
         title_path = create_editor_title_layer(
             document,
             assets_dir / "title.png",
-            title_accent_color=original_caption_accent,
-            caption_render_spec=caption_render_spec,
+            title_accent_color=(
+                None if caption_overlay_only else original_caption_accent
+            ),
+            caption_render_spec=caption_composition_spec,
         )
         channel_path = create_editor_channel_layer(
             document,
             assets_dir / "channel.png",
             channel_thumbnail_path,
-            caption_render_spec,
+            caption_composition_spec,
         )
         comment_assets = create_editor_comment_layers(
             document,
             assets_dir,
-            caption_render_spec,
+            caption_composition_spec,
         )
         render_text_specs = {
             item.id: item
@@ -1779,7 +1871,7 @@ class EditorDocumentRenderer:
                 document,
                 frame,
                 fps,
-                caption_render_spec,
+                caption_composition_spec,
             ),
         ]
         current_label = "scene0"

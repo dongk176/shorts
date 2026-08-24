@@ -1,5 +1,11 @@
 # Subtitle template admin canary
 
+> Current-operation note: the rollout steps below document the original
+> subtitle-template suite. That suite may already be public in production.
+> Never reset its public/runtime flags to the historical values in this
+> document while releasing unified v5. Unified v5 is activated and rolled back
+> only with `unified_template_subtitles_canary`.
+
 The three finished subtitle templates are isolated from every stable project,
 source-range, editor, and ElevenLabs-transcription route. A candidate is usable
 only when all of these controls agree:
@@ -94,6 +100,14 @@ shortcut.
 
 ## Safe activation and rollback
 
+The unified v5 template subtitle canary has an additional independent runtime
+flag, `unified_template_subtitles_canary`. Its additive migration seeds the flag
+as `false` without changing `subtitle_templates` or any public flag. Enable it
+only after the capable editor canary and designated administrator tester are in
+place. To stop only new unified v5 work, set
+`unified_template_subtitles_canary=false`; do not change `subtitle_templates`,
+because that switch also controls the existing subtitle-template suite.
+
 1. Apply `202608080001_subtitle_templates_admin_canary.sql`; verify both flags
    are still `false`.
 2. Register and scan the immutable candidate image and Job Definition.
@@ -109,7 +123,9 @@ shortcut.
 6. Set only `subtitle_templates=true` in the DB, leaving
    `subtitle_templates_public=false`, and run the admitted-admin canary.
 
-To stop new caption work, set `subtitle_templates=false` first. The web master
+To stop the entire existing subtitle-template suite, set
+`subtitle_templates=false` first. Do not use this for a unified-v5-only
+rollback. The web master
 may remain enabled because the DB gate then returns no capability; changing the
 Vercel environment is not required for emergency rollback. Do not change or
 terminate healthy pinned jobs. The nullable schema additions and minimal

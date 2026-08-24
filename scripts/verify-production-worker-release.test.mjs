@@ -5,11 +5,17 @@ import {
   validateReleasedDefinitions,
   validateWorkerAttemptBudget,
 } from "./verify-production-worker-release.mjs";
-import { projectBatchTargets } from "./verify-project-batch-targets.mjs";
+import {
+  projectBatchTargets,
+  STABLE_PROJECT_TARGET_PREFIXES,
+} from "./verify-project-batch-targets.mjs";
 import { productionWorkerEnvironment } from "./production-worker-release.mjs";
 
 const release = readProductionWorkerRelease();
-const targets = projectBatchTargets(productionWorkerEnvironment(release));
+const targets = projectBatchTargets(
+  productionWorkerEnvironment(release),
+  STABLE_PROJECT_TARGET_PREFIXES,
+);
 
 test("requires every active definition to use the exact image digest and one Batch attempt", () => {
   const definitions = Object.values(targets).map(({ definition }) => ({

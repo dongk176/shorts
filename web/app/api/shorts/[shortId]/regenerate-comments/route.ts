@@ -11,6 +11,11 @@ import { editorRenderingV2Enabled } from "@/lib/editor-rendering-release";
 import { apiError, HttpError } from "@/lib/http";
 import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
+import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import {
+  assertUnifiedTemplateSubtitleCanaryAccess,
+  isUnifiedTemplateSubtitleSnapshot,
+} from "@/lib/template-execution-snapshot";
 import { getUsageSnapshot } from "@/lib/usage";
 
 export const maxDuration = 60;
@@ -85,7 +90,8 @@ export async function POST(
           generated_short.highlight_reason,
           generated_short.subtitle_segments,
           generated_short.status,
-          generated_short.subtitle_template_id
+          generated_short.subtitle_template_id,
+          generated_short.subtitle_template_snapshot
         from shorts_mvp.generated_shorts generated_short
         join shorts_mvp.video_jobs job on job.id=generated_short.job_id
         where generated_short.id=${shortId}
@@ -95,7 +101,6 @@ export async function POST(
           and generated_short.deleted_at is null
           and generated_short.expires_at>clock_timestamp()
           and generated_short.status='ready'
-          and generated_short.subtitle_template_id is null
         limit 1
       `,
       getUsageSnapshot(db, session),
@@ -108,6 +113,7 @@ export async function POST(
       subtitleSegments: TranscriptSegment[];
       status: string;
       subtitleTemplateId: string | null;
+      subtitleTemplateSnapshot: unknown;
     } | undefined;
     if (!generatedShort) {
       throw new HttpError(
@@ -117,10 +123,17 @@ export async function POST(
       );
     }
     if (generatedShort.subtitleTemplateId) {
-      throw new HttpError(
-        409,
-        "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
-        "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+      if (!isUnifiedTemplateSubtitleSnapshot(
+        generatedShort.subtitleTemplateSnapshot,
+      )) {
+        throw new HttpError(
+          409,
+          "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
+          "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+        );
+      }
+      assertUnifiedTemplateSubtitleCanaryAccess(
+        await getSubtitleTemplateAccess(db, session.userId),
       );
     }
 

@@ -231,4 +231,35 @@ describe("editor document v3 render specification", () => {
     }
     expect(parsedApply.renderSpec.subtitles.fontId).toBe("do-hyeon");
   });
+
+  it("accepts v3 absolute subtitle size and regular text color", () => {
+    const fixture = JSON.parse(readFileSync(
+      path.resolve(process.cwd(), "../test-fixtures/editor-document-v3.json"),
+      "utf8",
+    ));
+    fixture.renderSpec.version = 3;
+    fixture.renderSpec.subtitles = {
+      centerX: 540,
+      offsetY: -180,
+      scale: 1,
+      fontId: "do-hyeon",
+      fontSize: 88,
+      color: "#F8FAFC",
+      accentColor: "#EF4444",
+    };
+
+    const parsed = editorDocumentSnapshotSchema.parse(fixture);
+    expect(parsed.version).toBe(3);
+    if (parsed.version !== 3 || parsed.renderSpec.version !== 3) {
+      throw new Error("v3 subtitle render spec was not preserved");
+    }
+    expect(parsed.renderSpec.subtitles).toMatchObject({
+      centerX: 540,
+      fontSize: 88,
+      color: "#F8FAFC",
+    });
+
+    fixture.renderSpec.subtitles.fontSize = 121;
+    expect(() => editorDocumentSnapshotSchema.parse(fixture)).toThrow();
+  });
 });

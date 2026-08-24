@@ -30,20 +30,19 @@ const applyEditRoute = readFileSync(
 
 describe("editor fonts", () => {
   it("exposes the bundled commercially usable Korean font choices", () => {
-    expect(editorFontOptions).toHaveLength(19);
-    expect(new Set(editorFontOptions.map((font) => font.id)).size).toBe(19);
+    expect(editorFontOptions).toHaveLength(20);
+    expect(new Set(editorFontOptions.map((font) => font.id)).size).toBe(20);
   });
 
-  it("allows every visible editor font in the promoted stable renderer", () => {
+  it("keeps candidate-only fonts out of the promoted stable renderer", () => {
     expect(stableEditorFontOptions.map((font) => font.id))
-      .toEqual(editorFontOptions.map((font) => font.id));
-    expect(stableEditorFontIds).toEqual(
-      editorFontOptions.map((font) => font.id),
-    );
+      .toEqual(stableEditorFontIds);
+    expect(stableEditorFontIds).not.toContain("paperlogy");
     expect(isStableEditorFontId("pretendard")).toBe(true);
     expect(isStableEditorFontId("spoqa-han-sans-neo")).toBe(true);
     expect(isStableEditorFontId("jua")).toBe(true);
     expect(isStableEditorFontId("ridi-batang")).toBe(true);
+    expect(isStableEditorFontId("paperlogy")).toBe(false);
     expect(isStableEditorFontId(null)).toBe(false);
     expect(applyEditRoute).not.toContain("EDITOR_FONT_CANARY_ONLY");
     expect(applyEditRoute).not.toContain("관리자 테스트 편집기");
@@ -68,6 +67,7 @@ describe("editor fonts", () => {
       "galmuri-9",
       "black-han-sans",
       "godo",
+      "paperlogy",
       "gmarket-sans",
       "nanum-square-neo",
       "s-core-dream",
@@ -81,6 +81,7 @@ describe("editor fonts", () => {
 
   it("resolves a selected font to its bundled editor family", () => {
     expect(editorFontFamily("black-han-sans")).toContain("Editor Black Han Sans");
+    expect(editorFontFamily("paperlogy")).toContain("Editor Paperlogy");
     expect(editorFontLabel("spoqa-han-sans-neo")).toBe("스포카 한 산스");
   });
 

@@ -17,6 +17,7 @@ import {
 import type { EditorDocumentJsonObject } from "@/lib/editor-document-snapshot";
 import {
   createEditorRenderSpec,
+  EDITOR_RENDER_SPEC_LEGACY_VERSION,
   EDITOR_RENDER_SPEC_VERSION,
 } from "@/lib/editor-render-spec";
 import {
@@ -25,6 +26,7 @@ import {
   type EditorReleaseAssignment,
   type RequestedEditorRelease,
 } from "@/lib/editor-rendering-release";
+import { isStableEditorFontId } from "@/lib/editor-fonts";
 import { resolveEditedTemplateSelection } from "@/lib/edit-template-selection";
 import { apiError, HttpError } from "@/lib/http";
 import {
@@ -43,6 +45,14 @@ import {
 } from "@/lib/onboarding-welcome";
 import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
+import {
+  getSubtitleTemplateAccess,
+  lockSubtitleTemplateAccess,
+} from "@/lib/subtitle-template-release";
+import {
+  assertUnifiedTemplateSubtitleCanaryAccess,
+  isUnifiedTemplateSubtitleSnapshot,
+} from "@/lib/template-execution-snapshot";
 
 const hexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
 const titleTextStyle = z.object({
@@ -134,7 +144,9 @@ type EditorExistingRow = {
   startSeconds: number;
   endSeconds: number;
   subtitleTemplateId: string | null;
+  subtitleTemplateSnapshot: unknown;
   captionRenderSpec: unknown;
+  subtitlesEnabled: boolean;
   channelThumbnailUrl: string | null;
   editorDocument: ValidatedEditorDocumentSnapshot | null;
   wordTimedSubtitlesAvailable: boolean;
@@ -147,6 +159,20 @@ function editorSnapshotHash(document: ValidatedEditorDocumentSnapshot) {
 
 function sameTimelineSecond(left: number, right: number) {
   return Math.abs(left - right) <= RANGE_EDIT_BOUNDARY_TOLERANCE_SECONDS;
+}
+
+function usesCandidateOnlyEditorFont(
+  document: ValidatedEditorDocumentSnapshot,
+) {
+  return [
+    document.overlays.fonts.title,
+    document.overlays.fonts.channel,
+    ...document.overlays.textOverlays.map((overlay) => overlay.fontId),
+    ...(document.version === 3
+      && document.renderSpec.version !== EDITOR_RENDER_SPEC_LEGACY_VERSION
+      ? [document.renderSpec.subtitles.fontId]
+      : []),
+  ].some((fontId) => fontId != null && !isStableEditorFontId(fontId));
 }
 
 async function applyEditorDocument({
@@ -179,7 +205,7 @@ async function applyEditorDocument({
   }
   if (
     requestedDocument.version === 3
-    && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+    && requestedDocument.renderSpec.version !== EDITOR_RENDER_SPEC_LEGACY_VERSION
     && !subtitleEditingReleaseEnabled(release)
   ) {
     throw new HttpError(
@@ -190,22 +216,57 @@ async function applyEditorDocument({
   }
   const billing = await getBillingSummary(db, session.userId);
   assertPaidProjectActionAccess(billing, "edit");
+  const requestedClipWindows = requestedDocument.video.clips.map((clip) => ({
+    sourceStartSeconds: clip.sourceStartSeconds,
+    sourceEndSeconds: clip.sourceEndSeconds,
+  }));
   const existingRows = await db`
     select s.id,s.job_id,s.mvp_session_id,s.status,s.render_version,
       s.duration_seconds,s.template_id,s.custom_template_id,s.template_snapshot,
       s.video_aspect_ratio,s.edit_timeline_s3_key,
       s.edit_timeline_start_seconds,s.edit_timeline_end_seconds,
       s.clean_clip_s3_key,s.start_seconds,s.end_seconds,
-      s.subtitle_template_id,s.caption_render_spec,s.editor_document,j.channel_thumbnail_url,
-      (
-        j.transcription_policy='elevenlabs_primary_openai_fallback'
-        and (
-          j.transcription_provider_used='elevenlabs'
-          or (
-            j.transcription_provider_used in ('openai','mixed')
-            and lower(coalesce(j.transcription_model_used,'')) like '%whisper%'
+      s.subtitle_template_id,s.subtitle_template_snapshot,s.caption_render_spec,
+      s.subtitles_enabled,s.editor_document,j.channel_thumbnail_url,
+      exists (
+        select 1
+        from shorts_mvp.job_transcripts transcript
+        cross join lateral jsonb_array_elements(transcript.words) word
+        cross join lateral jsonb_array_elements(
+          ${db.json(requestedClipWindows)}::jsonb
+        ) clip
+        where transcript.job_id=j.id
+          and jsonb_array_length(transcript.words)>0
+          and not exists (
+            select 1
+            from jsonb_array_elements(transcript.words) word
+            where jsonb_typeof(word->'text') is distinct from 'string'
+              or btrim(word->>'text')=''
+              or jsonb_typeof(word->'start') is distinct from 'number'
+              or jsonb_typeof(word->'end') is distinct from 'number'
+              or case
+                when jsonb_typeof(word->'start')='number'
+                  and jsonb_typeof(word->'end')='number'
+                then (word->>'start')::numeric<0
+                  or (word->>'end')::numeric<=(word->>'start')::numeric
+                else true
+              end
           )
-        )
+          and case
+            when jsonb_typeof(word->'start')='number'
+              and jsonb_typeof(word->'end')='number'
+              and jsonb_typeof(clip->'sourceStartSeconds')='number'
+              and jsonb_typeof(clip->'sourceEndSeconds')='number'
+            then (word->>'end')::numeric > coalesce(
+              s.edit_timeline_start_seconds,
+              s.start_seconds
+            ) + (clip->>'sourceStartSeconds')::numeric
+              and (word->>'start')::numeric < coalesce(
+                s.edit_timeline_start_seconds,
+                s.start_seconds
+              ) + (clip->>'sourceEndSeconds')::numeric
+            else false
+          end
       ) as word_timed_subtitles_available,
       exists (
         select 1
@@ -241,6 +302,16 @@ async function applyEditorDocument({
   if (!existing) {
     throw new HttpError(404, "편집 가능한 쇼츠 영상을 찾을 수 없습니다.");
   }
+  const unifiedTemplateSubtitleOutput = isUnifiedTemplateSubtitleSnapshot(
+    existing.subtitleTemplateSnapshot,
+  );
+  const unifiedSubtitleEditRequested = unifiedTemplateSubtitleOutput || (
+    requestedDocument.version === 3
+    && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+  );
+  const candidateOnlyFontRequested = usesCandidateOnlyEditorFont(
+    requestedDocument,
+  );
   if (
     existing.subtitleTemplateId
     && !subtitleEditingReleaseEnabled(release)
@@ -251,16 +322,9 @@ async function applyEditorDocument({
       "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
     );
   }
-  if (
-    requestedDocument.version === 3
-    && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
-    && !existing.subtitleTemplateId
-    && !existing.wordTimedSubtitlesAvailable
-  ) {
-    throw new HttpError(
-      409,
-      "정확한 단어 타임스탬프가 없는 프로젝트에서는 자막을 편집할 수 없습니다.",
-      "EDITOR_WORD_TIMED_SUBTITLES_REQUIRED",
+  if (unifiedSubtitleEditRequested || candidateOnlyFontRequested) {
+    assertUnifiedTemplateSubtitleCanaryAccess(
+      await getSubtitleTemplateAccess(db, session.userId),
     );
   }
   const storedCaptionRenderSpec = existing.subtitleTemplateId
@@ -269,20 +333,58 @@ async function applyEditorDocument({
   const captionRenderSpec = storedCaptionRenderSpec
     ? captionRenderSpecForEditor(storedCaptionRenderSpec)
     : null;
-  if (existing.subtitleTemplateId) {
-    if (
-      !captionRenderSpec
-      || captionRenderSpec.templateId !== existing.subtitleTemplateId
-    ) {
+  if (
+    captionRenderSpec
+    && existing.subtitleTemplateId
+    && captionRenderSpec.templateId !== existing.subtitleTemplateId
+  ) {
+    throw new HttpError(
+      409,
+      "원본 자막 렌더 정보를 찾을 수 없습니다.",
+      "CAPTION_RENDER_SPEC_MISSING",
+    );
+  }
+  if (
+    requestedDocument.version === 3
+    && requestedDocument.renderSpec.version !== EDITOR_RENDER_SPEC_LEGACY_VERSION
+    && requestedDocument.subtitles.enabled
+    && !captionRenderSpec
+    && !existing.wordTimedSubtitlesAvailable
+  ) {
+    throw new HttpError(
+      409,
+      "정확한 단어 타임스탬프가 없는 프로젝트에서는 자막을 편집할 수 없습니다.",
+      "EDITOR_WORD_TIMED_SUBTITLES_REQUIRED",
+    );
+  }
+  if (
+    requestedDocument.version === 3
+    && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+    && !captionRenderSpec
+    && (requestedDocument.renderSpec.subtitles.cueEdits?.length || 0) > 0
+  ) {
+    throw new HttpError(
+      400,
+      "정확한 자막 구간이 저장되지 않은 영상에서는 자막 문구를 수정할 수 없습니다.",
+      "EDITOR_DYNAMIC_CAPTION_TEXT_EDIT_UNSUPPORTED",
+    );
+  }
+  if (
+    requestedDocument.subtitles.enabled
+    && !existing.subtitlesEnabled
+    && !captionRenderSpec
+    && !existing.wordTimedSubtitlesAvailable
+  ) {
       throw new HttpError(
         409,
-        "원본 자막 렌더 정보를 찾을 수 없습니다.",
-        "CAPTION_RENDER_SPEC_MISSING",
+        "유효한 단어 타이밍이 없어 새 자막을 켤 수 없습니다.",
+        "EDITOR_WORD_TIMED_SUBTITLES_REQUIRED",
       );
-    }
+  }
+  if (captionRenderSpec) {
     if (
       requestedDocument.version === 3
-      && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+      && requestedDocument.renderSpec.version !== EDITOR_RENDER_SPEC_LEGACY_VERSION
       && (() => {
         const sourceCueCounts = new Map<number, number>();
         captionRenderSpec.cues.forEach((cue, cueIndex) => {
@@ -509,6 +611,11 @@ async function applyEditorDocument({
         409,
         "자막 영상의 관리자 편집 권한이 변경되었습니다. 화면을 다시 열어 주세요.",
         "EDITOR_RELEASE_CHANGED",
+      );
+    }
+    if (unifiedSubtitleEditRequested || candidateOnlyFontRequested) {
+      assertUnifiedTemplateSubtitleCanaryAccess(
+        await lockSubtitleTemplateAccess(tx, session.userId),
       );
     }
     persistedRelease = lockedRelease;

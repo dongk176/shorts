@@ -58,7 +58,10 @@ test("release switches default to legacy and v2 saving is server-authorized", as
     resolver,
     /if \(!editorRenderingV2MasterEnabled\(environment\) \|\| !userId\) \{\s+return legacyAssignment;/,
   );
-  assert.match(page, /editorRelease = await resolveEditorRelease/);
+  assert.match(
+    page,
+    /resolveEditorRelease\(db, session\.userId\)[\s\S]*editorRelease = resolvedEditorRelease/,
+  );
   assert.match(resolver, /coalesce\(release_user\.is_admin,false\) as user_is_admin/);
   assert.match(
     resolver,
@@ -155,6 +158,10 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(workflow, /EDITOR_RELEASE_IMAGE_DIGEST: \$\{\{ steps\.build\.outputs\.digest \}\}/);
   assert.match(workflow, /register-editor-release-job\.sh \\\s+isolated/);
   assert.match(workflow, /register-editor-release-job\.sh \\\s+production/);
+  assert.match(
+    workflow,
+    /register-editor-release-job\.sh \\\s+unified-template-subtitles \\\s+"\$UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION"/,
+  );
   assert.match(workflow, /editor-release-probe/);
   assert.match(workflow, /make verify/);
   assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_URL/);
@@ -162,10 +169,28 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(workflow, /PRODUCTION_SUPABASE_PROJECT_REF/);
   assert.match(
     workflow,
-    /node scripts\/apply-supabase\.mjs \\\s+202607310003_editor_release_channels\.sql \\\s+202608010001_editor_render_canary_outbox\.sql \\\s+202608080001_subtitle_templates_admin_canary\.sql \\\s+202608110001_editor_subtitle_editing_capability\.sql/,
+    /node scripts\/apply-supabase\.mjs \\\s+202607310003_editor_release_channels\.sql \\\s+202608010001_editor_render_canary_outbox\.sql \\\s+202608080001_subtitle_templates_admin_canary\.sql \\\s+202608110001_editor_subtitle_editing_capability\.sql \\\s+202608240002_unified_template_subtitles_canary_flag\.sql/,
   );
   assert.doesNotMatch(workflow, /node scripts\/apply-supabase\.mjs\s*\n\s*$/m);
   assert.match(workflow, /EDITOR_RELEASE_ECR_REPOSITORY_URI/);
+  assert.match(
+    workflow,
+    /UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION: \$\{\{ vars\.UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION \|\| 'shorts-mvp-project-heavy-fargate-production' \}\}/,
+  );
+  assert.match(
+    workflow,
+    /UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN: \$\{\{ vars\.UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN \}\}/,
+  );
+  assert.match(
+    workflow,
+    /job-queue\/shorts-mvp-prepare-production\$/,
+  );
+  assert.match(
+    workflow,
+    /UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN: \$\{\{ steps\.unified-template-subtitles-definition\.outputs\.unified_template_subtitles_job_definition_arn \}\}/,
+  );
+  assert.match(workflow, /GITHUB_STEP_SUMMARY/);
+  assert.doesNotMatch(workflow, /(?:create|update)-job-queue/);
   assert.match(
     workflow,
     /EDITOR_RELEASE_BUILD_ROLE_ARN: \$\{\{ vars\.EDITOR_RELEASE_BUILD_ROLE_ARN \}\}/,
@@ -173,7 +198,7 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/codex\/editor-v2-canary-release' \|\| github\.ref == 'refs\/heads\/codex\/editor-v3-fidelity-canary-20260805'/,
+    /github\.ref == 'refs\/heads\/codex\/unified-template-subtitles-admin-canary-20260824'/,
   );
   assert.match(workflow, /uiVersion:3/);
   assert.match(workflow, /documentVersion:3/);
@@ -186,6 +211,15 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(registrar, /-4vcpu/);
   assert.match(registrar, /candidate_vcpus="4"/);
   assert.match(registrar, /candidate_ffmpeg_threads="4"/);
+  assert.match(registrar, /unified-template-subtitles\)/);
+  assert.match(registrar, /shorts-mvp-project-heavy-fargate-production/);
+  assert.match(registrar, /INGESTION_PROXY_ROUTES_JSON/);
+  assert.match(registrar, /ephemeralStorage\.sizeInGiB == 30/);
+  assert.match(registrar, /attemptDurationSeconds == 7200/);
+  assert.match(
+    registrar,
+    /unified_template_subtitles_job_definition_arn=\$definition_arn/,
+  );
   assert.match(
     registrar,
     /\{type:"VCPU",value:\$candidateVcpus\}/,
@@ -222,6 +256,21 @@ test("subtitle editing is an immutable verified release capability", async () =>
   assert.doesNotMatch(migration, /\bdrop\s+(table|column)\b/i);
 });
 
+test("unified template subtitle canary uses an independent off-by-default flag", async () => {
+  const migration = await source(
+    "supabase/migrations/202608240002_unified_template_subtitles_canary_flag.sql",
+  );
+
+  assert.match(
+    migration,
+    /'unified_template_subtitles_canary',\s+false,/,
+  );
+  assert.match(migration, /on conflict \(flag_key\) do nothing/);
+  assert.doesNotMatch(migration, /subtitle_templates_public/);
+  assert.doesNotMatch(migration, /\bupdate\s+shorts_mvp\.runtime_feature_flags\b/i);
+  assert.doesNotMatch(migration, /\bdrop\s+(table|column)\b/i);
+});
+
 test("candidate worker uses a pinned, scan-friendly image with render dependencies", async () => {
   const [dockerfile, overlays] = await Promise.all([
     source("worker/Dockerfile"),
@@ -253,6 +302,15 @@ test("promotion and subtitle pilot enrollment are transactional, gated, and audi
   assert.match(actions, /const productionCanaryChecks = \[/);
   assert.match(actions, /editor_release\.promoted/);
   assert.match(actions, /editor_release\.rolled_back/);
+  assert.match(
+    actions,
+    /editor_release\.unified_template_subtitles_canary_enabled/,
+  );
+  assert.match(
+    actions,
+    /editor_release\.unified_template_subtitles_canary_disabled/,
+  );
+  assert.match(actions, /rollbackScope: "unified_template_subtitles_v5_only"/);
   assert.match(actions, /canary_enabled=true/);
   assert.match(actions, /public_enabled=true/);
   assert.match(actions, /status='succeeded'/);

@@ -57,6 +57,7 @@ CAPTION_FONT_FAMILIES = {
     EditorFontId.JALNAN_2: "Jalnan 2",
     EditorFontId.GODO: "Godo B",
     EditorFontId.GALMURI_9: "Galmuri9",
+    EditorFontId.PAPERLOGY: "Paperlogy",
 }
 _CAPTION_FONT_CONTEXT: ContextVar[EditorFontId] = ContextVar(
     "caption_font_id",
@@ -588,17 +589,23 @@ def _fit_display_words(
     *,
     template_id: str,
     safe_area: dict[str, int],
+    font_size: int | None = None,
 ) -> list[_CaptionWord]:
     outline = 8 if template_id == "pop" else 7
     max_width = safe_area["width"] - outline * 2
-    font_size = 64 if template_id == "pop" else 72
+    resolved_font_size = font_size or (92 if template_id == "pop" else 72)
+    fitting_font_size = (
+        min(resolved_font_size, 64)
+        if template_id == "pop"
+        else resolved_font_size
+    )
     scale = 1.12 if template_id == "pop" else 1.0
     fitted: list[_CaptionWord] = []
     for word in words:
         fitted.extend(
             _split_caption_word(
                 word,
-                font_size=font_size,
+                font_size=fitting_font_size,
                 max_width=max_width,
                 scale=scale,
             )
@@ -929,6 +936,7 @@ def _basic_or_highlight_cues(
     highlighted: bool,
     safe_area: dict[str, int],
     fps: int,
+    font_size: int = 72,
 ) -> list[dict[str, object]]:
     outline = 7
     max_width = safe_area["width"] - outline * 2
@@ -941,7 +949,7 @@ def _basic_or_highlight_cues(
             words,
             gap_frames=round(0.42 * fps),
             max_words=None,
-            font_size=72,
+            font_size=font_size,
             max_width=max_width,
             max_duration_frames=round(3.2 * fps),
             max_lines=1,
@@ -965,7 +973,7 @@ def _basic_or_highlight_cues(
         previous_end_frame = end_frame
         lines = _wrap_word_indexes(
             group,
-            font_size=72,
+            font_size=font_size,
             max_width=max_width,
             word_separator=word_separator,
         )
@@ -976,7 +984,7 @@ def _basic_or_highlight_cues(
                     [group[item] for item in line],
                     word_separator=word_separator,
                 ),
-                72,
+                font_size,
             )
             > max_width
             for line in lines
@@ -987,7 +995,7 @@ def _basic_or_highlight_cues(
                         [group[item] for item in line],
                         word_separator=word_separator,
                     ),
-                    72,
+                    font_size,
                 )
                 for line in lines
             )
@@ -998,7 +1006,7 @@ def _basic_or_highlight_cues(
         cue: dict[str, object] = {
             "startFrame": start_frame,
             "endFrame": end_frame,
-            "fontSize": 72,
+            "fontSize": font_size,
             "scaleX": scale_x,
             "centerX": safe_area["x"] + safe_area["width"] // 2,
             "centerY": safe_area["y"] + safe_area["height"] // 2,
@@ -1015,10 +1023,16 @@ def _basic_or_highlight_cues(
     return cues
 
 
-def _pop_font_size(word: _CaptionWord, max_width: int) -> int:
-    size = 92
-    while size > 64 and _measure(word.text, size) * 1.12 > max_width:
-        size -= 2
+def _pop_font_size(
+    word: _CaptionWord,
+    max_width: int,
+    *,
+    font_size: int = 92,
+) -> int:
+    size = font_size
+    minimum_size = min(font_size, 64)
+    while size > minimum_size and _measure(word.text, size) * 1.12 > max_width:
+        size = max(minimum_size, size - 2)
     return size
 
 
@@ -1068,6 +1082,7 @@ def _pop_cues(
     *,
     safe_area: dict[str, int],
     fps: int,
+    font_size: int = 92,
 ) -> list[dict[str, object]]:
     outline = 8
     max_width = safe_area["width"] - outline * 2
@@ -1077,7 +1092,7 @@ def _pop_cues(
             words,
             gap_frames=round(0.25 * fps),
             max_words=3,
-            font_size=92,
+            font_size=font_size,
             max_width=round(max_width / 1.12),
             max_duration_frames=round(2.0 * fps),
             max_lines=1,
@@ -1090,7 +1105,10 @@ def _pop_cues(
     cues: list[dict[str, object]] = []
     previous_end_frame = 0
     for index, group in enumerate(groups):
-        sizes = [_pop_font_size(word, max_width) for word in group]
+        sizes = [
+            _pop_font_size(word, max_width, font_size=font_size)
+            for word in group
+        ]
         widths = [_measure(word.text, size) * 1.12 for word, size in zip(group, sizes, strict=True)]
         gaps = [
             CAPTION_POP_SPACED_GAP_PX if group[item].space_before else CAPTION_POP_UNSPACED_GAP_PX
@@ -1099,7 +1117,8 @@ def _pop_cues(
         total_width = sum(widths) + sum(gaps)
         if total_width > max_width:
             ratio = max_width / total_width
-            sizes = [max(64, round(size * ratio)) for size in sizes]
+            minimum_size = min(font_size, 64)
+            sizes = [max(minimum_size, round(size * ratio)) for size in sizes]
             widths = [
                 _measure(word.text, size) * 1.12 for word, size in zip(group, sizes, strict=True)
             ]
@@ -1165,6 +1184,7 @@ def rebuild_caption_cue_text(
     template_id: str,
     safe_area: dict[str, int],
     fps: int = CAPTION_FPS,
+    font_size: int | None = None,
 ) -> list[dict[str, object]]:
     """Reflow one trusted cue while preserving its compiled frame window."""
     if template_id not in {"highlight", "pop"}:
@@ -1221,15 +1241,22 @@ def rebuild_caption_cue_text(
         words,
         template_id=template_id,
         safe_area=safe_area,
+        font_size=font_size,
     )
     rebuilt = (
-        _pop_cues(words, safe_area=safe_area, fps=fps)
+        _pop_cues(
+            words,
+            safe_area=safe_area,
+            fps=fps,
+            font_size=font_size or 92,
+        )
         if template_id == "pop"
         else _basic_or_highlight_cues(
             words,
             highlighted=True,
             safe_area=safe_area,
             fps=fps,
+            font_size=font_size or 72,
         )
     )
     if not rebuilt:
@@ -1245,6 +1272,7 @@ def _reflow_caption_cues_for_clips(
     clip_windows: Sequence[tuple[int, int, int]],
     cue_edits: dict[int, str] | None = None,
     fps: int = CAPTION_FPS,
+    font_size: int | None = None,
 ) -> list[dict[str, object]]:
     """Recompile caption layout from the words retained by editor cuts.
 
@@ -1414,6 +1442,7 @@ def _reflow_caption_cues_for_clips(
                 template_id=template_id,
                 safe_area=safe_area,
                 fps=fps,
+                font_size=font_size,
             )
             for cue in edited_cues:
                 cue["sourceCueIndex"] = source_cue_index
@@ -1425,15 +1454,22 @@ def _reflow_caption_cues_for_clips(
                 retained,
                 template_id=template_id,
                 safe_area=safe_area,
+                font_size=font_size,
             )
             compiled = (
-                _pop_cues(retained, safe_area=safe_area, fps=fps)
+                _pop_cues(
+                    retained,
+                    safe_area=safe_area,
+                    fps=fps,
+                    font_size=font_size or 92,
+                )
                 if template_id == "pop"
                 else _basic_or_highlight_cues(
                     retained,
                     highlighted=template_id == "highlight",
                     safe_area=safe_area,
                     fps=fps,
+                    font_size=font_size or 72,
                 )
             )
             for cue in compiled:
@@ -1458,6 +1494,7 @@ def reflow_caption_cues_for_clips(
     cue_edits: dict[int, str] | None = None,
     fps: int = CAPTION_FPS,
     font_id: EditorFontId | str | None = None,
+    font_size: int | None = None,
 ) -> list[dict[str, object]]:
     resolved_font_id = _caption_font_id(font_id)
     with _caption_font_context(resolved_font_id):
@@ -1468,6 +1505,7 @@ def reflow_caption_cues_for_clips(
             clip_windows=clip_windows,
             cue_edits=cue_edits,
             fps=fps,
+            font_size=font_size,
         )
 
 
@@ -1483,6 +1521,11 @@ def compile_caption_render_spec(
     accent_color: str = CAPTION_ACCENT,
     font_id: EditorFontId | str | None = None,
     timing_lead_frames: int = CAPTION_TIMING_LEAD_FRAMES,
+    caption_center_y: int | None = None,
+    caption_max_width: int | None = None,
+    font_size: int | None = None,
+    text_color: str = CAPTION_TEXT,
+    background_color: str | None = None,
 ) -> dict[str, object]:
     if template_id not in CAPTION_TEMPLATE_IDS:
         raise ValueError("지원하지 않는 자막 템플릿입니다.")
@@ -1496,6 +1539,17 @@ def compile_caption_render_spec(
         or not 0 <= timing_lead_frames <= 30
     ):
         raise ValueError("자막 선행 프레임 값이 올바르지 않습니다.")
+    if font_size is not None and not 24 <= font_size <= 120:
+        raise ValueError("자막 글자 크기가 올바르지 않습니다.")
+    if caption_max_width is not None and not 180 <= caption_max_width <= 1080:
+        raise ValueError("자막 최대 너비가 올바르지 않습니다.")
+    for color in (text_color, accent_color):
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+            raise ValueError("자막 색상이 올바르지 않습니다.")
+    if background_color is not None and not re.fullmatch(
+        r"#[0-9A-Fa-f]{6}", background_color
+    ):
+        raise ValueError("자막 배경색이 올바르지 않습니다.")
     resolved_font_id = _caption_font_id(font_id)
     with _caption_font_context(resolved_font_id):
         layout = caption_layout(
@@ -1503,6 +1557,14 @@ def compile_caption_render_spec(
             caption_placement=caption_placement,
         )
         safe_area = layout["caption"]
+        resolved_font_size = font_size or (92 if template_id == "pop" else 72)
+        if caption_max_width is not None:
+            safe_area["width"] = caption_max_width
+            safe_area["x"] = round((CANVAS_WIDTH - caption_max_width) / 2)
+        if caption_center_y is not None:
+            safe_area["height"] = max(140, resolved_font_size + 32)
+            safe_area["y"] = round(caption_center_y - safe_area["height"] / 2)
+        layout["caption"] = safe_area
         clipped_words = _clip_words(
             words,
             clip_start=clip_start,
@@ -1514,10 +1576,15 @@ def compile_caption_render_spec(
             clipped_words,
             template_id=template_id,
             safe_area=safe_area,
+            font_size=resolved_font_size,
         )
         if template_id == "pop":
-            cues = _pop_cues(clipped_words, safe_area=safe_area, fps=fps)
-            font_size = 92
+            cues = _pop_cues(
+                clipped_words,
+                safe_area=safe_area,
+                fps=fps,
+                font_size=resolved_font_size,
+            )
             outline = 8
         else:
             cues = _basic_or_highlight_cues(
@@ -1525,8 +1592,8 @@ def compile_caption_render_spec(
                 highlighted=template_id == "highlight",
                 safe_area=safe_area,
                 fps=fps,
+                font_size=resolved_font_size,
             )
-            font_size = 72
             outline = 7
     if not cues:
         raise TranscriptionError("선택한 쇼츠 구간에 표시할 자막이 없습니다.")
@@ -1547,13 +1614,13 @@ def compile_caption_render_spec(
         "safeArea": safe_area,
         "font": caption_font_spec(resolved_font_id),
         "style": {
-            "fontSize": font_size,
-            "textColor": CAPTION_TEXT,
+            "fontSize": resolved_font_size,
+            "textColor": text_color,
             "accentColor": accent_color,
             "outlineColor": CAPTION_OUTLINE,
             "outlineWidth": outline,
             "shadow": 0,
-            "background": None,
+            "background": background_color,
             "maxLines": 1,
         },
         "cues": cues,

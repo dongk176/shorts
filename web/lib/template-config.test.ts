@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { COMMENT_BACKGROUND_COLOR, COMMENT_CAPTURE_LANDSCAPE_LIFT_PX, createDefaultTemplateConfig, templateConfigSchema, templatePresetColorOptions, templatePresetColors, videoFrameForAspect } from "@/lib/template-config";
+import { templateIds } from "@/lib/contracts";
+import {
+  COMMENT_BACKGROUND_COLOR,
+  COMMENT_CAPTURE_LANDSCAPE_LIFT_PX,
+  createDefaultTemplateConfig,
+  createUnifiedSubtitleTemplateConfig,
+  isTemplateConfigV5,
+  templateConfigSchema,
+  templatePresetColorOptions,
+  templatePresetColors,
+  upgradeTemplateConfigToV5,
+  videoFrameForAspect,
+} from "@/lib/template-config";
 
 describe("personal template config", () => {
   it("creates bounded frames for every supported aspect ratio", () => {
@@ -21,7 +33,118 @@ describe("personal template config", () => {
   });
 
   it("keeps subtitles disabled while the template subtitle feature is hidden", () => {
-    expect(createDefaultTemplateConfig().subtitle.visible).toBe(false);
+    const config = createDefaultTemplateConfig();
+    expect(config.schemaVersion).toBe(4);
+    expect(config.subtitle.visible).toBe(false);
+  });
+
+  it("upgrades a legacy template only when the admin subtitle editor requests v5", () => {
+    const legacy = createDefaultTemplateConfig("paper");
+    legacy.subtitle.y = 1320;
+    legacy.subtitle.fontSize = 64;
+    legacy.subtitle.color = "#FFFFFF";
+
+    const upgraded = upgradeTemplateConfigToV5(legacy);
+
+    expect(legacy.schemaVersion).toBe(4);
+    expect(upgraded).toMatchObject({
+      schemaVersion: 5,
+      title: {
+        fontId: "pretendard",
+      },
+      subtitle: {
+        visible: false,
+        variant: "highlight",
+        x: 540,
+        y: 1320,
+        fontId: "pretendard",
+        fontSize: 64,
+        color: "#FFFFFF",
+        accentColor: "#FFD84D",
+      },
+    });
+    expect(isTemplateConfigV5(upgraded)).toBe(true);
+    expect(upgraded.subtitle).not.toHaveProperty("backgroundColor");
+    expect(templateConfigSchema.parse(upgraded)).toEqual(upgraded);
+  });
+
+  it.each(templateIds)(
+    "round-trips every %s preset with all unified subtitle settings",
+    (templateId) => {
+      const config = upgradeTemplateConfigToV5(
+        createDefaultTemplateConfig(templateId),
+      );
+      config.title.fontId = "paperlogy";
+      config.subtitle = {
+        ...config.subtitle,
+        visible: true,
+        variant: "pop",
+        y: 1_260,
+        fontId: "paperlogy",
+        fontSize: 88,
+        color: "#FFFFFF",
+        accentColor: "#FF715E",
+      };
+
+      const restored = templateConfigSchema.parse(
+        JSON.parse(JSON.stringify(config)),
+      );
+      expect(restored).toEqual(config);
+    },
+  );
+
+  it("creates pop and highlight seeds as ordinary v5 personal templates", () => {
+    const highlight = createUnifiedSubtitleTemplateConfig("highlight");
+    const pop = createUnifiedSubtitleTemplateConfig("pop");
+
+    expect(highlight.subtitle).toMatchObject({
+      visible: true,
+      variant: "highlight",
+      x: 540,
+      fontSize: 72,
+      accentColor: "#35E6E3",
+    });
+    expect(pop.subtitle).toMatchObject({
+      visible: true,
+      variant: "pop",
+      x: 540,
+      fontSize: 92,
+      accentColor: "#35E6E3",
+    });
+    expect(highlight.subtitle).not.toHaveProperty("backgroundColor");
+    expect(pop.subtitle).not.toHaveProperty("backgroundColor");
+  });
+
+  it("fixes v5 subtitles to the horizontal center and bounded font sizes", () => {
+    const config = createUnifiedSubtitleTemplateConfig("highlight");
+    expect(() => templateConfigSchema.parse({
+      ...config,
+      subtitle: { ...config.subtitle, x: 520 },
+    })).toThrow();
+    expect(() => templateConfigSchema.parse({
+      ...config,
+      subtitle: { ...config.subtitle, fontSize: 121 },
+    })).toThrow();
+    expect(() => templateConfigSchema.parse({
+      ...config,
+      title: { ...config.title, fontId: "unknown-font" },
+    })).toThrow();
+    expect(() => templateConfigSchema.parse({
+      ...config,
+      subtitle: { ...config.subtitle, backgroundColor: "#000000" },
+    })).toThrow();
+  });
+
+  it("stores Paperlogy for both v5 title and subtitle rendering", () => {
+    const config = createUnifiedSubtitleTemplateConfig("pop");
+    config.title.fontId = "paperlogy";
+    config.subtitle.fontId = "paperlogy";
+
+    expect(templateConfigSchema.parse(config)).toMatchObject({
+      schemaVersion: 5,
+      title: { fontId: "paperlogy" },
+      subtitle: { fontId: "paperlogy" },
+    });
   });
 
   it("starts new comment capture templates in 16:9 with the channel below comments", () => {

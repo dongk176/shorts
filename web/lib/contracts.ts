@@ -154,6 +154,7 @@ export type YoutubeAnalysis = {
   sourceRangeSelectionEnabled: boolean;
   subtitleTemplateSelectionEnabled: boolean;
   brandColorSelectionEnabled: boolean;
+  unifiedTemplateSubtitleCanaryEnabled: boolean;
   videoId: string;
   normalizedUrl: string;
   title: string;
@@ -217,7 +218,9 @@ export type GeneratedShort = {
   commentOverlays: CommentOverlay[];
   subtitlesEnabled: boolean;
   subtitleTemplateId?: import("./subtitle-templates").SubtitleTemplateId | null;
+  unifiedTemplateSubtitle?: boolean;
   captionRenderSpec?: import("./caption-render-spec").CaptionRenderSpec | null;
+  wordTimedSubtitlesAvailable: boolean;
   templateId: TemplateId;
   customTemplateId?: string | null;
   templateSnapshot?: Record<string, unknown> | null;
@@ -276,6 +279,8 @@ export type MvpState = {
   usage: UsageSnapshot;
   capabilities: {
     fileUpload: boolean;
+    unifiedTemplateSubtitles: boolean;
+    unifiedTemplateSubtitleLocalUpload: boolean;
   };
   hasUsedSubtitleTemplates: boolean;
   recentJobs: VideoJob[];

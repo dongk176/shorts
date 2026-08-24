@@ -64,6 +64,23 @@ function normalizedAllowedHosts(value: string | undefined) {
   );
 }
 
+function explicitLocalLoopbackHttpEnabled(
+  environment: Readonly<Record<string, string | undefined>>,
+  receiverBaseUrl: URL,
+) {
+  const hostname = receiverBaseUrl.hostname.toLowerCase().replace(/\.$/, "");
+  return environment.NODE_ENV !== "production"
+    && environment.UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ENABLED
+      ?.trim()
+      .toLowerCase() === "true"
+    && receiverBaseUrl.protocol === "http:"
+    && (
+      hostname === "localhost"
+      || hostname === "127.0.0.1"
+      || hostname === "[::1]"
+    );
+}
+
 export function getFileUploadReceiverConfig(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): FileUploadReceiverConfig {
@@ -90,8 +107,10 @@ export function getFileUploadReceiverConfig(
   const receiverHostname = receiverBaseUrl.hostname
     .toLowerCase()
     .replace(/\.$/, "");
+  const receiverTransportAllowed = receiverBaseUrl.protocol === "https:"
+    || explicitLocalLoopbackHttpEnabled(environment, receiverBaseUrl);
   if (
-    receiverBaseUrl.protocol !== "https:"
+    !receiverTransportAllowed
     || receiverBaseUrl.username
     || receiverBaseUrl.password
     || receiverBaseUrl.search

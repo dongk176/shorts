@@ -3,9 +3,18 @@ import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { customTemplateFromRow } from "@/lib/custom-templates";
-import { customTemplateInputSchema, MAX_PERSONAL_TEMPLATES } from "@/lib/template-config";
+import {
+  customTemplateInputSchema,
+  isTemplateConfigV5,
+  MAX_PERSONAL_TEMPLATES,
+} from "@/lib/template-config";
 import { getBillingSummary } from "@/lib/billing";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
+import {
+  getSubtitleTemplateAccess,
+  lockSubtitleTemplateAccess,
+} from "@/lib/subtitle-template-release";
+import { assertUnifiedTemplateSubtitleCanaryAccess } from "@/lib/template-execution-snapshot";
 
 export async function GET() {
   try {
@@ -17,7 +26,19 @@ export async function GET() {
       where user_id=${session.userId}
       order by updated_at desc, id desc
     `;
-    return NextResponse.json({ templates: rows.map(customTemplateFromRow) });
+    const templates = rows.map(customTemplateFromRow);
+    const hasUnifiedTemplates = templates.some((template) =>
+      isTemplateConfigV5(template.config)
+    );
+    if (!hasUnifiedTemplates) {
+      return NextResponse.json({ templates });
+    }
+    const access = await getSubtitleTemplateAccess(db, session.userId);
+    return NextResponse.json({
+      templates: access.unifiedEnabled
+        ? templates
+        : templates.filter((template) => !isTemplateConfigV5(template.config)),
+    });
   } catch (error) {
     return apiError(error);
   }
@@ -30,6 +51,11 @@ export async function POST(request: Request) {
     const db = getDb();
     const created = await db.begin(async (tx) => {
       assertCustomTemplateAccess(await getBillingSummary(tx, session.userId));
+      if (isTemplateConfigV5(input.config)) {
+        assertUnifiedTemplateSubtitleCanaryAccess(
+          await lockSubtitleTemplateAccess(tx, session.userId),
+        );
+      }
       await tx`select pg_advisory_xact_lock(hashtextextended(${`custom-template:${session.userId}`}, 0))`;
       const counts = await tx`
         select count(*)::int as count from shorts_mvp.custom_templates where user_id=${session.userId}

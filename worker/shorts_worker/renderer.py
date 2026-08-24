@@ -460,8 +460,6 @@ class VideoRenderer:
             else min(30.0, video_fps(probe))
         )
         has_audio = any(stream.get("codec_type") == "audio" for stream in probe.get("streams", []))
-        if caption_render_spec is not None and custom_template_config is not None:
-            raise RenderError("자막 완성형 템플릿은 커스텀 템플릿과 함께 사용할 수 없습니다.")
         if custom_template_config is not None:
             custom_metrics: dict[str, object] = {}
             rendered = self._render_custom_clean_clip(
@@ -477,6 +475,7 @@ class VideoRenderer:
                 channel_thumbnail_path=channel_thumbnail_path,
                 comment_overlays=comment_overlays or [],
                 config=custom_template_config,
+                caption_render_spec=caption_render_spec,
                 duration=duration,
                 fps=fps,
                 has_audio=has_audio,
@@ -604,7 +603,7 @@ class VideoRenderer:
                 prefix=prefix,
             )
         ass_path = None
-        if caption_render_spec is not None:
+        if caption_render_spec is not None and subtitles_enabled:
             ass_path = create_caption_ass(
                 caption_render_spec,
                 work_dir / "subtitles" / f"{prefix}_caption.ass",
@@ -761,6 +760,7 @@ class VideoRenderer:
         channel_thumbnail_path: Path | None,
         comment_overlays: list[CommentOverlay],
         config: CustomTemplateConfig,
+        caption_render_spec: dict[str, object] | None,
         duration: float,
         fps: float,
         has_audio: bool,
@@ -810,7 +810,12 @@ class VideoRenderer:
                 prefix=prefix,
             )
         ass_path = None
-        if subtitles_enabled:
+        if caption_render_spec is not None and subtitles_enabled:
+            ass_path = create_caption_ass(
+                caption_render_spec,
+                work_dir / "subtitles" / f"{prefix}_caption.ass",
+            )
+        elif subtitles_enabled:
             ass_path = create_ass_subtitles(
                 transcript,
                 clip_start=0,
@@ -836,8 +841,16 @@ class VideoRenderer:
             )
             video_label = "with_comments"
         if ass_path:
+            fonts_dir = ""
+            if caption_render_spec is not None:
+                caption_fonts_dir = prepare_caption_fonts(
+                    work_dir / "caption-fonts",
+                    caption_render_spec,
+                )
+                fonts_dir = f":fontsdir='{_escape_filter_path(caption_fonts_dir)}'"
             filters.append(
-                f"[{video_label}]subtitles=filename='{_escape_filter_path(ass_path)}'[captioned]"
+                f"[{video_label}]subtitles=filename='{_escape_filter_path(ass_path)}'"
+                f"{fonts_dir}[captioned]"
             )
             video_label = "captioned"
         command = [

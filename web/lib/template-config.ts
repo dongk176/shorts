@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { templateIds, videoAspectRatios, type TemplateId, type VideoAspectRatio } from "@/lib/contracts";
+import { DEFAULT_EDITOR_FONT_ID, editorFontIds } from "@/lib/editor-fonts";
 
 export const TEMPLATE_CANVAS = { width: 1080, height: 1920 } as const;
 export const MAX_PERSONAL_TEMPLATES = 50;
@@ -113,6 +114,33 @@ const sharedTemplateLayers = {
   channel: textLayerSchema.extend({ fontSize: z.number().int().min(20).max(64) }).strict(),
 } as const;
 
+export const unifiedSubtitleVariants = ["highlight", "pop"] as const;
+export type UnifiedSubtitleVariant = (typeof unifiedSubtitleVariants)[number];
+
+const unifiedSubtitleLayerSchema = textLayerSchema.omit({
+  backgroundColor: true,
+}).extend({
+  x: z.literal(TEMPLATE_CANVAS.width / 2),
+  variant: z.enum(unifiedSubtitleVariants),
+  fontId: z.enum(editorFontIds),
+  fontSize: z.number().int().min(24).max(120),
+  accentColor: colorSchema,
+}).strict();
+
+const unifiedTitleLayerSchema = titleLayerSchema.extend({
+  fontId: z.enum(editorFontIds),
+}).strict();
+
+const versionFiveTemplateConfigSchema = z.object({
+  schemaVersion: z.literal(5),
+  background: backgroundSchema,
+  video: videoLayerSchema,
+  title: unifiedTitleLayerSchema,
+  subtitle: unifiedSubtitleLayerSchema,
+  channel: sharedTemplateLayers.channel,
+  comment: commentLayerSchema,
+}).strict();
+
 const currentTemplateConfigSchema = z.object({
   schemaVersion: z.literal(4),
   ...sharedTemplateLayers,
@@ -156,6 +184,7 @@ const legacyTemplateConfigSchema = z.object({
 });
 
 export const templateConfigSchema = z.union([
+  versionFiveTemplateConfigSchema,
   currentTemplateConfigSchema,
   versionThreeTemplateConfigSchema,
   previousTemplateConfigSchema,
@@ -168,9 +197,23 @@ export const templateConfigSchema = z.union([
   if (config.video.x + config.video.width > TEMPLATE_CANVAS.width || config.video.y + config.video.height > TEMPLATE_CANVAS.height) {
     context.addIssue({ code: "custom", path: ["video"], message: "영상 프레임이 캔버스를 벗어났습니다." });
   }
+  if (config.schemaVersion === 5) {
+    const subtitleHeight = Math.max(140, config.subtitle.fontSize + 32);
+    if (
+      config.subtitle.y - subtitleHeight / 2 < 0
+      || config.subtitle.y + subtitleHeight / 2 > TEMPLATE_CANVAS.height
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["subtitle", "y"],
+        message: "자막 영역이 캔버스를 벗어났습니다.",
+      });
+    }
+  }
 });
 
 export type TemplateConfig = z.infer<typeof templateConfigSchema>;
+export type TemplateConfigV5 = z.infer<typeof versionFiveTemplateConfigSchema>;
 
 export const customTemplateInputSchema = z.object({
   name: z.string().trim().min(1).max(50),
@@ -248,6 +291,48 @@ export function createDefaultTemplateConfig(baseTemplateId: TemplateId = "dark-m
       visible: baseTemplateId === "comment-capture",
     },
   };
+}
+
+export function isTemplateConfigV5(config: TemplateConfig): config is TemplateConfigV5 {
+  return config.schemaVersion === 5;
+}
+
+export function upgradeTemplateConfigToV5(config: TemplateConfig): TemplateConfigV5 {
+  if (isTemplateConfigV5(config)) return structuredClone(config);
+  const {
+    backgroundColor: legacySubtitleBackgroundColor,
+    ...subtitle
+  } = structuredClone(config.subtitle);
+  void legacySubtitleBackgroundColor;
+  return {
+    ...structuredClone(config),
+    schemaVersion: 5,
+    title: {
+      ...structuredClone(config.title),
+      fontId: DEFAULT_EDITOR_FONT_ID,
+    },
+    subtitle: {
+      ...subtitle,
+      visible: false,
+      variant: "highlight",
+      x: TEMPLATE_CANVAS.width / 2,
+      fontId: DEFAULT_EDITOR_FONT_ID,
+      fontSize: Math.min(120, Math.max(24, config.subtitle.fontSize)),
+      accentColor: "#FFD84D",
+    },
+  };
+}
+
+export function createUnifiedSubtitleTemplateConfig(
+  variant: UnifiedSubtitleVariant,
+  baseTemplateId: TemplateId = "dark-minimal",
+): TemplateConfigV5 {
+  const config = upgradeTemplateConfigToV5(createDefaultTemplateConfig(baseTemplateId));
+  config.subtitle.visible = true;
+  config.subtitle.variant = variant;
+  config.subtitle.fontSize = variant === "pop" ? 92 : 72;
+  config.subtitle.accentColor = "#35E6E3";
+  return config;
 }
 
 export function snapshotFromTemplate(template: CustomTemplate): TemplateSnapshot {

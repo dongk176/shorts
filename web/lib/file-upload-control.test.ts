@@ -85,6 +85,25 @@ describe("file upload receiver control", () => {
     );
   });
 
+  it("accepts plain HTTP only for an explicit non-production loopback test", () => {
+    const config = getFileUploadReceiverConfig({
+      NODE_ENV: "development",
+      UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ENABLED: "true",
+      FILE_UPLOAD_RECEIVER_URL: "http://127.0.0.1:8090",
+      FILE_UPLOAD_RECEIVER_ALLOWED_HOSTS: "127.0.0.1",
+      FILE_UPLOAD_TOKEN_SECRET: "s".repeat(64),
+    });
+
+    expect(config.receiverBaseUrl.toString()).toBe("http://127.0.0.1:8090/");
+    expect(() => getFileUploadReceiverConfig({
+      NODE_ENV: "production",
+      UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ENABLED: "true",
+      FILE_UPLOAD_RECEIVER_URL: "http://127.0.0.1:8090",
+      FILE_UPLOAD_RECEIVER_ALLOWED_HOSTS: "127.0.0.1",
+      FILE_UPLOAD_TOKEN_SECRET: "s".repeat(64),
+    })).toThrowError(expect.objectContaining({ status: 503 }));
+  });
+
   it.each([
     { FILE_UPLOAD_RECEIVER_URL: "http://uploads.easycut.example" },
     { FILE_UPLOAD_RECEIVER_URL: "https://unexpected.example" },

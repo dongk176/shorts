@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { parseCaptionRenderSpec } from "@/lib/caption-render-spec";
 import { getDb } from "@/lib/db";
 import { editorOverlayPreviewEnabled } from "@/lib/editor-overlay-preview-flag";
 import {
@@ -11,6 +10,8 @@ import {
 } from "@/lib/editor-rendering-release";
 import { rangeEditingEnabled } from "@/lib/range-editing";
 import { requireMvpSession } from "@/lib/session";
+import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import { isUnifiedTemplateSubtitleSnapshot } from "@/lib/template-execution-snapshot";
 import { ShortEditorPage } from "../../../../shorts-app";
 
 export const dynamic = "force-dynamic";
@@ -37,18 +38,22 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
     subtitleEditingCapable: false,
     subtitleEditingPublicEnabled: false,
   };
+  let unifiedTemplateSubtitleCanaryEnabled = false;
   if (editorRenderingV2MasterEnabled()) {
     const session = await requireMvpSession(undefined, { createIfMissing: false });
-    editorRelease = await resolveEditorRelease(
-      db,
-      session.userId,
-    );
+    const [resolvedEditorRelease, subtitleAccess] = await Promise.all([
+      resolveEditorRelease(db, session.userId),
+      getSubtitleTemplateAccess(db, session.userId),
+    ]);
+    editorRelease = resolvedEditorRelease;
+    unifiedTemplateSubtitleCanaryEnabled = subtitleAccess.unifiedEnabled;
   }
   const adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(
     editorRelease,
   );
   const subtitleTemplateShortRows = await db`
-    select s.id,s.subtitle_template_id,s.caption_render_spec
+    select s.id,s.subtitle_template_id,s.subtitle_template_snapshot,
+      s.caption_render_spec
     from shorts_mvp.generated_shorts s
     join shorts_mvp.video_jobs j on j.id=s.job_id
     where s.id=${shortId}
@@ -56,12 +61,16 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
     limit 1
   `;
   const subtitleTemplateShort = subtitleTemplateShortRows[0];
+  const unifiedTemplateSubtitleOutput = isUnifiedTemplateSubtitleSnapshot(
+    subtitleTemplateShort?.subtitleTemplateSnapshot,
+  );
   if (
     subtitleTemplateShort?.subtitleTemplateId
-    && (
-      !adminSubtitleLayoutEnabled
-      || !parseCaptionRenderSpec(subtitleTemplateShort.captionRenderSpec)
-    )
+    && !adminSubtitleLayoutEnabled
+  ) notFound();
+  if (
+    unifiedTemplateSubtitleOutput
+    && !unifiedTemplateSubtitleCanaryEnabled
   ) notFound();
   const editorSaveEnabled = editorRelease.channel !== "legacy";
   return <ShortEditorPage
@@ -71,5 +80,6 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
     overlayPreviewEnabled={localOverlayPreviewEnabled || editorSaveEnabled}
     editorSaveEnabled={editorSaveEnabled}
     editorRelease={editorRelease}
+    unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled}
   />;
 }

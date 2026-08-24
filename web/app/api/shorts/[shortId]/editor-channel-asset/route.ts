@@ -11,6 +11,11 @@ import {
 import { apiError, HttpError } from "@/lib/http";
 import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
+import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import {
+  assertUnifiedTemplateSubtitleCanaryAccess,
+  isUnifiedTemplateSubtitleSnapshot,
+} from "@/lib/template-execution-snapshot";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +37,8 @@ export async function GET(
       select
         s.editor_document->'channel'->>'thumbnailAssetKey' as asset_key,
         s.expires_at,
-        s.subtitle_template_id
+        s.subtitle_template_id,
+        s.subtitle_template_snapshot
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and not j.is_example
@@ -42,17 +48,21 @@ export async function GET(
         and s.deleted_at is null and s.expires_at>clock_timestamp()
       limit 1
     `;
-    if (
-      rows[0]?.subtitleTemplateId
-      && !subtitleEditingReleaseEnabled(
+    if (rows[0]?.subtitleTemplateId) {
+      if (!subtitleEditingReleaseEnabled(
         await resolveEditorRelease(db, session.userId),
-      )
-    ) {
-      throw new HttpError(
-        409,
-        "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
-        "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
-      );
+      )) {
+        throw new HttpError(
+          409,
+          "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
+          "SUBTITLE_TEMPLATE_EDIT_UNSUPPORTED",
+        );
+      }
+      if (isUnifiedTemplateSubtitleSnapshot(rows[0].subtitleTemplateSnapshot)) {
+        assertUnifiedTemplateSubtitleCanaryAccess(
+          await getSubtitleTemplateAccess(db, session.userId),
+        );
+      }
     }
     const assetKey = String(rows[0]?.assetKey || "");
     if (!editorAssetKeyPattern.test(assetKey)) {

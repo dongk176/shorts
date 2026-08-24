@@ -19,6 +19,8 @@ import { Construct } from "constructs";
 import { DOWNLOAD_RESPONSE_HEADERS_FUNCTION_CODE } from "./cloudfront-functions";
 
 const projectRoot = path.resolve(__dirname, "../../..");
+const pinnedBatchJobDefinitionArn = /^arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-definition\/[A-Za-z0-9_-]+:[1-9][0-9]*$/;
+const pinnedBatchQueueArn = /^arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-queue\/[A-Za-z0-9_-]+$/;
 const placeholderPublicKey = [
   "-----BEGIN PUBLIC KEY-----",
   "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvrVZ6+TqXL7EtZYYN2HN",
@@ -431,8 +433,10 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
         },
         StringLike: {
-          "token.actions.githubusercontent.com:sub":
+          "token.actions.githubusercontent.com:sub": [
             `repo:${githubOrg}/${githubRepo}:ref:refs/heads/main`,
+            `repo:${githubOrg}/${githubRepo}:ref:refs/heads/codex/unified-template-subtitles-admin-canary-20260824`,
+          ],
         },
       }),
       maxSessionDuration: cdk.Duration.hours(1),
@@ -1293,6 +1297,51 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         "Subtitle template target must use a new immutable Job Definition",
       );
     }
+    const unifiedTemplateSubtitlesJobDefinitionArn = String(
+      this.node.tryGetContext("unifiedTemplateSubtitlesJobDefinitionArn") || "",
+    ).trim();
+    const unifiedTemplateSubtitlesBatchQueueArn = String(
+      this.node.tryGetContext("unifiedTemplateSubtitlesBatchQueueArn") || "",
+    ).trim();
+    if (
+      Boolean(unifiedTemplateSubtitlesJobDefinitionArn)
+      !== Boolean(unifiedTemplateSubtitlesBatchQueueArn)
+    ) {
+      throw new Error(
+        "Unified template subtitle Job Definition and queue ARNs must be configured together",
+      );
+    }
+    if (
+      unifiedTemplateSubtitlesJobDefinitionArn
+      && !pinnedBatchJobDefinitionArn.test(
+        unifiedTemplateSubtitlesJobDefinitionArn,
+      )
+    ) {
+      throw new Error(
+        "Unified template subtitle Job Definition must be an exact revision-pinned ARN",
+      );
+    }
+    if (
+      unifiedTemplateSubtitlesBatchQueueArn
+      && !pinnedBatchQueueArn.test(unifiedTemplateSubtitlesBatchQueueArn)
+    ) {
+      throw new Error(
+        "Unified template subtitle queue must be an exact ARN",
+      );
+    }
+    if (
+      unifiedTemplateSubtitlesJobDefinitionArn
+      && new Set([
+        legacyProjectJobDefinitionArn,
+        sourceRangeJobDefinitionArn,
+        elevenLabsJobDefinitionArn,
+        subtitleTemplatesJobDefinitionArn,
+      ]).has(unifiedTemplateSubtitlesJobDefinitionArn)
+    ) {
+      throw new Error(
+        "Unified template subtitle target must use a separate immutable Job Definition",
+      );
+    }
     if (props.environment === "production") {
       const requiredProductionTargets = {
         legacyProjectJobDefinitionArn,
@@ -1303,6 +1352,8 @@ export class ShortsMvpComputeStack extends cdk.Stack {
         elevenLabsBatchQueueArn,
         subtitleTemplatesJobDefinitionArn,
         subtitleTemplatesBatchQueueArn,
+        unifiedTemplateSubtitlesJobDefinitionArn,
+        unifiedTemplateSubtitlesBatchQueueArn,
       };
       const missingTargets = Object.entries(requiredProductionTargets)
         .filter(([, value]) => !value)
@@ -1343,6 +1394,12 @@ export class ShortsMvpComputeStack extends cdk.Stack {
             subtitleTemplatesJobDefinitionArn,
           SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN:
             subtitleTemplatesBatchQueueArn,
+        } : {}),
+        ...(unifiedTemplateSubtitlesJobDefinitionArn ? {
+          UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN:
+            unifiedTemplateSubtitlesJobDefinitionArn,
+          UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN:
+            unifiedTemplateSubtitlesBatchQueueArn,
         } : {}),
       },
     });

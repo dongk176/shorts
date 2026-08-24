@@ -10,7 +10,7 @@ import {
 
 export type YoutubeAnalysisMetadata = Omit<
   YoutubeAnalysis,
-  "analysisId" | "expectedShortCount" | "sourceRangeSelectionEnabled" | "subtitleTemplateSelectionEnabled" | "brandColorSelectionEnabled"
+  "analysisId" | "expectedShortCount" | "sourceRangeSelectionEnabled" | "subtitleTemplateSelectionEnabled" | "brandColorSelectionEnabled" | "unifiedTemplateSubtitleCanaryEnabled"
 >;
 
 export async function createYoutubeAnalysis(
@@ -49,6 +49,7 @@ export async function createYoutubeAnalysis(
     sourceRangeSelectionEnabled,
     subtitleTemplateSelectionEnabled: subtitleTemplateAccess.enabled,
     brandColorSelectionEnabled: subtitleTemplateAccess.enabled,
+    unifiedTemplateSubtitleCanaryEnabled: subtitleTemplateAccess.unifiedEnabled,
     expectedShortCount: expectedShortCount(metadata.durationSeconds),
   };
 }
@@ -74,6 +75,7 @@ export async function getYoutubeAnalysis(session: MvpSession, analysisId: string
     sourceRangeSelectionEnabled: rows[0].sourceRangeSelectionEnabled === true,
     subtitleTemplateSelectionEnabled: subtitleTemplateAccess.enabled,
     brandColorSelectionEnabled: subtitleTemplateAccess.enabled,
+    unifiedTemplateSubtitleCanaryEnabled: subtitleTemplateAccess.unifiedEnabled,
     videoId: String(rows[0].youtubeVideoId),
     normalizedUrl: String(rows[0].youtubeUrl),
     title: String(rows[0].videoTitle),

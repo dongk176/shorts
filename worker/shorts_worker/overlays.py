@@ -7,8 +7,11 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, UnidentifiedImageError
 
 from .schemas import (
+    EDITOR_FONT_FILE_IDS,
+    EDITOR_FONT_VARIABLE_IDS,
     CommentOverlay,
     CustomTemplateConfig,
+    EditorFontId,
     SubtitleSegment,
     TemplateId,
     TemplateTextLayer,
@@ -91,6 +94,8 @@ CUSTOM_BACKGROUND_ASSETS = {
     )
 }
 
+EDITOR_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
+
 
 FONT_CANDIDATES = {
     "bold": (
@@ -124,6 +129,19 @@ def find_font(kind: str = "bold") -> str:
 
 def load_font(size: int, kind: str = "bold") -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(find_font(kind), size=size)
+
+
+def load_custom_template_font(
+    font_id: EditorFontId | None,
+    size: int,
+) -> ImageFont.FreeTypeFont:
+    path = EDITOR_FONT_DIRECTORY / EDITOR_FONT_FILE_IDS[font_id]
+    if not path.is_file():
+        raise RuntimeError("템플릿 폰트 파일을 찾지 못했습니다.")
+    font = ImageFont.truetype(str(path), size=max(1, round(size)))
+    if font_id in EDITOR_FONT_VARIABLE_IDS:
+        font.set_variation_by_axes([700])
+    return font
 
 
 def wrap_korean_title(title: str, max_chars: int = 20, max_lines: int = 2) -> list[str]:
@@ -1153,6 +1171,7 @@ def _draw_centered_custom_text(
     y: int,
     max_width: int,
     font_size: int,
+    font_id: EditorFontId,
     color: str,
     primary_background_color: str | None,
     accent_background_color: str | None,
@@ -1160,10 +1179,18 @@ def _draw_centered_custom_text(
 ) -> None:
     draw = ImageDraw.Draw(image)
     lines = wrap_korean_title(text, max_chars=20, max_lines=2)
-    font = load_font(font_size, "bold")
+    font = (
+        load_custom_template_font(font_id, font_size)
+        if font_id is not None
+        else load_font(font_size, "bold")
+    )
     while font_size > 20 and max(_text_width(draw, line, font) for line in lines) > max_width:
         font_size -= 2
-        font = load_font(font_size, "bold")
+        font = (
+            load_custom_template_font(font_id, font_size)
+            if font_id is not None
+            else load_font(font_size, "bold")
+        )
     boxes = [draw.textbbox((0, 0), line, font=font) for line in lines]
     heights = [box[3] - box[1] for box in boxes]
     gap = max(6, round(font_size * 0.18))
@@ -1236,6 +1263,7 @@ def create_custom_canvas_overlays(
             y=config.title.y,
             max_width=config.title.max_width,
             font_size=config.title.font_size,
+            font_id=config.title.font_id,
             color=config.title.primary_color,
             accent_color=config.title.accent_color,
             primary_background_color=config.title.primary_background_color,

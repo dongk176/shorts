@@ -9,7 +9,8 @@ describe("administrator file upload UI isolation", () => {
     expect(source).toContain('useState<"youtube" | "upload">("youtube")');
     expect(source).toContain("const uploadModeEnabled = state?.capabilities.fileUpload === true");
     expect(source).toContain("{uploadModeEnabled ? (");
-    expect(stateSource).toContain("capabilities: { fileUpload: false }");
+    expect(stateSource).toContain("fileUpload: false,");
+    expect(stateSource).toContain("unifiedTemplateSubtitles: false,");
     expect(stateSource).toContain("fileUploadAccess.adminEnabled");
   });
 

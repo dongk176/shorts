@@ -4,6 +4,7 @@ import {
   compareProjectBatchTargets,
   parseEnvFile,
   projectBatchTargets,
+  STABLE_PROJECT_TARGET_PREFIXES,
   validateActiveBatchResources,
 } from "./verify-project-batch-targets.mjs";
 
@@ -24,9 +25,13 @@ const targets = {
     "arn:aws:batch:ap-northeast-2:181651591905:job-definition/subtitles:1",
   SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN:
     "arn:aws:batch:ap-northeast-2:181651591905:job-queue/elevenlabs",
+  UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN:
+    "arn:aws:batch:ap-northeast-2:181651591905:job-definition/unified-template-subtitles:3",
+  UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN:
+    "arn:aws:batch:ap-northeast-2:181651591905:job-queue/elevenlabs",
 };
 
-test("accepts the exact four web and Lambda target pairs", () => {
+test("accepts five exact targets while allowing an isolated target to share a queue", () => {
   assert.deepEqual(compareProjectBatchTargets(targets, { ...targets }), {
     LEGACY_PROJECT: {
       definition: targets.LEGACY_PROJECT_JOB_DEFINITION_ARN,
@@ -44,6 +49,10 @@ test("accepts the exact four web and Lambda target pairs", () => {
       definition: targets.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN,
       queue: targets.SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN,
     },
+    UNIFIED_TEMPLATE_SUBTITLES: {
+      definition: targets.UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN,
+      queue: targets.UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN,
+    },
   });
 });
 
@@ -51,17 +60,20 @@ test("fails closed when Vercel would pin a stale worker definition", () => {
   assert.throws(
     () => compareProjectBatchTargets({
       ...targets,
-      SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN:
-        "arn:aws:batch:ap-northeast-2:181651591905:job-definition/subtitles-old:1",
+      UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN:
+        "arn:aws:batch:ap-northeast-2:181651591905:job-definition/unified-template-subtitles-old:1",
     }, targets),
-    /SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN/,
+    /UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN/,
   );
 });
 
 test("rejects missing, cross-account, and shared definitions", () => {
   assert.throws(
-    () => projectBatchTargets({ ...targets, SOURCE_RANGE_BATCH_QUEUE_ARN: "" }),
-    /SOURCE_RANGE_BATCH_QUEUE_ARN/,
+    () => projectBatchTargets({
+      ...targets,
+      UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN: "",
+    }),
+    /UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN/,
   );
   assert.throws(
     () => projectBatchTargets({
@@ -74,10 +86,29 @@ test("rejects missing, cross-account, and shared definitions", () => {
   assert.throws(
     () => projectBatchTargets({
       ...targets,
-      SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN:
+      UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN:
         targets.ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN,
     }),
     /격리되지 않았습니다/,
+  );
+});
+
+test("uses the stable four only when a caller opts into the committed release contract", () => {
+  const stableEnvironment = Object.fromEntries(
+    Object.entries(targets).filter(([name]) => (
+      !name.startsWith("UNIFIED_TEMPLATE_SUBTITLES_")
+    )),
+  );
+  assert.throws(
+    () => projectBatchTargets(stableEnvironment),
+    /UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN/,
+  );
+  assert.equal(
+    Object.keys(projectBatchTargets(
+      stableEnvironment,
+      STABLE_PROJECT_TARGET_PREFIXES,
+    )).length,
+    4,
   );
 });
 
@@ -115,11 +146,12 @@ test("requires every definition and shared queue to be submit-ready", () => {
     () => validateActiveBatchResources(
       resolved,
       definitions.filter(({ jobDefinitionArn }) => (
-        jobDefinitionArn !== targets.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN
+        jobDefinitionArn
+        !== targets.UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN
       )),
       queues,
     ),
-    /SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN is not ACTIVE/,
+    /UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN is not ACTIVE/,
   );
   assert.throws(
     () => validateActiveBatchResources(

@@ -24,6 +24,7 @@ redistributing the web application.
 | 리디바탕 | `RIDIBatang-Regular.woff` | [리디바탕](https://ridicorp.com/ridibatang/) | SIL Open Font License 1.1 (`OFL-1.1.txt`, `FONT-NOTICES.txt`) |
 | 여기어때 잘난체2 | `Jalnan2-Regular.woff2` | [여기어때 잘난체](https://www.goodchoice.kr/font) | 여기어때 무료 사용 조건 (`ADDITIONAL-FONT-NOTICES.md`) |
 | 고도체 Bold | `Godo-Bold.ttf` | [고도체](https://design.godo.co.kr/custom/free-font.php) | 고도체 무료 사용 조건 (`ADDITIONAL-FONT-NOTICES.md`) |
+| 페이퍼로지 | `Paperlogy-7Bold.ttf` | [Paperlogy font archive](https://github.com/fonts-archive/Paperlogy) | SIL Open Font License 1.1 (`OFL-1.1.txt`, `FONT-NOTICES.txt`) |
 | 갈무리9 | `Galmuri9-Regular.ttf` | [Galmuri](https://github.com/quiple/galmuri) | SIL Open Font License 1.1 (`Galmuri-LICENSE.txt`) |
 
 The license applies to the font software, not to videos or images created

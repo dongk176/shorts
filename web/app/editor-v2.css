@@ -141,12 +141,26 @@
   font-weight: 400;
   font-display: swap;
 }
+@font-face {
+  font-family: "Editor V3 Paperlogy";
+  src: url("/fonts/editor/Paperlogy-7Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
 
 /*
  * Font-picker previews use these display aliases on the template page and in
  * the editor controls. Keep new aliases here so the approved legacy global
  * stylesheet remains byte-for-byte unchanged.
  */
+@font-face {
+  font-family: "Editor Paperlogy";
+  src: url("/fonts/editor/Paperlogy-7Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
 @font-face {
   font-family: "Editor Noto Sans KR";
   src: url("/fonts/editor/NotoSansKR-Variable.ttf") format("truetype");

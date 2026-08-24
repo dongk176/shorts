@@ -129,6 +129,7 @@ export function createEditorDocumentSnapshotV3(
   input: EditorDocumentSnapshotInput,
   subtitleLayout?: EditorSubtitleLayout,
   pinTitleAboveVideo = false,
+  subtitleSpecVersion: 2 | 3 = 3,
 ): EditorDocumentSnapshotV3 {
   const v2 = createEditorDocumentSnapshot(input);
   if (pinTitleAboveVideo) {
@@ -139,7 +140,7 @@ export function createEditorDocumentSnapshotV3(
   return {
     ...v2,
     version: EDITOR_DOCUMENT_V3_VERSION,
-    renderSpec: createEditorRenderSpec(v2, subtitleLayout),
+    renderSpec: createEditorRenderSpec(v2, subtitleLayout, subtitleSpecVersion),
   };
 }
 
@@ -149,9 +150,11 @@ export function cloneEditorDocumentSnapshot(
   return snapshot.version === EDITOR_DOCUMENT_V3_VERSION
     ? createEditorDocumentSnapshotV3(
         snapshot,
-        snapshot.renderSpec.version === 2
+        snapshot.renderSpec.version !== 1
           ? editorSubtitleLayoutFromRenderSpec(snapshot.renderSpec)
           : undefined,
+        false,
+        snapshot.renderSpec.version === 2 ? 2 : 3,
       )
     : createEditorDocumentSnapshot(snapshot);
 }

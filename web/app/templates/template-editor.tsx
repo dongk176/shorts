@@ -8,6 +8,7 @@ import {
   aspectHeightRatio,
   stockBackgrounds,
   templatePresetColorOptions,
+  isTemplateConfigV5,
   videoFrameForAspect,
   type CustomTemplate,
   type TemplatePresetColor,
@@ -27,16 +28,17 @@ import {
 import { CENTER_SNAP_THRESHOLD_PX, snapAxisToCenter } from "@/lib/template-editor-snap";
 import { userFacingErrorMessage } from "@/lib/public-error";
 import { TemplateCommentPrototype } from "@/components/template-comment-prototype";
+import { TemplateSubtitlePreview } from "@/components/template-subtitle-preview";
+import { editorFontFamily, editorFontOptions, resolveEditorFontFace, type EditorFontId } from "@/lib/editor-fonts";
 
-type LayerId = "video" | "title" | "channel" | "comment";
+type LayerId = "video" | "title" | "subtitle" | "channel" | "comment";
 type TemplateLayerId = Exclude<LayerId, "comment">;
-type TextLayerId = Exclude<TemplateLayerId, "video">;
+type TextLayerId = "title" | "channel";
 type History = { past: TemplateConfig[]; present: TemplateConfig; future: TemplateConfig[] };
 type CenterGuides = { x: boolean; y: boolean };
 
-const layerLabels: Record<LayerId, string> = { video: "영상", title: "제목", channel: "채널명", comment: "댓글" };
+const layerLabels: Record<LayerId, string> = { video: "영상", title: "제목", subtitle: "자막", channel: "채널명", comment: "댓글" };
 const standardLayerIds: LayerId[] = ["video", "title", "channel"];
-const commentLayerIds: LayerId[] = [...standardLayerIds, "comment"];
 const commentSizeOptions: { value: TemplateConfig["comment"]["size"]; label: string }[] = [
   { value: "small", label: "작게" },
   { value: "medium", label: "기본" },
@@ -45,6 +47,10 @@ const commentSizeOptions: { value: TemplateConfig["comment"]["size"]; label: str
 const commentThemeOptions = [
   { value: "dark", label: "다크 모드", background: COMMENT_BACKGROUND_COLOR, foreground: "#ffffff" },
   { value: "light", label: "화이트 모드", background: "#ffffff", foreground: "#18181b" },
+] as const;
+const subtitleVariantOptions = [
+  { value: "highlight", label: "강조형", description: "말하는 어절을 색으로 강조" },
+  { value: "pop", label: "팝형", description: "핵심 어절을 크게 강조" },
 ] as const;
 const COMMENT_VIDEO_SNAP_THRESHOLD_PX = 18;
 const COMMENT_Y_MIN = CUSTOM_COMMENT_Y_MIN;
@@ -99,10 +105,23 @@ function ColorPalette({ value, onChange, allowNone = false }: { value: TemplateP
   );
 }
 
-export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig }: { initialTemplate: CustomTemplate | null; baseTemplateId: TemplateId; initialConfig: TemplateConfig }) {
+export function TemplateEditor({
+  initialTemplate,
+  baseTemplateId,
+  initialConfig,
+  unifiedSubtitleCanaryEnabled = false,
+  suggestedName,
+}: {
+  initialTemplate: CustomTemplate | null;
+  baseTemplateId: TemplateId;
+  initialConfig: TemplateConfig;
+  unifiedSubtitleCanaryEnabled?: boolean;
+  suggestedName?: string;
+}) {
   const commentLayerEnabled = baseTemplateId === "comment-capture";
   const [history, setHistory] = useState<History>({ past: [], present: initialConfig, future: [] });
-  const [name, setName] = useState(initialTemplate?.name || "나의 템플릿");
+  const initialName = initialTemplate?.name || suggestedName || "나의 템플릿";
+  const [name, setName] = useState(initialName);
   const [selectedLayer, setSelectedLayer] = useState<LayerId>("title");
   const [zoom, setZoom] = useState(1);
   const [showAllBackgroundColors, setShowAllBackgroundColors] = useState(false);
@@ -113,10 +132,17 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
   const [commentSnapGuide, setCommentSnapGuide] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const transactionRef = useRef<TemplateConfig | null>(null);
-  const baselineRef = useRef(JSON.stringify({ name: initialTemplate?.name || "나의 템플릿", config: initialConfig }));
+  const baselineRef = useRef(JSON.stringify({ name: initialName, config: initialConfig }));
   const config = history.present;
   const dirty = JSON.stringify({ name, config }) !== baselineRef.current;
-  const availableLayerIds = commentLayerEnabled ? commentLayerIds : standardLayerIds;
+  const unifiedSubtitleConfigEnabled = unifiedSubtitleCanaryEnabled && isTemplateConfigV5(config);
+  const availableLayerIds = unifiedSubtitleConfigEnabled
+    ? commentLayerEnabled
+      ? (["video", "title", "subtitle", "channel", "comment"] satisfies LayerId[])
+      : (["video", "title", "subtitle", "channel"] satisfies LayerId[])
+    : commentLayerEnabled
+      ? ([...standardLayerIds, "comment"] satisfies LayerId[])
+      : standardLayerIds;
   const videoBottom = config.video.y + config.video.height;
   const commentCanDockToVideo = customCommentCanDockToVideo(config.video);
   const commentIsDockedToVideo = config.comment.dockedToVideo && commentCanDockToVideo;
@@ -210,6 +236,21 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
             return next;
           });
           setCenterGuides({ x: horizontal.snapped, y: vertical.snapped });
+          return;
+        }
+
+        if (layer === "subtitle") {
+          updateTransient((next) => {
+            if (!isTemplateConfigV5(next)) return next;
+            next.subtitle.x = TEMPLATE_CANVAS.width / 2;
+            next.subtitle.y = Math.round(clamp(
+              startConfig.subtitle.y + dy,
+              120,
+              1800,
+            ));
+            return next;
+          });
+          setCenterGuides({ x: true, y: false });
           return;
         }
 
@@ -331,6 +372,12 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
   };
 
   const selectedTextLayer = selectedLayer === "title" || selectedLayer === "channel" ? config[selectedLayer] : null;
+  const selectedSubtitle = selectedLayer === "subtitle" && unifiedSubtitleConfigEnabled && isTemplateConfigV5(config)
+    ? config.subtitle
+    : null;
+  const unifiedTitleFontId = unifiedSubtitleConfigEnabled && isTemplateConfigV5(config)
+    ? config.title.fontId
+    : undefined;
   const background = backgroundStyle(config);
   const selectedBackgroundColor = config.background.kind === "color" ? config.background.color : null;
   const visibleBackgroundColors = showAllBackgroundColors
@@ -358,7 +405,22 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,#73737c,#2c2c31_70%)]" /><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
                     <button type="button" aria-label="영상 크기 조절" onPointerDown={(event) => beginPointerAction(event, "video", "resize")} className="absolute bottom-0 right-0 h-6 w-6 cursor-nwse-resize border-l border-t border-white bg-[#ff715e]" />
                   </div>
-                  <CustomTemplateTitlePreview title={config.title} firstLine="놓치면 후회할" secondLine="핵심 한 가지" selected={selectedLayer === "title"} onPointerDown={(event) => beginPointerAction(event, "title")} />
+                  <CustomTemplateTitlePreview
+                    title={config.title}
+                    firstLine="놓치면 후회할"
+                    secondLine="핵심 한 가지"
+                    fontFamily={unifiedTitleFontId ? editorFontFamily(unifiedTitleFontId) : undefined}
+                    fontWeight={unifiedTitleFontId ? resolveEditorFontFace(unifiedTitleFontId, "title").resolvedWeight : undefined}
+                    selected={selectedLayer === "title"}
+                    onPointerDown={(event) => beginPointerAction(event, "title")}
+                  />
+                  {unifiedSubtitleConfigEnabled && isTemplateConfigV5(config)
+                    ? <TemplateSubtitlePreview
+                        subtitle={config.subtitle}
+                        selected={selectedLayer === "subtitle"}
+                        onPointerDown={(event) => beginPointerAction(event, "subtitle")}
+                      />
+                    : null}
                   {config.channel.visible && !commentLayerEnabled && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</button>}
                   {commentLayerEnabled && <div className="absolute inset-x-0 z-40" style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>
                     {config.comment.visible && <TemplateCommentPrototype selected={selectedLayer === "comment"} theme={config.comment.theme} size={config.comment.size} onSelect={() => setSelectedLayer("comment")} onPointerDown={beginCommentPointerAction} />}
@@ -380,18 +442,132 @@ export function TemplateEditor({ initialTemplate, baseTemplateId, initialConfig 
 
             <section><label className="block text-[15px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">템플릿 이름<input value={name} maxLength={50} onChange={(event) => setName(event.target.value)} className="mt-3 h-11 w-full rounded-xl border border-white/10 bg-black/25 px-3 text-sm font-medium text-white outline-none transition focus:border-[#ff715e]" /></label></section>
 
-            <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">편집 레이어</h2><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">미리보기에서 직접 선택하거나 아래 레이어를 고르세요.</p><div className={`mt-3 grid gap-1.5 rounded-xl border border-white/10 bg-black/20 p-1.5 ${commentLayerEnabled ? "grid-cols-4" : "grid-cols-3"}`}>{availableLayerIds.map((layer) => <button key={layer} type="button" onClick={() => setSelectedLayer(layer)} className={`rounded-lg px-1 py-2.5 text-xs font-bold transition ${selectedLayer === layer ? "bg-[#ff715e] text-white" : "text-neutral-400 hover:bg-white/5 hover:text-white"}`}>{layerLabels[layer]}</button>)}</div></section>
+            <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">편집 레이어</h2><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">미리보기에서 직접 선택하거나 아래 레이어를 고르세요.</p><div className={`mt-3 grid gap-1.5 rounded-xl border border-white/10 bg-black/20 p-1.5 ${availableLayerIds.length >= 5 ? "grid-cols-5" : availableLayerIds.length === 4 ? "grid-cols-4" : "grid-cols-3"}`}>{availableLayerIds.map((layer) => <button key={layer} type="button" onClick={() => setSelectedLayer(layer)} className={`rounded-lg px-1 py-2.5 text-xs font-bold transition ${selectedLayer === layer ? "bg-[#ff715e] text-white" : "text-neutral-400 hover:bg-white/5 hover:text-white"}`}>{layerLabels[layer]}</button>)}</div></section>
 
             {selectedLayer === "video" && <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">영상 프레임</h2><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5"><h3 className="text-sm font-semibold text-neutral-200">영상 비율</h3><div className="mt-3 grid grid-cols-5 gap-1">{videoAspectRatioOptions.map((option) => <button key={option.value} type="button" onClick={() => changeAspect(option.value)} className={`rounded-lg py-2 text-[10px] font-bold transition ${config.video.aspectRatio === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400 hover:bg-white/10"}`}>{option.value}</button>)}</div><p className="mt-3 text-[11px] leading-5 text-neutral-500">프레임을 끌어 이동하고 오른쪽 아래 핸들로 비율을 유지한 채 크기를 조절하세요.</p></div></section>}
 
             {selectedTextLayer && <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">{selectedLayer === "title" ? "제목 스타일" : "채널명 스타일"}</h2><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
               <div className="flex items-center justify-between"><span className="text-sm font-semibold text-neutral-200">레이어 표시</span><button type="button" onClick={() => commit((next) => { next[selectedLayer as TextLayerId].visible = !selectedTextLayer.visible; return next; })} className={`rounded-full px-3 py-1 text-xs font-bold ${selectedTextLayer.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}>{selectedTextLayer.visible ? "켜짐" : "꺼짐"}</button></div>
+              {selectedLayer === "title" && unifiedTitleFontId && <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">후킹 제목 폰트
+                <select
+                  aria-label="후킹 제목 폰트"
+                  value={unifiedTitleFontId}
+                  onChange={(event) => commit((next) => {
+                    if (isTemplateConfigV5(next)) next.title.fontId = event.target.value as EditorFontId;
+                    return next;
+                  })}
+                  className="mt-3 h-11 w-full rounded-xl border border-white/10 bg-[#242429] px-3 text-sm font-extrabold text-white outline-none transition focus:border-[#ff715e]"
+                  style={{ fontFamily: editorFontFamily(unifiedTitleFontId) }}
+                >
+                  {editorFontOptions.map((font) => <option key={font.id} value={font.id}>{font.label}</option>)}
+                </select>
+                <span className="mt-2 block text-[11px] font-medium leading-5 text-neutral-500">저장한 폰트가 홈 미리보기와 완성 영상의 후킹 제목에 적용됩니다.</span>
+              </label>}
               <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">글자 크기 <span className="float-right text-sm text-[#ff9b8d]">{selectedTextLayer.fontSize}px</span><input type="range" min={selectedLayer === "channel" ? 20 : 24} max={selectedLayer === "title" ? 96 : 64} value={selectedTextLayer.fontSize} onChange={(event) => commit((next) => { next[selectedLayer as TextLayerId].fontSize = Number(event.target.value); return next; })} className="mt-3 w-full accent-[#ff715e]" /></label>
               {selectedLayer === "title" ? <>
                 <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">1행 제목</h3><div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-xs font-semibold text-neutral-400">글자색</p><div className="mt-2"><ColorPalette key="title-line-1-text" value={config.title.primaryColor} onChange={(color) => { if (color) commit((next) => { next.title.primaryColor = color; return next; }); }} /></div></div><div><p className="text-xs font-semibold text-neutral-400">배경색</p><div className="mt-2"><ColorPalette key="title-line-1-background" allowNone value={config.title.primaryBackgroundColor} onChange={(color) => commit((next) => { next.title.primaryBackgroundColor = color; return next; })} /></div></div></div></div>
                 <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">2행 제목</h3><div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-xs font-semibold text-neutral-400">글자색</p><div className="mt-2"><ColorPalette key="title-line-2-text" value={config.title.accentColor} onChange={(color) => { if (color) commit((next) => { next.title.accentColor = color; return next; }); }} /></div></div><div><p className="text-xs font-semibold text-neutral-400">배경색</p><div className="mt-2"><ColorPalette key="title-line-2-background" allowNone value={config.title.accentBackgroundColor} onChange={(color) => commit((next) => { next.title.accentBackgroundColor = color; return next; })} /></div></div></div></div>
               </> : <div className="mt-5 border-t border-white/10 pt-4"><h3 className="text-sm font-semibold text-neutral-200">채널명</h3>{commentLayerEnabled && <p className="mt-1.5 text-[11px] leading-5 text-neutral-500">댓글 카드 크기가 바뀌어도 채널명은 항상 카드 아래로 자동 정렬됩니다.</p>}<div className="mt-3 grid grid-cols-2 gap-5"><div><p className="text-xs font-semibold text-neutral-400">글자색</p><div className="mt-2"><ColorPalette key="channel-color" value={config.channel.color} onChange={(color) => { if (color) commit((next) => { next.channel.color = color; return next; }); }} /></div></div><div><p className="text-xs font-semibold text-neutral-400">배경색</p><div className="mt-2"><ColorPalette key="channel-background" allowNone value={config.channel.backgroundColor} onChange={(color) => commit((next) => { next.channel.backgroundColor = color; return next; })} /></div></div></div></div>}
             </div></section>}
+
+            {selectedSubtitle && <section>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">자막 스타일</h2>
+                <span className="rounded-full border border-[#35e6e3]/25 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">어드민 카나리</span>
+              </div>
+              <p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">이 설정은 홈 미리보기와 링크·직접 업로드 영상에 동일하게 적용됩니다.</p>
+              <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-neutral-200">자막 표시</span>
+                  <button
+                    type="button"
+                    onClick={() => commit((next) => {
+                      if (isTemplateConfigV5(next)) next.subtitle.visible = !next.subtitle.visible;
+                      return next;
+                    })}
+                    className={`rounded-full px-3 py-1 text-xs font-bold ${selectedSubtitle.visible ? "bg-emerald-400 text-black" : "bg-white/10 text-neutral-400"}`}
+                  >
+                    {selectedSubtitle.visible ? "켜짐" : "꺼짐"}
+                  </button>
+                </div>
+
+                <div className="mt-5 border-t border-white/10 pt-4">
+                  <h3 className="text-sm font-semibold text-neutral-200">자막 방식</h3>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {subtitleVariantOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={selectedSubtitle.variant === option.value}
+                        onClick={() => commit((next) => {
+                          if (isTemplateConfigV5(next)) next.subtitle.variant = option.value;
+                          return next;
+                        })}
+                        className={`rounded-xl border px-3 py-3 text-left transition ${selectedSubtitle.variant === option.value ? "border-[#ff715e] bg-[#ff715e]/10 text-white" : "border-white/10 bg-white/[.03] text-neutral-400 hover:border-white/30 hover:text-white"}`}
+                      >
+                        <strong className="block text-xs">{option.label}</strong>
+                        <span className="mt-1 block text-[10px] leading-4 text-neutral-500">{option.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">폰트
+                  <select
+                    aria-label="자막 폰트"
+                    value={selectedSubtitle.fontId}
+                    onChange={(event) => commit((next) => {
+                      if (isTemplateConfigV5(next)) next.subtitle.fontId = event.target.value as EditorFontId;
+                      return next;
+                    })}
+                    className="mt-3 h-11 w-full rounded-xl border border-white/10 bg-[#242429] px-3 text-sm font-extrabold text-white outline-none transition focus:border-[#ff715e]"
+                    style={{ fontFamily: editorFontFamily(selectedSubtitle.fontId) }}
+                  >
+                    {editorFontOptions.map((font) => <option key={font.id} value={font.id}>{font.label}</option>)}
+                  </select>
+                </label>
+
+                <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">글자 크기 <span className="float-right text-sm text-[#ff9b8d]">{selectedSubtitle.fontSize}px</span>
+                  <input
+                    type="range"
+                    min={24}
+                    max={120}
+                    value={selectedSubtitle.fontSize}
+                    onChange={(event) => commit((next) => {
+                      if (isTemplateConfigV5(next)) next.subtitle.fontSize = Number(event.target.value);
+                      return next;
+                    })}
+                    className="mt-3 w-full accent-[#ff715e]"
+                  />
+                </label>
+
+                <label className="mt-5 block border-t border-white/10 pt-4 text-sm font-semibold text-neutral-200">세로 위치 <span className="float-right text-sm text-[#ff9b8d]">{Math.round((selectedSubtitle.y / TEMPLATE_CANVAS.height) * 100)}%</span>
+                  <input
+                    type="range"
+                    min={120}
+                    max={1800}
+                    step={10}
+                    value={selectedSubtitle.y}
+                    onChange={(event) => commit((next) => {
+                      if (isTemplateConfigV5(next)) {
+                        next.subtitle.x = TEMPLATE_CANVAS.width / 2;
+                        next.subtitle.y = Number(event.target.value);
+                      }
+                      return next;
+                    })}
+                    className="mt-3 w-full accent-[#ff715e]"
+                  />
+                </label>
+                <p className="mt-2 text-[11px] leading-5 text-neutral-500">가로 위치는 영상 중앙에 고정됩니다. 미리보기의 자막을 위아래로 끌어도 됩니다.</p>
+
+                <div className="mt-5 grid grid-cols-2 gap-5 border-t border-white/10 pt-4">
+                  <div><p className="text-xs font-semibold text-neutral-400">기본 글자색</p><div className="mt-2"><ColorPalette key="subtitle-text-color" value={selectedSubtitle.color} onChange={(color) => { if (color) commit((next) => { if (isTemplateConfigV5(next)) next.subtitle.color = color; return next; }); }} /></div></div>
+                  <div><p className="text-xs font-semibold text-neutral-400">강조 글자색</p><div className="mt-2"><ColorPalette key="subtitle-accent-color" value={selectedSubtitle.accentColor} onChange={(color) => { if (color) commit((next) => { if (isTemplateConfigV5(next)) next.subtitle.accentColor = color; return next; }); }} /></div></div>
+                </div>
+
+                <div className="mt-5 rounded-lg border border-emerald-300/20 bg-emerald-300/[.06] px-3 py-2.5 text-[11px] leading-5 text-emerald-100/75">템플릿을 저장하면 선택한 자막 상태·위치·폰트·크기·색상이 함께 저장됩니다.</div>
+              </div>
+            </section>}
 
             {selectedLayer === "comment" && commentLayerEnabled && <section>
               <div className="flex items-center justify-between gap-3">

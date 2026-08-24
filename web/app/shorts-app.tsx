@@ -124,6 +124,7 @@ import {
   COMMENT_CAPTURE_LANDSCAPE_LIFT_PX,
   COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
   PRESET_SQUARE_CHANNEL_CENTER_Y,
+  isTemplateConfigV5,
   stockBackgrounds,
   templateConfigSchema,
   templatePresetColorOptions,
@@ -394,6 +395,27 @@ function customTemplateFromEditorDraft(
     version: snapshot.version,
     createdAt: "",
     updatedAt: "",
+  };
+}
+
+function seedCustomTemplateTitleFont(
+  layout: EditorOverlayLayoutSnapshot,
+  template: CustomTemplate | null,
+  candidateFontsEnabled: boolean,
+) {
+  if (
+    !candidateFontsEnabled
+    || !template
+    || !isTemplateConfigV5(template.config)
+  ) {
+    return layout;
+  }
+  return {
+    ...layout,
+    fonts: {
+      ...layout.fonts,
+      title: template.config.title.fontId,
+    },
   };
 }
 
@@ -1579,8 +1601,20 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
   );
 }
 
-function CustomHomeTemplatePreview({ template }: { template: CustomTemplate }) {
-  return <CustomTemplateCanvasPreview template={template} firstLine="AI가 만든 제목" secondLine="핵심 포인트" channelLabel="채널 이름" />;
+function CustomHomeTemplatePreview({
+  template,
+  showUnifiedSubtitle = false,
+}: {
+  template: CustomTemplate;
+  showUnifiedSubtitle?: boolean;
+}) {
+  return <CustomTemplateCanvasPreview
+    template={template}
+    firstLine="AI가 만든 제목"
+    secondLine="핵심 포인트"
+    channelLabel="채널 이름"
+    showUnifiedSubtitle={showUnifiedSubtitle}
+  />;
 }
 
 function SubtitleTemplatePreview({
@@ -1726,6 +1760,7 @@ function CaptionTemplateEditorPreview({
   onEditingChange,
   onEditingCommit,
   onEditingCancel,
+  textEditingEnabled,
 }: {
   spec: CaptionRenderSpec;
   currentTimeSeconds: number;
@@ -1740,6 +1775,7 @@ function CaptionTemplateEditorPreview({
   onEditingChange: (text: string) => void;
   onEditingCommit: () => void;
   onEditingCancel: () => void;
+  textEditingEnabled: boolean;
 }) {
   const currentFrameFloat = Math.max(0, currentTimeSeconds * spec.fps);
   const currentFrame = Math.floor(currentFrameFloat + 0.0001);
@@ -1757,9 +1793,13 @@ function CaptionTemplateEditorPreview({
   const { cue, cueIndex, event } = active;
   const captionFontId = layout.fontId || spec.font.fontId || DEFAULT_EDITOR_FONT_ID;
   const captionFontFace = resolveEditorFontFace(captionFontId, "title");
+  const captionScale = layout.fontSize
+    ? layout.fontSize / spec.style.fontSize
+    : layout.scale;
+  const textColor = layout.color || spec.style.textColor;
   const canvasCqw = (pixels: number) => `${pixels / 10.8}cqw`;
   const transformedX = (centerX: number) => (
-    540 + (centerX - 540) * layout.scale
+    540 + (centerX - 540) * captionScale
   );
   const sharedTextStyle = {
     fontFamily: captionFontFace.family,
@@ -1771,7 +1811,7 @@ function CaptionTemplateEditorPreview({
   } satisfies CSSProperties;
   // CSS strokes are centered on a glyph and the fill covers their inner half.
   // ASS `bord` is an outward border, so two CSS pixels match one ASS border px.
-  const previewStrokeWidth = spec.style.outlineWidth * layout.scale * 2;
+  const previewStrokeWidth = spec.style.outlineWidth * captionScale * 2;
   const accentColor = layout.accentColor || spec.style.accentColor;
   const captionCenterY = (
     cue.centerY ?? (spec.safeArea.y + spec.safeArea.height / 2)
@@ -1779,6 +1819,7 @@ function CaptionTemplateEditorPreview({
   const beginTextEdit = (event: ReactMouseEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
+    if (!textEditingEnabled) return;
     onEditStart(cueIndex);
   };
 
@@ -1842,15 +1883,19 @@ function CaptionTemplateEditorPreview({
           key={`${event.startFrame}-${wordIndex}`}
           role="button"
           tabIndex={0}
-          aria-label="팝형 자막 위치·크기·텍스트 편집"
-          title="드래그해서 이동 · 더블클릭해서 자막 수정"
+          aria-label={textEditingEnabled
+            ? "팝형 자막 위치·크기·텍스트 편집"
+            : "팝형 자막 위치·크기 설정"}
+          title={textEditingEnabled
+            ? "드래그해서 이동 · 더블클릭해서 자막 수정"
+            : "드래그해서 자막 위치 이동"}
           className="pointer-events-auto absolute cursor-ns-resize touch-none whitespace-nowrap outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
           onPointerDown={(pointerEvent) => onPointerDown(
             pointerEvent,
             cueIndex,
           )}
           onClick={onSelect}
-          onDoubleClick={beginTextEdit}
+          onDoubleClick={textEditingEnabled ? beginTextEdit : undefined}
           onKeyDown={(keyboardEvent) => {
             if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
             keyboardEvent.preventDefault();
@@ -1860,9 +1905,9 @@ function CaptionTemplateEditorPreview({
             ...sharedTextStyle,
             left: `${transformedX(position.centerX) / 10.8}%`,
             top: `${(position.centerY + layout.offsetY) / 19.2}%`,
-            color: activeWord ? accentColor : spec.style.textColor,
+            color: activeWord ? accentColor : textColor,
             fontSize: canvasCqw(
-              word.fontSize * layout.scale * CAPTION_ASS_PREVIEW_FONT_SCALE,
+              word.fontSize * captionScale * CAPTION_ASS_PREVIEW_FONT_SCALE,
             ),
             WebkitTextStroke: `${canvasCqw(previewStrokeWidth)} ${spec.style.outlineColor}`,
             transform: `translate(-50%, -50%) scale(${activeScale})`,
@@ -1872,15 +1917,19 @@ function CaptionTemplateEditorPreview({
       : <span
         role="button"
         tabIndex={0}
-        aria-label="강조형 자막 위치·크기·텍스트 편집"
-        title="드래그해서 이동 · 더블클릭해서 자막 수정"
+        aria-label={textEditingEnabled
+          ? "강조형 자막 위치·크기·텍스트 편집"
+          : "강조형 자막 위치·크기 설정"}
+        title={textEditingEnabled
+          ? "드래그해서 이동 · 더블클릭해서 자막 수정"
+          : "드래그해서 자막 위치 이동"}
         className="pointer-events-auto absolute cursor-ns-resize touch-none whitespace-nowrap text-center outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
         onPointerDown={(pointerEvent) => onPointerDown(
           pointerEvent,
           cueIndex,
         )}
         onClick={onSelect}
-        onDoubleClick={beginTextEdit}
+        onDoubleClick={textEditingEnabled ? beginTextEdit : undefined}
         onKeyDown={(keyboardEvent) => {
           if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
           keyboardEvent.preventDefault();
@@ -1890,10 +1939,10 @@ function CaptionTemplateEditorPreview({
           ...sharedTextStyle,
           left: `${transformedX(cue.centerX ?? 540) / 10.8}%`,
           top: `${((cue.centerY ?? (spec.safeArea.y + spec.safeArea.height / 2)) + layout.offsetY) / 19.2}%`,
-          color: spec.style.textColor,
+          color: textColor,
           fontSize: canvasCqw(
             (cue.fontSize || spec.style.fontSize)
-              * layout.scale
+              * captionScale
               * CAPTION_ASS_PREVIEW_FONT_SCALE,
           ),
           WebkitTextStroke: `${canvasCqw(previewStrokeWidth)} ${spec.style.outlineColor}`,
@@ -1913,7 +1962,7 @@ function CaptionTemplateEditorPreview({
                 style={{
                   color: event.activeWordIndex === wordIndex
                     ? accentColor
-                    : spec.style.textColor,
+                    : textColor,
                 }}
               >{prefix}{word.text}</span>;
             })}
@@ -1935,6 +1984,7 @@ function TemplatePicker({
   customTemplateId,
   onCustomTemplateChange,
   canUseCustomTemplates,
+  unifiedTemplateSubtitleCanaryEnabled,
   subtitleTemplateSelectionEnabled,
   subtitleTemplateId,
   onSubtitleTemplateChange,
@@ -1956,6 +2006,7 @@ function TemplatePicker({
   customTemplateId: string | null;
   onCustomTemplateChange: (template: CustomTemplate | null) => void;
   canUseCustomTemplates: boolean;
+  unifiedTemplateSubtitleCanaryEnabled: boolean;
   subtitleTemplateSelectionEnabled: boolean;
   subtitleTemplateId: SubtitleTemplateSelectionId | null;
   onSubtitleTemplateChange: (value: SubtitleTemplateSelectionId | null) => void;
@@ -2001,7 +2052,7 @@ function TemplatePicker({
   const renderFavoriteCard = (card: FavoriteTemplateCard) => {
     if (card.kind === "custom") {
       const selected = !subtitleTemplateId && customTemplateId === card.template.id;
-      return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
+      return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
     }
     const selected = !subtitleTemplateId && !customTemplateId && value === card.template.id;
     return (
@@ -2086,7 +2137,7 @@ function TemplatePicker({
         {remainingFavoriteCards.map(renderFavoriteCard)}
         {remainingPersonalTemplates.map((template) => {
           const selected = !subtitleTemplateId && customTemplateId === template.id;
-          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
+          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
         })}
       </div>
       {settingsBelowRail && templateSettings}
@@ -3825,20 +3876,28 @@ function CommentTimelineEditor({
   </section>;
 }
 
-function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, wordTimedSubtitlesAvailable = false, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; wordTimedSubtitlesAvailable?: boolean; paidAccessBlocked?: boolean }) {
+function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false, wordTimedSubtitlesAvailable = false, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean; wordTimedSubtitlesAvailable?: boolean; paidAccessBlocked?: boolean }) {
   const adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(
     editorRelease,
   );
-  const availableEditorFontOptions = adminSubtitleLayoutEnabled
+  const unifiedSubtitleLayoutEnabled = adminSubtitleLayoutEnabled
+    && unifiedTemplateSubtitleCanaryEnabled;
+  const availableEditorFontOptions = unifiedSubtitleLayoutEnabled
     ? editorFontOptions
     : stableEditorFontOptions;
-  const adminSubtitleEditingEnabled = adminSubtitleLayoutEnabled
-    && wordTimedSubtitlesAvailable;
-  const captionTemplateEditorSpec = adminSubtitleEditingEnabled
+  const captionTemplateEditorSpec = adminSubtitleLayoutEnabled
     && item.captionRenderSpec
     && item.subtitleTemplateId === item.captionRenderSpec.templateId
     ? captionRenderSpecForEditor(item.captionRenderSpec)
     : null;
+  const dynamicWordTimedSubtitleEditing = unifiedSubtitleLayoutEnabled
+    && !captionTemplateEditorSpec;
+  const captionTextEditingEnabled = !dynamicWordTimedSubtitleEditing;
+  const adminSubtitleEditingEnabled = adminSubtitleLayoutEnabled
+    && (wordTimedSubtitlesAvailable || Boolean(captionTemplateEditorSpec));
+  const subtitleToolVisible = unifiedSubtitleLayoutEnabled
+    ? adminSubtitleLayoutEnabled
+    : adminSubtitleEditingEnabled;
   const savedEditorDocument = overlayPreviewEnabled
     && (item.editorDocument?.version === 2 || item.editorDocument?.version === 3)
     ? item.editorDocument
@@ -3941,11 +4000,25 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     fontId: savedSubtitleLayout.fontId
       || captionTemplateEditorSpec?.font.fontId
       || DEFAULT_EDITOR_FONT_ID,
+    ...(unifiedSubtitleLayoutEnabled
+      ? {
+          fontSize: savedSubtitleLayout.fontSize
+            || Math.round(
+              (captionTemplateEditorSpec?.style.fontSize || 72)
+              * savedSubtitleLayout.scale,
+            ),
+          scale: 1,
+          color: savedSubtitleLayout.color
+            || captionTemplateEditorSpec?.style.textColor
+            || undefined,
+        }
+      : {}),
     accentColor: savedSubtitleLayout.accentColor
       || captionTemplateEditorSpec?.style.accentColor
       || (adminSubtitleEditingEnabled
         ? presetBrandColor || SUBTITLE_TEMPLATE_BRAND_COLOR
         : undefined),
+    ...(dynamicWordTimedSubtitleEditing ? { cueEdits: [] } : {}),
   });
   const [subtitleLayout, setSubtitleLayout] = useState<EditorSubtitleLayout>(
     initialSubtitleLayout,
@@ -4080,7 +4153,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [overlayLayout, setOverlayLayout] = useState(() => {
     const initialLayout = savedEditorDocument
       ? normalizeEditorTitleScaleLayout(savedEditorDocument.overlays)
-      : createInitialEditorOverlayLayout();
+      : seedCustomTemplateTitleFont(
+          createInitialEditorOverlayLayout(),
+          availableCustomTemplate,
+          unifiedSubtitleLayoutEnabled,
+        );
     return adminSubtitleLayoutEnabled
       ? initialLayout
       : sanitizeEditorOverlayFontsForStable(initialLayout);
@@ -4592,11 +4669,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     setDesktopSidebarOpen(true);
   };
   const editorDocumentSubtitleLayout = useMemo(
-    () => editorSubtitleLayoutWithCaptionDraft(
-      subtitleLayout,
-      captionTextDraft,
-    ),
-    [captionTextDraft, subtitleLayout],
+    () => dynamicWordTimedSubtitleEditing
+      ? { ...subtitleLayout, cueEdits: [] }
+      : editorSubtitleLayoutWithCaptionDraft(
+          subtitleLayout,
+          captionTextDraft,
+        ),
+    [captionTextDraft, dynamicWordTimedSubtitleEditing, subtitleLayout],
   );
   const editorDocumentSnapshot = useMemo(() => {
     const input: Parameters<typeof createEditorDocumentSnapshot>[0] = {
@@ -4652,6 +4731,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             ? editorDocumentSubtitleLayout
             : undefined,
           adminSubtitleLayoutEnabled,
+          unifiedSubtitleLayoutEnabled ? 3 : 2,
         )
       : createEditorDocumentSnapshot(input);
   }, [
@@ -4682,6 +4762,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     editorRelease.documentVersion,
     adminSubtitleLayoutEnabled,
     adminSubtitleEditingEnabled,
+    unifiedSubtitleLayoutEnabled,
   ]);
   useEffect(() => {
     if (
@@ -4896,6 +4977,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   ]);
   const editableCaptionSourceSpec = captionTemplateEditorSpec
     || generalHighlightEditorSpec;
+  const subtitleCaptionScale = subtitleLayout.fontSize
+    && editableCaptionSourceSpec
+    ? subtitleLayout.fontSize / editableCaptionSourceSpec.style.fontSize
+    : subtitleLayout.scale;
   const captionTemplatePreviewSpec = useMemo(() => {
     void captionFontRevision;
     const cueEdits = JSON.parse(
@@ -4933,20 +5018,22 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     editableCaptionSourceSpec
       ? editorCaptionVerticalOffsetBounds(
           editableCaptionSourceSpec,
-          subtitleLayout.scale,
+          subtitleCaptionScale,
         )
       : {
           min: EDITOR_SUBTITLE_OFFSET_Y_MIN,
           max: EDITOR_SUBTITLE_OFFSET_Y_MAX,
         }
-  ), [editableCaptionSourceSpec, subtitleLayout.scale]);
+  ), [editableCaptionSourceSpec, subtitleCaptionScale]);
   const updateCaptionTemplateSubtitleLayout = useCallback((
     value: EditorSubtitleLayout,
   ) => {
     const bounds = editableCaptionSourceSpec
       ? editorCaptionVerticalOffsetBounds(
           editableCaptionSourceSpec,
-          value.scale,
+          value.fontSize
+            ? value.fontSize / editableCaptionSourceSpec.style.fontSize
+            : value.scale,
         )
       : {
           min: EDITOR_SUBTITLE_OFFSET_Y_MIN,
@@ -4960,16 +5047,22 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   useEffect(() => {
     if (!editableCaptionSourceSpec) return;
     const currentCueEdits = subtitleLayoutRef.current.cueEdits || [];
-    const cueEdits = sanitizeEditorCaptionCueEdits(
-      editableCaptionSourceSpec,
-      currentCueEdits,
-    );
+    const cueEdits = dynamicWordTimedSubtitleEditing
+      ? []
+      : sanitizeEditorCaptionCueEdits(
+          editableCaptionSourceSpec,
+          currentCueEdits,
+        );
     if (JSON.stringify(cueEdits) === JSON.stringify(currentCueEdits)) return;
     updateCaptionTemplateSubtitleLayout({
       ...subtitleLayoutRef.current,
       cueEdits,
     });
-  }, [editableCaptionSourceSpec, updateCaptionTemplateSubtitleLayout]);
+  }, [
+    dynamicWordTimedSubtitleEditing,
+    editableCaptionSourceSpec,
+    updateCaptionTemplateSubtitleLayout,
+  ]);
   const titleFontFamily = overlayPreviewEnabled
     ? renderSpec?.title.font.family || editorFontFamily(titleFontId)
     : undefined;
@@ -5656,6 +5749,18 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       : { ...DEFAULT_EDITOR_SUBTITLE_LAYOUT };
     const restoredSubtitleLayout = normalizeEditorSubtitleLayout({
       ...storedSubtitleLayout,
+      ...(unifiedSubtitleLayoutEnabled
+        ? {
+            fontSize: storedSubtitleLayout.fontSize
+              || Math.round(
+                (captionTemplateEditorSpec?.style.fontSize || 72)
+                * storedSubtitleLayout.scale,
+              ),
+            scale: 1,
+            color: storedSubtitleLayout.color
+              || captionTemplateEditorSpec?.style.textColor,
+          }
+        : {}),
       accentColor: storedSubtitleLayout.accentColor
         || captionTemplateEditorSpec?.style.accentColor,
     });
@@ -5808,11 +5913,14 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   }, [
     adminSubtitleLayoutEnabled,
     captionTemplateEditorSpec?.style.accentColor,
+    captionTemplateEditorSpec?.style.fontSize,
+    captionTemplateEditorSpec?.style.textColor,
     currentEditorCopySnapshot,
     currentEditorTemplateSnapshot,
     editorDraftCandidate,
     item.id,
     item.renderVersion,
+    unifiedSubtitleLayoutEnabled,
   ]);
 
   useEffect(() => {
@@ -6321,7 +6429,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const beginEditorCaptionTextEdit = useCallback((
     sourceCueIndex: number,
   ) => {
-    if (!editableCaptionSourceSpec) return;
+    if (!captionTextEditingEnabled || !editableCaptionSourceSpec) return;
     const target = resolveEditorCaptionTextEditTarget(
       editableCaptionSourceSpec,
       sourceCueIndex,
@@ -6342,6 +6450,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     });
   }, [
     beginEditorCopyInteraction,
+    captionTextEditingEnabled,
     editableCaptionSourceSpec,
     finishPendingEditorInteractions,
   ]);
@@ -8495,7 +8604,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       templateId: availableCustomTemplate.baseTemplateId,
       activeCustomTemplate: availableCustomTemplate,
       templateSelectionTouched: true,
-      overlayLayout: resetEditorOverlayGeometry(before.overlayLayout),
+      overlayLayout: seedCustomTemplateTitleFont(
+        resetEditorOverlayGeometry(before.overlayLayout),
+        availableCustomTemplate,
+        unifiedSubtitleLayoutEnabled,
+      ),
     };
     applyEditorTemplateSnapshot(after);
     recordEditorTemplateChange(before, after);
@@ -8520,6 +8633,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   };
 
   const toggleEditorSubtitles = useCallback(() => {
+    if (!subtitlesEnabledRef.current && !editableCaptionSourceSpec) return;
     finishPendingEditorInteractionsIncludingCaption();
     beginEditorCopyInteraction();
     const enabled = !subtitlesEnabledRef.current;
@@ -8528,6 +8642,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     finishEditorCopyInteraction();
   }, [
     beginEditorCopyInteraction,
+    editableCaptionSourceSpec,
     finishEditorCopyInteraction,
     finishPendingEditorInteractionsIncludingCaption,
   ]);
@@ -8570,7 +8685,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       const current = subtitleLayoutRef.current;
       const bounds = editorCaptionVerticalOffsetBounds(
         editableCaptionSourceSpec,
-        current.scale,
+        current.fontSize
+          ? current.fontSize / editableCaptionSourceSpec.style.fontSize
+          : current.scale,
       );
       updateCaptionTemplateSubtitleLayout({
         ...current,
@@ -10110,6 +10227,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             ))}
             onEditingCommit={commitEditorCaptionTextEdit}
             onEditingCancel={cancelEditorCaptionTextEdit}
+            textEditingEnabled={captionTextEditingEnabled}
           />}
           {subtitlesEnabled && !editableCaptionSourceSpec && activeSubtitle && <div
             className="absolute inset-x-5 bottom-[23.2%] z-50 rounded bg-black/75 px-2 py-1 text-center text-xs font-bold text-white"
@@ -10638,7 +10756,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             >
             {EDITOR_SIDEBAR_TOOLS.filter((tool) => (
               tool.id !== "subtitle"
-              || adminSubtitleEditingEnabled
+              || subtitleToolVisible
             )).map((tool) => {
               const active = activeEditorSidebarTool === tool.id
                 && desktopSidebarOpen;
@@ -10816,7 +10934,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               </p>}
           </section>}
           {overlayPreviewEnabled
-            && adminSubtitleEditingEnabled
+            && subtitleToolVisible
             && <section
               className={`editor-sidebar-tool-panel editor-subtitle-tool-panel${activeEditorSidebarTool === "subtitle" ? " is-active" : ""}`}
               aria-label={editableCaptionSourceSpec
@@ -10836,9 +10954,17 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 </div>
                 <button
                   type="button"
-                  className="editor-visibility-toggle"
+                  className="editor-visibility-toggle disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label={subtitlesEnabled ? "자막 끄기" : "자막 켜기"}
                   aria-pressed={subtitlesEnabled}
+                  disabled={unifiedSubtitleLayoutEnabled
+                    && !subtitlesEnabled
+                    && !editableCaptionSourceSpec}
+                  title={unifiedSubtitleLayoutEnabled
+                    && !subtitlesEnabled
+                    && !editableCaptionSourceSpec
+                    ? "단어 타이밍이 없어 자막을 켤 수 없습니다."
+                    : undefined}
                   onClick={toggleEditorSubtitles}
                 >
                   <span aria-hidden="true"><i /></span>
@@ -10849,13 +10975,15 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 ? editableCaptionSourceSpec
                   ? <>
               <p className="mb-5 text-xs leading-5 text-white/60">
-                자막을 위아래로 드래그해 옮기거나 더블클릭해 문구를 수정할 수 있습니다. 음성보다 {editableCaptionSourceSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES}프레임 먼저 표시되는 실제 렌더 타이밍도 그대로 유지됩니다.
+                {captionTextEditingEnabled
+                  ? <>자막을 위아래로 드래그해 옮기거나 더블클릭해 문구를 수정할 수 있습니다. 음성보다 {editableCaptionSourceSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES}프레임 먼저 표시되는 실제 렌더 타이밍도 그대로 유지됩니다.</>
+                  : <>자막의 위치·글꼴·크기·색상을 조정할 수 있습니다. 정확한 자막 구간이 저장되지 않은 영상에서는 문구 편집을 지원하지 않습니다.</>}
               </p>
               <div className="mb-6">
                 <span className="mb-2 block text-xs font-semibold text-white">자막 글씨체</span>
                 <EditorFontPicker
                   value={activeCaptionFontId}
-                  options={editorFontOptions}
+                  options={availableEditorFontOptions}
                   onChange={(fontId) => {
                     beginEditorCopyInteraction();
                     updateCaptionTemplateSubtitleLayout({
@@ -10866,6 +10994,30 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                   }}
                 />
               </div>
+              {unifiedSubtitleLayoutEnabled && <fieldset className="editor-text-color-setting mb-6">
+                <legend>일반 글자색</legend>
+                <div>
+                  {templatePresetColorOptions.map((option) => <button
+                    key={option.color}
+                    type="button"
+                    aria-label={`자막 일반 글자색 ${option.name}`}
+                    title={option.name}
+                    aria-pressed={(
+                      subtitleLayout.color
+                      || editableCaptionSourceSpec.style.textColor
+                    ) === option.color}
+                    onClick={() => {
+                      beginEditorCopyInteraction();
+                      updateCaptionTemplateSubtitleLayout({
+                        ...subtitleLayoutRef.current,
+                        color: option.color,
+                      });
+                      finishEditorCopyInteraction();
+                    }}
+                    style={{ backgroundColor: option.color }}
+                  />)}
+                </div>
+              </fieldset>}
               <fieldset className="editor-text-color-setting mb-6">
                 <legend>포인트 색상</legend>
                 <div>
@@ -10919,7 +11071,36 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                   className="mt-3 w-full accent-white"
                 />
               </label>
-              <label className="mt-6 block font-semibold">
+              {unifiedSubtitleLayoutEnabled ? <label className="mt-6 block font-semibold">
+                <span className="flex items-center justify-between gap-3 text-white">
+                  <span>자막 크기</span>
+                  <strong className="text-xs text-white/75">
+                    {subtitleLayout.fontSize
+                      || editableCaptionSourceSpec.style.fontSize}px
+                  </strong>
+                </span>
+                <input
+                  aria-label="자막 크기"
+                  type="range"
+                  min={24}
+                  max={120}
+                  step={1}
+                  value={subtitleLayout.fontSize
+                    || editableCaptionSourceSpec.style.fontSize}
+                  onPointerDown={beginEditorCopyInteraction}
+                  onPointerUp={finishEditorCopyInteraction}
+                  onPointerCancel={finishEditorCopyInteraction}
+                  onKeyDown={beginEditorCopyInteraction}
+                  onKeyUp={finishEditorCopyInteraction}
+                  onBlur={finishEditorCopyInteraction}
+                  onChange={(event) => updateCaptionTemplateSubtitleLayout({
+                    ...subtitleLayoutRef.current,
+                    fontSize: Number(event.target.value),
+                    scale: 1,
+                  })}
+                  className="mt-3 w-full accent-white"
+                />
+              </label> : <label className="mt-6 block font-semibold">
                 <span className="flex items-center justify-between gap-3 text-white">
                   <span>자막 크기</span>
                   <strong className="text-xs text-white/75">
@@ -10945,8 +11126,31 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                   })}
                   className="mt-3 w-full accent-white"
                 />
-              </label>
-              <button
+              </label>}
+              {unifiedSubtitleLayoutEnabled ? <button
+                type="button"
+                disabled={
+                  subtitleLayout.offsetY === DEFAULT_EDITOR_SUBTITLE_LAYOUT.offsetY
+                  && subtitleLayout.fontSize === editableCaptionSourceSpec.style.fontSize
+                  && subtitleLayout.color === editableCaptionSourceSpec.style.textColor
+                  && subtitleLayout.accentColor === editableCaptionSourceSpec.style.accentColor
+                }
+                onClick={() => {
+                  beginEditorCopyInteraction();
+                  updateCaptionTemplateSubtitleLayout({
+                    ...subtitleLayoutRef.current,
+                    offsetY: DEFAULT_EDITOR_SUBTITLE_LAYOUT.offsetY,
+                    scale: 1,
+                    fontSize: editableCaptionSourceSpec.style.fontSize,
+                    color: editableCaptionSourceSpec.style.textColor,
+                    accentColor: editableCaptionSourceSpec.style.accentColor,
+                  });
+                  finishEditorCopyInteraction();
+                }}
+                className="mt-6 min-h-10 w-full rounded-xl border border-white/15 bg-white/[.04] px-3 text-xs font-extrabold text-white/75 transition hover:bg-white/[.09] disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                기본 자막 설정으로 초기화
+              </button> : <button
                 type="button"
                 disabled={
                   subtitleLayout.offsetY === DEFAULT_EDITOR_SUBTITLE_LAYOUT.offsetY
@@ -10963,7 +11167,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 className="mt-6 min-h-10 w-full rounded-xl border border-white/15 bg-white/[.04] px-3 text-xs font-extrabold text-white/75 transition hover:bg-white/[.09] disabled:cursor-not-allowed disabled:opacity-35"
               >
                 기본 위치·크기로 초기화
-              </button>
+              </button>}
                     </>
                   : <div className="rounded-xl border border-white/10 bg-white/[.035] px-4 py-5">
                     <strong className="block text-sm font-extrabold text-white">
@@ -10978,9 +11182,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                     자막이 꺼져 있습니다
                   </strong>
                   <p className="mt-2 text-xs leading-5 text-white/55">
-                    미리보기와 실제 렌더 영상에서 자막이 모두 숨겨집니다. 다시 켜면 {editableCaptionSourceSpec
-                      ? "기존 문구와 위치·크기·색상 설정이"
-                      : "기존 전사 자막이"} 그대로 복원됩니다.
+                    {unifiedSubtitleLayoutEnabled
+                      ? editableCaptionSourceSpec
+                        ? "미리보기와 실제 렌더 영상에서 자막이 모두 숨겨집니다. 다시 켜면 기존 문구와 위치·크기·색상 설정이 그대로 복원됩니다."
+                        : "이 기존 영상에는 유효한 단어 타이밍이 없어 새 자막을 켤 수 없습니다. 다른 편집 기능은 그대로 사용할 수 있습니다."
+                      : <>미리보기와 실제 렌더 영상에서 자막이 모두 숨겨집니다. 다시 켜면 {editableCaptionSourceSpec
+                        ? "기존 문구와 위치·크기·색상 설정이"
+                        : "기존 전사 자막이"} 그대로 복원됩니다.</>}
                   </p>
                 </div>}
             </section>}
@@ -11436,6 +11644,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                     firstLine={customTitleLines[0] || ""}
                     secondLine={customTitleLines[1] || ""}
                     channelLabel={channel}
+                    showUnifiedSubtitle={unifiedSubtitleLayoutEnabled}
                   />
                   <span className="mt-2 block truncate text-center text-xs font-semibold">{availableCustomTemplate.name}</span>
                   <span className="mt-1 block text-center text-[10px] font-bold text-white/80">적용 중인 내 템플릿</span>
@@ -11708,7 +11917,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="editor-title">{editorContent}</div>;
 }
 
-function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = false }: { job: VideoJob; access: ProjectActionAccess; onBack: () => void; adminSubtitleLayoutEnabled?: boolean }) {
+function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = false, unifiedTemplateSubtitleCanaryEnabled = false }: { job: VideoJob; access: ProjectActionAccess; onBack: () => void; adminSubtitleLayoutEnabled?: boolean; unifiedTemplateSubtitleCanaryEnabled?: boolean }) {
   const { locale } = useI18n();
   const [playbackAssets, setPlaybackAssets] = useState<Record<string, {
     url: string;
@@ -11980,10 +12189,14 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
             const itemUrl = itemAsset?.url || null;
             const itemIsRerendering = item.status === "rerendering";
             const subtitleEditorUnavailable = Boolean(
-              item.subtitleTemplateId
-              && (
-                !adminSubtitleLayoutEnabled
-                || !item.captionRenderSpec
+              (item.unifiedTemplateSubtitle
+                && !unifiedTemplateSubtitleCanaryEnabled)
+              || (
+                item.subtitleTemplateId
+                && (
+                  !adminSubtitleLayoutEnabled
+                || (!item.captionRenderSpec && !item.wordTimedSubtitlesAvailable)
+                )
               ),
             );
             const script = item.subtitleSegments.map((segment) => segment.text).join(" ") || "추출된 스크립트가 없습니다.";
@@ -12060,7 +12273,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
   );
 }
 
-export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease }: { projectNumber: number; shortId: string; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment }) {
+export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false }: { projectNumber: number; shortId: string; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean }) {
   const [project, setProject] = useState<VideoJob | null>(null);
   const [access, setAccess] = useState<ProjectActionAccess | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -12086,10 +12299,10 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">편집기를 준비하고 있습니다…</main>;
   if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/projects/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
 
-  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} wordTimedSubtitlesAvailable={project.wordTimedSubtitlesAvailable} paidAccessBlocked={!access?.canEdit} />;
+  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled} wordTimedSubtitlesAvailable={item.wordTimedSubtitlesAvailable} paidAccessBlocked={!access?.canEdit} />;
 }
 
-export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false }: { projectNumber: number; adminSubtitleLayoutEnabled?: boolean }) {
+export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false, unifiedTemplateSubtitleCanaryEnabled = false }: { projectNumber: number; adminSubtitleLayoutEnabled?: boolean; unifiedTemplateSubtitleCanaryEnabled?: boolean }) {
   const [project, setProject] = useState<VideoJob | null>(null);
   const [access, setAccess] = useState<ProjectActionAccess>({ canEdit: false, canDownload: false });
   const [loading, setLoading] = useState(true);
@@ -12171,6 +12384,7 @@ export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false 
     access={access}
     onBack={returnToProjects}
     adminSubtitleLayoutEnabled={adminSubtitleLayoutEnabled}
+    unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled}
   />;
 }
 
@@ -12440,9 +12654,13 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const sourceRangeSelectionEnabled = uploadSourceActive
     ? uploadVideo.durationSeconds >= MIN_SELECTED_SOURCE_SECONDS
     : analysis?.sourceRangeSelectionEnabled === true;
-  const subtitleTemplateSelectionEnabled = uploadSourceActive
+  const unifiedTemplateSubtitleCanaryEnabled = Boolean(uploadSourceActive
+    ? state?.capabilities.unifiedTemplateSubtitleLocalUpload
+    : state?.capabilities.unifiedTemplateSubtitles
+      && analysis?.unifiedTemplateSubtitleCanaryEnabled);
+  const subtitleTemplateSelectionEnabled = !unifiedTemplateSubtitleCanaryEnabled && (uploadSourceActive
     ? true
-    : analysis?.subtitleTemplateSelectionEnabled === true;
+    : analysis?.subtitleTemplateSelectionEnabled === true);
   const brandColorSelectionEnabled = uploadSourceActive
     ? true
     : analysis?.brandColorSelectionEnabled === true;
@@ -12476,13 +12694,21 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const activeJobCount = state?.recentJobs.filter((job) => !terminalStatuses.has(job.status)).length || 0;
   const planEnforcementEnabled = state?.usage.enforcementEnabled ?? true;
   const canUseCustomTemplates = Boolean(state && billingSupportsCustomTemplates(state.billing));
+  const sourceCompatiblePersonalTemplates = useMemo(() => (
+    personalTemplates.filter((template) => (
+      unifiedTemplateSubtitleCanaryEnabled
+      || !isTemplateConfigV5(template.config)
+    ))
+  ), [personalTemplates, unifiedTemplateSubtitleCanaryEnabled]);
   const maxActiveJobs = planEnforcementEnabled ? (state?.billing.maxActiveJobs || 1) : 1;
   const activeJobBlocksCreation = Boolean(
     state?.user
     && activeJobCount >= maxActiveJobs,
   );
   const selectedPersonalTemplate = canUseCustomTemplates
-    ? personalTemplates.find((template) => template.id === customTemplateId)
+    ? sourceCompatiblePersonalTemplates.find(
+        (template) => template.id === customTemplateId,
+      )
     : undefined;
   const effectiveVideoAspectRatio = selectedPersonalTemplate?.config.video.aspectRatio ?? videoAspectRatio;
   const closeCreationRestriction = useCallback(() => setCreationRestrictionOpen(false), []);
@@ -12539,6 +12765,17 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setSubtitleCaptionPlacement("lower");
     }
   }, [subtitleTemplateSelectionEnabled]);
+
+  useEffect(() => {
+    if (
+      customTemplateId
+      && !sourceCompatiblePersonalTemplates.some(
+        (template) => template.id === customTemplateId,
+      )
+    ) {
+      setCustomTemplateId(null);
+    }
+  }, [customTemplateId, sourceCompatiblePersonalTemplates]);
 
   useEffect(() => {
     setSourceRangeGuideComplete(Boolean(
@@ -13530,10 +13767,11 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             onVideoAspectRatioChange={setVideoAspectRatio}
             channelName={selectedSource.channelName}
             channelThumbnailUrl={selectedSource.channelThumbnailUrl}
-            personalTemplates={personalTemplates}
+            personalTemplates={sourceCompatiblePersonalTemplates}
             favoriteTemplateKeys={favoriteTemplateKeys}
             customTemplateId={canUseCustomTemplates ? customTemplateId : null}
             canUseCustomTemplates={canUseCustomTemplates}
+            unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled}
             subtitleTemplateSelectionEnabled={subtitleTemplateSelectionEnabled}
             subtitleTemplateId={subtitleTemplateId}
             subtitleCaptionPlacement={subtitleCaptionPlacement}

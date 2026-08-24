@@ -74,12 +74,17 @@ describe("subtitle template UI isolation", () => {
     expect(shortsAppSource).toContain(
       "const subtitleEditorUnavailable = Boolean(",
     );
-    expect(shortsAppSource).toContain("|| !item.captionRenderSpec");
+    expect(shortsAppSource).toContain(
+      "(!item.captionRenderSpec && !item.wordTimedSubtitlesAvailable)",
+    );
     expect(projectPageSource).toContain(
       "subtitleEditingReleaseEnabled",
     );
     expect(projectPageSource).toContain(
       "adminSubtitleLayoutEnabled={adminSubtitleLayoutEnabled}",
+    );
+    expect(projectPageSource).toContain(
+      "unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled}",
     );
   });
 
@@ -87,7 +92,8 @@ describe("subtitle template UI isolation", () => {
     expect(editPageSource).toContain("!uuidPattern.test(shortId)");
     expect(editPageSource).toContain("s.caption_render_spec");
     expect(editPageSource).toContain(
-      "!parseCaptionRenderSpec(subtitleTemplateShort.captionRenderSpec)",
+      "isUnifiedTemplateSubtitleSnapshot(",
     );
+    expect(editPageSource).toContain("&& !unifiedTemplateSubtitleCanaryEnabled");
   });
 });

@@ -23,5 +23,8 @@ Copyright 2014 The Jua Project Authors.
 RIDI Batang
 Copyright RIDI Corporation.
 
+Paperlogy
+Created by Kim Do-gyun (Paperlogy) and Lee Ju-im (Presentation Designer).
+
 The font software above is distributed under the SIL Open Font License,
 Version 1.1. The complete license is in OFL-1.1.txt in this directory.

@@ -11,7 +11,10 @@ import { customTemplateFromRow } from "@/lib/custom-templates";
 import { getBillingSummary } from "@/lib/billing";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
-import type { CustomTemplate } from "@/lib/template-config";
+import {
+  isTemplateConfigV5,
+  type CustomTemplate,
+} from "@/lib/template-config";
 import {
   DEFAULT_FAVORITE_TEMPLATE_KEYS,
   resolveStoredFavoriteTemplateKeys,
@@ -32,6 +35,7 @@ export default async function TemplatesPage() {
   let personalTemplates: CustomTemplate[] = [];
   let canUseCustomTemplates = false;
   let adminPresetNamesEnabled = false;
+  let unifiedSubtitleCanaryEnabled = false;
   let initialFavoriteTemplateKeys: TemplateFavoriteKey[] = [...DEFAULT_FAVORITE_TEMPLATE_KEYS];
   if (user) {
     const session = await requireMvpSession(user, { createIfMissing: false });
@@ -49,9 +53,14 @@ export default async function TemplatesPage() {
       getBillingSummary(db, session.userId),
       getSubtitleTemplateAccess(db, session.userId),
     ]);
-    personalTemplates = templateRows.map(customTemplateFromRow);
+    personalTemplates = templateRows
+      .map(customTemplateFromRow)
+      .filter((template) => (
+        subtitleTemplateAccess.unifiedEnabled || !isTemplateConfigV5(template.config)
+      ));
     canUseCustomTemplates = billingSupportsCustomTemplates(billing);
     adminPresetNamesEnabled = subtitleTemplateAccess.enabled;
+    unifiedSubtitleCanaryEnabled = subtitleTemplateAccess.unifiedEnabled;
     if (favoriteRows[0]) {
       initialFavoriteTemplateKeys = resolveStoredFavoriteTemplateKeys(favoriteRows[0].templateKeys);
     }
@@ -66,6 +75,7 @@ export default async function TemplatesPage() {
           authenticated={Boolean(user)}
           canUseCustomTemplates={canUseCustomTemplates}
           adminPresetNamesEnabled={adminPresetNamesEnabled}
+          unifiedSubtitleCanaryEnabled={unifiedSubtitleCanaryEnabled}
           initialFavoriteTemplateKeys={initialFavoriteTemplateKeys}
         />
       </main>

@@ -33,6 +33,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.SOURCE_RANGE_SELECTION_ENABLED = "true";
   delete process.env.SUBTITLE_TEMPLATES_ENABLED;
+  delete process.env.EDITOR_RENDERING_V2_ENABLED;
 });
 
 describe("YouTube analysis persistence", () => {
@@ -50,22 +51,47 @@ describe("YouTube analysis persistence", () => {
       sourceRangeSelectionEnabled: true,
       subtitleTemplateSelectionEnabled: false,
       brandColorSelectionEnabled: false,
+      unifiedTemplateSubtitleCanaryEnabled: false,
       expectedShortCount: 12,
     });
   });
 
   it("returns the server-authorized subtitle template capability for an administrator", async () => {
     process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    process.env.EDITOR_RENDERING_V2_ENABLED = "true";
     const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const sql = strings.join(" ");
       if (values.includes("subtitle_templates_public")) {
         return [
           { flagKey: "subtitle_templates", enabled: true },
           { flagKey: "subtitle_templates_public", enabled: false },
+          { flagKey: "unified_template_subtitles_canary", enabled: true },
         ];
       }
       if (values.includes("source_range_selection_public")) return enabledReleaseFlags;
-      if (sql.includes("from shorts_mvp.app_users")) return [{ isAdmin: true }];
+      if (sql.includes("from shorts_mvp.app_users")) {
+        return [{ isAdmin: true, testerEnabled: true }];
+      }
+      if (sql.includes("from shorts_mvp.editor_release_state")) {
+        return [{
+          publicEnabled: false,
+          canaryEnabled: true,
+          runtimeEnabled: false,
+          testerEnabled: true,
+          userIsAdmin: true,
+          stableReleaseId: null,
+          stableUiVersion: null,
+          stableDocumentVersion: null,
+          stableStatus: null,
+          stableSubtitleEditingCapable: false,
+          candidateReleaseId: "5a5f9f4d-f59d-4ba3-a28a-9396ac8284a7",
+          candidateUiVersion: 3,
+          candidateDocumentVersion: 3,
+          candidateStatus: "canary_active",
+          candidateSubtitleEditingCapable: true,
+          subtitleEditingPublicEnabled: false,
+        }];
+      }
       if (sql.includes("insert into shorts_mvp.youtube_analyses")) {
         return [{ id: "6bce83c4-b12e-4d11-8f16-2fef8a96c541" }];
       }
@@ -79,7 +105,11 @@ describe("YouTube analysis persistence", () => {
     )).resolves.toMatchObject({
       subtitleTemplateSelectionEnabled: true,
       brandColorSelectionEnabled: true,
+      unifiedTemplateSubtitleCanaryEnabled: true,
     });
+    expect(db.mock.calls.some((call) => (
+      call.slice(1).includes("unified_template_subtitles_canary")
+    ))).toBe(true);
   });
 
   it("accepts sources longer than sixty minutes when the release is enabled", async () => {

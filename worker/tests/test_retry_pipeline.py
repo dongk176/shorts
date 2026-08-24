@@ -23,9 +23,11 @@ from shorts_worker.schemas import HighlightClip, SubtitleSegment, TemplateId
 from shorts_worker.worker_pipeline import (
     BatchWorker,
     ProjectTimelineTarget,
+    _caption_compile_options,
     _offset_highlight_clip,
     _relative_source_transcript,
     _subtitle_template_timing_lead_frames,
+    _unified_template_subtitle,
     _validate_clip_in_source_window,
     classify_full_source_download,
     project_source_window,
@@ -160,11 +162,83 @@ def test_project_clip_forwards_immutable_caption_render_spec(tmp_path: Path) -> 
         subtitles=[SubtitleSegment(start=0, end=1, text="legacy")],
         comments=[{"body": "legacy comment"}],
         caption_render_spec=caption_spec,
+        caption_enabled=False,
     )
 
     stored = worker.repository.add_pending_short.call_args.kwargs
     assert stored["caption_render_spec"] is caption_spec
-    assert stored["comment_overlays"] == []
+    assert stored["comment_overlays"] == [{"body": "legacy comment"}]
+    assert stored["subtitles_enabled"] is False
+
+
+def test_v5_template_subtitle_is_the_authoritative_caption_style() -> None:
+    item: dict[str, object] = {
+        "template_snapshot": {
+            "config": {
+                "schemaVersion": 5,
+                "background": {"kind": "color", "color": "#111111"},
+                "video": {
+                    "aspectRatio": "16:9",
+                    "x": 0,
+                    "y": 500,
+                    "width": 1080,
+                    "height": 608,
+                    "fit": "cover",
+                },
+                "title": {
+                    "visible": True,
+                    "x": 540,
+                    "y": 240,
+                    "maxWidth": 900,
+                    "fontSize": 72,
+                    "fontId": "paperlogy",
+                    "primaryColor": "#FFFFFF",
+                    "accentColor": "#FF4D4F",
+                    "primaryBackgroundColor": None,
+                    "accentBackgroundColor": None,
+                },
+                "subtitle": {
+                    "visible": False,
+                    "variant": "pop",
+                    "x": 540,
+                    "y": 1320,
+                    "maxWidth": 760,
+                    "fontId": "paperlogy",
+                    "fontSize": 88,
+                    "color": "#F3F0E9",
+                    "accentColor": "#FFD84D",
+                },
+                "channel": {
+                    "visible": True,
+                    "x": 540,
+                    "y": 1700,
+                    "maxWidth": 800,
+                    "fontSize": 42,
+                    "color": "#FFFFFF",
+                    "backgroundColor": None,
+                },
+                "comment": {
+                    "visible": False,
+                    "theme": "dark",
+                    "size": "medium",
+                    "y": 1108,
+                    "dockedToVideo": True,
+                },
+            }
+        }
+    }
+
+    subtitle = _unified_template_subtitle(item)
+
+    assert subtitle is not None
+    assert subtitle.visible is False
+    assert subtitle.variant == "pop"
+    assert _caption_compile_options(subtitle) == {
+        "caption_center_y": 1320,
+        "caption_max_width": 760,
+        "font_size": 88,
+        "text_color": "#F3F0E9",
+    }
 
 
 def test_selected_clips_are_shifted_once_to_full_source_absolute_times() -> None:
@@ -1558,16 +1632,161 @@ def test_editor_document_rerender_uses_padded_caption_source_with_timeline(
     )
 
 
-def test_editor_document_rerender_fails_closed_without_caption_template_spec(
+def test_editor_document_rerender_compiles_authoritative_stored_word_timing(
+    tmp_path,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    snapshot = json.loads(
+        (Path(__file__).resolve().parents[2] / "test-fixtures" /
+         "editor-document-v3.json").read_text()
+    )
+    snapshot.update({
+        "version": 3,
+        "sourceShortId": EDITOR_DOCUMENT_SHORT_ID,
+        "baseRenderVersion": 1,
+    })
+    snapshot["renderSpec"] = {
+        **snapshot["renderSpec"],
+        "version": 3,
+        "subtitles": {
+            "centerX": 540,
+            "offsetY": 0,
+            "scale": 1,
+            "fontId": "pretendard",
+            "fontSize": 64,
+            "color": "#FFFFFF",
+            "accentColor": "#35E6E3",
+            "cueEdits": [],
+        },
+    }
+    snapshot["subtitles"]["enabled"] = True
+    item = worker.repository.get_short.return_value
+    item["pending_edit_snapshot"] = snapshot
+    item["transcript_words"] = [
+        {
+            "text": "정확한",
+            "start": 11.0,
+            "end": 11.5,
+            "provider": "elevenlabs",
+        },
+        {
+            "text": "타이밍",
+            "start": 11.5,
+            "end": 12.0,
+            "provider": "elevenlabs",
+            "spaceBefore": True,
+        },
+    ]
+
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    caption_spec = worker.editor_renderer.render.call_args.kwargs[
+        "caption_render_spec"
+    ]
+    assert caption_spec["templateId"] == "highlight"
+    assert caption_spec["style"]["fontSize"] == 64
+    assert caption_spec["cues"]
+    assert caption_spec["cues"][0]["words"][0]["speechStartFrame"] == 30
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_overlay_only"]
+        is True
+    )
+
+
+def test_editor_document_rerender_v2_preserves_legacy_subtitle_fallback(
+    tmp_path,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    snapshot = json.loads(
+        (Path(__file__).resolve().parents[2] / "test-fixtures" /
+         "editor-document-v3.json").read_text()
+    )
+    snapshot.update({
+        "sourceShortId": EDITOR_DOCUMENT_SHORT_ID,
+        "baseRenderVersion": 1,
+    })
+    snapshot["renderSpec"] = {
+        **snapshot["renderSpec"],
+        "version": 2,
+        "subtitles": {
+            "centerX": 540,
+            "offsetY": 0,
+            "scale": 1,
+            "fontId": "pretendard",
+            "fontSize": 64,
+            "color": "#FFFFFF",
+            "accentColor": "#35E6E3",
+            "cueEdits": [],
+        },
+    }
+    snapshot["subtitles"]["enabled"] = True
+    item = worker.repository.get_short.return_value
+    item["pending_edit_snapshot"] = snapshot
+    item["transcript_words"] = [{
+        "text": "레거시",
+        "start": 11.0,
+        "end": 11.5,
+        "provider": "elevenlabs",
+    }]
+
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
+        is None
+    )
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_overlay_only"]
+        is False
+    )
+
+
+def test_editor_document_rerender_rejects_missing_authoritative_word_timing(
+    tmp_path,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    snapshot = json.loads(
+        (Path(__file__).resolve().parents[2] / "test-fixtures" /
+         "editor-document-v3.json").read_text()
+    )
+    snapshot.update({
+        "sourceShortId": EDITOR_DOCUMENT_SHORT_ID,
+        "baseRenderVersion": 1,
+    })
+    snapshot["renderSpec"]["version"] = 3
+    snapshot["renderSpec"]["subtitles"] = {
+        "centerX": 540,
+        "offsetY": 0,
+        "scale": 1,
+        "fontId": "pretendard",
+        "fontSize": 64,
+        "color": "#FFFFFF",
+        "accentColor": "#35E6E3",
+        "cueEdits": [],
+    }
+    item = worker.repository.get_short.return_value
+    item["pending_edit_snapshot"] = snapshot
+    item["transcript_words"] = []
+
+    with pytest.raises(ValueError, match="단어 타임스탬프"):
+        worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    worker.editor_renderer.render.assert_not_called()
+
+
+def test_editor_document_rerender_preserves_legacy_caption_without_template_spec(
     tmp_path,
 ) -> None:
     worker = _editor_document_rerender_worker(tmp_path, {})
     worker.repository.get_short.return_value["subtitle_template_id"] = "highlight"
 
-    with pytest.raises(ValueError, match="원본 자막 렌더 정보를 찾을 수 없습니다"):
-        worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
 
-    worker.editor_renderer.render.assert_not_called()
+    worker.editor_renderer.render.assert_called_once()
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
+        is None
+    )
 
 
 def test_editor_document_failure_releases_lock_after_final_attempt(

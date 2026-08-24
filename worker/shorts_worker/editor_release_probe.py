@@ -42,6 +42,7 @@ FONT_IDS = (
     "noto-serif-kr",
     "nanum-myeongjo",
     "ridi-batang",
+    "paperlogy",
 )
 
 FONT_METADATA = {
@@ -135,6 +136,11 @@ FONT_METADATA = {
         "RIDIBatang-Regular.woff",
         '"Editor V3 Ridi Batang", serif',
         400,
+    ),
+    "paperlogy": (
+        "Paperlogy-7Bold.ttf",
+        '"Editor V3 Paperlogy", sans-serif',
+        700,
     ),
 }
 

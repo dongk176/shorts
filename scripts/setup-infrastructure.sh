@@ -33,6 +33,8 @@ aws sts get-caller-identity >/dev/null
 
 PRODUCTION_WORKER_RELEASE_FILE="${PRODUCTION_WORKER_RELEASE_FILE:-$ROOT/production-worker-release.json}"
 if [[ "$ENVIRONMENT" == "production" ]]; then
+  : "${UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN:?UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN is required in production}"
+  : "${UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN:?UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN is required in production}"
   while IFS='=' read -r release_name release_value; do
     [[ -n "$release_name" && -n "$release_value" ]] || continue
     export "$release_name=$release_value"
@@ -140,6 +142,8 @@ if [[ "$ENVIRONMENT" == "production" ]]; then
     -c "elevenLabsTranscriptionBatchQueueArn=$ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN"
     -c "subtitleTemplatesJobDefinitionArn=$SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"
     -c "subtitleTemplatesBatchQueueArn=$SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"
+    -c "unifiedTemplateSubtitlesJobDefinitionArn=$UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"
+    -c "unifiedTemplateSubtitlesBatchQueueArn=$UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
   )
 fi
 if [[ ${#context_args[@]} -gt 0 ]]; then

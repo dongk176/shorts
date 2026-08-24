@@ -9,7 +9,8 @@ import type { EditorDocumentSnapshotV2 } from "@/lib/editor-document-snapshot";
 import type { TemplatePresetColor } from "@/lib/template-config";
 
 export const EDITOR_RENDER_SPEC_LEGACY_VERSION = 1 as const;
-export const EDITOR_RENDER_SPEC_VERSION = 2 as const;
+export const EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION = 2 as const;
+export const EDITOR_RENDER_SPEC_VERSION = 3 as const;
 export const EDITOR_RENDER_CANVAS = { width: 1080, height: 1920 } as const;
 export const EDITOR_RENDER_FPS = 30 as const;
 export const EDITOR_SUBTITLE_DEFAULT_MARGIN_V = 445 as const;
@@ -28,6 +29,8 @@ export type EditorSubtitleLayout = {
   offsetY: number;
   scale: number;
   fontId?: EditorFontId;
+  fontSize?: number;
+  color?: string;
   accentColor?: string;
   cueEdits?: EditorSubtitleCueEdit[];
 };
@@ -92,7 +95,7 @@ export type EditorRenderSpecV1 = EditorRenderSpecBase & {
 };
 
 export type EditorRenderSpecV2 = EditorRenderSpecBase & {
-  version: typeof EDITOR_RENDER_SPEC_VERSION;
+  version: typeof EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION;
   subtitles: {
     centerX: 540;
     offsetY: number;
@@ -103,7 +106,15 @@ export type EditorRenderSpecV2 = EditorRenderSpecBase & {
   };
 };
 
-export type EditorRenderSpec = EditorRenderSpecV1 | EditorRenderSpecV2;
+export type EditorRenderSpecV3 = EditorRenderSpecBase & {
+  version: typeof EDITOR_RENDER_SPEC_VERSION;
+  subtitles: EditorRenderSpecV2["subtitles"] & {
+    fontSize: number;
+    color: string;
+  };
+};
+
+export type EditorRenderSpec = EditorRenderSpecV1 | EditorRenderSpecV2 | EditorRenderSpecV3;
 
 export function normalizeEditorSubtitleLayout(
   value: EditorSubtitleLayout,
@@ -128,6 +139,9 @@ export function normalizeEditorSubtitleLayout(
   const accentColor = /^#[0-9A-Fa-f]{6}$/.test(value.accentColor || "")
     ? value.accentColor
     : undefined;
+  const color = /^#[0-9A-Fa-f]{6}$/.test(value.color || "")
+    ? value.color
+    : undefined;
   const fontId = editorFontIds.includes(value.fontId as EditorFontId)
     ? value.fontId
     : undefined;
@@ -137,6 +151,9 @@ export function normalizeEditorSubtitleLayout(
       Math.min(EDITOR_SUBTITLE_OFFSET_Y_MAX, Math.round(value.offsetY)),
     ),
     ...(fontId ? { fontId } : {}),
+    ...(typeof value.fontSize === "number" && Number.isFinite(value.fontSize)
+      ? { fontSize: Math.max(24, Math.min(120, Math.round(value.fontSize))) }
+      : {}),
     scale: Math.max(
       EDITOR_SUBTITLE_SCALE_MIN,
       Math.min(
@@ -145,6 +162,7 @@ export function normalizeEditorSubtitleLayout(
       ),
     ),
     ...(accentColor ? { accentColor } : {}),
+    ...(color ? { color } : {}),
     ...(cueEdits.length > 0 ? { cueEdits } : {}),
   };
 }
@@ -152,7 +170,10 @@ export function normalizeEditorSubtitleLayout(
 export function editorSubtitleLayoutFromRenderSpec(
   renderSpec: EditorRenderSpec | null | undefined,
 ): EditorSubtitleLayout {
-  return renderSpec?.version === EDITOR_RENDER_SPEC_VERSION
+  return (
+    renderSpec?.version === EDITOR_RENDER_SPEC_VERSION
+    || renderSpec?.version === EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION
+  )
     ? normalizeEditorSubtitleLayout(renderSpec.subtitles)
     : { ...DEFAULT_EDITOR_SUBTITLE_LAYOUT };
 }
@@ -209,6 +230,8 @@ export function createEditorRenderSpec(
     renderSpec?: EditorRenderSpec;
   },
   requestedSubtitleLayout?: EditorSubtitleLayout,
+  requestedSubtitleVersion: typeof EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION
+    | typeof EDITOR_RENDER_SPEC_VERSION = EDITOR_RENDER_SPEC_VERSION,
 ): EditorRenderSpec {
   const titleLines = wrapPreviewTitle(document.title.text);
   const snapshotConfig = document.template.snapshot?.config;
@@ -236,8 +259,12 @@ export function createEditorRenderSpec(
   );
   const subtitleLayout = requestedSubtitleLayout
     || (document.renderSpec?.version === EDITOR_RENDER_SPEC_VERSION
+      || document.renderSpec?.version === EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION
       ? document.renderSpec.subtitles
       : null);
+  const preserveLegacySubtitleSpec = requestedSubtitleLayout
+    ? requestedSubtitleVersion === EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION
+    : document.renderSpec?.version === EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION;
   const base: EditorRenderSpecBase = {
     canvas: EDITOR_RENDER_CANVAS,
     fps: EDITOR_RENDER_FPS,
@@ -297,12 +324,35 @@ export function createEditorRenderSpec(
   const normalizedSubtitleLayout = normalizeEditorSubtitleLayout(
     subtitleLayout,
   );
+  if (preserveLegacySubtitleSpec) {
+    return {
+      ...base,
+      version: EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION,
+      subtitles: {
+        centerX: 540,
+        offsetY: normalizedSubtitleLayout.offsetY,
+        scale: normalizedSubtitleLayout.scale,
+        ...(normalizedSubtitleLayout.fontId
+          ? { fontId: normalizedSubtitleLayout.fontId }
+          : {}),
+        ...(normalizedSubtitleLayout.accentColor
+          ? { accentColor: normalizedSubtitleLayout.accentColor }
+          : {}),
+        ...(normalizedSubtitleLayout.cueEdits
+          ? { cueEdits: normalizedSubtitleLayout.cueEdits }
+          : {}),
+      },
+    };
+  }
   return {
     ...base,
     version: EDITOR_RENDER_SPEC_VERSION,
     subtitles: {
       centerX: 540,
       ...normalizedSubtitleLayout,
+      fontSize: normalizedSubtitleLayout.fontSize
+        ?? EDITOR_SUBTITLE_DEFAULT_FONT_SIZE,
+      color: normalizedSubtitleLayout.color ?? "#FFFFFF",
     },
   };
 }

@@ -20,6 +20,7 @@ import {
 import {
   SUBTITLE_TEMPLATES_FLAG_KEY,
   SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY,
+  UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY,
 } from "@/lib/subtitle-template-release";
 
 const adminPath = "/admin/easycutcutcutcutcutcut?tab=editor-releases";
@@ -175,6 +176,12 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
       throw new HttpError(409, "격리 검증을 통과한 후보만 카나리를 시작할 수 있습니다.");
     }
     await assertChecksPassed(tx, releaseId, "isolated", isolatedChecks);
+    // A newly started editor canary must opt into unified v5 separately.
+    await tx`
+      update shorts_mvp.runtime_feature_flags
+      set enabled=false,updated_by_user_id=${admin.id}
+      where flag_key=${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY}
+    `;
     await tx`
       update shorts_mvp.editor_releases
       set status='canary_active',canary_started_at=coalesce(canary_started_at,now())
@@ -194,6 +201,7 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
       {
         gitSha: release.gitSha,
         workerImageDigest: release.workerImageDigest,
+        unifiedTemplateSubtitlesCanaryEnabled: false,
       },
     );
   });
@@ -210,6 +218,11 @@ export async function pauseEditorReleaseCanary() {
       for update
     `;
     const state = states[0];
+    await tx`
+      update shorts_mvp.runtime_feature_flags
+      set enabled=false,updated_by_user_id=${admin.id}
+      where flag_key=${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY}
+    `;
     if (!state?.candidateReleaseId || !state.canaryEnabled) return;
     await tx`
       update shorts_mvp.editor_release_state
@@ -226,7 +239,7 @@ export async function pauseEditorReleaseCanary() {
       admin.id,
       "editor_release.canary_paused",
       String(state.candidateReleaseId),
-      {},
+      { unifiedTemplateSubtitlesCanaryEnabled: false },
     );
   });
   revalidatePath(adminPath);
@@ -525,6 +538,109 @@ export async function publishSubtitleSuite() {
   revalidatePath(adminPath);
 }
 
+export async function setUnifiedTemplateSubtitleCanary(
+  enabledValue: boolean,
+) {
+  const enabled = z.boolean().parse(enabledValue);
+  const admin = await requireAdminUser();
+  if (
+    enabled
+    && process.env.SUBTITLE_TEMPLATES_ENABLED?.trim().toLowerCase() !== "true"
+  ) {
+    throw new HttpError(
+      409,
+      "자막 템플릿 서버 마스터 스위치를 먼저 켜 주세요.",
+      "UNIFIED_TEMPLATE_SUBTITLE_MASTER_DISABLED",
+    );
+  }
+  await getDb().begin(async (tx) => {
+    const flagRows = await tx`
+      select flag_key,enabled
+      from shorts_mvp.runtime_feature_flags
+      where flag_key in (
+        ${SUBTITLE_TEMPLATES_FLAG_KEY},
+        ${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY}
+      )
+      for update
+    `;
+    const baseFlag = flagRows.find(
+      (flag) => flag.flagKey === SUBTITLE_TEMPLATES_FLAG_KEY,
+    );
+    const unifiedFlag = flagRows.find(
+      (flag) => flag.flagKey === UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY,
+    );
+    if (!unifiedFlag) {
+      throw new HttpError(
+        503,
+        "통합 템플릿 자막 카나리 플래그 마이그레이션이 필요합니다.",
+        "UNIFIED_TEMPLATE_SUBTITLE_FLAG_MISSING",
+      );
+    }
+
+    let candidateReleaseId: string | null = null;
+    if (enabled) {
+      if (baseFlag?.enabled !== true) {
+        throw new HttpError(
+          409,
+          "기존 자막 템플릿 런타임 스위치를 먼저 켜 주세요.",
+          "SUBTITLE_TEMPLATES_RUNTIME_DISABLED",
+        );
+      }
+      const states = await tx`
+        select state.candidate_release_id,state.canary_enabled,
+          release.status,release.subtitle_editing_capable
+        from shorts_mvp.editor_release_state state
+        left join shorts_mvp.editor_releases release
+          on release.id=state.candidate_release_id
+        where state.singleton=true
+        for update of state
+      `;
+      const state = states[0];
+      if (
+        !state?.canaryEnabled
+        || !state.candidateReleaseId
+        || state.status !== "canary_active"
+        || state.subtitleEditingCapable !== true
+      ) {
+        throw new HttpError(
+          409,
+          "자막 편집 capability가 검증된 운영 카나리 릴리스를 먼저 시작해 주세요.",
+          "UNIFIED_TEMPLATE_SUBTITLE_RELEASE_REQUIRED",
+        );
+      }
+      candidateReleaseId = String(state.candidateReleaseId);
+    }
+
+    const updated = await tx`
+      update shorts_mvp.runtime_feature_flags
+      set enabled=${enabled},updated_by_user_id=${admin.id}
+      where flag_key=${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY}
+      returning flag_key
+    `;
+    if (updated.length !== 1) {
+      throw new HttpError(
+        503,
+        "통합 템플릿 자막 카나리 플래그를 변경하지 못했습니다.",
+        "UNIFIED_TEMPLATE_SUBTITLE_FLAG_MISSING",
+      );
+    }
+    await recordAudit(
+      tx,
+      admin.id,
+      enabled
+        ? "editor_release.unified_template_subtitles_canary_enabled"
+        : "editor_release.unified_template_subtitles_canary_disabled",
+      candidateReleaseId || UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY,
+      {
+        enabled,
+        candidateReleaseId,
+        rollbackScope: "unified_template_subtitles_v5_only",
+      },
+    );
+  });
+  revalidatePath(adminPath);
+}
+
 export async function rollbackEditorRelease(modeValue: "previous" | "legacy") {
   const mode = z.enum(["previous", "legacy"]).parse(modeValue);
   const admin = await requireAdminUser();
@@ -544,7 +660,8 @@ export async function rollbackEditorRelease(modeValue: "previous" | "legacy") {
       where flag_key in (
         ${EDITOR_SUBTITLE_EDITING_PUBLIC_FLAG_KEY},
         ${ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY},
-        ${SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY}
+        ${SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY},
+        ${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY}
       )
     `;
     const currentReleaseId = state.stableReleaseId
