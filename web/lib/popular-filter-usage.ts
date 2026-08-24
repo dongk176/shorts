@@ -53,7 +53,7 @@ export async function recordPopularFilterUsage(
     limit 1
   `;
   const source = sources[0];
-  if (!source?.billingOrderId) {
+  if (!source) {
     const directAccess = await db`
       select 1
       from shorts_mvp.app_users account

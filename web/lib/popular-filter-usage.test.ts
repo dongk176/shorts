@@ -48,7 +48,7 @@ describe("popular filter usage evidence", () => {
     ]);
   });
 
-  it("fails closed when no paid order can be tied to the active entitlement", async () => {
+  it("fails closed when no active subscription or direct access can be found", async () => {
     const { db } = databaseWithResponses([], []);
 
     await expect(recordPopularFilterUsage(db as never, {
@@ -61,6 +61,32 @@ describe("popular filter usage evidence", () => {
       discoveryPeriod: "all",
       resultCount: 0,
     })).rejects.toThrow("POPULAR_FILTER_ENTITLEMENT_SOURCE_MISSING");
+  });
+
+  it("stores complimentary active-subscription usage without inventing a payment order", async () => {
+    const { db, calls } = databaseWithResponses(
+      [{ subscriptionId: "subscription-complimentary", billingOrderId: null }],
+      [{ id: "event-complimentary", occurredAt: new Date("2026-08-15T04:49:28.798Z") }],
+    );
+
+    const result = await recordPopularFilterUsage(db as never, {
+      userId: "user-complimentary",
+      type: "trending",
+      category: "entertainment",
+      reusableOnly: false,
+      longFormOnly: false,
+      koreanOnly: false,
+      discoveryPeriod: "all",
+      resultCount: 48,
+    });
+
+    expect(result).toMatchObject({ id: "event-complimentary" });
+    expect(calls).toHaveLength(2);
+    expect(calls[1].values.slice(1, 4)).toEqual([
+      "user-complimentary",
+      "subscription-complimentary",
+      null,
+    ]);
   });
 
   it("stores direct-access usage without inventing a payment order", async () => {
