@@ -82,6 +82,18 @@ function masterSwitchEnabled() {
   return process.env.SUBTITLE_TEMPLATES_ENABLED?.trim().toLowerCase() === "true";
 }
 
+function disabledAccess() {
+  return resolveSubtitleTemplateAccess({
+    masterEnabled: false,
+    featureEnabled: false,
+    unifiedCanaryEnabled: false,
+    publicEnabled: false,
+    isAdmin: false,
+    pilotEnabled: false,
+    suitePublicEnabled: false,
+  });
+}
+
 export function resolveSubtitleTemplateAccess(input: {
   masterEnabled: boolean;
   featureEnabled: boolean;
@@ -140,17 +152,10 @@ async function readAccess(
   db: Sql | TransactionSql,
   userId: string | null,
   lock: boolean,
+  resolvedRelease?: Awaited<ReturnType<typeof resolveEditorRelease>>,
 ) {
   if (!masterSwitchEnabled()) {
-    return resolveSubtitleTemplateAccess({
-      masterEnabled: false,
-      featureEnabled: false,
-      unifiedCanaryEnabled: false,
-      publicEnabled: false,
-      isAdmin: false,
-      pilotEnabled: false,
-      suitePublicEnabled: false,
-    });
+    return disabledAccess();
   }
   const flagRows = lock ? await db`
     select flag_key,enabled
@@ -191,8 +196,20 @@ async function readAccess(
     from shorts_mvp.app_users app_user
     where app_user.id=${userId} limit 1
   `;
-  const release = await resolveEditorRelease(db, userId);
+  const release = resolvedRelease ?? await resolveEditorRelease(db, userId);
   return accessFromRows(flagRows, adminRows, release);
+}
+
+export async function resolveUnifiedTemplateSubtitleEditorContext(
+  db: Sql | TransactionSql,
+  userId: string | null,
+) {
+  const editorRelease = await resolveEditorRelease(db, userId);
+  const subtitleAccess = editorRelease.channel === "canary"
+    && subtitleEditingReleaseEnabled(editorRelease)
+    ? await readAccess(db, userId, false, editorRelease)
+    : disabledAccess();
+  return { editorRelease, subtitleAccess };
 }
 
 export function getSubtitleTemplateAccess(

@@ -107,6 +107,34 @@ describe("canonical URL middleware", () => {
     expect(mocks.refreshSession).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "/projects/5743",
+    "/projects/5743/edit/11111111-1111-4111-8111-111111111111",
+    "/templates/new?preset=subtitle-pop",
+    "/templates/11111111-1111-4111-8111-111111111111/edit",
+  ])("short-circuits database-heavy page prefetch for %s", async (path) => {
+    const request = new NextRequest(`https://www.easycut.co.kr${path}`, {
+      headers: { "next-router-prefetch": "1" },
+    });
+
+    const response = await middleware(request);
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(mocks.refreshSession).not.toHaveBeenCalled();
+  });
+
+  it("continues to authenticate real template editor navigation", async () => {
+    const request = new NextRequest(
+      "https://www.easycut.co.kr/templates/new?preset=subtitle-pop",
+    );
+
+    const response = await middleware(request);
+
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(mocks.refreshSession).toHaveBeenCalledOnce();
+  });
+
   it("continues to authenticate real admin navigation requests", async () => {
     const request = new NextRequest(
       "https://www.easycut.co.kr/admin/easycutcutcutcutcutcut?tab=members",

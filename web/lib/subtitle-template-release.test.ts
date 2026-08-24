@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import type { Sql } from "postgres";
+import { describe, expect, it, vi } from "vitest";
 import {
+  resolveUnifiedTemplateSubtitleEditorContext,
   resolveSubtitleTemplateAccess,
   unifiedTemplateSubtitleLocalUploadEnabled,
 } from "./subtitle-template-release";
@@ -105,6 +107,59 @@ describe("subtitle template release", () => {
       isAdmin: false,
       pilotEnabled: true,
     }).unifiedEnabled).toBe(false);
+  });
+
+  it("resolves the editor release once inside the trusted canary context", async () => {
+    const previousEditorMaster = process.env.EDITOR_RENDERING_V2_ENABLED;
+    const previousSubtitleMaster = process.env.SUBTITLE_TEMPLATES_ENABLED;
+    process.env.EDITOR_RENDERING_V2_ENABLED = "true";
+    process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    const db = vi.fn()
+      .mockResolvedValueOnce([{
+        publicEnabled: false,
+        canaryEnabled: true,
+        runtimeEnabled: false,
+        testerEnabled: true,
+        userIsAdmin: true,
+        stableReleaseId: null,
+        stableUiVersion: null,
+        stableDocumentVersion: null,
+        stableStatus: null,
+        stableSubtitleEditingCapable: false,
+        candidateReleaseId: "release-a",
+        candidateUiVersion: 3,
+        candidateDocumentVersion: 3,
+        candidateStatus: "canary_ready",
+        candidateSubtitleEditingCapable: true,
+        subtitleEditingPublicEnabled: false,
+      }])
+      .mockResolvedValueOnce([
+        { flagKey: "subtitle_templates", enabled: true },
+        { flagKey: "subtitle_templates_public", enabled: true },
+        { flagKey: "unified_template_subtitles_canary", enabled: true },
+      ])
+      .mockResolvedValueOnce([{ isAdmin: true, testerEnabled: true }]);
+    try {
+      const context = await resolveUnifiedTemplateSubtitleEditorContext(
+        db as unknown as Sql,
+        "user-a",
+      );
+
+      expect(context.editorRelease.channel).toBe("canary");
+      expect(context.subtitleAccess.unifiedEnabled).toBe(true);
+      expect(db).toHaveBeenCalledTimes(3);
+    } finally {
+      if (previousEditorMaster === undefined) {
+        delete process.env.EDITOR_RENDERING_V2_ENABLED;
+      } else {
+        process.env.EDITOR_RENDERING_V2_ENABLED = previousEditorMaster;
+      }
+      if (previousSubtitleMaster === undefined) {
+        delete process.env.SUBTITLE_TEMPLATES_ENABLED;
+      } else {
+        process.env.SUBTITLE_TEMPLATES_ENABLED = previousSubtitleMaster;
+      }
+    }
   });
 
   it("seeds the independent unified canary flag disabled without overwriting state", () => {

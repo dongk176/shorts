@@ -26,6 +26,7 @@ export type MvpSession = {
   selectedPlanCode: string;
   userId: string | null;
   user: AuthProfile | null;
+  isAdmin?: boolean;
 };
 
 type SessionAccessOptions = {
@@ -123,6 +124,7 @@ export async function requireMvpSession(
         selectedPlanCode: existing.selectedPlanCode,
         userId: null,
         user: null,
+        isAdmin: false,
       };
     }
     if (options.createIfMissing === false) {
@@ -131,15 +133,22 @@ export async function requireMvpSession(
         selectedPlanCode: "free",
         userId: null,
         user: null,
+        isAdmin: false,
       };
     }
     const created = await createStoredSession(db, cookieStore, null);
-    return { id: created.id, selectedPlanCode: created.selectedPlanCode, userId: null, user: null };
+    return {
+      id: created.id,
+      selectedPlanCode: created.selectedPlanCode,
+      userId: null,
+      user: null,
+      isAdmin: false,
+    };
   }
 
   const profile = authProfile(authUser);
   const appUsers = await db`
-    select u.id, coalesce(s.plan_code,'free') as selected_plan_code
+    select u.id,u.is_admin,coalesce(s.plan_code,'free') as selected_plan_code
     from shorts_mvp.app_users u
     left join lateral (
       select s.plan_code from shorts_mvp.user_subscriptions s
@@ -150,7 +159,11 @@ export async function requireMvpSession(
     where u.auth_user_id=${authUser.id}
     limit 1
   `;
-  const appUser = appUsers[0] as { id: string; selectedPlanCode: string } | undefined;
+  const appUser = appUsers[0] as {
+    id: string;
+    isAdmin: boolean;
+    selectedPlanCode: string;
+  } | undefined;
   if (!appUser) throw new Error("로그인 계정 연결이 완료되지 않았습니다. 다시 로그인해 주세요.");
 
   const activeSession = existing?.userId === appUser.id
@@ -169,6 +182,7 @@ export async function requireMvpSession(
     selectedPlanCode: appUser.selectedPlanCode,
     userId: appUser.id,
     user: profile,
+    isAdmin: appUser.isAdmin === true,
   };
   if (options.enforcePaymentMethodRemediation) {
     await assertPaymentMethodRemediationAccess(db, appUser.id);

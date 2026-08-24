@@ -6,12 +6,11 @@ import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import {
   subtitleEditingReleaseEnabled,
-  resolveEditorRelease,
 } from "@/lib/editor-rendering-release";
 import { apiError, HttpError } from "@/lib/http";
 import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
-import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import { resolveUnifiedTemplateSubtitleEditorContext } from "@/lib/subtitle-template-release";
 import {
   assertUnifiedTemplateSubtitleCanaryAccess,
   isUnifiedTemplateSubtitleSnapshot,
@@ -49,9 +48,9 @@ export async function GET(
       limit 1
     `;
     if (rows[0]?.subtitleTemplateId) {
-      if (!subtitleEditingReleaseEnabled(
-        await resolveEditorRelease(db, session.userId),
-      )) {
+      const { editorRelease, subtitleAccess } =
+        await resolveUnifiedTemplateSubtitleEditorContext(db, session.userId);
+      if (!subtitleEditingReleaseEnabled(editorRelease)) {
         throw new HttpError(
           409,
           "자막 템플릿으로 만든 영상은 아직 편집할 수 없습니다.",
@@ -60,7 +59,7 @@ export async function GET(
       }
       if (isUnifiedTemplateSubtitleSnapshot(rows[0].subtitleTemplateSnapshot)) {
         assertUnifiedTemplateSubtitleCanaryAccess(
-          await getSubtitleTemplateAccess(db, session.userId),
+          subtitleAccess,
         );
       }
     }

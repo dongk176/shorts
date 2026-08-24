@@ -9,11 +9,21 @@ const LEGACY_PRODUCTION_HOSTS = new Set([
   "shorts-dmsthaalcls-1044-artiroom.vercel.app",
 ]);
 const ADMIN_DASHBOARD_PATH = "/admin/easycutcutcutcutcutcut";
+const DATABASE_HEAVY_NAVIGATION_PATHS = [
+  /^\/projects\/[1-9]\d*(?:\/edit\/[^/]+)?\/?$/,
+  /^\/templates\/new\/?$/,
+  /^\/templates\/[^/]+\/edit\/?$/,
+];
 
 function isNavigationPrefetch(request: NextRequest) {
   return request.headers.get("next-router-prefetch") === "1"
     || request.headers.get("purpose")?.toLowerCase() === "prefetch"
     || request.headers.get("sec-purpose")?.toLowerCase().includes("prefetch") === true;
+}
+
+function isDatabaseHeavyNavigation(pathname: string) {
+  return pathname.startsWith(ADMIN_DASHBOARD_PATH)
+    || DATABASE_HEAVY_NAVIGATION_PATHS.some((pattern) => pattern.test(pathname));
 }
 
 export async function middleware(request: NextRequest) {
@@ -47,14 +57,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next({ request });
   }
 
-  // Older admin client bundles eagerly prefetched every dashboard tab. A single
-  // visit could fan out into many expensive RSC renders and exhaust the shared
-  // database pool before the real navigation request was served. New links also
-  // opt out of prefetching, but this server-side breaker protects already-open
-  // browser tabs until they receive the new bundle.
+  // Older client bundles can eagerly prefetch many database-backed RSC pages at
+  // once. That fan-out can fill the small serverless database pool before the
+  // user's real navigation is served. New links opt out too, while this breaker
+  // protects already-open tabs until they receive the new bundle.
   if (
     request.method === "GET"
-    && pathname.startsWith(ADMIN_DASHBOARD_PATH)
+    && isDatabaseHeavyNavigation(pathname)
     && isNavigationPrefetch(request)
   ) {
     return new NextResponse(null, {

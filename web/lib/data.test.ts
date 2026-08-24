@@ -95,10 +95,15 @@ describe("generated short details", () => {
         rerenderProgress: 100,
         status: "ready",
         expiresAt: new Date("2026-08-01T00:00:00.000Z"),
-      }]);
+      }])
+      .mockReturnValueOnce(["job-a"])
+      .mockReturnValueOnce(["job-a"])
+      .mockResolvedValueOnce([{ id: "short-a" }]);
     const query = queryMock as unknown as Sql;
 
-    const shorts = await getShortsForJobs(query, ["job-a"]);
+    const shorts = await getShortsForJobs(query, ["job-a"], {
+      includeExactWordTimingAvailability: true,
+    });
 
     expect(shorts.get("job-a")?.[0]?.highlightReason).toBe(
       "반전이 드러나는 핵심 발언이 포함된 구간입니다.",
@@ -119,11 +124,17 @@ describe("generated short details", () => {
       wordTimedSubtitlesAvailable: true,
     });
     const queryText = Array.from(
+      queryMock.mock.calls[4][0] as TemplateStringsArray,
+    ).join("");
+    expect(queryText).toContain("selected_transcripts as materialized");
+    expect(queryText).toContain("jsonb_array_elements(");
+    expect(queryText).toContain(") word");
+    expect(queryText).toContain("generated_short.edit_timeline_start_seconds");
+    expect(queryText).toContain("generated_short.edit_timeline_end_seconds");
+    const listQueryText = Array.from(
       queryMock.mock.calls[1][0] as TemplateStringsArray,
     ).join("");
-    expect(queryText).toContain("jsonb_array_elements(transcript.words) word");
-    expect(queryText).toContain("generated_shorts.edit_timeline_start_seconds");
-    expect(queryText).toContain("generated_shorts.edit_timeline_end_seconds");
+    expect(listQueryText).not.toContain("jsonb_array_elements");
   });
 
   it("maps a permanent short without an expiry timestamp", async () => {
@@ -239,7 +250,26 @@ describe("all projects", () => {
         expiresAt: new Date("2026-08-19T00:00:00.000Z"),
       }])
       .mockReturnValueOnce(["job-a"])
-      .mockResolvedValueOnce([]) as unknown as Sql;
+      .mockResolvedValueOnce([{
+        id: "short-a",
+        jobId: "job-a",
+        clipIndex: 1,
+        startSeconds: "12",
+        endSeconds: "54",
+        durationSeconds: "42",
+        hookTitle: "후킹 제목",
+        highlightReason: "",
+        channelDisplayName: "채널",
+        subtitleSegments: [],
+        subtitlesEnabled: false,
+        templateId: "dark-red",
+        videoAspectRatio: "9:16",
+        titleFontScale: "1",
+        renderVersion: 1,
+        rerenderProgress: 100,
+        status: "ready",
+        expiresAt: new Date("2026-08-19T00:00:00.000Z"),
+      }]) as unknown as Sql;
 
     const projects = await getAllProjects(query, {
       id: "session-a",
@@ -254,6 +284,7 @@ describe("all projects", () => {
       isExample: false,
       wordTimedSubtitlesAvailable: true,
       expiresAt: "2026-08-19T00:00:00.000Z",
+      shorts: [{ id: "short-a", wordTimedSubtitlesAvailable: true }],
     }]);
   });
 });

@@ -67,7 +67,79 @@ export async function getPublicMvpState(db: Sql) {
   }
 }
 
-export async function getShortsForJobs(db: Sql, jobIds: string[]) {
+type ShortsForJobsOptions = {
+  includeExactWordTimingAvailability?: boolean;
+};
+
+async function getWordTimedShortIds(db: Sql, jobIds: string[]) {
+  if (!jobIds.length) return new Set<string>();
+  const rows = await db`
+    with selected_transcripts as materialized (
+      select transcript.job_id,transcript.words,
+        case
+          when jsonb_typeof(transcript.words)='array'
+          then jsonb_array_length(transcript.words)>0
+            and not exists (
+              select 1
+              from jsonb_array_elements(transcript.words) candidate
+              where jsonb_typeof(candidate->'text') is distinct from 'string'
+                or btrim(candidate->>'text')=''
+                or jsonb_typeof(candidate->'start') is distinct from 'number'
+                or jsonb_typeof(candidate->'end') is distinct from 'number'
+                or case
+                  when jsonb_typeof(candidate->'start')='number'
+                    and jsonb_typeof(candidate->'end')='number'
+                  then (candidate->>'start')::numeric<0
+                    or (candidate->>'end')::numeric
+                      <=(candidate->>'start')::numeric
+                  else true
+                end
+            )
+          else false
+        end as valid_word_timing
+      from shorts_mvp.job_transcripts transcript
+      where transcript.job_id in ${db(jobIds)}
+    )
+    select generated_short.id
+    from shorts_mvp.generated_shorts generated_short
+    join selected_transcripts transcript
+      on transcript.job_id=generated_short.job_id
+    where generated_short.job_id in ${db(jobIds)}
+      and generated_short.deleted_at is null
+      and generated_short.status in ('ready','rerendering')
+      and transcript.valid_word_timing
+      and exists (
+        select 1
+        from jsonb_array_elements(
+          case
+            when jsonb_typeof(transcript.words)='array'
+            then transcript.words
+            else '[]'::jsonb
+          end
+        ) word
+        where case
+          when jsonb_typeof(word->'start')='number'
+            and jsonb_typeof(word->'end')='number'
+          then (word->>'end')::numeric > coalesce(
+            generated_short.edit_timeline_start_seconds,
+            generated_short.start_seconds
+          )
+            and (word->>'start')::numeric < coalesce(
+              generated_short.edit_timeline_end_seconds,
+              generated_short.end_seconds
+            )
+          else false
+        end
+      )
+  `;
+  return new Set(rows.map((row) => String(row.id)));
+}
+
+export async function getShortsForJobs(
+  db: Sql,
+  jobIds: string[],
+  options: ShortsForJobsOptions = {},
+) {
   if (!jobIds.length) return new Map<string, GeneratedShort[]>();
   const rows = await db`
     select id, job_id, clip_index, start_seconds, end_seconds, duration_seconds,
@@ -78,41 +150,6 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       hook_title, highlight_reason, channel_display_name, subtitle_segments, subtitles_enabled,
       comment_overlays, template_id, custom_template_id, template_snapshot, video_aspect_ratio, title_font_scale, title_text_styles,
       subtitle_template_id, subtitle_template_snapshot, caption_render_spec,
-      exists (
-        select 1
-        from shorts_mvp.job_transcripts transcript
-        cross join lateral jsonb_array_elements(transcript.words) word
-        where transcript.job_id=generated_shorts.job_id
-          and jsonb_array_length(transcript.words)>0
-          and not exists (
-            select 1
-            from jsonb_array_elements(transcript.words) candidate
-            where jsonb_typeof(candidate->'text') is distinct from 'string'
-              or btrim(candidate->>'text')=''
-              or jsonb_typeof(candidate->'start') is distinct from 'number'
-              or jsonb_typeof(candidate->'end') is distinct from 'number'
-              or case
-                when jsonb_typeof(candidate->'start')='number'
-                  and jsonb_typeof(candidate->'end')='number'
-                then (candidate->>'start')::numeric<0
-                  or (candidate->>'end')::numeric<=(candidate->>'start')::numeric
-                else true
-              end
-          )
-          and case
-            when jsonb_typeof(word->'start')='number'
-              and jsonb_typeof(word->'end')='number'
-            then (word->>'end')::numeric > coalesce(
-              generated_shorts.edit_timeline_start_seconds,
-              generated_shorts.start_seconds
-            )
-              and (word->>'start')::numeric < coalesce(
-                generated_shorts.edit_timeline_end_seconds,
-                generated_shorts.end_seconds
-              )
-            else false
-          end
-      ) as word_timed_subtitles_available,
       title_text_styles_initialized, render_version,
       editor_document,
       rerender_progress, status, expires_at
@@ -121,6 +158,9 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
       and status in ('ready', 'rerendering')
     order by job_id, clip_index
   `;
+  const wordTimedShortIds = options.includeExactWordTimingAvailability
+    ? await getWordTimedShortIds(db, jobIds)
+    : new Set<string>();
   const result = new Map<string, GeneratedShort[]>();
   for (const row of rows) {
     const editorDocument = editorDocumentSnapshotSchema.safeParse(
@@ -163,9 +203,7 @@ export async function getShortsForJobs(db: Sql, jobIds: string[]) {
         row.subtitleTemplateSnapshot,
       ),
       captionRenderSpec: parseCaptionRenderSpec(row.captionRenderSpec),
-      wordTimedSubtitlesAvailable: Boolean(
-        row.wordTimedSubtitlesAvailable,
-      ),
+      wordTimedSubtitlesAvailable: wordTimedShortIds.has(String(row.id)),
       videoAspectRatio: row.videoAspectRatio || "1:1",
       titleFontScale: Number(row.titleFontScale),
       titleTextStyles: row.titleTextStyles || [],
@@ -218,31 +256,10 @@ export async function getProjectByNumber(
   db: Sql,
   session: MvpSession,
   projectNumber: number,
+  options: ShortsForJobsOptions = {},
 ): Promise<VideoJob | null> {
   const rows = await db`
-    select job.*,
-      exists (
-        select 1
-        from shorts_mvp.job_transcripts transcript
-        where transcript.job_id=job.id
-          and jsonb_array_length(transcript.words)>0
-          and not exists (
-            select 1
-            from jsonb_array_elements(transcript.words) word
-            where jsonb_typeof(word->'text') is distinct from 'string'
-              or btrim(word->>'text')=''
-              or jsonb_typeof(word->'start') is distinct from 'number'
-              or jsonb_typeof(word->'end') is distinct from 'number'
-              or case
-                when jsonb_typeof(word->'start')='number'
-                  and jsonb_typeof(word->'end')='number'
-                then (word->>'start')::numeric<0
-                  or (word->>'end')::numeric<=(word->>'start')::numeric
-                else true
-              end
-          )
-      ) as valid_word_timing_available
-    from shorts_mvp.video_jobs job
+    select * from shorts_mvp.video_jobs
     where project_number=${projectNumber} and user_deleted_at is null and (
       (${session.userId}::uuid is not null and user_id=${session.userId})
       or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
@@ -250,7 +267,7 @@ export async function getProjectByNumber(
     )
     limit 1
   `;
-  return (await mapJobs(db, rows))[0] || null;
+  return (await mapJobs(db, rows, options))[0] || null;
 }
 
 export async function getAuthenticatedProjectPageAccess(
@@ -308,45 +325,62 @@ export async function getPublicExampleProjectByNumber(
   return (await mapJobs(db, rows))[0] || null;
 }
 
-async function mapJobs(db: Sql, rows: Row[]): Promise<VideoJob[]> {
-  const shorts = await getShortsForJobs(db, rows.map((row) => row.id));
-  return rows.map((row) => ({
-    id: row.id,
-    projectNumber: Number(row.projectNumber),
-    isExample: Boolean(row.isExample),
-    videoTitle: row.videoTitle,
-    channelName: row.channelName,
-    channelThumbnailUrl: row.channelThumbnailUrl || null,
-    thumbnailUrl: row.thumbnailUrl,
-    sourceDurationSeconds: row.sourceDurationSeconds,
-    outputLanguage: row.outputLanguage,
-    expectedShortCount: row.expectedShortCount,
-    plannedShortCount: Number(row.plannedShortCount ?? row.expectedShortCount),
-    readyShortCount: Number(row.readyShortCount ?? 0),
-    failedShortCount: Number(row.failedShortCount ?? 0),
-    renderSuccessPercent: row.renderSuccessPercent == null
-      ? null
-      : Number(row.renderSuccessPercent),
-    wordTimedSubtitlesAvailable: typeof row.validWordTimingAvailable === "boolean"
+async function mapJobs(
+  db: Sql,
+  rows: Row[],
+  options: ShortsForJobsOptions = {},
+): Promise<VideoJob[]> {
+  const shorts = await getShortsForJobs(
+    db,
+    rows.map((row) => row.id),
+    options,
+  );
+  return rows.map((row) => {
+    const wordTimedSubtitlesAvailable = typeof row.validWordTimingAvailable === "boolean"
       ? row.validWordTimingAvailable
       : hasWordTimedTranscription({
           policy: row.transcriptionPolicy,
           provider: row.transcriptionProviderUsed,
           model: row.transcriptionModelUsed,
-        }),
-    status: row.status,
-    stage: row.stage,
-    progress: row.progress,
-    stageCompletedCount: Number(row.stageCompletedCount ?? 0),
-    stageTotalCount: Number(row.stageTotalCount ?? 0),
-    errorMessage: row.errorMessage
-      ? userFacingErrorMessage(
-          row.errorMessage,
-          "쇼츠 제작 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
-        )
-      : null,
-    createdAt: row.createdAt.toISOString(),
-    expiresAt: row.expiresAt?.toISOString() ?? null,
-    shorts: shorts.get(row.id) || [],
-  })) as VideoJob[];
+        });
+    const jobShorts = shorts.get(row.id) || [];
+    return {
+      id: row.id,
+      projectNumber: Number(row.projectNumber),
+      isExample: Boolean(row.isExample),
+      videoTitle: row.videoTitle,
+      channelName: row.channelName,
+      channelThumbnailUrl: row.channelThumbnailUrl || null,
+      thumbnailUrl: row.thumbnailUrl,
+      sourceDurationSeconds: row.sourceDurationSeconds,
+      outputLanguage: row.outputLanguage,
+      expectedShortCount: row.expectedShortCount,
+      plannedShortCount: Number(row.plannedShortCount ?? row.expectedShortCount),
+      readyShortCount: Number(row.readyShortCount ?? 0),
+      failedShortCount: Number(row.failedShortCount ?? 0),
+      renderSuccessPercent: row.renderSuccessPercent == null
+        ? null
+        : Number(row.renderSuccessPercent),
+      wordTimedSubtitlesAvailable,
+      status: row.status,
+      stage: row.stage,
+      progress: row.progress,
+      stageCompletedCount: Number(row.stageCompletedCount ?? 0),
+      stageTotalCount: Number(row.stageTotalCount ?? 0),
+      errorMessage: row.errorMessage
+        ? userFacingErrorMessage(
+            row.errorMessage,
+            "쇼츠 제작 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+          )
+        : null,
+      createdAt: row.createdAt.toISOString(),
+      expiresAt: row.expiresAt?.toISOString() ?? null,
+      shorts: options.includeExactWordTimingAvailability
+        ? jobShorts
+        : jobShorts.map((item) => ({
+            ...item,
+            wordTimedSubtitlesAvailable,
+          })),
+    };
+  }) as VideoJob[];
 }

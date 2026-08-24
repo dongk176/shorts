@@ -76,6 +76,12 @@ export async function loadMvpState(
   }
 
   const session = await requireMvpSession(user, { createIfMissing: false });
+  // Unified v5 is an administrator-only canary. The session lookup already
+  // reads app_users, so regular members must not pay for another three-query
+  // feature-release lookup on every home render.
+  const subtitleTemplateAccessPromise = session.isAdmin === true
+    ? getSubtitleTemplateAccess(db, session.userId)
+    : Promise.resolve(null);
   const [
     usage,
     recentJobs,
@@ -91,7 +97,7 @@ export async function loadMvpState(
     getPaymentMethodAction(db, session.userId),
     getSubtitleTemplateUsage(db, session.userId),
     getFileUploadReleaseAccess(db, session.userId),
-    getSubtitleTemplateAccess(db, session.userId),
+    subtitleTemplateAccessPromise,
   ]);
 
   return {
@@ -105,10 +111,12 @@ export async function loadMvpState(
     usage,
     capabilities: {
       fileUpload: fileUploadAccess.adminEnabled,
-      unifiedTemplateSubtitles: subtitleTemplateAccess.unifiedEnabled,
+      unifiedTemplateSubtitles:
+        subtitleTemplateAccess?.unifiedEnabled === true,
       unifiedTemplateSubtitleLocalUpload:
         unifiedTemplateSubtitleLocalUploadEnabled({
-          strictAccessEnabled: subtitleTemplateAccess.unifiedEnabled,
+          strictAccessEnabled:
+            subtitleTemplateAccess?.unifiedEnabled === true,
           fileUploadAdminEnabled: fileUploadAccess.adminEnabled,
         }),
     },

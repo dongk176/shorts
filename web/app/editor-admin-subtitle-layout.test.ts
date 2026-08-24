@@ -42,7 +42,7 @@ describe("admin editor subtitle layout", () => {
       "const subtitleEditorUnavailable = Boolean(",
     );
     expect(editorSource).toContain(
-      "(!item.captionRenderSpec && !item.wordTimedSubtitlesAvailable)",
+      "!unifiedTemplateSubtitleCanaryEnabled\n                    || !item.wordTimedSubtitlesAvailable",
     );
     const editPageSource = source("./projects/[projectNumber]/edit/[shortId]/page.tsx");
     expect(editPageSource).toContain(

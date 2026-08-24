@@ -75,7 +75,7 @@ describe("subtitle template UI isolation", () => {
       "const subtitleEditorUnavailable = Boolean(",
     );
     expect(shortsAppSource).toContain(
-      "(!item.captionRenderSpec && !item.wordTimedSubtitlesAvailable)",
+      "!unifiedTemplateSubtitleCanaryEnabled\n                    || !item.wordTimedSubtitlesAvailable",
     );
     expect(projectPageSource).toContain(
       "subtitleEditingReleaseEnabled",

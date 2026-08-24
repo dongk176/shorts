@@ -12195,7 +12195,13 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                 item.subtitleTemplateId
                 && (
                   !adminSubtitleLayoutEnabled
-                || (!item.captionRenderSpec && !item.wordTimedSubtitlesAvailable)
+                || (
+                  !item.captionRenderSpec
+                  && (
+                    !unifiedTemplateSubtitleCanaryEnabled
+                    || !item.wordTimedSubtitlesAvailable
+                  )
+                )
                 )
               ),
             );
@@ -12227,6 +12233,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                         : <Link
                             data-project-guide={item.id === guideEditShortId ? "edit" : undefined}
                             href={`/projects/${job.projectNumber}/edit/${item.id}`}
+                            prefetch={false}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="tool-button short-edit-button flex items-center justify-center"
@@ -12295,9 +12302,9 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
     window.setTimeout(() => { if (!window.closed) window.location.href = `/projects/${projectNumber}`; }, 100);
   };
 
-  if (error) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집기를 열 수 없습니다.</h1><p className="mt-3 text-sm text-red-300">{error}</p><Link href={`/projects/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
+  if (error) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집기를 열 수 없습니다.</h1><p className="mt-3 text-sm text-red-300">{error}</p><Link href={`/projects/${projectNumber}`} prefetch={false} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">편집기를 준비하고 있습니다…</main>;
-  if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/projects/${projectNumber}`} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
+  if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/projects/${projectNumber}`} prefetch={false} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
 
   return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled} wordTimedSubtitlesAvailable={item.wordTimedSubtitlesAvailable} paidAccessBlocked={!access?.canEdit} />;
 }

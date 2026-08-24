@@ -46,8 +46,9 @@ test("every candidate editor selector is scoped below editor-v2-root", async () 
 });
 
 test("release switches default to legacy and v2 saving is server-authorized", async () => {
-  const [resolver, page, route, editor, migration] = await Promise.all([
+  const [resolver, subtitleRelease, page, route, editor, migration] = await Promise.all([
     source("web/lib/editor-rendering-release.ts"),
+    source("web/lib/subtitle-template-release.ts"),
     source("web/app/projects/[projectNumber]/edit/[shortId]/page.tsx"),
     source("web/app/api/shorts/[shortId]/apply-edit/route.ts"),
     source("web/app/shorts-app.tsx"),
@@ -60,7 +61,11 @@ test("release switches default to legacy and v2 saving is server-authorized", as
   );
   assert.match(
     page,
-    /resolveEditorRelease\(db, session\.userId\)[\s\S]*editorRelease = resolvedEditorRelease/,
+    /resolveUnifiedTemplateSubtitleEditorContext\(db, session\.userId\)[\s\S]*editorRelease = resolvedEditorRelease/,
+  );
+  assert.match(
+    subtitleRelease,
+    /resolveUnifiedTemplateSubtitleEditorContext[\s\S]*const editorRelease = await resolveEditorRelease\(db, userId\)/,
   );
   assert.match(resolver, /coalesce\(release_user\.is_admin,false\) as user_is_admin/);
   assert.match(

@@ -2654,6 +2654,7 @@ describe("job API security and idempotency", () => {
       expect.anything(),
       expect.objectContaining({ id: "session-a", userId: "user-a" }),
       12,
+      { includeExactWordTimingAvailability: false },
     );
   });
 

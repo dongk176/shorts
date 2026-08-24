@@ -297,6 +297,7 @@ export function ProjectCard({ job }: { job: VideoJob }) {
       <article className={`project-card group relative !overflow-visible text-left ${menuOpen ? "z-40" : ""} ${isProcessing ? "project-card-processing" : ""}`}>
         <Link
           href={projectHref}
+          prefetch={false}
           target="_blank"
           rel="noopener noreferrer"
           aria-label={locale === "ko" ? `프로젝트 /${job.projectNumber}: ${job.videoTitle} 새 탭에서 열기` : locale === "en" ? `Open project /${job.projectNumber}: ${job.videoTitle} in a new tab` : `プロジェクト /${job.projectNumber}: ${job.videoTitle} を新しいタブで開く`}
@@ -346,7 +347,7 @@ export function ProjectCard({ job }: { job: VideoJob }) {
           </button>
           {menuOpen ? (
             <div id={menuId} role="menu" className="absolute right-0 top-12 w-52 overflow-hidden rounded-2xl border border-white/15 bg-[#242729]/[.98] p-1.5 text-sm text-white shadow-[0_22px_55px_rgba(0,0,0,.68)] backdrop-blur-xl">
-              <Link href={projectHref} target="_blank" rel="noopener noreferrer" role="menuitem" onClick={() => setMenuOpen(false)} className="flex min-h-10 items-center gap-3 rounded-xl px-3 font-bold transition hover:bg-white/[.08] focus-visible:bg-white/[.08] focus-visible:outline-none">
+              <Link href={projectHref} prefetch={false} target="_blank" rel="noopener noreferrer" role="menuitem" onClick={() => setMenuOpen(false)} className="flex min-h-10 items-center gap-3 rounded-xl px-3 font-bold transition hover:bg-white/[.08] focus-visible:bg-white/[.08] focus-visible:outline-none">
                 <span aria-hidden="true">↗</span>
                 {locale === "ko" ? "프로젝트 열기" : locale === "en" ? "Open project" : "プロジェクトを開く"}
               </Link>

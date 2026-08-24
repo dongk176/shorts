@@ -39,6 +39,7 @@ describe("MVP session cookie", () => {
       selectedPlanCode: "free",
       userId: null,
       user: null,
+      isAdmin: false,
     });
 
     expect(storedHash).toMatch(/^[a-f0-9]{64}$/);
@@ -69,6 +70,7 @@ describe("MVP session cookie", () => {
       selectedPlanCode: "free",
       userId: null,
       user: null,
+      isAdmin: false,
     });
 
     expect(db).not.toHaveBeenCalled();
@@ -86,6 +88,7 @@ describe("MVP session cookie", () => {
     });
     const db = vi.fn().mockResolvedValueOnce([{
       id: "app-user",
+      isAdmin: true,
       selectedPlanCode: "standard",
     }]);
     mocks.getDb.mockReturnValue(db);
@@ -97,6 +100,7 @@ describe("MVP session cookie", () => {
       id: "",
       userId: "app-user",
       selectedPlanCode: "standard",
+      isAdmin: true,
     });
 
     expect(db).toHaveBeenCalledOnce();

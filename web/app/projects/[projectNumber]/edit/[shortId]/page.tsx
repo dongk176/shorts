@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { parseCaptionRenderSpec } from "@/lib/caption-render-spec";
 import { getDb } from "@/lib/db";
 import { editorOverlayPreviewEnabled } from "@/lib/editor-overlay-preview-flag";
 import {
   subtitleEditingReleaseEnabled,
   editorRenderingV2MasterEnabled,
-  resolveEditorRelease,
   type EditorReleaseAssignment,
 } from "@/lib/editor-rendering-release";
 import { rangeEditingEnabled } from "@/lib/range-editing";
 import { requireMvpSession } from "@/lib/session";
-import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import { resolveUnifiedTemplateSubtitleEditorContext } from "@/lib/subtitle-template-release";
 import { isUnifiedTemplateSubtitleSnapshot } from "@/lib/template-execution-snapshot";
 import { ShortEditorPage } from "../../../../shorts-app";
 
@@ -41,10 +41,10 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
   let unifiedTemplateSubtitleCanaryEnabled = false;
   if (editorRenderingV2MasterEnabled()) {
     const session = await requireMvpSession(undefined, { createIfMissing: false });
-    const [resolvedEditorRelease, subtitleAccess] = await Promise.all([
-      resolveEditorRelease(db, session.userId),
-      getSubtitleTemplateAccess(db, session.userId),
-    ]);
+    const {
+      editorRelease: resolvedEditorRelease,
+      subtitleAccess,
+    } = await resolveUnifiedTemplateSubtitleEditorContext(db, session.userId);
     editorRelease = resolvedEditorRelease;
     unifiedTemplateSubtitleCanaryEnabled = subtitleAccess.unifiedEnabled;
   }
@@ -61,12 +61,18 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
     limit 1
   `;
   const subtitleTemplateShort = subtitleTemplateShortRows[0];
+  const storedCaptionRenderSpec = parseCaptionRenderSpec(
+    subtitleTemplateShort?.captionRenderSpec,
+  );
   const unifiedTemplateSubtitleOutput = isUnifiedTemplateSubtitleSnapshot(
     subtitleTemplateShort?.subtitleTemplateSnapshot,
   );
   if (
     subtitleTemplateShort?.subtitleTemplateId
-    && !adminSubtitleLayoutEnabled
+    && (
+      !adminSubtitleLayoutEnabled
+      || (!storedCaptionRenderSpec && !unifiedTemplateSubtitleCanaryEnabled)
+    )
   ) notFound();
   if (
     unifiedTemplateSubtitleOutput
