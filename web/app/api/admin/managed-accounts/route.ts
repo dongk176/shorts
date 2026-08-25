@@ -3,6 +3,8 @@ import { z } from "zod";
 import { requireAdminUser } from "@/lib/admin";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
+import { insertEnterpriseBillingRequest } from "@/lib/enterprise-billing";
+import { enterprisePaymentItemSchema } from "@/lib/enterprise-contract";
 import { MANAGED_ACCOUNT_TYPES } from "@/lib/managed-account-type";
 import {
   MANAGED_ACCOUNT_PRODUCT_CODE,
@@ -18,10 +20,28 @@ const createSchema = z.object({
   loginId: z.string().trim().min(3).max(32),
   temporaryPassword: z.string().min(10).max(128),
   displayName: z.string().trim().min(1).max(100),
-  usageMinutes: z.number().int().min(0).max(100_000),
-  serviceAccessUntil: z.string().datetime({ offset: true }),
+  usageMinutes: z.number().int().min(0).max(100_000).default(0),
+  serviceAccessUntil: z.string().datetime({ offset: true }).nullable().optional(),
   popularFilterEnabled: z.boolean(),
   accountType: z.enum(MANAGED_ACCOUNT_TYPES).default("personal"),
+  customerEmail: z.union([z.string().trim().email().max(100), z.literal("")]).optional(),
+  paymentTitle: z.string().trim().min(1).max(100).default("이지컷 기업 결제 요청"),
+  paymentItems: z.array(enterprisePaymentItemSchema).max(10).default([]),
+}).superRefine((value, context) => {
+  if (value.accountType === "enterprise" && value.paymentItems.length < 1) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["paymentItems"],
+      message: "기업 계정에는 결제 상품이 1개 이상 필요합니다.",
+    });
+  }
+  if (value.accountType === "personal" && !value.serviceAccessUntil) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["serviceAccessUntil"],
+      message: "개인 계정의 서비스 이용 만료일이 필요합니다.",
+    });
+  }
 });
 
 export async function POST(request: NextRequest) {
@@ -40,8 +60,12 @@ export async function POST(request: NextRequest) {
         "INVALID_MANAGED_LOGIN_ID",
       );
     }
-    const serviceAccessUntil = new Date(body.serviceAccessUntil);
-    if (serviceAccessUntil.getTime() <= Date.now()) {
+    const serviceAccessUntil = body.serviceAccessUntil
+      ? new Date(body.serviceAccessUntil)
+      : null;
+    if (body.accountType === "personal" && (
+      !serviceAccessUntil || serviceAccessUntil.getTime() <= Date.now()
+    )) {
       throw new HttpError(400, "서비스 이용 만료일은 현재보다 이후여야 합니다.");
     }
 
@@ -53,9 +77,19 @@ export async function POST(request: NextRequest) {
       limit 1
     `;
     if (duplicateRequest[0]) {
+      const paymentRows = await db`
+        select public_token
+        from shorts_mvp.enterprise_payment_requests
+        where managed_account_id=${duplicateRequest[0].id}
+        order by created_at
+        limit 1
+      `;
       return NextResponse.json({
         ok: true,
         accountId: duplicateRequest[0].id,
+        paymentPath: paymentRows[0]
+          ? `/enterprise-pay/${encodeURIComponent(paymentRows[0].publicToken)}`
+          : null,
         alreadyProcessed: true,
       });
     }
@@ -99,7 +133,7 @@ export async function POST(request: NextRequest) {
           manual_service_access_until
         ) values (
           ${data.user.id},${authEmail},${body.displayName},'managed_password','free',
-          ${serviceAccessUntil}
+          ${body.accountType === "personal" ? serviceAccessUntil : null}
         )
         returning id
       `;
@@ -116,7 +150,8 @@ export async function POST(request: NextRequest) {
         returning id
       `;
       const managedAccountId = accounts[0].id;
-      if (body.usageMinutes > 0) {
+      let enterprisePaymentRequest: { id: string; publicToken: string } | null = null;
+      if (body.accountType === "personal" && body.usageMinutes > 0 && serviceAccessUntil) {
         const seconds = body.usageMinutes * 60;
         await tx`
           insert into shorts_mvp.usage_grants (
@@ -128,6 +163,20 @@ export async function POST(request: NextRequest) {
           )
         `;
       }
+      if (body.accountType === "enterprise") {
+        enterprisePaymentRequest = await insertEnterpriseBillingRequest({
+          db: tx,
+          createRequestId: body.requestId,
+          managedAccountId,
+          appUserId,
+          createdByUserId: admin.id,
+          customerName: body.displayName,
+          customerEmail: body.customerEmail || null,
+          title: body.paymentTitle,
+          blocksServiceAccess: true,
+          items: body.paymentItems,
+        });
+      }
       await tx`
         insert into shorts_mvp.admin_audit_logs (
           actor_user_id,action,entity_type,entity_id,metadata
@@ -138,18 +187,26 @@ export async function POST(request: NextRequest) {
             loginId,
             displayName: body.displayName,
             accountType: body.accountType,
-            usageMinutes: body.usageMinutes,
-            serviceAccessUntil: serviceAccessUntil.toISOString(),
+            usageMinutes: body.accountType === "personal" ? body.usageMinutes : null,
+            serviceAccessUntil: serviceAccessUntil?.toISOString() || null,
             popularFilterEnabled: body.popularFilterEnabled,
+            enterprisePaymentRequestId: enterprisePaymentRequest?.id || null,
+            enterprisePaymentItemCount: body.paymentItems.length,
           })}
         )
       `;
-      return { id: managedAccountId };
+      return {
+        id: managedAccountId,
+        paymentPath: enterprisePaymentRequest
+          ? `/enterprise-pay/${encodeURIComponent(enterprisePaymentRequest.publicToken)}`
+          : null,
+      };
     });
 
     return NextResponse.json({
       ok: true,
       accountId: account.id,
+      paymentPath: account.paymentPath,
       alreadyProcessed: false,
     }, { status: 201 });
   } catch (error) {

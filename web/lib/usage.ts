@@ -62,6 +62,13 @@ export async function getUsageSnapshot(
           where account.id=${session.userId}
             and account.manual_service_access_until>clock_timestamp()
         )
+        or exists (
+          select 1
+          from shorts_mvp.enterprise_service_entitlements entitlement
+          where entitlement.app_user_id=${session.userId}
+            and entitlement.starts_at<=clock_timestamp()
+            and entitlement.ends_at>clock_timestamp()
+        )
       ) as enabled
     ), current_base as (
       select

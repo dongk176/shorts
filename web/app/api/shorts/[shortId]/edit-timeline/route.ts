@@ -4,6 +4,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
+import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import {
   subtitleEditingReleaseEnabled,
 } from "@/lib/editor-rendering-release";
@@ -25,6 +26,7 @@ export async function GET(_: Request, context: { params: Promise<{ shortId: stri
     const { shortId } = await context.params;
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    await assertEnterpriseSessionServiceAccess(db, session);
     const billing = await getBillingSummary(db, session.userId);
     assertPaidProjectActionAccess(billing, "edit");
     const rows = await db`

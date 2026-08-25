@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
+import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { apiError, HttpError } from "@/lib/http";
 import {
   ONBOARDING_WELCOME_MAX_RERENDERS,
@@ -15,6 +16,7 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
     const { shortId } = await context.params;
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    await assertEnterpriseSessionServiceAccess(db, session);
     const billing = await getBillingSummary(db, session.userId);
     assertPaidProjectActionAccess(billing, "edit");
     const rows = await db`

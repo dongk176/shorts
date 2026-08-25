@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getShortDownloadUrl } from "@/lib/aws";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
+import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { apiError } from "@/lib/http";
 import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
@@ -22,6 +23,7 @@ export async function GET(
     requestedShortId = shortId;
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    await assertEnterpriseSessionServiceAccess(db, session);
     const billing = await getBillingSummary(db, session.userId);
     assertPaidProjectActionAccess(billing, "download");
     const rows = await db`

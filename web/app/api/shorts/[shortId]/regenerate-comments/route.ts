@@ -6,6 +6,7 @@ import {
   paidGeminiCommentGenerationEnabled,
 } from "@/lib/comment-regeneration-server";
 import { getDb } from "@/lib/db";
+import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { editorOverlayPreviewEnabled } from "@/lib/editor-overlay-preview-flag";
 import { editorRenderingV2Enabled } from "@/lib/editor-rendering-release";
 import { apiError, HttpError } from "@/lib/http";
@@ -61,6 +62,7 @@ export async function POST(
     const input = requestSchema.parse(await request.json());
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    await assertEnterpriseSessionServiceAccess(db, session);
     if (
       !editorOverlayPreviewEnabled()
       && !await editorRenderingV2Enabled(db, session.userId)

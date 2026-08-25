@@ -12,6 +12,7 @@ import {
 import { wakeOutboxDispatcher } from "@/lib/aws";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
+import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import {
   elevenLabsTranscriptionDispatchTarget,
   type ProjectDispatchTarget,
@@ -97,6 +98,8 @@ export async function POST(request: Request) {
     const rightsConfirmed = input.rightsConfirmed === true;
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    const enterpriseAccess = await assertEnterpriseSessionServiceAccess(db, session);
+    const enterpriseUsage = enterpriseAccess.accountType === "enterprise";
     const executionBackend = getInitialJobBackend();
     const existing = await db`
       select id, project_number, status from shorts_mvp.video_jobs
@@ -431,9 +434,15 @@ export async function POST(request: Request) {
         returning id
       `;
       if (beforeUsage.enforcementEnabled) {
-        await tx`select shorts_mvp.reserve_usage_grants(
-          ${session.userId},${reservations[0].id},${usageSeconds}
-        )`;
+        if (enterpriseUsage) {
+          await tx`select shorts_mvp.reserve_enterprise_usage_grants(
+            ${session.userId},${reservations[0].id},${usageSeconds}
+          )`;
+        } else {
+          await tx`select shorts_mvp.reserve_usage_grants(
+            ${session.userId},${reservations[0].id},${usageSeconds}
+          )`;
+        }
       }
       if (executionBackend === "aws_batch") {
         await tx`select shorts_mvp.initialize_project_output_attempts(${jobId})`;

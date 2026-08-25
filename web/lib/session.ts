@@ -27,6 +27,7 @@ export type MvpSession = {
   userId: string | null;
   user: AuthProfile | null;
   isAdmin?: boolean;
+  isEnterprise?: boolean;
 };
 
 type SessionAccessOptions = {
@@ -148,7 +149,12 @@ export async function requireMvpSession(
 
   const profile = authProfile(authUser);
   const appUsers = await db`
-    select u.id,u.is_admin,coalesce(s.plan_code,'free') as selected_plan_code
+    select u.id,u.is_admin,coalesce(s.plan_code,'free') as selected_plan_code,
+      exists (
+        select 1 from shorts_mvp.managed_login_accounts managed
+        where managed.app_user_id=u.id and managed.account_type='enterprise'
+          and managed.is_active=true
+      ) as is_enterprise
     from shorts_mvp.app_users u
     left join lateral (
       select s.plan_code from shorts_mvp.user_subscriptions s
@@ -163,6 +169,7 @@ export async function requireMvpSession(
     id: string;
     isAdmin: boolean;
     selectedPlanCode: string;
+    isEnterprise: boolean;
   } | undefined;
   if (!appUser) throw new Error("로그인 계정 연결이 완료되지 않았습니다. 다시 로그인해 주세요.");
 
@@ -183,6 +190,7 @@ export async function requireMvpSession(
     userId: appUser.id,
     user: profile,
     isAdmin: appUser.isAdmin === true,
+    isEnterprise: appUser.isEnterprise === true,
   };
   if (options.enforcePaymentMethodRemediation) {
     await assertPaymentMethodRemediationAccess(db, appUser.id);

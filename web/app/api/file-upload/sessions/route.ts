@@ -10,6 +10,7 @@ import {
   videoAspectRatios,
 } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
+import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import {
   FILE_UPLOAD_CONTROL_BODY_MAX_BYTES,
   FILE_UPLOAD_MAX_BYTES,
@@ -235,6 +236,8 @@ export async function POST(request: Request) {
   try {
     const session = await requireHiddenAuthenticatedSession();
     const db = getDb();
+    const enterpriseAccess = await assertEnterpriseSessionServiceAccess(db, session);
+    const enterpriseUsage = enterpriseAccess.accountType === "enterprise";
     const access = await getFileUploadReleaseAccess(db, session.userId);
     if (!access.adminEnabled) throw hiddenNotFound();
 
@@ -556,11 +559,19 @@ export async function POST(request: Request) {
         throw new Error("사용량을 예약하지 못했습니다.");
       }
       if (beforeUsage.enforcementEnabled) {
-        await tx`
-          select shorts_mvp.reserve_usage_grants(
-            ${session.userId},${reservations[0].id},${usageSeconds}
-          )
-        `;
+        if (enterpriseUsage) {
+          await tx`
+            select shorts_mvp.reserve_enterprise_usage_grants(
+              ${session.userId},${reservations[0].id},${usageSeconds}
+            )
+          `;
+        } else {
+          await tx`
+            select shorts_mvp.reserve_usage_grants(
+              ${session.userId},${reservations[0].id},${usageSeconds}
+            )
+          `;
+        }
       }
       await tx`select shorts_mvp.initialize_project_output_attempts(${jobId})`;
 

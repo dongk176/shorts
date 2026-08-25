@@ -37,6 +37,10 @@ export function tossBillingCohortAssignmentEnabled() {
     && enabled("TOSS_BILLING_COHORT_ASSIGNMENT_ENABLED");
 }
 
+export function tossEnterpriseBillingEnabled() {
+  return tossBillingChargesEnabled() && enabled("TOSS_ENTERPRISE_BILLING_ENABLED");
+}
+
 export function assertTossBillingEnabled() {
   if (!tossBillingEnabled()) {
     throw new TossBillingConfigurationError("토스 빌링 기능이 활성화되지 않았습니다.");

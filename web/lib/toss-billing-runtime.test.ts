@@ -8,6 +8,7 @@ import {
   TOSS_RUNTIME_ASSIGNMENTS_FLAG,
   TOSS_RUNTIME_CHARGES_FLAG,
   TOSS_RUNTIME_HANA_CARD_FLAG,
+  TOSS_RUNTIME_ENTERPRISE_BILLING_FLAG,
   TOSS_RUNTIME_RENEWALS_FLAG,
 } from "@/lib/toss-billing-runtime";
 
@@ -20,6 +21,7 @@ function enableEnvironment() {
   vi.stubEnv("TOSS_BILLING_CHARGES_ENABLED", "true");
   vi.stubEnv("TOSS_BILLING_RENEWALS_ENABLED", "true");
   vi.stubEnv("TOSS_BILLING_COHORT_ASSIGNMENT_ENABLED", "true");
+  vi.stubEnv("TOSS_ENTERPRISE_BILLING_ENABLED", "true");
 }
 
 afterEach(() => vi.unstubAllEnvs());
@@ -32,18 +34,21 @@ describe("Toss billing runtime controls", () => {
       { flagKey: TOSS_RUNTIME_CHARGES_FLAG, enabled: false },
       { flagKey: TOSS_RUNTIME_RENEWALS_FLAG, enabled: true },
       { flagKey: TOSS_RUNTIME_HANA_CARD_FLAG, enabled: false },
+      { flagKey: TOSS_RUNTIME_ENTERPRISE_BILLING_FLAG, enabled: true },
     ]));
     expect(state.stored).toEqual({
       assignments: true,
       charges: false,
       renewals: true,
       hanaCard: false,
+      enterpriseBilling: true,
     });
     expect(state.effective).toEqual({
       assignments: false,
       charges: false,
       renewals: false,
       hanaCard: false,
+      enterpriseBilling: false,
     });
   });
 
@@ -55,15 +60,17 @@ describe("Toss billing runtime controls", () => {
       charges: false,
       renewals: false,
       hanaCard: false,
+      enterpriseBilling: false,
     });
     await expect(assertTossRuntimeChargesEnabled(flagDb([]))).rejects.toMatchObject({
       code: "TOSS_RUNTIME_CHARGES_DISABLED",
     });
   });
 
-  it("accepts only the four audited runtime controls", () => {
+  it("accepts only the five audited runtime controls", () => {
     expect(isTossRuntimeFlag(TOSS_RUNTIME_CHARGES_FLAG)).toBe(true);
     expect(isTossRuntimeFlag(TOSS_RUNTIME_HANA_CARD_FLAG)).toBe(true);
+    expect(isTossRuntimeFlag(TOSS_RUNTIME_ENTERPRISE_BILLING_FLAG)).toBe(true);
     expect(isTossRuntimeFlag("unrelated_flag")).toBe(false);
   });
 

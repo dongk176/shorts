@@ -53,6 +53,9 @@ test("production release guard rejects any unexpected route addition or removal"
   assert.ok(ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE.includes(
     "/purchase-terms/versions/7/page",
   ));
+  assert.ok(ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE.includes(
+    "/api/enterprise-pay/[token]/billing/items/[itemId]/charge/route",
+  ));
   assert.deepEqual(
     compareManifestRoutes(PROTECTED_APP_ROUTES, [...PROTECTED_APP_ROUTES]),
     { added: [], removed: [] },

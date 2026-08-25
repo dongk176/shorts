@@ -4,6 +4,7 @@ import { deleteShortObjects } from "@/lib/aws";
 import { getBillingSummary } from "@/lib/billing";
 import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
+import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { resolveEditedTemplateSelection } from "@/lib/edit-template-selection";
 import { apiError, HttpError } from "@/lib/http";
 import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
@@ -69,6 +70,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
     const input = patchSchema.parse(await request.json());
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    await assertEnterpriseSessionServiceAccess(db, session);
     const billing = await getBillingSummary(db, session.userId);
     assertPaidProjectActionAccess(billing, "edit");
     const existing = await db`
@@ -159,6 +161,7 @@ export async function DELETE(_: Request, context: { params: Promise<{ shortId: s
     const { shortId } = await context.params;
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    await assertEnterpriseSessionServiceAccess(db, session);
     const rows = await db`
       update shorts_mvp.generated_shorts s
       set status='deleted', deleted_at=coalesce(deleted_at, now())

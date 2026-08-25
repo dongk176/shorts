@@ -19,7 +19,9 @@ export async function AdminManagedAccountsSection() {
       managed.account_type,managed.popular_filter_enabled,
       managed.created_at,managed.updated_at,
       managed.last_login_at,managed.last_password_reset_at,
-      account.id as user_id,account.display_name,account.manual_service_access_until,
+      account.id as user_id,account.display_name,
+      coalesce(account.manual_service_access_until,enterprise_period.last_ends_at)
+        as manual_service_access_until,
       coalesce(usage.total_seconds,0)::bigint as usage_total_seconds,
       coalesce(usage.consumed_seconds,0)::bigint as usage_consumed_seconds,
       coalesce(usage.reserved_seconds,0)::bigint as usage_reserved_seconds,
@@ -34,11 +36,22 @@ export async function AdminManagedAccountsSection() {
         coalesce(sum(grant_row.reserved_seconds),0)::bigint as reserved_seconds
       from shorts_mvp.usage_grants grant_row
       where grant_row.user_id=account.id
-        and grant_row.product_code=${MANAGED_ACCOUNT_PRODUCT_CODE}
+        and (
+          grant_row.product_code=${MANAGED_ACCOUNT_PRODUCT_CODE}
+          or (
+            managed.account_type='enterprise'
+            and grant_row.product_code like 'enterprise_contract:%'
+          )
+        )
         and grant_row.status='active'
         and grant_row.valid_from<=clock_timestamp()
         and grant_row.expires_at>clock_timestamp()
     ) usage on true
+    left join lateral (
+      select max(entitlement.ends_at) as last_ends_at
+      from shorts_mvp.enterprise_service_entitlements entitlement
+      where entitlement.managed_account_id=managed.id
+    ) enterprise_period on true
     left join lateral (
       select count(*)::integer as project_count
       from shorts_mvp.video_jobs project
@@ -56,8 +69,12 @@ export async function AdminManagedAccountsSection() {
       payment_request.id,payment_request.managed_account_id,
       payment_request.public_token,payment_request.customer_name,
       payment_request.customer_email,payment_request.title,
-      payment_request.status,payment_request.expires_at,payment_request.created_at,
-      item.id as item_id,item.name as item_name,item.amount_krw,
+      payment_request.status,payment_request.payment_mode,
+      payment_request.blocks_service_access,
+      payment_request.expires_at,payment_request.created_at,
+      item.id as item_id,item.sort_order,item.name as item_name,item.amount_krw,
+      item.service_start_date,item.service_end_date,item.included_minutes,
+      item.vat_treatment,item.payment_due_date,
       item.status as item_status,item.paid_at as item_paid_at
     from shorts_mvp.enterprise_payment_requests payment_request
     join shorts_mvp.enterprise_payment_items item
@@ -76,6 +93,8 @@ export async function AdminManagedAccountsSection() {
         customerEmail: row.customerEmail || null,
         title: row.title,
         status: row.status,
+        paymentMode: row.paymentMode,
+        blocksServiceAccess: Boolean(row.blocksServiceAccess),
         expiresAt: iso(row.expiresAt)!,
         createdAt: iso(row.createdAt)!,
         items: [],
@@ -86,9 +105,15 @@ export async function AdminManagedAccountsSection() {
     paymentRequest.items.push({
       id: row.itemId,
       name: row.itemName,
+      sortOrder: Number(row.sortOrder),
       amountKrw: Number(row.amountKrw),
       status: row.itemStatus,
       paidAt: iso(row.itemPaidAt),
+      serviceStartDate: row.serviceStartDate ? String(row.serviceStartDate).slice(0, 10) : null,
+      serviceEndDate: row.serviceEndDate ? String(row.serviceEndDate).slice(0, 10) : null,
+      includedMinutes: row.includedMinutes === null ? null : Number(row.includedMinutes),
+      vatTreatment: row.vatTreatment || null,
+      paymentDueDate: row.paymentDueDate ? String(row.paymentDueDate).slice(0, 10) : null,
     });
   }
   const accounts: AdminManagedAccount[] = rows.map((row) => {

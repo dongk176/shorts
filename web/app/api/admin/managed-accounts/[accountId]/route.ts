@@ -26,7 +26,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     ]);
     const db = getDb();
     const accounts = await db`
-      select auth_user_id,login_id
+      select auth_user_id,login_id,account_type
       from shorts_mvp.managed_login_accounts
       where id=${accountId}
       limit 1
@@ -61,7 +61,10 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       await tx`
         update shorts_mvp.app_users
         set display_name=${body.displayName},
-          manual_service_access_until=${serviceAccessUntil},
+          manual_service_access_until=case
+            when ${account.accountType}='personal' then ${serviceAccessUntil}
+            else manual_service_access_until
+          end,
           updated_at=clock_timestamp()
         where id=${updated[0].appUserId}
       `;

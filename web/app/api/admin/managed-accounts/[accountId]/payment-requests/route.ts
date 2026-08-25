@@ -7,7 +7,8 @@ import {
 } from "@/lib/billing-request";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
-import { tossGeneralPaymentKeys } from "@/lib/toss-general-payment-config";
+import { insertEnterpriseBillingRequest } from "@/lib/enterprise-billing";
+import { enterprisePaymentItemSchema } from "@/lib/enterprise-contract";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,11 +21,8 @@ const schema = z.object({
   customerEmail: z.union([z.string().trim().email().max(100), z.literal("")])
     .optional(),
   title: z.string().trim().min(1).max(100),
-  expiresAt: z.string().datetime({ offset: true }),
-  items: z.array(z.object({
-    name: z.string().trim().min(1).max(100),
-    amountKrw: z.number().int().min(100).max(1_000_000_000),
-  }).strict()).min(1).max(10),
+  blocksServiceAccess: z.boolean().default(false),
+  items: z.array(enterprisePaymentItemSchema).min(1).max(10),
 }).strict();
 
 function paymentUrl(request: Request, token: string) {
@@ -40,16 +38,6 @@ export async function POST(request: Request, { params }: RouteContext) {
       requireAdminUser(),
       request.json().then((value) => schema.parse(value)),
     ]);
-    tossGeneralPaymentKeys();
-    const expiresAt = new Date(input.expiresAt);
-    const now = Date.now();
-    if (expiresAt.getTime() <= now + 5 * 60_000) {
-      throw new HttpError(400, "결제 기한은 현재보다 5분 이상 이후여야 합니다.");
-    }
-    if (expiresAt.getTime() > now + 180 * 24 * 60 * 60_000) {
-      throw new HttpError(400, "결제 기한은 180일 이내로 설정해 주세요.");
-    }
-
     const db = getDb();
     const duplicate = await db`
       select id,public_token
@@ -67,7 +55,7 @@ export async function POST(request: Request, { params }: RouteContext) {
     }
 
     const accounts = await db`
-      select id,login_id,account_type
+      select id,login_id,account_type,app_user_id
       from shorts_mvp.managed_login_accounts
       where id=${accountId}
       limit 1
@@ -80,26 +68,18 @@ export async function POST(request: Request, { params }: RouteContext) {
 
     const totalAmountKrw = input.items.reduce((sum, item) => sum + item.amountKrw, 0);
     const created = await db.begin(async (tx) => {
-      const requests = await tx`
-        insert into shorts_mvp.enterprise_payment_requests (
-          create_request_id,managed_account_id,customer_name,customer_email,
-          title,expires_at,created_by_user_id
-        ) values (
-          ${input.requestId},${accountId},${input.customerName},
-          ${input.customerEmail || null},${input.title},${expiresAt},${admin.id}
-        )
-        returning id,public_token
-      `;
-      const paymentRequest = requests[0];
-      for (const [index, item] of input.items.entries()) {
-        await tx`
-          insert into shorts_mvp.enterprise_payment_items (
-            payment_request_id,sort_order,name,amount_krw
-          ) values (
-            ${paymentRequest.id},${index + 1},${item.name},${item.amountKrw}
-          )
-        `;
-      }
+      const paymentRequest = await insertEnterpriseBillingRequest({
+        db: tx,
+        createRequestId: input.requestId,
+        managedAccountId: accountId,
+        appUserId: account.appUserId,
+        createdByUserId: admin.id,
+        customerName: input.customerName,
+        customerEmail: input.customerEmail || null,
+        title: input.title,
+        blocksServiceAccess: input.blocksServiceAccess,
+        items: input.items,
+      });
       await tx`
         insert into shorts_mvp.admin_audit_logs (
           actor_user_id,action,entity_type,entity_id,metadata
@@ -111,7 +91,9 @@ export async function POST(request: Request, { params }: RouteContext) {
             loginId: account.loginId,
             itemCount: input.items.length,
             totalAmountKrw,
-            expiresAt: expiresAt.toISOString(),
+            expiresAt: paymentRequest.expiresAt.toISOString(),
+            paymentMode: "billing",
+            blocksServiceAccess: input.blocksServiceAccess,
           })}
         )
       `;

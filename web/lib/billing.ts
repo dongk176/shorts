@@ -305,6 +305,13 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
           and welcome_grant.total_seconds
             > welcome_grant.reserved_seconds+welcome_grant.consumed_seconds
       ) as has_onboarding_welcome_access
+      ,exists (
+        select 1
+        from shorts_mvp.enterprise_service_entitlements entitlement
+        where entitlement.app_user_id=account.id
+          and entitlement.starts_at<=clock_timestamp()
+          and entitlement.ends_at>clock_timestamp()
+      ) as has_enterprise_service_access
     from shorts_mvp.app_users account
     left join shorts_mvp.billing_payment_methods default_method
       on default_method.id=account.default_payment_method_id
@@ -346,6 +353,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
     const empty = await getBillingSummary(db, null);
     const hasManualServiceAccess = Boolean(history?.hasManualServiceAccess);
     const hasOnboardingWelcomeAccess = Boolean(history?.hasOnboardingWelcomeAccess);
+    const hasEnterpriseServiceAccess = Boolean(history?.hasEnterpriseServiceAccess);
     return {
       ...empty,
       hasPaymentHistory: Boolean(history?.hasPaymentHistory),
@@ -364,9 +372,13 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       cardLast4: history?.defaultCardLast4 || null,
       hasStoredPayerTel: Boolean(history?.defaultHasStoredPayerTel),
       paymentProvider: history?.defaultPaymentProvider || null,
-      canCreateJobs: hasManualServiceAccess || hasOnboardingWelcomeAccess,
-      maxActiveJobs: hasManualServiceAccess || hasOnboardingWelcomeAccess ? 1 : 0,
-      retentionDays: hasManualServiceAccess ? 30 : 1,
+      canCreateJobs: hasManualServiceAccess
+        || hasOnboardingWelcomeAccess
+        || hasEnterpriseServiceAccess,
+      maxActiveJobs: hasManualServiceAccess
+        || hasOnboardingWelcomeAccess
+        || hasEnterpriseServiceAccess ? 1 : 0,
+      retentionDays: hasManualServiceAccess || hasEnterpriseServiceAccess ? 30 : 1,
     };
   }
   const status = row.status === "trialing" ? "active" : row.status as SubscriptionStatus;
@@ -379,6 +391,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
   const hasActivePaidAccess = status === "active" && inCurrentPeriod;
   const hasManualServiceAccess = Boolean(history?.hasManualServiceAccess);
   const hasOnboardingWelcomeAccess = Boolean(history?.hasOnboardingWelcomeAccess);
+  const hasEnterpriseServiceAccess = Boolean(history?.hasEnterpriseServiceAccess);
   const activeProducts = rows.flatMap((activeRow) => {
     const isActiveStatus = activeRow.status === "active" || activeRow.status === "trialing";
     const isActivePeriod = activeRow.currentPeriodStart instanceof Date
@@ -434,15 +447,16 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
     requiresManualReview: row.billingReviewStatus === "manual_review",
     canCreateJobs: hasActivePaidAccess
       || hasManualServiceAccess
-      || hasOnboardingWelcomeAccess,
+      || hasOnboardingWelcomeAccess
+      || hasEnterpriseServiceAccess,
     maxActiveJobs: hasActivePaidAccess
       ? Number(row.maxActiveJobs)
-      : hasManualServiceAccess || hasOnboardingWelcomeAccess
+      : hasManualServiceAccess || hasOnboardingWelcomeAccess || hasEnterpriseServiceAccess
         ? 1
         : 0,
     retentionDays: hasActivePaidAccess
       ? Number(row.retentionDays)
-      : hasManualServiceAccess
+      : hasManualServiceAccess || hasEnterpriseServiceAccess
         ? 30
         : 1,
   };

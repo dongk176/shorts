@@ -9,6 +9,7 @@ import {
   getSubtitleTemplateUsage,
 } from "@/lib/data";
 import { getDb } from "@/lib/db";
+import { getEnterpriseAccessState } from "@/lib/enterprise-access";
 import { getFileUploadReleaseAccess } from "@/lib/file-upload-release";
 import {
   getSubtitleTemplateAccess,
@@ -72,6 +73,7 @@ export async function loadMvpState(
       },
       hasUsedSubtitleTemplates: false,
       recentJobs,
+      enterpriseAccess: { accountType: "personal", allowed: true },
     };
   }
 
@@ -90,6 +92,7 @@ export async function loadMvpState(
     hasUsedSubtitleTemplates,
     fileUploadAccess,
     subtitleTemplateAccess,
+    enterpriseAccess,
   ] = await Promise.all([
     getUsageSnapshot(db, session),
     getRecentJobs(db, session),
@@ -98,6 +101,9 @@ export async function loadMvpState(
     getSubtitleTemplateUsage(db, session.userId),
     getFileUploadReleaseAccess(db, session.userId),
     subtitleTemplateAccessPromise,
+    session.isEnterprise === true
+      ? getEnterpriseAccessState(db, session.userId!)
+      : Promise.resolve({ accountType: "personal" as const, allowed: true as const }),
   ]);
 
   return {
@@ -122,5 +128,6 @@ export async function loadMvpState(
     },
     hasUsedSubtitleTemplates,
     recentJobs,
+    enterpriseAccess,
   };
 }

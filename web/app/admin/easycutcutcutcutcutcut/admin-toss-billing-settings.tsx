@@ -5,6 +5,7 @@ import {
   TOSS_RUNTIME_ASSIGNMENTS_FLAG,
   TOSS_RUNTIME_CHARGES_FLAG,
   TOSS_RUNTIME_HANA_CARD_FLAG,
+  TOSS_RUNTIME_ENTERPRISE_BILLING_FLAG,
   TOSS_RUNTIME_RENEWALS_FLAG,
   type TossBillingRuntimeState,
   type TossRuntimeFlag,
@@ -17,6 +18,12 @@ const controls: Array<{
   title: string;
   description: string;
 }> = [
+  {
+    flag: TOSS_RUNTIME_ENTERPRISE_BILLING_FLAG,
+    key: "enterpriseBilling",
+    title: "기업 순차결제",
+    description: "기업 발급계정의 카드등록과 상품별 즉시 승인을 제어합니다. OFF여도 결제요청·동의·영수증 기록은 유지됩니다.",
+  },
   {
     flag: TOSS_RUNTIME_ASSIGNMENTS_FLAG,
     key: "assignments",

@@ -9,6 +9,7 @@ import {
   tossBillingChargesEnabled,
   tossBillingCohortAssignmentEnabled,
   tossBillingRenewalsEnabled,
+  tossEnterpriseBillingEnabled,
 } from "@/lib/toss-billing-config";
 import {
   isTossRuntimeFlag,
@@ -17,6 +18,7 @@ import {
   TOSS_RUNTIME_CHARGES_FLAG,
   TOSS_RUNTIME_FLAGS,
   TOSS_RUNTIME_HANA_CARD_FLAG,
+  TOSS_RUNTIME_ENTERPRISE_BILLING_FLAG,
   TOSS_RUNTIME_RENEWALS_FLAG,
   type TossBillingRuntimeState,
 } from "@/lib/toss-billing-runtime";
@@ -42,6 +44,7 @@ export async function updateTossBillingRuntimeSetting(input: {
         ${TOSS_RUNTIME_CHARGES_FLAG},
         ${TOSS_RUNTIME_RENEWALS_FLAG},
         ${TOSS_RUNTIME_HANA_CARD_FLAG}
+        ,${TOSS_RUNTIME_ENTERPRISE_BILLING_FLAG}
       )
       for update
     `;
@@ -67,6 +70,12 @@ export async function updateTossBillingRuntimeSetting(input: {
       ) {
         throw new HttpError(409, "자동갱신 전에 배포 설정과 토스 승인을 먼저 켜야 합니다.");
       }
+      if (
+        parsed.flag === TOSS_RUNTIME_ENTERPRISE_BILLING_FLAG
+        && (!tossEnterpriseBillingEnabled() || !previous[TOSS_RUNTIME_CHARGES_FLAG])
+      ) {
+        throw new HttpError(409, "기업 결제 전에 배포 설정과 토스 승인을 먼저 켜야 합니다.");
+      }
     }
 
     if (parsed.flag === TOSS_RUNTIME_CHARGES_FLAG && !parsed.enabled) {
@@ -77,6 +86,7 @@ export async function updateTossBillingRuntimeSetting(input: {
           ${TOSS_RUNTIME_ASSIGNMENTS_FLAG},
           ${TOSS_RUNTIME_CHARGES_FLAG},
           ${TOSS_RUNTIME_RENEWALS_FLAG}
+          ,${TOSS_RUNTIME_ENTERPRISE_BILLING_FLAG}
         )
       `;
     } else {

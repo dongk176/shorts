@@ -6,12 +6,14 @@ import {
   tossBillingChargesEnabled,
   tossBillingCohortAssignmentEnabled,
   tossBillingRenewalsEnabled,
+  tossEnterpriseBillingEnabled,
 } from "@/lib/toss-billing-config";
 import {
   TOSS_RUNTIME_ASSIGNMENTS_FLAG,
   TOSS_RUNTIME_CHARGES_FLAG,
   TOSS_RUNTIME_FLAGS,
   TOSS_RUNTIME_HANA_CARD_FLAG,
+  TOSS_RUNTIME_ENTERPRISE_BILLING_FLAG,
   TOSS_RUNTIME_RENEWALS_FLAG,
   type TossBillingRuntimeState,
   type TossRuntimeFlag,
@@ -22,6 +24,7 @@ export {
   TOSS_RUNTIME_CHARGES_FLAG,
   TOSS_RUNTIME_FLAGS,
   TOSS_RUNTIME_HANA_CARD_FLAG,
+  TOSS_RUNTIME_ENTERPRISE_BILLING_FLAG,
   TOSS_RUNTIME_RENEWALS_FLAG,
 };
 export type { TossBillingRuntimeState, TossRuntimeFlag };
@@ -45,7 +48,8 @@ export async function loadTossBillingRuntimeState(
         ${TOSS_RUNTIME_ASSIGNMENTS_FLAG},
         ${TOSS_RUNTIME_CHARGES_FLAG},
         ${TOSS_RUNTIME_RENEWALS_FLAG},
-        ${TOSS_RUNTIME_HANA_CARD_FLAG}
+        ${TOSS_RUNTIME_HANA_CARD_FLAG},
+        ${TOSS_RUNTIME_ENTERPRISE_BILLING_FLAG}
       )
     ` as Array<{ flagKey: string; enabled: boolean }>;
   } catch {
@@ -58,12 +62,14 @@ export async function loadTossBillingRuntimeState(
     charges: enabled.get(TOSS_RUNTIME_CHARGES_FLAG) === true,
     renewals: enabled.get(TOSS_RUNTIME_RENEWALS_FLAG) === true,
     hanaCard: enabled.get(TOSS_RUNTIME_HANA_CARD_FLAG) === true,
+    enterpriseBilling: enabled.get(TOSS_RUNTIME_ENTERPRISE_BILLING_FLAG) === true,
   };
   const environment = {
     assignments: tossBillingCohortAssignmentEnabled(),
     charges: tossBillingChargesEnabled(),
     renewals: tossBillingRenewalsEnabled(),
     hanaCard: true,
+    enterpriseBilling: tossEnterpriseBillingEnabled(),
   };
   const effectiveCharges = environment.charges && stored.charges;
   return {
@@ -74,6 +80,8 @@ export async function loadTossBillingRuntimeState(
       charges: effectiveCharges,
       renewals: environment.renewals && stored.renewals && effectiveCharges,
       hanaCard: stored.hanaCard,
+      enterpriseBilling:
+        environment.enterpriseBilling && stored.enterpriseBilling && effectiveCharges,
     },
   };
 }
@@ -93,6 +101,17 @@ export async function assertTossRuntimeChargesEnabled(db: BillingDb = getDb()) {
       503,
       "토스 결제를 잠시 점검하고 있습니다. 잠시 후 다시 시도해 주세요.",
       "TOSS_RUNTIME_CHARGES_DISABLED",
+    );
+  }
+}
+
+export async function assertTossEnterpriseBillingEnabled(db: BillingDb = getDb()) {
+  const state = await loadTossBillingRuntimeState(db);
+  if (!state.effective.enterpriseBilling) {
+    throw new HttpError(
+      503,
+      "기업 카드 결제를 잠시 점검하고 있습니다. 잠시 후 다시 시도해 주세요.",
+      "TOSS_ENTERPRISE_BILLING_DISABLED",
     );
   }
 }

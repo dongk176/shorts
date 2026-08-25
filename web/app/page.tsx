@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { StructuredData } from "@/components/structured-data";
+import { EnterpriseServiceGate } from "@/components/enterprise-service-gate";
 import { createPageMetadata, DEFAULT_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
 import { getRequestLocale } from "@/lib/i18n/server";
 import { localizedValue } from "@/lib/i18n/config";
@@ -59,7 +60,10 @@ export default async function Home() {
   return (
     <>
       <StructuredData data={applicationData} />
-      <ShortsApp initialState={initialState} />
+      {initialState?.enterpriseAccess.accountType === "enterprise"
+        && !initialState.enterpriseAccess.allowed
+        ? <EnterpriseServiceGate access={initialState.enterpriseAccess} />
+        : <ShortsApp initialState={initialState} />}
     </>
   );
 }

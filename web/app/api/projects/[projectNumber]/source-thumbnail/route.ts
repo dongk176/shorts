@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProjectSourceThumbnailUrl } from "@/lib/aws";
 import { getDb } from "@/lib/db";
+import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { apiError, HttpError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 
@@ -25,6 +26,7 @@ async function requireHiddenOwnerSession() {
       allowPaymentMethodRemediation: true,
       createIfMissing: false,
     });
+    await assertEnterpriseSessionServiceAccess(getDb(), session);
     if (!session.userId) throw hiddenNotFound();
     return session;
   } catch {

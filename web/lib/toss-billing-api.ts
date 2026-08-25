@@ -62,6 +62,7 @@ export type TossBillingPaymentResponse = {
   method: string | null;
   lastTransactionKey: string | null;
   card: TossBillingCardSummary | null;
+  receiptUrl?: string | null;
   cancels: Array<{
     transactionKey: string | null;
     cancelAmount: number;
@@ -197,6 +198,9 @@ function parsePayment(value: unknown): TossBillingPaymentResponse {
     });
   }
   const body = value as Record<string, unknown>;
+  const receipt = body.receipt && typeof body.receipt === "object"
+    ? body.receipt as Record<string, unknown>
+    : null;
   const paymentKey = boundedString(body.paymentKey, 200);
   const orderId = boundedString(body.orderId, 100);
   if (!paymentKey || !orderId) {
@@ -230,6 +234,7 @@ function parsePayment(value: unknown): TossBillingPaymentResponse {
     method: boundedString(body.method, 50),
     lastTransactionKey: boundedString(body.lastTransactionKey, 200),
     card: cardSummary(body.card),
+    receiptUrl: boundedString(receipt?.url, 2_000),
     cancels,
   };
 }

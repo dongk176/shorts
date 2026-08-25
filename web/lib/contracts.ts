@@ -284,6 +284,14 @@ export type MvpState = {
   };
   hasUsedSubtitleTemplates: boolean;
   recentJobs: VideoJob[];
+  enterpriseAccess: {
+    accountType: "personal" | "enterprise";
+    allowed: boolean;
+    reason?: "available" | "payment_required" | "not_started" | "outside_period";
+    paymentPath?: string | null;
+    firstStartsAt?: string | null;
+    lastEndsAt?: string | null;
+  };
 };
 
 export function expectedShortCount(durationSeconds: number) {

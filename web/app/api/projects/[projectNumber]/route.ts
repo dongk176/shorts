@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getBillingSummary } from "@/lib/billing";
 import { getProjectByNumber, getPublicExampleProjectByNumber } from "@/lib/data";
 import { getDb } from "@/lib/db";
+import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { apiError, HttpError } from "@/lib/http";
 import { billingSupportsPaidProjectActions } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
@@ -40,6 +41,7 @@ export async function GET(
     }
 
     const session = await requireAuthenticatedMvpSession();
+    await assertEnterpriseSessionServiceAccess(db, session);
     const unifiedTemplateSubtitleCanaryEnabled = session.isAdmin === true
       ? (await getSubtitleTemplateAccess(db, session.userId)).unifiedEnabled
       : false;
@@ -79,6 +81,7 @@ export async function DELETE(
       createIfMissing: false,
     });
     const db = getDb();
+    await assertEnterpriseSessionServiceAccess(db, session);
 
     const result = await db.begin(async (tx) => {
       const rows = await tx`

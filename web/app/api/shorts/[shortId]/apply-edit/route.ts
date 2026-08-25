@@ -9,6 +9,7 @@ import {
 } from "@/lib/caption-render-spec";
 import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
+import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import {
   editorDocumentOutputDuration,
   editorDocumentSnapshotSchema,
@@ -188,6 +189,7 @@ async function applyEditorDocument({
 }) {
   const session = await requireAuthenticatedMvpSession();
   const db = getDb();
+  await assertEnterpriseSessionServiceAccess(db, session);
   const release = await resolveRequestedEditorRelease(
     db,
     session.userId,
@@ -714,6 +716,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
     const input = legacyEditSchema.parse(requestBody);
     const session = await requireAuthenticatedMvpSession();
     const db = getDb();
+    await assertEnterpriseSessionServiceAccess(db, session);
     const billing = await getBillingSummary(db, session.userId);
     assertPaidProjectActionAccess(billing, "edit");
     const existingRows = await db`

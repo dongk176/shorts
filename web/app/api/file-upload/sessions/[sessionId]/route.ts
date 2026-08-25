@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
+import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import {
   getFileUploadReleaseAccess,
   lockFileUploadReleaseAccess,
@@ -46,6 +47,7 @@ export async function DELETE(_: Request, context: RouteContext) {
     if (!parsedSessionId.success) throw hiddenNotFound();
 
     const db = getDb();
+    await assertEnterpriseSessionServiceAccess(db, session);
     const access = await getFileUploadReleaseAccess(db, session.userId);
     if (!access.adminEnabled) throw hiddenNotFound();
 
