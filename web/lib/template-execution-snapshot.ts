@@ -28,7 +28,7 @@ export function assertUnifiedTemplateSubtitleCanaryAccess(
   if (!access.unifiedEnabled) {
     throw new HttpError(
       403,
-      "현재 계정에서는 통합 템플릿 자막 테스트를 사용할 수 없습니다.",
+      "현재 계정에서는 자막 포함 커스텀 템플릿을 사용할 수 없습니다.",
       UNIFIED_TEMPLATE_SUBTITLE_CANARY_REQUIRED,
     );
   }

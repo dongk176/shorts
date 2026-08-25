@@ -11,6 +11,7 @@ import {
 import { getBillingSummary } from "@/lib/billing";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
 import {
+  getPublicSubtitleTemplateAccess,
   getSubtitleTemplateAccess,
   lockSubtitleTemplateAccess,
 } from "@/lib/subtitle-template-release";
@@ -33,7 +34,9 @@ export async function GET() {
     if (!hasUnifiedTemplates) {
       return NextResponse.json({ templates });
     }
-    const access = await getSubtitleTemplateAccess(db, session.userId);
+    const access = session.isAdmin === true
+      ? await getSubtitleTemplateAccess(db, session.userId)
+      : await getPublicSubtitleTemplateAccess(db, session.userId);
     return NextResponse.json({
       templates: access.unifiedEnabled
         ? templates

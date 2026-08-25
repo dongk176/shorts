@@ -473,9 +473,9 @@ export function TemplateEditor({
             {selectedSubtitle && <section>
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">자막 스타일</h2>
-                <span className="rounded-full border border-[#35e6e3]/25 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">어드민 카나리</span>
+                <span className="rounded-full border border-[#35e6e3]/25 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">영상에 적용</span>
               </div>
-              <p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">이 설정은 홈 미리보기와 링크·직접 업로드 영상에 동일하게 적용됩니다.</p>
+              <p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">이 설정은 템플릿 미리보기와 링크로 만든 영상에 동일하게 적용됩니다.</p>
               <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-neutral-200">자막 표시</span>

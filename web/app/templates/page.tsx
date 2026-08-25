@@ -10,7 +10,11 @@ import { getDb } from "@/lib/db";
 import { customTemplateFromRow } from "@/lib/custom-templates";
 import { getBillingSummary } from "@/lib/billing";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
-import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import {
+  getPublicSubtitleTemplateAccess,
+  getSubtitleTemplateAccess,
+  getUnifiedTemplateSubtitlePublicPreviewAccess,
+} from "@/lib/subtitle-template-release";
 import {
   isTemplateConfigV5,
   type CustomTemplate,
@@ -51,7 +55,9 @@ export default async function TemplatesPage() {
         where user_id=${session.userId}
       `,
       getBillingSummary(db, session.userId),
-      getSubtitleTemplateAccess(db, session.userId),
+      session.isAdmin === true
+        ? getSubtitleTemplateAccess(db, session.userId)
+        : getPublicSubtitleTemplateAccess(db, session.userId),
     ]);
     personalTemplates = templateRows
       .map(customTemplateFromRow)
@@ -64,6 +70,9 @@ export default async function TemplatesPage() {
     if (favoriteRows[0]) {
       initialFavoriteTemplateKeys = resolveStoredFavoriteTemplateKeys(favoriteRows[0].templateKeys);
     }
+  } else {
+    unifiedSubtitleCanaryEnabled =
+      await getUnifiedTemplateSubtitlePublicPreviewAccess(getDb());
   }
 
   return (

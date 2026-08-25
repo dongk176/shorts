@@ -2,7 +2,10 @@ import { expectedShortCount, type YoutubeAnalysis } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
 import type { MvpSession } from "@/lib/session";
 import { getSourceRangeReleaseAccess } from "@/lib/source-range-release";
-import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import {
+  getPublicSubtitleTemplateAccess,
+  getSubtitleTemplateAccess,
+} from "@/lib/subtitle-template-release";
 import {
   assertSupportedSourceVideoDuration,
   sourceRangeSelectionForDuration,
@@ -25,7 +28,9 @@ export async function createYoutubeAnalysis(
   const db = getDb();
   const [releaseAccess, subtitleTemplateAccess] = await Promise.all([
     getSourceRangeReleaseAccess(db, session.userId),
-    getSubtitleTemplateAccess(db, session.userId),
+    session.isAdmin === true
+      ? getSubtitleTemplateAccess(db, session.userId)
+      : getPublicSubtitleTemplateAccess(db, session.userId),
   ]);
   const sourceRangeSelectionEnabled = sourceRangeSelectionForDuration(
     metadata.durationSeconds,
@@ -69,7 +74,9 @@ export async function getYoutubeAnalysis(session: MvpSession, analysisId: string
   `;
   if (!rows[0]) throw new Error("영상 분석 정보를 찾을 수 없거나 만료되었습니다.");
   const durationSeconds = Number(rows[0].durationSeconds);
-  const subtitleTemplateAccess = await getSubtitleTemplateAccess(db, session.userId);
+  const subtitleTemplateAccess = session.isAdmin === true
+    ? await getSubtitleTemplateAccess(db, session.userId)
+    : await getPublicSubtitleTemplateAccess(db, session.userId);
   return {
     analysisId: String(rows[0].id),
     sourceRangeSelectionEnabled: rows[0].sourceRangeSelectionEnabled === true,

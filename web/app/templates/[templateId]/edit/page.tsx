@@ -3,7 +3,10 @@ import { customTemplateFromRow } from "@/lib/custom-templates";
 import { getDb } from "@/lib/db";
 import { requireMvpSession } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
-import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import {
+  getPublicSubtitleTemplateAccess,
+  getSubtitleTemplateAccess,
+} from "@/lib/subtitle-template-release";
 import {
   isTemplateConfigV5,
   upgradeTemplateConfigToV5,
@@ -22,7 +25,9 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ t
       select id, name, base_template_id, config, version, created_at, updated_at
       from shorts_mvp.custom_templates where id=${templateId} and user_id=${session.userId} limit 1
     `,
-    getSubtitleTemplateAccess(db, session.userId),
+    session.isAdmin === true
+      ? getSubtitleTemplateAccess(db, session.userId)
+      : getPublicSubtitleTemplateAccess(db, session.userId),
   ]);
   if (!rows[0]) notFound();
   const template = customTemplateFromRow(rows[0]);

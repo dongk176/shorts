@@ -6,7 +6,10 @@ import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { apiError, HttpError } from "@/lib/http";
 import { billingSupportsPaidProjectActions } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
-import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import {
+  getPublicSubtitleTemplateAccess,
+  getSubtitleTemplateAccess,
+} from "@/lib/subtitle-template-release";
 
 export const dynamic = "force-dynamic";
 
@@ -42,15 +45,18 @@ export async function GET(
 
     const session = await requireAuthenticatedMvpSession();
     await assertEnterpriseSessionServiceAccess(db, session);
-    const unifiedTemplateSubtitleCanaryEnabled = session.isAdmin === true
-      ? (await getSubtitleTemplateAccess(db, session.userId)).unifiedEnabled
-      : false;
+    const billingPromise = getBillingSummary(db, session.userId);
+    const subtitleTemplateAccess = session.isAdmin === true
+      ? await getSubtitleTemplateAccess(db, session.userId)
+      : await getPublicSubtitleTemplateAccess(db, session.userId);
+    const unifiedTemplateSubtitleCanaryEnabled =
+      subtitleTemplateAccess.unifiedEnabled;
     const [project, billing] = await Promise.all([
       getProjectByNumber(db, session, projectNumber, {
         includeExactWordTimingAvailability:
           unifiedTemplateSubtitleCanaryEnabled,
       }),
-      getBillingSummary(db, session.userId),
+      billingPromise,
     ]);
     if (!project) throw new HttpError(404, "프로젝트를 찾을 수 없습니다.");
     const hasPaidAccess = billingSupportsPaidProjectActions(billing);

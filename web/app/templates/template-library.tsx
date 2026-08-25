@@ -465,7 +465,7 @@ export function TemplateLibrary({
               <div className="flex flex-1 items-center justify-center px-2 py-4"><UnifiedSubtitlePresetPreview preset={preset} /></div>
               <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4">
                 <div className="min-w-0"><h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{preset.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">{preset.description}</p></div>
-                <span className="shrink-0 rounded-full border border-[#35e6e3]/20 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">카나리</span>
+                <span className="shrink-0 rounded-full border border-[#35e6e3]/20 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">자막 템플릿</span>
               </div>
             </Link>
           </article>

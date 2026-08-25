@@ -10,7 +10,10 @@ import { templateIds, type TemplateId } from "@/lib/contracts";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { getDb } from "@/lib/db";
 import { requireMvpSession } from "@/lib/session";
-import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import {
+  getPublicSubtitleTemplateAccess,
+  getSubtitleTemplateAccess,
+} from "@/lib/subtitle-template-release";
 
 const subtitlePresetVariants: Record<string, UnifiedSubtitleVariant> = {
   "subtitle-pop": "pop",
@@ -24,7 +27,10 @@ export default async function NewTemplatePage({ searchParams }: { searchParams: 
   const next = `/templates/new${preset ? `?preset=${encodeURIComponent(preset)}` : base ? `?base=${encodeURIComponent(base)}` : ""}`;
   if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(next)}`);
   const session = await requireMvpSession(user, { createIfMissing: false });
-  const subtitleAccess = await getSubtitleTemplateAccess(getDb(), session.userId);
+  const db = getDb();
+  const subtitleAccess = session.isAdmin === true
+    ? await getSubtitleTemplateAccess(db, session.userId)
+    : await getPublicSubtitleTemplateAccess(db, session.userId);
   const unifiedSubtitleCanaryEnabled = subtitleAccess.unifiedEnabled;
   const subtitleVariant = preset ? subtitlePresetVariants[preset] : null;
   if (preset && (!subtitleVariant || !unifiedSubtitleCanaryEnabled)) notFound();

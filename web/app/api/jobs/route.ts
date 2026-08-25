@@ -210,7 +210,7 @@ export async function POST(request: Request) {
         if (input.subtitleTemplateId && !subtitleTemplateAccess.enabled) {
           throw new HttpError(
             409,
-            "현재 계정에서는 자막 템플릿 테스트를 사용할 수 없습니다.",
+            "현재 계정에서는 자막 템플릿을 사용할 수 없습니다.",
           );
         }
         if (input.brandColor && !subtitleTemplateAccess.enabled) {
@@ -231,7 +231,7 @@ export async function POST(request: Request) {
         if (executionBackend !== "aws_batch") {
           throw new HttpError(
             503,
-            "자막 템플릿 테스트 작업을 안전한 전용 워커에 연결하지 못했습니다.",
+            "자막 템플릿 작업을 안전한 전용 워커에 연결하지 못했습니다.",
           );
         }
       }
@@ -308,7 +308,7 @@ export async function POST(request: Request) {
       ) {
         throw new HttpError(
           503,
-          "통합 템플릿 자막 테스트 작업을 안전한 전용 워커에 연결하지 못했습니다.",
+          "자막 포함 템플릿 작업을 안전한 전용 워커에 연결하지 못했습니다.",
         );
       }
       if (!transcriptionAccess) {

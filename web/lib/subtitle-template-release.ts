@@ -1,5 +1,7 @@
 import type { Sql, TransactionSql } from "postgres";
 import {
+  editorRenderingV2GlobalEnabled,
+  editorRenderingV2MasterEnabled,
   resolveEditorRelease,
   subtitleEditingReleaseEnabled,
 } from "@/lib/editor-rendering-release";
@@ -8,6 +10,8 @@ export const SUBTITLE_TEMPLATES_FLAG_KEY = "subtitle_templates";
 export const SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY = "subtitle_templates_public";
 export const UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY =
   "unified_template_subtitles_canary";
+export const UNIFIED_TEMPLATE_SUBTITLES_PUBLIC_FLAG_KEY =
+  "unified_template_subtitles_public";
 
 export type SubtitleTemplateAccess = {
   enabled: boolean;
@@ -15,6 +19,7 @@ export type SubtitleTemplateAccess = {
   masterEnabled: boolean;
   featureEnabled: boolean;
   unifiedCanaryEnabled: boolean;
+  unifiedPublicEnabled: boolean;
   publicEnabled: boolean;
   isAdmin: boolean;
   pilotEnabled: boolean;
@@ -36,6 +41,23 @@ export function unifiedTemplateSubtitleCanaryEnabled(
     && access.unifiedCanaryEnabled
     && access.isAdmin
     && access.pilotEnabled;
+}
+
+export function unifiedTemplateSubtitlePublicEnabled(
+  access: Pick<
+    SubtitleTemplateAccess,
+    | "masterEnabled"
+    | "featureEnabled"
+    | "publicEnabled"
+    | "unifiedPublicEnabled"
+    | "suitePublicEnabled"
+  >,
+) {
+  return access.masterEnabled
+    && access.featureEnabled
+    && access.publicEnabled
+    && access.unifiedPublicEnabled
+    && access.suitePublicEnabled;
 }
 
 type UnifiedTemplateSubtitleLocalUploadEnvironment = {
@@ -87,6 +109,7 @@ function disabledAccess() {
     masterEnabled: false,
     featureEnabled: false,
     unifiedCanaryEnabled: false,
+    unifiedPublicEnabled: false,
     publicEnabled: false,
     isAdmin: false,
     pilotEnabled: false,
@@ -98,6 +121,7 @@ export function resolveSubtitleTemplateAccess(input: {
   masterEnabled: boolean;
   featureEnabled: boolean;
   unifiedCanaryEnabled: boolean;
+  unifiedPublicEnabled?: boolean;
   publicEnabled: boolean;
   isAdmin: boolean;
   pilotEnabled?: boolean;
@@ -105,10 +129,12 @@ export function resolveSubtitleTemplateAccess(input: {
 }): SubtitleTemplateAccess {
   const pilotEnabled = input.pilotEnabled === true;
   const suitePublicEnabled = input.suitePublicEnabled === true;
+  const unifiedPublicEnabled = input.unifiedPublicEnabled === true;
   const access = {
     ...input,
     pilotEnabled,
     suitePublicEnabled,
+    unifiedPublicEnabled,
   };
   return {
     ...access,
@@ -120,8 +146,10 @@ export function resolveSubtitleTemplateAccess(input: {
         || pilotEnabled
         || (input.publicEnabled && suitePublicEnabled)
       ),
-    // The v5 unified template work is a separate, stricter admin canary.
-    unifiedEnabled: unifiedTemplateSubtitleCanaryEnabled(access),
+    // Keep the administrator canary and the public stable admission switches
+    // independent so either path can be stopped without changing the other.
+    unifiedEnabled: unifiedTemplateSubtitleCanaryEnabled(access)
+      || unifiedTemplateSubtitlePublicEnabled(access),
   };
 }
 
@@ -129,6 +157,7 @@ function accessFromRows(
   flagRows: Array<{ flagKey?: unknown; enabled?: unknown }>,
   adminRows: Array<{ isAdmin?: unknown; testerEnabled?: unknown }>,
   release: Awaited<ReturnType<typeof resolveEditorRelease>>,
+  allowAdministratorCanary: boolean,
 ) {
   const flags = new Map(
     flagRows.map((row) => [String(row.flagKey || ""), row.enabled === true]),
@@ -137,7 +166,10 @@ function accessFromRows(
     masterEnabled: masterSwitchEnabled(),
     featureEnabled: flags.get(SUBTITLE_TEMPLATES_FLAG_KEY) === true,
     unifiedCanaryEnabled:
-      flags.get(UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY) === true,
+      allowAdministratorCanary
+      && flags.get(UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY) === true,
+    unifiedPublicEnabled:
+      flags.get(UNIFIED_TEMPLATE_SUBTITLES_PUBLIC_FLAG_KEY) === true,
     publicEnabled: flags.get(SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY) === true,
     isAdmin: adminRows[0]?.isAdmin === true,
     pilotEnabled: adminRows[0]?.testerEnabled === true
@@ -153,6 +185,7 @@ async function readAccess(
   userId: string | null,
   lock: boolean,
   resolvedRelease?: Awaited<ReturnType<typeof resolveEditorRelease>>,
+  allowAdministratorCanary: boolean = true,
 ) {
   if (!masterSwitchEnabled()) {
     return disabledAccess();
@@ -163,7 +196,8 @@ async function readAccess(
     where flag_key in (
       ${SUBTITLE_TEMPLATES_FLAG_KEY},
       ${SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY},
-      ${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY}
+      ${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY},
+      ${UNIFIED_TEMPLATE_SUBTITLES_PUBLIC_FLAG_KEY}
     )
     for share
   ` : await db`
@@ -172,7 +206,8 @@ async function readAccess(
     where flag_key in (
       ${SUBTITLE_TEMPLATES_FLAG_KEY},
       ${SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY},
-      ${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY}
+      ${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY},
+      ${UNIFIED_TEMPLATE_SUBTITLES_PUBLIC_FLAG_KEY}
     )
   `;
   const adminRows = !userId ? [] : lock ? await db`
@@ -197,7 +232,12 @@ async function readAccess(
     where app_user.id=${userId} limit 1
   `;
   const release = resolvedRelease ?? await resolveEditorRelease(db, userId);
-  return accessFromRows(flagRows, adminRows, release);
+  return accessFromRows(
+    flagRows,
+    adminRows,
+    release,
+    allowAdministratorCanary,
+  );
 }
 
 export async function resolveUnifiedTemplateSubtitleEditorContext(
@@ -205,11 +245,61 @@ export async function resolveUnifiedTemplateSubtitleEditorContext(
   userId: string | null,
 ) {
   const editorRelease = await resolveEditorRelease(db, userId);
-  const subtitleAccess = editorRelease.channel === "canary"
-    && subtitleEditingReleaseEnabled(editorRelease)
+  const subtitleAccess = subtitleEditingReleaseEnabled(editorRelease)
     ? await readAccess(db, userId, false, editorRelease)
     : disabledAccess();
+  if (subtitleAccess.unifiedEnabled || editorRelease.channel !== "canary") {
+    return { editorRelease, subtitleAccess };
+  }
+
+  // A non-administrator can be enrolled in an unrelated editor canary. That
+  // assignment must not hide the stable public subtitle release from them.
+  const publicEditorRelease = await resolveEditorRelease(db, null);
+  const publicSubtitleAccess = subtitleEditingReleaseEnabled(publicEditorRelease)
+    ? await readAccess(db, userId, false, publicEditorRelease, false)
+    : disabledAccess();
+  if (publicSubtitleAccess.unifiedEnabled) {
+    return {
+      editorRelease: publicEditorRelease,
+      subtitleAccess: publicSubtitleAccess,
+    };
+  }
   return { editorRelease, subtitleAccess };
+}
+
+export async function getUnifiedTemplateSubtitlePublicPreviewAccess(
+  db: Sql | TransactionSql,
+) {
+  if (
+    !masterSwitchEnabled()
+    || !editorRenderingV2MasterEnabled()
+    || !editorRenderingV2GlobalEnabled()
+  ) {
+    return false;
+  }
+  const rows = await db`
+    select state.public_enabled
+      and release.status='stable'
+      and release.subtitle_editing_capable=true
+      and release.document_version=3
+      and coalesce((
+        select count(*)=5
+        from shorts_mvp.runtime_feature_flags flag
+        where flag.enabled=true and flag.flag_key in (
+          ${SUBTITLE_TEMPLATES_FLAG_KEY},
+          ${SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY},
+          ${UNIFIED_TEMPLATE_SUBTITLES_PUBLIC_FLAG_KEY},
+          'editor_rendering_v2',
+          'editor_subtitle_editing_public'
+        )
+      ),false) as enabled
+    from shorts_mvp.editor_release_state state
+    join shorts_mvp.editor_releases release
+      on release.id=state.stable_release_id
+    where state.singleton=true
+    limit 1
+  `;
+  return rows[0]?.enabled === true;
 }
 
 export function getSubtitleTemplateAccess(
@@ -217,6 +307,14 @@ export function getSubtitleTemplateAccess(
   userId: string | null,
 ) {
   return readAccess(db, userId, false);
+}
+
+export async function getPublicSubtitleTemplateAccess(
+  db: Sql | TransactionSql,
+  userId: string | null,
+) {
+  const publicEditorRelease = await resolveEditorRelease(db, null);
+  return readAccess(db, userId, false, publicEditorRelease, false);
 }
 
 export function lockSubtitleTemplateAccess(

@@ -10,6 +10,7 @@ import {
   removeEditorReleaseTester,
   rollbackEditorRelease,
   setUnifiedTemplateSubtitleCanary,
+  setUnifiedTemplateSubtitlePublic,
   startEditorReleaseCanary,
 } from "./editor-release-actions";
 
@@ -58,6 +59,7 @@ type Props = {
   canaryEnabled: boolean;
   subtitleSuitePublicEnabled: boolean;
   unifiedTemplateSubtitleCanaryEnabled: boolean;
+  unifiedTemplateSubtitlePublicEnabled: boolean;
   stableReleaseId: string | null;
   previousStableReleaseId: string | null;
   candidateReleaseId: string | null;
@@ -126,6 +128,7 @@ export function AdminEditorReleases({
   canaryEnabled,
   subtitleSuitePublicEnabled,
   unifiedTemplateSubtitleCanaryEnabled,
+  unifiedTemplateSubtitlePublicEnabled,
   stableReleaseId,
   previousStableReleaseId,
   candidateReleaseId,
@@ -302,6 +305,33 @@ export function AdminEditorReleases({
           })}
           className="rounded-xl border border-violet-300/30 bg-violet-400/10 px-4 py-2.5 text-sm font-bold text-violet-100 disabled:opacity-40"
         >통합 자막 카나리 중단</button>}
+        {publicEnabled
+          && stable?.subtitleEditingCapable
+          && subtitleSuitePublicEnabled
+          && !unifiedTemplateSubtitlePublicEnabled
+          && <button
+            type="button"
+            disabled={pending || !masterEnvironmentEnabled || !globalEnvironmentEnabled}
+            onClick={() => setConfirmation({
+              title: "통합 자막 템플릿을 일반 사용자에게 공개할까요?",
+              description: "성공한 링크 기반 생성 기록과 stable 자막 편집 릴리스, 전사·렌더 스위치를 서버에서 다시 확인한 뒤 일반 유료 사용자와 발급계정에 공개합니다. 파일 업로드는 공개되지 않습니다.",
+              confirmLabel: "통합 자막 템플릿 공개",
+              action: () => setUnifiedTemplateSubtitlePublic(true),
+            })}
+            className="rounded-xl bg-cyan-300 px-4 py-2.5 text-sm font-black text-cyan-950 disabled:opacity-40"
+          >통합 자막 템플릿 공개</button>}
+        {unifiedTemplateSubtitlePublicEnabled && <button
+          type="button"
+          disabled={pending}
+          onClick={() => setConfirmation({
+            title: "통합 자막 템플릿 공개를 중단할까요?",
+            description: "신규 v5 템플릿 저장·링크 생성·재편집 요청만 차단합니다. 저장 데이터와 완성 영상은 삭제하지 않고 파일 업로드 설정에도 영향을 주지 않습니다.",
+            confirmLabel: "통합 자막 공개 중단",
+            danger: true,
+            action: () => setUnifiedTemplateSubtitlePublic(false),
+          })}
+          className="rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-4 py-2.5 text-sm font-bold text-cyan-100 disabled:opacity-40"
+        >통합 자막 공개 중단</button>}
       </div>
       {canaryEnabled && candidate && !promotionReady && <p className="mt-3 text-xs leading-5 text-amber-100/80">
         모든 격리·운영 카나리 검사가 통과하고 성공 렌더가 1건 이상이며,

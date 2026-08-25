@@ -2083,7 +2083,7 @@ describe("job API security and idempotency", () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({
-      detail: "현재 계정에서는 자막 템플릿 테스트를 사용할 수 없습니다.",
+      detail: "현재 계정에서는 자막 템플릿을 사용할 수 없습니다.",
     });
     expect(tx.mock.calls.some(([strings]) =>
       Array.from(strings as TemplateStringsArray).join("").includes(
@@ -2151,7 +2151,7 @@ describe("job API security and idempotency", () => {
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toMatchObject({
-      detail: "자막 템플릿 테스트 작업을 안전한 전용 워커에 연결하지 못했습니다.",
+      detail: "자막 템플릿 작업을 안전한 전용 워커에 연결하지 못했습니다.",
     });
   });
 

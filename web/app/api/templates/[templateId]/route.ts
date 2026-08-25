@@ -11,6 +11,7 @@ import {
 } from "@/lib/template-config";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
 import {
+  getPublicSubtitleTemplateAccess,
   getSubtitleTemplateAccess,
   lockSubtitleTemplateAccess,
 } from "@/lib/subtitle-template-release";
@@ -40,7 +41,9 @@ export async function GET(_request: Request, context: Context) {
     const template = customTemplateFromRow(rows[0]);
     if (isTemplateConfigV5(template.config)) {
       assertUnifiedTemplateSubtitleCanaryAccess(
-        await getSubtitleTemplateAccess(db, session.userId),
+        session.isAdmin === true
+          ? await getSubtitleTemplateAccess(db, session.userId)
+          : await getPublicSubtitleTemplateAccess(db, session.userId),
       );
     }
     return NextResponse.json({ template });

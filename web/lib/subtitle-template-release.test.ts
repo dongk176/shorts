@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Sql } from "postgres";
 import { describe, expect, it, vi } from "vitest";
 import {
+  getUnifiedTemplateSubtitlePublicPreviewAccess,
   resolveUnifiedTemplateSubtitleEditorContext,
   resolveSubtitleTemplateAccess,
   unifiedTemplateSubtitleLocalUploadEnabled,
@@ -10,6 +11,13 @@ import {
 const unifiedCanaryFlagMigration = readFileSync(
   new URL(
     "../../supabase/migrations/202608240002_unified_template_subtitles_canary_flag.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const unifiedPublicFlagMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/202608260003_unified_template_subtitles_public.sql",
     import.meta.url,
   ),
   "utf8",
@@ -98,6 +106,36 @@ describe("subtitle template release", () => {
     }).unifiedEnabled).toBe(false);
   });
 
+  it("admits a regular member only through the independent stable public gate", () => {
+    expect(resolveSubtitleTemplateAccess({
+      masterEnabled: true,
+      featureEnabled: true,
+      unifiedCanaryEnabled: false,
+      unifiedPublicEnabled: true,
+      publicEnabled: true,
+      isAdmin: false,
+      suitePublicEnabled: true,
+    }).unifiedEnabled).toBe(true);
+    expect(resolveSubtitleTemplateAccess({
+      masterEnabled: true,
+      featureEnabled: true,
+      unifiedCanaryEnabled: true,
+      unifiedPublicEnabled: false,
+      publicEnabled: true,
+      isAdmin: false,
+      suitePublicEnabled: true,
+    }).unifiedEnabled).toBe(false);
+    expect(resolveSubtitleTemplateAccess({
+      masterEnabled: true,
+      featureEnabled: true,
+      unifiedCanaryEnabled: false,
+      unifiedPublicEnabled: true,
+      publicEnabled: true,
+      isAdmin: false,
+      suitePublicEnabled: false,
+    }).unifiedEnabled).toBe(false);
+  });
+
   it("rejects a selected non-admin pilot", () => {
     expect(resolveSubtitleTemplateAccess({
       masterEnabled: true,
@@ -176,6 +214,44 @@ describe("subtitle template release", () => {
       "on conflict (flag_key) do update",
     );
     expect(unifiedCanaryFlagMigration).not.toMatch(/\bupdate\s+shorts_mvp\./i);
+  });
+
+  it("seeds the independent public flag disabled without overwriting state", () => {
+    expect(unifiedPublicFlagMigration).toContain(
+      "'unified_template_subtitles_public'",
+    );
+    expect(unifiedPublicFlagMigration).toMatch(
+      /'unified_template_subtitles_public',\s*false,/,
+    );
+    expect(unifiedPublicFlagMigration).toContain(
+      "on conflict (flag_key) do nothing",
+    );
+    expect(unifiedPublicFlagMigration).not.toMatch(/\bpublic\./i);
+  });
+
+  it("shows anonymous previews only while every stable public ceiling is enabled", async () => {
+    const previous = {
+      subtitle: process.env.SUBTITLE_TEMPLATES_ENABLED,
+      editor: process.env.EDITOR_RENDERING_V2_ENABLED,
+      global: process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED,
+    };
+    process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    process.env.EDITOR_RENDERING_V2_ENABLED = "true";
+    process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = "true";
+    const db = vi.fn().mockResolvedValue([{ enabled: true }]);
+    try {
+      await expect(getUnifiedTemplateSubtitlePublicPreviewAccess(
+        db as unknown as Sql,
+      )).resolves.toBe(true);
+      expect(db).toHaveBeenCalledTimes(1);
+    } finally {
+      if (previous.subtitle === undefined) delete process.env.SUBTITLE_TEMPLATES_ENABLED;
+      else process.env.SUBTITLE_TEMPLATES_ENABLED = previous.subtitle;
+      if (previous.editor === undefined) delete process.env.EDITOR_RENDERING_V2_ENABLED;
+      else process.env.EDITOR_RENDERING_V2_ENABLED = previous.editor;
+      if (previous.global === undefined) delete process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED;
+      else process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = previous.global;
+    }
   });
 
   it("allows unified upload only for an explicit non-production loopback", () => {

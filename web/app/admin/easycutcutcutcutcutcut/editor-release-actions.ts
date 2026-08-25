@@ -21,6 +21,7 @@ import {
   SUBTITLE_TEMPLATES_FLAG_KEY,
   SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY,
   UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY,
+  UNIFIED_TEMPLATE_SUBTITLES_PUBLIC_FLAG_KEY,
 } from "@/lib/subtitle-template-release";
 
 const adminPath = "/admin/easycutcutcutcutcutcut?tab=editor-releases";
@@ -641,6 +642,153 @@ export async function setUnifiedTemplateSubtitleCanary(
   revalidatePath(adminPath);
 }
 
+export async function setUnifiedTemplateSubtitlePublic(
+  enabledValue: boolean,
+) {
+  const enabled = z.boolean().parse(enabledValue);
+  const admin = await requireAdminUser();
+  if (enabled && (
+    process.env.SUBTITLE_TEMPLATES_ENABLED?.trim().toLowerCase() !== "true"
+    || process.env.ELEVENLABS_TRANSCRIPTION_ENABLED?.trim().toLowerCase()
+      !== "true"
+    || !editorRenderingV2MasterEnabled()
+    || !editorRenderingV2GlobalEnabled()
+    || !process.env.UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN?.trim()
+    || !process.env.UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN?.trim()
+  )) {
+    throw new HttpError(
+      409,
+      "통합 자막 템플릿의 서버·전사·렌더 대상을 먼저 확인해 주세요.",
+      "UNIFIED_TEMPLATE_SUBTITLE_PUBLIC_MASTER_DISABLED",
+    );
+  }
+  await getDb().begin(async (tx) => {
+    let releaseId: string | null = null;
+    let completedProjects = 0;
+    let readyShorts = 0;
+    if (enabled) {
+      const states = await tx`
+        select state.stable_release_id,state.public_enabled,
+          release.status,release.document_version,
+          release.subtitle_editing_capable
+        from shorts_mvp.editor_release_state state
+        join shorts_mvp.editor_releases release
+          on release.id=state.stable_release_id
+        where state.singleton=true
+        limit 1
+        for update of state,release
+      `;
+      const state = states[0];
+      if (
+        !state?.stableReleaseId
+        || state.publicEnabled !== true
+        || state.status !== "stable"
+        || Number(state.documentVersion) !== 3
+        || state.subtitleEditingCapable !== true
+      ) {
+        throw new HttpError(
+          409,
+          "자막 편집이 가능한 stable 릴리스를 먼저 공개해 주세요.",
+          "UNIFIED_TEMPLATE_SUBTITLE_PUBLIC_STABLE_REQUIRED",
+        );
+      }
+      releaseId = String(state.stableReleaseId);
+      const requiredFlagKeys = [
+        EDITOR_RENDERING_V2_FLAG_KEY,
+        EDITOR_SUBTITLE_EDITING_PUBLIC_FLAG_KEY,
+        ELEVENLABS_TRANSCRIPTION_FLAG_KEY,
+        ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY,
+        ELEVENLABS_PUBLIC_COMPLIANCE_APPROVED_FLAG_KEY,
+        SUBTITLE_TEMPLATES_FLAG_KEY,
+        SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY,
+      ];
+      const flags = await tx`
+        select flag_key,enabled
+        from shorts_mvp.runtime_feature_flags
+        where flag_key=any(${requiredFlagKeys})
+        for update
+      `;
+      if (
+        flags.length !== requiredFlagKeys.length
+        || flags.some((flag) => flag.enabled !== true)
+      ) {
+        throw new HttpError(
+          409,
+          "자막 템플릿·편집·전사 공개 스위치를 먼저 확인해 주세요.",
+          "UNIFIED_TEMPLATE_SUBTITLE_PUBLIC_FLAGS_REQUIRED",
+        );
+      }
+      const evidence = await tx`
+        select
+          count(distinct job.id) filter (
+            where job.status='completed'
+          )::integer as completed_projects,
+          count(distinct short.id) filter (
+            where short.status='ready'
+          )::integer as ready_shorts,
+          count(distinct job.id) filter (
+            where job.status in (
+              'validating','queued','starting','downloading','transcribing',
+              'selecting','extracting','rendering','uploading','retry_waiting'
+            )
+          )::integer as active_projects
+        from shorts_mvp.video_jobs job
+        left join shorts_mvp.generated_shorts short
+          on short.job_id=job.id
+          and short.subtitle_template_snapshot->>'origin'='unified-template-v5'
+        where job.subtitle_template_snapshot->>'origin'='unified-template-v5'
+      `;
+      completedProjects = Number(evidence[0]?.completedProjects || 0);
+      readyShorts = Number(evidence[0]?.readyShorts || 0);
+      if (Number(evidence[0]?.activeProjects || 0) > 0) {
+        throw new HttpError(
+          409,
+          "진행 중인 통합 자막 템플릿 작업이 끝난 뒤 공개해 주세요.",
+          "UNIFIED_TEMPLATE_SUBTITLE_PUBLIC_ACTIVE_JOBS",
+        );
+      }
+      if (completedProjects < 1 || readyShorts < 1) {
+        throw new HttpError(
+          409,
+          "통합 자막 템플릿의 성공 프로젝트와 완성 영상 검증이 필요합니다.",
+          "UNIFIED_TEMPLATE_SUBTITLE_PUBLIC_EVIDENCE_REQUIRED",
+        );
+      }
+    }
+    const updated = await tx`
+      update shorts_mvp.runtime_feature_flags
+      set enabled=${enabled},updated_by_user_id=${admin.id}
+      where flag_key=${UNIFIED_TEMPLATE_SUBTITLES_PUBLIC_FLAG_KEY}
+      returning flag_key
+    `;
+    if (updated.length !== 1) {
+      throw new HttpError(
+        503,
+        "통합 자막 템플릿 공개 플래그 마이그레이션이 필요합니다.",
+        "UNIFIED_TEMPLATE_SUBTITLE_PUBLIC_FLAG_MISSING",
+      );
+    }
+    await recordAudit(
+      tx,
+      admin.id,
+      enabled
+        ? "editor_release.unified_template_subtitles_published"
+        : "editor_release.unified_template_subtitles_unpublished",
+      releaseId || UNIFIED_TEMPLATE_SUBTITLES_PUBLIC_FLAG_KEY,
+      {
+        enabled,
+        releaseId,
+        completedProjects,
+        readyShorts,
+        rollbackScope: "new_unified_template_subtitle_admissions",
+      },
+    );
+  });
+  revalidatePath(adminPath);
+  revalidatePath("/templates");
+  revalidatePath("/");
+}
+
 export async function rollbackEditorRelease(modeValue: "previous" | "legacy") {
   const mode = z.enum(["previous", "legacy"]).parse(modeValue);
   const admin = await requireAdminUser();
@@ -661,7 +809,8 @@ export async function rollbackEditorRelease(modeValue: "previous" | "legacy") {
         ${EDITOR_SUBTITLE_EDITING_PUBLIC_FLAG_KEY},
         ${ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY},
         ${SUBTITLE_TEMPLATES_PUBLIC_FLAG_KEY},
-        ${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY}
+        ${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY},
+        ${UNIFIED_TEMPLATE_SUBTITLES_PUBLIC_FLAG_KEY}
       )
     `;
     const currentReleaseId = state.stableReleaseId

@@ -12,6 +12,7 @@ import { getDb } from "@/lib/db";
 import { getEnterpriseAccessState } from "@/lib/enterprise-access";
 import { getFileUploadReleaseAccess } from "@/lib/file-upload-release";
 import {
+  getPublicSubtitleTemplateAccess,
   getSubtitleTemplateAccess,
   unifiedTemplateSubtitleLocalUploadEnabled,
 } from "@/lib/subtitle-template-release";
@@ -78,12 +79,9 @@ export async function loadMvpState(
   }
 
   const session = await requireMvpSession(user, { createIfMissing: false });
-  // Unified v5 is an administrator-only canary. The session lookup already
-  // reads app_users, so regular members must not pay for another three-query
-  // feature-release lookup on every home render.
   const subtitleTemplateAccessPromise = session.isAdmin === true
     ? getSubtitleTemplateAccess(db, session.userId)
-    : Promise.resolve(null);
+    : getPublicSubtitleTemplateAccess(db, session.userId);
   const [
     usage,
     recentJobs,

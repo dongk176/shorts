@@ -228,6 +228,11 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
               from shorts_mvp.runtime_feature_flags
               where flag_key='unified_template_subtitles_canary'
             ),false) as unified_template_subtitles_canary_enabled
+            ,coalesce((
+              select enabled
+              from shorts_mvp.runtime_feature_flags
+              where flag_key='unified_template_subtitles_public'
+            ),false) as unified_template_subtitles_public_enabled
           from shorts_mvp.editor_release_state
           where singleton=true
           limit 1
@@ -810,6 +815,9 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           )}
           unifiedTemplateSubtitleCanaryEnabled={Boolean(
             editorReleaseState?.unifiedTemplateSubtitlesCanaryEnabled,
+          )}
+          unifiedTemplateSubtitlePublicEnabled={Boolean(
+            editorReleaseState?.unifiedTemplateSubtitlesPublicEnabled,
           )}
           stableReleaseId={editorReleaseState?.stableReleaseId
             ? String(editorReleaseState.stableReleaseId)

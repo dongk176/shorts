@@ -34,5 +34,8 @@ describe("unified template subtitle admin canary", () => {
     expect(editorSource).toContain("next.subtitle.x = TEMPLATE_CANVAS.width / 2");
     expect(editorSource).toContain("next.subtitle.accentColor = color");
     expect(editorSource).toContain("next.subtitle.visible = !next.subtitle.visible");
+    expect(editorSource).not.toContain("어드민 카나리");
+    expect(editorSource).not.toContain("직접 업로드 영상에 동일하게 적용");
+    expect(librarySource).toContain(">자막 템플릿</span>");
   });
 });

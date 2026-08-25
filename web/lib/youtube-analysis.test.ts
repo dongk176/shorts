@@ -100,7 +100,7 @@ describe("YouTube analysis persistence", () => {
     mocks.getDb.mockReturnValue(db);
 
     await expect(createYoutubeAnalysis(
-      { ...session, userId: "admin-user" },
+      { ...session, userId: "admin-user", isAdmin: true },
       metadata,
     )).resolves.toMatchObject({
       subtitleTemplateSelectionEnabled: true,
