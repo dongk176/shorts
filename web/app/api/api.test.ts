@@ -191,7 +191,7 @@ const adminSubtitleCanaryReleaseRow = {
   stableDocumentVersion: null,
   stableStatus: null,
   stableSubtitleEditingCapable: false,
-  candidateReleaseId: "5a5f9f4d-f59d-4ba3-a28a-9396ac8284a7",
+  candidateReleaseId: "775b464d-048e-4015-a721-5d48ea03f4b3",
   candidateUiVersion: 3,
   candidateDocumentVersion: 3,
   candidateStatus: "canary_active",
@@ -914,10 +914,70 @@ describe("subtitle template edit isolation", () => {
     });
   });
 
+  it("rejects render spec v3 before queuing it on the current v2-only stable worker", async () => {
+    process.env.EDITOR_RENDERING_V2_ENABLED = "true";
+    process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = "true";
+    const stableReleaseId = "b0cd2a6b-5019-4b5c-87cb-57e2d0bdb4c0";
+    const document = JSON.parse(readFileSync(
+      new URL("../../../test-fixtures/editor-document-v3.json", import.meta.url),
+      "utf8",
+    ));
+    document.renderSpec = createEditorRenderSpec(document, {
+      offsetY: 120,
+      scale: 1,
+      fontId: "pretendard",
+      fontSize: 64,
+      color: "#FFFFFF",
+      accentColor: "#35E6E3",
+    }, 3);
+    const db = dbWithRows([{
+      publicEnabled: true,
+      canaryEnabled: false,
+      runtimeEnabled: true,
+      testerEnabled: false,
+      userIsAdmin: false,
+      stableReleaseId,
+      stableUiVersion: 3,
+      stableDocumentVersion: 3,
+      stableStatus: "stable",
+      stableSubtitleEditingCapable: true,
+      candidateReleaseId: null,
+      candidateUiVersion: null,
+      candidateDocumentVersion: null,
+      candidateStatus: null,
+      candidateSubtitleEditingCapable: false,
+      subtitleEditingPublicEnabled: true,
+    }]);
+    const begin = vi.fn();
+    Object.assign(db, { begin });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        requestId: "bb60093d-71e9-459b-95b5-b096d54dd291",
+        release: {
+          releaseId: stableReleaseId,
+          channel: "stable",
+          uiVersion: 3,
+          documentVersion: 3,
+        },
+        document,
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "EDITOR_RENDER_SPEC_UNSUPPORTED",
+    });
+    expect(db).toHaveBeenCalledTimes(1);
+    expect(begin).not.toHaveBeenCalled();
+  });
+
   it("rejects a forged v3 subtitle edit from a non-admin canary tester", async () => {
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
     process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
-    const candidateReleaseId = "5a5f9f4d-f59d-4ba3-a28a-9396ac8284a7";
+    const candidateReleaseId = "775b464d-048e-4015-a721-5d48ea03f4b3";
     const document = JSON.parse(readFileSync(
       new URL("../../../test-fixtures/editor-document-v3.json", import.meta.url),
       "utf8",
@@ -1243,7 +1303,7 @@ describe("subtitle template edit isolation", () => {
   }) => {
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
     process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
-    const candidateReleaseId = "5a5f9f4d-f59d-4ba3-a28a-9396ac8284a7";
+    const candidateReleaseId = "775b464d-048e-4015-a721-5d48ea03f4b3";
     const requestId = "5253b207-cd49-45bc-8d83-69c2b781e21f";
     const adminV3Release = {
       publicEnabled: false,

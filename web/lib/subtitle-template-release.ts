@@ -2,6 +2,7 @@ import type { Sql, TransactionSql } from "postgres";
 import {
   editorRenderingV2GlobalEnabled,
   editorRenderingV2MasterEnabled,
+  resolvePublicEditorRelease,
   resolveEditorRelease,
   subtitleEditingReleaseEnabled,
 } from "@/lib/editor-rendering-release";
@@ -254,7 +255,7 @@ export async function resolveUnifiedTemplateSubtitleEditorContext(
 
   // A non-administrator can be enrolled in an unrelated editor canary. That
   // assignment must not hide the stable public subtitle release from them.
-  const publicEditorRelease = await resolveEditorRelease(db, null);
+  const publicEditorRelease = await resolvePublicEditorRelease(db);
   const publicSubtitleAccess = subtitleEditingReleaseEnabled(publicEditorRelease)
     ? await readAccess(db, userId, false, publicEditorRelease, false)
     : disabledAccess();
@@ -313,7 +314,7 @@ export async function getPublicSubtitleTemplateAccess(
   db: Sql | TransactionSql,
   userId: string | null,
 ) {
-  const publicEditorRelease = await resolveEditorRelease(db, null);
+  const publicEditorRelease = await resolvePublicEditorRelease(db);
   return readAccess(db, userId, false, publicEditorRelease, false);
 }
 

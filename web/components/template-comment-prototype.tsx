@@ -120,12 +120,14 @@ export function TemplateCommentPrototype({
   selected,
   theme,
   size,
+  comment,
   onSelect,
   onPointerDown,
 }: {
   selected: boolean;
   theme: TemplateCommentTheme;
   size: TemplateCommentSize;
+  comment?: CommentOverlay;
   onSelect: () => void;
   onPointerDown: PointerEventHandler<HTMLButtonElement>;
 }) {
@@ -140,7 +142,7 @@ export function TemplateCommentPrototype({
       className={`relative z-40 block w-full cursor-ns-resize appearance-none overflow-hidden rounded-none border-0 text-left shadow-none ${selected ? "outline outline-2 outline-[#ff715e] outline-offset-[-2px]" : ""}`}
       style={appearance.style}
     >
-      <TemplateCommentContents {...appearance} />
+      <TemplateCommentContents {...appearance} comment={comment} />
     </button>
   );
 }

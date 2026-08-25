@@ -24,7 +24,9 @@ describe("unified template subtitle access", () => {
   it("opens pop and highlight presets in the editor only for paid or issued accounts", () => {
     expect(librarySource).toContain('id: "subtitle-pop"');
     expect(librarySource).toContain('id: "subtitle-highlight"');
-    expect(librarySource).toContain("authenticated && canUseCustomTemplates && unifiedSubtitleCanaryEnabled");
+    expect(librarySource).toContain("!authenticated");
+    expect(librarySource).toContain("/auth/sign-in?next=${encodeURIComponent(`/templates/new?preset=${preset.id}`)}");
+    expect(librarySource).toContain("canUseCustomTemplates && unifiedSubtitleCanaryEnabled");
     expect(librarySource).toContain("/templates/new?preset=${preset.id}");
     expect(newPageSource).toContain("createUnifiedSubtitleTemplateConfig(subtitleVariant)");
     expect(newPageSource).toContain("if (!billingSupportsCustomTemplates(billing))");

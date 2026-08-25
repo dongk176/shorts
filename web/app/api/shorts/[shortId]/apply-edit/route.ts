@@ -22,6 +22,7 @@ import {
   EDITOR_RENDER_SPEC_VERSION,
 } from "@/lib/editor-render-spec";
 import {
+  editorReleaseSupportsRenderSpecV3,
   subtitleEditingReleaseEnabled,
   resolveRequestedEditorRelease,
   type EditorReleaseAssignment,
@@ -205,6 +206,24 @@ async function applyEditorDocument({
       "EDITOR_RELEASE_VERSION_CONFLICT",
     );
   }
+  const candidateOnlyFontRequested = usesCandidateOnlyEditorFont(
+    requestedDocument,
+  );
+  if (
+    (
+      requestedDocument.version === 3
+      && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+    )
+    || candidateOnlyFontRequested
+  ) {
+    if (!editorReleaseSupportsRenderSpecV3(release)) {
+      throw new HttpError(
+        409,
+        "현재 편집기가 지원하는 설정으로 다시 저장해 주세요.",
+        "EDITOR_RENDER_SPEC_UNSUPPORTED",
+      );
+    }
+  }
   if (
     requestedDocument.version === 3
     && requestedDocument.renderSpec.version !== EDITOR_RENDER_SPEC_LEGACY_VERSION
@@ -310,9 +329,6 @@ async function applyEditorDocument({
   const unifiedSubtitleEditRequested = unifiedTemplateSubtitleOutput || (
     requestedDocument.version === 3
     && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
-  );
-  const candidateOnlyFontRequested = usesCandidateOnlyEditorFont(
-    requestedDocument,
   );
   if (
     existing.subtitleTemplateId
@@ -598,6 +614,17 @@ async function applyEditorDocument({
       lockedRelease.channel === "legacy"
       || !lockedRelease.releaseId
       || lockedRelease.releaseId !== release.releaseId
+      || (
+        (
+          requestedDocument.version === 3
+          && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+        )
+        && !editorReleaseSupportsRenderSpecV3(lockedRelease)
+      )
+      || (
+        candidateOnlyFontRequested
+        && !editorReleaseSupportsRenderSpecV3(lockedRelease)
+      )
     ) {
       throw new HttpError(
         409,

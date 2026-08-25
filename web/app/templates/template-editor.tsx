@@ -7,10 +7,15 @@ import {
   COMMENT_BACKGROUND_COLOR,
   aspectHeightRatio,
   stockBackgrounds,
+  TEMPLATE_PRESET_COMMENT_SAMPLE,
+  templatePresetPresentation,
+  templateConfigColorOptions,
   templatePresetColorOptions,
+  templatePresetColors,
   isTemplateConfigV5,
   videoFrameForAspect,
   type CustomTemplate,
+  type TemplateConfigColor,
   type TemplatePresetColor,
   type TemplateConfig,
 } from "@/lib/template-config";
@@ -56,9 +61,9 @@ const COMMENT_VIDEO_SNAP_THRESHOLD_PX = 18;
 const COMMENT_Y_MIN = CUSTOM_COMMENT_Y_MIN;
 const COMMENT_Y_MAX = CUSTOM_COMMENT_Y_MAX;
 const hiddenCenterGuides: CenterGuides = { x: false, y: false };
-const compactTextColors = ["#FFFFFF", "#111111", "#35E6E3"] as const satisfies readonly TemplatePresetColor[];
-const compactTextBackgroundColors = ["#111111", "#FFFFFF"] as const satisfies readonly TemplatePresetColor[];
-const compactBackgroundColors = [COMMENT_BACKGROUND_COLOR, "#000000", "#111111", "#FFFFFF", "#F3F0E9", "#E32626", "#2563EB"] as const satisfies readonly TemplatePresetColor[];
+const compactTextColors = ["#FFFFFF", "#111111", "#35E6E3"] as const satisfies readonly TemplateConfigColor[];
+const compactTextBackgroundColors = ["#111111", "#FFFFFF"] as const satisfies readonly TemplateConfigColor[];
+const compactBackgroundColors = [COMMENT_BACKGROUND_COLOR, "#000000", "#111111", "#FFFFFF", "#F3F0E9", "#E32626", "#2563EB"] as const satisfies readonly TemplateConfigColor[];
 
 function cloneConfig(config: TemplateConfig) {
   return structuredClone(config);
@@ -82,18 +87,37 @@ function backgroundStyle(config: TemplateConfig): React.CSSProperties {
   return { backgroundImage: `url(${asset?.src || ""})`, backgroundPosition: "center", backgroundSize: "cover" };
 }
 
-function compactColorOptions(value: TemplatePresetColor | null, colors: readonly TemplatePresetColor[]) {
-  const defaults = colors.map((color) => templatePresetColorOptions.find((option) => option.color === color)!);
+type TemplateColorOption = { color: TemplateConfigColor; name: string };
+
+function compactColorOptions(
+  value: TemplateConfigColor | null,
+  colors: readonly TemplateConfigColor[],
+  options: readonly TemplateColorOption[] = templateConfigColorOptions,
+) {
+  const defaults = colors.map((color) => options.find((option) => option.color === color)!);
   if (!value || defaults.some((option) => option.color === value)) return defaults;
-  const selected = templatePresetColorOptions.find((option) => option.color === value);
+  const selected = options.find((option) => option.color === value);
   return selected ? [selected, ...defaults.slice(0, colors.length - 1)] : defaults;
 }
 
-function ColorPalette({ value, onChange, allowNone = false }: { value: TemplatePresetColor | null; onChange: (value: TemplatePresetColor | null) => void; allowNone?: boolean }) {
+function rendererPresetColor(
+  value: TemplateConfigColor,
+): value is TemplatePresetColor {
+  return (templatePresetColors as readonly string[]).includes(value);
+}
+
+function ColorPalette({ value, onChange, allowNone = false, rendererOnly = false }: { value: TemplateConfigColor | null; onChange: (value: TemplateConfigColor | null) => void; allowNone?: boolean; rendererOnly?: boolean }) {
   const [expanded, setExpanded] = useState(false);
-  const visibleOptions = expanded
+  const options: readonly TemplateColorOption[] = rendererOnly
     ? templatePresetColorOptions
-    : compactColorOptions(value, allowNone ? compactTextBackgroundColors : compactTextColors);
+    : templateConfigColorOptions;
+  const visibleOptions = expanded
+    ? options
+    : compactColorOptions(
+        value,
+        allowNone ? compactTextBackgroundColors : compactTextColors,
+        options,
+      );
   return (
     <div className="flex flex-wrap gap-2">
       {allowNone && <button type="button" title="없음" aria-label="배경 없음" aria-pressed={value === null} onClick={() => onChange(null)} className={`flex h-8 w-8 items-center justify-center rounded-full border border-dashed text-[8px] font-bold transition ${value === null ? "border-[#ff715e] text-white ring-2 ring-[#ff715e]/25" : "border-white/35 bg-white/[.03] text-neutral-400 hover:border-white/60 hover:text-white"}`}>없음</button>}
@@ -134,6 +158,9 @@ export function TemplateEditor({
   const transactionRef = useRef<TemplateConfig | null>(null);
   const baselineRef = useRef(JSON.stringify({ name: initialName, config: initialConfig }));
   const config = history.present;
+  const previewTitleLines = isTemplateConfigV5(config) && config.subtitle.visible
+    ? (["AI가 고른 오늘의", "핵심 장면"] as const)
+    : templatePresetPresentation[baseTemplateId].titleLines;
   const dirty = JSON.stringify({ name, config }) !== baselineRef.current;
   const unifiedSubtitleConfigEnabled = unifiedSubtitleCanaryEnabled && isTemplateConfigV5(config);
   const availableLayerIds = unifiedSubtitleConfigEnabled
@@ -381,7 +408,7 @@ export function TemplateEditor({
   const background = backgroundStyle(config);
   const selectedBackgroundColor = config.background.kind === "color" ? config.background.color : null;
   const visibleBackgroundColors = showAllBackgroundColors
-    ? templatePresetColorOptions
+    ? templateConfigColorOptions
     : compactColorOptions(selectedBackgroundColor, compactBackgroundColors);
 
   return (
@@ -407,8 +434,8 @@ export function TemplateEditor({
                   </div>
                   <CustomTemplateTitlePreview
                     title={config.title}
-                    firstLine="놓치면 후회할"
-                    secondLine="핵심 한 가지"
+                    firstLine={previewTitleLines[0]}
+                    secondLine={previewTitleLines[1]}
                     fontFamily={unifiedTitleFontId ? editorFontFamily(unifiedTitleFontId) : undefined}
                     fontWeight={unifiedTitleFontId ? resolveEditorFontFace(unifiedTitleFontId, "title").resolvedWeight : undefined}
                     selected={selectedLayer === "title"}
@@ -423,7 +450,7 @@ export function TemplateEditor({
                     : null}
                   {config.channel.visible && !commentLayerEnabled && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</button>}
                   {commentLayerEnabled && <div className="absolute inset-x-0 z-40" style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>
-                    {config.comment.visible && <TemplateCommentPrototype selected={selectedLayer === "comment"} theme={config.comment.theme} size={config.comment.size} onSelect={() => setSelectedLayer("comment")} onPointerDown={beginCommentPointerAction} />}
+                    {config.comment.visible && <TemplateCommentPrototype selected={selectedLayer === "comment"} theme={config.comment.theme} size={config.comment.size} comment={TEMPLATE_PRESET_COMMENT_SAMPLE} onSelect={() => setSelectedLayer("comment")} onPointerDown={beginCommentPointerAction} />}
                     {config.channel.visible && <button type="button" onClick={() => setSelectedLayer("channel")} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setSelectedLayer("channel"); }} className={`${config.schemaVersion >= 4 ? "absolute left-1/2" : "relative mx-auto mt-[2cqw] block"} z-30 truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ top: config.schemaVersion >= 4 ? customCanvasWidth(config.channel.y - commentY) : undefined, transform: config.schemaVersion >= 4 ? "translate(-50%, -50%)" : undefined, width: customCanvasWidth(config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</button>}
                   </div>}
                   {commentSnapGuide && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 z-50 h-px bg-[#35e6e3] shadow-[0_0_7px_rgba(53,230,227,.9)]" style={{ top: `${(videoBottom / TEMPLATE_CANVAS.height) * 100}%` }}><span className="absolute right-2 -translate-y-full rounded-t bg-[#35e6e3] px-1.5 py-0.5 text-[7px] font-black text-black">영상 하단에 맞춤</span></div>}
@@ -562,7 +589,7 @@ export function TemplateEditor({
 
                 <div className="mt-5 grid grid-cols-2 gap-5 border-t border-white/10 pt-4">
                   <div><p className="text-xs font-semibold text-neutral-400">기본 글자색</p><div className="mt-2"><ColorPalette key="subtitle-text-color" value={selectedSubtitle.color} onChange={(color) => { if (color) commit((next) => { if (isTemplateConfigV5(next)) next.subtitle.color = color; return next; }); }} /></div></div>
-                  <div><p className="text-xs font-semibold text-neutral-400">강조 글자색</p><div className="mt-2"><ColorPalette key="subtitle-accent-color" value={selectedSubtitle.accentColor} onChange={(color) => { if (color) commit((next) => { if (isTemplateConfigV5(next)) next.subtitle.accentColor = color; return next; }); }} /></div></div>
+                  <div><p className="text-xs font-semibold text-neutral-400">강조 글자색</p><div className="mt-2"><ColorPalette key="subtitle-accent-color" value={selectedSubtitle.accentColor} rendererOnly onChange={(color) => { if (color && rendererPresetColor(color)) commit((next) => { if (isTemplateConfigV5(next)) next.subtitle.accentColor = color; return next; }); }} /></div></div>
                 </div>
 
                 <div className="mt-5 rounded-lg border border-emerald-300/20 bg-emerald-300/[.06] px-3 py-2.5 text-[11px] leading-5 text-emerald-100/75">템플릿을 저장하면 선택한 자막 상태·위치·폰트·크기·색상이 함께 저장됩니다.</div>

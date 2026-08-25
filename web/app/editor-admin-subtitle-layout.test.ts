@@ -98,9 +98,20 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain(
       "? editorDocumentSubtitleLayout",
     );
+    expect(editorSource).toContain(
+      "const editorRenderSpecVersion = editorRenderSpecVersionForRelease(\n    editorRelease,\n  )",
+    );
+    expect(editorSource).toContain(
+      "const fullSubtitleStyleEditingEnabled = unifiedSubtitleLayoutEnabled\n    && editorRenderSpecVersion === 3",
+    );
+    expect(editorSource).toContain(
+      "editorRenderSpecVersion,\n        )",
+    );
     const routeSource = source("./api/shorts/[shortId]/apply-edit/route.ts");
     expect(routeSource).toContain("!subtitleEditingReleaseEnabled(release)");
     expect(routeSource).toContain("EDITOR_SUBTITLE_EDITING_DISABLED");
+    expect(routeSource).toContain("!editorReleaseSupportsRenderSpecV3(release)");
+    expect(routeSource).toContain("EDITOR_RENDER_SPEC_UNSUPPORTED");
     expect(routeSource).toContain("s.caption_render_spec");
     expect(routeSource).toContain("CAPTION_RENDER_SPEC_MISSING");
     expect(routeSource).toContain("word_timed_subtitles_available");

@@ -146,6 +146,15 @@ describe("editor document v2 contract", () => {
     value.overlays.commentOffsets["comment-1"] = { x: 1, y: 20 };
     expect(() => editorDocumentSnapshotSchema.parse(value)).toThrow();
   });
+
+  it("rejects card-only colors from renderer overlay inputs", () => {
+    const value = validDocument();
+    value.overlays.background = {
+      kind: "color",
+      color: "#F04444" as never,
+    };
+    expect(() => editorDocumentSnapshotSchema.parse(value)).toThrow();
+  });
 });
 
 describe("editor document v3 render specification", () => {

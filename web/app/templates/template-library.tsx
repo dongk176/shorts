@@ -13,7 +13,10 @@ import {
   COMMENT_CAPTURE_LANDSCAPE_LIFT_PX,
   COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
   PRESET_SQUARE_CHANNEL_CENTER_Y,
+  TEMPLATE_PRESET_COMMENT_SAMPLE,
   createUnifiedSubtitleTemplateConfig,
+  isTemplateConfigV5,
+  templatePresetPresentation,
   type CustomTemplate,
   type UnifiedSubtitleVariant,
 } from "@/lib/template-config";
@@ -139,18 +142,6 @@ const unifiedSubtitlePreviewTemplates = {
   },
 } satisfies Record<UnifiedSubtitleVariant, CustomTemplate>;
 
-const templateCommentSample: CommentOverlay = {
-  id: "template-comment-sample",
-  startSeconds: 0,
-  endSeconds: 10,
-  text: "아 진짜 ㅋㅋㅋㅋㅋㅋㅋㅋ",
-  initial: "소",
-  avatarColor: "#8B2CC4",
-  nickname: "소담기록24",
-  likeCount: 1_312,
-  ageLabel: "5개월 전",
-};
-
 function aspectLayout(value: VideoAspectRatio, reserveCommentSpace = false) {
   const layoutValue = reserveCommentSpace && value === "9:16" ? "4:5" : value;
   const option = videoAspectRatioOptions.find((item) => item.value === layoutValue)
@@ -274,7 +265,7 @@ function TemplatePreview({ template }: { template: TemplateShowcase }) {
       </div>
       <div className={`absolute inset-x-0 z-10 overflow-hidden text-[5.5cqw] font-semibold ${template.id === "paper" ? "text-neutral-700" : ""}`} style={{ top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.bottomHeight}%` }}>
         {template.id === "comment-capture"
-          ? <div className="h-full bg-[#040404]"><CommentCaptureCard comment={templateCommentSample} /></div>
+          ? <div className="h-full bg-[#040404]"><CommentCaptureCard comment={TEMPLATE_PRESET_COMMENT_SAMPLE} /></div>
           : null}
       </div>
       <FixedPresetChannel template={template} />
@@ -296,7 +287,10 @@ function EmptyTemplateCard({ authenticated, canUseCustomTemplates }: { authentic
 }
 
 function CustomTemplatePreview({ template, showUnifiedSubtitle = false }: { template: CustomTemplate; showUnifiedSubtitle?: boolean }) {
-  return <CustomTemplateCanvasPreview template={template} firstLine="놓치면 후회할" secondLine="핵심 한 가지" channelLabel="Easy Cut" showUnifiedSubtitle={showUnifiedSubtitle} />;
+  const titleLines = isTemplateConfigV5(template.config) && template.config.subtitle.visible
+    ? (["AI가 고른 오늘의", "핵심 장면"] as const)
+    : templatePresetPresentation[template.baseTemplateId].titleLines;
+  return <CustomTemplateCanvasPreview template={template} firstLine={titleLines[0]} secondLine={titleLines[1]} channelLabel="Easy Cut" showUnifiedSubtitle={showUnifiedSubtitle} />;
 }
 
 function UnifiedSubtitlePresetPreview({ preset }: { preset: (typeof unifiedSubtitlePresets)[number] }) {
@@ -464,9 +458,11 @@ export function TemplateLibrary({
         {visibleUnifiedSubtitlePresets.map((preset) => (
           <article key={preset.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#35e6e3]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#35e6e3]/50 hover:shadow-[0_20px_55px_rgba(53,230,227,.08)]">
             <Link
-              href={authenticated && canUseCustomTemplates && unifiedSubtitleCanaryEnabled
-                ? `/templates/new?preset=${preset.id}`
-                : `/?subtitleTemplate=${preset.variant}`}
+              href={!authenticated
+                ? `/auth/sign-in?next=${encodeURIComponent(`/templates/new?preset=${preset.id}`)}`
+                : canUseCustomTemplates && unifiedSubtitleCanaryEnabled
+                  ? `/templates/new?preset=${preset.id}`
+                  : `/?subtitleTemplate=${preset.variant}`}
               prefetch={false}
               className="flex flex-1 flex-col"
             >

@@ -34,6 +34,7 @@ beforeEach(() => {
   process.env.SOURCE_RANGE_SELECTION_ENABLED = "true";
   delete process.env.SUBTITLE_TEMPLATES_ENABLED;
   delete process.env.EDITOR_RENDERING_V2_ENABLED;
+  delete process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED;
 });
 
 describe("YouTube analysis persistence", () => {
@@ -110,6 +111,54 @@ describe("YouTube analysis persistence", () => {
     expect(db.mock.calls.some((call) => (
       call.slice(1).includes("unified_template_subtitles_canary")
     ))).toBe(true);
+  });
+
+  it("shows the built-in subtitle templates to an ordinary issued or free account after public release", async () => {
+    process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+    process.env.EDITOR_RENDERING_V2_ENABLED = "true";
+    process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = "true";
+    const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = strings.join(" ");
+      if (values.includes("source_range_selection_public")) {
+        return enabledReleaseFlags;
+      }
+      if (sql.includes("stable.id as stable_release_id") && !sql.includes("candidate.id")) {
+        return [{
+          publicEnabled: true,
+          runtimeEnabled: true,
+          stableReleaseId: "5a5f9f4d-f59d-4ba3-a28a-9396ac8284a7",
+          stableUiVersion: 3,
+          stableDocumentVersion: 3,
+          stableStatus: "stable",
+          stableSubtitleEditingCapable: true,
+          subtitleEditingPublicEnabled: true,
+        }];
+      }
+      if (values.includes("subtitle_templates_public")) {
+        return [
+          { flagKey: "subtitle_templates", enabled: true },
+          { flagKey: "subtitle_templates_public", enabled: true },
+          { flagKey: "unified_template_subtitles_public", enabled: true },
+        ];
+      }
+      if (sql.includes("from shorts_mvp.app_users")) {
+        return [{ isAdmin: false, testerEnabled: false }];
+      }
+      if (sql.includes("insert into shorts_mvp.youtube_analyses")) {
+        return [{ id: "6bce83c4-b12e-4d11-8f16-2fef8a96c541" }];
+      }
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    await expect(createYoutubeAnalysis(
+      { ...session, userId: "managed-or-free-user", isAdmin: false },
+      metadata,
+    )).resolves.toMatchObject({
+      subtitleTemplateSelectionEnabled: true,
+      brandColorSelectionEnabled: true,
+      unifiedTemplateSubtitleCanaryEnabled: true,
+    });
   });
 
   it("accepts sources longer than sixty minutes when the release is enabled", async () => {

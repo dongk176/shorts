@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  editorReleaseSupportsRenderSpecV3,
+  editorRenderSpecVersionForRelease,
   subtitleEditingReleaseEnabled,
   editorRenderingV2Enabled,
   editorRenderingV2GlobalEnabled,
   editorRenderingV2MasterEnabled,
   editorRenderingV2TestUserIds,
   resolveEditorRelease,
+  resolvePublicEditorRelease,
   resolveRequestedEditorRelease,
 } from "./editor-rendering-release";
 
@@ -35,6 +38,40 @@ function releaseRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe("editor release gate", () => {
+  it("uses render spec v3 only for a renderer release that passed its probe", () => {
+    const base = {
+      channel: "stable" as const,
+      uiVersion: 3,
+      documentVersion: 3,
+      subtitleEditingCapable: true,
+      subtitleEditingPublicEnabled: true,
+    };
+    const verified = {
+      ...base,
+      channel: "canary" as const,
+      releaseId: "775b464d-048e-4015-a721-5d48ea03f4b3",
+    };
+    const currentStable = {
+      ...base,
+      releaseId: "b0cd2a6b-5019-4b5c-87cb-57e2d0bdb4c0",
+    };
+    const unknown = { ...base, releaseId };
+
+    expect(editorReleaseSupportsRenderSpecV3(verified)).toBe(true);
+    expect(editorRenderSpecVersionForRelease(verified)).toBe(3);
+    expect(editorReleaseSupportsRenderSpecV3(currentStable)).toBe(false);
+    expect(editorRenderSpecVersionForRelease(currentStable)).toBe(2);
+    expect(editorRenderSpecVersionForRelease(unknown)).toBe(2);
+    expect(editorRenderSpecVersionForRelease({
+      channel: "legacy",
+      releaseId: null,
+      uiVersion: null,
+      documentVersion: null,
+      subtitleEditingCapable: false,
+      subtitleEditingPublicEnabled: false,
+    })).toBe(2);
+  });
+
   it("enables subtitle editing only for a capable canary or published stable", () => {
     expect(subtitleEditingReleaseEnabled({
       channel: "canary",
@@ -293,6 +330,35 @@ describe("editor release gate", () => {
       { EDITOR_RENDERING_V2_ENABLED: "true" },
     )).resolves.toMatchObject({ channel: "legacy" });
     expect(db).not.toHaveBeenCalled();
+  });
+
+  it("resolves the published stable release without impersonating an anonymous user", async () => {
+    const db = vi.fn().mockResolvedValue([releaseRow({
+      publicEnabled: true,
+      runtimeEnabled: true,
+      stableReleaseId: releaseId,
+      stableUiVersion: 3,
+      stableDocumentVersion: 3,
+      stableStatus: "stable",
+      stableSubtitleEditingCapable: true,
+      subtitleEditingPublicEnabled: true,
+    })]);
+
+    await expect(resolvePublicEditorRelease(
+      db as never,
+      {
+        EDITOR_RENDERING_V2_ENABLED: "true",
+        EDITOR_RENDERING_V2_GLOBAL_ENABLED: "true",
+      },
+    )).resolves.toEqual({
+      channel: "stable",
+      releaseId,
+      uiVersion: 3,
+      documentVersion: 3,
+      subtitleEditingCapable: true,
+      subtitleEditingPublicEnabled: true,
+    });
+    expect(db).toHaveBeenCalledTimes(1);
   });
 
   it("keeps an open previous stable UI on its own immutable worker release", async () => {

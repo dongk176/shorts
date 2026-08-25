@@ -22,6 +22,28 @@ export type RequestedEditorRelease = {
   documentVersion: number;
 };
 
+// Renderer capabilities belong to an immutable release, not to its current
+// stable/canary channel. Add a release here only after its isolated render
+// probe has accepted editor render spec v3. Unknown releases stay on v2 so a
+// web rollout can never submit a document that makes an older worker exit.
+const editorRenderSpecV3ReleaseIds = new Set([
+  "775b464d-048e-4015-a721-5d48ea03f4b3",
+]);
+
+export function editorReleaseSupportsRenderSpecV3(
+  release: EditorReleaseAssignment,
+) {
+  return release.documentVersion === 3
+    && release.releaseId !== null
+    && editorRenderSpecV3ReleaseIds.has(release.releaseId);
+}
+
+export function editorRenderSpecVersionForRelease(
+  release: EditorReleaseAssignment,
+): 2 | 3 {
+  return editorReleaseSupportsRenderSpecV3(release) ? 3 : 2;
+}
+
 export function subtitleEditingReleaseEnabled(
   release: EditorReleaseAssignment,
 ) {
@@ -196,6 +218,67 @@ export async function resolveEditorRelease(
     );
   }
   return legacyAssignment;
+}
+
+export async function resolvePublicEditorRelease(
+  db: Sql | TransactionSql,
+  environment: EditorRenderingEnvironment = process.env,
+): Promise<EditorReleaseAssignment> {
+  if (
+    !editorRenderingV2MasterEnabled(environment)
+    || !editorRenderingV2GlobalEnabled(environment)
+  ) {
+    return legacyAssignment;
+  }
+  const rows = await db`
+    select state.public_enabled,
+      coalesce(flag.enabled,false) as runtime_enabled,
+      stable.id as stable_release_id,
+      stable.ui_version as stable_ui_version,
+      stable.document_version as stable_document_version,
+      stable.status as stable_status,
+      coalesce(stable.subtitle_editing_capable,false)
+        as stable_subtitle_editing_capable,
+      coalesce(subtitle_public.enabled,false)
+        as subtitle_editing_public_enabled
+    from shorts_mvp.editor_release_state state
+    left join shorts_mvp.runtime_feature_flags flag
+      on flag.flag_key=${EDITOR_RENDERING_V2_FLAG_KEY}
+    left join shorts_mvp.runtime_feature_flags subtitle_public
+      on subtitle_public.flag_key=${EDITOR_SUBTITLE_EDITING_PUBLIC_FLAG_KEY}
+    left join shorts_mvp.editor_releases stable
+      on stable.id=state.stable_release_id
+    where state.singleton=true
+    limit 1
+    for share of state
+  `;
+  const state = rows[0] as Pick<
+    EditorReleaseRow,
+    | "publicEnabled"
+    | "runtimeEnabled"
+    | "stableReleaseId"
+    | "stableUiVersion"
+    | "stableDocumentVersion"
+    | "stableStatus"
+    | "stableSubtitleEditingCapable"
+    | "subtitleEditingPublicEnabled"
+  > | undefined;
+  if (
+    !state
+    || !state.publicEnabled
+    || !state.runtimeEnabled
+    || state.stableStatus !== "stable"
+  ) {
+    return legacyAssignment;
+  }
+  return releaseAssignment(
+    "stable",
+    state.stableReleaseId,
+    Number(state.stableUiVersion),
+    Number(state.stableDocumentVersion),
+    state.stableSubtitleEditingCapable,
+    state.subtitleEditingPublicEnabled,
+  );
 }
 
 export async function resolveRequestedEditorRelease(

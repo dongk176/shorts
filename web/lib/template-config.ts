@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { templateIds, videoAspectRatios, type TemplateId, type VideoAspectRatio } from "@/lib/contracts";
+import {
+  templateIds,
+  videoAspectRatios,
+  type CommentOverlay,
+  type TemplateId,
+  type VideoAspectRatio,
+} from "@/lib/contracts";
 import { DEFAULT_EDITOR_FONT_ID, editorFontIds } from "@/lib/editor-fonts";
 
 export const TEMPLATE_CANVAS = { width: 1080, height: 1920 } as const;
@@ -60,7 +66,26 @@ export const templatePresetColorOptions = templatePresetColors.map((color) => ({
   name: templatePresetColorNames[color],
 }));
 
-const colorSchema = z.enum(templatePresetColors);
+export const templateConfigColors = [
+  ...templatePresetColors,
+  "#363636",
+  "#F04444",
+  "#D52B2B",
+] as const;
+export type TemplateConfigColor = (typeof templateConfigColors)[number];
+const templateConfigColorNames: Record<TemplateConfigColor, string> = {
+  ...templatePresetColorNames,
+  "#363636": "페이퍼 차콜",
+  "#F04444": "소프트 레드",
+  "#D52B2B": "페이퍼 레드",
+};
+export const templateConfigColorOptions = templateConfigColors.map((color) => ({
+  color,
+  name: templateConfigColorNames[color],
+}));
+
+const rendererColorSchema = z.enum(templatePresetColors);
+const colorSchema = z.enum(templateConfigColors);
 const backgroundSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("color"), color: colorSchema }).strict(),
   z.object({ kind: z.literal("image"), assetId: z.enum(stockBackgroundIds) }).strict(),
@@ -124,7 +149,7 @@ const unifiedSubtitleLayerSchema = textLayerSchema.omit({
   variant: z.enum(unifiedSubtitleVariants),
   fontId: z.enum(editorFontIds),
   fontSize: z.number().int().min(24).max(120),
-  accentColor: colorSchema,
+  accentColor: rendererColorSchema,
 }).strict();
 
 const unifiedTitleLayerSchema = titleLayerSchema.extend({
@@ -254,6 +279,92 @@ export function videoFrameForAspect(aspectRatio: VideoAspectRatio, width: number
   };
 }
 
+export const templatePresetPresentation = {
+  "comment-capture": {
+    titleLines: ["댓글 반응과 함께", "시청 지속시간 상승"],
+    backgroundColor: COMMENT_BACKGROUND_COLOR,
+    videoAspectRatio: "16:9",
+    titleY: 500,
+    primaryColor: "#FFFFFF",
+    accentColor: "#35E6E3",
+    primaryBackgroundColor: null,
+    accentBackgroundColor: null,
+    channelY: COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
+    channelColor: "#FFFFFF",
+  },
+  "dark-red": {
+    titleLines: ["지금 꼭 알아야 할", "핵심 한 가지"],
+    backgroundColor: "#000000",
+    videoAspectRatio: "5:4",
+    titleY: 359,
+    primaryColor: "#FFFFFF",
+    accentColor: "#FFFFFF",
+    primaryBackgroundColor: null,
+    accentBackgroundColor: "#E32626",
+    channelY: PRESET_SQUARE_CHANNEL_CENTER_Y,
+    channelColor: "#FFFFFF",
+  },
+  "white-yellow": {
+    titleLines: ["생각보다 쉬운", "핵심 한 가지"],
+    backgroundColor: "#FFFFFF",
+    videoAspectRatio: "5:4",
+    titleY: 359,
+    primaryColor: "#111111",
+    accentColor: "#111111",
+    primaryBackgroundColor: null,
+    accentBackgroundColor: "#FFD84D",
+    channelY: PRESET_SQUARE_CHANNEL_CENTER_Y,
+    channelColor: "#111111",
+  },
+  "dark-minimal": {
+    titleLines: ["놓치기 쉬운", "결정적 순간"],
+    backgroundColor: "#000000",
+    videoAspectRatio: "5:4",
+    titleY: 372,
+    primaryColor: "#FFFFFF",
+    accentColor: "#F04444",
+    primaryBackgroundColor: null,
+    accentBackgroundColor: null,
+    channelY: PRESET_SQUARE_CHANNEL_CENTER_Y,
+    channelColor: "#FFFFFF",
+  },
+  paper: {
+    titleLines: ["오늘 바로 쓰는", "핵심 방법"],
+    backgroundColor: "#F3F0E9",
+    videoAspectRatio: "5:4",
+    titleY: 372,
+    primaryColor: "#111111",
+    accentColor: "#D52B2B",
+    primaryBackgroundColor: null,
+    accentBackgroundColor: null,
+    channelY: PRESET_SQUARE_CHANNEL_CENTER_Y,
+    channelColor: "#363636",
+  },
+} as const satisfies Record<TemplateId, {
+  titleLines: readonly [string, string];
+  backgroundColor: TemplateConfigColor;
+  videoAspectRatio: VideoAspectRatio;
+  titleY: number;
+  primaryColor: TemplateConfigColor;
+  accentColor: TemplateConfigColor;
+  primaryBackgroundColor: TemplateConfigColor | null;
+  accentBackgroundColor: TemplateConfigColor | null;
+  channelY: number;
+  channelColor: TemplateConfigColor;
+}>;
+
+export const TEMPLATE_PRESET_COMMENT_SAMPLE: CommentOverlay = {
+  id: "template-comment-sample",
+  startSeconds: 0,
+  endSeconds: 10,
+  text: "아 진짜 ㅋㅋㅋㅋㅋㅋㅋㅋ",
+  initial: "소",
+  avatarColor: "#8B2CC4",
+  nickname: "소담기록24",
+  likeCount: 1_312,
+  ageLabel: "5개월 전",
+};
+
 function defaultCommentLayer(video: { y: number; height: number }) {
   return {
     visible: true,
@@ -265,26 +376,25 @@ function defaultCommentLayer(video: { y: number; height: number }) {
 }
 
 export function createDefaultTemplateConfig(baseTemplateId: TemplateId = "dark-minimal"): TemplateConfig {
-  const light = baseTemplateId === "white-yellow" || baseTemplateId === "paper";
-  const accent = baseTemplateId === "comment-capture" ? "#35E6E3" : baseTemplateId === "white-yellow" ? "#FFD84D" : "#FF4D4F";
-  const video = videoFrameForAspect(baseTemplateId === "comment-capture" ? "16:9" : "5:4");
-  if (baseTemplateId === "comment-capture") video.y -= COMMENT_CAPTURE_LANDSCAPE_LIFT_PX;
+  const presentation = templatePresetPresentation[baseTemplateId];
+  const video = videoFrameForAspect(presentation.videoAspectRatio);
   return {
     schemaVersion: 4,
-    background: { kind: "color", color: baseTemplateId === "comment-capture" ? COMMENT_BACKGROUND_COLOR : light ? "#F3F0E9" : "#111111" },
+    background: { kind: "color", color: presentation.backgroundColor },
     video,
     title: {
-      visible: true, x: 540, y: baseTemplateId === "comment-capture" ? 90 : 250, maxWidth: 920, fontSize: 72,
-      primaryColor: light ? "#111111" : "#FFFFFF", accentColor: accent,
-      primaryBackgroundColor: null, accentBackgroundColor: null,
+      visible: true, x: 540, y: presentation.titleY, maxWidth: 974, fontSize: 72,
+      primaryColor: presentation.primaryColor, accentColor: presentation.accentColor,
+      primaryBackgroundColor: presentation.primaryBackgroundColor,
+      accentBackgroundColor: presentation.accentBackgroundColor,
     },
     subtitle: {
       visible: false, x: 540, y: 1410, maxWidth: 900, fontSize: 48,
       color: "#FFFFFF", backgroundColor: "#000000",
     },
     channel: {
-      visible: true, x: 540, y: baseTemplateId === "comment-capture" ? 1740 : 1650, maxWidth: 800, fontSize: 42,
-      color: light ? "#353438" : "#FFFFFF", backgroundColor: null,
+      visible: true, x: 540, y: presentation.channelY, maxWidth: 800, fontSize: 42,
+      color: presentation.channelColor, backgroundColor: null,
     },
     comment: {
       ...defaultCommentLayer(video),

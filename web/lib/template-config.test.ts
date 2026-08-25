@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import { templateIds } from "@/lib/contracts";
 import {
   COMMENT_BACKGROUND_COLOR,
-  COMMENT_CAPTURE_LANDSCAPE_LIFT_PX,
   createDefaultTemplateConfig,
   createUnifiedSubtitleTemplateConfig,
   isTemplateConfigV5,
   templateConfigSchema,
+  templateConfigColors,
   templatePresetColorOptions,
   templatePresetColors,
+  templatePresetPresentation,
   upgradeTemplateConfigToV5,
   videoFrameForAspect,
 } from "@/lib/template-config";
@@ -66,6 +67,44 @@ describe("personal template config", () => {
     expect(isTemplateConfigV5(upgraded)).toBe(true);
     expect(upgraded.subtitle).not.toHaveProperty("backgroundColor");
     expect(templateConfigSchema.parse(upgraded)).toEqual(upgraded);
+  });
+
+  it.each(templateIds)(
+    "uses the library preview geometry and colors for the %s editor seed",
+    (templateId) => {
+      const presentation = templatePresetPresentation[templateId];
+      const config = createDefaultTemplateConfig(templateId);
+
+      expect(config.background).toEqual({
+        kind: "color",
+        color: presentation.backgroundColor,
+      });
+      expect(config.video).toEqual(videoFrameForAspect(
+        presentation.videoAspectRatio,
+      ));
+      expect(config.title).toMatchObject({
+        y: presentation.titleY,
+        primaryColor: presentation.primaryColor,
+        accentColor: presentation.accentColor,
+        primaryBackgroundColor: presentation.primaryBackgroundColor,
+        accentBackgroundColor: presentation.accentBackgroundColor,
+      });
+      expect(config.channel).toMatchObject({
+        y: presentation.channelY,
+        color: presentation.channelColor,
+      });
+    },
+  );
+
+  it("keeps card-only colors out of renderer and brand-color inputs", () => {
+    expect(templateConfigColors).toEqual(expect.arrayContaining([
+      "#363636",
+      "#F04444",
+      "#D52B2B",
+    ]));
+    expect(templatePresetColorOptions.map((option) => option.color)).not.toEqual(
+      expect.arrayContaining(["#363636", "#F04444", "#D52B2B"]),
+    );
   });
 
   it.each(templateIds)(
@@ -180,11 +219,10 @@ describe("personal template config", () => {
   it("starts new comment capture templates in 16:9 with the channel below comments", () => {
     const commentConfig = createDefaultTemplateConfig("comment-capture");
     const centeredLandscape = videoFrameForAspect("16:9");
-    expect(commentConfig.video).toEqual({
-      ...centeredLandscape,
-      y: centeredLandscape.y - COMMENT_CAPTURE_LANDSCAPE_LIFT_PX,
-    });
-    expect(commentConfig.title.y).toBe(250 - COMMENT_CAPTURE_LANDSCAPE_LIFT_PX);
+    expect(commentConfig.video).toEqual(centeredLandscape);
+    expect(commentConfig.title.y).toBe(
+      templatePresetPresentation["comment-capture"].titleY,
+    );
     expect(commentConfig.channel.visible).toBe(true);
     expect(commentConfig.channel.y).toBeGreaterThan(commentConfig.comment.y);
     expect(commentConfig.comment).toEqual({

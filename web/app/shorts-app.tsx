@@ -127,8 +127,10 @@ import {
   isTemplateConfigV5,
   stockBackgrounds,
   templateConfigSchema,
+  templatePresetPresentation,
   templatePresetColorOptions,
   TEMPLATE_CANVAS,
+  TEMPLATE_PRESET_COMMENT_SAMPLE,
   type CustomTemplate,
   type TemplatePresetColor,
 } from "@/lib/template-config";
@@ -262,6 +264,7 @@ import {
 } from "@/lib/editor-draft-store";
 import { editorVideoUrlRefreshDelay } from "@/lib/editor-video-url-refresh";
 import {
+  editorRenderSpecVersionForRelease,
   subtitleEditingReleaseEnabled,
   type EditorReleaseAssignment,
 } from "@/lib/editor-rendering-release";
@@ -561,18 +564,6 @@ async function createEditorChannelPresetImageDataUrl(file: File) {
     URL.revokeObjectURL(objectUrl);
   }
 }
-
-const templateCommentSample: CommentOverlay = {
-  id: "template-comment-sample",
-  startSeconds: 0,
-  endSeconds: 10,
-  text: "아 진짜 ㅋㅋㅋㅋㅋㅋㅋㅋ",
-  initial: "소",
-  avatarColor: "#8B2CC4",
-  nickname: "소담기록24",
-  likeCount: 1_312,
-  ageLabel: "5개월 전",
-};
 
 function aspectLayout(
   value: VideoAspectRatio,
@@ -1591,7 +1582,7 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
       </div>
       <div className={`absolute inset-x-0 z-10 overflow-hidden text-[5.5cqw] font-semibold ${template.id === "paper" ? "text-neutral-700" : ""}`} style={layout.fullVertical ? { bottom: "6.25%", height: "9.375%" } : { top: `${layout.videoTop + layout.videoHeight}%`, height: `${layout.bottomHeight}%` }}>
         {template.id === "comment-capture"
-          ? <div className="h-full bg-[#040404]"><CommentCaptureCard comment={templateCommentSample} /></div>
+          ? <div className="h-full bg-[#040404]"><CommentCaptureCard comment={TEMPLATE_PRESET_COMMENT_SAMPLE} /></div>
           : null}
       </div>
       {template.id === "comment-capture"
@@ -1608,10 +1599,13 @@ function CustomHomeTemplatePreview({
   template: CustomTemplate;
   showUnifiedSubtitle?: boolean;
 }) {
+  const titleLines = isTemplateConfigV5(template.config) && template.config.subtitle.visible
+    ? (["AI가 고른 오늘의", "핵심 장면"] as const)
+    : templatePresetPresentation[template.baseTemplateId].titleLines;
   return <CustomTemplateCanvasPreview
     template={template}
-    firstLine="AI가 만든 제목"
-    secondLine="핵심 포인트"
+    firstLine={titleLines[0]}
+    secondLine={titleLines[1]}
     channelLabel="채널 이름"
     showUnifiedSubtitle={showUnifiedSubtitle}
   />;
@@ -3887,7 +3881,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   );
   const unifiedSubtitleLayoutEnabled = adminSubtitleLayoutEnabled
     && unifiedTemplateSubtitleCanaryEnabled;
-  const availableEditorFontOptions = unifiedSubtitleLayoutEnabled
+  const editorRenderSpecVersion = editorRenderSpecVersionForRelease(
+    editorRelease,
+  );
+  const fullSubtitleStyleEditingEnabled = unifiedSubtitleLayoutEnabled
+    && editorRenderSpecVersion === 3;
+  const availableEditorFontOptions = fullSubtitleStyleEditingEnabled
     ? editorFontOptions
     : stableEditorFontOptions;
   const captionTemplateEditorSpec = adminSubtitleLayoutEnabled
@@ -4736,7 +4735,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             ? editorDocumentSubtitleLayout
             : undefined,
           adminSubtitleLayoutEnabled,
-          unifiedSubtitleLayoutEnabled ? 3 : 2,
+          editorRenderSpecVersion,
         )
       : createEditorDocumentSnapshot(input);
   }, [
@@ -4767,7 +4766,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     editorRelease.documentVersion,
     adminSubtitleLayoutEnabled,
     adminSubtitleEditingEnabled,
-    unifiedSubtitleLayoutEnabled,
+    editorRenderSpecVersion,
   ]);
   useEffect(() => {
     if (
@@ -10999,7 +10998,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                   }}
                 />
               </div>
-              {unifiedSubtitleLayoutEnabled && <fieldset className="editor-text-color-setting mb-6">
+              {fullSubtitleStyleEditingEnabled && <fieldset className="editor-text-color-setting mb-6">
                 <legend>일반 글자색</legend>
                 <div>
                   {templatePresetColorOptions.map((option) => <button
@@ -11076,7 +11075,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                   className="mt-3 w-full accent-white"
                 />
               </label>
-              {unifiedSubtitleLayoutEnabled ? <label className="mt-6 block font-semibold">
+              {fullSubtitleStyleEditingEnabled ? <label className="mt-6 block font-semibold">
                 <span className="flex items-center justify-between gap-3 text-white">
                   <span>자막 크기</span>
                   <strong className="text-xs text-white/75">
@@ -11132,7 +11131,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                   className="mt-3 w-full accent-white"
                 />
               </label>}
-              {unifiedSubtitleLayoutEnabled ? <button
+              {fullSubtitleStyleEditingEnabled ? <button
                 type="button"
                 disabled={
                   subtitleLayout.offsetY === DEFAULT_EDITOR_SUBTITLE_LAYOUT.offsetY
