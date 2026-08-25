@@ -26,6 +26,25 @@ export type AdminManagedAccount = {
   updatedAt: string;
   lastLoginAt: string | null;
   lastPasswordResetAt: string | null;
+  paymentRequests: AdminEnterprisePaymentRequest[];
+};
+
+export type AdminEnterprisePaymentRequest = {
+  id: string;
+  paymentPath: string;
+  customerName: string;
+  customerEmail: string | null;
+  title: string;
+  status: string;
+  expiresAt: string;
+  createdAt: string;
+  items: Array<{
+    id: string;
+    name: string;
+    amountKrw: number;
+    status: string;
+    paidAt: string | null;
+  }>;
 };
 
 function defaultExpiry() {
@@ -59,7 +78,11 @@ function minutes(seconds: number) {
   return Math.max(0, Math.floor(seconds / 60)).toLocaleString("ko-KR");
 }
 
-async function send(url: string, method: "POST" | "PATCH", body: unknown) {
+async function send<T = Record<string, unknown>>(
+  url: string,
+  method: "POST" | "PATCH",
+  body: unknown,
+): Promise<T> {
   const response = await fetch(url, {
     method,
     headers: { "Content-Type": "application/json" },
@@ -67,7 +90,7 @@ async function send(url: string, method: "POST" | "PATCH", body: unknown) {
   });
   const payload = await response.json().catch(() => ({})) as { detail?: string };
   if (!response.ok) throw new Error(payload.detail || "요청을 처리하지 못했습니다.");
-  return payload;
+  return payload as T;
 }
 
 function Toggle({
@@ -89,6 +112,208 @@ function Toggle({
         className="h-4 w-4 accent-[#ff715e]"
       />
     </label>
+  );
+}
+
+function won(value: number) {
+  return `${new Intl.NumberFormat("ko-KR").format(value)}원`;
+}
+
+function paymentRequestStatus(paymentRequest: AdminEnterprisePaymentRequest) {
+  if (paymentRequest.status === "paid") return "전체 결제 완료";
+  if (paymentRequest.status === "partial") return "일부 결제 완료";
+  if (paymentRequest.status === "canceled") return "요청 취소";
+  if (new Date(paymentRequest.expiresAt).getTime() <= Date.now()) return "기한 만료";
+  return "결제 대기";
+}
+
+function paymentDefaultExpiry() {
+  const value = new Date();
+  value.setDate(value.getDate() + 14);
+  value.setHours(23, 59, 0, 0);
+  return localDateTime(value.toISOString());
+}
+
+function EnterprisePaymentRequests({ account }: { account: AdminManagedAccount }) {
+  const router = useRouter();
+  const [customerName, setCustomerName] = useState(account.displayName);
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [title, setTitle] = useState("이지컷 기업 결제 요청");
+  const [expiresAt, setExpiresAt] = useState(paymentDefaultExpiry);
+  const [items, setItems] = useState([
+    { name: "", amount: "" },
+    { name: "", amount: "" },
+  ]);
+  const [creating, setCreating] = useState(false);
+  const [message, setMessage] = useState("");
+  const [createdUrl, setCreatedUrl] = useState("");
+  const validItems = items.every((item) => (
+    item.name.trim().length > 0
+    && Number.isInteger(Number(item.amount))
+    && Number(item.amount) >= 100
+  ));
+
+  async function copyPaymentLink(pathOrUrl: string) {
+    const url = pathOrUrl.startsWith("http")
+      ? pathOrUrl
+      : new URL(pathOrUrl, window.location.origin).toString();
+    try {
+      await navigator.clipboard.writeText(url);
+      setMessage("결제 링크를 복사했습니다.");
+    } catch {
+      setMessage(`결제 링크: ${url}`);
+    }
+  }
+
+  async function createPaymentRequest() {
+    setCreating(true);
+    setMessage("");
+    setCreatedUrl("");
+    try {
+      const response = await send<{ paymentUrl: string }>(
+        `/api/admin/managed-accounts/${account.id}/payment-requests`,
+        "POST",
+        {
+          requestId: crypto.randomUUID(),
+          customerName,
+          customerEmail,
+          title,
+          expiresAt: requestDate(expiresAt),
+          items: items.map((item) => ({
+            name: item.name.trim(),
+            amountKrw: Number(item.amount),
+          })),
+        },
+      );
+      setCreatedUrl(response.paymentUrl);
+      setMessage("결제 요청을 만들었습니다. 아래 링크를 기업 담당자에게 전달해 주세요.");
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "결제 요청을 만들지 못했습니다.");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <section className="mt-5 rounded-xl border border-sky-300/20 bg-sky-300/[.04] p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-black text-sky-100">기업 결제 요청</h4>
+          <p className="mt-1 text-xs leading-5 text-neutral-500">
+            여러 결제 항목을 한 링크에 담아 보내고, 각 항목의 카드 승인 상태를 따로 확인합니다.
+          </p>
+        </div>
+        <span className="rounded-full bg-sky-300/10 px-2.5 py-1 text-[11px] font-black text-sky-200">
+          일반결제
+        </span>
+      </div>
+
+      {account.paymentRequests.length ? (
+        <div className="mt-4 grid gap-2">
+          {account.paymentRequests.map((paymentRequest) => {
+            const total = paymentRequest.items.reduce((sum, item) => sum + item.amountKrw, 0);
+            const paid = paymentRequest.items
+              .filter((item) => item.status === "paid")
+              .reduce((sum, item) => sum + item.amountKrw, 0);
+            return (
+              <div key={paymentRequest.id} className="rounded-xl border border-white/10 bg-black/20 p-3 sm:flex sm:items-center sm:justify-between sm:gap-4">
+                <div>
+                  <p className="text-xs font-black text-white">{paymentRequest.title}</p>
+                  <p className="mt-1 text-[11px] text-neutral-500">
+                    {paymentRequestStatus(paymentRequest)} · {won(paid)} / {won(total)} · 기한 {date(paymentRequest.expiresAt)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void copyPaymentLink(paymentRequest.paymentPath)}
+                  className="mt-3 h-9 rounded-lg border border-white/10 px-3 text-xs font-black text-neutral-200 hover:bg-white/[.05] sm:mt-0"
+                >
+                  링크 복사
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <label className="text-xs font-bold text-neutral-400">
+          결제 담당 기업·이름
+          <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} maxLength={100} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-sky-300/40" />
+        </label>
+        <label className="text-xs font-bold text-neutral-400">
+          담당자 이메일(선택)
+          <input type="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} maxLength={100} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-sky-300/40" />
+        </label>
+        <label className="text-xs font-bold text-neutral-400">
+          요청 제목
+          <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={100} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-sky-300/40" />
+        </label>
+        <label className="text-xs font-bold text-neutral-400">
+          결제 기한
+          <input type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-sky-300/40" />
+        </label>
+      </div>
+
+      <div className="mt-4 grid gap-2">
+        {items.map((item, index) => (
+          <div key={index} className="grid gap-2 sm:grid-cols-[1fr_180px_auto]">
+            <input
+              value={item.name}
+              onChange={(event) => setItems((current) => current.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, name: event.target.value } : candidate))}
+              maxLength={100}
+              placeholder={index === 0 ? "예: 파일럿 이용료" : "예: 정규 이용료"}
+              aria-label={`결제 ${index + 1} 항목명`}
+              className="h-11 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-sky-300/40"
+            />
+            <input
+              type="number"
+              min={100}
+              max={1_000_000_000}
+              value={item.amount}
+              onChange={(event) => setItems((current) => current.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, amount: event.target.value } : candidate))}
+              placeholder="결제 금액(원)"
+              aria-label={`결제 ${index + 1} 금액`}
+              className="h-11 rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-sky-300/40"
+            />
+            <button
+              type="button"
+              disabled={items.length === 1}
+              onClick={() => setItems((current) => current.filter((_, candidateIndex) => candidateIndex !== index))}
+              className="h-11 rounded-xl border border-white/10 px-3 text-xs font-black text-neutral-400 disabled:opacity-30"
+            >
+              삭제
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-between">
+        <button
+          type="button"
+          disabled={items.length >= 10}
+          onClick={() => setItems((current) => [...current, { name: "", amount: "" }])}
+          className="h-10 rounded-xl border border-white/10 px-4 text-xs font-black text-neutral-300 disabled:opacity-30"
+        >
+          결제 항목 추가
+        </button>
+        <button
+          type="button"
+          disabled={creating || !customerName.trim() || !title.trim() || !expiresAt || !validItems}
+          onClick={() => void createPaymentRequest()}
+          className="h-11 rounded-xl bg-sky-300 px-5 text-sm font-black text-sky-950 disabled:opacity-40"
+        >
+          {creating ? "요청 만드는 중..." : "결제 요청 만들기"}
+        </button>
+      </div>
+      {createdUrl ? (
+        <button type="button" onClick={() => void copyPaymentLink(createdUrl)} className="mt-3 w-full rounded-xl border border-emerald-300/20 bg-emerald-300/[.08] px-4 py-3 text-left text-xs font-black text-emerald-100 break-all">
+          {createdUrl} · 눌러서 복사
+        </button>
+      ) : null}
+      {message ? <p className="mt-3 text-xs leading-5 text-neutral-300" role="status">{message}</p> : null}
+    </section>
   );
 }
 
@@ -198,6 +423,10 @@ function ManagedAccountCard({ account }: { account: AdminManagedAccount }) {
           서비스 이용 만료 {date(account.serviceAccessUntil)}
         </p>
       </section>
+
+      {account.accountType === "enterprise" ? (
+        <EnterprisePaymentRequests account={account} />
+      ) : null}
 
       <div className="mt-5 grid gap-5 xl:grid-cols-3">
         <section className="rounded-xl border border-white/10 p-4">

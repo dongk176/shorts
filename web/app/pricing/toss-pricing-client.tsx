@@ -9,21 +9,6 @@ import type { TossBillingState } from "@/lib/toss-billing-state";
 import type { TossCatalogPlan } from "@/lib/toss-subscription";
 import styles from "./pricing.module.css";
 
-declare global {
-  interface Window {
-    TossPayments?: (clientKey: string) => {
-      payment: (input: { customerKey: string }) => {
-        requestBillingAuth: (input: {
-          method: "CARD";
-          successUrl: string;
-          failUrl: string;
-          customerName: string;
-        }) => Promise<void>;
-      };
-    };
-  }
-}
-
 type DialogAction = "subscribe" | "immediate" | "scheduled" | "cancel_pending";
 type Selection = {
   plan: TossCatalogPlan;

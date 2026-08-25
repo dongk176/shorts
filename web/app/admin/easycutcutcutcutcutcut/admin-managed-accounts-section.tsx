@@ -12,7 +12,8 @@ function iso(value: unknown) {
 }
 
 export async function AdminManagedAccountsSection() {
-  const rows = await getDb()`
+  const db = getDb();
+  const rows = await db`
     select
       managed.id,managed.login_id,managed.is_active,
       managed.account_type,managed.popular_filter_enabled,
@@ -50,6 +51,46 @@ export async function AdminManagedAccountsSection() {
     ) shorts on true
     order by managed.created_at desc
   `;
+  const paymentRows = await db`
+    select
+      payment_request.id,payment_request.managed_account_id,
+      payment_request.public_token,payment_request.customer_name,
+      payment_request.customer_email,payment_request.title,
+      payment_request.status,payment_request.expires_at,payment_request.created_at,
+      item.id as item_id,item.name as item_name,item.amount_krw,
+      item.status as item_status,item.paid_at as item_paid_at
+    from shorts_mvp.enterprise_payment_requests payment_request
+    join shorts_mvp.enterprise_payment_items item
+      on item.payment_request_id=payment_request.id
+    order by payment_request.created_at desc,item.sort_order
+  `;
+  const paymentRequestsByAccount = new Map<string, AdminManagedAccount["paymentRequests"]>();
+  for (const row of paymentRows) {
+    const accountRequests = paymentRequestsByAccount.get(row.managedAccountId) || [];
+    let paymentRequest = accountRequests.find((candidate) => candidate.id === row.id);
+    if (!paymentRequest) {
+      paymentRequest = {
+        id: row.id,
+        paymentPath: `/enterprise-pay/${encodeURIComponent(row.publicToken)}`,
+        customerName: row.customerName,
+        customerEmail: row.customerEmail || null,
+        title: row.title,
+        status: row.status,
+        expiresAt: iso(row.expiresAt)!,
+        createdAt: iso(row.createdAt)!,
+        items: [],
+      };
+      accountRequests.push(paymentRequest);
+      paymentRequestsByAccount.set(row.managedAccountId, accountRequests);
+    }
+    paymentRequest.items.push({
+      id: row.itemId,
+      name: row.itemName,
+      amountKrw: Number(row.amountKrw),
+      status: row.itemStatus,
+      paidAt: iso(row.itemPaidAt),
+    });
+  }
   const accounts: AdminManagedAccount[] = rows.map((row) => {
     const total = Number(row.usageTotalSeconds || 0);
     const consumed = Number(row.usageConsumedSeconds || 0);
@@ -73,6 +114,7 @@ export async function AdminManagedAccountsSection() {
       updatedAt: iso(row.updatedAt)!,
       lastLoginAt: iso(row.lastLoginAt),
       lastPasswordResetAt: iso(row.lastPasswordResetAt),
+      paymentRequests: paymentRequestsByAccount.get(row.id) || [],
     };
   });
   return <AdminManagedAccountsDashboard accounts={accounts} />;
