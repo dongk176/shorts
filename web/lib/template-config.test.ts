@@ -111,6 +111,36 @@ describe("personal template config", () => {
       fontSize: 92,
       accentColor: "#35E6E3",
     });
+    expect(highlight.video).toEqual({
+      aspectRatio: "16:9",
+      x: 0,
+      y: 432,
+      width: 1080,
+      height: 608,
+      fit: "cover",
+    });
+    expect(highlight.title).toMatchObject({
+      visible: true,
+      x: 540,
+      y: 295,
+      maxWidth: 920,
+      fontSize: 84,
+      primaryColor: "#FFFFFF",
+      accentColor: "#35E6E3",
+    });
+    expect(highlight.subtitle).toMatchObject({
+      y: 1158,
+      maxWidth: 840,
+      color: "#FFFFFF",
+    });
+    expect(highlight.channel).toMatchObject({
+      visible: true,
+      x: 540,
+      y: 1790,
+      maxWidth: 800,
+      fontSize: 48,
+      color: "#FFFFFF",
+    });
     expect(highlight.subtitle).not.toHaveProperty("backgroundColor");
     expect(pop.subtitle).not.toHaveProperty("backgroundColor");
   });

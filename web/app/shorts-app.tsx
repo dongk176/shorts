@@ -12636,6 +12636,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const projectsSectionRef = useRef<HTMLElement>(null);
   const initializedSourceRangeAnalysisId = useRef<string | null>(null);
   const uploadFileInputRef = useRef<HTMLInputElement>(null);
+  const requestedSubtitleTemplateRef = useRef<SubtitleTemplateSelectionId | null>(null);
   const activeJobId = activeJob?.id;
   const activeJobStatus = activeJob?.status;
   const activeJobHasRerendering = Boolean(activeJob?.shorts.some((item) => item.status === "rerendering"));
@@ -12670,9 +12671,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     ? state?.capabilities.unifiedTemplateSubtitleLocalUpload
     : state?.capabilities.unifiedTemplateSubtitles
       && analysis?.unifiedTemplateSubtitleCanaryEnabled);
-  const subtitleTemplateSelectionEnabled = !unifiedTemplateSubtitleCanaryEnabled && (uploadSourceActive
+  const subtitleTemplateSelectionEnabled = uploadSourceActive
     ? true
-    : analysis?.subtitleTemplateSelectionEnabled === true);
+    : analysis?.subtitleTemplateSelectionEnabled === true;
   const brandColorSelectionEnabled = uploadSourceActive
     ? true
     : analysis?.brandColorSelectionEnabled === true;
@@ -12772,10 +12773,39 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   }, [closeConversionMaintenance, conversionMaintenanceOpen]);
 
   useEffect(() => {
+    const currentUrl = new URL(window.location.href);
+    const requestedSubtitleTemplate = subtitleTemplateOptions.find(
+      (template) => template.id === currentUrl.searchParams.get("subtitleTemplate"),
+    )?.id ?? null;
+    if (!requestedSubtitleTemplate) return;
+    requestedSubtitleTemplateRef.current = requestedSubtitleTemplate;
+    setTemplateId("dark-minimal");
+    setCustomTemplateId(null);
+    setVideoAspectRatio("16:9");
+    setSubtitleCaptionPlacement("lower");
+    currentUrl.searchParams.delete("subtitleTemplate");
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`,
+    );
+  }, []);
+
+  useEffect(() => {
     if (!subtitleTemplateSelectionEnabled) {
       setSubtitleTemplateId(null);
       setSubtitleCaptionPlacement("lower");
+      return;
     }
+    const requestedSubtitleTemplate = requestedSubtitleTemplateRef.current;
+    if (!requestedSubtitleTemplate) return;
+    requestedSubtitleTemplateRef.current = null;
+    markSubtitleTemplateUsed();
+    setCustomTemplateId(null);
+    setTemplateId("dark-minimal");
+    setVideoAspectRatio("16:9");
+    setSubtitleCaptionPlacement("lower");
+    setSubtitleTemplateId(requestedSubtitleTemplate);
   }, [subtitleTemplateSelectionEnabled]);
 
   useEffect(() => {

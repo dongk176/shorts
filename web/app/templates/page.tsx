@@ -40,11 +40,18 @@ export default async function TemplatesPage() {
   let canUseCustomTemplates = false;
   let adminPresetNamesEnabled = false;
   let unifiedSubtitleCanaryEnabled = false;
+  let unifiedSubtitlePreviewEnabled = false;
   let initialFavoriteTemplateKeys: TemplateFavoriteKey[] = [...DEFAULT_FAVORITE_TEMPLATE_KEYS];
+  const db = getDb();
   if (user) {
     const session = await requireMvpSession(user, { createIfMissing: false });
-    const db = getDb();
-    const [templateRows, favoriteRows, billing, subtitleTemplateAccess] = await Promise.all([
+    const [
+      templateRows,
+      favoriteRows,
+      billing,
+      subtitleTemplateAccess,
+      publicSubtitlePreviewEnabled,
+    ] = await Promise.all([
       db`
         select id, name, base_template_id, config, version, created_at, updated_at
         from shorts_mvp.custom_templates where user_id=${session.userId}
@@ -58,6 +65,7 @@ export default async function TemplatesPage() {
       session.isAdmin === true
         ? getSubtitleTemplateAccess(db, session.userId)
         : getPublicSubtitleTemplateAccess(db, session.userId),
+      getUnifiedTemplateSubtitlePublicPreviewAccess(db),
     ]);
     personalTemplates = templateRows
       .map(customTemplateFromRow)
@@ -67,12 +75,13 @@ export default async function TemplatesPage() {
     canUseCustomTemplates = billingSupportsCustomTemplates(billing);
     adminPresetNamesEnabled = subtitleTemplateAccess.enabled;
     unifiedSubtitleCanaryEnabled = subtitleTemplateAccess.unifiedEnabled;
+    unifiedSubtitlePreviewEnabled = publicSubtitlePreviewEnabled;
     if (favoriteRows[0]) {
       initialFavoriteTemplateKeys = resolveStoredFavoriteTemplateKeys(favoriteRows[0].templateKeys);
     }
   } else {
-    unifiedSubtitleCanaryEnabled =
-      await getUnifiedTemplateSubtitlePublicPreviewAccess(getDb());
+    unifiedSubtitlePreviewEnabled =
+      await getUnifiedTemplateSubtitlePublicPreviewAccess(db);
   }
 
   return (
@@ -85,6 +94,7 @@ export default async function TemplatesPage() {
           canUseCustomTemplates={canUseCustomTemplates}
           adminPresetNamesEnabled={adminPresetNamesEnabled}
           unifiedSubtitleCanaryEnabled={unifiedSubtitleCanaryEnabled}
+          unifiedSubtitlePreviewEnabled={unifiedSubtitlePreviewEnabled}
           initialFavoriteTemplateKeys={initialFavoriteTemplateKeys}
         />
       </main>

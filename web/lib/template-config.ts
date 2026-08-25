@@ -328,10 +328,48 @@ export function createUnifiedSubtitleTemplateConfig(
   baseTemplateId: TemplateId = "dark-minimal",
 ): TemplateConfigV5 {
   const config = upgradeTemplateConfigToV5(createDefaultTemplateConfig(baseTemplateId));
+  // Keep the public subtitle presets aligned with the long-standing subtitle
+  // creation layout: a 16:9 video band, hook title above it, captions below it,
+  // and the channel mark near the bottom of the 9:16 canvas.
+  config.background = { kind: "color", color: "#000000" };
+  config.video = {
+    aspectRatio: "16:9",
+    x: 0,
+    y: 432,
+    width: TEMPLATE_CANVAS.width,
+    height: 608,
+    fit: "cover",
+  };
+  config.title = {
+    ...config.title,
+    visible: true,
+    x: TEMPLATE_CANVAS.width / 2,
+    y: 295,
+    maxWidth: 920,
+    fontSize: 84,
+    primaryColor: "#FFFFFF",
+    accentColor: "#35E6E3",
+    primaryBackgroundColor: null,
+    accentBackgroundColor: null,
+  };
   config.subtitle.visible = true;
   config.subtitle.variant = variant;
+  config.subtitle.x = TEMPLATE_CANVAS.width / 2;
+  config.subtitle.y = 1158;
+  config.subtitle.maxWidth = 840;
   config.subtitle.fontSize = variant === "pop" ? 92 : 72;
+  config.subtitle.color = "#FFFFFF";
   config.subtitle.accentColor = "#35E6E3";
+  config.channel = {
+    ...config.channel,
+    visible: true,
+    x: TEMPLATE_CANVAS.width / 2,
+    y: 1790,
+    maxWidth: 800,
+    fontSize: 48,
+    color: "#FFFFFF",
+    backgroundColor: null,
+  };
   return config;
 }
 

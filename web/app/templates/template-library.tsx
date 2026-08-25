@@ -301,7 +301,13 @@ function CustomTemplatePreview({ template, showUnifiedSubtitle = false }: { temp
 
 function UnifiedSubtitlePresetPreview({ preset }: { preset: (typeof unifiedSubtitlePresets)[number] }) {
   const template = unifiedSubtitlePreviewTemplates[preset.variant];
-  return <CustomTemplatePreview template={template} showUnifiedSubtitle />;
+  return <CustomTemplateCanvasPreview
+    template={template}
+    firstLine="AI가 고른 오늘의"
+    secondLine="핵심 장면"
+    channelLabel="Easy Cut"
+    showUnifiedSubtitle
+  />;
 }
 
 export function TemplateLibrary({
@@ -310,6 +316,7 @@ export function TemplateLibrary({
   canUseCustomTemplates,
   adminPresetNamesEnabled,
   unifiedSubtitleCanaryEnabled,
+  unifiedSubtitlePreviewEnabled,
   initialFavoriteTemplateKeys,
 }: {
   personalTemplates: CustomTemplate[];
@@ -317,6 +324,7 @@ export function TemplateLibrary({
   canUseCustomTemplates: boolean;
   adminPresetNamesEnabled: boolean;
   unifiedSubtitleCanaryEnabled: boolean;
+  unifiedSubtitlePreviewEnabled: boolean;
   initialFavoriteTemplateKeys: TemplateFavoriteKey[];
 }) {
   const [query, setQuery] = useState("");
@@ -403,7 +411,7 @@ export function TemplateLibrary({
     return personalTemplates.filter((template) => template.name.toLocaleLowerCase("ko-KR").includes(normalizedQuery));
   }, [personalTemplates, query]);
   const visibleUnifiedSubtitlePresets = useMemo(() => {
-    if (!unifiedSubtitleCanaryEnabled) return [];
+    if (!unifiedSubtitlePreviewEnabled) return [];
     const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
     if (!normalizedQuery) return unifiedSubtitlePresets;
     return unifiedSubtitlePresets.filter((preset) => (
@@ -411,7 +419,7 @@ export function TemplateLibrary({
         .toLocaleLowerCase("ko-KR")
         .includes(normalizedQuery)
     ));
-  }, [query, unifiedSubtitleCanaryEnabled]);
+  }, [query, unifiedSubtitlePreviewEnabled]);
 
   return (
     <div className="mx-auto w-full max-w-[1040px]">
@@ -456,9 +464,9 @@ export function TemplateLibrary({
         {visibleUnifiedSubtitlePresets.map((preset) => (
           <article key={preset.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#35e6e3]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#35e6e3]/50 hover:shadow-[0_20px_55px_rgba(53,230,227,.08)]">
             <Link
-              href={!authenticated
-                ? `/auth/sign-in?next=${encodeURIComponent(`/templates/new?preset=${preset.id}`)}`
-                : canUseCustomTemplates ? `/templates/new?preset=${preset.id}` : "/pricing"}
+              href={authenticated && canUseCustomTemplates && unifiedSubtitleCanaryEnabled
+                ? `/templates/new?preset=${preset.id}`
+                : `/?subtitleTemplate=${preset.variant}`}
               prefetch={false}
               className="flex flex-1 flex-col"
             >

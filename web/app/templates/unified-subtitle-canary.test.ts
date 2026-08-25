@@ -5,25 +5,31 @@ const editorSource = readFileSync(new URL("./template-editor.tsx", import.meta.u
 const librarySource = readFileSync(new URL("./template-library.tsx", import.meta.url), "utf8");
 const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 const newPageSource = readFileSync(new URL("./new/page.tsx", import.meta.url), "utf8");
+const editPageSource = readFileSync(new URL("./[templateId]/edit/page.tsx", import.meta.url), "utf8");
 const previewSource = readFileSync(
   new URL("../../components/custom-template-canvas-preview.tsx", import.meta.url),
   "utf8",
 );
 
-describe("unified template subtitle admin canary", () => {
-  it("keeps every new subtitle surface behind the server-authorized canary prop", () => {
+describe("unified template subtitle access", () => {
+  it("shows the stable public presets independently from paid editing access", () => {
     expect(pageSource).toContain("unifiedSubtitleCanaryEnabled = subtitleTemplateAccess.unifiedEnabled");
-    expect(librarySource).toContain("if (!unifiedSubtitleCanaryEnabled) return []");
+    expect(pageSource).toContain("getUnifiedTemplateSubtitlePublicPreviewAccess(db)");
+    expect(librarySource).toContain("if (!unifiedSubtitlePreviewEnabled) return []");
+    expect(librarySource).toContain("/?subtitleTemplate=${preset.variant}");
     expect(editorSource).toContain("unifiedSubtitleCanaryEnabled && isTemplateConfigV5(config)");
     expect(previewSource).toContain("showUnifiedSubtitle && isTemplateConfigV5(config)");
   });
 
-  it("opens pop and highlight presets in the ordinary personal template editor", () => {
+  it("opens pop and highlight presets in the editor only for paid or issued accounts", () => {
     expect(librarySource).toContain('id: "subtitle-pop"');
     expect(librarySource).toContain('id: "subtitle-highlight"');
+    expect(librarySource).toContain("authenticated && canUseCustomTemplates && unifiedSubtitleCanaryEnabled");
     expect(librarySource).toContain("/templates/new?preset=${preset.id}");
     expect(newPageSource).toContain("createUnifiedSubtitleTemplateConfig(subtitleVariant)");
-    expect(newPageSource).toContain("if (preset && (!subtitleVariant || !unifiedSubtitleCanaryEnabled)) notFound()");
+    expect(newPageSource).toContain("if (!billingSupportsCustomTemplates(billing))");
+    expect(newPageSource).toContain("if (subtitleVariant) redirect(`/?subtitleTemplate=${subtitleVariant}`)");
+    expect(editPageSource).toContain("if (!billingSupportsCustomTemplates(billing)) redirect(\"/pricing\")");
   });
 
   it("offers the agreed saveable subtitle controls while fixing horizontal position", () => {

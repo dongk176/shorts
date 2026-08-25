@@ -56,6 +56,10 @@ describe("subtitle template UI isolation", () => {
     expect(shortsAppSource).toContain(">자막입니다</span>");
     expect(shortsAppSource).not.toContain("지금 이 순간을 놓치지 마세요");
     expect(shortsAppSource).not.toContain('whitespace-nowrap text-[9px]');
+    expect(shortsAppSource).toContain("const subtitleTemplateSelectionEnabled = uploadSourceActive");
+    expect(shortsAppSource).not.toContain("!unifiedTemplateSubtitleCanaryEnabled && (uploadSourceActive");
+    expect(shortsAppSource).toContain('currentUrl.searchParams.get("subtitleTemplate")');
+    expect(shortsAppSource).toContain("setSubtitleTemplateId(requestedSubtitleTemplate)");
   });
 
   it("keeps creation simple by using the default subtitle font", () => {

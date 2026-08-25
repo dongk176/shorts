@@ -10,6 +10,8 @@ import { templateIds, type TemplateId } from "@/lib/contracts";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { getDb } from "@/lib/db";
 import { requireMvpSession } from "@/lib/session";
+import { getBillingSummary } from "@/lib/billing";
+import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 import {
   getPublicSubtitleTemplateAccess,
   getSubtitleTemplateAccess,
@@ -28,12 +30,20 @@ export default async function NewTemplatePage({ searchParams }: { searchParams: 
   if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(next)}`);
   const session = await requireMvpSession(user, { createIfMissing: false });
   const db = getDb();
-  const subtitleAccess = session.isAdmin === true
-    ? await getSubtitleTemplateAccess(db, session.userId)
-    : await getPublicSubtitleTemplateAccess(db, session.userId);
+  const [subtitleAccess, billing] = await Promise.all([
+    session.isAdmin === true
+      ? getSubtitleTemplateAccess(db, session.userId)
+      : getPublicSubtitleTemplateAccess(db, session.userId),
+    getBillingSummary(db, session.userId),
+  ]);
   const unifiedSubtitleCanaryEnabled = subtitleAccess.unifiedEnabled;
   const subtitleVariant = preset ? subtitlePresetVariants[preset] : null;
-  if (preset && (!subtitleVariant || !unifiedSubtitleCanaryEnabled)) notFound();
+  if (preset && !subtitleVariant) notFound();
+  if (!billingSupportsCustomTemplates(billing)) {
+    if (subtitleVariant) redirect(`/?subtitleTemplate=${subtitleVariant}`);
+    redirect("/pricing");
+  }
+  if (preset && !unifiedSubtitleCanaryEnabled) notFound();
 
   const initialConfig = subtitleVariant
     ? createUnifiedSubtitleTemplateConfig(subtitleVariant)

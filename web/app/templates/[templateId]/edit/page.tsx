@@ -3,6 +3,8 @@ import { customTemplateFromRow } from "@/lib/custom-templates";
 import { getDb } from "@/lib/db";
 import { requireMvpSession } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
+import { getBillingSummary } from "@/lib/billing";
+import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 import {
   getPublicSubtitleTemplateAccess,
   getSubtitleTemplateAccess,
@@ -20,7 +22,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ t
   if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(next)}`);
   const session = await requireMvpSession(user, { createIfMissing: false });
   const db = getDb();
-  const [rows, subtitleAccess] = await Promise.all([
+  const [rows, subtitleAccess, billing] = await Promise.all([
     db`
       select id, name, base_template_id, config, version, created_at, updated_at
       from shorts_mvp.custom_templates where id=${templateId} and user_id=${session.userId} limit 1
@@ -28,8 +30,10 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ t
     session.isAdmin === true
       ? getSubtitleTemplateAccess(db, session.userId)
       : getPublicSubtitleTemplateAccess(db, session.userId),
+    getBillingSummary(db, session.userId),
   ]);
   if (!rows[0]) notFound();
+  if (!billingSupportsCustomTemplates(billing)) redirect("/pricing");
   const template = customTemplateFromRow(rows[0]);
   if (isTemplateConfigV5(template.config) && !subtitleAccess.unifiedEnabled) notFound();
   const initialConfig = subtitleAccess.unifiedEnabled

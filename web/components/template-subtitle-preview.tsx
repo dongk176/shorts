@@ -3,8 +3,6 @@ import { customCanvasWidth } from "@/lib/custom-template-preview-layout";
 import { editorFontFamily, resolveEditorFontFace } from "@/lib/editor-fonts";
 import { TEMPLATE_CANVAS, type TemplateConfigV5 } from "@/lib/template-config";
 
-const previewWords = ["핵심", "자막이", "강조돼요"] as const;
-
 export function TemplateSubtitlePreview({
   subtitle,
   selected = false,
@@ -16,13 +14,23 @@ export function TemplateSubtitlePreview({
 }) {
   if (!subtitle.visible) return null;
   const font = resolveEditorFontFace(subtitle.fontId, "title");
+  const previewWords = subtitle.variant === "pop"
+    ? [
+        { text: "자막", active: true },
+        { text: "입니다", active: false },
+      ]
+    : [
+        { text: "이게", active: false },
+        { text: "바로", active: false },
+        { text: "자막입니다", active: true },
+      ];
   const content = (
     <span className="flex items-center justify-center gap-[.18em] whitespace-nowrap">
-      {previewWords.map((word, index) => {
-        const active = index === 1;
+      {previewWords.map((word) => {
+        const active = word.active;
         return (
           <span
-            key={word}
+            key={word.text}
             style={{
               color: active ? subtitle.accentColor : subtitle.color,
               display: "inline-block",
@@ -30,7 +38,7 @@ export function TemplateSubtitlePreview({
               transformOrigin: "center",
             }}
           >
-            {word}
+            {word.text}
           </span>
         );
       })}
