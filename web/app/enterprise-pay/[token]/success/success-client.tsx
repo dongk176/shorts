@@ -93,7 +93,7 @@ export function EnterprisePaymentSuccessClient({ token }: { token: string }) {
 
   return (
     <main className="grid min-h-screen place-items-center bg-[#0f1213] px-5 py-12 text-neutral-100">
-      <section className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#191d1e] p-7 shadow-[0_30px_100px_rgba(0,0,0,.42)] sm:p-10">
+      <section className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#191d1e] p-7 sm:p-10">
         {status.kind === "loading" ? (
           <>
             <div className="h-12 w-12 animate-pulse rounded-2xl bg-white/[.07]" />

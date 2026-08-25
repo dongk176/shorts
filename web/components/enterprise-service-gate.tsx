@@ -26,7 +26,7 @@ export function EnterpriseServiceGate({
       : "현재 활성화된 기업 서비스 상품이 없습니다. 이용기간과 결제 상태를 확인해 주세요.";
   return (
     <main className="grid min-h-screen place-items-center bg-[#0f1213] px-5 py-12 text-neutral-100">
-      <section className="w-full max-w-xl rounded-[28px] border border-white/10 bg-[#191d1e] p-7 shadow-[0_30px_100px_rgba(0,0,0,.42)] sm:p-10">
+      <section className="w-full max-w-xl rounded-[28px] border border-white/10 bg-[#191d1e] p-7 sm:p-10">
         <p className="text-xl font-black tracking-tight">EasyCut</p>
         <span className="mt-8 inline-flex rounded-full bg-sky-300/10 px-3 py-1 text-xs font-black text-sky-200">
           기업 서비스

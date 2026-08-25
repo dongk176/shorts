@@ -64,7 +64,7 @@ export function EnterpriseBillingSuccessClient({ token }: { token: string }) {
 
   return (
     <main className="grid min-h-screen place-items-center bg-[#0f1213] px-5 py-12 text-neutral-100">
-      <section className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#191d1e] p-7 shadow-[0_30px_100px_rgba(0,0,0,.42)] sm:p-10">
+      <section className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#191d1e] p-7 sm:p-10">
         {status.kind === "loading" ? (
           <><h1 className="text-2xl font-black">카드등록과 결제를 확인하고 있습니다</h1><p className="mt-3 text-sm leading-7 text-neutral-400">창을 닫지 말고 잠시만 기다려 주세요.</p></>
         ) : status.kind === "success" ? (

@@ -26,7 +26,7 @@ export function EnterpriseBillingFailClient({ token }: { token: string }) {
   }, [token]);
   return (
     <main className="grid min-h-screen place-items-center bg-[#0f1213] px-5 py-12 text-neutral-100">
-      <section className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#191d1e] p-7 shadow-[0_30px_100px_rgba(0,0,0,.42)] sm:p-10">
+      <section className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#191d1e] p-7 sm:p-10">
         <span className="inline-flex rounded-full bg-white/[.06] px-3 py-1 text-xs font-black text-neutral-300">카드등록 미완료</span>
         <h1 className="mt-5 text-3xl font-black">카드등록이 완료되지 않았습니다</h1>
         <p className="mt-4 text-sm leading-7 text-neutral-300">{message}</p>

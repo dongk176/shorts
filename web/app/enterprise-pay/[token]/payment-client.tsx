@@ -149,8 +149,8 @@ export function EnterprisePaymentClient({ data }: { data: EnterprisePaymentPageD
           </span>
         </header>
 
-        <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[#181c1d] shadow-[0_30px_100px_rgba(0,0,0,.38)]">
-          <div className="border-b border-white/10 bg-gradient-to-br from-[#ff715e]/15 via-transparent to-sky-400/10 p-6 sm:p-9">
+        <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[#181c1d]">
+          <div className="border-b border-white/10 p-6 sm:p-9">
             <p className="text-xs font-black uppercase tracking-[.18em] text-[#ff9585]">Payment request</p>
             <h1 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-3xl">{data.title}</h1>
             <p className="mt-3 text-sm leading-6 text-neutral-400">
