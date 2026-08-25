@@ -1,5 +1,8 @@
 begin;
 
+set local lock_timeout = '3s';
+set local statement_timeout = '30s';
+
 create table if not exists shorts_mvp.enterprise_payment_requests (
   id uuid primary key default gen_random_uuid(),
   create_request_id uuid not null unique,

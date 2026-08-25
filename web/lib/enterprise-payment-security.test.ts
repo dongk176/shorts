@@ -13,6 +13,8 @@ const publicClient = source("../app/enterprise-pay/[token]/payment-client.tsx");
 
 describe("enterprise payment safety invariants", () => {
   it("keeps public payment tables server-only and capability-token protected", () => {
+    expect(migration).toContain("set local lock_timeout = '3s'");
+    expect(migration).toContain("set local statement_timeout = '30s'");
     expect(migration).toContain("public_token uuid not null default gen_random_uuid() unique");
     expect(migration).toContain("enable row level security");
     expect(migration).toContain("revoke all on shorts_mvp.enterprise_payment_requests from anon, authenticated");
