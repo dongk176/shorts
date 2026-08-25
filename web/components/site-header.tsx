@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { HeaderUsageIndicator } from "@/components/header-usage-indicator";
+import { useUsageState } from "@/components/usage-provider";
 import { useI18n } from "@/lib/i18n/provider";
 
 const navigation = [
@@ -81,10 +82,11 @@ function NavigationIcon({ path }: { path: string }) {
   );
 }
 
-function NavigationLinks({ pathname, onNavigate, mobile = false }: {
+function NavigationLinks({ pathname, onNavigate, mobile = false, isEnterprise }: {
   pathname: string;
   onNavigate?: () => void;
   mobile?: boolean;
+  isEnterprise: boolean;
 }) {
   const { t } = useI18n();
   let decodedPathname = pathname;
@@ -96,7 +98,7 @@ function NavigationLinks({ pathname, onNavigate, mobile = false }: {
   const privateActive = decodedPathname === "/easycut-private";
   return (
     <>
-      {navigation.map((item) => {
+      {navigation.filter((item) => !isEnterprise || item.path !== "/pricing").map((item) => {
         const active = item.path === decodedPathname;
         return (
           <Link
@@ -111,15 +113,17 @@ function NavigationLinks({ pathname, onNavigate, mobile = false }: {
           </Link>
         );
       })}
-      <Link
-        href="/easycut-private"
-        onClick={onNavigate}
-        aria-current={privateActive ? "page" : undefined}
-        className={`${mobile ? "rounded-xl px-4 py-3" : "easycut-private-nav nav-link"} ${privateActive ? "text-[#ffb4a8]" : mobile ? "text-neutral-200 hover:bg-white/[.06] hover:text-white" : ""}`}
-      >
-        <NavigationIcon path="/easycut-private" />
-        EASYCUT PRIVATE
-      </Link>
+      {!isEnterprise ? (
+        <Link
+          href="/easycut-private"
+          onClick={onNavigate}
+          aria-current={privateActive ? "page" : undefined}
+          className={`${mobile ? "rounded-xl px-4 py-3" : "easycut-private-nav nav-link"} ${privateActive ? "text-[#ffb4a8]" : mobile ? "text-neutral-200 hover:bg-white/[.06] hover:text-white" : ""}`}
+        >
+          <NavigationIcon path="/easycut-private" />
+          EASYCUT PRIVATE
+        </Link>
+      ) : null}
     </>
   );
 }
@@ -135,6 +139,7 @@ export function SiteHeader({
 }) {
   const pathname = usePathname();
   const { t } = useI18n();
+  const { isEnterprise } = useUsageState();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -164,7 +169,7 @@ export function SiteHeader({
           <span className="brand-type">Easy <em>Cut</em></span>
         </Link>
         <nav className="site-header-primary hidden items-center gap-8 text-sm font-semibold text-neutral-300 md:flex" aria-label={t("nav.primary")}>
-          <NavigationLinks pathname={pathname} />
+          <NavigationLinks pathname={pathname} isEnterprise={isEnterprise} />
           {showUsageIndicator ? <HeaderUsageIndicator /> : null}
         </nav>
         <div ref={menuRef} className="site-header-actions relative shrink-0">
@@ -183,7 +188,7 @@ export function SiteHeader({
           </button>
           <div id="site-navigation-menu" className={`site-header-menu-panel${menuOpen ? " is-open" : ""}`}>
             <nav aria-label={t("nav.mobilePrimary")} className="grid gap-1 md:hidden">
-              <NavigationLinks pathname={pathname} mobile onNavigate={() => setMenuOpen(false)} />
+              <NavigationLinks pathname={pathname} mobile isEnterprise={isEnterprise} onNavigate={() => setMenuOpen(false)} />
             </nav>
             <div className="site-header-menu-account" onClick={() => setMenuOpen(false)}>
               {children}

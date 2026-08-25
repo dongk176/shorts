@@ -86,6 +86,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   let initialUsageState: UsageState = {
     authenticated: false,
     accountId: null,
+    isEnterprise: false,
     usage: null,
   };
   let initialPaymentMethodAction: PaymentMethodAction = null;
@@ -94,12 +95,18 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     if (authenticatedUser) {
       const db = getDb();
       const appUserRows = await db`
-        select id
-        from shorts_mvp.app_users
-        where auth_user_id=${authenticatedUser.id}
+        select app_user.id,
+          exists (
+            select 1 from shorts_mvp.managed_login_accounts managed
+            where managed.app_user_id=app_user.id
+              and managed.account_type='enterprise' and managed.is_active=true
+          ) as is_enterprise
+        from shorts_mvp.app_users app_user
+        where app_user.auth_user_id=${authenticatedUser.id}
         limit 1
       `;
       const appUserId = typeof appUserRows[0]?.id === "string" ? appUserRows[0].id : null;
+      const isEnterprise = appUserRows[0]?.isEnterprise === true;
       const [usage, paymentMethodAction] = appUserId
         ? await Promise.all([
             getUsageSnapshot(db, {
@@ -114,6 +121,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       initialUsageState = {
         authenticated: true,
         accountId: appUserId,
+        isEnterprise,
         usage,
       };
       initialPaymentMethodAction = paymentMethodAction;

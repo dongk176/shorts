@@ -17,6 +17,67 @@ export async function GET(request: Request) {
     const db = getDb();
 
     if (type === "payments") {
+      if (session.isEnterprise === true) {
+        const [rows, countRows] = await Promise.all([
+          db`
+            select item.id,item.name as order_name,'enterprise_contract'::text as product_code,
+              'enterprise'::text as billing_cycle,'enterprise_payment'::text as kind,
+              item.amount_krw,0::integer as installment_months,
+              case
+                when item.status='paid' then 'succeeded'
+                when item.status='manual_review' then 'manual_review'
+                when payment_request.status='canceled' then 'canceled'
+                when payment_request.expires_at<=clock_timestamp() then 'expired'
+                when item.status='confirming' then 'processing'
+                else item.status
+              end as status,
+              null::text as refund_status,0::integer as refunded_amount_krw,
+              null::text as provider_auth_code,null::text as provider_transaction_id,
+              attempt.order_id,attempt.payment_method,attempt.receipt_url,
+              coalesce(attempt.approved_at,item.paid_at) as approved_at,item.created_at,
+              0::integer as scheduled_refund_amount_krw,
+              0::integer as upgrade_refunded_amount_krw,
+              true as is_enterprise_product,item.sort_order,item.service_start_date,
+              item.service_end_date,item.included_minutes,item.vat_treatment,
+              item.payment_due_date,payment_request.title as request_title
+            from shorts_mvp.enterprise_payment_items item
+            join shorts_mvp.enterprise_payment_requests payment_request
+              on payment_request.id=item.payment_request_id
+            join shorts_mvp.managed_login_accounts managed
+              on managed.id=payment_request.managed_account_id
+            left join lateral (
+              select payment_attempt.order_id,payment_attempt.payment_method,
+                payment_attempt.receipt_url,payment_attempt.approved_at
+              from shorts_mvp.enterprise_payment_attempts payment_attempt
+              where payment_attempt.payment_item_id=item.id
+              order by (payment_attempt.id=item.paid_attempt_id) desc,
+                payment_attempt.created_at desc
+              limit 1
+            ) attempt on true
+            where managed.app_user_id=${session.userId}
+              and managed.account_type='enterprise' and managed.is_active=true
+            order by coalesce(item.paid_at,item.created_at) desc,item.sort_order
+            limit ${limit} offset ${offset}
+          `,
+          db`
+            select count(*)::integer as count
+            from shorts_mvp.enterprise_payment_items item
+            join shorts_mvp.enterprise_payment_requests payment_request
+              on payment_request.id=item.payment_request_id
+            join shorts_mvp.managed_login_accounts managed
+              on managed.id=payment_request.managed_account_id
+            where managed.app_user_id=${session.userId}
+              and managed.account_type='enterprise' and managed.is_active=true
+          `,
+        ]);
+        return NextResponse.json({
+          type,
+          page,
+          pageSize: limit,
+          total: Number(countRows[0]?.count || 0),
+          items: rows,
+        });
+      }
       const [rows, countRows] = await Promise.all([
         db`
           select o.id,o.order_id,o.order_name,o.product_code,o.billing_cycle,o.kind,
@@ -50,6 +111,7 @@ export async function GET(request: Request) {
         with activity as (
           select g.id::text || ':credited' as id,g.created_at as occurred_at,
             case
+              when enterprise_item.id is not null then 'enterprise_grant'
               when g.product_code='feedback_reward_30m' then 'feedback_reward'
               when g.product_code='editor_launch_bonus_20260728' then 'update_event_bonus'
               when g.product_code='onboarding_welcome_20min_v1' then 'welcome_grant'
@@ -62,19 +124,29 @@ export async function GET(request: Request) {
               when o.kind='subscription_renewal' then 'annual_or_monthly_grant'
               else 'plan_grant'
             end as event_type,
-            g.product_code,g.credited_seconds as seconds,null::bigint as project_number,
+            g.product_code,enterprise_item.name as product_name,
+            g.credited_seconds as seconds,null::bigint as project_number,
             null::text as video_title,'granted'::text as result
           from shorts_mvp.usage_grants g
           left join shorts_mvp.billing_orders o on o.id=g.billing_order_id
           left join shorts_mvp.user_subscriptions s on s.id=g.subscription_id
+          left join shorts_mvp.enterprise_service_entitlements enterprise_entitlement
+            on enterprise_entitlement.usage_grant_id=g.id
+          left join shorts_mvp.enterprise_payment_items enterprise_item
+            on enterprise_item.id=enterprise_entitlement.payment_item_id
           where g.user_id=${session.userId} and g.credited_seconds > 0
           union all
           select g.id::text || ':carried',g.created_at,'upgrade_carryover',
-            g.product_code,g.carried_seconds,null::bigint,null::text,'carried'
+            g.product_code,enterprise_item.name,g.carried_seconds,
+            null::bigint,null::text,'carried'
           from shorts_mvp.usage_grants g
+          left join shorts_mvp.enterprise_service_entitlements enterprise_entitlement
+            on enterprise_entitlement.usage_grant_id=g.id
+          left join shorts_mvp.enterprise_payment_items enterprise_item
+            on enterprise_item.id=enterprise_entitlement.payment_item_id
           where g.user_id=${session.userId} and g.carried_seconds > 0
           union all
-          select e.id::text,e.occurred_at,e.event_type,null::text,
+          select e.id::text,e.occurred_at,e.event_type,null::text,null::text,
             case when e.event_type='source_consumed' then -e.source_duration_seconds
               else e.source_duration_seconds end,
             j.project_number,j.video_title,j.status

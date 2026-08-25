@@ -61,4 +61,18 @@ describe("enterprise billing safety contract", () => {
     expect(consent).toContain("refundPolicyAgreed: z.literal(true)");
     expect(consent).toContain("storedCardChargeAgreed: z.literal(true)");
   });
+
+  it("hides personal sales links and exposes only the signed-in enterprise account history", () => {
+    const header = source("web/components/site-header.tsx");
+    const activity = source("web/app/api/account/activity/route.ts");
+    const receipt = source("web/app/api/account/receipts/[orderId]/route.ts");
+    expect(header).toContain('!isEnterprise || item.path !== "/pricing"');
+    expect(header).toContain("{!isEnterprise ? (");
+    expect(activity).toContain("session.isEnterprise === true");
+    expect(activity).toContain("managed.app_user_id=${session.userId}");
+    expect(activity).toContain("item.service_start_date");
+    expect(activity).toContain("item.included_minutes");
+    expect(receipt).toContain("managed.app_user_id=${session.userId}");
+    expect(receipt).toContain("enterprise/refund-policy");
+  });
 });

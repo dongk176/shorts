@@ -54,7 +54,7 @@ export function HeaderUsageIndicator() {
 
   return (
     <Link
-      href="/pricing"
+      href={usageState.isEnterprise ? "/account/activity" : "/pricing"}
       aria-label={label}
       title={label}
       className="header-usage-indicator inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[.035] px-2.5 text-xs font-extrabold tabular-nums text-neutral-200 transition hover:border-[#ff8c7c]/45 hover:bg-[#ff8c7c]/10 hover:text-white"

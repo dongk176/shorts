@@ -17,6 +17,7 @@ import { USAGE_UPDATED_EVENT, usageFromEvent } from "@/lib/usage-client";
 export type UsageState = {
   authenticated: boolean;
   accountId: string | null;
+  isEnterprise: boolean;
   usage: UsageSnapshot | null;
 };
 
@@ -47,6 +48,7 @@ export function UsageProvider({
     setUsageState({
       authenticated: body.authenticated,
       accountId: body.authenticated ? body.accountId : null,
+      isEnterprise: body.authenticated && body.isEnterprise === true,
       usage: body.authenticated ? body.usage : null,
     });
     return body.authenticated ? body.usage : null;
