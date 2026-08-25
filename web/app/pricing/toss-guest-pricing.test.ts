@@ -62,7 +62,7 @@ describe("guest Toss pricing", () => {
       /@media \(min-width: 901px\)[\s\S]*?\.localPlanGrid::before\s*\{/,
     );
     expect(pricingStyles).toMatch(
-      /\.localPlanSummaryFeatures\s*\{[^}]*font-size:\s*13px;/,
+      /\.localPlanSummaryFeatures\s*\{[^}]*font-size:\s*15px;/,
     );
     expect(tossSource).not.toContain("styles.localDialogLead");
     expect(tossSource).not.toContain("styles.localPaymentNote");
@@ -85,10 +85,22 @@ describe("guest Toss pricing", () => {
       /\.localDialogActions button\s*\{[^}]*width:\s*100%;[^}]*min-width:\s*0;/,
     );
     expect(pricingStyles).toMatch(
-      /\.localDialogActions button:first-child\s*\{[^}]*font-size:\s*14px;/,
+      /\.localDialogActions button:first-child\s*\{[^}]*font-size:\s*15px;/,
     );
     expect(pricingStyles).toMatch(
-      /\.localDialogActions button:last-child\s*\{[^}]*font-size:\s*16px;/,
+      /\.localDialogActions button:last-child\s*\{[^}]*font-size:\s*17px;/,
+    );
+  });
+
+  it("uses readable checkout overlay typography and controls", () => {
+    expect(pricingStyles).toMatch(
+      /\.localPlanSummaryCopy > strong\s*\{[^}]*font-size:\s*18px;/,
+    );
+    expect(pricingStyles).toMatch(
+      /\.localConsent\s*\{[^}]*font-size:\s*14px;/,
+    );
+    expect(pricingStyles).toMatch(
+      /\.localDialogActions button\s*\{[^}]*min-height:\s*52px;/,
     );
   });
 });
