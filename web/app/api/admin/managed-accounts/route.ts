@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAdminUser } from "@/lib/admin";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
+import { MANAGED_ACCOUNT_TYPES } from "@/lib/managed-account-type";
 import {
   MANAGED_ACCOUNT_PRODUCT_CODE,
   createManagedAuthEmail,
@@ -20,6 +21,7 @@ const createSchema = z.object({
   usageMinutes: z.number().int().min(0).max(100_000),
   serviceAccessUntil: z.string().datetime({ offset: true }),
   popularFilterEnabled: z.boolean(),
+  accountType: z.enum(MANAGED_ACCOUNT_TYPES).default("personal"),
 });
 
 export async function POST(request: NextRequest) {
@@ -105,10 +107,11 @@ export async function POST(request: NextRequest) {
       const accounts = await tx`
         insert into shorts_mvp.managed_login_accounts (
           create_request_id,auth_user_id,app_user_id,login_id,auth_email,
-          is_active,popular_filter_enabled,created_by_user_id,updated_by_user_id
+          account_type,is_active,popular_filter_enabled,
+          created_by_user_id,updated_by_user_id
         ) values (
           ${body.requestId},${data.user.id},${appUserId},${loginId},${authEmail},
-          true,${body.popularFilterEnabled},${admin.id},${admin.id}
+          ${body.accountType},true,${body.popularFilterEnabled},${admin.id},${admin.id}
         )
         returning id
       `;
@@ -134,6 +137,7 @@ export async function POST(request: NextRequest) {
           ${tx.json({
             loginId,
             displayName: body.displayName,
+            accountType: body.accountType,
             usageMinutes: body.usageMinutes,
             serviceAccessUntil: serviceAccessUntil.toISOString(),
             popularFilterEnabled: body.popularFilterEnabled,

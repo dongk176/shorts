@@ -15,7 +15,8 @@ export async function AdminManagedAccountsSection() {
   const rows = await getDb()`
     select
       managed.id,managed.login_id,managed.is_active,
-      managed.popular_filter_enabled,managed.created_at,managed.updated_at,
+      managed.account_type,managed.popular_filter_enabled,
+      managed.created_at,managed.updated_at,
       managed.last_login_at,managed.last_password_reset_at,
       account.id as user_id,account.display_name,account.manual_service_access_until,
       coalesce(usage.total_seconds,0)::bigint as usage_total_seconds,
@@ -57,6 +58,7 @@ export async function AdminManagedAccountsSection() {
       id: row.id,
       userId: row.userId,
       loginId: row.loginId,
+      accountType: row.accountType === "enterprise" ? "enterprise" : "personal",
       displayName: row.displayName || "",
       isActive: Boolean(row.isActive),
       popularFilterEnabled: Boolean(row.popularFilterEnabled),

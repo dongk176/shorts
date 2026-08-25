@@ -2,11 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import {
+  MANAGED_ACCOUNT_TYPE_LABELS,
+  type ManagedAccountType,
+} from "@/lib/managed-account-type";
 
 export type AdminManagedAccount = {
   id: string;
   userId: string;
   loginId: string;
+  accountType: ManagedAccountType;
   displayName: string;
   isActive: boolean;
   popularFilterEnabled: boolean;
@@ -132,6 +137,13 @@ function ManagedAccountCard({ account }: { account: AdminManagedAccount }) {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-mono text-lg font-black text-white">{account.loginId}</h3>
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${
+              account.accountType === "enterprise"
+                ? "bg-sky-300/10 text-sky-200"
+                : "bg-white/[.05] text-neutral-300"
+            }`}>
+              {MANAGED_ACCOUNT_TYPE_LABELS[account.accountType]}
+            </span>
             <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${
               account.isActive
                 ? "bg-emerald-300/10 text-emerald-200"
@@ -330,10 +342,13 @@ export function AdminManagedAccountsDashboard({
   const [password, setPassword] = useState("");
   const [usageMinutes, setUsageMinutes] = useState("120");
   const [serviceUntil, setServiceUntil] = useState(defaultExpiry);
+  const [accountType, setAccountType] = useState<ManagedAccountType>("personal");
   const [filterEnabled, setFilterEnabled] = useState(false);
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState("");
   const activeCount = accounts.filter((account) => account.isActive).length;
+  const personalCount = accounts.filter((account) => account.accountType === "personal").length;
+  const enterpriseCount = accounts.length - personalCount;
 
   async function createAccount() {
     setCreating(true);
@@ -344,6 +359,7 @@ export function AdminManagedAccountsDashboard({
         loginId,
         temporaryPassword: password,
         displayName,
+        accountType,
         usageMinutes: Number(usageMinutes),
         serviceAccessUntil: requestDate(serviceUntil),
         popularFilterEnabled: filterEnabled,
@@ -353,6 +369,7 @@ export function AdminManagedAccountsDashboard({
       setPassword("");
       setUsageMinutes("120");
       setServiceUntil(defaultExpiry());
+      setAccountType("personal");
       setFilterEnabled(false);
       setMessage("발급 계정을 만들었습니다. 임시 비밀번호는 지금 안전하게 전달해 주세요.");
       router.refresh();
@@ -377,10 +394,24 @@ export function AdminManagedAccountsDashboard({
           <div className="rounded-xl bg-black/20 px-4 py-3 text-right">
             <p className="text-xs text-neutral-500">전체 / 활성</p>
             <p className="mt-1 text-lg font-black text-white">{accounts.length} / {activeCount}</p>
+            <p className="mt-1 text-[11px] text-neutral-500">
+              개인 {personalCount} · 기업 {enterpriseCount}
+            </p>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+          <label className="text-xs font-bold text-neutral-400">
+            계정 구분
+            <select
+              value={accountType}
+              onChange={(event) => setAccountType(event.target.value as ManagedAccountType)}
+              className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm font-bold text-white outline-none focus:border-[#ff8c7c]/60"
+            >
+              <option value="personal">개인</option>
+              <option value="enterprise">기업</option>
+            </select>
+          </label>
           <label className="text-xs font-bold text-neutral-400">
             로그인 아이디
             <input
