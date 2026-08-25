@@ -75,4 +75,17 @@ describe("enterprise billing safety contract", () => {
     expect(receipt).toContain("managed.app_user_id=${session.userId}");
     expect(receipt).toContain("enterprise/refund-policy");
   });
+
+  it("shows enterprise products in plan management without entering personal billing", () => {
+    const page = source("web/app/settings/plan/page.tsx");
+    const view = source("web/app/settings/plan/enterprise-plan-management.tsx");
+    expect(page).toContain("session.isEnterprise === true");
+    expect(page).toContain("managed.app_user_id=${userId}");
+    expect(page).toContain("payment_request.payment_mode='billing'");
+    expect(page).toContain("enterprise_service_entitlements entitlement");
+    expect(page.indexOf("session.isEnterprise === true"))
+      .toBeLessThan(page.indexOf("const cohort = await resolveBillingCustomerCohort(session.userId, db)"));
+    expect(view).toContain("기업 이용 상품");
+    expect(view).not.toContain('href="/pricing"');
+  });
 });
