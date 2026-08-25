@@ -59,8 +59,8 @@ test("indexes on live legacy tables are built concurrently in an isolated migrat
 });
 
 test("the sale catalog adds exact package totals without repricing legacy Pro", () => {
-  assert.match(saleCatalogMigration, /'toss_starter_3m'[^\n]+23655,70965/i);
-  assert.match(saleCatalogMigration, /'toss_expert_3m'[^\n]+49000,147000/i);
+  assert.match(saleCatalogMigration, /'toss_starter_3m'[^\n]+30,153,23655,70965/i);
+  assert.match(saleCatalogMigration, /'toss_expert_3m'[^\n]+30,163,49000,147000/i);
   for (const [code, monthly, total] of [
     ["toss_starter_6m", 19900, 119400],
     ["toss_starter_12m", 16500, 198000],

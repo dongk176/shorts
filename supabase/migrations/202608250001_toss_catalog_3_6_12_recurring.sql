@@ -26,8 +26,8 @@ insert into shorts_mvp.plans (
   code,display_name,monthly_source_seconds,retention_days,sort_order,
   monthly_price_krw,yearly_price_krw,max_active_jobs,is_active,prepaid_months
 ) values
-  ('toss_starter_3m','스타터 패키지 3개월',12000,30,150,23655,70965,2,false,3),
-  ('toss_expert_3m','전문가 패키지 3개월',36000,30,160,49000,147000,3,false,3)
+  ('toss_starter_3m','스타터 패키지 3개월',12000,30,153,23655,70965,2,false,3),
+  ('toss_expert_3m','전문가 패키지 3개월',36000,30,163,49000,147000,3,false,3)
 on conflict (code) do update set
   display_name=excluded.display_name,
   monthly_source_seconds=excluded.monthly_source_seconds,
