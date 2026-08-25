@@ -48,6 +48,13 @@ function date(value: string) {
   }).format(new Date(value));
 }
 
+function billingCycleLabel(contractMonths: TossCatalogPlan["contractMonths"]) {
+  if (contractMonths === 1) return "월간 결제";
+  if (contractMonths === 3) return "분기 결제";
+  if (contractMonths === 6) return "반기 결제";
+  return "연간 결제";
+}
+
 async function postJson<T>(url: string, body: Record<string, unknown>): Promise<T> {
   const response = await fetch(url, {
     method: "POST",
@@ -362,8 +369,8 @@ export function TossPricingClient({
               </div>
               <p className="pricing-billing">
                 {plan.tier === "easycut_pro"
-                  ? "월간 정기결제"
-                  : `${plan.contractMonths}개월마다 정기결제 · 총 ₩${won(plan.priceKrw)}`}
+                  ? billingCycleLabel(plan.contractMonths)
+                  : `${billingCycleLabel(plan.contractMonths)} · 총 ₩${won(plan.priceKrw)}`}
               </p>
               <ul>
                 {features(plan).map((feature, index) => (

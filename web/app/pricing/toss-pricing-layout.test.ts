@@ -18,6 +18,15 @@ describe("production Toss pricing layout", () => {
     expect(clientSource).toContain('<span>패키지 이용기간</span>');
   });
 
+  it("uses familiar billing-cycle labels for every selectable term", () => {
+    expect(clientSource).toContain('if (contractMonths === 1) return "월간 결제"');
+    expect(clientSource).toContain('if (contractMonths === 3) return "분기 결제"');
+    expect(clientSource).toContain('if (contractMonths === 6) return "반기 결제"');
+    expect(clientSource).toContain('return "연간 결제"');
+    expect(clientSource).not.toContain("개월마다 정기결제");
+    expect(clientSource).not.toContain("월간 정기결제");
+  });
+
   it("separates Pro from package cards only on desktop", () => {
     expect(pricingStyles).toMatch(
       /@media \(min-width: 901px\)\s*\{[\s\S]*?\.localPlanGrid::before\s*\{/,
@@ -43,6 +52,12 @@ describe("production Toss pricing layout", () => {
     );
     expect(pricingStyles).toMatch(
       /\.localDialogActions button\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;/,
+    );
+  });
+
+  it("keeps the desktop CTA spacing equal to the existing mobile spacing", () => {
+    expect(pricingStyles).toMatch(
+      /\.localPlanCard \.planCta\s*\{[\s\S]*?margin-top:\s*24px;/,
     );
   });
 

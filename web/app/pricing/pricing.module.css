@@ -1089,6 +1089,10 @@
   line-height: 1.35;
 }
 
+.localPlanCard .planCta {
+  margin-top: 24px;
+}
+
 .localPlanDescription {
   min-height: 18px;
   margin-top: 3px;
