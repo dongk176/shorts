@@ -179,10 +179,11 @@ describe("billing summary", () => {
       maxActiveJobs: 1,
       retentionDays: 30,
     });
-    expect(statements[0]).toContain(
-      "account.manual_service_access_until > clock_timestamp()",
-    );
-    expect(statements[0]).toContain("managed.is_active=true");
+    const managedFeatureQuery = statements[0]
+      .split("as has_manual_service_access,")[1]
+      ?.split("as has_onboarding_welcome_access")[0] || "";
+    expect(managedFeatureQuery).toContain("managed.is_active=true");
+    expect(managedFeatureQuery).not.toContain("manual_service_access_until");
   });
 
   it("allows only one active job with one-day retention for a free welcome grant", async () => {

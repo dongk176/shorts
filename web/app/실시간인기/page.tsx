@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
-import { billingSupportsPopularFilters } from "@/lib/popular-entitlements";
+import {
+  billingSupportsPopularFilters,
+  hasDirectPopularFilterAccess,
+  managedPopularFilterOverride,
+} from "@/lib/popular-entitlements";
 import { authProfile } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { createPageMetadata } from "@/lib/seo";
@@ -22,29 +26,7 @@ export default async function PopularVideosPage() {
     try {
       const db = getDb();
       const appUserRows = await db`
-        select account.id,(
-          (
-            account.manual_service_access_until > clock_timestamp()
-            and not exists (
-              select 1
-              from shorts_mvp.managed_login_accounts managed
-              where managed.app_user_id=account.id
-            )
-          )
-          or exists (
-            select 1
-            from shorts_mvp.managed_login_accounts managed
-            where managed.app_user_id=account.id
-              and managed.is_active=true
-              and managed.popular_filter_enabled=true
-          )
-        ) as has_direct_popular_filter_access,
-        (
-          select managed.popular_filter_enabled
-          from shorts_mvp.managed_login_accounts managed
-          where managed.app_user_id=account.id and managed.is_active=true
-          limit 1
-        ) as managed_popular_filter_override
+        select account.id
         from shorts_mvp.app_users account
         where account.auth_user_id=${user.id}
         limit 1
@@ -53,13 +35,15 @@ export default async function PopularVideosPage() {
         ? appUserRows[0].id
         : null;
       if (appUserId) {
+        const [billing, directAccess, managedOverride] = await Promise.all([
+          getBillingSummary(db, appUserId),
+          hasDirectPopularFilterAccess(db, appUserId),
+          managedPopularFilterOverride(db, appUserId),
+        ]);
         canUseFilters = billingSupportsPopularFilters(
-          await getBillingSummary(db, appUserId),
-          Boolean(appUserRows[0]?.hasDirectPopularFilterAccess),
-          appUserRows[0]?.managedPopularFilterOverride === null
-            || appUserRows[0]?.managedPopularFilterOverride === undefined
-            ? null
-            : Boolean(appUserRows[0].managedPopularFilterOverride),
+          billing,
+          directAccess,
+          managedOverride,
         );
       }
     } catch (error) {

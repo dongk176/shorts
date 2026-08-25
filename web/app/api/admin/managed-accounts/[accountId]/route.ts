@@ -12,7 +12,6 @@ const updateSchema = z.object({
   requestId: z.string().uuid(),
   displayName: z.string().trim().min(1).max(100),
   isActive: z.boolean(),
-  popularFilterEnabled: z.boolean(),
   serviceAccessUntil: z.string().datetime({ offset: true }).nullable(),
 });
 
@@ -52,7 +51,6 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       const updated = await tx`
         update shorts_mvp.managed_login_accounts managed
         set is_active=${body.isActive},
-          popular_filter_enabled=${body.popularFilterEnabled},
           updated_by_user_id=${admin.id}
         where managed.id=${accountId}
         returning app_user_id
@@ -77,7 +75,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
             loginId: account.loginId,
             displayName: body.displayName,
             isActive: body.isActive,
-            popularFilterEnabled: body.popularFilterEnabled,
+            paidFeaturesEnabled: true,
             serviceAccessUntil: serviceAccessUntil?.toISOString() || null,
             requestId: body.requestId,
           })}

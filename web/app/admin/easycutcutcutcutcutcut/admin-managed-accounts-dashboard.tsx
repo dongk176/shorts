@@ -20,7 +20,6 @@ export type AdminManagedAccount = {
   accountType: ManagedAccountType;
   displayName: string;
   isActive: boolean;
-  popularFilterEnabled: boolean;
   serviceAccessUntil: string | null;
   usageTotalSeconds: number;
   usageConsumedSeconds: number;
@@ -417,7 +416,6 @@ function ManagedAccountCard({ account }: { account: AdminManagedAccount }) {
   const router = useRouter();
   const [displayName, setDisplayName] = useState(account.displayName);
   const [active, setActive] = useState(account.isActive);
-  const [filterEnabled, setFilterEnabled] = useState(account.popularFilterEnabled);
   const [serviceUntil, setServiceUntil] = useState(localDateTime(account.serviceAccessUntil));
   const [usageMinutes, setUsageMinutes] = useState("60");
   const [usageUntil, setUsageUntil] = useState(
@@ -472,12 +470,8 @@ function ManagedAccountCard({ account }: { account: AdminManagedAccount }) {
             }`}>
               {account.isActive ? "로그인 허용" : "로그인 차단"}
             </span>
-            <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${
-              account.popularFilterEnabled
-                ? "bg-violet-300/10 text-violet-200"
-                : "bg-white/[.05] text-neutral-500"
-            }`}>
-              필터 {account.popularFilterEnabled ? "허용" : "차단"}
+            <span className="rounded-full bg-violet-300/10 px-2.5 py-1 text-[11px] font-black text-violet-200">
+              유료 기능 전체 허용
             </span>
           </div>
           <p className="mt-2 text-xs text-neutral-500">
@@ -547,7 +541,6 @@ function ManagedAccountCard({ account }: { account: AdminManagedAccount }) {
           </label> : null}
           <div className="mt-3 grid gap-2">
             <Toggle checked={active} onChange={setActive} label="아이디 로그인 허용" />
-            <Toggle checked={filterEnabled} onChange={setFilterEnabled} label="실시간 인기 필터 허용" />
           </div>
           <button
             type="button"
@@ -559,7 +552,6 @@ function ManagedAccountCard({ account }: { account: AdminManagedAccount }) {
                 requestId: crypto.randomUUID(),
                 displayName,
                 isActive: active,
-                popularFilterEnabled: filterEnabled,
                 serviceAccessUntil: account.accountType === "personal"
                   ? requestDate(serviceUntil)
                   : null,
@@ -676,7 +668,6 @@ export function AdminManagedAccountsDashboard({
     newEnterpriseProduct(0, "new-account-initial"),
   ]);
   const [createdPaymentPath, setCreatedPaymentPath] = useState("");
-  const [filterEnabled, setFilterEnabled] = useState(false);
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState("");
   const activeCount = accounts.filter((account) => account.isActive).length;
@@ -695,7 +686,6 @@ export function AdminManagedAccountsDashboard({
         accountType,
         usageMinutes: accountType === "personal" ? Number(usageMinutes) : 0,
         serviceAccessUntil: accountType === "personal" ? requestDate(serviceUntil) : null,
-        popularFilterEnabled: filterEnabled,
         customerEmail,
         paymentTitle,
         paymentItems: accountType === "enterprise"
@@ -711,7 +701,6 @@ export function AdminManagedAccountsDashboard({
       setCustomerEmail("");
       setPaymentTitle("이지컷 기업 결제 요청");
       setPaymentItems([newEnterpriseProduct(0, crypto.randomUUID())]);
-      setFilterEnabled(false);
       setCreatedPaymentPath(response.paymentPath || "");
       setMessage("발급 계정을 만들었습니다. 임시 비밀번호는 지금 안전하게 전달해 주세요.");
       router.refresh();
@@ -811,7 +800,9 @@ export function AdminManagedAccountsDashboard({
           </section>
         ) : null}
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Toggle checked={filterEnabled} onChange={setFilterEnabled} label="실시간 인기 필터도 허용" />
+          <p className="text-xs font-bold leading-5 text-violet-200/80">
+            발급 계정은 실시간 인기 필터·템플릿·편집·다운로드 등 유료 기능이 자동으로 허용됩니다.
+          </p>
           <button
             type="button"
             disabled={

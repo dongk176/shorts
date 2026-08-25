@@ -282,8 +282,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       account.manual_service_access_until > clock_timestamp()
         as has_manual_service_access,
       (
-        account.manual_service_access_until > clock_timestamp()
-        and exists (
+        exists (
           select 1
           from shorts_mvp.managed_login_accounts managed
           where managed.app_user_id=account.id

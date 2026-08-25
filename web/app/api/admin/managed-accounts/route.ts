@@ -22,7 +22,6 @@ const createSchema = z.object({
   displayName: z.string().trim().min(1).max(100),
   usageMinutes: z.number().int().min(0).max(100_000).default(0),
   serviceAccessUntil: z.string().datetime({ offset: true }).nullable().optional(),
-  popularFilterEnabled: z.boolean(),
   accountType: z.enum(MANAGED_ACCOUNT_TYPES).default("personal"),
   customerEmail: z.union([z.string().trim().email().max(100), z.literal("")]).optional(),
   paymentTitle: z.string().trim().min(1).max(100).default("이지컷 기업 결제 요청"),
@@ -141,11 +140,11 @@ export async function POST(request: NextRequest) {
       const accounts = await tx`
         insert into shorts_mvp.managed_login_accounts (
           create_request_id,auth_user_id,app_user_id,login_id,auth_email,
-          account_type,is_active,popular_filter_enabled,
+          account_type,is_active,
           created_by_user_id,updated_by_user_id
         ) values (
           ${body.requestId},${data.user.id},${appUserId},${loginId},${authEmail},
-          ${body.accountType},true,${body.popularFilterEnabled},${admin.id},${admin.id}
+          ${body.accountType},true,${admin.id},${admin.id}
         )
         returning id
       `;
@@ -189,7 +188,7 @@ export async function POST(request: NextRequest) {
             accountType: body.accountType,
             usageMinutes: body.accountType === "personal" ? body.usageMinutes : null,
             serviceAccessUntil: serviceAccessUntil?.toISOString() || null,
-            popularFilterEnabled: body.popularFilterEnabled,
+            paidFeaturesEnabled: true,
             enterprisePaymentRequestId: enterprisePaymentRequest?.id || null,
             enterprisePaymentItemCount: body.paymentItems.length,
           })}

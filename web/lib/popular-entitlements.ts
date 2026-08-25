@@ -35,10 +35,8 @@ export async function managedPopularFilterOverride(
   const rows = await db`
     select true as feature_access
     from shorts_mvp.managed_login_accounts managed
-    join shorts_mvp.app_users account on account.id=managed.app_user_id
     where managed.app_user_id=${userId}
       and managed.is_active=true
-      and account.manual_service_access_until>clock_timestamp()
     limit 1
   `;
   return rows[0] ? true : null;
@@ -66,7 +64,6 @@ export async function hasDirectPopularFilterAccess(
           from shorts_mvp.managed_login_accounts managed
           where managed.app_user_id=account.id
             and managed.is_active=true
-            and account.manual_service_access_until>clock_timestamp()
         )
       )
     limit 1

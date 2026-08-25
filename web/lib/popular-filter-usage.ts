@@ -72,7 +72,6 @@ export async function recordPopularFilterUsage(
             from shorts_mvp.managed_login_accounts managed
             where managed.app_user_id=account.id
               and managed.is_active=true
-              and account.manual_service_access_until>clock_timestamp()
           )
         )
       limit 1
