@@ -162,6 +162,7 @@ describe("billing summary", () => {
         purchasedPackageCodes: [],
         hasManualServiceAccess: true,
         hasManagedFeatureAccess: true,
+        managedMaxActiveJobs: 7,
       }],
       [],
     ];
@@ -176,7 +177,7 @@ describe("billing summary", () => {
       activeProducts: [],
       hasManagedFeatureAccess: true,
       canCreateJobs: true,
-      maxActiveJobs: 1,
+      maxActiveJobs: 7,
       retentionDays: 30,
     });
     const managedFeatureQuery = statements[0]
@@ -207,6 +208,45 @@ describe("billing summary", () => {
       canCreateJobs: true,
       maxActiveJobs: 1,
       retentionDays: 1,
+    });
+  });
+
+  it("uses the issued-account limit instead of a smaller active plan limit", async () => {
+    const activeStart = new Date("2026-01-01T00:00:00.000Z");
+    const activeEnd = new Date("2099-01-01T00:00:00.000Z");
+    const responses = [
+      [{
+        hasPaymentHistory: true,
+        purchasedPackageCodes: [],
+        hasManagedFeatureAccess: true,
+        managedMaxActiveJobs: 9,
+      }],
+      [{
+        status: "active",
+        planCode: "plus",
+        displayName: "Plus",
+        billingCycle: "monthly",
+        currentPeriodStart: activeStart,
+        currentPeriodEnd: activeEnd,
+        nextChargeAt: null,
+        cancelAtPeriodEnd: false,
+        scheduledPlanCode: null,
+        scheduledBillingCycle: null,
+        providerScheduleStatus: "none",
+        billingReviewStatus: "none",
+        monthlySourceSeconds: 6_000,
+        maxActiveJobs: 1,
+        retentionDays: 7,
+      }],
+    ];
+    const db = (async () => responses.shift() || []) as unknown as BillingDb;
+
+    const summary = await getBillingSummary(db, "user-managed-paid");
+
+    expect(summary).toMatchObject({
+      hasManagedFeatureAccess: true,
+      canCreateJobs: true,
+      maxActiveJobs: 9,
     });
   });
 

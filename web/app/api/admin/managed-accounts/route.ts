@@ -5,6 +5,11 @@ import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
 import { insertEnterpriseBillingRequest } from "@/lib/enterprise-billing";
 import { enterprisePaymentItemSchema } from "@/lib/enterprise-contract";
+import {
+  MANAGED_ACCOUNT_DEFAULT_ACTIVE_JOBS,
+  MANAGED_ACCOUNT_MAX_ACTIVE_JOBS,
+  MANAGED_ACCOUNT_MIN_ACTIVE_JOBS,
+} from "@/lib/managed-account-limits";
 import { MANAGED_ACCOUNT_TYPES } from "@/lib/managed-account-type";
 import {
   MANAGED_ACCOUNT_PRODUCT_CODE,
@@ -20,6 +25,10 @@ const createSchema = z.object({
   loginId: z.string().trim().min(3).max(32),
   temporaryPassword: z.string().min(10).max(128),
   displayName: z.string().trim().min(1).max(100),
+  maxActiveJobs: z.number().int()
+    .min(MANAGED_ACCOUNT_MIN_ACTIVE_JOBS)
+    .max(MANAGED_ACCOUNT_MAX_ACTIVE_JOBS)
+    .default(MANAGED_ACCOUNT_DEFAULT_ACTIVE_JOBS),
   usageMinutes: z.number().int().min(0).max(100_000).default(0),
   serviceAccessUntil: z.string().datetime({ offset: true }).nullable().optional(),
   accountType: z.enum(MANAGED_ACCOUNT_TYPES).default("personal"),
@@ -140,11 +149,11 @@ export async function POST(request: NextRequest) {
       const accounts = await tx`
         insert into shorts_mvp.managed_login_accounts (
           create_request_id,auth_user_id,app_user_id,login_id,auth_email,
-          account_type,is_active,
+          account_type,is_active,max_active_jobs,
           created_by_user_id,updated_by_user_id
         ) values (
           ${body.requestId},${data.user.id},${appUserId},${loginId},${authEmail},
-          ${body.accountType},true,${admin.id},${admin.id}
+          ${body.accountType},true,${body.maxActiveJobs},${admin.id},${admin.id}
         )
         returning id
       `;
@@ -189,6 +198,7 @@ export async function POST(request: NextRequest) {
             usageMinutes: body.accountType === "personal" ? body.usageMinutes : null,
             serviceAccessUntil: serviceAccessUntil?.toISOString() || null,
             paidFeaturesEnabled: true,
+            maxActiveJobs: body.maxActiveJobs,
             enterprisePaymentRequestId: enterprisePaymentRequest?.id || null,
             enterprisePaymentItemCount: body.paymentItems.length,
           })}

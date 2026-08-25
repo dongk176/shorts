@@ -3,6 +3,10 @@ import { z } from "zod";
 import { requireAdminUser } from "@/lib/admin";
 import { getDb } from "@/lib/db";
 import { apiError, HttpError } from "@/lib/http";
+import {
+  MANAGED_ACCOUNT_MAX_ACTIVE_JOBS,
+  MANAGED_ACCOUNT_MIN_ACTIVE_JOBS,
+} from "@/lib/managed-account-limits";
 import { assertSameOriginJsonRequest } from "@/lib/same-origin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -12,6 +16,9 @@ const updateSchema = z.object({
   requestId: z.string().uuid(),
   displayName: z.string().trim().min(1).max(100),
   isActive: z.boolean(),
+  maxActiveJobs: z.number().int()
+    .min(MANAGED_ACCOUNT_MIN_ACTIVE_JOBS)
+    .max(MANAGED_ACCOUNT_MAX_ACTIVE_JOBS),
   serviceAccessUntil: z.string().datetime({ offset: true }).nullable(),
 });
 
@@ -51,6 +58,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       const updated = await tx`
         update shorts_mvp.managed_login_accounts managed
         set is_active=${body.isActive},
+          max_active_jobs=${body.maxActiveJobs},
           updated_by_user_id=${admin.id}
         where managed.id=${accountId}
         returning app_user_id
@@ -76,6 +84,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
             displayName: body.displayName,
             isActive: body.isActive,
             paidFeaturesEnabled: true,
+            maxActiveJobs: body.maxActiveJobs,
             serviceAccessUntil: serviceAccessUntil?.toISOString() || null,
             requestId: body.requestId,
           })}

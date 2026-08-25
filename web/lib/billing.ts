@@ -10,6 +10,7 @@ import type {
 } from "@/lib/contracts";
 import { resolveStoredCardIssuer } from "@/lib/billing-card";
 import { HttpError } from "@/lib/http";
+import { resolveManagedAccountMaxActiveJobs } from "@/lib/managed-account-limits";
 import { ONBOARDING_WELCOME_PRODUCT_CODE } from "@/lib/onboarding-welcome";
 import { SHORTS_THANK_YOU_EVENT_PRODUCT_CODE } from "@/lib/shorts-thank-you-event";
 import { isPricingV2PackageCode } from "@/lib/pricing-v2";
@@ -289,6 +290,13 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
             and managed.is_active=true
         )
       ) as has_managed_feature_access,
+      coalesce((
+        select managed.max_active_jobs
+        from shorts_mvp.managed_login_accounts managed
+        where managed.app_user_id=account.id
+          and managed.is_active=true
+        limit 1
+      ),0) as managed_max_active_jobs,
       exists (
         select 1
         from shorts_mvp.usage_grants welcome_grant
@@ -353,6 +361,10 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
     const hasManualServiceAccess = Boolean(history?.hasManualServiceAccess);
     const hasOnboardingWelcomeAccess = Boolean(history?.hasOnboardingWelcomeAccess);
     const hasEnterpriseServiceAccess = Boolean(history?.hasEnterpriseServiceAccess);
+    const hasManagedFeatureAccess = Boolean(history?.hasManagedFeatureAccess);
+    const canCreateJobs = hasManualServiceAccess
+      || hasOnboardingWelcomeAccess
+      || hasEnterpriseServiceAccess;
     return {
       ...empty,
       hasPaymentHistory: Boolean(history?.hasPaymentHistory),
@@ -362,7 +374,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       purchasedPackageCodes: Array.isArray(history?.purchasedPackageCodes)
         ? history.purchasedPackageCodes.filter(isPricingV2PackageCode) as PaidPlanCode[]
         : [],
-      hasManagedFeatureAccess: Boolean(history?.hasManagedFeatureAccess),
+      hasManagedFeatureAccess,
       cardIssuer: resolveStoredCardIssuer({
         issuer: history?.defaultIssuerName || history?.defaultIssuerCode || null,
         cardNumberMasked: history?.defaultCardNumberMasked || null,
@@ -371,12 +383,12 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       cardLast4: history?.defaultCardLast4 || null,
       hasStoredPayerTel: Boolean(history?.defaultHasStoredPayerTel),
       paymentProvider: history?.defaultPaymentProvider || null,
-      canCreateJobs: hasManualServiceAccess
-        || hasOnboardingWelcomeAccess
-        || hasEnterpriseServiceAccess,
-      maxActiveJobs: hasManualServiceAccess
-        || hasOnboardingWelcomeAccess
-        || hasEnterpriseServiceAccess ? 1 : 0,
+      canCreateJobs,
+      maxActiveJobs: canCreateJobs
+        ? hasManagedFeatureAccess
+          ? resolveManagedAccountMaxActiveJobs(history?.managedMaxActiveJobs)
+          : 1
+        : 0,
       retentionDays: hasManualServiceAccess || hasEnterpriseServiceAccess ? 30 : 1,
     };
   }
@@ -391,6 +403,11 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
   const hasManualServiceAccess = Boolean(history?.hasManualServiceAccess);
   const hasOnboardingWelcomeAccess = Boolean(history?.hasOnboardingWelcomeAccess);
   const hasEnterpriseServiceAccess = Boolean(history?.hasEnterpriseServiceAccess);
+  const hasManagedFeatureAccess = Boolean(history?.hasManagedFeatureAccess);
+  const canCreateJobs = hasActivePaidAccess
+    || hasManualServiceAccess
+    || hasOnboardingWelcomeAccess
+    || hasEnterpriseServiceAccess;
   const activeProducts = rows.flatMap((activeRow) => {
     const isActiveStatus = activeRow.status === "active" || activeRow.status === "trialing";
     const isActivePeriod = activeRow.currentPeriodStart instanceof Date
@@ -418,7 +435,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       ? history.purchasedPackageCodes.filter(isPricingV2PackageCode) as PaidPlanCode[]
       : [],
     activeProducts,
-    hasManagedFeatureAccess: Boolean(history?.hasManagedFeatureAccess),
+    hasManagedFeatureAccess,
     status,
     planCode,
     billingCycle: row.billingCycle as BillingCycle | null,
@@ -444,15 +461,14 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
     paymentProvider: history?.defaultPaymentProvider || row.paymentProvider || null,
     providerScheduleStatus: row.providerScheduleStatus || "none",
     requiresManualReview: row.billingReviewStatus === "manual_review",
-    canCreateJobs: hasActivePaidAccess
-      || hasManualServiceAccess
-      || hasOnboardingWelcomeAccess
-      || hasEnterpriseServiceAccess,
-    maxActiveJobs: hasActivePaidAccess
-      ? Number(row.maxActiveJobs)
-      : hasManualServiceAccess || hasOnboardingWelcomeAccess || hasEnterpriseServiceAccess
-        ? 1
-        : 0,
+    canCreateJobs,
+    maxActiveJobs: canCreateJobs
+      ? hasManagedFeatureAccess
+        ? resolveManagedAccountMaxActiveJobs(history?.managedMaxActiveJobs)
+        : hasActivePaidAccess
+          ? Number(row.maxActiveJobs)
+          : 1
+      : 0,
     retentionDays: hasActivePaidAccess
       ? Number(row.retentionDays)
       : hasManualServiceAccess || hasEnterpriseServiceAccess

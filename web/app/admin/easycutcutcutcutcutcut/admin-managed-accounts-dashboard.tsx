@@ -12,6 +12,11 @@ import {
   type EnterpriseDurationUnit,
   type EnterpriseVatTreatment,
 } from "@/lib/enterprise-contract";
+import {
+  MANAGED_ACCOUNT_DEFAULT_ACTIVE_JOBS,
+  MANAGED_ACCOUNT_MAX_ACTIVE_JOBS,
+  MANAGED_ACCOUNT_MIN_ACTIVE_JOBS,
+} from "@/lib/managed-account-limits";
 
 export type AdminManagedAccount = {
   id: string;
@@ -20,6 +25,7 @@ export type AdminManagedAccount = {
   accountType: ManagedAccountType;
   displayName: string;
   isActive: boolean;
+  maxActiveJobs: number;
   serviceAccessUntil: string | null;
   usageTotalSeconds: number;
   usageConsumedSeconds: number;
@@ -416,6 +422,7 @@ function ManagedAccountCard({ account }: { account: AdminManagedAccount }) {
   const router = useRouter();
   const [displayName, setDisplayName] = useState(account.displayName);
   const [active, setActive] = useState(account.isActive);
+  const [maxActiveJobs, setMaxActiveJobs] = useState(String(account.maxActiveJobs));
   const [serviceUntil, setServiceUntil] = useState(localDateTime(account.serviceAccessUntil));
   const [usageMinutes, setUsageMinutes] = useState("60");
   const [usageUntil, setUsageUntil] = useState(
@@ -542,9 +549,25 @@ function ManagedAccountCard({ account }: { account: AdminManagedAccount }) {
           <div className="mt-3 grid gap-2">
             <Toggle checked={active} onChange={setActive} label="아이디 로그인 허용" />
           </div>
+          <label className="mt-3 block text-xs font-bold text-neutral-400">
+            동시 작업 한도
+            <input
+              type="number"
+              min={MANAGED_ACCOUNT_MIN_ACTIVE_JOBS}
+              max={MANAGED_ACCOUNT_MAX_ACTIVE_JOBS}
+              value={maxActiveJobs}
+              onChange={(event) => setMaxActiveJobs(event.target.value)}
+              className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff8c7c]/60"
+            />
+            <span className="mt-1.5 block text-[11px] font-normal text-neutral-600">한 계정에서 동시에 처리할 수 있는 프로젝트 수 · 1~10개</span>
+          </label>
           <button
             type="button"
-            disabled={busy !== null || !displayName.trim()}
+            disabled={busy !== null
+              || !displayName.trim()
+              || !Number.isInteger(Number(maxActiveJobs))
+              || Number(maxActiveJobs) < MANAGED_ACCOUNT_MIN_ACTIVE_JOBS
+              || Number(maxActiveJobs) > MANAGED_ACCOUNT_MAX_ACTIVE_JOBS}
             onClick={() => void perform("settings", () => send(
               `/api/admin/managed-accounts/${account.id}`,
               "PATCH",
@@ -552,6 +575,7 @@ function ManagedAccountCard({ account }: { account: AdminManagedAccount }) {
                 requestId: crypto.randomUUID(),
                 displayName,
                 isActive: active,
+                maxActiveJobs: Number(maxActiveJobs),
                 serviceAccessUntil: account.accountType === "personal"
                   ? requestDate(serviceUntil)
                   : null,
@@ -662,6 +686,9 @@ export function AdminManagedAccountsDashboard({
   const [usageMinutes, setUsageMinutes] = useState("120");
   const [serviceUntil, setServiceUntil] = useState(defaultExpiry);
   const [accountType, setAccountType] = useState<ManagedAccountType>("personal");
+  const [maxActiveJobs, setMaxActiveJobs] = useState(String(
+    MANAGED_ACCOUNT_DEFAULT_ACTIVE_JOBS,
+  ));
   const [customerEmail, setCustomerEmail] = useState("");
   const [paymentTitle, setPaymentTitle] = useState("이지컷 기업 결제 요청");
   const [paymentItems, setPaymentItems] = useState<EnterpriseProductDraft[]>([
@@ -684,6 +711,7 @@ export function AdminManagedAccountsDashboard({
         temporaryPassword: password,
         displayName,
         accountType,
+        maxActiveJobs: Number(maxActiveJobs),
         usageMinutes: accountType === "personal" ? Number(usageMinutes) : 0,
         serviceAccessUntil: accountType === "personal" ? requestDate(serviceUntil) : null,
         customerEmail,
@@ -698,6 +726,7 @@ export function AdminManagedAccountsDashboard({
       setUsageMinutes("120");
       setServiceUntil(defaultExpiry());
       setAccountType("personal");
+      setMaxActiveJobs(String(MANAGED_ACCOUNT_DEFAULT_ACTIVE_JOBS));
       setCustomerEmail("");
       setPaymentTitle("이지컷 기업 결제 요청");
       setPaymentItems([newEnterpriseProduct(0, crypto.randomUUID())]);
@@ -731,7 +760,7 @@ export function AdminManagedAccountsDashboard({
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-7">
           <label className="text-xs font-bold text-neutral-400">
             계정 구분
             <select
@@ -778,6 +807,17 @@ export function AdminManagedAccountsDashboard({
               className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none focus:border-[#ff8c7c]/60"
             />
           </label>
+          <label className="text-xs font-bold text-neutral-400">
+            동시 작업 한도
+            <input
+              type="number"
+              min={MANAGED_ACCOUNT_MIN_ACTIVE_JOBS}
+              max={MANAGED_ACCOUNT_MAX_ACTIVE_JOBS}
+              value={maxActiveJobs}
+              onChange={(event) => setMaxActiveJobs(event.target.value)}
+              className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none focus:border-[#ff8c7c]/60"
+            />
+          </label>
           {accountType === "personal" ? <>
             <label className="text-xs font-bold text-neutral-400">
               최초 처리시간(분)
@@ -810,6 +850,9 @@ export function AdminManagedAccountsDashboard({
               || loginId.length < 3
               || !displayName.trim()
               || password.length < 10
+              || !Number.isInteger(Number(maxActiveJobs))
+              || Number(maxActiveJobs) < MANAGED_ACCOUNT_MIN_ACTIVE_JOBS
+              || Number(maxActiveJobs) > MANAGED_ACCOUNT_MAX_ACTIVE_JOBS
               || (accountType === "personal" && (!serviceUntil || Number(usageMinutes) < 0))
               || (accountType === "enterprise" && (
                 !paymentTitle.trim()

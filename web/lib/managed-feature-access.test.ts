@@ -44,4 +44,20 @@ describe("administrator-issued account paid feature access", () => {
     expect(migration).toContain("set popular_filter_enabled=true");
     expect(migration).not.toMatch(/\bpublic\./i);
   });
+
+  it("lets administrators set a safe per-account concurrent job limit", () => {
+    const migration = source("supabase/migrations/202608260004_managed_account_max_active_jobs.sql");
+    const billing = source("web/lib/billing.ts");
+    const dashboard = source("web/app/admin/easycutcutcutcutcutcut/admin-managed-accounts-dashboard.tsx");
+    const createRoute = source("web/app/api/admin/managed-accounts/route.ts");
+    const updateRoute = source("web/app/api/admin/managed-accounts/[accountId]/route.ts");
+
+    expect(migration).toContain("set max_active_jobs=10");
+    expect(migration).toContain("check (max_active_jobs between 1 and 10)");
+    expect(migration).not.toMatch(/\bpublic\./i);
+    expect(billing).toContain("resolveManagedAccountMaxActiveJobs");
+    expect(dashboard).toContain("동시 작업 한도");
+    expect(createRoute).toContain("max_active_jobs");
+    expect(updateRoute).toContain("max_active_jobs=${body.maxActiveJobs}");
+  });
 });
