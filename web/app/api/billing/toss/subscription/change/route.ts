@@ -5,13 +5,13 @@ import { assertBillingMutationRequest } from "@/lib/billing-request";
 import { apiError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { changeTossSubscription } from "@/lib/toss-billing-service";
-import { isTossPlanCode, type TossPlanCode } from "@/lib/toss-subscription";
+import { isTossSalePlanCode, type TossPlanCode } from "@/lib/toss-subscription";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
-  targetPlanCode: z.string().refine(isTossPlanCode),
+  targetPlanCode: z.string().refine(isTossSalePlanCode),
   requestId: z.string().uuid().optional(),
 }).strict();
 

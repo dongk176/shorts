@@ -4,13 +4,13 @@ import { assertBillingMutationRequest, billingRequestOrigin } from "@/lib/billin
 import { apiError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { prepareTossCheckout } from "@/lib/toss-checkout";
-import { isTossPlanCode, type TossPlanCode } from "@/lib/toss-subscription";
+import { isTossSalePlanCode, type TossPlanCode } from "@/lib/toss-subscription";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
-  targetPlanCode: z.string().refine(isTossPlanCode),
+  targetPlanCode: z.string().refine(isTossSalePlanCode),
 }).strict();
 
 export async function POST(request: Request) {

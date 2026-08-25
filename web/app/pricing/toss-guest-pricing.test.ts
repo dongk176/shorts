@@ -39,34 +39,33 @@ describe("guest Toss pricing", () => {
     expect(tossSource).toContain("const loading = !state && !guestCatalog;");
   });
 
-  it("keeps the month picker but removes its visible payment-cycle label", () => {
-    expect(tossSource).not.toContain("<span>결제 주기</span>");
-    expect(tossSource).toContain('aria-label="구독 결제 주기"');
-    expect(tossSource).toContain('term === 1 ? "월간"');
-    expect(tossSource).toContain('term === 12 ? "연간"');
-    expect(tossSource).toContain('`${term}개월`');
+  it("fixes Pro to monthly and exposes only 3, 6, and 12 months for packages", () => {
+    expect(tossSource).toContain("const PACKAGE_TERMS = [3, 6, 12] as const");
+    expect(tossSource).toContain("<span>패키지 이용기간</span>");
+    expect(tossSource).toContain('aria-label="패키지 이용기간"');
+    expect(tossSource).toContain('? plan.contractMonths === 1');
+    expect(tossSource).not.toContain('term === 1 ? "월간"');
   });
 
-  it("keeps amounts out of the confirmation dialog and explains the Hana Card restriction", () => {
-    expect(tossSource).toContain("카드 등록과 결제 후 바로 시작됩니다.");
-    expect(tossSource).toContain("등록 카드 결제 후 바로 전환됩니다.");
-    expect(tossSource).not.toContain("카드 등록과 ${won(");
-    expect(tossSource).not.toContain("등록 카드로 ${selection.chargeAmountKrw");
+  it("keeps amounts and generic payment copy out of the dialog while showing plan performance", () => {
+    expect(tossSource).not.toContain("카드 등록과 결제 후 바로 시작됩니다.");
+    expect(tossSource).not.toContain("등록 카드 결제 후 바로 전환됩니다.");
+    expect(tossSource).not.toContain("chargeAmountKrw:");
+    expect(tossSource).toContain("styles.localPlanSummaryFeatures");
+    expect(tossSource).toContain("features(selection.plan).slice(0, 5)");
     expect(tossSource).toContain("!state.paymentRestrictions.hanaCardAvailable");
     expect(tossSource).toContain("하나카드는 아직 결제할 수 없어요");
   });
 
-  it("keeps plan prices balanced across mobile and desktop and enlarges checkout summaries", () => {
+  it("adds a desktop-only divider and readable checkout summaries", () => {
     expect(pricingStyles).toMatch(
-      /@media \(max-width: 900px\)[\s\S]*?\.localPlanCard \.planCta\s*\{\s*margin-top:\s*24px;/,
+      /@media \(min-width: 901px\)[\s\S]*?\.localPlanGrid::before\s*\{/,
     );
-    expect(pricingStyles).toMatch(/\.localDialogLead\s*\{[^}]*font-size:\s*15px;/);
-    expect(pricingStyles).toMatch(/\.localPlanSummaryCopy strong\s*\{[^}]*font-size:\s*16px;/);
-    expect(pricingStyles).toMatch(/\.localPlanTransitionItem strong\s*\{[^}]*font-size:\s*14px;/);
-    expect(pricingStyles).toMatch(/\.localPaymentNote\s*\{[^}]*font-size:\s*13px;/);
     expect(pricingStyles).toMatch(
-      /\.localPlanPrice strong\s*\{[^}]*font-size:\s*clamp\(2\.5rem,\s*4\.1vw,\s*2\.75rem\);/,
+      /\.localPlanSummaryFeatures\s*\{[^}]*font-size:\s*13px;/,
     );
+    expect(tossSource).not.toContain("styles.localDialogLead");
+    expect(tossSource).not.toContain("styles.localPaymentNote");
   });
 
   it("keeps the maximum-discount badge the same size as the best-value badge", () => {

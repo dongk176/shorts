@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useUsageState } from "@/components/usage-provider";
 import type { TossBillingState } from "@/lib/toss-billing-state";
-import type { TossCatalogPlan, TossContractMonths } from "@/lib/toss-subscription";
+import type { TossCatalogPlan } from "@/lib/toss-subscription";
 import styles from "./pricing.module.css";
 
 declare global {
@@ -28,11 +28,12 @@ type DialogAction = "subscribe" | "immediate" | "scheduled" | "cancel_pending";
 type Selection = {
   plan: TossCatalogPlan;
   action: DialogAction;
-  chargeAmountKrw: number | null;
 };
 type ApiError = { detail?: string; message?: string; code?: string };
 
 const TIER_ORDER = { easycut_pro: 0, starter: 1, expert: 2 } as const;
+const PACKAGE_TERMS = [3, 6, 12] as const;
+type PackageTerm = (typeof PACKAGE_TERMS)[number];
 
 function won(value: number) {
   return new Intl.NumberFormat("ko-KR").format(value);
@@ -83,7 +84,9 @@ function features(plan: TossCatalogPlan) {
   const minutes = Math.round(plan.monthlyQuotaSeconds / 60);
   return [
     `매월 ${minutes}분 원본 영상 처리`,
-    `쇼츠 약 ${Math.round(minutes * 0.8 * plan.contractMonths)}개 · ${plan.contractMonths}개월`,
+    plan.tier === "easycut_pro"
+      ? `쇼츠 매월 약 ${Math.round(minutes * 0.8)}개`
+      : `쇼츠 약 ${Math.round(minutes * 0.8 * plan.contractMonths)}개 · ${plan.contractMonths}개월`,
     `동시 작업 ${plan.maxActiveJobs}개`,
     "프로젝트 30일 보관",
     "실시간 인기 필터 제공",
@@ -95,14 +98,6 @@ function subtitle(plan: TossCatalogPlan) {
   if (plan.tier === "easycut_pro") return "핵심 기능을 가볍게 시작하는 플랜";
   if (plan.tier === "starter") return "꾸준한 제작을 위한 넉넉한 플랜";
   return "대량 제작과 운영을 위한 최대 플랜";
-}
-
-function capabilitySummary(plan: TossCatalogPlan) {
-  return [
-    `매월 ${Math.floor(plan.monthlyQuotaSeconds / 60)}분`,
-    `동시 작업 ${plan.maxActiveJobs}개`,
-    `가이드북 ${plan.guidebookIncluded ? "포함" : "미포함"}`,
-  ].join(" · ");
 }
 
 function mobileOrderClass(plan: TossCatalogPlan) {
@@ -123,7 +118,7 @@ export function TossPricingClient({
   const router = useRouter();
   const { refreshUsage } = useUsageState();
   const [state, setState] = useState(initialState);
-  const [months, setMonths] = useState<TossContractMonths>(6);
+  const [months, setMonths] = useState<PackageTerm>(6);
   const [sdkReady, setSdkReady] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [consent, setConsent] = useState(false);
@@ -163,7 +158,9 @@ export function TossPricingClient({
   }, [busy, result, selection]);
 
   const plans = useMemo(() => (state?.catalog ?? guestCatalog ?? [])
-    .filter((plan) => plan.contractMonths === months)
+    .filter((plan) => plan.tier === "easycut_pro"
+      ? plan.contractMonths === 1
+      : plan.contractMonths === months)
     .sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]), [guestCatalog, months, state]);
   const loading = !state && !guestCatalog;
 
@@ -176,7 +173,7 @@ export function TossPricingClient({
     setError(null);
     setConsent(false);
     if (state.subscription?.scheduledPlan?.code === plan.code) {
-      setSelection({ plan, action: "cancel_pending", chargeAmountKrw: null });
+      setSelection({ plan, action: "cancel_pending" });
       return;
     }
     if (state.subscription?.plan.code === plan.code) return;
@@ -184,13 +181,7 @@ export function TossPricingClient({
     const action = !state.subscription
       ? "subscribe"
       : quote?.action === "immediate" ? "immediate" : "scheduled";
-    setSelection({
-      plan,
-      action,
-      chargeAmountKrw: action === "immediate"
-        ? quote?.chargeAmountKrw ?? null
-        : plan.priceKrw,
-    });
+    setSelection({ plan, action });
   }
 
   async function confirm() {
@@ -285,9 +276,21 @@ export function TossPricingClient({
 
       {error ? <div className={styles.localError} role="alert">{error}</div> : null}
 
+      {state?.subscription?.plan.tier === "easycut_pro"
+      && state.subscription.plan.contractMonths !== 1 ? (
+        <section className={styles.localLegacyNotice} aria-label="기존 이지컷 프로 계약 안내">
+          <strong>이지컷 프로 {state.subscription.plan.contractMonths}개월 기존 계약 이용 중</strong>
+          <p>
+            기존 계약은 현재 조건과 결제 금액으로 계속 유지됩니다. 월간 이지컷 프로를 선택하면
+            {" "}{date(state.subscription.currentPeriodEnd)}부터 월간 계약으로 변경 예약됩니다.
+          </p>
+        </section>
+      ) : null}
+
       <div className={`${styles.planToolbar} ${styles.localPlanToolbar}`}>
-        <div className={`${styles.packageTermPicker} ${styles.localTermPicker}`} role="group" aria-label="구독 결제 주기">
-          {([1, 6, 12] as const).map((term) => (
+        <span>패키지 이용기간</span>
+        <div className={`${styles.packageTermPicker} ${styles.localTermPicker}`} role="group" aria-label="패키지 이용기간">
+          {PACKAGE_TERMS.map((term) => (
             <button
               key={term}
               type="button"
@@ -295,7 +298,7 @@ export function TossPricingClient({
               className={months === term ? styles.packageTermActive : ""}
               onClick={() => setMonths(term)}
             >
-              {term === 1 ? "월간" : term === 12 ? "연간" : `${term}개월`}
+              {term}개월
             </button>
           ))}
         </div>
@@ -304,7 +307,7 @@ export function TossPricingClient({
       <section
         id="pricing-plans"
         className={`pricing-grid ${styles.localPlanGrid}`}
-        aria-label={`${months}개월 정기 구독 요금제`}
+        aria-label="정기 구독 요금제"
         aria-busy={loading}
       >
         {loading && ["pro", "starter", "expert"].map((plan) => (
@@ -357,7 +360,11 @@ export function TossPricingClient({
               <div className={`pricing-price ${styles.localPlanPrice}`}>
                 <strong>₩{won(plan.monthlyEquivalentKrw)}</strong><span>/월</span>
               </div>
-              <p className="pricing-billing">{plan.contractMonths}개월 총 ₩{won(plan.priceKrw)}</p>
+              <p className="pricing-billing">
+                {plan.tier === "easycut_pro"
+                  ? "월간 정기결제"
+                  : `${plan.contractMonths}개월마다 정기결제 · 총 ₩${won(plan.priceKrw)}`}
+              </p>
               <ul>
                 {features(plan).map((feature, index) => (
                   <li key={feature} className={index === 5 && !plan.guidebookIncluded ? "pricing-feature-unavailable" : ""}>
@@ -404,15 +411,6 @@ export function TossPricingClient({
               <button type="button" aria-label="닫기" disabled={busy} onClick={() => setSelection(null)}>×</button>
             </div>
             <div className={styles.localDialogBody}>
-              <p className={styles.localDialogLead}>
-                {selection.action === "cancel_pending"
-                  ? `${selection.plan.displayName} 플랜 변경 예약을 취소할까요?`
-                  : selection.action === "scheduled" && state.subscription
-                    ? `${selection.plan.displayName} 플랜으로 전환할까요?`
-                    : selection.action === "subscribe"
-                      ? `${selection.plan.displayName} 플랜 구독을 시작할까요?`
-                      : `${selection.plan.displayName} 플랜으로 전환할까요?`}
-              </p>
               {selection.action === "cancel_pending" ? (
                 <div className={styles.localPlanSummary}>
                   <div className={styles.localPlanSummaryCopy}>
@@ -420,37 +418,26 @@ export function TossPricingClient({
                     <span>예약을 취소하면 현재 플랜이 그대로 유지됩니다.</span>
                   </div>
                 </div>
-              ) : state.subscription ? (
-                <div className={styles.localPlanTransition}>
-                  <div className={styles.localPlanTransitionItem}>
-                    <small>현재</small>
-                    <strong>{state.subscription.plan.displayName} {state.subscription.plan.contractMonths}개월</strong>
-                    <span>{capabilitySummary(state.subscription.plan)}</span>
-                  </div>
-                  <span className={styles.localPlanTransitionArrow} aria-hidden="true">→</span>
-                  <div className={`${styles.localPlanTransitionItem} ${styles.localPlanTransitionNext}`}>
-                    <small>{selection.action === "scheduled" ? "다음 플랜" : "변경 후"}</small>
-                    <strong>{selection.plan.displayName} {selection.plan.contractMonths}개월</strong>
-                    <span>{capabilitySummary(selection.plan)}</span>
-                  </div>
-                </div>
               ) : (
                 <div className={styles.localPlanSummary}>
                   <div className={styles.localPlanSummaryCopy}>
-                    <strong>{selection.plan.displayName} {selection.plan.contractMonths}개월</strong>
-                    <span>{capabilitySummary(selection.plan)}</span>
+                    <strong>{selection.plan.displayName}</strong>
+                    {selection.action === "scheduled" && state.subscription ? (
+                      <span>현재 구독 종료 후 적용됩니다</span>
+                    ) : null}
+                    <ul className={styles.localPlanSummaryFeatures}>
+                      {features(selection.plan).slice(0, 5).map((feature, index) => (
+                        <li key={feature}>
+                          <span>✓</span>
+                          <span>{index === 0
+                            ? <><strong>{feature.replace(" 원본 영상 처리", "")}</strong> 원본 영상 처리</>
+                            : feature}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 </div>
               )}
-              {selection.action !== "cancel_pending" ? (
-                <p className={styles.localPaymentNote}>
-                  {selection.action === "scheduled" && state.subscription
-                    ? `${date(state.subscription.currentPeriodEnd)} 등록 카드 결제 후 시작됩니다.`
-                    : selection.action === "immediate"
-                      ? "등록 카드 결제 후 바로 전환됩니다."
-                      : "카드 등록과 결제 후 바로 시작됩니다."}
-                </p>
-              ) : null}
               {selection.action === "subscribe" && !state.paymentRestrictions.hanaCardAvailable ? (
                 <aside className={styles.localCardRestriction} aria-label="결제 가능 카드 안내">
                   <strong>하나카드는 아직 결제할 수 없어요</strong>
@@ -480,7 +467,7 @@ export function TossPricingClient({
                   : selection.action === "cancel_pending"
                     ? "예약 취소"
                     : selection.action === "subscribe"
-                      ? "구독 확인"
+                      ? "시작하기"
                       : selection.action === "scheduled"
                         ? "변경 예약"
                         : "전환 확인"}

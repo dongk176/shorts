@@ -3,7 +3,7 @@ import { assertPersistedTossBillingCustomer } from "@/lib/billing-cohort";
 import { getDb } from "@/lib/db";
 import type { MvpSession } from "@/lib/session";
 import { loadTossBillingRuntimeState } from "@/lib/toss-billing-runtime";
-import { TOSS_PLAN_CATALOG, classifyTossSubscriptionChange, quoteImmediateTossChange, tossPlan, type TossPlanCode } from "@/lib/toss-subscription";
+import { TOSS_SALE_PLAN_CATALOG, classifyTossSubscriptionChange, quoteImmediateTossChange, tossPlan, type TossPlanCode } from "@/lib/toss-subscription";
 import { getUsageSnapshot } from "@/lib/usage";
 
 type StateSubscriptionRow = {
@@ -22,7 +22,7 @@ type StateSubscriptionRow = {
 };
 
 export function publicTossCatalog() {
-  return TOSS_PLAN_CATALOG.map((plan) => ({ ...plan }));
+  return TOSS_SALE_PLAN_CATALOG.map((plan) => ({ ...plan }));
 }
 
 export async function getTossBillingState(input: {

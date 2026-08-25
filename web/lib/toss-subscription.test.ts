@@ -1,25 +1,36 @@
 import { describe, expect, it } from "vitest";
 import {
   TOSS_PLAN_CATALOG,
+  TOSS_SALE_PLAN_CATALOG,
   classifyTossSubscriptionChange,
+  isTossPlanCode,
+  isTossSalePlanCode,
   quoteImmediateTossChange,
   tossPlan,
 } from "@/lib/toss-subscription";
 
 describe("Toss subscription catalog", () => {
-  it("contains only the approved 1, 6, and 12 month prices", () => {
-    expect(TOSS_PLAN_CATALOG.map((plan) => [plan.code, plan.priceKrw])).toEqual([
+  it("sells only Pro monthly and the exact 3, 6, and 12 month package totals", () => {
+    expect(TOSS_SALE_PLAN_CATALOG.map((plan) => [plan.code, plan.priceKrw])).toEqual([
       ["toss_easycut_pro_1m", 9_900],
-      ["toss_easycut_pro_6m", 53_400],
-      ["toss_easycut_pro_12m", 82_800],
-      ["toss_starter_1m", 24_900],
+      ["toss_starter_3m", 70_965],
       ["toss_starter_6m", 119_400],
-      ["toss_starter_12m", 178_800],
-      ["toss_expert_1m", 59_000],
-      ["toss_expert_6m", 247_800],
-      ["toss_expert_12m", 354_000],
+      ["toss_starter_12m", 198_000],
+      ["toss_expert_3m", 147_000],
+      ["toss_expert_6m", 288_000],
+      ["toss_expert_12m", 432_000],
     ]);
-    expect(Math.max(...TOSS_PLAN_CATALOG.map((plan) => plan.priceKrw))).toBeLessThanOrEqual(432_000);
+    expect(Math.max(...TOSS_SALE_PLAN_CATALOG.map((plan) => plan.priceKrw))).toBe(432_000);
+  });
+
+  it("keeps legacy EasyCut Pro contracts readable and renewable without selling them again", () => {
+    expect(isTossPlanCode("toss_easycut_pro_6m")).toBe(true);
+    expect(isTossPlanCode("toss_easycut_pro_12m")).toBe(true);
+    expect(tossPlan("toss_easycut_pro_6m").priceKrw).toBe(53_400);
+    expect(isTossSalePlanCode("toss_easycut_pro_6m")).toBe(false);
+    expect(isTossSalePlanCode("toss_easycut_pro_12m")).toBe(false);
+    expect(isTossSalePlanCode("toss_starter_1m")).toBe(false);
+    expect(isTossSalePlanCode("toss_expert_1m")).toBe(false);
   });
 
   it("uses total contract value to choose immediate versus scheduled changes", () => {
@@ -37,7 +48,7 @@ describe("Toss subscription catalog", () => {
     })).toBe("scheduled");
   });
 
-  it("classifies all 81 plan-change combinations consistently", () => {
+  it("classifies all plan-change combinations with the production total-value rule", () => {
     const counts = { unchanged: 0, immediate: 0, scheduled: 0 };
     for (const current of TOSS_PLAN_CATALOG) {
       for (const target of TOSS_PLAN_CATALOG) {
@@ -55,7 +66,7 @@ describe("Toss subscription catalog", () => {
         }
       }
     }
-    expect(counts).toEqual({ unchanged: 9, immediate: 36, scheduled: 36 });
+    expect(counts).toEqual({ unchanged: 11, immediate: 55, scheduled: 55 });
   });
 
   it("charges only the contract-value difference for an immediate change at period start", () => {
