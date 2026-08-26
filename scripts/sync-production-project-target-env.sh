@@ -19,10 +19,8 @@ command -v vercel >/dev/null 2>&1 || {
 }
 
 live_project_file="$(mktemp)"
-value_file="$(mktemp)"
-pulled_file="$(mktemp)"
 registry_env_file="$(mktemp)"
-trap 'rm -f "$live_project_file" "$value_file" "$pulled_file" "$registry_env_file"' EXIT
+trap 'rm -f "$live_project_file" "$registry_env_file"' EXIT
 
 cd "$ROOT/web"
 vercel whoami --scope "$VERCEL_TEAM_SLUG" >/dev/null
@@ -79,19 +77,19 @@ for name in "${target_names[@]}"; do
     echo "registry에서 필수 Vercel 대상 값을 찾을 수 없습니다: $name" >&2
     exit 2
   fi
-  printf '%s' "$value" > "$value_file"
   vercel env add "$name" production \
     --force \
-    --scope "$VERCEL_TEAM_SLUG" < "$value_file" >/dev/null
+    --yes \
+    --value "$value" \
+    --scope "$VERCEL_TEAM_SLUG" >/dev/null
 done
 
-vercel env pull "$pulled_file" \
-  --yes \
-  --environment production \
-  --scope "$VERCEL_TEAM_SLUG" >/dev/null
+node "$ROOT/scripts/verify-vercel-project-target-env-metadata.mjs" \
+  --project "$VERCEL_PROJECT_NAME" \
+  --scope "$VERCEL_TEAM_SLUG" \
+  --registry "$REGISTRY_FILE"
 
 node "$ROOT/scripts/verify-project-batch-targets.mjs" \
-  --env "$pulled_file" \
   --registry "$REGISTRY_FILE" \
   --lambda-function "$BATCH_SUBMITTER_FUNCTION_NAME" \
   --region "$AWS_REGION"

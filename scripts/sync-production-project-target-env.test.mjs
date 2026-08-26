@@ -33,8 +33,13 @@ test("syncs only the exact fifteen production project target variables", () => {
   for (const name of names) assert.match(source, new RegExp(`\\n  ${name}\\n`));
   assert.match(source, /for name in "\$\{target_names\[@\]\}"/);
   assert.match(source, /vercel env add "\$name" production/);
+  assert.match(source, /--value "\$value"/);
+  assert.match(source, /--yes/);
+  assert.doesNotMatch(source, /--no-sensitive/);
+  assert.doesNotMatch(source, /< "\$value_file"/);
   assert.match(source, /verify-production-worker-release\.mjs/);
   assert.match(source, /verify-project-batch-targets\.mjs/);
+  assert.match(source, /verify-vercel-project-target-env-metadata\.mjs/);
   assert.match(source, /vercel api "\/v9\/projects\/\$VERCEL_PROJECT_NAME"/);
   assert.match(source, /verify-vercel-project-link\.mjs/);
   assert.match(source, /registry_env_file="\$\(mktemp\)"/);
