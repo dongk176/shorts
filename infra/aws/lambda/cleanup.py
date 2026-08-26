@@ -11,6 +11,20 @@ from common import iso_now, log_event, patch, rest
 s3 = boto3.client("s3")
 batch = boto3.client("batch")
 bucket = os.environ["MEDIA_BUCKET"]
+STALE_HEARTBEAT_GRACE = timedelta(minutes=15)
+
+
+def _has_recent_heartbeat(job: dict[str, Any], now: datetime) -> bool:
+    raw_heartbeat = str(job.get("heartbeat_at") or "").strip()
+    if not raw_heartbeat:
+        return False
+    try:
+        heartbeat = datetime.fromisoformat(raw_heartbeat.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if heartbeat.tzinfo is None:
+        return False
+    return heartbeat >= now - STALE_HEARTBEAT_GRACE
 
 
 def _delete_keys(keys: list[str]) -> int:
@@ -106,7 +120,8 @@ def cleanup_failed_shorts() -> tuple[int, int]:
 
 
 def release_stale_jobs() -> int:
-    cutoff = urllib.parse.quote((datetime.now(UTC) - timedelta(hours=2)).isoformat(), safe="")
+    now = datetime.now(UTC)
+    cutoff = urllib.parse.quote((now - timedelta(hours=2)).isoformat(), safe="")
     terminal = "(completed,failed,expired,deleted)"
     jobs = rest(
         "video_jobs",
@@ -118,6 +133,11 @@ def release_stale_jobs() -> int:
     ) or []
     released = 0
     for job in jobs:
+        # Created-at is only the candidate scan bound. A worker that still
+        # reports a recent heartbeat is active even when a recovery submission
+        # replaced an older terminal Batch id.
+        if _has_recent_heartbeat(job, now):
+            continue
         if (
             job.get("execution_backend") == "mac_pull"
             and job.get("status") == "queued"

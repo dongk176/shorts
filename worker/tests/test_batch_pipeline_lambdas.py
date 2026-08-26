@@ -411,6 +411,43 @@ def test_stale_rerender_cleanup_releases_v2_request_and_snapshot() -> None:
     assert patches[1][2]["pending_edit_request_id"] is None
 
 
+def test_stale_job_cleanup_preserves_a_recent_worker_heartbeat() -> None:
+    module, batch = _load_lambda("cleanup")
+    module.rest = MagicMock(return_value=[{
+        "id": "job-active",
+        "aws_batch_job_id": "old-terminal-batch",
+        "status": "extracting",
+        "heartbeat_at": datetime.now(UTC).isoformat(),
+        "created_at": (datetime.now(UTC) - timedelta(hours=3)).isoformat(),
+        "execution_backend": "aws_batch",
+        "claimed_at": None,
+        "pipeline_version": 2,
+    }])
+
+    assert module.release_stale_jobs() == 0
+    batch.describe_jobs.assert_not_called()
+    assert all(
+        call.args[0] != "rpc/finalize_project_job"
+        for call in module.rest.call_args_list
+    )
+
+
+def test_recent_heartbeat_requires_a_valid_timezone_aware_timestamp() -> None:
+    module, _ = _load_lambda("cleanup")
+    now = datetime.now(UTC)
+
+    assert module._has_recent_heartbeat(
+        {"heartbeat_at": (now - timedelta(minutes=14)).isoformat()}, now
+    )
+    assert not module._has_recent_heartbeat(
+        {"heartbeat_at": (now - timedelta(minutes=16)).isoformat()}, now
+    )
+    assert not module._has_recent_heartbeat({"heartbeat_at": "not-a-time"}, now)
+    assert not module._has_recent_heartbeat(
+        {"heartbeat_at": datetime.now().replace(tzinfo=None).isoformat()}, now
+    )
+
+
 def test_failed_short_cleanup_deletes_versions_before_marking_deleted() -> None:
     module, _ = _load_lambda("cleanup")
     item = {
