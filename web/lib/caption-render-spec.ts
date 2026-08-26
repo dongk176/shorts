@@ -6,7 +6,7 @@ import {
 
 // libass renders Pretendard's ASS `fs` smaller than browsers render the same
 // numeric CSS font-size. This measured calibration keeps the V3 editor preview
-// glyph bounds (and therefore the fixed-center word gaps) aligned to FFmpeg.
+// phrase bounds aligned to FFmpeg while both renderers shape normal spaces.
 export const CAPTION_ASS_PREVIEW_FONT_SCALE = 0.84 as const;
 
 const finiteNumber = z.number().finite();

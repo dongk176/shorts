@@ -637,7 +637,7 @@ def test_overlapping_fast_pop_groups_are_serialized_without_failing() -> None:
     )
 
 
-def test_pop_uses_two_frame_ease_and_event_specific_word_positions(tmp_path: Path) -> None:
+def test_pop_uses_two_frame_ease_but_libass_shapes_one_phrase(tmp_path: Path) -> None:
     spec = _compile(
         [
             _word("pop", 0.0, 0.15),
@@ -656,9 +656,92 @@ def test_pop_uses_two_frame_ease_and_event_specific_word_positions(tmp_path: Pat
     assert event_positions[0] != event_positions[1]
     ass = create_caption_ass(spec, tmp_path / "pop.ass").read_text(encoding="utf-8")
     assert r"\t(0,67,\fscx112\fscy112)" in ass
-    for positions in event_positions:
-        for x, y in positions:
-            assert f"\\pos({x},{y})" in ass
+    dialogues = [line for line in ass.splitlines() if line.startswith("Dialogue:")]
+    assert len(dialogues) == len(cue["events"])
+    assert all("pop" in line and " caption" in line for line in dialogues)
+    assert all(line.count(r"\pos(") == 1 for line in dialogues)
+    assert all(r"\pos(540.0," in line for line in dialogues)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is required")
+def test_paperlogy_uses_its_bundled_face_and_phrase_spacing(tmp_path: Path) -> None:
+    spec = compile_caption_render_spec(
+        [
+            _word("bar", 0.0, 0.3),
+            _word("hanging", 0.3, 0.6, space_before=True),
+            _word("over", 0.6, 0.9, space_before=True),
+        ],
+        template_id="pop",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        font_id=EditorFontId.PAPERLOGY,
+        font_size=56,
+        caption_center_y=1391,
+        caption_max_width=840,
+    )
+    ass_path = create_caption_ass(spec, tmp_path / "paperlogy-pop.ass")
+    ass = ass_path.read_text(encoding="utf-8")
+    dialogues = [line for line in ass.splitlines() if line.startswith("Dialogue:")]
+    assert len(dialogues) == 3
+    assert all(r"\fnPaperlogy 7 Bold" in line for line in dialogues)
+    assert all("bar" in line and " hanging" in line and " over" in line for line in dialogues)
+
+    font_directory = prepare_caption_fonts(tmp_path / "fonts", spec)
+    frame_path = tmp_path / "paperlogy-pop.png"
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "verbose",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=black:size=1080x1920:rate=30:duration=0.1",
+            "-vf",
+            f"subtitles=filename='{ass_path}':fontsdir='{font_directory}'",
+            "-frames:v",
+            "1",
+            str(frame_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "XDG_CACHE_HOME": str(tmp_path / "font-cache")},
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    font_lines = [line for line in result.stderr.splitlines() if "fontselect" in line]
+    assert font_lines, result.stderr[-2000:]
+    assert any("Paperlogy 7 Bold" in line for line in font_lines), font_lines
+    assert not any("Helvetica" in line for line in font_lines), font_lines
+    with Image.open(frame_path).convert("RGB") as image:
+        bounds = ImageChops.difference(
+            image,
+            Image.new("RGB", image.size, "black"),
+        ).getbbox()
+        assert bounds is not None
+        crop = image.crop(bounds)
+        visible_columns = [
+            any(
+                max(crop.getpixel((x, y))) > 50
+                for y in range(crop.height)
+            )
+            for x in range(crop.width)
+        ]
+    assert bounds is not None
+    assert bounds[2] - bounds[0] < 470
+    blank_runs: list[int] = []
+    run_start: int | None = None
+    for index, visible in enumerate([*visible_columns, True]):
+        if not visible and run_start is None:
+            run_start = index
+        elif visible and run_start is not None:
+            if run_start > 0 and index < len(visible_columns):
+                blank_runs.append(index - run_start)
+            run_start = None
+    assert max(blank_runs, default=0) <= 18
 
 
 def test_project_3272_pop_phrase_stays_tight_while_active_word_changes() -> None:

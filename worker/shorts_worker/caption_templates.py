@@ -59,6 +59,14 @@ CAPTION_FONT_FAMILIES = {
     EditorFontId.GALMURI_9: "Galmuri9",
     EditorFontId.PAPERLOGY: "Paperlogy",
 }
+# Stored render specs keep the public family snapshot above for backward
+# compatibility.  libass/fontconfig, however, identifies Paperlogy's bundled
+# static face by its full internal family name.  Use that exact render-only
+# name so existing specs remain valid while FFmpeg never falls back to an
+# unrelated system font.
+CAPTION_ASS_FONT_FAMILIES = {
+    EditorFontId.PAPERLOGY: "Paperlogy 7 Bold",
+}
 _CAPTION_FONT_CONTEXT: ContextVar[EditorFontId] = ContextVar(
     "caption_font_id",
     default=CAPTION_DEFAULT_FONT_ID,
@@ -1691,6 +1699,10 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
     accent_color = str(style.get("accentColor") or CAPTION_ACCENT)
     outline_color = str(style.get("outlineColor") or CAPTION_OUTLINE)
     ass_bold = -1 if int(font["weight"]) >= 700 else 0
+    ass_font_family = CAPTION_ASS_FONT_FAMILIES.get(
+        font_id,
+        str(font["family"]),
+    )
     dialogues: list[str] = []
     for cue in spec.get("cues") or []:
         words = list(cue.get("words") or [])
@@ -1715,16 +1727,27 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
                         )
                     except (KeyError, TypeError, ValueError) as exc:
                         raise RenderError("팝 자막 안전영역이 올바르지 않습니다.") from exc
+                if any(not isinstance(position, dict) for position in positions):
+                    raise RenderError("팝 자막 위치가 올바르지 않습니다.")
+                safe_area = spec.get("safeArea")
+                if not isinstance(safe_area, dict):
+                    raise RenderError("팝 자막 안전영역이 올바르지 않습니다.")
+                try:
+                    center_x = round(
+                        float(safe_area["x"]) + float(safe_area["width"]) / 2,
+                        3,
+                    )
+                    center_y = round(float(positions[0]["centerY"]), 3)
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise RenderError("팝 자막 위치가 올바르지 않습니다.") from exc
                 ease_frames = max(0, int(cue.get("easeFrames") or 0))
                 ease_milliseconds = round(ease_frames / fps * 1000)
                 event_frames = max(
                     1,
                     int(event["endFrame"]) - int(event["startFrame"]),
                 )
+                phrase = ""
                 for word_index, word in enumerate(words):
-                    position = positions[word_index]
-                    if not isinstance(position, dict):
-                        raise RenderError("팝 자막 위치가 올바르지 않습니다.")
                     scale = 100
                     color = accent_color if word_index == active_index else text_color
                     ease = ""
@@ -1738,20 +1761,34 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
                             scale = 112
                         else:
                             ease = f"\\t(0,{ease_milliseconds},\\fscx112\\fscy112)"
-                    tags = (
-                        f"\\an5\\pos({position['centerX']},{position['centerY']})"
-                        f"\\fn{font['family']}\\fs{word['fontSize']}"
+                    word_tags = (
+                        f"\\fn{ass_font_family}\\fs{word['fontSize']}"
                         f"\\fscx{scale}\\fscy{scale}"
-                        f"\\bord{style['outlineWidth']}\\shad0"
                         f"\\1c{_ass_color(color)}\\3c{_ass_color(outline_color)}"
                         f"{ease}"
                     )
-                    dialogues.append(
-                        "Dialogue: 0,"
-                        f"{_ass_timestamp(int(event['startFrame']), fps)},"
-                        f"{_ass_timestamp(int(event['endFrame']), fps)},"
-                        f"Default,,0,0,0,,{{{tags}}}{_ass_escape(str(word['text']))}"
+                    # Put the separator under the following word's explicit
+                    # style reset. This keeps it a regular space even while
+                    # the preceding active word is being enlarged.
+                    prefix = (
+                        CAPTION_HIGHLIGHT_WORD_SEPARATOR
+                        if word_index and word.get("spaceBefore")
+                        else ""
                     )
+                    phrase += (
+                        f"{{{word_tags}}}{prefix}{_ass_escape(str(word['text']))}"
+                    )
+                tags = (
+                    f"\\an5\\pos({center_x},{center_y})"
+                    f"\\fn{ass_font_family}\\bord{style['outlineWidth']}\\shad0"
+                    f"\\1c{_ass_color(text_color)}\\3c{_ass_color(outline_color)}"
+                )
+                dialogues.append(
+                    "Dialogue: 0,"
+                    f"{_ass_timestamp(int(event['startFrame']), fps)},"
+                    f"{_ass_timestamp(int(event['endFrame']), fps)},"
+                    f"Default,,0,0,0,,{{{tags}}}{phrase}"
+                )
             continue
         for event in events:
             active_index = (
@@ -1774,7 +1811,7 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
             ]
             tags = (
                 f"\\an5\\pos({cue['centerX']},{cue['centerY']})"
-                f"\\fn{font['family']}\\fs{cue['fontSize']}"
+                f"\\fn{ass_font_family}\\fs{cue['fontSize']}"
                 f"\\fscx{cue.get('scaleX', 100)}\\fscy100"
                 f"\\bord{style['outlineWidth']}\\shad0"
                 f"\\1c{_ass_color(text_color)}\\3c{_ass_color(outline_color)}"
@@ -1803,7 +1840,7 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
             "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
             "Alignment, MarginL, MarginR, MarginV, Encoding",
             (
-                f"Style: Default,{font['family']},72,{_ass_color(text_color)},"
+                f"Style: Default,{ass_font_family},72,{_ass_color(text_color)},"
                 f"{_ass_color(text_color)},{_ass_color(outline_color)},&HFF000000,"
                 f"{ass_bold},0,0,0,100,100,0,0,1,0,0,5,0,0,0,1"
             ),

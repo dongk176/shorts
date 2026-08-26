@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, FormEvent, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   ChangeEvent,
   CSSProperties,
@@ -1854,60 +1854,73 @@ function CaptionTemplateEditorPreview({
     className="pointer-events-none absolute inset-0 z-50"
   >
     {spec.templateId === "pop"
-      ? cue.words.map((word, wordIndex) => {
-        const position = event.positions?.[wordIndex]
-          || (word.centerX != null && word.centerY != null
-            ? { centerX: word.centerX, centerY: word.centerY }
-            : null);
-        if (!position || word.fontSize == null) return null;
-        const activeWord = event.activeWordIndex === wordIndex;
-        const maximumScale = (word.maxScale || 112) / 100;
-        const eventFrames = event.endFrame - event.startFrame;
-        const easeFrames = Math.max(0, cue.easeFrames || 0);
-        const easeProgress = eventFrames === 1 || easeFrames === 0
-          ? 1
-          : Math.max(0, Math.min(
-              1,
-              (currentFrameFloat - event.startFrame) / easeFrames,
-            ));
-        const activeScale = activeWord
-          ? 1 + (maximumScale - 1) * easeProgress
-          : 1;
-        return <span
-          key={`${event.startFrame}-${wordIndex}`}
-          role="button"
-          tabIndex={0}
-          aria-label={textEditingEnabled
-            ? "팝형 자막 위치·크기·텍스트 편집"
-            : "팝형 자막 위치·크기 설정"}
-          title={textEditingEnabled
-            ? "드래그해서 이동 · 더블클릭해서 자막 수정"
-            : "드래그해서 자막 위치 이동"}
-          className="pointer-events-auto absolute cursor-ns-resize touch-none whitespace-nowrap outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
-          onPointerDown={(pointerEvent) => onPointerDown(
-            pointerEvent,
-            cueIndex,
-          )}
-          onClick={onSelect}
-          onDoubleClick={textEditingEnabled ? beginTextEdit : undefined}
-          onKeyDown={(keyboardEvent) => {
-            if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
-            keyboardEvent.preventDefault();
-            onSelect();
-          }}
-          style={{
-            ...sharedTextStyle,
-            left: `${transformedX(position.centerX) / 10.8}%`,
-            top: `${(position.centerY + layout.offsetY) / 19.2}%`,
-            color: activeWord ? accentColor : textColor,
-            fontSize: canvasCqw(
-              word.fontSize * captionScale * CAPTION_ASS_PREVIEW_FONT_SCALE,
-            ),
-            WebkitTextStroke: `${canvasCqw(previewStrokeWidth)} ${spec.style.outlineColor}`,
-            transform: `translate(-50%, -50%) scale(${activeScale})`,
-          }}
-        >{word.text}</span>;
-      })
+      ? <span
+        role="button"
+        tabIndex={0}
+        aria-label={textEditingEnabled
+          ? "팝형 자막 위치·크기·텍스트 편집"
+          : "팝형 자막 위치·크기 설정"}
+        title={textEditingEnabled
+          ? "드래그해서 이동 · 더블클릭해서 자막 수정"
+          : "드래그해서 자막 위치 이동"}
+        className="pointer-events-auto absolute cursor-ns-resize touch-none whitespace-pre outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
+        onPointerDown={(pointerEvent) => onPointerDown(
+          pointerEvent,
+          cueIndex,
+        )}
+        onClick={onSelect}
+        onDoubleClick={textEditingEnabled ? beginTextEdit : undefined}
+        onKeyDown={(keyboardEvent) => {
+          if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
+          keyboardEvent.preventDefault();
+          onSelect();
+        }}
+        style={{
+          ...sharedTextStyle,
+          left: `${transformedX(spec.safeArea.x + spec.safeArea.width / 2) / 10.8}%`,
+          top: `${captionCenterY / 19.2}%`,
+          color: textColor,
+          fontSize: canvasCqw(
+            spec.style.fontSize
+              * captionScale
+              * CAPTION_ASS_PREVIEW_FONT_SCALE,
+          ),
+          WebkitTextStroke: `${canvasCqw(previewStrokeWidth)} ${spec.style.outlineColor}`,
+          transform: "translate(-50%, -50%)",
+        }}
+      >
+        {cue.words.map((word, wordIndex) => {
+          if (word.fontSize == null) return null;
+          const activeWord = event.activeWordIndex === wordIndex;
+          const maximumScale = (word.maxScale || 112) / 100;
+          const eventFrames = event.endFrame - event.startFrame;
+          const easeFrames = Math.max(0, cue.easeFrames || 0);
+          const easeProgress = eventFrames === 1 || easeFrames === 0
+            ? 1
+            : Math.max(0, Math.min(
+                1,
+                (currentFrameFloat - event.startFrame) / easeFrames,
+              ));
+          const activeScale = activeWord
+            ? 1 + (maximumScale - 1) * easeProgress
+            : 1;
+          return <Fragment key={`${event.startFrame}-${wordIndex}`}>
+            {wordIndex > 0 && word.spaceBefore ? " " : null}
+            <span
+              className="inline-block"
+              style={{
+                color: activeWord ? accentColor : textColor,
+                fontSize: canvasCqw(
+                  word.fontSize
+                    * captionScale
+                    * CAPTION_ASS_PREVIEW_FONT_SCALE
+                    * activeScale,
+                ),
+              }}
+            >{word.text}</span>
+          </Fragment>;
+        })}
+      </span>
       : <span
         role="button"
         tabIndex={0}

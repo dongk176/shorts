@@ -87,6 +87,12 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain("document.fonts.load");
     expect(editorSource).not.toContain("visibleEditedWords");
     expect(editorSource).toContain("(currentFrameFloat - event.startFrame) / easeFrames");
+    expect(editorSource).toContain('className="inline-block"');
+    expect(editorSource).toContain('wordIndex > 0 && word.spaceBefore ? " " : null');
+    expect(editorSource).toContain(
+      "transformedX(spec.safeArea.x + spec.safeArea.width / 2)",
+    );
+    expect(editorSource).not.toContain("transformedX(position.centerX)");
     expect(editorSource).toContain('!overlayPreviewEnabled && templateId !== "comment-capture"');
     expect(editorSource).toContain("!editableCaptionSourceSpec && activeSubtitle");
     expect(editorSource).toContain("captionTemplatePreviewSnapshot.layout.video");
