@@ -28,6 +28,7 @@ export type RequestedEditorRelease = {
 // web rollout can never submit a document that makes an older worker exit.
 const editorRenderSpecV3ReleaseIds = new Set([
   "775b464d-048e-4015-a721-5d48ea03f4b3",
+  "28405fea-41bb-4151-b8c7-93e59a7b74b7",
 ]);
 
 export function editorReleaseSupportsRenderSpecV3(
