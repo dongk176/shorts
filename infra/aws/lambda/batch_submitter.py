@@ -6,6 +6,7 @@ import os
 import re
 import urllib.parse
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import boto3
@@ -30,12 +31,268 @@ _BATCH_QUEUE_ARN = re.compile(
 )
 _SUBTITLE_TEMPLATE_IDS = {"basic", "highlight", "pop"}
 _UNIFIED_TEMPLATE_SUBTITLE_ORIGIN = "unified-template-v5"
+_PROJECT_TARGET_KEYS = {
+    "legacy_project",
+    "source_range",
+    "elevenlabs_transcription",
+    "subtitle_templates",
+    "unified_template_subtitles",
+}
+_RESOURCE_TIER_BY_TARGET_KEY = {
+    "legacy_project": "legacy",
+    "source_range": "source_range",
+    "elevenlabs_transcription": "elevenlabs_transcription",
+    "subtitle_templates": "subtitle_templates",
+    "unified_template_subtitles": "unified_template_subtitles",
+}
 _BRAND_COLOR_VALUES = {
     "#040404", "#000000", "#111111", "#1B1B1E", "#353438", "#64748B",
     "#FFFFFF", "#F3F0E9", "#E32626", "#FF4D4F", "#FF715E", "#FFB4A8",
     "#F97316", "#FFD84D", "#8BFF5A", "#16A34A", "#35E6E3", "#3B82F6",
     "#2563EB", "#A78BFA", "#DB2777",
 }
+
+
+class UnknownBatchTargetRelease(RuntimeError):
+    """A logical project target points at a release outside current/previous."""
+
+
+class BatchTargetTrustRejected(RuntimeError):
+    """A project target does not match the job's immutable execution contract."""
+
+
+class UnsubmittedBatchTargetCutoverBlocked(BatchTargetTrustRejected):
+    """A pre-cutover claim has no provable AWS job and cannot be retargeted."""
+
+
+def _production_project_target_registry() -> dict[str, Any] | None:
+    raw = os.environ.get("PROJECT_TARGET_REGISTRY_JSON", "").strip()
+    registry_path = os.environ.get("PROJECT_TARGET_REGISTRY_PATH", "").strip()
+    if raw and registry_path:
+        raise RuntimeError(
+            "Production project target registry has multiple configured sources"
+        )
+    if registry_path:
+        try:
+            raw = Path(registry_path).read_text(encoding="utf-8")
+        except OSError as exc:
+            raise RuntimeError(
+                "Production project target registry file is unavailable"
+            ) from exc
+        if len(raw.encode("utf-8")) > 64 * 1024:
+            raise RuntimeError("Production project target registry file is too large")
+    if not raw:
+        if os.environ.get("PROJECT_TARGET_REGISTRY_REQUIRED") == "true":
+            raise RuntimeError("Production project target registry is required")
+        return None
+    try:
+        registry = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Production project target registry is invalid JSON") from exc
+    if (
+        not isinstance(registry, dict)
+        or registry.get("version") != 1
+        or registry.get("environment") != "production"
+        or not isinstance(registry.get("lanes"), dict)
+    ):
+        raise RuntimeError("Production project target registry header is invalid")
+    lanes = registry["lanes"]
+    if set(lanes) != _PROJECT_TARGET_KEYS:
+        raise RuntimeError("Production project target registry lanes are invalid")
+    definitions: set[str] = set()
+    queue_scheduling_modes: dict[str, str] = {}
+    for target_key, lane in lanes.items():
+        if not isinstance(lane, dict):
+            raise RuntimeError(f"Project target lane {target_key} is invalid")
+        if lane.get("schedulingMode") not in {"fair_share", "fifo"}:
+            raise RuntimeError(
+                f"Project target lane {target_key} scheduling mode is invalid"
+            )
+        releases: list[dict[str, Any]] = []
+        current = lane.get("current")
+        previous = lane.get("previous")
+        if not isinstance(current, dict):
+            raise RuntimeError(f"Project target lane {target_key} current is invalid")
+        releases.append(current)
+        if previous is not None:
+            if not isinstance(previous, dict):
+                raise RuntimeError(
+                    f"Project target lane {target_key} previous is invalid"
+                )
+            releases.append(previous)
+        release_ids: set[str] = set()
+        for release in releases:
+            release_id = str(release.get("releaseId") or "")
+            definition = str(release.get("jobDefinitionArn") or "")
+            queue = str(release.get("jobQueueArn") or "")
+            if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{2,127}", release_id):
+                raise RuntimeError(
+                    f"Project target lane {target_key} release id is invalid"
+                )
+            if release_id in release_ids:
+                raise RuntimeError(
+                    f"Project target lane {target_key} release id is duplicated"
+                )
+            if not _BATCH_JOB_DEFINITION_ARN.fullmatch(definition):
+                raise RuntimeError(
+                    f"Project target lane {target_key} definition is invalid"
+                )
+            if not _BATCH_QUEUE_ARN.fullmatch(queue):
+                raise RuntimeError(
+                    f"Project target lane {target_key} queue is invalid"
+                )
+            existing_mode = queue_scheduling_modes.get(queue)
+            if existing_mode and existing_mode != lane["schedulingMode"]:
+                raise RuntimeError(
+                    "Project target queue has conflicting scheduling modes"
+                )
+            queue_scheduling_modes[queue] = str(lane["schedulingMode"])
+            if definition in definitions:
+                raise RuntimeError("Project target definitions must be isolated")
+            release_ids.add(release_id)
+            definitions.add(definition)
+        if previous is not None:
+            submit_as = previous.get("submitAsReleaseId")
+            if submit_as is not None and submit_as not in release_ids:
+                raise RuntimeError(
+                    f"Project target lane {target_key} submit-as release is invalid"
+                )
+    return registry
+
+
+def _target_release(
+    lane: dict[str, Any], release_id: str
+) -> dict[str, Any] | None:
+    for pointer in ("current", "previous"):
+        release = lane.get(pointer)
+        if isinstance(release, dict) and release.get("releaseId") == release_id:
+            return release
+    return None
+
+
+def _expected_target_key(
+    job: dict[str, Any],
+    *,
+    uses_admin_template_candidate: bool,
+    uses_unified_template_candidate: bool,
+    transcription_policy: str,
+) -> str:
+    if uses_unified_template_candidate:
+        return "unified_template_subtitles"
+    if uses_admin_template_candidate:
+        return "subtitle_templates"
+    if transcription_policy == "elevenlabs_primary_openai_fallback":
+        return "elevenlabs_transcription"
+    if bool(job.get("source_range_selection_enabled")):
+        return "source_range"
+    return "legacy_project"
+
+
+def _registry_project_dispatch_target(
+    registry: dict[str, Any],
+    job: dict[str, Any],
+    *,
+    expected_target_key: str,
+    estimated_seconds: int,
+) -> tuple[str, str, str, int]:
+    lanes = registry["lanes"]
+    lane = lanes[expected_target_key]
+    logical_key = str(job.get("batch_target_key") or "").strip()
+    logical_release_id = str(job.get("batch_target_release_id") or "").strip()
+    stored_definition = str(job.get("batch_job_definition") or "").strip()
+    stored_queue = str(job.get("batch_job_queue") or "").strip()
+
+    if logical_key or logical_release_id:
+        if not logical_key or not logical_release_id:
+            raise BatchTargetTrustRejected(
+                "Logical project Batch target is incomplete"
+            )
+        if logical_key not in lanes:
+            raise UnknownBatchTargetRelease("Project Batch target key is unknown")
+        if logical_key != expected_target_key:
+            raise BatchTargetTrustRejected(
+                "Project Batch target does not match its execution contract"
+            )
+        release = _target_release(lane, logical_release_id)
+        if not release:
+            raise UnknownBatchTargetRelease(
+                "Project Batch target release is outside current/previous"
+            )
+        submit_as_release_id = str(
+            release.get("submitAsReleaseId") or logical_release_id
+        )
+        submit_release = _target_release(lane, submit_as_release_id)
+        if not submit_release:
+            raise UnknownBatchTargetRelease(
+                "Project Batch target submit-as release is unknown"
+            )
+        return (
+            str(submit_release["jobDefinitionArn"]),
+            str(submit_release["jobQueueArn"]),
+            _RESOURCE_TIER_BY_TARGET_KEY[expected_target_key],
+            estimated_seconds,
+        )
+
+    # Rows created before logical routing remain immutable. They are trusted
+    # only when their exact (definition, queue) pair is current or previous for
+    # the semantic lane selected above. A previous pointer may submit as the
+    # current hardened release, but no arbitrary ARN is accepted.
+    if stored_definition or stored_queue:
+        for pointer in ("current", "previous"):
+            release = lane.get(pointer)
+            if not isinstance(release, dict):
+                continue
+            if (
+                stored_definition == release.get("jobDefinitionArn")
+                and stored_queue == release.get("jobQueueArn")
+            ):
+                submit_as_release_id = str(
+                    release.get("submitAsReleaseId")
+                    or release.get("releaseId")
+                )
+                submit_release = _target_release(lane, submit_as_release_id)
+                if not submit_release:
+                    raise UnknownBatchTargetRelease(
+                        "Legacy project Batch submit-as release is unknown"
+                    )
+                return (
+                    str(submit_release["jobDefinitionArn"]),
+                    str(submit_release["jobQueueArn"]),
+                    _RESOURCE_TIER_BY_TARGET_KEY[expected_target_key],
+                    estimated_seconds,
+                )
+        legacy_names = {
+            os.environ.get("PROJECT_JOB_DEFINITION", "").strip(),
+            os.environ.get("PROJECT_HEAVY_JOB_DEFINITION", "").strip(),
+        }
+        current = lane["current"]
+        if (
+            expected_target_key == "legacy_project"
+            and not bool(job.get("source_range_selection_enabled"))
+            and not stored_queue
+            and stored_definition in legacy_names
+        ):
+            return (
+                str(current["jobDefinitionArn"]),
+                str(current["jobQueueArn"]),
+                "legacy",
+                estimated_seconds,
+            )
+        raise BatchTargetTrustRejected("Stored project Batch target is not trusted")
+
+    # Very old ordinary rows did not pin the stable target. Preserve only that
+    # established stable fallback; candidate lanes must always be explicit.
+    if expected_target_key != "legacy_project":
+        raise BatchTargetTrustRejected(
+            "Candidate project is missing its immutable Batch target"
+        )
+    current = lane["current"]
+    return (
+        str(current["jobDefinitionArn"]),
+        str(current["jobQueueArn"]),
+        "legacy",
+        estimated_seconds,
+    )
 
 
 def _estimated_output_seconds(job: dict[str, Any]) -> int:
@@ -116,11 +373,6 @@ def _project_dispatch_target(
     estimated_seconds = _estimated_output_seconds(job)
     stored_definition = str(job.get("batch_job_definition") or "").strip()
     stored_queue = str(job.get("batch_job_queue") or "").strip()
-    legacy_definition, legacy_queue = _trusted_project_target("LEGACY_PROJECT")
-    range_definition, range_queue = _trusted_project_target("SOURCE_RANGE")
-    transcription_target = _optional_trusted_project_target(
-        "ELEVENLABS_TRANSCRIPTION"
-    )
     raw_subtitle_template_id = job.get("subtitle_template_id")
     subtitle_template_id = (
         str(raw_subtitle_template_id)
@@ -137,6 +389,53 @@ def _project_dispatch_target(
         subtitle_template_id is not None or brand_color is not None
     )
     uses_unified_template_candidate = _uses_unified_template_v5(job)
+    transcription_policy = str(
+        job.get("transcription_policy") or "openai_stable"
+    )
+    if transcription_policy not in {
+        "openai_stable",
+        "elevenlabs_primary_openai_fallback",
+    }:
+        raise RuntimeError("Project transcription policy is invalid")
+    if (
+        uses_admin_template_candidate
+        and transcription_policy != "elevenlabs_primary_openai_fallback"
+    ):
+        raise RuntimeError(
+            "Admin template candidate requires the word-timed transcription policy"
+        )
+    if (
+        uses_unified_template_candidate
+        and transcription_policy != "elevenlabs_primary_openai_fallback"
+    ):
+        raise RuntimeError(
+            "Unified template candidate requires the word-timed transcription policy"
+        )
+
+    registry = _production_project_target_registry()
+    if registry is not None:
+        expected_target_key = _expected_target_key(
+            job,
+            uses_admin_template_candidate=uses_admin_template_candidate,
+            uses_unified_template_candidate=uses_unified_template_candidate,
+            transcription_policy=transcription_policy,
+        )
+        return _registry_project_dispatch_target(
+            registry,
+            job,
+            expected_target_key=expected_target_key,
+            estimated_seconds=estimated_seconds,
+        )
+
+    # The environment-based resolver remains only for local tests and
+    # pre-registry deployments. Production reads its immutable target registry
+    # from the bundled Lambda asset and therefore does not duplicate ARN state
+    # across dozens of environment variables.
+    legacy_definition, legacy_queue = _trusted_project_target("LEGACY_PROJECT")
+    range_definition, range_queue = _trusted_project_target("SOURCE_RANGE")
+    transcription_target = _optional_trusted_project_target(
+        "ELEVENLABS_TRANSCRIPTION"
+    )
     # A partially configured subtitle candidate must never stop an ordinary
     # legacy/source-range submission. Parse this optional target only after the
     # stored job itself proves it is a caption-template job.
@@ -213,29 +512,6 @@ def _project_dispatch_target(
             )
         allowed_targets[candidate_target] = resource_tier
         allowed_definitions.add(candidate_target[0])
-
-    transcription_policy = str(
-        job.get("transcription_policy") or "openai_stable"
-    )
-    if transcription_policy not in {
-        "openai_stable",
-        "elevenlabs_primary_openai_fallback",
-    }:
-        raise RuntimeError("Project transcription policy is invalid")
-    if (
-        uses_admin_template_candidate
-        and transcription_policy != "elevenlabs_primary_openai_fallback"
-    ):
-        raise RuntimeError(
-            "Admin template candidate requires the word-timed transcription policy"
-        )
-    if (
-        uses_unified_template_candidate
-        and transcription_policy != "elevenlabs_primary_openai_fallback"
-    ):
-        raise RuntimeError(
-            "Unified template candidate requires the word-timed transcription policy"
-        )
 
     if stored_definition or stored_queue:
         resource_tier = allowed_targets.get((stored_definition, stored_queue))
@@ -341,13 +617,37 @@ def _project_scheduling_overrides(
     priority_class: object,
     *identity_values: object,
 ) -> dict[str, object]:
-    # The unified v5 initial-render definition runs on the existing Prepare
-    # queue, which intentionally has no fair-share scheduling policy. Keep
-    # every established project payload unchanged and omit these fields only
-    # for the trusted unified tier on its exact configured queue.
+    # Scheduling mode belongs to the logical lane. Queue rotations therefore
+    # cannot accidentally attach fair-share-only fields to a FIFO queue.
+    registry = _production_project_target_registry()
+    if registry is not None:
+        target_key = next(
+            (
+                key
+                for key, tier in _RESOURCE_TIER_BY_TARGET_KEY.items()
+                if tier == resource_tier
+            ),
+            None,
+        )
+        if target_key:
+            lane = registry["lanes"][target_key]
+            valid_queues = {
+                str(release["jobQueueArn"])
+                for pointer in ("current", "previous")
+                if isinstance((release := lane.get(pointer)), dict)
+            }
+            if job_queue in valid_queues:
+                return {} if lane["schedulingMode"] == "fifo" else {
+                    "shareIdentifier": _priority_share_identifier(
+                        priority_class,
+                        *identity_values,
+                    ),
+                    "schedulingPriorityOverride": _scheduling_priority(
+                        priority_class
+                    ),
+                }
     configured_unified_queue = os.environ.get(
-        "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN",
-        "",
+        "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN", ""
     ).strip()
     if (
         resource_tier == "unified_template_subtitles"
@@ -446,32 +746,173 @@ def _existing_batch_job(job_queue: str, job_name: str) -> str | None:
     return None
 
 
-def _submit_once(request: dict[str, Any], submission_key: str) -> str:
+def _batch_job_has_target(
+    batch_job_id: str,
+    job_definition: str,
+    job_queue: str,
+) -> bool:
+    described = batch.describe_jobs(jobs=[batch_job_id]).get("jobs", [])
+    if len(described) != 1:
+        return False
+    return (
+        str(described[0].get("jobDefinition") or "") == job_definition
+        and str(described[0].get("jobQueue") or "") == job_queue
+    )
+
+
+def _complete_batch_submission_target(
+    submission_key: str,
+    batch_job_id: str,
+    job_definition: str,
+    job_queue: str,
+    project_binding: dict[str, Any] | None = None,
+) -> None:
+    rpc = "rpc/complete_batch_submission_target"
+    body: dict[str, Any] = {
+        "p_submission_key": submission_key,
+        "p_aws_batch_job_id": batch_job_id,
+        "p_job_definition": job_definition,
+        "p_job_queue": job_queue,
+    }
+    if project_binding is not None:
+        rpc = "rpc/complete_project_batch_submission_target"
+        body.update(project_binding)
+    completed = rest(
+        rpc,
+        method="POST",
+        body=body,
+        prefer="return=representation",
+    )
+    if completed is not True and completed != [True]:
+        raise RuntimeError("Batch submission target completion was rejected")
+
+
+def _submit_once(
+    request: dict[str, Any],
+    submission_key: str,
+    *,
+    project_binding: dict[str, Any] | None = None,
+) -> str:
+    job_definition = str(request.get("jobDefinition") or "").strip()
+    job_queue = str(request.get("jobQueue") or "").strip()
+    if not _BATCH_JOB_DEFINITION_ARN.fullmatch(job_definition):
+        raise BatchTargetTrustRejected(
+            "Batch submission Job Definition must be a revision-pinned ARN"
+        )
+    if not _BATCH_QUEUE_ARN.fullmatch(job_queue):
+        raise BatchTargetTrustRejected(
+            "Batch submission queue must be an exact ARN"
+        )
     claims = rest(
-        "rpc/claim_batch_submission",
+        "rpc/claim_batch_submission_target",
         method="POST",
         body={
             "p_submission_key": submission_key,
             "p_job_name": str(request["jobName"]),
+            "p_job_definition": job_definition,
+            "p_job_queue": job_queue,
         },
         prefer="return=representation",
     ) or []
     if not claims:
         raise RuntimeError("Batch submission claim returned no result")
-    if claims[0].get("action") == "existing":
-        return str(claims[0]["aws_batch_job_id"])
-    if claims[0].get("action") != "claimed":
+    action = str(claims[0].get("action") or "")
+    claimed_definition = str(claims[0].get("job_definition") or "").strip()
+    claimed_queue = str(claims[0].get("job_queue") or "").strip()
+    if action == "invalid_target":
+        raise BatchTargetTrustRejected(
+            "Batch submission claim target does not match the resolved target"
+        )
+    if action == "target_mismatch":
+        claimed_batch_job_id = str(
+            claims[0].get("aws_batch_job_id") or ""
+        ).strip()
+        if (
+            project_binding is not None
+            and not claimed_batch_job_id
+            and claimed_definition
+            and claimed_queue
+        ):
+            # A target-aware invocation may have claimed the old current target
+            # immediately before a registry cutover. Never execute that previous
+            # target merely to make the mismatch disappear: it may have been
+            # remapped for a security hardening reason (for example Proof of
+            # Origin). If AWS already accepted the old request, however, adopting
+            # that exact existing job is safer than submitting a duplicate. A
+            # claim with no discoverable AWS job remains fail-closed until the
+            # deployment admission fence drains it.
+            existing = _existing_batch_job(
+                claimed_queue, str(request["jobName"])
+            )
+            if existing:
+                if not _batch_job_has_target(
+                    existing, claimed_definition, claimed_queue
+                ):
+                    raise BatchTargetTrustRejected(
+                        "Pre-cutover Batch job name is bound to another target"
+                    )
+                _complete_batch_submission_target(
+                    submission_key,
+                    existing,
+                    claimed_definition,
+                    claimed_queue,
+                    project_binding,
+                )
+                return existing
+            raise UnsubmittedBatchTargetCutoverBlocked(
+                "Pre-cutover Batch claim has no provable AWS job and cannot be retargeted"
+            )
+        raise BatchTargetTrustRejected(
+            "Batch submission claim target does not match the resolved target"
+        )
+    if action == "existing":
+        batch_job_id = str(claims[0].get("aws_batch_job_id") or "").strip()
+        if not batch_job_id:
+            raise RuntimeError("Existing Batch submission claim has no job id")
+        if claimed_definition or claimed_queue:
+            if (
+                claimed_definition != job_definition
+                or claimed_queue != job_queue
+            ):
+                raise BatchTargetTrustRejected(
+                    "Existing Batch submission claim target changed"
+                )
+        else:
+            if not _batch_job_has_target(
+                batch_job_id, job_definition, job_queue
+            ):
+                raise BatchTargetTrustRejected(
+                    "Legacy Batch submission claim target cannot be proven"
+                )
+        if project_binding is not None or not (
+            claimed_definition or claimed_queue
+        ):
+            _complete_batch_submission_target(
+                submission_key,
+                batch_job_id,
+                job_definition,
+                job_queue,
+                project_binding,
+            )
+        return batch_job_id
+    if action != "claimed":
         raise RuntimeError("Batch submission is already in progress")
-    existing = _existing_batch_job(str(request["jobQueue"]), str(request["jobName"]))
+    if claimed_definition != job_definition or claimed_queue != job_queue:
+        raise BatchTargetTrustRejected(
+            "Claimed Batch submission target changed"
+        )
+    existing = _existing_batch_job(job_queue, str(request["jobName"]))
+    if existing and not _batch_job_has_target(existing, job_definition, job_queue):
+        raise BatchTargetTrustRejected(
+            "Existing Batch job name is bound to another target"
+        )
     batch_job_id = existing or str(batch.submit_job(**request)["jobId"])
-    rest(
-        "rpc/complete_batch_submission",
-        method="POST",
-        body={
-            "p_submission_key": submission_key,
-            "p_aws_batch_job_id": batch_job_id,
-        },
-        prefer="return=representation",
+    _complete_batch_submission_target(
+        submission_key,
+        batch_job_id,
+        job_definition,
+        job_queue,
+        project_binding,
     )
     return batch_job_id
 
@@ -486,6 +927,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
             "select=id,status,pipeline_version,project_resume_count,aws_batch_job_id,"
             "mvp_session_id,user_id,preparation_finished_at,planned_short_count,"
             "clip_length_option,batch_job_definition,batch_job_queue,"
+            "batch_target_key,batch_target_release_id,"
             "source_range_selection_enabled,transcription_policy,subtitle_template_id,"
             "template_snapshot,subtitle_template_snapshot,"
             "dispatch_priority_class"
@@ -494,16 +936,23 @@ def _submit(payload: dict[str, Any]) -> str | None:
         if not jobs or int(jobs[0].get("pipeline_version") or 1) != 2:
             return None
         job = jobs[0]
+        resume_count = int(job.get("project_resume_count") or 0)
+        recorded_batch_job_id = str(
+            job.get("aws_batch_job_id") or ""
+        ).strip()
+        # The attempt identity is immutable even if an EventBridge state event
+        # advances the project status before the submitter finishes binding the
+        # idempotency claim and raw target.  A recorded Batch id therefore
+        # re-enters the exact same submission path for reconciliation instead
+        # of taking the historical id-only fast path.
+        if resume:
+            if resume_count != 1 or not job.get("preparation_finished_at"):
+                return None
+        elif resume_count != 0:
+            return None
         expected_status = "rendering" if resume else "queued"
-        if job["status"] != expected_status:
+        if not recorded_batch_job_id and job["status"] != expected_status:
             return None
-        if resume and (
-            int(job.get("project_resume_count") or 0) != 1
-            or not job.get("preparation_finished_at")
-        ):
-            return None
-        if job.get("aws_batch_job_id"):
-            return str(job["aws_batch_job_id"])
         suffix = "resume-1" if resume else "0"
         command = ["python", "-m", "shorts_worker", "project", "--job-id", job_id]
         if resume:
@@ -551,17 +1000,28 @@ def _submit(payload: dict[str, Any]) -> str | None:
             },
         )
         submission_key = f"project:{job_id}:resume:1" if resume else f"project:{job_id}:0"
-        project_batch_id = _submit_once(request, submission_key)
-        job_patch = {
-            "aws_batch_job_id": project_batch_id,
-            "batch_job_definition": job_definition,
-            "batch_job_queue": job_queue,
-        }
-        patch(
-            "video_jobs",
-            f"id=eq.{encoded_job_id}&status=eq.{expected_status}",
-            job_patch,
+        project_batch_id = _submit_once(
+            request,
+            submission_key,
+            project_binding={
+                "p_video_job_id": job_id,
+                "p_expected_batch_target_key": job.get("batch_target_key"),
+                "p_expected_batch_target_release_id": job.get(
+                    "batch_target_release_id"
+                ),
+                "p_observed_job_definition": job.get(
+                    "batch_job_definition"
+                ),
+                "p_observed_job_queue": job.get("batch_job_queue"),
+            },
         )
+        if (
+            recorded_batch_job_id
+            and project_batch_id != recorded_batch_job_id
+        ):
+            raise BatchTargetTrustRejected(
+                "Recorded project Batch id changed during reconciliation"
+            )
         return project_batch_id
     if kind == "prepare_batch":
         dispatch_id = str(payload["dispatchBatchId"])
@@ -855,6 +1315,27 @@ def _aws_error_code(exc: Exception) -> str:
     return type(exc).__name__
 
 
+def _log_project_target_failure(
+    exc: Exception,
+    payload: dict[str, Any],
+    *,
+    invocation: str,
+) -> None:
+    if isinstance(exc, UnknownBatchTargetRelease):
+        event_name = "project_target_release_unknown"
+    elif isinstance(exc, BatchTargetTrustRejected):
+        event_name = "project_target_trust_rejected"
+    else:
+        return
+    log_event(
+        event_name,
+        kind=payload.get("kind"),
+        job_id=payload.get("jobId"),
+        error_type=type(exc).__name__,
+        invocation=invocation,
+    )
+
+
 def _release_terminal_editor_submission(
     payload: dict[str, Any],
     error_code: str,
@@ -912,7 +1393,11 @@ def _release_terminal_editor_submission(
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     if event.get("kind"):
-        result = _submit(event)
+        try:
+            result = _submit(event)
+        except Exception as exc:
+            _log_project_target_failure(exc, event, invocation="direct")
+            raise
         log_event(
             "batch_submit_succeeded",
             kind=event.get("kind"),
@@ -936,6 +1421,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
             )
         except Exception as exc:
             error_code = _aws_error_code(exc)
+            _log_project_target_failure(exc, payload, invocation="sqs")
             receive_count = int(
                 record.get("attributes", {}).get("ApproximateReceiveCount") or 1
             )

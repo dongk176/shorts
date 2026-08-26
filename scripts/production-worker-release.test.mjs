@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   productionWorkerCdkContext,
@@ -24,55 +23,33 @@ test("pins the proven production worker source and immutable image digest", () =
   assert.ok(release.imageUri.endsWith(`@${release.imageDigest}`));
 });
 
-test("maps all four release targets to the web and Lambda environment contract", () => {
+test("maps all five registry lanes to the web and Lambda environment contract", () => {
   const environment = productionWorkerEnvironment(release);
-  assert.deepEqual(Object.keys(environment).sort(), [
-    "ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN",
-    "ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN",
-    "LEGACY_PROJECT_BATCH_QUEUE_ARN",
-    "LEGACY_PROJECT_JOB_DEFINITION_ARN",
-    "SOURCE_RANGE_BATCH_QUEUE_ARN",
-    "SOURCE_RANGE_JOB_DEFINITION_ARN",
-    "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN",
-    "SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN",
-  ]);
+  for (const prefix of [
+    "LEGACY_PROJECT",
+    "SOURCE_RANGE",
+    "ELEVENLABS_TRANSCRIPTION",
+    "SUBTITLE_TEMPLATES",
+    "UNIFIED_TEMPLATE_SUBTITLES",
+  ]) {
+    assert.ok(environment[`${prefix}_JOB_DEFINITION_ARN`]);
+    assert.ok(environment[`${prefix}_BATCH_QUEUE_ARN`]);
+    assert.ok(environment[`${prefix}_BATCH_TARGET_RELEASE_ID`]);
+  }
+  assert.ok(environment.PROJECT_TARGET_REGISTRY_JSON);
 });
 
-test("maps the same release targets to the production CDK context", () => {
+test("passes the exact registry JSON as the sole production CDK target context", () => {
   const context = productionWorkerCdkContext(release);
-  assert.deepEqual(Object.keys(context).sort(), [
-    "elevenLabsTranscriptionBatchQueueArn",
-    "elevenLabsTranscriptionJobDefinitionArn",
-    "legacyProjectBatchQueueArn",
-    "legacyProjectJobDefinitionArn",
-    "sourceRangeBatchQueueArn",
-    "sourceRangeJobDefinitionArn",
-    "subtitleTemplatesBatchQueueArn",
-    "subtitleTemplatesJobDefinitionArn",
-  ]);
+  assert.deepEqual(Object.keys(context), ["projectTargetRegistryJson"]);
+  const registry = JSON.parse(context.projectTargetRegistryJson);
   assert.equal(
-    context.legacyProjectJobDefinitionArn,
+    registry.lanes.legacy_project.current.jobDefinitionArn,
     release.targets.legacyProject.jobDefinitionArn,
   );
 });
 
-test("production synth supplies a non-persisted fifth candidate target", () => {
-  const source = readFileSync(
-    new URL("./synth-production-infrastructure.mjs", import.meta.url),
-    "utf8",
-  );
-  assert.match(source, /unifiedTemplateSubtitlesJobDefinitionArn/);
-  assert.match(
-    source,
-    /job-definition\/unified-template-subtitles-local-synth:1/,
-  );
-  assert.match(
-    source,
-    /job-queue\/shorts-mvp-prepare-production/,
-  );
-});
-
-test("rejects mutable images, stale budgets, and shared definitions", () => {
+test("rejects mutable images, stale budgets, shared definitions, and registry drift", () => {
   assert.throws(
     () => validateProductionWorkerRelease({ ...release, imageUri: "example.invalid/worker:latest" }),
     /고정 digest/,
@@ -90,5 +67,19 @@ test("rejects mutable images, stale budgets, and shared definitions", () => {
       },
     }),
     /서로 달라야/,
+  );
+  assert.throws(
+    () => validateProductionWorkerRelease({
+      ...release,
+      targets: {
+        ...release.targets,
+        legacyProject: {
+          ...release.targets.legacyProject,
+          jobQueueArn:
+            "arn:aws:batch:ap-northeast-2:181651591905:job-queue/drifted",
+        },
+      },
+    }),
+    /registry와 다릅니다/,
   );
 });

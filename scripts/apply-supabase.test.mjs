@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
+import {
+  parseMigrationArguments,
+  requireMigrationDatabaseUrl,
+} from "./supabase-migration-contract.mjs";
+import {
+  FIXED_PRODUCTION_DATABASE_FINGERPRINT,
+  productionDatabaseFingerprint,
+} from "./production-database-identity.mjs";
 
 test("forwards selected migration filenames to the migration runner", () => {
   const wrapper = fs.readFileSync(
@@ -10,10 +18,116 @@ test("forwards selected migration filenames to the migration runner", () => {
   assert.match(wrapper, /node scripts\/apply-supabase\.mjs "\$@"/);
 });
 
+test("keeps the default migration command fail-closed and names both environments", () => {
+  const packageJson = JSON.parse(fs.readFileSync(
+    new URL("../package.json", import.meta.url),
+    "utf8",
+  ));
+  assert.equal(packageJson.scripts["db:migrate"], "bash scripts/apply-supabase.sh");
+  assert.equal(
+    packageJson.scripts["db:migrate:non-production"],
+    "bash scripts/apply-supabase.sh --non-production",
+  );
+  assert.equal(
+    packageJson.scripts["db:migrate:production"],
+    "bash scripts/apply-supabase.sh --production",
+  );
+});
+
+test("requires an explicit migration environment contract", () => {
+  assert.throws(() => parseMigrationArguments([]), /--production/);
+  assert.deepEqual(
+    parseMigrationArguments(["--production", "202608260005_example.sql"]),
+    {
+      environment: "production",
+      migrationFiles: ["202608260005_example.sql"],
+    },
+  );
+  assert.deepEqual(parseMigrationArguments(["--non-production"]), {
+    environment: "non-production",
+    migrationFiles: [],
+  });
+  assert.throws(
+    () => parseMigrationArguments(["--production", "--non-production"]),
+    /동시에 선택/,
+  );
+});
+
+test("validates the fixed production DB fingerprint before migration connection", () => {
+  const productionUrl =
+    "postgresql://postgres.production-ref:secret@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres";
+  const productionEnvironment = {
+    DATABASE_URL: productionUrl,
+    PRODUCTION_DATABASE_FINGERPRINT: FIXED_PRODUCTION_DATABASE_FINGERPRINT,
+  };
+  assert.notEqual(
+    productionDatabaseFingerprint(productionUrl),
+    FIXED_PRODUCTION_DATABASE_FINGERPRINT,
+  );
+  assert.throws(
+    () => requireMigrationDatabaseUrl("production", productionEnvironment),
+    /fingerprint와 다릅니다/,
+  );
+  const fixedUrl =
+    "postgresql://postgres.mvcprswvfybudtopepuj:secret@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres";
+  assert.equal(productionDatabaseFingerprint(fixedUrl), FIXED_PRODUCTION_DATABASE_FINGERPRINT);
+  assert.equal(
+    requireMigrationDatabaseUrl("production", {
+      DATABASE_URL: fixedUrl,
+      PRODUCTION_DATABASE_FINGERPRINT: FIXED_PRODUCTION_DATABASE_FINGERPRINT,
+    }),
+    fixedUrl,
+  );
+  assert.throws(
+    () => requireMigrationDatabaseUrl("production", {
+      DATABASE_URL: fixedUrl,
+    }),
+    /PRODUCTION_DATABASE_FINGERPRINT/,
+  );
+});
+
+test("keeps isolated migrations usable but rejects production signals", () => {
+  const isolated = "postgresql://postgres.test:secret@localhost:5432/postgres";
+  const isolatedFingerprint = productionDatabaseFingerprint(isolated);
+  assert.equal(
+    requireMigrationDatabaseUrl("non-production", {
+      DATABASE_URL: isolated,
+      NON_PRODUCTION_DATABASE_FINGERPRINT: isolatedFingerprint,
+    }),
+    isolated,
+  );
+  assert.throws(
+    () => requireMigrationDatabaseUrl("non-production", {
+      DATABASE_URL: isolated,
+      DEPLOY_ENV: "production",
+      NON_PRODUCTION_DATABASE_FINGERPRINT: isolatedFingerprint,
+    }),
+    /운영 신호/,
+  );
+  assert.throws(
+    () => requireMigrationDatabaseUrl("non-production", {
+      DATABASE_URL: isolated,
+      NON_PRODUCTION_DATABASE_FINGERPRINT: FIXED_PRODUCTION_DATABASE_FINGERPRINT,
+    }),
+    /운영 DB fingerprint와 같아/,
+  );
+  assert.throws(
+    () => requireMigrationDatabaseUrl("non-production", {
+      DATABASE_URL: isolated,
+    }),
+    /NON_PRODUCTION_DATABASE_FINGERPRINT/,
+  );
+});
+
 test("runs concurrent index migrations outside an implicit transaction", () => {
   const runner = fs.readFileSync(
     new URL("./apply-supabase.mjs", import.meta.url),
     "utf8",
+  );
+  assert.ok(
+    runner.indexOf("requireMigrationDatabaseUrl(")
+      < runner.indexOf("postgres(databaseUrl"),
+    "production identity must be verified before creating a postgres client",
   );
   assert.match(runner, /concurrentIndexPattern/);
   assert.match(runner, /split\(\/;\\s\*/);

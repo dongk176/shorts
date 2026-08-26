@@ -9,6 +9,7 @@ export const PROTECTED_APP_ROUTES = [
   "/page",
   "/guidebook/page",
   "/pricing/page",
+  "/templates/page",
   "/projects/page",
   "/account/activity/page",
   "/billing/checkout/page",

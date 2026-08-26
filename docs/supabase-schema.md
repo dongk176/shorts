@@ -35,7 +35,14 @@
 - `user_onboarding_profiles`, `member_campaign_announcements`: 최초 온보딩 멱등 응답과 로그인 시 비유료 회원에게 지급한 20분 체험 grant의 계정당 1회 안내 이력
 - `job_events`: stage 변경 이벤트
 
-적용은 `npm run db:migrate`입니다. 서버와 Worker는 schema-qualified SQL만 사용합니다. Cleanup Lambda에서 PostgREST를 쓸 경우 Supabase API exposed schemas에 `shorts_mvp`를 추가하되, schema/table 권한은 service role에만 유지합니다.
+기본 `npm run db:migrate`는 환경이 명시되지 않아 실패합니다. 비운영
+적용은 고정된 `NON_PRODUCTION_DATABASE_FINGERPRINT`를 설정하고
+`npm run db:migrate:non-production`, 운영 적용은 고정된
+`PRODUCTION_DATABASE_FINGERPRINT`를 설정한 뒤
+`npm run db:migrate:production -- <migration.sql...>`을 사용합니다. 서버와
+Worker는 schema-qualified SQL만 사용합니다. Cleanup Lambda에서 PostgREST를
+쓸 경우 Supabase API exposed schemas에 `shorts_mvp`를 추가하되,
+schema/table 권한은 service role에만 유지합니다.
 
 이지컷 프로는 최초 더페이원 승인 시각부터 유료기간을 시작하고, 자동 승인 결과 통지마다 기본시간 60분을 지급하면서 기존 Pro 이용기간 끝에 1개월을 추가합니다. 최종 해지 시 PG 일정을 즉시 중지하되 이미 결제한 이용기간은 유지합니다. 다시 구독하면 저장 카드를 확인해 즉시 결제하고 60분을 지급하며, 남은 이용기간 끝에 1개월을 추가한 뒤 기존 자동결제 일정을 재활성화합니다. Pro에서 기간 패키지로 전환할 때는 패키지 총액 승인과 기존 Pro 원결제 9,900원 전액취소가 모두 확인된 뒤 기존 Pro 기본시간을 종료하고 패키지를 즉시 활성화합니다. Pro 환불이 실패하면 패키지 승인을 전액취소하고 기존 Pro를 유지하며, 결과가 불명확하면 자동 활성화하지 않습니다. 기간 패키지는 승인일부터 독립된 3·6·12개월 이용기간을 시작하고, 활성 상태인 동안 매월 상품별 시간을 지급하며 자동결제하지 않습니다. 스타터·전문가의 기간별 각 상품은 계정당 한 번만 구매할 수 있고, 서로 다른 상품을 구매한 경우 각 기간과 월 지급 일정을 독립적으로 보존합니다. 기존 주문은 환불정책 v1, 신규 주문은 v2로 기록하여 계산 기준을 소급 변경하지 않습니다. v2 패키지는 완료 월과 현재 사용 월을 계약 월단가로 정산하고, 현재 사용 월을 공제한 경우 월말 예약 종료, 현재 월 미사용 환불은 즉시 종료로 기록합니다. 모든 시각은 DB에 UTC `timestamptz`로 저장합니다.
 

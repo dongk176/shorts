@@ -57,7 +57,8 @@ workflow는 Vercel, CDK, 운영 DB를 자동 배포하지 않는다.
   `EDITOR_RELEASE_REGISTRAR_FUNCTION`
 - variable: `EDITOR_TEST_SUPABASE_PROJECT_REF`,
   `PRODUCTION_SUPABASE_PROJECT_REF` (둘은 반드시 달라야 함)
-- secret: `EDITOR_TEST_DATABASE_URL`
+- secret: `EDITOR_TEST_DATABASE_URL`,
+  `EDITOR_TEST_DATABASE_FINGERPRINT` (password를 제외한 고정 DB identity)
 
 격리 AWS secret과 GitHub secret에는 테스트 전용 Supabase 값만 넣는다.
 운영 데이터를 격리 프로젝트에 복제하지 않는다.

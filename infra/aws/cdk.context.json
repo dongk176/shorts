@@ -1,0 +1,9 @@
+{
+  "availability-zones:account=181651591905:region=ap-northeast-2": [
+    "ap-northeast-2a",
+    "ap-northeast-2b",
+    "ap-northeast-2c",
+    "ap-northeast-2d"
+  ],
+  "editorStableRerenderJobDefinitionArn:production": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-rerender-fargate-production:27"
+}

@@ -170,11 +170,12 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(workflow, /editor-release-probe/);
   assert.match(workflow, /make verify/);
   assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_URL/);
+  assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_FINGERPRINT/);
   assert.match(workflow, /EDITOR_TEST_SUPABASE_PROJECT_REF/);
   assert.match(workflow, /PRODUCTION_SUPABASE_PROJECT_REF/);
   assert.match(
     workflow,
-    /node scripts\/apply-supabase\.mjs \\\s+202607310003_editor_release_channels\.sql \\\s+202608010001_editor_render_canary_outbox\.sql \\\s+202608080001_subtitle_templates_admin_canary\.sql \\\s+202608110001_editor_subtitle_editing_capability\.sql \\\s+202608240002_unified_template_subtitles_canary_flag\.sql/,
+    /node scripts\/apply-supabase\.mjs --non-production \\\s+202607310003_editor_release_channels\.sql \\\s+202608010001_editor_render_canary_outbox\.sql \\\s+202608080001_subtitle_templates_admin_canary\.sql \\\s+202608110001_editor_subtitle_editing_capability\.sql \\\s+202608240002_unified_template_subtitles_canary_flag\.sql/,
   );
   assert.doesNotMatch(workflow, /node scripts\/apply-supabase\.mjs\s*\n\s*$/m);
   assert.match(workflow, /EDITOR_RELEASE_ECR_REPOSITORY_URI/);
@@ -322,20 +323,27 @@ test("promotion and subtitle pilot enrollment are transactional, gated, and audi
   assert.match(actions, /status='rolled_back'/);
 });
 
-test("infrastructure deploy keeps legacy rerenders pinned and editor test outputs opt-in", async () => {
-  const setup = await source("scripts/setup-infrastructure.sh");
+test("non-production setup never mutates repository variables and editor outputs stay in the verified release flow", async () => {
+  const [setup, readme, rollout] = await Promise.all([
+    source("scripts/setup-infrastructure.sh"),
+    source("README.md"),
+    source("docs/editor-rendering-v2-rollout.md"),
+  ]);
 
   assert.match(
     setup,
-    /LEGACY_RERENDER_IMAGE_TAG=.*currently deployed known-good rerender image tag/,
+    /LEGACY_RERENDER_IMAGE_TAG="\$\{LEGACY_RERENDER_IMAGE_TAG:-\$WORKER_IMAGE_TAG\}"/,
   );
+  assert.match(setup, /운영 전체 인프라 배포는 금지됩니다/);
   assert.match(setup, /legacyRerenderImageTag=\$LEGACY_RERENDER_IMAGE_TAG/);
+  assert.doesNotMatch(setup, /gh variable set/);
+  assert.doesNotMatch(setup, /EDITOR_TEST_(?:JOB_QUEUE|TEMPLATE_JOB_DEFINITION)/);
   assert.match(
-    setup,
-    /EDITOR_TEST_TEMPLATE_JOB_DEFINITION[\s\S]*EditorTestTemplateJobDefinitionArn EditorTest/,
+    readme,
+    /운영 GitHub 변수는 검증된 별도 release 절차에서만 갱신합니다/,
   );
-  assert.match(
-    setup,
-    /if \[\[ "\$\{INCLUDE_EDITOR_TEST:-false\}" == "true" \]\]; then/,
-  );
+  assert.match(rollout, /## GitHub Actions 설정/);
+  assert.match(rollout, /EDITOR_TEST_JOB_QUEUE/);
+  assert.match(rollout, /EDITOR_TEST_TEMPLATE_JOB_DEFINITION/);
+  assert.match(rollout, /main에서 workflow를 수동 실행/);
 });

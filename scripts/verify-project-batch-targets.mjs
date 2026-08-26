@@ -4,6 +4,10 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  productionProjectTargetEnvironment,
+  readProductionProjectTargets,
+} from "./production-project-targets.mjs";
 
 export const STABLE_PROJECT_TARGET_PREFIXES = [
   "LEGACY_PROJECT",
@@ -155,18 +159,24 @@ export function validateActiveBatchResources(
 
 function parseArgs(argv) {
   const options = {
-    envFile: ".env.local",
+    envFile: "",
+    registryFile: "production-project-targets.json",
     functionName: process.env.BATCH_SUBMITTER_FUNCTION_NAME?.trim() || "",
     region: process.env.AWS_REGION?.trim() || "ap-northeast-2",
   };
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] === "--env") options.envFile = argv[++index] || "";
+    else if (argv[index] === "--registry") {
+      options.registryFile = argv[++index] || "";
+    }
     else if (argv[index] === "--lambda-function") {
       options.functionName = argv[++index] || "";
     } else if (argv[index] === "--region") options.region = argv[++index] || "";
     else throw new Error(`알 수 없는 옵션입니다: ${argv[index]}`);
   }
-  if (!options.envFile) throw new Error("--env <환경변수 파일>이 필요합니다.");
+  if (!options.registryFile) {
+    throw new Error("--registry <프로젝트 대상 registry>가 필요합니다.");
+  }
   if (!options.functionName) {
     throw new Error("--lambda-function <Batch 제출 Lambda 이름>이 필요합니다.");
   }
@@ -176,12 +186,7 @@ function parseArgs(argv) {
   return options;
 }
 
-function readLambdaTargets(functionName, region) {
-  const names = PROJECT_TARGET_PREFIXES.flatMap((prefix) => [
-    `${prefix}_JOB_DEFINITION_ARN`,
-    `${prefix}_BATCH_QUEUE_ARN`,
-  ]);
-  const projection = names.map((name) => `${name}:${name}`).join(",");
+function readLambdaRegistryConfiguration(functionName, region) {
   const output = execFileSync("aws", [
     "lambda",
     "get-function-configuration",
@@ -190,7 +195,7 @@ function readLambdaTargets(functionName, region) {
     "--region",
     region,
     "--query",
-    `Environment.Variables.{${projection}}`,
+    "Environment.Variables.{PROJECT_TARGET_REGISTRY_PATH:PROJECT_TARGET_REGISTRY_PATH,PROJECT_TARGET_REGISTRY_REQUIRED:PROJECT_TARGET_REGISTRY_REQUIRED,PROJECT_TARGET_REGISTRY_JSON:PROJECT_TARGET_REGISTRY_JSON}",
     "--output",
     "json",
   ], { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
@@ -235,14 +240,31 @@ function readActiveBatchResources(targets, region) {
 
 export function runProjectBatchTargetVerification(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
-  const webEnvironment = parseEnvFile(
-    readFileSync(resolve(options.envFile), "utf8"),
+  const registryEnvironment = productionProjectTargetEnvironment(
+    readProductionProjectTargets(resolve(options.registryFile)),
   );
-  const lambdaEnvironment = readLambdaTargets(options.functionName, options.region);
-  const targets = compareProjectBatchTargets(webEnvironment, lambdaEnvironment);
+  if (options.envFile) {
+    compareProjectBatchTargets(
+      parseEnvFile(readFileSync(resolve(options.envFile), "utf8")),
+      registryEnvironment,
+    );
+  }
+  const lambdaEnvironment = readLambdaRegistryConfiguration(
+    options.functionName,
+    options.region,
+  );
+  if (
+    lambdaEnvironment.PROJECT_TARGET_REGISTRY_PATH
+      !== "/var/task/production-project-targets.json"
+    || lambdaEnvironment.PROJECT_TARGET_REGISTRY_REQUIRED !== "true"
+    || lambdaEnvironment.PROJECT_TARGET_REGISTRY_JSON
+  ) {
+    throw new Error("Batch 제출 Lambda가 단일 fail-closed registry asset을 사용하지 않습니다.");
+  }
+  const targets = projectBatchTargets(registryEnvironment);
   readActiveBatchResources(targets, options.region);
   process.stdout.write(
-    `Batch 대상 사전검증 통과: ${PROJECT_TARGET_PREFIXES.length}개 대상이 Lambda 신뢰값과 일치하고 ACTIVE 상태입니다.\n`,
+    `Batch 대상 사전검증 통과: ${PROJECT_TARGET_PREFIXES.length}개 registry 대상이 ACTIVE이며 Lambda가 fail-closed asset을 사용합니다.\n`,
   );
 }
 

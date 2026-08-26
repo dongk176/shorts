@@ -3,6 +3,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  productionProjectTargetCdkContext,
+  productionProjectTargetEnvironment,
+  readProductionProjectTargets,
+  validateProductionProjectTargets,
+} from "./production-project-targets.mjs";
 
 export const RELEASE_TARGETS = {
   legacyProject: "LEGACY_PROJECT",
@@ -11,13 +17,24 @@ export const RELEASE_TARGETS = {
   subtitleTemplates: "SUBTITLE_TEMPLATES",
 };
 
+const RELEASE_TARGET_LANES = {
+  legacyProject: "legacy_project",
+  sourceRange: "source_range",
+  elevenLabsTranscription: "elevenlabs_transcription",
+  subtitleTemplates: "subtitle_templates",
+};
+
 const GIT_SHA = /^[0-9a-f]{40}$/;
 const IMAGE_DIGEST = /^sha256:[0-9a-f]{64}$/;
 const IMAGE_URI = /^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com\/[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$/;
 const JOB_DEFINITION_ARN = /^arn:aws:batch:([a-z0-9-]+):([0-9]{12}):job-definition\/[A-Za-z0-9_-]+:[1-9][0-9]*$/;
 const JOB_QUEUE_ARN = /^arn:aws:batch:([a-z0-9-]+):([0-9]{12}):job-queue\/[A-Za-z0-9_-]+$/;
 
-export function validateProductionWorkerRelease(value) {
+export function validateProductionWorkerRelease(
+  value,
+  projectTargets = readProductionProjectTargets(),
+) {
+  const registry = validateProductionProjectTargets(projectTargets);
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("운영 Worker release manifest가 JSON 객체가 아닙니다.");
   }
@@ -69,6 +86,26 @@ export function validateProductionWorkerRelease(value) {
   if (identities.size !== 1) {
     throw new Error("운영 Worker 대상이 서로 다른 AWS 계정 또는 리전을 사용합니다.");
   }
+  for (const [targetName, laneName] of Object.entries(RELEASE_TARGET_LANES)) {
+    const target = value.targets[targetName];
+    const registered = registry.lanes[laneName].current;
+    if (
+      target.jobDefinitionArn !== registered.jobDefinitionArn
+      || target.jobQueueArn !== registered.jobQueueArn
+    ) {
+      throw new Error(
+        `${targetName} Worker release 대상이 production-project-targets registry와 다릅니다.`,
+      );
+    }
+    if (
+      registered.workerSourceGitSha !== value.workerSourceGitSha
+      || registered.imageUri !== value.imageUri
+    ) {
+      throw new Error(
+        `${targetName} Worker provenance가 production-project-targets registry와 다릅니다.`,
+      );
+    }
+  }
   return value;
 }
 
@@ -80,34 +117,25 @@ export function readProductionWorkerRelease(filePath = "production-worker-releas
 }
 
 export function productionWorkerEnvironment(release) {
-  const validated = validateProductionWorkerRelease(release);
-  return Object.fromEntries(
-    Object.entries(RELEASE_TARGETS).flatMap(([targetName, prefix]) => {
-      const target = validated.targets[targetName];
-      return [
-        [`${prefix}_JOB_DEFINITION_ARN`, target.jobDefinitionArn],
-        [`${prefix}_BATCH_QUEUE_ARN`, target.jobQueueArn],
-      ];
-    }),
-  );
+  const registry = readProductionProjectTargets();
+  validateProductionWorkerRelease(release, registry);
+  return productionProjectTargetEnvironment(registry);
 }
 
 export function productionWorkerCdkContext(release) {
-  const environment = productionWorkerEnvironment(release);
-  return {
-    legacyProjectJobDefinitionArn: environment.LEGACY_PROJECT_JOB_DEFINITION_ARN,
-    legacyProjectBatchQueueArn: environment.LEGACY_PROJECT_BATCH_QUEUE_ARN,
-    sourceRangeJobDefinitionArn: environment.SOURCE_RANGE_JOB_DEFINITION_ARN,
-    sourceRangeBatchQueueArn: environment.SOURCE_RANGE_BATCH_QUEUE_ARN,
-    elevenLabsTranscriptionJobDefinitionArn:
-      environment.ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN,
-    elevenLabsTranscriptionBatchQueueArn:
-      environment.ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN,
-    subtitleTemplatesJobDefinitionArn:
-      environment.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN,
-    subtitleTemplatesBatchQueueArn:
-      environment.SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN,
-  };
+  const registry = readProductionProjectTargets();
+  validateProductionWorkerRelease(release, registry);
+  return productionProjectTargetCdkContext(registry);
+}
+
+export function assertWorkerReleaseMatchesProjectTargets(
+  release,
+  registry = readProductionProjectTargets(),
+) {
+  return validateProductionWorkerRelease(
+    release,
+    validateProductionProjectTargets(registry),
+  );
 }
 
 function runCli(argv = process.argv.slice(2)) {

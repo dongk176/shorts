@@ -241,6 +241,14 @@ beforeEach(() => {
     "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
     + "shorts-mvp-unified-template-subtitles-canary-production"
   );
+  process.env.LEGACY_PROJECT_BATCH_TARGET_RELEASE_ID = "project-test-r27";
+  process.env.SOURCE_RANGE_BATCH_TARGET_RELEASE_ID = "source-range-test-r1";
+  process.env.ELEVENLABS_TRANSCRIPTION_BATCH_TARGET_RELEASE_ID =
+    "elevenlabs-test-r1";
+  process.env.SUBTITLE_TEMPLATES_BATCH_TARGET_RELEASE_ID =
+    "subtitle-templates-test-r1";
+  process.env.UNIFIED_TEMPLATE_SUBTITLES_BATCH_TARGET_RELEASE_ID =
+    "unified-test-r1";
   delete process.env.ELEVENLABS_TRANSCRIPTION_ENABLED;
   delete process.env.SUBTITLE_TEMPLATES_ENABLED;
   delete process.env.EDITOR_RENDERING_V2_ENABLED;
@@ -1619,15 +1627,25 @@ describe("job API security and idempotency", () => {
       Array.from(strings as TemplateStringsArray).join("").includes(
         "insert into shorts_mvp.video_jobs",
       ));
-    expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
+    const insertValues = insertCall?.slice(1) || [];
+    expect(insertValues).toEqual(expect.arrayContaining([
       7200,
       1200,
       2400,
       150,
       true,
+      "source_range",
+      process.env.SOURCE_RANGE_BATCH_TARGET_RELEASE_ID,
+    ]));
+    const releaseValueIndex = insertValues.indexOf(
+      process.env.SOURCE_RANGE_BATCH_TARGET_RELEASE_ID,
+    );
+    expect(releaseValueIndex).toBeGreaterThan(0);
+    expect(insertValues[releaseValueIndex - 1]).toBe("source_range");
+    expect(insertValues.slice(releaseValueIndex + 1, releaseValueIndex + 3)).toEqual([
       process.env.SOURCE_RANGE_JOB_DEFINITION_ARN,
       process.env.SOURCE_RANGE_BATCH_QUEUE_ARN,
-    ]));
+    ]);
     const reservationCall = tx.mock.calls.find(([strings]) =>
       Array.from(strings as TemplateStringsArray).join("").includes(
         "insert into shorts_mvp.usage_reservations",
@@ -1671,8 +1689,8 @@ describe("job API security and idempotency", () => {
       ));
     expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
       "elevenlabs_primary_openai_fallback",
-      process.env.ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN,
-      process.env.ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN,
+      "elevenlabs_transcription",
+      process.env.ELEVENLABS_TRANSCRIPTION_BATCH_TARGET_RELEASE_ID,
     ]));
   });
 
@@ -1726,14 +1744,14 @@ describe("job API security and idempotency", () => {
     expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
       customTemplateId,
       "elevenlabs_primary_openai_fallback",
-      process.env.ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN,
-      process.env.ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN,
+      "elevenlabs_transcription",
+      process.env.ELEVENLABS_TRANSCRIPTION_BATCH_TARGET_RELEASE_ID,
     ]));
     expect(insertCall?.slice(1)).not.toContain(
-      process.env.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN,
+      "subtitle_templates",
     );
     expect(insertCall?.slice(1)).not.toContain(
-      process.env.UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN,
+      "unified_template_subtitles",
     );
   });
 
@@ -1854,11 +1872,11 @@ describe("job API security and idempotency", () => {
         color: expect.objectContaining({ active: "#FF715E" }),
       }),
       "elevenlabs_primary_openai_fallback",
-      process.env.UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN,
-      process.env.UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN,
+      "unified_template_subtitles",
+      process.env.UNIFIED_TEMPLATE_SUBTITLES_BATCH_TARGET_RELEASE_ID,
     ]));
     expect(insertCall?.slice(1)).not.toContain(
-      process.env.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN,
+      "subtitle_templates",
     );
   });
 
@@ -1924,11 +1942,11 @@ describe("job API security and idempotency", () => {
         safeArea: { x: 120, y: 890, width: 840, height: 140 },
       }),
       "elevenlabs_primary_openai_fallback",
-      process.env.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN,
-      process.env.SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN,
+      "subtitle_templates",
+      process.env.SUBTITLE_TEMPLATES_BATCH_TARGET_RELEASE_ID,
     ]));
     expect(insertCall?.slice(1)).not.toContain(
-      process.env.UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN,
+      "unified_template_subtitles",
     );
   });
 
@@ -1980,11 +1998,11 @@ describe("job API security and idempotency", () => {
     expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
       expect.objectContaining({ presetVersion: 3, brandColor: "#FF715E" }),
       "elevenlabs_primary_openai_fallback",
-      process.env.SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN,
-      process.env.SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN,
+      "subtitle_templates",
+      process.env.SUBTITLE_TEMPLATES_BATCH_TARGET_RELEASE_ID,
     ]));
     expect(insertCall?.slice(1)).not.toContain(
-      process.env.UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN,
+      "unified_template_subtitles",
     );
   });
 
@@ -2240,6 +2258,20 @@ describe("job API security and idempotency", () => {
     }));
 
     expect(response.status).toBe(202);
+    const insertCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes(
+        "insert into shorts_mvp.video_jobs",
+      ));
+    const insertValues = insertCall?.slice(1) || [];
+    const releaseValueIndex = insertValues.indexOf(
+      process.env.LEGACY_PROJECT_BATCH_TARGET_RELEASE_ID,
+    );
+    expect(releaseValueIndex).toBeGreaterThan(0);
+    expect(insertValues[releaseValueIndex - 1]).toBe("legacy_project");
+    expect(insertValues.slice(releaseValueIndex + 1, releaseValueIndex + 3)).toEqual([
+      process.env.LEGACY_PROJECT_JOB_DEFINITION_ARN,
+      process.env.LEGACY_PROJECT_BATCH_QUEUE_ARN,
+    ]);
     const queriedSql = tx.mock.calls.map(([strings]) =>
       Array.from(strings as TemplateStringsArray).join(""),
     ).join("\n");

@@ -5,17 +5,24 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REGION="${AWS_REGION:-ap-northeast-2}"
 ENVIRONMENT="${DEPLOY_ENV:-production}"
 cd "$ROOT"
+if [[ "$ENVIRONMENT" == "production" ]]; then
+  cat >&2 <<'EOF'
+운영 전체 인프라 배포는 금지됩니다.
+Deployment A는 아래 exact control-plane 절차만 사용하세요:
+  npm run infra:deploy-control-plane -- --base <promoted-git-sha> --worker-image-tag <immutable-tag> --legacy-rerender-image-tag <immutable-tag> --prepare
+준비된 CHANGE_SET_ID ARN을 검토한 뒤 같은 스크립트의 --execute-change-set 단계로 실행해야 합니다.
+EOF
+  exit 2
+fi
+export AWS_REGION="$REGION"
+export AWS_DEFAULT_REGION="$REGION"
 if [[ -z "${WORKER_IMAGE_TAG:-}" ]] \
   && [[ -n "$(git status --porcelain -- worker infra/aws/lambda infra/aws/lib/stacks.ts supabase/migrations)" ]]; then
   echo "Worker/Batch 변경을 먼저 커밋하고 이미지 빌드가 끝난 뒤 배포하세요." >&2
   exit 2
 fi
 WORKER_IMAGE_TAG="${WORKER_IMAGE_TAG:-$(git rev-parse HEAD)}"
-if [[ "$ENVIRONMENT" == "production" ]]; then
-  LEGACY_RERENDER_IMAGE_TAG="${LEGACY_RERENDER_IMAGE_TAG:?Set LEGACY_RERENDER_IMAGE_TAG to the currently deployed known-good rerender image tag}"
-else
-  LEGACY_RERENDER_IMAGE_TAG="${LEGACY_RERENDER_IMAGE_TAG:-$WORKER_IMAGE_TAG}"
-fi
+LEGACY_RERENDER_IMAGE_TAG="${LEGACY_RERENDER_IMAGE_TAG:-$WORKER_IMAGE_TAG}"
 if [[ "$LEGACY_RERENDER_IMAGE_TAG" == "latest" || "$LEGACY_RERENDER_IMAGE_TAG" == "latest-prepare" ]]; then
   echo "레거시 재렌더 이미지는 불변 태그로 고정해야 합니다." >&2
   exit 2
@@ -31,22 +38,8 @@ for command in aws git openssl node npm; do
 done
 aws sts get-caller-identity >/dev/null
 
-PRODUCTION_WORKER_RELEASE_FILE="${PRODUCTION_WORKER_RELEASE_FILE:-$ROOT/production-worker-release.json}"
-if [[ "$ENVIRONMENT" == "production" ]]; then
-  : "${UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN:?UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN is required in production}"
-  : "${UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN:?UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN is required in production}"
-  while IFS='=' read -r release_name release_value; do
-    [[ -n "$release_name" && -n "$release_value" ]] || continue
-    export "$release_name=$release_value"
-  done < <(node scripts/production-worker-release.mjs env "$PRODUCTION_WORKER_RELEASE_FILE")
-  node scripts/verify-production-worker-release.mjs \
-    --release "$PRODUCTION_WORKER_RELEASE_FILE" \
-    --lambda-function shorts-mvp-batch-submitter-production \
-    --region "$REGION"
-fi
-
 echo "Supabase schema migration을 먼저 적용합니다."
-npm run db:migrate
+npm run db:migrate:non-production
 
 repository_name="shorts-mvp-worker-$ENVIRONMENT"
 if aws ecr describe-repositories --region "$REGION" \
@@ -93,9 +86,6 @@ if aws ecr describe-repositories --region "$REGION" \
       --image-manifest "$legacy_rerender_manifest" >/dev/null
   fi
   LEGACY_RERENDER_IMAGE_TAG="$protected_legacy_tag"
-elif [[ "$ENVIRONMENT" == "production" ]]; then
-  echo "운영 레거시 재렌더 ECR 저장소를 찾을 수 없습니다." >&2
-  exit 2
 fi
 
 mkdir -p .secrets
@@ -132,55 +122,16 @@ deploy_args=(
   -c "githubOrg=${GITHUB_ORG:-dongk176}"
   -c "githubRepo=${GITHUB_REPO:-shorts}"
 )
-if [[ "$ENVIRONMENT" == "production" ]]; then
-  deploy_args+=(
-    -c "legacyProjectJobDefinitionArn=$LEGACY_PROJECT_JOB_DEFINITION_ARN"
-    -c "legacyProjectBatchQueueArn=$LEGACY_PROJECT_BATCH_QUEUE_ARN"
-    -c "sourceRangeJobDefinitionArn=$SOURCE_RANGE_JOB_DEFINITION_ARN"
-    -c "sourceRangeBatchQueueArn=$SOURCE_RANGE_BATCH_QUEUE_ARN"
-    -c "elevenLabsTranscriptionJobDefinitionArn=$ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN"
-    -c "elevenLabsTranscriptionBatchQueueArn=$ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN"
-    -c "subtitleTemplatesJobDefinitionArn=$SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"
-    -c "subtitleTemplatesBatchQueueArn=$SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"
-    -c "unifiedTemplateSubtitlesJobDefinitionArn=$UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"
-    -c "unifiedTemplateSubtitlesBatchQueueArn=$UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
-  )
-  if [[ -n "${UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN:-}" ]]; then
-    deploy_args+=(
-      -c "unifiedTemplateSubtitlesPreviousJobDefinitionArn=$UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN"
-    )
-  fi
-fi
 if [[ ${#context_args[@]} -gt 0 ]]; then
   deploy_args+=("${context_args[@]}")
 fi
-AWS_REGION="$REGION" npm --prefix infra/aws run deploy -- "${deploy_args[@]}"
+AWS_REGION="$REGION" AWS_DEFAULT_REGION="$REGION" \
+  npm --prefix infra/aws run deploy -- "${deploy_args[@]}"
 
 bash scripts/sync-runtime-secret.sh
-bash scripts/sync-vercel-env.sh
-if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-  gh variable set AWS_WORKER_BUILD_ROLE_ARN --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
-    --body "$(bash scripts/stack-outputs.sh GithubWorkerBuildRoleArn Compute)"
-  gh variable set EDITOR_RELEASE_BUILD_ROLE_ARN --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
-    --body "$(bash scripts/stack-outputs.sh EditorReleaseBuildRoleArn EditorCanary)"
-  gh variable set AWS_ECR_REPOSITORY_URI --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
-    --body "$(bash scripts/stack-outputs.sh WorkerRepositoryUri Foundation)"
-  gh variable set EDITOR_RELEASE_ECR_REPOSITORY_URI \
-    --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
-    --body "$(bash scripts/stack-outputs.sh EditorReleaseRepositoryUri Foundation)"
-  gh variable set EDITOR_PRODUCTION_TEMPLATE_JOB_DEFINITION \
-    --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
-    --body "$(bash scripts/stack-outputs.sh RerenderFargateBatchJobDefinition Compute)"
-  gh variable set EDITOR_RELEASE_REGISTRAR_FUNCTION \
-    --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
-    --body "$(bash scripts/stack-outputs.sh EditorReleaseRegistrarFunctionArn Compute)"
-  if [[ "${INCLUDE_EDITOR_TEST:-false}" == "true" ]]; then
-    gh variable set EDITOR_TEST_JOB_QUEUE \
-      --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
-      --body "$(bash scripts/stack-outputs.sh EditorTestBatchJobQueue EditorTest)"
-    gh variable set EDITOR_TEST_TEMPLATE_JOB_DEFINITION \
-      --repo "${GITHUB_ORG:-dongk176}/${GITHUB_REPO:-shorts}" \
-      --body "$(bash scripts/stack-outputs.sh EditorTestTemplateJobDefinitionArn EditorTest)"
-  fi
-fi
+# This command is retained for non-production AWS provisioning only. Never let
+# it mutate the Vercel production environment or repository-wide GitHub Actions
+# variables as a side effect. Those production values are managed only by their
+# separately verified release procedures.
+echo "Vercel production 환경변수와 GitHub Actions 저장소 변수는 변경하지 않았습니다."
 echo "AWS 인프라 구성이 완료되었습니다. GitHub Actions에서 worker image를 게시하세요."

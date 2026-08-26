@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "environment": "production",
+  "lanes": {
+    "legacy_project": {
+      "schedulingMode": "fair_share",
+      "current": {
+        "releaseId": "legacy-project-f862397-r1",
+        "workerSourceGitSha": "f8623974c7528ce9142af63d8f4d925df55f2641",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:2e8685bf5324645f9133dafeabecb06352c6a205c1e11f36cbf4d55844e53840",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-project-heavy-pot-f862397-production:1",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-project-fargate-production"
+      },
+      "previous": null
+    },
+    "source_range": {
+      "schedulingMode": "fair_share",
+      "current": {
+        "releaseId": "source-range-f862397-r1",
+        "workerSourceGitSha": "f8623974c7528ce9142af63d8f4d925df55f2641",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:2e8685bf5324645f9133dafeabecb06352c6a205c1e11f36cbf4d55844e53840",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-source-range-pot-f862397-production:1",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-source-range-production"
+      },
+      "previous": null
+    },
+    "elevenlabs_transcription": {
+      "schedulingMode": "fair_share",
+      "current": {
+        "releaseId": "elevenlabs-transcription-f862397-r1",
+        "workerSourceGitSha": "f8623974c7528ce9142af63d8f4d925df55f2641",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:2e8685bf5324645f9133dafeabecb06352c6a205c1e11f36cbf4d55844e53840",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-elevenlabs-pot-f862397-production:1",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-elevenlabs-transcription-canary-production"
+      },
+      "previous": null
+    },
+    "subtitle_templates": {
+      "schedulingMode": "fair_share",
+      "current": {
+        "releaseId": "subtitle-templates-f862397-r1",
+        "workerSourceGitSha": "f8623974c7528ce9142af63d8f4d925df55f2641",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:2e8685bf5324645f9133dafeabecb06352c6a205c1e11f36cbf4d55844e53840",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-subtitle-pot-f862397-production:1",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-elevenlabs-transcription-canary-production"
+      },
+      "previous": null
+    },
+    "unified_template_subtitles": {
+      "schedulingMode": "fifo",
+      "current": {
+        "releaseId": "unified-f28e1fe874c1-r4",
+        "workerSourceGitSha": "f28e1fe874c1bff1da6184088ef1ee48e8418dc5",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:f451682b1468c918e36bca3dc99ba0ee0c22a607064ff4ddfb3a653e1a41ada5",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-unified-template-subtitles-f28e1fe874c1-4vcpu:4",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-prepare-production"
+      },
+      "previous": {
+        "releaseId": "unified-8fa1f8494a49-r1",
+        "workerSourceGitSha": "8fa1f8494a491c1e3b8d23c18ffcdf36581c12b5",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:9e40d290f774359ac023e1df0003f8dfed60a9c88f3efd1afc2d5fe1ea776644",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-unified-template-subtitles-8fa1f8494a49-4vcpu:1",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-prepare-production",
+        "submitAsReleaseId": "unified-f28e1fe874c1-r4"
+      }
+    }
+  }
+}

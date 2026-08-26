@@ -83,6 +83,9 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
     os.environ.pop(
         "UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN", None
     )
+    os.environ.pop("PROJECT_TARGET_REGISTRY_JSON", None)
+    os.environ.pop("PROJECT_TARGET_REGISTRY_PATH", None)
+    os.environ.pop("PROJECT_TARGET_REGISTRY_REQUIRED", None)
     os.environ["RERENDER_JOB_DEFINITION"] = "rerender-definition:1"
     os.environ["EDITOR_STABLE_BATCH_QUEUE"] = "editor-stable-queue"
     os.environ["EDITOR_CANARY_BATCH_QUEUE"] = "editor-canary-queue"
@@ -104,6 +107,40 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
         else:
             sys.modules["common"] = previous_common  # type: ignore[assignment]
     return module, fake_sqs
+
+
+def _project_target_registry() -> dict[str, object]:
+    def lane(prefix: str, release_id: str, *, scheduling: str = "fair_share"):
+        return {
+            "schedulingMode": scheduling,
+            "current": {
+                "releaseId": release_id,
+                "jobDefinitionArn": os.environ[f"{prefix}_JOB_DEFINITION_ARN"],
+                "jobQueueArn": os.environ[f"{prefix}_BATCH_QUEUE_ARN"],
+            },
+            "previous": None,
+        }
+
+    registry: dict[str, object] = {
+        "version": 1,
+        "environment": "production",
+        "lanes": {
+            "legacy_project": lane("LEGACY_PROJECT", "legacy-r27"),
+            "source_range": lane("SOURCE_RANGE", "source-range-r1"),
+            "elevenlabs_transcription": lane(
+                "ELEVENLABS_TRANSCRIPTION", "elevenlabs-r1"
+            ),
+            "subtitle_templates": lane(
+                "SUBTITLE_TEMPLATES", "subtitle-templates-r1"
+            ),
+            "unified_template_subtitles": lane(
+                "UNIFIED_TEMPLATE_SUBTITLES",
+                "unified-current-r4",
+                scheduling="fifo",
+            ),
+        },
+    }
+    return registry
 
 
 def test_state_writer_applies_stage_counts_atomically_with_v2_rpc() -> None:
@@ -427,9 +464,177 @@ def test_stale_job_cleanup_preserves_a_recent_worker_heartbeat() -> None:
     assert module.release_stale_jobs() == 0
     batch.describe_jobs.assert_not_called()
     assert all(
-        call.args[0] != "rpc/finalize_project_job"
+        call.args[0] != "rpc/finalize_stale_video_job_if_unchanged"
         for call in module.rest.call_args_list
     )
+
+
+def test_stale_job_cleanup_finalizes_only_through_atomic_observation_rpc() -> None:
+    module, batch = _load_lambda("cleanup")
+    now = datetime.now(UTC)
+    observed_heartbeat = (now - timedelta(hours=3)).isoformat()
+    candidate = {
+        "id": "job-stale",
+        "aws_batch_job_id": "terminal-batch",
+        "status": "extracting",
+        "heartbeat_at": observed_heartbeat,
+        "created_at": (now - timedelta(hours=4)).isoformat(),
+        "execution_backend": "aws_batch",
+        "claimed_at": now.isoformat(),
+    }
+    rpc_bodies: list[dict[str, object]] = []
+
+    def rest(table: str, **kwargs):
+        if table == "video_jobs":
+            return [candidate]
+        if table == "rpc/finalize_stale_video_job_if_unchanged":
+            rpc_bodies.append(kwargs["body"])
+            return [{"finalized": True, "reason": "finalized", "final_status": "failed"}]
+        return []
+
+    module.rest = MagicMock(side_effect=rest)
+    module.patch = MagicMock()
+    batch.describe_jobs.return_value = {"jobs": [{"status": "FAILED"}]}
+
+    assert module.release_stale_jobs() == 1
+    assert len(rpc_bodies) == 1
+    assert rpc_bodies[0]["p_job_id"] == "job-stale"
+    assert rpc_bodies[0]["p_observed_aws_batch_job_id"] == "terminal-batch"
+    assert rpc_bodies[0]["p_observed_status"] == "extracting"
+    assert rpc_bodies[0]["p_observed_heartbeat_at"] == observed_heartbeat
+    assert datetime.fromisoformat(str(rpc_bodies[0]["p_created_before"])) < now
+    assert datetime.fromisoformat(str(rpc_bodies[0]["p_heartbeat_before"])) < now
+    module.patch.assert_not_called()
+
+
+def test_stale_job_cleanup_does_not_count_a_changed_atomic_observation() -> None:
+    module, batch = _load_lambda("cleanup")
+    now = datetime.now(UTC)
+    candidate = {
+        "id": "job-recovered",
+        "aws_batch_job_id": "old-terminal-batch",
+        "status": "extracting",
+        "heartbeat_at": (now - timedelta(hours=3)).isoformat(),
+        "created_at": (now - timedelta(hours=4)).isoformat(),
+        "execution_backend": "aws_batch",
+        "claimed_at": now.isoformat(),
+    }
+
+    def rest(table: str, **_kwargs):
+        if table == "video_jobs":
+            return [candidate]
+        if table == "rpc/finalize_stale_video_job_if_unchanged":
+            return [{
+                "finalized": False,
+                "reason": "observation_changed",
+                "final_status": "rendering",
+            }]
+        return []
+
+    module.rest = rest
+    batch.describe_jobs.return_value = {"jobs": [{"status": "FAILED"}]}
+
+    assert module.release_stale_jobs() == 0
+
+
+def test_cleanup_emits_structured_batch_dispatch_health() -> None:
+    module, _ = _load_lambda("cleanup")
+    module.rest = MagicMock(return_value=[{
+        "actionable_queued_without_batch_id": 3,
+        "oldest_actionable_at": "2026-08-26T03:00:00+00:00",
+        "oldest_actionable_age_seconds": 601,
+        "submission_claim_without_job_id": 0,
+        "oldest_submission_claim_at": None,
+        "oldest_submission_claim_age_seconds": None,
+    }])
+    module.log_event = MagicMock()
+
+    assert module.report_batch_dispatch_health() == 3
+    assert module.log_event.call_args_list[0].args == ("project_dispatch_health",)
+    assert module.log_event.call_args_list[0].kwargs == {
+        "actionableQueuedWithoutBatchId": 3,
+        "oldestActionableAt": "2026-08-26T03:00:00+00:00",
+        "oldestActionableAgeSeconds": 601,
+        "submissionClaimWithoutJobId": 0,
+        "oldestSubmissionClaimAt": None,
+        "oldestSubmissionClaimAgeSeconds": None,
+        "healthy": False,
+    }
+    assert module.log_event.call_args_list[1].args == ("queued_without_batch_id",)
+    assert module.log_event.call_args_list[1].kwargs == {
+        "count": 3,
+        "oldest_seconds": 601,
+    }
+
+
+def test_cleanup_does_not_emit_dispatch_alert_when_healthy() -> None:
+    module, _ = _load_lambda("cleanup")
+    module.rest = MagicMock(return_value=[{
+        "actionable_queued_without_batch_id": 0,
+        "oldest_actionable_at": None,
+        "oldest_actionable_age_seconds": None,
+        "submission_claim_without_job_id": 0,
+        "oldest_submission_claim_at": None,
+        "oldest_submission_claim_age_seconds": None,
+    }])
+    module.log_event = MagicMock()
+
+    assert module.report_batch_dispatch_health() == 0
+    assert module.log_event.call_count == 1
+    assert module.log_event.call_args.args == ("project_dispatch_health",)
+
+
+def test_cleanup_alerts_on_a_completed_submission_missing_from_the_job() -> None:
+    module, _ = _load_lambda("cleanup")
+    module.rest = MagicMock(return_value=[{
+        "actionable_queued_without_batch_id": 0,
+        "oldest_actionable_at": None,
+        "oldest_actionable_age_seconds": None,
+        "submission_claim_without_job_id": 2,
+        "oldest_submission_claim_at": "2026-08-26T03:00:00+00:00",
+        "oldest_submission_claim_age_seconds": 701,
+    }])
+    module.log_event = MagicMock()
+
+    assert module.report_batch_dispatch_health() == 0
+    assert module.log_event.call_args_list[0].kwargs["healthy"] is False
+    assert module.log_event.call_args_list[1].args == (
+        "batch_submission_reconciliation_required",
+    )
+    assert module.log_event.call_args_list[1].kwargs == {
+        "count": 2,
+        "oldest_seconds": 701,
+    }
+
+
+def test_dispatch_health_failure_does_not_block_core_cleanup() -> None:
+    module, _ = _load_lambda("cleanup")
+    module.report_batch_dispatch_health = MagicMock(
+        side_effect=RuntimeError("database unavailable")
+    )
+    module.enforce_deadlines = MagicMock(return_value=1)
+    module.cleanup_failed_shorts = MagicMock(return_value=(2, 3))
+    module.expire_shorts = MagicMock(return_value=(4, 5))
+    module.release_stale_jobs = MagicMock(return_value=6)
+    module.reset_stale_rerenders = MagicMock(return_value=7)
+    module.log_event = MagicMock()
+
+    assert module.handler({}, None) == {
+        "expiredShorts": 4,
+        "cleanedFailedShorts": 2,
+        "deletedObjects": 8,
+        "releasedStaleJobs": 6,
+        "resetStaleRerenders": 7,
+        "enforcedDeadlines": 1,
+        "actionableQueuedWithoutBatchId": -1,
+    }
+    module.enforce_deadlines.assert_called_once_with()
+    assert module.log_event.call_args_list[0].args == (
+        "project_dispatch_health_check_failed",
+    )
+    assert module.log_event.call_args_list[0].kwargs == {
+        "error_type": "RuntimeError",
+    }
 
 
 def test_recent_heartbeat_requires_a_valid_timezone_aware_timestamp() -> None:
@@ -613,17 +818,93 @@ def test_heavy_project_submission_records_selected_definition() -> None:
     assert request["jobDefinition"] == os.environ[
         "LEGACY_PROJECT_JOB_DEFINITION_ARN"
     ]
-    module.patch.assert_called_once_with(
-        "video_jobs",
-        "id=eq.job-heavy&status=eq.queued",
-        {
-            "aws_batch_job_id": "project-heavy-batch",
-            "batch_job_definition": os.environ[
-                "LEGACY_PROJECT_JOB_DEFINITION_ARN"
-            ],
-            "batch_job_queue": os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"],
-        },
-    )
+    assert module._submit_once.call_args.kwargs["project_binding"] == {
+        "p_video_job_id": "job-heavy",
+        "p_expected_batch_target_key": None,
+        "p_expected_batch_target_release_id": None,
+        "p_observed_job_definition": None,
+        "p_observed_job_queue": None,
+    }
+    module.patch.assert_not_called()
+
+
+def test_project_submission_reconciles_an_eventbridge_recorded_id_after_status_advance() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module.rest = MagicMock(return_value=[{
+        "id": "job-reconcile",
+        "status": "rendering",
+        "pipeline_version": 2,
+        "project_resume_count": 0,
+        "aws_batch_job_id": "batch-recorded",
+        "mvp_session_id": "session-a",
+        "user_id": "user-a",
+        "preparation_finished_at": None,
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "openai_stable",
+        "subtitle_template_id": None,
+        "batch_job_definition": os.environ[
+            "LEGACY_PROJECT_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"],
+        "batch_target_key": None,
+        "batch_target_release_id": None,
+    }])
+    module._submit_once = MagicMock(return_value="batch-recorded")
+
+    result = module._submit({"kind": "project", "jobId": "job-reconcile"})
+
+    assert result == "batch-recorded"
+    request, submission_key = module._submit_once.call_args.args
+    assert submission_key == "project:job-reconcile:0"
+    assert request["jobName"] == "shorts-project-job-reconcile-0"
+    assert module._submit_once.call_args.kwargs["project_binding"] == {
+        "p_video_job_id": "job-reconcile",
+        "p_expected_batch_target_key": None,
+        "p_expected_batch_target_release_id": None,
+        "p_observed_job_definition": os.environ[
+            "LEGACY_PROJECT_JOB_DEFINITION_ARN"
+        ],
+        "p_observed_job_queue": os.environ[
+            "LEGACY_PROJECT_BATCH_QUEUE_ARN"
+        ],
+    }
+
+
+def test_project_submission_reconciliation_rejects_a_different_batch_id() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module.rest = MagicMock(return_value=[{
+        "id": "job-reconcile-mismatch",
+        "status": "rendering",
+        "pipeline_version": 2,
+        "project_resume_count": 0,
+        "aws_batch_job_id": "batch-recorded",
+        "mvp_session_id": "session-a",
+        "user_id": "user-a",
+        "preparation_finished_at": None,
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "openai_stable",
+        "subtitle_template_id": None,
+        "batch_job_definition": os.environ[
+            "LEGACY_PROJECT_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"],
+        "batch_target_key": None,
+        "batch_target_release_id": None,
+    }])
+    module._submit_once = MagicMock(return_value="batch-different")
+
+    with pytest.raises(
+        module.BatchTargetTrustRejected,
+        match="changed during reconciliation",
+    ):
+        module._submit({
+            "kind": "project",
+            "jobId": "job-reconcile-mismatch",
+        })
 
 
 def test_project_resume_preserves_original_heavy_definition() -> None:
@@ -773,6 +1054,261 @@ def test_project_scheduling_overrides_only_omit_for_exact_unified_queue() -> Non
         "session-a",
         "job-a",
     ) == expected
+
+
+def test_logical_project_target_resolves_only_the_registered_current_release() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    registry = _project_target_registry()
+    os.environ["PROJECT_TARGET_REGISTRY_JSON"] = json.dumps(registry)
+    job = {
+        "planned_short_count": 2,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": True,
+        "transcription_policy": "openai_stable",
+        "subtitle_template_id": None,
+        "batch_target_key": "source_range",
+        "batch_target_release_id": "source-range-r1",
+        "batch_job_definition": None,
+        "batch_job_queue": None,
+    }
+
+    assert module._project_dispatch_target(job, resume=False) == (
+        os.environ["SOURCE_RANGE_JOB_DEFINITION_ARN"],
+        os.environ["SOURCE_RANGE_BATCH_QUEUE_ARN"],
+        "source_range",
+        60,
+    )
+
+
+def test_registry_keeps_name_only_legacy_project_rows_compatible() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    registry = _project_target_registry()
+    os.environ["PROJECT_TARGET_REGISTRY_JSON"] = json.dumps(registry)
+    legacy_current = registry["lanes"]["legacy_project"]["current"]
+
+    assert module._project_dispatch_target({
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "openai_stable",
+        "subtitle_template_id": None,
+        "batch_target_key": None,
+        "batch_target_release_id": None,
+        "batch_job_definition": os.environ["PROJECT_JOB_DEFINITION"],
+        "batch_job_queue": None,
+    }, resume=False) == (
+        legacy_current["jobDefinitionArn"],
+        legacy_current["jobQueueArn"],
+        "legacy",
+        30,
+    )
+
+
+def test_bundled_registry_file_is_the_only_required_production_target_source(
+    tmp_path: Path,
+) -> None:
+    module, _ = _load_lambda("batch_submitter")
+    registry = _project_target_registry()
+    registry_path = tmp_path / "production-project-targets.json"
+    registry_path.write_text(json.dumps(registry), encoding="utf-8")
+    os.environ["PROJECT_TARGET_REGISTRY_PATH"] = str(registry_path)
+    os.environ["PROJECT_TARGET_REGISTRY_REQUIRED"] = "true"
+    for prefix in (
+        "LEGACY_PROJECT",
+        "SOURCE_RANGE",
+        "ELEVENLABS_TRANSCRIPTION",
+        "SUBTITLE_TEMPLATES",
+        "UNIFIED_TEMPLATE_SUBTITLES",
+    ):
+        os.environ.pop(f"{prefix}_JOB_DEFINITION_ARN", None)
+        os.environ.pop(f"{prefix}_BATCH_QUEUE_ARN", None)
+    os.environ.pop(
+        "UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN",
+        None,
+    )
+
+    assert module._project_dispatch_target({
+        "planned_short_count": 2,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": True,
+        "transcription_policy": "openai_stable",
+        "subtitle_template_id": None,
+        "batch_target_key": "source_range",
+        "batch_target_release_id": "source-range-r1",
+        "batch_job_definition": None,
+        "batch_job_queue": None,
+    }, resume=False) == (
+        registry["lanes"]["source_range"]["current"]["jobDefinitionArn"],
+        registry["lanes"]["source_range"]["current"]["jobQueueArn"],
+        "source_range",
+        60,
+    )
+
+
+def test_production_registry_rejects_missing_or_ambiguous_sources(
+    tmp_path: Path,
+) -> None:
+    module, _ = _load_lambda("batch_submitter")
+    os.environ["PROJECT_TARGET_REGISTRY_REQUIRED"] = "true"
+    with pytest.raises(RuntimeError, match="registry is required"):
+        module._production_project_target_registry()
+
+    registry_path = tmp_path / "production-project-targets.json"
+    registry_path.write_text(
+        json.dumps(_project_target_registry()),
+        encoding="utf-8",
+    )
+    os.environ["PROJECT_TARGET_REGISTRY_PATH"] = str(registry_path)
+    os.environ["PROJECT_TARGET_REGISTRY_JSON"] = json.dumps(
+        _project_target_registry()
+    )
+    with pytest.raises(RuntimeError, match="multiple configured sources"):
+        module._production_project_target_registry()
+
+
+def test_production_registry_rejects_conflicting_modes_for_a_shared_queue() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    registry = _project_target_registry()
+    lanes = registry["lanes"]
+    assert isinstance(lanes, dict)
+    source_range = lanes["source_range"]
+    unified = lanes["unified_template_subtitles"]
+    assert isinstance(source_range, dict)
+    assert isinstance(unified, dict)
+    source_current = source_range["current"]
+    unified_current = unified["current"]
+    assert isinstance(source_current, dict)
+    assert isinstance(unified_current, dict)
+    source_current["jobQueueArn"] = unified_current["jobQueueArn"]
+    os.environ["PROJECT_TARGET_REGISTRY_JSON"] = json.dumps(registry)
+
+    with pytest.raises(RuntimeError, match="conflicting scheduling modes"):
+        module._production_project_target_registry()
+
+
+def test_registered_previous_release_uses_its_declared_hardened_submit_target() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    registry = _project_target_registry()
+    lanes = registry["lanes"]
+    assert isinstance(lanes, dict)
+    unified = lanes["unified_template_subtitles"]
+    assert isinstance(unified, dict)
+    previous_definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-unified-template-subtitles-previous-production:1"
+    )
+    unified["previous"] = {
+        "releaseId": "unified-previous-r1",
+        "jobDefinitionArn": previous_definition,
+        "jobQueueArn": os.environ["UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"],
+        "submitAsReleaseId": "unified-current-r4",
+    }
+    os.environ["PROJECT_TARGET_REGISTRY_JSON"] = json.dumps(registry)
+    job = {
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": True,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "highlight",
+        "template_snapshot": {"config": {"schemaVersion": 5}},
+        "subtitle_template_snapshot": {"origin": "unified-template-v5"},
+        "batch_target_key": "unified_template_subtitles",
+        "batch_target_release_id": "unified-previous-r1",
+        "batch_job_definition": None,
+        "batch_job_queue": None,
+    }
+
+    assert module._project_dispatch_target(job, resume=False) == (
+        os.environ["UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"],
+        os.environ["UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"],
+        "unified_template_subtitles",
+        225,
+    )
+
+
+def test_registered_previous_release_executes_itself_without_explicit_remap() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    registry = _project_target_registry()
+    lanes = registry["lanes"]
+    assert isinstance(lanes, dict)
+    source_range = lanes["source_range"]
+    assert isinstance(source_range, dict)
+    previous_definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-source-range-previous-production:2"
+    )
+    previous_queue = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+        "shorts-mvp-source-range-previous-production"
+    )
+    source_range["previous"] = {
+        "releaseId": "source-range-previous-r2",
+        "jobDefinitionArn": previous_definition,
+        "jobQueueArn": previous_queue,
+    }
+    os.environ["PROJECT_TARGET_REGISTRY_JSON"] = json.dumps(registry)
+
+    assert module._project_dispatch_target({
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": True,
+        "transcription_policy": "openai_stable",
+        "subtitle_template_id": None,
+        "batch_target_key": "source_range",
+        "batch_target_release_id": "source-range-previous-r2",
+        "batch_job_definition": None,
+        "batch_job_queue": None,
+    }, resume=False) == (
+        previous_definition,
+        previous_queue,
+        "source_range",
+        30,
+    )
+
+
+def test_logical_target_rejects_unknown_release_and_semantic_lane_forgery() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    os.environ["PROJECT_TARGET_REGISTRY_JSON"] = json.dumps(
+        _project_target_registry()
+    )
+    base_job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": True,
+        "transcription_policy": "openai_stable",
+        "subtitle_template_id": None,
+        "batch_job_definition": None,
+        "batch_job_queue": None,
+    }
+    with pytest.raises(module.UnknownBatchTargetRelease):
+        module._project_dispatch_target({
+            **base_job,
+            "batch_target_key": "source_range",
+            "batch_target_release_id": "source-range-unknown",
+        }, resume=False)
+    with pytest.raises(module.BatchTargetTrustRejected):
+        module._project_dispatch_target({
+            **base_job,
+            "batch_target_key": "legacy_project",
+            "batch_target_release_id": "legacy-r27",
+        }, resume=False)
+
+
+def test_direct_target_rejection_emits_sanitized_alarm_event() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module._submit = MagicMock(side_effect=module.UnknownBatchTargetRelease("secret"))
+    module.log_event = MagicMock()
+
+    with pytest.raises(module.UnknownBatchTargetRelease):
+        module.handler({"kind": "project", "jobId": "job-a"}, None)
+
+    module.log_event.assert_called_once_with(
+        "project_target_release_unknown",
+        kind="project",
+        job_id="job-a",
+        error_type="UnknownBatchTargetRelease",
+        invocation="direct",
+    )
 
 
 def test_elevenlabs_project_and_resume_keep_the_exact_candidate_target() -> None:
@@ -1000,6 +1536,64 @@ def test_previous_unified_definition_is_remapped_to_hardened_primary() -> None:
         "unified_template_subtitles",
         225,
     )
+
+
+def test_previous_unified_eventbridge_id_reconciles_with_creation_target_cas() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    registry = _project_target_registry()
+    lane = registry["lanes"]["unified_template_subtitles"]
+    current = lane["current"]
+    previous_definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-unified-template-subtitles-previous-production:1"
+    )
+    previous_release = {
+        "releaseId": "unified-previous-r1",
+        "jobDefinitionArn": previous_definition,
+        "jobQueueArn": current["jobQueueArn"],
+        "submitAsReleaseId": current["releaseId"],
+    }
+    lane["previous"] = previous_release
+    os.environ["PROJECT_TARGET_REGISTRY_JSON"] = json.dumps(registry)
+    module.rest = MagicMock(return_value=[{
+        "id": "job-unified-reconcile",
+        "status": "rendering",
+        "pipeline_version": 2,
+        "project_resume_count": 0,
+        "aws_batch_job_id": "batch-unified-recorded",
+        "mvp_session_id": "session-a",
+        "user_id": "user-a",
+        "preparation_finished_at": None,
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "highlight",
+        "template_snapshot": {"config": {"schemaVersion": 5}},
+        "subtitle_template_snapshot": {"origin": "unified-template-v5"},
+        "batch_target_key": "unified_template_subtitles",
+        "batch_target_release_id": previous_release["releaseId"],
+        "batch_job_definition": previous_definition,
+        "batch_job_queue": previous_release["jobQueueArn"],
+    }])
+    module._submit_once = MagicMock(return_value="batch-unified-recorded")
+
+    result = module._submit({
+        "kind": "project",
+        "jobId": "job-unified-reconcile",
+    })
+
+    assert result == "batch-unified-recorded"
+    request = module._submit_once.call_args.args[0]
+    assert request["jobDefinition"] == current["jobDefinitionArn"]
+    assert request["jobQueue"] == current["jobQueueArn"]
+    assert module._submit_once.call_args.kwargs["project_binding"] == {
+        "p_video_job_id": "job-unified-reconcile",
+        "p_expected_batch_target_key": "unified_template_subtitles",
+        "p_expected_batch_target_release_id": previous_release["releaseId"],
+        "p_observed_job_definition": previous_definition,
+        "p_observed_job_queue": previous_release["jobQueueArn"],
+    }
 
 
 def test_ordinary_project_cannot_use_previous_unified_definition() -> None:
@@ -1465,6 +2059,18 @@ def test_regular_brand_color_project_uses_the_isolated_admin_target() -> None:
     assert request["jobQueue"] == os.environ[
         "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"
     ]
+    assert module._submit_once.call_args.kwargs["project_binding"] == {
+        "p_video_job_id": "job-brand-color",
+        "p_expected_batch_target_key": None,
+        "p_expected_batch_target_release_id": None,
+        "p_observed_job_definition": os.environ[
+            "SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN"
+        ],
+        "p_observed_job_queue": os.environ[
+            "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN"
+        ],
+    }
+    module.patch.assert_not_called()
 
 
 def test_subtitle_template_requires_word_timed_policy_and_dedicated_target() -> None:
@@ -1721,16 +2327,33 @@ def test_project_submission_rejects_untrusted_stored_target() -> None:
 
 def test_project_failure_after_checkpoint_submits_one_resume() -> None:
     module, sqs = _load_lambda("batch_state")
+    job_id = "9e79c781-37fd-4329-a5c4-896ce63df13a"
+    definition = os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"]
+    queue = os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
 
     def rest(table: str, **kwargs):
         if table == "video_jobs":
             return [{
-                "id": "job-a",
+                "id": job_id,
                 "status": "rendering",
                 "pipeline_version": 2,
                 "project_resume_count": 0,
                 "preparation_finished_at": "2026-07-22T00:00:00+00:00",
+                "aws_batch_job_id": "project-batch-a",
+                "batch_target_key": None,
+                "batch_target_release_id": None,
+                "batch_job_definition": definition,
+                "batch_job_queue": queue,
             }]
+        if table == "batch_submission_claims":
+            return [{
+                "submission_key": f"project:{job_id}:0",
+                "aws_batch_job_id": "project-batch-a",
+                "job_definition": definition,
+                "job_queue": queue,
+            }]
+        if table == "rpc/complete_project_batch_submission_target":
+            return True
         if table == "rpc/handle_project_batch_failure":
             assert kwargs["body"]["p_batch_job_id"] == "project-batch-a"
             return [{"action": "resume", "resume_count": 1}]
@@ -1739,19 +2362,269 @@ def test_project_failure_after_checkpoint_submits_one_resume() -> None:
     module.rest = rest
     result = module.handler({"detail": {
         "jobId": "project-batch-a",
+        "jobName": f"shorts-project-{job_id}-0",
+        "jobDefinition": definition,
+        "jobQueue": queue,
         "status": "FAILED",
         "statusReason": "Task failed to start",
     }}, None)
 
     assert result == {
-        "projectJobId": "job-a",
+        "projectJobId": job_id,
         "action": "resume",
         "failureCategory": "infrastructure",
         "resumeCount": 1,
     }
     assert json.loads(sqs.send_message.call_args.kwargs["MessageBody"]) == {
-        "kind": "project_resume", "jobId": "job-a",
+        "kind": "project_resume", "jobId": job_id,
     }
+
+
+def test_project_success_event_binds_claim_and_job_atomically_before_finalize() -> None:
+    module, _ = _load_lambda("batch_state")
+    job_id = "9e79c781-37fd-4329-a5c4-896ce63df13a"
+    old_definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-unified-template-subtitles-old-production:1"
+    )
+    definition = os.environ["UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"]
+    queue = os.environ["UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"]
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def rest(table: str, **kwargs):
+        calls.append((table, kwargs))
+        if table == "video_jobs":
+            if "aws_batch_job_id=eq" in kwargs["query"]:
+                return []
+            return [{
+                "id": job_id,
+                "status": "rendering",
+                "pipeline_version": 2,
+                "project_resume_count": 0,
+                "preparation_finished_at": None,
+                "aws_batch_job_id": None,
+                "batch_target_key": "unified_template_subtitles",
+                "batch_target_release_id": "unified-previous-r1",
+                "batch_job_definition": old_definition,
+                "batch_job_queue": queue,
+            }]
+        if table == "batch_submission_claims":
+            return [{
+                "submission_key": f"project:{job_id}:0",
+                "aws_batch_job_id": None,
+                "job_definition": definition,
+                "job_queue": queue,
+            }]
+        if table == "rpc/complete_project_batch_submission_target":
+            assert kwargs["body"] == {
+                "p_submission_key": f"project:{job_id}:0",
+                "p_video_job_id": job_id,
+                "p_expected_batch_target_key": "unified_template_subtitles",
+                "p_expected_batch_target_release_id": "unified-previous-r1",
+                "p_observed_job_definition": old_definition,
+                "p_observed_job_queue": queue,
+                "p_aws_batch_job_id": "project-batch-a",
+                "p_job_definition": definition,
+                "p_job_queue": queue,
+            }
+            return True
+        if table == "rpc/finalize_project_job":
+            return [{"final_status": "completed"}]
+        return []
+
+    module.rest = rest
+    module.patch = MagicMock()
+    result = module.handler({"detail": {
+        "jobId": "project-batch-a",
+        "jobName": f"shorts-project-{job_id}-0",
+        "jobDefinition": definition,
+        "jobQueue": queue,
+        "status": "SUCCEEDED",
+    }}, None)
+
+    assert result == {"reconciledProjectJobId": job_id}
+    assert [table for table, _ in calls[-2:]] == [
+        "rpc/complete_project_batch_submission_target",
+        "rpc/finalize_project_job",
+    ]
+    module.patch.assert_not_called()
+
+
+def test_project_terminal_event_reloads_once_after_concurrent_atomic_binding() -> None:
+    module, _ = _load_lambda("batch_state")
+    job_id = "9e79c781-37fd-4329-a5c4-896ce63df13a"
+    old_definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-unified-template-subtitles-old-production:1"
+    )
+    definition = os.environ["UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"]
+    queue = os.environ["UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"]
+    binding_completed = False
+    completion_calls = 0
+
+    def rest(table: str, **kwargs):
+        nonlocal binding_completed, completion_calls
+        if table == "video_jobs":
+            if "aws_batch_job_id=eq" in kwargs["query"] and not binding_completed:
+                return []
+            return [{
+                "id": job_id,
+                "status": "rendering",
+                "pipeline_version": 2,
+                "project_resume_count": 0,
+                "preparation_finished_at": None,
+                "aws_batch_job_id": (
+                    "project-batch-a" if binding_completed else None
+                ),
+                "batch_target_key": "unified_template_subtitles",
+                "batch_target_release_id": "unified-previous-r1",
+                "batch_job_definition": (
+                    definition if binding_completed else old_definition
+                ),
+                "batch_job_queue": queue,
+            }]
+        if table == "batch_submission_claims":
+            return [{
+                "submission_key": f"project:{job_id}:0",
+                "aws_batch_job_id": (
+                    "project-batch-a" if binding_completed else None
+                ),
+                "job_definition": definition,
+                "job_queue": queue,
+            }]
+        if table == "rpc/complete_project_batch_submission_target":
+            completion_calls += 1
+            if completion_calls == 1:
+                binding_completed = True
+                return False
+            assert kwargs["body"]["p_observed_job_definition"] == definition
+            return True
+        if table == "rpc/finalize_project_job":
+            return [{"final_status": "completed"}]
+        return []
+
+    module.rest = rest
+    result = module.handler({"detail": {
+        "jobId": "project-batch-a",
+        "jobName": f"shorts-project-{job_id}-0",
+        "jobDefinition": definition,
+        "jobQueue": queue,
+        "status": "SUCCEEDED",
+    }}, None)
+
+    assert result == {"reconciledProjectJobId": job_id}
+    assert completion_calls == 2
+    assert not any(
+        call.args[0] == "project_batch_event_rejected"
+        for call in module.log_event.call_args_list
+    )
+
+
+def test_project_terminal_event_rejects_unproven_target_before_finalize() -> None:
+    module, _ = _load_lambda("batch_state")
+    job_id = "9e79c781-37fd-4329-a5c4-896ce63df13a"
+    definition = os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"]
+    queue = os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
+    forged_definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "forged-project-target:1"
+    )
+    calls: list[str] = []
+
+    def rest(table: str, **kwargs):
+        calls.append(table)
+        if table == "video_jobs":
+            if "aws_batch_job_id=eq" in kwargs["query"]:
+                return []
+            return [{
+                "id": job_id,
+                "status": "rendering",
+                "pipeline_version": 2,
+                "project_resume_count": 0,
+                "preparation_finished_at": None,
+                "aws_batch_job_id": None,
+                "batch_target_key": None,
+                "batch_target_release_id": None,
+                "batch_job_definition": definition,
+                "batch_job_queue": queue,
+            }]
+        if table == "batch_submission_claims":
+            return [{
+                "submission_key": f"project:{job_id}:0",
+                "aws_batch_job_id": None,
+                "job_definition": definition,
+                "job_queue": queue,
+            }]
+        return []
+
+    module.rest = rest
+    result = module.handler({"detail": {
+        "jobId": "forged-batch-a",
+        "jobName": f"shorts-project-{job_id}-0",
+        "jobDefinition": forged_definition,
+        "jobQueue": queue,
+        "status": "SUCCEEDED",
+    }}, None)
+
+    assert result == {"ignored": True}
+    assert "rpc/complete_project_batch_submission_target" not in calls
+    assert "rpc/finalize_project_job" not in calls
+    assert any(
+        call.args[0] == "project_batch_event_rejected"
+        and call.kwargs["error_type"] == "ClaimTargetMismatch"
+        for call in module.log_event.call_args_list
+    )
+
+
+def test_project_terminal_event_requires_atomic_binding_success() -> None:
+    module, _ = _load_lambda("batch_state")
+    job_id = "9e79c781-37fd-4329-a5c4-896ce63df13a"
+    definition = os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"]
+    queue = os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
+    calls: list[str] = []
+
+    def rest(table: str, **kwargs):
+        calls.append(table)
+        if table == "video_jobs":
+            return [{
+                "id": job_id,
+                "status": "rendering",
+                "pipeline_version": 2,
+                "project_resume_count": 0,
+                "preparation_finished_at": None,
+                "aws_batch_job_id": "project-batch-a",
+                "batch_target_key": None,
+                "batch_target_release_id": None,
+                "batch_job_definition": definition,
+                "batch_job_queue": queue,
+            }]
+        if table == "batch_submission_claims":
+            return [{
+                "submission_key": f"project:{job_id}:0",
+                "aws_batch_job_id": "project-batch-a",
+                "job_definition": definition,
+                "job_queue": queue,
+            }]
+        if table == "rpc/complete_project_batch_submission_target":
+            return False
+        return []
+
+    module.rest = rest
+    result = module.handler({"detail": {
+        "jobId": "project-batch-a",
+        "jobName": f"shorts-project-{job_id}-0",
+        "jobDefinition": definition,
+        "jobQueue": queue,
+        "status": "SUCCEEDED",
+    }}, None)
+
+    assert result == {"ignored": True}
+    assert "rpc/finalize_project_job" not in calls
+    assert any(
+        call.args[0] == "project_batch_event_rejected"
+        and call.kwargs["error_type"] == "AtomicBindingRejected"
+        for call in module.log_event.call_args_list
+    )
 
 
 def test_rerender_uses_fargate_and_batch_never_retries_itself() -> None:
@@ -2513,20 +3386,266 @@ def test_legacy_rerender_new_save_never_reuses_a_failed_batch_identity() -> None
 
 def test_batch_submission_claim_reuses_an_already_recorded_job() -> None:
     module, _ = _load_lambda("batch_submitter")
+    definition = os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"]
+    queue = os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
     module.rest = MagicMock(return_value=[{
         "action": "existing",
         "aws_batch_job_id": "batch-existing",
+        "job_definition": definition,
+        "job_queue": queue,
     }])
     module.batch = MagicMock()
 
     result = module._submit_once({
         "jobName": "shorts-prepare-abcd1234",
-        "jobQueue": "prepare-queue",
+        "jobQueue": queue,
+        "jobDefinition": definition,
     }, "prepare:dispatch-a")
 
     assert result == "batch-existing"
     module.batch.list_jobs.assert_not_called()
     module.batch.submit_job.assert_not_called()
+
+
+def test_batch_submission_claim_pins_target_before_submit_and_completion() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    definition = os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"]
+    queue = os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
+    module.rest = MagicMock(side_effect=[
+        [{
+            "action": "claimed",
+            "aws_batch_job_id": None,
+            "job_definition": definition,
+            "job_queue": queue,
+        }],
+        True,
+    ])
+    module.batch = MagicMock()
+    module.batch.list_jobs.return_value = {"jobSummaryList": []}
+    module.batch.submit_job.return_value = {"jobId": "batch-new"}
+
+    result = module._submit_once({
+        "jobName": "shorts-project-job-a-0",
+        "jobQueue": queue,
+        "jobDefinition": definition,
+    }, "project:job-a:0")
+
+    assert result == "batch-new"
+    claim = module.rest.call_args_list[0]
+    assert claim.args[0] == "rpc/claim_batch_submission_target"
+    assert claim.kwargs["body"]["p_job_definition"] == definition
+    assert claim.kwargs["body"]["p_job_queue"] == queue
+    complete = module.rest.call_args_list[1]
+    assert complete.args[0] == "rpc/complete_batch_submission_target"
+    assert complete.kwargs["body"]["p_aws_batch_job_id"] == "batch-new"
+
+
+def test_project_submission_completes_claim_and_job_binding_atomically() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    definition = os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"]
+    queue = os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
+    module.rest = MagicMock(side_effect=[
+        [{
+            "action": "claimed",
+            "aws_batch_job_id": None,
+            "job_definition": definition,
+            "job_queue": queue,
+        }],
+        True,
+    ])
+    module.batch = MagicMock()
+    module.batch.list_jobs.return_value = {"jobSummaryList": []}
+    module.batch.submit_job.return_value = {"jobId": "batch-project"}
+    binding = {
+        "p_video_job_id": "9e79c781-37fd-4329-a5c4-896ce63df13a",
+        "p_expected_batch_target_key": "legacy_project",
+        "p_expected_batch_target_release_id": "legacy-v1",
+        "p_observed_job_definition": definition,
+        "p_observed_job_queue": queue,
+    }
+
+    result = module._submit_once({
+        "jobName": "shorts-project-9e79c781-37fd-4329-a5c4-896ce63df13a-0",
+        "jobQueue": queue,
+        "jobDefinition": definition,
+    }, "project:9e79c781-37fd-4329-a5c4-896ce63df13a:0", project_binding=binding)
+
+    assert result == "batch-project"
+    complete = module.rest.call_args_list[1]
+    assert complete.args[0] == "rpc/complete_project_batch_submission_target"
+    assert complete.kwargs["body"] == {
+        "p_submission_key": (
+            "project:9e79c781-37fd-4329-a5c4-896ce63df13a:0"
+        ),
+        "p_aws_batch_job_id": "batch-project",
+        "p_job_definition": definition,
+        "p_job_queue": queue,
+        **binding,
+    }
+
+
+def test_batch_submission_rejects_mutable_target_names() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module.rest = MagicMock()
+
+    with pytest.raises(
+        module.BatchTargetTrustRejected,
+        match="revision-pinned ARN",
+    ):
+        module._submit_once({
+            "jobName": "shorts-prepare-abcd1234",
+            "jobQueue": os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"],
+            "jobDefinition": "shorts-mvp-prepare-production",
+        }, "prepare:dispatch-a")
+
+    module.rest.assert_not_called()
+
+
+def test_batch_submission_claim_rejects_a_rotated_target_for_existing_id() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    definition = os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"]
+    queue = os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
+    module.rest = MagicMock(return_value=[{
+        "action": "target_mismatch",
+        "aws_batch_job_id": "batch-existing",
+        "job_definition": "old-definition",
+        "job_queue": queue,
+    }])
+    module.batch = MagicMock()
+
+    with pytest.raises(module.BatchTargetTrustRejected):
+        module._submit_once({
+            "jobName": "shorts-project-job-a-0",
+            "jobQueue": queue,
+            "jobDefinition": definition,
+        }, "project:job-a:0")
+
+    module.batch.submit_job.assert_not_called()
+
+
+def test_project_cutover_adopts_only_a_proven_existing_old_target_job() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    current_definition = os.environ["UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"]
+    queue = os.environ["UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"]
+    old_definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-unified-template-subtitles-old-production:1"
+    )
+    job_id = "9e79c781-37fd-4329-a5c4-896ce63df13a"
+    binding = {
+        "p_video_job_id": job_id,
+        "p_expected_batch_target_key": "unified_template_subtitles",
+        "p_expected_batch_target_release_id": "unified-previous-r1",
+        "p_observed_job_definition": old_definition,
+        "p_observed_job_queue": queue,
+    }
+    module.rest = MagicMock(side_effect=[
+        [{
+            "action": "target_mismatch",
+            "aws_batch_job_id": None,
+            "job_definition": old_definition,
+            "job_queue": queue,
+        }],
+        True,
+    ])
+    module.batch = MagicMock()
+    module.batch.list_jobs.return_value = {"jobSummaryList": [{
+        "jobId": "batch-old-existing",
+        "jobName": f"shorts-project-{job_id}-0",
+    }]}
+    module.batch.describe_jobs.return_value = {"jobs": [{
+        "jobId": "batch-old-existing",
+        "jobDefinition": old_definition,
+        "jobQueue": queue,
+    }]}
+
+    result = module._submit_once({
+        "jobName": f"shorts-project-{job_id}-0",
+        "jobQueue": queue,
+        "jobDefinition": current_definition,
+    }, f"project:{job_id}:0", project_binding=binding)
+
+    assert result == "batch-old-existing"
+    module.batch.submit_job.assert_not_called()
+    completed = module.rest.call_args_list[1]
+    assert completed.args[0] == "rpc/complete_project_batch_submission_target"
+    assert completed.kwargs["body"] == {
+        "p_submission_key": f"project:{job_id}:0",
+        "p_aws_batch_job_id": "batch-old-existing",
+        "p_job_definition": old_definition,
+        "p_job_queue": queue,
+        **binding,
+    }
+
+
+def test_project_cutover_never_executes_or_retargets_an_unsubmitted_old_claim() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    current_definition = os.environ["UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"]
+    queue = os.environ["UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"]
+    old_definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-unified-template-subtitles-old-production:1"
+    )
+    job_id = "9e79c781-37fd-4329-a5c4-896ce63df13a"
+    module.rest = MagicMock(return_value=[{
+        "action": "target_mismatch",
+        "aws_batch_job_id": None,
+        "job_definition": old_definition,
+        "job_queue": queue,
+    }])
+    module.batch = MagicMock()
+    module.batch.list_jobs.return_value = {"jobSummaryList": []}
+
+    with pytest.raises(
+        module.UnsubmittedBatchTargetCutoverBlocked,
+        match="cannot be retargeted",
+    ):
+        module._submit_once({
+            "jobName": f"shorts-project-{job_id}-0",
+            "jobQueue": queue,
+            "jobDefinition": current_definition,
+        }, f"project:{job_id}:0", project_binding={
+            "p_video_job_id": job_id,
+            "p_expected_batch_target_key": "unified_template_subtitles",
+            "p_expected_batch_target_release_id": "unified-previous-r1",
+            "p_observed_job_definition": old_definition,
+            "p_observed_job_queue": queue,
+        })
+
+    module.batch.submit_job.assert_not_called()
+    assert module.rest.call_count == 1
+
+
+def test_legacy_submission_claim_backfills_only_after_aws_target_proof() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    definition = os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"]
+    queue = os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
+    module.rest = MagicMock(side_effect=[
+        [{
+            "action": "existing",
+            "aws_batch_job_id": "batch-existing",
+            "job_definition": None,
+            "job_queue": None,
+        }],
+        True,
+    ])
+    module.batch = MagicMock()
+    module.batch.describe_jobs.return_value = {"jobs": [{
+        "jobId": "batch-existing",
+        "jobDefinition": definition,
+        "jobQueue": queue,
+    }]}
+
+    result = module._submit_once({
+        "jobName": "shorts-project-job-a-0",
+        "jobQueue": queue,
+        "jobDefinition": definition,
+    }, "project:job-a:0")
+
+    assert result == "batch-existing"
+    assert module.rest.call_args_list[1].args[0] == (
+        "rpc/complete_batch_submission_target"
+    )
 
 
 def test_prepare_batch_submits_without_a_global_circuit_delay() -> None:
@@ -2751,6 +3870,192 @@ def test_outbox_dispatcher_continues_after_one_project_submit_failure() -> None:
     )
     assert failed_patch.args[1] == "id=eq.outbox-a"
     assert failed_patch.args[2]["status"] == "pending"
+
+
+def test_outbox_dispatcher_reconciles_claim_through_submitter_without_id_only_patch() -> None:
+    module, aws_client = _load_lambda("outbox_dispatcher")
+    aws_client.invoke.side_effect = [
+        {
+            "FunctionError": "Unhandled",
+            "Payload": io.BytesIO(b'{"errorMessage":"response lost"}'),
+        },
+        {"Payload": io.BytesIO(b'{"batchJobId":"project-batch-a"}')},
+    ]
+
+    def rest(table: str, **_kwargs):
+        if table == "rpc/claim_project_job_outbox":
+            return [{
+                "outbox_id": "outbox-a",
+                "job_id": "job-a",
+                "route_id": "route-a",
+                "priority_class": "paid",
+            }]
+        if table == "video_jobs":
+            return [{"aws_batch_job_id": None}]
+        if table == "batch_submission_claims":
+            return [{"aws_batch_job_id": "project-batch-a"}]
+        if table in {"rpc/claim_job_outbox", "rpc/claim_short_outbox"}:
+            return []
+        return []
+
+    module.rest = rest
+    module.patch = MagicMock()
+
+    result = module.handler({}, None)
+
+    assert result["dispatchedProjects"] == 1
+    assert result["failedProjects"] == 0
+    assert aws_client.invoke.call_count == 2
+    assert not any(
+        call.args[0] == "video_jobs"
+        for call in module.patch.call_args_list
+    )
+    assert not any(
+        call.args[0] == "project_job_outbox"
+        for call in module.patch.call_args_list
+    )
+
+
+def test_outbox_dispatcher_schedules_reconciliation_after_the_claim_lease() -> None:
+    module, aws_client = _load_lambda("outbox_dispatcher")
+    aws_client.invoke.side_effect = [
+        {
+            "FunctionError": "Unhandled",
+            "Payload": io.BytesIO(b'{"errorMessage":"response lost"}'),
+        },
+        {
+            "FunctionError": "Unhandled",
+            "Payload": io.BytesIO(b'{"errorMessage":"still unavailable"}'),
+        },
+    ]
+
+    def rest(table: str, **_kwargs):
+        if table == "rpc/claim_project_job_outbox":
+            return [{
+                "outbox_id": "outbox-a",
+                "job_id": "job-a",
+                "route_id": "route-a",
+                "priority_class": "paid",
+            }]
+        if table == "video_jobs":
+            return [{"aws_batch_job_id": None}]
+        if table == "batch_submission_claims":
+            return [{"aws_batch_job_id": "project-batch-a"}]
+        if table in {"rpc/claim_job_outbox", "rpc/claim_short_outbox"}:
+            return []
+        return []
+
+    module.rest = rest
+    module.patch = MagicMock()
+
+    result = module.handler({}, None)
+
+    assert result["dispatchedProjects"] == 1
+    assert result["failedProjects"] == 0
+    assert not any(
+        call.args[0] in {"video_jobs", "project_job_outbox"}
+        for call in module.patch.call_args_list
+    )
+    assert aws_client.send_message.call_args.kwargs == {
+        "QueueUrl": "https://sqs.example/work",
+        "MessageBody": json.dumps({
+            "kind": "project",
+            "jobId": "job-a",
+            "priorityClass": "paid",
+        }, separators=(",", ":")),
+        "DelaySeconds": 120,
+    }
+    assert any(
+        call.args[0] == "batch_submission_reconciliation_scheduled"
+        for call in module.log_event.call_args_list
+    )
+
+
+def test_outbox_dispatcher_keeps_route_when_target_claim_has_no_id_yet() -> None:
+    module, aws_client = _load_lambda("outbox_dispatcher")
+    aws_client.invoke.return_value = {
+        "FunctionError": "Unhandled",
+        "Payload": io.BytesIO(b'{"errorMessage":"completion failed"}'),
+    }
+
+    def rest(table: str, **_kwargs):
+        if table == "rpc/claim_project_job_outbox":
+            return [{
+                "outbox_id": "outbox-a",
+                "job_id": "job-a",
+                "route_id": "route-a",
+                "priority_class": "paid",
+            }]
+        if table == "video_jobs":
+            return [{"aws_batch_job_id": None}]
+        if table == "batch_submission_claims":
+            return [{
+                "aws_batch_job_id": None,
+                "job_definition": os.environ[
+                    "LEGACY_PROJECT_JOB_DEFINITION_ARN"
+                ],
+                "job_queue": os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"],
+            }]
+        if table in {"rpc/claim_job_outbox", "rpc/claim_short_outbox"}:
+            return []
+        return []
+
+    module.rest = MagicMock(side_effect=rest)
+    module.patch = MagicMock()
+
+    result = module.handler({}, None)
+
+    assert result["dispatchedProjects"] == 0
+    assert result["failedProjects"] == 1
+    assert aws_client.invoke.call_count == 1
+    assert aws_client.send_message.call_args.kwargs["DelaySeconds"] == 120
+    assert not any(
+        call.args[0] in {"video_jobs", "project_job_outbox"}
+        for call in module.patch.call_args_list
+    )
+    assert not any(
+        call.args[0] == "rpc/release_ingestion_route"
+        for call in module.rest.call_args_list
+        if isinstance(call.args[0], str)
+    )
+
+
+def test_outbox_dispatcher_rejects_conflicting_job_and_claim_ids() -> None:
+    module, aws_client = _load_lambda("outbox_dispatcher")
+    aws_client.invoke.return_value = {
+        "FunctionError": "Unhandled",
+        "Payload": io.BytesIO(b'{"errorMessage":"response lost"}'),
+    }
+
+    def rest(table: str, **_kwargs):
+        if table == "rpc/claim_project_job_outbox":
+            return [{
+                "outbox_id": "outbox-a",
+                "job_id": "job-a",
+                "route_id": "route-a",
+                "priority_class": "paid",
+            }]
+        if table == "video_jobs":
+            return [{"aws_batch_job_id": "batch-from-job"}]
+        if table == "batch_submission_claims":
+            return [{"aws_batch_job_id": "batch-from-claim"}]
+        if table in {"rpc/claim_job_outbox", "rpc/claim_short_outbox"}:
+            return []
+        return []
+
+    module.rest = rest
+    module.patch = MagicMock()
+
+    result = module.handler({}, None)
+
+    assert result["dispatchedProjects"] == 0
+    assert result["failedProjects"] == 1
+    assert aws_client.invoke.call_count == 1
+    aws_client.send_message.assert_not_called()
+    assert any(
+        call.args[0] == "batch_submission_reconciliation_required"
+        for call in module.log_event.call_args_list
+    )
 
 
 def test_paid_job_priority_migration_is_aged_and_non_preemptive() -> None:

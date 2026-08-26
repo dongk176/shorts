@@ -121,13 +121,15 @@ def cleanup_failed_shorts() -> tuple[int, int]:
 
 def release_stale_jobs() -> int:
     now = datetime.now(UTC)
-    cutoff = urllib.parse.quote((now - timedelta(hours=2)).isoformat(), safe="")
+    created_before = now - timedelta(hours=2)
+    heartbeat_before = now - STALE_HEARTBEAT_GRACE
+    cutoff = urllib.parse.quote(created_before.isoformat(), safe="")
     terminal = "(completed,failed,expired,deleted)"
     jobs = rest(
         "video_jobs",
         query=(
             "select=id,aws_batch_job_id,status,heartbeat_at,created_at,"
-            "execution_backend,claimed_at,pipeline_version"
+            "execution_backend,claimed_at"
             f"&status=not.in.{terminal}&created_at=lt.{cutoff}&limit=100"
         ),
     ) or []
@@ -151,37 +153,63 @@ def release_stale_jobs() -> int:
                 "SUBMITTED", "PENDING", "RUNNABLE", "STARTING", "RUNNING"
             }:
                 continue
-        if int(job.get("pipeline_version") or 1) == 2:
-            rest(
-                "rpc/finalize_project_job",
-                method="POST",
-                body={
-                    "p_job_id": job["id"],
-                    "p_error_code": "stale_job",
-                    "p_error_message": "작업 heartbeat가 2시간 이상 중단되었습니다.",
-                },
-                prefer="return=representation",
-            )
-        else:
-            patch(
-                "video_jobs",
-                f"id=eq.{job['id']}",
-                {
-                    "status": "failed",
-                    "stage": "failed",
-                    "progress": 100,
-                    "error_code": "stale_job",
-                    "error_message": "작업 heartbeat가 2시간 이상 중단되었습니다.",
-                    "source_deleted_at": iso_now(),
-                },
-            )
-            patch(
-                "usage_reservations",
-                f"job_id=eq.{job['id']}&status=eq.reserved",
-                {"status": "released", "released_at": iso_now()},
-            )
-        released += 1
+        claimed = rest(
+            "rpc/finalize_stale_video_job_if_unchanged",
+            method="POST",
+            body={
+                "p_job_id": job["id"],
+                "p_observed_aws_batch_job_id": batch_id,
+                "p_observed_status": job.get("status"),
+                "p_observed_heartbeat_at": job.get("heartbeat_at"),
+                "p_created_before": created_before.isoformat(),
+                "p_heartbeat_before": heartbeat_before.isoformat(),
+            },
+            prefer="return=representation",
+        ) or []
+        if claimed and claimed[0].get("finalized"):
+            released += 1
     return released
+
+
+def report_batch_dispatch_health() -> int:
+    rows = rest(
+        "rpc/get_batch_dispatch_health",
+        method="POST",
+        body={},
+        prefer="return=representation",
+    ) or []
+    snapshot = rows[0] if rows else {}
+    actionable = int(snapshot.get("actionable_queued_without_batch_id") or 0)
+    oldest_seconds = snapshot.get("oldest_actionable_age_seconds")
+    reconciliation_required = int(
+        snapshot.get("submission_claim_without_job_id") or 0
+    )
+    reconciliation_oldest_seconds = snapshot.get(
+        "oldest_submission_claim_age_seconds"
+    )
+    log_event(
+        "project_dispatch_health",
+        actionableQueuedWithoutBatchId=actionable,
+        oldestActionableAt=snapshot.get("oldest_actionable_at"),
+        oldestActionableAgeSeconds=oldest_seconds,
+        submissionClaimWithoutJobId=reconciliation_required,
+        oldestSubmissionClaimAt=snapshot.get("oldest_submission_claim_at"),
+        oldestSubmissionClaimAgeSeconds=reconciliation_oldest_seconds,
+        healthy=actionable == 0 and reconciliation_required == 0,
+    )
+    if actionable > 0:
+        log_event(
+            "queued_without_batch_id",
+            count=actionable,
+            oldest_seconds=oldest_seconds,
+        )
+    if reconciliation_required > 0:
+        log_event(
+            "batch_submission_reconciliation_required",
+            count=reconciliation_required,
+            oldest_seconds=reconciliation_oldest_seconds,
+        )
+    return actionable
 
 
 def enforce_deadlines() -> int:
@@ -308,6 +336,14 @@ def reset_stale_rerenders() -> int:
 
 
 def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
+    try:
+        queued_without_batch_id = report_batch_dispatch_health()
+    except Exception as exc:  # noqa: BLE001 - observability must not block cleanup
+        queued_without_batch_id = -1
+        log_event(
+            "project_dispatch_health_check_failed",
+            error_type=type(exc).__name__,
+        )
     deadlines = enforce_deadlines()
     failed, failed_objects = cleanup_failed_shorts()
     expired, objects = expire_shorts()
@@ -320,6 +356,7 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
         "releasedStaleJobs": stale,
         "resetStaleRerenders": rerenders,
         "enforcedDeadlines": deadlines,
+        "actionableQueuedWithoutBatchId": queued_without_batch_id,
     }
     log_event("cleanup_completed", **result)
     return result

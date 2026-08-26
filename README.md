@@ -52,26 +52,48 @@ Worker의 YouTube JavaScript 실행 환경은 `yt-dlp==2026.7.4`, `yt-dlp-ejs==0
 
 ## Supabase migration
 
-`.env.local`에 기존 Supabase의 direct `DATABASE_URL`을 넣고 실행합니다.
+`.env.local`에 Supabase의 direct `DATABASE_URL`과 해당 환경에 고정한
+fingerprint를 넣고 실행합니다. 기본 `db:migrate`는 환경을 선택하지
+않아 의도적으로 실패합니다.
 
 ```bash
-npm run db:migrate
+# 비운영: NON_PRODUCTION_DATABASE_FINGERPRINT 필수
+npm run db:migrate:non-production -- <migration.sql...>
+
+# 운영: 고정된 PRODUCTION_DATABASE_FINGERPRINT 필수
+npm run db:migrate:production -- <migration.sql...>
 ```
 
 스크립트는 migration 전후 `public` schema 객체 목록을 비교하고, Free/Plus/Standard/Pro 가격·처리시간·동시 작업·보관기간 seed까지 확인합니다. SQL은 [migrations](supabase/migrations)에 있으며 모든 객체는 schema-qualified 되어 있습니다.
 
 ## AWS provisioning
 
-AWS CLI 인증과 제한된 Vercel team/project 값을 준비한 뒤 실행합니다.
+비운영 환경의 최초 구성에서만 환경과 DB identity를 명시해 전체 setup을
+실행합니다.
 
 ```bash
 export AWS_REGION=ap-northeast-2
 export VERCEL_TEAM_SLUG=your-team-slug
 export VERCEL_PROJECT_NAME=your-vercel-project
+DEPLOY_ENV=staging \
+NON_PRODUCTION_DATABASE_FINGERPRINT="$STAGING_DATABASE_FINGERPRINT" \
 npm run infra:setup
 ```
 
-이 명령은 CloudFront RSA key를 `.secrets/`에 생성하고, CDK bootstrap/deploy, runtime secret, Vercel production env 동기화를 수행합니다. `.secrets/`와 `.env.local`은 Git에서 제외됩니다. Worker는 GitHub Actions OIDC로 다운로드 전용 `SHA-prepare` 이미지와 렌더 전용 `SHA` 이미지를 `linux/amd64`로 ECR에 게시하므로 로컬 Docker가 필요하지 않습니다. Job Definition은 `latest`가 아니라 커밋 SHA 이미지에 고정됩니다. 기존 환경을 갱신할 때는 변경을 커밋하고 GitHub Actions 이미지 게시가 끝난 뒤 실행해야 하며, 두 이미지 중 하나라도 없으면 배포 스크립트가 중단됩니다.
+비운영 setup은 AWS 리소스와 해당 환경의 runtime secret만 구성하며 Vercel
+production 환경변수와 repository-wide GitHub Actions 저장소 변수를 변경하지
+않습니다. 운영 GitHub 변수는 검증된 별도 release 절차에서만 갱신합니다.
+운영에서는 `infra:setup`과 광범위한
+`scripts/sync-vercel-env.sh`를 사용하지 않습니다. 운영 DB migration 005·006을
+명시적으로 적용한 뒤 `infra:deploy-control-plane`으로 exact ChangeSet을
+prepare/review/execute하고, `vercel:sync-project-targets`로 Batch target 15개만
+동기화합니다. 무별칭 후보를 검증한 뒤 같은 배포를 재빌드 없이 승격하는
+정확한 순서는 [AWS runbook](docs/aws-runbook.md)을 따릅니다.
+
+`.secrets/`와 `.env.local`은 Git에서 제외됩니다. Worker는 GitHub Actions
+OIDC로 다운로드 전용 `SHA-prepare` 이미지와 렌더 전용 `SHA` 이미지를
+`linux/amd64`로 ECR에 게시하므로 로컬 Docker가 필요하지 않습니다. Job
+Definition은 `latest`가 아니라 불변 digest와 정확한 revision에 고정합니다.
 
 ## Vercel OIDC
 

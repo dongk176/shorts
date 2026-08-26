@@ -15,6 +15,7 @@ import { getDb } from "@/lib/db";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import {
   elevenLabsTranscriptionDispatchTarget,
+  legacyProjectDispatchTarget,
   type ProjectDispatchTarget,
   sourceRangeDispatchTarget,
   subtitleTemplatesDispatchTarget,
@@ -340,6 +341,9 @@ export async function POST(request: Request) {
                   ? sourceRangeDispatchTarget()
                   : null;
       }
+      if (executionBackend === "aws_batch" && !dispatchTarget) {
+        dispatchTarget = legacyProjectDispatchTarget();
+      }
       const resolvedTemplateId = resolvedExecution.resolvedTemplateId;
       const resolvedVideoAspectRatio =
         resolvedExecution.resolvedVideoAspectRatio;
@@ -410,6 +414,7 @@ export async function POST(request: Request) {
           clip_length_option, output_language, expected_short_count, rights_confirmed, execution_backend,
           status, stage, progress, deadline_at, planned_short_count,retention_days_snapshot,
           pipeline_version, source_range_selection_enabled, transcription_policy,
+          batch_target_key, batch_target_release_id,
           batch_job_definition, batch_job_queue
           ,selected_source_duration_seconds,billable_source_seconds
         ) values (
@@ -422,7 +427,9 @@ export async function POST(request: Request) {
           now() + ${deadlineMinutes} * interval '1 minute', ${plannedShortCount},${billing.retentionDays},
           ${executionBackend === "aws_batch" ? 2 : 1}, ${sourceRangeSelectionEnabled},
           ${transcriptionPolicy},
-          ${dispatchTarget?.jobDefinitionArn || null}, ${dispatchTarget?.jobQueueArn || null},
+          ${dispatchTarget?.targetKey || null}, ${dispatchTarget?.releaseId || null},
+          ${dispatchTarget?.jobDefinitionArn || null},
+          ${dispatchTarget?.jobQueueArn || null},
           ${selectedDurationSeconds},${usageSeconds}
         )
         returning project_number

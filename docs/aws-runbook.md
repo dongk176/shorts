@@ -1,24 +1,115 @@
 # AWS runbook
 
-## Provision and publish
+## 운영 Stage A: control-plane 정식 편입
 
-1. `aws sts get-caller-identity`가 대상 계정인지 확인합니다.
-2. `VERCEL_TEAM_SLUG`, `VERCEL_PROJECT_NAME`, `AWS_REGION=ap-northeast-2`를 설정합니다.
-3. 현재 승격된 운영 커밋의 후속 커밋만 main에 반영합니다. Worker를 변경하지 않는 릴리스는 `production-worker-release.json`의 기존 검증 digest를 재사용합니다.
-4. Worker 변경 릴리스에서만 `Build and publish worker` workflow와 격리 검증을 거쳐 새 digest와 네 Job Definition을 `production-worker-release.json`에 기록합니다. `npm run infra:setup`은 이 파일이 없거나 Lambda·Batch 실제값과 다르면 운영 배포를 중단합니다.
-5. 최초 환경이라면 CDK 출력의 `GithubWorkerBuildRoleArn`,
-   `WorkerRepositoryUri`, `EditorReleaseRepositoryUri`를 각각 GitHub
-   Actions variables `AWS_WORKER_BUILD_ROLE_ARN`,
-   `AWS_ECR_REPOSITORY_URI`, `EDITOR_RELEASE_ECR_REPOSITORY_URI`로
-   등록한 뒤 해당 workflow를 한 번 수동 실행합니다.
-6. `scripts/sync-vercel-env.sh`를 실행합니다. 이 명령은 Vercel 값을 쓰기 전에
-   다섯 프로젝트 Batch 대상이 `shorts-mvp-batch-submitter-production` Lambda의
-   신뢰 ARN과 정확히 일치하고 각 Job Definition/queue가 ACTIVE 및
-   VALID/ENABLED 상태인지 검사하며, 하나라도 다르면 배포를 중단합니다.
-7. 현재 운영 커밋과 후보의 route manifest를 `scripts/verify-production-release.mjs --base <운영 SHA> --baseline-manifest <운영 manifest>`로 비교합니다.
-8. `vercel deploy --prod --skip-domain`으로 무별칭 운영 후보를 만든 뒤 핵심 경로와 UI를 검증합니다.
-9. 검증한 후보를 `vercel promote <후보 URL>`로 재빌드 없이 승격하고 `scripts/verify-production.sh <운영 URL>`을 실행합니다.
-10. `node scripts/verify-production-worker-release.mjs`와 `node scripts/audit-production-billing.mjs --since <점검 시작 시각> --env-file <운영 env 파일>`으로 Worker drift와 결제 불일치를 확인합니다.
+`npm run infra:setup`과 `scripts/sync-vercel-env.sh`는 운영 Stage A
+절차가 아닙니다. 전자는 운영에서 즉시 중단되고, 후자는 다른 운영
+환경변수까지 광범위하게 다루므로 이 절차에서 사용하지 않습니다.
+
+1. `aws sts get-caller-identity`로 대상 계정을 확인하고,
+   `AWS_REGION=ap-northeast-2`, `VERCEL_TEAM_SLUG`,
+   `VERCEL_PROJECT_NAME`, 운영 `DATABASE_URL`, 고정된
+   `PRODUCTION_DATABASE_FINGERPRINT`를 설정합니다.
+2. `easycut.co.kr`에 현재 승격된 정확한 Git SHA를
+   `PROMOTED_GIT_SHA`로 고정합니다. 작업공간은 그 SHA의 후속이어야
+   하며 `git status` 결과가 비어 있어야 합니다. 운영 SHA가 바뀌면
+   즉시 멈추고 기준선을 다시 잡습니다.
+3. 다음 두 추가형 migration만 순서대로 운영 DB에 적용합니다.
+
+   ```bash
+   npm run db:migrate:production -- \
+     202608260005_batch_target_and_stale_guards.sql \
+     202608260006_batch_target_and_stale_guards_validate.sql
+   ```
+
+   적용 후 새 열과 RPC가 `shorts_mvp`에만 생겼고 `public`이
+   변경되지 않았는지 확인합니다. 기존 행을 삭제·재분류·일괄 수정하지
+   않습니다.
+4. 현재 검증된 Worker 이미지의 불변 태그를 `WORKER_IMAGE_TAG`,
+   `LEGACY_RERENDER_IMAGE_TAG`로 설정한 뒤 exact control-plane
+   ChangeSet만 준비합니다.
+
+   ```bash
+   npm run infra:deploy-control-plane -- \
+     --base "$PROMOTED_GIT_SHA" \
+     --worker-image-tag "$WORKER_IMAGE_TAG" \
+     --legacy-rerender-image-tag "$LEGACY_RERENDER_IMAGE_TAG" \
+     --prepare
+   ```
+
+   출력된 `CHANGE_SET_ID`, `HEAD`, `REGISTRY_SHA256`,
+   `TEMPLATE_SHA256`를 별도로 보관하고 CloudFormation preview가 허용된
+   Compute/Lambda·로그·메트릭·알람 변경만 포함하는지 확인합니다.
+   삭제, 교체, 예상 밖 스택 변경이 있으면 실행하지 않습니다.
+5. 검토한 같은 ChangeSet ARN과 SHA/hash를 사용해 별도 명령으로
+   실행합니다.
+
+   ```bash
+   npm run infra:deploy-control-plane -- \
+     --base "$PROMOTED_GIT_SHA" \
+     --execute-change-set "$CHANGE_SET_ID" \
+     --expected-head "$HEAD" \
+     --expected-registry-sha256 "$REGISTRY_SHA256" \
+     --expected-template-sha256 "$TEMPLATE_SHA256"
+   ```
+
+   스크립트는 실행 직전에 운영 SHA, registry, ChangeSet, 비종결
+   작업을 다시 읽고 하나라도 다르면 중단합니다.
+6. 새 Batch Submitter가 exact registry를 사용하고 다섯 lane의
+   current·previous Definition이 ACTIVE, queue가 VALID/ENABLED인 상태를
+   확인한 뒤 해당 Vercel 운영 프로젝트의 Batch target 환경변수 15개만
+   동기화합니다.
+
+   ```bash
+   npm run vercel:sync-project-targets
+   ```
+
+   이 명령은 로컬 `.vercel/project.json`과 Vercel live project의
+   project ID·team ID·project name이 다르면 값을 쓰기 전에 중단합니다.
+7. 현재 운영 route manifest와 후보 manifest를 비교합니다.
+
+   ```bash
+   node scripts/verify-production-release.mjs \
+     --base "$PROMOTED_GIT_SHA" \
+     --baseline-manifest "$PRODUCTION_ROUTE_MANIFEST"
+   ```
+
+   금지된 콘텐츠 캘린더·YouTube 게시 경로가 없고 `/`, `/guidebook`,
+   `/pricing`, 어드민, `/templates`, 프로젝트 편집기 경로가 유지되어야
+   합니다.
+8. Vercel에 무별칭 후보를 배포하고 위 경로, 로그인, 어드민, 편집기를
+   검증합니다. 확인한 후보 URL 그 자체를 재빌드 없이 승격합니다.
+
+   ```bash
+   cd web
+   vercel deploy --prod --skip-domain
+   vercel promote "$CANDIDATE_URL"
+   cd ..
+   bash scripts/verify-production.sh https://www.easycut.co.kr
+   ```
+
+9. 승격 직후 핵심 경로·로그인·5xx를 3분 이상 감시하고, 내부 작업 1건을
+   Batch ID 발급부터 산출물 완료까지 확인한 뒤 trust 거절, Lambda 오류,
+   DLQ, Batch ID 없는 queued 작업을 15분 이상 감시합니다. 이상이 있으면
+   다음 단계로 넘어가지 않습니다.
+
+Worker 변경 릴리스에서만 `Build and publish worker` workflow와 격리
+검증을 거쳐 새 digest와 Job Definition을 별도 단계에서 회전합니다.
+Stage A는 기존 검증 digest를 재사용하며 Worker 이미지를 새로 빌드하지
+않습니다.
+
+## 비운영 환경 최초 구성
+
+비운영에서만 환경과 DB identity를 명시해 전체 setup을 사용합니다.
+이 setup은 비운영 AWS 리소스만 구성하며 Vercel production 환경변수를
+동기화하거나 repository-wide GitHub Actions 저장소 변수를 변경하지 않습니다.
+운영 GitHub 변수는 검증된 별도 release 절차에서만 갱신합니다.
+
+```bash
+DEPLOY_ENV=staging \
+NON_PRODUCTION_DATABASE_FINGERPRINT="$STAGING_DATABASE_FINGERPRINT" \
+npm run infra:setup
+```
 
 CloudFront private key는 `.secrets/cloudfront-private.pem`과 Vercel secret에만 둡니다. 분실 시 새 key pair/public key/key group을 배포하고 Vercel env를 교체합니다.
 

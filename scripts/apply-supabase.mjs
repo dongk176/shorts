@@ -2,6 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import postgres from "../web/node_modules/postgres/src/index.js";
+import {
+  parseMigrationArguments,
+  requireMigrationDatabaseUrl,
+} from "./supabase-migration-contract.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 
@@ -22,12 +26,16 @@ function loadEnv(file) {
 }
 
 loadEnv(path.join(root, ".env.local"));
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL이 필요합니다. 기존 Supabase direct connection URL을 .env.local에 넣어 주세요.");
-}
+const migrationArguments = parseMigrationArguments(process.argv.slice(2));
+// Production identity is checked before postgres() creates a client, so a
+// mismatched URL cannot make even the first connection attempt.
+const databaseUrl = requireMigrationDatabaseUrl(
+  migrationArguments.environment,
+  process.env,
+);
 
 const migrationDirectory = path.join(root, "supabase", "migrations");
-const requestedMigrationFiles = process.argv.slice(2);
+const requestedMigrationFiles = migrationArguments.migrationFiles;
 const availableMigrationFiles = fs.readdirSync(migrationDirectory)
   .filter((name) => name.endsWith(".sql"))
   .sort();
@@ -46,7 +54,7 @@ for (const file of migrationFiles) {
   if (forbidden.test(migration)) throw new Error(`${file}에서 public schema 변경문을 발견했습니다.`);
 }
 
-const sql = postgres(process.env.DATABASE_URL, { max: 1, connect_timeout: 15, idle_timeout: 5 });
+const sql = postgres(databaseUrl, { max: 1, connect_timeout: 15, idle_timeout: 5 });
 const concurrentIndexPattern = /\bcreate\s+(?:unique\s+)?index\s+concurrently\b/i;
 
 async function applyMigration(file, migration) {

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.parse
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -21,6 +22,12 @@ RENDER_FINAL_MESSAGE = (
 )
 TERMINAL_STATUSES = {"completed", "failed", "expired", "deleted"}
 MAX_EXTERNAL_RENDER_RETRIES = 1
+_BATCH_JOB_DEFINITION_ARN = re.compile(
+    r"arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-definition/[A-Za-z0-9_-]+:[1-9][0-9]*"
+)
+_BATCH_QUEUE_ARN = re.compile(
+    r"arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-queue/[A-Za-z0-9_-]+"
+)
 
 
 def _encoded(value: object) -> str:
@@ -49,46 +56,201 @@ def _send_delayed(payload: dict[str, Any]) -> None:
     )
 
 
-def _project_job(
-    batch_job_id: str, detail: dict[str, Any] | None = None
-) -> dict[str, Any] | None:
-    rows = rest(
-        "video_jobs",
-        query=(
-            "select=id,status,pipeline_version,project_resume_count,preparation_finished_at"
-            f"&aws_batch_job_id=eq.{_encoded(batch_job_id)}&pipeline_version=eq.2&limit=1"
-        ),
-    ) or []
-    if rows:
-        return rows[0]
-    job_name = str((detail or {}).get("jobName") or "")
-    if not job_name.startswith("shorts-project-"):
+def _project_event_identity(detail: dict[str, Any]) -> tuple[str, str] | None:
+    job_name = str(detail.get("jobName") or "")
+    prefix = "shorts-project-"
+    if not job_name.startswith(prefix):
         return None
-    candidate = job_name.removeprefix("shorts-project-")
-    candidate = (
-        candidate.removesuffix("-resume-1")
-        if candidate.endswith("-resume-1")
-        else candidate.removesuffix("-0")
-    )
+    encoded_identity = job_name.removeprefix(prefix)
+    if encoded_identity.endswith("-resume-1"):
+        candidate = encoded_identity.removesuffix("-resume-1")
+        suffix = "resume:1"
+    elif encoded_identity.endswith("-0"):
+        candidate = encoded_identity.removesuffix("-0")
+        suffix = "0"
+    else:
+        return None
     try:
         job_id = str(UUID(candidate))
     except ValueError:
         return None
+    return job_id, f"project:{job_id}:{suffix}"
+
+
+def _project_event_target(detail: dict[str, Any]) -> tuple[str, str] | None:
+    job_definition = str(detail.get("jobDefinition") or "").strip()
+    job_queue = str(detail.get("jobQueue") or "").strip()
+    if (
+        not _BATCH_JOB_DEFINITION_ARN.fullmatch(job_definition)
+        or not _BATCH_QUEUE_ARN.fullmatch(job_queue)
+    ):
+        return None
+    return job_definition, job_queue
+
+
+def _project_event_rejected(
+    batch_job_id: str,
+    reason: str,
+) -> None:
+    log_event(
+        "project_batch_event_rejected",
+        batch_job_id=batch_job_id,
+        error_type=reason,
+    )
+
+
+def _project_job(
+    batch_job_id: str,
+    detail: dict[str, Any] | None = None,
+    *,
+    _cas_retry: bool = True,
+) -> dict[str, Any] | None:
+    event_detail = detail or {}
+    identity = _project_event_identity(event_detail)
+    target = _project_event_target(event_detail)
+    if identity is None or target is None:
+        return None
+    event_job_id, submission_key = identity
+    event_definition, event_queue = target
+    selected_fields = (
+        "id,status,pipeline_version,project_resume_count,preparation_finished_at,"
+        "aws_batch_job_id,batch_target_key,batch_target_release_id,"
+        "batch_job_definition,batch_job_queue"
+    )
     rows = rest(
         "video_jobs",
         query=(
-            "select=id,status,pipeline_version,project_resume_count,preparation_finished_at,"
-            "aws_batch_job_id"
-            f"&id=eq.{_encoded(job_id)}&pipeline_version=eq.2&limit=1"
+            f"select={selected_fields}"
+            f"&aws_batch_job_id=eq.{_encoded(batch_job_id)}"
+            "&pipeline_version=eq.2&limit=2"
         ),
     ) or []
-    if not rows:
+    if len(rows) > 1:
+        _project_event_rejected(batch_job_id, "DuplicateBatchJobBinding")
         return None
-    if not rows[0].get("aws_batch_job_id"):
-        patch("video_jobs", f"id=eq.{_encoded(job_id)}&aws_batch_job_id=is.null", {
-            "aws_batch_job_id": batch_job_id,
-        })
-    return rows[0]
+    if rows:
+        job = rows[0]
+        if str(job.get("id") or "") != event_job_id:
+            _project_event_rejected(batch_job_id, "JobNameBindingMismatch")
+            return None
+    else:
+        rows = rest(
+            "video_jobs",
+            query=(
+                f"select={selected_fields}"
+                f"&id=eq.{_encoded(event_job_id)}"
+                "&pipeline_version=eq.2&limit=1"
+            ),
+        ) or []
+        if not rows:
+            return None
+        job = rows[0]
+
+    recorded_batch_job_id = str(job.get("aws_batch_job_id") or "").strip()
+    if recorded_batch_job_id and recorded_batch_job_id != batch_job_id:
+        _project_event_rejected(batch_job_id, "RecordedBatchJobIdMismatch")
+        return None
+    if job.get("status") in TERMINAL_STATUSES:
+        return job if recorded_batch_job_id == batch_job_id else None
+
+    resume_count = int(job.get("project_resume_count") or 0)
+    if submission_key.endswith(":resume:1"):
+        if resume_count != 1 or not job.get("preparation_finished_at"):
+            _project_event_rejected(batch_job_id, "ResumeIdentityMismatch")
+            return None
+    elif resume_count != 0:
+        _project_event_rejected(batch_job_id, "InitialIdentityMismatch")
+        return None
+
+    logical_key = job.get("batch_target_key")
+    logical_release_id = job.get("batch_target_release_id")
+    if (logical_key is None) != (logical_release_id is None):
+        _project_event_rejected(batch_job_id, "IncompleteLogicalTarget")
+        return None
+    observed_definition = job.get("batch_job_definition")
+    observed_queue = job.get("batch_job_queue")
+    if (observed_definition is None) != (observed_queue is None):
+        _project_event_rejected(batch_job_id, "IncompleteStoredTarget")
+        return None
+    if observed_definition is None or observed_queue is None:
+        _project_event_rejected(batch_job_id, "MissingStoredTarget")
+        return None
+
+    claims = rest(
+        "batch_submission_claims",
+        query=(
+            "select=submission_key,aws_batch_job_id,job_definition,job_queue"
+            f"&submission_key=eq.{_encoded(submission_key)}&limit=2"
+        ),
+    ) or []
+    if len(claims) != 1:
+        _project_event_rejected(batch_job_id, "MissingOrDuplicateSubmissionClaim")
+        return None
+    claim = claims[0]
+    claim_batch_job_id = str(claim.get("aws_batch_job_id") or "").strip()
+    if claim_batch_job_id and claim_batch_job_id != batch_job_id:
+        _project_event_rejected(batch_job_id, "ClaimBatchJobIdMismatch")
+        return None
+    claim_definition = claim.get("job_definition")
+    claim_queue = claim.get("job_queue")
+    if (claim_definition is None) != (claim_queue is None):
+        _project_event_rejected(batch_job_id, "IncompleteClaimTarget")
+        return None
+    if claim_definition is not None:
+        if claim_definition != event_definition or claim_queue != event_queue:
+            _project_event_rejected(batch_job_id, "ClaimTargetMismatch")
+            return None
+    elif (
+        observed_definition != event_definition
+        or observed_queue != event_queue
+    ):
+        # A legacy two-argument claim has no immutable target. It can only be
+        # backfilled when the event proves the exact creation-time raw pair;
+        # a mapped previous -> current release requires a target-aware claim.
+        _project_event_rejected(batch_job_id, "LegacyClaimTargetUnproven")
+        return None
+    if recorded_batch_job_id and (
+        observed_definition != event_definition
+        or observed_queue != event_queue
+    ):
+        _project_event_rejected(batch_job_id, "RecordedTargetMismatch")
+        return None
+
+    completed = rest(
+        "rpc/complete_project_batch_submission_target",
+        method="POST",
+        body={
+            "p_submission_key": submission_key,
+            "p_video_job_id": event_job_id,
+            "p_expected_batch_target_key": logical_key,
+            "p_expected_batch_target_release_id": logical_release_id,
+            "p_observed_job_definition": observed_definition,
+            "p_observed_job_queue": observed_queue,
+            "p_aws_batch_job_id": batch_job_id,
+            "p_job_definition": event_definition,
+            "p_job_queue": event_queue,
+        },
+        prefer="return=representation",
+    )
+    if completed is not True and completed != [True]:
+        # The submitter and EventBridge can race while a previous logical
+        # release is being rebound to its verified submit-as target. Re-read
+        # the immutable claim/job pair once so a successful concurrent bind
+        # is accepted, while a real mismatch remains fail-closed.
+        if _cas_retry:
+            return _project_job(
+                batch_job_id,
+                event_detail,
+                _cas_retry=False,
+            )
+        _project_event_rejected(batch_job_id, "AtomicBindingRejected")
+        return None
+    return {
+        **job,
+        "aws_batch_job_id": batch_job_id,
+        "batch_job_definition": event_definition,
+        "batch_job_queue": event_queue,
+    }
 
 
 def _handle_project_failure(

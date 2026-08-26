@@ -1,0 +1,32 @@
+# Local secrets and Vercel project links
+.env
+.env.local
+.env.*.local
+!.env.example
+.vercel/
+.secrets/
+*.pem
+*.key
+
+# JavaScript and framework build products
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+*.tsbuildinfo
+
+# AWS CDK synthesis products
+cdk.out/
+**/cdk.out/
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Test and coverage output
+coverage/
+htmlcov/

@@ -37,14 +37,14 @@ test("verifies and syncs every immutable project Batch target", () => {
     "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN",
     "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN",
     "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN",
+    "LEGACY_PROJECT_BATCH_TARGET_RELEASE_ID",
+    "SOURCE_RANGE_BATCH_TARGET_RELEASE_ID",
+    "ELEVENLABS_TRANSCRIPTION_BATCH_TARGET_RELEASE_ID",
+    "SUBTITLE_TEMPLATES_BATCH_TARGET_RELEASE_ID",
+    "UNIFIED_TEMPLATE_SUBTITLES_BATCH_TARGET_RELEASE_ID",
   ]) {
     assert.match(script, new RegExp(`\\b${name}\\b`));
   }
-  for (const name of [
-    "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN",
-    "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN",
-  ]) {
-    const required = script.indexOf(`\${${name}:?${name} is required}`);
-    assert.ok(required >= 0 && required < guard && required < firstWrite);
-  }
+  assert.match(script, /production-worker-release\.mjs env/);
+  assert.match(script, /production-project-targets\.mjs env/);
 });

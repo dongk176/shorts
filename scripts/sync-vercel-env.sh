@@ -5,8 +5,6 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/web"
 source ../scripts/load-env.sh
 load_env_file ../.env.local
-: "${UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN:?UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN is required}"
-: "${UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN:?UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN is required}"
 command -v vercel >/dev/null 2>&1 || { echo "vercel CLI가 필요합니다." >&2; exit 2; }
 vercel whoami >/dev/null
 if [[ ! -f .vercel/project.json ]]; then
@@ -28,6 +26,12 @@ while IFS='=' read -r release_name release_value; do
   export "$release_name=$release_value"
 done < <(node ../scripts/production-worker-release.mjs env "$PRODUCTION_WORKER_RELEASE_FILE")
 
+PROJECT_TARGET_REGISTRY_FILE="${PROJECT_TARGET_REGISTRY_FILE:-$ROOT/production-project-targets.json}"
+while IFS='=' read -r target_name target_value; do
+  [[ -n "$target_name" && -n "$target_value" ]] || continue
+  export "$target_name=$target_value"
+done < <(node ../scripts/production-project-targets.mjs env "$PROJECT_TARGET_REGISTRY_FILE")
+
 node ../scripts/verify-production-worker-release.mjs \
   --release "$PRODUCTION_WORKER_RELEASE_FILE" \
   --lambda-function "$BATCH_SUBMITTER_FUNCTION_NAME" \
@@ -36,7 +40,7 @@ node ../scripts/verify-production-worker-release.mjs \
 # The web persists an immutable Batch target with every project. Fail before
 # touching Vercel if those values differ from the submitter Lambda allowlist.
 node ../scripts/verify-project-batch-targets.mjs \
-  --env ../.env.local \
+  --registry "$PROJECT_TARGET_REGISTRY_FILE" \
   --lambda-function "$BATCH_SUBMITTER_FUNCTION_NAME" \
   --region "$AWS_REGION"
 
@@ -61,12 +65,17 @@ for name in DATABASE_URL SUPABASE_URL SUPABASE_PUBLISHABLE_KEY YOUTUBE_API_KEY \
   EDITOR_RENDERING_V2_ENABLED EDITOR_RENDERING_V2_GLOBAL_ENABLED \
   EDITOR_RENDERING_V2_TEST_USER_IDS \
   LEGACY_PROJECT_JOB_DEFINITION_ARN LEGACY_PROJECT_BATCH_QUEUE_ARN \
+  LEGACY_PROJECT_BATCH_TARGET_RELEASE_ID \
   SOURCE_RANGE_JOB_DEFINITION_ARN SOURCE_RANGE_BATCH_QUEUE_ARN \
+  SOURCE_RANGE_BATCH_TARGET_RELEASE_ID \
   ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN \
   ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN \
+  ELEVENLABS_TRANSCRIPTION_BATCH_TARGET_RELEASE_ID \
   SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN \
+  SUBTITLE_TEMPLATES_BATCH_TARGET_RELEASE_ID \
   UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN \
   UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN \
+  UNIFIED_TEMPLATE_SUBTITLES_BATCH_TARGET_RELEASE_ID \
   VIDEO_JOB_BACKEND MVP_PLAN_ENFORCEMENT; do
   value="${!name:-}"
   [[ -n "$value" ]] || { echo "건너뜀(값 없음): $name"; continue; }

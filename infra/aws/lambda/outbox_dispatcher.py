@@ -61,14 +61,32 @@ def _recorded_batch_job_id(dispatch_batch_id: str) -> str | None:
     return str(value) if value else None
 
 
-def _recorded_project_batch_job_id(job_id: str) -> str | None:
+def _project_submission_claim(job_id: str) -> dict[str, Any] | None:
     key = urllib.parse.quote(f"project:{job_id}:0", safe="")
     rows = rest(
         "batch_submission_claims",
-        query=f"select=aws_batch_job_id&submission_key=eq.{key}&limit=1",
+        query=(
+            "select=aws_batch_job_id,job_definition,job_queue"
+            f"&submission_key=eq.{key}&limit=1"
+        ),
     ) or []
-    value = rows[0].get("aws_batch_job_id") if rows else None
-    return str(value) if value else None
+    return rows[0] if rows else None
+
+
+def _schedule_project_reconciliation(job_id: str, priority_class: str) -> None:
+    # A Batch state event can arrive after SubmitJob but before the submitter's
+    # atomic claim/job binding.  Re-enter the same idempotent attempt after the
+    # 90-second claim lease so it adopts the existing AWS job by exact name and
+    # target instead of leaving an id-only video_jobs row behind.
+    sqs.send_message(
+        QueueUrl=queue_url,
+        MessageBody=json.dumps({
+            "kind": "project",
+            "jobId": job_id,
+            "priorityClass": priority_class,
+        }, separators=(",", ":")),
+        DelaySeconds=120,
+    )
 
 
 def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
@@ -100,15 +118,101 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
                 "video_jobs",
                 query=f"select=aws_batch_job_id&id=eq.{job_id}&limit=1",
             ) or []
-            if rows and rows[0].get("aws_batch_job_id"):
+            raw_job_batch_job_id = (
+                rows[0].get("aws_batch_job_id") if rows else None
+            )
+            job_batch_job_id = (
+                str(raw_job_batch_job_id).strip()
+                if raw_job_batch_job_id
+                else ""
+            )
+            submission_claim = _project_submission_claim(job_id)
+            raw_claim_batch_job_id = (
+                submission_claim.get("aws_batch_job_id")
+                if submission_claim
+                else None
+            )
+            recorded_batch_job_id = (
+                str(raw_claim_batch_job_id).strip()
+                if raw_claim_batch_job_id
+                else ""
+            )
+            if submission_claim is not None and (
+                bool(submission_claim.get("job_definition"))
+                != bool(submission_claim.get("job_queue"))
+            ):
+                log_event(
+                    "batch_submission_reconciliation_required",
+                    job_id=job_id,
+                    batch_job_id=job_batch_job_id,
+                    claim_batch_job_id=recorded_batch_job_id,
+                    error_type="IncompleteClaimTarget",
+                )
+                project_failures += 1
+                continue
+            recorded_ids = {
+                value
+                for value in (job_batch_job_id, recorded_batch_job_id)
+                if value
+            }
+            if len(recorded_ids) == 1:
+                expected_batch_job_id = next(iter(recorded_ids))
+                # The submitter owns both idempotency and the immutable raw
+                # definition/queue provenance. Re-enter it so an ambiguous
+                # response repairs all three fields together; never write a
+                # Batch id alone from the outbox dispatcher.
+                try:
+                    reconciled_batch_job_id = _submit_project(
+                        job_id, priority_class
+                    )
+                except Exception as reconciliation_exc:  # noqa: BLE001
+                    _schedule_project_reconciliation(job_id, priority_class)
+                    log_event(
+                        "batch_submission_reconciliation_scheduled",
+                        job_id=job_id,
+                        batch_job_id=expected_batch_job_id,
+                        error_type=type(reconciliation_exc).__name__,
+                        delay_seconds=120,
+                    )
+                    project_jobs += 1
+                    continue
+                if reconciled_batch_job_id != expected_batch_job_id:
+                    log_event(
+                        "batch_submission_reconciliation_required",
+                        job_id=job_id,
+                        batch_job_id=expected_batch_job_id,
+                        error_type="BatchJobIdMismatch",
+                    )
+                    project_failures += 1
+                    continue
+                log_event(
+                    "project_outbox_submit_reconciled",
+                    job_id=job_id,
+                    batch_job_id=reconciled_batch_job_id,
+                    priority_class=priority_class,
+                )
                 project_jobs += 1
                 continue
-            recorded_batch_job_id = _recorded_project_batch_job_id(job_id)
-            if recorded_batch_job_id:
-                patch("video_jobs", f"id=eq.{job_id}", {
-                    "aws_batch_job_id": recorded_batch_job_id,
-                })
-                project_jobs += 1
+            if len(recorded_ids) > 1:
+                log_event(
+                    "batch_submission_reconciliation_required",
+                    job_id=job_id,
+                    batch_job_id=job_batch_job_id,
+                    claim_batch_job_id=recorded_batch_job_id,
+                    error_type="BatchJobIdMismatch",
+                )
+                project_failures += 1
+                continue
+            if submission_claim is not None:
+                _schedule_project_reconciliation(job_id, priority_class)
+                log_event(
+                    "batch_submission_reconciliation_scheduled",
+                    job_id=job_id,
+                    batch_job_id=None,
+                    error_type=type(exc).__name__,
+                    delay_seconds=120,
+                )
+                project_failures += 1
                 continue
             patch("project_job_outbox", f"id=eq.{item['outbox_id']}", {
                 "status": "pending", "dispatched_at": None,

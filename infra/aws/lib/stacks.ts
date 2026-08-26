@@ -1,6 +1,8 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as batch from "aws-cdk-lib/aws-batch";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
@@ -21,6 +23,15 @@ import { DOWNLOAD_RESPONSE_HEADERS_FUNCTION_CODE } from "./cloudfront-functions"
 const projectRoot = path.resolve(__dirname, "../../..");
 const pinnedBatchJobDefinitionArn = /^arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-definition\/[A-Za-z0-9_-]+:[1-9][0-9]*$/;
 const pinnedBatchQueueArn = /^arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-queue\/[A-Za-z0-9_-]+$/;
+const pinnedEcrImageUri = /^([0-9]{12})\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com\/[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$/;
+const workerSourceGitSha = /^[0-9a-f]{40}$/;
+const projectTargetLaneNames = [
+  "legacy_project",
+  "source_range",
+  "elevenlabs_transcription",
+  "subtitle_templates",
+  "unified_template_subtitles",
+] as const;
 const placeholderPublicKey = [
   "-----BEGIN PUBLIC KEY-----",
   "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvrVZ6+TqXL7EtZYYN2HN",
@@ -67,6 +78,273 @@ function requiredContext(stack: cdk.Stack, name: string): string {
     throw new Error(`${name} context is required`);
   }
   return value;
+}
+
+function editorStableRerenderJobDefinitionArn(
+  stack: cdk.Stack,
+  environment: string,
+): string {
+  const contextName = `editorStableRerenderJobDefinitionArn:${environment}`;
+  const configured = String(stack.node.tryGetContext(contextName) || "").trim();
+  if (!configured) {
+    if (environment === "production") {
+      throw new Error(`${contextName} context is required in production`);
+    }
+    // A newly-created non-production Compute stack starts at revision 1.
+    // Operators can pin a later retained revision through the same context.
+    return stack.formatArn({
+      service: "batch",
+      resource: "job-definition",
+      resourceName: `shorts-mvp-rerender-fargate-${environment}:1`,
+      arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+    });
+  }
+  const match = /^arn:aws:batch:([a-z0-9-]+):([0-9]{12}):job-definition\/([A-Za-z0-9_-]+):([1-9][0-9]*)$/.exec(
+    configured,
+  );
+  if (!match || match[3] !== `shorts-mvp-rerender-fargate-${environment}`) {
+    throw new Error(
+      `${contextName} must be the revision-pinned ${environment} rerender Job Definition ARN`,
+    );
+  }
+  if (!cdk.Token.isUnresolved(stack.region) && match[1] !== stack.region) {
+    throw new Error(`${contextName} region must match the stack region`);
+  }
+  if (!cdk.Token.isUnresolved(stack.account) && match[2] !== stack.account) {
+    throw new Error(`${contextName} account must match the stack account`);
+  }
+  return configured;
+}
+
+interface ProjectTargetRelease {
+  releaseId: string;
+  workerSourceGitSha: string;
+  imageUri: string;
+  jobDefinitionArn: string;
+  jobQueueArn: string;
+}
+
+interface ProjectTargetPreviousRelease extends ProjectTargetRelease {
+  submitAsReleaseId?: string;
+}
+
+interface ProjectTargetLane {
+  schedulingMode: "fair_share" | "fifo";
+  current: ProjectTargetRelease;
+  previous: ProjectTargetPreviousRelease | null;
+}
+
+interface ProjectTargetRegistry {
+  version: 1;
+  environment: string;
+  lanes: Record<(typeof projectTargetLaneNames)[number], ProjectTargetLane>;
+}
+
+function exactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+  label: string,
+): void {
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  if (JSON.stringify(actual) !== JSON.stringify(wanted)) {
+    throw new Error(`${label} keys must be exact: ${actual.join(", ")}`);
+  }
+}
+
+function projectTargetRegistry(
+  stack: cdk.Stack,
+  environment: string,
+): { registry: ProjectTargetRegistry; json: string } | null {
+  const raw = String(stack.node.tryGetContext("projectTargetRegistryJson") || "").trim();
+  if (!raw) {
+    if (environment === "production") {
+      throw new Error("projectTargetRegistryJson context is required in production");
+    }
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("projectTargetRegistryJson must be valid JSON");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("projectTargetRegistryJson must be a JSON object");
+  }
+  const registry = parsed as ProjectTargetRegistry;
+  exactKeys(registry as unknown as Record<string, unknown>, [
+    "version", "environment", "lanes",
+  ], "project target registry");
+  if (registry.version !== 1 || registry.environment !== environment) {
+    throw new Error("project target registry version/environment mismatch");
+  }
+  if (!registry.lanes || typeof registry.lanes !== "object") {
+    throw new Error("project target registry lanes are required");
+  }
+  exactKeys(
+    registry.lanes as unknown as Record<string, unknown>,
+    projectTargetLaneNames,
+    "project target registry lanes",
+  );
+  const identities = new Set<string>();
+  const definitions = new Set<string>();
+  const releases = new Set<string>();
+  const queueSchedulingModes = new Map<string, ProjectTargetLane["schedulingMode"]>();
+  for (const laneName of projectTargetLaneNames) {
+    const lane = registry.lanes[laneName];
+    exactKeys(lane as unknown as Record<string, unknown>, [
+      "schedulingMode", "current", "previous",
+    ], `${laneName} lane`);
+    if (lane.schedulingMode !== "fair_share" && lane.schedulingMode !== "fifo") {
+      throw new Error(`${laneName} schedulingMode is invalid`);
+    }
+    const targetRows: Array<{
+      target: ProjectTargetRelease | ProjectTargetPreviousRelease;
+      previous: boolean;
+    }> = [{ target: lane.current, previous: false }];
+    if (lane.previous) targetRows.push({ target: lane.previous, previous: true });
+    for (const { target, previous } of targetRows) {
+      exactKeys(target as unknown as Record<string, unknown>, previous
+        ? [
+          "releaseId",
+          "workerSourceGitSha",
+          "imageUri",
+          "jobDefinitionArn",
+          "jobQueueArn",
+          ...("submitAsReleaseId" in target ? ["submitAsReleaseId"] : []),
+        ]
+        : [
+          "releaseId",
+          "workerSourceGitSha",
+          "imageUri",
+          "jobDefinitionArn",
+          "jobQueueArn",
+        ],
+      `${laneName} ${previous ? "previous" : "current"}`);
+      if (!/^[a-z0-9][a-z0-9._-]{2,127}$/.test(target.releaseId)) {
+        throw new Error(`${laneName} releaseId is invalid`);
+      }
+      if (!workerSourceGitSha.test(target.workerSourceGitSha)) {
+        throw new Error(`${laneName} workerSourceGitSha is invalid`);
+      }
+      const image = pinnedEcrImageUri.exec(target.imageUri);
+      const definition = pinnedBatchJobDefinitionArn.exec(target.jobDefinitionArn);
+      const queue = pinnedBatchQueueArn.exec(target.jobQueueArn);
+      if (!image || !definition || !queue) {
+        throw new Error(`${laneName} target ARNs must be exact and revision-pinned`);
+      }
+      const definitionIdentity = /^arn:aws:batch:([^:]+):([^:]+):/.exec(
+        target.jobDefinitionArn,
+      );
+      const queueIdentity = /^arn:aws:batch:([^:]+):([^:]+):/.exec(
+        target.jobQueueArn,
+      );
+      if (
+        definitionIdentity?.[1] !== queueIdentity?.[1]
+        || definitionIdentity?.[2] !== queueIdentity?.[2]
+      ) {
+        throw new Error(`${laneName} target account/region mismatch`);
+      }
+      if (
+        image[1] !== definitionIdentity?.[2]
+        || image[2] !== definitionIdentity?.[1]
+      ) {
+        throw new Error(`${laneName} worker image account/region mismatch`);
+      }
+      if (!target.jobDefinitionArn.includes(target.workerSourceGitSha.slice(0, 7))) {
+        throw new Error(`${laneName} Job Definition has no worker source identity`);
+      }
+      identities.add(`${definitionIdentity?.[1]}:${definitionIdentity?.[2]}`);
+      if (definitions.has(target.jobDefinitionArn)) {
+        throw new Error("project target Job Definitions must be isolated");
+      }
+      if (releases.has(target.releaseId)) {
+        throw new Error("project target release IDs must be unique");
+      }
+      definitions.add(target.jobDefinitionArn);
+      releases.add(target.releaseId);
+      const queueMode = queueSchedulingModes.get(target.jobQueueArn);
+      if (queueMode && queueMode !== lane.schedulingMode) {
+        throw new Error("one Batch queue cannot use conflicting scheduling modes");
+      }
+      queueSchedulingModes.set(target.jobQueueArn, lane.schedulingMode);
+    }
+    if (lane.previous) {
+      if (lane.previous.releaseId === lane.current.releaseId) {
+        throw new Error(`${laneName} previous release must differ from current`);
+      }
+      if (
+        lane.previous.submitAsReleaseId !== undefined
+        && ![
+          lane.current.releaseId,
+          lane.previous.releaseId,
+        ].includes(lane.previous.submitAsReleaseId)
+      ) {
+        throw new Error(`${laneName} previous submitAsReleaseId must stay in its lane`);
+      }
+    }
+  }
+  if (identities.size !== 1) {
+    throw new Error("project target registry must use one AWS account/region");
+  }
+  return { registry, json: JSON.stringify(registry) };
+}
+
+/**
+ * Each function asset contains only its handler and common.py. This prevents a
+ * cleanup-only hotfix from silently revising the submitter, dispatcher, and
+ * state functions that happen to live in the same source directory.
+ */
+function isolatedLambdaCode(
+  handlerModule: string,
+  generatedFiles: Record<string, string> = {},
+): lambda.AssetCode {
+  if (!/^[a-z][a-z0-9_]*$/.test(handlerModule)) {
+    throw new Error("Lambda handler module is invalid");
+  }
+  const sourceDirectory = path.join(__dirname, "../lambda");
+  const sources = [`${handlerModule}.py`, "common.py"];
+  for (const source of sources) {
+    if (!fs.existsSync(path.join(sourceDirectory, source))) {
+      throw new Error(`Lambda source is missing: ${source}`);
+    }
+  }
+  for (const fileName of Object.keys(generatedFiles)) {
+    if (!/^[a-z0-9][a-z0-9._-]*$/.test(fileName)) {
+      throw new Error(`Generated Lambda asset filename is invalid: ${fileName}`);
+    }
+  }
+  const generatedFilesFingerprint = crypto.createHash("sha256")
+    .update(JSON.stringify(generatedFiles))
+    .digest("hex");
+  return lambda.Code.fromAsset(sourceDirectory, {
+    bundling: {
+      image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+      environment: {
+        GENERATED_FILES_SHA256: generatedFilesFingerprint,
+      },
+      local: {
+        tryBundle(outputDirectory: string): boolean {
+          for (const source of sources) {
+            fs.copyFileSync(
+              path.join(sourceDirectory, source),
+              path.join(outputDirectory, source),
+            );
+          }
+          for (const [fileName, content] of Object.entries(generatedFiles)) {
+            fs.writeFileSync(path.join(outputDirectory, fileName), content, "utf8");
+          }
+          return true;
+        },
+      },
+      command: [
+        "bash",
+        "-c",
+        `cp ${sources.map((source) => `/asset-input/${source}`).join(" ")} /asset-output/`,
+      ],
+    },
+  });
 }
 
 export class ShortsMvpFoundationStack extends cdk.Stack {
@@ -312,15 +590,20 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
         arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
       })],
     }));
+    const stableProjectQueueArn = this.formatArn({
+      service: "batch",
+      resource: "job-queue",
+      resourceName: `shorts-mvp-project-fargate-${props.environment}`,
+      arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+    });
     const environment = {
       RUNTIME_SECRET_ARN: runtimeSecret.secretArn,
       MEDIA_BUCKET: bucket.bucketName,
-      PROJECT_BATCH_QUEUE: `shorts-mvp-project-fargate-${props.environment}`,
-      EDITOR_STABLE_BATCH_QUEUE:
-        `shorts-mvp-project-fargate-${props.environment}`,
-      EDITOR_CANARY_BATCH_QUEUE: this.queue.ref,
+      PROJECT_BATCH_QUEUE: stableProjectQueueArn,
+      EDITOR_STABLE_BATCH_QUEUE: stableProjectQueueArn,
+      EDITOR_CANARY_BATCH_QUEUE: this.queue.attrJobQueueArn,
       RERENDER_JOB_DEFINITION:
-        `shorts-mvp-rerender-fargate-${props.environment}`,
+        editorStableRerenderJobDefinitionArn(this, props.environment),
       EDITOR_TEST_BUCKET_NAME:
         `shorts-mvp-editor-test-${this.account}-${this.region}`,
       EDITOR_TEST_TEMPLATE_JOB_DEFINITION:
@@ -328,9 +611,6 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
       EDITOR_WORK_DISPATCH_QUEUE_URL: dispatchQueue.queueUrl,
       WORK_DISPATCH_QUEUE_URL: dispatchQueue.queueUrl,
     };
-    const lambdaCode = lambda.Code.fromAsset(path.join(__dirname, "../lambda"), {
-      exclude: ["__pycache__", "*.pyc"],
-    });
     const outboxDispatcher = new lambda.Function(
       this,
       "EditorOutboxDispatcherFunction",
@@ -338,7 +618,7 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
         functionName: `shorts-mvp-editor-outbox-${props.environment}`,
         runtime: lambda.Runtime.PYTHON_3_12,
         handler: "editor_outbox_dispatcher.handler",
-        code: lambdaCode,
+        code: isolatedLambdaCode("editor_outbox_dispatcher"),
         role: lambdaRole,
         timeout: cdk.Duration.seconds(60),
         memorySize: 256,
@@ -352,7 +632,7 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
         functionName: `shorts-mvp-editor-batch-submitter-${props.environment}`,
         runtime: lambda.Runtime.PYTHON_3_12,
         handler: "batch_submitter.handler",
-        code: lambdaCode,
+        code: isolatedLambdaCode("batch_submitter"),
         role: lambdaRole,
         timeout: cdk.Duration.seconds(30),
         memorySize: 256,
@@ -364,7 +644,7 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
       functionName: `shorts-mvp-editor-batch-state-${props.environment}`,
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "batch_state.handler",
-      code: lambdaCode,
+      code: isolatedLambdaCode("batch_state"),
       role: lambdaRole,
       timeout: cdk.Duration.seconds(60),
       memorySize: 256,
@@ -374,7 +654,7 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
       functionName: `shorts-mvp-editor-cleanup-${props.environment}`,
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "editor_cleanup.handler",
-      code: lambdaCode,
+      code: isolatedLambdaCode("editor_cleanup"),
       role: lambdaRole,
       timeout: cdk.Duration.seconds(60),
       memorySize: 256,
@@ -384,7 +664,7 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
       functionName: `shorts-mvp-editor-release-registrar-${props.environment}`,
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "editor_release_registrar.handler",
-      code: lambdaCode,
+      code: isolatedLambdaCode("editor_release_registrar"),
       role: lambdaRole,
       timeout: cdk.Duration.seconds(60),
       memorySize: 256,
@@ -1001,9 +1281,15 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       RERENDER_JOB_DEFINITION: rerenderDefinitionName,
       STATE_EVENT_QUEUE_URL: stateQueue.queueUrl,
     };
-    const lambdaCode = lambda.Code.fromAsset(path.join(__dirname, "../lambda"), {
-      exclude: ["__pycache__", "*.pyc"],
-    });
+    // Batch submission claims store the exact immutable target that AWS
+    // accepted. Only the submitter needs revision-pinned ARNs; the remaining
+    // control-plane Lambdas keep their established environment contract.
+    const batchSubmitterEnvironment = {
+      ...lambdaEnvironment,
+      PREPARE_JOB_DEFINITION: prepareDefinition.attrJobDefinitionArn,
+      RENDER_JOB_DEFINITION: renderDefinition.attrJobDefinitionArn,
+      RERENDER_JOB_DEFINITION: rerenderDefinition.attrJobDefinitionArn,
+    };
     const cleanupLogGroup = new logs.LogGroup(this, "CleanupLogs", {
       logGroupName: `/shorts-mvp/${props.environment}/cleanup`,
       retention: logs.RetentionDays.TWO_WEEKS,
@@ -1225,7 +1511,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     const cleanup = new lambda.Function(this, "CleanupFunction", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "cleanup.handler",
-      code: lambdaCode,
+      code: isolatedLambdaCode("cleanup"),
       role: lambdaRole,
       timeout: cdk.Duration.minutes(5),
       memorySize: 512,
@@ -1235,7 +1521,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     const batchState = new lambda.Function(this, "BatchStateFunction", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "batch_state.handler",
-      code: lambdaCode,
+      code: isolatedLambdaCode("batch_state"),
       role: lambdaRole,
       timeout: cdk.Duration.seconds(60),
       memorySize: 256,
@@ -1245,182 +1531,98 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     const outboxDispatcher = new lambda.Function(this, "OutboxDispatcherFunction", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "outbox_dispatcher.handler",
-      code: lambdaCode,
+      code: isolatedLambdaCode("outbox_dispatcher"),
       role: lambdaRole,
       timeout: cdk.Duration.minutes(5),
       memorySize: 256,
       environment: lambdaEnvironment,
     });
     const batchSubmitterFunctionName = `shorts-mvp-batch-submitter-${props.environment}`;
-    const legacyProjectJobDefinitionArn = String(
-      this.node.tryGetContext("legacyProjectJobDefinitionArn") || "",
-    ).trim();
-    const legacyProjectBatchQueueArn = String(
-      this.node.tryGetContext("legacyProjectBatchQueueArn") || "",
-    ).trim();
-    const sourceRangeJobDefinitionArn = String(
-      this.node.tryGetContext("sourceRangeJobDefinitionArn") || "",
-    ).trim();
-    const sourceRangeBatchQueueArn = String(
-      this.node.tryGetContext("sourceRangeBatchQueueArn") || "",
-    ).trim();
-    const elevenLabsJobDefinitionArn = String(
-      this.node.tryGetContext("elevenLabsTranscriptionJobDefinitionArn") || "",
-    ).trim();
-    const elevenLabsBatchQueueArn = String(
-      this.node.tryGetContext("elevenLabsTranscriptionBatchQueueArn") || "",
-    ).trim();
-    if (Boolean(elevenLabsJobDefinitionArn) !== Boolean(elevenLabsBatchQueueArn)) {
-      throw new Error(
-        "ElevenLabs transcription Job Definition and queue ARNs must be configured together",
-      );
-    }
-    const subtitleTemplatesJobDefinitionArn = String(
-      this.node.tryGetContext("subtitleTemplatesJobDefinitionArn") || "",
-    ).trim();
-    const subtitleTemplatesBatchQueueArn = String(
-      this.node.tryGetContext("subtitleTemplatesBatchQueueArn") || "",
-    ).trim();
-    if (
-      Boolean(subtitleTemplatesJobDefinitionArn)
-      !== Boolean(subtitleTemplatesBatchQueueArn)
-    ) {
-      throw new Error(
-        "Subtitle template Job Definition and queue ARNs must be configured together",
-      );
-    }
-    if (
-      subtitleTemplatesJobDefinitionArn
-      && subtitleTemplatesJobDefinitionArn === elevenLabsJobDefinitionArn
-    ) {
-      throw new Error(
-        "Subtitle template target must use a new immutable Job Definition",
-      );
-    }
-    const unifiedTemplateSubtitlesJobDefinitionArn = String(
+    const registryResult = projectTargetRegistry(this, props.environment);
+    const registry = registryResult?.registry;
+    const lane = (name: (typeof projectTargetLaneNames)[number]) => (
+      registry?.lanes[name]
+    );
+    const legacyProjectJobDefinitionArn = lane("legacy_project")
+      ?.current.jobDefinitionArn || String(
+        this.node.tryGetContext("legacyProjectJobDefinitionArn") || "",
+      ).trim();
+    const legacyProjectBatchQueueArn = lane("legacy_project")
+      ?.current.jobQueueArn || String(
+        this.node.tryGetContext("legacyProjectBatchQueueArn") || "",
+      ).trim();
+    const sourceRangeJobDefinitionArn = lane("source_range")
+      ?.current.jobDefinitionArn || String(
+        this.node.tryGetContext("sourceRangeJobDefinitionArn") || "",
+      ).trim();
+    const sourceRangeBatchQueueArn = lane("source_range")
+      ?.current.jobQueueArn || String(
+        this.node.tryGetContext("sourceRangeBatchQueueArn") || "",
+      ).trim();
+    const elevenLabsJobDefinitionArn = lane("elevenlabs_transcription")
+      ?.current.jobDefinitionArn || String(
+        this.node.tryGetContext("elevenLabsTranscriptionJobDefinitionArn") || "",
+      ).trim();
+    const elevenLabsBatchQueueArn = lane("elevenlabs_transcription")
+      ?.current.jobQueueArn || String(
+        this.node.tryGetContext("elevenLabsTranscriptionBatchQueueArn") || "",
+      ).trim();
+    const subtitleTemplatesJobDefinitionArn = lane("subtitle_templates")
+      ?.current.jobDefinitionArn || String(
+        this.node.tryGetContext("subtitleTemplatesJobDefinitionArn") || "",
+      ).trim();
+    const subtitleTemplatesBatchQueueArn = lane("subtitle_templates")
+      ?.current.jobQueueArn || String(
+        this.node.tryGetContext("subtitleTemplatesBatchQueueArn") || "",
+      ).trim();
+    const unifiedTemplateSubtitlesJobDefinitionArn = lane(
+      "unified_template_subtitles",
+    )?.current.jobDefinitionArn || String(
       this.node.tryGetContext("unifiedTemplateSubtitlesJobDefinitionArn") || "",
     ).trim();
-    const unifiedTemplateSubtitlesBatchQueueArn = String(
+    const unifiedTemplateSubtitlesBatchQueueArn = lane(
+      "unified_template_subtitles",
+    )?.current.jobQueueArn || String(
       this.node.tryGetContext("unifiedTemplateSubtitlesBatchQueueArn") || "",
     ).trim();
-    const unifiedTemplateSubtitlesPreviousJobDefinitionArn = String(
+    const unifiedTemplateSubtitlesPreviousJobDefinitionArn = lane(
+      "unified_template_subtitles",
+    )?.previous?.jobDefinitionArn || String(
       this.node.tryGetContext(
         "unifiedTemplateSubtitlesPreviousJobDefinitionArn",
       ) || "",
     ).trim();
-    if (
-      Boolean(unifiedTemplateSubtitlesJobDefinitionArn)
-      !== Boolean(unifiedTemplateSubtitlesBatchQueueArn)
-    ) {
-      throw new Error(
-        "Unified template subtitle Job Definition and queue ARNs must be configured together",
-      );
-    }
-    if (
-      unifiedTemplateSubtitlesJobDefinitionArn
-      && !pinnedBatchJobDefinitionArn.test(
-        unifiedTemplateSubtitlesJobDefinitionArn,
-      )
-    ) {
-      throw new Error(
-        "Unified template subtitle Job Definition must be an exact revision-pinned ARN",
-      );
-    }
-    if (
-      unifiedTemplateSubtitlesBatchQueueArn
-      && !pinnedBatchQueueArn.test(unifiedTemplateSubtitlesBatchQueueArn)
-    ) {
-      throw new Error(
-        "Unified template subtitle queue must be an exact ARN",
-      );
-    }
-    if (
-      unifiedTemplateSubtitlesPreviousJobDefinitionArn
-      && !unifiedTemplateSubtitlesJobDefinitionArn
-    ) {
-      throw new Error(
-        "Previous unified template subtitle Job Definition requires the primary target",
-      );
-    }
-    if (
-      unifiedTemplateSubtitlesPreviousJobDefinitionArn
-      && !pinnedBatchJobDefinitionArn.test(
-        unifiedTemplateSubtitlesPreviousJobDefinitionArn,
-      )
-    ) {
-      throw new Error(
-        "Previous unified template subtitle Job Definition must be an exact revision-pinned ARN",
-      );
-    }
-    if (
-      unifiedTemplateSubtitlesPreviousJobDefinitionArn
-      && unifiedTemplateSubtitlesPreviousJobDefinitionArn
-        === unifiedTemplateSubtitlesJobDefinitionArn
-    ) {
-      throw new Error(
-        "Previous unified template subtitle Job Definition must differ from the primary target",
-      );
-    }
-    if (
-      unifiedTemplateSubtitlesJobDefinitionArn
-      && new Set([
-        legacyProjectJobDefinitionArn,
-        sourceRangeJobDefinitionArn,
-        elevenLabsJobDefinitionArn,
-        subtitleTemplatesJobDefinitionArn,
-      ]).has(unifiedTemplateSubtitlesJobDefinitionArn)
-    ) {
-      throw new Error(
-        "Unified template subtitle target must use a separate immutable Job Definition",
-      );
-    }
-    if (
-      unifiedTemplateSubtitlesPreviousJobDefinitionArn
-      && new Set([
-        legacyProjectJobDefinitionArn,
-        sourceRangeJobDefinitionArn,
-        elevenLabsJobDefinitionArn,
-        subtitleTemplatesJobDefinitionArn,
-        unifiedTemplateSubtitlesJobDefinitionArn,
-      ]).has(unifiedTemplateSubtitlesPreviousJobDefinitionArn)
-    ) {
-      throw new Error(
-        "Previous unified template subtitle target must use a separate immutable Job Definition",
-      );
-    }
-    if (props.environment === "production") {
-      const requiredProductionTargets = {
-        legacyProjectJobDefinitionArn,
-        legacyProjectBatchQueueArn,
-        sourceRangeJobDefinitionArn,
-        sourceRangeBatchQueueArn,
-        elevenLabsJobDefinitionArn,
-        elevenLabsBatchQueueArn,
-        subtitleTemplatesJobDefinitionArn,
-        subtitleTemplatesBatchQueueArn,
-        unifiedTemplateSubtitlesJobDefinitionArn,
-        unifiedTemplateSubtitlesBatchQueueArn,
-      };
-      const missingTargets = Object.entries(requiredProductionTargets)
-        .filter(([, value]) => !value)
-        .map(([name]) => name);
-      if (missingTargets.length > 0) {
-        throw new Error(
-          `Production Batch targets must be explicitly pinned: ${missingTargets.join(", ")}`,
-        );
-      }
-    }
+    const batchSubmitterLogGroup = new logs.LogGroup(
+      this,
+      "BatchSubmitterLogs",
+      {
+        logGroupName: `/shorts-mvp/${props.environment}/batch-submitter`,
+        retention: logs.RetentionDays.TWO_WEEKS,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
     const batchSubmitter = new lambda.Function(this, "BatchSubmitterFunction", {
       functionName: batchSubmitterFunctionName,
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "batch_submitter.handler",
-      code: lambdaCode,
+      code: isolatedLambdaCode(
+        "batch_submitter",
+        registryResult ? {
+          "production-project-targets.json": registryResult.json,
+        } : {},
+      ),
       role: lambdaRole,
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
       reservedConcurrentExecutions: 10,
+      logGroup: batchSubmitterLogGroup,
       environment: {
-        ...lambdaEnvironment,
+        ...batchSubmitterEnvironment,
+        // Keep the currently deployed exact raw targets alongside the
+        // immutable registry during Stage A. The submitter resolves logical
+        // project targets from the registry first, while preserving these
+        // variables makes the control-plane cutover property-additive and
+        // leaves the legacy fallback byte-for-byte available for rollback.
         LEGACY_PROJECT_JOB_DEFINITION_ARN:
           legacyProjectJobDefinitionArn || projectHeavyDefinition.ref,
         LEGACY_PROJECT_BATCH_QUEUE_ARN:
@@ -1451,8 +1653,125 @@ export class ShortsMvpComputeStack extends cdk.Stack {
           UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN:
             unifiedTemplateSubtitlesPreviousJobDefinitionArn,
         } : {}),
+        ...(registryResult ? {
+          PROJECT_TARGET_REGISTRY_PATH:
+            "/var/task/production-project-targets.json",
+          PROJECT_TARGET_REGISTRY_REQUIRED:
+            props.environment === "production" ? "true" : "false",
+        } : {}),
       },
     });
+    const controlPlaneMetric = (
+      id: string,
+      logGroup: logs.ILogGroup,
+      filterPattern: string,
+      metricName: string,
+    ) => {
+      new logs.MetricFilter(this, id, {
+        logGroup,
+        filterPattern: logs.FilterPattern.literal(filterPattern),
+        metricNamespace: renderMetricNamespace,
+        metricName,
+        metricValue: "1",
+        defaultValue: 0,
+      });
+      return new cloudwatch.Metric({
+        namespace: renderMetricNamespace,
+        metricName,
+        statistic: "Sum",
+        period: cdk.Duration.minutes(1),
+      });
+    };
+    const oneMinuteAlarm = (
+      id: string,
+      alarmName: string,
+      metric: cloudwatch.IMetric,
+    ) => new cloudwatch.Alarm(this, id, {
+      alarmName,
+      metric,
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      comparisonOperator:
+        cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    oneMinuteAlarm(
+      "BatchSubmitterFailureAlarm",
+      `shorts-mvp-${props.environment}-batch-submitter-failure`,
+      controlPlaneMetric(
+        "BatchSubmitterFailureMetric",
+        batchSubmitterLogGroup,
+        '{ $.event = "batch_submit_failed" }',
+        "BatchSubmitterFailure",
+      ),
+    );
+    oneMinuteAlarm(
+      "BatchTargetTrustRejectedAlarm",
+      `shorts-mvp-${props.environment}-batch-target-trust-rejected`,
+      controlPlaneMetric(
+        "BatchTargetTrustRejectedMetric",
+        batchSubmitterLogGroup,
+        '{ $.event = "project_target_trust_rejected" }',
+        "BatchTargetTrustRejected",
+      ),
+    );
+    oneMinuteAlarm(
+      "BatchTargetUnknownReleaseAlarm",
+      `shorts-mvp-${props.environment}-batch-target-unknown-release`,
+      controlPlaneMetric(
+        "BatchTargetUnknownReleaseMetric",
+        batchSubmitterLogGroup,
+        '{ $.event = "project_target_release_unknown" }',
+        "BatchTargetUnknownRelease",
+      ),
+    );
+    oneMinuteAlarm(
+      "QueuedWithoutBatchIdAlarm",
+      `shorts-mvp-${props.environment}-queued-without-batch-id`,
+      controlPlaneMetric(
+        "QueuedWithoutBatchIdMetric",
+        cleanupLogGroup,
+        '{ $.event = "queued_without_batch_id" }',
+        "QueuedWithoutBatchId",
+      ),
+    );
+    oneMinuteAlarm(
+      "ProjectDispatchHealthCheckFailedAlarm",
+      `shorts-mvp-${props.environment}-project-dispatch-health-check-failed`,
+      controlPlaneMetric(
+        "ProjectDispatchHealthCheckFailedMetric",
+        cleanupLogGroup,
+        '{ $.event = "project_dispatch_health_check_failed" }',
+        "ProjectDispatchHealthCheckFailed",
+      ),
+    );
+    oneMinuteAlarm(
+      "BatchSubmissionReconciliationRequiredAlarm",
+      `shorts-mvp-${props.environment}-batch-submission-reconciliation-required`,
+      controlPlaneMetric(
+        "BatchSubmissionReconciliationRequiredMetric",
+        cleanupLogGroup,
+        '{ $.event = "batch_submission_reconciliation_required" }',
+        "BatchSubmissionReconciliationRequired",
+      ),
+    );
+    oneMinuteAlarm(
+      "BatchSubmitterLambdaErrorAlarm",
+      `shorts-mvp-${props.environment}-batch-submitter-lambda-error`,
+      batchSubmitter.metricErrors({
+        period: cdk.Duration.minutes(1),
+        statistic: "Sum",
+      }),
+    );
+    oneMinuteAlarm(
+      "WorkDispatchDlqAlarm",
+      `shorts-mvp-${props.environment}-work-dispatch-dlq`,
+      workDlq.metricApproximateNumberOfMessagesVisible({
+        period: cdk.Duration.minutes(1),
+        statistic: "Maximum",
+      }),
+    );
     outboxDispatcher.addEnvironment(
       "BATCH_SUBMITTER_FUNCTION_NAME",
       batchSubmitterFunctionName,
@@ -1473,7 +1792,7 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     const stateWriter = new lambda.Function(this, "StateWriterFunction", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "state_writer.handler",
-      code: lambdaCode,
+      code: isolatedLambdaCode("state_writer"),
       role: lambdaRole,
       timeout: cdk.Duration.seconds(60),
       memorySize: 256,

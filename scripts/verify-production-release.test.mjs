@@ -37,6 +37,7 @@ test("production release guard rejects the isolated content calendar", () => {
 });
 
 test("production release guard requires protected routes and forbids publishing routes", () => {
+  assert.ok(PROTECTED_APP_ROUTES.includes("/templates/page"));
   assert.deepEqual(validateManifestRoutes(PROTECTED_APP_ROUTES), {
     missingProtected: [],
     includedForbidden: [],

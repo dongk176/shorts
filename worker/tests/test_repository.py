@@ -665,6 +665,115 @@ def test_selected_output_completion_policy_only_applies_to_new_jobs() -> None:
     assert "public." not in migration
 
 
+def test_batch_target_and_stale_guard_migration_is_atomic_and_private() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202608260005_batch_target_and_stale_guards.sql"
+    ).read_text(encoding="utf-8")
+    validation = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202608260006_batch_target_and_stale_guards_validate.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "batch_target_key text" in migration
+    assert "batch_target_release_id text" in migration
+    assert "video_jobs_batch_target_pair_check" in migration
+    assert "job_definition text" in migration
+    assert "job_queue text" in migration
+    assert (
+        "create or replace function "
+        "shorts_mvp.complete_project_batch_submission_target" in migration
+    )
+    assert "p_expected_batch_target_key text" in migration
+    assert "p_expected_batch_target_release_id text" in migration
+    assert "p_observed_job_definition text" in migration
+    assert "p_observed_job_queue text" in migration
+    assert "update shorts_mvp.batch_submission_claims" in migration
+    assert "update shorts_mvp.video_jobs" in migration
+    assert "set aws_batch_job_id=p_aws_batch_job_id" in migration
+    assert "current_job.batch_target_key" in migration
+    assert "current_job.batch_target_release_id" in migration
+    assert (
+        "current_job.batch_job_definition\n"
+        "      is distinct from p_observed_job_definition"
+        in migration
+    )
+    assert (
+        "current_job.batch_job_queue\n"
+        "      is distinct from p_observed_job_queue"
+        in migration
+    )
+    assert migration.count(
+        "text,uuid,text,text,text,text,text,text,text"
+    ) == 2
+    assert (
+        "create or replace function "
+        "shorts_mvp.finalize_stale_video_job_if_unchanged" in migration
+    )
+    assert "for update" in migration
+    assert "current_job.aws_batch_job_id is distinct from p_observed_aws_batch_job_id" in migration
+    assert "current_job.status is distinct from p_observed_status" in migration
+    assert "current_job.heartbeat_at is distinct from p_observed_heartbeat_at" in migration
+    assert "current_job.created_at >= p_created_before" in migration
+    assert "current_job.status in ('queued','retry_waiting')" in migration
+    assert "current_job.queue_expires_at > clock_timestamp()" in migration
+    assert "'queue_waiting'::text" in migration
+    assert "current_job.ingestion_route_leased_at >= p_heartbeat_before" in migration
+    assert "from shorts_mvp.project_job_outbox outbox" in migration
+    assert "from shorts_mvp.batch_submission_claims claim" in migration
+    assert "current_job.project_resume_count=1" in migration
+    assert "':resume:1'" in migration
+    assert "claim.aws_batch_job_id is not null" in migration
+    assert "claim.claimed_at >= p_heartbeat_before" in migration
+    assert "current_job.aws_batch_job_id is null" in migration
+    assert (
+        "claim.aws_batch_job_id is null\n"
+        "            and claim.claimed_at >= p_heartbeat_before"
+    ) in migration
+    assert "from shorts_mvp.finalize_project_job(" in migration
+    assert "update shorts_mvp.usage_reservations" in migration
+    assert "create or replace function shorts_mvp.get_batch_dispatch_health()" in migration
+    assert "join shorts_mvp.project_job_outbox outbox" in migration
+    assert "outbox.status='dispatched' or outbox.last_error is not null" in migration
+    assert "submission_claim_without_job_id bigint" in migration
+    assert "claim_mismatch as (" in migration
+    assert "claim.aws_batch_job_id is null" in migration
+    assert (
+        "job.aws_batch_job_id is distinct from claim.aws_batch_job_id"
+        in migration
+    )
+    assert (
+        "job.aws_batch_job_id is not null\n"
+        "            and job.batch_job_definition is null"
+        in migration
+    )
+    assert "claim.job_definition is not null and (" in migration
+    assert "job.batch_job_definition is distinct from claim.job_definition" in migration
+    assert "job.batch_job_queue is distinct from claim.job_queue" in migration
+    assert (
+        "(job.batch_job_definition is null)\n"
+        "            is distinct from (job.batch_job_queue is null)"
+        in migration
+    )
+    assert (
+        "(claim.job_definition is null)\n"
+        "            is distinct from (claim.job_queue is null)"
+        in migration
+    )
+    assert "and job.status in ('queued','retry_waiting')" not in migration
+    assert "statement_timestamp() - interval '5 minutes'" in migration
+    assert "job.execution_backend='aws_batch'" in migration
+    assert "from public,anon,authenticated" in migration
+    assert "public." not in migration
+    assert "set local lock_timeout = '3s'" in validation
+    assert validation.count("validate constraint video_jobs_batch_target_") == 3
+    assert "public." not in validation
+
+
 def test_restricted_content_failure_message_migration_is_scoped() -> None:
     migration = (
         Path(__file__).parents[2]
