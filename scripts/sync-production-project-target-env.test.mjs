@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import test from "node:test";
 import {
@@ -36,7 +37,17 @@ test("syncs only the exact fifteen production project target variables", () => {
   assert.match(source, /verify-project-batch-targets\.mjs/);
   assert.match(source, /vercel api "\/v9\/projects\/\$VERCEL_PROJECT_NAME"/);
   assert.match(source, /verify-vercel-project-link\.mjs/);
+  assert.match(source, /registry_env_file="\$\(mktemp\)"/);
+  assert.doesNotMatch(source, /declare\s+-A/);
   assert.doesNotMatch(source, /TOSS_|THEPAYONE_|DATABASE_URL|SUPABASE_/);
+});
+
+test("uses syntax supported by the macOS system bash", () => {
+  const result = spawnSync("/bin/bash", ["-n", new URL(
+    "./sync-production-project-target-env.sh",
+    import.meta.url,
+  ).pathname], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
 });
 
 test("fails closed when an existing Vercel link differs from the live project", () => {

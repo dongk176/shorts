@@ -21,7 +21,8 @@ command -v vercel >/dev/null 2>&1 || {
 live_project_file="$(mktemp)"
 value_file="$(mktemp)"
 pulled_file="$(mktemp)"
-trap 'rm -f "$live_project_file" "$value_file" "$pulled_file"' EXIT
+registry_env_file="$(mktemp)"
+trap 'rm -f "$live_project_file" "$value_file" "$pulled_file" "$registry_env_file"' EXIT
 
 cd "$ROOT/web"
 vercel whoami --scope "$VERCEL_TEAM_SLUG" >/dev/null
@@ -64,14 +65,16 @@ target_names=(
   UNIFIED_TEMPLATE_SUBTITLES_BATCH_TARGET_RELEASE_ID
 )
 
-declare -A target_values=()
-while IFS='=' read -r name value; do
-  [[ -n "$name" && -n "$value" ]] || continue
-  target_values["$name"]="$value"
-done < <(node "$ROOT/scripts/production-project-targets.mjs" env "$REGISTRY_FILE")
+node "$ROOT/scripts/production-project-targets.mjs" env "$REGISTRY_FILE" > "$registry_env_file"
 
 for name in "${target_names[@]}"; do
-  value="${target_values[$name]:-}"
+  value=""
+  while IFS='=' read -r candidate_name candidate_value; do
+    if [[ "$candidate_name" == "$name" ]]; then
+      value="$candidate_value"
+      break
+    fi
+  done < "$registry_env_file"
   if [[ -z "$value" ]]; then
     echo "registry에서 필수 Vercel 대상 값을 찾을 수 없습니다: $name" >&2
     exit 2
