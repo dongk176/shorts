@@ -2,19 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   assertCustomTemplateAccess,
   billingSupportsCustomTemplates,
-  planSupportsCustomTemplates,
 } from "@/lib/template-entitlements";
+import { TOSS_PLAN_CATALOG } from "@/lib/toss-subscription";
 
 describe("custom-template plan entitlements", () => {
-  it.each([
-    ["free", false],
-    ["plus", true],
-    ["standard", true],
-    ["pro", true],
-  ] as const)("maps the %s plan to %s", (planCode, expected) => {
-    expect(planSupportsCustomTemplates(planCode)).toBe(expected);
-  });
-
   it("locks custom templates when a subscription is inactive", () => {
     expect(billingSupportsCustomTemplates({ activeProducts: [] })).toBe(false);
     expect(() => assertCustomTemplateAccess({ activeProducts: [] }))
@@ -35,6 +26,23 @@ describe("custom-template plan entitlements", () => {
         monthlySourceSeconds: 12_000,
       }],
     })).toBe(true);
+  });
+
+  it("allows custom templates for every active Toss subscription plan", () => {
+    for (const plan of TOSS_PLAN_CATALOG) {
+      expect(billingSupportsCustomTemplates({
+        activeProducts: [{
+          planCode: plan.code,
+          displayName: plan.displayName,
+          billingCycle: "monthly",
+          currentPeriodStart: "2026-08-01T00:00:00.000Z",
+          currentPeriodEnd: "2026-09-01T00:00:00.000Z",
+          nextChargeAt: "2026-09-01T00:00:00.000Z",
+          cancelAtPeriodEnd: false,
+          monthlySourceSeconds: plan.monthlyQuotaSeconds,
+        }],
+      })).toBe(true);
+    }
   });
 
   it("allows custom templates for an active administrator-issued account", () => {

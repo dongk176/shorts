@@ -104,7 +104,7 @@ export type UsageSnapshot = {
 };
 
 export type ActiveBillingProduct = {
-  planCode: PaidPlanCode;
+  planCode: string;
   displayName: string;
   billingCycle: BillingCycle;
   currentPeriodStart: string;
@@ -123,19 +123,19 @@ export type BillingSummary = {
   activeProducts: ActiveBillingProduct[];
   hasManagedFeatureAccess: boolean;
   status: SubscriptionStatus;
-  planCode: PlanCode;
+  planCode: string;
   billingCycle: BillingCycle | null;
   currentPeriodStart: string | null;
   currentPeriodEnd: string | null;
   nextChargeAt: string | null;
   cancelAtPeriodEnd: boolean;
-  scheduledPlanCode: PaidPlanCode | null;
+  scheduledPlanCode: string | null;
   scheduledBillingCycle: BillingCycle | null;
   cardIssuer: string | null;
   cardNumberMasked: string | null;
   cardLast4: string | null;
   hasStoredPayerTel: boolean;
-  paymentProvider: "thepayone" | "nicepay" | null;
+  paymentProvider: "thepayone" | "nicepay" | "toss" | null;
   providerScheduleStatus: "none" | "active" | "paused" | "disposed" | "manual_review";
   requiresManualReview: boolean;
   canCreateJobs: boolean;
@@ -271,7 +271,7 @@ export type MvpState = {
     displayName: string | null;
     avatarUrl: string | null;
   } | null;
-  selectedPlanCode: PlanCode;
+  selectedPlanCode: string;
   generatedShortCount: number;
   plans: Plan[];
   billing: BillingSummary;

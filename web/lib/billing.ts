@@ -393,7 +393,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
     };
   }
   const status = row.status === "trialing" ? "active" : row.status as SubscriptionStatus;
-  const planCode = row.planCode as PlanCode;
+  const planCode = String(row.planCode);
   const now = Date.now();
   const inCurrentPeriod = row.currentPeriodStart instanceof Date
     && row.currentPeriodEnd instanceof Date
@@ -416,7 +416,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
       && activeRow.currentPeriodEnd.getTime() > now;
     if (!isActiveStatus || !isActivePeriod || !activeRow.billingCycle) return [];
     return [{
-      planCode: activeRow.planCode as PaidPlanCode,
+      planCode: String(activeRow.planCode),
       displayName: activeRow.displayName || activeRow.planCode,
       billingCycle: activeRow.billingCycle as BillingCycle,
       currentPeriodStart: activeRow.currentPeriodStart.toISOString(),
@@ -443,7 +443,7 @@ export async function getBillingSummary(db: BillingDb, userId: string | null): P
     currentPeriodEnd: row.currentPeriodEnd?.toISOString() || null,
     nextChargeAt: row.nextChargeAt?.toISOString() || null,
     cancelAtPeriodEnd: Boolean(row.cancelAtPeriodEnd),
-    scheduledPlanCode: row.scheduledPlanCode as PaidPlanCode | null,
+    scheduledPlanCode: row.scheduledPlanCode ? String(row.scheduledPlanCode) : null,
     scheduledBillingCycle: row.scheduledBillingCycle as BillingCycle | null,
     cardIssuer: resolveStoredCardIssuer({
       issuer: history?.defaultIssuerName

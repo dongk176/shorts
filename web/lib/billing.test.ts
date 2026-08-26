@@ -250,6 +250,47 @@ describe("billing summary", () => {
     });
   });
 
+  it("preserves an active Toss plan and provider in the shared billing summary", async () => {
+    const activeStart = new Date("2026-08-01T00:00:00.000Z");
+    const activeEnd = new Date("2099-09-01T00:00:00.000Z");
+    const responses = [
+      [{
+        hasPaymentHistory: true,
+        purchasedPackageCodes: [],
+        defaultPaymentProvider: "toss",
+      }],
+      [{
+        status: "active",
+        planCode: "toss_easycut_pro_1m",
+        displayName: "이지컷 프로",
+        billingCycle: "monthly",
+        currentPeriodStart: activeStart,
+        currentPeriodEnd: activeEnd,
+        nextChargeAt: activeEnd,
+        cancelAtPeriodEnd: false,
+        scheduledPlanCode: null,
+        scheduledBillingCycle: null,
+        paymentProvider: "toss",
+        providerScheduleStatus: "none",
+        billingReviewStatus: "none",
+        monthlySourceSeconds: 3_600,
+        maxActiveJobs: 1,
+        retentionDays: 30,
+      }],
+    ];
+    const db = (async () => responses.shift() || []) as unknown as BillingDb;
+
+    const summary = await getBillingSummary(db, "toss-user");
+
+    expect(summary).toMatchObject({
+      status: "active",
+      planCode: "toss_easycut_pro_1m",
+      paymentProvider: "toss",
+      activeProducts: [{ planCode: "toss_easycut_pro_1m" }],
+      canCreateJobs: true,
+    });
+  });
+
   it("returns every currently active product and excludes overdue products", async () => {
     const activeStart = new Date("2026-01-01T00:00:00.000Z");
     const activeEnd = new Date("2099-01-01T00:00:00.000Z");

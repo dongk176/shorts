@@ -4,6 +4,7 @@ import {
   billingSupportsEbookDownloads,
   downloadableEbookSlugs,
 } from "./ebook-entitlements";
+import { TOSS_PLAN_CATALOG } from "./toss-subscription";
 
 describe("ebook download entitlements", () => {
   it("includes every ebook offered in the pricing package", () => {
@@ -41,6 +42,23 @@ describe("ebook download entitlements", () => {
         monthlySourceSeconds: 3_600,
       }],
     })).toBe(expected);
+  });
+
+  it("matches every Toss plan's guidebook policy", () => {
+    for (const plan of TOSS_PLAN_CATALOG) {
+      expect(billingSupportsEbookDownloads({
+        activeProducts: [{
+          planCode: plan.code,
+          displayName: plan.displayName,
+          billingCycle: "monthly",
+          currentPeriodStart: "2026-08-01T00:00:00.000Z",
+          currentPeriodEnd: "2026-09-01T00:00:00.000Z",
+          nextChargeAt: "2026-09-01T00:00:00.000Z",
+          cancelAtPeriodEnd: false,
+          monthlySourceSeconds: plan.monthlyQuotaSeconds,
+        }],
+      })).toBe(plan.guidebookIncluded);
+    }
   });
 
   it("rejects non-entitled plans at the server boundary", () => {

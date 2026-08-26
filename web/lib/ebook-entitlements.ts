@@ -3,6 +3,7 @@ import {
   type FeatureEntitlementBilling,
 } from "@/lib/feature-entitlements";
 import { HttpError } from "@/lib/http";
+import { isTossPlanCode, tossPlan } from "@/lib/toss-subscription";
 
 export const downloadableEbookSlugs = [
   "monetization-7",
@@ -21,6 +22,8 @@ export function billingSupportsEbookDownloads(
   return hasManagedFeatureAccess(billing) || billing.activeProducts.some((product) =>
     product.planCode.startsWith("starter_")
     || product.planCode.startsWith("expert_")
+    || (isTossPlanCode(product.planCode)
+      && tossPlan(product.planCode).guidebookIncluded)
   );
 }
 
