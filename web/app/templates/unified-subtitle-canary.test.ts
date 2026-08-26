@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const editorSource = readFileSync(new URL("./template-editor.tsx", import.meta.url), "utf8");
 const librarySource = readFileSync(new URL("./template-library.tsx", import.meta.url), "utf8");
 const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const pageShellSource = readFileSync(new URL("./templates-page-shell.tsx", import.meta.url), "utf8");
 const newPageSource = readFileSync(new URL("./new/page.tsx", import.meta.url), "utf8");
 const editPageSource = readFileSync(new URL("./[templateId]/edit/page.tsx", import.meta.url), "utf8");
 const previewSource = readFileSync(
@@ -26,7 +27,11 @@ describe("unified template subtitle access", () => {
     expect(librarySource).toContain('id: "subtitle-pop"');
     expect(librarySource).toContain('id: "subtitle-highlight"');
     expect(librarySource).toContain("!authenticated");
-    expect(librarySource).toContain("/auth/sign-in?next=${encodeURIComponent(`/templates/new?preset=${preset.id}`)}");
+    expect(librarySource).toContain("/auth/sign-in?next=${encodeURIComponent(next)}");
+    expect(librarySource).toContain("onLoginRequest(next)");
+    expect(pageShellSource).toContain("setLoginNext(next)");
+    expect(pageShellSource).toContain("setLoginOpen(true)");
+    expect(pageShellSource).toContain("next={loginNext}");
     expect(librarySource).toContain("canUseCustomTemplates && unifiedSubtitleCanaryEnabled");
     expect(librarySource).toContain("/templates/new?preset=${preset.id}");
     expect(newPageSource).toContain("createUnifiedSubtitleTemplateConfig(subtitleVariant)");

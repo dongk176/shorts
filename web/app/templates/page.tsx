@@ -1,7 +1,4 @@
 import type { Metadata } from "next";
-import { AuthControls } from "@/components/auth-controls";
-import { SiteFooter } from "@/components/site-footer";
-import { SiteHeader } from "@/components/site-header";
 import { authProfile } from "@/lib/session";
 import { createPageMetadata } from "@/lib/seo";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
@@ -23,7 +20,7 @@ import {
   resolveStoredFavoriteTemplateKeys,
   type TemplateFavoriteKey,
 } from "@/lib/template-favorites";
-import { TemplateLibrary } from "./template-library";
+import { TemplatesPageShell } from "./templates-page-shell";
 
 const PAGE_PATH = "/templates";
 
@@ -82,21 +79,13 @@ export default async function TemplatesPage() {
       await getUnifiedTemplateSubtitlePublicPreviewAccess(db);
   }
 
-  return (
-    <div className="app-shell site-chrome desktop-sidebar-layout min-h-screen overflow-visible text-neutral-100">
-      <SiteHeader desktopSidebar><AuthControls user={user ? authProfile(user) : null} next={PAGE_PATH} /></SiteHeader>
-      <main className="w-full flex-1 px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
-        <TemplateLibrary
-          personalTemplates={personalTemplates}
-          authenticated={Boolean(user)}
-          canUseCustomTemplates={canUseCustomTemplates}
-          adminPresetNamesEnabled={adminPresetNamesEnabled}
-          unifiedSubtitleCanaryEnabled={unifiedSubtitleCanaryEnabled}
-          unifiedSubtitlePreviewEnabled={unifiedSubtitlePreviewEnabled}
-          initialFavoriteTemplateKeys={initialFavoriteTemplateKeys}
-        />
-      </main>
-      <SiteFooter />
-    </div>
-  );
+  return <TemplatesPageShell
+    user={user ? authProfile(user) : null}
+    personalTemplates={personalTemplates}
+    canUseCustomTemplates={canUseCustomTemplates}
+    adminPresetNamesEnabled={adminPresetNamesEnabled}
+    unifiedSubtitleCanaryEnabled={unifiedSubtitleCanaryEnabled}
+    unifiedSubtitlePreviewEnabled={unifiedSubtitlePreviewEnabled}
+    initialFavoriteTemplateKeys={initialFavoriteTemplateKeys}
+  />;
 }

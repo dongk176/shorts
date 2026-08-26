@@ -8,7 +8,7 @@ function source(path: string) {
 const desktopSidebarPages = [
   "./shorts-app.tsx",
   "./projects/page.tsx",
-  "./templates/page.tsx",
+  "./templates/templates-page-shell.tsx",
   "./pricing/pricing-page-shell.tsx",
   "./settings/settings-page-content.tsx",
   "./실시간인기/popular-page-shell.tsx",

@@ -273,12 +273,30 @@ function TemplatePreview({ template }: { template: TemplateShowcase }) {
   );
 }
 
-function EmptyTemplateCard({ authenticated, canUseCustomTemplates }: { authenticated: boolean; canUseCustomTemplates: boolean }) {
+function EmptyTemplateCard({
+  authenticated,
+  canUseCustomTemplates,
+  onLoginRequest,
+}: {
+  authenticated: boolean;
+  canUseCustomTemplates: boolean;
+  onLoginRequest?: (next: string) => void;
+}) {
+  const next = "/templates/new";
   const href = !authenticated
-    ? `/auth/sign-in?next=${encodeURIComponent("/templates/new")}`
+    ? `/auth/sign-in?next=${encodeURIComponent(next)}`
     : canUseCustomTemplates ? "/templates/new" : "/pricing";
   return (
-    <Link href={href} prefetch={false} className="flex min-h-[456px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/[.018] px-6 text-center transition duration-300 hover:border-[#ff715e]/50 hover:bg-[#ff715e]/[.035]">
+    <Link
+      href={href}
+      prefetch={false}
+      onClick={(event) => {
+        if (authenticated || !onLoginRequest) return;
+        event.preventDefault();
+        onLoginRequest(next);
+      }}
+      className="flex min-h-[456px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/[.018] px-6 text-center transition duration-300 hover:border-[#ff715e]/50 hover:bg-[#ff715e]/[.035]"
+    >
       <span className="grid h-16 w-16 place-items-center rounded-full border border-white/10 bg-[#1f1f22] text-3xl font-light text-neutral-400 shadow-inner" aria-hidden="true">+</span>
       <h2 className="mt-5 text-lg font-bold tracking-[-.025em] text-neutral-200">새 템플릿</h2>
       <p className="mt-2 text-xs font-semibold text-neutral-500">{canUseCustomTemplates ? "빈 화면에서 직접 디자인하기" : "유료 플랜에서 직접 디자인하기"}</p>
@@ -312,6 +330,7 @@ export function TemplateLibrary({
   unifiedSubtitleCanaryEnabled,
   unifiedSubtitlePreviewEnabled,
   initialFavoriteTemplateKeys,
+  onLoginRequest,
 }: {
   personalTemplates: CustomTemplate[];
   authenticated: boolean;
@@ -320,6 +339,7 @@ export function TemplateLibrary({
   unifiedSubtitleCanaryEnabled: boolean;
   unifiedSubtitlePreviewEnabled: boolean;
   initialFavoriteTemplateKeys: TemplateFavoriteKey[];
+  onLoginRequest?: (next: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState(initialFavoriteTemplateKeys);
@@ -437,7 +457,7 @@ export function TemplateLibrary({
       </div>
 
       <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4" aria-live="polite">
-        {!query.trim() && <EmptyTemplateCard authenticated={authenticated} canUseCustomTemplates={canUseCustomTemplates} />}
+        {!query.trim() && <EmptyTemplateCard authenticated={authenticated} canUseCustomTemplates={canUseCustomTemplates} onLoginRequest={onLoginRequest} />}
         {visiblePersonalTemplates.map((template) => {
           const templateKey = customTemplateFavoriteKey(template.id);
           return (
@@ -455,34 +475,48 @@ export function TemplateLibrary({
             </article>
           );
         })}
-        {visibleUnifiedSubtitlePresets.map((preset) => (
-          <article key={preset.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#35e6e3]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#35e6e3]/50 hover:shadow-[0_20px_55px_rgba(53,230,227,.08)]">
-            <Link
-              href={!authenticated
-                ? `/auth/sign-in?next=${encodeURIComponent(`/templates/new?preset=${preset.id}`)}`
-                : canUseCustomTemplates && unifiedSubtitleCanaryEnabled
-                  ? `/templates/new?preset=${preset.id}`
-                  : `/?subtitleTemplate=${preset.variant}`}
-              prefetch={false}
-              className="flex flex-1 flex-col"
-            >
-              <div className="flex flex-1 items-center justify-center px-2 py-4"><UnifiedSubtitlePresetPreview preset={preset} /></div>
-              <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4">
-                <div className="min-w-0"><h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{preset.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">{preset.description}</p></div>
-                <span className="shrink-0 rounded-full border border-[#35e6e3]/20 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">자막 템플릿</span>
-              </div>
-            </Link>
-          </article>
-        ))}
+        {visibleUnifiedSubtitlePresets.map((preset) => {
+          const next = `/templates/new?preset=${preset.id}`;
+          return (
+            <article key={preset.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#35e6e3]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#35e6e3]/50 hover:shadow-[0_20px_55px_rgba(53,230,227,.08)]">
+              <Link
+                href={!authenticated
+                  ? `/auth/sign-in?next=${encodeURIComponent(next)}`
+                  : canUseCustomTemplates && unifiedSubtitleCanaryEnabled
+                    ? next
+                    : `/?subtitleTemplate=${preset.variant}`}
+                prefetch={false}
+                onClick={(event) => {
+                  if (authenticated || !onLoginRequest) return;
+                  event.preventDefault();
+                  onLoginRequest(next);
+                }}
+                className="flex flex-1 flex-col"
+              >
+                <div className="flex flex-1 items-center justify-center px-2 py-4"><UnifiedSubtitlePresetPreview preset={preset} /></div>
+                <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4">
+                  <div className="min-w-0"><h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{preset.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">{preset.description}</p></div>
+                  <span className="shrink-0 rounded-full border border-[#35e6e3]/20 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">자막 템플릿</span>
+                </div>
+              </Link>
+            </article>
+          );
+        })}
         {visibleTemplates.map((template) => {
           const templateKey = presetTemplateFavoriteKey(template.id);
+          const next = `/templates/new?base=${template.id}`;
           return (
             <article key={template.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-white/[.08] bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#ff715e]/30 hover:shadow-[0_20px_55px_rgba(255,113,94,.09)]">
               <Link
                 href={!authenticated
-                  ? `/auth/sign-in?next=${encodeURIComponent(`/templates/new?base=${template.id}`)}`
-                  : canUseCustomTemplates ? `/templates/new?base=${template.id}` : "/pricing"}
+                  ? `/auth/sign-in?next=${encodeURIComponent(next)}`
+                  : canUseCustomTemplates ? next : "/pricing"}
                 prefetch={false}
+                onClick={(event) => {
+                  if (authenticated || !onLoginRequest) return;
+                  event.preventDefault();
+                  onLoginRequest(next);
+                }}
                 className="flex flex-1 flex-col"
               >
                 <div className="flex flex-1 items-center justify-center px-2 py-4">
