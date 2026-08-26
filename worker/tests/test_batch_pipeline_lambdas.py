@@ -80,6 +80,9 @@ def _load_lambda(name: str) -> tuple[ModuleType, MagicMock]:
     )
     os.environ.pop("SUBTITLE_TEMPLATES_PREVIOUS_JOB_DEFINITION_ARN", None)
     os.environ.pop("SUBTITLE_TEMPLATES_PREVIOUS_BATCH_QUEUE_ARN", None)
+    os.environ.pop(
+        "UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN", None
+    )
     os.environ["RERENDER_JOB_DEFINITION"] = "rerender-definition:1"
     os.environ["EDITOR_STABLE_BATCH_QUEUE"] = "editor-stable-queue"
     os.environ["EDITOR_CANARY_BATCH_QUEUE"] = "editor-canary-queue"
@@ -922,6 +925,137 @@ def test_unified_template_project_and_resume_keep_the_exact_candidate_target() -
     for request in (first_request, resume_request):
         assert "shareIdentifier" not in request
         assert "schedulingPriorityOverride" not in request
+
+
+def test_previous_unified_definition_stays_allowed_on_primary_queue() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    previous_definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-unified-template-subtitles-previous-production:1"
+    )
+    os.environ[
+        "UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN"
+    ] = previous_definition
+    job = {
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "source_range_selection_enabled": True,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "highlight",
+        "template_snapshot": {
+            "id": "template-v5",
+            "config": {"schemaVersion": 5},
+            "version": 1,
+        },
+        "subtitle_template_snapshot": {
+            "schemaVersion": 4,
+            "origin": "unified-template-v5",
+        },
+        "batch_job_definition": previous_definition,
+        "batch_job_queue": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
+        ],
+    }
+
+    assert module._project_dispatch_target(job, resume=False) == (
+        previous_definition,
+        os.environ["UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"],
+        "unified_template_subtitles",
+        225,
+    )
+
+
+def test_ordinary_project_cannot_use_previous_unified_definition() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    previous_definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-unified-template-subtitles-previous-production:1"
+    )
+    os.environ[
+        "UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN"
+    ] = previous_definition
+    job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "openai_stable",
+        "subtitle_template_id": None,
+        "template_snapshot": {"presetVersion": 3},
+        "batch_job_definition": previous_definition,
+        "batch_job_queue": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
+        ],
+    }
+
+    with pytest.raises(RuntimeError, match="not trusted"):
+        module._project_dispatch_target(job, resume=False)
+
+
+@pytest.mark.parametrize(
+    "previous_definition",
+    [
+        "not-an-arn",
+        (
+            "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+            "missing-revision"
+        ),
+    ],
+)
+def test_previous_unified_definition_must_be_an_exact_arn(
+    previous_definition: str,
+) -> None:
+    module, _ = _load_lambda("batch_submitter")
+    os.environ[
+        "UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN"
+    ] = previous_definition
+    job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "pop",
+        "template_snapshot": {"config": {"schemaVersion": 5}},
+        "subtitle_template_snapshot": {"origin": "unified-template-v5"},
+        "batch_job_definition": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
+        ],
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN is invalid"
+        ),
+    ):
+        module._project_dispatch_target(job, resume=False)
+
+
+def test_previous_unified_definition_must_not_match_primary() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    os.environ[
+        "UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN"
+    ] = os.environ["UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"]
+    job = {
+        "planned_short_count": 1,
+        "clip_length_option": "sec_30",
+        "source_range_selection_enabled": False,
+        "transcription_policy": "elevenlabs_primary_openai_fallback",
+        "subtitle_template_id": "pop",
+        "template_snapshot": {"config": {"schemaVersion": 5}},
+        "subtitle_template_snapshot": {"origin": "unified-template-v5"},
+        "batch_job_definition": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"
+        ],
+        "batch_job_queue": os.environ[
+            "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
+        ],
+    }
+
+    with pytest.raises(RuntimeError, match="must differ from the primary"):
+        module._project_dispatch_target(job, resume=False)
 
 
 @pytest.mark.parametrize(

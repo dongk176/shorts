@@ -648,6 +648,38 @@ describe("shorts MVP infrastructure", () => {
     })).toThrow("separate immutable Job Definition");
   });
 
+  it("keeps one previous unified template revision trusted", () => {
+    const previousDefinition =
+      "arn:aws:batch:ap-northeast-2:123456789012:job-definition/unified-template-subtitles:2";
+    const { compute } = stacks("test", {
+      unifiedTemplateSubtitlesPreviousJobDefinitionArn: previousDefinition,
+    });
+    compute.hasResourceProperties("AWS::Lambda::Function", {
+      Handler: "batch_submitter.handler",
+      Environment: {
+        Variables: Match.objectLike({
+          UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN:
+            previousDefinition,
+        }),
+      },
+    });
+  });
+
+  it("requires the previous unified revision to be pinned and distinct", () => {
+    expect(() => stacks("test", {
+      unifiedTemplateSubtitlesPreviousJobDefinitionArn:
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/unified-template-subtitles",
+    })).toThrow("exact revision-pinned ARN");
+    expect(() => stacks("test", {
+      unifiedTemplateSubtitlesPreviousJobDefinitionArn:
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/unified-template-subtitles:3",
+    })).toThrow("must differ from the primary target");
+    expect(() => stacks("test", {
+      unifiedTemplateSubtitlesPreviousJobDefinitionArn:
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/subtitle-canary:2",
+    })).toThrow("separate immutable Job Definition");
+  });
+
   it("requires the pinned unified target in production", () => {
     expect(() => stacks("production", {
       unifiedTemplateSubtitlesJobDefinitionArn: "",

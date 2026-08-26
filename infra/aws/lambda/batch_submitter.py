@@ -168,6 +168,29 @@ def _project_dispatch_target(
                 previous_subtitle_definition,
                 subtitle_target[1],
             )
+    previous_unified_template_target = None
+    if uses_unified_template_candidate:
+        previous_unified_template_definition = (
+            _optional_trusted_project_definition(
+                "UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN"
+            )
+        )
+        if previous_unified_template_definition:
+            if not unified_template_target:
+                raise RuntimeError(
+                    "Previous unified template Job Definition requires the primary target"
+                )
+            if (
+                previous_unified_template_definition
+                == unified_template_target[0]
+            ):
+                raise RuntimeError(
+                    "Previous unified template Job Definition must differ from the primary target"
+                )
+            previous_unified_template_target = (
+                previous_unified_template_definition,
+                unified_template_target[1],
+            )
     allowed_targets = {
         (legacy_definition, legacy_queue): "legacy",
         (range_definition, range_queue): "source_range",
@@ -180,6 +203,7 @@ def _project_dispatch_target(
         (subtitle_target, "subtitle_templates"),
         (previous_subtitle_target, "subtitle_templates"),
         (unified_template_target, "unified_template_subtitles"),
+        (previous_unified_template_target, "unified_template_subtitles"),
     ):
         if not candidate_target:
             continue

@@ -1303,6 +1303,11 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     const unifiedTemplateSubtitlesBatchQueueArn = String(
       this.node.tryGetContext("unifiedTemplateSubtitlesBatchQueueArn") || "",
     ).trim();
+    const unifiedTemplateSubtitlesPreviousJobDefinitionArn = String(
+      this.node.tryGetContext(
+        "unifiedTemplateSubtitlesPreviousJobDefinitionArn",
+      ) || "",
+    ).trim();
     if (
       Boolean(unifiedTemplateSubtitlesJobDefinitionArn)
       !== Boolean(unifiedTemplateSubtitlesBatchQueueArn)
@@ -1330,6 +1335,33 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       );
     }
     if (
+      unifiedTemplateSubtitlesPreviousJobDefinitionArn
+      && !unifiedTemplateSubtitlesJobDefinitionArn
+    ) {
+      throw new Error(
+        "Previous unified template subtitle Job Definition requires the primary target",
+      );
+    }
+    if (
+      unifiedTemplateSubtitlesPreviousJobDefinitionArn
+      && !pinnedBatchJobDefinitionArn.test(
+        unifiedTemplateSubtitlesPreviousJobDefinitionArn,
+      )
+    ) {
+      throw new Error(
+        "Previous unified template subtitle Job Definition must be an exact revision-pinned ARN",
+      );
+    }
+    if (
+      unifiedTemplateSubtitlesPreviousJobDefinitionArn
+      && unifiedTemplateSubtitlesPreviousJobDefinitionArn
+        === unifiedTemplateSubtitlesJobDefinitionArn
+    ) {
+      throw new Error(
+        "Previous unified template subtitle Job Definition must differ from the primary target",
+      );
+    }
+    if (
       unifiedTemplateSubtitlesJobDefinitionArn
       && new Set([
         legacyProjectJobDefinitionArn,
@@ -1340,6 +1372,20 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     ) {
       throw new Error(
         "Unified template subtitle target must use a separate immutable Job Definition",
+      );
+    }
+    if (
+      unifiedTemplateSubtitlesPreviousJobDefinitionArn
+      && new Set([
+        legacyProjectJobDefinitionArn,
+        sourceRangeJobDefinitionArn,
+        elevenLabsJobDefinitionArn,
+        subtitleTemplatesJobDefinitionArn,
+        unifiedTemplateSubtitlesJobDefinitionArn,
+      ]).has(unifiedTemplateSubtitlesPreviousJobDefinitionArn)
+    ) {
+      throw new Error(
+        "Previous unified template subtitle target must use a separate immutable Job Definition",
       );
     }
     if (props.environment === "production") {
@@ -1400,6 +1446,10 @@ export class ShortsMvpComputeStack extends cdk.Stack {
             unifiedTemplateSubtitlesJobDefinitionArn,
           UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN:
             unifiedTemplateSubtitlesBatchQueueArn,
+        } : {}),
+        ...(unifiedTemplateSubtitlesPreviousJobDefinitionArn ? {
+          UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN:
+            unifiedTemplateSubtitlesPreviousJobDefinitionArn,
         } : {}),
       },
     });

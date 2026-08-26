@@ -145,6 +145,11 @@ if [[ "$ENVIRONMENT" == "production" ]]; then
     -c "unifiedTemplateSubtitlesJobDefinitionArn=$UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"
     -c "unifiedTemplateSubtitlesBatchQueueArn=$UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"
   )
+  if [[ -n "${UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN:-}" ]]; then
+    deploy_args+=(
+      -c "unifiedTemplateSubtitlesPreviousJobDefinitionArn=$UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN"
+    )
+  fi
 fi
 if [[ ${#context_args[@]} -gt 0 ]]; then
   deploy_args+=("${context_args[@]}")
