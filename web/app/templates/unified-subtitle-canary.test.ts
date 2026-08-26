@@ -14,6 +14,7 @@ const previewSource = readFileSync(
 describe("unified template subtitle access", () => {
   it("shows the stable public presets independently from paid editing access", () => {
     expect(pageSource).toContain("unifiedSubtitleCanaryEnabled = subtitleTemplateAccess.unifiedEnabled");
+    expect(pageSource).toContain("resolveUnifiedTemplateSubtitleEditorContext(db, session.userId)");
     expect(pageSource).toContain("getUnifiedTemplateSubtitlePublicPreviewAccess(db)");
     expect(librarySource).toContain("if (!unifiedSubtitlePreviewEnabled) return []");
     expect(librarySource).toContain("/?subtitleTemplate=${preset.variant}");
@@ -29,6 +30,11 @@ describe("unified template subtitle access", () => {
     expect(librarySource).toContain("canUseCustomTemplates && unifiedSubtitleCanaryEnabled");
     expect(librarySource).toContain("/templates/new?preset=${preset.id}");
     expect(newPageSource).toContain("createUnifiedSubtitleTemplateConfig(subtitleVariant)");
+    expect(newPageSource).toContain("resolveUnifiedTemplateSubtitleEditorContext(db, session.userId)");
+    expect(editPageSource).toContain("resolveUnifiedTemplateSubtitleEditorContext(db, session.userId)");
+    expect(pageSource).not.toContain("session.isAdmin === true");
+    expect(newPageSource).not.toContain("session.isAdmin === true");
+    expect(editPageSource).not.toContain("session.isAdmin === true");
     expect(newPageSource).toContain("if (!billingSupportsCustomTemplates(billing))");
     expect(newPageSource).toContain("if (subtitleVariant) redirect(`/?subtitleTemplate=${subtitleVariant}`)");
     expect(editPageSource).toContain("if (!billingSupportsCustomTemplates(billing)) redirect(\"/pricing\")");

@@ -11,9 +11,8 @@ import { customTemplateFromRow } from "@/lib/custom-templates";
 import { getBillingSummary } from "@/lib/billing";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 import {
-  getPublicSubtitleTemplateAccess,
-  getSubtitleTemplateAccess,
   getUnifiedTemplateSubtitlePublicPreviewAccess,
+  resolveUnifiedTemplateSubtitleEditorContext,
 } from "@/lib/subtitle-template-release";
 import {
   isTemplateConfigV5,
@@ -49,7 +48,7 @@ export default async function TemplatesPage() {
       templateRows,
       favoriteRows,
       billing,
-      subtitleTemplateAccess,
+      subtitleEditorContext,
       publicSubtitlePreviewEnabled,
     ] = await Promise.all([
       db`
@@ -62,11 +61,10 @@ export default async function TemplatesPage() {
         where user_id=${session.userId}
       `,
       getBillingSummary(db, session.userId),
-      session.isAdmin === true
-        ? getSubtitleTemplateAccess(db, session.userId)
-        : getPublicSubtitleTemplateAccess(db, session.userId),
+      resolveUnifiedTemplateSubtitleEditorContext(db, session.userId),
       getUnifiedTemplateSubtitlePublicPreviewAccess(db),
     ]);
+    const subtitleTemplateAccess = subtitleEditorContext.subtitleAccess;
     personalTemplates = templateRows
       .map(customTemplateFromRow)
       .filter((template) => (

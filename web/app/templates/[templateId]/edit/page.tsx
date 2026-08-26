@@ -6,8 +6,7 @@ import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { getBillingSummary } from "@/lib/billing";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 import {
-  getPublicSubtitleTemplateAccess,
-  getSubtitleTemplateAccess,
+  resolveUnifiedTemplateSubtitleEditorContext,
 } from "@/lib/subtitle-template-release";
 import {
   isTemplateConfigV5,
@@ -22,16 +21,15 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ t
   if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(next)}`);
   const session = await requireMvpSession(user, { createIfMissing: false });
   const db = getDb();
-  const [rows, subtitleAccess, billing] = await Promise.all([
+  const [rows, subtitleEditorContext, billing] = await Promise.all([
     db`
       select id, name, base_template_id, config, version, created_at, updated_at
       from shorts_mvp.custom_templates where id=${templateId} and user_id=${session.userId} limit 1
     `,
-    session.isAdmin === true
-      ? getSubtitleTemplateAccess(db, session.userId)
-      : getPublicSubtitleTemplateAccess(db, session.userId),
+    resolveUnifiedTemplateSubtitleEditorContext(db, session.userId),
     getBillingSummary(db, session.userId),
   ]);
+  const subtitleAccess = subtitleEditorContext.subtitleAccess;
   if (!rows[0]) notFound();
   if (!billingSupportsCustomTemplates(billing)) redirect("/pricing");
   const template = customTemplateFromRow(rows[0]);

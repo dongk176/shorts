@@ -13,8 +13,7 @@ import { requireMvpSession } from "@/lib/session";
 import { getBillingSummary } from "@/lib/billing";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
 import {
-  getPublicSubtitleTemplateAccess,
-  getSubtitleTemplateAccess,
+  resolveUnifiedTemplateSubtitleEditorContext,
 } from "@/lib/subtitle-template-release";
 
 const subtitlePresetVariants: Record<string, UnifiedSubtitleVariant> = {
@@ -30,12 +29,11 @@ export default async function NewTemplatePage({ searchParams }: { searchParams: 
   if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(next)}`);
   const session = await requireMvpSession(user, { createIfMissing: false });
   const db = getDb();
-  const [subtitleAccess, billing] = await Promise.all([
-    session.isAdmin === true
-      ? getSubtitleTemplateAccess(db, session.userId)
-      : getPublicSubtitleTemplateAccess(db, session.userId),
+  const [subtitleEditorContext, billing] = await Promise.all([
+    resolveUnifiedTemplateSubtitleEditorContext(db, session.userId),
     getBillingSummary(db, session.userId),
   ]);
+  const subtitleAccess = subtitleEditorContext.subtitleAccess;
   const unifiedSubtitleCanaryEnabled = subtitleAccess.unifiedEnabled;
   const subtitleVariant = preset ? subtitlePresetVariants[preset] : null;
   if (preset && !subtitleVariant) notFound();
