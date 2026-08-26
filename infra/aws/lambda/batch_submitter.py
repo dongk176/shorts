@@ -269,9 +269,22 @@ def _project_dispatch_target(
                 raise RuntimeError(
                     "Stable transcription job cannot use an isolated candidate target"
                 )
+            resolved_definition = stored_definition
+            resolved_queue = stored_queue
+            if (
+                previous_unified_template_target
+                and unified_template_target
+                and (stored_definition, stored_queue)
+                == previous_unified_template_target
+            ):
+                # The previous pointer is a one-generation trust marker, not an
+                # execution rollback. Older immutable definitions may lack the
+                # current public-video ingestion controls, so validated v5 jobs
+                # must run on the primary hardened unified target.
+                resolved_definition, resolved_queue = unified_template_target
             return (
-                stored_definition,
-                stored_queue,
+                resolved_definition,
+                resolved_queue,
                 resource_tier,
                 estimated_seconds,
             )

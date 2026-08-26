@@ -927,7 +927,7 @@ def test_unified_template_project_and_resume_keep_the_exact_candidate_target() -
         assert "schedulingPriorityOverride" not in request
 
 
-def test_previous_unified_definition_stays_allowed_on_primary_queue() -> None:
+def test_previous_unified_definition_is_remapped_to_hardened_primary() -> None:
     module, _ = _load_lambda("batch_submitter")
     previous_definition = (
         "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
@@ -958,7 +958,7 @@ def test_previous_unified_definition_stays_allowed_on_primary_queue() -> None:
     }
 
     assert module._project_dispatch_target(job, resume=False) == (
-        previous_definition,
+        os.environ["UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN"],
         os.environ["UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"],
         "unified_template_subtitles",
         225,
