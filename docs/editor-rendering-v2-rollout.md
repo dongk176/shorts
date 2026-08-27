@@ -191,9 +191,11 @@ workflow는 Vercel, CDK, 운영 DB를 자동 배포하지 않는다.
   되돌리는 별도 IAM-only 변경을 준비한다.
 - 운영 적용은 두 stack의 현재 live template과 합성 template을 비교해 위
   phase별 허용 리소스만 복사한 exact template을 만든 뒤, stack별 change
-  set을 `prepare-change-set`으로만 준비한다. 두 preview와 template hash를
-  별도 검토한 뒤 EditorCanary를 먼저 실행한다. Compute 실행은 Editor의
-  승인된 후보 hash가 실제 live template hash가 된 경우에만 가능하다.
+  set만 준비한다. exact template은 versioning이 켜진 CDK asset bucket에
+  SHA-256 checksum과 고정 version ID로 올리고, CloudFormation에는 그 URL을
+  직접 전달한다. 두 preview와 template hash를 별도 검토한 뒤 EditorCanary를
+  먼저 실행한다. Compute 실행은 Editor의 승인된 후보 hash가 실제 live
+  template hash가 된 경우에만 가능하다.
 - prepare 또는 검증이 중간 실패하면 그 실행에서 만든 미실행 change set만
   정리한다. 전체 `cdk deploy`, `--all`, Stage A 배포 명령, 수동 IAM 편집은
   사용하지 않는다. 구체적인 명령과 hash 전달 순서는

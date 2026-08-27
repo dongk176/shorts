@@ -126,6 +126,121 @@ function awsJson(args) {
   return JSON.parse(run("aws", [...args, "--output", "json"], { capture: true }));
 }
 
+function optionalS3HeadObject(bucket, key, region, versionId = "") {
+  const args = [
+    "s3api",
+    "head-object",
+    "--bucket",
+    bucket,
+    "--key",
+    key,
+    "--checksum-mode",
+    "ENABLED",
+    "--region",
+    region,
+    "--output",
+    "json",
+  ];
+  if (versionId) args.push("--version-id", versionId);
+  const result = spawnSync("aws", args, {
+    cwd: root,
+    env: process.env,
+    encoding: "utf8",
+    timeout: 60_000,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.error) throw result.error;
+  if (result.status === 0) return JSON.parse(result.stdout || "{}");
+  if (/(?:\b404\b|Not Found|NoSuchKey)/i.test(result.stderr || "")) return null;
+  throw new Error("Stage B exact template S3 object 조회에 실패했습니다.");
+}
+
+function validateExactTemplateObject(head, expected) {
+  if (
+    !head
+    || Number(head.ContentLength) !== expected.contentLength
+    || head.ChecksumSHA256 !== expected.checksumSha256
+    || head.ContentType !== "application/json"
+    || head.ServerSideEncryption !== "AES256"
+    || !String(head.VersionId || "").trim()
+    || head.VersionId === "null"
+  ) {
+    throw new Error("Stage B exact template object가 immutable checksum 계약과 다릅니다.");
+  }
+  return String(head.VersionId);
+}
+
+function publishExactStageBTemplate({
+  candidatePath,
+  candidateTemplateSha256,
+  identity,
+}) {
+  const templateSource = fs.readFileSync(candidatePath);
+  const parsedTemplate = JSON.parse(templateSource.toString("utf8"));
+  if (stageBTemplateSha256(parsedTemplate) !== candidateTemplateSha256) {
+    throw new Error("업로드할 exact template hash가 메모리 후보와 다릅니다.");
+  }
+  const rawSha256 = crypto.createHash("sha256").update(templateSource).digest("hex");
+  const checksumSha256 = crypto
+    .createHash("sha256")
+    .update(templateSource)
+    .digest("base64");
+  const bucket = `cdk-hnb659fds-assets-${identity.account}-${identity.region}`;
+  const key = `stage-b/exact-templates/${rawSha256}.json`;
+  if (awsJson([
+    "s3api",
+    "get-bucket-versioning",
+    "--bucket",
+    bucket,
+    "--region",
+    identity.region,
+  ]).Status !== "Enabled") {
+    throw new Error("Stage B exact template bucket의 versioning이 활성화되지 않았습니다.");
+  }
+  const expected = {
+    checksumSha256,
+    contentLength: templateSource.byteLength,
+  };
+  const existing = optionalS3HeadObject(bucket, key, identity.region);
+  let versionId;
+  if (existing) {
+    versionId = validateExactTemplateObject(existing, expected);
+  } else {
+    const put = awsJson([
+      "s3api",
+      "put-object",
+      "--bucket",
+      bucket,
+      "--key",
+      key,
+      "--body",
+      candidatePath,
+      "--content-type",
+      "application/json",
+      "--server-side-encryption",
+      "AES256",
+      "--checksum-algorithm",
+      "SHA256",
+      "--checksum-sha256",
+      checksumSha256,
+      "--region",
+      identity.region,
+    ]);
+    if (put.ChecksumSHA256 !== checksumSha256) {
+      throw new Error("Stage B exact template 업로드 checksum이 다릅니다.");
+    }
+    versionId = String(put.VersionId || "").trim();
+    validateExactTemplateObject(
+      optionalS3HeadObject(bucket, key, identity.region, versionId),
+      expected,
+    );
+  }
+  return [
+    `https://${bucket}.s3.${identity.region}.amazonaws.com/${key}`,
+    `versionId=${encodeURIComponent(versionId)}`,
+  ].join("?");
+}
+
 export function validateStageBChangeSetId(changeSetId, region) {
   const escapedRegion = String(region).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const pattern = new RegExp(
@@ -677,23 +792,76 @@ function prepareChangeSet(
   exactTemplate,
   currentTemplate,
   validationOptions,
-  cdkEnvironment,
+  identity,
 ) {
-  run("npx", [
-    "cdk",
-    "deploy",
-    "--app",
+  const candidatePath = path.join(
     outputDirectory,
+    STAGE_B_STACKS[stackKey].templateFile,
+  );
+  const templateUrl = publishExactStageBTemplate({
+    candidatePath,
+    candidateTemplateSha256: candidateHash,
+    identity,
+  });
+  const stack = liveStack(stackKey, options.region);
+  const capabilities = [...new Set(stack.Capabilities || [])].sort();
+  if (
+    !capabilities.length
+    || capabilities.some((value) => ![
+      "CAPABILITY_AUTO_EXPAND",
+      "CAPABILITY_IAM",
+      "CAPABILITY_NAMED_IAM",
+    ].includes(value))
+  ) {
+    throw new Error(`${stackKey} stack capability 계약이 올바르지 않습니다.`);
+  }
+  const roleArn = String(stack.RoleARN || "");
+  if (
+    roleArn !== `arn:aws:iam::${identity.account}:role/cdk-hnb659fds-cfn-exec-role-${identity.account}-${identity.region}`
+  ) {
+    throw new Error(`${stackKey} CloudFormation 실행 role이 exact bootstrap role과 다릅니다.`);
+  }
+  const parameters = (stack.Parameters || []).map((parameter) => {
+    const key = String(parameter?.ParameterKey || "");
+    if (!/^[A-Za-z][A-Za-z0-9]{0,254}$/.test(key)) {
+      throw new Error(`${stackKey} stack parameter key가 올바르지 않습니다.`);
+    }
+    return `ParameterKey=${key},UsePreviousValue=true`;
+  });
+  const createArgs = [
+    "cloudformation",
+    "create-change-set",
+    "--stack-name",
     STAGE_B_STACKS[stackKey].stackName,
-    "--exclusively",
-    "--method",
-    "prepare-change-set",
     "--change-set-name",
     name,
-    "--require-approval",
-    "never",
-    "--rollback",
-  ], { cwd: infra, env: cdkEnvironment });
+    "--change-set-type",
+    "UPDATE",
+    "--template-url",
+    templateUrl,
+    "--role-arn",
+    roleArn,
+    "--capabilities",
+    ...capabilities,
+    "--description",
+    `Stage B ${options.phase}/${stackKey} exact ${candidateHash}`,
+    "--region",
+    options.region,
+  ];
+  if (parameters.length) createArgs.push("--parameters", ...parameters);
+  const created = awsJson(createArgs);
+  validateStageBChangeSetId(created.Id, options.region);
+  run("aws", [
+    "cloudformation",
+    "wait",
+    "change-set-create-complete",
+    "--stack-name",
+    STAGE_B_STACKS[stackKey].stackName,
+    "--change-set-name",
+    created.Id,
+    "--region",
+    options.region,
+  ]);
   const prepared = discoverPreparedChangeSet(
     options.phase,
     stackKey,
@@ -1443,7 +1611,7 @@ export async function runStageBReleaseControl(argv = process.argv.slice(2)) {
         exactTemplates[stackKey],
         currentTemplates[stackKey],
         validationOptions,
-        cdkEnvironment,
+        identity,
       );
       record.id = prepared.ChangeSetId;
       assertChangeSetProvenance(prepared, name, record.id);

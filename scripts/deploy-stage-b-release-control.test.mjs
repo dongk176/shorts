@@ -79,7 +79,17 @@ test("synthesizes exact Editor and Compute templates with the phase ref", () => 
 });
 
 test("prepares exact change sets only and cleans partial prepares on failure", () => {
-  assert.match(source, /"--method",\s*"prepare-change-set"/);
+  assert.match(source, /"s3api",\s*"put-object"/);
+  assert.match(source, /"--checksum-algorithm",\s*"SHA256"/);
+  assert.match(source, /"--checksum-sha256",\s*checksumSha256/);
+  assert.match(source, /"--server-side-encryption",\s*"AES256"/);
+  assert.match(source, /get-bucket-versioning/);
+  assert.match(source, /versionId=\$\{encodeURIComponent\(versionId\)\}/);
+  assert.match(source, /"cloudformation",\s*"create-change-set"/);
+  assert.match(source, /"--change-set-type",\s*"UPDATE"/);
+  assert.match(source, /UsePreviousValue=true/);
+  assert.match(source, /"--role-arn",\s*roleArn/);
+  assert.match(source, /"cloudformation",\s*"wait"[\s\S]*"change-set-create-complete"/);
   assert.match(source, /validatePreparedStageBChangeSet/);
   assert.match(source, /prepared template hash가 exact 후보와 다릅니다/);
   assert.match(source, /cleanupPreparedChangeSets/);
@@ -88,7 +98,7 @@ test("prepares exact change sets only and cleans partial prepares on failure", (
   assert.match(source, /"delete-change-set"/);
   assert.match(source, /name === "--prepare"/);
   assert.match(source, /\["--apply", "--all", "--deploy", "--execute-all"\]/);
-  assert.doesNotMatch(source, /"cdk",\s*"deploy"[\s\S]{0,300}"--all"/);
+  assert.doesNotMatch(source, /"cdk",\s*"deploy"/);
   assert.doesNotMatch(source, /"--method",\s*"direct"/);
 });
 
@@ -100,7 +110,7 @@ test("executes Editor and Compute separately and derives the Editor-first gate i
   assert.match(source, /exact HEAD 내부 합성과 live 적용 검증 결과/);
   assert.match(source, /"cloudformation",\s*"execute-change-set"/);
   assert.match(source, /"--no-disable-rollback"/);
-  assert.doesNotMatch(source, /"cloudformation",\s*"wait"/);
+  assert.doesNotMatch(source, /stack-update-complete/);
   assert.match(source, /waitForStageBStackUpdate/);
   assert.match(source, /실행 직전에 변경되었습니다/);
 });
