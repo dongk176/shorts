@@ -842,6 +842,7 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
     registrarRole.addToPolicy(new iam.PolicyStatement({
       actions: ["batch:TagResource"],
       resources: [
+        editorTestQueueArn,
         this.formatArn({
           service: "batch",
           resource: "job-definition",
