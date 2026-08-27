@@ -165,10 +165,13 @@ workflow는 Vercel, CDK, 운영 DB를 자동 배포하지 않는다.
 
 - Stage A용 `infra:deploy-control-plane` 명령은 Stage B에 사용하지 않는다.
   그 명령의 고정 logical-ID 계약은 이번 registrar/IAM 변경과 다르다.
-- Stage B는 `deploy-stage-b-release-control.mjs`의 세 phase만 사용한다.
+- Stage B는 `deploy-stage-b-release-control.mjs`의 네 phase만 사용한다.
   - `bootstrap`: registrar code와 고정 registry 경로, release build role의
     단일 exact OIDC subject, policy의 `shorts-mvp-editor-v4-*` TagResource ARN,
     Batch submitter code만 허용한다.
+  - `renewal`: 불변 후보가 운영 연결 전에 실패했을 때만 사용한다. 새 exact
+    tag를 가리키는 registrar code/environment와 release build role trust 두
+    리소스만 Editor stack에서 함께 변경하며 Compute 실행은 거절한다.
   - `rotation`: registrar의 registry asset, Batch submitter의 registry asset과
     registry에서 다시 계산한 current target 환경값만 허용한다. 이 phase의
     `--prior-stage-head..--head`에는

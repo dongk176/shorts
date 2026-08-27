@@ -211,6 +211,37 @@ node scripts/deploy-stage-b-release-control.mjs \
   --expected-editor-live-template-sha256 "$EDITOR_EXPECTED_TEMPLATE_SHA256"
 ```
 
+### 1.5. Failed immutable candidate renewal
+
+보호된 release tag의 후보가 운영 연결 전에 실패했다면 tag를 이동하거나
+기존 bootstrap 계약을 완화하지 않습니다. 새 exact tag를 지정한 후
+`renewal` phase로 registrar code/environment와 release build role trust의
+두 Editor 리소스만 함께 갱신합니다. Compute ChangeSet은 만들거나 실행하지
+않습니다.
+
+```bash
+RENEWAL_HEAD="$NEW_EXACT_RELEASE_HEAD"
+
+node scripts/deploy-stage-b-release-control.mjs \
+  --phase renewal \
+  --base "$PROMOTED_GIT_SHA" \
+  --head "$RENEWAL_HEAD" \
+  --worker-image-tag "$WORKER_IMAGE_TAG" \
+  --legacy-rerender-image-tag "$LEGACY_RERENDER_IMAGE_TAG" \
+  --prepare
+
+node scripts/deploy-stage-b-release-control.mjs \
+  --phase renewal \
+  --base "$PROMOTED_GIT_SHA" \
+  --head "$RENEWAL_HEAD" \
+  --worker-image-tag "$WORKER_IMAGE_TAG" \
+  --legacy-rerender-image-tag "$LEGACY_RERENDER_IMAGE_TAG" \
+  --execute-editor-change-set "$EDITOR_CHANGE_SET_ID" \
+  --expected-registry-sha256 "$REGISTRY_SHA256" \
+  --expected-live-template-sha256 "$EDITOR_EXPECTED_LIVE_TEMPLATE_SHA256" \
+  --expected-template-sha256 "$EDITOR_EXPECTED_TEMPLATE_SHA256"
+```
+
 ### 2. Worker target rotation
 
 격리 workflow에서 검증한 하나의 image digest로 다섯 Job Definition을

@@ -468,6 +468,63 @@ test("bootstrap builds exact registrar, IAM, and submitter templates", () => {
   );
 });
 
+test("renewal changes only the exact registrar identity and build-role tag", () => {
+  const { current, candidate } = editorBootstrapTemplates();
+  const live = buildExactStageBTemplate(
+    "bootstrap",
+    "editor",
+    current,
+    candidate,
+    bootstrapOptions,
+  );
+  const renewalCurrent = structuredClone(live);
+  renewalCurrent.Resources.EditorReleaseRegistrarFunctionD787453A
+    .Properties.Environment.Variables.GITHUB_OIDC_RELEASE_TAG =
+      "editor-v4-render-parity-20260826";
+  renewalCurrent.Resources.EditorReleaseBuildRole111C67A7 =
+    oidcRole("refs/tags/editor-v4-render-parity-20260826");
+  const renewalCandidate = structuredClone(live);
+  renewalCandidate.Resources.EditorReleaseRegistrarFunctionD787453A.Properties.Code = {
+    S3Bucket: "cdk-hnb659fds-assets-181651591905-ap-northeast-2",
+    S3Key: `${"c".repeat(64)}.zip`,
+  };
+  const renewalExact = buildExactStageBTemplate(
+    "renewal",
+    "editor",
+    renewalCurrent,
+    renewalCandidate,
+    bootstrapOptions,
+  );
+  assert.deepEqual(stageBStackKeys("renewal"), ["editor"]);
+  assert.equal(
+    validateExactStageBTemplate(
+      "renewal",
+      "editor",
+      renewalCurrent,
+      renewalExact,
+      bootstrapOptions,
+    ).length,
+    2,
+  );
+  const unsafe = structuredClone(renewalCandidate);
+  unsafe.Resources.EditorReleaseBuildRoleDefaultPolicyF82DF532
+    .Properties.PolicyDocument.Statement.push({
+      Action: "iam:*",
+      Effect: "Allow",
+      Resource: "*",
+    });
+  assert.throws(
+    () => buildExactStageBTemplate(
+      "renewal",
+      "editor",
+      renewalCurrent,
+      unsafe,
+      bootstrapOptions,
+    ),
+    /범위 밖 변경/,
+  );
+});
+
 test("deployment projection excludes unrelated full-synth drift", () => {
   const { current, candidate } = editorBootstrapTemplates();
   const fullCandidate = structuredClone(candidate);
