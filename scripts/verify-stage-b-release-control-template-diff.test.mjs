@@ -198,6 +198,7 @@ function registrarPolicy() {
         "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-test-release-*",
       ] },
       { Action: "batch:TagResource", Effect: "Allow", Resource: [
+        "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-editor-test",
         "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-*",
         "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-test-release-*",
         "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-*",
@@ -624,6 +625,76 @@ test("renewal repairs only a stale verifier trust when other release identity is
     ),
     /change set 변경이 없습니다/,
   );
+});
+
+test("renewal repairs only the isolated queue tagging permission", () => {
+  const { current, candidate } = editorBootstrapTemplates();
+  const live = buildExactStageBTemplate(
+    "bootstrap",
+    "editor",
+    current,
+    candidate,
+    bootstrapOptions,
+  );
+  const stale = structuredClone(live);
+  const statements = stale.Resources
+    .EditorReleaseRegistrarRoleDefaultPolicy3320C259
+    .Properties.PolicyDocument.Statement;
+  const tagStatement = statements.find((statement) => (
+    statement.Action === "batch:TagResource"
+  ));
+  tagStatement.Resource = tagStatement.Resource.filter((resource) => (
+    !resource.includes("job-queue/shorts-mvp-editor-test")
+  ));
+
+  const exact = buildExactStageBTemplate(
+    "renewal",
+    "editor",
+    stale,
+    live,
+    { ...bootstrapOptions, phase: "renewal" },
+  );
+  const changes = validateExactStageBTemplate(
+    "renewal",
+    "editor",
+    stale,
+    exact,
+    { ...bootstrapOptions, phase: "renewal" },
+  );
+  assert.deepEqual(changes, [{
+    logicalId: "EditorReleaseRegistrarRoleDefaultPolicy3320C259",
+    type: "AWS::IAM::Policy",
+    action: "update",
+  }]);
+
+  const preview = {
+    StackName: "ShortsMvpEditorCanary-production",
+    ChangeSetType: "UPDATE",
+    Status: "CREATE_COMPLETE",
+    ExecutionStatus: "AVAILABLE",
+    Changes: [{ ResourceChange: {
+      Action: "Modify",
+      LogicalResourceId: "EditorReleaseRegistrarRoleDefaultPolicy3320C259",
+      ResourceType: "AWS::IAM::Policy",
+      Replacement: "False",
+      Scope: ["Properties"],
+      Details: [{
+        ChangeSource: "DirectModification",
+        Evaluation: "Static",
+        Target: {
+          Attribute: "Properties",
+          AttributeChangeType: "Modify",
+          Name: "PolicyDocument",
+          RequiresRecreation: "Never",
+        },
+      }],
+    } }],
+  };
+  assert.doesNotThrow(() => validatePreparedStageBChangeSet(
+    "renewal",
+    "editor",
+    preview,
+  ));
 });
 
 test("deployment projection excludes unrelated full-synth drift", () => {

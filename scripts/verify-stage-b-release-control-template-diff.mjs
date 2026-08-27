@@ -48,6 +48,7 @@ export const STAGE_B_PHASE_CONTRACTS = Object.freeze({
     stacks: Object.freeze({
       editor: Object.freeze({
         EditorReleaseRegistrarFunctionD787453A: "AWS::Lambda::Function",
+        EditorReleaseRegistrarRoleDefaultPolicy3320C259: "AWS::IAM::Policy",
         EditorReleaseBuildRole111C67A7: "AWS::IAM::Role",
         EditorReleaseVerifierRoleBAFDF9FA: "AWS::IAM::Role",
       }),
@@ -112,6 +113,9 @@ const PHASE_PROPERTY_CONTRACTS = Object.freeze({
     editor: Object.freeze({
       EditorReleaseRegistrarFunctionD787453A: Object.freeze([
         "Code", "Environment",
+      ]),
+      EditorReleaseRegistrarRoleDefaultPolicy3320C259: Object.freeze([
+        "PolicyDocument",
       ]),
       EditorReleaseBuildRole111C67A7: Object.freeze(["AssumeRolePolicyDocument"]),
       EditorReleaseVerifierRoleBAFDF9FA: Object.freeze(["AssumeRolePolicyDocument"]),
@@ -655,7 +659,10 @@ function exactRegistrarPolicy(candidate, options) {
     || !JSON.stringify(submit.Resource).includes("shorts-mvp-editor-test")
     || !JSON.stringify(submit.Resource).includes("shorts-mvp-editor-test-release-*")
     || !Array.isArray(tag.Resource)
-    || tag.Resource.length !== 3
+    || tag.Resource.length !== 4
+    || !tag.Resource.some((resource) => (
+      JSON.stringify(resource).includes("job-queue/shorts-mvp-editor-test")
+    ))
     || fingerprint(passRole?.Resource) !== fingerprint(
       [...(options.registrarPassRoleArns || [])].sort(),
     )
@@ -952,7 +959,7 @@ function exactResource(phase, stackKey, logicalId, current, candidate, options) 
     return exactRegistrarRole(candidate);
   }
   if (
-    phase === "bootstrap"
+    ["bootstrap", "renewal"].includes(phase)
     && logicalId === "EditorReleaseRegistrarRoleDefaultPolicy3320C259"
   ) {
     return exactRegistrarPolicy(candidate, options);

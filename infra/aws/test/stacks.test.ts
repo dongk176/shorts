@@ -347,6 +347,9 @@ describe("shorts MVP infrastructure", () => {
     expect(templateJson).toContain(
       "job-definition/shorts-mvp-editor-test-release-*",
     );
+    expect(templateJson).toContain(
+      "job-queue/shorts-mvp-editor-test",
+    );
   });
 
   it("disables editor release OIDC trust unless the exact Stage B ref is supplied", () => {
