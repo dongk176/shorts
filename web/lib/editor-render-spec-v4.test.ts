@@ -54,7 +54,7 @@ function documentFixture() {
 }
 
 describe("editor render specification v4 title compiler", () => {
-  it("uses measured glyph bounds, padding, absolute clamp, and 0.001px coordinates", () => {
+  it("uses deterministic em boxes, padding, absolute clamp, and 0.001px coordinates", () => {
     const title = compileEditorRenderTitleSpecV4(
       documentFixture(),
       (text, fontSize) => ({
@@ -94,6 +94,28 @@ describe("editor render specification v4 title compiler", () => {
       ]),
     ];
     expect(numericCoordinates.every(isQuantizedEditorRenderPx)).toBe(true);
+    expect(title.lineBoxes.every(
+      (line) => line.height === title.fontSize + title.linePaddingY * 2,
+    )).toBe(true);
+  });
+
+  it("does not let platform-specific glyph ink bounds move title lines", () => {
+    const compile = (ascent: number, descent: number) => (
+      compileEditorRenderTitleSpecV4(
+        documentFixture(),
+        (text, fontSize) => ({
+          width: Array.from(text).length * fontSize * 0.72,
+          actualBoundingBoxAscent: fontSize * ascent,
+          actualBoundingBoxDescent: fontSize * descent,
+        }),
+      )
+    );
+
+    const macLike = compile(0.72, 0.18);
+    const linuxLike = compile(0.84, 0.27);
+
+    expect(linuxLike.lineBoxes).toEqual(macLike.lineBoxes);
+    expect(linuxLike.centerY).toBe(macLike.centerY);
   });
 
   it("never silently creates v4 through the synchronous legacy compiler", () => {

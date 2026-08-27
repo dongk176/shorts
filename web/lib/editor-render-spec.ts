@@ -504,12 +504,7 @@ export function compileEditorRenderTitleSpecV4(
     const candidateMeasurements = lines.map((line) => exactMeasure(line, candidate));
     if (candidateMeasurements.some((item) => (
       !Number.isFinite(item.width)
-      || !Number.isFinite(item.actualBoundingBoxAscent)
-      || !Number.isFinite(item.actualBoundingBoxDescent)
       || item.width < 0
-      || item.actualBoundingBoxAscent < 0
-      || item.actualBoundingBoxDescent < 0
-      || item.actualBoundingBoxAscent + item.actualBoundingBoxDescent <= 0
     ))) {
       throw new Error("Exact title font metrics are unavailable.");
     }
@@ -533,10 +528,11 @@ export function compileEditorRenderTitleSpecV4(
   const widths = measurements.map((measurement) => quantizeEditorRenderPx(
     measurement.width + linePaddingX * 2,
   ));
-  const heights = measurements.map((measurement) => quantizeEditorRenderPx(
-    measurement.actualBoundingBoxAscent
-      + measurement.actualBoundingBoxDescent
-      + linePaddingY * 2,
+  // Canvas glyph ink bounds vary by Chromium/OS even when the exact same
+  // immutable font bytes are loaded. Title layout uses the configured em box
+  // instead, matching the stored background box and the Linux renderer.
+  const heights = lines.map(() => quantizeEditorRenderPx(
+    fontSize + linePaddingY * 2,
   ));
   const contentHeight = quantizeEditorRenderPx(
     heights.reduce((total, height) => total + height, 0)
