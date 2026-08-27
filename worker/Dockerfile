@@ -30,7 +30,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 USER 0
-RUN apk add --no-cache \
+RUN apk add --no-cache --upgrade \
         bash \
         cairo \
         coreutils \
@@ -39,7 +39,9 @@ RUN apk add --no-cache \
         giflib \
         libjpeg-turbo \
         libstdc++ \
-        openssl=3.5.7-r0 \
+        libcrypto3=3.5.8-r0 \
+        libssl3=3.5.8-r0 \
+        openssl=3.5.8-r0 \
         pango \
         pixman
 

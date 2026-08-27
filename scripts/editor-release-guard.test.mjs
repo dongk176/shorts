@@ -212,7 +212,7 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260827-3'/,
+    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260827-4'/,
   );
   assert.equal(workflow.match(/fetch-depth: 0/g)?.length, 2);
   assert.equal(workflow.match(/fetch-tags: true/g)?.length, 2);
@@ -405,7 +405,10 @@ test("candidate worker uses a pinned, scan-friendly image with render dependenci
     /FROM python:3\.12-alpine3\.22@sha256:[a-f0-9]{64} AS worker-base/,
   );
   assert.match(dockerfile, /apk add --no-cache[\s\S]*deno[\s\S]*ffmpeg/);
-  assert.match(dockerfile, /openssl=3\.5\.7-r0/);
+  assert.match(
+    dockerfile,
+    /FROM python:3\.12-alpine3\.22@sha256:[a-f0-9]{64} AS worker-base[\s\S]*RUN apk add --no-cache --upgrade[\s\S]*libcrypto3=3\.5\.8-r0[\s\S]*libssl3=3\.5\.8-r0[\s\S]*openssl=3\.5\.8-r0/,
+  );
   assert.match(dockerfile, /apk add --no-cache font-noto-cjk/);
   assert.doesNotMatch(dockerfile, /python:3\.12-slim/);
   assert.match(overlays, /\/usr\/share\/fonts\/noto\/NotoSansCJK-Bold\.ttc/);
