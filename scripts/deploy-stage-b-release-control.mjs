@@ -660,6 +660,7 @@ function publishAndVerifyStageBAssets({
   run("npx", [
     "cdk",
     "publish-assets",
+    "--unstable=publish-assets",
     ...stackKeys.map((stackKey) => STAGE_B_STACKS[stackKey].stackName),
     "--app",
     outputDirectory,

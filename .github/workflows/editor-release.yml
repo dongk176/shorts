@@ -30,7 +30,7 @@ jobs:
   build:
     # A mutable branch is never a release identity. AWS independently verifies
     # this exact protected tag before it allows an image push.
-    if: github.ref == 'refs/tags/editor-v4-render-parity-20260827-7'
+    if: github.ref == 'refs/tags/editor-v4-render-parity-20260827-8'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     outputs:
