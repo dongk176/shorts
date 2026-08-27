@@ -603,6 +603,93 @@ function liveTemplate(stackKey, region, changeSetId = "") {
   return awsJson(args).TemplateBody;
 }
 
+export function stageBChangedLambdaCodeAssets(
+  currentTemplates,
+  exactTemplates,
+  identity,
+) {
+  const expectedBucket = `cdk-hnb659fds-assets-${identity.account}-${identity.region}`;
+  const assets = [];
+  for (const stackKey of Object.keys(exactTemplates).sort()) {
+    const currentResources = currentTemplates[stackKey]?.Resources || {};
+    const exactResources = exactTemplates[stackKey]?.Resources || {};
+    for (const logicalId of Object.keys(exactResources).sort()) {
+      const exactResource = exactResources[logicalId];
+      if (exactResource?.Type !== "AWS::Lambda::Function") continue;
+      const currentCode = currentResources[logicalId]?.Properties?.Code;
+      const exactCode = exactResource?.Properties?.Code;
+      if (JSON.stringify(stable(currentCode)) === JSON.stringify(stable(exactCode))) {
+        continue;
+      }
+      if (
+        !exactCode
+        || Object.keys(exactCode).sort().join(",") !== "S3Bucket,S3Key"
+        || exactCode.S3Bucket !== expectedBucket
+        || !/^[0-9a-f]{64}\.zip$/.test(String(exactCode.S3Key || ""))
+      ) {
+        throw new Error(
+          `${stackKey}/${logicalId} Lambda Code가 exact CDK file asset이 아닙니다.`,
+        );
+      }
+      assets.push({
+        stackKey,
+        logicalId,
+        bucket: exactCode.S3Bucket,
+        key: exactCode.S3Key,
+      });
+    }
+  }
+  return assets;
+}
+
+function publishAndVerifyStageBAssets({
+  options,
+  stackKeys,
+  outputDirectory,
+  cdkEnvironment,
+  currentTemplates,
+  exactTemplates,
+  identity,
+}) {
+  const assets = stageBChangedLambdaCodeAssets(
+    currentTemplates,
+    exactTemplates,
+    identity,
+  );
+  if (!assets.length) return;
+  run("npx", [
+    "cdk",
+    "publish-assets",
+    ...stackKeys.map((stackKey) => STAGE_B_STACKS[stackKey].stackName),
+    "--app",
+    outputDirectory,
+    "--exclusively",
+    "--yes",
+    "--concurrency",
+    "1",
+    "--region",
+    options.region,
+  ], { cwd: infra, env: cdkEnvironment });
+  for (const asset of assets) {
+    const head = optionalS3HeadObject(
+      asset.bucket,
+      asset.key,
+      options.region,
+    );
+    if (
+      !head
+      || Number(head.ContentLength) <= 0
+      || head.ServerSideEncryption !== "AES256"
+      || !String(head.VersionId || "").trim()
+      || head.VersionId === "null"
+    ) {
+      throw new Error(
+        `${asset.stackKey}/${asset.logicalId} Lambda asset 게시 검증에 실패했습니다.`,
+      );
+    }
+  }
+}
+
 function describeChangeSet(stackKey, region, idOrName) {
   return awsJson([
     "cloudformation",
@@ -1582,6 +1669,19 @@ export async function runStageBReleaseControl(argv = process.argv.slice(2)) {
       process.stdout.write("검사 전용입니다. change set 생성은 --prepare를 사용하세요.\n");
       return;
     }
+
+    publishAndVerifyStageBAssets({
+      options,
+      stackKeys,
+      outputDirectory,
+      cdkEnvironment,
+      currentTemplates,
+      exactTemplates,
+      identity,
+    });
+    verifyRepositoryUnchanged(options, initial);
+    verifyPromotedProductionBaseline(options.base);
+    verifyLiveHashes(stackKeys, options.region, currentHashes);
 
     for (const stackKey of stackKeys) {
       verifyRepositoryUnchanged(options, initial);

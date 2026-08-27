@@ -5,6 +5,7 @@ import {
   assertChangeSetProvenance,
   classifyStageBStackObservation,
   shouldReleaseStageBInfrastructureLease,
+  stageBChangedLambdaCodeAssets,
   stageBChangeSetName,
   stageBChangeSetProvenanceSha256,
   stageBTemplateSha256,
@@ -79,6 +80,12 @@ test("synthesizes exact Editor and Compute templates with the phase ref", () => 
 });
 
 test("prepares exact change sets only and cleans partial prepares on failure", () => {
+  assert.match(source, /"cdk",\s*"publish-assets"/);
+  assert.match(source, /"--app",\s*outputDirectory/);
+  assert.match(source, /"--exclusively"/);
+  assert.match(source, /publishAndVerifyStageBAssets/);
+  assert.match(source, /optionalS3HeadObject/);
+  assert.match(source, /Lambda asset 게시 검증에 실패했습니다/);
   assert.match(source, /"s3api",\s*"put-object"/);
   assert.match(source, /"--checksum-algorithm",\s*"SHA256"/);
   assert.match(source, /"--checksum-sha256",\s*checksumSha256/);
@@ -100,6 +107,50 @@ test("prepares exact change sets only and cleans partial prepares on failure", (
   assert.match(source, /\["--apply", "--all", "--deploy", "--execute-all"\]/);
   assert.doesNotMatch(source, /"cdk",\s*"deploy"/);
   assert.doesNotMatch(source, /"--method",\s*"direct"/);
+});
+
+test("publishes only exact changed Lambda file assets for the production identity", () => {
+  const identity = { account: "181651591905", region: "ap-northeast-2" };
+  const current = {
+    editor: {
+      Resources: {
+        Registrar: {
+          Type: "AWS::Lambda::Function",
+          Properties: {
+            Code: {
+              S3Bucket: "cdk-hnb659fds-assets-181651591905-ap-northeast-2",
+              S3Key: `${"a".repeat(64)}.zip`,
+            },
+          },
+        },
+      },
+    },
+  };
+  const exact = structuredClone(current);
+  exact.editor.Resources.Registrar.Properties.Code.S3Key = `${"b".repeat(64)}.zip`;
+  assert.deepEqual(
+    stageBChangedLambdaCodeAssets(current, exact, identity),
+    [{
+      stackKey: "editor",
+      logicalId: "Registrar",
+      bucket: "cdk-hnb659fds-assets-181651591905-ap-northeast-2",
+      key: `${"b".repeat(64)}.zip`,
+    }],
+  );
+  assert.deepEqual(stageBChangedLambdaCodeAssets(current, current, identity), []);
+
+  const foreign = structuredClone(exact);
+  foreign.editor.Resources.Registrar.Properties.Code.S3Bucket = "foreign-bucket";
+  assert.throws(
+    () => stageBChangedLambdaCodeAssets(current, foreign, identity),
+    /exact CDK file asset이 아닙니다/,
+  );
+  const inline = structuredClone(exact);
+  inline.editor.Resources.Registrar.Properties.Code = { ZipFile: "unsafe" };
+  assert.throws(
+    () => stageBChangedLambdaCodeAssets(current, inline, identity),
+    /exact CDK file asset이 아닙니다/,
+  );
 });
 
 test("executes Editor and Compute separately and derives the Editor-first gate internally", () => {
