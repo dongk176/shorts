@@ -27,6 +27,19 @@ const candidateName = `shorts-mvp-unified-template-subtitles-${releaseSha.slice(
 const candidateArn = `arn:aws:batch:${region}:${accountId}:job-definition/${candidateName}:1`;
 const repositoryUri = `${accountId}.dkr.ecr.${region}.amazonaws.com/shorts-mvp-editor-releases-production`;
 const imageDigest = `sha256:${"d".repeat(64)}`;
+const capabilityEnvironmentNames = [
+  "EDITOR_RELEASE_RENDER_SPEC_VERSION",
+  "EDITOR_RELEASE_CAPTION_RENDER_SPEC_VERSION",
+  "EDITOR_RELEASE_FONT_MANIFEST_SHA256",
+];
+
+function isolatedRegistrationEnvironment(baseEnvironment, overrides) {
+  const environment = { ...baseEnvironment };
+  for (const name of capabilityEnvironmentNames) {
+    delete environment[name];
+  }
+  return { ...environment, ...overrides };
+}
 
 function projectHeavyTemplate() {
   return {
@@ -109,8 +122,7 @@ fi
   ], {
     cwd: dirname(scriptPath),
     encoding: "utf8",
-    env: {
-      ...process.env,
+    env: isolatedRegistrationEnvironment(process.env, {
       PATH: `${binDirectory}:${process.env.PATH}`,
       AWS_REGION: region,
       EDITOR_RELEASE_ECR_REPOSITORY_URI: repositoryUri,
@@ -120,7 +132,7 @@ fi
       MOCK_TEMPLATE_JSON: templatePath,
       MOCK_CANDIDATE_ARN: candidateArn,
       MOCK_REGISTER_CAPTURE: capturePath,
-    },
+    }),
   });
   let registered = null;
   try {
@@ -143,6 +155,23 @@ test("adds a separate deterministic kind without creating or updating queues", (
     source,
     /(?:create|update)-job-queue|update-compute-environment|cdk deploy/,
   );
+});
+
+test("does not inherit an incomplete workflow capability contract", () => {
+  const environment = isolatedRegistrationEnvironment(
+    {
+      KEEP_ME: "yes",
+      EDITOR_RELEASE_RENDER_SPEC_VERSION: "4",
+      EDITOR_RELEASE_CAPTION_RENDER_SPEC_VERSION: "4",
+    },
+    { AWS_REGION: region },
+  );
+
+  assert.equal(environment.KEEP_ME, "yes");
+  assert.equal(environment.AWS_REGION, region);
+  for (const name of capabilityEnvironmentNames) {
+    assert.equal(Object.hasOwn(environment, name), false);
+  }
 });
 
 test("clones the project-heavy initial-render contract at the tested digest", async () => {
