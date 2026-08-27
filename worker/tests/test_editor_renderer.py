@@ -34,10 +34,12 @@ from shorts_worker.editor_renderer import (
     editor_subtitle_style,
     editor_video_frame,
     load_editor_font,
+    project_caption_render_spec_v4,
     retime_editor_caption_spec,
     retime_editor_subtitles,
     verify_editor_fonts,
 )
+from shorts_worker.render_spec_v4 import compile_initial_editor_render_spec_v4
 from shorts_worker.schemas import (
     CustomTemplateConfig,
     EditorDocument,
@@ -117,6 +119,63 @@ def _document_v3_with_absolute_subtitle_style(
         "accentColor": "#FFD84D",
         "cueEdits": [],
     }
+    return EditorDocument.model_validate(value)
+
+
+def _caption_spec_v4() -> dict[str, object]:
+    return compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="첫째",
+                start=3,
+                end=3.45,
+                provider="elevenlabs",
+            ),
+            TranscriptWord(
+                text="둘째",
+                start=3.6,
+                end=4.2,
+                provider="elevenlabs",
+            ),
+        ],
+        template_id="pop",
+        clip_start=0,
+        clip_end=10,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        schema_version=4,
+    )
+
+
+def _document_v4_with_contiguous_caption_clip(
+    caption_render_spec: dict[str, object],
+    *,
+    clip_start_seconds: float,
+    clip_end_seconds: float,
+) -> EditorDocument:
+    value = json.loads(V3_FIXTURE.read_text())
+    value["overlays"]["textOverlays"] = []
+    value["overlays"]["layerOrder"] = [
+        "video",
+        "title",
+        "comment",
+        "channel",
+    ]
+    value["video"].update({
+        "clips": [{
+            "id": "one-contiguous-v4-clip",
+            "sourceStartSeconds": clip_start_seconds,
+            "sourceEndSeconds": clip_end_seconds,
+        }],
+        "selectionStartSeconds": 10 + clip_start_seconds,
+        "selectionEndSeconds": 10 + clip_end_seconds,
+    })
+    value["renderSpec"] = compile_initial_editor_render_spec_v4(
+        title=value["title"]["text"],
+        template_id=value["template"]["id"],
+        video_aspect_ratio=value["video"]["aspectRatio"],
+        font_scale=value["title"]["fontScale"],
+        caption_render_spec=caption_render_spec,
+    )
     return EditorDocument.model_validate(value)
 
 
@@ -338,6 +397,103 @@ def test_caption_editor_font_override_is_persisted_in_render_spec() -> None:
         "family": "Jua",
         "weight": 400,
     }
+
+
+def test_v4_caption_projection_preserves_stored_absolute_geometry() -> None:
+    canonical = _caption_spec_v4()
+    source_cue = canonical["cues"][0]
+    projected = project_caption_render_spec_v4(
+        canonical,
+        clip_start_seconds=2,
+        clip_end_seconds=8,
+    )
+    projected_cue = projected["cues"][0]
+
+    assert projected["clipStartSeconds"] == 2
+    assert projected["clipEndSeconds"] == 8
+    assert projected_cue["startFrame"] == source_cue["startFrame"] - 60
+    assert projected_cue["endFrame"] == source_cue["endFrame"] - 60
+    assert projected_cue["words"][0]["centerX"] == source_cue["words"][0][
+        "centerX"
+    ]
+    assert projected_cue["words"][0]["centerY"] == source_cue["words"][0][
+        "centerY"
+    ]
+    assert projected_cue["events"][0]["positions"] == source_cue["events"][0][
+        "positions"
+    ]
+
+
+def test_v4_padded_timeline_noop_uses_the_same_canonical_projection() -> None:
+    canonical = _caption_spec_v4()
+    document = _document_v4_with_contiguous_caption_clip(
+        canonical,
+        clip_start_seconds=2,
+        clip_end_seconds=8,
+    )
+    expected = project_caption_render_spec_v4(
+        canonical,
+        clip_start_seconds=2,
+        clip_end_seconds=8,
+    )
+
+    first_rerender = retime_editor_caption_spec(document, canonical)
+    second_rerender = retime_editor_caption_spec(document, canonical)
+
+    assert first_rerender == expected
+    assert second_rerender == expected
+
+
+def test_v4_boundary_projection_is_identical_on_first_and_noop_rerender() -> None:
+    canonical = compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="경계",
+                start=1.9,
+                end=2.6,
+                provider="elevenlabs",
+            ),
+            TranscriptWord(
+                text="자막",
+                start=2.7,
+                end=3.2,
+                provider="elevenlabs",
+            ),
+        ],
+        template_id="pop",
+        clip_start=0,
+        clip_end=10,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        schema_version=4,
+    )
+    document = _document_v4_with_contiguous_caption_clip(
+        canonical,
+        clip_start_seconds=2,
+        clip_end_seconds=8,
+    )
+    first_render_projection = project_caption_render_spec_v4(
+        canonical,
+        clip_start_seconds=2,
+        clip_end_seconds=8,
+    )
+
+    assert retime_editor_caption_spec(document, canonical) == first_render_projection
+    assert first_render_projection == project_caption_render_spec_v4(
+        canonical,
+        clip_start_seconds=2,
+        clip_end_seconds=8,
+    )
+
+
+def test_v4_selected_clip_noop_keeps_the_original_caption_spec_exact() -> None:
+    canonical = _caption_spec_v4()
+    document = _document_v4_with_contiguous_caption_clip(
+        canonical,
+        clip_start_seconds=0,
+        clip_end_seconds=10,
+    )
+
+    assert retime_editor_caption_spec(document, canonical) == canonical
 
 
 def test_editor_render_spec_v3_applies_absolute_caption_size_and_color_once() -> None:

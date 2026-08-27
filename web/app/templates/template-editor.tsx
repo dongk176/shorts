@@ -21,6 +21,7 @@ import {
 } from "@/lib/template-config";
 import { videoAspectRatioOptions, type TemplateId, type VideoAspectRatio } from "@/lib/contracts";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
+import { TemplateTitleV4Preview } from "@/components/template-title-v4-preview";
 import {
   CUSTOM_COMMENT_Y_MAX,
   CUSTOM_COMMENT_Y_MIN,
@@ -35,6 +36,7 @@ import { userFacingErrorMessage } from "@/lib/public-error";
 import { TemplateCommentPrototype } from "@/components/template-comment-prototype";
 import { TemplateSubtitlePreview } from "@/components/template-subtitle-preview";
 import { editorFontFamily, editorFontOptions, resolveEditorFontFace, type EditorFontId } from "@/lib/editor-fonts";
+import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
 
 type LayerId = "video" | "title" | "subtitle" | "channel" | "comment";
 type TemplateLayerId = Exclude<LayerId, "comment">;
@@ -163,6 +165,7 @@ export function TemplateEditor({
     : templatePresetPresentation[baseTemplateId].titleLines;
   const dirty = JSON.stringify({ name, config }) !== baselineRef.current;
   const unifiedSubtitleConfigEnabled = unifiedSubtitleCanaryEnabled && isTemplateConfigV5(config);
+  const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
   const availableLayerIds = unifiedSubtitleConfigEnabled
     ? commentLayerEnabled
       ? (["video", "title", "subtitle", "channel", "comment"] satisfies LayerId[])
@@ -432,20 +435,32 @@ export function TemplateEditor({
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,#73737c,#2c2c31_70%)]" /><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
                     <button type="button" aria-label="영상 크기 조절" onPointerDown={(event) => beginPointerAction(event, "video", "resize")} className="absolute bottom-0 right-0 h-6 w-6 cursor-nwse-resize border-l border-t border-white bg-[#ff715e]" />
                   </div>
-                  <CustomTemplateTitlePreview
-                    title={config.title}
-                    firstLine={previewTitleLines[0]}
-                    secondLine={previewTitleLines[1]}
-                    fontFamily={unifiedTitleFontId ? editorFontFamily(unifiedTitleFontId) : undefined}
-                    fontWeight={unifiedTitleFontId ? resolveEditorFontFace(unifiedTitleFontId, "title").resolvedWeight : undefined}
-                    selected={selectedLayer === "title"}
-                    onPointerDown={(event) => beginPointerAction(event, "title")}
-                  />
+                  {positionedWordsV4Enabled
+                    ? <TemplateTitleV4Preview
+                        enabled
+                        templateId={baseTemplateId}
+                        title={`${previewTitleLines[0]}\n${previewTitleLines[1]}`}
+                        templateConfig={config}
+                        primaryColor={config.title.primaryColor}
+                        accentColor={config.title.accentColor}
+                        selected={selectedLayer === "title"}
+                        onPointerDown={(event) => beginPointerAction(event, "title")}
+                      />
+                    : <CustomTemplateTitlePreview
+                        title={config.title}
+                        firstLine={previewTitleLines[0]}
+                        secondLine={previewTitleLines[1]}
+                        fontFamily={unifiedTitleFontId ? editorFontFamily(unifiedTitleFontId) : undefined}
+                        fontWeight={unifiedTitleFontId ? resolveEditorFontFace(unifiedTitleFontId, "title").resolvedWeight : undefined}
+                        selected={selectedLayer === "title"}
+                        onPointerDown={(event) => beginPointerAction(event, "title")}
+                      />}
                   {unifiedSubtitleConfigEnabled && isTemplateConfigV5(config)
                     ? <TemplateSubtitlePreview
                         subtitle={config.subtitle}
                         selected={selectedLayer === "subtitle"}
                         onPointerDown={(event) => beginPointerAction(event, "subtitle")}
+                        positionedWordsV4Enabled={positionedWordsV4Enabled}
                       />
                     : null}
                   {config.channel.visible && !commentLayerEnabled && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</button>}

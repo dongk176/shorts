@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
+import re
 import subprocess
 import tempfile
 from math import floor
@@ -9,17 +12,33 @@ from pathlib import Path
 from typing import Any
 
 import boto3
-from PIL import Image
+from PIL import Image, ImageChops
 
-from .caption_templates import compile_caption_render_spec
+from .browser_parity_probe import build_browser_parity_matrix
+from .caption_templates import (
+    caption_font_spec,
+    compile_caption_render_spec,
+    create_caption_ass,
+    prepare_caption_fonts,
+    verify_caption_font_selection_v4,
+)
 from .config import Settings
 from .editor_renderer import (
     EditorDocumentRenderer,
+    create_editor_title_layer,
     editor_video_frame,
     retime_editor_caption_spec,
     verify_editor_fonts,
 )
-from .schemas import EditorDocument, VideoAspectRatio
+from .font_manifest import canonical_editor_font_manifest
+from .overlays import TEMPLATE_STYLES
+from .release_identity import verify_initial_render_v4_runtime
+from .render_spec_v4 import (
+    compile_editor_title_spec_v4,
+    draw_editor_title_spec_v4,
+    editor_font_face_v4,
+)
+from .schemas import EditorDocument, EditorFontId, TitleTextStyle, VideoAspectRatio
 from .subtitles import TranscriptWord
 
 FONT_IDS = (
@@ -45,105 +64,6 @@ FONT_IDS = (
     "paperlogy",
 )
 
-FONT_METADATA = {
-    "pretendard": (
-        "Pretendard-Bold.woff2",
-        '"Editor V3 Pretendard", sans-serif',
-        700,
-    ),
-    "noto-sans-kr": (
-        "NotoSansKR-Variable.ttf",
-        '"Editor V3 Noto Sans KR", sans-serif',
-        None,
-    ),
-    "do-hyeon": (
-        "DoHyeon-Regular.ttf",
-        '"Editor V3 Do Hyeon", sans-serif',
-        400,
-    ),
-    "jua": (
-        "Jua-Regular.ttf",
-        '"Editor V3 Jua", sans-serif',
-        400,
-    ),
-    "jalnan-2": (
-        "Jalnan2-Regular.woff2",
-        '"Editor V3 Jalnan 2", sans-serif',
-        400,
-    ),
-    "cafe24-anemone": (
-        "Cafe24Anemone-Bold.woff",
-        '"Editor V3 Cafe24 Anemone", sans-serif',
-        700,
-    ),
-    "cafe24-pro-up": (
-        "Cafe24ProUp-Regular.woff2",
-        '"Editor V3 Cafe24 Pro Up", sans-serif',
-        400,
-    ),
-    "sandbox-aggro": (
-        "SandboxAggro-Bold.ttf",
-        '"Editor V3 Sandbox Aggro", sans-serif',
-        700,
-    ),
-    "galmuri-9": (
-        "Galmuri9-Regular.ttf",
-        '"Editor V3 Galmuri 9", sans-serif',
-        400,
-    ),
-    "black-han-sans": (
-        "BlackHanSans-Regular.ttf",
-        '"Editor V3 Black Han Sans", sans-serif',
-        400,
-    ),
-    "godo": (
-        "Godo-Bold.ttf",
-        '"Editor V3 Godo", sans-serif',
-        700,
-    ),
-    "gmarket-sans": (
-        "GmarketSans-Bold.ttf",
-        '"Editor V3 Gmarket Sans", sans-serif',
-        700,
-    ),
-    "nanum-square-neo": (
-        "NanumSquareNeo-Bold.ttf",
-        '"Editor V3 Nanum Square Neo", sans-serif',
-        700,
-    ),
-    "s-core-dream": (
-        "SCoreDream-ExtraBold.otf",
-        '"Editor V3 S-Core Dream", sans-serif',
-        800,
-    ),
-    "noto-serif-kr": (
-        "NotoSerifKR-Variable.ttf",
-        '"Editor V3 Noto Serif KR", serif',
-        None,
-    ),
-    "nanum-myeongjo": (
-        "NanumMyeongjo-Bold.ttf",
-        '"Editor V3 Nanum Myeongjo", serif',
-        700,
-    ),
-    "suit": ("SUIT-Bold.woff2", '"Editor V3 SUIT", sans-serif', 700),
-    "spoqa-han-sans-neo": (
-        "SpoqaHanSansNeo-Bold.woff2",
-        '"Editor V3 Spoqa Han Sans Neo", sans-serif',
-        700,
-    ),
-    "ridi-batang": (
-        "RIDIBatang-Regular.woff",
-        '"Editor V3 Ridi Batang", serif',
-        400,
-    ),
-    "paperlogy": (
-        "Paperlogy-7Bold.ttf",
-        '"Editor V3 Paperlogy", sans-serif',
-        700,
-    ),
-}
-
 PROBE_SCENARIOS = (
     "baseline",
     "ripple-cut",
@@ -154,44 +74,71 @@ PROBE_SCENARIOS = (
 )
 
 
-def _font_face(font_id: str, *, text: bool) -> dict[str, object]:
-    file_id, family, static_weight = FONT_METADATA[font_id]
-    requested_weight = 800 if text else 700
-    resolved_weight = requested_weight if static_weight is None else static_weight
+def _put_versioned_evidence(
+    client: Any,
+    *,
+    bucket: str,
+    key: str,
+    payload: bytes,
+    content_type: str,
+) -> dict[str, str]:
+    digest = hashlib.sha256(payload).hexdigest()
+    checksum = base64.b64encode(bytes.fromhex(digest)).decode("ascii")
+    response = client.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=payload,
+        ContentType=content_type,
+        ChecksumSHA256=checksum,
+    )
+    version_id = str(response.get("VersionId") or "")
+    if not version_id or len(version_id) > 1024:
+        raise RuntimeError("Editor release evidence bucket must have versioning enabled")
     return {
-        "fontId": font_id,
-        "fileId": file_id,
-        "family": family,
-        "requestedWeight": requested_weight,
-        "resolvedWeight": resolved_weight,
-        "variableWeight": requested_weight if static_weight is None else None,
+        "versionId": version_id,
+        "sha256": digest,
+        "checksumSHA256": checksum,
+        "etag": str(response.get("ETag") or "").strip('"'),
     }
+
+
+def _font_face(font_id: str, *, text: bool) -> dict[str, object]:
+    return editor_font_face_v4(
+        EditorFontId(font_id),
+        requested_weight=800 if text else 700,
+    )
 
 
 def _render_spec(value: dict[str, Any]) -> dict[str, object]:
     overlays = value["overlays"]
     title = value["title"]
-    title_lines = [line for line in str(title["text"]).splitlines() if line] or ["핵심 장면"]
-    title_font_size = max(18, min(200, round(84 * float(title["fontScale"]))))
     comments = value["comments"]
     text_overlays = overlays["textOverlays"]
+    title_spec = compile_editor_title_spec_v4(
+        title=str(title["text"]),
+        template_id=str(value["template"]["id"]),
+        video_aspect_ratio=str(value["video"]["aspectRatio"]),
+        font_id=str(overlays["fonts"]["title"]),
+        font_scale=float(title["fontScale"]),
+        title_text_styles=[
+            TitleTextStyle.model_validate(style)
+            for style in title.get("textStyles") or []
+        ],
+        visible=bool(overlays["visible"]["title"]),
+        offset_x=float(overlays["offsets"]["title"]["x"]),
+        offset_y=float(overlays["offsets"]["title"]["y"]),
+    )
     return {
-        "version": 2,
+        "version": 4,
         "canvas": {"width": 1080, "height": 1920},
         "fps": 30,
         "layerOrder": list(overlays["layerOrder"]),
-        "title": {
-            "lines": title_lines[:2],
-            "centerX": 540,
-            "offsetY": overlays["offsets"]["title"]["y"],
-            "fontSize": title_font_size,
-            "scale": 1,
-            "font": _font_face(overlays["fonts"]["title"], text=False),
-        },
+        "title": title_spec,
         "channel": {
             "offsetX": overlays["offsets"]["channel"]["x"],
             "offsetY": overlays["offsets"]["channel"]["y"],
             "scale": overlays["scales"]["channel"],
+            "visible": bool(overlays["visible"]["channel"]),
             "font": _font_face(overlays["fonts"]["channel"], text=False),
         },
         "comments": [
@@ -232,8 +179,15 @@ def _render_spec(value: dict[str, Any]) -> dict[str, object]:
         },
         "subtitles": {
             "centerX": 540,
-            "offsetY": -260,
-            "scale": 1.5,
+            "visible": True,
+            "captionSpecVersion": 4,
+            "offsetY": 0,
+            "scale": 1,
+            "fontId": "paperlogy",
+            "fontSize": 92,
+            "color": "#FFFFFF",
+            "accentColor": "#35E6E3",
+            "cueEdits": [],
         },
     }
 
@@ -635,7 +589,7 @@ def _document(scenario: str = "baseline") -> EditorDocument:
 def _pop_caption_render_spec() -> dict[str, object]:
     """Build immutable source-timeline pop captions spanning every probe cut."""
     words = [
-        TranscriptWord(text="팝형", start=0.55, end=0.95, provider="probe"),
+        TranscriptWord(text="Paperlogy", start=0.55, end=0.95, provider="probe"),
         TranscriptWord(
             text="자막", start=1.05, end=1.45, provider="probe", space_before=True
         ),
@@ -643,7 +597,13 @@ def _pop_caption_render_spec() -> dict[str, object]:
             text="위치", start=2.05, end=2.55, provider="probe", space_before=True
         ),
         TranscriptWord(
-            text="크기", start=4.10, end=4.80, provider="probe", space_before=True
+            text="크기", start=4.10, end=4.45, provider="probe", space_before=True
+        ),
+        TranscriptWord(
+            text="간격", start=4.50, end=4.85, provider="probe", space_before=True
+        ),
+        TranscriptWord(
+            text="JOIN", start=4.90, end=5.25, provider="probe", space_before=False
         ),
         TranscriptWord(
             text="렌더", start=6.05, end=6.55, provider="probe", space_before=True
@@ -659,6 +619,8 @@ def _pop_caption_render_spec() -> dict[str, object]:
         clip_end=10,
         video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
         caption_placement="center",
+        font_id=EditorFontId.PAPERLOGY,
+        schema_version=4,
     )
 
 
@@ -716,6 +678,105 @@ def _caption_event_active_at(
     return False
 
 
+def _verify_v4_initial_editor_parity(
+    document: EditorDocument,
+    *,
+    root: Path,
+) -> None:
+    if document.render_spec is None or document.render_spec.version != 4:
+        raise RuntimeError("Probe document does not contain renderSpec v4")
+    style = TEMPLATE_STYLES[document.template.id]
+    initial = draw_editor_title_spec_v4(
+        title_spec=document.render_spec.title,
+        source_title=document.title.text,
+        title_text_styles=document.title.text_styles,
+        primary_color=(
+            style.accent
+            if document.video.aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+            and document.template.id.value != "paper"
+            else style.primary
+        ),
+        accent_color=style.accent,
+    )
+    rerender_path = create_editor_title_layer(
+        document,
+        root / "rerender-title.png",
+    )
+    with Image.open(rerender_path).convert("RGBA") as rerender:
+        if ImageChops.difference(initial, rerender).getbbox() is not None:
+            raise RuntimeError("Initial and editor v4 title pixels are not identical")
+
+
+def _verify_v4_noop_caption_parity(*, root: Path) -> None:
+    value = _document("baseline").model_dump(mode="json", by_alias=True)
+    value["video"]["clips"] = [{
+        "id": "parity-full",
+        "sourceStartSeconds": 0,
+        "sourceEndSeconds": 3.5,
+    }]
+    value["video"]["timelineStartSeconds"] = 0
+    value["video"]["timelineEndSeconds"] = 3.5
+    value["video"]["selectionStartSeconds"] = 0
+    value["video"]["selectionEndSeconds"] = 3.5
+    value["subtitles"]["segments"] = [
+        {"start": 0.5, "end": 1.5, "text": "Paperlogy 자막"},
+    ]
+    document = EditorDocument.model_validate(value)
+    source = compile_caption_render_spec(
+        [
+            TranscriptWord(text="Paperlogy", start=0.5, end=1.0, provider="probe"),
+            TranscriptWord(
+                text="자막",
+                start=1.0,
+                end=1.5,
+                provider="probe",
+                space_before=True,
+            ),
+        ],
+        template_id="pop",
+        clip_start=0,
+        clip_end=3.5,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        caption_placement="center",
+        font_id=EditorFontId.PAPERLOGY,
+        schema_version=4,
+    )
+    retimed = retime_editor_caption_spec(document, source)
+    if retimed != source:
+        raise RuntimeError("No-op v4 caption retiming changed authoritative positions")
+    initial_ass = create_caption_ass(source, root / "initial-caption.ass")
+    rerender_ass = create_caption_ass(retimed, root / "rerender-caption.ass")
+    if initial_ass.read_bytes() != rerender_ass.read_bytes():
+        raise RuntimeError("No-op v4 caption ASS is not byte-identical")
+
+
+def _verify_all_v4_caption_font_selections(*, root: Path) -> tuple[str, ...]:
+    """Require libass to select each bundled editor face without fallback."""
+    expected_font_ids = {font_id.value for font_id in EditorFontId}
+    if len(FONT_IDS) != len(expected_font_ids) or set(FONT_IDS) != expected_font_ids:
+        raise RuntimeError("Editor font fallback probe does not cover every font")
+
+    font_directory = root / "caption-fonts"
+    verified: list[str] = []
+    for font_value in FONT_IDS:
+        font_id = EditorFontId(font_value)
+        spec: dict[str, object] = {
+            "schemaVersion": 4,
+            "font": caption_font_spec(font_id, schema_version=4),
+        }
+        prepare_caption_fonts(font_directory, spec)
+        verify_caption_font_selection_v4(
+            font_directory=font_directory,
+            spec=spec,
+            timeout=30,
+        )
+        verified.append(font_value)
+
+    if tuple(verified) != FONT_IDS:
+        raise RuntimeError("Editor font fallback probe did not verify every font")
+    return tuple(verified)
+
+
 def run_editor_release_probe() -> dict[str, Any]:
     git_sha = os.environ.get("EDITOR_RELEASE_GIT_SHA", "").strip().lower()
     image_digest = os.environ.get("WORKER_IMAGE_DIGEST", "").strip().lower()
@@ -727,10 +788,51 @@ def run_editor_release_probe() -> dict[str, Any]:
         or any(character not in "0123456789abcdef" for character in image_digest[7:])
     ):
         raise RuntimeError("WORKER_IMAGE_DIGEST must contain the immutable image digest")
+    runtime_identity = verify_initial_render_v4_runtime({
+        "initial_render_spec_version": 4,
+        "initial_caption_render_spec_version": 4,
+    })
+    if (
+        runtime_identity is None
+        or runtime_identity.get("sourceGitSha") != git_sha
+        or runtime_identity.get("imageDigest") != image_digest
+        or runtime_identity.get("renderSpecVersion") != "4"
+        or runtime_identity.get("captionRenderSpecVersion") != "4"
+    ):
+        raise RuntimeError("Worker v4 runtime identity evidence is incomplete")
     if os.environ.get("EDITOR_RELEASE_SUITE_VERIFIED", "").strip().lower() != "true":
         raise RuntimeError(
             "EDITOR_RELEASE_SUITE_VERIFIED must confirm the legacy and timeline test suite"
         )
+    expected_font_manifest_sha = os.environ.get(
+        "EDITOR_RELEASE_FONT_MANIFEST_SHA256",
+        "",
+    ).strip().lower()
+    font_manifest = canonical_editor_font_manifest()
+    if (
+        len(expected_font_manifest_sha) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in expected_font_manifest_sha
+        )
+        or expected_font_manifest_sha != font_manifest["sha256"]
+    ):
+        raise RuntimeError(
+            "EDITOR_RELEASE_FONT_MANIFEST_SHA256 does not match this worker image"
+        )
+    if runtime_identity.get("fontManifestSha256") != expected_font_manifest_sha:
+        raise RuntimeError("Worker v4 runtime font identity evidence is incomplete")
+    manifest_font_ids = {
+        str(entry.get("fontId"))
+        for entry in font_manifest["entries"]
+        if isinstance(entry, dict)
+    }
+    if (
+        font_manifest.get("fallbackDetected") is not False
+        or len(font_manifest["entries"]) != len(FONT_IDS)
+        or manifest_font_ids != set(FONT_IDS)
+    ):
+        raise RuntimeError("Worker v4 font manifest is incomplete")
 
     scenario = os.environ.get("EDITOR_RELEASE_SCENARIO", "baseline").strip().lower()
     if scenario not in PROBE_SCENARIOS:
@@ -748,6 +850,12 @@ def run_editor_release_probe() -> dict[str, Any]:
     verify_editor_fonts()
     document = _document(scenario)
     caption_render_spec = _pop_caption_render_spec()
+    if (
+        document.render_spec is None
+        or document.render_spec.version != 4
+        or caption_render_spec.get("schemaVersion") != 4
+    ):
+        raise RuntimeError("Probe did not compile v4 render specifications")
     rendered_caption_spec = retime_editor_caption_spec(
         document,
         caption_render_spec,
@@ -759,6 +867,11 @@ def run_editor_release_probe() -> dict[str, Any]:
         dir=settings.temp_dir if settings.temp_dir.is_dir() else None,
     ) as temporary:
         root = Path(temporary)
+        _verify_v4_initial_editor_parity(document, root=root)
+        _verify_v4_noop_caption_parity(root=root)
+        verified_font_ids = _verify_all_v4_caption_font_selections(root=root)
+        if verified_font_ids != FONT_IDS:
+            raise RuntimeError("Worker v4 font selection evidence is incomplete")
         timeline = root / "timeline.mp4"
         _run([
             "ffmpeg",
@@ -805,15 +918,21 @@ def run_editor_release_probe() -> dict[str, Any]:
         subtitle_ass = (
             root / "render-work" / "editor-assets" / "subtitles.ass"
         ).read_text(encoding="utf-8")
+        caption_font = caption_render_spec.get("font")
+        if not isinstance(caption_font, dict):
+            raise RuntimeError("Probe v4 caption font identity is missing")
+        expected_ass_family = str(caption_font.get("family") or "").strip('"')
         if (
-            "Style: Default,Pretendard,72," not in subtitle_ass
+            not expected_ass_family
+            or f"\\fn{expected_ass_family}" not in subtitle_ass
             or r"\pos(" not in subtitle_ass
-            or r"\fs138.0" not in subtitle_ass
+            or r"\fscx112\fscy112" not in subtitle_ass
+            or r"\t(" in subtitle_ass
             or "Noto Sans CJK KR" in subtitle_ass
         ):
             raise RuntimeError("Probe did not render the trusted pop caption template")
         if not (
-            root / "render-work" / "caption-fonts" / "Pretendard-Bold.ttf"
+            root / "render-work" / "caption-fonts" / "Paperlogy-7Bold.ttf"
         ).is_file():
             raise RuntimeError("Probe did not materialize the approved caption font")
         probe = json.loads(_run([
@@ -883,14 +1002,35 @@ def run_editor_release_probe() -> dict[str, Any]:
         accent_pixels = _caption_accent_pixel_count(frame_path, safe_area)
         if accent_pixels < 25:
             raise RuntimeError("Rendered probe frame does not contain the pop caption accent")
+        browser_parity_root: Path | None = None
+        browser_parity_matrix: dict[str, Any] | None = None
+        if scenario == "baseline":
+            browser_parity_root = root / "browser-parity"
+            browser_parity_matrix = build_browser_parity_matrix(
+                browser_parity_root,
+                runtime_identity=runtime_identity,
+            )
+            if (
+                browser_parity_matrix.get("caseCount") != len(
+                    browser_parity_matrix.get("cases") or []
+                )
+                or set(browser_parity_matrix.get("fontIds") or []) != set(FONT_IDS)
+            ):
+                raise RuntimeError("Browser parity worker matrix is incomplete")
         manifest = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "scenario": scenario,
             "gitSha": git_sha,
             "workerImageDigest": image_digest,
             "documentVersion": document.version,
+            "renderSpecVersion": document.render_spec.version,
+            "captionRenderSpecVersion": caption_render_spec["schemaVersion"],
+            "fontManifestSha256": expected_font_manifest_sha,
+            "fontManifest": font_manifest,
+            "runtimeIdentity": runtime_identity,
             "checks": {
                 "worker-image": True,
+                "runtime-identity": True,
                 "legacy-no-timeline": True,
                 "captured-timeline": True,
                 "editor-v2": True,
@@ -898,9 +1038,21 @@ def run_editor_release_probe() -> dict[str, Any]:
                 "caption-template-pop": True,
                 "ffprobe": True,
                 "frame-parity": True,
+                "render-spec-v4": True,
+                "caption-render-spec-v4": True,
+                "worker-title-compositor-parity": True,
+                "worker-caption-noop-parity": True,
+                "font-manifest": True,
+                "font-fallback": True,
+                **({"browser-parity-worker-matrix": True}
+                   if browser_parity_matrix is not None else {}),
             },
             "checkSources": {
-                "worker-image": "immutable-runtime-digest",
+                "worker-image": "ecs-metadata-v4-image-id",
+                "runtime-identity": (
+                    "verify-initial-render-v4-runtime:"
+                    "ecs-metadata-v4+embedded-source-sha"
+                ),
                 "legacy-no-timeline": "make-verify",
                 "captured-timeline": "make-verify",
                 "editor-v2": "synthetic-render",
@@ -908,6 +1060,19 @@ def run_editor_release_probe() -> dict[str, Any]:
                 "caption-template-pop": "synthetic-render-frame",
                 "ffprobe": "synthetic-render",
                 "frame-parity": "synthetic-render",
+                "render-spec-v4": "validated-editor-document",
+                "caption-render-spec-v4": "validated-pop-ass",
+                "worker-title-compositor-parity": (
+                    "worker-pillow-initial-vs-rerender-pixels"
+                ),
+                "worker-caption-noop-parity": "worker-caption-ass-byte-parity",
+                "font-manifest": "immutable-image-font-manifest",
+                "font-fallback": "ffmpeg-libass-fontselect",
+                **({
+                    "browser-parity-worker-matrix": (
+                        "isolated-linux-worker-rendered-png-matrix"
+                    ),
+                } if browser_parity_matrix is not None else {}),
             },
             "media": {
                 "width": int(video["width"]),
@@ -930,6 +1095,14 @@ def run_editor_release_probe() -> dict[str, Any]:
             },
             "fonts": list(FONT_IDS),
             "capabilities": {"subtitleEditing": True},
+            "browserParityMatrix": ({
+                "schemaVersion": browser_parity_matrix["schemaVersion"],
+                "caseCount": browser_parity_matrix["caseCount"],
+                "fontIds": browser_parity_matrix["fontIds"],
+                "sha256": hashlib.sha256(
+                    (browser_parity_root / "matrix.json").read_bytes()
+                ).hexdigest(),
+            } if browser_parity_matrix is not None and browser_parity_root else None),
             "features": {
                 "clipCount": len(document.video.clips),
                 "commentCount": len(document.comments),
@@ -954,24 +1127,105 @@ def run_editor_release_probe() -> dict[str, Any]:
         if not bucket:
             raise RuntimeError("AWS_S3_OUTPUT_BUCKET is required for release evidence")
         if scenario == "baseline":
-            prefix = f"editor-release-probes/{git_sha}/{image_digest[7:19]}"
+            release_nonce = os.environ.get(
+                "EDITOR_RELEASE_PROBE_NONCE",
+                "",
+            ).strip().lower()
+            probe_run_id = os.environ.get(
+                "EDITOR_RELEASE_PROBE_RUN_ID",
+                "",
+            ).strip().lower()
+            batch_job_id = os.environ.get("AWS_BATCH_JOB_ID", "").strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{32}", release_nonce):
+                raise RuntimeError("EDITOR_RELEASE_PROBE_NONCE is invalid")
+            if not re.fullmatch(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+                r"[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                probe_run_id,
+            ):
+                raise RuntimeError("EDITOR_RELEASE_PROBE_RUN_ID is invalid")
+            if not re.fullmatch(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+                r"[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                batch_job_id,
+            ):
+                raise RuntimeError("AWS_BATCH_JOB_ID is invalid")
+            manifest["probeIdentity"] = {
+                "nonce": release_nonce,
+                "batchJobId": batch_job_id,
+                "probeRunId": probe_run_id,
+            }
+            prefix = (
+                f"editor-release-probes/{git_sha}/{image_digest[7:19]}/"
+                f"{release_nonce}/{batch_job_id}"
+            )
         else:
             prefix = (
                 f"editor-release-scenarios/{git_sha}/{image_digest[7:19]}/"
                 f"{scenario}"
             )
         client = boto3.client("s3", region_name=settings.aws_region)
-        client.upload_file(str(output), bucket, f"{prefix}/output.mp4")
-        client.upload_file(str(frame_path), bucket, f"{prefix}/frame.png")
-        client.put_object(
-            Bucket=bucket,
-            Key=f"{prefix}/manifest.json",
-            Body=json.dumps(manifest, separators=(",", ":")).encode(),
-            ContentType="application/json",
-        )
+        manifest_version_id: str | None = None
+        manifest_payload_sha256: str | None = None
+        if scenario == "baseline":
+            files: list[tuple[str, Path, str]] = [
+                ("output.mp4", output, "video/mp4"),
+                ("frame.png", frame_path, "image/png"),
+            ]
+            if browser_parity_root is not None:
+                files.append((
+                    "browser-parity/matrix.json",
+                    browser_parity_root / "matrix.json",
+                    "application/json",
+                ))
+                files.extend(
+                    (
+                        f"browser-parity/frames/{parity_frame.name}",
+                        parity_frame,
+                        "image/png",
+                    )
+                    for parity_frame in sorted(
+                        (browser_parity_root / "frames").glob("*.png")
+                    )
+                )
+            artifacts: list[dict[str, str]] = []
+            for relative_name, file_path, content_type in files:
+                evidence = _put_versioned_evidence(
+                    client,
+                    bucket=bucket,
+                    key=f"{prefix}/{relative_name}",
+                    payload=file_path.read_bytes(),
+                    content_type=content_type,
+                )
+                artifacts.append({"relativeName": relative_name, **evidence})
+            manifest["artifacts"] = artifacts
+            manifest_payload = json.dumps(
+                manifest,
+                separators=(",", ":"),
+            ).encode()
+            manifest_evidence = _put_versioned_evidence(
+                client,
+                bucket=bucket,
+                key=f"{prefix}/manifest.json",
+                payload=manifest_payload,
+                content_type="application/json",
+            )
+            manifest_version_id = manifest_evidence["versionId"]
+            manifest_payload_sha256 = manifest_evidence["sha256"]
+        else:
+            client.upload_file(str(output), bucket, f"{prefix}/output.mp4")
+            client.upload_file(str(frame_path), bucket, f"{prefix}/frame.png")
+            client.put_object(
+                Bucket=bucket,
+                Key=f"{prefix}/manifest.json",
+                Body=json.dumps(manifest, separators=(",", ":")).encode(),
+                ContentType="application/json",
+            )
         result = {
             **manifest,
             "artifactUri": f"s3://{bucket}/{prefix}/manifest.json",
+            "manifestVersionId": manifest_version_id,
+            "manifestSha256": manifest_payload_sha256,
         }
         print(json.dumps({"event": "editor_release_probe_passed", **result}))
         return result

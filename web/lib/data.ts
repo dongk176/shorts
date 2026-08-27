@@ -1,6 +1,9 @@
 import type { Row, Sql } from "postgres";
 import type { GeneratedShort, Plan, VideoJob } from "@/lib/contracts";
-import { editorDocumentSnapshotSchema } from "@/lib/editor-document-contract";
+import {
+  editorDocumentSnapshotSchema,
+  parseInitialEditorRenderSpec,
+} from "@/lib/editor-document-contract";
 import type { EditorDocumentSnapshot } from "@/lib/editor-document-snapshot";
 import { parseCaptionRenderSpec } from "@/lib/caption-render-spec";
 import { hasWordTimedTranscription } from "@/lib/transcription-release";
@@ -151,7 +154,7 @@ export async function getShortsForJobs(
       comment_overlays, template_id, custom_template_id, template_snapshot, video_aspect_ratio, title_font_scale, title_text_styles,
       subtitle_template_id, subtitle_template_snapshot, caption_render_spec,
       title_text_styles_initialized, render_version,
-      editor_document,
+      initial_render_spec, editor_document,
       rerender_progress, status, expires_at
     from shorts_mvp.generated_shorts
     where job_id in ${db(jobIds)} and deleted_at is null
@@ -209,6 +212,7 @@ export async function getShortsForJobs(
       titleTextStyles: row.titleTextStyles || [],
       titleTextStylesInitialized: Boolean(row.titleTextStylesInitialized),
       renderVersion: row.renderVersion,
+      initialRenderSpec: parseInitialEditorRenderSpec(row.initialRenderSpec),
       editorDocument: editorDocument.success
         ? editorDocument.data as EditorDocumentSnapshot
         : null,

@@ -63,6 +63,12 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && python -c "from importlib.metadata import version; assert version('yt-dlp') == '2026.7.4'; assert version('yt-dlp-ejs') == '0.8.0'; assert version('bgutil-ytdlp-pot-provider') == '1.3.1'"
 COPY . .
 
+# Legacy/local images deliberately carry a non-release marker. The v4 worker
+# path accepts only a 40-character SHA that the release workflow supplied as a
+# build argument, and compares it with the immutable Job Definition identity.
+ARG WORKER_SOURCE_GIT_SHA=legacy
+RUN printf '%s\n' "$WORKER_SOURCE_GIT_SHA" > /app/worker/.worker-source-git-sha
+
 FROM worker-base AS prepare
 
 ENTRYPOINT ["./entrypoint.sh"]

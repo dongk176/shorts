@@ -1,4 +1,5 @@
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
+import { TemplateTitleV4Preview } from "@/components/template-title-v4-preview";
 import { TemplateSubtitlePreview } from "@/components/template-subtitle-preview";
 import { TemplateCommentPreview } from "@/components/template-comment-prototype";
 import {
@@ -61,12 +62,16 @@ export function CustomTemplateCanvasPreview({
   secondLine,
   channelLabel,
   showUnifiedSubtitle = false,
+  positionedWordsV4Enabled = false,
+  titleV4Enabled = positionedWordsV4Enabled,
 }: {
   template: CustomTemplate;
   firstLine: string;
   secondLine: string;
   channelLabel: string;
   showUnifiedSubtitle?: boolean;
+  positionedWordsV4Enabled?: boolean;
+  titleV4Enabled?: boolean;
 }) {
   const config = template.config;
   const unifiedConfig = showUnifiedSubtitle && isTemplateConfigV5(config)
@@ -83,15 +88,27 @@ export function CustomTemplateCanvasPreview({
       <div className="absolute bg-neutral-700" style={customVideoFrameStyle(config.video)}>
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
       </div>
-      <CustomTemplateTitlePreview
-        title={config.title}
-        firstLine={firstLine}
-        secondLine={secondLine}
-        fontFamily={unifiedConfig ? editorFontFamily(unifiedConfig.title.fontId) : undefined}
-        fontWeight={unifiedConfig ? resolveEditorFontFace(unifiedConfig.title.fontId, "title").resolvedWeight : undefined}
-      />
+      {titleV4Enabled
+        ? <TemplateTitleV4Preview
+            enabled
+            templateId={template.baseTemplateId}
+            title={`${firstLine}\n${secondLine}`}
+            templateConfig={config}
+            primaryColor={config.title.primaryColor}
+            accentColor={config.title.accentColor}
+          />
+        : <CustomTemplateTitlePreview
+            title={config.title}
+            firstLine={firstLine}
+            secondLine={secondLine}
+            fontFamily={unifiedConfig ? editorFontFamily(unifiedConfig.title.fontId) : undefined}
+            fontWeight={unifiedConfig ? resolveEditorFontFace(unifiedConfig.title.fontId, "title").resolvedWeight : undefined}
+          />}
       {unifiedConfig
-        ? <TemplateSubtitlePreview subtitle={unifiedConfig.subtitle} />
+        ? <TemplateSubtitlePreview
+            subtitle={unifiedConfig.subtitle}
+            positionedWordsV4Enabled={positionedWordsV4Enabled}
+          />
         : null}
       {commentLayerEnabled
         ? <div className="absolute inset-x-0 z-40" style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>

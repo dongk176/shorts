@@ -3,7 +3,11 @@ import {
   templateIds,
   videoAspectRatios,
 } from "@/lib/contracts";
-import { editorFontIds } from "@/lib/editor-fonts";
+import {
+  EDITOR_FONT_METRICS_REVISION,
+  editorFontIds,
+  resolveEditorFontFaceV4,
+} from "@/lib/editor-fonts";
 import {
   EDITOR_DOCUMENT_SNAPSHOT_VERSION,
   EDITOR_DOCUMENT_V3_VERSION,
@@ -14,16 +18,20 @@ import {
   EDITOR_RENDER_SPEC_LEGACY_VERSION,
   EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION,
   EDITOR_RENDER_SPEC_VERSION,
+  EDITOR_RENDER_SPEC_V4_VERSION,
   EDITOR_SUBTITLE_OFFSET_Y_MAX,
   EDITOR_SUBTITLE_OFFSET_Y_MIN,
   EDITOR_SUBTITLE_SCALE_MAX,
   EDITOR_SUBTITLE_SCALE_MIN,
+  isQuantizedEditorRenderPx,
+  type EditorRenderSpec,
 } from "@/lib/editor-render-spec";
 import {
   stockBackgroundIds,
   templatePresetColors,
   TEMPLATE_CANVAS,
 } from "@/lib/template-config";
+import { wrapPreviewTitle } from "@/lib/title-preview";
 
 export const EDITOR_DOCUMENT_MAX_TEXT_OVERLAYS = 20;
 export const EDITOR_DOCUMENT_MAX_COMMENTS = 20;
@@ -103,6 +111,17 @@ const resolvedFontFaceSchema = z.object({
   requestedWeight: z.union([z.literal(700), z.literal(800)]),
   resolvedWeight: z.union([z.literal(400), z.literal(700), z.literal(800)]),
   variableWeight: z.union([z.literal(700), z.literal(800)]).nullable(),
+}).strict();
+
+const fixedPointPx = finiteNumber.refine(
+  isQuantizedEditorRenderPx,
+  "렌더 좌표는 0.001px 단위여야 합니다.",
+);
+const resolvedFontFaceV4Schema = resolvedFontFaceSchema.extend({
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  metrics: z.object({
+    revision: z.literal(EDITOR_FONT_METRICS_REVISION),
+  }).strict(),
 }).strict();
 
 const renderFrameSchema = z.number().int().nonnegative();
@@ -197,11 +216,175 @@ const renderSpecV3Schema = renderSpecBaseSchema.extend({
     }).strict()).max(2_000).optional(),
   }).strict(),
 }).strict();
+const renderTitleBackgroundRunV4Schema = z.object({
+  start: z.number().int().nonnegative(),
+  end: z.number().int().positive(),
+  color: hexColorSchema,
+  x: fixedPointPx.min(-TEMPLATE_CANVAS.width).max(TEMPLATE_CANVAS.width * 2).optional(),
+  y: fixedPointPx.min(-TEMPLATE_CANVAS.height).max(TEMPLATE_CANVAS.height * 2).optional(),
+  width: fixedPointPx.positive().max(TEMPLATE_CANVAS.width * 2).optional(),
+  height: fixedPointPx.positive().max(TEMPLATE_CANVAS.height * 2).optional(),
+  radius: fixedPointPx.min(0).max(200).optional(),
+}).strict().superRefine((run, context) => {
+  if (run.end <= run.start) {
+    context.addIssue({ code: "custom", message: "제목 배경 범위가 올바르지 않습니다." });
+  }
+  const geometry = [run.x, run.y, run.width, run.height, run.radius];
+  if (geometry.some((value) => value !== undefined)
+    && geometry.some((value) => value === undefined)) {
+    context.addIssue({ code: "custom", message: "제목 배경 좌표가 완전하지 않습니다." });
+  }
+});
+const renderTitleLineBoxV4Schema = z.object({
+  text: z.string().max(80),
+  centerX: fixedPointPx.min(-TEMPLATE_CANVAS.width).max(TEMPLATE_CANVAS.width * 2),
+  centerY: fixedPointPx.min(-TEMPLATE_CANVAS.height).max(TEMPLATE_CANVAS.height * 2),
+  width: fixedPointPx.positive().max(TEMPLATE_CANVAS.width),
+  height: fixedPointPx.positive().max(TEMPLATE_CANVAS.height),
+  baselineY: fixedPointPx.min(-TEMPLATE_CANVAS.height).max(TEMPLATE_CANVAS.height * 2),
+  backgroundRuns: z.array(renderTitleBackgroundRunV4Schema).max(80),
+}).strict().superRefine((line, context) => {
+  const characterCount = Array.from(line.text).length;
+  line.backgroundRuns.forEach((run, index) => {
+    if (run.end > characterCount) {
+      context.addIssue({
+        code: "custom",
+        path: ["backgroundRuns", index, "end"],
+        message: "제목 배경 범위가 줄의 Unicode 문자 범위를 넘을 수 없습니다.",
+      });
+    }
+    if (index > 0 && run.start < line.backgroundRuns[index - 1].end) {
+      context.addIssue({
+        code: "custom",
+        path: ["backgroundRuns", index, "start"],
+        message: "제목 배경 범위는 서로 겹칠 수 없습니다.",
+      });
+    }
+  });
+});
+const renderTitleV4Schema = z.object({
+  visible: z.boolean(),
+  lines: z.array(z.string().max(80)).min(1).max(2),
+  centerX: fixedPointPx.min(-TEMPLATE_CANVAS.width).max(TEMPLATE_CANVAS.width * 2),
+  centerY: fixedPointPx.min(-TEMPLATE_CANVAS.height).max(TEMPLATE_CANVAS.height * 2),
+  offsetY: fixedPointPx.min(-TEMPLATE_CANVAS.height).max(TEMPLATE_CANVAS.height),
+  fontSize: fixedPointPx.min(18).max(200),
+  scale: z.literal(1),
+  lineGap: fixedPointPx.min(0).max(400),
+  linePaddingX: fixedPointPx.min(0).max(400),
+  linePaddingY: fixedPointPx.min(0).max(400),
+  clamp: z.object({
+    minX: fixedPointPx.min(-TEMPLATE_CANVAS.width).max(TEMPLATE_CANVAS.width),
+    maxX: fixedPointPx.min(0).max(TEMPLATE_CANVAS.width * 2),
+    minY: fixedPointPx.min(-TEMPLATE_CANVAS.height).max(TEMPLATE_CANVAS.height),
+    maxY: fixedPointPx.min(0).max(TEMPLATE_CANVAS.height * 2),
+  }).strict(),
+  lineBoxes: z.array(renderTitleLineBoxV4Schema).min(1).max(2),
+  font: resolvedFontFaceV4Schema,
+}).strict().superRefine((title, context) => {
+  if (
+    title.clamp.minX > title.clamp.maxX
+    || title.clamp.minY > title.clamp.maxY
+    || title.centerX < title.clamp.minX
+    || title.centerX > title.clamp.maxX
+    || title.centerY < title.clamp.minY
+    || title.centerY > title.clamp.maxY
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["clamp"],
+      message: "제목 중심점은 렌더 경계 안에 있어야 합니다.",
+    });
+  }
+  if (
+    title.lineBoxes.length !== title.lines.length
+    || title.lineBoxes.some((line, index) => (
+      line.text !== title.lines[index]
+      || line.centerX !== title.centerX
+      || line.centerX - line.width / 2 < title.clamp.minX - 0.001
+      || line.centerX + line.width / 2 > title.clamp.maxX + 0.001
+      || line.centerY - line.height / 2 < title.clamp.minY - 0.001
+      || line.centerY + line.height / 2 > title.clamp.maxY + 0.001
+      || line.baselineY < line.centerY - line.height / 2
+      || line.baselineY > line.centerY + line.height / 2
+    ))
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["lineBoxes"],
+      message: "제목 줄 상자는 확정 줄과 렌더 경계에 정확히 맞아야 합니다.",
+    });
+  }
+  if (title.lineBoxes.some((line) => line.backgroundRuns.some((run) => (
+    [run.x, run.y, run.width, run.height, run.radius]
+      .some((value) => value === undefined)
+  )))) {
+    context.addIssue({
+      code: "custom",
+      path: ["lineBoxes"],
+      message: "v4 제목 배경은 확정 좌표를 모두 저장해야 합니다.",
+    });
+  }
+});
+const renderSpecV4Schema = renderSpecBaseSchema.omit({
+  title: true,
+  channel: true,
+  textOverlays: true,
+}).extend({
+  version: z.literal(EDITOR_RENDER_SPEC_V4_VERSION),
+  title: renderTitleV4Schema,
+  channel: renderSpecBaseSchema.shape.channel.extend({
+    visible: z.boolean(),
+    font: resolvedFontFaceV4Schema,
+  }).strict(),
+  textOverlays: z.array(
+    renderSpecBaseSchema.shape.textOverlays.element.safeExtend({
+      font: resolvedFontFaceV4Schema,
+    }).strict(),
+  ).max(20),
+  subtitles: renderSpecV3Schema.shape.subtitles.extend({
+    visible: z.literal(true),
+    captionSpecVersion: z.literal(4),
+  }).strict().optional(),
+}).strict();
 const renderSpecSchema = z.discriminatedUnion("version", [
   renderSpecV1Schema,
   renderSpecV2Schema,
   renderSpecV3Schema,
+  renderSpecV4Schema,
 ]);
+
+export function parseInitialEditorRenderSpec(
+  value: unknown,
+): EditorRenderSpec | null {
+  const parsed = renderSpecSchema.safeParse(value);
+  if (!parsed.success) return null;
+  const renderSpec = parsed.data as EditorRenderSpec;
+  if (renderSpec.version !== EDITOR_RENDER_SPEC_V4_VERSION) {
+    return null;
+  }
+  const titleFont = resolveEditorFontFaceV4(
+    renderSpec.title.font.fontId,
+    "title",
+  );
+  const channelFont = resolveEditorFontFaceV4(
+    renderSpec.channel.font.fontId,
+    "channel",
+  );
+  if (
+    !editorJsonValuesEqual(renderSpec.title.font, titleFont)
+    || !editorJsonValuesEqual(renderSpec.channel.font, channelFont)
+    || renderSpec.textOverlays.some((overlay) => (
+      !editorJsonValuesEqual(
+        overlay.font,
+        resolveEditorFontFaceV4(overlay.font.fontId, "text"),
+      )
+    ))
+  ) {
+    return null;
+  }
+  return renderSpec;
+}
 
 const editorDocumentSnapshotBaseSchema = z.object({
   version: z.literal(EDITOR_DOCUMENT_SNAPSHOT_VERSION),
@@ -513,13 +696,55 @@ function validateEditorDocumentSnapshot(
     });
   }
   if (document.version === EDITOR_DOCUMENT_V3_VERSION) {
-    const canonical = createEditorRenderSpec(document);
-    if (!editorJsonValuesEqual(document.renderSpec, canonical)) {
-      context.addIssue({
-        code: "custom",
-        path: ["renderSpec"],
-        message: "미리보기 렌더 사양이 편집 내용과 일치하지 않습니다.",
-      });
+    if (document.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION) {
+      const v4 = document.renderSpec;
+      const canonicalTitleLines = wrapPreviewTitle(document.title.text);
+      const expectedTitleFont = resolveEditorFontFaceV4(
+        document.overlays.fonts.title,
+        "title",
+      );
+      const expectedChannelFont = resolveEditorFontFaceV4(
+        document.overlays.fonts.channel,
+        "channel",
+      );
+      const exactTextFonts = document.overlays.textOverlays.map((overlay) => (
+        resolveEditorFontFaceV4(overlay.fontId, "text")
+      ));
+      if (
+        v4.title.visible !== document.overlays.visible.title
+        || v4.title.lines.length !== canonicalTitleLines.length
+        || v4.title.lines.some((line, index) => (
+          line !== canonicalTitleLines[index]
+        ))
+        || v4.channel.visible !== document.overlays.visible.channel
+        || Boolean(v4.subtitles) !== document.subtitles.enabled
+        || !editorJsonValuesEqual(v4.title.font, expectedTitleFont)
+        || !editorJsonValuesEqual(v4.channel.font, expectedChannelFont)
+        || v4.textOverlays.length !== exactTextFonts.length
+        || v4.textOverlays.some((overlay, index) => (
+          !editorJsonValuesEqual(overlay.font, exactTextFonts[index])
+          || overlay.id !== document.overlays.textOverlays[index]?.id
+        ))
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["renderSpec"],
+          message: "V4 렌더 사양이 편집 내용과 승인 폰트 목록에 일치해야 합니다.",
+        });
+      }
+    } else {
+      const canonical = createEditorRenderSpec(
+        document,
+        undefined,
+        document.renderSpec.version,
+      );
+      if (!editorJsonValuesEqual(document.renderSpec, canonical)) {
+        context.addIssue({
+          code: "custom",
+          path: ["renderSpec"],
+          message: "미리보기 렌더 사양이 편집 내용과 일치하지 않습니다.",
+        });
+      }
     }
   }
 }

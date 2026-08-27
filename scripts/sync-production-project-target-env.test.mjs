@@ -11,7 +11,7 @@ const source = fs.readFileSync(
   "utf8",
 );
 
-test("syncs only the exact fifteen production project target variables", () => {
+test("syncs only exact production project target and provenance variables", () => {
   const names = [
     "LEGACY_PROJECT_JOB_DEFINITION_ARN",
     "LEGACY_PROJECT_BATCH_QUEUE_ARN",
@@ -28,6 +28,16 @@ test("syncs only the exact fifteen production project target variables", () => {
     "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN",
     "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN",
     "UNIFIED_TEMPLATE_SUBTITLES_BATCH_TARGET_RELEASE_ID",
+    "LEGACY_PROJECT_WORKER_SOURCE_GIT_SHA",
+    "LEGACY_PROJECT_WORKER_IMAGE_DIGEST",
+    "SOURCE_RANGE_WORKER_SOURCE_GIT_SHA",
+    "SOURCE_RANGE_WORKER_IMAGE_DIGEST",
+    "ELEVENLABS_TRANSCRIPTION_WORKER_SOURCE_GIT_SHA",
+    "ELEVENLABS_TRANSCRIPTION_WORKER_IMAGE_DIGEST",
+    "SUBTITLE_TEMPLATES_WORKER_SOURCE_GIT_SHA",
+    "SUBTITLE_TEMPLATES_WORKER_IMAGE_DIGEST",
+    "UNIFIED_TEMPLATE_SUBTITLES_WORKER_SOURCE_GIT_SHA",
+    "UNIFIED_TEMPLATE_SUBTITLES_WORKER_IMAGE_DIGEST",
   ];
 
   for (const name of names) assert.match(source, new RegExp(`\\n  ${name}\\n`));
@@ -40,6 +50,8 @@ test("syncs only the exact fifteen production project target variables", () => {
   assert.match(source, /verify-production-worker-release\.mjs/);
   assert.match(source, /verify-project-batch-targets\.mjs/);
   assert.match(source, /verify-vercel-project-target-env-metadata\.mjs/);
+  assert.match(source, /--print-stale-optional/);
+  assert.match(source, /vercel env rm "\$stale_optional_name" production/);
   assert.match(source, /vercel api "\/v9\/projects\/\$VERCEL_PROJECT_NAME"/);
   assert.match(source, /verify-vercel-project-link\.mjs/);
   assert.match(source, /registry_env_file="\$\(mktemp\)"/);

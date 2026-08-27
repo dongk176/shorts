@@ -54,6 +54,11 @@ import {
   editorRenderingV2GlobalEnabled,
   editorRenderingV2MasterEnabled,
 } from "@/lib/editor-rendering-release";
+import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
+import {
+  editorRenderV4AuditEntityId,
+  editorRenderV4ControlAuditActions,
+} from "@/lib/editor-render-v4-rollout-control";
 import {
   LOGIN_WELCOME_GRANT_FLAG_KEY,
   onboardingWelcomeGrantEnabled,
@@ -213,6 +218,28 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         db`
           select stable_release_id,previous_stable_release_id,
             candidate_release_id,public_enabled,canary_enabled,
+            render_v4_internal_enabled,render_v4_rollout_percent,
+            render_v4_kill_switch,
+            (
+              select audit.action
+              from shorts_mvp.admin_audit_logs audit
+              where audit.entity_type='editor_release'
+                and audit.entity_id=${editorRenderV4AuditEntityId}
+                and audit.action=any(${[...editorRenderV4ControlAuditActions]})
+                and audit.metadata->>'releaseId'=state.candidate_release_id::text
+              order by audit.render_v4_event_sequence desc nulls last
+              limit 1
+            ) as render_v4_candidate_last_transition,
+            (
+              select audit.action
+              from shorts_mvp.admin_audit_logs audit
+              where audit.entity_type='editor_release'
+                and audit.entity_id=${editorRenderV4AuditEntityId}
+                and audit.action=any(${[...editorRenderV4ControlAuditActions]})
+                and audit.metadata->>'releaseId'=state.stable_release_id::text
+              order by audit.render_v4_event_sequence desc nulls last
+              limit 1
+            ) as render_v4_stable_last_transition,
             coalesce((
               select count(*)=4
               from shorts_mvp.runtime_feature_flags
@@ -233,14 +260,15 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
               from shorts_mvp.runtime_feature_flags
               where flag_key='unified_template_subtitles_public'
             ),false) as unified_template_subtitles_public_enabled
-          from shorts_mvp.editor_release_state
-          where singleton=true
+          from shorts_mvp.editor_release_state state
+          where state.singleton=true
           limit 1
         `,
         db`
           select id,git_sha,ui_version,document_version,
             worker_image_digest,production_job_definition_arn,status,
-            subtitle_editing_capable,
+            subtitle_editing_capable,render_spec_version,
+            caption_render_spec_version,font_manifest_sha256,
             created_at,staging_verified_at,canary_started_at,promoted_at
           from shorts_mvp.editor_releases
           order by created_at desc
@@ -682,6 +710,17 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     uiVersion: Number(row.uiVersion),
     documentVersion: Number(row.documentVersion),
     subtitleEditingCapable: Boolean(row.subtitleEditingCapable),
+    renderSpecVersion: row.renderSpecVersion === null
+      || row.renderSpecVersion === undefined
+      ? null
+      : Number(row.renderSpecVersion),
+    captionRenderSpecVersion: row.captionRenderSpecVersion === null
+      || row.captionRenderSpecVersion === undefined
+      ? null
+      : Number(row.captionRenderSpecVersion),
+    fontManifestSha256: row.fontManifestSha256
+      ? String(row.fontManifestSha256)
+      : null,
     workerImageDigest: String(row.workerImageDigest),
     productionJobDefinitionArn: String(row.productionJobDefinitionArn),
     status: String(row.status),
@@ -810,6 +849,24 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           globalEnvironmentEnabled={editorRenderingV2GlobalEnabled()}
           publicEnabled={Boolean(editorReleaseState?.publicEnabled)}
           canaryEnabled={Boolean(editorReleaseState?.canaryEnabled)}
+          renderV4EnvironmentEnabled={isEditorRenderSpecV4Enabled()}
+          renderV4InternalEnabled={Boolean(
+            editorReleaseState?.renderV4InternalEnabled,
+          )}
+          renderV4RolloutPercent={Number(
+            editorReleaseState?.renderV4RolloutPercent || 0,
+          )}
+          renderV4KillSwitch={editorReleaseState?.renderV4KillSwitch !== false}
+          renderV4CandidateLastTransition={
+            editorReleaseState?.renderV4CandidateLastTransition
+              ? String(editorReleaseState.renderV4CandidateLastTransition)
+              : null
+          }
+          renderV4StableLastTransition={
+            editorReleaseState?.renderV4StableLastTransition
+              ? String(editorReleaseState.renderV4StableLastTransition)
+              : null
+          }
           subtitleSuitePublicEnabled={Boolean(
             editorReleaseState?.subtitleSuitePublicEnabled,
           )}

@@ -30,9 +30,12 @@ from shorts_worker.caption_templates import (
     prepare_caption_fonts,
     rebuild_caption_cue_text,
     reflow_caption_cues_for_clips,
+    verify_caption_font_selection_v4,
 )
 from shorts_worker.config import Settings
+from shorts_worker.errors import RenderError
 from shorts_worker.media import probe_media
+from shorts_worker.render_spec_v4 import canonical_px_v4
 from shorts_worker.renderer import VideoRenderer, caption_video_layout
 from shorts_worker.schemas import EditorFontId, TemplateId, TitleTextStyle, VideoAspectRatio
 from shorts_worker.subtitles import TranscriptWord
@@ -70,6 +73,93 @@ def _compile(
         video_aspect_ratio=ratio,
         caption_placement=caption_placement,
     )
+
+
+def test_v4_pop_uses_authoritative_word_positions_and_exact_font_metrics(
+    tmp_path: Path,
+) -> None:
+    spec = compile_caption_render_spec(
+        [
+            _word("Paperlogy", 0.1, 0.4),
+            _word("한글", 0.4, 0.7, space_before=True),
+            _word("붙임", 0.7, 1.0),
+        ],
+        template_id="pop",
+        clip_start=0,
+        clip_end=1.2,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        font_id=EditorFontId.PAPERLOGY,
+        schema_version=4,
+    )
+
+    assert spec["schemaVersion"] == 4
+    assert spec["layoutMode"] == "absolute-word-positions-v1"
+    assert spec["wordGapPx"] == 6
+    assert spec["joinedWordGapPx"] == 0
+    assert spec["font"]["metrics"] == {
+        "revision": "editor-font-metrics-v1",
+        "cssToAssScale": 0.849057,
+        "cssToAssBaselineOffsetEm": 0.0,
+    }
+    for cue in spec["cues"]:
+        for event in cue["events"]:
+            positions = event["positions"]
+            assert len(positions) == len(cue["words"])
+            for index, position in enumerate(positions):
+                assert canonical_px_v4(position["centerX"]) == position["centerX"]
+                assert canonical_px_v4(position["advanceWidth"]) == position["advanceWidth"]
+                expected_gap = 6 if index and cue["words"][index].get("spaceBefore") else 0
+                assert position["gapBefore"] == expected_gap
+                if index:
+                    previous = positions[index - 1]
+                    actual_gap = (
+                        position["centerX"] - position["advanceWidth"] / 2
+                        - previous["centerX"] - previous["advanceWidth"] / 2
+                    )
+                    assert actual_gap == pytest.approx(expected_gap, abs=0.0015)
+
+    ass = create_caption_ass(spec, tmp_path / "v4-pop.ass").read_text(encoding="utf-8")
+    expected_dialogues = sum(len(cue["words"]) * len(cue["events"]) for cue in spec["cues"])
+    assert ass.count("Dialogue: 0,") == expected_dialogues
+    assert r"\t(" not in ass
+    assert "Paperlogy 한글" not in ass
+    assert r"\fscx112\fscy112" in ass
+
+
+def test_v4_fixed_point_rounding_matches_javascript_math_round() -> None:
+    assert canonical_px_v4(1.2345) == 1.235
+    assert canonical_px_v4(1.2355) == 1.236
+
+
+def test_v4_fontselect_rejects_system_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    spec = compile_caption_render_spec(
+        [_word("한글", 0.1, 0.8)],
+        template_id="pop",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        font_id=EditorFontId.PAPERLOGY,
+        schema_version=4,
+    )
+    font_directory = prepare_caption_fonts(tmp_path / "fonts", spec)
+    monkeypatch.setattr(
+        "shorts_worker.caption_templates.run_command",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="fontselect: (Paperlogy, 700, 0) -> NotoSansCJK-Regular, 0, Noto Sans CJK KR",
+        ),
+    )
+
+    with pytest.raises(RenderError, match="대체 폰트"):
+        verify_caption_font_selection_v4(
+            font_directory=font_directory,
+            spec=spec,
+        )
 
 
 def test_v5_template_caption_style_compiles_to_the_immutable_render_spec() -> None:

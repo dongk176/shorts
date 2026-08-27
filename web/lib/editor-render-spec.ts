@@ -1,16 +1,35 @@
-import { fitPreviewTitleFont, wrapPreviewTitle } from "@/lib/title-preview";
+import {
+  fitPreviewTitleFont,
+  styledTitleLineRuns,
+  TITLE_LINE_GAP,
+  titleLineCharacterIndices,
+  titlePreviewLinePaddingX,
+  titlePreviewLinePaddingY,
+  wrapPreviewTitle,
+} from "@/lib/title-preview";
 import {
   editorFontIds,
+  editorWordSpaceAdvanceEmById,
+  ensureEditorFontFaceV4Loaded,
   resolveEditorFontFace,
+  resolveEditorFontFaceV4,
   type EditorFontId,
   type ResolvedEditorFontFace,
+  type ResolvedEditorFontFaceV4,
 } from "@/lib/editor-fonts";
+import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
 import type { EditorDocumentSnapshotV2 } from "@/lib/editor-document-snapshot";
-import type { TemplatePresetColor } from "@/lib/template-config";
+import {
+  COMMENT_CAPTURE_LANDSCAPE_LIFT_PX,
+  type TemplatePresetColor,
+} from "@/lib/template-config";
 
 export const EDITOR_RENDER_SPEC_LEGACY_VERSION = 1 as const;
 export const EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION = 2 as const;
 export const EDITOR_RENDER_SPEC_VERSION = 3 as const;
+export const EDITOR_RENDER_SPEC_V4_VERSION = 4 as const;
+export const EDITOR_RENDER_FIXED_POINT_SCALE = 1_000 as const;
+export const EDITOR_RENDER_FIXED_POINT_PRECISION_PX = 0.001 as const;
 export const EDITOR_RENDER_CANVAS = { width: 1080, height: 1920 } as const;
 export const EDITOR_RENDER_FPS = 30 as const;
 export const EDITOR_SUBTITLE_DEFAULT_MARGIN_V = 445 as const;
@@ -114,7 +133,111 @@ export type EditorRenderSpecV3 = EditorRenderSpecBase & {
   };
 };
 
-export type EditorRenderSpec = EditorRenderSpecV1 | EditorRenderSpecV2 | EditorRenderSpecV3;
+export type EditorRenderTitleBackgroundRunV4 = {
+  start: number;
+  end: number;
+  color: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  radius?: number;
+};
+
+export type EditorRenderTitleLineBoxV4 = {
+  text: string;
+  centerX: number;
+  centerY: number;
+  width: number;
+  height: number;
+  baselineY: number;
+  backgroundRuns: EditorRenderTitleBackgroundRunV4[];
+};
+
+export type EditorRenderTitleSpecV4 = {
+  visible: boolean;
+  lines: string[];
+  centerX: number;
+  centerY: number;
+  offsetY: number;
+  fontSize: number;
+  scale: 1;
+  lineGap: number;
+  linePaddingX: number;
+  linePaddingY: number;
+  clamp: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  };
+  lineBoxes: EditorRenderTitleLineBoxV4[];
+  font: ResolvedEditorFontFaceV4;
+};
+
+export type EditorRenderSpecV4 = Omit<
+  EditorRenderSpecBase,
+  "title" | "channel" | "textOverlays"
+> & {
+  version: typeof EDITOR_RENDER_SPEC_V4_VERSION;
+  title: EditorRenderTitleSpecV4;
+  channel: Omit<EditorRenderSpecBase["channel"], "font"> & {
+    visible: boolean;
+    font: ResolvedEditorFontFaceV4;
+  };
+  textOverlays: Array<Omit<EditorRenderTextLayerSpec, "font"> & {
+    font: ResolvedEditorFontFaceV4;
+  }>;
+  subtitles?: EditorRenderSpecV3["subtitles"] & {
+    visible: true;
+    captionSpecVersion: 4;
+  };
+};
+
+export type EditorRenderSpec =
+  | EditorRenderSpecV1
+  | EditorRenderSpecV2
+  | EditorRenderSpecV3
+  | EditorRenderSpecV4;
+
+export type EditorRenderSpecVersion = EditorRenderSpec["version"];
+
+export type EditorRenderDocumentInput = Omit<
+  EditorDocumentSnapshotV2,
+  "version" | "overlays"
+> & {
+  overlays: Omit<EditorDocumentSnapshotV2["overlays"], "layerOrder"> & {
+    layerOrder: string[];
+  };
+  renderSpec?: EditorRenderSpec;
+};
+
+export function editorRenderSpecSupportsAbsoluteSubtitleStyle(
+  version: EditorRenderSpecVersion,
+) {
+  return version === EDITOR_RENDER_SPEC_VERSION
+    || version === EDITOR_RENDER_SPEC_V4_VERSION;
+}
+
+export function editorRenderSpecSupportsPositionedWords(
+  version: EditorRenderSpecVersion,
+) {
+  return version === EDITOR_RENDER_SPEC_V4_VERSION;
+}
+
+export function quantizeEditorRenderPx(value: number) {
+  if (!Number.isFinite(value)) {
+    throw new Error("Editor render coordinates must be finite.");
+  }
+  return Math.round(value * EDITOR_RENDER_FIXED_POINT_SCALE)
+    / EDITOR_RENDER_FIXED_POINT_SCALE;
+}
+
+export function isQuantizedEditorRenderPx(value: number) {
+  return Number.isFinite(value)
+    && !Object.is(value, -0)
+    && value === quantizeEditorRenderPx(value);
+}
 
 export function normalizeEditorSubtitleLayout(
   value: EditorSubtitleLayout,
@@ -173,8 +296,12 @@ export function editorSubtitleLayoutFromRenderSpec(
   return (
     renderSpec?.version === EDITOR_RENDER_SPEC_VERSION
     || renderSpec?.version === EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION
+    || (
+      renderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
+      && renderSpec.subtitles
+    )
   )
-    ? normalizeEditorSubtitleLayout(renderSpec.subtitles)
+    ? normalizeEditorSubtitleLayout(renderSpec.subtitles!)
     : { ...DEFAULT_EDITOR_SUBTITLE_LAYOUT };
 }
 
@@ -222,17 +349,337 @@ export function wrapEditorRenderText(
   return lines.slice(0, 20);
 }
 
-export function createEditorRenderSpec(
-  document: Omit<EditorDocumentSnapshotV2, "version" | "overlays"> & {
-    overlays: Omit<EditorDocumentSnapshotV2["overlays"], "layerOrder"> & {
-      layerOrder: string[];
+type SnapshotTitleConfig = {
+  visible?: boolean;
+  x?: number;
+  y?: number;
+  maxWidth?: number;
+  fontSize?: number;
+  primaryBackgroundColor?: string | null;
+  accentBackgroundColor?: string | null;
+};
+
+function titleSnapshotConfig(
+  document: Pick<EditorDocumentSnapshotV2, "template">,
+): SnapshotTitleConfig | null {
+  const config = document.template.snapshot?.config;
+  if (!config || typeof config !== "object" || Array.isArray(config)) return null;
+  const title = config.title;
+  return title && typeof title === "object" && !Array.isArray(title)
+    ? title as SnapshotTitleConfig
+    : null;
+}
+
+function titlePanelBounds(
+  document: Pick<EditorDocumentSnapshotV2, "template" | "video">,
+) {
+  if (
+    document.template.id === "comment-capture"
+    && document.video.aspectRatio === "9:16"
+  ) {
+    // The comment template reserves the same title panel as its 4:5 layout
+    // even when the source fills a 9:16 canvas. Keep this in lockstep with
+    // worker/shorts_worker/render_spec_v4.py.
+    return { y: 0, height: 285 };
+  }
+  if (document.video.aspectRatio === "9:16") {
+    return { y: 96, height: 360 };
+  }
+  const videoHeights = {
+    "16:9": 608,
+    "5:4": 864,
+    "1:1": 1080,
+    "4:5": 1350,
+  } as const;
+  const lift = document.template.id === "comment-capture"
+    && document.video.aspectRatio === "16:9"
+    ? COMMENT_CAPTURE_LANDSCAPE_LIFT_PX
+    : 0;
+  return {
+    y: 0,
+    height: (EDITOR_RENDER_CANVAS.height - videoHeights[document.video.aspectRatio]) / 2 - lift,
+  };
+}
+
+export type EditorTitleTextMeasurementV4 = {
+  width: number;
+  actualBoundingBoxAscent: number;
+  actualBoundingBoxDescent: number;
+};
+
+export type EditorTitleTextMeasurerV4 = (
+  text: string,
+  fontSize: number,
+  font: ResolvedEditorFontFaceV4,
+) => EditorTitleTextMeasurementV4;
+
+function lineBackgroundRuns(
+  line: string,
+  lineIndex: number,
+  document: Pick<EditorDocumentSnapshotV2, "title">,
+  snapshotTitle: SnapshotTitleConfig | null,
+) {
+  const indices = titleLineCharacterIndices(
+    document.title.text,
+    wrapPreviewTitle(document.title.text),
+  )[lineIndex] || Array.from(line).map(() => null);
+  const defaultBackground = lineIndex === 1
+    ? snapshotTitle?.accentBackgroundColor
+    : snapshotTitle?.primaryBackgroundColor;
+  const runs = styledTitleLineRuns(
+    line,
+    indices,
+    document.title.textStyles,
+  );
+  const result: EditorRenderTitleBackgroundRunV4[] = [];
+  let offset = 0;
+  for (const run of runs) {
+    const length = Array.from(run.text).length;
+    const color = run.backgroundColor || defaultBackground;
+    if (color) {
+      const previous = result.at(-1);
+      if (previous && previous.end === offset && previous.color === color) {
+        previous.end += length;
+      } else {
+        result.push({ start: offset, end: offset + length, color });
+      }
+    }
+    offset += length;
+  }
+  return result;
+}
+
+export function compileEditorRenderTitleSpecV4(
+  document: EditorRenderDocumentInput,
+  measure: EditorTitleTextMeasurerV4,
+): EditorRenderTitleSpecV4 {
+  const lines = wrapPreviewTitle(document.title.text);
+  const snapshotTitle = titleSnapshotConfig(document);
+  const font = resolveEditorFontFaceV4(document.overlays.fonts.title, "title");
+  const exactMeasure = (text: string, size: number) => {
+    const measured = measure(text, size, font);
+    const segments = text.split(" ");
+    if (segments.length === 1) return measured;
+    const segmentWidth = segments.reduce((total, segment) => (
+      total + (segment ? measure(segment, size, font).width : 0)
+    ), 0);
+    return {
+      ...measured,
+      width: segmentWidth
+        + (segments.length - 1)
+          * size
+          * editorWordSpaceAdvanceEmById[font.fontId],
     };
-    renderSpec?: EditorRenderSpec;
-  },
+  };
+  const configuredFontSize = Math.max(
+    18,
+    Math.min(200, Math.round(
+      (typeof snapshotTitle?.fontSize === "number"
+        ? snapshotTitle.fontSize
+        : 84) * document.title.fontScale,
+    )),
+  );
+  const customLayout = typeof snapshotTitle?.y === "number";
+  const maxWidth = Math.max(
+    1,
+    Math.min(
+      EDITOR_RENDER_CANVAS.width,
+      typeof snapshotTitle?.maxWidth === "number"
+        ? snapshotTitle.maxWidth
+        : 930,
+    ),
+  );
+  let fontSize = configuredFontSize;
+  let linePaddingX = 0;
+  let linePaddingY = 0;
+  let measurements: EditorTitleTextMeasurementV4[] = [];
+  for (let candidate = configuredFontSize; candidate >= 18; candidate -= 1) {
+    const candidatePaddingX = customLayout
+      ? Math.max(10, Math.round(candidate * 0.28))
+      : titlePreviewLinePaddingX(candidate);
+    const candidatePaddingY = customLayout
+      ? Math.max(6, Math.round(candidate * 0.14))
+      : titlePreviewLinePaddingY(candidate);
+    const candidateMeasurements = lines.map((line) => exactMeasure(line, candidate));
+    if (candidateMeasurements.some((item) => (
+      !Number.isFinite(item.width)
+      || !Number.isFinite(item.actualBoundingBoxAscent)
+      || !Number.isFinite(item.actualBoundingBoxDescent)
+      || item.width < 0
+      || item.actualBoundingBoxAscent < 0
+      || item.actualBoundingBoxDescent < 0
+      || item.actualBoundingBoxAscent + item.actualBoundingBoxDescent <= 0
+    ))) {
+      throw new Error("Exact title font metrics are unavailable.");
+    }
+    fontSize = candidate;
+    linePaddingX = candidatePaddingX;
+    linePaddingY = candidatePaddingY;
+    measurements = candidateMeasurements;
+    if (candidateMeasurements.every(
+      (item) => item.width + candidatePaddingX * 2 <= maxWidth,
+    )) break;
+  }
+  fontSize = quantizeEditorRenderPx(fontSize);
+  linePaddingX = quantizeEditorRenderPx(linePaddingX);
+  linePaddingY = quantizeEditorRenderPx(linePaddingY);
+  const lineGap = quantizeEditorRenderPx(customLayout
+    ? Math.max(6, Math.round(fontSize * 0.18))
+    : TITLE_LINE_GAP);
+  const backgroundRuns = lines.map((line, lineIndex) => (
+    lineBackgroundRuns(line, lineIndex, document, snapshotTitle)
+  ));
+  const widths = measurements.map((measurement) => quantizeEditorRenderPx(
+    measurement.width + linePaddingX * 2,
+  ));
+  const heights = measurements.map((measurement) => quantizeEditorRenderPx(
+    measurement.actualBoundingBoxAscent
+      + measurement.actualBoundingBoxDescent
+      + linePaddingY * 2,
+  ));
+  const contentHeight = quantizeEditorRenderPx(
+    heights.reduce((total, height) => total + height, 0)
+      + lineGap * Math.max(0, lines.length - 1),
+  );
+  const panel = titlePanelBounds(document);
+  const bottomMargin = panel.height === 285
+    ? 12
+    : Math.min(44, Math.max(24, Math.round(panel.height * 0.105)));
+  const requestedCenterX = quantizeEditorRenderPx(
+    (typeof snapshotTitle?.x === "number" ? snapshotTitle.x : 540)
+      + document.overlays.offsets.title.x,
+  );
+  const requestedCenterY = quantizeEditorRenderPx(
+    (typeof snapshotTitle?.y === "number"
+      ? snapshotTitle.y
+      : panel.y + panel.height - bottomMargin - contentHeight / 2)
+      + document.overlays.offsets.title.y,
+  );
+  const maximumLineWidth = Math.max(...widths);
+  const clamp = {
+    minX: 0,
+    maxX: EDITOR_RENDER_CANVAS.width,
+    minY: 0,
+    maxY: EDITOR_RENDER_CANVAS.height,
+  };
+  const centerX = quantizeEditorRenderPx(Math.max(
+    clamp.minX + maximumLineWidth / 2,
+    Math.min(clamp.maxX - maximumLineWidth / 2, requestedCenterX),
+  ));
+  const centerY = quantizeEditorRenderPx(Math.max(
+    clamp.minY + contentHeight / 2,
+    Math.min(clamp.maxY - contentHeight / 2, requestedCenterY),
+  ));
+  let nextTop = centerY - contentHeight / 2;
+  const lineBoxes = lines.map((text, index) => {
+    const lineCenterY = quantizeEditorRenderPx(nextTop + heights[index] / 2);
+    // Backgrounds use the configured em box instead of browser-specific glyph
+    // ink bounds. Canvas and Pillow disagree by a few pixels for the same
+    // bundled font, while the em box is part of the render contract and stays
+    // stable for every title string in both runtimes.
+    const backgroundHeight = quantizeEditorRenderPx(
+      fontSize + linePaddingY * 2,
+    );
+    nextTop += heights[index] + lineGap;
+    const characters = Array.from(text);
+    const lineLeft = centerX - (widths[index] - linePaddingX * 2) / 2;
+    const finalBackgroundRuns = backgroundRuns[index].map((run) => {
+      const runLeft = lineLeft + exactMeasure(
+        characters.slice(0, run.start).join(""),
+        fontSize,
+      ).width;
+      const runRight = lineLeft + exactMeasure(
+        characters.slice(0, run.end).join(""),
+        fontSize,
+      ).width;
+      return {
+        ...run,
+        x: quantizeEditorRenderPx(runLeft - linePaddingX),
+        y: quantizeEditorRenderPx(lineCenterY - backgroundHeight / 2),
+        width: quantizeEditorRenderPx(
+          runRight - runLeft + linePaddingX * 2,
+        ),
+        height: backgroundHeight,
+        radius: quantizeEditorRenderPx(Math.max(6, Math.round(fontSize * 0.14))),
+      };
+    });
+    return {
+      text,
+      centerX,
+      centerY: lineCenterY,
+      width: widths[index],
+      height: heights[index],
+      baselineY: quantizeEditorRenderPx(
+        lineCenterY
+          + (
+            measurements[index].actualBoundingBoxAscent
+            - measurements[index].actualBoundingBoxDescent
+          ) / 2,
+      ),
+      backgroundRuns: finalBackgroundRuns,
+    };
+  });
+  return {
+    visible: snapshotTitle?.visible !== false && document.overlays.visible.title,
+    lines,
+    centerX,
+    centerY,
+    offsetY: quantizeEditorRenderPx(document.overlays.offsets.title.y),
+    fontSize,
+    scale: 1,
+    lineGap,
+    linePaddingX,
+    linePaddingY,
+    clamp,
+    lineBoxes,
+    font,
+  };
+}
+
+export async function createEditorRenderTitleSpecV4(
+  document: EditorRenderDocumentInput,
+) {
+  if (!isEditorRenderSpecV4Enabled()) {
+    throw new Error("Editor render specification v4 is disabled.");
+  }
+  const font = resolveEditorFontFaceV4(document.overlays.fonts.title, "title");
+  await ensureEditorFontFaceV4Loaded(font, document.title.text);
+  const context = documentGlobalCanvasContext();
+  return compileEditorRenderTitleSpecV4(document, (text, fontSize, exactFont) => {
+    context.font = `${exactFont.resolvedWeight} ${fontSize}px ${exactFont.family}`;
+    const measured = context.measureText(text);
+    return {
+      width: measured.width,
+      actualBoundingBoxAscent: measured.actualBoundingBoxAscent,
+      actualBoundingBoxDescent: measured.actualBoundingBoxDescent,
+    };
+  });
+}
+
+function documentGlobalCanvasContext() {
+  if (typeof document === "undefined") {
+    throw new Error("Exact editor title measurement requires a browser.");
+  }
+  const context = document.createElement("canvas").getContext("2d");
+  if (!context) {
+    throw new Error("Exact editor title measurement is unavailable.");
+  }
+  return context;
+}
+
+export function createEditorRenderSpec(
+  document: EditorRenderDocumentInput,
   requestedSubtitleLayout?: EditorSubtitleLayout,
-  requestedSubtitleVersion: typeof EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION
-    | typeof EDITOR_RENDER_SPEC_VERSION = EDITOR_RENDER_SPEC_VERSION,
+  requestedRenderSpecVersion?: EditorRenderSpecVersion,
 ): EditorRenderSpec {
+  const effectiveRenderSpecVersion = requestedRenderSpecVersion
+    ?? (requestedSubtitleLayout
+      ? document.renderSpec?.version === EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION
+        || document.renderSpec?.version === EDITOR_RENDER_SPEC_VERSION
+        || document.renderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
+        ? document.renderSpec.version
+        : EDITOR_RENDER_SPEC_VERSION
+      : document.renderSpec?.version ?? EDITOR_RENDER_SPEC_VERSION);
   const titleLines = wrapPreviewTitle(document.title.text);
   const snapshotConfig = document.template.snapshot?.config;
   const snapshotTitle = snapshotConfig
@@ -260,11 +707,14 @@ export function createEditorRenderSpec(
   const subtitleLayout = requestedSubtitleLayout
     || (document.renderSpec?.version === EDITOR_RENDER_SPEC_VERSION
       || document.renderSpec?.version === EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION
-      ? document.renderSpec.subtitles
+      || (
+        document.renderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
+        && document.renderSpec.subtitles
+      )
+      ? document.renderSpec.subtitles!
       : null);
-  const preserveLegacySubtitleSpec = requestedSubtitleLayout
-    ? requestedSubtitleVersion === EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION
-    : document.renderSpec?.version === EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION;
+  const preserveLegacySubtitleSpec = effectiveRenderSpecVersion
+    === EDITOR_RENDER_SPEC_SUBTITLE_LEGACY_VERSION;
   const base: EditorRenderSpecBase = {
     canvas: EDITOR_RENDER_CANVAS,
     fps: EDITOR_RENDER_FPS,
@@ -315,6 +765,11 @@ export function createEditorRenderSpec(
       scale: document.overlays.scales.video,
     },
   };
+  if (effectiveRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION) {
+    throw new Error(
+      "Render specification v4 requires exact asynchronous font measurement.",
+    );
+  }
   if (!subtitleLayout) {
     return {
       ...base,
@@ -354,5 +809,74 @@ export function createEditorRenderSpec(
         ?? EDITOR_SUBTITLE_DEFAULT_FONT_SIZE,
       color: normalizedSubtitleLayout.color ?? "#FFFFFF",
     },
+  };
+}
+
+export async function createEditorRenderSpecV4(
+  document: EditorRenderDocumentInput,
+  requestedSubtitleLayout?: EditorSubtitleLayout,
+): Promise<EditorRenderSpecV4> {
+  if (!isEditorRenderSpecV4Enabled()) {
+    throw new Error("Editor render specification v4 is disabled.");
+  }
+  const legacySpec = createEditorRenderSpec(
+    document,
+    document.subtitles.enabled
+      ? requestedSubtitleLayout || DEFAULT_EDITOR_SUBTITLE_LAYOUT
+      : undefined,
+    document.subtitles.enabled
+      ? EDITOR_RENDER_SPEC_VERSION
+      : EDITOR_RENDER_SPEC_LEGACY_VERSION,
+  );
+  const title = await createEditorRenderTitleSpecV4(document);
+  const channelFont = resolveEditorFontFaceV4(
+    document.overlays.fonts.channel,
+    "channel",
+  );
+  const textOverlayFonts = document.overlays.textOverlays.map((overlay) => (
+    resolveEditorFontFaceV4(overlay.fontId, "text")
+  ));
+  await Promise.all([
+    ensureEditorFontFaceV4Loaded(channelFont, document.channel.displayName),
+    ...textOverlayFonts.map((font, index) => (
+      ensureEditorFontFaceV4Loaded(
+        font,
+        document.overlays.textOverlays[index].text || "텍스트",
+      )
+    )),
+  ]);
+  const normalizedSubtitleLayout = normalizeEditorSubtitleLayout(
+    requestedSubtitleLayout || DEFAULT_EDITOR_SUBTITLE_LAYOUT,
+  );
+  return {
+    canvas: legacySpec.canvas,
+    fps: legacySpec.fps,
+    layerOrder: legacySpec.layerOrder,
+    comments: legacySpec.comments,
+    video: legacySpec.video,
+    version: EDITOR_RENDER_SPEC_V4_VERSION,
+    title,
+    channel: {
+      ...legacySpec.channel,
+      visible: document.overlays.visible.channel,
+      font: channelFont,
+    },
+    textOverlays: legacySpec.textOverlays.map((overlay, index) => ({
+      ...overlay,
+      font: textOverlayFonts[index],
+    })),
+    ...(document.subtitles.enabled
+      ? {
+          subtitles: {
+            centerX: 540 as const,
+            ...normalizedSubtitleLayout,
+            fontSize: normalizedSubtitleLayout.fontSize
+              ?? EDITOR_SUBTITLE_DEFAULT_FONT_SIZE,
+            color: normalizedSubtitleLayout.color ?? "#FFFFFF",
+            visible: true as const,
+            captionSpecVersion: 4 as const,
+          },
+        }
+      : {}),
   };
 }

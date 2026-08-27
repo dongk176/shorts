@@ -1,8 +1,14 @@
-import type { CaptionRenderSpec } from "./caption-render-spec";
+import type {
+  CaptionRenderSpec,
+  CaptionRenderSpecV4,
+} from "./caption-render-spec";
 import {
   DEFAULT_EDITOR_FONT_ID,
+  editorCaptionCssToAssBaselineOffsetEmById,
+  editorCaptionCssToAssScaleById,
   editorCaptionFontFamily,
   resolveEditorFontFace,
+  resolveEditorFontFaceV4,
   type EditorFontId,
 } from "./editor-fonts";
 import type { VideoAspectRatio } from "./contracts";
@@ -15,6 +21,7 @@ import {
   EDITOR_RENDER_CANVAS,
   EDITOR_SUBTITLE_OFFSET_Y_MAX,
   EDITOR_SUBTITLE_OFFSET_Y_MIN,
+  normalizeEditorSubtitleLayout,
 } from "./editor-render-spec";
 import {
   SUBTITLE_TEMPLATE_BRAND_COLOR,
@@ -29,11 +36,20 @@ const frameAt = (seconds: number, fps: number) => (
 
 type CaptionCue = CaptionRenderSpec["cues"][number];
 type CaptionWord = CaptionCue["words"][number];
-type CaptionTextMeasurer = (text: string, fontSize: number) => number;
+export type CaptionTextMeasurer = (text: string, fontSize: number) => number;
 type CaptionClipWindow = {
   startFrame: number;
   endFrame: number;
   outputStartFrame: number;
+};
+
+export type EditorCaptionPreviewCompileOptions = {
+  layout?: EditorSubtitleLayout;
+};
+
+export type EditorHighlightCaptionSpecOptions = {
+  schemaVersion?: 3 | 4;
+  fontSize?: number;
 };
 
 export type EditorCaptionTextEditTarget = {
@@ -217,6 +233,33 @@ export function measureEditorCaptionText(
   return captionMeasureContext.measureText(text).width;
 }
 
+export function measureEditorCaptionTextV4(
+  text: string,
+  fontSize: number,
+  fontId: EditorFontId,
+) {
+  if (typeof document === "undefined" || !document.fonts) {
+    throw new Error("Exact caption font measurement requires a browser.");
+  }
+  if (captionMeasureContext === undefined) {
+    captionMeasureContext = document.createElement("canvas").getContext("2d");
+  }
+  if (!captionMeasureContext) {
+    throw new Error("Exact caption font measurement is unavailable.");
+  }
+  const font = resolveEditorFontFaceV4(fontId, "title");
+  const descriptor = `${font.resolvedWeight} ${fontSize}px ${font.family}`;
+  if (!document.fonts.check(descriptor, text)) {
+    throw new Error(`Exact caption font is not loaded: ${font.fontId}`);
+  }
+  captionMeasureContext.font = descriptor;
+  const width = captionMeasureContext.measureText(text).width;
+  if (!Number.isFinite(width) || width <= 0) {
+    throw new Error("Exact caption font metrics are unavailable.");
+  }
+  return width;
+}
+
 function pythonRound(value: number) {
   const lower = Math.floor(value);
   const fraction = value - lower;
@@ -227,6 +270,23 @@ function pythonRound(value: number) {
 
 function round3(value: number) {
   return Math.round(value * 1_000) / 1_000;
+}
+
+function editorCaptionFontSpecV4(fontId: EditorFontId) {
+  const face = resolveEditorFontFaceV4(fontId, "title");
+  return {
+    fontId: face.fontId,
+    fileId: face.fileId,
+    sha256: face.sha256,
+    family: face.family,
+    weight: face.resolvedWeight,
+    metrics: {
+      revision: face.metrics.revision,
+      cssToAssScale: editorCaptionCssToAssScaleById[face.fontId],
+      cssToAssBaselineOffsetEm:
+        editorCaptionCssToAssBaselineOffsetEmById[face.fontId],
+    },
+  } as const;
 }
 
 function displayUnits(text: string) {
@@ -339,13 +399,17 @@ function fitCaptionWords(
   templateId: CaptionRenderSpec["templateId"],
   safeArea: CaptionRenderSpec["safeArea"],
   measure: CaptionTextMeasurer,
+  fontSize?: number,
 ) {
   const outline = templateId === "pop" ? 8 : 7;
-  const fontSize = templateId === "pop" ? 64 : 72;
+  const resolvedFontSize = fontSize ?? (templateId === "pop" ? 92 : 72);
+  const fittingFontSize = templateId === "pop"
+    ? Math.min(resolvedFontSize, 64)
+    : resolvedFontSize;
   const scale = templateId === "pop" ? POP_SCALE : 1;
   const maxWidth = safeArea.width - outline * 2;
   return words.flatMap((word) => (
-    splitCaptionWord(word, fontSize, maxWidth, scale, measure)
+    splitCaptionWord(word, fittingFontSize, maxWidth, scale, measure)
   ));
 }
 
@@ -509,9 +573,13 @@ function popEventPositions(
   activeWordIndex: number,
   safeArea: CaptionRenderSpec["safeArea"],
   measure: CaptionTextMeasurer,
+  positionedWordsV4 = false,
+  cssToAssScale = 1,
 ) {
   const widths = words.map((word, index) => (
-    measure(word.text, word.fontSize || 92) * (index === activeWordIndex ? POP_SCALE : 1)
+    measure(word.text, word.fontSize || 92)
+      * (index === activeWordIndex ? POP_SCALE : 1)
+      * cssToAssScale
   ));
   const gaps: number[] = words.slice(1).map((word) => (
     word.spaceBefore ? POP_SPACED_GAP : POP_UNSPACED_GAP
@@ -526,6 +594,12 @@ function popEventPositions(
     const position = {
       centerX: round3(cursor + widths[index] / 2),
       centerY: round3(centerY),
+      ...(positionedWordsV4
+        ? {
+            advanceWidth: round3(widths[index]),
+            gapBefore: index === 0 ? 0 as const : gaps[index - 1] as 0 | 6,
+          }
+        : {}),
     };
     cursor += widths[index];
     return position;
@@ -537,12 +611,16 @@ function compilePopCaptionWords(
   safeArea: CaptionRenderSpec["safeArea"],
   fps: number,
   measure: CaptionTextMeasurer,
+  positionedWordsV4 = false,
+  fontSize = 92,
+  cssToAssScale = 1,
 ) {
   const maxWidth = safeArea.width - 16;
+  const minimumFontSize = Math.min(fontSize, 64);
   const groups = partitionCaptionWords(words, {
     gapFrames: pythonRound(0.25 * fps),
     maxWords: 3,
-    fontSize: 92,
+    fontSize,
     maxWidth: pythonRound(maxWidth / POP_SCALE),
     maxDurationFrames: pythonRound(2 * fps),
     requireWordFrames: true,
@@ -551,12 +629,15 @@ function compilePopCaptionWords(
   let previousEndFrame = 0;
   return groups.map((group, index): CaptionCue => {
     let sizes = group.map((word) => {
-      let size = 92;
-      while (size > 64 && measure(word.text, size) * POP_SCALE > maxWidth) size -= 2;
+      let size = fontSize;
+      while (
+        size > minimumFontSize
+        && measure(word.text, size) * POP_SCALE > maxWidth
+      ) size = Math.max(minimumFontSize, size - 2);
       return size;
     });
     let widths = group.map((word, wordIndex) => (
-      measure(word.text, sizes[wordIndex]) * POP_SCALE
+      measure(word.text, sizes[wordIndex]) * POP_SCALE * cssToAssScale
     ));
     const gaps: number[] = group.slice(1).map((word) => (
       word.spaceBefore ? POP_SPACED_GAP : POP_UNSPACED_GAP
@@ -565,12 +646,18 @@ function compilePopCaptionWords(
       + gaps.reduce((sum, gap) => sum + gap, 0);
     if (totalWidth > maxWidth) {
       const ratio = maxWidth / totalWidth;
-      sizes = sizes.map((size) => Math.max(64, pythonRound(size * ratio)));
+      sizes = sizes.map((size) => Math.max(
+        minimumFontSize,
+        pythonRound(size * ratio),
+      ));
       widths = group.map((word, wordIndex) => (
-        measure(word.text, sizes[wordIndex]) * POP_SCALE
+        measure(word.text, sizes[wordIndex]) * POP_SCALE * cssToAssScale
       ));
       totalWidth = widths.reduce((sum, width) => sum + width, 0)
         + gaps.reduce((sum, gap) => sum + gap, 0);
+    }
+    if (positionedWordsV4 && totalWidth > maxWidth + 0.5) {
+      throw new Error("V4 pop caption cannot fit inside its safe area.");
     }
     const centerX = safeArea.x + safeArea.width / 2;
     const centerY = safeArea.y + safeArea.height / 2;
@@ -601,7 +688,14 @@ function compilePopCaptionWords(
     previousEndFrame = endFrame;
     const events = captionEventRanges(group, startFrame, endFrame).map((event) => ({
       ...event,
-      positions: popEventPositions(serialized, event.activeWordIndex, safeArea, measure),
+      positions: popEventPositions(
+        serialized,
+        event.activeWordIndex,
+        safeArea,
+        measure,
+        positionedWordsV4,
+        cssToAssScale,
+      ),
     }));
     return {
       startFrame,
@@ -618,14 +712,18 @@ function compileHighlightCaptionWords(
   safeArea: CaptionRenderSpec["safeArea"],
   fps: number,
   measure: CaptionTextMeasurer,
+  fontSize = 72,
+  strictV4 = false,
+  cssToAssScale = 1,
 ) {
   const maxWidth = safeArea.width - 14;
+  const measuredMaxWidth = maxWidth / cssToAssScale;
   const wordSeparator = " ";
   const groups = partitionCaptionWords(words, {
     gapFrames: pythonRound(0.42 * fps),
     maxWords: null,
-    fontSize: 72,
-    maxWidth,
+    fontSize,
+    maxWidth: measuredMaxWidth,
     maxDurationFrames: pythonRound(3.2 * fps),
     requireWordFrames: true,
     wordSeparator,
@@ -641,24 +739,41 @@ function compileHighlightCaptionWords(
       && nextStart - (group.at(-1)?.endFrame || 0) < pythonRound(0.42 * fps)
     ) endFrame = nextStart;
     previousEndFrame = endFrame;
-    const lines = wrapCaptionWordIndexes(group, 72, maxWidth, wordSeparator, measure);
+    const lines = wrapCaptionWordIndexes(
+      group,
+      fontSize,
+      measuredMaxWidth,
+      wordSeparator,
+      measure,
+    );
     const widest = Math.max(...lines.map((line) => measure(
       captionTextForWords(line.map((wordIndex) => group[wordIndex]), wordSeparator),
-      72,
+      fontSize,
     )));
-    const scaleX = widest > maxWidth
-      ? pythonRound(Math.min(100, maxWidth / widest * 100))
+    const requiredScaleX = widest > measuredMaxWidth
+      ? Math.min(100, maxWidth / (widest * cssToAssScale) * 100)
       : 100;
+    if (strictV4 && requiredScaleX < 60) {
+      throw new Error("V4 highlight caption cannot fit inside its safe area.");
+    }
+    const scaleX = pythonRound(requiredScaleX);
     return {
       startFrame,
       endFrame,
-      fontSize: 72,
+      fontSize,
       scaleX,
       centerX: Math.floor(safeArea.x + safeArea.width / 2),
       centerY: Math.floor(safeArea.y + safeArea.height / 2),
       words: group,
       lines,
       wordSeparator,
+      ...(strictV4
+        ? {
+            separatorAdvanceWidth: round3(
+              measure(wordSeparator, fontSize) * cssToAssScale,
+            ),
+          }
+        : {}),
       events: captionEventRanges(group, startFrame, endFrame),
     };
   });
@@ -670,8 +785,24 @@ function compileCaptionWords(
   measure: CaptionTextMeasurer,
 ) {
   return spec.templateId === "pop"
-    ? compilePopCaptionWords(words, spec.safeArea, spec.fps, measure)
-    : compileHighlightCaptionWords(words, spec.safeArea, spec.fps, measure);
+    ? compilePopCaptionWords(
+        words,
+        spec.safeArea,
+        spec.fps,
+        measure,
+        spec.schemaVersion === 4,
+        spec.schemaVersion === 4 ? spec.style.fontSize : 92,
+        spec.schemaVersion === 4 ? spec.font.metrics.cssToAssScale : 1,
+      )
+    : compileHighlightCaptionWords(
+        words,
+        spec.safeArea,
+        spec.fps,
+        measure,
+        spec.schemaVersion === 4 ? spec.style.fontSize : 72,
+        spec.schemaVersion === 4,
+        spec.schemaVersion === 4 ? spec.font.metrics.cssToAssScale : 1,
+      );
 }
 
 export type EditorHighlightSubtitleSegment = {
@@ -743,8 +874,21 @@ export function createEditorHighlightCaptionSpec(
   videoAspectRatio: VideoAspectRatio,
   accentColor: string = SUBTITLE_TEMPLATE_BRAND_COLOR,
   fontId: EditorFontId = DEFAULT_EDITOR_FONT_ID,
-  measure: CaptionTextMeasurer = measureEditorCaptionText,
+  measure?: CaptionTextMeasurer,
+  options: EditorHighlightCaptionSpecOptions = {},
 ): CaptionRenderSpec | null {
+  const schemaVersion = options.schemaVersion ?? 3;
+  const fontSize = Math.max(
+    24,
+    Math.min(120, Math.round(options.fontSize ?? 72)),
+  );
+  const exactMeasure = measure || (schemaVersion === 4
+    ? (text: string, size: number) => (
+        measureEditorCaptionTextV4(text, size, fontId)
+      )
+    : (text: string, size: number) => (
+        measureEditorCaptionText(text, size, fontId)
+      ));
   const snapshot = subtitleTemplateStyleSnapshot(
     "highlight",
     videoAspectRatio,
@@ -757,17 +901,51 @@ export function createEditorHighlightCaptionSpec(
     editorHighlightWords(segments, snapshot.fps),
     "highlight",
     snapshot.safeArea,
-    measure,
+    exactMeasure,
+    fontSize,
   );
   if (words.length === 0) return null;
   const cues = compileHighlightCaptionWords(
     words,
     snapshot.safeArea,
     snapshot.fps,
-    measure,
+    exactMeasure,
+    fontSize,
+    schemaVersion === 4,
+    schemaVersion === 4 ? editorCaptionCssToAssScaleById[fontId] : 1,
   );
   normalizeCaptionCueHandoffs(cues);
   if (cues.length === 0) return null;
+  if (schemaVersion === 4) {
+    const v4: CaptionRenderSpecV4 = {
+      schemaVersion: 4,
+      templateId: "highlight",
+      layoutMode: "absolute-word-positions-v1",
+      wordGapPx: POP_SPACED_GAP,
+      joinedWordGapPx: POP_UNSPACED_GAP,
+      captionPlacement: "lower",
+      fps: 30,
+      timingLeadFrames: SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
+      layout: {
+        ...snapshot.layout,
+        caption: { ...snapshot.safeArea },
+      },
+      safeArea: { ...snapshot.safeArea },
+      font: editorCaptionFontSpecV4(fontId),
+      style: {
+        fontSize,
+        textColor: snapshot.color.text,
+        accentColor,
+        outlineColor: snapshot.color.outline,
+        outlineWidth: snapshot.outlinePx,
+        shadow: 0,
+        background: null,
+        maxLines: 1,
+      },
+      cues: cues as CaptionRenderSpecV4["cues"],
+    };
+    return v4;
+  }
   const font = resolveEditorFontFace(fontId, "title");
   return {
     schemaVersion: 3,
@@ -784,7 +962,7 @@ export function createEditorHighlightCaptionSpec(
       weight: font.resolvedWeight,
     },
     style: {
-      fontSize: 72,
+      fontSize,
       textColor: snapshot.color.text,
       accentColor,
       outlineColor: snapshot.color.outline,
@@ -832,7 +1010,13 @@ function rebuildEditedCaptionCue(
     spaceBefore: index > 0,
   }));
   return compileCaptionWords(
-    fitCaptionWords(words, spec.templateId, spec.safeArea, measure),
+    fitCaptionWords(
+      words,
+      spec.templateId,
+      spec.safeArea,
+      measure,
+      spec.schemaVersion === 4 ? spec.style.fontSize : undefined,
+    ),
     spec,
     measure,
   );
@@ -978,12 +1162,70 @@ export function editorCaptionVerticalOffsetBounds(
   };
 }
 
+function compileTargetCaptionSpecV4(
+  spec: CaptionRenderSpecV4,
+  requestedLayout: EditorSubtitleLayout,
+) {
+  const layout = normalizeEditorSubtitleLayout(requestedLayout);
+  const scale = layout.scale;
+  const sourceFontSize = spec.style.fontSize;
+  const targetFontSize = layout.fontSize ?? sourceFontSize * scale;
+  const sourceCenterX = spec.safeArea.x + spec.safeArea.width / 2;
+  const sourceCenterY = spec.safeArea.y + spec.safeArea.height / 2;
+  const rawWidth = spec.safeArea.width * scale;
+  const rawHeight = spec.safeArea.height * scale;
+  const safeArea = {
+    x: round3(540 + (sourceCenterX - 540) * scale - rawWidth / 2),
+    y: round3(sourceCenterY + layout.offsetY - rawHeight / 2),
+    width: round3(rawWidth),
+    height: round3(rawHeight),
+  };
+  const targetFontId = layout.fontId || spec.font.fontId;
+  const target: CaptionRenderSpecV4 = {
+    ...spec,
+    safeArea,
+    font: editorCaptionFontSpecV4(targetFontId),
+    style: {
+      ...spec.style,
+      fontSize: round3(targetFontSize),
+      textColor: layout.color || spec.style.textColor,
+      accentColor: layout.accentColor || spec.style.accentColor,
+      outlineWidth: round3(
+        spec.style.outlineWidth * targetFontSize / sourceFontSize,
+      ),
+    },
+    ...(spec.layout
+      ? {
+          layout: {
+            ...spec.layout,
+            caption: { ...safeArea },
+          },
+        }
+      : {}),
+  };
+  return {
+    layout,
+    sourceFontSize,
+    target,
+  };
+}
+
 export function retimeCaptionRenderSpecForEditor(
   spec: CaptionRenderSpec,
   clips: EditorVideoClip[],
   cueEdits: EditorSubtitleCueEdit[] = [],
-  measure: CaptionTextMeasurer = measureEditorCaptionText,
+  measure?: CaptionTextMeasurer,
+  options: EditorCaptionPreviewCompileOptions = {},
 ): CaptionRenderSpec | null {
+  const compiledTarget = spec.schemaVersion === 4 && options.layout
+    ? compileTargetCaptionSpecV4(spec, options.layout)
+    : null;
+  const targetSpec: CaptionRenderSpec = compiledTarget?.target || spec;
+  const rawMeasure = measure || (targetSpec.schemaVersion === 4
+    ? (text: string, fontSize: number) => (
+        measureEditorCaptionTextV4(text, fontSize, targetSpec.font.fontId)
+      )
+    : measureEditorCaptionText);
   let outputCursor = 0;
   const unmergedWindows: CaptionClipWindow[] = clips.flatMap((clip) => {
     const startFrame = frameAt(clip.sourceStartSeconds, spec.fps);
@@ -1016,6 +1258,59 @@ export function retimeCaptionRenderSpecForEditor(
     [],
   );
 
+  const v4NoopLayout = Boolean(
+    compiledTarget
+    && cueEdits.length === 0
+    && clipWindows.length === 1
+    && clipWindows[0].outputStartFrame === 0
+    && Math.abs(compiledTarget.layout.offsetY) < 0.0005
+    && Math.abs(compiledTarget.layout.scale - 1) < 0.0005
+    && Math.abs(
+      compiledTarget.target.style.fontSize - compiledTarget.sourceFontSize,
+    ) < 0.0005
+    && compiledTarget.target.font.fontId === spec.font.fontId
+    && compiledTarget.target.style.textColor === spec.style.textColor
+    && compiledTarget.target.style.accentColor === spec.style.accentColor
+  );
+  const v4BoundaryCueExists = Boolean(
+    v4NoopLayout
+    && spec.cues.some((cue) => {
+      const clip = clipWindows[0];
+      const intersects = cue.endFrame > clip.startFrame
+        && cue.startFrame < clip.endFrame;
+      return intersects && (
+        cue.startFrame < clip.startFrame
+        || cue.endFrame > clip.endFrame
+      );
+    }),
+  );
+  // A padded editor source deliberately contains cues before and after the
+  // selected clip. Those fully excluded cues must not force the selected cues
+  // through the text compiler again. Only a cue that actually crosses a cut
+  // boundary requires the deterministic reflow path used by the worker.
+  const preservedV4Geometry = v4NoopLayout && !v4BoundaryCueExists;
+  const forceV4Reflow = Boolean(compiledTarget && !preservedV4Geometry);
+  if (
+    forceV4Reflow
+    && spec.cues.some((cue) => cue.words.some((word) => (
+      word.startFrame == null || word.endFrame == null
+    )))
+  ) {
+    throw new Error("V4 caption reflow requires word timing frames.");
+  }
+
+  const everyV4CueIsContained = preservedV4Geometry && spec.cues.every((cue) => (
+    cue.startFrame >= clipWindows[0].startFrame
+    && cue.endFrame <= clipWindows[0].endFrame
+  ));
+  if (
+    preservedV4Geometry
+    && everyV4CueIsContained
+    && clipWindows[0].startFrame === 0
+  ) {
+    return targetSpec;
+  }
+
   const edits = new Map(cueEdits.map((edit) => [edit.cueIndex, edit.text]));
   const cues: CaptionCue[] = [];
   for (let cueIndex = 0; cueIndex < spec.cues.length; cueIndex += 1) {
@@ -1040,8 +1335,8 @@ export function retimeCaptionRenderSpecForEditor(
           endFrame: retainedEndFrame,
         },
         editedText,
-        spec,
-        measure,
+        targetSpec,
+        rawMeasure,
       );
       for (const rebuilt of rebuiltCues) {
         cues.push({ ...rebuilt, sourceCueIndex });
@@ -1055,7 +1350,7 @@ export function retimeCaptionRenderSpecForEditor(
         clip.startFrame <= sourceCue.startFrame
         && clip.endFrame >= sourceCue.endFrame
       ));
-      if (containingClip) {
+      if (containingClip && !forceV4Reflow) {
         const offset = containingClip.outputStartFrame - containingClip.startFrame;
         cues.push({
           ...sourceCue,
@@ -1092,11 +1387,18 @@ export function retimeCaptionRenderSpecForEditor(
         if (retainedWords.length === 0) continue;
         const fitted = fitCaptionWords(
           retainedWords,
-          spec.templateId,
-          spec.safeArea,
-          measure,
+          targetSpec.templateId,
+          targetSpec.safeArea,
+          rawMeasure,
+          targetSpec.schemaVersion === 4
+            ? targetSpec.style.fontSize
+            : undefined,
         );
-        for (const rebuilt of compileCaptionWords(fitted, spec, measure)) {
+        for (const rebuilt of compileCaptionWords(
+          fitted,
+          targetSpec,
+          rawMeasure,
+        )) {
           cues.push({ ...rebuilt, sourceCueIndex });
         }
       }
@@ -1108,5 +1410,11 @@ export function retimeCaptionRenderSpecForEditor(
     index > 0 && cues[index - 1].endFrame > cue.startFrame
   ))) return null;
 
-  return cues.length > 0 ? { ...spec, cues } : null;
+  if (cues.length === 0) return null;
+  return targetSpec.schemaVersion === 4
+    ? { ...targetSpec, cues: cues as CaptionRenderSpecV4["cues"] }
+    : { ...targetSpec, cues: cues as Extract<
+        CaptionRenderSpec,
+        { schemaVersion: 3 }
+      >["cues"] };
 }

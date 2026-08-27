@@ -10,7 +10,7 @@ import {
   editorDocumentSnapshotsEqual,
 } from "./editor-document-snapshot";
 
-const snapshot = () => {
+const snapshot = (preserveTitleHorizontalOffset = false) => {
   const overlays = createInitialEditorOverlayLayout();
   overlays.textOverlays = [createEditorTextOverlay("text-1", 3)];
   overlays.textOverlays[0] = {
@@ -93,7 +93,7 @@ const snapshot = () => {
     selectionStartSeconds: 0,
     selectionEndSeconds: 3,
   },
-  });
+  }, preserveTitleHorizontalOffset);
 };
 
 describe("editor document snapshot", () => {
@@ -153,6 +153,14 @@ describe("editor document snapshot", () => {
 
     expect(value.title.fontScale).toBeCloseTo(1.68);
     expect(value.overlays.scales.title).toBe(1);
+  });
+
+  it("keeps legacy title x locked while allowing an explicit v4 preparation", () => {
+    expect(snapshot().overlays.offsets.title).toEqual({ x: 0, y: 18 });
+    expect(snapshot(true).overlays.offsets.title).toEqual({ x: -30, y: 18 });
+    expect(
+      cloneEditorDocumentSnapshot(snapshot(true), true).overlays.offsets.title,
+    ).toEqual({ x: -30, y: 18 });
   });
 
   it("clones nested state so preview and future render payloads cannot mutate each other", () => {

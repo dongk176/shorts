@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
+import { TemplateTitleV4Preview } from "@/components/template-title-v4-preview";
 import { TemplateFavoriteButton } from "@/components/template-favorite-button";
 import { TemplateFavoriteToast } from "@/components/template-favorite-toast";
 import { COMMENT_CAPTURE_BODY_FONT_CQW } from "@/lib/comment-overlay";
@@ -29,7 +30,9 @@ import {
 import { userFacingErrorMessage } from "@/lib/public-error";
 import { formatLocale } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
+import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
 import { titleLineBackground, titleLineColor } from "@/lib/title-preview";
+import { defaultTemplateTitleTextStyles } from "@/lib/title-text-style";
 import {
   presetTemplateDisplayDescription,
   presetTemplateDisplayName,
@@ -215,11 +218,23 @@ function FixedPresetChannel({ template }: { template: TemplateShowcase }) {
   );
 }
 
-function TemplatePreview({ template }: { template: TemplateShowcase }) {
+function TemplatePreview({
+  template,
+  titleV4Enabled = false,
+}: {
+  template: TemplateShowcase;
+  titleV4Enabled?: boolean;
+}) {
   const [firstLine, secondLine] = template.label.split("\n");
   const isLight = template.id === "white-yellow" || template.id === "paper";
   const foreground = isLight ? "text-black" : "text-white";
   const layout = aspectLayout(template.id === "comment-capture" ? "16:9" : "5:4");
+  const titleV4Styles = useMemo(() => defaultTemplateTitleTextStyles(
+    template.label,
+    layout.option.value,
+    template.background,
+    template.accentBackground,
+  ), [layout.option.value, template]);
   const previewLine = (line: string, index: number) => {
     const lineBackground = titleLineBackground(
       index,
@@ -255,10 +270,20 @@ function TemplatePreview({ template }: { template: TemplateShowcase }) {
       style={{ aspectRatio: "9 / 16", background: template.background, containerType: "inline-size" }}
       aria-label={`${template.name} 쇼츠 미리보기`}
     >
-      <div data-template-title className={`absolute inset-x-0 z-10 flex flex-col items-center justify-end px-[4.9cqw] text-center text-[6.7cqw] font-extrabold leading-[1.25] ${layout.option.value === "4:5" ? "pb-[1.2cqw]" : "pb-[4.9cqw]"}`} style={layout.fullVertical ? { top: "5%", height: "18.75%" } : { top: 0, height: `${layout.videoTop}%` }}>
-        {previewLine(firstLine, 0)}
-        {previewLine(secondLine, 1)}
-      </div>
+      {titleV4Enabled
+        ? <TemplateTitleV4Preview
+            enabled
+            templateId={template.id}
+            title={template.label}
+            videoAspectRatio={layout.option.value}
+            textStyles={titleV4Styles}
+            primaryColor={template.primary}
+            accentColor={template.accent}
+          />
+        : <div data-template-title className={`absolute inset-x-0 z-10 flex flex-col items-center justify-end px-[4.9cqw] text-center text-[6.7cqw] font-extrabold leading-[1.25] ${layout.option.value === "4:5" ? "pb-[1.2cqw]" : "pb-[4.9cqw]"}`} style={layout.fullVertical ? { top: "5%", height: "18.75%" } : { top: 0, height: `${layout.videoTop}%` }}>
+            {previewLine(firstLine, 0)}
+            {previewLine(secondLine, 1)}
+          </div>}
       <div className={`absolute inset-x-0 flex items-center justify-center overflow-hidden ${isLight ? "bg-neutral-300" : "bg-neutral-700"}`} style={{ top: `${layout.videoTop}%`, height: `${layout.videoHeight}%` }}>
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
         <div className={`h-[22cqw] w-[22cqw] rounded-full border-2 ${isLight ? "border-neutral-500" : "border-neutral-400"}`} aria-hidden="true" />
@@ -304,14 +329,35 @@ function EmptyTemplateCard({
   );
 }
 
-function CustomTemplatePreview({ template, showUnifiedSubtitle = false }: { template: CustomTemplate; showUnifiedSubtitle?: boolean }) {
+function CustomTemplatePreview({
+  template,
+  showUnifiedSubtitle = false,
+  positionedWordsV4Enabled = false,
+}: {
+  template: CustomTemplate;
+  showUnifiedSubtitle?: boolean;
+  positionedWordsV4Enabled?: boolean;
+}) {
   const titleLines = isTemplateConfigV5(template.config) && template.config.subtitle.visible
     ? (["AI가 고른 오늘의", "핵심 장면"] as const)
     : templatePresetPresentation[template.baseTemplateId].titleLines;
-  return <CustomTemplateCanvasPreview template={template} firstLine={titleLines[0]} secondLine={titleLines[1]} channelLabel="Easy Cut" showUnifiedSubtitle={showUnifiedSubtitle} />;
+  return <CustomTemplateCanvasPreview
+    template={template}
+    firstLine={titleLines[0]}
+    secondLine={titleLines[1]}
+    channelLabel="Easy Cut"
+    showUnifiedSubtitle={showUnifiedSubtitle}
+    positionedWordsV4Enabled={positionedWordsV4Enabled}
+  />;
 }
 
-function UnifiedSubtitlePresetPreview({ preset }: { preset: (typeof unifiedSubtitlePresets)[number] }) {
+function UnifiedSubtitlePresetPreview({
+  preset,
+  positionedWordsV4Enabled,
+}: {
+  preset: (typeof unifiedSubtitlePresets)[number];
+  positionedWordsV4Enabled: boolean;
+}) {
   const template = unifiedSubtitlePreviewTemplates[preset.variant];
   return <CustomTemplateCanvasPreview
     template={template}
@@ -319,6 +365,7 @@ function UnifiedSubtitlePresetPreview({ preset }: { preset: (typeof unifiedSubti
     secondLine="핵심 장면"
     channelLabel="Easy Cut"
     showUnifiedSubtitle
+    positionedWordsV4Enabled={positionedWordsV4Enabled}
   />;
 }
 
@@ -341,6 +388,7 @@ export function TemplateLibrary({
   initialFavoriteTemplateKeys: TemplateFavoriteKey[];
   onLoginRequest?: (next: string) => void;
 }) {
+  const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
   const [query, setQuery] = useState("");
   const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState(initialFavoriteTemplateKeys);
   const [savingTemplateKey, setSavingTemplateKey] = useState<TemplateFavoriteKey | null>(null);
@@ -463,7 +511,7 @@ export function TemplateLibrary({
           return (
             <article key={template.id} className="relative flex min-h-[456px] min-w-0 flex-col rounded-2xl border border-[#ff715e]/25 bg-[rgba(26,26,30,.72)] p-4 shadow-[0_16px_48px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#ff715e]/50 hover:shadow-[0_20px_55px_rgba(255,113,94,.09)]">
               <Link href={canUseCustomTemplates ? `/templates/${template.id}/edit` : "/pricing"} prefetch={false} className="flex flex-1 flex-col">
-                <div className="flex flex-1 items-center justify-center px-2 py-4"><CustomTemplatePreview template={template} showUnifiedSubtitle={unifiedSubtitleCanaryEnabled} /></div>
+                <div className="flex flex-1 items-center justify-center px-2 py-4"><CustomTemplatePreview template={template} showUnifiedSubtitle={unifiedSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /></div>
                 <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4"><div className="min-w-0"><h2 data-i18n-skip className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{template.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">내가 저장한 템플릿</p></div><span className="shrink-0 rounded-full border border-[#ff715e]/20 bg-[#ff715e]/10 px-2.5 py-1 text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></div>
               </Link>
               <TemplateFavoriteButton
@@ -493,7 +541,7 @@ export function TemplateLibrary({
                 }}
                 className="flex flex-1 flex-col"
               >
-                <div className="flex flex-1 items-center justify-center px-2 py-4"><UnifiedSubtitlePresetPreview preset={preset} /></div>
+                <div className="flex flex-1 items-center justify-center px-2 py-4"><UnifiedSubtitlePresetPreview preset={preset} positionedWordsV4Enabled={positionedWordsV4Enabled} /></div>
                 <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4">
                   <div className="min-w-0"><h2 className="truncate text-lg font-bold tracking-[-.025em] text-[#e4e1e6]">{preset.name}</h2><p className="mt-1 truncate text-xs text-[#777780]">{preset.description}</p></div>
                   <span className="shrink-0 rounded-full border border-[#35e6e3]/20 bg-[#35e6e3]/10 px-2.5 py-1 text-[10px] font-bold text-[#74efec]">자막 템플릿</span>
@@ -520,7 +568,10 @@ export function TemplateLibrary({
                 className="flex flex-1 flex-col"
               >
                 <div className="flex flex-1 items-center justify-center px-2 py-4">
-                  <TemplatePreview template={template} />
+                  <TemplatePreview
+                    template={template}
+                    titleV4Enabled={positionedWordsV4Enabled}
+                  />
                 </div>
                 <div className="flex items-start justify-between gap-4 px-2 pb-1 pt-4">
                   <div className="min-w-0">

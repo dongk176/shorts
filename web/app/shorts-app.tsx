@@ -17,6 +17,8 @@ import { BrandColorPicker } from "@/components/brand-color-picker";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
 import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
+import { EditorTitleV4Preview } from "@/components/editor-title-v4-preview";
+import { TemplateTitleV4Preview } from "@/components/template-title-v4-preview";
 import {
   EditorTextOverlayPreview,
   EditorTextTimeline,
@@ -24,6 +26,13 @@ import {
 import { EstimatedProcessingOverlay, ProjectCard } from "@/components/project-card";
 import { ProjectReveal } from "@/components/project-reveal";
 import { PaidProjectFeatureOverlay } from "@/components/paid-project-feature-overlay";
+import {
+  POSITIONED_SUBTITLE_JOINED_WORD_GAP_PX,
+  POSITIONED_SUBTITLE_WORD_GAP_PX,
+  FlowSubtitleWords,
+  PositionedSubtitleWords,
+  type PositionedSubtitleWordBox,
+} from "@/components/positioned-subtitle-words";
 import { ProjectActionGuide } from "@/components/project-action-guide";
 import {
   ShortsEventParticipationCompleteOverlay,
@@ -76,6 +85,7 @@ import { SHOW_MONETIZATION_CONTENT } from "@/lib/content-visibility";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isConversionMaintenanceActive } from "@/lib/conversion-maintenance";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
+import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
 import {
   adjustTimedRange,
   clampTimelineSeconds,
@@ -201,7 +211,9 @@ import {
   DEFAULT_EDITOR_FONT_ID,
   editorFontFamily,
   editorFontOptions,
+  ensureEditorFontFaceV4Loaded,
   resolveEditorFontFace,
+  resolveEditorFontFaceV4,
   stableEditorFontOptions,
   type EditorFontId,
 } from "@/lib/editor-fonts";
@@ -236,20 +248,32 @@ import {
   type EditorDocumentSnapshot,
 } from "@/lib/editor-document-snapshot";
 import {
+  editorDocumentSemanticFingerprint,
+  editorInitialRenderSpecLayerFingerprints,
+  preserveUnchangedInitialRenderSpecLayers,
+  seedEditorDocumentInitialRenderSpec,
+  seedEditorOverlayLayoutFromInitialRenderSpec,
+  shouldPreserveInitialEditorRenderSpec,
+  type EditorInitialRenderSpecLayerFingerprints,
+} from "@/lib/editor-initial-render-spec";
+import {
   editorDraftDocumentSnapshotSchema,
   editorDocumentSnapshotSchema,
   editorDocumentOutputDuration,
 } from "@/lib/editor-document-contract";
 import {
   createEditorRenderSpec,
+  createEditorRenderSpecV4,
   DEFAULT_EDITOR_SUBTITLE_LAYOUT,
   EDITOR_RENDER_FPS,
+  EDITOR_RENDER_SPEC_V4_VERSION,
   EDITOR_SUBTITLE_OFFSET_Y_MAX,
   EDITOR_SUBTITLE_OFFSET_Y_MIN,
   EDITOR_SUBTITLE_SCALE_MAX,
   EDITOR_SUBTITLE_SCALE_MIN,
   editorSubtitleLayoutFromRenderSpec,
   normalizeEditorSubtitleLayout,
+  type EditorRenderSpecV4,
   type EditorSubtitleLayout,
 } from "@/lib/editor-render-spec";
 import { editorSubtitlesForSave } from "@/lib/editor-subtitle-save";
@@ -1532,7 +1556,7 @@ function EditorFontPicker({
   );
 }
 
-function TemplatePreview({ template, videoAspectRatio, channelName, channelThumbnailUrl, brandColor }: { template: (typeof templates)[number]; videoAspectRatio: VideoAspectRatio; channelName: string; channelThumbnailUrl: string | null; brandColor?: TemplatePresetColor }) {
+function TemplatePreview({ template, videoAspectRatio, channelName, channelThumbnailUrl, brandColor, titleV4Enabled = false }: { template: (typeof templates)[number]; videoAspectRatio: VideoAspectRatio; channelName: string; channelThumbnailUrl: string | null; brandColor?: TemplatePresetColor; titleV4Enabled?: boolean }) {
   const [firstLine, secondLine] = template.label.split("\n");
   const isLight = template.id === "white-yellow" || template.id === "paper";
   const foreground = isLight ? "text-black" : "text-white";
@@ -1541,6 +1565,33 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
     template.id === "comment-capture",
     template.id === "comment-capture",
   );
+  const titleV4Styles = useMemo(() => defaultTemplateTitleTextStyles(
+    template.label,
+    layout.option.value,
+    template.background,
+    template.accentBackground,
+    brandColor,
+  ), [brandColor, layout.option.value, template]);
+  const titleV4Primary = brandedTitleLinePresentation({
+    index: 0,
+    overlayMode: layout.fullVertical,
+    background: template.background,
+    accentBackground: template.accentBackground,
+    primary: template.primary,
+    accent: template.accent,
+    brandColor,
+    keepPrimaryFirstLine: template.id === "paper",
+  }).color;
+  const titleV4Accent = brandedTitleLinePresentation({
+    index: 1,
+    overlayMode: layout.fullVertical,
+    background: template.background,
+    accentBackground: template.accentBackground,
+    primary: template.primary,
+    accent: template.accent,
+    brandColor,
+    keepPrimaryFirstLine: template.id === "paper",
+  }).color;
   const previewLine = (line: string, index: number) => {
     const linePresentation = brandedTitleLinePresentation({
       index,
@@ -1572,10 +1623,20 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
       className={`relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg ${foreground}`}
       style={{ aspectRatio: "9 / 16", background: template.background, containerType: "inline-size" }}
     >
-      <div data-template-title className={`absolute inset-x-0 z-10 flex flex-col items-center justify-end px-[4.9cqw] text-center text-[6.7cqw] font-extrabold leading-[1.25] ${layout.option.value === "4:5" ? "pb-[1.2cqw]" : "pb-[4.9cqw]"}`} style={layout.fullVertical ? { top: "5%", height: "18.75%" } : { top: 0, height: `${layout.videoTop}%` }}>
-        {previewLine(firstLine, 0)}
-        {previewLine(secondLine, 1)}
-      </div>
+      {titleV4Enabled
+        ? <TemplateTitleV4Preview
+            enabled
+            templateId={template.id}
+            title={template.label}
+            videoAspectRatio={layout.option.value}
+            textStyles={titleV4Styles}
+            primaryColor={titleV4Primary}
+            accentColor={titleV4Accent}
+          />
+        : <div data-template-title className={`absolute inset-x-0 z-10 flex flex-col items-center justify-end px-[4.9cqw] text-center text-[6.7cqw] font-extrabold leading-[1.25] ${layout.option.value === "4:5" ? "pb-[1.2cqw]" : "pb-[4.9cqw]"}`} style={layout.fullVertical ? { top: "5%", height: "18.75%" } : { top: 0, height: `${layout.videoTop}%` }}>
+            {previewLine(firstLine, 0)}
+            {previewLine(secondLine, 1)}
+          </div>}
       <div className={`absolute inset-x-0 flex items-center justify-center overflow-hidden ${isLight ? "bg-neutral-300" : "bg-neutral-700"}`} style={{ top: `${layout.videoTop}%`, height: `${layout.videoHeight}%` }}>
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
         <div className={`h-[22cqw] w-[22cqw] rounded-full border-2 ${isLight ? "border-neutral-500" : "border-neutral-400"}`} aria-hidden="true" />
@@ -1595,9 +1656,11 @@ function TemplatePreview({ template, videoAspectRatio, channelName, channelThumb
 function CustomHomeTemplatePreview({
   template,
   showUnifiedSubtitle = false,
+  positionedWordsV4Enabled = false,
 }: {
   template: CustomTemplate;
   showUnifiedSubtitle?: boolean;
+  positionedWordsV4Enabled?: boolean;
 }) {
   const titleLines = isTemplateConfigV5(template.config) && template.config.subtitle.visible
     ? (["AI가 고른 오늘의", "핵심 장면"] as const)
@@ -1608,6 +1671,7 @@ function CustomHomeTemplatePreview({
     secondLine={titleLines[1]}
     channelLabel="채널 이름"
     showUnifiedSubtitle={showUnifiedSubtitle}
+    positionedWordsV4Enabled={positionedWordsV4Enabled}
   />;
 }
 
@@ -1743,6 +1807,56 @@ function SubtitleTemplatePreview({
   );
 }
 
+function captionV4PositionedWordBoxes(
+  spec: CaptionRenderSpec,
+  event: unknown,
+  words: readonly { spaceBefore?: boolean }[],
+): PositionedSubtitleWordBox[] | null {
+  if (!isEditorRenderSpecV4Enabled()) return null;
+  const runtimeSpec = spec as unknown as {
+    schemaVersion?: unknown;
+    layoutMode?: unknown;
+    wordGapPx?: unknown;
+    joinedWordGapPx?: unknown;
+    templateId?: unknown;
+  };
+  if (
+    runtimeSpec.schemaVersion !== 4
+    || runtimeSpec.layoutMode !== "absolute-word-positions-v1"
+    || runtimeSpec.templateId !== "pop"
+    || runtimeSpec.wordGapPx !== POSITIONED_SUBTITLE_WORD_GAP_PX
+    || runtimeSpec.joinedWordGapPx !== POSITIONED_SUBTITLE_JOINED_WORD_GAP_PX
+  ) return null;
+  const positions = (event as { positions?: unknown } | null)?.positions;
+  if (!Array.isArray(positions) || positions.length !== words.length) {
+    return null;
+  }
+  const boxes: PositionedSubtitleWordBox[] = [];
+  for (const [index, value] of positions.entries()) {
+    if (!value || typeof value !== "object") return null;
+    const position = value as Record<string, unknown>;
+    const { centerX, centerY, advanceWidth, gapBefore } = position;
+    if (
+      typeof centerX !== "number"
+      || !Number.isFinite(centerX)
+      || typeof centerY !== "number"
+      || !Number.isFinite(centerY)
+      || typeof advanceWidth !== "number"
+      || !Number.isFinite(advanceWidth)
+      || advanceWidth <= 0
+      || typeof gapBefore !== "number"
+      || !Number.isFinite(gapBefore)
+      || gapBefore !== (
+        index > 0 && words[index]?.spaceBefore !== false
+          ? POSITIONED_SUBTITLE_WORD_GAP_PX
+          : POSITIONED_SUBTITLE_JOINED_WORD_GAP_PX
+      )
+    ) return null;
+    boxes.push({ centerX, centerY, advanceWidth, gapBefore });
+  }
+  return boxes;
+}
+
 function CaptionTemplateEditorPreview({
   spec,
   currentTimeSeconds,
@@ -1785,12 +1899,35 @@ function CaptionTemplateEditorPreview({
   if (!active?.event) return null;
 
   const { cue, cueIndex, event } = active;
-  const captionFontId = layout.fontId || spec.font.fontId || DEFAULT_EDITOR_FONT_ID;
-  const captionFontFace = resolveEditorFontFace(captionFontId, "title");
-  const captionScale = layout.fontSize
+  const authoritativeV4 = spec.schemaVersion === 4
+    && isEditorRenderSpecV4Enabled();
+  const positionedV4Boxes = captionV4PositionedWordBoxes(
+    spec,
+    event,
+    cue.words,
+  );
+  const positionedV4CssToAssScale = positionedV4Boxes
+    && spec.schemaVersion === 4
+    ? spec.font.metrics.cssToAssScale
+    : null;
+  if (authoritativeV4 && spec.templateId === "pop" && !positionedV4Boxes) {
+    return null;
+  }
+  const captionFontId = authoritativeV4
+    ? spec.font.fontId
+    : layout.fontId || spec.font.fontId || DEFAULT_EDITOR_FONT_ID;
+  const captionFontFace = authoritativeV4
+    ? resolveEditorFontFaceV4(captionFontId, "title")
+    : resolveEditorFontFace(captionFontId, "title");
+  const captionScale = authoritativeV4
+    ? 1
+    : layout.fontSize
     ? layout.fontSize / spec.style.fontSize
     : layout.scale;
-  const textColor = layout.color || spec.style.textColor;
+  const captionOffsetY = authoritativeV4 ? 0 : layout.offsetY;
+  const textColor = authoritativeV4
+    ? spec.style.textColor
+    : layout.color || spec.style.textColor;
   const canvasCqw = (pixels: number) => `${pixels / 10.8}cqw`;
   const transformedX = (centerX: number) => (
     540 + (centerX - 540) * captionScale
@@ -1806,10 +1943,54 @@ function CaptionTemplateEditorPreview({
   // CSS strokes are centered on a glyph and the fill covers their inner half.
   // ASS `bord` is an outward border, so two CSS pixels match one ASS border px.
   const previewStrokeWidth = spec.style.outlineWidth * captionScale * 2;
-  const accentColor = layout.accentColor || spec.style.accentColor;
+  const accentColor = authoritativeV4
+    ? spec.style.accentColor
+    : layout.accentColor || spec.style.accentColor;
   const captionCenterY = (
-    cue.centerY ?? (spec.safeArea.y + spec.safeArea.height / 2)
-  ) + layout.offsetY;
+    positionedV4Boxes?.[0]?.centerY
+      ?? cue.centerY
+      ?? (spec.safeArea.y + spec.safeArea.height / 2)
+  ) + captionOffsetY;
+  const previewFontScale = authoritativeV4
+    ? spec.font.metrics.cssToAssScale
+    : CAPTION_ASS_PREVIEW_FONT_SCALE;
+  const previewBaselineOffsetEm = authoritativeV4
+    ? spec.font.metrics.cssToAssBaselineOffsetEm
+    : 0;
+  const activeWordScale = event.activeWordIndex != null
+    && cue.words[event.activeWordIndex]
+    ? 1.12
+    : 1;
+  const separatorAdvanceWidth = "separatorAdvanceWidth" in cue
+    ? cue.separatorAdvanceWidth
+    : null;
+  const positionedV4Bounds = positionedV4Boxes && positionedV4CssToAssScale
+    ? positionedV4Boxes.reduce((bounds, position, index) => {
+        const word = cue.words[index];
+        const wordHeight = (word?.fontSize || spec.style.fontSize)
+          * captionScale
+          * positionedV4CssToAssScale
+          * 1.35;
+        const centerX = transformedX(position.centerX);
+        const centerY = position.centerY
+          + captionOffsetY
+          + (word?.fontSize || spec.style.fontSize)
+            * previewBaselineOffsetEm
+            * captionScale;
+        const halfWidth = position.advanceWidth * captionScale / 2;
+        return {
+          left: Math.min(bounds.left, centerX - halfWidth),
+          top: Math.min(bounds.top, centerY - wordHeight / 2),
+          right: Math.max(bounds.right, centerX + halfWidth),
+          bottom: Math.max(bounds.bottom, centerY + wordHeight / 2),
+        };
+      }, {
+        left: Number.POSITIVE_INFINITY,
+        top: Number.POSITIVE_INFINITY,
+        right: Number.NEGATIVE_INFINITY,
+        bottom: Number.NEGATIVE_INFINITY,
+      })
+    : null;
   const beginTextEdit = (event: ReactMouseEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1853,7 +2034,55 @@ function CaptionTemplateEditorPreview({
     data-editor-caption-template-preview={spec.templateId}
     className="pointer-events-none absolute inset-0 z-50"
   >
-    {spec.templateId === "pop"
+    {positionedV4Boxes && positionedV4Bounds && positionedV4CssToAssScale
+      ? <>
+        <PositionedSubtitleWords
+          words={cue.words.map((word) => ({
+            text: word.text,
+            fontSize: word.fontSize || spec.style.fontSize,
+          }))}
+          positions={positionedV4Boxes}
+          activeWordIndex={event.activeWordIndex}
+          activeWordScale={activeWordScale}
+          layoutScale={captionScale}
+          offsetY={captionOffsetY}
+          cssToAssScale={positionedV4CssToAssScale}
+          cssToAssBaselineOffsetEm={previewBaselineOffsetEm}
+          textColor={textColor}
+          accentColor={accentColor}
+          fontFamily={captionFontFace.family}
+          fontWeight={captionFontFace.resolvedWeight}
+          textStyle={{
+            paintOrder: "stroke fill",
+            textRendering: "geometricPrecision",
+            WebkitFontSmoothing: "antialiased",
+            WebkitTextStroke: `${canvasCqw(previewStrokeWidth)} ${spec.style.outlineColor}`,
+          }}
+        />
+        <button
+          type="button"
+          aria-label={textEditingEnabled
+            ? "팝형 자막 위치·크기·텍스트 편집"
+            : "팝형 자막 위치·크기 설정"}
+          title={textEditingEnabled
+            ? "드래그해서 이동 · 더블클릭해서 자막 수정"
+            : "드래그해서 자막 위치 이동"}
+          className="pointer-events-auto absolute cursor-ns-resize touch-none outline-offset-2 hover:outline hover:outline-1 hover:outline-white/55"
+          onPointerDown={(pointerEvent) => onPointerDown(
+            pointerEvent,
+            cueIndex,
+          )}
+          onClick={onSelect}
+          onDoubleClick={textEditingEnabled ? beginTextEdit : undefined}
+          style={{
+            left: `${positionedV4Bounds.left / 10.8}%`,
+            top: `${positionedV4Bounds.top / 19.2}%`,
+            width: `${(positionedV4Bounds.right - positionedV4Bounds.left) / 10.8}%`,
+            height: `${(positionedV4Bounds.bottom - positionedV4Bounds.top) / 19.2}%`,
+          }}
+        />
+      </>
+      : spec.templateId === "pop"
       ? <span
         role="button"
         tabIndex={0}
@@ -1883,7 +2112,7 @@ function CaptionTemplateEditorPreview({
           fontSize: canvasCqw(
             spec.style.fontSize
               * captionScale
-              * CAPTION_ASS_PREVIEW_FONT_SCALE,
+              * previewFontScale,
           ),
           WebkitTextStroke: `${canvasCqw(previewStrokeWidth)} ${spec.style.outlineColor}`,
           transform: "translate(-50%, -50%)",
@@ -1913,7 +2142,7 @@ function CaptionTemplateEditorPreview({
                 fontSize: canvasCqw(
                   word.fontSize
                     * captionScale
-                    * CAPTION_ASS_PREVIEW_FONT_SCALE
+                    * previewFontScale
                     * activeScale,
                 ),
               }}
@@ -1945,36 +2174,60 @@ function CaptionTemplateEditorPreview({
         style={{
           ...sharedTextStyle,
           left: `${transformedX(cue.centerX ?? 540) / 10.8}%`,
-          top: `${((cue.centerY ?? (spec.safeArea.y + spec.safeArea.height / 2)) + layout.offsetY) / 19.2}%`,
+          top: `${((
+            cue.centerY ?? (spec.safeArea.y + spec.safeArea.height / 2)
+          ) + captionOffsetY + (
+            (cue.fontSize || spec.style.fontSize)
+              * captionScale
+              * previewBaselineOffsetEm
+          )) / 19.2}%`,
           color: textColor,
           fontSize: canvasCqw(
             (cue.fontSize || spec.style.fontSize)
               * captionScale
-              * CAPTION_ASS_PREVIEW_FONT_SCALE,
+              * previewFontScale,
           ),
           WebkitTextStroke: `${canvasCqw(previewStrokeWidth)} ${spec.style.outlineColor}`,
           transform: `translate(-50%, -50%) scaleX(${(cue.scaleX || 100) / 100})`,
         }}
       >
-        {(cue.lines?.length ? cue.lines : [cue.words.map((_, index) => index)]).map(
-          (line, lineIndex) => <span key={lineIndex} className="block">
-            {line.map((wordIndex, linePosition) => {
-              const word = cue.words[wordIndex];
-              if (!word) return null;
-              const prefix = linePosition > 0 && word.spaceBefore
-                ? (cue.wordSeparator || " ")
-                : "";
-              return <span
-                key={wordIndex}
-                style={{
-                  color: event.activeWordIndex === wordIndex
-                    ? accentColor
-                    : textColor,
-                }}
-              >{prefix}{word.text}</span>;
-            })}
-          </span>,
-        )}
+        {authoritativeV4 && separatorAdvanceWidth != null
+          ? <FlowSubtitleWords
+            words={cue.words.map((word) => ({
+              text: word.text,
+              fontSize: cue.fontSize || spec.style.fontSize,
+              spaceBefore: word.spaceBefore,
+            }))}
+            lines={cue.lines?.length
+              ? cue.lines
+              : [cue.words.map((_word, index) => index)]}
+            activeWordIndex={event.activeWordIndex}
+            separatorAdvanceWidth={separatorAdvanceWidth * captionScale}
+            textColor={textColor}
+            accentColor={accentColor}
+            pixelToCss={canvasCqw}
+          />
+          : (cue.lines?.length
+            ? cue.lines
+            : [cue.words.map((_word, index) => index)]).map(
+              (line, lineIndex) => <span key={lineIndex} className="block">
+                {line.map((wordIndex, linePosition) => {
+                  const word = cue.words[wordIndex];
+                  if (!word) return null;
+                  const prefix = linePosition > 0 && word.spaceBefore
+                    ? (cue.wordSeparator || " ")
+                    : "";
+                  return <span
+                    key={wordIndex}
+                    style={{
+                      color: event.activeWordIndex === wordIndex
+                        ? accentColor
+                        : textColor,
+                    }}
+                  >{prefix}{word.text}</span>;
+                })}
+              </span>,
+            )}
       </span>}
   </div>;
 }
@@ -2024,6 +2277,7 @@ function TemplatePicker({
   onBrandColorChange: (value: TemplatePresetColor) => void;
   settingsBelowRail: boolean;
 }) {
+  const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
   const usablePersonalTemplates = canUseCustomTemplates ? personalTemplates : [];
   const selectedCustom = usablePersonalTemplates.find((template) => template.id === customTemplateId);
   const selectedTemplate = templates.find((template) => template.id === value) || templates[0];
@@ -2059,7 +2313,7 @@ function TemplatePicker({
   const renderFavoriteCard = (card: FavoriteTemplateCard) => {
     if (card.kind === "custom") {
       const selected = !subtitleTemplateId && customTemplateId === card.template.id;
-      return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
+      return <button key={`favorite-custom-${card.template.id}`} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(card.template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={card.template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{card.template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">자주 쓰는 내 템플릿</span></button>;
     }
     const selected = !subtitleTemplateId && !customTemplateId && value === card.template.id;
     return (
@@ -2070,7 +2324,7 @@ function TemplatePicker({
         onClick={() => { onCustomTemplateChange(null); onChange(card.template.id); }}
         className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}
       >
-        <TemplatePreview template={card.template} videoAspectRatio={effectiveAspectRatio} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} brandColor={brandColorSelectionEnabled ? brandColor : undefined} />
+        <TemplatePreview template={card.template} videoAspectRatio={effectiveAspectRatio} channelName={channelName} channelThumbnailUrl={channelThumbnailUrl} brandColor={brandColorSelectionEnabled ? brandColor : undefined} titleV4Enabled={positionedWordsV4Enabled} />
         <span className="mt-2.5 block text-center text-sm font-semibold">
           {presetTemplateDisplayName(
             card.template.id,
@@ -2149,7 +2403,7 @@ function TemplatePicker({
         {remainingFavoriteCards.map(renderFavoriteCard)}
         {remainingPersonalTemplates.map((template) => {
           const selected = !subtitleTemplateId && customTemplateId === template.id;
-          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
+          return <button key={template.id} type="button" aria-pressed={selected} onClick={() => onCustomTemplateChange(template)} className={`w-[72vw] max-w-[250px] shrink-0 snap-start rounded-xl border-2 bg-[rgba(26,26,30,.72)] p-2.5 backdrop-blur-xl transition sm:w-[220px] ${selected ? "border-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.12)]" : "border-white/10 hover:border-white/30"}`}><CustomHomeTemplatePreview template={template} showUnifiedSubtitle={unifiedTemplateSubtitleCanaryEnabled} positionedWordsV4Enabled={positionedWordsV4Enabled} /><span className="mt-2.5 block truncate text-center text-sm font-semibold">{template.name}</span><span className="mt-1 block text-center text-[10px] font-bold text-[#ff9b8d]">내 템플릿</span></button>;
         })}
       </div>
       {settingsBelowRail && templateSettings}
@@ -3889,6 +4143,7 @@ function CommentTimelineEditor({
 }
 
 function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false, wordTimedSubtitlesAvailable = false, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean; wordTimedSubtitlesAvailable?: boolean; paidAccessBlocked?: boolean }) {
+  const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
   const adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(
     editorRelease,
   );
@@ -3898,7 +4153,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     editorRelease,
   );
   const fullSubtitleStyleEditingEnabled = unifiedSubtitleLayoutEnabled
-    && editorRenderSpecVersion === 3;
+    && (
+      editorRenderSpecVersion === 3
+      || editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION
+    );
   const availableEditorFontOptions = fullSubtitleStyleEditingEnabled
     ? editorFontOptions
     : stableEditorFontOptions;
@@ -3919,6 +4177,23 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     && (item.editorDocument?.version === 2 || item.editorDocument?.version === 3)
     ? item.editorDocument
     : null;
+  const initialRenderSpec = overlayPreviewEnabled
+    ? savedEditorDocument?.version === 3
+      && savedEditorDocument.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION
+      ? savedEditorDocument.renderSpec
+      : !savedEditorDocument
+        ? item.initialRenderSpec || null
+        : null
+    : null;
+  const [liveRenderSpecV4, setLiveRenderSpecV4] =
+    useState<EditorRenderSpecV4 | null>(() => (
+      initialRenderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
+        ? structuredClone(initialRenderSpec)
+        : null
+    ));
+  const preserveV4TitleHorizontalOffset =
+    editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION
+    || initialRenderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION;
   const initialTemplateId = savedEditorDocument?.template.id || item.templateId;
   const initialTemplate = templates.find(
     (value) => value.id === initialTemplateId,
@@ -4044,15 +4319,28 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   useEffect(() => {
     if (!adminSubtitleEditingEnabled || typeof document === "undefined") return;
     let cancelled = false;
-    const captionFontFace = resolveEditorFontFace(
-      subtitleLayout.fontId
-        || captionTemplateEditorSpec?.font.fontId
-        || DEFAULT_EDITOR_FONT_ID,
-      "title",
-    );
-    void document.fonts.load(
-      `${captionFontFace.resolvedWeight} 92px ${captionFontFace.family}`,
-    ).then(() => {
+    const captionFontId = subtitleLayout.fontId
+      || captionTemplateEditorSpec?.font.fontId
+      || DEFAULT_EDITOR_FONT_ID;
+    const exactCaptionPreview = positionedWordsV4Enabled
+      && editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION;
+    const captionFontSample = captionTemplateEditorSpec
+      ? captionTemplateEditorSpec.cues
+        .flatMap((cue) => cue.words.map((word) => word.text))
+        .join(" ")
+      : segments.map((segment) => segment.text).join(" ");
+    const loadCaptionFont = exactCaptionPreview
+      ? ensureEditorFontFaceV4Loaded(
+          resolveEditorFontFaceV4(captionFontId, "title"),
+          captionFontSample || "자막 Aa 123",
+        )
+      : (() => {
+          const captionFontFace = resolveEditorFontFace(captionFontId, "title");
+          return document.fonts.load(
+            `${captionFontFace.resolvedWeight} 92px ${captionFontFace.family}`,
+          ).then(() => undefined);
+        })();
+    void loadCaptionFont.then(() => {
       if (!cancelled) setCaptionFontRevision((revision) => revision + 1);
     }).catch(() => undefined);
     return () => {
@@ -4060,7 +4348,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     };
   }, [
     adminSubtitleEditingEnabled,
+    captionTemplateEditorSpec,
+    captionTemplateEditorSpec?.cues,
     captionTemplateEditorSpec?.font.fontId,
+    captionTemplateEditorSpec?.schemaVersion,
+    editorRenderSpecVersion,
+    positionedWordsV4Enabled,
+    segments,
     subtitleLayout.fontId,
   ]);
   const subtitleLayoutRef = useRef(initialSubtitleLayout);
@@ -4170,10 +4464,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [overlayLayout, setOverlayLayout] = useState(() => {
     const initialLayout = savedEditorDocument
       ? normalizeEditorTitleScaleLayout(savedEditorDocument.overlays)
-      : seedCustomTemplateTitleFont(
-          createInitialEditorOverlayLayout(),
-          availableCustomTemplate,
-          unifiedSubtitleLayoutEnabled,
+      : seedEditorOverlayLayoutFromInitialRenderSpec(
+          seedCustomTemplateTitleFont(
+            createInitialEditorOverlayLayout(),
+            availableCustomTemplate,
+            unifiedSubtitleLayoutEnabled,
+          ),
+          initialRenderSpec,
         );
     return adminSubtitleLayoutEnabled
       ? initialLayout
@@ -4277,6 +4574,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const editorDraftHasSavedRef = useRef(false);
   const editorDraftLatestValidRef = useRef<EditorDocumentSnapshot | null>(null);
   const editorDraftNeedsWriteRef = useRef(false);
+  const initialRenderPreviewBaselineRef = useRef<string | null>(null);
+  const initialRenderSemanticBaselineRef = useRef<string | null>(null);
+  const initialRenderPreviewLayerBaselineRef =
+    useRef<EditorInitialRenderSpecLayerFingerprints | null>(null);
+  const initialRenderSemanticLayerBaselineRef =
+    useRef<EditorInitialRenderSpecLayerFingerprints | null>(null);
   const [previewTime, setPreviewTime] = useState(0);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
@@ -4694,7 +4997,64 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         ),
     [captionTextDraft, dynamicWordTimedSubtitleEditing, subtitleLayout],
   );
-  const editorDocumentSnapshot = useMemo(() => {
+  const finalizeEditorDocumentForSave = useCallback((
+    source: EditorDocumentSnapshot,
+  ) => {
+    const document = cloneEditorDocumentSnapshot(
+      source,
+      preserveV4TitleHorizontalOffset,
+    );
+    const outputDuration = editorDocumentOutputDuration(document);
+    document.comments = scaleTimedRanges(
+      document.comments,
+      item.durationSeconds,
+      outputDuration,
+    );
+    document.overlays.commentOffsets = Object.fromEntries(
+      Object.entries(document.overlays.commentOffsets).filter(([id]) => (
+        document.comments.some((comment) => comment.id === id)
+      )),
+    );
+    if (adminSubtitleLayoutEnabled) {
+      document.overlays.textOverlays = fitTimedRangesToDurationFrames(
+        document.overlays.textOverlays,
+        outputDuration,
+        EDITOR_RENDER_FPS,
+      );
+      const retainedTextOverlayIds = new Set(
+        document.overlays.textOverlays.map((textOverlay) => textOverlay.id),
+      );
+      document.overlays.layerOrder = document.overlays.layerOrder.filter(
+        (layer) => (
+          !layer.startsWith("text:")
+          || retainedTextOverlayIds.has(layer.slice("text:".length))
+        ),
+      );
+    } else {
+      document.overlays.textOverlays = document.overlays.textOverlays.map(
+        (textOverlay) => {
+          const startSeconds = Math.max(
+            0,
+            Math.min(outputDuration - 0.001, textOverlay.startSeconds),
+          );
+          const endSeconds = Math.max(
+            startSeconds + 0.001,
+            Math.min(outputDuration, textOverlay.endSeconds),
+          );
+          return { ...textOverlay, startSeconds, endSeconds };
+        },
+      );
+    }
+    document.subtitles.segments = editorSubtitlesForSave(
+      document.subtitles.segments,
+    );
+    return document;
+  }, [
+    adminSubtitleLayoutEnabled,
+    item.durationSeconds,
+    preserveV4TitleHorizontalOffset,
+  ]);
+  const editorSemanticDocumentSnapshot = useMemo(() => {
     const input: Parameters<typeof createEditorDocumentSnapshot>[0] = {
     sourceShortId: item.id,
     baseRenderVersion: item.renderVersion,
@@ -4741,16 +5101,21 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       selectionEndSeconds: selectionEnd,
     },
     };
-    return editorRelease.documentVersion === 3
-      ? createEditorDocumentSnapshotV3(
-          input,
-          adminSubtitleEditingEnabled
-            ? editorDocumentSubtitleLayout
-            : undefined,
-          adminSubtitleLayoutEnabled,
-          editorRenderSpecVersion,
-        )
-      : createEditorDocumentSnapshot(input);
+    if (editorRelease.documentVersion !== 3) {
+      return createEditorDocumentSnapshot(input);
+    }
+    const document = createEditorDocumentSnapshotV3(
+      input,
+      adminSubtitleEditingEnabled
+        ? editorDocumentSubtitleLayout
+        : undefined,
+      adminSubtitleLayoutEnabled,
+      editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION
+        ? 3
+        : editorRenderSpecVersion,
+      preserveV4TitleHorizontalOffset,
+    );
+    return document;
   }, [
     activeCustomTemplate,
     channel,
@@ -4780,6 +5145,110 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     adminSubtitleLayoutEnabled,
     adminSubtitleEditingEnabled,
     editorRenderSpecVersion,
+    preserveV4TitleHorizontalOffset,
+  ]);
+  const editorDocumentSnapshot = useMemo(() => (
+    seedEditorDocumentInitialRenderSpec(
+      editorSemanticDocumentSnapshot,
+      liveRenderSpecV4,
+    )
+  ), [editorSemanticDocumentSnapshot, liveRenderSpecV4]);
+  useEffect(() => {
+    if (
+      initialRenderSpec?.version !== EDITOR_RENDER_SPEC_V4_VERSION
+      || !editorGuideReady
+      || !editorDraftLookupComplete
+      || !editorDraftDecisionComplete
+      || editorDraftCandidate
+      || editorDraftHasSavedRef.current
+      || initialRenderSemanticBaselineRef.current !== null
+    ) {
+      return;
+    }
+    initialRenderPreviewBaselineRef.current =
+      editorDocumentSemanticFingerprint(editorSemanticDocumentSnapshot);
+    initialRenderPreviewLayerBaselineRef.current =
+      editorInitialRenderSpecLayerFingerprints(editorSemanticDocumentSnapshot);
+    const finalizedInitialDocument = finalizeEditorDocumentForSave(
+      seedEditorDocumentInitialRenderSpec(
+        editorSemanticDocumentSnapshot,
+        initialRenderSpec,
+      ),
+    );
+    initialRenderSemanticBaselineRef.current =
+      editorDocumentSemanticFingerprint(finalizedInitialDocument);
+    initialRenderSemanticLayerBaselineRef.current =
+      editorInitialRenderSpecLayerFingerprints(finalizedInitialDocument);
+  }, [
+    editorSemanticDocumentSnapshot,
+    editorDraftCandidate,
+    editorDraftDecisionComplete,
+    editorDraftLookupComplete,
+    editorGuideReady,
+    finalizeEditorDocumentForSave,
+    initialRenderSpec,
+  ]);
+  useEffect(() => {
+    if (
+      editorRenderSpecVersion !== EDITOR_RENDER_SPEC_V4_VERSION
+      || editorSemanticDocumentSnapshot.version !== 3
+      || !editorGuideReady
+      || !editorDraftLookupComplete
+      || !editorDraftDecisionComplete
+      || editorDraftCandidate
+    ) {
+      return;
+    }
+    const semanticFingerprint = editorDocumentSemanticFingerprint(
+      editorSemanticDocumentSnapshot,
+    );
+    if (
+      initialRenderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
+      && initialRenderPreviewBaselineRef.current === semanticFingerprint
+      && !editorDraftHasSavedRef.current
+    ) {
+      setLiveRenderSpecV4((current) => (
+        current && JSON.stringify(current) === JSON.stringify(initialRenderSpec)
+          ? current
+          : structuredClone(initialRenderSpec)
+      ));
+      return;
+    }
+    let cancelled = false;
+    void createEditorRenderSpecV4(
+      editorSemanticDocumentSnapshot,
+      adminSubtitleEditingEnabled
+        ? editorDocumentSubtitleLayout
+        : undefined,
+    ).then((compiledRenderSpec) => {
+      if (cancelled) return;
+      const renderSpec = preserveUnchangedInitialRenderSpecLayers(
+        compiledRenderSpec,
+        editorSemanticDocumentSnapshot,
+        initialRenderSpec,
+        initialRenderPreviewLayerBaselineRef.current,
+      );
+      setLiveRenderSpecV4((current) => (
+        current && JSON.stringify(current) === JSON.stringify(renderSpec)
+          ? current
+          : renderSpec
+      ));
+    }).catch(() => {
+      // Keep the last fully compiled render spec while an exact font is loading.
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    adminSubtitleEditingEnabled,
+    editorDocumentSubtitleLayout,
+    editorDraftCandidate,
+    editorDraftDecisionComplete,
+    editorDraftLookupComplete,
+    editorGuideReady,
+    editorRenderSpecVersion,
+    editorSemanticDocumentSnapshot,
+    initialRenderSpec,
   ]);
   useEffect(() => {
     if (
@@ -4970,27 +5439,43 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     || DEFAULT_EDITOR_FONT_ID;
   const generalHighlightEditorSpec = useMemo(() => {
     void captionFontRevision;
-    return adminSubtitleEditingEnabled && !captionTemplateEditorSpec
-      ? createEditorHighlightCaptionSpec(
+    if (!adminSubtitleEditingEnabled || captionTemplateEditorSpec) return null;
+    const compileV4 = positionedWordsV4Enabled
+      && editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION;
+    try {
+      return createEditorHighlightCaptionSpec(
           segments,
           editorDocumentSnapshot.video.aspectRatio,
           subtitleLayout.accentColor || SUBTITLE_TEMPLATE_BRAND_COLOR,
           activeCaptionFontId,
-          (text, fontSize) => measureEditorCaptionText(
-            text,
-            fontSize,
-            activeCaptionFontId,
-          ),
-        )
-      : null;
+          compileV4
+            ? undefined
+            : (text, fontSize) => measureEditorCaptionText(
+                text,
+                fontSize,
+                activeCaptionFontId,
+              ),
+          compileV4
+            ? {
+                schemaVersion: 4,
+                fontSize: subtitleLayout.fontSize || 72,
+              }
+            : undefined,
+        );
+    } catch {
+      return null;
+    }
   }, [
     activeCaptionFontId,
     adminSubtitleEditingEnabled,
     captionFontRevision,
     captionTemplateEditorSpec,
+    editorRenderSpecVersion,
     editorDocumentSnapshot.video.aspectRatio,
+    positionedWordsV4Enabled,
     segments,
     subtitleLayout.accentColor,
+    subtitleLayout.fontSize,
   ]);
   const editableCaptionSourceSpec = captionTemplateEditorSpec
     || generalHighlightEditorSpec;
@@ -5003,21 +5488,37 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     const cueEdits = JSON.parse(
       subtitleCueEditsSignature,
     ) as NonNullable<EditorSubtitleLayout["cueEdits"]>;
-    return editableCaptionSourceSpec
-      ? retimeCaptionRenderSpecForEditor(
-          editableCaptionSourceSpec,
-          renderVideoClips,
-          cueEdits,
-          (text, fontSize) => measureEditorCaptionText(
-            text,
-            fontSize,
-            activeCaptionFontId,
-          ),
-        )
-      : null;
+    if (!editableCaptionSourceSpec) return null;
+    try {
+      return retimeCaptionRenderSpecForEditor(
+        editableCaptionSourceSpec,
+        renderVideoClips,
+        cueEdits,
+        editableCaptionSourceSpec.schemaVersion === 4
+          ? undefined
+          : (text, fontSize) => measureEditorCaptionText(
+              text,
+              fontSize,
+              activeCaptionFontId,
+            ),
+        editableCaptionSourceSpec.schemaVersion === 4
+          && positionedWordsV4Enabled
+          && editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION
+          ? { layout: editorDocumentSubtitleLayout }
+          : undefined,
+      );
+    } catch {
+      // V4 is fail-closed while its exact font face is unavailable. The font
+      // loader above bumps the revision and recomputes this preview only after
+      // the verified face has loaded.
+      return null;
+    }
   }, [
     captionFontRevision,
     editableCaptionSourceSpec,
+    editorDocumentSubtitleLayout,
+    editorRenderSpecVersion,
+    positionedWordsV4Enabled,
     renderVideoClips,
     subtitleCueEditsSignature,
     activeCaptionFontId,
@@ -5387,6 +5888,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     commentId?: string,
   ): CSSProperties | undefined => {
     if (!overlayPreviewEnabled) return undefined;
+    if (
+      layer === "title"
+      && renderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
+    ) {
+      return { zIndex: previewOverlayZIndex(layer) };
+    }
     const rawOffset = layer === "comment" && commentId
       ? commentOffsets[commentId] || overlayOffsets.comment
       : overlayOffsets[layer];
@@ -7747,7 +8254,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       });
       updateEditorOverlayLayout((current) => {
         const nextOffset = {
-          x: layer === "comment" || layer === "title"
+          x: layer === "comment" || (
+            layer === "title"
+            && renderSpec?.version !== EDITOR_RENDER_SPEC_V4_VERSION
+          )
             ? 0
             : startOffset.x + resolved.delta.x,
           y: startOffset.y + resolved.delta.y,
@@ -7803,6 +8313,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     finishPendingEditorInteractionsIncludingCaption,
     openMobileEditorControlsFromDoubleTap,
     overlayPreviewEnabled,
+    renderSpec?.version,
     resolveEditorOverlayDelta,
     updateEditorOverlayLayout,
   ]);
@@ -9351,57 +9862,69 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         if (!editTimeline || editorDocumentSnapshot.video.clips.length === 0) {
           throw new Error("편집용 영상이 준비된 뒤 다시 시도해 주세요.");
         }
-        const document = cloneEditorDocumentSnapshot(editorDocumentSnapshot);
-        const outputDuration = editorDocumentOutputDuration(document);
-        document.comments = scaleTimedRanges(
-          document.comments,
-          item.durationSeconds,
-          outputDuration,
-        );
-        document.overlays.commentOffsets = Object.fromEntries(
-          Object.entries(document.overlays.commentOffsets).filter(([id]) => (
-            document.comments.some((comment) => comment.id === id)
-          )),
-        );
-        if (adminSubtitleLayoutEnabled) {
-          document.overlays.textOverlays = fitTimedRangesToDurationFrames(
-            document.overlays.textOverlays,
-            outputDuration,
-            EDITOR_RENDER_FPS,
-          );
-          const retainedTextOverlayIds = new Set(
-            document.overlays.textOverlays.map((textOverlay) => textOverlay.id),
-          );
-          document.overlays.layerOrder = document.overlays.layerOrder.filter(
-            (layer) => (
-              !layer.startsWith("text:")
-              || retainedTextOverlayIds.has(layer.slice("text:".length))
-            ),
-          );
-        } else {
-          document.overlays.textOverlays = document.overlays.textOverlays.map(
-            (textOverlay) => {
-              const startSeconds = Math.max(
-                0,
-                Math.min(outputDuration - 0.001, textOverlay.startSeconds),
-              );
-              const endSeconds = Math.max(
-                startSeconds + 0.001,
-                Math.min(outputDuration, textOverlay.endSeconds),
-              );
-              return {
-                ...textOverlay,
-                startSeconds,
-                endSeconds,
-              };
-            },
+        if (
+          subtitlesEnabled
+          && editableCaptionSourceSpec?.schemaVersion === 4
+        ) {
+          await ensureEditorFontFaceV4Loaded(
+            resolveEditorFontFaceV4(activeCaptionFontId, "title"),
+            editableCaptionSourceSpec.cues
+              .flatMap((cue) => cue.words.map((word) => word.text))
+              .join(" ") || "자막 Aa 123",
           );
         }
-        document.subtitles.segments = editorSubtitlesForSave(
-          document.subtitles.segments,
+        const document = finalizeEditorDocumentForSave(
+          editorDocumentSnapshot,
         );
+        const preserveInitialRenderSpec =
+          shouldPreserveInitialEditorRenderSpec(
+            document,
+            initialRenderSpec,
+            initialRenderSemanticBaselineRef.current,
+          );
         if (document.version === 3) {
-          document.renderSpec = createEditorRenderSpec(document);
+          if (editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION) {
+            if (
+              preserveInitialRenderSpec
+              && document.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION
+            ) {
+              await Promise.all([
+                ensureEditorFontFaceV4Loaded(
+                  document.renderSpec.title.font,
+                  document.title.text,
+                ),
+                ensureEditorFontFaceV4Loaded(
+                  document.renderSpec.channel.font,
+                  document.channel.displayName,
+                ),
+                ...document.renderSpec.textOverlays.map((overlay, index) => (
+                  ensureEditorFontFaceV4Loaded(
+                    overlay.font,
+                    document.overlays.textOverlays[index]?.text || "텍스트",
+                  )
+                )),
+              ]);
+            } else {
+              const compiledRenderSpec = await createEditorRenderSpecV4(
+                document,
+                adminSubtitleEditingEnabled
+                  ? editorDocumentSubtitleLayout
+                  : undefined,
+              );
+              document.renderSpec = preserveUnchangedInitialRenderSpecLayers(
+                compiledRenderSpec,
+                document,
+                initialRenderSpec,
+                initialRenderSemanticLayerBaselineRef.current,
+              );
+            }
+          } else if (document.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION) {
+            throw new Error(
+              "현재 편집기 릴리스에서는 이 영상의 렌더 사양을 변경할 수 없습니다.",
+            );
+          } else {
+            document.renderSpec = createEditorRenderSpec(document);
+          }
         }
         const validatedDocument = editorDocumentSnapshotSchema.safeParse(
           document,
@@ -9970,8 +10493,31 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             containerType: "inline-size",
           }}
         >
-          {renderOverlayLayout.visible.title && (activeCustomTemplate
-            ? <CustomTemplateTitlePreview
+          {renderOverlayLayout.visible.title && (
+            renderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
+            ? <EditorTitleV4Preview
+                spec={renderSpec.title}
+                sourceTitle={renderTitle}
+                textStyles={renderTitleTextStyles}
+                primaryColor={activeCustomTemplate
+                  ? activeCustomTemplate.config.title.primaryColor
+                  : template.primary}
+                accentColor={activeCustomTemplate
+                  ? activeCustomTemplate.config.title.accentColor
+                  : presetBrandColor || template.accent}
+                selected={overlayPreviewEnabled && selectedOverlay === "title"}
+                editing={inlineEditingOverlay === "title"}
+                editValue={renderTitle}
+                zIndex={previewOverlayZIndex("title")}
+                onPointerDown={overlayPreviewEnabled
+                  ? (event) => beginEditorOverlayDrag("title", event)
+                  : undefined}
+                onEditStart={beginEditorTitleInlineEdit}
+                onEditValueChange={updateEditorTitleInlineValue}
+                onEditEnd={finishEditorInlineEdit}
+              />
+            : activeCustomTemplate
+              ? <CustomTemplateTitlePreview
                 title={activeCustomTemplate.config.title}
                 sourceTitle={renderTitle}
                 firstLine={customTitleLines[0] || ""}
@@ -11662,6 +12208,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                     secondLine={customTitleLines[1] || ""}
                     channelLabel={channel}
                     showUnifiedSubtitle={unifiedSubtitleLayoutEnabled}
+                    positionedWordsV4Enabled={positionedWordsV4Enabled}
                   />
                   <span className="mt-2 block truncate text-center text-xs font-semibold">{availableCustomTemplate.name}</span>
                   <span className="mt-1 block text-center text-[10px] font-bold text-white/80">적용 중인 내 템플릿</span>
@@ -11675,7 +12222,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                     onClick={() => selectTemplate(value.id)}
                     className={`min-w-0 rounded-xl border-2 p-2 transition ${selected ? "border-white/75 bg-white/10" : "border-white/10 bg-black/20 hover:border-white/25"}`}
                   >
-                    <TemplatePreview template={value} videoAspectRatio={item.videoAspectRatio || "1:1"} channelName={channel} channelThumbnailUrl={editorChannelThumbnailUrl} />
+                    <TemplatePreview template={value} videoAspectRatio={item.videoAspectRatio || "1:1"} channelName={channel} channelThumbnailUrl={editorChannelThumbnailUrl} titleV4Enabled={positionedWordsV4Enabled} />
                     <span className="mt-2 block truncate text-center text-xs font-semibold">
                       {presetTemplateDisplayName(
                         value.id,

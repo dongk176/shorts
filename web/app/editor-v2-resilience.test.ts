@@ -266,12 +266,14 @@ describe("editor v2 resilience", () => {
   });
 
   it("removes text overlays outside a shortened output before applying", () => {
-    const saveStart = editorSource.indexOf("const save = async () =>");
-    const saveSource = editorSource.slice(saveStart, saveStart + 3_000);
-    expect(saveStart).toBeGreaterThan(-1);
-    expect(saveSource).toContain("fitTimedRangesToDurationFrames(");
-    expect(saveSource).toContain("retainedTextOverlayIds");
-    expect(saveSource).toContain('layer.startsWith("text:")');
+    const finalizeStart = editorSource.indexOf(
+      "const finalizeEditorDocumentForSave = useCallback(",
+    );
+    const finalizeSource = editorSource.slice(finalizeStart, finalizeStart + 3_000);
+    expect(finalizeStart).toBeGreaterThan(-1);
+    expect(finalizeSource).toContain("fitTimedRangesToDurationFrames(");
+    expect(finalizeSource).toContain("retainedTextOverlayIds");
+    expect(finalizeSource).toContain('layer.startsWith("text:")');
   });
 
   it("only deletes a draft when the user chooses to start over", () => {

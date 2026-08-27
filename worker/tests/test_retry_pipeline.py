@@ -19,11 +19,13 @@ from shorts_worker.errors import (
     TranscriptionError,
 )
 from shorts_worker.ingestion import DownloadedAssetBundle, VideoMetadata
+from shorts_worker.render_spec_v4 import compile_initial_editor_render_spec_v4
 from shorts_worker.schemas import HighlightClip, SubtitleSegment, TemplateId
 from shorts_worker.worker_pipeline import (
     BatchWorker,
     ProjectTimelineTarget,
     _caption_compile_options,
+    _initial_title_text_styles,
     _offset_highlight_clip,
     _relative_source_transcript,
     _subtitle_template_timing_lead_frames,
@@ -127,6 +129,47 @@ def test_project_clip_extracts_and_stores_absolute_source_times(
     assert stored["selection_raw_end_seconds"] == 1256
 
 
+def test_project_clip_cleans_new_media_when_v2_slot_conflict_fails_closed(
+    tmp_path: Path,
+) -> None:
+    worker = BatchWorker.__new__(BatchWorker)
+    worker.settings = SimpleNamespace(clean_clip_preset="superfast", clean_clip_crf=20)
+    worker.renderer = MagicMock()
+    worker.storage = MagicMock()
+    worker.storage.upload.return_value = 1234
+    worker.repository = MagicMock()
+    worker.repository.add_pending_short.return_value = False
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"video")
+
+    prepared = worker._prepare_project_clip(
+        job_id="job-v4-conflict",
+        job={
+            "id": "job-v4-conflict",
+            "mvp_session_id": "session-v4",
+            "channel_name": "채널",
+            "template_id": "dark-minimal",
+            "retention_days": 7,
+            "video_aspect_ratio": "16:9",
+            "pipeline_version": 2,
+            "initial_render_spec_version": 4,
+            "initial_caption_render_spec_version": 4,
+        },
+        source=source,
+        source_probe={},
+        work_dir=tmp_path,
+        slot_index=1,
+        clip=HighlightClip(start_seconds=1, end_seconds=11, hook_title="제목"),
+        subtitles=[],
+        comments=[],
+    )
+
+    assert prepared is None
+    clean_key = worker.storage.upload.call_args.args[1]
+    worker.storage.delete.assert_called_once_with(clean_key)
+    worker.repository.fail_project_attempt.assert_called_once()
+
+
 def test_project_clip_forwards_immutable_caption_render_spec(tmp_path: Path) -> None:
     worker = BatchWorker.__new__(BatchWorker)
     worker.settings = SimpleNamespace(clean_clip_preset="superfast", clean_clip_crf=20)
@@ -171,6 +214,65 @@ def test_project_clip_forwards_immutable_caption_render_spec(tmp_path: Path) -> 
     assert stored["subtitles_enabled"] is False
 
 
+def test_v4_project_clip_persists_full_spec_before_first_render(tmp_path: Path) -> None:
+    worker = BatchWorker.__new__(BatchWorker)
+    worker.settings = SimpleNamespace(clean_clip_preset="superfast", clean_clip_crf=20)
+    worker.renderer = MagicMock()
+    worker.storage = MagicMock()
+    worker.storage.upload.return_value = 1234
+    worker.repository = MagicMock()
+    worker.repository.add_pending_short.return_value = True
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"video")
+
+    worker._prepare_project_clip(
+        job_id="job-v4",
+        job={
+            "id": "job-v4",
+            "mvp_session_id": "session-v4",
+            "channel_name": "채널",
+            "template_id": "dark-red",
+            "retention_days": 7,
+            "video_aspect_ratio": "16:9",
+            "pipeline_version": 2,
+            "initial_render_spec_version": 4,
+            "initial_caption_render_spec_version": 4,
+        },
+        source=source,
+        source_probe={},
+        work_dir=tmp_path,
+        slot_index=1,
+        clip=HighlightClip(
+            start_seconds=1,
+            end_seconds=11,
+            hook_title="첫째 줄\n둘째 줄",
+        ),
+        subtitles=[],
+        comments=[],
+    )
+
+    stored = worker.repository.add_pending_short.call_args.kwargs
+    assert stored["initial_render_spec"]["version"] == 4
+    assert "subtitles" not in stored["initial_render_spec"]
+    assert stored["title_text_styles_initialized"] is True
+    assert stored["title_text_styles"] == [{
+        "start": 5,
+        "end": 9,
+        "backgroundColor": "#E32626",
+    }]
+    background = stored["initial_render_spec"]["title"]["lineBoxes"][1][
+        "backgroundRuns"
+    ][0]
+    assert {
+        key: background[key]
+        for key in ("start", "end", "color")
+    } == {"start": 0, "end": 4, "color": "#E32626"}
+    assert all(
+        key in background
+        for key in ("x", "y", "width", "height", "radius")
+    )
+
+
 def test_v5_template_subtitle_is_the_authoritative_caption_style() -> None:
     item: dict[str, object] = {
         "template_snapshot": {
@@ -186,7 +288,7 @@ def test_v5_template_subtitle_is_the_authoritative_caption_style() -> None:
                     "fit": "cover",
                 },
                 "title": {
-                    "visible": True,
+                    "visible": False,
                     "x": 540,
                     "y": 240,
                     "maxWidth": 900,
@@ -194,8 +296,8 @@ def test_v5_template_subtitle_is_the_authoritative_caption_style() -> None:
                     "fontId": "paperlogy",
                     "primaryColor": "#FFFFFF",
                     "accentColor": "#FF4D4F",
-                    "primaryBackgroundColor": None,
-                    "accentBackgroundColor": None,
+                    "primaryBackgroundColor": "#16A34A",
+                    "accentBackgroundColor": "#2563EB",
                 },
                 "subtitle": {
                     "visible": False,
@@ -239,6 +341,34 @@ def test_v5_template_subtitle_is_the_authoritative_caption_style() -> None:
         "font_size": 88,
         "text_color": "#F3F0E9",
     }
+    # Custom template backgrounds are semantic template defaults. They must
+    # not be overwritten by the preset's implicit title style and must remain
+    # paired with the hidden-title flag in the stored v4 spec.
+    title = "첫째 줄\n둘째 줄"
+    styles = _initial_title_text_styles(
+        {
+            **item,
+            "template_id": "dark-red",
+            "video_aspect_ratio": "16:9",
+        },
+        title=title,
+        caption_render_spec=None,
+    )
+    assert styles == []
+    config = item["template_snapshot"]["config"]
+    stored_spec = compile_initial_editor_render_spec_v4(
+        title=title,
+        template_id="dark-red",
+        video_aspect_ratio="16:9",
+        font_scale=1,
+        title_text_styles=styles,
+        custom_template_config=config,
+    )
+    assert stored_spec["title"]["visible"] is False
+    assert [
+        box["backgroundRuns"][0]["color"]
+        for box in stored_spec["title"]["lineBoxes"]
+    ] == ["#16A34A", "#2563EB"]
 
 
 def test_selected_clips_are_shifted_once_to_full_source_absolute_times() -> None:
@@ -1376,7 +1506,9 @@ def test_project_isolates_unavailable_or_uncompilable_caption_clips() -> None:
     assert source.count(
         "timing_lead_frames=caption_timing_lead_frames",
     ) == 2
-    assert "except (CaptionCompileError, TranscriptionError)" in source
+    assert source.count("CaptionCompileError,") >= 2
+    assert source.count("RenderError,") >= 2
+    assert source.count("TranscriptionError,") >= 2
     assert "len(compiled_clips) < required_minimum_count" in source
     assert "clips = [clip for clip, _spec in compiled_clips]" in source
 
@@ -1452,6 +1584,23 @@ def test_project_initial_render_reuses_local_clean_clip_without_s3_download(tmp_
     assert metrics["cleanSource"] == "local"
     assert not local_clean.exists()
     worker.repository.merge_project_attempt_performance_metrics.assert_called_once()
+
+
+def test_initial_render_consumes_the_exact_persisted_v4_spec(tmp_path) -> None:
+    worker = _initial_render_worker(tmp_path, True)
+    item = _initial_render_item()
+    initial_render_spec = {
+        "version": 4,
+        "opaqueFutureCompatibleField": "kept-for-forwarding",
+    }
+    item["initial_render_spec"] = initial_render_spec
+
+    worker._render_initial_short(item)
+
+    assert (
+        worker.renderer.render_clean_clip.call_args.kwargs["initial_render_spec"]
+        == initial_render_spec
+    )
 
 
 def test_rerender_preserves_output_when_commit_response_is_ambiguous(tmp_path) -> None:

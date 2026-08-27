@@ -5,6 +5,18 @@ const TITLE_MAX_CHARS = 20;
 const TITLE_MAX_LINES = 2;
 export const TITLE_MAX_WIDTH = 930;
 export const TITLE_LINE_GAP = 18;
+// Explicitly keep this set aligned with worker/title_wrapping.py. JavaScript
+// and Python disagree about NEL and the information separators, so relying on
+// \s or str.split() makes the browser and Linux worker wrap identical input
+// differently.
+const COLLAPSIBLE_TITLE_WHITESPACE =
+  /[\u0009-\u000D\u001C-\u0020\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]+/gu;
+const COLLAPSIBLE_TITLE_WHITESPACE_CHARACTER =
+  /^[\u0009-\u000D\u001C-\u0020\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]$/u;
+
+function normalizeTitleWhitespace(value: string) {
+  return value.replace(COLLAPSIBLE_TITLE_WHITESPACE, " ").trim();
+}
 
 export function titlePreviewLinePaddingX(fontSize: number) {
   return Math.max(1, Math.round(fontSize * 0.34));
@@ -94,12 +106,12 @@ function sliceCharacters(value: string, start: number, end?: number) {
 
 export function wrapPreviewTitle(title: string): string[] {
   const manualLines = title
-    .split(/\r?\n/)
-    .map((line) => line.trim().replace(/\s+/g, " "))
+    .split(/\r\n|[\n\r\u2028\u2029]/)
+    .map(normalizeTitleWhitespace)
     .filter(Boolean);
   if (manualLines.length > 1) return manualLines.slice(0, TITLE_MAX_LINES);
 
-  const clean = sliceCharacters(title.replace(/\s+/g, " ").trim(), 0, 40);
+  const clean = sliceCharacters(normalizeTitleWhitespace(title), 0, 40);
   if (!clean) return ["핵심 장면"];
   const cleanCharacters = characters(clean);
   if (cleanCharacters.length > TITLE_MAX_CHARS) {
@@ -150,7 +162,7 @@ export function wrapPreviewTitle(title: string): string[] {
 export function titleLineCharacterIndices(title: string, lines: string[]) {
   const normalized: Array<{ character: string; index: number }> = [];
   Array.from(title).forEach((character, index) => {
-    if (/\s/u.test(character)) {
+    if (COLLAPSIBLE_TITLE_WHITESPACE_CHARACTER.test(character)) {
       if (normalized.length && normalized[normalized.length - 1].character !== " ") {
         normalized.push({ character: " ", index });
       }
@@ -220,7 +232,7 @@ export function styledTitleLineRuns(
 }
 
 function estimatedCharacterWidth(character: string) {
-  if (/\s/u.test(character)) return 0.28;
+  if (COLLAPSIBLE_TITLE_WHITESPACE_CHARACTER.test(character)) return 0.28;
   if (/\p{Script=Hangul}|\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}/u.test(character)) return 1;
   if (/\p{Extended_Pictographic}/u.test(character)) return 1;
   if (/[A-Z]/.test(character)) return 0.68;

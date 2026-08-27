@@ -1322,6 +1322,9 @@ class WorkerRepository:
         retention_days: int,
         shard_index: int,
         caption_render_spec: dict[str, Any] | None = None,
+        initial_render_spec: dict[str, Any] | None = None,
+        title_text_styles: list[dict[str, Any]] | None = None,
+        title_text_styles_initialized: bool = False,
         subtitles_enabled: bool | None = None,
         viral_score: int | None = None,
     ) -> bool:
@@ -1343,7 +1346,7 @@ class WorkerRepository:
             )
             if not active_job:
                 return False
-            connection.execute(
+            upserted = connection.execute(
                 """
                 insert into shorts_mvp.generated_shorts (
                   id, job_id, mvp_session_id, user_id, clip_index, start_seconds,
@@ -1354,7 +1357,8 @@ class WorkerRepository:
                   selection_repositioned, hook_title, highlight_reason,
                   channel_display_name,
                   subtitle_template_id, subtitle_template_snapshot,
-                  caption_render_spec,
+                  caption_render_spec, initial_render_spec,
+                  title_text_styles, title_text_styles_initialized,
                   subtitle_segments, subtitles_enabled, comment_overlays,
                   template_id, custom_template_id, template_snapshot, video_aspect_ratio,
                   clean_clip_s3_key, edit_timeline_s3_key,
@@ -1365,6 +1369,7 @@ class WorkerRepository:
                   expires_at, status, render_shard_index, render_progress
                 ) values (
                   %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                  %s,%s,%s,
                   %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,null,null,null,%s,
                   now(),
                   now() + make_interval(days => least(greatest(%s::integer, 1), 30)),
@@ -1381,7 +1386,27 @@ class WorkerRepository:
                   initial_end_seconds=excluded.initial_end_seconds,
                   subtitle_segments=excluded.subtitle_segments,
                   subtitles_enabled=excluded.subtitles_enabled,
-                  caption_render_spec=excluded.caption_render_spec,
+                  caption_render_spec=case
+                    when generated_shorts.initial_render_spec is null
+                      then excluded.caption_render_spec
+                    else generated_shorts.caption_render_spec
+                  end,
+                  initial_render_spec=coalesce(
+                    generated_shorts.initial_render_spec,
+                    excluded.initial_render_spec
+                  ),
+                  title_text_styles=case
+                    when generated_shorts.initial_render_spec is null
+                      and excluded.initial_render_spec is not null
+                      then excluded.title_text_styles
+                    else generated_shorts.title_text_styles
+                  end,
+                  title_text_styles_initialized=case
+                    when generated_shorts.initial_render_spec is null
+                      and excluded.initial_render_spec is not null
+                      then excluded.title_text_styles_initialized
+                    else generated_shorts.title_text_styles_initialized
+                  end,
                   comment_overlays=case
                     when generated_shorts.comment_overlays='[]'::jsonb
                       then excluded.comment_overlays
@@ -1404,6 +1429,12 @@ class WorkerRepository:
                   render_shard_index=excluded.render_shard_index,
                   status='rendering', render_progress=0,
                   render_error_code=null, render_error_message=null
+                where coalesce((
+                  select j.pipeline_version
+                  from shorts_mvp.video_jobs j
+                  where j.id=generated_shorts.job_id
+                ),1) <> 2
+                returning id
                 """,
                 (
                     short_id,
@@ -1432,6 +1463,9 @@ class WorkerRepository:
                         else None
                     ),
                     Jsonb(caption_render_spec) if caption_render_spec else None,
+                    Jsonb(initial_render_spec) if initial_render_spec else None,
+                    Jsonb(title_text_styles or []),
+                    bool(title_text_styles_initialized),
                     Jsonb(subtitles),
                     (
                         bool(caption_render_spec)
@@ -1455,7 +1489,15 @@ class WorkerRepository:
                     retention_days,
                     shard_index,
                 ),
-            )
+            ).fetchone()
+            # A pipeline-v2 slot is immutable once inserted. Its extracted
+            # media, title, timing, caption source and initial v4 render spec
+            # form one evidence set, while this method's caller still owns the
+            # newly generated short id. Reusing an existing row here would
+            # either mix those sets or checkpoint an id that does not exist.
+            # Fail closed so the caller deletes the newly uploaded clean clip.
+            if not upserted:
+                return False
             if int(job.get("pipeline_version") or 1) == 2:
                 checkpoint = connection.execute(
                     """

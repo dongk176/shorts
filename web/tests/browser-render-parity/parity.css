@@ -1,0 +1,26 @@
+html,
+body,
+#root,
+[data-browser-parity-scene] {
+  width: 1080px;
+  height: 1920px;
+  margin: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+[data-browser-parity-scene] {
+  position: relative;
+  container-type: size;
+}
+
+.absolute { position: absolute; }
+.inset-0 { inset: 0; }
+.h-full { height: 100%; }
+.w-full { width: 100%; }
+.overflow-visible { overflow: visible; }
+.pointer-events-none { pointer-events: none; }
+.block { display: block; }
+.inline-block { display: inline-block; }
+.whitespace-nowrap { white-space: nowrap; }
+.text-center { text-align: center; }

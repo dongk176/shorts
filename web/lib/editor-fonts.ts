@@ -205,6 +205,7 @@ export const stableEditorFontIds = [
   "galmuri-9",
   "black-han-sans",
   "godo",
+  "paperlogy",
   "gmarket-sans",
   "nanum-square-neo",
   "s-core-dream",
@@ -247,6 +248,113 @@ export type ResolvedEditorFontFace = {
   variableWeight: 700 | 800 | null;
 };
 
+export const EDITOR_FONT_METRICS_REVISION = "editor-font-metrics-v1" as const;
+
+export const editorFontSha256ById = {
+  "pretendard": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+  "noto-sans-kr": "194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252",
+  "do-hyeon": "35644be7f28e0a68a447b1f7af351dcde5674b870f24f7b5f43e26d00b4ab653",
+  "jua": "769677aef240bfc3b9965f2b50748075bff885e6c6992fc591a3fb268279f898",
+  "jalnan-2": "e8dd022ed1c566d75b0ddf64e32bb36e93d9744b49a296c0f75242553bd3bfae",
+  "cafe24-anemone": "1eb9a54bc973d86cbeedcc12cd4257b2d630e6787df77c2b53fd4e9cf8731941",
+  "cafe24-pro-up": "26b67d9d4c5902c1eb6c1a0c33373450a971b5c5206732b25e5b313a600c474f",
+  "sandbox-aggro": "6c2d664601dc6684676329577c7dd28fb6295fd488f97220b245ca72b82fc14e",
+  "galmuri-9": "e84e821b18be15b9e3a907ceb83cfba25fabf51c80b7edf0d2921cf8f8e1a11d",
+  "black-han-sans": "31960809284026681774a8e52dc19ebcad26cf69b0ad9d560f288296fbb52739",
+  "godo": "4e84160a96f3c91b828c43230786734dc4cdc98caf03bfed3f5a6485edf422b1",
+  "paperlogy": "fe71049fe3d3a7dd3f2e0c12efd850acd1293658181af322348edde9b016e6ba",
+  "gmarket-sans": "ff7c354dd1a324e4cecc1223c4f71e74fa81be7027e0c7f6324c475909cacefc",
+  "nanum-square-neo": "4749fa5691157cf56a59d297b45e88894a646846048018cd7a4117ffb2869767",
+  "s-core-dream": "c11785ddadc4c415fea6737f5986b051bdfd815d4e33747d47000e4bed799f0f",
+  "suit": "044e7df5d44e38ea371e9d808165fdec8d05257589bdad21da8f3b79ad4000de",
+  "spoqa-han-sans-neo": "c85faa3fa812cae9fad6eadc662b0e68c84f010b61c5c0ebc769a7b43e0fcd4d",
+  "noto-serif-kr": "11f8d5de6f1b79195efba3828aaa2ec95c1178f5ae976fb23c8d53250a9938f3",
+  "nanum-myeongjo": "bc9ed8e60d93fe6db054b8fb988481b625f2eef8cb2317ad0e9834681b8fe3f3",
+  "ridi-batang": "b1507550e860d1d0f680f86d88fcc4df279f03af451a052a1fbfa657a40cc1d3",
+} as const satisfies Record<EditorFontId, string>;
+
+export const editorCaptionCssToAssScaleById = {
+  "pretendard": 0.838314,
+  "noto-sans-kr": 0.690608,
+  "do-hyeon": 1,
+  "jua": 0.898473,
+  "jalnan-2": 0.847458,
+  "cafe24-anemone": 0.847458,
+  "cafe24-pro-up": 0.831947,
+  "sandbox-aggro": 0.833333,
+  "galmuri-9": 0.833333,
+  "black-han-sans": 0.980392,
+  "godo": 0.884956,
+  "paperlogy": 0.849057,
+  "gmarket-sans": 0.869565,
+  "nanum-square-neo": 0.904977,
+  "s-core-dream": 0.719942,
+  "suit": 0.801282,
+  "spoqa-han-sans-neo": 0.70922,
+  "noto-serif-kr": 0.695894,
+  "nanum-myeongjo": 0.868533,
+  "ridi-batang": 1,
+} as const satisfies Record<EditorFontId, number>;
+
+// Derived from the immutable bundled font tables. CSS uses the hhea line box
+// while libass centers against OS/2 usWinAscent/usWinDescent; values are in the
+// original (pre cssToAssScale) font-size unit.
+export const editorCaptionCssToAssBaselineOffsetEmById = {
+  "pretendard": -0.000205,
+  "noto-sans-kr": 0,
+  "do-hyeon": 0,
+  "jua": 0.015723,
+  "jalnan-2": 0,
+  "cafe24-anemone": 0,
+  "cafe24-pro-up": -0.000832,
+  "sandbox-aggro": 0,
+  "galmuri-9": 0.041667,
+  "black-han-sans": 0.009804,
+  "godo": 0,
+  "paperlogy": 0,
+  "gmarket-sans": -0.065217,
+  "nanum-square-neo": 0,
+  "s-core-dream": 0.058315,
+  "suit": 0,
+  "spoqa-han-sans-neo": 0.03617,
+  "noto-serif-kr": 0,
+  "nanum-myeongjo": 0.03011,
+  "ridi-batang": -0.019,
+} as const satisfies Record<EditorFontId, number>;
+
+// Derived from the U+0020 advance in each immutable bundled font. If a source
+// face omits U+0020 (RIDIBatang does), the worker and browser both use the
+// smallest positive empty-glyph advance and never depend on system fallback.
+export const editorWordSpaceAdvanceEmById = {
+  "pretendard": 0.230469,
+  "noto-sans-kr": 0.22,
+  "do-hyeon": 0.3,
+  "jua": 0.3,
+  "jalnan-2": 0.28,
+  "cafe24-anemone": 0.27,
+  "cafe24-pro-up": 0.2,
+  "sandbox-aggro": 0.28,
+  "galmuri-9": 0.4,
+  "black-han-sans": 0.3,
+  "godo": 0.307,
+  "paperlogy": 0.22,
+  "gmarket-sans": 0.28,
+  "nanum-square-neo": 0.245,
+  "s-core-dream": 0.294,
+  "suit": 0.23,
+  "spoqa-han-sans-neo": 0.227,
+  "noto-serif-kr": 0.259,
+  "nanum-myeongjo": 0.273438,
+  "ridi-batang": 0.29,
+} as const satisfies Record<EditorFontId, number>;
+
+export type ResolvedEditorFontFaceV4 = ResolvedEditorFontFace & {
+  sha256: string;
+  metrics: {
+    revision: typeof EDITOR_FONT_METRICS_REVISION;
+  };
+};
+
 export function resolveEditorFontFace(
   fontId: EditorFontId | undefined,
   role: EditorFontRole,
@@ -265,6 +373,46 @@ export function resolveEditorFontFace(
     resolvedWeight: variableWeight ?? option.staticWeight ?? 700,
     variableWeight,
   };
+}
+
+export function resolveEditorFontFaceV4(
+  fontId: EditorFontId,
+  role: EditorFontRole,
+): ResolvedEditorFontFaceV4 {
+  const option = editorFontOptions.find((font) => font.id === fontId);
+  if (!option) {
+    throw new Error(`Unknown editor font for render specification v4: ${fontId}`);
+  }
+  const resolved = resolveEditorFontFace(fontId, role);
+  const exactFamily = resolved.family
+    .replace('"Editor V3 ', '"Editor V4 ')
+    .replace(/,\s*(?:sans-serif|serif)$/, "");
+  return {
+    ...resolved,
+    family: exactFamily,
+    sha256: editorFontSha256ById[fontId],
+    metrics: {
+      revision: EDITOR_FONT_METRICS_REVISION,
+    },
+  };
+}
+
+export async function ensureEditorFontFaceV4Loaded(
+  face: ResolvedEditorFontFaceV4,
+  sample = "한글 Aa 123",
+) {
+  if (typeof document === "undefined" || !document.fonts) {
+    throw new Error("Exact editor font loading is unavailable.");
+  }
+  const descriptor = `${face.resolvedWeight} 16px ${face.family}`;
+  const loadedFaces = await document.fonts.load(descriptor, sample);
+  if (
+    loadedFaces.length === 0
+    || loadedFaces.some((loadedFace) => loadedFace.status !== "loaded")
+    || !document.fonts.check(descriptor, sample)
+  ) {
+    throw new Error(`Exact editor font failed to load: ${face.fontId}`);
+  }
 }
 
 export function editorCaptionFontFamily(fontId: EditorFontId | undefined) {

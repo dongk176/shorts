@@ -20,9 +20,11 @@ import {
   createEditorRenderSpec,
   EDITOR_RENDER_SPEC_LEGACY_VERSION,
   EDITOR_RENDER_SPEC_VERSION,
+  EDITOR_RENDER_SPEC_V4_VERSION,
 } from "@/lib/editor-render-spec";
 import {
   editorReleaseSupportsRenderSpecV3,
+  editorReleaseSupportsRenderSpecV4,
   subtitleEditingReleaseEnabled,
   resolveRequestedEditorRelease,
   type EditorReleaseAssignment,
@@ -172,6 +174,7 @@ function usesCandidateOnlyEditorFont(
     ...document.overlays.textOverlays.map((overlay) => overlay.fontId),
     ...(document.version === 3
       && document.renderSpec.version !== EDITOR_RENDER_SPEC_LEGACY_VERSION
+      && document.renderSpec.subtitles
       ? [document.renderSpec.subtitles.fontId]
       : []),
   ].some((fontId) => fontId != null && !isStableEditorFontId(fontId));
@@ -209,6 +212,21 @@ async function applyEditorDocument({
   const candidateOnlyFontRequested = usesCandidateOnlyEditorFont(
     requestedDocument,
   );
+  const renderSpecV4Requested = requestedDocument.version === 3
+    && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION;
+  const subtitleEditingRequested = requestedDocument.version === 3
+    && requestedDocument.renderSpec.version !== EDITOR_RENDER_SPEC_LEGACY_VERSION
+    && Boolean(requestedDocument.renderSpec.subtitles);
+  if (
+    renderSpecV4Requested
+    && !editorReleaseSupportsRenderSpecV4(release)
+  ) {
+    throw new HttpError(
+      409,
+      "현재 편집기가 지원하는 설정으로 다시 저장해 주세요.",
+      "EDITOR_RENDER_SPEC_UNSUPPORTED",
+    );
+  }
   if (
     (
       requestedDocument.version === 3
@@ -216,7 +234,10 @@ async function applyEditorDocument({
     )
     || candidateOnlyFontRequested
   ) {
-    if (!editorReleaseSupportsRenderSpecV3(release)) {
+    if (
+      !editorReleaseSupportsRenderSpecV3(release)
+      && !editorReleaseSupportsRenderSpecV4(release)
+    ) {
       throw new HttpError(
         409,
         "현재 편집기가 지원하는 설정으로 다시 저장해 주세요.",
@@ -225,8 +246,7 @@ async function applyEditorDocument({
     }
   }
   if (
-    requestedDocument.version === 3
-    && requestedDocument.renderSpec.version !== EDITOR_RENDER_SPEC_LEGACY_VERSION
+    subtitleEditingRequested
     && !subtitleEditingReleaseEnabled(release)
   ) {
     throw new HttpError(
@@ -328,7 +348,13 @@ async function applyEditorDocument({
   );
   const unifiedSubtitleEditRequested = unifiedTemplateSubtitleOutput || (
     requestedDocument.version === 3
-    && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+    && (
+      requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+      || (
+        requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION
+        && Boolean(requestedDocument.renderSpec.subtitles)
+      )
+    )
   );
   if (
     existing.subtitleTemplateId
@@ -377,9 +403,12 @@ async function applyEditorDocument({
   }
   if (
     requestedDocument.version === 3
-    && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+    && (
+      requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
+      || requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION
+    )
     && !captionRenderSpec
-    && (requestedDocument.renderSpec.subtitles.cueEdits?.length || 0) > 0
+    && (requestedDocument.renderSpec.subtitles?.cueEdits?.length || 0) > 0
   ) {
     throw new HttpError(
       400,
@@ -403,6 +432,7 @@ async function applyEditorDocument({
     if (
       requestedDocument.version === 3
       && requestedDocument.renderSpec.version !== EDITOR_RENDER_SPEC_LEGACY_VERSION
+      && requestedDocument.renderSpec.subtitles
       && (() => {
         const sourceCueCounts = new Map<number, number>();
         captionRenderSpec.cues.forEach((cue, cueIndex) => {
@@ -598,7 +628,10 @@ async function applyEditorDocument({
       );
     }
   }
-  if (document.version === 3) {
+  if (
+    document.version === 3
+    && document.renderSpec.version !== EDITOR_RENDER_SPEC_V4_VERSION
+  ) {
     document.renderSpec = createEditorRenderSpec(document);
   }
   const snapshotHash = editorSnapshotHash(document);
@@ -615,15 +648,21 @@ async function applyEditorDocument({
       || !lockedRelease.releaseId
       || lockedRelease.releaseId !== release.releaseId
       || (
+        renderSpecV4Requested
+        && !editorReleaseSupportsRenderSpecV4(lockedRelease)
+      )
+      || (
         (
           requestedDocument.version === 3
           && requestedDocument.renderSpec.version === EDITOR_RENDER_SPEC_VERSION
         )
         && !editorReleaseSupportsRenderSpecV3(lockedRelease)
+        && !editorReleaseSupportsRenderSpecV4(lockedRelease)
       )
       || (
         candidateOnlyFontRequested
         && !editorReleaseSupportsRenderSpecV3(lockedRelease)
+        && !editorReleaseSupportsRenderSpecV4(lockedRelease)
       )
     ) {
       throw new HttpError(
@@ -633,7 +672,7 @@ async function applyEditorDocument({
       );
     }
     if (
-      existing.subtitleTemplateId
+      (existing.subtitleTemplateId || subtitleEditingRequested)
       && !subtitleEditingReleaseEnabled(lockedRelease)
     ) {
       throw new HttpError(

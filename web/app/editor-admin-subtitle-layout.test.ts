@@ -79,12 +79,26 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain(
       "음성보다 {editableCaptionSourceSpec.timingLeadFrames ?? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES}프레임 먼저 표시",
     );
-    expect(editorSource).toContain("* CAPTION_ASS_PREVIEW_FONT_SCALE");
+    expect(editorSource).toContain("? spec.font.metrics.cssToAssScale");
+    expect(editorSource).toContain(": CAPTION_ASS_PREVIEW_FONT_SCALE;");
     expect(editorSource).toContain("spec.style.outlineWidth * captionScale * 2");
     expect(editorSource).toContain("min={24}");
     expect(editorSource).toContain("max={120}");
     expect(editorSource).toContain("subtitleLayout.cueEdits");
     expect(editorSource).toContain("document.fonts.load");
+    expect(editorSource).toContain(
+      "const exactCaptionPreview = positionedWordsV4Enabled\n"
+      + "      && editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION;",
+    );
+    expect(editorSource).toContain(
+      "ensureEditorFontFaceV4Loaded(\n          resolveEditorFontFaceV4(captionFontId, \"title\")",
+    );
+    expect(editorSource).toContain(
+      "editableCaptionSourceSpec.schemaVersion === 4\n          ? undefined",
+    );
+    expect(editorSource).toContain(
+      "subtitlesEnabled\n          && editableCaptionSourceSpec?.schemaVersion === 4",
+    );
     expect(editorSource).not.toContain("visibleEditedWords");
     expect(editorSource).toContain("(currentFrameFloat - event.startFrame) / easeFrames");
     expect(editorSource).toContain('className="inline-block"');
@@ -92,7 +106,21 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain(
       "transformedX(spec.safeArea.x + spec.safeArea.width / 2)",
     );
-    expect(editorSource).not.toContain("transformedX(position.centerX)");
+    expect(editorSource).toContain(
+      "const positionedV4Boxes = captionV4PositionedWordBoxes(",
+    );
+    expect(editorSource).toContain(
+      "const centerX = transformedX(position.centerX);",
+    );
+    const legacyPopStart = editorSource.indexOf(': spec.templateId === "pop"');
+    const legacyPopEnd = editorSource.indexOf(
+      '\n      : <span\n        role="button"',
+      legacyPopStart,
+    );
+    const legacyPopBranch = editorSource.slice(legacyPopStart, legacyPopEnd);
+    expect(legacyPopStart).toBeGreaterThan(-1);
+    expect(legacyPopEnd).toBeGreaterThan(legacyPopStart);
+    expect(legacyPopBranch).not.toContain("position.centerX");
     expect(editorSource).toContain('!overlayPreviewEnabled && templateId !== "comment-capture"');
     expect(editorSource).toContain("!editableCaptionSourceSpec && activeSubtitle");
     expect(editorSource).toContain("captionTemplatePreviewSnapshot.layout.video");
@@ -100,7 +128,7 @@ describe("admin editor subtitle layout", () => {
     expect(editorSource).toContain("<CaptionTemplateEditorChannel");
   });
 
-  it("sends a subtitle layout only through an enabled v3 release", () => {
+  it("sends a subtitle layout through an enabled v3 or v4 release", () => {
     expect(editorSource).toContain(
       "? editorDocumentSubtitleLayout",
     );
@@ -108,10 +136,22 @@ describe("admin editor subtitle layout", () => {
       "const editorRenderSpecVersion = editorRenderSpecVersionForRelease(\n    editorRelease,\n  )",
     );
     expect(editorSource).toContain(
-      "const fullSubtitleStyleEditingEnabled = unifiedSubtitleLayoutEnabled\n    && editorRenderSpecVersion === 3",
+      "const fullSubtitleStyleEditingEnabled = unifiedSubtitleLayoutEnabled\n    && (\n      editorRenderSpecVersion === 3\n      || editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION\n    )",
     );
     expect(editorSource).toContain(
-      "editorRenderSpecVersion,\n        )",
+      "editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION\n        ? 3\n        : editorRenderSpecVersion,",
+    );
+    expect(editorSource).toContain(
+      "preserveV4TitleHorizontalOffset,\n    );",
+    );
+    expect(editorSource).toContain(
+      "savedEditorDocument.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION\n"
+      + "      ? savedEditorDocument.renderSpec",
+    );
+    expect(editorSource).toContain(
+      "const preserveV4TitleHorizontalOffset =\n"
+      + "    editorRenderSpecVersion === EDITOR_RENDER_SPEC_V4_VERSION\n"
+      + "    || initialRenderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION;",
     );
     const routeSource = source("./api/shorts/[shortId]/apply-edit/route.ts");
     expect(routeSource).toContain("!subtitleEditingReleaseEnabled(release)");

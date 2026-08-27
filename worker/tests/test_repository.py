@@ -293,8 +293,8 @@ def test_pending_short_insert_passes_retention_period_not_an_absolute_time() -> 
     assert insert_call.args[0].count("%s") == len(insert_call.args[1])
     # Caption identity is inserted before the optional render spec. Legacy
     # rows keep all caption fields empty and subtitles disabled.
-    assert insert_call.args[1][19:22] == (None, None, None)
-    assert insert_call.args[1][23] is False
+    assert insert_call.args[1][19:23] == (None, None, None, None)
+    assert insert_call.args[1][24] is False
     assert insert_call.args[1][-3] == 87
     assert insert_call.args[1][-2] == 30
 
@@ -352,10 +352,94 @@ def test_pending_caption_short_inserts_immutable_identity_and_render_spec() -> N
     assert parameters[19] == "highlight"
     assert parameters[20].obj == snapshot
     assert parameters[21].obj == render_spec
-    assert parameters[23] is True
+    assert parameters[22] is None
+    assert parameters[23].obj == []
+    assert parameters[24] is False
+    assert parameters[26] is True
     assert "subtitle_template_id=excluded.subtitle_template_id" not in query
     assert "subtitle_template_snapshot=excluded.subtitle_template_snapshot" not in query
-    assert "caption_render_spec=excluded.caption_render_spec" in query
+    assert "then excluded.caption_render_spec" in query
+    assert "else generated_shorts.caption_render_spec" in query
+
+
+def test_pending_v4_short_persists_initial_spec_without_dirtying_hash() -> None:
+    implementation = inspect.getsource(WorkerRepository.add_pending_short)
+    completion = inspect.getsource(WorkerRepository.complete_initial_render)
+
+    assert "caption_render_spec, initial_render_spec" in implementation
+    assert "else generated_shorts.caption_render_spec" in implementation
+    assert "initial_render_spec=coalesce(" in implementation
+    assert "Jsonb(initial_render_spec)" in implementation
+    assert "title_text_styles_initialized=case" in implementation
+    assert "select j.pipeline_version" in implementation
+    assert "),1) <> 2" in implementation
+    assert "returning id" in implementation
+    assert "if not upserted:" in implementation
+    # The initial v4 spec is immutable source evidence, not user-editable
+    # configuration. Including it here would diverge from every current hash
+    # producer and make an unchanged video appear dirty forever.
+    assert "~initial-render-spec~" not in completion
+
+
+def test_pending_pipeline_v2_conflict_fails_closed_before_checkpoint() -> None:
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+    locked = MagicMock()
+    locked.fetchone.return_value = {"id": "job-v4"}
+    active = MagicMock()
+    active.fetchone.return_value = {"id": "job-v4"}
+    conflicted = MagicMock()
+    conflicted.fetchone.return_value = None
+    connection.execute.side_effect = [locked, active, conflicted]
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+
+    assert repository.add_pending_short(
+        short_id="new-short-id",
+        job={
+            "id": "job-v4",
+            "mvp_session_id": "session-v4",
+            "channel_name": "channel-v4",
+            "template_id": "dark-minimal",
+            "pipeline_version": 2,
+        },
+        clip_index=1,
+        start_seconds=10,
+        end_seconds=20,
+        hook_title="new hook",
+        highlight_reason="new reason",
+        selection_raw_start_seconds=10,
+        selection_raw_end_seconds=20,
+        selection_raw_duration_seconds=10,
+        selection_candidate_index=1,
+        selection_provider="gemini",
+        selection_model="model",
+        selection_length_adjustment=None,
+        selection_repositioned=False,
+        subtitles=[{"start": 0, "end": 1, "text": "new caption"}],
+        comment_overlays=[],
+        clean_key="edit-sources/new-short-id.mp4",
+        timeline_key=None,
+        timeline_start_seconds=None,
+        timeline_end_seconds=None,
+        timeline_subtitles=None,
+        retention_days=30,
+        shard_index=0,
+        caption_render_spec={"schemaVersion": 4},
+        initial_render_spec={"version": 4},
+        title_text_styles=[],
+        title_text_styles_initialized=True,
+    ) is False
+
+    assert connection.execute.call_count == 3
+    upsert_query = connection.execute.call_args_list[2].args[0]
+    assert "where coalesce((" in upsert_query
+    assert "pipeline_version" in upsert_query
+    assert "returning id" in upsert_query
 
 
 def test_deferred_timeline_commit_only_updates_live_completed_project_output() -> None:

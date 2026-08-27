@@ -5,9 +5,19 @@ import {
   editorDraftDocumentSnapshotSchema,
   editorDocumentOutputDuration,
   editorDocumentSnapshotSchema,
+  parseInitialEditorRenderSpec,
 } from "./editor-document-contract";
-import { createEditorDocumentSnapshot } from "./editor-document-snapshot";
+import {
+  cloneEditorDocumentSnapshot,
+  createEditorDocumentSnapshot,
+  type EditorDocumentSnapshot,
+} from "./editor-document-snapshot";
 import { createInitialEditorOverlayLayout } from "./editor-overlay-preview";
+import { resolveEditorFontFaceV4 } from "./editor-fonts";
+import {
+  compileEditorRenderTitleSpecV4,
+  createEditorRenderSpec,
+} from "./editor-render-spec";
 
 function validDocument() {
   return createEditorDocumentSnapshot({
@@ -65,6 +75,54 @@ function validDocument() {
       selectionEndSeconds: 16,
     },
   });
+}
+
+function validV4Document() {
+  const document = validDocument();
+  const legacy = createEditorRenderSpec(document, undefined, 1);
+  if (legacy.version !== 1) throw new Error("invalid legacy fixture");
+  const title = compileEditorRenderTitleSpecV4(
+    document,
+    (text, fontSize) => ({
+      width: Array.from(text).length * fontSize * 0.72,
+      actualBoundingBoxAscent: fontSize * 0.76,
+      actualBoundingBoxDescent: fontSize * 0.24,
+    }),
+  );
+  return {
+    ...document,
+    version: 3,
+    renderSpec: {
+      canvas: legacy.canvas,
+      fps: legacy.fps,
+      layerOrder: legacy.layerOrder,
+      comments: legacy.comments,
+      video: legacy.video,
+      version: 4,
+      title,
+      channel: {
+        ...legacy.channel,
+        visible: document.overlays.visible.channel,
+        font: resolveEditorFontFaceV4(document.overlays.fonts.channel, "channel"),
+      },
+      textOverlays: legacy.textOverlays.map((overlay, index) => ({
+        ...overlay,
+        font: resolveEditorFontFaceV4(
+          document.overlays.textOverlays[index]?.fontId || "pretendard",
+          "text",
+        ),
+      })),
+      subtitles: {
+        centerX: 540,
+        offsetY: 0,
+        scale: 1,
+        fontSize: 48,
+        color: "#FFFFFF",
+        visible: true,
+        captionSpecVersion: 4,
+      },
+    },
+  };
 }
 
 describe("editor document v2 contract", () => {
@@ -172,6 +230,79 @@ describe("editor document v3 render specification", () => {
       startFrame: 15,
       endFrame: 75,
     });
+  });
+
+  it("preserves authoritative v4 geometry and nested version while cloning", () => {
+    const value = validV4Document();
+    const parsed = editorDocumentSnapshotSchema.parse(value);
+    expect(parsed.version).toBe(3);
+    if (parsed.version !== 3 || parsed.renderSpec.version !== 4) {
+      throw new Error("v4 fixture was downgraded");
+    }
+    expect(parsed.renderSpec.title.lineBoxes).toEqual(
+      value.renderSpec.title.lineBoxes,
+    );
+    const cloned = cloneEditorDocumentSnapshot(
+      parsed as unknown as EditorDocumentSnapshot,
+    );
+    expect(cloned).toEqual(parsed);
+    if (cloned.version !== 3 || cloned.renderSpec.version !== 4) {
+      throw new Error("v4 clone was downgraded");
+    }
+    cloned.renderSpec.title.lineBoxes[0].centerY += 1;
+    expect(parsed.renderSpec.title.lineBoxes[0].centerY).not.toBe(
+      cloned.renderSpec.title.lineBoxes[0].centerY,
+    );
+  });
+
+  it("parses an authoritative initial render spec without a document wrapper", () => {
+    const value = validV4Document().renderSpec;
+    expect(parseInitialEditorRenderSpec(value)).toEqual(value);
+
+    const legacy = createEditorRenderSpec(validDocument(), undefined, 3);
+    expect(parseInitialEditorRenderSpec(legacy)).toBeNull();
+
+    const forged = structuredClone(value);
+    forged.channel.font.sha256 = "0".repeat(64);
+    expect(parseInitialEditorRenderSpec(forged)).toBeNull();
+    expect(parseInitialEditorRenderSpec({ version: 4 })).toBeNull();
+  });
+
+  it("rejects forged v4 fonts, over-precision, and invalid Unicode runs", () => {
+    const forgedFont = validV4Document();
+    forgedFont.renderSpec.title.font.sha256 = "0".repeat(64);
+    expect(() => editorDocumentSnapshotSchema.parse(forgedFont)).toThrow();
+
+    const overPrecision = validV4Document();
+    overPrecision.renderSpec.title.lineBoxes[0].centerY += 0.0001;
+    expect(() => editorDocumentSnapshotSchema.parse(overPrecision)).toThrow();
+
+    const invalidRun = validV4Document();
+    invalidRun.renderSpec.title.lineBoxes[0].backgroundRuns = [{
+      start: 0,
+      end: Array.from(invalidRun.renderSpec.title.lineBoxes[0].text).length + 1,
+      color: "#FFFFFF",
+    }];
+    expect(() => editorDocumentSnapshotSchema.parse(invalidRun)).toThrow();
+
+    const missingBackgroundGeometry = validV4Document();
+    const sealedText = missingBackgroundGeometry.renderSpec.title
+      .lineBoxes[0].text;
+    missingBackgroundGeometry.renderSpec.title.lineBoxes[0].backgroundRuns = [{
+      start: 0,
+      end: Math.min(1, Array.from(sealedText).length),
+      color: "#FF715E",
+    }];
+    expect(() => editorDocumentSnapshotSchema.parse(missingBackgroundGeometry))
+      .toThrow("v4 제목 배경은 확정 좌표를 모두 저장해야 합니다.");
+  });
+
+  it("rejects stale v4 title geometry after the semantic title changes", () => {
+    const staleTitle = validV4Document();
+    staleTitle.title.text = "바뀐 제목은 기존 줄 상자를 재사용할 수 없습니다";
+    expect(() => editorDocumentSnapshotSchema.parse(staleTitle)).toThrow(
+      "V4 렌더 사양이 편집 내용과 승인 폰트 목록에 일치해야 합니다.",
+    );
   });
 
   it("rejects a client render specification that differs from semantic edits", () => {

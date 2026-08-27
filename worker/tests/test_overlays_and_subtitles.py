@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from shorts_worker.config import Settings
@@ -21,6 +22,8 @@ from shorts_worker.overlays import (
 from shorts_worker.schemas import (
     CommentOverlay,
     CustomTemplateConfig,
+    EditorDocumentTitle,
+    HighlightClip,
     SubtitleSegment,
     TemplateId,
     TitleTextStyle,
@@ -40,6 +43,58 @@ def test_title_wrapping_preserves_user_line_break() -> None:
         "첫 번째 핵심",
         "두 번째 반전",
     ]
+
+
+@pytest.mark.parametrize("separator", ["\r\n", "\r", "\u2028", "\u2029"])
+def test_title_wrapping_uses_the_browser_line_break_contract(
+    separator: str,
+) -> None:
+    assert wrap_korean_title(f"첫 번째 핵심{separator}두 번째 반전") == [
+        "첫 번째 핵심",
+        "두 번째 반전",
+    ]
+
+
+def test_title_wrapping_does_not_promote_non_browser_record_separators() -> None:
+    # Python's str.splitlines() used to treat this as an authored two-line
+    # title even though the browser saw ordinary collapsible whitespace.
+    assert wrap_korean_title("첫 번째 핵심\x1e두 번째 반전") != [
+        "첫 번째 핵심",
+        "두 번째 반전",
+    ]
+
+
+def test_title_wrapping_collapses_cross_runtime_whitespace_identically() -> None:
+    assert wrap_korean_title("첫째\x85둘째\x1e셋째") == ["첫째 둘째 셋째"]
+
+
+@pytest.mark.parametrize("separator", ["\v", "\x85", "\x1e"])
+def test_title_models_do_not_promote_python_only_line_breaks(separator: str) -> None:
+    title = f"첫째{separator}둘째{separator}셋째"
+
+    parsed = EditorDocumentTitle.model_validate({
+        "text": title,
+        "textStyles": [],
+        "fontScale": 1,
+    })
+    clip = HighlightClip(
+        start_seconds=0,
+        end_seconds=10,
+        hook_title=title,
+    )
+
+    assert parsed.text == title
+    assert clip.hook_title == "첫째 둘째 셋째"
+
+
+@pytest.mark.parametrize("separator", ["\n", "\r", "\u2028", "\u2029"])
+def test_title_model_rejects_three_browser_authored_lines(separator: str) -> None:
+    with pytest.raises(ValueError, match="at most two lines"):
+        EditorDocumentTitle.model_validate({
+            "text": separator.join(("첫째", "둘째", "셋째")),
+            "textStyles": [],
+            "fontScale": 1,
+        })
 
 
 def test_korean_title_overlay_is_created(tmp_path: Path) -> None:

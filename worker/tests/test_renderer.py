@@ -4,12 +4,14 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
 
 from shorts_worker.caption_templates import compile_caption_render_spec
 from shorts_worker.config import Settings
+from shorts_worker.render_spec_v4 import compile_initial_editor_render_spec_v4
 from shorts_worker.renderer import (
     COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y,
     PRESET_SQUARE_CHANNEL_CENTER_Y,
@@ -35,6 +37,81 @@ from shorts_worker.subtitles import TranscriptWord
 from shorts_worker.worker_pipeline import edit_timeline_clip
 
 pytestmark = pytest.mark.render
+
+
+def test_v4_initial_render_hides_channel_but_legacy_keeps_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clean = tmp_path / "clean.mp4"
+    clean.write_bytes(b"clean")
+
+    def probe(_path: Path, **_kwargs: object) -> dict[str, object]:
+        return {
+            "format": {"duration": "1"},
+            "streams": [{
+                "codec_type": "video",
+                "width": 1080,
+                "height": 1920,
+                "avg_frame_rate": "30/1",
+            }],
+        }
+
+    def panels(**kwargs: object) -> tuple[Path, Path]:
+        directory = Path(kwargs["directory"])
+        prefix = str(kwargs["prefix"])
+        directory.mkdir(parents=True, exist_ok=True)
+        top = directory / f"{prefix}_top.png"
+        bottom = directory / f"{prefix}_bottom.png"
+        Image.new("RGBA", (1080, 656), (255, 0, 0, 255)).save(top)
+        Image.new("RGBA", (1080, 656), (255, 0, 0, 255)).save(bottom)
+        return top, bottom
+
+    def render(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        Path(command[-1]).write_bytes(b"rendered")
+        return SimpleNamespace(returncode=0, stdout="")
+
+    monkeypatch.setattr("shorts_worker.renderer.probe_media", probe)
+    monkeypatch.setattr("shorts_worker.renderer.create_panel_overlays", panels)
+    monkeypatch.setattr("shorts_worker.renderer.run_command", render)
+    renderer = VideoRenderer(Settings(temp_dir=tmp_path, ffmpeg_timeout_seconds=30))
+    initial_spec = compile_initial_editor_render_spec_v4(
+        title="제목",
+        template_id="dark-red",
+        video_aspect_ratio="16:9",
+        font_scale=1,
+    )
+    initial_spec["channel"]["visible"] = False
+
+    renderer.render_clean_clip(
+        clean_path=clean,
+        output_path=tmp_path / "v4.mp4",
+        title="제목",
+        channel_name="숨긴 채널",
+        template_id=TemplateId.DARK_RED,
+        transcript=[],
+        subtitles_enabled=False,
+        work_dir=tmp_path / "v4-work",
+        prefix="v4",
+        initial_render_spec=initial_spec,
+    )
+    hidden = tmp_path / "v4-work/overlays/v4_channel_hidden_v4.png"
+    with Image.open(hidden).convert("RGBA") as image:
+        assert image.getbbox() is None
+
+    renderer.render_clean_clip(
+        clean_path=clean,
+        output_path=tmp_path / "legacy.mp4",
+        title="제목",
+        channel_name="기존 채널",
+        template_id=TemplateId.DARK_RED,
+        transcript=[],
+        subtitles_enabled=False,
+        work_dir=tmp_path / "legacy-work",
+        prefix="legacy",
+    )
+    with Image.open(tmp_path / "legacy-work/overlays/legacy_bottom.png") as image:
+        assert image.getbbox() is not None
 
 
 def test_caption_title_background_defaults_only_for_full_vertical() -> None:
