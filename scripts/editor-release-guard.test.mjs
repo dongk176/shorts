@@ -197,6 +197,10 @@ test("release workflow promotes one tested digest without deploying the website"
     workflow,
     /node scripts\/apply-supabase\.mjs --non-production[\s\S]*202608260008_editor_release_probe_attestation\.sql/,
   );
+  assert.match(
+    workflow,
+    /202608260008_editor_release_probe_attestation\.sql[\s\\\n]*202608270001_fix_editor_release_object_cardinality\.sql/,
+  );
   assert.doesNotMatch(workflow, /node scripts\/apply-supabase\.mjs\s*\n\s*$/m);
   assert.match(workflow, /EDITOR_RELEASE_ECR_REPOSITORY_URI/);
   assert.match(workflow, /\.projectTargets \| keys \| length == 5/);
@@ -213,11 +217,11 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260827-12'/,
+    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260827-13'/,
   );
   assert.deepEqual(
     [...new Set(workflow.match(/editor-v4-render-parity-[0-9]{8}-[0-9]+/g))],
-    ["editor-v4-render-parity-20260827-12"],
+    ["editor-v4-render-parity-20260827-13"],
   );
   assert.equal(workflow.match(/fetch-depth: 0/g)?.length, 2);
   assert.equal(workflow.match(/fetch-tags: true/g)?.length, 2);
@@ -278,7 +282,7 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(registrar, /docker\s+(build|push)/);
 });
 
-test("production runbook applies and verifies migrations 007 and 008 before bootstrap", async () => {
+test("production runbook applies and verifies migrations 007, 008, and 009 before bootstrap", async () => {
   const runbook = await source("docs/aws-runbook.md");
   assert.match(
     runbook,
@@ -294,10 +298,14 @@ test("production runbook applies and verifies migrations 007 and 008 before boot
   );
   assert.match(
     runbook,
+    /202608260008_editor_release_probe_attestation\.sql[\s\\\n]*202608270001_fix_editor_release_object_cardinality\.sql/,
+  );
+  assert.match(
+    runbook,
     /verify-editor-release-probe-attestation\.mjs --require-empty/,
   );
   assert.ok(
-    runbook.indexOf("202608260008_editor_release_probe_attestation.sql")
+    runbook.indexOf("202608270001_fix_editor_release_object_cardinality.sql")
       < runbook.indexOf("--phase bootstrap"),
   );
 });

@@ -144,7 +144,8 @@ node scripts/apply-supabase.mjs --production \
 node scripts/verify-editor-render-v4-release-control.mjs --require-stopped
 
 node scripts/apply-supabase.mjs --production \
-  202608260008_editor_release_probe_attestation.sql
+  202608260008_editor_release_probe_attestation.sql \
+  202608270001_fix_editor_release_object_cardinality.sql
 
 node scripts/verify-editor-release-probe-attestation.mjs --require-empty
 ```

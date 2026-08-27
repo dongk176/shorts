@@ -7,9 +7,13 @@ import { pathToFileURL } from "node:url";
 import postgres from "../web/node_modules/postgres/src/index.js";
 import { requireProductionDatabaseUrl } from "./production-database-identity.mjs";
 
-const migrationPath = path.resolve(
+const baseMigrationPath = path.resolve(
   import.meta.dirname,
   "../supabase/migrations/202608260008_editor_release_probe_attestation.sql",
+);
+const finalizerRepairMigrationPath = path.resolve(
+  import.meta.dirname,
+  "../supabase/migrations/202608270001_fix_editor_release_object_cardinality.sql",
 );
 
 const FUNCTION_CONTRACTS = Object.freeze({
@@ -111,6 +115,9 @@ function sha256(value) {
 }
 
 export function probeMigrationFunctionBody(functionName) {
+  const migrationPath = functionName === "finalize_editor_render_v4_release"
+    ? finalizerRepairMigrationPath
+    : baseMigrationPath;
   const migration = fs.readFileSync(migrationPath, "utf8");
   const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = new RegExp(
