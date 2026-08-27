@@ -1923,19 +1923,16 @@ def test_editor_document_rerender_rejects_missing_authoritative_word_timing(
     worker.editor_renderer.render.assert_not_called()
 
 
-def test_editor_document_rerender_preserves_legacy_caption_without_template_spec(
+def test_editor_document_rerender_rejects_legacy_caption_without_template_spec(
     tmp_path,
 ) -> None:
     worker = _editor_document_rerender_worker(tmp_path, {})
     worker.repository.get_short.return_value["subtitle_template_id"] = "highlight"
 
-    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+    with pytest.raises(ValueError, match="이전 자막 형식"):
+        worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
 
-    worker.editor_renderer.render.assert_called_once()
-    assert (
-        worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
-        is None
-    )
+    worker.editor_renderer.render.assert_not_called()
 
 
 def test_editor_document_failure_releases_lock_after_final_attempt(

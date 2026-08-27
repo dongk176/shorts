@@ -8,7 +8,7 @@ function source(path: string) {
 describe("admin editor subtitle layout", () => {
   const editorSource = source("./shorts-app.tsx");
 
-  it("shows the canary subtitle tool and disables only unsupported legacy activation", () => {
+  it("shows the canary subtitle tool and fails closed without an authoritative caption spec", () => {
     expect(editorSource).toContain(
       "subtitleEditingReleaseEnabled(\n    editorRelease,\n  )",
     );
@@ -42,7 +42,7 @@ describe("admin editor subtitle layout", () => {
       "const subtitleEditorUnavailable = Boolean(",
     );
     expect(editorSource).toContain(
-      "!unifiedTemplateSubtitleCanaryEnabled\n                    || !item.wordTimedSubtitlesAvailable",
+      "!adminSubtitleLayoutEnabled\n                  || !item.captionRenderSpec",
     );
     const editPageSource = source("./projects/[projectNumber]/edit/[shortId]/page.tsx");
     expect(editPageSource).toContain(

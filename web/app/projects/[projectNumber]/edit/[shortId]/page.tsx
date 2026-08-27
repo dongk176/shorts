@@ -71,7 +71,7 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
     subtitleTemplateShort?.subtitleTemplateId
     && (
       !adminSubtitleLayoutEnabled
-      || (!storedCaptionRenderSpec && !unifiedTemplateSubtitleCanaryEnabled)
+      || !storedCaptionRenderSpec
     )
   ) notFound();
   if (
