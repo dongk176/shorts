@@ -471,7 +471,7 @@ begin
           || left(v_probe.git_sha,12) || ':[1-9][0-9]*$')
       or v_target.value->>'jobQueueArn'
         !~ '^arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-queue/[A-Za-z0-9_-]+$'
-    ) then
+    then
       raise exception 'invalid editor release project target %',v_target.key;
     end if;
     insert into shorts_mvp.editor_release_project_targets (
