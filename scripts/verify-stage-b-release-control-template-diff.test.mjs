@@ -761,6 +761,21 @@ test("prepared preview has exact resources with no replacement", () => {
     "editor",
     preview,
   ));
+  const apiPreview = structuredClone(preview);
+  delete apiPreview.ChangeSetType;
+  assert.doesNotThrow(() => validatePreparedStageBChangeSet(
+    "bootstrap",
+    "editor",
+    apiPreview,
+  ));
+  assert.throws(
+    () => validatePreparedStageBChangeSet(
+      "bootstrap",
+      "editor",
+      { ...preview, ChangeSetType: "CREATE" },
+    ),
+    /실행 가능 UPDATE preview/,
+  );
   changes[0].ResourceChange.Replacement = "Conditional";
   assert.throws(
     () => validatePreparedStageBChangeSet("bootstrap", "editor", preview),

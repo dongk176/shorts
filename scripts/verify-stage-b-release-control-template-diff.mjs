@@ -1096,7 +1096,7 @@ export function validatePreparedStageBChangeSet(phaseValue, stackKey, changeSet)
   const propertyContracts = PHASE_PROPERTY_CONTRACTS[contract.phase][stackKey];
   if (
     changeSet?.StackName !== contract.stackName
-    || changeSet?.ChangeSetType !== "UPDATE"
+    || ![undefined, "UPDATE"].includes(changeSet?.ChangeSetType)
     || changeSet?.Status !== "CREATE_COMPLETE"
     || changeSet?.ExecutionStatus !== "AVAILABLE"
   ) {
