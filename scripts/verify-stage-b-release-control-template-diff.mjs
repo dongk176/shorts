@@ -1149,20 +1149,45 @@ export function validatePreparedStageBChangeSet(phaseValue, stackKey, changeSet)
       throw new Error(`Stage B change set Scope/Details 계약 위반: ${logicalId}`);
     }
     const allowedProperties = new Set(propertyContracts[logicalId] || []);
+    const registrarRoleDetails = (
+      contract.phase === "bootstrap"
+      && stackKey === "editor"
+      && logicalId === "EditorReleaseRegistrarFunctionD787453A"
+    ) ? change.Details.filter((detail) => detail?.Target?.Name === "Role") : [];
+    const registrarRoleDetailKeys = new Set(registrarRoleDetails.map((detail) => (
+      [
+        String(detail.ChangeSource || ""),
+        String(detail.Evaluation || ""),
+        String(detail.CausingEntity || ""),
+      ].join("|")
+    )));
+    if (
+      registrarRoleDetails.length > 0
+      && (
+        registrarRoleDetails.length !== 2
+        || registrarRoleDetailKeys.size !== 2
+        || !registrarRoleDetailKeys.has("DirectModification|Dynamic|")
+        || !registrarRoleDetailKeys.has(
+          "ResourceAttribute|Static|EditorReleaseRegistrarRole9129B368.Arn",
+        )
+      )
+    ) {
+      throw new Error("Stage B registrar Role dependency detail 집합이 exact contract와 다릅니다.");
+    }
     for (const detail of change.Details) {
       const target = detail?.Target || {};
-      const exactDependency = (
+      const isRegistrarRole = (
         contract.phase === "bootstrap"
         && stackKey === "editor"
         && logicalId === "EditorReleaseRegistrarFunctionD787453A"
         && target.Name === "Role"
-      ) ? {
-          source: "ResourceAttribute",
-          causing: "EditorReleaseRegistrarRole9129B368.Arn",
-        } : null;
-      const exactChangeSource = exactDependency
-        ? detail.ChangeSource === exactDependency.source
-          && detail.CausingEntity === exactDependency.causing
+      );
+      const exactChangeSource = isRegistrarRole
+        ? registrarRoleDetailKeys.has([
+            String(detail.ChangeSource || ""),
+            String(detail.Evaluation || ""),
+            String(detail.CausingEntity || ""),
+          ].join("|"))
         : detail.ChangeSource === "DirectModification"
           && [undefined, null, ""].includes(detail.CausingEntity);
       if (
@@ -1170,7 +1195,7 @@ export function validatePreparedStageBChangeSet(phaseValue, stackKey, changeSet)
         || !allowedProperties.has(String(target.Name || ""))
         || !["Modify", "Add", "Remove"].includes(target.AttributeChangeType)
         || target.RequiresRecreation !== "Never"
-        || detail.Evaluation !== "Static"
+        || (!isRegistrarRole && detail.Evaluation !== "Static")
         || !exactChangeSource
       ) {
         throw new Error([
