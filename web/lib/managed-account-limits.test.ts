@@ -9,9 +9,10 @@ describe("managed-account concurrent job limits", () => {
     expect(resolveManagedAccountMaxActiveJobs(1)).toBe(1);
     expect(resolveManagedAccountMaxActiveJobs(7)).toBe(7);
     expect(resolveManagedAccountMaxActiveJobs(10)).toBe(10);
+    expect(resolveManagedAccountMaxActiveJobs(30)).toBe(30);
   });
 
-  it.each([0, 11, 1.5, null, undefined, "invalid"])(
+  it.each([0, 31, 1.5, null, undefined, "invalid"])(
     "falls back safely for %j",
     (value) => {
       expect(resolveManagedAccountMaxActiveJobs(value))
