@@ -232,16 +232,14 @@ def compile_editor_title_spec_v4(
     line_widths: list[float] = []
     line_heights: list[float] = []
     for line in lines:
-        _left, top, _right, bottom = font.getbbox(line, anchor="ls")
-        ascent = max(0.0, float(-top))
-        descent = max(0.0, float(bottom))
-        if ascent + descent <= 0:
-            raise RenderError("v4 제목 글꼴 메트릭을 측정하지 못했습니다.")
         line_widths.append(
             canonical_px_v4(float(font.getlength(line)) + line_padding_x * 2)
         )
+        # Pillow and Chromium report different glyph ink bounds for a few
+        # bundled faces. The configured em box is the cross-runtime title line
+        # contract and is also the exact background height drawn by consumers.
         line_heights.append(
-            canonical_px_v4(ascent + descent + line_padding_y * 2)
+            canonical_px_v4(font_size + line_padding_y * 2)
         )
     content_height = sum(line_heights) + line_gap * max(0, len(lines) - 1)
     widest = max(line_widths)

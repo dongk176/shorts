@@ -49,6 +49,19 @@ def test_comment_capture_full_vertical_uses_default_size_and_portrait_panel() ->
     assert all(box["centerY"] < 285 for box in value["lineBoxes"])
 
 
+def test_title_line_boxes_use_the_deterministic_configured_em_box() -> None:
+    value = compile_editor_title_spec_v4(
+        title="아주 긴 한글 후킹 제목도\n미리보기와 똑같이 줄어듭니다",
+        template_id="dark-red",
+        video_aspect_ratio="16:9",
+        font_id="gmarket-sans",
+        font_scale=1,
+    )
+
+    expected_height = value["fontSize"] + value["linePaddingY"] * 2
+    assert all(box["height"] == expected_height for box in value["lineBoxes"])
+
+
 def test_title_draw_honors_authoritative_stored_advance_width() -> None:
     title = "Stored width"
     value = compile_editor_title_spec_v4(
