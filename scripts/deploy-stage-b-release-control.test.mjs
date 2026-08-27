@@ -81,6 +81,7 @@ test("synthesizes exact Editor and Compute templates with the phase ref", () => 
 
 test("prepares exact change sets only and cleans partial prepares on failure", () => {
   assert.match(source, /"cdk",\s*"publish-assets"/);
+  assert.match(source, /"--unstable=publish-assets"/);
   assert.match(source, /"--app",\s*outputDirectory/);
   assert.match(source, /"--exclusively"/);
   assert.match(source, /publishAndVerifyStageBAssets/);
