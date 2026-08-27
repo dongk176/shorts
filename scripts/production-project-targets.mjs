@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -281,6 +282,35 @@ export function productionProjectTargetEnvironment(registry) {
     }
   }
   return values;
+}
+
+export function productionProjectTargetsFingerprint(registry) {
+  const validated = validateProductionProjectTargets(registry);
+  const canonical = Object.entries(PROJECT_TARGET_LANES)
+    .map(([laneName]) => {
+      const current = validated.lanes[laneName].current;
+      return {
+        targetKey: laneName,
+        releaseId: current.releaseId,
+        workerSourceGitSha: current.workerSourceGitSha,
+        workerImageDigest: current.imageUri.split("@")[1],
+        jobDefinitionArn: current.jobDefinitionArn,
+        jobQueueArn: current.jobQueueArn,
+        v4Capability: current.renderSpecVersion === undefined
+          ? null
+          : {
+            renderSpecVersion: current.renderSpecVersion,
+            captionRenderSpecVersion: current.captionRenderSpecVersion,
+            fontManifestSha256: current.fontManifestSha256,
+          },
+      };
+    })
+    .sort((left, right) => (
+      left.targetKey < right.targetKey ? -1 : left.targetKey > right.targetKey ? 1 : 0
+    ));
+  return createHash("sha256")
+    .update(JSON.stringify(canonical))
+    .digest("hex");
 }
 
 export function productionProjectTargetCdkContext(registry) {

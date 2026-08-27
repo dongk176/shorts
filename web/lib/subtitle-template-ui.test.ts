@@ -67,14 +67,14 @@ describe("subtitle template UI isolation", () => {
   });
 
   it("keeps creation simple by using the default subtitle font", () => {
-    expect(shortsAppSource).toContain(
-      "...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId, subtitleCaptionPlacement } : {})",
+    expect(shortsAppSource).toMatch(
+      /\.\.\.\(subtitleTemplateSelectionEnabled\s*&&\s*subtitleTemplateId[\s\S]{0,120}\{ subtitleTemplateId, subtitleCaptionPlacement \}/,
     );
     expect(shortsAppSource).toContain("fontId={DEFAULT_EDITOR_FONT_ID}");
     expect(shortsAppSource).not.toContain("subtitleFontId");
     expect(shortsAppSource).not.toContain('aria-label="자막 글씨체"');
-    expect(shortsAppSource).toContain(
-      "...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {})",
+    expect(shortsAppSource).toMatch(
+      /\.\.\.\(brandColorSelectionEnabled\s*&&\s*!customTemplateId\s*\?\s*\{ brandColor \}/,
     );
   });
 

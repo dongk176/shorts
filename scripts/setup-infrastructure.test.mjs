@@ -108,6 +108,10 @@ test("documents only the exact Stage A production path and explicit non-producti
     /npm run infra:deploy-control-plane --[\s\S]*--execute-change-set "\$CHANGE_SET_ID"/,
   );
   assert.match(awsRunbook, /npm run vercel:sync-project-targets/);
+  assert.match(
+    awsRunbook,
+    /vercel:verify-job-admission -- --url "\$CANDIDATE_URL"[\s\S]*vercel promote "\$CANDIDATE_URL"/,
+  );
   assert.match(awsRunbook, /vercel promote "\$CANDIDATE_URL"/);
   assert.doesNotMatch(awsRunbook, /`scripts\/sync-vercel-env\.sh`를 실행/);
   assert.doesNotMatch(awsRunbook, /`npm run infra:setup`으로 운영/);

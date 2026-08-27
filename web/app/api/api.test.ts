@@ -2151,7 +2151,7 @@ describe("job API security and idempotency", () => {
     )).join("\n")).not.toContain("shorts_mvp.custom_templates");
   });
 
-  it("derives a hidden v5 caption snapshot and pins it to the unified candidate", async () => {
+  it("pins a long source-range v5 custom template to the unified capable target", async () => {
     process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
     process.env.ELEVENLABS_TRANSCRIPTION_ENABLED = "true";
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
@@ -2170,9 +2170,20 @@ describe("job API security and idempotency", () => {
       color: "#FFFFFF",
       accentColor: "#FF715E",
     };
-    const db = dbWithRows([], [analysisRow]);
+    const sourceRangeFlags = [
+      { flagKey: "source_range_selection", enabled: true },
+      { flagKey: "source_range_selection_public", enabled: true },
+    ];
+    const db = dbWithRows(
+      [],
+      [{ ...analysisRow, durationSeconds: 5_925, sourceRangeSelectionEnabled: true }],
+      sourceRangeFlags,
+      [{ isAdmin: false }],
+    );
     const tx = dbWithRows(
       [],
+      sourceRangeFlags,
+      [{ isAdmin: false }],
       [],
       [{
         id: customTemplateId,
@@ -2210,6 +2221,8 @@ describe("job API security and idempotency", () => {
       analysisId,
       templateId: "dark-red",
       customTemplateId,
+      rangeStartSeconds: 600,
+      rangeEndSeconds: 1_200,
       rightsConfirmed: true,
       requestId: "892854f0-bf07-425a-9135-2d23cc0c3d20",
     }));

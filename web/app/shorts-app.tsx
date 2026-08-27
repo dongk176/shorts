@@ -13150,6 +13150,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const uploadAbortController = useRef<AbortController | null>(null);
   const uploadRequestId = useRef<string | null>(null);
   const uploadRequestIntentKey = useRef<string | null>(null);
+  const jobRequestId = useRef<string | null>(null);
+  const jobRequestIntentKey = useRef<string | null>(null);
   const [sourceRangeStartSeconds, setSourceRangeStartSeconds] = useState(0);
   const [sourceRangeEndSeconds, setSourceRangeEndSeconds] = useState(0);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
@@ -13307,6 +13309,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     uploadAbortController.current?.abort();
     uploadRequestId.current = null;
     uploadRequestIntentKey.current = null;
+    jobRequestId.current = null;
+    jobRequestIntentKey.current = null;
   }, []);
 
   useEffect(() => {
@@ -14011,6 +14015,28 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setConcurrentJobNoticeOpen(true);
       return;
     }
+    const requestPayload = {
+      analysisId: analysis.analysisId,
+      templateId,
+      customTemplateId: canUseCustomTemplates ? customTemplateId : null,
+      videoAspectRatio: effectiveVideoAspectRatio,
+      outputLanguage,
+      rightsConfirmed,
+      ...(sourceRangeSelectionEnabled
+        ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds }
+        : {}),
+      ...(subtitleTemplateSelectionEnabled && subtitleTemplateId
+        ? { subtitleTemplateId, subtitleCaptionPlacement }
+        : {}),
+      ...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {}),
+    };
+    const intentKey = JSON.stringify(requestPayload);
+    if (jobRequestIntentKey.current !== intentKey) {
+      jobRequestId.current = null;
+      jobRequestIntentKey.current = intentKey;
+    }
+    jobRequestId.current ||= crypto.randomUUID();
+    const requestId = jobRequestId.current;
     setBusy(true); setError(null);
     try {
       const value = await requestJson<{
@@ -14022,7 +14048,13 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           grantedSeconds: number;
           validUntil: string | null;
         };
-      }>("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ analysisId: analysis.analysisId, templateId, customTemplateId: canUseCustomTemplates ? customTemplateId : null, videoAspectRatio: effectiveVideoAspectRatio, outputLanguage, rightsConfirmed, requestId: crypto.randomUUID(), ...(sourceRangeSelectionEnabled ? { rangeStartSeconds: sourceRangeStartSeconds, rangeEndSeconds: sourceRangeEndSeconds } : {}), ...(subtitleTemplateSelectionEnabled && subtitleTemplateId ? { subtitleTemplateId, subtitleCaptionPlacement } : {}), ...(brandColorSelectionEnabled && !customTemplateId ? { brandColor } : {}) }) });
+      }>("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...requestPayload, requestId }),
+      });
+      jobRequestId.current = null;
+      jobRequestIntentKey.current = null;
       setShortsEventRewardAvailable(false);
       if (value.shortsThankYouEventReward.granted) {
         setShortsEventGrantedSeconds(
@@ -14055,6 +14087,14 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         );
       }
     } catch (cause) {
+      const definitiveFailure = cause instanceof HttpRequestError
+        && cause.status >= 400
+        && cause.status < 500
+        && ![408, 409, 429].includes(cause.status);
+      if (definitiveFailure && jobRequestId.current === requestId) {
+        jobRequestId.current = null;
+        jobRequestIntentKey.current = null;
+      }
       if (cause instanceof HttpRequestError && cause.status === 401) {
         setLoginNext(next);
         setLoginOpen(true);
@@ -14421,10 +14461,17 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               </span>
             </span>
           </label>
-          <button disabled={analysisCreationBlocked || !sourceRangeIsValid || busy || stateLoadStatus !== "ready"} onClick={() => void (uploadSourceActive ? createUploadJob() : createJob())} aria-busy={loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
+          {error && (
+            <div role="alert" className="rounded-xl border border-red-400/25 bg-red-500/[.08] px-4 py-3 text-sm font-semibold leading-6 text-red-100">
+              {error}
+            </div>
+          )}
+          <button disabled={analysisCreationBlocked || !sourceRangeIsValid || busy || stateLoadStatus !== "ready"} onClick={() => void (uploadSourceActive ? createUploadJob() : createJob())} aria-busy={busy || loginPromptPending} className={`h-[52px] w-full rounded-xl py-4 font-bold text-black transition duration-150 disabled:bg-neutral-800 disabled:text-neutral-500 ${loginPromptPending ? "scale-[.985] bg-neutral-200 shadow-[inset_0_2px_6px_rgba(0,0,0,.22)] motion-reduce:transform-none" : "bg-white hover:bg-neutral-100 active:scale-[.985]"}`}>
             <span className="inline-flex items-center justify-center gap-2">
-              {loginPromptPending && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
-              {analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs || shortsEventRewardAvailable ? t("home.create") : t("home.choosePlan")}
+              {(busy || loginPromptPending) && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-black/25 border-t-black motion-reduce:animate-none" />}
+              {busy
+                ? localizedValue(locale, { ko: "작업을 시작하고 있어요", en: "Starting your job", ja: "処理を開始しています" })
+                : analysisCreationBlocked ? t("home.createUnavailable") : stateLoadStatus !== "ready" ? t("home.loginChecking") : !state?.user ? t("home.create") : !planEnforcementEnabled || state.billing.canCreateJobs || shortsEventRewardAvailable ? t("home.create") : t("home.choosePlan")}
             </span>
           </button>
         </section>

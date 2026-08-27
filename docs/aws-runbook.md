@@ -57,8 +57,9 @@
    작업을 다시 읽고 하나라도 다르면 중단합니다.
 6. 새 Batch Submitter가 exact registry를 사용하고 다섯 lane의
    current·previous Definition이 ACTIVE, queue가 VALID/ENABLED인 상태를
-   확인한 뒤 해당 Vercel 운영 프로젝트의 Batch target 환경변수 15개만
-   동기화합니다.
+   확인한 뒤 해당 Vercel 운영 프로젝트의 현재 Batch target identity
+   (각 lane의 release ID, source SHA, image digest, definition, queue와 선택적
+   v4 capability)만 동기화합니다.
 
    ```bash
    npm run vercel:sync-project-targets
@@ -78,11 +79,16 @@
    `/pricing`, 어드민, `/templates`, 프로젝트 편집기 경로가 유지되어야
    합니다.
 8. Vercel에 무별칭 후보를 배포하고 위 경로, 로그인, 어드민, 편집기를
-   검증합니다. 확인한 후보 URL 그 자체를 재빌드 없이 승격합니다.
+   검증합니다. 승격 전에 후보가 다섯 lane의 정확한 current identity를
+   읽어 실제 작업 생성 준비가 됐는지 반드시 사전검증합니다. 설정 하나라도
+   빠졌거나 registry와 다르면 승격하지 않습니다.
 
    ```bash
    cd web
    vercel deploy --prod --skip-domain
+   cd ..
+   npm run vercel:verify-job-admission -- --url "$CANDIDATE_URL"
+   cd web
    vercel promote "$CANDIDATE_URL"
    cd ..
    bash scripts/verify-production.sh https://www.easycut.co.kr
@@ -387,6 +393,15 @@ Workflow가 출력한 정확 Job Definition ARN과 위 queue ARN을 각각
 `scripts/verify-project-batch-targets.mjs`가 다섯 definition의 격리, 웹과 제출
 Lambda의 exact pair 일치, ACTIVE/VALID/ENABLED 상태를 모두 확인한 뒤에만
 Vercel 동기화를 진행합니다.
+
+1시간을 넘는 원본의 선택 구간 작업도 통합 자막 템플릿을 사용할 때는 같은
+통합 lane으로 제출됩니다. 따라서 통합 lane current는 자막 worker image와
+`ELEVENLABS_API_KEY`·수집 proxy secret을 보존하면서, source-range의
+8 vCPU·16GB·80GiB·5시간 timeout·4시간 원본 제한을 함께 만족해야 합니다.
+`scripts/register-unified-source-range-job.sh`는 두 revision-pinned 정의를
+읽어 이 결합 정의만 추가하며 queue나 기존 Job Definition은 변경하지 않습니다.
+`scripts/verify-project-batch-targets.mjs`가 이 결합 계약까지 확인하지 못하면
+Lambda/Vercel 동기화와 웹 승격을 중단합니다.
 
 ### v5 카나리 활성화 순서
 

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 const TARGET_RELEASE_ID = /^[a-z0-9][a-z0-9._-]{2,127}$/;
 const JOB_DEFINITION_ARN =
   /^arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-definition\/[^:]+:[1-9][0-9]*$/;
@@ -129,4 +131,35 @@ export function unifiedTemplateSubtitlesDispatchTarget(): ProjectDispatchTarget 
     "unified_template_subtitles",
     "UNIFIED_TEMPLATE_SUBTITLES",
   );
+}
+
+export function allProjectDispatchTargets(): ProjectDispatchTarget[] {
+  return [
+    legacyProjectDispatchTarget(),
+    sourceRangeDispatchTarget(),
+    elevenLabsTranscriptionDispatchTarget(),
+    subtitleTemplatesDispatchTarget(),
+    unifiedTemplateSubtitlesDispatchTarget(),
+  ];
+}
+
+export function projectDispatchTargetsFingerprint(
+  targets: ProjectDispatchTarget[] = allProjectDispatchTargets(),
+) {
+  const canonical = [...targets]
+    .sort((left, right) => (
+      left.targetKey < right.targetKey ? -1 : left.targetKey > right.targetKey ? 1 : 0
+    ))
+    .map((entry) => ({
+      targetKey: entry.targetKey,
+      releaseId: entry.releaseId,
+      workerSourceGitSha: entry.workerSourceGitSha,
+      workerImageDigest: entry.workerImageDigest,
+      jobDefinitionArn: entry.jobDefinitionArn,
+      jobQueueArn: entry.jobQueueArn,
+      v4Capability: entry.v4Capability,
+    }));
+  return createHash("sha256")
+    .update(JSON.stringify(canonical))
+    .digest("hex");
 }

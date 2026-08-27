@@ -39,8 +39,31 @@ test("requires every current lane to use its exact registered immutable digest",
   const definitions = Object.values(targets).map(({ definition }) => ({
     jobDefinitionArn: definition,
     status: "ACTIVE",
+    ...(definition === targets.UNIFIED_TEMPLATE_SUBTITLES.definition
+      ? { timeout: { attemptDurationSeconds: 18000 } }
+      : {}),
     containerProperties: {
       image: registeredByDefinition.get(definition).imageUri,
+      ...(definition === targets.UNIFIED_TEMPLATE_SUBTITLES.definition
+        ? {
+          ephemeralStorage: { sizeInGiB: 80 },
+          resourceRequirements: [
+            { type: "VCPU", value: "8" },
+            { type: "MEMORY", value: "16384" },
+          ],
+          environment: [
+            { name: "MAX_VIDEO_DURATION_SECONDS", value: "14400" },
+            { name: "DOWNLOAD_TIMEOUT_SECONDS", value: "14400" },
+            { name: "PROJECT_RESOURCE_TIER", value: "source_range" },
+            { name: "TASK_VCPUS", value: "8" },
+            { name: "FFMPEG_THREADS", value: "2" },
+          ],
+          secrets: [
+            { name: "INGESTION_PROXY_ROUTES_JSON", valueFrom: "secret:proxy" },
+            { name: "ELEVENLABS_API_KEY", valueFrom: "secret:elevenlabs" },
+          ],
+        }
+        : {}),
     },
     retryStrategy: { attempts: 1 },
   }));
@@ -73,7 +96,13 @@ test("requires every current lane to use its exact registered immutable digest",
       registry,
       targets,
       definitions.map((row) => row.jobDefinitionArn === targets.UNIFIED_TEMPLATE_SUBTITLES.definition
-        ? { ...row, containerProperties: { image: "repo.invalid/worker:latest" } }
+        ? {
+          ...row,
+          containerProperties: {
+            ...row.containerProperties,
+            image: "repo.invalid/worker:latest",
+          },
+        }
         : row),
       queues,
     ),

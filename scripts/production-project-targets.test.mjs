@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   PROJECT_TARGET_LANES,
   productionProjectTargetEnvironment,
+  productionProjectTargetsFingerprint,
   readProductionProjectTargets,
   validateLiveProductionProjectTargetTransition,
   validateProductionProjectTargets,
@@ -10,24 +11,21 @@ import {
 
 const registry = readProductionProjectTargets();
 
-test("pins all five production lanes and the exact unified rotation pair", () => {
+test("pins all five production lanes and the source-range-capable unified rotation", () => {
   assert.deepEqual(Object.keys(registry.lanes), Object.keys(PROJECT_TARGET_LANES));
   const unified = registry.lanes.unified_template_subtitles;
   assert.equal(unified.schedulingMode, "fifo");
-  assert.match(unified.current.jobDefinitionArn, /f28e1fe874c1-4vcpu:4$/);
-  assert.match(unified.previous.jobDefinitionArn, /8fa1f8494a49-4vcpu:1$/);
+  assert.match(unified.current.jobDefinitionArn, /unified-source-range-f28e1fe874c1-8vcpu:1$/);
+  assert.match(unified.previous.jobDefinitionArn, /f28e1fe874c1-4vcpu:4$/);
   assert.equal(
     unified.current.workerSourceGitSha,
     "f28e1fe874c1bff1da6184088ef1ee48e8418dc5",
   );
   assert.match(unified.current.imageUri, /@sha256:f451682b1468c918/);
-  assert.equal(
-    unified.previous.workerSourceGitSha,
-    "8fa1f8494a491c1e3b8d23c18ffcdf36581c12b5",
-  );
-  assert.match(unified.previous.imageUri, /@sha256:9e40d290f774359a/);
+  assert.equal(unified.previous.workerSourceGitSha, unified.current.workerSourceGitSha);
+  assert.equal(unified.previous.imageUri, unified.current.imageUri);
   assert.equal(unified.previous.jobQueueArn, unified.current.jobQueueArn);
-  assert.equal(unified.previous.submitAsReleaseId, unified.current.releaseId);
+  assert.equal(unified.previous.submitAsReleaseId, undefined);
   assert.doesNotMatch(JSON.stringify(registry), /f586/i);
 });
 
@@ -44,6 +42,21 @@ test("exports exact current release IDs and the immutable registry JSON", () => 
     JSON.parse(environment.PROJECT_TARGET_REGISTRY_JSON),
     registry,
   );
+});
+
+test("fingerprints only the exact five current web admission identities", () => {
+  const original = productionProjectTargetsFingerprint(registry);
+  assert.match(original, /^[0-9a-f]{64}$/);
+  const previousOnly = structuredClone(registry);
+  previousOnly.lanes.unified_template_subtitles.previous.releaseId =
+    "unified-template-subtitles-previous-copy";
+  assert.equal(productionProjectTargetsFingerprint(previousOnly), original);
+  const currentChanged = structuredClone(registry);
+  currentChanged.lanes.unified_template_subtitles.current.releaseId =
+    "unified-template-subtitles-next-r1";
+  currentChanged.lanes.unified_template_subtitles.previous.submitAsReleaseId =
+    "unified-template-subtitles-next-r1";
+  assert.notEqual(productionProjectTargetsFingerprint(currentChanged), original);
 });
 
 test("accepts and exports only the complete exact v4 capability triple", () => {
@@ -95,7 +108,7 @@ test("rejects unknown lanes, mutable definitions, and unsafe previous targets", 
           current: {
             ...registry.lanes.unified_template_subtitles.current,
             jobDefinitionArn: registry.lanes.unified_template_subtitles.current
-              .jobDefinitionArn.replace(/:4$/, ""),
+              .jobDefinitionArn.replace(/:[1-9][0-9]*$/, ""),
           },
         },
       },

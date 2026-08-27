@@ -149,6 +149,42 @@ export function validateActiveBatchResources(
       failures.push(`${prefix}_BATCH_QUEUE_ARN is not VALID/ENABLED`);
     }
   }
+  if (prefixes.includes("UNIFIED_TEMPLATE_SUBTITLES")) {
+    const definition = definitionRows.find((row) => (
+      row?.jobDefinitionArn === targets.UNIFIED_TEMPLATE_SUBTITLES.definition
+      && row?.status === "ACTIVE"
+    ));
+    const resources = Object.fromEntries(
+      (definition?.containerProperties?.resourceRequirements ?? [])
+        .map(({ type, value }) => [type, value]),
+    );
+    const environment = Object.fromEntries(
+      (definition?.containerProperties?.environment ?? [])
+        .map(({ name, value }) => [name, value]),
+    );
+    const secrets = new Set(
+      (definition?.containerProperties?.secrets ?? []).map(({ name }) => name),
+    );
+    const combinedContractReady = Boolean(
+      definition
+      && Number(resources.VCPU) >= 8
+      && Number(resources.MEMORY) >= 16384
+      && Number(definition.containerProperties?.ephemeralStorage?.sizeInGiB) >= 80
+      && Number(definition.timeout?.attemptDurationSeconds) >= 18000
+      && environment.MAX_VIDEO_DURATION_SECONDS === "14400"
+      && environment.DOWNLOAD_TIMEOUT_SECONDS === "14400"
+      && environment.PROJECT_RESOURCE_TIER === "source_range"
+      && environment.TASK_VCPUS === "8"
+      && environment.FFMPEG_THREADS === "2"
+      && secrets.has("INGESTION_PROXY_ROUTES_JSON")
+      && secrets.has("ELEVENLABS_API_KEY")
+    );
+    if (!combinedContractReady) {
+      failures.push(
+        "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN lacks the combined subtitle/source-range contract",
+      );
+    }
+  }
   if (failures.length) {
     throw new Error([
       "웹이 사용할 AWS Batch 대상이 제출 가능한 상태가 아니어서 배포를 중단합니다.",

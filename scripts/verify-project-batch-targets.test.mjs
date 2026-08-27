@@ -132,6 +132,29 @@ test("requires every definition and shared queue to be submit-ready", () => {
   const definitions = Object.values(resolved).map(({ definition }) => ({
     jobDefinitionArn: definition,
     status: "ACTIVE",
+    ...(definition === targets.UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN
+      ? {
+        timeout: { attemptDurationSeconds: 18000 },
+        containerProperties: {
+          ephemeralStorage: { sizeInGiB: 80 },
+          resourceRequirements: [
+            { type: "VCPU", value: "8" },
+            { type: "MEMORY", value: "16384" },
+          ],
+          environment: [
+            { name: "MAX_VIDEO_DURATION_SECONDS", value: "14400" },
+            { name: "DOWNLOAD_TIMEOUT_SECONDS", value: "14400" },
+            { name: "PROJECT_RESOURCE_TIER", value: "source_range" },
+            { name: "TASK_VCPUS", value: "8" },
+            { name: "FFMPEG_THREADS", value: "2" },
+          ],
+          secrets: [
+            { name: "INGESTION_PROXY_ROUTES_JSON", valueFrom: "secret:proxy" },
+            { name: "ELEVENLABS_API_KEY", valueFrom: "secret:elevenlabs" },
+          ],
+        },
+      }
+      : {}),
   }));
   const queues = [...new Set(Object.values(resolved).map(({ queue }) => queue))]
     .map((queue) => ({
@@ -160,5 +183,21 @@ test("requires every definition and shared queue to be submit-ready", () => {
       queues.map((queue) => ({ ...queue, state: "DISABLED" })),
     ),
     /BATCH_QUEUE_ARN is not VALID\/ENABLED/,
+  );
+
+  const weakUnified = definitions.map((definition) => (
+    definition.jobDefinitionArn === targets.UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN
+      ? {
+        ...definition,
+        containerProperties: {
+          ...definition.containerProperties,
+          ephemeralStorage: { sizeInGiB: 30 },
+        },
+      }
+      : definition
+  ));
+  assert.throws(
+    () => validateActiveBatchResources(resolved, weakUnified, queues),
+    /lacks the combined subtitle\/source-range contract/,
   );
 });

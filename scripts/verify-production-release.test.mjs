@@ -52,6 +52,9 @@ test("production release guard requires protected routes and forbids publishing 
 
 test("production release guard rejects any unexpected route addition or removal", () => {
   assert.ok(ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE.includes(
+    "/api/internal/job-admission-preflight/route",
+  ));
+  assert.ok(ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE.includes(
     "/purchase-terms/versions/7/page",
   ));
   assert.ok(ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE.includes(

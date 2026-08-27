@@ -12,6 +12,7 @@
     "infra:setup": "bash scripts/setup-infrastructure.sh",
     "infra:deploy-control-plane": "node scripts/deploy-production-control-plane.mjs",
     "vercel:sync-project-targets": "bash scripts/sync-production-project-target-env.sh",
+    "vercel:verify-job-admission": "node scripts/verify-production-web-candidate-admission.mjs",
     "db:migrate": "bash scripts/apply-supabase.sh",
     "db:migrate:non-production": "bash scripts/apply-supabase.sh --non-production",
     "db:migrate:production": "bash scripts/apply-supabase.sh --production",
