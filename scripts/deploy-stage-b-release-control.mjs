@@ -677,18 +677,34 @@ function publishAndVerifyStageBAssets({
       asset.key,
       options.region,
     );
-    if (
-      !head
-      || Number(head.ContentLength) <= 0
-      || head.ServerSideEncryption !== "AES256"
-      || !String(head.VersionId || "").trim()
-      || head.VersionId === "null"
-    ) {
+    try {
+      validateStageBPublishedAssetHead(head, identity);
+    } catch {
       throw new Error(
         `${asset.stackKey}/${asset.logicalId} Lambda asset 게시 검증에 실패했습니다.`,
       );
     }
   }
+}
+
+export function validateStageBPublishedAssetHead(head, identity) {
+  const sameAccountKmsKey = new RegExp(
+    `^arn:aws:kms:${String(identity.region).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:${String(identity.account).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:key/[0-9a-f-]{36}$`,
+  );
+  const encryptionIsValid = head?.ServerSideEncryption === "AES256" || (
+    head?.ServerSideEncryption === "aws:kms"
+    && sameAccountKmsKey.test(String(head?.SSEKMSKeyId || ""))
+  );
+  if (
+    !head
+    || Number(head.ContentLength) <= 0
+    || !encryptionIsValid
+    || !String(head.VersionId || "").trim()
+    || head.VersionId === "null"
+  ) {
+    throw new Error("Stage B published Lambda asset metadata가 안전하지 않습니다.");
+  }
+  return head;
 }
 
 function describeChangeSet(stackKey, region, idOrName) {

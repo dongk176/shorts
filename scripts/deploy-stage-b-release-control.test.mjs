@@ -10,6 +10,7 @@ import {
   stageBChangeSetProvenanceSha256,
   stageBTemplateSha256,
   validatePromotedStageBDeployment,
+  validateStageBPublishedAssetHead,
   validateRotationChangedPaths,
   validateStageBChangeSetId,
   waitForStageBStackUpdate,
@@ -151,6 +152,33 @@ test("publishes only exact changed Lambda file assets for the production identit
   assert.throws(
     () => stageBChangedLambdaCodeAssets(current, inline, identity),
     /exact CDK file asset이 아닙니다/,
+  );
+
+  const commonHead = { ContentLength: 100, VersionId: "exact-version" };
+  assert.equal(
+    validateStageBPublishedAssetHead({
+      ...commonHead,
+      ServerSideEncryption: "AES256",
+    }, identity).ContentLength,
+    100,
+  );
+  assert.equal(
+    validateStageBPublishedAssetHead({
+      ...commonHead,
+      ServerSideEncryption: "aws:kms",
+      SSEKMSKeyId:
+        "arn:aws:kms:ap-northeast-2:181651591905:key/3c0eea8c-0464-42c0-8172-b58ad3b2f186",
+    }, identity).VersionId,
+    "exact-version",
+  );
+  assert.throws(
+    () => validateStageBPublishedAssetHead({
+      ...commonHead,
+      ServerSideEncryption: "aws:kms",
+      SSEKMSKeyId:
+        "arn:aws:kms:ap-northeast-2:999999999999:key/3c0eea8c-0464-42c0-8172-b58ad3b2f186",
+    }, identity),
+    /metadata가 안전하지 않습니다/,
   );
 });
 
