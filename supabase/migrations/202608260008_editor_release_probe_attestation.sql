@@ -378,7 +378,12 @@ begin
     raise exception 'editor release probe is not ready to finalize';
   end if;
   if jsonb_typeof(p_project_targets)<>'object'
-    or jsonb_object_length(p_project_targets)<>5
+    or (
+      case when jsonb_typeof(p_project_targets)='object'
+        then (select count(*) from jsonb_object_keys(p_project_targets))
+        else 0
+      end
+    )<>5
     or jsonb_typeof(p_release_checks)<>'array'
     or jsonb_array_length(p_release_checks)<>15
     or p_browser_parity_report_sha256 !~ '^[0-9a-f]{64}$'
@@ -401,7 +406,12 @@ begin
     or exists (
       select 1 from jsonb_array_elements(p_release_checks) check_value
       where jsonb_typeof(check_value)<>'object'
-        or jsonb_object_length(check_value)<>3
+        or (
+          case when jsonb_typeof(check_value)='object'
+            then (select count(*) from jsonb_object_keys(check_value))
+            else 0
+          end
+        )<>3
         or not check_value ?& array['checkName','artifactUri','details']
         or jsonb_typeof(check_value->'details')<>'object'
         or (
@@ -454,7 +464,12 @@ begin
       'legacy_project','source_range','elevenlabs_transcription',
       'subtitle_templates','unified_template_subtitles'
     ) or jsonb_typeof(v_target.value)<>'object'
-      or jsonb_object_length(v_target.value)<>6
+      or (
+        case when jsonb_typeof(v_target.value)='object'
+          then (select count(*) from jsonb_object_keys(v_target.value))
+          else 0
+        end
+      )<>6
       or not v_target.value ?& array[
         'batchTargetReleaseId','workerSourceGitSha','workerImageDigest',
         'jobDefinitionArn','jobQueueArn','renderSpecVersion'
