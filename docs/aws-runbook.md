@@ -106,6 +106,12 @@ Stage B에서는 Stage A 명령, 전체 CDK deploy, DB migration, Vercel 환경�
 계정·리전, 두 stack의 live template을 다시 읽고 하나라도 다르면
 ChangeSet 생성 또는 실행 전에 중단합니다.
 
+`--prepare`는 exact template에서 실제로 바뀌는 Lambda file asset이 있을 때
+해당 phase stack의 CDK asset만 먼저 게시합니다. 게시 후 production account와
+region의 immutable S3 key, version, 암호화와 크기를 직접 확인하며, 자산이
+없거나 다른 bucket·형식이면 ChangeSet을 만들지 않습니다. 이 단계는 Lambda나
+CloudFormation stack을 갱신하지 않습니다.
+
 공통 환경값을 먼저 고정합니다.
 
 ```bash
