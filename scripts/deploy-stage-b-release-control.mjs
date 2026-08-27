@@ -251,8 +251,8 @@ function parseArgs(argv) {
   } else if (options.priorStageHead) {
     throw new Error("--prior-stage-head는 rotation 단계에서만 사용합니다.");
   }
-  if (options.phase === "lockdown" && options.executeStack === "compute") {
-    throw new Error("lockdown은 editor IAM stack만 실행할 수 있습니다.");
+  if (["renewal", "lockdown"].includes(options.phase) && options.executeStack === "compute") {
+    throw new Error(`${options.phase}은 editor stack만 실행할 수 있습니다.`);
   }
   if (options.changeSetPrefix && !CHANGE_SET_NAME.test(options.changeSetPrefix)) {
     throw new Error("change set prefix 형식이 올바르지 않습니다.");
@@ -1126,7 +1126,8 @@ async function executeChangeSet(options, initial, registry) {
       requireStopped: options.phase !== "lockdown",
     });
 
-    const leaseOwner = `stage-b:${options.phase}:${initial.head}`;
+    const leasePhase = options.phase === "renewal" ? "bootstrap" : options.phase;
+    const leaseOwner = `stage-b:${leasePhase}:${initial.head}`;
     const leaseId = crypto.randomUUID();
     let leaseAcquired = false;
     let executionMayHaveStarted = false;
@@ -1463,7 +1464,9 @@ export async function runStageBReleaseControl(argv = process.argv.slice(2)) {
       ]),
       options.phase === "lockdown"
         ? "자동 실행하지 않았습니다. IAM-only Editor preview/해시를 검토한 뒤 별도로 실행하세요."
-        : "자동 실행하지 않았습니다. Editor preview/해시를 먼저 검토·실행한 뒤 Compute를 별도로 실행하세요.",
+        : options.phase === "renewal"
+          ? "자동 실행하지 않았습니다. renewal은 exact Editor preview/해시만 검토한 뒤 별도로 실행하세요."
+          : "자동 실행하지 않았습니다. Editor preview/해시를 먼저 검토·실행한 뒤 Compute를 별도로 실행하세요.",
       "",
     ].join("\n"));
   } finally {

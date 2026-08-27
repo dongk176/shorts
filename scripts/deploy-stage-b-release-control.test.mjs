@@ -344,6 +344,15 @@ test("does not mix Stage A, DB, Vercel mutation, Queue, CE, or JobDefinition act
   assert.doesNotMatch(source, /AWS::Batch::(?:JobQueue|ComputeEnvironment|JobDefinition)/);
 });
 
+test("renews a failed immutable candidate through an Editor-only exact phase", () => {
+  assert.match(source, /\["renewal", "lockdown"\][\s\S]*executeStack === "compute"/);
+  assert.match(
+    source,
+    /options\.phase === "renewal" \? "bootstrap" : options\.phase/,
+  );
+  assert.match(source, /renewal은 exact Editor preview\/해시만/);
+});
+
 test("requires the separately applied production v4 schema before any AWS mutation", () => {
   assert.match(source, /verifyEditorRenderV4ReleaseControl/);
   assert.match(source, /verifyEditorReleaseProbeAttestation/);

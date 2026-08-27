@@ -43,6 +43,15 @@ export const STAGE_B_PHASE_CONTRACTS = Object.freeze({
       }),
     }),
   }),
+  renewal: Object.freeze({
+    editorReleaseRef: STAGE_B_EDITOR_RELEASE_REF,
+    stacks: Object.freeze({
+      editor: Object.freeze({
+        EditorReleaseRegistrarFunctionD787453A: "AWS::Lambda::Function",
+        EditorReleaseBuildRole111C67A7: "AWS::IAM::Role",
+      }),
+    }),
+  }),
   rotation: Object.freeze({
     editorReleaseRef: STAGE_B_EDITOR_RELEASE_REF,
     stacks: Object.freeze({
@@ -96,6 +105,14 @@ const PHASE_PROPERTY_CONTRACTS = Object.freeze({
     }),
     compute: Object.freeze({
       BatchSubmitterFunction95B3701F: Object.freeze(["Code"]),
+    }),
+  }),
+  renewal: Object.freeze({
+    editor: Object.freeze({
+      EditorReleaseRegistrarFunctionD787453A: Object.freeze([
+        "Code", "Environment",
+      ]),
+      EditorReleaseBuildRole111C67A7: Object.freeze(["AssumeRolePolicyDocument"]),
     }),
   }),
   rotation: Object.freeze({
@@ -165,19 +182,26 @@ function exactTemplateEnvelope(phase, stackKey, currentTemplate, candidateTempla
   const expected = templateEnvelope(currentTemplate);
   const candidate = templateEnvelope(candidateTemplate);
   if (phase === "bootstrap" && stackKey === "editor") {
+    const exactVerifierOutput = {
+      Value: { "Fn::GetAtt": ["EditorReleaseVerifierRoleBAFDF9FA", "Arn"] },
+    };
+    const currentVerifierOutput = expected?.Outputs?.EditorReleaseVerifierRoleArn;
     const verifierOutput = candidate?.Outputs?.EditorReleaseVerifierRoleArn;
     if (
-      expected?.Outputs?.EditorReleaseVerifierRoleArn !== undefined
-      || fingerprint(verifierOutput) !== fingerprint({
-        Value: { "Fn::GetAtt": ["EditorReleaseVerifierRoleBAFDF9FA", "Arn"] },
-      })
+      (
+        currentVerifierOutput !== undefined
+        && fingerprint(currentVerifierOutput) !== fingerprint(exactVerifierOutput)
+      )
+      || fingerprint(verifierOutput) !== fingerprint(exactVerifierOutput)
     ) {
       throw new Error("Stage B verifier role output contract가 다릅니다.");
     }
-    expected.Outputs = {
-      ...(expected.Outputs || {}),
-      EditorReleaseVerifierRoleArn: clone(verifierOutput),
-    };
+    if (currentVerifierOutput === undefined) {
+      expected.Outputs = {
+        ...(expected.Outputs || {}),
+        EditorReleaseVerifierRoleArn: clone(verifierOutput),
+      };
+    }
   }
   if (fingerprint(expected) !== fingerprint(candidate)) {
     throw new Error("Stage B template의 Parameters/Outputs/Conditions 등 범위 밖 변경입니다.");
@@ -188,7 +212,9 @@ function exactTemplateEnvelope(phase, stackKey, currentTemplate, candidateTempla
 export function validateStageBPhase(value) {
   const phase = String(value || "").trim();
   if (!Object.hasOwn(STAGE_B_PHASE_CONTRACTS, phase)) {
-    throw new Error("Stage B phase는 bootstrap, rotation, lockdown 중 하나여야 합니다.");
+    throw new Error(
+      "Stage B phase는 bootstrap, renewal, rotation, lockdown 중 하나여야 합니다.",
+    );
   }
   return phase;
 }
@@ -893,6 +919,9 @@ function exactResource(phase, stackKey, logicalId, current, candidate, options) 
   if (phase === "bootstrap" && logicalId === "EditorReleaseRegistrarFunctionD787453A") {
     return exactBootstrapRegistrar(current, candidate, options);
   }
+  if (phase === "renewal" && logicalId === "EditorReleaseRegistrarFunctionD787453A") {
+    return exactBootstrapRegistrar(current, candidate, options);
+  }
   if (
     phase === "bootstrap"
     && logicalId === "EditorCanaryLambdaRoleDefaultPolicy2BA45784"
@@ -1222,7 +1251,7 @@ export function validatePreparedStageBChangeSet(phaseValue, stackKey, changeSet)
 function runCli(argv = process.argv.slice(2)) {
   if (argv.length < 4 || argv.length > 5) {
     throw new Error(
-      "usage: verify-stage-b-release-control-template-diff.mjs bootstrap|rotation|lockdown editor|compute current.json candidate.json [exact-ref]",
+      "usage: verify-stage-b-release-control-template-diff.mjs bootstrap|renewal|rotation|lockdown editor|compute current.json candidate.json [exact-ref]",
     );
   }
   const [phase, stackKey, currentPath, candidatePath, ref] = argv;
