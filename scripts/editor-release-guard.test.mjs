@@ -212,7 +212,7 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260826'/,
+    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260827'/,
   );
   assert.doesNotMatch(workflow, /refs\/heads\//);
   assert.match(workflow, /environment: editor-v4-release-approval/);

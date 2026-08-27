@@ -673,7 +673,7 @@ def _read_inline_browser_parity_report(
 
 
 def _parity_number(value: object, name: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, int | float):
         raise TypeError(f"Browser/worker parity {name} is invalid")
     number = float(value)
     if number < 0 or number > 2:
@@ -1085,13 +1085,13 @@ def _verify_manifest(
                 or resolved_path != expected_path
                 or ".." in resolved_path.split("/")
                 or isinstance(css_to_ass_scale, bool)
-                or not isinstance(css_to_ass_scale, (int, float))
+                or not isinstance(css_to_ass_scale, int | float)
                 or not 0 < float(css_to_ass_scale) <= 1.2
                 or isinstance(css_to_ass_baseline_offset, bool)
-                or not isinstance(css_to_ass_baseline_offset, (int, float))
+                or not isinstance(css_to_ass_baseline_offset, int | float)
                 or not -0.25 <= float(css_to_ass_baseline_offset) <= 0.25
                 or isinstance(word_space_advance, bool)
-                or not isinstance(word_space_advance, (int, float))
+                or not isinstance(word_space_advance, int | float)
                 or not 0 < float(word_space_advance) <= 1
             ):
                 raise RuntimeError("Editor release font manifest is invalid")
