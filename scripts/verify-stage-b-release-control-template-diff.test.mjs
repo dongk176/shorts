@@ -776,23 +776,43 @@ test("prepared preview has exact resources with no replacement", () => {
     ),
     /실행 가능 UPDATE preview/,
   );
-  const registrarDetail = modified[0].ResourceChange.Details[0];
-  registrarDetail.ChangeSource = "ResourceAttribute";
-  registrarDetail.CausingEntity = "EditorReleaseRegistrarRole9129B368.Arn";
-  registrarDetail.Target.Name = "Role";
+  const originalRegistrarDetails = structuredClone(
+    modified[0].ResourceChange.Details,
+  );
+  modified[0].ResourceChange.Details = [
+    {
+      ChangeSource: "DirectModification",
+      Evaluation: "Dynamic",
+      Target: {
+        Attribute: "Properties",
+        AttributeChangeType: "Modify",
+        Name: "Role",
+        RequiresRecreation: "Never",
+      },
+    },
+    {
+      CausingEntity: "EditorReleaseRegistrarRole9129B368.Arn",
+      ChangeSource: "ResourceAttribute",
+      Evaluation: "Static",
+      Target: {
+        Attribute: "Properties",
+        AttributeChangeType: "Modify",
+        Name: "Role",
+        RequiresRecreation: "Never",
+      },
+    },
+  ];
   assert.doesNotThrow(() => validatePreparedStageBChangeSet(
     "bootstrap",
     "editor",
     preview,
   ));
-  registrarDetail.CausingEntity = "UnexpectedRole.Arn";
+  modified[0].ResourceChange.Details[1].CausingEntity = "UnexpectedRole.Arn";
   assert.throws(
     () => validatePreparedStageBChangeSet("bootstrap", "editor", preview),
-    /property detail 계약 위반/,
+    /Role dependency detail 집합/,
   );
-  registrarDetail.ChangeSource = "DirectModification";
-  delete registrarDetail.CausingEntity;
-  registrarDetail.Target.Name = "Code";
+  modified[0].ResourceChange.Details = originalRegistrarDetails;
   changes[0].ResourceChange.Replacement = "Conditional";
   assert.throws(
     () => validatePreparedStageBChangeSet("bootstrap", "editor", preview),
