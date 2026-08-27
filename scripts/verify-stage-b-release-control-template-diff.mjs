@@ -1159,7 +1159,16 @@ export function validatePreparedStageBChangeSet(phaseValue, stackKey, changeSet)
         || detail.Evaluation !== "Static"
         || detail.ChangeSource !== "DirectModification"
       ) {
-        throw new Error(`Stage B change set property detail 계약 위반: ${logicalId}`);
+        throw new Error([
+          `Stage B change set property detail 계약 위반: ${logicalId}`,
+          `attribute=${String(target.Attribute || "")}`,
+          `name=${String(target.Name || "")}`,
+          `changeType=${String(target.AttributeChangeType || "")}`,
+          `recreation=${String(target.RequiresRecreation || "")}`,
+          `evaluation=${String(detail?.Evaluation || "")}`,
+          `source=${String(detail?.ChangeSource || "")}`,
+          `causing=${String(detail?.CausingEntity || "")}`,
+        ].join(" "));
       }
     }
     seen.add(logicalId);
