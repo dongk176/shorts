@@ -170,8 +170,10 @@ workflow는 Vercel, CDK, 운영 DB를 자동 배포하지 않는다.
     단일 exact OIDC subject, policy의 `shorts-mvp-editor-v4-*` TagResource ARN,
     Batch submitter code만 허용한다.
   - `renewal`: 불변 후보가 운영 연결 전에 실패했을 때만 사용한다. 새 exact
-    tag를 가리키는 registrar code/environment와 release build role trust 두
-    리소스만 Editor stack에서 함께 변경하며 Compute 실행은 거절한다.
+    tag를 가리키는 registrar code/environment, release build role trust,
+    release verifier role trust만 Editor stack에서 변경하며 Compute 실행은
+    거절한다. 세 리소스 중 이미 exact 후보와 일치하는 항목은 건드리지 않고,
+    어긋난 항목만 1~3개 복구한다.
   - `rotation`: registrar의 registry asset, Batch submitter의 registry asset과
     registry에서 다시 계산한 current target 환경값만 허용한다. 이 phase의
     `--prior-stage-head..--head`에는

@@ -49,6 +49,7 @@ export const STAGE_B_PHASE_CONTRACTS = Object.freeze({
       editor: Object.freeze({
         EditorReleaseRegistrarFunctionD787453A: "AWS::Lambda::Function",
         EditorReleaseBuildRole111C67A7: "AWS::IAM::Role",
+        EditorReleaseVerifierRoleBAFDF9FA: "AWS::IAM::Role",
       }),
     }),
   }),
@@ -113,6 +114,7 @@ const PHASE_PROPERTY_CONTRACTS = Object.freeze({
         "Code", "Environment",
       ]),
       EditorReleaseBuildRole111C67A7: Object.freeze(["AssumeRolePolicyDocument"]),
+      EditorReleaseVerifierRoleBAFDF9FA: Object.freeze(["AssumeRolePolicyDocument"]),
     }),
   }),
   rotation: Object.freeze({
@@ -232,6 +234,24 @@ function contractFor(phaseValue, stackKey) {
     throw new Error(`${phase} 단계에서 허용되지 않은 Stage B stack입니다: ${stackKey}`);
   }
   return { phase, ...stack, resources: resourcesContract };
+}
+
+function validateContractChangeCompleteness(contract, logicalIds, context) {
+  const seen = new Set(logicalIds);
+  if (!seen.size) {
+    throw new Error(`Stage B ${contract.phase} ${context}이 없습니다.`);
+  }
+  // Renewal also repairs a partially-applied exact release identity. The
+  // allowlist remains fixed, while already-correct resources stay untouched.
+  if (contract.phase === "renewal") return;
+  const missing = Object.keys(contract.resources).filter(
+    (logicalId) => !seen.has(logicalId),
+  );
+  if (missing.length) {
+    throw new Error(
+      `Stage B ${contract.phase} ${context} 누락: ${missing.join(", ")}`,
+    );
+  }
 }
 
 export function validateStageBEditorReleaseRef(value, phaseValue = "") {
@@ -937,8 +957,14 @@ function exactResource(phase, stackKey, logicalId, current, candidate, options) 
   ) {
     return exactRegistrarPolicy(candidate, options);
   }
-  if (phase === "bootstrap" && logicalId === "EditorReleaseVerifierRoleBAFDF9FA") {
-    return exactOidcRole(candidate, options, { verifier: true });
+  if (
+    ["bootstrap", "renewal"].includes(phase)
+    && logicalId === "EditorReleaseVerifierRoleBAFDF9FA"
+  ) {
+    return candidateWithCurrentMetadata(
+      current,
+      exactOidcRole(candidate, options, { verifier: true }),
+    );
   }
   if (
     phase === "bootstrap"
@@ -1000,18 +1026,17 @@ export function buildExactStageBTemplate(
       );
     }
   }
-  const missing = Object.keys(contract.resources).filter((logicalId) => (
-    !fullChanges.some((change) => change.logicalId === logicalId)
-  ));
-  if (missing.length) {
-    throw new Error(`Stage B ${contract.phase} 필수 변경이 없습니다: ${missing.join(", ")}`);
-  }
+  validateContractChangeCompleteness(
+    contract,
+    fullChanges.map((change) => change.logicalId),
+    "필수 변경",
+  );
   const exact = clone(currentTemplate);
   for (const key of Object.keys(exact)) {
     if (key !== "Resources") delete exact[key];
   }
   Object.assign(exact, expectedEnvelope);
-  for (const logicalId of Object.keys(contract.resources)) {
+  for (const { logicalId } of fullChanges) {
     exact.Resources[logicalId] = exactResource(
       contract.phase,
       stackKey,
@@ -1075,10 +1100,11 @@ export function validateExactStageBTemplate(
     }
     seen.add(change.logicalId);
   }
-  const missing = Object.keys(contract.resources).filter((logicalId) => !seen.has(logicalId));
-  if (missing.length) {
-    throw new Error(`Stage B ${contract.phase} exact template 변경 누락: ${missing.join(", ")}`);
-  }
+  validateContractChangeCompleteness(
+    contract,
+    seen,
+    "exact template 변경",
+  );
   return changes.map(({ before: _before, after: _after, ...change }) => change);
 }
 
@@ -1241,10 +1267,7 @@ export function validatePreparedStageBChangeSet(phaseValue, stackKey, changeSet)
     }
     seen.add(logicalId);
   }
-  const missing = Object.keys(contract.resources).filter((logicalId) => !seen.has(logicalId));
-  if (missing.length) {
-    throw new Error(`Stage B change set 변경 누락: ${missing.join(", ")}`);
-  }
+  validateContractChangeCompleteness(contract, seen, "change set 변경");
   return changeSet;
 }
 

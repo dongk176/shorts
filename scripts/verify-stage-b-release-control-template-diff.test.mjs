@@ -468,7 +468,7 @@ test("bootstrap builds exact registrar, IAM, and submitter templates", () => {
   );
 });
 
-test("renewal changes only the exact registrar identity and build-role tag", () => {
+test("renewal changes the exact registrar, build-role, and verifier-role tags", () => {
   const { current, candidate } = editorBootstrapTemplates();
   const live = buildExactStageBTemplate(
     "bootstrap",
@@ -483,6 +483,8 @@ test("renewal changes only the exact registrar identity and build-role tag", () 
       "editor-v4-render-parity-20260826";
   renewalCurrent.Resources.EditorReleaseBuildRole111C67A7 =
     oidcRole("refs/tags/editor-v4-render-parity-20260826");
+  renewalCurrent.Resources.EditorReleaseVerifierRoleBAFDF9FA =
+    oidcRole("refs/tags/editor-v4-render-parity-20260826", true);
   const renewalCandidate = structuredClone(live);
   renewalCandidate.Resources.EditorReleaseRegistrarFunctionD787453A.Properties.Code = {
     S3Bucket: "cdk-hnb659fds-assets-181651591905-ap-northeast-2",
@@ -504,8 +506,19 @@ test("renewal changes only the exact registrar identity and build-role tag", () 
       renewalExact,
       bootstrapOptions,
     ).length,
-    2,
+    3,
   );
+  const verifierCondition = renewalExact.Resources.EditorReleaseVerifierRoleBAFDF9FA
+    .Properties.AssumeRolePolicyDocument.Statement[0].Condition;
+  assert.equal(
+    verifierCondition.StringEquals["token.actions.githubusercontent.com:ref"],
+    STAGE_B_EDITOR_RELEASE_REF,
+  );
+  assert.equal(
+    verifierCondition.StringEquals["token.actions.githubusercontent.com:sub"],
+    "repo:dongk176/shorts:environment:editor-v4-release-approval",
+  );
+  assert.equal(verifierCondition.StringLike, undefined);
   const unsafe = structuredClone(renewalCandidate);
   unsafe.Resources.EditorReleaseBuildRoleDefaultPolicyF82DF532
     .Properties.PolicyDocument.Statement.push({
@@ -522,6 +535,94 @@ test("renewal changes only the exact registrar identity and build-role tag", () 
       bootstrapOptions,
     ),
     /범위 밖 변경/,
+  );
+});
+
+test("renewal repairs only a stale verifier trust when other release identity is current", () => {
+  const { current, candidate } = editorBootstrapTemplates();
+  const live = buildExactStageBTemplate(
+    "bootstrap",
+    "editor",
+    current,
+    candidate,
+    bootstrapOptions,
+  );
+  const repairCurrent = structuredClone(live);
+  repairCurrent.Resources.EditorReleaseVerifierRoleBAFDF9FA =
+    oidcRole("refs/tags/editor-v4-render-parity-20260826", true);
+  const exact = buildExactStageBTemplate(
+    "renewal",
+    "editor",
+    repairCurrent,
+    live,
+    { ...bootstrapOptions, phase: "renewal" },
+  );
+  const changes = validateExactStageBTemplate(
+    "renewal",
+    "editor",
+    repairCurrent,
+    exact,
+    { ...bootstrapOptions, phase: "renewal" },
+  );
+  assert.deepEqual(changes, [{
+    logicalId: "EditorReleaseVerifierRoleBAFDF9FA",
+    type: "AWS::IAM::Role",
+    action: "update",
+  }]);
+  assert.deepEqual(
+    exact.Resources.EditorReleaseBuildRole111C67A7,
+    repairCurrent.Resources.EditorReleaseBuildRole111C67A7,
+  );
+  assert.deepEqual(
+    exact.Resources.EditorReleaseRegistrarFunctionD787453A,
+    repairCurrent.Resources.EditorReleaseRegistrarFunctionD787453A,
+  );
+  assert.throws(
+    () => buildExactStageBTemplate(
+      "renewal",
+      "editor",
+      live,
+      live,
+      { ...bootstrapOptions, phase: "renewal" },
+    ),
+    /필수 변경이 없습니다/,
+  );
+
+  const preview = {
+    StackName: "ShortsMvpEditorCanary-production",
+    ChangeSetType: "UPDATE",
+    Status: "CREATE_COMPLETE",
+    ExecutionStatus: "AVAILABLE",
+    Changes: [{ ResourceChange: {
+      Action: "Modify",
+      LogicalResourceId: "EditorReleaseVerifierRoleBAFDF9FA",
+      ResourceType: "AWS::IAM::Role",
+      Replacement: "False",
+      Scope: ["Properties"],
+      Details: [{
+        ChangeSource: "DirectModification",
+        Evaluation: "Static",
+        Target: {
+          Attribute: "Properties",
+          AttributeChangeType: "Modify",
+          Name: "AssumeRolePolicyDocument",
+          RequiresRecreation: "Never",
+        },
+      }],
+    } }],
+  };
+  assert.doesNotThrow(() => validatePreparedStageBChangeSet(
+    "renewal",
+    "editor",
+    preview,
+  ));
+  assert.throws(
+    () => validatePreparedStageBChangeSet(
+      "renewal",
+      "editor",
+      { ...preview, Changes: [] },
+    ),
+    /change set 변경이 없습니다/,
   );
 });
 
