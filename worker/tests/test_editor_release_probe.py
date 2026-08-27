@@ -238,7 +238,7 @@ def test_release_probe_renders_and_uploads_machine_verifiable_evidence(
     monkeypatch.setenv("WORKER_IMAGE_DIGEST", f"sha256:{'b' * 64}")
     monkeypatch.setenv("EDITOR_RELEASE_SUITE_VERIFIED", "true")
     monkeypatch.setenv(
-        "EDITOR_RELEASE_FONT_MANIFEST_SHA256",
+        "EDITOR_FONT_MANIFEST_SHA256",
         str(canonical_editor_font_manifest()["sha256"]),
     )
     monkeypatch.setenv("EDITOR_RELEASE_SCENARIO", scenario)

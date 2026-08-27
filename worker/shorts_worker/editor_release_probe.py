@@ -805,7 +805,7 @@ def run_editor_release_probe() -> dict[str, Any]:
             "EDITOR_RELEASE_SUITE_VERIFIED must confirm the legacy and timeline test suite"
         )
     expected_font_manifest_sha = os.environ.get(
-        "EDITOR_RELEASE_FONT_MANIFEST_SHA256",
+        "EDITOR_FONT_MANIFEST_SHA256",
         "",
     ).strip().lower()
     font_manifest = canonical_editor_font_manifest()
@@ -818,7 +818,7 @@ def run_editor_release_probe() -> dict[str, Any]:
         or expected_font_manifest_sha != font_manifest["sha256"]
     ):
         raise RuntimeError(
-            "EDITOR_RELEASE_FONT_MANIFEST_SHA256 does not match this worker image"
+            "EDITOR_FONT_MANIFEST_SHA256 does not match this worker image"
         )
     if runtime_identity.get("fontManifestSha256") != expected_font_manifest_sha:
         raise RuntimeError("Worker v4 runtime font identity evidence is incomplete")
