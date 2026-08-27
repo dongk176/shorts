@@ -1064,6 +1064,7 @@ def _verify_manifest(
                 "resolvedPath",
                 "cssToAssScale",
                 "cssToAssBaselineOffsetEm",
+                "titleBaselineOffsetEm",
                 "wordSpaceAdvanceEm",
             }:
                 raise RuntimeError("Editor release font manifest is invalid")
@@ -1073,6 +1074,7 @@ def _verify_manifest(
             resolved_path = str(entry.get("resolvedPath") or "").strip()
             css_to_ass_scale = entry.get("cssToAssScale")
             css_to_ass_baseline_offset = entry.get("cssToAssBaselineOffsetEm")
+            title_baseline_offset = entry.get("titleBaselineOffsetEm")
             word_space_advance = entry.get("wordSpaceAdvanceEm")
             expected_file = _REQUIRED_FONT_FILES.get(font_id)
             expected_path = (
@@ -1090,6 +1092,9 @@ def _verify_manifest(
                 or isinstance(css_to_ass_baseline_offset, bool)
                 or not isinstance(css_to_ass_baseline_offset, int | float)
                 or not -0.25 <= float(css_to_ass_baseline_offset) <= 0.25
+                or isinstance(title_baseline_offset, bool)
+                or not isinstance(title_baseline_offset, int | float)
+                or not -0.25 <= float(title_baseline_offset) <= 0.75
                 or isinstance(word_space_advance, bool)
                 or not isinstance(word_space_advance, int | float)
                 or not 0 < float(word_space_advance) <= 1

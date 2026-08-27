@@ -149,9 +149,10 @@ test("candidate renders use an isolated outbox while legacy rerenders stay uncha
 });
 
 test("release workflow promotes one tested digest without deploying the website", async () => {
-  const [workflow, registrar] = await Promise.all([
+  const [workflow, registrar, browserParityRunner] = await Promise.all([
     source(".github/workflows/editor-release.yml"),
     source("infra/aws/lambda/editor_release_registrar.py"),
+    source("scripts/run-editor-v4-browser-worker-parity-matrix.py"),
   ]);
 
   assert.equal(
@@ -212,7 +213,7 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260827-5'/,
+    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260827-6'/,
   );
   assert.equal(workflow.match(/fetch-depth: 0/g)?.length, 2);
   assert.equal(workflow.match(/fetch-tags: true/g)?.length, 2);
@@ -226,7 +227,7 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(workflow, /\.checks\["runtime-identity"\] == true/);
   assert.match(workflow, /\.runtimeIdentity == \{/);
   assert.match(registrar, /EDITOR_RELEASE_GIT_SHA/);
-  assert.match(workflow, /"cssToAssBaselineOffsetEm","cssToAssScale","fontId","postscriptName","resolvedPath","sha256","wordSpaceAdvanceEm"/);
+  assert.match(workflow, /"cssToAssBaselineOffsetEm","cssToAssScale","fontId","postscriptName","resolvedPath","sha256","titleBaselineOffsetEm","wordSpaceAdvanceEm"/);
   assert.match(workflow, /"paperlogy":"Paperlogy-7Bold\.ttf"/);
   assert.match(
     workflow,
@@ -236,6 +237,8 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(workflow, /worker-caption-noop-parity/);
   assert.match(workflow, /browser-worker-visual-parity/);
   assert.match(workflow, /run-editor-v4-browser-worker-parity-matrix\.py/);
+  assert.match(browserParityRunner, /for attempt in range\(2\)/);
+  assert.match(browserParityRunner, /_failure_detail\(error\)/);
   assert.match(workflow, /--worker-manifest probe-manifest\.json/);
   assert.match(workflow, /maximumPixelErrorPixels <= 2/);
   assert.match(workflow, /browser-worker-parity\/report\.json/);

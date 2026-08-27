@@ -45,6 +45,42 @@ def _run(arguments: list[str], *, root: Path, deadline: float) -> None:
     )
 
 
+def _run_browser_capture(
+    arguments: list[str],
+    *,
+    root: Path,
+    deadline: float,
+    outputs: tuple[Path, ...],
+) -> None:
+    """Retry one transient Chromium launch without retrying parity failures."""
+    for attempt in range(2):
+        try:
+            _run(arguments, root=root, deadline=deadline)
+            return
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            if attempt == 1:
+                raise
+            for output in outputs:
+                output.unlink(missing_ok=True)
+
+
+def _failure_detail(
+    error: subprocess.CalledProcessError | subprocess.TimeoutExpired,
+) -> str:
+    if isinstance(error, subprocess.TimeoutExpired):
+        return str(error)
+    lines = [line.strip() for line in str(error.stderr or "").splitlines()]
+    for prefix in ("RuntimeError:", "Error:"):
+        matching = [line for line in lines if line.startswith(prefix)]
+        if matching:
+            return matching[-1]
+    meaningful = [
+        line for line in lines
+        if line and not line.startswith("at ") and not line.startswith("Node.js v")
+    ]
+    return meaningful[-1] if meaningful else str(error)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--matrix", type=Path, required=True)
@@ -118,7 +154,7 @@ def main() -> None:
         metrics_path = case_root / "chromium-metrics.json"
         report_path = case_reports / f"{case_id}.json"
         try:
-            _run(
+            _run_browser_capture(
                 [
                     "node",
                     "web/tests/browser-render-parity/run.mjs",
@@ -131,6 +167,7 @@ def main() -> None:
                 ],
                 root=root,
                 deadline=deadline,
+                outputs=(screenshot_path, metrics_path),
             )
             _run(
                 [
@@ -157,11 +194,7 @@ def main() -> None:
                 deadline=deadline,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
-            detail = (
-                str(error.stderr).strip().splitlines()[-1]
-                if isinstance(error, subprocess.CalledProcessError) and error.stderr
-                else str(error)
-            )
+            detail = _failure_detail(error)
             failures.append(f"{case_id}: {detail}")
 
     if failures:

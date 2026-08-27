@@ -51,6 +51,10 @@ def test_v4_font_manifest_is_complete_deterministic_and_exact() -> None:
     )
     assert paperlogy["postscriptName"] == "Paperlogy-7Bold"
     assert paperlogy["cssToAssScale"] == 0.849057
+    noto_sans = next(entry for entry in entries if entry["fontId"] == "noto-sans-kr")
+    assert noto_sans["cssToAssBaselineOffsetEm"] == 0.021739
+    gmarket = next(entry for entry in entries if entry["fontId"] == "gmarket-sans")
+    assert gmarket["titleBaselineOffsetEm"] == 0.3
 
 
 @pytest.mark.parametrize("scenario", editor_release_probe.PROBE_SCENARIOS)
@@ -158,7 +162,7 @@ def test_v4_fallback_probe_verifies_every_editor_font(
         font = spec["font"]
         assert isinstance(font, dict)
         assert spec["schemaVersion"] == 4
-        assert font["metrics"]["revision"] == "editor-font-metrics-v1"
+        assert font["metrics"]["revision"] == "editor-font-metrics-v2"
         verified.append(str(font["fontId"]))
 
     monkeypatch.setattr(editor_release_probe, "prepare_caption_fonts", fake_prepare)

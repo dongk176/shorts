@@ -97,7 +97,7 @@ def test_v4_pop_uses_authoritative_word_positions_and_exact_font_metrics(
     assert spec["wordGapPx"] == 6
     assert spec["joinedWordGapPx"] == 0
     assert spec["font"]["metrics"] == {
-        "revision": "editor-font-metrics-v1",
+        "revision": "editor-font-metrics-v2",
         "cssToAssScale": 0.849057,
         "cssToAssBaselineOffsetEm": 0.0,
     }

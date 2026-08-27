@@ -7,7 +7,9 @@ import {
   editorFontLabel,
   editorFontOptions,
   editorCaptionCssToAssScaleById,
+  editorCaptionCssToAssBaselineOffsetEmById,
   editorFontSha256ById,
+  editorTitleBaselineOffsetEmById,
   isStableEditorFontId,
   resolveEditorFontFace,
   resolveEditorFontFaceV4,
@@ -132,6 +134,12 @@ describe("editor fonts", () => {
     expect(Object.keys(editorCaptionCssToAssScaleById)).toEqual(
       editorFontOptions.map((font) => font.id),
     );
+    expect(Object.keys(editorCaptionCssToAssBaselineOffsetEmById)).toEqual(
+      editorFontOptions.map((font) => font.id),
+    );
+    expect(Object.keys(editorTitleBaselineOffsetEmById)).toEqual(
+      editorFontOptions.map((font) => font.id),
+    );
     for (const option of editorFontOptions) {
       expect(editorFontSha256ById[option.id]).toMatch(/^[0-9a-f]{64}$/);
       expect(createHash("sha256").update(readFileSync(
@@ -142,11 +150,20 @@ describe("editor fonts", () => {
       expect(
         editorCaptionCssToAssScaleById[option.id] * 1_000_000,
       ).toBe(Math.round(editorCaptionCssToAssScaleById[option.id] * 1_000_000));
+      expect(editorTitleBaselineOffsetEmById[option.id]).toBeGreaterThanOrEqual(-0.25);
+      expect(editorTitleBaselineOffsetEmById[option.id]).toBeLessThanOrEqual(0.75);
+      expect(
+        editorTitleBaselineOffsetEmById[option.id] * 1_000_000,
+      ).toBe(Math.round(editorTitleBaselineOffsetEmById[option.id] * 1_000_000));
     }
     expect(editorFontSha256ById.paperlogy).toBe(
       "fe71049fe3d3a7dd3f2e0c12efd850acd1293658181af322348edde9b016e6ba",
     );
     expect(editorCaptionCssToAssScaleById.paperlogy).toBe(0.849057);
+    expect(editorCaptionCssToAssBaselineOffsetEmById["noto-sans-kr"]).toBe(
+      0.021739,
+    );
+    expect(editorTitleBaselineOffsetEmById["gmarket-sans"]).toBe(0.3);
   });
 
   it("resolves a v4 face without a fallback family", () => {
@@ -159,7 +176,7 @@ describe("editor fonts", () => {
       variableWeight: null,
       sha256: editorFontSha256ById.paperlogy,
       metrics: {
-        revision: "editor-font-metrics-v1",
+        revision: "editor-font-metrics-v2",
       },
     });
   });
