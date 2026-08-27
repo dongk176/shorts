@@ -136,6 +136,39 @@ test("builds an exact live-template patch and preserves every non-allowlisted re
   );
 });
 
+test("reconciles a registry rotation after the additive control plane is already installed", () => {
+  const { current, candidate } = fixture();
+  for (const [logicalId, expected] of Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)) {
+    if (expected.action === "add") {
+      current.Resources[logicalId] = structuredClone(candidate.Resources[logicalId]);
+    }
+  }
+  const submitter = current.Resources.BatchSubmitterFunction95B3701F;
+  submitter.Properties.LoggingConfig = structuredClone(
+    candidate.Resources.BatchSubmitterFunction95B3701F.Properties.LoggingConfig,
+  );
+  submitter.Properties.Environment = structuredClone(
+    candidate.Resources.BatchSubmitterFunction95B3701F.Properties.Environment,
+  );
+  submitter.Properties.Environment.Variables
+    .UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN = "arn:aws:batch:region:account:job-definition/old:1";
+
+  const exact = buildExactControlPlaneTemplate(current, candidate);
+  assert.equal(validateControlPlaneTemplateDiff(current, exact).length, 4);
+  for (const [logicalId, expected] of Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)) {
+    if (expected.action === "add") {
+      assert.deepEqual(exact.Resources[logicalId], current.Resources[logicalId]);
+    }
+  }
+
+  const drifted = structuredClone(candidate);
+  drifted.Resources.BatchSubmitterFailureAlarm9EBC0935.Properties.Threshold = 2;
+  assert.throws(
+    () => buildExactControlPlaneTemplate(current, drifted),
+    /속성 계약 밖 변경/,
+  );
+});
+
 test("rejects deletes, arbitrary Lambda/IAM changes, and unrecognised Batch drift", () => {
   const { current, candidate } = fixture();
   const exact = buildExactControlPlaneTemplate(current, candidate);
@@ -327,6 +360,13 @@ test("requires a complete non-replacing change-set preview and rollback-enabled 
     Changes: changes,
   };
   assert.doesNotThrow(() => validatePreparedChangeSet(preview));
+  const updateOnlyPreview = {
+    ...preview,
+    Changes: changes.filter(({ ResourceChange }) => (
+      CONTROL_PLANE_RESOURCE_CHANGES[ResourceChange.LogicalResourceId].action === "update"
+    )),
+  };
+  assert.doesNotThrow(() => validatePreparedChangeSet(updateOnlyPreview));
   assert.throws(
     () => validatePreparedChangeSet({
       ...preview,

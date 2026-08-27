@@ -414,11 +414,15 @@ function exactAllowedLambdaUpdate(current, candidate, logicalId) {
     if (!currentVariables || typeof currentVariables !== "object") {
       throw new Error("BatchSubmitter live 환경변수 계약이 없습니다.");
     }
-    if (
-      currentVariables.PROJECT_TARGET_REGISTRY_PATH !== undefined
-      || currentVariables.PROJECT_TARGET_REGISTRY_REQUIRED !== undefined
-    ) {
-      throw new Error("BatchSubmitter live registry 전제가 이미 바뀌었습니다.");
+    const registryPath = currentVariables.PROJECT_TARGET_REGISTRY_PATH;
+    const registryRequired = currentVariables.PROJECT_TARGET_REGISTRY_REQUIRED;
+    const registryAlreadyInstalled = registryPath !== undefined
+      || registryRequired !== undefined;
+    if (registryAlreadyInstalled && (
+      registryPath !== "/var/task/production-project-targets.json"
+      || registryRequired !== "true"
+    )) {
+      throw new Error("BatchSubmitter live registry 계약이 불완전합니다.");
     }
     expected.Properties.Environment = clone(current.Properties.Environment);
     expected.Properties.Environment.Variables = {
@@ -448,8 +452,16 @@ function exactAllowedLambdaUpdate(current, candidate, logicalId) {
 }
 
 export function validateControlPlaneTemplateDiff(currentTemplate, candidateTemplate) {
+  const currentResources = resources(currentTemplate);
+  const candidateResources = resources(candidateTemplate);
   const changes = templateResourceChanges(currentTemplate, candidateTemplate);
   const seen = new Set();
+  for (const [logicalId, expected] of Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)) {
+    if (expected.action !== "add" || currentResources[logicalId] === undefined) continue;
+    exactAllowedAddedResource(currentResources[logicalId], logicalId);
+    exactAllowedAddedResource(candidateResources[logicalId], logicalId);
+    seen.add(logicalId);
+  }
   for (const change of changes) {
     const expected = CONTROL_PLANE_RESOURCE_CHANGES[change.logicalId];
     validateExpectedChange(change, expected);
@@ -478,6 +490,12 @@ export function buildExactControlPlaneTemplate(currentTemplate, fullCandidateTem
   const candidate = resources(fullCandidateTemplate);
   const changes = templateResourceChanges(currentTemplate, fullCandidateTemplate);
   const controlPlaneSeen = new Set();
+  for (const [logicalId, expected] of Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)) {
+    if (expected.action !== "add" || current[logicalId] === undefined) continue;
+    exactAllowedAddedResource(current[logicalId], logicalId);
+    exactAllowedAddedResource(candidate[logicalId], logicalId);
+    controlPlaneSeen.add(logicalId);
+  }
   const unexpected = [];
   for (const change of changes) {
     const expected = CONTROL_PLANE_RESOURCE_CHANGES[change.logicalId];
@@ -521,12 +539,17 @@ export function buildExactControlPlaneTemplate(currentTemplate, fullCandidateTem
   const exact = clone(currentTemplate);
   const exactResources = resources(exact);
   for (const [logicalId, expected] of Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)) {
-    if (expected.action === "add" && current[logicalId]) {
-      throw new Error(`${logicalId}는 live template에 없어야 합니다.`);
+    if (expected.type === "AWS::Lambda::Function") {
+      exactResources[logicalId] = exactAllowedLambdaUpdate(
+        current[logicalId],
+        candidate[logicalId],
+        logicalId,
+      );
+      continue;
     }
-    exactResources[logicalId] = expected.type === "AWS::Lambda::Function"
-      ? exactAllowedLambdaUpdate(current[logicalId], candidate[logicalId], logicalId)
-      : exactAllowedAddedResource(candidate[logicalId], logicalId);
+    exactResources[logicalId] = current[logicalId] === undefined
+      ? exactAllowedAddedResource(candidate[logicalId], logicalId)
+      : exactAllowedAddedResource(current[logicalId], logicalId);
   }
 
   for (const [logicalId, resource] of Object.entries(current)) {
@@ -560,9 +583,10 @@ export function validatePreparedChangeSet(changeSet) {
     }
     seen.add(logicalId);
   }
-  const missing = Object.keys(CONTROL_PLANE_RESOURCE_CHANGES).filter(
-    (logicalId) => !seen.has(logicalId),
-  );
+  const missing = Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)
+    .filter(([, expected]) => expected.action === "update")
+    .map(([logicalId]) => logicalId)
+    .filter((logicalId) => !seen.has(logicalId));
   if (missing.length) {
     throw new Error(`change set preview 변경 누락: ${missing.join(", ")}`);
   }
