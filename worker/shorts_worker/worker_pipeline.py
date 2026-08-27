@@ -3462,6 +3462,13 @@ class BatchWorker:
                 if isinstance(caption_render_spec, dict)
                 else None
             )
+            if (
+                item.get("subtitle_template_id")
+                and resolved_caption_render_spec is None
+            ):
+                raise ValueError(
+                    "이전 자막 형식은 새 편집기에서 지원하지 않습니다."
+                )
             caption_overlay_only = False
             if (
                 resolved_caption_render_spec is None

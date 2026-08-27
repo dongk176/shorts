@@ -17,6 +17,10 @@ const projectPageSource = readFileSync(
   new URL("../app/projects/[projectNumber]/page.tsx", import.meta.url),
   "utf8",
 );
+const applyEditRouteSource = readFileSync(
+  new URL("../app/api/shorts/[shortId]/apply-edit/route.ts", import.meta.url),
+  "utf8",
+);
 
 describe("subtitle template UI isolation", () => {
   it("mounts the test cards only behind the server capability", () => {
@@ -83,7 +87,10 @@ describe("subtitle template UI isolation", () => {
       "const subtitleEditorUnavailable = Boolean(",
     );
     expect(shortsAppSource).toContain(
-      "!unifiedTemplateSubtitleCanaryEnabled\n                    || !item.wordTimedSubtitlesAvailable",
+      "!adminSubtitleLayoutEnabled\n                  || !item.captionRenderSpec",
+    );
+    expect(shortsAppSource).not.toContain(
+      "!item.captionRenderSpec\n                  && (",
     );
     expect(projectPageSource).toContain(
       "subtitleEditingReleaseEnabled",
@@ -99,9 +106,14 @@ describe("subtitle template UI isolation", () => {
   it("fails closed when a non-canary user opens a generated caption edit URL", () => {
     expect(editPageSource).toContain("!uuidPattern.test(shortId)");
     expect(editPageSource).toContain("s.caption_render_spec");
+    expect(editPageSource).toContain("|| !storedCaptionRenderSpec");
     expect(editPageSource).toContain(
       "isUnifiedTemplateSubtitleSnapshot(",
     );
     expect(editPageSource).toContain("&& !unifiedTemplateSubtitleCanaryEnabled");
+    expect(applyEditRouteSource).toContain(
+      "if (existing.subtitleTemplateId && !captionRenderSpec)",
+    );
+    expect(applyEditRouteSource).toContain('"CAPTION_RENDER_SPEC_MISSING"');
   });
 });

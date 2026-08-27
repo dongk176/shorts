@@ -377,6 +377,13 @@ async function applyEditorDocument({
   const captionRenderSpec = storedCaptionRenderSpec
     ? captionRenderSpecForEditor(storedCaptionRenderSpec)
     : null;
+  if (existing.subtitleTemplateId && !captionRenderSpec) {
+    throw new HttpError(
+      409,
+      "이전 자막 형식은 새 편집기에서 지원하지 않습니다.",
+      "CAPTION_RENDER_SPEC_MISSING",
+    );
+  }
   if (
     captionRenderSpec
     && existing.subtitleTemplateId

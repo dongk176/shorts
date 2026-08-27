@@ -12759,13 +12759,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                 item.subtitleTemplateId
                 && (
                   !adminSubtitleLayoutEnabled
-                || (
-                  !item.captionRenderSpec
-                  && (
-                    !unifiedTemplateSubtitleCanaryEnabled
-                    || !item.wordTimedSubtitlesAvailable
-                  )
-                )
+                  || !item.captionRenderSpec
                 )
               ),
             );
