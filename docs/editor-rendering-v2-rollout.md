@@ -186,7 +186,7 @@ workflow는 Vercel, CDK, 운영 DB를 자동 배포하지 않는다.
   `False`여야 한다.
 - OIDC subject는 기본적으로
   `refs/tags/__disabled_editor_release__`이고, 이번 검증 중에만
-  `refs/tags/editor-v4-render-parity-20260827-4` exact ref를 허용한다. 와일드카드나
+  `refs/tags/editor-v4-render-parity-20260827-5` exact ref를 허용한다. 와일드카드나
   다른 브랜치는 허용하지 않는다. Stage B 완료 후 disabled sentinel로
   되돌리는 별도 IAM-only 변경을 준비한다.
 - 운영 적용은 두 stack의 현재 live template과 합성 template을 비교해 위
