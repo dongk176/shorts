@@ -29,6 +29,12 @@ _BATCH_JOB_DEFINITION_ARN = re.compile(
 _BATCH_QUEUE_ARN = re.compile(
     r"^arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-queue/[^/]+$"
 )
+_WORKER_IMAGE_URI = re.compile(
+    r"^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/"
+    r"[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$"
+)
+_GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
+_FONT_MANIFEST_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SUBTITLE_TEMPLATE_IDS = {"basic", "highlight", "pop"}
 _UNIFIED_TEMPLATE_SUBTITLE_ORIGIN = "unified-template-v5"
 _PROJECT_TARGET_KEYS = {
@@ -91,6 +97,7 @@ def _production_project_target_registry() -> dict[str, Any] | None:
         raise RuntimeError("Production project target registry is invalid JSON") from exc
     if (
         not isinstance(registry, dict)
+        or set(registry) != {"version", "environment", "lanes"}
         or registry.get("version") != 1
         or registry.get("environment") != "production"
         or not isinstance(registry.get("lanes"), dict)
@@ -104,6 +111,10 @@ def _production_project_target_registry() -> dict[str, Any] | None:
     for target_key, lane in lanes.items():
         if not isinstance(lane, dict):
             raise RuntimeError(f"Project target lane {target_key} is invalid")
+        if set(lane) != {"schedulingMode", "current", "previous"}:
+            raise RuntimeError(
+                f"Project target lane {target_key} keys are invalid"
+            )
         if lane.get("schedulingMode") not in {"fair_share", "fifo"}:
             raise RuntimeError(
                 f"Project target lane {target_key} scheduling mode is invalid"
@@ -122,9 +133,38 @@ def _production_project_target_registry() -> dict[str, Any] | None:
             releases.append(previous)
         release_ids: set[str] = set()
         for release in releases:
+            allowed_release_keys = {
+                "releaseId",
+                "workerSourceGitSha",
+                "imageUri",
+                "jobDefinitionArn",
+                "jobQueueArn",
+                "renderSpecVersion",
+                "captionRenderSpecVersion",
+                "fontManifestSha256",
+            }
+            if release is previous:
+                allowed_release_keys.add("submitAsReleaseId")
+            required_release_keys = {
+                "releaseId",
+                "workerSourceGitSha",
+                "imageUri",
+                "jobDefinitionArn",
+                "jobQueueArn",
+            }
+            actual_release_keys = set(release)
+            if (
+                not required_release_keys.issubset(actual_release_keys)
+                or not actual_release_keys.issubset(allowed_release_keys)
+            ):
+                raise RuntimeError(
+                    f"Project target lane {target_key} release keys are invalid"
+                )
             release_id = str(release.get("releaseId") or "")
             definition = str(release.get("jobDefinitionArn") or "")
             queue = str(release.get("jobQueueArn") or "")
+            worker_source_git_sha = str(release.get("workerSourceGitSha") or "")
+            image_uri = str(release.get("imageUri") or "")
             if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{2,127}", release_id):
                 raise RuntimeError(
                     f"Project target lane {target_key} release id is invalid"
@@ -140,6 +180,33 @@ def _production_project_target_registry() -> dict[str, Any] | None:
             if not _BATCH_QUEUE_ARN.fullmatch(queue):
                 raise RuntimeError(
                     f"Project target lane {target_key} queue is invalid"
+                )
+            if (
+                not _GIT_SHA.fullmatch(worker_source_git_sha)
+                or not _WORKER_IMAGE_URI.fullmatch(image_uri)
+            ):
+                raise RuntimeError(
+                    f"Project target lane {target_key} provenance is invalid"
+                )
+            capability_values = (
+                release.get("renderSpecVersion"),
+                release.get("captionRenderSpecVersion"),
+                release.get("fontManifestSha256"),
+            )
+            capability_count = sum(value is not None for value in capability_values)
+            if capability_count not in {0, 3}:
+                raise RuntimeError(
+                    f"Project target lane {target_key} v4 capability is incomplete"
+                )
+            if capability_count and (
+                capability_values[0] != 4
+                or capability_values[1] != 4
+                or not _FONT_MANIFEST_SHA256.fullmatch(
+                    str(capability_values[2] or "")
+                )
+            ):
+                raise RuntimeError(
+                    f"Project target lane {target_key} v4 capability is invalid"
                 )
             existing_mode = queue_scheduling_modes.get(queue)
             if existing_mode and existing_mode != lane["schedulingMode"]:
@@ -682,11 +749,141 @@ def _rerender_scheduling_overrides(
     }
 
 
-def _render_container_overrides(command: list[str]) -> dict[str, object]:
+def _render_container_overrides(
+    command: list[str],
+    additional_environment: list[dict[str, str]] | None = None,
+) -> dict[str, object]:
     return {
         "command": command,
-        "environment": [{"name": "RENDER_SUBMITTED_AT", "value": iso_now()}],
+        "environment": [
+            {"name": "RENDER_SUBMITTED_AT", "value": iso_now()},
+            *(additional_environment or []),
+        ],
     }
+
+
+def _initial_render_v4_environment(
+    job: dict[str, Any],
+    *,
+    job_definition: str,
+    job_queue: str,
+    resume: bool,
+) -> list[dict[str, str]]:
+    render_version = job.get("initial_render_spec_version")
+    caption_version = job.get("initial_caption_render_spec_version")
+    if render_version is None and caption_version is None:
+        return []
+    if render_version != 4 or caption_version != 4:
+        raise BatchTargetTrustRejected(
+            "Initial render v4 version pair is incomplete or unsupported"
+        )
+    registry = _production_project_target_registry()
+    if registry is None:
+        raise BatchTargetTrustRejected(
+            "Initial render v4 requires the immutable project target registry"
+        )
+    matched_lane = ""
+    matched_release: dict[str, Any] | None = None
+    for target_key, lane in registry["lanes"].items():
+        pointers = ("current", "previous") if resume else ("current",)
+        for pointer in pointers:
+            release = lane.get(pointer)
+            if not isinstance(release, dict):
+                continue
+            if (
+                release.get("jobDefinitionArn") == job_definition
+                and release.get("jobQueueArn") == job_queue
+            ):
+                matched_lane = target_key
+                matched_release = release
+                break
+        if matched_release:
+            break
+    if not matched_release:
+        raise BatchTargetTrustRejected(
+            "Initial render v4 is not bound to the selected current release"
+        )
+    font_manifest_sha256 = str(
+        matched_release.get("fontManifestSha256") or ""
+    )
+    if (
+        matched_release.get("renderSpecVersion") != 4
+        or matched_release.get("captionRenderSpecVersion") != 4
+        or not _FONT_MANIFEST_SHA256.fullmatch(font_manifest_sha256)
+    ):
+        raise BatchTargetTrustRejected(
+            "Selected project target has no verified v4 capability triple"
+        )
+    worker_source_git_sha = str(
+        matched_release.get("workerSourceGitSha") or ""
+    )
+    image_uri = str(matched_release.get("imageUri") or "")
+    worker_image_digest = image_uri.rsplit("@", maxsplit=1)[-1]
+    encoded_git_sha = urllib.parse.quote(worker_source_git_sha, safe="")
+    encoded_digest = urllib.parse.quote(worker_image_digest, safe="")
+    releases = rest("editor_releases", query=(
+        "select=id,status,git_sha,worker_image_digest,render_spec_version,"
+        "caption_render_spec_version,font_manifest_sha256,staging_verified_at,"
+        "promoted_at"
+        f"&git_sha=eq.{encoded_git_sha}"
+        f"&worker_image_digest=eq.{encoded_digest}"
+        "&render_spec_version=eq.4&caption_render_spec_version=eq.4"
+        f"&font_manifest_sha256=eq.{font_manifest_sha256}&limit=2"
+    )) or []
+    if len(releases) != 1:
+        raise BatchTargetTrustRejected(
+            "Selected project target is not bound to one verified v4 release"
+        )
+    release = releases[0]
+    status = str(release.get("status") or "")
+    if (
+        release.get("git_sha") != worker_source_git_sha
+        or release.get("worker_image_digest") != worker_image_digest
+        or release.get("render_spec_version") != 4
+        or release.get("caption_render_spec_version") != 4
+        or release.get("font_manifest_sha256") != font_manifest_sha256
+        or not release.get("staging_verified_at")
+        or status not in {
+            "canary_ready", "canary_active", "approved", "stable",
+        }
+        or (status == "stable" and not release.get("promoted_at"))
+    ):
+        raise BatchTargetTrustRejected(
+            "Selected project target v4 release is not eligible"
+        )
+    encoded_release_id = urllib.parse.quote(str(release.get("id") or ""), safe="")
+    encoded_target_key = urllib.parse.quote(matched_lane, safe="")
+    encoded_target_release_id = urllib.parse.quote(
+        str(matched_release.get("releaseId") or ""), safe=""
+    )
+    targets = rest("editor_release_project_targets", query=(
+        "select=release_id,target_key,batch_target_release_id,worker_source_git_sha,"
+        "worker_image_digest,job_definition_arn,job_queue_arn"
+        f"&release_id=eq.{encoded_release_id}"
+        f"&target_key=eq.{encoded_target_key}"
+        f"&batch_target_release_id=eq.{encoded_target_release_id}&limit=2"
+    )) or []
+    if len(targets) != 1 or targets[0] != {
+        "release_id": release["id"],
+        "target_key": matched_lane,
+        "batch_target_release_id": matched_release["releaseId"],
+        "worker_source_git_sha": worker_source_git_sha,
+        "worker_image_digest": worker_image_digest,
+        "job_definition_arn": job_definition,
+        "job_queue_arn": job_queue,
+    }:
+        raise BatchTargetTrustRejected(
+            "Selected project target differs from verified v4 release evidence"
+        )
+    return [
+        {"name": "EDITOR_RELEASE_GIT_SHA", "value": worker_source_git_sha},
+        {"name": "EDITOR_RENDER_SPEC_VERSION", "value": "4"},
+        {"name": "EDITOR_CAPTION_RENDER_SPEC_VERSION", "value": "4"},
+        {
+            "name": "EDITOR_FONT_MANIFEST_SHA256",
+            "value": font_manifest_sha256,
+        },
+    ]
 
 
 def _editor_release_target(
@@ -929,6 +1126,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
             "clip_length_option,batch_job_definition,batch_job_queue,"
             "batch_target_key,batch_target_release_id,"
             "source_range_selection_enabled,transcription_policy,subtitle_template_id,"
+            "initial_render_spec_version,initial_caption_render_spec_version,"
             "template_snapshot,subtitle_template_snapshot,"
             "dispatch_priority_class"
             f"&id=eq.{encoded_job_id}&limit=1"
@@ -961,6 +1159,12 @@ def _submit(payload: dict[str, Any]) -> str | None:
             job,
             resume=resume,
         )
+        v4_environment = _initial_render_v4_environment(
+            job,
+            job_definition=job_definition,
+            job_queue=job_queue,
+            resume=resume,
+        )
         priority_class = _priority_class(
             job.get("dispatch_priority_class") or payload.get("priorityClass")
         )
@@ -984,7 +1188,10 @@ def _submit(payload: dict[str, Any]) -> str | None:
                 priority_class,
                 job.get("user_id"), job.get("mvp_session_id"), job_id
             ),
-            containerOverrides=_render_container_overrides(command),
+            containerOverrides=_render_container_overrides(
+                command,
+                v4_environment,
+            ),
             retryStrategy={"attempts": 1},
             timeout={
                 "attemptDurationSeconds": (

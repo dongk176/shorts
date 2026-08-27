@@ -3,7 +3,16 @@ import {
   captionRenderSpecForEditor,
   parseCaptionRenderSpec,
   type CaptionRenderSpec,
+  type CaptionRenderSpecV4,
 } from "./caption-render-spec";
+import {
+  EDITOR_FONT_METRICS_REVISION,
+  editorCaptionCssToAssBaselineOffsetEmById,
+  editorCaptionCssToAssScaleById,
+  editorFontSha256ById,
+  editorWordSpaceAdvanceEmById,
+  resolveEditorFontFaceV4,
+} from "./editor-fonts";
 import {
   createEditorHighlightCaptionSpec,
   editorCaptionVerticalOffsetBounds,
@@ -42,6 +51,85 @@ const spec: CaptionRenderSpec = {
     events: [{ startFrame: 23, endFrame: 40, activeWordIndex: 0 }],
   }],
 };
+
+function v4CaptionFixture(
+  templateId: "pop" | "highlight",
+): CaptionRenderSpecV4 {
+  const pop = templateId === "pop";
+  const parsed = parseCaptionRenderSpec({
+    schemaVersion: 4,
+    templateId,
+    layoutMode: "absolute-word-positions-v1",
+    wordGapPx: 6,
+    joinedWordGapPx: 0,
+    captionPlacement: "lower",
+    fps: 30,
+    safeArea: { x: 120, y: 1025, width: 840, height: 140 },
+    font: {
+      fontId: "pretendard",
+      fileId: "Pretendard-Bold.woff2",
+      sha256: editorFontSha256ById.pretendard,
+      family: resolveEditorFontFaceV4("pretendard", "title").family,
+      weight: 700,
+      metrics: {
+        revision: EDITOR_FONT_METRICS_REVISION,
+        cssToAssScale: editorCaptionCssToAssScaleById.pretendard,
+        cssToAssBaselineOffsetEm:
+          editorCaptionCssToAssBaselineOffsetEmById.pretendard,
+      },
+    },
+    style: {
+      fontSize: pop ? 92 : 72,
+      textColor: "#FFFFFF",
+      accentColor: "#35E6E3",
+      outlineColor: "#080808",
+      outlineWidth: pop ? 8 : 7,
+    },
+    cues: [{
+      startFrame: 0,
+      endFrame: 90,
+      ...(pop ? {} : {
+        fontSize: 72,
+        scaleX: 100,
+        centerX: 540,
+        centerY: 1095,
+        lines: [[0, 1, 2]],
+        wordSeparator: " ",
+        separatorAdvanceWidth: Math.round(
+          editorWordSpaceAdvanceEmById.pretendard
+          * 72
+          * editorCaptionCssToAssScaleById.pretendard
+          * 1_000,
+        ) / 1_000,
+      }),
+      words: [
+        { text: "한글", startFrame: 0, endFrame: 30 },
+        { text: "English", startFrame: 30, endFrame: 60, spaceBefore: true },
+        { text: "123", startFrame: 60, endFrame: 90, spaceBefore: true },
+      ],
+      events: pop
+        ? [0, 1, 2].map((activeWordIndex) => ({
+            startFrame: activeWordIndex * 30,
+            endFrame: activeWordIndex * 30 + 30,
+            activeWordIndex,
+            positions: [
+              { centerX: 390, centerY: 1095, advanceWidth: 120, gapBefore: 0 },
+              { centerX: 520, centerY: 1095, advanceWidth: 128, gapBefore: 6 },
+              { centerX: 650, centerY: 1095, advanceWidth: 120, gapBefore: 6 },
+            ],
+          }))
+        : [0, 1, 2].map((activeWordIndex) => ({
+            startFrame: activeWordIndex * 30,
+            endFrame: activeWordIndex * 30 + 30,
+            activeWordIndex,
+          })),
+    }],
+  });
+  if (!parsed || parsed.schemaVersion !== 4) {
+    throw new Error("invalid v4 caption fixture");
+  }
+  return parsed;
+}
 
 describe("editor caption preview timing", () => {
   it("compiles ordinary transcript segments into deterministic highlight cues", () => {
@@ -175,6 +263,112 @@ describe("editor caption preview timing", () => {
     }]);
 
     expect(retimed?.cues[0]?.events[0]?.positions).toEqual(positions);
+  });
+
+  it("preserves stored v4 geometry while shifting a single padded source clip", () => {
+    const source = v4CaptionFixture("pop");
+    const padded: CaptionRenderSpecV4 = {
+      ...source,
+      cues: source.cues.map((cue) => ({
+        ...cue,
+        startFrame: cue.startFrame + 60,
+        endFrame: cue.endFrame + 60,
+        words: cue.words.map((word) => ({
+          ...word,
+          startFrame: word.startFrame == null ? undefined : word.startFrame + 60,
+          endFrame: word.endFrame == null ? undefined : word.endFrame + 60,
+        })),
+        events: cue.events.map((event) => ({
+          ...event,
+          startFrame: event.startFrame + 60,
+          endFrame: event.endFrame + 60,
+        })),
+      })),
+    };
+    const originalPositions = structuredClone(
+      padded.cues[0]?.events[0]?.positions,
+    );
+    const retimed = retimeCaptionRenderSpecForEditor(
+      padded,
+      [{ id: "padded", sourceStartSeconds: 2, sourceEndSeconds: 5 }],
+      [],
+      undefined,
+      {
+        layout: {
+          offsetY: 0,
+          scale: 1,
+          fontId: padded.font.fontId,
+          fontSize: padded.style.fontSize,
+          color: padded.style.textColor,
+          accentColor: padded.style.accentColor,
+        },
+      },
+    );
+
+    expect(retimed?.cues[0]?.startFrame).toBe(0);
+    expect(retimed?.cues[0]?.endFrame).toBe(90);
+    expect(retimed?.cues[0]?.events[0]?.positions).toEqual(originalPositions);
+    expect(retimed?.safeArea).toEqual(padded.safeArea);
+  });
+
+  it("ignores padded outside cues without reflowing the selected v4 cue", () => {
+    const source = v4CaptionFixture("pop");
+    const shiftCue = (frameOffset: number, centerOffset: number) => ({
+      ...structuredClone(source.cues[0]),
+      startFrame: source.cues[0].startFrame + frameOffset,
+      endFrame: source.cues[0].endFrame + frameOffset,
+      words: source.cues[0].words.map((word) => ({
+        ...word,
+        startFrame: word.startFrame == null
+          ? undefined
+          : word.startFrame + frameOffset,
+        endFrame: word.endFrame == null
+          ? undefined
+          : word.endFrame + frameOffset,
+      })),
+      events: source.cues[0].events.map((event) => ({
+        ...event,
+        startFrame: event.startFrame + frameOffset,
+        endFrame: event.endFrame + frameOffset,
+        positions: event.positions?.map((position) => ({
+          ...position,
+          centerX: position.centerX + centerOffset,
+        })),
+      })),
+    });
+    const padded: CaptionRenderSpecV4 = {
+      ...source,
+      cues: [
+        shiftCue(0, -70),
+        shiftCue(120, -39),
+        shiftCue(240, 85),
+      ],
+    };
+    const selectedPositions = structuredClone(
+      padded.cues[1].events[0].positions,
+    );
+
+    const retimed = retimeCaptionRenderSpecForEditor(
+      padded,
+      [{ id: "selected", sourceStartSeconds: 4, sourceEndSeconds: 7 }],
+      [],
+      undefined,
+      {
+        layout: {
+          offsetY: 0,
+          scale: 1,
+          fontId: padded.font.fontId,
+          fontSize: padded.style.fontSize,
+          color: padded.style.textColor,
+          accentColor: padded.style.accentColor,
+        },
+      },
+    );
+
+    expect(retimed?.cues).toHaveLength(1);
+    expect(retimed?.cues[0]).toMatchObject({ startFrame: 0, endFrame: 90 });
+    expect(retimed?.cues[0].events[0].positions).toEqual(selectedPositions);
+    expect(retimed?.cues[0].events[0].positions?.[0].centerX).toBe(351);
   });
 
   it("reflows an edited final pop word into the same standalone cue as rendering", () => {
@@ -348,5 +542,185 @@ describe("editor caption preview timing", () => {
       min: -900,
       max: 717,
     });
+  });
+
+  it("rebuilds edited v4 pop captions with canonical advance boxes and gaps", () => {
+    const v4 = parseCaptionRenderSpec({
+      schemaVersion: 4,
+      templateId: "pop",
+      layoutMode: "absolute-word-positions-v1",
+      wordGapPx: 6,
+      joinedWordGapPx: 0,
+      captionPlacement: "lower",
+      fps: 30,
+      safeArea: { x: 120, y: 1025, width: 840, height: 140 },
+      font: {
+        fontId: "pretendard",
+        fileId: "Pretendard-Bold.woff2",
+        sha256: editorFontSha256ById.pretendard,
+        family: resolveEditorFontFaceV4("pretendard", "title").family,
+        weight: 700,
+        metrics: {
+          revision: EDITOR_FONT_METRICS_REVISION,
+          cssToAssScale: editorCaptionCssToAssScaleById.pretendard,
+          cssToAssBaselineOffsetEm:
+            editorCaptionCssToAssBaselineOffsetEmById.pretendard,
+        },
+      },
+      style: {
+        fontSize: 72,
+        textColor: "#FFFFFF",
+        accentColor: "#35E6E3",
+        outlineColor: "#080808",
+        outlineWidth: 7,
+      },
+      cues: [{
+        startFrame: 0,
+        endFrame: 60,
+        words: [
+          { text: "기존", startFrame: 0, endFrame: 30 },
+          { text: "자막", startFrame: 30, endFrame: 60, spaceBefore: true },
+        ],
+        events: [{
+          startFrame: 0,
+          endFrame: 60,
+          activeWordIndex: 0,
+          positions: [
+            { centerX: 470, centerY: 1095, advanceWidth: 120, gapBefore: 0 },
+            { centerX: 596, centerY: 1095, advanceWidth: 120, gapBefore: 6 },
+          ],
+        }],
+      }],
+    });
+    if (!v4 || v4.schemaVersion !== 4) throw new Error("invalid v4 fixture");
+
+    const edited = retimeCaptionRenderSpecForEditor(
+      v4,
+      [{ id: "whole", sourceStartSeconds: 0, sourceEndSeconds: 2 }],
+      [{ cueIndex: 0, text: "수정 자막" }],
+      (text, fontSize) => Array.from(text).length * fontSize * 0.5,
+    );
+    expect(edited?.schemaVersion).toBe(4);
+    if (!edited || edited.schemaVersion !== 4) {
+      throw new Error("v4 edited spec was downgraded");
+    }
+    const positions = edited.cues[0]?.events[0]?.positions;
+    expect(positions).toHaveLength(2);
+    expect(positions?.map((position) => position.gapBefore)).toEqual([0, 6]);
+    expect(positions?.[0]?.advanceWidth).toBe(
+      Math.round(2 * 72 * 0.5 * 1.12
+        * editorCaptionCssToAssScaleById.pretendard * 1_000) / 1_000,
+    );
+    expect(positions?.every((position) => (
+      "advanceWidth" in position
+      && Number.isFinite(position.advanceWidth)
+      && Math.round(position.advanceWidth * 1_000) === position.advanceWidth * 1_000
+    ))).toBe(true);
+  });
+
+  it.each(["pop", "highlight"] as const)(
+    "recompiles v4 %s geometry for the selected font, size, and safe area",
+    (templateId) => {
+      const source = v4CaptionFixture(templateId);
+      const target = retimeCaptionRenderSpecForEditor(
+        source,
+        [{ id: "whole", sourceStartSeconds: 0, sourceEndSeconds: 3 }],
+        [],
+        (text, fontSize) => Array.from(text).length * fontSize * 0.35,
+        {
+          layout: {
+            offsetY: 50,
+            scale: 1.1,
+            fontId: "paperlogy",
+            fontSize: 84,
+            color: "#FFD84D",
+            accentColor: "#E32626",
+          },
+        },
+      );
+      if (!target || target.schemaVersion !== 4) {
+        throw new Error("v4 target did not compile");
+      }
+
+      expect(target.font).toMatchObject({
+        fontId: "paperlogy",
+        fileId: "Paperlogy-7Bold.ttf",
+        sha256: editorFontSha256ById.paperlogy,
+        family: resolveEditorFontFaceV4("paperlogy", "title").family,
+        metrics: {
+          revision: EDITOR_FONT_METRICS_REVISION,
+          cssToAssScale: editorCaptionCssToAssScaleById.paperlogy,
+        },
+      });
+      expect(target.safeArea).toEqual({
+        x: 78,
+        y: 1068,
+        width: 924,
+        height: 154,
+      });
+      expect(target.style).toMatchObject({
+        fontSize: 84,
+        textColor: "#FFD84D",
+        accentColor: "#E32626",
+      });
+      expect(target.cues.flatMap((cue) => cue.words.map((word) => word.text)))
+        .toEqual(["한글", "English", "123"]);
+      if (templateId === "pop") {
+        expect(target.cues.flatMap((cue) => cue.words.map((word) => word.fontSize)))
+          .toEqual([84, 84, 84]);
+        expect(target.cues[0].events[0].positions?.[0].advanceWidth).toBe(
+          Math.round(
+            2 * 84 * 0.35 * 1.12
+              * editorCaptionCssToAssScaleById.paperlogy * 1_000,
+          ) / 1_000,
+        );
+      } else {
+        expect(target.cues[0]).toMatchObject({
+          fontSize: 84,
+          centerX: 540,
+          centerY: 1145,
+        });
+      }
+    },
+  );
+
+  it.each([
+    "한글 자막 테스트",
+    "English caption fixture",
+    "한글 English 123",
+  ])("compiles general highlight v4 with exact per-font metrics: %s", (text) => {
+    const highlighted = createEditorHighlightCaptionSpec(
+      [{ start: 0, end: 3, text }],
+      "16:9",
+      "#35E6E3",
+      "paperlogy",
+      (value, fontSize) => Array.from(value).length * fontSize * 0.4,
+      { schemaVersion: 4, fontSize: 64 },
+    );
+    if (!highlighted || highlighted.schemaVersion !== 4) {
+      throw new Error("general highlight v4 did not compile");
+    }
+    expect(highlighted.font).toMatchObject({
+      fontId: "paperlogy",
+      family: resolveEditorFontFaceV4("paperlogy", "title").family,
+      metrics: {
+        cssToAssScale: editorCaptionCssToAssScaleById.paperlogy,
+      },
+    });
+    expect(highlighted.style.fontSize).toBe(64);
+    expect(highlighted.cues.every((cue) => cue.fontSize === 64)).toBe(true);
+    expect(highlighted.cues.flatMap((cue) => cue.words.map((word) => word.text)))
+      .toEqual(text.split(" "));
+  });
+
+  it("keeps the general highlight compiler on schema v3 by default", () => {
+    const highlighted = createEditorHighlightCaptionSpec(
+      [{ start: 0, end: 1, text: "기존 강조" }],
+      "16:9",
+      "#35E6E3",
+      "pretendard",
+      (text, fontSize) => Array.from(text).length * fontSize * 0.4,
+    );
+    expect(highlighted?.schemaVersion).toBe(3);
   });
 });

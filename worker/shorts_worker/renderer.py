@@ -12,6 +12,7 @@ from .caption_templates import (
     CAPTION_TIMING_LEAD_FRAMES,
     create_caption_ass,
     prepare_caption_fonts,
+    verify_caption_font_selection_v4,
 )
 from .config import Settings
 from .errors import RenderError
@@ -26,9 +27,11 @@ from .overlays import (
     create_custom_comment_overlay,
     create_panel_overlays,
 )
+from .render_spec_v4 import draw_editor_title_spec_v4
 from .schemas import (
     CommentOverlay,
     CustomTemplateConfig,
+    EditorRenderSpec,
     HighlightClip,
     SubtitleSegment,
     TemplateId,
@@ -444,6 +447,7 @@ class VideoRenderer:
         title_text_styles: list[TitleTextStyle] | None = None,
         custom_template_config: CustomTemplateConfig | None = None,
         caption_render_spec: dict[str, object] | None = None,
+        initial_render_spec: dict[str, object] | None = None,
         title_accent_color: str | None = None,
         metrics_callback: RenderMetricsCallback | None = None,
     ) -> Path:
@@ -460,6 +464,22 @@ class VideoRenderer:
             else min(30.0, video_fps(probe))
         )
         has_audio = any(stream.get("codec_type") == "audio" for stream in probe.get("streams", []))
+        authoritative_render_spec = (
+            EditorRenderSpec.model_validate(initial_render_spec)
+            if initial_render_spec is not None
+            else None
+        )
+        if (
+            authoritative_render_spec is not None
+            and authoritative_render_spec.version != 4
+        ):
+            raise RenderError("최초 렌더에는 v4 편집 명세만 사용할 수 있습니다.")
+        if authoritative_render_spec is not None:
+            caption_is_visible = (
+                caption_render_spec is not None and subtitles_enabled
+            )
+            if (authoritative_render_spec.subtitles is not None) != caption_is_visible:
+                raise RenderError("최초 렌더 명세와 자막 표시 상태가 다릅니다.")
         if custom_template_config is not None:
             custom_metrics: dict[str, object] = {}
             rendered = self._render_custom_clean_clip(
@@ -476,6 +496,8 @@ class VideoRenderer:
                 comment_overlays=comment_overlays or [],
                 config=custom_template_config,
                 caption_render_spec=caption_render_spec,
+                initial_render_spec=authoritative_render_spec,
+                title_text_styles=title_text_styles or [],
                 duration=duration,
                 fps=fps,
                 has_audio=has_audio,
@@ -530,9 +552,41 @@ class VideoRenderer:
                 )
             ),
         )
+        channel_visible = (
+            authoritative_render_spec is None
+            or authoritative_render_spec.channel.visible is not False
+        )
+        if not channel_visible:
+            hidden_channel = Image.new(
+                "RGBA",
+                (CANVAS_WIDTH, layout.bottom_height),
+                (0, 0, 0, 0),
+            )
+            bottom = work_dir / "overlays" / f"{prefix}_channel_hidden_v4.png"
+            hidden_channel.save(bottom, format="PNG", compress_level=1)
+        title_overlay_y = layout.top_y
+        if authoritative_render_spec is not None:
+            style = TEMPLATE_STYLES[template_id]
+            overlay_accent = (
+                title_accent_color or style.accent
+                if video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+                and template_id is not TemplateId.PAPER
+                else style.primary
+            )
+            rendered_title = draw_editor_title_spec_v4(
+                title_spec=authoritative_render_spec.title,
+                source_title=title,
+                title_text_styles=title_text_styles or [],
+                primary_color=overlay_accent,
+                accent_color=title_accent_color or style.accent,
+            )
+            top = work_dir / "overlays" / f"{prefix}_title_v4.png"
+            rendered_title.save(top, format="PNG", compress_level=1)
+            title_overlay_y = 0
         channel_overlay_y = layout.bottom_y
         if (
             caption_render_spec is None
+            and channel_visible
             and fixed_preset_channel
             and template_id is not TemplateId.COMMENT_CAPTURE
         ):
@@ -549,7 +603,9 @@ class VideoRenderer:
             )
         if template_id is TemplateId.COMMENT_CAPTURE:
             comment_channel_center_y = None
-            if comment_channel_fixed:
+            if not channel_visible:
+                comment_channel_center_y = None
+            elif comment_channel_fixed:
                 comment_channel_center_y = (
                     COMMENT_CAPTURE_SQUARE_CHANNEL_CENTER_Y - layout.bottom_y
                 )
@@ -626,7 +682,7 @@ class VideoRenderer:
                 f"pad={CANVAS_WIDTH}:{layout.video_height}:(ow-iw)/2:(oh-ih)/2:color=black[center]"
             ),
             f"[base][center]overlay=x=0:y={layout.video_y}:shortest=1[with_video]",
-            f"[with_video][1:v]overlay=x=0:y={layout.top_y}:shortest=1[with_top]",
+            f"[with_video][1:v]overlay=x=0:y={title_overlay_y}:shortest=1[with_top]",
             f"[with_top][2:v]overlay=x=0:y={channel_overlay_y}:shortest=1[composed]",
         ]
         video_label = "composed"
@@ -643,6 +699,11 @@ class VideoRenderer:
                 caption_fonts_dir = prepare_caption_fonts(
                     work_dir / "caption-fonts",
                     caption_render_spec,
+                )
+                verify_caption_font_selection_v4(
+                    font_directory=caption_fonts_dir,
+                    spec=caption_render_spec,
+                    timeout=min(30, self.settings.ffmpeg_timeout_seconds),
                 )
                 fonts_dir = f":fontsdir='{_escape_filter_path(caption_fonts_dir)}'"
             filters.append(
@@ -761,6 +822,8 @@ class VideoRenderer:
         comment_overlays: list[CommentOverlay],
         config: CustomTemplateConfig,
         caption_render_spec: dict[str, object] | None,
+        initial_render_spec: EditorRenderSpec | None,
+        title_text_styles: list[TitleTextStyle],
         duration: float,
         fps: float,
         has_audio: bool,
@@ -786,8 +849,20 @@ class VideoRenderer:
             directory=work_dir / "overlays",
             prefix=prefix,
             channel_thumbnail_path=channel_thumbnail_path,
-            include_channel=True,
+            include_channel=(
+                initial_render_spec is None
+                or initial_render_spec.channel.visible is not False
+            ),
         )
+        if initial_render_spec is not None:
+            rendered_title = draw_editor_title_spec_v4(
+                title_spec=initial_render_spec.title,
+                source_title=title,
+                title_text_styles=title_text_styles,
+                primary_color=config.title.primary_color,
+                accent_color=config.title.accent_color,
+            )
+            rendered_title.save(title_overlay, format="PNG", compress_level=1)
         comment_panels = [
             create_custom_comment_overlay(
                 comment,
@@ -846,6 +921,11 @@ class VideoRenderer:
                 caption_fonts_dir = prepare_caption_fonts(
                     work_dir / "caption-fonts",
                     caption_render_spec,
+                )
+                verify_caption_font_selection_v4(
+                    font_directory=caption_fonts_dir,
+                    spec=caption_render_spec,
+                    timeout=min(30, self.settings.ffmpeg_timeout_seconds),
                 )
                 fonts_dir = f":fontsdir='{_escape_filter_path(caption_fonts_dir)}'"
             filters.append(

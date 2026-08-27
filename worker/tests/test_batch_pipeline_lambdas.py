@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
 import json
@@ -115,6 +116,11 @@ def _project_target_registry() -> dict[str, object]:
             "schedulingMode": scheduling,
             "current": {
                 "releaseId": release_id,
+                "workerSourceGitSha": "a" * 40,
+                "imageUri": (
+                    "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/"
+                    f"shorts@sha256:{'b' * 64}"
+                ),
                 "jobDefinitionArn": os.environ[f"{prefix}_JOB_DEFINITION_ARN"],
                 "jobQueueArn": os.environ[f"{prefix}_BATCH_QUEUE_ARN"],
             },
@@ -1186,6 +1192,115 @@ def test_production_registry_rejects_conflicting_modes_for_a_shared_queue() -> N
         module._production_project_target_registry()
 
 
+def test_initial_render_v4_environment_requires_exact_release_and_lane_evidence() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    git_sha = "a" * 40
+    digest = f"sha256:{'b' * 64}"
+    font_hash = "c" * 64
+    definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-editor-v4-legacy-project-aaaaaaaaaaaa:1"
+    )
+    queue = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+        "shorts-mvp-project-fargate-production"
+    )
+    target = {
+        "releaseId": "legacy-project-aaaaaaaaaaaa-v4",
+        "workerSourceGitSha": git_sha,
+        "imageUri": (
+            "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/shorts@"
+            f"{digest}"
+        ),
+        "jobDefinitionArn": definition,
+        "jobQueueArn": queue,
+        "renderSpecVersion": 4,
+        "captionRenderSpecVersion": 4,
+        "fontManifestSha256": font_hash,
+    }
+    module._production_project_target_registry = lambda: {
+        "lanes": {
+            "legacy_project": {
+                "current": target,
+                "previous": None,
+            },
+        },
+    }
+    release_id = "7fd1c249-6cef-40f1-97d4-e4e6c837f60a"
+
+    def rest(table: str, **_kwargs):
+        if table == "editor_releases":
+            return [{
+                "id": release_id,
+                "status": "canary_ready",
+                "git_sha": git_sha,
+                "worker_image_digest": digest,
+                "render_spec_version": 4,
+                "caption_render_spec_version": 4,
+                "font_manifest_sha256": font_hash,
+                "staging_verified_at": "2026-08-26T00:00:00+00:00",
+                "promoted_at": None,
+            }]
+        if table == "editor_release_project_targets":
+            return [{
+                "release_id": release_id,
+                "target_key": "legacy_project",
+                "batch_target_release_id": target["releaseId"],
+                "worker_source_git_sha": git_sha,
+                "worker_image_digest": digest,
+                "job_definition_arn": definition,
+                "job_queue_arn": queue,
+            }]
+        return []
+
+    module.rest = rest
+    assert module._initial_render_v4_environment(
+        {
+            "initial_render_spec_version": 4,
+            "initial_caption_render_spec_version": 4,
+        },
+        job_definition=definition,
+        job_queue=queue,
+        resume=False,
+    ) == [
+        {"name": "EDITOR_RELEASE_GIT_SHA", "value": git_sha},
+        {"name": "EDITOR_RENDER_SPEC_VERSION", "value": "4"},
+        {"name": "EDITOR_CAPTION_RENDER_SPEC_VERSION", "value": "4"},
+        {"name": "EDITOR_FONT_MANIFEST_SHA256", "value": font_hash},
+    ]
+
+    target["fontManifestSha256"] = "d" * 64
+    with pytest.raises(
+        module.BatchTargetTrustRejected,
+        match="v4 release is not eligible",
+    ):
+        module._initial_render_v4_environment(
+            {
+                "initial_render_spec_version": 4,
+                "initial_caption_render_spec_version": 4,
+            },
+            job_definition=definition,
+            job_queue=queue,
+            resume=False,
+        )
+
+
+def test_initial_render_v4_legacy_null_pair_emits_no_capability_environment() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module._production_project_target_registry = MagicMock()
+
+    assert module._initial_render_v4_environment(
+        {
+            "initial_render_spec_version": None,
+            "initial_caption_render_spec_version": None,
+        },
+        job_definition="definition",
+        job_queue="queue",
+        resume=False,
+    ) == []
+    module._production_project_target_registry.assert_not_called()
+
+
 def test_registered_previous_release_uses_its_declared_hardened_submit_target() -> None:
     module, _ = _load_lambda("batch_submitter")
     registry = _project_target_registry()
@@ -1199,6 +1314,11 @@ def test_registered_previous_release_uses_its_declared_hardened_submit_target() 
     )
     unified["previous"] = {
         "releaseId": "unified-previous-r1",
+        "workerSourceGitSha": "c" * 40,
+        "imageUri": (
+            "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/"
+            f"shorts@sha256:{'d' * 64}"
+        ),
         "jobDefinitionArn": previous_definition,
         "jobQueueArn": os.environ["UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN"],
         "submitAsReleaseId": "unified-current-r4",
@@ -1243,6 +1363,11 @@ def test_registered_previous_release_executes_itself_without_explicit_remap() ->
     )
     source_range["previous"] = {
         "releaseId": "source-range-previous-r2",
+        "workerSourceGitSha": "c" * 40,
+        "imageUri": (
+            "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/"
+            f"shorts@sha256:{'d' * 64}"
+        ),
         "jobDefinitionArn": previous_definition,
         "jobQueueArn": previous_queue,
     }
@@ -1549,6 +1674,11 @@ def test_previous_unified_eventbridge_id_reconciles_with_creation_target_cas() -
     )
     previous_release = {
         "releaseId": "unified-previous-r1",
+        "workerSourceGitSha": "c" * 40,
+        "imageUri": (
+            "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/"
+            f"shorts@sha256:{'d' * 64}"
+        ),
         "jobDefinitionArn": previous_definition,
         "jobQueueArn": current["jobQueueArn"],
         "submitAsReleaseId": current["releaseId"],
@@ -2974,7 +3104,6 @@ def _editor_release_registration_event(
             "s3://isolated-editor-test/editor-release-probes/"
             f"{'a' * 40}/{'b' * 12}/manifest.json"
         ),
-        "workflowRunUrl": "https://github.example/actions/runs/1",
     }
 
 
@@ -3023,6 +3152,219 @@ def _editor_release_manifest(document_version: int = 2) -> dict[str, object]:
             "paperlogy",
         ],
         "capabilities": {"subtitleEditing": True},
+    }
+
+
+def _editor_release_v4_manifest(module: ModuleType) -> dict[str, object]:
+    entries = [{
+        "fontId": font_id,
+        "sha256": "c" * 64,
+        "postscriptName": f"PostScript-{font_id}",
+        "resolvedPath": f"{module._EDITOR_FONT_ROOT}/{file_name}",
+        "cssToAssScale": 0.84,
+        "cssToAssBaselineOffsetEm": 0.0,
+        "wordSpaceAdvanceEm": 0.25,
+    } for font_id, file_name in sorted(module._REQUIRED_FONT_FILES.items())]
+    unsigned_font_manifest = {
+        "fallbackDetected": False,
+        "entries": entries,
+    }
+    canonical = json.dumps(
+        unsigned_font_manifest,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    font_manifest_sha256 = hashlib.sha256(canonical).hexdigest()
+    manifest = _editor_release_manifest(document_version=3)
+    manifest.update({
+        "schemaVersion": 2,
+        "renderSpecVersion": 4,
+        "captionRenderSpecVersion": 4,
+        "fontManifestSha256": font_manifest_sha256,
+        "runtimeIdentity": {
+            "sourceGitSha": "a" * 40,
+            "imageDigest": f"sha256:{'b' * 64}",
+            "renderSpecVersion": "4",
+            "captionRenderSpecVersion": "4",
+            "fontManifestSha256": font_manifest_sha256,
+        },
+        "fontManifest": {
+            "sha256": font_manifest_sha256,
+            **unsigned_font_manifest,
+        },
+    })
+    manifest["checks"].update({
+        "runtime-identity": True,
+        "render-spec-v4": True,
+        "caption-render-spec-v4": True,
+        "worker-title-compositor-parity": True,
+        "worker-caption-noop-parity": True,
+        "font-manifest": True,
+        "font-fallback": True,
+        "browser-parity-worker-matrix": True,
+    })
+    return manifest
+
+
+def _editor_browser_parity_matrix(
+    module: ModuleType,
+    manifest: dict[str, object],
+) -> dict[str, object]:
+    fonts = sorted(module._REQUIRED_FONTS)
+    cases: list[dict[str, object]] = []
+
+    def add_case(
+        case_id: str,
+        *,
+        font_id: str,
+        coverage: list[str],
+        template_id: str | None = None,
+        title: str | None = None,
+    ) -> None:
+        fixture: dict[str, object] = {
+            "caseId": case_id,
+            "coverage": coverage,
+            "fontId": font_id,
+        }
+        if template_id:
+            fixture["caption"] = {
+                "mode": (
+                    "positioned-pop"
+                    if template_id == "pop"
+                    else "flow-highlight"
+                ),
+            }
+        if title:
+            fixture["title"] = {
+                "compilerInput": {
+                    "fontId": font_id,
+                    "title": title,
+                },
+            }
+        cases.append({
+            "id": case_id,
+            "fontId": font_id,
+            "coverage": coverage,
+            "templateId": template_id,
+            "fixture": fixture,
+            "workerFrameName": f"frames/{case_id}.png",
+            "workerFrameSha256": hashlib.sha256(case_id.encode()).hexdigest(),
+        })
+
+    edge_cases = [
+        (
+            "title-long-korean",
+            ["long-korean-title", "transparent-title-background"],
+        ),
+        (
+            "title-colored-background",
+            ["colored-title-background"],
+        ),
+        (
+            "title-non-centered",
+            ["non-centered-title"],
+        ),
+        (
+            "title-edge-clamped",
+            ["edge-clamped-title"],
+        ),
+    ]
+    for case_id, coverage in edge_cases:
+        add_case(
+            case_id,
+            font_id="pretendard",
+            coverage=coverage,
+            title="긴 한글 제목 preview",
+        )
+    for font_id in fonts:
+        add_case(
+            f"title-font-{font_id}",
+            font_id=font_id,
+            coverage=["title-font-matrix", "mixed-language-title"],
+            title="한글 English 제목",
+        )
+        for template_id in ("pop", "highlight"):
+            add_case(
+                f"font-{template_id}-{font_id}",
+                font_id=font_id,
+                coverage=[
+                    "font-template-mode-matrix",
+                    f"{template_id}-caption",
+                    "mixed-language-caption",
+                ],
+                template_id=template_id,
+            )
+    add_case(
+        "caption-pure-korean",
+        font_id="pretendard",
+        coverage=["pure-korean-caption", "pop-caption"],
+        template_id="pop",
+    )
+    add_case(
+        "caption-pure-english",
+        font_id="pretendard",
+        coverage=["pure-english-caption", "highlight-caption"],
+        template_id="highlight",
+    )
+    return {
+        "schemaVersion": 1,
+        "renderer": "isolated-linux-worker-v4",
+        "runtimeIdentity": manifest["runtimeIdentity"],
+        "caseCount": len(cases),
+        "fontIds": fonts,
+        "cases": cases,
+    }
+
+
+def _editor_browser_parity_report(
+    module: ModuleType,
+    manifest: dict[str, object],
+    *,
+    manifest_sha256: str,
+    matrix: dict[str, object],
+    matrix_sha256: str,
+    matrix_uri: str,
+) -> dict[str, object]:
+    cases = [{
+        "caseId": item["id"],
+        "coverage": item["coverage"],
+        "fontId": item["fontId"],
+        "workerFrameSha256": item["workerFrameSha256"],
+        "workerFrameSource": (
+            matrix_uri.removesuffix("matrix.json") + item["workerFrameName"]
+        ),
+        "browserScreenshotSha256": hashlib.sha256(
+            f"browser-{item['id']}".encode()
+        ).hexdigest(),
+        "maximumDomErrorPixels": 0.25,
+        "maximumPixelErrorPixels": 1,
+        "checks": {
+            "browser-worker-visual-parity": True,
+            "browserTemplateCompilerParity": True,
+            "storedSpecConsumerParity": True,
+        },
+    } for item in matrix["cases"]]
+    return {
+        "schemaVersion": 2,
+        "gitSha": manifest["gitSha"],
+        "workerImageDigest": manifest["workerImageDigest"],
+        "fontManifestSha256": manifest["fontManifestSha256"],
+        "runtimeIdentity": manifest["runtimeIdentity"],
+        "workerManifestSha256": manifest_sha256,
+        "workerMatrixSha256": matrix_sha256,
+        "workerMatrixSource": matrix_uri,
+        "maximumAllowedErrorPixels": 2,
+        "maximumDomErrorPixels": 0.25,
+        "maximumPixelErrorPixels": 1,
+        "caseCount": len(cases),
+        "fontIds": sorted(module._REQUIRED_FONTS),
+        "coverage": sorted(module._BROWSER_PARITY_REQUIRED_COVERAGE),
+        "browsers": ["Mozilla/5.0 Chrome/151.0.0.0 Safari/537.36"],
+        "checks": {
+            name: True for name in module._BROWSER_PARITY_REQUIRED_CHECKS
+        },
+        "cases": cases,
     }
 
 
@@ -3208,6 +3550,271 @@ def test_editor_release_registrar_rejects_incomplete_subtitle_evidence() -> None
         )
 
 
+def test_editor_release_registrar_recomputes_the_exact_v4_font_manifest() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    manifest = _editor_release_v4_manifest(module)
+    manifest_sha256 = str(manifest["fontManifestSha256"])
+
+    module._verify_manifest(
+        manifest,
+        git_sha="a" * 40,
+        digest=f"sha256:{'b' * 64}",
+        document_version=3,
+        subtitle_editing_capable=True,
+        render_spec_version=4,
+        caption_render_spec_version=4,
+        font_manifest_sha256=manifest_sha256,
+    )
+
+    tampered = deepcopy(manifest)
+    tampered["fontManifest"]["entries"][0]["cssToAssScale"] = 0.85
+    with pytest.raises(RuntimeError, match="font manifest hash does not match"):
+        module._verify_manifest(
+            tampered,
+            git_sha="a" * 40,
+            digest=f"sha256:{'b' * 64}",
+            document_version=3,
+            subtitle_editing_capable=True,
+            render_spec_version=4,
+            caption_render_spec_version=4,
+            font_manifest_sha256=manifest_sha256,
+        )
+
+    invalid_path = deepcopy(manifest)
+    invalid_path["fontManifest"]["entries"][0]["resolvedPath"] = (
+        f"{module._EDITOR_FONT_ROOT}/../outside.ttf"
+    )
+    with pytest.raises(RuntimeError, match="font manifest is invalid"):
+        module._verify_manifest(
+            invalid_path,
+            git_sha="a" * 40,
+            digest=f"sha256:{'b' * 64}",
+            document_version=3,
+            subtitle_editing_capable=True,
+            render_spec_version=4,
+            caption_render_spec_version=4,
+            font_manifest_sha256=manifest_sha256,
+        )
+
+    forged_runtime = deepcopy(manifest)
+    forged_runtime["runtimeIdentity"]["imageDigest"] = f"sha256:{'d' * 64}"
+    with pytest.raises(RuntimeError, match="runtime identity evidence"):
+        module._verify_manifest(
+            forged_runtime,
+            git_sha="a" * 40,
+            digest=f"sha256:{'b' * 64}",
+            document_version=3,
+            subtitle_editing_capable=True,
+            render_spec_version=4,
+            caption_render_spec_version=4,
+            font_manifest_sha256=manifest_sha256,
+        )
+
+
+def test_editor_v4_registrar_requires_the_exact_browser_parity_artifact() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    manifest = _editor_release_v4_manifest(module)
+    matrix = _editor_browser_parity_matrix(module, manifest)
+    assert matrix["caseCount"] == 66
+    matrix_payload = json.dumps(matrix, separators=(",", ":")).encode()
+    matrix_sha256 = hashlib.sha256(matrix_payload).hexdigest()
+    manifest["browserParityMatrix"] = {
+        "schemaVersion": 1,
+        "caseCount": 66,
+        "fontIds": sorted(module._REQUIRED_FONTS),
+        "sha256": matrix_sha256,
+    }
+    manifest_payload = json.dumps(manifest).encode()
+    manifest_sha256 = hashlib.sha256(manifest_payload).hexdigest()
+    report = _editor_browser_parity_report(
+        module,
+        manifest,
+        manifest_sha256=manifest_sha256,
+        matrix=matrix,
+        matrix_sha256=matrix_sha256,
+        matrix_uri=(
+            "s3://isolated-editor-test/editor-release-probes/"
+            f"{'a' * 40}/{'b' * 12}/browser-parity/matrix.json"
+        ),
+    )
+    report_payload = json.dumps(report, separators=(",", ":")).encode()
+    report_sha256 = hashlib.sha256(report_payload).hexdigest()
+    artifact_uri = (
+        "s3://isolated-editor-test/editor-release-probes/"
+        f"{'a' * 40}/{'b' * 12}/manifest.json"
+    )
+    os.environ["EDITOR_TEST_BUCKET_NAME"] = "isolated-editor-test"
+    module.s3 = MagicMock()
+    module.s3.get_object.return_value = {"Body": io.BytesIO(matrix_payload)}
+
+    observed_matrix, observed_sha256, matrix_uri = (
+        module._read_browser_parity_matrix(
+            artifact_uri=artifact_uri,
+            manifest=manifest,
+        )
+    )
+    observed_report = module._read_inline_browser_parity_report(
+        report_payload.decode(),
+        report_sha256,
+    )
+    module._verify_browser_parity_report(
+        observed_report,
+        matrix=observed_matrix,
+        matrix_uri=matrix_uri,
+        matrix_sha256=observed_sha256,
+        manifest_sha256=manifest_sha256,
+        git_sha="a" * 40,
+        digest=f"sha256:{'b' * 64}",
+        font_manifest_sha256=str(manifest["fontManifestSha256"]),
+    )
+    module.s3.get_object.assert_called_once_with(
+        Bucket="isolated-editor-test",
+        Key=(
+            "editor-release-probes/"
+            f"{'a' * 40}/{'b' * 12}/browser-parity/matrix.json"
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="Inline browser/worker parity report hash"):
+        module._read_inline_browser_parity_report(
+            report_payload.decode(),
+            "f" * 64,
+        )
+
+    forged = deepcopy(report)
+    forged["runtimeIdentity"]["imageDigest"] = f"sha256:{'f' * 64}"
+    with pytest.raises(RuntimeError, match="identity or checks"):
+        module._verify_browser_parity_report(
+            forged,
+            matrix=observed_matrix,
+            matrix_uri=matrix_uri,
+            matrix_sha256=observed_sha256,
+            manifest_sha256=manifest_sha256,
+            git_sha="a" * 40,
+            digest=f"sha256:{'b' * 64}",
+            font_manifest_sha256=str(manifest["fontManifestSha256"]),
+        )
+
+    tampered_matrix = deepcopy(observed_matrix)
+    tampered_matrix["cases"] = tampered_matrix["cases"][:-1]
+    with pytest.raises(RuntimeError, match="matrix identity"):
+        module._verify_browser_parity_report(
+            observed_report,
+            matrix=tampered_matrix,
+            matrix_uri=matrix_uri,
+            matrix_sha256=observed_sha256,
+            manifest_sha256=manifest_sha256,
+            git_sha="a" * 40,
+            digest=f"sha256:{'b' * 64}",
+            font_manifest_sha256=str(manifest["fontManifestSha256"]),
+        )
+
+
+def test_editor_v4_registrar_rejects_direct_invocation_without_browser_report() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    manifest = _editor_release_v4_manifest(module)
+    event = _editor_release_registration_event(document_version=3)
+    event.update({
+        "uiVersion": 4,
+        "renderSpecVersion": 4,
+        "captionRenderSpecVersion": 4,
+        "fontManifestSha256": manifest["fontManifestSha256"],
+    })
+
+    with pytest.raises(ValueError, match="browserParityReportJson is required"):
+        module.handler(event, None)
+
+
+def test_editor_v4_release_records_browser_worker_parity_as_required_check() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    manifest = _editor_release_v4_manifest(module)
+    matrix = _editor_browser_parity_matrix(module, manifest)
+    matrix_payload = json.dumps(matrix, separators=(",", ":")).encode()
+    matrix_sha256 = hashlib.sha256(matrix_payload).hexdigest()
+    matrix_uri = (
+        "s3://isolated-editor-test/editor-release-probes/"
+        f"{'a' * 40}/{'b' * 12}/browser-parity/matrix.json"
+    )
+    manifest_sha256 = hashlib.sha256(json.dumps(manifest).encode()).hexdigest()
+    report = _editor_browser_parity_report(
+        module,
+        manifest,
+        manifest_sha256=manifest_sha256,
+        matrix=matrix,
+        matrix_sha256=matrix_sha256,
+        matrix_uri=matrix_uri,
+    )
+    event = _editor_release_registration_event(document_version=3)
+    event.update({
+        "uiVersion": 4,
+        "renderSpecVersion": 4,
+        "captionRenderSpecVersion": 4,
+        "fontManifestSha256": manifest["fontManifestSha256"],
+    })
+    release_id = "7fd1c249-6cef-40f1-97d4-e4e6c837f60a"
+    project_targets = {
+        lane: {
+            "batchTargetReleaseId": f"{lane}-aaaaaaaaaaaa-v4",
+            "workerSourceGitSha": "a" * 40,
+            "workerImageDigest": f"sha256:{'b' * 64}",
+            "jobDefinitionArn": f"definition-{lane}",
+            "jobQueueArn": f"queue-{lane}",
+        }
+        for lane in module._PROJECT_TARGET_LANES
+    }
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def rest(table: str, **kwargs):
+        calls.append((table, kwargs))
+        if table == "editor_releases" and kwargs.get("method") is None:
+            return []
+        if table == "editor_releases" and kwargs.get("method") == "POST":
+            return [{"id": release_id}]
+        if table == "editor_release_project_targets":
+            return []
+        if table == "editor_release_state" and kwargs.get("method") is None:
+            return [{"candidate_release_id": None, "canary_enabled": False}]
+        return None
+
+    module.rest = rest
+    result = module._record_release(
+        event,
+        git_sha="a" * 40,
+        digest=f"sha256:{'b' * 64}",
+        production_definition_arn=str(event["productionJobDefinitionArn"]),
+        artifact_uri=str(event["artifactUri"]),
+        manifest=manifest,
+        subtitle_editing_capable=True,
+        render_spec_version=4,
+        caption_render_spec_version=4,
+        font_manifest_sha256=str(manifest["fontManifestSha256"]),
+        project_targets=project_targets,
+        browser_parity_matrix_uri=matrix_uri,
+        browser_parity_report_sha256="f" * 64,
+        browser_parity_report=report,
+        workflow_run_url="https://github.com/dongk176/shorts/actions/runs/1/attempts/1",
+    )
+
+    assert result == release_id
+    browser_check = next(
+        kwargs["body"]
+        for table, kwargs in calls
+        if table == "editor_release_checks"
+        and kwargs.get("method") == "POST"
+        and kwargs["body"]["check_name"] == "browser-worker-visual-parity"
+    )
+    assert browser_check["artifact_uri"] == matrix_uri
+    assert browser_check["details"]["source"] == (
+        "actual-chromium-vs-isolated-linux-worker"
+    )
+    assert browser_check["details"]["workflowRunUrl"].endswith(
+        "/actions/runs/1/attempts/1"
+    )
+    assert browser_check["details"]["reportSha256"] == "f" * 64
+    assert browser_check["details"]["caseCount"] == 66
+    assert browser_check["details"]["report"] == report
+
+
 def test_editor_release_registrar_rejects_definition_contract_drift() -> None:
     module, _ = _load_lambda("editor_release_registrar")
     trusted = {
@@ -3261,6 +3868,420 @@ def test_editor_release_registrar_allows_only_the_4_vcpu_candidate_delta() -> No
             trusted,
             allow_candidate_resources=True,
         )
+
+
+def test_editor_release_registrar_can_clone_a_prior_v4_definition() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    previous_sha = "9" * 40
+    candidate_sha = "a" * 40
+    previous_hash = "8" * 64
+    candidate_hash = "c" * 64
+    trusted = _editor_release_job_definition(
+        "shorts-mvp-editor-v4-legacy-project-999999999999",
+        image="registry.example/shorts@sha256:" + "7" * 64,
+        vcpus="4",
+    )
+    trusted["containerProperties"]["environment"].extend([
+        {"name": "EDITOR_RELEASE_GIT_SHA", "value": previous_sha},
+        {"name": "EDITOR_RENDER_SPEC_VERSION", "value": "4"},
+        {"name": "EDITOR_CAPTION_RENDER_SPEC_VERSION", "value": "4"},
+        {"name": "EDITOR_FONT_MANIFEST_SHA256", "value": previous_hash},
+    ])
+    candidate = deepcopy(trusted)
+    candidate["jobDefinitionName"] = (
+        "shorts-mvp-editor-v4-legacy-project-aaaaaaaaaaaa"
+    )
+    candidate["containerProperties"]["image"] = (
+        "registry.example/shorts@sha256:" + "b" * 64
+    )
+    candidate["containerProperties"]["environment"] = [
+        item
+        for item in candidate["containerProperties"]["environment"]
+        if item["name"] not in module._V4_DEFINITION_ENVIRONMENT
+    ] + [
+        {"name": "EDITOR_RELEASE_GIT_SHA", "value": candidate_sha},
+        {"name": "EDITOR_RENDER_SPEC_VERSION", "value": "4"},
+        {"name": "EDITOR_CAPTION_RENDER_SPEC_VERSION", "value": "4"},
+        {"name": "EDITOR_FONT_MANIFEST_SHA256", "value": candidate_hash},
+    ]
+
+    module._verify_definition_contract(
+        candidate,
+        trusted,
+        git_sha=candidate_sha,
+        render_spec_version=4,
+        caption_render_spec_version=4,
+        font_manifest_sha256=candidate_hash,
+    )
+
+
+def _v4_probe_identity() -> dict[str, str]:
+    return {
+        "repository": "dongk176/shorts",
+        "repositoryId": "12345",
+        "repositoryOwnerId": "67890",
+        "environment": "editor-v4-release-approval",
+        "ref": "refs/tags/editor-v4-render-parity-20260826",
+        "sha": "a" * 40,
+        "workflowRef": (
+            "dongk176/shorts/.github/workflows/editor-release.yml@"
+            "refs/tags/editor-v4-render-parity-20260826"
+        ),
+        "workflow": "Editor render release",
+        "runId": "112233",
+        "runAttempt": "1",
+        "workflowRunUrl": (
+            "https://github.com/dongk176/shorts/actions/runs/112233/attempts/1"
+        ),
+    }
+
+
+def _reserved_v4_probe() -> dict[str, object]:
+    return {
+        "id": "7fd1c249-6cef-40f1-97d4-e4e6c837f60a",
+        "nonce": "c" * 32,
+        "state": "reserved",
+        "git_sha": "a" * 40,
+        "worker_image_digest": f"sha256:{'b' * 64}",
+        "font_manifest_sha256": "d" * 64,
+        "github_repository": "dongk176/shorts",
+        "github_repository_id": 12345,
+        "github_repository_owner_id": 67890,
+        "github_workflow_ref": (
+            "dongk176/shorts/.github/workflows/editor-release.yml@"
+            "refs/tags/editor-v4-render-parity-20260826"
+        ),
+        "github_workflow_name": "Editor render release",
+        "github_release_ref": "refs/tags/editor-v4-render-parity-20260826",
+        "github_environment": "editor-v4-release-approval",
+        "github_workflow_run_id": 112233,
+        "github_workflow_run_attempt": 1,
+    }
+
+
+def test_editor_v4_registrar_creates_the_probe_job_from_trusted_server_state() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    probe = _reserved_v4_probe()
+    job_id = "8fd1c249-6cef-40f1-97d4-e4e6c837f60b"
+    queue_arn = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+        "shorts-mvp-editor-test"
+    )
+    definition_arn = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        f"shorts-mvp-editor-test-release-{'a' * 12}-{'c' * 8}-4vcpu:3"
+    )
+    os.environ.update({
+        "EDITOR_TEST_TEMPLATE_JOB_DEFINITION": "trusted-isolated-template",
+        "EDITOR_TEST_TASK_ROLE_ARN": (
+            "arn:aws:iam::123456789012:role/shorts-mvp-editor-test-task"
+        ),
+        "EDITOR_TEST_EXECUTION_ROLE_ARN": (
+            "arn:aws:iam::123456789012:role/shorts-mvp-editor-test-execution"
+        ),
+        "EDITOR_TEST_JOB_QUEUE_ARN": queue_arn,
+    })
+    module._v4_request_identity = MagicMock(return_value=(
+        "a" * 40,
+        f"sha256:{'b' * 64}",
+        "d" * 64,
+        _v4_probe_identity(),
+    ))
+    module._reserve_probe = MagicMock(return_value=probe)
+    module._repository_identity = MagicMock(return_value=(
+        "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/shorts",
+        "shorts",
+    ))
+    trusted = _editor_release_job_definition(
+        "trusted-isolated-template",
+        image="registry.example/old@sha256:" + "9" * 64,
+        vcpus="2",
+    )
+    module._latest_job_definition = MagicMock(return_value=trusted)
+    payload = {"jobDefinitionName": "server-selected-definition"}
+    module._registration_payload = MagicMock(return_value=payload)
+    module._register_exact_definition = MagicMock(return_value=definition_arn)
+    module._job_definition = MagicMock(return_value=trusted)
+    module._verify_definition_contract = MagicMock()
+    module.batch = MagicMock()
+    module.batch.list_jobs.return_value = {"jobSummaryList": []}
+    module.batch.submit_job.return_value = {"jobId": job_id}
+    attached = {
+        **probe,
+        "state": "job_submitted",
+        "isolated_job_name": f"editor-release-{'a' * 12}-{'c' * 8}",
+        "isolated_job_definition_arn": definition_arn,
+        "isolated_batch_job_id": job_id,
+    }
+    module._rpc = MagicMock(return_value=attached)
+    module._probe_artifact_uri = MagicMock(return_value="s3://exact/manifest.json")
+
+    result = module._start_v4_probe({
+        "jobQueue": "attacker-queue",
+        "jobDefinition": "attacker-definition",
+        "command": ["attacker"],
+    })
+
+    assert result["isolatedBatchJobId"] == job_id
+    assert result["artifactUri"] == "s3://exact/manifest.json"
+    submitted = module.batch.submit_job.call_args.kwargs
+    assert submitted["jobQueue"] == queue_arn
+    assert submitted["jobDefinition"] == definition_arn
+    assert submitted["containerOverrides"]["command"] == [
+        "python", "-m", "shorts_worker", "editor-release-probe",
+    ]
+    environment = {
+        item["name"]: item["value"]
+        for item in submitted["containerOverrides"]["environment"]
+    }
+    assert environment["EDITOR_RELEASE_PROBE_NONCE"] == "c" * 32
+    assert environment["EDITOR_RELEASE_PROBE_RUN_ID"] == str(probe["id"])
+    module._registration_payload.assert_called_once()
+    assert module._registration_payload.call_args.kwargs["forced_task_role_arn"].endswith(
+        "shorts-mvp-editor-test-task"
+    )
+
+
+def test_editor_v4_registrar_reconciles_retry_and_rejects_duplicate_probe_jobs() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    queue = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-queue/"
+        "shorts-mvp-editor-test"
+    )
+    definition = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-editor-test-release-aaaaaaaaaaaa-cccccccc-4vcpu:3"
+    )
+    module.batch = MagicMock()
+    module.batch.list_jobs.return_value = {"jobSummaryList": [
+        {"jobName": "exact-probe", "jobId": "job-a"},
+        {"jobName": "exact-probe", "jobId": "job-b"},
+    ]}
+    with pytest.raises(RuntimeError, match="Multiple isolated probe jobs"):
+        module._reconcile_probe_job(
+            job_name="exact-probe",
+            queue_arn=queue,
+            definition_arn=definition,
+        )
+
+    module.batch.list_jobs.return_value = {"jobSummaryList": [
+        {"jobName": "exact-probe", "jobId": "job-a"},
+    ]}
+    module.batch.describe_jobs.return_value = {"jobs": [{
+        "jobName": "exact-probe",
+        "jobId": "job-a",
+        "jobQueue": queue,
+        "jobDefinition": definition,
+    }]}
+    assert module._reconcile_probe_job(
+        job_name="exact-probe",
+        queue_arn=queue,
+        definition_arn=definition,
+    ) == "job-a"
+
+
+def test_editor_v4_registrar_verifies_the_exact_completed_batch_identity() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    probe = {
+        **_reserved_v4_probe(),
+        "state": "job_submitted",
+        "isolated_job_name": "exact-probe",
+        "isolated_job_queue_arn": "exact-queue",
+        "isolated_job_definition_arn": "exact-definition",
+        "isolated_batch_job_id": "8fd1c249-6cef-40f1-97d4-e4e6c837f60b",
+    }
+    exact_job = {
+        "status": "SUCCEEDED",
+        "jobName": "exact-probe",
+        "jobQueue": "exact-queue",
+        "jobDefinition": "exact-definition",
+        "stoppedAt": int(datetime.now(UTC).timestamp() * 1000),
+        "container": {
+            "command": ["python", "-m", "shorts_worker", "editor-release-probe"],
+            "environment": [
+                {"name": "EDITOR_RELEASE_PROBE_NONCE", "value": probe["nonce"]},
+                {"name": "EDITOR_RELEASE_PROBE_RUN_ID", "value": probe["id"]},
+                {"name": "EDITOR_RELEASE_GIT_SHA", "value": probe["git_sha"]},
+            ],
+        },
+        "attempts": [{"container": {"exitCode": 0}}],
+    }
+    module.batch = MagicMock()
+    module.batch.describe_jobs.return_value = {"jobs": [exact_job]}
+
+    assert module._verify_isolated_v4_job(probe) == exact_job
+
+    forged = deepcopy(exact_job)
+    forged["container"]["environment"][0]["value"] = "f" * 32
+    module.batch.describe_jobs.return_value = {"jobs": [forged]}
+    with pytest.raises(RuntimeError, match="identity or result differs"):
+        module._verify_isolated_v4_job(probe)
+
+
+def test_editor_v4_registrar_finalization_uses_only_attested_evidence_and_atomic_rpc() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    probe = {
+        **_reserved_v4_probe(),
+        "state": "job_submitted",
+        "isolated_job_name": "exact-probe",
+        "isolated_job_queue_arn": "exact-queue",
+        "isolated_job_definition_arn": "exact-definition",
+        "isolated_batch_job_id": "8fd1c249-6cef-40f1-97d4-e4e6c837f60b",
+    }
+    artifact_uri = "s3://isolated/editor-release-probes/exact/manifest.json"
+    matrix_uri = "s3://isolated/editor-release-probes/exact/browser-parity/matrix.json"
+    manifest = {
+        "probeIdentity": {
+            "nonce": probe["nonce"],
+            "batchJobId": probe["isolated_batch_job_id"],
+            "probeRunId": str(probe["id"]),
+        },
+        "checkSources": {},
+    }
+    module._v4_request_identity = MagicMock(return_value=(
+        "a" * 40,
+        f"sha256:{'b' * 64}",
+        "d" * 64,
+        _v4_probe_identity(),
+    ))
+    module._load_probe = MagicMock(return_value=probe)
+    module._verify_probe_request_identity = MagicMock()
+    module._verify_isolated_v4_job = MagicMock(return_value={"status": "SUCCEEDED"})
+    module._probe_artifact_uri = MagicMock(return_value=artifact_uri)
+    module._read_versioned_json = MagicMock(return_value=(
+        manifest,
+        "e" * 64,
+        "manifest-version",
+    ))
+    module._verify_manifest = MagicMock()
+    module._artifact_contract = MagicMock(return_value={
+        "versionId": "matrix-version",
+        "sha256": "f" * 64,
+    })
+    module._read_browser_parity_matrix = MagicMock(return_value=(
+        {"caseCount": 66},
+        "f" * 64,
+        matrix_uri,
+    ))
+    verified_probe = {
+        **probe,
+        "state": "evidence_verified",
+        "artifact_uri": artifact_uri,
+        "manifest_s3_version_id": "manifest-version",
+        "manifest_sha256": "e" * 64,
+        "matrix_uri": matrix_uri,
+        "matrix_s3_version_id": "matrix-version",
+        "matrix_sha256": "f" * 64,
+    }
+    rpc_calls: list[tuple[str, dict[str, object]]] = []
+
+    def rpc(name: str, body: dict[str, object]):
+        rpc_calls.append((name, body))
+        if name == "attach_editor_release_probe_evidence_v4":
+            return verified_probe
+        if name == "finalize_editor_render_v4_release":
+            return {"releaseId": "9fd1c249-6cef-40f1-97d4-e4e6c837f60c", "status": "canary_ready"}
+        raise AssertionError(name)
+
+    module._rpc = rpc
+    module._read_inline_browser_parity_report = MagicMock(return_value={
+        "caseCount": 66,
+        "maximumDomErrorPixels": 1.5,
+        "maximumPixelErrorPixels": 2,
+    })
+    module._verify_browser_parity_report = MagicMock()
+    production_arn = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "shorts-mvp-editor-release-aaaaaaaaaaaa-4vcpu:7"
+    )
+    targets = {
+        lane: {
+            "batchTargetReleaseId": f"{lane}-aaaaaaaaaaaa-v4",
+            "workerSourceGitSha": "a" * 40,
+            "workerImageDigest": f"sha256:{'b' * 64}",
+            "jobDefinitionArn": f"exact-{lane}",
+            "jobQueueArn": f"queue-{lane}",
+            "renderSpecVersion": 4,
+        }
+        for lane in module._PROJECT_TARGET_LANES
+    }
+    module._register_v4_production_definitions = MagicMock(return_value=(
+        production_arn,
+        targets,
+    ))
+    module.rest = MagicMock(side_effect=AssertionError("direct table mutation"))
+    report_json = json.dumps({"attested": True})
+    report_sha = hashlib.sha256(report_json.encode()).hexdigest()
+
+    result = module._finalize_v4_release({
+        "probeRunId": str(probe["id"]),
+        "browserParityReportJson": report_json,
+        "browserParityReportSha256": report_sha,
+        "productionJobDefinitionArn": "attacker-definition",
+        "projectTargets": {"attacker": True},
+    })
+
+    assert result["productionJobDefinitionArn"] == production_arn
+    assert result["projectTargets"] == targets
+    assert module.rest.call_count == 0
+    assert [name for name, _body in rpc_calls] == [
+        "attach_editor_release_probe_evidence_v4",
+        "finalize_editor_render_v4_release",
+    ]
+    final_body = rpc_calls[-1][1]
+    assert final_body["p_production_job_definition_arn"] == production_arn
+    assert final_body["p_project_targets"] == targets
+    assert len(final_body["p_release_checks"]) == 15
+    assert {item["checkName"] for item in final_body["p_release_checks"]} == (
+        module._REQUIRED_CHECKS
+        | module._V4_REQUIRED_CHECKS
+        | {module._BROWSER_PARITY_CHECK}
+    )
+    release_identity = module._verify_browser_parity_report.call_args.kwargs[
+        "release_identity"
+    ]
+    assert release_identity["probeRunId"] == str(probe["id"])
+    assert release_identity["nonce"] == probe["nonce"]
+    assert release_identity["batchJobId"] == probe["isolated_batch_job_id"]
+
+
+def test_editor_v4_job_definition_retry_uses_a_normalized_exact_contract() -> None:
+    module, _ = _load_lambda("editor_release_registrar")
+    payload = {
+        "jobDefinitionName": "exact-definition",
+        "type": "container",
+        "containerProperties": {
+            "image": "registry/repo@sha256:" + "b" * 64,
+            "environment": [
+                {"name": "B", "value": "2"},
+                {"name": "A", "value": "1"},
+            ],
+            "resourceRequirements": [
+                {"type": "VCPU", "value": "4"},
+                {"type": "MEMORY", "value": "16384"},
+            ],
+        },
+        "platformCapabilities": ["FARGATE"],
+        "tags": {"B": "2", "A": "1"},
+    }
+    existing = deepcopy(payload)
+    existing["jobDefinitionArn"] = (
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+        "exact-definition:3"
+    )
+    existing["parameters"] = {}
+    existing["retryStrategy"] = {}
+    existing["timeout"] = {}
+    existing["propagateTags"] = False
+    existing["containerProperties"]["environment"].reverse()
+    existing["containerProperties"]["resourceRequirements"].reverse()
+    module.batch = MagicMock()
+    module.batch.describe_job_definitions.return_value = {
+        "jobDefinitions": [existing],
+    }
+
+    assert module._register_exact_definition(payload) == existing["jobDefinitionArn"]
+    module.batch.register_job_definition.assert_not_called()
 
 
 def test_editor_release_registration_retry_never_pauses_an_active_canary() -> None:

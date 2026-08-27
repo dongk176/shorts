@@ -97,7 +97,62 @@ import {
   upgradeTemplateConfigToV5,
   videoFrameForAspect,
 } from "@/lib/template-config";
-import { createEditorRenderSpec } from "@/lib/editor-render-spec";
+import {
+  compileEditorRenderTitleSpecV4,
+  createEditorRenderSpec,
+} from "@/lib/editor-render-spec";
+import { resolveEditorFontFaceV4 } from "@/lib/editor-fonts";
+import { editorDocumentSnapshotSchema } from "@/lib/editor-document-contract";
+
+function editorDocumentV4Fixture() {
+  const document = JSON.parse(readFileSync(
+    new URL("../../../test-fixtures/editor-document-v3.json", import.meta.url),
+    "utf8",
+  ));
+  const legacy = document.renderSpec;
+  document.renderSpec = {
+    canvas: legacy.canvas,
+    fps: legacy.fps,
+    layerOrder: legacy.layerOrder,
+    comments: legacy.comments,
+    video: legacy.video,
+    version: 4,
+    title: compileEditorRenderTitleSpecV4(
+      document,
+      (text, fontSize) => ({
+        width: Array.from(text).length * fontSize * 0.72,
+        actualBoundingBoxAscent: fontSize * 0.76,
+        actualBoundingBoxDescent: fontSize * 0.24,
+      }),
+    ),
+    channel: {
+      ...legacy.channel,
+      visible: document.overlays.visible.channel,
+      font: resolveEditorFontFaceV4(document.overlays.fonts.channel, "channel"),
+    },
+    textOverlays: legacy.textOverlays.map((overlay: { id: string }, index: number) => ({
+      ...overlay,
+      font: resolveEditorFontFaceV4(
+        document.overlays.textOverlays[index]?.fontId || "pretendard",
+        "text",
+      ),
+    })),
+    ...(document.subtitles.enabled
+      ? {
+          subtitles: {
+            centerX: 540,
+            offsetY: 0,
+            scale: 1,
+            fontSize: 48,
+            color: "#FFFFFF",
+            visible: true,
+            captionSpecVersion: 4,
+          },
+        }
+      : {}),
+  };
+  return editorDocumentSnapshotSchema.parse(document);
+}
 
 const usage = {
   usedSeconds: 60,
@@ -249,12 +304,26 @@ beforeEach(() => {
     "subtitle-templates-test-r1";
   process.env.UNIFIED_TEMPLATE_SUBTITLES_BATCH_TARGET_RELEASE_ID =
     "unified-test-r1";
+  for (const prefix of [
+    "LEGACY_PROJECT",
+    "SOURCE_RANGE",
+    "ELEVENLABS_TRANSCRIPTION",
+    "SUBTITLE_TEMPLATES",
+    "UNIFIED_TEMPLATE_SUBTITLES",
+  ]) {
+    process.env[`${prefix}_WORKER_SOURCE_GIT_SHA`] = "a".repeat(40);
+    process.env[`${prefix}_WORKER_IMAGE_DIGEST`] = `sha256:${"b".repeat(64)}`;
+    delete process.env[`${prefix}_RENDER_SPEC_VERSION`];
+    delete process.env[`${prefix}_CAPTION_RENDER_SPEC_VERSION`];
+    delete process.env[`${prefix}_FONT_MANIFEST_SHA256`];
+  }
   delete process.env.ELEVENLABS_TRANSCRIPTION_ENABLED;
   delete process.env.SUBTITLE_TEMPLATES_ENABLED;
   delete process.env.EDITOR_RENDERING_V2_ENABLED;
   delete process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED;
   delete process.env.EDITOR_RENDERING_V2_TEST_USER_IDS;
   delete process.env.EDITOR_OVERLAY_PREVIEW_ENABLED;
+  delete process.env.NEXT_PUBLIC_EDITOR_RENDER_SPEC_V4_ENABLED;
   delete process.env.VIDEO_JOB_BACKEND;
   process.env.SOURCE_RANGE_SELECTION_ENABLED = "true";
   delete process.env.RANGE_EDITING_ENABLED;
@@ -982,6 +1051,171 @@ describe("subtitle template edit isolation", () => {
     expect(begin).not.toHaveBeenCalled();
   });
 
+  it("rejects render spec v4 when the exact assigned release is killed", async () => {
+    process.env.EDITOR_RENDERING_V2_ENABLED = "true";
+    process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = "true";
+    const stableReleaseId = "b0cd2a6b-5019-4b5c-87cb-57e2d0bdb4c0";
+    const document = editorDocumentV4Fixture();
+    const db = dbWithRows([{
+      publicEnabled: true,
+      canaryEnabled: false,
+      runtimeEnabled: true,
+      testerEnabled: false,
+      userIsAdmin: false,
+      stableReleaseId,
+      stableUiVersion: 3,
+      stableDocumentVersion: 3,
+      stableStatus: "stable",
+      stableSubtitleEditingCapable: true,
+      stableRenderSpecVersion: 4,
+      stableCaptionRenderSpecVersion: 4,
+      stableFontManifestSha256: "a".repeat(64),
+      candidateReleaseId: null,
+      candidateUiVersion: null,
+      candidateDocumentVersion: null,
+      candidateStatus: null,
+      candidateSubtitleEditingCapable: false,
+      candidateRenderSpecVersion: null,
+      candidateCaptionRenderSpecVersion: null,
+      candidateFontManifestSha256: null,
+      subtitleEditingPublicEnabled: true,
+      renderV4InternalEnabled: false,
+      renderV4RolloutPercent: 100,
+      renderV4KillSwitch: true,
+      renderV4RolloutBucket: 0,
+    }]);
+    const begin = vi.fn();
+    Object.assign(db, { begin });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        requestId: "18375111-c923-4830-a75e-1c38bef8c4ec",
+        release: {
+          releaseId: stableReleaseId,
+          channel: "stable",
+          uiVersion: 3,
+          documentVersion: 3,
+        },
+        document,
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "EDITOR_RENDER_SPEC_UNSUPPORTED",
+    });
+    expect(begin).not.toHaveBeenCalled();
+  });
+
+  it("queues and preserves an exact render spec v4 on its assigned release", async () => {
+    process.env.EDITOR_RENDERING_V2_ENABLED = "true";
+    process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = "true";
+    const stableReleaseId = "b0cd2a6b-5019-4b5c-87cb-57e2d0bdb4c0";
+    const document = editorDocumentV4Fixture();
+    document.subtitles.enabled = false;
+    document.subtitles.segments = [];
+    if (document.version !== 3 || document.renderSpec.version !== 4) {
+      throw new Error("invalid v4 API fixture");
+    }
+    delete document.renderSpec.subtitles;
+    const releaseRow = {
+      publicEnabled: true,
+      canaryEnabled: false,
+      runtimeEnabled: true,
+      testerEnabled: false,
+      userIsAdmin: false,
+      stableReleaseId,
+      stableUiVersion: 3,
+      stableDocumentVersion: 3,
+      stableStatus: "stable",
+      stableSubtitleEditingCapable: true,
+      stableRenderSpecVersion: 4,
+      stableCaptionRenderSpecVersion: 4,
+      stableFontManifestSha256: "a".repeat(64),
+      candidateReleaseId: null,
+      candidateUiVersion: null,
+      candidateDocumentVersion: null,
+      candidateStatus: null,
+      candidateSubtitleEditingCapable: false,
+      candidateRenderSpecVersion: null,
+      candidateCaptionRenderSpecVersion: null,
+      candidateFontManifestSha256: null,
+      subtitleEditingPublicEnabled: true,
+      renderV4InternalEnabled: false,
+      renderV4RolloutPercent: 100,
+      renderV4KillSwitch: false,
+      renderV4RolloutBucket: 0,
+    };
+    const db = dbWithRows(
+      [releaseRow],
+      [{
+        id: shortId,
+        jobId: "job-a",
+        mvpSessionId: "session-a",
+        status: "ready",
+        renderVersion: 3,
+        durationSeconds: 3.5,
+        templateId: "dark-minimal",
+        customTemplateId: null,
+        templateSnapshot: { presetVersion: 3 },
+        videoAspectRatio: "16:9",
+        editTimelineS3Key: "edit-sources/timeline.mp4",
+        editTimelineStartSeconds: 10,
+        editTimelineEndSeconds: 20,
+        cleanClipS3Key: "edit-sources/clean.mp4",
+        startSeconds: 11,
+        endSeconds: 16,
+        subtitleTemplateId: null,
+        subtitleTemplateSnapshot: null,
+        captionRenderSpec: null,
+        subtitlesEnabled: false,
+        wordTimedSubtitlesAvailable: false,
+        channelThumbnailUrl: "https://example.com/channel.png",
+        editorDocument: null,
+        onboardingWelcomeFunded: false,
+      }],
+      [],
+    );
+    const requestId = "596fb91f-b134-4d42-a84a-b7bfd60508af";
+    const tx = dbWithRows(
+      [releaseRow],
+      [{ id: requestId }],
+      [{ id: shortId }],
+      [],
+    );
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        requestId,
+        release: {
+          releaseId: stableReleaseId,
+          channel: "stable",
+          uiVersion: 3,
+          documentVersion: 3,
+        },
+        document,
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(202);
+    const pendingDocument = tx.mock.calls.flat().find((value) => (
+      typeof value === "object"
+      && value !== null
+      && "renderSpec" in value
+    ));
+    expect(pendingDocument).toEqual(document);
+    expect((pendingDocument as typeof document).renderSpec).toEqual(
+      document.renderSpec,
+    );
+  });
+
   it("rejects a forged v3 subtitle edit from a non-admin canary tester", async () => {
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
     process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
@@ -1627,7 +1861,7 @@ describe("job API security and idempotency", () => {
       Array.from(strings as TemplateStringsArray).join("").includes(
         "insert into shorts_mvp.video_jobs",
       ));
-    const insertValues = insertCall?.slice(1) || [];
+    const insertValues = (insertCall?.slice(1) || []) as unknown[];
     expect(insertValues).toEqual(expect.arrayContaining([
       7200,
       1200,
@@ -1651,6 +1885,135 @@ describe("job API security and idempotency", () => {
         "insert into shorts_mvp.usage_reservations",
       ));
     expect(reservationCall?.slice(1)).toContain(1200);
+  });
+
+  it("opts an initial render into v4 only through the exact release resolver", async () => {
+    const fontManifestSha256 = "c".repeat(64);
+    process.env.NEXT_PUBLIC_EDITOR_RENDER_SPEC_V4_ENABLED = "true";
+    process.env.LEGACY_PROJECT_RENDER_SPEC_VERSION = "4";
+    process.env.LEGACY_PROJECT_CAPTION_RENDER_SPEC_VERSION = "4";
+    process.env.LEGACY_PROJECT_FONT_MANIFEST_SHA256 = fontManifestSha256;
+    const tx = vi.fn(async (strings: TemplateStringsArray) => {
+      const sql = Array.from(strings).join("");
+      if (sql.includes("resolve_initial_render_v4_release")) {
+        return [{
+          releaseId: "7fd1c249-6cef-40f1-97d4-e4e6c837f60a",
+          releaseChannel: "canary",
+          renderSpecVersion: 4,
+          captionRenderSpecVersion: 4,
+          fontManifestSha256,
+          releaseWorkerImageDigest:
+            process.env.LEGACY_PROJECT_WORKER_IMAGE_DIGEST,
+          editorProductionJobDefinitionArn: (
+            "arn:aws:batch:ap-northeast-2:123456789012:job-definition/"
+            + "shorts-mvp-editor-release-aaaaaaaaaaaa-4vcpu:1"
+          ),
+        }];
+      }
+      if (sql.includes("with scoped_jobs as")) {
+        return [{ active: 0, restrictedContentCooldownMinutes: 0 }];
+      }
+      if (sql.includes("insert into shorts_mvp.video_jobs")) {
+        return [{ projectNumber: 17 }];
+      }
+      if (sql.includes("insert into shorts_mvp.usage_reservations")) {
+        return [{ id: "reservation-v4" }];
+      }
+      return [];
+    });
+    Object.assign(tx, { json: (value: unknown) => value });
+    const db = dbWithRows([], [analysisRow]);
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rightsConfirmed: true,
+      requestId: "ce8b1da0-25fc-4fef-97ad-067277073ac4",
+    }));
+
+    expect(response.status).toBe(202);
+    const resolverCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes(
+        "resolve_initial_render_v4_release",
+      ));
+    expect(resolverCall?.slice(1)).toEqual([
+      "user-a",
+      "legacy_project",
+      process.env.LEGACY_PROJECT_BATCH_TARGET_RELEASE_ID,
+      process.env.LEGACY_PROJECT_JOB_DEFINITION_ARN,
+      process.env.LEGACY_PROJECT_BATCH_QUEUE_ARN,
+      process.env.LEGACY_PROJECT_WORKER_IMAGE_DIGEST,
+      process.env.LEGACY_PROJECT_WORKER_SOURCE_GIT_SHA,
+    ]);
+    const insertCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes(
+        "insert into shorts_mvp.video_jobs",
+      ));
+    const insertValues = (insertCall?.slice(1) || []) as unknown[];
+    const releaseValueIndex = insertValues.indexOf(
+      process.env.LEGACY_PROJECT_BATCH_TARGET_RELEASE_ID ?? "",
+    );
+    expect(insertValues.slice(releaseValueIndex + 1, releaseValueIndex + 5)).toEqual([
+      process.env.LEGACY_PROJECT_JOB_DEFINITION_ARN,
+      process.env.LEGACY_PROJECT_BATCH_QUEUE_ARN,
+      4,
+      4,
+    ]);
+  });
+
+  it("keeps initial rendering on legacy when the v4 compiler flag is off", async () => {
+    process.env.NEXT_PUBLIC_EDITOR_RENDER_SPEC_V4_ENABLED = "false";
+    process.env.LEGACY_PROJECT_RENDER_SPEC_VERSION = "4";
+    process.env.LEGACY_PROJECT_CAPTION_RENDER_SPEC_VERSION = "4";
+    process.env.LEGACY_PROJECT_FONT_MANIFEST_SHA256 = "c".repeat(64);
+    const tx = vi.fn(async (strings: TemplateStringsArray) => {
+      const sql = Array.from(strings).join("");
+      if (sql.includes("resolve_initial_render_v4_release")) {
+        throw new Error("v4 resolver must remain closed while compiler is off");
+      }
+      if (sql.includes("with scoped_jobs as")) {
+        return [{ active: 0, restrictedContentCooldownMinutes: 0 }];
+      }
+      if (sql.includes("insert into shorts_mvp.video_jobs")) {
+        return [{ projectNumber: 18 }];
+      }
+      if (sql.includes("insert into shorts_mvp.usage_reservations")) {
+        return [{ id: "reservation-v4-compiler-off" }];
+      }
+      return [];
+    });
+    Object.assign(tx, { json: (value: unknown) => value });
+    const db = dbWithRows([], [analysisRow]);
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId,
+      templateId: "dark-red",
+      rightsConfirmed: true,
+      requestId: "a04f31e4-23e1-4ee7-8040-24b571cc96c0",
+    }));
+
+    expect(response.status).toBe(202);
+    expect(tx.mock.calls.some(([strings]) => Array.from(
+      strings as TemplateStringsArray,
+    ).join("").includes("resolve_initial_render_v4_release"))).toBe(false);
+    const insertCall = tx.mock.calls.find(([strings]) =>
+      Array.from(strings as TemplateStringsArray).join("").includes(
+        "insert into shorts_mvp.video_jobs",
+      ));
+    const insertValues = (insertCall?.slice(1) || []) as unknown[];
+    const releaseValueIndex = insertValues.indexOf(
+      process.env.LEGACY_PROJECT_BATCH_TARGET_RELEASE_ID ?? "",
+    );
+    expect(insertValues.slice(releaseValueIndex + 3, releaseValueIndex + 5))
+      .toEqual([null, null]);
   });
 
   it("pins only an admitted admin job to the ElevenLabs candidate", async () => {

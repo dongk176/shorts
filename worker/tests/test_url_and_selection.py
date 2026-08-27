@@ -18,6 +18,7 @@ from shorts_worker.schemas import (
 )
 from shorts_worker.selector import (
     TranscriptSelector,
+    _two_line_title,
     clip_count_for_duration,
     deterministic_fallback,
     minimum_clip_count,
@@ -26,6 +27,17 @@ from shorts_worker.selector import (
 )
 from shorts_worker.url_validation import validate_youtube_url
 from shorts_worker.worker_pipeline import edit_timeline_clip
+
+
+@pytest.mark.parametrize("separator", ["\v", "\x85", "\x1e"])
+def test_selector_does_not_promote_python_only_title_breaks(separator: str) -> None:
+    title = _two_line_title(
+        f"브라우저에서는 한 줄{separator}제목으로 보는 충분히 긴 문장",
+        OutputLanguage.KO,
+    )
+
+    assert title.count("\n") == 1
+    assert title != "브라우저에서는 한 줄\n제목으로 보는 충분히 긴 문장"
 
 
 @pytest.mark.parametrize(

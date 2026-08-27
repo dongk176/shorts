@@ -9,6 +9,64 @@ import {
   getSubtitleTemplateUsage,
 } from "./data";
 
+const initialRenderSpec = {
+  version: 4 as const,
+  canvas: { width: 1080 as const, height: 1920 as const },
+  fps: 30 as const,
+  layerOrder: ["video", "title", "comment", "channel"],
+  title: {
+    visible: true,
+    lines: ["후킹 제목"],
+    centerX: 540,
+    centerY: 200,
+    offsetY: 0,
+    fontSize: 84,
+    scale: 1 as const,
+    lineGap: 18,
+    linePaddingX: 24,
+    linePaddingY: 12,
+    clamp: { minX: 0, maxX: 1080, minY: 0, maxY: 1920 },
+    lineBoxes: [{
+      text: "후킹 제목",
+      centerX: 540,
+      centerY: 200,
+      width: 500,
+      height: 100,
+      baselineY: 220,
+      backgroundRuns: [],
+    }],
+    font: {
+      fontId: "pretendard" as const,
+      fileId: "Pretendard-Bold.woff2",
+      family: '"Editor V4 Pretendard"',
+      requestedWeight: 700 as const,
+      resolvedWeight: 700 as const,
+      variableWeight: null,
+      sha256: "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+      metrics: { revision: "editor-font-metrics-v1" as const },
+    },
+  },
+  channel: {
+    visible: true,
+    offsetX: 0,
+    offsetY: 0,
+    scale: 1,
+    font: {
+      fontId: "pretendard" as const,
+      fileId: "Pretendard-Bold.woff2",
+      family: '"Editor V4 Pretendard"',
+      requestedWeight: 700 as const,
+      resolvedWeight: 700 as const,
+      variableWeight: null,
+      sha256: "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
+      metrics: { revision: "editor-font-metrics-v1" as const },
+    },
+  },
+  comments: [],
+  textOverlays: [],
+  video: { offsetX: 0, offsetY: 0, scale: 1 },
+};
+
 describe("generated shorts counter", () => {
   it("returns the persisted public counter as a number", async () => {
     const db = vi.fn().mockResolvedValue([{ value: "4327" }]) as unknown as Sql;
@@ -92,6 +150,7 @@ describe("generated short details", () => {
         titleFontScale: "1",
         titleTextStyles: [{ start: 0, end: 2, color: "#00FF00" }],
         renderVersion: 1,
+        initialRenderSpec,
         rerenderProgress: 100,
         status: "ready",
         expiresAt: new Date("2026-08-01T00:00:00.000Z"),
@@ -121,6 +180,7 @@ describe("generated short details", () => {
       viralScore: 87,
       subtitleTemplateId: "highlight",
       captionRenderSpec,
+      initialRenderSpec,
       wordTimedSubtitlesAvailable: true,
     });
     const queryText = Array.from(
@@ -135,6 +195,7 @@ describe("generated short details", () => {
       queryMock.mock.calls[1][0] as TemplateStringsArray,
     ).join("");
     expect(listQueryText).not.toContain("jsonb_array_elements");
+    expect(listQueryText).toContain("initial_render_spec");
   });
 
   it("maps a permanent short without an expiry timestamp", async () => {

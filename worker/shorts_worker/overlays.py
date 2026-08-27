@@ -17,6 +17,7 @@ from .schemas import (
     TemplateTextLayer,
     TitleTextStyle,
 )
+from .title_wrapping import wrap_korean_title
 
 PANEL_WIDTH = 1080
 PANEL_HEIGHT = 420
@@ -142,45 +143,6 @@ def load_custom_template_font(
     if font_id in EDITOR_FONT_VARIABLE_IDS:
         font.set_variation_by_axes([700])
     return font
-
-
-def wrap_korean_title(title: str, max_chars: int = 20, max_lines: int = 2) -> list[str]:
-    """Greedy Korean-safe wrapping that prefers spaces but can split long Korean words."""
-    manual_lines = [" ".join(line.split()) for line in title.splitlines() if line.strip()]
-    if len(manual_lines) > 1:
-        return manual_lines[:max_lines]
-    clean = " ".join(title.replace("\n", " ").split())[:40]
-    if not clean:
-        return ["핵심 장면"]
-    if len(clean) > max_chars:
-        balanced = [
-            (clean[:index].strip(), clean[index + 1 :].strip())
-            for index, char in enumerate(clean)
-            if char == " "
-            and clean[:index].strip()
-            and clean[index + 1 :].strip()
-            and len(clean[:index].strip()) <= max_chars
-            and len(clean[index + 1 :].strip()) <= max_chars
-        ]
-        if balanced:
-            return list(min(balanced, key=lambda pair: abs(len(pair[0]) - len(pair[1]))))
-    lines: list[str] = []
-    remaining = clean
-    while remaining and len(lines) < max_lines:
-        if len(remaining) <= max_chars:
-            lines.append(remaining)
-            remaining = ""
-            break
-        window = remaining[: max_chars + 1]
-        split_at = window.rfind(" ", max_chars // 2, max_chars + 1)
-        if split_at < 1:
-            split_at = max_chars
-        lines.append(remaining[:split_at].strip())
-        remaining = remaining[split_at:].strip()
-    if remaining:
-        last = lines[-1]
-        lines[-1] = last[: max(1, max_chars - 1)].rstrip() + "…"
-    return lines
 
 
 def wrap_caption(text: str, max_chars: int = 22) -> list[str]:

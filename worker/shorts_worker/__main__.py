@@ -30,6 +30,10 @@ def main() -> None:
         "editor-release-probe",
         help="render and upload synthetic evidence for an immutable editor release",
     )
+    subparsers.add_parser(
+        "editor-font-manifest",
+        help="print the deterministic bundled editor font manifest",
+    )
     pull = subparsers.add_parser("pull")
     pull.add_argument("--worker-id", default=socket.gethostname())
     pull.add_argument("--poll-seconds", type=float, default=5.0)
@@ -47,6 +51,11 @@ def main() -> None:
         from .editor_release_probe import run_editor_release_probe
 
         run_editor_release_probe()
+        return
+    if args.command == "editor-font-manifest":
+        from .font_manifest import canonical_editor_font_manifest_json
+
+        print(canonical_editor_font_manifest_json(), flush=True)
         return
     worker = BatchWorker(Settings())
     if args.command == "initial":

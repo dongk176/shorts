@@ -20,6 +20,7 @@ from .schemas import (
     SelectionResponse,
     SubtitleSegment,
 )
+from .title_wrapping import manual_title_lines
 
 
 def _log_selection_event(event: str, **fields: object) -> None:
@@ -100,7 +101,7 @@ def _clean_title_line(value: str) -> str:
 
 
 def _two_line_title(value: str, output_language: OutputLanguage) -> str:
-    manual_lines = [_clean_title_line(line) for line in value.splitlines()]
+    manual_lines = [_clean_title_line(line) for line in manual_title_lines(value)]
     manual_lines = [line for line in manual_lines if line]
     if len(manual_lines) >= 2:
         first = manual_lines[0][: MAX_HOOK_TITLE_CHARS // 2].rstrip()

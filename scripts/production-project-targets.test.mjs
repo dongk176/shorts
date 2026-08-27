@@ -37,10 +37,43 @@ test("exports exact current release IDs and the immutable registry JSON", () => 
     assert.ok(environment[`${prefix}_BATCH_TARGET_RELEASE_ID`]);
     assert.ok(environment[`${prefix}_JOB_DEFINITION_ARN`]);
     assert.ok(environment[`${prefix}_BATCH_QUEUE_ARN`]);
+    assert.match(environment[`${prefix}_WORKER_SOURCE_GIT_SHA`], /^[0-9a-f]{40}$/);
+    assert.match(environment[`${prefix}_WORKER_IMAGE_DIGEST`], /^sha256:[0-9a-f]{64}$/);
   }
   assert.deepEqual(
     JSON.parse(environment.PROJECT_TARGET_REGISTRY_JSON),
     registry,
+  );
+});
+
+test("accepts and exports only the complete exact v4 capability triple", () => {
+  const v4 = structuredClone(registry);
+  const target = v4.lanes.legacy_project.current;
+  target.renderSpecVersion = 4;
+  target.captionRenderSpecVersion = 4;
+  target.fontManifestSha256 = "a".repeat(64);
+
+  assert.doesNotThrow(() => validateProductionProjectTargets(v4));
+  const environment = productionProjectTargetEnvironment(v4);
+  assert.equal(environment.LEGACY_PROJECT_RENDER_SPEC_VERSION, "4");
+  assert.equal(environment.LEGACY_PROJECT_CAPTION_RENDER_SPEC_VERSION, "4");
+  assert.equal(
+    environment.LEGACY_PROJECT_FONT_MANIFEST_SHA256,
+    "a".repeat(64),
+  );
+
+  const partial = structuredClone(v4);
+  delete partial.lanes.legacy_project.current.fontManifestSha256;
+  assert.throws(
+    () => validateProductionProjectTargets(partial),
+    /capability triple이 완전하지/,
+  );
+
+  const wrongVersion = structuredClone(v4);
+  wrongVersion.lanes.legacy_project.current.renderSpecVersion = 3;
+  assert.throws(
+    () => validateProductionProjectTargets(wrongVersion),
+    /capability triple이 올바르지/,
   );
 });
 

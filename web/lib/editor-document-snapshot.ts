@@ -15,6 +15,7 @@ import type { EditorVideoClip } from "./editor-video-cuts";
 import {
   createEditorRenderSpec,
   editorSubtitleLayoutFromRenderSpec,
+  EDITOR_RENDER_SPEC_V4_VERSION,
   type EditorRenderSpec,
   type EditorSubtitleLayout,
 } from "./editor-render-spec";
@@ -91,6 +92,7 @@ type EditorDocumentSnapshotInput = Omit<EditorDocumentSnapshotV2, "version">;
 
 export function createEditorDocumentSnapshot(
   input: EditorDocumentSnapshotInput,
+  preserveTitleHorizontalOffset = false,
 ): EditorDocumentSnapshotV2 {
   const overlays = cloneEditorOverlayLayout(input.overlays);
   const titleFontScale = consolidateEditorTitleFontScale(
@@ -98,9 +100,11 @@ export function createEditorDocumentSnapshot(
     overlays.scales.title,
   );
   overlays.scales.title = 1;
-  overlays.offsets.title = lockEditorTitleHorizontalOffset(
-    overlays.offsets.title,
-  );
+  if (!preserveTitleHorizontalOffset) {
+    overlays.offsets.title = lockEditorTitleHorizontalOffset(
+      overlays.offsets.title,
+    );
+  }
   return {
     version: EDITOR_DOCUMENT_SNAPSHOT_VERSION,
     sourceShortId: input.sourceShortId,
@@ -130,8 +134,12 @@ export function createEditorDocumentSnapshotV3(
   subtitleLayout?: EditorSubtitleLayout,
   pinTitleAboveVideo = false,
   subtitleSpecVersion: 2 | 3 = 3,
+  preserveTitleHorizontalOffset = false,
 ): EditorDocumentSnapshotV3 {
-  const v2 = createEditorDocumentSnapshot(input);
+  const v2 = createEditorDocumentSnapshot(
+    input,
+    preserveTitleHorizontalOffset,
+  );
   if (pinTitleAboveVideo) {
     v2.overlays.layerOrder = normalizeEditorOverlayLayerOrder(
       v2.overlays.layerOrder,
@@ -146,7 +154,14 @@ export function createEditorDocumentSnapshotV3(
 
 export function cloneEditorDocumentSnapshot(
   snapshot: EditorDocumentSnapshot,
+  preserveTitleHorizontalOffset = false,
 ): EditorDocumentSnapshot {
+  if (
+    snapshot.version === EDITOR_DOCUMENT_V3_VERSION
+    && snapshot.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION
+  ) {
+    return structuredClone(snapshot);
+  }
   return snapshot.version === EDITOR_DOCUMENT_V3_VERSION
     ? createEditorDocumentSnapshotV3(
         snapshot,
@@ -155,8 +170,9 @@ export function cloneEditorDocumentSnapshot(
           : undefined,
         false,
         snapshot.renderSpec.version === 2 ? 2 : 3,
+        preserveTitleHorizontalOffset,
       )
-    : createEditorDocumentSnapshot(snapshot);
+    : createEditorDocumentSnapshot(snapshot, preserveTitleHorizontalOffset);
 }
 
 export function editorDocumentSnapshotsEqual(

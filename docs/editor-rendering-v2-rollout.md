@@ -65,7 +65,9 @@ workflow는 Vercel, CDK, 운영 DB를 자동 배포하지 않는다.
 
 ## 후보 생성
 
-main에서 workflow를 수동 실행한다. workflow는 다음 순서를 강제한다.
+검증 전용 `codex/render-parity-v4-20260826` 브랜치에서 workflow를 수동
+실행한다. `main`과 다른 임의 ref에서는 실행하지 않는다. workflow는 다음
+순서를 강제한다.
 
 1. 전체 `make verify`
 2. render 이미지를 `editor-release-<git sha>` 태그로 한 번만 빌드·게시
@@ -127,3 +129,72 @@ main에서 workflow를 수동 실행한다. workflow는 다음 순서를 강제�
   제목·자막·댓글의 기존 요청 형식을 변경하지 않는다.
 - 고정 기준을 의도적으로 바꿔야 한다면 별도 사용자 영향 검토와
   스크린샷 승인을 먼저 받고 해시를 갱신한다.
+
+## Render-spec v4 단계적 공개
+
+- `NEXT_PUBLIC_EDITOR_RENDER_SPEC_V4_ENABLED=true`는 Stage B 무별칭 후보를
+  빌드하기 전에 Vercel Production 빌드 환경에 있어야 한다. 이 값은
+  브라우저의 v4 컴파일러 포함 여부만 결정하며 계정을 단독으로 허용하지
+  않는다. 실제 허용은 불변 4/4 릴리스, DB rollout bucket,
+  `render_v4_kill_switch`가 계속 결정한다. 값이 없거나 `true`가 아니면
+  v4 배정 계정이 정확한 명세를 저장할 수 없으므로 승격을 중단한다.
+
+- v4 릴리스는 top-level 문서 버전 `3`을 유지하면서
+  `render_spec_version=4`, `caption_render_spec_version=4`, 검증된 Linux
+  폰트 manifest SHA-256을 하나의 불변 capability로 등록한다.
+- workflow는 render 이미지를 한 번만 빌드하고 그 digest에서 폰트
+  manifest와 격리 probe 증거를 만든 뒤, 같은 digest로 다섯 project lane
+  (`legacy_project`, `source_range`, `elevenlabs_transcription`,
+  `subtitle_templates`, `unified_template_subtitles`)을 각각 등록한다.
+- 다섯 lane의 current 정의와 release registry의 source SHA, image digest,
+  4/4/font hash가 모두 일치하기 전에는 신규 작업의 v4 필드를 저장하지
+  않는다. 기존 작업은 NULL을 유지해 레거시 경로를 사용한다.
+- 공개 순서는 kill switch가 켜진 기본 상태에서 시작해 내부 tester,
+  5%, 25%, 100% 순서로만 올린다. 허용되는 공개 비율도
+  `0`, `5`, `25`, `100`뿐이다.
+- 이상 징후가 있으면 먼저 `render_v4_kill_switch`를 켠다. 목표 공개
+  비율과 DB 기록은 삭제하지 않는다. 긴급 중단된 동일 immutable release는
+  다시 켜지 않으며, 새 소스·이미지·release ID로 격리 검증부터 다시 진행한다.
+  새 후보를 시작할 때 공개 비율은 0으로 초기화되고 이전 release의 긴급
+  중단 이력이 새 release를 막지 않는다. DB 직접 수정으로 복구하지 않는다.
+- previous 정의는 해당 정의를 참조하는 비종결 작업이 0건인 상태가
+  15분 유지된 뒤 별도 인프라 변경으로 제거한다. v4 후보용 정확한 GitHub
+  OIDC branch allowlist도 릴리스 완료 후 함께 제거한다.
+
+### Stage B 인프라 변경 경계
+
+- Stage A용 `infra:deploy-control-plane` 명령은 Stage B에 사용하지 않는다.
+  그 명령의 고정 logical-ID 계약은 이번 registrar/IAM 변경과 다르다.
+- Stage B는 `deploy-stage-b-release-control.mjs`의 세 phase만 사용한다.
+  - `bootstrap`: registrar code와 고정 registry 경로, release build role의
+    단일 exact OIDC subject, policy의 `shorts-mvp-editor-v4-*` TagResource ARN,
+    Batch submitter code만 허용한다.
+  - `rotation`: registrar의 registry asset, Batch submitter의 registry asset과
+    registry에서 다시 계산한 current target 환경값만 허용한다. 이 phase의
+    `--prior-stage-head..--head`에는
+    `production-project-targets.json` 한 파일 변경만 존재해야 한다.
+  - `lockdown`: release build role subject를
+    `refs/tags/__disabled_editor_release__`로 바꾸는 IAM-only 변경만 허용한다.
+- Compute Environment, Batch Queue, 기존 Job Definition, 그 밖의 Lambda/IAM,
+  template envelope, DB, Vercel 변경은 모두 거절한다. 모든 변경은 `Modify`,
+  scope는 허용된 property뿐이며 CloudFormation replacement가 정확히
+  `False`여야 한다.
+- OIDC subject는 기본적으로
+  `refs/tags/__disabled_editor_release__`이고, 이번 검증 중에만
+  `refs/tags/editor-v4-render-parity-20260826` exact ref를 허용한다. 와일드카드나
+  다른 브랜치는 허용하지 않는다. Stage B 완료 후 disabled sentinel로
+  되돌리는 별도 IAM-only 변경을 준비한다.
+- 운영 적용은 두 stack의 현재 live template과 합성 template을 비교해 위
+  phase별 허용 리소스만 복사한 exact template을 만든 뒤, stack별 change
+  set을 `prepare-change-set`으로만 준비한다. 두 preview와 template hash를
+  별도 검토한 뒤 EditorCanary를 먼저 실행한다. Compute 실행은 Editor의
+  승인된 후보 hash가 실제 live template hash가 된 경우에만 가능하다.
+- prepare 또는 검증이 중간 실패하면 그 실행에서 만든 미실행 change set만
+  정리한다. 전체 `cdk deploy`, `--all`, Stage A 배포 명령, 수동 IAM 편집은
+  사용하지 않는다. 구체적인 명령과 hash 전달 순서는
+  [AWS runbook](aws-runbook.md)의 Stage B 절차를 따른다.
+- AWS stack 실행 중에는 운영 DB의 TTL infrastructure lease를 유지한다.
+  유효한 lease 동안 내부 활성화·승격·5→25→100 전환·일반 rollback은
+  거절하고 긴급 중단만 항상 허용한다. lease는 process session이 아닌 DB
+  만료시각과 owner/ID로 관리해 transaction pooler에서도 고아 lock을 남기지
+  않는다.

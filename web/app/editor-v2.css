@@ -150,6 +150,152 @@
 }
 
 /*
+ * Render specification v4 uses unique, exact-face aliases. UI code waits for
+ * these faces and fails closed before preview/apply, so no fallback family is
+ * part of the v4 rendering contract.
+ */
+@font-face {
+  font-family: "Editor V4 Pretendard";
+  src: url("/fonts/editor/Pretendard-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Noto Sans KR";
+  src: url("/fonts/editor/NotoSansKR-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Do Hyeon";
+  src: url("/fonts/editor/DoHyeon-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Jua";
+  src: url("/fonts/editor/Jua-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Jalnan 2";
+  src: url("/fonts/editor/Jalnan2-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Cafe24 Anemone";
+  src: url("/fonts/editor/Cafe24Anemone-Bold.woff") format("woff");
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Cafe24 Pro Up";
+  src: url("/fonts/editor/Cafe24ProUp-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Sandbox Aggro";
+  src: url("/fonts/editor/SandboxAggro-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Galmuri 9";
+  src: url("/fonts/editor/Galmuri9-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Black Han Sans";
+  src: url("/fonts/editor/BlackHanSans-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Godo";
+  src: url("/fonts/editor/Godo-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Paperlogy";
+  src: url("/fonts/editor/Paperlogy-7Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Gmarket Sans";
+  src: url("/fonts/editor/GmarketSans-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Nanum Square Neo";
+  src: url("/fonts/editor/NanumSquareNeo-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 S-Core Dream";
+  src: url("/fonts/editor/SCoreDream-ExtraBold.otf") format("opentype");
+  font-style: normal;
+  font-weight: 800;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 SUIT";
+  src: url("/fonts/editor/SUIT-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Spoqa Han Sans Neo";
+  src: url("/fonts/editor/SpoqaHanSansNeo-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Noto Serif KR";
+  src: url("/fonts/editor/NotoSerifKR-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Nanum Myeongjo";
+  src: url("/fonts/editor/NanumMyeongjo-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+}
+@font-face {
+  font-family: "Editor V4 Ridi Batang";
+  src: url("/fonts/editor/RIDIBatang-Regular.woff") format("woff");
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+
+/*
  * Font-picker previews use these display aliases on the template page and in
  * the editor controls. Keep new aliases here so the approved legacy global
  * stylesheet remains byte-for-byte unchanged.

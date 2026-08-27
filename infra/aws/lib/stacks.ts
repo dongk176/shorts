@@ -25,6 +25,13 @@ const pinnedBatchJobDefinitionArn = /^arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-def
 const pinnedBatchQueueArn = /^arn:aws:batch:[a-z0-9-]+:[0-9]{12}:job-queue\/[A-Za-z0-9_-]+$/;
 const pinnedEcrImageUri = /^([0-9]{12})\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com\/[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$/;
 const workerSourceGitSha = /^[0-9a-f]{40}$/;
+const disabledEditorReleaseGitHubRef =
+  "refs/tags/__disabled_editor_release__";
+const stageBEditorReleaseGitHubRef =
+  "refs/tags/editor-v4-render-parity-20260826";
+const editorReleaseApprovalEnvironment = "editor-v4-release-approval";
+const editorReleaseWorkflowPath = ".github/workflows/editor-release.yml";
+const editorReleaseWorkflowName = "Verify editor release candidate";
 const projectTargetLaneNames = [
   "legacy_project",
   "source_range",
@@ -80,6 +87,89 @@ function requiredContext(stack: cdk.Stack, name: string): string {
   return value;
 }
 
+function editorReleaseGitHubRef(stack: cdk.Stack): string {
+  const value = String(
+    stack.node.tryGetContext("githubEditorReleaseRef")
+      || disabledEditorReleaseGitHubRef,
+  ).trim();
+  if (![
+    disabledEditorReleaseGitHubRef,
+    stageBEditorReleaseGitHubRef,
+  ].includes(value)) {
+    throw new Error(
+      "githubEditorReleaseRef must be the exact Stage B ref or disabled sentinel",
+    );
+  }
+  return value;
+}
+
+function editorReleaseRegistrarPassRoleArns(
+  stack: cdk.Stack,
+  releaseRef: string,
+): string[] {
+  const contextName = "editorReleaseRegistrarPassRoleArns";
+  const raw = String(stack.node.tryGetContext(contextName) || "").trim();
+  if (!raw) {
+    if (releaseRef === stageBEditorReleaseGitHubRef) {
+      throw new Error(
+        `${contextName} context is required for the enabled Stage B tag`,
+      );
+    }
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(`${contextName} must be an exact JSON array`);
+  }
+  if (!Array.isArray(parsed) || parsed.length < 2 || parsed.length > 20) {
+    throw new Error(`${contextName} must contain 2-20 exact role ARNs`);
+  }
+  const values = parsed.map((value) => String(value || "").trim());
+  const rolePattern = /^arn:aws:iam::([0-9]{12}):role\/[A-Za-z0-9+=,.@_\/-]+$/;
+  const accounts = new Set(values.map((value) => rolePattern.exec(value)?.[1] || ""));
+  if (
+    values.some((value) => (
+      !rolePattern.test(value)
+      || value.includes("*")
+    ))
+    || accounts.size !== 1
+    || accounts.has("")
+    || (!cdk.Token.isUnresolved(stack.account) && !accounts.has(stack.account))
+    || new Set(values).size !== values.length
+  ) {
+    throw new Error(`${contextName} must contain unique exact role ARNs`);
+  }
+  return values.sort();
+}
+
+function editorReleaseGitHubNumericIdentity(
+  stack: cdk.Stack,
+  releaseRef: string,
+): { repositoryId: string; ownerId: string } {
+  const repositoryId = String(
+    stack.node.tryGetContext("githubRepositoryId") || "",
+  ).trim();
+  const ownerId = String(
+    stack.node.tryGetContext("githubRepositoryOwnerId") || "",
+  ).trim();
+  if (releaseRef === stageBEditorReleaseGitHubRef) {
+    if (!/^[1-9][0-9]*$/.test(repositoryId)) {
+      throw new Error("githubRepositoryId context is required for the enabled Stage B tag");
+    }
+    if (!/^[1-9][0-9]*$/.test(ownerId)) {
+      throw new Error(
+        "githubRepositoryOwnerId context is required for the enabled Stage B tag",
+      );
+    }
+  }
+  return {
+    repositoryId: repositoryId || "0",
+    ownerId: ownerId || "0",
+  };
+}
+
 function editorStableRerenderJobDefinitionArn(
   stack: cdk.Stack,
   environment: string,
@@ -122,6 +212,9 @@ interface ProjectTargetRelease {
   imageUri: string;
   jobDefinitionArn: string;
   jobQueueArn: string;
+  renderSpecVersion?: 4;
+  captionRenderSpecVersion?: 4;
+  fontManifestSha256?: string;
 }
 
 interface ProjectTargetPreviousRelease extends ProjectTargetRelease {
@@ -205,22 +298,33 @@ function projectTargetRegistry(
     }> = [{ target: lane.current, previous: false }];
     if (lane.previous) targetRows.push({ target: lane.previous, previous: true });
     for (const { target, previous } of targetRows) {
-      exactKeys(target as unknown as Record<string, unknown>, previous
-        ? [
+      const capabilityKeys = [
+        "renderSpecVersion",
+        "captionRenderSpecVersion",
+        "fontManifestSha256",
+      ].filter((key) => key in target);
+      if (capabilityKeys.length !== 0 && capabilityKeys.length !== 3) {
+        throw new Error(`${laneName} v4 capability triple must be complete`);
+      }
+      exactKeys(target as unknown as Record<string, unknown>, [
+        ...(previous
+          ? [
           "releaseId",
           "workerSourceGitSha",
           "imageUri",
           "jobDefinitionArn",
           "jobQueueArn",
           ...("submitAsReleaseId" in target ? ["submitAsReleaseId"] : []),
-        ]
-        : [
+          ]
+          : [
           "releaseId",
           "workerSourceGitSha",
           "imageUri",
           "jobDefinitionArn",
           "jobQueueArn",
-        ],
+          ]),
+        ...capabilityKeys,
+      ],
       `${laneName} ${previous ? "previous" : "current"}`);
       if (!/^[a-z0-9][a-z0-9._-]{2,127}$/.test(target.releaseId)) {
         throw new Error(`${laneName} releaseId is invalid`);
@@ -254,6 +358,13 @@ function projectTargetRegistry(
       }
       if (!target.jobDefinitionArn.includes(target.workerSourceGitSha.slice(0, 7))) {
         throw new Error(`${laneName} Job Definition has no worker source identity`);
+      }
+      if (capabilityKeys.length && (
+        target.renderSpecVersion !== 4
+        || target.captionRenderSpecVersion !== 4
+        || !/^[0-9a-f]{64}$/.test(String(target.fontManifestSha256 || ""))
+      )) {
+        throw new Error(`${laneName} v4 capability triple is invalid`);
       }
       identities.add(`${definitionIdentity?.[1]}:${definitionIdentity?.[2]}`);
       if (definitions.has(target.jobDefinitionArn)) {
@@ -498,6 +609,10 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ComputeProps) {
     super(scope, id, props);
     const { bucket, editorReleaseRepository, runtimeSecret } = props.foundation;
+    const editorProjectTargetRegistry = projectTargetRegistry(
+      this,
+      props.environment,
+    );
     const vpc = new ec2.Vpc(this, "EditorCanaryVpc", {
       maxAzs: 2,
       natGateways: 0,
@@ -575,21 +690,6 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
       ],
       resources: ["*"],
     }));
-    lambdaRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["ecr:DescribeImageScanFindings"],
-      resources: [editorReleaseRepository.repositoryArn],
-    }));
-    lambdaRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["s3:GetObject"],
-      resources: [this.formatArn({
-        service: "s3",
-        region: "",
-        account: "",
-        resource: `shorts-mvp-editor-test-${this.account}-${this.region}`,
-        resourceName: "editor-release-probes/*",
-        arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-      })],
-    }));
     const stableProjectQueueArn = this.formatArn({
       service: "batch",
       resource: "job-queue",
@@ -660,15 +760,152 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
       memorySize: 256,
       environment,
     });
+    const githubOrg = this.node.tryGetContext("githubOrg") || "dongk176";
+    const githubRepo = this.node.tryGetContext("githubRepo") || "shorts";
+    const githubEditorReleaseRef = editorReleaseGitHubRef(this);
+    const registrarPassRoleArns = editorReleaseRegistrarPassRoleArns(
+      this,
+      githubEditorReleaseRef,
+    );
+    const githubNumericIdentity = editorReleaseGitHubNumericIdentity(
+      this,
+      githubEditorReleaseRef,
+    );
+    const githubEditorReleaseTag = githubEditorReleaseRef.replace(
+      /^refs\/tags\//,
+      "",
+    );
+    const editorTestBucketArn = this.formatArn({
+      service: "s3",
+      region: "",
+      account: "",
+      resource: `shorts-mvp-editor-test-${this.account}-${this.region}`,
+    });
+    const editorTestQueueArn = this.formatArn({
+      service: "batch",
+      resource: "job-queue",
+      resourceName: "shorts-mvp-editor-test",
+      arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+    });
+    const editorTestTaskRoleArn = this.formatArn({
+      service: "iam",
+      region: "",
+      resource: "role",
+      resourceName: "shorts-mvp-editor-test-task",
+      arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+    });
+    const editorTestExecutionRoleArn = this.formatArn({
+      service: "iam",
+      region: "",
+      resource: "role",
+      resourceName: "shorts-mvp-editor-test-execution",
+      arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+    });
+    const registrarRole = new iam.Role(this, "EditorReleaseRegistrarRole", {
+      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName(
+          "service-role/AWSLambdaBasicExecutionRole",
+        ),
+      ],
+    });
+    runtimeSecret.grantRead(registrarRole);
+    registrarRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["ecr:DescribeImageScanFindings", "ecr:DescribeImages"],
+      resources: [editorReleaseRepository.repositoryArn],
+    }));
+    registrarRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["s3:GetObject", "s3:GetObjectVersion"],
+      resources: [`${editorTestBucketArn}/editor-release-probes/*`],
+    }));
+    registrarRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        "batch:DescribeJobDefinitions",
+        "batch:DescribeJobs",
+        "batch:ListJobs",
+        "batch:RegisterJobDefinition",
+      ],
+      resources: ["*"],
+    }));
+    registrarRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["batch:SubmitJob"],
+      resources: [
+        editorTestQueueArn,
+        this.formatArn({
+          service: "batch",
+          resource: "job-definition",
+          resourceName: "shorts-mvp-editor-test-release-*",
+          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+        }),
+      ],
+    }));
+    registrarRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["batch:TagResource"],
+      resources: [
+        this.formatArn({
+          service: "batch",
+          resource: "job-definition",
+          resourceName: "shorts-mvp-editor-release-*",
+          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+        }),
+        this.formatArn({
+          service: "batch",
+          resource: "job-definition",
+          resourceName: "shorts-mvp-editor-test-release-*",
+          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+        }),
+        this.formatArn({
+          service: "batch",
+          resource: "job-definition",
+          resourceName: "shorts-mvp-editor-v4-*",
+          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+        }),
+      ],
+    }));
+    if (registrarPassRoleArns.length) {
+      registrarRole.addToPolicy(new iam.PolicyStatement({
+        actions: ["iam:PassRole"],
+        resources: registrarPassRoleArns,
+        conditions: {
+          StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" },
+        },
+      }));
+    }
     const registrar = new lambda.Function(this, "EditorReleaseRegistrarFunction", {
       functionName: `shorts-mvp-editor-release-registrar-${props.environment}`,
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "editor_release_registrar.handler",
-      code: isolatedLambdaCode("editor_release_registrar"),
-      role: lambdaRole,
-      timeout: cdk.Duration.seconds(60),
-      memorySize: 256,
-      environment,
+      code: isolatedLambdaCode(
+        "editor_release_registrar",
+        editorProjectTargetRegistry ? {
+          "production-project-targets.json": editorProjectTargetRegistry.json,
+        } : {},
+      ),
+      role: registrarRole,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      environment: {
+        ...environment,
+        ...(editorProjectTargetRegistry ? {
+          PROJECT_TARGET_REGISTRY_PATH:
+            "/var/task/production-project-targets.json",
+        } : {}),
+        GITHUB_OIDC_AUDIENCE: "editor-v4-release-registrar",
+        GITHUB_OIDC_REPOSITORY: `${githubOrg}/${githubRepo}`,
+        GITHUB_OIDC_REPOSITORY_ID: githubNumericIdentity.repositoryId,
+        GITHUB_OIDC_REPOSITORY_OWNER_ID: githubNumericIdentity.ownerId,
+        GITHUB_OIDC_ENVIRONMENT: editorReleaseApprovalEnvironment,
+        GITHUB_OIDC_RELEASE_TAG: githubEditorReleaseTag,
+        GITHUB_OIDC_WORKFLOW_PATH: editorReleaseWorkflowPath,
+        GITHUB_OIDC_WORKFLOW_NAME: editorReleaseWorkflowName,
+        EDITOR_RELEASE_ECR_REPOSITORY_URI:
+          editorReleaseRepository.repositoryUri,
+        EDITOR_TEST_JOB_QUEUE_ARN: editorTestQueueArn,
+        EDITOR_TEST_TASK_ROLE_ARN: editorTestTaskRoleArn,
+        EDITOR_TEST_EXECUTION_ROLE_ARN: editorTestExecutionRoleArn,
+        EDITOR_RELEASE_REGISTRAR_PASS_ROLE_ARNS:
+          JSON.stringify(registrarPassRoleArns),
+      },
     });
     batchSubmitter.addEventSource(new lambdaEventSources.SqsEventSource(
       dispatchQueue,
@@ -694,8 +931,6 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
       targets: [new targets.LambdaFunction(batchState)],
     });
 
-    const githubOrg = this.node.tryGetContext("githubOrg") || "dongk176";
-    const githubRepo = this.node.tryGetContext("githubRepo") || "shorts";
     const githubProviderArn = this.node.tryGetContext("githubOidcProviderArn");
     const githubProvider = githubProviderArn
       ? iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
@@ -707,100 +942,78 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
           url: "https://token.actions.githubusercontent.com",
           clientIds: ["sts.amazonaws.com"],
         });
-    const githubRole = new iam.Role(this, "EditorReleaseBuildRole", {
+    const githubBuildRole = new iam.Role(this, "EditorReleaseBuildRole", {
       assumedBy: new iam.OpenIdConnectPrincipal(githubProvider).withConditions({
         StringEquals: {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-        },
-        StringLike: {
-          "token.actions.githubusercontent.com:sub": [
-            `repo:${githubOrg}/${githubRepo}:ref:refs/heads/main`,
-            `repo:${githubOrg}/${githubRepo}:ref:refs/heads/codex/unified-template-subtitles-admin-canary-20260824`,
-          ],
+          "token.actions.githubusercontent.com:sub":
+            `repo:${githubOrg}/${githubRepo}:ref:${githubEditorReleaseRef}`,
+          "token.actions.githubusercontent.com:ref": githubEditorReleaseRef,
+          "token.actions.githubusercontent.com:repository":
+            `${githubOrg}/${githubRepo}`,
+          "token.actions.githubusercontent.com:repository_id":
+            githubNumericIdentity.repositoryId,
+          "token.actions.githubusercontent.com:repository_owner_id":
+            githubNumericIdentity.ownerId,
+          "token.actions.githubusercontent.com:workflow": editorReleaseWorkflowName,
         },
       }),
       maxSessionDuration: cdk.Duration.hours(1),
     });
-    editorReleaseRepository.grantPullPush(githubRole);
-    githubRole.addToPolicy(new iam.PolicyStatement({
+    editorReleaseRepository.grantPullPush(githubBuildRole);
+    githubBuildRole.addToPolicy(new iam.PolicyStatement({
       actions: ["ecr:GetAuthorizationToken"],
       resources: ["*"],
     }));
-    registrar.grantInvoke(githubRole);
-    githubRole.addToPolicy(new iam.PolicyStatement({
-      actions: [
-        "batch:DescribeJobDefinitions",
-        "batch:DescribeJobs",
-        "batch:RegisterJobDefinition",
-      ],
-      resources: ["*"],
-    }));
-    githubRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["batch:TagResource"],
-      resources: [
-        this.formatArn({
-          service: "batch",
-          resource: "job-definition",
-          resourceName: "shorts-mvp-editor-release-*",
-          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-        }),
-        this.formatArn({
-          service: "batch",
-          resource: "job-definition",
-          resourceName: "shorts-mvp-editor-test-release-*",
-          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-        }),
-      ],
-    }));
-    githubRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["batch:SubmitJob"],
-      resources: [
-        this.queue.attrJobQueueArn,
-        this.formatArn({
-          service: "batch",
-          resource: "job-queue",
-          resourceName: "shorts-mvp-editor-test",
-          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-        }),
-        this.formatArn({
-          service: "batch",
-          resource: "job-definition",
-          resourceName: "shorts-mvp-editor-release-*",
-          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-        }),
-        this.formatArn({
-          service: "batch",
-          resource: "job-definition",
-          resourceName: "shorts-mvp-editor-test-release-*",
-          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-        }),
-      ],
-    }));
-    githubRole.addToPolicy(new iam.PolicyStatement({
+    githubBuildRole.addToPolicy(new iam.PolicyStatement({
       actions: ["ecr:DescribeImages", "ecr:DescribeImageScanFindings"],
       resources: [editorReleaseRepository.repositoryArn],
     }));
-    githubRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["iam:PassRole"],
-      resources: [
-        this.formatArn({
-          service: "iam",
-          region: "",
-          resource: "role",
-          resourceName: "ShortsMvpCompute-production-Worker*Role*",
-          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-        }),
-        this.formatArn({
-          service: "iam",
-          region: "",
-          resource: "role",
-          resourceName: "shorts-mvp-editor-test-*",
-          arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
-        }),
-      ],
-      conditions: {
-        StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" },
-      },
+
+    const githubVerifierRole = new iam.Role(this, "EditorReleaseVerifierRole", {
+      assumedBy: new iam.OpenIdConnectPrincipal(githubProvider).withConditions({
+        StringEquals: {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub":
+            `repo:${githubOrg}/${githubRepo}:environment:${editorReleaseApprovalEnvironment}`,
+          "token.actions.githubusercontent.com:ref": githubEditorReleaseRef,
+          "token.actions.githubusercontent.com:repository":
+            `${githubOrg}/${githubRepo}`,
+          "token.actions.githubusercontent.com:repository_id":
+            githubNumericIdentity.repositoryId,
+          "token.actions.githubusercontent.com:repository_owner_id":
+            githubNumericIdentity.ownerId,
+          "token.actions.githubusercontent.com:workflow": editorReleaseWorkflowName,
+          "token.actions.githubusercontent.com:environment":
+            editorReleaseApprovalEnvironment,
+        },
+      }),
+      maxSessionDuration: cdk.Duration.hours(2),
+    });
+    editorReleaseRepository.grantPull(githubVerifierRole);
+    githubVerifierRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["ecr:GetAuthorizationToken"],
+      resources: ["*"],
+    }));
+    registrar.grantInvoke(githubVerifierRole);
+    githubVerifierRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["batch:DescribeJobDefinitions", "batch:DescribeJobs"],
+      resources: ["*"],
+    }));
+    githubVerifierRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["ecr:DescribeImages", "ecr:DescribeImageScanFindings"],
+      resources: [editorReleaseRepository.repositoryArn],
+    }));
+    githubVerifierRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["s3:GetObject", "s3:GetObjectVersion"],
+      resources: [this.formatArn({
+        service: "s3",
+        region: "",
+        account: "",
+        resource: `shorts-mvp-editor-test-${this.account}-${this.region}`,
+        resourceName: "editor-release-probes/*",
+        arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+      })],
     }));
 
     new cdk.CfnOutput(this, "EditorCanaryBatchJobQueue", {
@@ -810,7 +1023,10 @@ export class ShortsMvpEditorCanaryStack extends cdk.Stack {
       value: registrar.functionArn,
     });
     new cdk.CfnOutput(this, "EditorReleaseBuildRoleArn", {
-      value: githubRole.roleArn,
+      value: githubBuildRole.roleArn,
+    });
+    new cdk.CfnOutput(this, "EditorReleaseVerifierRoleArn", {
+      value: githubVerifierRole.roleArn,
     });
   }
 }
@@ -2247,6 +2463,7 @@ export class ShortsMvpEditorTestStack extends cdk.Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
+      versioned: true,
       autoDeleteObjects: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       lifecycleRules: [{

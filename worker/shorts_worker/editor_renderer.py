@@ -15,6 +15,7 @@ from .caption_templates import (
     create_caption_ass,
     prepare_caption_fonts,
     reflow_caption_cues_for_clips,
+    verify_caption_font_selection_v4,
 )
 from .config import Settings
 from .errors import RenderError
@@ -28,6 +29,11 @@ from .overlays import (
     create_comment_panel,
     ensure_title_text_background,
     wrap_korean_title,
+)
+from .render_spec_v4 import (
+    canonical_px_v4,
+    draw_editor_title_spec_v4,
+    verify_editor_font_face_v4,
 )
 from .renderer import VideoLayout, caption_video_layout
 from .schemas import (
@@ -107,7 +113,7 @@ class EditorSubtitleStyle:
 def editor_subtitle_style(document: EditorDocument) -> EditorSubtitleStyle:
     render_subtitles = (
         document.render_spec.subtitles
-        if document.render_spec and document.render_spec.version in {2, 3}
+        if document.render_spec and document.render_spec.version in {2, 3, 4}
         else None
     )
     if render_subtitles is None:
@@ -121,7 +127,7 @@ def editor_subtitle_style(document: EditorDocument) -> EditorSubtitleStyle:
         ),
         font_size=round(
             render_subtitles.font_size
-            if document.render_spec and document.render_spec.version == 3
+            if document.render_spec and document.render_spec.version in {3, 4}
             and render_subtitles.font_size is not None
             else EDITOR_SUBTITLE_DEFAULT_FONT_SIZE * render_subtitles.scale
         ),
@@ -398,7 +404,7 @@ def editor_highlight_caption_spec(
         return None
     render_subtitles = (
         document.render_spec.subtitles
-        if document.render_spec and document.render_spec.version in {2, 3}
+        if document.render_spec and document.render_spec.version in {2, 3, 4}
         else None
     )
     try:
@@ -431,6 +437,12 @@ def editor_highlight_caption_spec(
                 if render_subtitles and render_subtitles.color
                 else "#FFFFFF"
             ),
+            schema_version=(
+                4
+                if document.render_spec is not None
+                and document.render_spec.version == 4
+                else 3
+            ),
         )
     except RenderError:
         raise
@@ -443,7 +455,7 @@ def editor_highlight_subtitles_enabled(document: EditorDocument) -> bool:
         document.subtitles.enabled
         and document.version == 3
         and document.render_spec is not None
-        and document.render_spec.version in {2, 3}
+        and document.render_spec.version in {2, 3, 4}
         and document.render_spec.subtitles is not None
     )
 
@@ -467,13 +479,143 @@ def editor_subtitle_render_mode(
     return "legacy-v2"
 
 
+def _shift_caption_cue_frames(
+    cue: dict[str, object],
+    *,
+    frame_offset: int,
+) -> dict[str, object]:
+    """Shift only timing fields while retaining authoritative v4 geometry."""
+    shifted = deepcopy(cue)
+    for key in ("startFrame", "endFrame"):
+        if key in shifted:
+            shifted[key] = int(shifted[key]) + frame_offset
+    words = shifted.get("words")
+    if isinstance(words, list):
+        for word in words:
+            if not isinstance(word, dict):
+                raise RenderError("원본 자막 어절이 올바르지 않습니다.")
+            for key in (
+                "startFrame",
+                "endFrame",
+                "speechStartFrame",
+                "speechEndFrame",
+            ):
+                if key in word:
+                    word[key] = int(word[key]) + frame_offset
+    events = shifted.get("events")
+    if isinstance(events, list):
+        for event in events:
+            if not isinstance(event, dict):
+                raise RenderError("원본 자막 이벤트가 올바르지 않습니다.")
+            for key in ("startFrame", "endFrame"):
+                if key in event:
+                    event[key] = int(event[key]) + frame_offset
+    return shifted
+
+
+def project_caption_render_spec_v4(
+    caption_render_spec: dict[str, object],
+    *,
+    clip_start_seconds: float,
+    clip_end_seconds: float,
+) -> dict[str, object]:
+    """Project one contiguous edit window from the canonical stored v4 spec.
+
+    Fully retained cues keep their stored word/event coordinates byte-for-byte;
+    only frame fields move to the selected clip's zero point.  A cue crossing a
+    cut boundary is rebuilt with the same deterministic compiler used by edits.
+    Both the first render and a padded-timeline no-op call this function, so a
+    boundary case still produces the same coordinates on both paths.
+    """
+    spec = deepcopy(caption_render_spec)
+    if (
+        int(spec.get("schemaVersion") or 0) != 4
+        or spec.get("layoutMode") != "absolute-word-positions-v1"
+    ):
+        raise RenderError("v4 자막 원본만 정확한 구간 투영을 지원합니다.")
+    fps = int(spec.get("fps") or 0)
+    if fps != CAPTION_FPS:
+        raise RenderError("원본 자막 렌더 프레임레이트가 올바르지 않습니다.")
+    clip_start_frame = floor(float(clip_start_seconds) * fps + 0.5)
+    clip_end_frame = floor(float(clip_end_seconds) * fps + 0.5)
+    if clip_start_frame < 0 or clip_end_frame <= clip_start_frame:
+        raise RenderError("v4 자막 선택 구간이 올바르지 않습니다.")
+    source_start_seconds = float(spec.get("clipStartSeconds") or 0)
+    source_end_seconds = float(spec.get("clipEndSeconds") or 0)
+    source_duration_frames = floor(
+        (source_end_seconds - source_start_seconds) * fps + 0.5
+    )
+    if source_duration_frames <= 0 or clip_end_frame > source_duration_frames:
+        raise RenderError("v4 자막 선택 구간이 원본 범위를 벗어났습니다.")
+    cues_value = spec.get("cues")
+    safe_area_value = spec.get("safeArea")
+    style_value = spec.get("style")
+    font_value = spec.get("font")
+    if (
+        not isinstance(cues_value, list)
+        or not isinstance(safe_area_value, dict)
+        or not isinstance(style_value, dict)
+        or not isinstance(font_value, dict)
+    ):
+        raise RenderError("v4 자막 원본 정보가 올바르지 않습니다.")
+
+    retained: list[dict[str, object]] = []
+    boundary_crossed = False
+    for cue_value in cues_value:
+        if not isinstance(cue_value, dict):
+            raise RenderError("원본 자막 큐가 올바르지 않습니다.")
+        cue_start = int(cue_value.get("startFrame") or 0)
+        cue_end = int(cue_value.get("endFrame") or 0)
+        if cue_end <= clip_start_frame or cue_start >= clip_end_frame:
+            continue
+        if cue_start < clip_start_frame or cue_end > clip_end_frame:
+            boundary_crossed = True
+            break
+        retained.append(
+            _shift_caption_cue_frames(
+                cue_value,
+                frame_offset=-clip_start_frame,
+            )
+        )
+
+    if boundary_crossed:
+        try:
+            retained = reflow_caption_cues_for_clips(
+                cues_value,
+                template_id=str(spec.get("templateId") or ""),
+                safe_area={
+                    key: int(safe_area_value[key])
+                    for key in ("x", "y", "width", "height")
+                },
+                clip_windows=[(clip_start_frame, clip_end_frame, 0)],
+                fps=fps,
+                font_id=font_value.get("fontId"),
+                font_size=round(float(style_value.get("fontSize") or 0)),
+                schema_version=4,
+            )
+        except Exception as exc:
+            if isinstance(exc, RenderError):
+                raise
+            raise RenderError("v4 자막 선택 구간을 투영하지 못했습니다.") from exc
+    if not retained:
+        raise RenderError("선택한 영상 구간에 표시할 v4 자막이 없습니다.")
+
+    spec["clipStartSeconds"] = round(source_start_seconds + clip_start_seconds, 3)
+    spec["clipEndSeconds"] = round(source_start_seconds + clip_end_seconds, 3)
+    spec["cues"] = retained
+    # A selected projection is a render input, never another source container.
+    spec.pop("editorSource", None)
+    return spec
+
+
 def retime_editor_caption_spec(
     document: EditorDocument,
     caption_render_spec: dict[str, object],
 ) -> dict[str, object] | None:
     """Apply trusted editor timing and layout to an immutable caption template."""
     spec = deepcopy(caption_render_spec)
-    if int(spec.get("schemaVersion") or 0) != 3:
+    caption_schema_version = int(spec.get("schemaVersion") or 0)
+    if caption_schema_version not in {3, 4}:
         raise RenderError("원본 자막 렌더 사양 버전이 올바르지 않습니다.")
     if str(spec.get("templateId") or "") not in {"basic", "highlight", "pop"}:
         raise RenderError("원본 자막 렌더 템플릿이 올바르지 않습니다.")
@@ -483,7 +625,7 @@ def retime_editor_caption_spec(
 
     render_subtitles = (
         document.render_spec.subtitles
-        if document.render_spec and document.render_spec.version in {2, 3}
+        if document.render_spec and document.render_spec.version in {2, 3, 4}
         else None
     )
     offset_y = render_subtitles.offset_y if render_subtitles else 0.0
@@ -497,7 +639,7 @@ def retime_editor_caption_spec(
         raise RenderError("원본 자막 글자 크기가 올바르지 않습니다.")
     target_font_size = (
         float(render_subtitles.font_size)
-        if render_spec_version == 3
+        if render_spec_version in {3, 4}
         and render_subtitles is not None
         and render_subtitles.font_size is not None
         else source_font_size * scale
@@ -514,7 +656,10 @@ def retime_editor_caption_spec(
         else source_font_id
     )
     if render_subtitles and render_subtitles.font_id is not None:
-        spec["font"] = caption_font_spec(render_subtitles.font_id)
+        spec["font"] = caption_font_spec(
+            render_subtitles.font_id,
+            schema_version=caption_schema_version,
+        )
 
     cue_edits = {
         edit.cue_index: edit.text
@@ -528,6 +673,18 @@ def retime_editor_caption_spec(
     safe_area = {
         key: int(safe_area_value[key])
         for key in ("x", "y", "width", "height")
+    }
+    safe_width = float(safe_area["width"]) * scale
+    safe_height = float(safe_area["height"]) * scale
+    safe_center_x = float(safe_area["x"]) + float(safe_area["width"]) / 2
+    safe_center_y = float(safe_area["y"]) + float(safe_area["height"]) / 2
+    transformed_v4_safe_area = {
+        "x": canonical_px_v4(
+            540 + (safe_center_x - 540) * scale - safe_width / 2
+        ),
+        "y": canonical_px_v4(safe_center_y + offset_y - safe_height / 2),
+        "width": canonical_px_v4(safe_width),
+        "height": canonical_px_v4(safe_height),
     }
 
     clip_windows: list[tuple[int, int, int]] = []
@@ -550,22 +707,56 @@ def retime_editor_caption_spec(
         )
         for cue in source_cues
     )
-    reflowed_cues = supports_word_reflow or bool(cue_edits)
+    projectable_v4_noop = (
+        caption_schema_version == 4
+        and not cue_edits
+        and len(clip_windows) == 1
+        and clip_windows[0][2] == 0
+        and abs(offset_y) < 0.0005
+        and abs(scale - 1) < 0.0005
+        and abs(target_font_size - source_font_size) < 0.0005
+        and str(caption_font_id) == str(source_font_id)
+        and (
+            not render_subtitles
+            or not render_subtitles.accent_color
+            or render_subtitles.accent_color == source_style.get("accentColor")
+        )
+        and (
+            not render_subtitles
+            or not render_subtitles.color
+            or render_subtitles.color == source_style.get("textColor")
+        )
+    )
+    reflowed_cues = (supports_word_reflow or bool(cue_edits)) and not projectable_v4_noop
+    if caption_schema_version == 4 and not projectable_v4_noop and not reflowed_cues:
+        raise RenderError("v4 자막을 재배치할 단어 타이밍 정보가 없습니다.")
     try:
-        if reflowed_cues:
+        if projectable_v4_noop:
+            clip_start, clip_end, _output_start = clip_windows[0]
+            spec = project_caption_render_spec_v4(
+                spec,
+                clip_start_seconds=clip_start / fps,
+                clip_end_seconds=clip_end / fps,
+            )
+        elif reflowed_cues:
             spec["cues"] = reflow_caption_cues_for_clips(
                 source_cues,
                 template_id=str(spec["templateId"]),
-                safe_area=safe_area,
+                safe_area=(
+                    transformed_v4_safe_area
+                    if caption_schema_version == 4
+                    else safe_area
+                ),
                 clip_windows=clip_windows,
                 cue_edits=cue_edits,
                 fps=fps,
                 font_id=caption_font_id,
                 font_size=round(
                     target_font_size
-                    if render_spec_version == 3
+                    if render_spec_version in {3, 4}
                     else source_font_size
                 ),
+                schema_version=caption_schema_version,
             )
         else:
             # Schema-v3 probes and early stored specs predate per-word frame
@@ -612,11 +803,27 @@ def retime_editor_caption_spec(
             raise
         raise RenderError("편집한 자막을 다시 배치하지 못했습니다.") from exc
 
+    if projectable_v4_noop:
+        # The fixed-point v4 cue/event/word positions are authoritative. A
+        # true no-op may shift frame fields for a padded timeline, but must not
+        # run a second geometry normalization pass.
+        return spec
+
     def scaled_x(value: object) -> float:
-        return round(540 + (float(value) - 540) * scale, 3)
+        transformed = 540 + (float(value) - 540) * scale
+        return (
+            canonical_px_v4(transformed)
+            if caption_schema_version == 4
+            else round(transformed, 3)
+        )
 
     def shifted_y(value: object) -> float:
-        return round(float(value) + offset_y, 3)
+        transformed = float(value) + offset_y
+        return (
+            canonical_px_v4(transformed)
+            if caption_schema_version == 4
+            else round(transformed, 3)
+        )
 
     style = spec.get("style")
     if not isinstance(style, dict):
@@ -625,21 +832,31 @@ def retime_editor_caption_spec(
         style["accentColor"] = render_subtitles.accent_color
     if render_subtitles and render_subtitles.color:
         style["textColor"] = render_subtitles.color
-    style["fontSize"] = round(target_font_size, 3)
+    style["fontSize"] = (
+        canonical_px_v4(target_font_size)
+        if caption_schema_version == 4
+        else round(target_font_size, 3)
+    )
     font_geometry_scale = (
         1.0
-        if render_spec_version == 3 and reflowed_cues
+        if render_spec_version in {3, 4} and reflowed_cues
         else target_font_size / source_font_size
     )
-    style["outlineWidth"] = round(
-        float(style.get("outlineWidth") or 0)
-        * (target_font_size / source_font_size),
-        3,
+    outline_width = float(style.get("outlineWidth") or 0) * (
+        target_font_size / source_font_size
+    )
+    style["outlineWidth"] = (
+        canonical_px_v4(outline_width)
+        if caption_schema_version == 4
+        else round(outline_width, 3)
     )
 
     for rectangle_key in ("safeArea",):
         rectangle = spec.get(rectangle_key)
         if not isinstance(rectangle, dict):
+            continue
+        if caption_schema_version == 4:
+            rectangle.update(transformed_v4_safe_area)
             continue
         original_width = float(rectangle.get("width") or 0)
         original_height = float(rectangle.get("height") or 0)
@@ -673,9 +890,9 @@ def retime_editor_caption_spec(
         if not isinstance(words, list) or not isinstance(events, list):
             raise RenderError("원본 자막 이벤트가 올바르지 않습니다.")
 
-        if "centerX" in cue:
+        if "centerX" in cue and caption_schema_version != 4:
             cue["centerX"] = scaled_x(cue["centerX"])
-        if "centerY" in cue:
+        if "centerY" in cue and caption_schema_version != 4:
             cue["centerY"] = shifted_y(cue["centerY"])
         if "fontSize" in cue:
             cue["fontSize"] = round(
@@ -690,9 +907,9 @@ def retime_editor_caption_spec(
                     float(word_value["fontSize"]) * font_geometry_scale,
                     3,
                 )
-            if "centerX" in word_value:
+            if "centerX" in word_value and caption_schema_version != 4:
                 word_value["centerX"] = scaled_x(word_value["centerX"])
-            if "centerY" in word_value:
+            if "centerY" in word_value and caption_schema_version != 4:
                 word_value["centerY"] = shifted_y(word_value["centerY"])
 
         for event in events:
@@ -703,8 +920,9 @@ def retime_editor_caption_spec(
                 for position in positions:
                     if not isinstance(position, dict):
                         raise RenderError("원본 팝 자막 위치가 올바르지 않습니다.")
-                    position["centerX"] = scaled_x(position["centerX"])
-                    position["centerY"] = shifted_y(position["centerY"])
+                    if caption_schema_version != 4:
+                        position["centerX"] = scaled_x(position["centerX"])
+                        position["centerY"] = shifted_y(position["centerY"])
         retimed_cues.append(cue)
 
     if not retimed_cues:
@@ -954,6 +1172,30 @@ def create_editor_title_layer(
         canvas.save(output_path)
         return output_path
     config = _custom_template_config(document)
+    if document.render_spec is not None and document.render_spec.version == 4:
+        style = TEMPLATE_STYLES[document.template.id]
+        overlay_accent = (
+            title_accent_color or style.accent
+            if document.video.aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+            and document.template.id is not TemplateId.PAPER
+            else style.primary
+        )
+        rendered = draw_editor_title_spec_v4(
+            title_spec=document.render_spec.title,
+            source_title=document.title.text,
+            title_text_styles=document.title.text_styles,
+            primary_color=(
+                config.title.primary_color if config is not None else overlay_accent
+            ),
+            accent_color=(
+                config.title.accent_color
+                if config is not None
+                else title_accent_color or style.accent
+            ),
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        rendered.save(output_path, format="PNG", compress_level=1)
+        return output_path
     caption_layout = _editor_caption_layout(
         caption_render_spec,
         custom_template_config=config,
@@ -1727,6 +1969,21 @@ class EditorDocumentRenderer:
         caption_overlay_only: bool = False,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
+        if document.render_spec is not None and document.render_spec.version == 4:
+            verify_editor_font_face_v4(document.render_spec.title.font)
+            verify_editor_font_face_v4(document.render_spec.channel.font)
+            for text_overlay in document.render_spec.text_overlays:
+                verify_editor_font_face_v4(text_overlay.font)
+            caption_spec_version = (
+                int(caption_render_spec.get("schemaVersion") or 0)
+                if isinstance(caption_render_spec, dict)
+                else None
+            )
+            if document.render_spec.subtitles is None:
+                if caption_render_spec is not None:
+                    raise RenderError("자막이 없는 v4 문서에 자막 사양이 포함되었습니다.")
+            elif caption_render_spec is not None and caption_spec_version != 4:
+                raise RenderError("v4 편집 문서에는 v4 자막 사양이 필요합니다.")
         assets_dir = work_dir / "editor-assets"
         assets_dir.mkdir(parents=True, exist_ok=True)
         probe = probe_media(
@@ -1897,6 +2154,11 @@ class EditorDocumentRenderer:
                     work_dir / "caption-fonts",
                     rendered_caption_spec,
                 )
+                verify_caption_font_selection_v4(
+                    font_directory=caption_fonts_dir,
+                    spec=rendered_caption_spec,
+                    timeout=min(30, self.settings.ffmpeg_timeout_seconds),
+                )
         elif subtitle_render_mode == "editor-highlight":
             source_highlight_spec = editor_highlight_caption_spec(document)
             rendered_caption_spec = (
@@ -1912,6 +2174,11 @@ class EditorDocumentRenderer:
                 caption_fonts_dir = prepare_caption_fonts(
                     work_dir / "caption-fonts",
                     rendered_caption_spec,
+                )
+                verify_caption_font_selection_v4(
+                    font_directory=caption_fonts_dir,
+                    spec=rendered_caption_spec,
+                    timeout=min(30, self.settings.ffmpeg_timeout_seconds),
                 )
         elif subtitle_render_mode == "legacy-v2":
             subtitle_style = editor_subtitle_style(document)

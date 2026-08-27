@@ -1,12 +1,16 @@
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_EDITOR_FONT_ID,
   editorFontFamily,
   editorFontLabel,
   editorFontOptions,
+  editorCaptionCssToAssScaleById,
+  editorFontSha256ById,
   isStableEditorFontId,
   resolveEditorFontFace,
+  resolveEditorFontFaceV4,
   stableEditorFontIds,
   stableEditorFontOptions,
 } from "@/lib/editor-fonts";
@@ -34,15 +38,15 @@ describe("editor fonts", () => {
     expect(new Set(editorFontOptions.map((font) => font.id)).size).toBe(20);
   });
 
-  it("keeps candidate-only fonts out of the promoted stable renderer", () => {
+  it("keeps the promoted exact-face fonts in the stable renderer", () => {
     expect(stableEditorFontOptions.map((font) => font.id))
       .toEqual(stableEditorFontIds);
-    expect(stableEditorFontIds).not.toContain("paperlogy");
+    expect(stableEditorFontIds).toContain("paperlogy");
     expect(isStableEditorFontId("pretendard")).toBe(true);
     expect(isStableEditorFontId("spoqa-han-sans-neo")).toBe(true);
+    expect(isStableEditorFontId("paperlogy")).toBe(true);
     expect(isStableEditorFontId("jua")).toBe(true);
     expect(isStableEditorFontId("ridi-batang")).toBe(true);
-    expect(isStableEditorFontId("paperlogy")).toBe(false);
     expect(isStableEditorFontId(null)).toBe(false);
     expect(applyEditRoute).not.toContain("EDITOR_FONT_CANARY_ONLY");
     expect(applyEditRoute).not.toContain("관리자 테스트 편집기");
@@ -118,6 +122,45 @@ describe("editor fonts", () => {
     expect(resolveEditorFontFace("noto-sans-kr", "text")).toMatchObject({
       resolvedWeight: 800,
       variableWeight: 800,
+    });
+  });
+
+  it("pins every v4 face to an exact file hash and measured CSS-to-ASS scale", () => {
+    expect(Object.keys(editorFontSha256ById)).toEqual(
+      editorFontOptions.map((font) => font.id),
+    );
+    expect(Object.keys(editorCaptionCssToAssScaleById)).toEqual(
+      editorFontOptions.map((font) => font.id),
+    );
+    for (const option of editorFontOptions) {
+      expect(editorFontSha256ById[option.id]).toMatch(/^[0-9a-f]{64}$/);
+      expect(createHash("sha256").update(readFileSync(
+        new URL(`../public/fonts/editor/${option.fileName}`, import.meta.url),
+      )).digest("hex")).toBe(editorFontSha256ById[option.id]);
+      expect(editorCaptionCssToAssScaleById[option.id]).toBeGreaterThanOrEqual(0.5);
+      expect(editorCaptionCssToAssScaleById[option.id]).toBeLessThanOrEqual(1.5);
+      expect(
+        editorCaptionCssToAssScaleById[option.id] * 1_000_000,
+      ).toBe(Math.round(editorCaptionCssToAssScaleById[option.id] * 1_000_000));
+    }
+    expect(editorFontSha256ById.paperlogy).toBe(
+      "fe71049fe3d3a7dd3f2e0c12efd850acd1293658181af322348edde9b016e6ba",
+    );
+    expect(editorCaptionCssToAssScaleById.paperlogy).toBe(0.849057);
+  });
+
+  it("resolves a v4 face without a fallback family", () => {
+    expect(resolveEditorFontFaceV4("paperlogy", "title")).toEqual({
+      fontId: "paperlogy",
+      fileId: "Paperlogy-7Bold.ttf",
+      family: '"Editor V4 Paperlogy"',
+      requestedWeight: 700,
+      resolvedWeight: 700,
+      variableWeight: null,
+      sha256: editorFontSha256ById.paperlogy,
+      metrics: {
+        revision: "editor-font-metrics-v1",
+      },
     });
   });
 });

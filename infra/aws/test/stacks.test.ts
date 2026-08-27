@@ -94,6 +94,13 @@ function testProjectTargetRegistry(environment: string) {
   };
 }
 
+const exactRegistrarPassRoleArns = JSON.stringify([
+  "arn:aws:iam::123456789012:role/shorts-mvp-editor-test-execution",
+  "arn:aws:iam::123456789012:role/shorts-mvp-editor-test-task",
+  "arn:aws:iam::123456789012:role/shorts-production-worker-execution",
+  "arn:aws:iam::123456789012:role/shorts-production-worker-task",
+]);
+
 function stacks(
   environment = "test",
   contextOverrides: Record<string, string> = {},
@@ -103,6 +110,8 @@ function stacks(
     vercelProjectName: "shorts",
     workerImageTag: "test-worker-image",
     legacyRerenderImageTag: "legacy-worker-image",
+    githubRepositoryId: "1234567",
+    githubRepositoryOwnerId: "7654321",
     [`editorStableRerenderJobDefinitionArn:${environment}`]:
       `arn:aws:batch:ap-northeast-2:123456789012:job-definition/shorts-mvp-rerender-fargate-${environment}:7`,
     projectTargetRegistryJson: JSON.stringify(
@@ -340,21 +349,112 @@ describe("shorts MVP infrastructure", () => {
     );
   });
 
-  it("trusts editor release builds from main and the exact subtitle candidate only", () => {
+  it("disables editor release OIDC trust unless the exact Stage B ref is supplied", () => {
     const { editorCanary } = stacks("production");
     const roles = editorCanary.findResources("AWS::IAM::Role");
     const editorReleaseRole = Object.entries(roles).find(([logicalId]) => (
       logicalId.startsWith("EditorReleaseBuildRole")
     ))?.[1];
-    const subject = editorReleaseRole?.Properties?.AssumeRolePolicyDocument
-      ?.Statement?.[0]?.Condition?.StringLike
+    const condition = editorReleaseRole?.Properties?.AssumeRolePolicyDocument
+      ?.Statement?.[0]?.Condition?.StringEquals;
+    const subject = condition
       ?.["token.actions.githubusercontent.com:sub"];
 
-    expect(subject).toEqual([
-      "repo:dongk176/shorts:ref:refs/heads/main",
-      "repo:dongk176/shorts:ref:refs/heads/codex/unified-template-subtitles-admin-canary-20260824",
-    ]);
-    expect(JSON.stringify(subject)).not.toContain("codex/*");
+    expect(condition?.["token.actions.githubusercontent.com:aud"])
+      .toBe("sts.amazonaws.com");
+    expect(subject).toBe(
+      "repo:dongk176/shorts:ref:refs/tags/__disabled_editor_release__",
+    );
+  });
+
+  it("splits the exact protected Stage B tag between build and approval roles", () => {
+    const { editorCanary } = stacks("production", {
+      githubEditorReleaseRef:
+        "refs/tags/editor-v4-render-parity-20260826",
+      editorReleaseRegistrarPassRoleArns: exactRegistrarPassRoleArns,
+    });
+    const roles = editorCanary.findResources("AWS::IAM::Role");
+    const buildRole = Object.entries(roles).find(([logicalId]) => (
+      logicalId.startsWith("EditorReleaseBuildRole")
+    ))?.[1];
+    const verifierRole = Object.entries(roles).find(([logicalId]) => (
+      logicalId.startsWith("EditorReleaseVerifierRole")
+    ))?.[1];
+    const buildCondition = buildRole?.Properties?.AssumeRolePolicyDocument
+      ?.Statement?.[0]?.Condition;
+    const verifierCondition = verifierRole?.Properties?.AssumeRolePolicyDocument
+      ?.Statement?.[0]?.Condition;
+
+    expect(buildCondition?.StringLike).toBeUndefined();
+    expect(buildCondition?.StringEquals?.[
+      "token.actions.githubusercontent.com:sub"
+    ]).toBe(
+      "repo:dongk176/shorts:ref:refs/tags/editor-v4-render-parity-20260826",
+    );
+    expect(verifierCondition?.StringLike).toBeUndefined();
+    expect(verifierCondition?.StringEquals?.[
+      "token.actions.githubusercontent.com:sub"
+    ]).toBe("repo:dongk176/shorts:environment:editor-v4-release-approval");
+    expect(verifierCondition?.StringEquals?.[
+      "token.actions.githubusercontent.com:workflow"
+    ]).toBe("Verify editor release candidate");
+  });
+
+  it("lets only the verifier read isolated evidence and invoke the registrar", () => {
+    const { editorCanary } = stacks("production", {
+      githubEditorReleaseRef:
+        "refs/tags/editor-v4-render-parity-20260826",
+      editorReleaseRegistrarPassRoleArns: exactRegistrarPassRoleArns,
+    });
+    const template = editorCanary.toJSON();
+    const policies = template.Resources as Record<string, {
+      Properties?: { PolicyDocument?: { Statement?: unknown[] } };
+    }>;
+    const buildPolicy = JSON.stringify(Object.entries(policies)
+      .filter(([logicalId]) => logicalId.startsWith("EditorReleaseBuildRole")));
+    const verifierPolicy = JSON.stringify(Object.entries(policies)
+      .filter(([logicalId]) => logicalId.startsWith("EditorReleaseVerifierRole")));
+    const registrarPolicy = JSON.stringify(Object.entries(policies)
+      .filter(([logicalId]) => logicalId.startsWith("EditorReleaseRegistrarRole")));
+
+    expect(verifierPolicy).toContain('"s3:GetObject"');
+    expect(verifierPolicy).toContain('"s3:GetObjectVersion"');
+    expect(verifierPolicy).toContain("editor-release-probes/*");
+    expect(verifierPolicy).toContain('"lambda:InvokeFunction"');
+    expect(verifierPolicy).not.toContain('"batch:SubmitJob"');
+    expect(verifierPolicy).not.toContain('"batch:RegisterJobDefinition"');
+    expect(verifierPolicy).not.toContain('"s3:PutObject"');
+    expect(verifierPolicy).not.toContain('"iam:PassRole"');
+    expect(registrarPolicy).toContain('"batch:SubmitJob"');
+    expect(registrarPolicy).toContain('"batch:RegisterJobDefinition"');
+    expect(registrarPolicy).toContain('"iam:PassRole"');
+    expect(registrarPolicy).toContain("shorts-production-worker-task");
+    expect(registrarPolicy).toContain("shorts-mvp-editor-test-task");
+    expect(buildPolicy).not.toContain('"s3:GetObject"');
+    expect(buildPolicy).not.toContain('"s3:PutObject"');
+    expect(buildPolicy).not.toContain('"batch:SubmitJob"');
+    expect(buildPolicy).not.toContain('"lambda:InvokeFunction"');
+  });
+
+  it("rejects every unapproved editor release OIDC ref", () => {
+    expect(() => stacks("production", {
+      githubEditorReleaseRef: "refs/heads/codex/*",
+    })).toThrow(/exact Stage B ref or disabled sentinel/);
+  });
+
+  it("requires unique exact PassRole ARNs when the protected tag is enabled", () => {
+    expect(() => stacks("production", {
+      githubEditorReleaseRef:
+        "refs/tags/editor-v4-render-parity-20260826",
+    })).toThrow(/editorReleaseRegistrarPassRoleArns context is required/);
+    expect(() => stacks("production", {
+      githubEditorReleaseRef:
+        "refs/tags/editor-v4-render-parity-20260826",
+      editorReleaseRegistrarPassRoleArns: JSON.stringify([
+        "arn:aws:iam::123456789012:role/shorts-*",
+        "arn:aws:iam::123456789012:role/shorts-task",
+      ]),
+    })).toThrow(/unique exact role ARNs/);
   });
 
   it("enables verified paid Gemini processing only in production", () => {

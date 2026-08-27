@@ -24,6 +24,7 @@ import {
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { apiError, HttpError } from "@/lib/http";
 import { getInitialJobBackend } from "@/lib/job-backend";
+import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
 import {
   assertJobCreationAllowed,
   assertRestrictedContentCooldown,
@@ -344,6 +345,8 @@ export async function POST(request: Request) {
       if (executionBackend === "aws_batch" && !dispatchTarget) {
         dispatchTarget = legacyProjectDispatchTarget();
       }
+      let initialRenderSpecVersion: 4 | null = null;
+      let initialCaptionRenderSpecVersion: 4 | null = null;
       const resolvedTemplateId = resolvedExecution.resolvedTemplateId;
       const resolvedVideoAspectRatio =
         resolvedExecution.resolvedVideoAspectRatio;
@@ -405,6 +408,45 @@ export async function POST(request: Request) {
         sourceDurationSeconds: usageSeconds,
         usage: beforeUsage,
       });
+      // Keep the authoritative v4 admission as the last read before INSERT.
+      // The DB resolver takes shared locks on the runtime/state rows until this
+      // transaction commits, so an emergency stop or infrastructure lease is
+      // strictly ordered before or after this job instead of racing the INSERT.
+      if (
+        session.userId
+        && dispatchTarget?.v4Capability
+        && isEditorRenderSpecV4Enabled()
+      ) {
+        const v4Releases = await tx`
+          select release_id, release_channel, render_spec_version,
+            caption_render_spec_version, font_manifest_sha256,
+            release_worker_image_digest,
+            editor_production_job_definition_arn
+          from shorts_mvp.resolve_initial_render_v4_release(
+            ${session.userId},
+            ${dispatchTarget.targetKey},
+            ${dispatchTarget.releaseId},
+            ${dispatchTarget.jobDefinitionArn},
+            ${dispatchTarget.jobQueueArn},
+            ${dispatchTarget.workerImageDigest},
+            ${dispatchTarget.workerSourceGitSha}
+          )
+        `;
+        const verifiedRelease = v4Releases.length === 1
+          ? v4Releases[0]
+          : null;
+        if (
+          verifiedRelease?.renderSpecVersion === 4
+          && verifiedRelease.captionRenderSpecVersion === 4
+          && verifiedRelease.fontManifestSha256
+            === dispatchTarget.v4Capability.fontManifestSha256
+          && verifiedRelease.releaseWorkerImageDigest
+            === dispatchTarget.workerImageDigest
+        ) {
+          initialRenderSpecVersion = 4;
+          initialCaptionRenderSpecVersion = 4;
+        }
+      }
       const insertedJobs = await tx`
         insert into shorts_mvp.video_jobs (
           id, mvp_session_id, user_id, request_id, youtube_url, youtube_video_id, video_title,
@@ -415,7 +457,8 @@ export async function POST(request: Request) {
           status, stage, progress, deadline_at, planned_short_count,retention_days_snapshot,
           pipeline_version, source_range_selection_enabled, transcription_policy,
           batch_target_key, batch_target_release_id,
-          batch_job_definition, batch_job_queue
+          batch_job_definition, batch_job_queue,
+          initial_render_spec_version, initial_caption_render_spec_version
           ,selected_source_duration_seconds,billable_source_seconds
         ) values (
           ${jobId}, ${session.id}, ${session.userId}, ${input.requestId}, ${metadata.normalizedUrl}, ${metadata.videoId}, ${metadata.title},
@@ -430,6 +473,7 @@ export async function POST(request: Request) {
           ${dispatchTarget?.targetKey || null}, ${dispatchTarget?.releaseId || null},
           ${dispatchTarget?.jobDefinitionArn || null},
           ${dispatchTarget?.jobQueueArn || null},
+          ${initialRenderSpecVersion}, ${initialCaptionRenderSpecVersion},
           ${selectedDurationSeconds},${usageSeconds}
         )
         returning project_number

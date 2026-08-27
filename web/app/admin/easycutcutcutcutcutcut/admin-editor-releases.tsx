@@ -3,6 +3,9 @@
 import { useState, useTransition } from "react";
 import {
   addEditorReleaseTester,
+  advanceEditorRenderV4Rollout,
+  emergencyStopEditorRenderV4,
+  enableEditorRenderV4Internal,
   pauseEditorReleaseCanary,
   publishSubtitleSuite,
   promoteEditorRelease,
@@ -13,6 +16,11 @@ import {
   setUnifiedTemplateSubtitlePublic,
   startEditorReleaseCanary,
 } from "./editor-release-actions";
+import {
+  canEnableEditorRenderV4Internal,
+  editorRenderV4EmergencyStoppedAction,
+  nextEditorRenderV4RolloutPercent,
+} from "@/lib/editor-render-v4-rollout-control";
 
 export type AdminEditorRelease = {
   id: string;
@@ -20,6 +28,9 @@ export type AdminEditorRelease = {
   uiVersion: number;
   documentVersion: number;
   subtitleEditingCapable: boolean;
+  renderSpecVersion: number | null;
+  captionRenderSpecVersion: number | null;
+  fontManifestSha256: string | null;
   workerImageDigest: string;
   productionJobDefinitionArn: string;
   status: string;
@@ -57,6 +68,12 @@ type Props = {
   globalEnvironmentEnabled: boolean;
   publicEnabled: boolean;
   canaryEnabled: boolean;
+  renderV4EnvironmentEnabled: boolean;
+  renderV4InternalEnabled: boolean;
+  renderV4RolloutPercent: number;
+  renderV4KillSwitch: boolean;
+  renderV4CandidateLastTransition: string | null;
+  renderV4StableLastTransition: string | null;
   subtitleSuitePublicEnabled: boolean;
   unifiedTemplateSubtitleCanaryEnabled: boolean;
   unifiedTemplateSubtitlePublicEnabled: boolean;
@@ -84,6 +101,7 @@ const checkLabels: Record<string, string> = {
   "editor-v2": "통합 편집 문서",
   ffprobe: "영상 규격",
   "frame-parity": "프레임 일치",
+  "browser-worker-visual-parity": "브라우저·워커 시각 일치",
   "save-render-download": "저장·렌더·다운로드",
   "gemini-comments": "AI 댓글 재생성",
   "reopen-reedit": "재진입·재편집",
@@ -103,6 +121,10 @@ const isolatedCheckNames = [
   "ffprobe",
   "frame-parity",
 ] as const;
+const v4IsolatedCheckNames = [
+  ...isolatedCheckNames,
+  "browser-worker-visual-parity",
+] as const;
 
 function short(value: string | null) {
   return value ? value.slice(0, 12) : "없음";
@@ -121,11 +143,26 @@ function statusLabel(status: string) {
   }[status] || status;
 }
 
+function isExactRenderV4Release(release: AdminEditorRelease | undefined) {
+  return Boolean(
+    release
+    && release.renderSpecVersion === 4
+    && release.captionRenderSpecVersion === 4
+    && /^[0-9a-f]{64}$/.test(release.fontManifestSha256 || ""),
+  );
+}
+
 export function AdminEditorReleases({
   masterEnvironmentEnabled,
   globalEnvironmentEnabled,
   publicEnabled,
   canaryEnabled,
+  renderV4EnvironmentEnabled,
+  renderV4InternalEnabled,
+  renderV4RolloutPercent,
+  renderV4KillSwitch,
+  renderV4CandidateLastTransition,
+  renderV4StableLastTransition,
   subtitleSuitePublicEnabled,
   unifiedTemplateSubtitleCanaryEnabled,
   unifiedTemplateSubtitlePublicEnabled,
@@ -146,26 +183,71 @@ export function AdminEditorReleases({
   const candidateStats = renderStats.find(
     (item) => item.releaseId === candidateReleaseId,
   );
+  const stableStats = renderStats.find((item) => item.releaseId === stableReleaseId);
   const checkPassed = (
+    releaseId: string | null,
     environment: AdminEditorReleaseCheck["environment"],
     checkName: string,
   ) => checks.some((check) => (
-    check.releaseId === candidateReleaseId
+    check.releaseId === releaseId
     && check.environment === environment
     && check.checkName === checkName
     && check.status === "passed"
   ));
+  const releaseCanaryReady = (
+    release: AdminEditorRelease | undefined,
+    stats: AdminEditorReleaseRenderStats | undefined,
+  ) => Boolean(
+    release
+    && (release.renderSpecVersion === 4
+      ? v4IsolatedCheckNames
+      : isolatedCheckNames
+    ).every((name) => checkPassed(release.id, "isolated", name))
+    && productionCanaryCheckNames.every(
+      (name) => checkPassed(release.id, "production_canary", name),
+    )
+    && Number(stats?.active || 0) === 0
+    && Number(stats?.failed || 0) === 0
+    && Number(stats?.succeeded || 0) > 0,
+  );
   const promotionReady = Boolean(
     candidate
     && candidate.status === "canary_active"
-    && isolatedCheckNames.every((name) => checkPassed("isolated", name))
-    && productionCanaryCheckNames.every(
-      (name) => checkPassed("production_canary", name),
-    )
-    && Number(candidateStats?.active || 0) === 0
-    && Number(candidateStats?.failed || 0) === 0
-    && Number(candidateStats?.succeeded || 0) > 0,
+    && releaseCanaryReady(candidate, candidateStats),
   );
+  const candidateIsRenderV4 = isExactRenderV4Release(candidate);
+  const stableIsRenderV4 = isExactRenderV4Release(stable);
+  const v4InternalChecksReady = Boolean(
+    candidateIsRenderV4
+    && candidate
+    && v4IsolatedCheckNames.every(
+      (name) => checkPassed(candidate.id, "isolated", name),
+    ),
+  );
+  const v4PublicChecksReady = Boolean(
+    stableIsRenderV4 && releaseCanaryReady(stable, stableStats),
+  );
+  const v4CandidateEmergencyStopped = renderV4CandidateLastTransition
+    === editorRenderV4EmergencyStoppedAction;
+  const v4StableEmergencyStopped = renderV4StableLastTransition
+    === editorRenderV4EmergencyStoppedAction;
+  const v4EmergencyStopped = v4CandidateEmergencyStopped
+    || v4StableEmergencyStopped;
+  const nextV4RolloutPercent = v4StableEmergencyStopped
+    ? null
+    : nextEditorRenderV4RolloutPercent(
+      renderV4RolloutPercent,
+      renderV4KillSwitch,
+    );
+  const v4InternalCanStart = canEnableEditorRenderV4Internal(
+    renderV4RolloutPercent,
+    renderV4KillSwitch,
+    renderV4CandidateLastTransition,
+    candidate?.id || null,
+    candidate?.id || "",
+  );
+  const productionCanaryRecordAllowed = !candidateIsRenderV4
+    || (renderV4InternalEnabled && !renderV4KillSwitch);
 
   function execute(action: () => Promise<unknown>, successMessage: string) {
     startTransition(async () => {
@@ -208,7 +290,11 @@ export function AdminEditorReleases({
       <div className="mt-4 flex flex-wrap gap-2">
         {candidate && !canaryEnabled && <button
           type="button"
-          disabled={pending || !masterEnvironmentEnabled}
+          disabled={
+            pending
+            || !masterEnvironmentEnabled
+            || (candidateIsRenderV4 && !renderV4EnvironmentEnabled)
+          }
           onClick={() => setConfirmation({
             title: "운영 내부 카나리를 시작할까요?",
             description: "등록된 내부 테스트 계정만 후보 UI와 별도 카나리 워커를 사용합니다.",
@@ -234,16 +320,21 @@ export function AdminEditorReleases({
             pending
             || !masterEnvironmentEnabled
             || !globalEnvironmentEnabled
+            || (candidateIsRenderV4 && !renderV4EnvironmentEnabled)
             || !promotionReady
           }
           onClick={() => setConfirmation({
-            title: "모든 사용자에게 공개할까요?",
-            description: "필수 검사와 카나리 작업을 다시 확인한 뒤 100% 사용자에게 즉시 공개합니다. 이미지 재빌드는 발생하지 않습니다.",
-            confirmLabel: "전체 공개",
+            title: candidateIsRenderV4
+              ? "v4 릴리스를 0% 정지 상태로 승격할까요?"
+              : "모든 사용자에게 공개할까요?",
+            description: candidateIsRenderV4
+              ? "릴리스는 stable로 승격하지만 v4 렌더는 내부 OFF·공개 0%·긴급 중단 ON으로 초기화합니다. 이후 5% 공개를 별도로 확인해야 하며 이미지 재빌드는 발생하지 않습니다."
+              : "필수 검사와 카나리 작업을 다시 확인한 뒤 100% 사용자에게 즉시 공개합니다. 이미지 재빌드는 발생하지 않습니다.",
+            confirmLabel: candidateIsRenderV4 ? "v4 승격 후 정지" : "전체 공개",
             action: () => promoteEditorRelease(candidate.id),
           })}
           className="rounded-xl bg-emerald-300 px-4 py-2.5 text-sm font-black text-emerald-950 disabled:opacity-40"
-        >전체 승격</button>}
+        >{candidateIsRenderV4 ? "v4 승격(0% 정지)" : "전체 승격"}</button>}
         {(publicEnabled || canaryEnabled) && <button
           type="button"
           disabled={pending}
@@ -340,11 +431,141 @@ export function AdminEditorReleases({
       {message && <p className="mt-4 rounded-xl bg-black/30 px-3 py-2 text-sm text-white">{message}</p>}
     </div>
 
+    {(candidateIsRenderV4 || stableIsRenderV4) && <div className="rounded-2xl border border-cyan-300/20 bg-cyan-300/[.04] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h3 className="text-base font-black text-white">렌더 v4 단계 공개</h3>
+          <p className="mt-2 text-sm leading-6 text-white/60">
+            내부 검증과 공개 비율은 별도입니다. 공개는 5% → 25% → 100% 순서로만 진행됩니다.
+          </p>
+        </div>
+        <span className={`rounded-full px-3 py-1.5 text-xs font-black ${
+          renderV4KillSwitch
+            ? "bg-red-400/15 text-red-100"
+            : renderV4InternalEnabled
+              ? "bg-cyan-300/15 text-cyan-100"
+              : "bg-emerald-300/15 text-emerald-100"
+        }`}>
+          {renderV4KillSwitch
+            ? "긴급 중단"
+            : renderV4InternalEnabled
+              ? "내부 v4 활성"
+              : `공개 ${renderV4RolloutPercent}%`}
+        </span>
+      </div>
+      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+        <div className="rounded-xl bg-black/25 p-3">
+          <dt className="text-white/50">내부 테스트 계정</dt>
+          <dd className="mt-1 font-bold text-white">
+            {renderV4InternalEnabled && !renderV4KillSwitch ? "v4 사용" : "v4 중단"}
+          </dd>
+        </div>
+        <div className="rounded-xl bg-black/25 p-3">
+          <dt className="text-white/50">저장된 공개 비율</dt>
+          <dd className="mt-1 font-bold text-white">{renderV4RolloutPercent}%</dd>
+        </div>
+        <div className="rounded-xl bg-black/25 p-3">
+          <dt className="text-white/50">긴급 중단 스위치</dt>
+          <dd className={`mt-1 font-bold ${
+            renderV4KillSwitch ? "text-red-200" : "text-emerald-200"
+          }`}>{renderV4KillSwitch ? "ON · 적용 차단" : "OFF · 적용 가능"}</dd>
+        </div>
+      </dl>
+
+      {!renderV4EnvironmentEnabled && <div className="mt-4 rounded-xl border border-red-300/25 bg-red-400/10 p-3 text-sm leading-6 text-red-100">
+        현재 웹 배포의 v4 렌더 명세 스위치가 꺼져 있어 내부 활성화와 단계 공개가 서버에서도 차단됩니다.
+      </div>}
+
+      {renderV4KillSwitch && v4EmergencyStopped && <div className="mt-4 rounded-xl border border-red-300/25 bg-red-400/10 p-3 text-sm leading-6 text-red-100">
+        이 릴리스는 긴급 중단되어 다시 활성화할 수 없습니다. DB를 직접 수정하지 말고,
+        새 소스·이미지로 검증된 릴리스를 등록해 내부 검증부터 다시 진행해 주세요.
+      </div>}
+      {stableIsRenderV4
+        && renderV4RolloutPercent === 0
+        && renderV4KillSwitch
+        && !v4EmergencyStopped
+        && <div className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm leading-6 text-amber-100">
+        v4 승격 직후의 안전 정지 상태입니다. 일반 사용자에게 v4 렌더가 적용되지 않으며, 5% 공개를 별도로 확인해야 합니다.
+      </div>}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {candidateIsRenderV4
+          && candidate
+          && canaryEnabled
+          && (!renderV4InternalEnabled || renderV4KillSwitch)
+          && <button
+            type="button"
+            disabled={
+              pending
+              || !masterEnvironmentEnabled
+              || !renderV4EnvironmentEnabled
+              || !v4InternalChecksReady
+              || !v4InternalCanStart
+            }
+            onClick={() => setConfirmation({
+              title: "내부 테스트 계정에 v4 렌더를 켤까요?",
+              description: "브라우저·워커 시각 일치를 포함한 v4 격리 검사를 서버에서 다시 확인합니다. 공개 비율은 변경하지 않습니다.",
+              confirmLabel: "내부 v4 켜기",
+              action: () => enableEditorRenderV4Internal(candidate.id),
+            })}
+            className="rounded-xl bg-cyan-300 px-4 py-2.5 text-sm font-black text-cyan-950 disabled:opacity-40"
+          >내부 v4 명시적 활성화</button>}
+
+        {stableIsRenderV4
+          && stable
+          && publicEnabled
+          && nextV4RolloutPercent !== null
+          && <button
+            type="button"
+            disabled={
+              pending
+              || !masterEnvironmentEnabled
+              || !globalEnvironmentEnabled
+              || !renderV4EnvironmentEnabled
+              || !v4PublicChecksReady
+            }
+            onClick={() => setConfirmation({
+              title: `v4를 ${nextV4RolloutPercent}%에 공개할까요?`,
+              description: `현재 ${renderV4RolloutPercent}%에서 다음 승인 단계인 ${nextV4RolloutPercent}%로만 이동합니다. 모든 v4 격리·운영 카나리 검사와 성공 렌더를 서버에서 다시 확인합니다.`,
+              confirmLabel: `${nextV4RolloutPercent}% 공개`,
+              action: () => advanceEditorRenderV4Rollout(
+                stable.id,
+                nextV4RolloutPercent,
+              ),
+            })}
+            className="rounded-xl bg-emerald-300 px-4 py-2.5 text-sm font-black text-emerald-950 disabled:opacity-40"
+          >다음 단계: {nextV4RolloutPercent}%</button>}
+
+        {(!renderV4KillSwitch || renderV4InternalEnabled) && <button
+          type="button"
+          disabled={pending}
+          onClick={() => setConfirmation({
+            title: "v4 렌더를 즉시 긴급 중단할까요?",
+            description: "내부 v4를 끄고 신규 v4 적용을 즉시 차단합니다. 현재 공개 비율은 감사와 복구를 위해 보존되지만 자동으로 다시 켜지지 않습니다.",
+            confirmLabel: "v4 즉시 중단",
+            danger: true,
+            action: emergencyStopEditorRenderV4,
+          })}
+          className="rounded-xl border border-red-300/30 bg-red-400/10 px-4 py-2.5 text-sm font-bold text-red-100 disabled:opacity-40"
+        >v4 긴급 중단</button>}
+      </div>
+
+      {candidateIsRenderV4 && canaryEnabled && !v4InternalChecksReady && <p className="mt-3 text-xs leading-5 text-amber-100/80">
+        브라우저·워커 시각 일치를 포함한 모든 v4 격리 검사가 통과해야 내부 v4를 켤 수 있습니다.
+      </p>}
+      {stableIsRenderV4 && publicEnabled && !v4PublicChecksReady && <p className="mt-3 text-xs leading-5 text-amber-100/80">
+        모든 v4 격리·운영 카나리 검사, 성공 렌더 1건 이상, 진행 중·실패 0건을 만족해야 공개할 수 있습니다.
+      </p>}
+    </div>}
+
     {canaryEnabled && candidate && <div className="rounded-2xl border border-white/10 bg-white/[.03] p-5">
       <h3 className="text-base font-black text-white">운영 카나리 확인</h3>
       <p className="mt-2 text-sm leading-6 text-white/55">
         내부 계정으로 실제 시나리오를 확인한 관리자가 결과를 기록합니다. 하나라도 실패하면 전체 승격은 차단됩니다.
       </p>
+      {!productionCanaryRecordAllowed && <p className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-xs leading-5 text-amber-100">
+        v4 후보는 내부 v4를 명시적으로 켠 뒤에 수행한 결과만 운영 카나리 검사로 기록할 수 있습니다.
+      </p>}
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
         {productionCanaryCheckNames.map((checkName) => {
           const check = checks.find((item) => (
@@ -366,7 +587,7 @@ export function AdminEditorReleases({
             <div className="flex gap-1.5">
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending || !productionCanaryRecordAllowed}
                 onClick={() => execute(
                   () => recordEditorReleaseCanaryCheck(
                     candidate.id,
@@ -379,7 +600,7 @@ export function AdminEditorReleases({
               >통과</button>
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending || !productionCanaryRecordAllowed}
                 onClick={() => execute(
                   () => recordEditorReleaseCanaryCheck(
                     candidate.id,

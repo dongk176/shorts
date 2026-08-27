@@ -23,6 +23,22 @@ describe("render-matched title preview", () => {
     ]);
   });
 
+  it.each(["\r", "\u2028", "\u2029"])(
+    "treats the %s Unicode separator as the same explicit line break",
+    (separator) => {
+      expect(wrapPreviewTitle(`첫 번째 줄${separator}두 번째 줄`)).toEqual([
+        "첫 번째 줄",
+        "두 번째 줄",
+      ]);
+    },
+  );
+
+  it("collapses Python-only whitespace with the same browser contract", () => {
+    expect(wrapPreviewTitle("첫째\u0085둘째\u001e셋째")).toEqual([
+      "첫째 둘째 셋째",
+    ]);
+  });
+
   it("matches the renderer's two-line 20-character wrapping limit", () => {
     const lines = wrapPreviewTitle("사람들이 가장 많이 놓치는 결정적인 핵심 장면입니다");
     expect(lines).toHaveLength(2);

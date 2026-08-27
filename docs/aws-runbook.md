@@ -98,6 +98,190 @@ Worker 변경 릴리스에서만 `Build and publish worker` workflow와 격리
 Stage A는 기존 검증 digest를 재사용하며 Worker 이미지를 새로 빌드하지
 않습니다.
 
+## 운영 Stage B: render v4 release control
+
+Stage B에서는 Stage A 명령, 전체 CDK deploy, DB migration, Vercel 환경변수
+동기화를 한 명령에 섞지 않습니다. `deploy-stage-b-release-control.mjs`는
+현재 `easycut.co.kr`에 실제 promoted된 Git SHA, 깨끗한 exact HEAD, AWS
+계정·리전, 두 stack의 live template을 다시 읽고 하나라도 다르면
+ChangeSet 생성 또는 실행 전에 중단합니다.
+
+공통 환경값을 먼저 고정합니다.
+
+```bash
+export AWS_REGION=ap-northeast-2
+export VERCEL_TEAM_SLUG=artiroom
+export VERCEL_PROJECT_NAME=shorts
+export GITHUB_OIDC_PROVIDER_ARN="$PRODUCTION_GITHUB_OIDC_PROVIDER_ARN"
+export VERCEL_OIDC_PROVIDER_ARN="$PRODUCTION_VERCEL_OIDC_PROVIDER_ARN"
+export GITHUB_REPOSITORY_ID="$EXACT_GITHUB_REPOSITORY_NUMERIC_ID"
+export GITHUB_REPOSITORY_OWNER_ID="$EXACT_GITHUB_OWNER_NUMERIC_ID"
+export WORKER_IMAGE_TAG="$CURRENT_IMMUTABLE_WORKER_TAG"
+export LEGACY_RERENDER_IMAGE_TAG="$CURRENT_IMMUTABLE_RERENDER_TAG"
+```
+
+### 0. 운영 DB additive migration과 정지 상태 검증
+
+AWS bootstrap보다 먼저, 운영 DB identity를 고정 fingerprint로 확인한 뒤
+Stage B additive migration 두 파일을 번호순으로 각각 적용·검증합니다. 이
+단계는 AWS나 Vercel을 변경하지 않습니다. migration은 기존 행을 재분류하지
+않고 새 열, 테이블, 제약과 resolver만 추가하며 v4 kill switch의 기본값은
+`true`입니다.
+
+```bash
+export DATABASE_URL="$ACTUAL_PRODUCTION_DATABASE_URL"
+export PRODUCTION_DATABASE_FINGERPRINT="sha256:be47955061a9c7b2204ea3bd2e950c7dae6d31f6a484f1780c6b69630744f20a"
+
+node scripts/apply-supabase.mjs --production \
+  202608260007_editor_render_spec_v4_release_control.sql
+
+node scripts/verify-editor-render-v4-release-control.mjs --require-stopped
+
+node scripts/apply-supabase.mjs --production \
+  202608260008_editor_release_probe_attestation.sql
+
+node scripts/verify-editor-release-probe-attestation.mjs --require-empty
+```
+
+검증기는 운영 DB를 read-only로 다시 열어 필수 열·검증된 제약·불변 target
+trigger·service role 최소 권한, 단조 audit sequence, 만료형 infrastructure
+lease와 `kill=true`, `internal=false`, `rollout=0`을 확인합니다.
+두 번째 검증기는 단일 사용 서버 nonce, GitHub run·Batch job·S3 VersionId
+결합, 15개 exact check, 다섯 project target, candidate pointer CAS와 RPC 전용
+쓰기 권한을 확인합니다. registrar의 `iam:PassRole` 목록은 운영 target과
+stable rerender Job Definition의 task/execution role을 AWS에서 직접 읽고,
+격리 test role 두 개를 더해 exact ARN으로 합성합니다.
+`deploy-stage-b-release-control.mjs`도 ChangeSet 실행 직전에 같은 검증을
+강제하므로, migration을 건너뛴 상태에서는 AWS 변경이 시작되지 않습니다.
+
+### 1. Bootstrap
+
+Stage B 소스 커밋을 만든 뒤 `git status`가 비어 있는지 확인합니다. 운영
+SHA와 후보 HEAD를 각각 40자리 SHA로 고정하고, exact template과 두
+ChangeSet만 준비합니다.
+
+```bash
+PROMOTED_GIT_SHA="$ACTUAL_EASYCUT_PROMOTED_SHA"
+BOOTSTRAP_HEAD="$STAGE_B_BOOTSTRAP_COMMIT_SHA"
+
+node scripts/deploy-stage-b-release-control.mjs \
+  --phase bootstrap \
+  --base "$PROMOTED_GIT_SHA" \
+  --head "$BOOTSTRAP_HEAD" \
+  --worker-image-tag "$WORKER_IMAGE_TAG" \
+  --legacy-rerender-image-tag "$LEGACY_RERENDER_IMAGE_TAG" \
+  --prepare
+```
+
+출력된 `HEAD`, `REGISTRY_SHA256`, Editor·Compute의 live/candidate template
+hash, 두 exact ChangeSet ARN을 별도로 보관합니다. CloudFormation preview의
+resource, property detail, `Replacement=False`를 다시 확인합니다. Editor를
+먼저 별도 실행합니다.
+
+```bash
+node scripts/deploy-stage-b-release-control.mjs \
+  --phase bootstrap \
+  --base "$PROMOTED_GIT_SHA" \
+  --head "$BOOTSTRAP_HEAD" \
+  --worker-image-tag "$WORKER_IMAGE_TAG" \
+  --legacy-rerender-image-tag "$LEGACY_RERENDER_IMAGE_TAG" \
+  --execute-editor-change-set "$EDITOR_CHANGE_SET_ID" \
+  --expected-registry-sha256 "$REGISTRY_SHA256" \
+  --expected-live-template-sha256 "$EDITOR_EXPECTED_LIVE_TEMPLATE_SHA256" \
+  --expected-template-sha256 "$EDITOR_EXPECTED_TEMPLATE_SHA256"
+```
+
+Editor stack의 실행 후 live hash가 후보 hash와 정확히 같아야만 Compute를
+실행합니다. Compute 명령은 현재 exact HEAD를 내부에서 다시 합성하고,
+Editor의 phase 허용 리소스가 그 합성 결과와 실제 live template에서
+일치하는지 직접 증명합니다. 전달하는 hash는 이 내부 계산값과 일치해야
+하는 추가 확인값일 뿐, 실행 권한의 근거로 사용되지 않습니다.
+
+```bash
+node scripts/deploy-stage-b-release-control.mjs \
+  --phase bootstrap \
+  --base "$PROMOTED_GIT_SHA" \
+  --head "$BOOTSTRAP_HEAD" \
+  --worker-image-tag "$WORKER_IMAGE_TAG" \
+  --legacy-rerender-image-tag "$LEGACY_RERENDER_IMAGE_TAG" \
+  --execute-compute-change-set "$COMPUTE_CHANGE_SET_ID" \
+  --expected-registry-sha256 "$REGISTRY_SHA256" \
+  --expected-live-template-sha256 "$COMPUTE_EXPECTED_LIVE_TEMPLATE_SHA256" \
+  --expected-template-sha256 "$COMPUTE_EXPECTED_TEMPLATE_SHA256" \
+  --expected-editor-live-template-sha256 "$EDITOR_EXPECTED_TEMPLATE_SHA256"
+```
+
+### 2. Worker target rotation
+
+격리 workflow에서 검증한 하나의 image digest로 다섯 Job Definition을
+등록한 뒤, bootstrap 커밋 위에 `production-project-targets.json`만 바꾸는
+별도 rotation 커밋을 만듭니다. 다른 파일이 하나라도 바뀌면 wrapper가
+중단합니다.
+
+```bash
+ROTATION_HEAD="$REGISTRY_ONLY_ROTATION_COMMIT_SHA"
+
+node scripts/deploy-stage-b-release-control.mjs \
+  --phase rotation \
+  --base "$PROMOTED_GIT_SHA" \
+  --head "$ROTATION_HEAD" \
+  --prior-stage-head "$BOOTSTRAP_HEAD" \
+  --worker-image-tag "$WORKER_IMAGE_TAG" \
+  --legacy-rerender-image-tag "$LEGACY_RERENDER_IMAGE_TAG" \
+  --prepare
+```
+
+rotation도 새 출력 hash와 ARN만 사용해 Editor를 먼저, Compute를 두 번째로
+각각 실행합니다. 두 실행 명령에는 `--phase rotation`, 동일한
+`--prior-stage-head`, rotation prepare가 출력한 registry/live/candidate
+hash와 동일한 두 immutable worker image tag를 사용합니다. Compute에는 rotation Editor candidate hash를
+`--expected-editor-live-template-sha256`로 전달합니다. bootstrap 때 보관한
+hash나 ChangeSet을 재사용하지 않습니다.
+
+### 3. OIDC lockdown
+
+Worker 회전과 내부 검증이 끝나고 웹 후보가 운영으로 승격됐다면
+`easycut.co.kr`의 promoted SHA를 다시 조회합니다. lockdown은 Editor IAM
+subject를 disabled sentinel로 바꾸는 한 stack만 준비·실행합니다.
+
+```bash
+PROMOTED_GIT_SHA="$ACTUAL_CURRENT_PROMOTED_SHA"
+LOCKDOWN_HEAD="$CURRENT_EXACT_RELEASE_HEAD"
+
+node scripts/deploy-stage-b-release-control.mjs \
+  --phase lockdown \
+  --base "$PROMOTED_GIT_SHA" \
+  --head "$LOCKDOWN_HEAD" \
+  --worker-image-tag "$WORKER_IMAGE_TAG" \
+  --legacy-rerender-image-tag "$LEGACY_RERENDER_IMAGE_TAG" \
+  --prepare
+
+node scripts/deploy-stage-b-release-control.mjs \
+  --phase lockdown \
+  --base "$PROMOTED_GIT_SHA" \
+  --head "$LOCKDOWN_HEAD" \
+  --worker-image-tag "$WORKER_IMAGE_TAG" \
+  --legacy-rerender-image-tag "$LEGACY_RERENDER_IMAGE_TAG" \
+  --execute-editor-change-set "$EDITOR_CHANGE_SET_ID" \
+  --expected-registry-sha256 "$REGISTRY_SHA256" \
+  --expected-live-template-sha256 "$EDITOR_EXPECTED_LIVE_TEMPLATE_SHA256" \
+  --expected-template-sha256 "$EDITOR_EXPECTED_TEMPLATE_SHA256"
+```
+
+`lockdown`의 Compute 실행, `--all`, `--apply`, `--deploy`, Stage A wrapper는
+거절됩니다. prepare가 중간 실패하면 그 실행에서 만든 미실행 ChangeSet만
+정리하며, DB·Vercel·Queue·Compute Environment·Job Definition은 변경하지
+않습니다.
+
+각 stack 실행은 `phase/stack/base/head/registry/live/candidate/Editor`
+hash에서 계산한 고정 ChangeSet 이름과 ARN을 다시 검증합니다. 실행 직전
+DB가 완전 정지 상태일 때만 300초 TTL infrastructure lease를 원자적으로
+획득하고, CloudFormation을 감시하는 동안 주기적으로 갱신한 뒤 성공·실패
+모두 owner와 lease ID가 일치할 때만 해제합니다. 관리자 승격·내부 활성화·
+5→25→100 전환은 유효한 lease 동안 거절되지만 긴급 중단은 항상 허용됩니다.
+프로세스가 종료돼 해제하지 못해도 TTL 뒤 자동 복구되므로 DB 직접 수정이나
+session advisory lock을 사용하지 않습니다.
+
 ## 비운영 환경 최초 구성
 
 비운영에서만 환경과 DB identity를 명시해 전체 setup을 사용합니다.

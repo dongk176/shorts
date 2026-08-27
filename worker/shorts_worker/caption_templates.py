@@ -13,11 +13,16 @@ from pathlib import Path
 from typing import Any
 
 from fontTools.ttLib import TTFont
+from fontTools.varLib.instancer import instantiateVariableFont
 from PIL import ImageFont
 
 from .errors import CaptionCompileError, RenderError, TranscriptionError
+from .font_manifest import editor_font_manifest_entry, normalized_editor_font_bytes
+from .media import run_command
+from .render_spec_v4 import EDITOR_FONT_RENDER_FAMILIES, canonical_px_v4
 from .schemas import (
     EDITOR_FONT_FILE_IDS,
+    EDITOR_FONT_METRICS_REVISION,
     EDITOR_FONT_STATIC_WEIGHTS,
     EDITOR_FONT_VARIABLE_IDS,
     EditorFontId,
@@ -140,36 +145,96 @@ def _caption_font_path(font_id: EditorFontId) -> Path:
     return path
 
 
-def caption_font_spec(font_id: EditorFontId | str | None) -> dict[str, object]:
+def caption_font_spec(
+    font_id: EditorFontId | str | None,
+    *,
+    schema_version: int = 3,
+) -> dict[str, object]:
     resolved = _caption_font_id(font_id)
     path = _caption_font_path(resolved)
-    return {
+    spec: dict[str, object] = {
         "fontId": resolved.value,
         "fileId": path.name,
         "sha256": _sha256(path),
-        "family": CAPTION_FONT_FAMILIES[resolved],
+        "family": (
+            EDITOR_FONT_RENDER_FAMILIES[resolved]
+            if schema_version == 4
+            else CAPTION_FONT_FAMILIES[resolved]
+        ),
         "weight": (
             700
             if resolved in EDITOR_FONT_VARIABLE_IDS
             else EDITOR_FONT_STATIC_WEIGHTS[resolved]
         ),
     }
+    if schema_version == 4:
+        manifest = editor_font_manifest_entry(resolved)
+        spec["metrics"] = {
+            "revision": EDITOR_FONT_METRICS_REVISION,
+            "cssToAssScale": _caption_css_to_ass_scale(resolved),
+            "cssToAssBaselineOffsetEm": float(
+                manifest["cssToAssBaselineOffsetEm"]
+            ),
+        }
+    return spec
 
 
 @lru_cache(maxsize=32)
 def _caption_ttf_bytes(font_id: EditorFontId) -> bytes:
-    font_path = _caption_font_path(font_id)
+    _caption_font_path(font_id)
+    return normalized_editor_font_bytes(font_id)
+
+
+@lru_cache(maxsize=32)
+def _caption_ass_ttf_bytes(font_id: EditorFontId) -> bytes:
+    """Build the exact static 700 face that FFmpeg/libass must select."""
+    _caption_font_path(font_id)
     try:
-        font = TTFont(str(font_path), recalcBBoxes=False, recalcTimestamp=False)
+        font = TTFont(
+            io.BytesIO(normalized_editor_font_bytes(font_id)),
+            recalcBBoxes=False,
+            recalcTimestamp=False,
+        )
+        if font_id in EDITOR_FONT_VARIABLE_IDS:
+            font = instantiateVariableFont(
+                font,
+                {"wght": 700},
+                inplace=True,
+                updateFontNames=True,
+            )
+        family = EDITOR_FONT_RENDER_FAMILIES[font_id].strip('"')
+        weight = (
+            700
+            if font_id in EDITOR_FONT_VARIABLE_IDS
+            else EDITOR_FONT_STATIC_WEIGHTS[font_id]
+        )
+        subfamily = "Bold" if weight >= 700 else "Regular"
+        postscript_name = (
+            "EditorV4"
+            + "".join(part.title() for part in font_id.value.split("-"))
+            + f"-{subfamily}"
+        )
+        names = font["name"]
+        for name_id, value in (
+            (1, family),
+            (2, subfamily),
+            (4, f"{family} {subfamily}"),
+            (6, postscript_name),
+            (16, family),
+            (17, subfamily),
+        ):
+            names.removeNames(nameID=name_id)
+            names.setName(value, name_id, 3, 1, 0x409)
+            names.setName(value, name_id, 1, 0, 0)
         font.flavor = None
         output = io.BytesIO()
         font.save(output, reorderTables=False)
         font.close()
         value = output.getvalue()
     except Exception as exc:
-        raise RenderError("자막 폰트를 변환하지 못했습니다.") from exc
+        raise RenderError("자막 렌더 폰트를 변환하지 못했습니다.") from exc
     if not value:
-        raise RenderError("자막 폰트를 변환하지 못했습니다.")
+        raise RenderError("자막 렌더 폰트를 변환하지 못했습니다.")
     return value
 
 
@@ -203,6 +268,14 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+@lru_cache(maxsize=32)
+def _caption_css_to_ass_scale(font_id: EditorFontId) -> float:
+    value = editor_font_manifest_entry(font_id).get("cssToAssScale")
+    if not isinstance(value, float) or not 0 < value <= 1.2:
+        raise RenderError("자막 폰트 CSS/ASS 보정값이 올바르지 않습니다.")
+    return value
+
+
 def prepare_caption_fonts(
     directory: Path,
     spec: dict[str, object] | None = None,
@@ -224,13 +297,139 @@ def prepare_caption_fonts(
         ".ttf"
     ).name
     try:
-        output_path.write_bytes(_caption_ttf_bytes(font_id))
+        schema_version = int(spec.get("schemaVersion") or 0) if spec else 0
+        output_path.write_bytes(
+            _caption_ass_ttf_bytes(font_id)
+            if schema_version == 4
+            else _caption_ttf_bytes(font_id)
+        )
     except OSError as exc:
         output_path.unlink(missing_ok=True)
         raise RenderError("자막 렌더 폰트를 준비하지 못했습니다.") from exc
     if not output_path.is_file() or output_path.stat().st_size <= 0:
         raise RenderError("자막 렌더 폰트를 준비하지 못했습니다.")
     return directory
+
+
+def _escape_filter_path(path: Path) -> str:
+    return (
+        str(path.resolve())
+        .replace("\\", "\\\\")
+        .replace(":", "\\:")
+        .replace("'", "\\'")
+        .replace("[", "\\[")
+        .replace("]", "\\]")
+        .replace(",", "\\,")
+    )
+
+
+def verify_caption_font_selection_v4(
+    *,
+    font_directory: Path,
+    spec: dict[str, object],
+    timeout: float = 30,
+) -> None:
+    """Fail closed when libass selects anything but the bundled v4 face."""
+    if int(spec.get("schemaVersion") or 0) != 4:
+        return
+    font_value = spec.get("font")
+    if not isinstance(font_value, dict):
+        raise RenderError("v4 자막 폰트 정보를 찾지 못했습니다.")
+    font_id = _caption_font_id(font_value.get("fontId"))
+    expected = caption_font_spec(font_id, schema_version=4)
+    if any(font_value.get(key) != value for key, value in expected.items()):
+        raise RenderError("v4 자막 폰트 정보가 승인된 파일과 다릅니다.")
+    ass_family = str(expected["family"]).strip('"')
+    selected_path = font_directory / Path(str(expected["fileId"])).with_suffix(
+        ".ttf"
+    ).name
+    if not selected_path.is_file():
+        raise RenderError("v4 자막 렌더 폰트를 찾지 못했습니다.")
+    try:
+        selected_font = TTFont(
+            str(selected_path),
+            recalcBBoxes=False,
+            recalcTimestamp=False,
+        )
+        postscript_names = {
+            record.toUnicode()
+            for record in selected_font["name"].names
+            if record.nameID == 6
+        }
+        selected_font.close()
+    except Exception as exc:
+        raise RenderError("v4 자막 렌더 폰트 정보를 읽지 못했습니다.") from exc
+    if not postscript_names:
+        raise RenderError("v4 자막 렌더 폰트 이름을 찾지 못했습니다.")
+    probe_path = font_directory / ".editor-font-selection-v4.ass"
+    probe_path.write_text(
+        "\n".join([
+            "[Script Info]",
+            "ScriptType: v4.00+",
+            "PlayResX: 1080",
+            "PlayResY: 1920",
+            "",
+            "[V4+ Styles]",
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+            "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
+            "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+            "Alignment, MarginL, MarginR, MarginV, Encoding",
+            f"Style: Default,{ass_family},72,&H00FFFFFF,&H00FFFFFF,&H00000000,"
+            "&HFF000000,-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1",
+            "",
+            "[Events]",
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+            "Dialogue: 0,0:00:00.00,0:00:00.10,Default,,0,0,0,,가A1",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    result = run_command(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "verbose",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=black:size=1080x1920:rate=30:duration=0.1",
+            "-vf",
+            (
+                f"subtitles=filename='{_escape_filter_path(probe_path)}'"
+                f":fontsdir='{_escape_filter_path(font_directory)}'"
+            ),
+            "-frames:v",
+            "1",
+            "-f",
+            "null",
+            "-",
+        ],
+        timeout=timeout,
+        cwd=font_directory,
+    )
+    if result.returncode != 0:
+        raise RenderError("v4 자막 폰트 선택을 검증하지 못했습니다.")
+    font_lines = [
+        line for line in result.stderr.splitlines()
+        if "fontselect:" in line and "->" in line
+    ]
+    if not font_lines:
+        raise RenderError("v4 자막 폰트 선택 증거를 찾지 못했습니다.")
+
+    def normalized(value: str) -> str:
+        return "".join(character.lower() for character in value if character.isalnum())
+
+    accepted_tokens = {normalized(name) for name in postscript_names}
+    accepted_tokens.add(normalized(selected_path.stem))
+    for line in font_lines:
+        selected_value = line.split("->", 1)[1]
+        selected = normalized(selected_value)
+        if not any(token and token in selected for token in accepted_tokens):
+            raise RenderError(
+                "v4 자막 렌더에서 대체 폰트가 감지되었습니다: "
+                f"{font_id.value} ({selected or 'unknown'})"
+            )
 
 
 def caption_layout(
@@ -945,9 +1144,16 @@ def _basic_or_highlight_cues(
     safe_area: dict[str, int],
     fps: int,
     font_size: int = 72,
+    schema_version: int = 3,
 ) -> list[dict[str, object]]:
     outline = 7
     max_width = safe_area["width"] - outline * 2
+    css_to_ass_scale = (
+        _caption_css_to_ass_scale(_CAPTION_FONT_CONTEXT.get())
+        if schema_version == 4
+        else 1.0
+    )
+    measured_max_width = max_width / css_to_ass_scale
     word_separator = (
         CAPTION_HIGHLIGHT_WORD_SEPARATOR if highlighted else CAPTION_WORD_SEPARATOR
     )
@@ -958,7 +1164,7 @@ def _basic_or_highlight_cues(
             gap_frames=round(0.42 * fps),
             max_words=None,
             font_size=font_size,
-            max_width=max_width,
+            max_width=measured_max_width,
             max_duration_frames=round(3.2 * fps),
             max_lines=1,
             require_word_frames=highlighted,
@@ -982,7 +1188,7 @@ def _basic_or_highlight_cues(
         lines = _wrap_word_indexes(
             group,
             font_size=font_size,
-            max_width=max_width,
+            max_width=measured_max_width,
             word_separator=word_separator,
         )
         scale_x = 100
@@ -994,7 +1200,7 @@ def _basic_or_highlight_cues(
                 ),
                 font_size,
             )
-            > max_width
+            > measured_max_width
             for line in lines
         ):
             widest = max(
@@ -1007,7 +1213,10 @@ def _basic_or_highlight_cues(
                 )
                 for line in lines
             )
-            required_scale_x = min(100, max_width / widest * 100)
+            required_scale_x = min(
+                100,
+                max_width / (widest * css_to_ass_scale) * 100,
+            )
             if required_scale_x < 60:
                 raise CaptionCompileError("자막 어절이 안전영역에 들어갈 수 없을 만큼 깁니다.")
             scale_x = round(required_scale_x)
@@ -1022,6 +1231,10 @@ def _basic_or_highlight_cues(
             "lines": lines,
             "wordSeparator": word_separator,
         }
+        if schema_version == 4:
+            cue["separatorAdvanceWidth"] = canonical_px_v4(
+                _measure(word_separator, font_size) * css_to_ass_scale
+            )
         cue["events"] = (
             _event_ranges(group, cue_start=start_frame, cue_end=end_frame)
             if highlighted
@@ -1049,6 +1262,7 @@ def _pop_event_positions(
     *,
     active_word_index: int,
     safe_area: dict[str, int],
+    schema_version: int = 3,
 ) -> list[dict[str, float]]:
     """Center a pop cue using the scale visible in this exact event.
 
@@ -1057,9 +1271,15 @@ def _pop_event_positions(
     apart than the configured six-pixel gap. Reflow each event around its one
     active word so the rendered glyph boxes retain the approved spacing.
     """
+    css_to_ass_scale = (
+        _caption_css_to_ass_scale(_CAPTION_FONT_CONTEXT.get())
+        if schema_version == 4
+        else 1.0
+    )
     widths = [
         _measure(str(word["text"]), int(word["fontSize"]))
         * (1.12 if word_index == active_word_index else 1.0)
+        * css_to_ass_scale
         for word_index, word in enumerate(words)
     ]
     gaps = [
@@ -1075,12 +1295,27 @@ def _pop_event_positions(
     for word_index, width in enumerate(widths):
         if word_index:
             cursor += gaps[word_index - 1]
-        positions.append(
-            {
-                "centerX": round(cursor + width / 2, 3),
-                "centerY": round(center_y, 3),
-            }
-        )
+        center_x_value = cursor + width / 2
+        position = {
+            "centerX": (
+                canonical_px_v4(center_x_value)
+                if schema_version == 4
+                else round(center_x_value, 3)
+            ),
+            "centerY": (
+                canonical_px_v4(center_y)
+                if schema_version == 4
+                else round(center_y, 3)
+            ),
+        }
+        if schema_version == 4:
+            position.update({
+                "advanceWidth": canonical_px_v4(width),
+                "gapBefore": (
+                    canonical_px_v4(gaps[word_index - 1]) if word_index else 0
+                ),
+            })
+        positions.append(position)
         cursor += width
     return positions
 
@@ -1091,6 +1326,7 @@ def _pop_cues(
     safe_area: dict[str, int],
     fps: int,
     font_size: int = 92,
+    schema_version: int = 3,
 ) -> list[dict[str, object]]:
     outline = 8
     max_width = safe_area["width"] - outline * 2
@@ -1117,7 +1353,15 @@ def _pop_cues(
             _pop_font_size(word, max_width, font_size=font_size)
             for word in group
         ]
-        widths = [_measure(word.text, size) * 1.12 for word, size in zip(group, sizes, strict=True)]
+        css_to_ass_scale = (
+            _caption_css_to_ass_scale(_CAPTION_FONT_CONTEXT.get())
+            if schema_version == 4
+            else 1.0
+        )
+        widths = [
+            _measure(word.text, size) * 1.12 * css_to_ass_scale
+            for word, size in zip(group, sizes, strict=True)
+        ]
         gaps = [
             CAPTION_POP_SPACED_GAP_PX if group[item].space_before else CAPTION_POP_UNSPACED_GAP_PX
             for item in range(1, len(group))
@@ -1128,7 +1372,8 @@ def _pop_cues(
             minimum_size = min(font_size, 64)
             sizes = [max(minimum_size, round(size * ratio)) for size in sizes]
             widths = [
-                _measure(word.text, size) * 1.12 for word, size in zip(group, sizes, strict=True)
+                _measure(word.text, size) * 1.12 * css_to_ass_scale
+                for word, size in zip(group, sizes, strict=True)
             ]
             total_width = sum(widths) + sum(gaps)
         if total_width > max_width + 0.5:
@@ -1142,8 +1387,16 @@ def _pop_cues(
             serialized_word.update(
                 {
                     "fontSize": size,
-                    "centerX": round(cursor + width / 2, 3),
-                    "centerY": round(center_y, 3),
+                    "centerX": (
+                        canonical_px_v4(cursor + width / 2)
+                        if schema_version == 4
+                        else round(cursor + width / 2, 3)
+                    ),
+                    "centerY": (
+                        canonical_px_v4(center_y)
+                        if schema_version == 4
+                        else round(center_y, 3)
+                    ),
                     "maxScale": 112,
                 }
             )
@@ -1165,6 +1418,7 @@ def _pop_cues(
                     serialized,
                     active_word_index=event["activeWordIndex"],
                     safe_area=safe_area,
+                    schema_version=schema_version,
                 ),
             }
             for event in _event_ranges(
@@ -1193,6 +1447,7 @@ def rebuild_caption_cue_text(
     safe_area: dict[str, int],
     fps: int = CAPTION_FPS,
     font_size: int | None = None,
+    schema_version: int = 3,
 ) -> list[dict[str, object]]:
     """Reflow one trusted cue while preserving its compiled frame window."""
     if template_id not in {"highlight", "pop"}:
@@ -1257,6 +1512,7 @@ def rebuild_caption_cue_text(
             safe_area=safe_area,
             fps=fps,
             font_size=font_size or 92,
+            schema_version=schema_version,
         )
         if template_id == "pop"
         else _basic_or_highlight_cues(
@@ -1265,6 +1521,7 @@ def rebuild_caption_cue_text(
             safe_area=safe_area,
             fps=fps,
             font_size=font_size or 72,
+            schema_version=schema_version,
         )
     )
     if not rebuilt:
@@ -1281,6 +1538,7 @@ def _reflow_caption_cues_for_clips(
     cue_edits: dict[int, str] | None = None,
     fps: int = CAPTION_FPS,
     font_size: int | None = None,
+    schema_version: int = 3,
 ) -> list[dict[str, object]]:
     """Recompile caption layout from the words retained by editor cuts.
 
@@ -1451,6 +1709,7 @@ def _reflow_caption_cues_for_clips(
                 safe_area=safe_area,
                 fps=fps,
                 font_size=font_size,
+                schema_version=schema_version,
             )
             for cue in edited_cues:
                 cue["sourceCueIndex"] = source_cue_index
@@ -1470,6 +1729,7 @@ def _reflow_caption_cues_for_clips(
                     safe_area=safe_area,
                     fps=fps,
                     font_size=font_size or 92,
+                    schema_version=schema_version,
                 )
                 if template_id == "pop"
                 else _basic_or_highlight_cues(
@@ -1478,6 +1738,7 @@ def _reflow_caption_cues_for_clips(
                     safe_area=safe_area,
                     fps=fps,
                     font_size=font_size or 72,
+                    schema_version=schema_version,
                 )
             )
             for cue in compiled:
@@ -1503,6 +1764,7 @@ def reflow_caption_cues_for_clips(
     fps: int = CAPTION_FPS,
     font_id: EditorFontId | str | None = None,
     font_size: int | None = None,
+    schema_version: int = 3,
 ) -> list[dict[str, object]]:
     resolved_font_id = _caption_font_id(font_id)
     with _caption_font_context(resolved_font_id):
@@ -1514,6 +1776,7 @@ def reflow_caption_cues_for_clips(
             cue_edits=cue_edits,
             fps=fps,
             font_size=font_size,
+            schema_version=schema_version,
         )
 
 
@@ -1534,9 +1797,12 @@ def compile_caption_render_spec(
     font_size: int | None = None,
     text_color: str = CAPTION_TEXT,
     background_color: str | None = None,
+    schema_version: int = 3,
 ) -> dict[str, object]:
     if template_id not in CAPTION_TEMPLATE_IDS:
         raise ValueError("지원하지 않는 자막 템플릿입니다.")
+    if schema_version not in {3, 4}:
+        raise ValueError("지원하지 않는 자막 렌더 사양 버전입니다.")
     if fps != CAPTION_FPS:
         raise ValueError("자막 렌더 프레임레이트는 30fps여야 합니다.")
     if caption_placement not in {"lower", "center"}:
@@ -1592,6 +1858,7 @@ def compile_caption_render_spec(
                 safe_area=safe_area,
                 fps=fps,
                 font_size=resolved_font_size,
+                schema_version=schema_version,
             )
             outline = 8
         else:
@@ -1601,6 +1868,7 @@ def compile_caption_render_spec(
                 safe_area=safe_area,
                 fps=fps,
                 font_size=resolved_font_size,
+                schema_version=schema_version,
             )
             outline = 7
     if not cues:
@@ -1610,8 +1878,8 @@ def compile_caption_render_spec(
         raise CaptionCompileError(
             f"생성 자막 큐 {overlap_count}개가 서로 겹칩니다."
         )
-    return {
-        "schemaVersion": 3,
+    spec: dict[str, object] = {
+        "schemaVersion": schema_version,
         "templateId": template_id,
         "captionPlacement": caption_placement,
         "fps": fps,
@@ -1620,7 +1888,10 @@ def compile_caption_render_spec(
         "timingLeadFrames": timing_lead_frames,
         "layout": layout,
         "safeArea": safe_area,
-        "font": caption_font_spec(resolved_font_id),
+        "font": caption_font_spec(
+            resolved_font_id,
+            schema_version=schema_version,
+        ),
         "style": {
             "fontSize": resolved_font_size,
             "textColor": text_color,
@@ -1633,6 +1904,13 @@ def compile_caption_render_spec(
         },
         "cues": cues,
     }
+    if schema_version == 4:
+        spec.update({
+            "layoutMode": "absolute-word-positions-v1",
+            "wordGapPx": CAPTION_POP_SPACED_GAP_PX,
+            "joinedWordGapPx": CAPTION_POP_UNSPACED_GAP_PX,
+        })
+    return spec
 
 
 def _ass_timestamp(frame: int, fps: int) -> str:
@@ -1676,7 +1954,8 @@ def _line_text(
 
 
 def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
-    if int(spec.get("schemaVersion") or 0) not in {1, 2, 3}:
+    schema_version = int(spec.get("schemaVersion") or 0)
+    if schema_version not in {1, 2, 3, 4}:
         raise RenderError("자막 렌더 사양 버전이 올바르지 않습니다.")
     template_id = str(spec.get("templateId") or "")
     if template_id not in CAPTION_TEMPLATE_IDS:
@@ -1688,20 +1967,27 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
     if not isinstance(font, dict):
         raise RenderError("자막 렌더 폰트 정보가 올바르지 않습니다.")
     font_id = _caption_font_id(font.get("fontId"))
-    expected_font = caption_font_spec(font_id)
-    if any(
-        font.get(key) != expected_font[key]
-        for key in ("fileId", "sha256", "family", "weight")
-    ):
+    expected_font = caption_font_spec(font_id, schema_version=schema_version)
+    checked_font_keys = ["fileId", "sha256", "family", "weight"]
+    if schema_version == 4:
+        checked_font_keys.append("metrics")
+    if any(font.get(key) != expected_font[key] for key in checked_font_keys):
         raise RenderError("자막 렌더 폰트가 승인된 파일과 다릅니다.")
+    if schema_version == 4 and (
+        spec.get("layoutMode") != "absolute-word-positions-v1"
+        or spec.get("wordGapPx") != CAPTION_POP_SPACED_GAP_PX
+        or spec.get("joinedWordGapPx") != CAPTION_POP_UNSPACED_GAP_PX
+    ):
+        raise RenderError("v4 자막 절대 위치 계약이 올바르지 않습니다.")
     style = spec.get("style") or {}
     text_color = str(style.get("textColor") or CAPTION_TEXT)
     accent_color = str(style.get("accentColor") or CAPTION_ACCENT)
     outline_color = str(style.get("outlineColor") or CAPTION_OUTLINE)
     ass_bold = -1 if int(font["weight"]) >= 700 else 0
-    ass_font_family = CAPTION_ASS_FONT_FAMILIES.get(
-        font_id,
-        str(font["family"]),
+    ass_font_family = (
+        str(font["family"]).strip('"')
+        if schema_version == 4
+        else CAPTION_ASS_FONT_FAMILIES.get(font_id, str(font["family"]))
     )
     dialogues: list[str] = []
     for cue in spec.get("cues") or []:
@@ -1709,10 +1995,28 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
         events = list(cue.get("events") or [])
         if not words or not events:
             continue
+        if schema_version == 4 and template_id == "highlight":
+            with _caption_font_context(font_id):
+                expected_separator_advance = canonical_px_v4(
+                    _measure(
+                        str(cue.get("wordSeparator") or " "),
+                        int(cue.get("fontSize") or style["fontSize"]),
+                    )
+                    * _caption_css_to_ass_scale(font_id)
+                )
+            if cue.get("separatorAdvanceWidth") != expected_separator_advance:
+                raise RenderError(
+                    "v4 강조 자막 공백 폭이 승인된 폰트 메트릭과 다릅니다."
+                )
         if template_id == "pop":
             for event in events:
                 active_index = int(event["activeWordIndex"])
                 positions = event.get("positions")
+                if (
+                    schema_version == 4
+                    and (not isinstance(positions, list) or len(positions) != len(words))
+                ):
+                    raise RenderError("v4 팝 자막 단어 위치가 누락되었습니다.")
                 if not isinstance(positions, list) or len(positions) != len(words):
                     safe_area = spec.get("safeArea")
                     if not isinstance(safe_area, dict):
@@ -1732,14 +2036,53 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
                 safe_area = spec.get("safeArea")
                 if not isinstance(safe_area, dict):
                     raise RenderError("팝 자막 안전영역이 올바르지 않습니다.")
-                try:
-                    center_x = round(
-                        float(safe_area["x"]) + float(safe_area["width"]) / 2,
-                        3,
-                    )
-                    center_y = round(float(positions[0]["centerY"]), 3)
-                except (KeyError, TypeError, ValueError) as exc:
-                    raise RenderError("팝 자막 위치가 올바르지 않습니다.") from exc
+                if schema_version == 4:
+                    with _caption_font_context(font_id):
+                        expected_positions = _pop_event_positions(
+                            words,
+                            active_word_index=active_index,
+                            safe_area={
+                                key: float(safe_area[key])
+                                for key in ("x", "y", "width", "height")
+                            },
+                            schema_version=4,
+                        )
+                    try:
+                        for word_index, (position, expected_position) in enumerate(
+                            zip(positions, expected_positions, strict=True)
+                        ):
+                            for key in (
+                                "centerX",
+                                "centerY",
+                                "advanceWidth",
+                                "gapBefore",
+                            ):
+                                value = float(position[key])
+                                if (
+                                    canonical_px_v4(value) != value
+                                    or abs(value - float(expected_position[key])) > 0.001
+                                ):
+                                    raise ValueError(key)
+                            expected_gap = (
+                                CAPTION_POP_SPACED_GAP_PX
+                                if word_index and words[word_index].get("spaceBefore")
+                                else CAPTION_POP_UNSPACED_GAP_PX
+                            )
+                            if float(position["gapBefore"]) != expected_gap:
+                                raise ValueError("gapBefore")
+                    except (KeyError, TypeError, ValueError) as exc:
+                        raise RenderError(
+                            "v4 팝 자막 단어 위치가 승인된 6px/0px 간격과 다릅니다."
+                        ) from exc
+                else:
+                    try:
+                        center_x = round(
+                            float(safe_area["x"]) + float(safe_area["width"]) / 2,
+                            3,
+                        )
+                        center_y = round(float(positions[0]["centerY"]), 3)
+                    except (KeyError, TypeError, ValueError) as exc:
+                        raise RenderError("팝 자막 위치가 올바르지 않습니다.") from exc
                 ease_frames = max(0, int(cue.get("easeFrames") or 0))
                 ease_milliseconds = round(ease_frames / fps * 1000)
                 event_frames = max(
@@ -1757,7 +2100,7 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
                         # approved 112% scale immediately instead of producing
                         # a barely enlarged word. Longer events retain the
                         # two-frame ease requested by the template.
-                        if event_frames == 1:
+                        if schema_version == 4 or event_frames == 1:
                             scale = 112
                         else:
                             ease = f"\\t(0,{ease_milliseconds},\\fscx112\\fscy112)"
@@ -1767,17 +2110,33 @@ def create_caption_ass(spec: dict[str, Any], output_path: Path) -> Path:
                         f"\\1c{_ass_color(color)}\\3c{_ass_color(outline_color)}"
                         f"{ease}"
                     )
-                    # Put the separator under the following word's explicit
-                    # style reset. This keeps it a regular space even while
-                    # the preceding active word is being enlarged.
-                    prefix = (
-                        CAPTION_HIGHLIGHT_WORD_SEPARATOR
-                        if word_index and word.get("spaceBefore")
-                        else ""
-                    )
-                    phrase += (
-                        f"{{{word_tags}}}{prefix}{_ass_escape(str(word['text']))}"
-                    )
+                    if schema_version == 4:
+                        position = positions[word_index]
+                        tags = (
+                            f"\\an5\\pos({position['centerX']},{position['centerY']})"
+                            f"\\fn{ass_font_family}\\bord{style['outlineWidth']}\\shad0"
+                            f"\\1c{_ass_color(text_color)}\\3c{_ass_color(outline_color)}"
+                            f"{word_tags}"
+                        )
+                        dialogues.append(
+                            "Dialogue: 0,"
+                            f"{_ass_timestamp(int(event['startFrame']), fps)},"
+                            f"{_ass_timestamp(int(event['endFrame']), fps)},"
+                            f"Default,,0,0,0,,{{{tags}}}{_ass_escape(str(word['text']))}"
+                        )
+                    else:
+                        # Legacy specs intentionally retain the shaped phrase
+                        # and ordinary-space behavior for stored v1-v3 jobs.
+                        prefix = (
+                            CAPTION_HIGHLIGHT_WORD_SEPARATOR
+                            if word_index and word.get("spaceBefore")
+                            else ""
+                        )
+                        phrase += (
+                            f"{{{word_tags}}}{prefix}{_ass_escape(str(word['text']))}"
+                        )
+                if schema_version == 4:
+                    continue
                 tags = (
                     f"\\an5\\pos({center_x},{center_y})"
                     f"\\fn{ass_font_family}\\bord{style['outlineWidth']}\\shad0"

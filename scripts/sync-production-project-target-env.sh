@@ -49,21 +49,58 @@ target_names=(
   LEGACY_PROJECT_JOB_DEFINITION_ARN
   LEGACY_PROJECT_BATCH_QUEUE_ARN
   LEGACY_PROJECT_BATCH_TARGET_RELEASE_ID
+  LEGACY_PROJECT_WORKER_SOURCE_GIT_SHA
+  LEGACY_PROJECT_WORKER_IMAGE_DIGEST
   SOURCE_RANGE_JOB_DEFINITION_ARN
   SOURCE_RANGE_BATCH_QUEUE_ARN
   SOURCE_RANGE_BATCH_TARGET_RELEASE_ID
+  SOURCE_RANGE_WORKER_SOURCE_GIT_SHA
+  SOURCE_RANGE_WORKER_IMAGE_DIGEST
   ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN
   ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN
   ELEVENLABS_TRANSCRIPTION_BATCH_TARGET_RELEASE_ID
+  ELEVENLABS_TRANSCRIPTION_WORKER_SOURCE_GIT_SHA
+  ELEVENLABS_TRANSCRIPTION_WORKER_IMAGE_DIGEST
   SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN
   SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN
   SUBTITLE_TEMPLATES_BATCH_TARGET_RELEASE_ID
+  SUBTITLE_TEMPLATES_WORKER_SOURCE_GIT_SHA
+  SUBTITLE_TEMPLATES_WORKER_IMAGE_DIGEST
   UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN
   UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN
   UNIFIED_TEMPLATE_SUBTITLES_BATCH_TARGET_RELEASE_ID
+  UNIFIED_TEMPLATE_SUBTITLES_WORKER_SOURCE_GIT_SHA
+  UNIFIED_TEMPLATE_SUBTITLES_WORKER_IMAGE_DIGEST
 )
 
 node "$ROOT/scripts/production-project-targets.mjs" env "$REGISTRY_FILE" > "$registry_env_file"
+
+# If a lane is intentionally rotated back to a legacy renderer, remove only
+# the three v4 capability variables that are no longer present in the exact
+# registry. Leaving them behind can make a later build reinterpret a legacy
+# target as v4. The verifier prints only exact, sensitive, Production-only
+# optional keys and fails closed on duplicates or broader scopes.
+while IFS= read -r stale_optional_name; do
+  [[ -n "$stale_optional_name" ]] || continue
+  vercel env rm "$stale_optional_name" production \
+    --yes \
+    --scope "$VERCEL_TEAM_SLUG" >/dev/null
+done < <(
+  node "$ROOT/scripts/verify-vercel-project-target-env-metadata.mjs" \
+    --project "$VERCEL_PROJECT_NAME" \
+    --scope "$VERCEL_TEAM_SLUG" \
+    --registry "$REGISTRY_FILE" \
+    --print-stale-optional
+)
+
+for prefix in LEGACY_PROJECT SOURCE_RANGE ELEVENLABS_TRANSCRIPTION SUBTITLE_TEMPLATES UNIFIED_TEMPLATE_SUBTITLES; do
+  for suffix in RENDER_SPEC_VERSION CAPTION_RENDER_SPEC_VERSION FONT_MANIFEST_SHA256; do
+    optional_name="${prefix}_${suffix}"
+    if grep -q "^${optional_name}=" "$registry_env_file"; then
+      target_names[${#target_names[@]}]="$optional_name"
+    fi
+  done
+done
 
 for name in "${target_names[@]}"; do
   value=""
@@ -94,4 +131,4 @@ node "$ROOT/scripts/verify-project-batch-targets.mjs" \
   --lambda-function "$BATCH_SUBMITTER_FUNCTION_NAME" \
   --region "$AWS_REGION"
 
-echo "Vercel production 프로젝트 Batch 대상 15개만 동기화했습니다."
+echo "Vercel production 프로젝트 Batch 대상 ${#target_names[@]}개만 동기화했습니다."

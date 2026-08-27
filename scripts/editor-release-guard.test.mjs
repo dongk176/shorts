@@ -151,7 +151,7 @@ test("candidate renders use an isolated outbox while legacy rerenders stay uncha
 test("release workflow promotes one tested digest without deploying the website", async () => {
   const [workflow, registrar] = await Promise.all([
     source(".github/workflows/editor-release.yml"),
-    source("scripts/register-editor-release-job.sh"),
+    source("infra/aws/lambda/editor_release_registrar.py"),
   ]);
 
   assert.equal(
@@ -159,15 +159,34 @@ test("release workflow promotes one tested digest without deploying the website"
     1,
     "The editor release workflow must build the render image exactly once.",
   );
+  const actionReferences = [...workflow.matchAll(/uses:\s*([^\s#]+)/g)]
+    .map((match) => match[1]);
+  assert.ok(actionReferences.length >= 7);
+  for (const reference of actionReferences) {
+    assert.match(
+      reference,
+      /@[0-9a-f]{40}$/,
+      `Privileged release action must use a full commit SHA: ${reference}`,
+    );
+  }
   assert.match(workflow, /provenance: false/);
-  assert.match(workflow, /EDITOR_RELEASE_IMAGE_DIGEST: \$\{\{ steps\.build\.outputs\.digest \}\}/);
-  assert.match(workflow, /register-editor-release-job\.sh \\\s+isolated/);
-  assert.match(workflow, /register-editor-release-job\.sh \\\s+production/);
   assert.match(
     workflow,
-    /register-editor-release-job\.sh \\\s+unified-template-subtitles \\\s+"\$UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION"/,
+    /build-args:\s*\|\s*WORKER_SOURCE_GIT_SHA=\$\{\{ github\.sha \}\}/,
   );
-  assert.match(workflow, /editor-release-probe/);
+  assert.match(workflow, /image_digest: \$\{\{ steps\.image\.outputs\.digest \}\}/);
+  assert.match(workflow, /Resolve an existing immutable release tag on workflow retry/);
+  assert.doesNotMatch(workflow, /register-editor-release-job\.sh/);
+  assert.doesNotMatch(workflow, /register-editor-v4-project-lane\.sh/);
+  assert.doesNotMatch(workflow, /aws batch (?:register-job-definition|submit-job)/);
+  for (const lane of [
+    "legacy_project",
+    "source_range",
+    "elevenlabs_transcription",
+    "subtitle_templates",
+    "unified_template_subtitles",
+  ]) assert.match(registrar, new RegExp(lane));
+  assert.match(registrar, /editor-release-probe/);
   assert.match(workflow, /make verify/);
   assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_URL/);
   assert.match(workflow, /secrets\.EDITOR_TEST_DATABASE_FINGERPRINT/);
@@ -175,73 +194,168 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.match(workflow, /PRODUCTION_SUPABASE_PROJECT_REF/);
   assert.match(
     workflow,
-    /node scripts\/apply-supabase\.mjs --non-production \\\s+202607310003_editor_release_channels\.sql \\\s+202608010001_editor_render_canary_outbox\.sql \\\s+202608080001_subtitle_templates_admin_canary\.sql \\\s+202608110001_editor_subtitle_editing_capability\.sql \\\s+202608240002_unified_template_subtitles_canary_flag\.sql/,
+    /node scripts\/apply-supabase\.mjs --non-production[\s\S]*202608260008_editor_release_probe_attestation\.sql/,
   );
   assert.doesNotMatch(workflow, /node scripts\/apply-supabase\.mjs\s*\n\s*$/m);
   assert.match(workflow, /EDITOR_RELEASE_ECR_REPOSITORY_URI/);
-  assert.match(
-    workflow,
-    /UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION: \$\{\{ vars\.UNIFIED_TEMPLATE_SUBTITLES_TEMPLATE_JOB_DEFINITION \|\| 'shorts-mvp-project-heavy-fargate-production' \}\}/,
-  );
-  assert.match(
-    workflow,
-    /UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN: \$\{\{ vars\.UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN \}\}/,
-  );
-  assert.match(
-    workflow,
-    /job-queue\/shorts-mvp-prepare-production\$/,
-  );
-  assert.match(
-    workflow,
-    /UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN: \$\{\{ steps\.unified-template-subtitles-definition\.outputs\.unified_template_subtitles_job_definition_arn \}\}/,
-  );
+  assert.match(workflow, /\.projectTargets \| keys \| length == 5/);
   assert.match(workflow, /GITHUB_STEP_SUMMARY/);
   assert.doesNotMatch(workflow, /(?:create|update)-job-queue/);
   assert.match(
     workflow,
     /EDITOR_RELEASE_BUILD_ROLE_ARN: \$\{\{ vars\.EDITOR_RELEASE_BUILD_ROLE_ARN \}\}/,
   );
+  assert.match(
+    workflow,
+    /EDITOR_RELEASE_VERIFIER_ROLE_ARN: \$\{\{ vars\.EDITOR_RELEASE_VERIFIER_ROLE_ARN \}\}/,
+  );
   assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/heads\/codex\/unified-template-subtitles-admin-canary-20260824'/,
+    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260826'/,
   );
-  assert.match(workflow, /uiVersion:3/);
-  assert.match(workflow, /documentVersion:3/);
-  assert.match(workflow, /subtitleEditingCapable:true/);
+  assert.doesNotMatch(workflow, /refs\/heads\//);
+  assert.match(workflow, /environment: editor-v4-release-approval/);
+  assert.doesNotMatch(workflow, /unified-template-subtitles-admin-canary/);
+  assert.match(workflow, /action:"startProbe"/);
+  assert.match(workflow, /action:"finalizeRelease"/);
+  assert.match(workflow, /editor-font-manifest/);
+  assert.match(workflow, /\.checks\["runtime-identity"\] == true/);
+  assert.match(workflow, /\.runtimeIdentity == \{/);
+  assert.match(registrar, /EDITOR_RELEASE_GIT_SHA/);
+  assert.match(workflow, /"cssToAssBaselineOffsetEm","cssToAssScale","fontId","postscriptName","resolvedPath","sha256","wordSpaceAdvanceEm"/);
+  assert.match(workflow, /"paperlogy":"Paperlogy-7Bold\.ttf"/);
+  assert.match(
+    workflow,
+    /\{fallbackDetected,entries:\(\.entries \| sort_by\(\.fontId\)\)\}/,
+  );
+  assert.match(workflow, /worker-title-compositor-parity/);
+  assert.match(workflow, /worker-caption-noop-parity/);
+  assert.match(workflow, /browser-worker-visual-parity/);
+  assert.match(workflow, /run-editor-v4-browser-worker-parity-matrix\.py/);
+  assert.match(workflow, /--worker-manifest probe-manifest\.json/);
+  assert.match(workflow, /maximumPixelErrorPixels <= 2/);
+  assert.match(workflow, /browser-worker-parity\/report\.json/);
+  assert.match(workflow, /allEditorFontsBothCaptionModes/);
+  assert.match(workflow, /allEditorFontsTitleMatrix/);
+  assert.match(workflow, /browserParityReportJson:\$browserParityReportJson/);
+  assert.match(workflow, /browserParityReportSha256:\$browserParityReportSha256/);
+  assert.match(workflow, /githubOidcToken:\$githubOidcToken/);
+  assert.match(workflow, /audience=editor-v4-release-registrar/);
+  assert.match(workflow, /--version-id "\$manifest_version"/);
+  assert.match(workflow, /--version-id "\$matrix_version"/);
+  assert.match(workflow, /releaseIdentity:\{/);
+  assert.doesNotMatch(workflow, /browserParityReportUri/);
+  assert.doesNotMatch(workflow, /actions\/upload-artifact/);
   assert.doesNotMatch(workflow, /startsWith\(github\.ref/);
   assert.doesNotMatch(workflow, /\b(vercel deploy|cdk deploy)\b/);
 
-  assert.match(registrar, /shorts-mvp-editor-release-\$\{git_sha:0:12\}/);
-  assert.match(registrar, /shorts-mvp-editor-test-release-\$\{git_sha:0:12\}/);
+  assert.match(registrar, /def _start_v4_probe/);
+  assert.match(registrar, /def _finalize_v4_release/);
+  assert.match(registrar, /reserve_editor_release_probe_v4/);
+  assert.match(registrar, /attach_editor_release_probe_job_v4/);
+  assert.match(registrar, /attach_editor_release_probe_evidence_v4/);
+  assert.match(registrar, /finalize_editor_render_v4_release/);
+  assert.match(registrar, /shorts-mvp-editor-release-\{git_sha\[:12\]\}/);
+  assert.match(registrar, /shorts-mvp-editor-test-release-\{git_sha\[:12\]\}-\{nonce\[:8\]\}/);
   assert.match(registrar, /-4vcpu/);
-  assert.match(registrar, /candidate_vcpus="4"/);
-  assert.match(registrar, /candidate_ffmpeg_threads="4"/);
-  assert.match(registrar, /unified-template-subtitles\)/);
-  assert.match(registrar, /shorts-mvp-project-heavy-fargate-production/);
-  assert.match(registrar, /INGESTION_PROXY_ROUTES_JSON/);
-  assert.match(registrar, /ephemeralStorage\.sizeInGiB == 30/);
-  assert.match(registrar, /attemptDurationSeconds == 7200/);
-  assert.match(
-    registrar,
-    /unified_template_subtitles_job_definition_arn=\$definition_arn/,
-  );
-  assert.match(
-    registrar,
-    /\{type:"VCPU",value:\$candidateVcpus\}/,
-  );
-  assert.match(
-    registrar,
-    /\{name:"TASK_VCPUS",value:\$candidateVcpus\}/,
-  );
-  assert.match(
-    registrar,
-    /\{name:"FFMPEG_THREADS",value:\$candidateFfmpegThreads\}/,
-  );
-  assert.match(registrar, /\$\{repository_uri\}@\$\{image_digest\}/);
-  assert.match(registrar, /ascii_downcase \| startswith\("aws:"\) \| not/);
+  assert.match(registrar, /EDITOR_RELEASE_REGISTRAR_PASS_ROLE_ARNS/);
+  assert.match(registrar, /forced_task_role_arn=os\.environ\["EDITOR_TEST_TASK_ROLE_ARN"\]/);
+  assert.match(registrar, /"command": \["python", "-m", "shorts_worker", "editor-release-probe"\]/);
+  assert.match(registrar, /version_id=matrix_contract\["versionId"\]/);
+  assert.match(registrar, /release_identity=release_identity/);
   assert.doesNotMatch(registrar, /:latest/);
   assert.doesNotMatch(registrar, /docker\s+(build|push)/);
+});
+
+test("production runbook applies and verifies migrations 007 and 008 before bootstrap", async () => {
+  const runbook = await source("docs/aws-runbook.md");
+  assert.match(
+    runbook,
+    /apply-supabase\.mjs --production[\s\\\n]*202608260007_editor_render_spec_v4_release_control\.sql/,
+  );
+  assert.match(
+    runbook,
+    /verify-editor-render-v4-release-control\.mjs --require-stopped/,
+  );
+  assert.match(
+    runbook,
+    /apply-supabase\.mjs --production[\s\\\n]*202608260008_editor_release_probe_attestation\.sql/,
+  );
+  assert.match(
+    runbook,
+    /verify-editor-release-probe-attestation\.mjs --require-empty/,
+  );
+  assert.ok(
+    runbook.indexOf("202608260008_editor_release_probe_attestation.sql")
+      < runbook.indexOf("--phase bootstrap"),
+  );
+});
+
+test("render-spec v4 release control is additive, immutable, and off by default", async () => {
+  const migration = await source(
+    "supabase/migrations/202608260007_editor_render_spec_v4_release_control.sql",
+  );
+
+  for (const column of [
+    "render_spec_version",
+    "caption_render_spec_version",
+    "font_manifest_sha256",
+    "initial_render_spec_version",
+    "initial_caption_render_spec_version",
+    "initial_render_spec",
+  ]) assert.match(migration, new RegExp(`add column if not exists ${column}`));
+  assert.match(migration, /render_v4_rollout_percent in \(0,5,25,100\)/);
+  assert.match(migration, /render_v4_kill_switch boolean not null default true/);
+  assert.match(migration, /candidate\.status in \('canary_ready','canary_active','approved'\)/);
+  assert.match(migration, /candidate\.staging_verified_at is not null/);
+  assert.match(migration, /stable\.promoted_at is not null/);
+  assert.match(migration, /p_job_queue_arn text/);
+  assert.equal(
+    migration.match(/project_target\.job_queue_arn=p_job_queue_arn/g)?.length,
+    2,
+  );
+  assert.match(migration, /video_jobs_initial_render_spec_versions_check/);
+  assert.match(migration, /initial_render_spec is null[\s\S]*jsonb_typeof\(initial_render_spec\)='object'/);
+  assert.match(migration, /validate constraint generated_shorts_initial_render_spec_object_check/);
+  assert.match(migration, /new\.render_spec_version[\s\S]*old\.font_manifest_sha256/);
+  assert.match(
+    migration,
+    /before update or delete on shorts_mvp\.editor_release_project_targets/,
+  );
+  assert.match(
+    migration,
+    /grant select,insert on shorts_mvp\.editor_release_project_targets to service_role/,
+  );
+  assert.doesNotMatch(migration, /\bupdate\s+shorts_mvp\.(?:video_jobs|generated_shorts|editor_releases)\b/i);
+  assert.doesNotMatch(migration, /\bdrop\s+(?:table|column)\b/i);
+  const jobsRoute = await source("web/app/api/jobs/route.ts");
+  assert.match(jobsRoute, /resolve_initial_render_v4_release/);
+  assert.match(jobsRoute, /initial_render_spec_version, initial_caption_render_spec_version/);
+  const admissionCheck = jobsRoute.indexOf("assertJobCreationAllowed({");
+  const resolver = jobsRoute.indexOf("resolve_initial_render_v4_release(");
+  const jobInsert = jobsRoute.indexOf("insert into shorts_mvp.video_jobs (");
+  assert.ok(admissionCheck >= 0 && resolver > admissionCheck);
+  assert.ok(jobInsert > resolver);
+  assert.match(
+    migration,
+    /language plpgsql[\s\S]*volatile[\s\S]*for share of state,runtime/,
+  );
+});
+
+test("the public v4 compiler flag is explicit and synchronized for candidate builds", async () => {
+  const [example, sync, rollout] = await Promise.all([
+    source(".env.example"),
+    source("scripts/sync-vercel-env.sh"),
+    source("docs/editor-rendering-v2-rollout.md"),
+  ]);
+
+  assert.match(example, /^NEXT_PUBLIC_EDITOR_RENDER_SPEC_V4_ENABLED=false$/m);
+  assert.match(sync, /NEXT_PUBLIC_EDITOR_RENDER_SPEC_V4_ENABLED/);
+  assert.match(
+    rollout,
+    /NEXT_PUBLIC_EDITOR_RENDER_SPEC_V4_ENABLED=true[\s\S]*무별칭 후보를\s+빌드하기 전에/,
+  );
 });
 
 test("subtitle editing is an immutable verified release capability", async () => {
@@ -345,5 +459,8 @@ test("non-production setup never mutates repository variables and editor outputs
   assert.match(rollout, /## GitHub Actions 설정/);
   assert.match(rollout, /EDITOR_TEST_JOB_QUEUE/);
   assert.match(rollout, /EDITOR_TEST_TEMPLATE_JOB_DEFINITION/);
-  assert.match(rollout, /main에서 workflow를 수동 실행/);
+  assert.match(
+    rollout,
+    /codex\/render-parity-v4-20260826[\s\S]*main.*임의 ref에서는 실행하지 않는다/,
+  );
 });

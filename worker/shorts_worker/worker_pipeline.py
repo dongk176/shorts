@@ -31,19 +31,31 @@ from .editor_renderer import (
     EditorDocumentRenderer,
     editor_highlight_subtitles_enabled,
     editor_subtitle_render_mode,
+    project_caption_render_spec_v4,
     retime_editor_subtitles,
 )
 from .errors import (
     BotCheckError,
     CaptionCompileError,
     IngestionError,
+    RenderError,
     RetryableIngestionError,
     RetryExhaustedIngestionError,
     TranscriptionError,
 )
 from .ingestion import DownloadedAssetBundle, YtDlpIngestionProvider
 from .media import media_duration, probe_media, run_command
+from .overlays import (
+    contrasting_title_text_color,
+    default_title_text_styles,
+    ensure_title_text_background,
+)
 from .queueing import WorkQueue
+from .release_identity import (
+    initial_render_v4_opt_in,
+    verify_initial_render_v4_runtime,
+)
+from .render_spec_v4 import compile_initial_editor_render_spec_v4
 from .renderer import VideoRenderer
 from .repository import WorkerRepository
 from .schemas import (
@@ -204,6 +216,74 @@ def _preset_brand_color(item: dict[str, object]) -> str | None:
     if isinstance(brand_color, str) and brand_color in BRAND_COLOR_VALUES:
         return brand_color
     return None
+
+
+def _initial_title_text_styles(
+    item: dict[str, object],
+    *,
+    title: str,
+    caption_render_spec: dict[str, object] | None,
+) -> list[TitleTextStyle]:
+    """Return the exact semantic styles paired with the initial v4 boxes.
+
+    These values are persisted on the generated short as well as consumed by
+    the v4 compiler.  The editor therefore starts from the same overrides that
+    produced the first video instead of reconstructing a different legacy
+    default and later reviving a removed background.
+    """
+    template_id = TemplateId(str(item["template_id"]))
+    video_aspect_ratio = VideoAspectRatio(
+        str(item.get("video_aspect_ratio") or "1:1")
+    )
+    custom_config = _custom_template_config(item)
+    default_aspect_ratio = (
+        VideoAspectRatio.PORTRAIT
+        if template_id is TemplateId.COMMENT_CAPTURE
+        and video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+        else video_aspect_ratio
+    )
+    # A custom template already owns its primary/accent colors and background
+    # semantics.  Persisting a preset's implicit title style on top of it would
+    # turn that preset fallback into an explicit user override and could revive
+    # a background the custom template intentionally removed.
+    styles = (
+        []
+        if custom_config is not None
+        else default_title_text_styles(
+            title,
+            template_id,
+            overlay_mode=default_aspect_ratio is VideoAspectRatio.FULL_VERTICAL,
+        )
+    )
+    brand_color = _preset_brand_color(item)
+    if custom_config is None and brand_color and styles:
+        styles = [
+            style.model_copy(update={
+                "background_color": brand_color,
+                "color": contrasting_title_text_color(brand_color),
+            })
+            for style in styles
+        ]
+
+    if (
+        custom_config is None
+        and caption_render_spec is not None
+        and video_aspect_ratio is VideoAspectRatio.FULL_VERTICAL
+    ):
+        style_value = caption_render_spec.get("style")
+        caption_brand_color = (
+            style_value.get("accentColor")
+            if isinstance(style_value, dict)
+            and isinstance(style_value.get("accentColor"), str)
+            and style_value.get("accentColor") in BRAND_COLOR_VALUES
+            else CAPTION_ACCENT
+        )
+        styles = ensure_title_text_background(
+            title,
+            styles,
+            brand_color or str(caption_brand_color),
+        )
+    return styles
 
 
 def _subtitle_template_timing_lead_frames(snapshot: object) -> int:
@@ -957,6 +1037,7 @@ class BatchWorker:
             raise KeyError(job_id)
         if int(job.get("pipeline_version") or 1) != 2:
             raise ValueError("project command requires pipeline_version=2")
+        initial_render_v4 = verify_initial_render_v4_runtime(job) is not None
         claimed = self.repository.claim_project_run(job_id, resume=resume)
         if not claimed:
             return
@@ -1449,11 +1530,16 @@ class BatchWorker:
                                     else caption_font_id
                                 ),
                                 timing_lead_frames=caption_timing_lead_frames,
+                                schema_version=4 if initial_render_v4 else 3,
                                 **_caption_compile_options(
                                     unified_template_subtitle
                                 ),
                             )
-                        except (CaptionCompileError, TranscriptionError) as exc:
+                        except (
+                            CaptionCompileError,
+                            RenderError,
+                            TranscriptionError,
+                        ) as exc:
                             rejected_caption_clips += 1
                             _log_event(
                                 "project_caption_clip_rejected",
@@ -1536,11 +1622,40 @@ class BatchWorker:
                                     else caption_font_id
                                 ),
                                 timing_lead_frames=caption_timing_lead_frames,
+                                schema_version=4 if initial_render_v4 else 3,
                                 **_caption_compile_options(
                                     unified_template_subtitle
                                 ),
                             )
-                        except (CaptionCompileError, TranscriptionError) as exc:
+                            if initial_render_v4:
+                                selected_clip = _offset_highlight_clip(
+                                    clips[index - 1],
+                                    source_offset_seconds,
+                                )
+                                # The padded timeline is the one canonical word
+                                # source.  Derive the first-render selection from
+                                # it with the same projector used by a no-op edit;
+                                # never compile two competing v4 geometries.
+                                caption_render_specs[index] = (
+                                    project_caption_render_spec_v4(
+                                        timeline_spec,
+                                        clip_start_seconds=round(
+                                            selected_clip.start_seconds
+                                            - absolute_timeline_clip.start_seconds,
+                                            3,
+                                        ),
+                                        clip_end_seconds=round(
+                                            selected_clip.end_seconds
+                                            - absolute_timeline_clip.start_seconds,
+                                            3,
+                                        ),
+                                    )
+                                )
+                        except (
+                            CaptionCompileError,
+                            RenderError,
+                            TranscriptionError,
+                        ) as exc:
                             unavailable_timeline_indexes.append(index)
                             _log_event(
                                 "caption_edit_timeline_rejected",
@@ -1857,6 +1972,33 @@ class BatchWorker:
         clean_key: str | None = None
         clean_metrics: dict[str, object] = {}
         source_offset_seconds = float(job.get("normalized_source_start_seconds") or 0.0)
+        initial_v4 = initial_render_v4_opt_in(job)
+        visible_caption_spec = (
+            caption_render_spec if caption_enabled is not False else None
+        )
+        initial_title_text_styles = (
+            _initial_title_text_styles(
+                job,
+                title=clip.hook_title,
+                caption_render_spec=visible_caption_spec,
+            )
+            if initial_v4
+            else None
+        )
+        initial_render_spec = (
+            compile_initial_editor_render_spec_v4(
+                title=clip.hook_title,
+                template_id=str(job["template_id"]),
+                video_aspect_ratio=str(job.get("video_aspect_ratio") or "1:1"),
+                font_scale=1,
+                title_text_styles=initial_title_text_styles,
+                custom_template_config=_custom_template_config(job),
+                comments=comments,
+                caption_render_spec=visible_caption_spec,
+            )
+            if initial_v4
+            else None
+        )
         try:
             self.renderer.extract_clean_clip(
                 source_path=source,
@@ -1909,6 +2051,16 @@ class BatchWorker:
                 retention_days=int(job["retention_days"]),
                 shard_index=0,
                 caption_render_spec=caption_render_spec,
+                initial_render_spec=initial_render_spec,
+                title_text_styles=(
+                    [
+                        style.model_dump(by_alias=True, exclude_none=True)
+                        for style in initial_title_text_styles
+                    ]
+                    if initial_title_text_styles is not None
+                    else None
+                ),
+                title_text_styles_initialized=initial_v4,
                 subtitles_enabled=caption_enabled,
             )
             if not inserted:
@@ -2972,6 +3124,7 @@ class BatchWorker:
         job = self.repository.get_job(job_id)
         if not job:
             raise KeyError(job_id)
+        verify_initial_render_v4_runtime(job)
         if job["status"] in {"completed", "failed", "expired", "deleted"}:
             return
         if job.get("deadline_at") and job["deadline_at"] <= datetime.now(UTC):
@@ -3099,6 +3252,14 @@ class BatchWorker:
                 caption_render_spec=(
                     dict(caption_spec)
                     if isinstance((caption_spec := item.get("caption_render_spec")), dict)
+                    else None
+                ),
+                initial_render_spec=(
+                    dict(initial_render_spec)
+                    if isinstance(
+                        (initial_render_spec := item.get("initial_render_spec")),
+                        dict,
+                    )
                     else None
                 ),
                 title_accent_color=_preset_brand_color(item),

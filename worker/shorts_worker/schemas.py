@@ -8,6 +8,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .fallback_comments import select_fallback_comment_texts
+from .title_wrapping import manual_title_lines, wrap_korean_title
 
 
 class TemplateId(StrEnum):
@@ -332,7 +333,8 @@ class TitleTextStyle(BaseModel):
 EDITOR_DOCUMENT_VERSION = 2
 EDITOR_DOCUMENT_LATEST_VERSION = 3
 EDITOR_RENDER_SPEC_VERSION = 1
-EDITOR_RENDER_SPEC_LATEST_VERSION = 3
+EDITOR_RENDER_SPEC_LATEST_VERSION = 4
+EDITOR_FONT_METRICS_REVISION = "editor-font-metrics-v1"
 EDITOR_CANVAS_WIDTH = 1080
 EDITOR_CANVAS_HEIGHT = 1920
 EDITOR_PRESET_COLORS = {
@@ -418,6 +420,16 @@ EDITOR_FONT_VARIABLE_IDS = {
 }
 
 
+class EditorFontMetrics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    revision: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9][a-z0-9._-]*$",
+    )
+
+
 class EditorResolvedFontFace(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -427,6 +439,11 @@ class EditorResolvedFontFace(BaseModel):
     requested_weight: int = Field(alias="requestedWeight")
     resolved_weight: int = Field(alias="resolvedWeight")
     variable_weight: int | None = Field(alias="variableWeight")
+    sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    metrics: EditorFontMetrics | None = None
 
     @model_validator(mode="after")
     def validate_face(self) -> EditorResolvedFontFace:
@@ -448,15 +465,106 @@ class EditorResolvedFontFace(BaseModel):
         return self
 
 
+class EditorRenderTitleClamp(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    min_x: float = Field(alias="minX", ge=-1080, le=2160)
+    max_x: float = Field(alias="maxX", ge=-1080, le=2160)
+    min_y: float = Field(alias="minY", ge=-1920, le=3840)
+    max_y: float = Field(alias="maxY", ge=-1920, le=3840)
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> EditorRenderTitleClamp:
+        if self.max_x <= self.min_x or self.max_y <= self.min_y:
+            raise ValueError("editor v4 title clamp is invalid")
+        return self
+
+
+class EditorRenderTitleBackgroundRun(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    start: int = Field(ge=0, le=200)
+    end: int = Field(gt=0, le=200)
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    x: float | None = Field(default=None, ge=-1080, le=2160)
+    y: float | None = Field(default=None, ge=-1920, le=3840)
+    width: float | None = Field(default=None, gt=0, le=2160)
+    height: float | None = Field(default=None, gt=0, le=3840)
+    radius: float | None = Field(default=None, ge=0, le=200)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> EditorRenderTitleBackgroundRun:
+        if self.end <= self.start:
+            raise ValueError("editor v4 title background range is invalid")
+        geometry = (self.x, self.y, self.width, self.height, self.radius)
+        if any(value is None for value in geometry) and any(
+            value is not None for value in geometry
+        ):
+            raise ValueError("editor v4 title background geometry is incomplete")
+        return self
+
+
+class EditorRenderTitleLineBox(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    text: str = Field(min_length=1, max_length=80)
+    center_x: float = Field(alias="centerX", ge=-1080, le=2160)
+    center_y: float = Field(alias="centerY", ge=-1920, le=3840)
+    width: float = Field(gt=0, le=2160)
+    height: float = Field(gt=0, le=3840)
+    baseline_y: float = Field(alias="baselineY", ge=-1920, le=3840)
+    background_runs: list[EditorRenderTitleBackgroundRun] = Field(
+        default_factory=list,
+        alias="backgroundRuns",
+        max_length=80,
+    )
+
+    @model_validator(mode="after")
+    def validate_background_runs(self) -> EditorRenderTitleLineBox:
+        previous_end = 0
+        for run in self.background_runs:
+            if run.end > len(self.text) or run.start < previous_end:
+                raise ValueError("editor v4 title background runs are invalid")
+            previous_end = run.end
+        return self
+
+
 class EditorRenderTitleSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     lines: list[str] = Field(min_length=1, max_length=2)
-    center_x: int = Field(alias="centerX", ge=540, le=540)
+    center_x: float = Field(alias="centerX", ge=-1080, le=2160)
     offset_y: float = Field(alias="offsetY", ge=-1920, le=1920)
     font_size: float = Field(alias="fontSize", ge=18, le=200)
     scale: float = Field(ge=1, le=1)
     font: EditorResolvedFontFace
+    visible: bool | None = None
+    center_y: float | None = Field(
+        default=None,
+        alias="centerY",
+        ge=-1920,
+        le=3840,
+    )
+    line_gap: float | None = Field(default=None, alias="lineGap", ge=0, le=1920)
+    line_padding_x: float | None = Field(
+        default=None,
+        alias="linePaddingX",
+        ge=0,
+        le=1080,
+    )
+    line_padding_y: float | None = Field(
+        default=None,
+        alias="linePaddingY",
+        ge=0,
+        le=1920,
+    )
+    clamp: EditorRenderTitleClamp | None = None
+    line_boxes: list[EditorRenderTitleLineBox] | None = Field(
+        default=None,
+        alias="lineBoxes",
+        min_length=1,
+        max_length=2,
+    )
 
 
 class EditorRenderChannelSpec(BaseModel):
@@ -466,6 +574,7 @@ class EditorRenderChannelSpec(BaseModel):
     offset_y: float = Field(alias="offsetY", ge=-1920, le=1920)
     scale: float = Field(ge=0.5, le=2)
     font: EditorResolvedFontFace
+    visible: bool | None = None
 
 
 class EditorRenderCommentSpec(BaseModel):
@@ -502,6 +611,13 @@ class EditorRenderSubtitleSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     center_x: int = Field(alias="centerX", ge=540, le=540)
+    visible: bool | None = None
+    caption_spec_version: int | None = Field(
+        default=None,
+        alias="captionSpecVersion",
+        ge=4,
+        le=4,
+    )
     offset_y: float = Field(alias="offsetY", ge=-900, le=900)
     scale: float = Field(ge=0.5, le=2)
     font_id: EditorFontId | None = Field(default=None, alias="fontId")
@@ -588,6 +704,8 @@ class EditorRenderSpec(BaseModel):
     def validate_canvas(self) -> EditorRenderSpec:
         if self.canvas != {"width": 1080, "height": 1920}:
             raise ValueError("editor render canvas is invalid")
+        if self.version < 4 and self.title.center_x != 540:
+            raise ValueError("legacy editor render title must remain centered")
         if self.version == 1 and self.subtitles is not None:
             raise ValueError("editor renderSpec v1 cannot contain subtitle layout")
         if self.version in {2, 3} and self.subtitles is None:
@@ -598,6 +716,94 @@ class EditorRenderSpec(BaseModel):
             or self.subtitles.color is None
         ):
             raise ValueError("editor renderSpec v3 requires subtitle style")
+        if self.version == 4 and self.subtitles is not None and (
+            self.subtitles.font_size is None
+            or self.subtitles.color is None
+            or self.subtitles.visible is not True
+            or self.subtitles.caption_spec_version != 4
+        ):
+            raise ValueError("editor renderSpec v4 subtitle style is incomplete")
+        if self.version == 4:
+            title = self.title
+            if any(
+                value is None
+                for value in (
+                    title.visible,
+                    title.center_y,
+                    title.line_gap,
+                    title.line_padding_x,
+                    title.line_padding_y,
+                    title.clamp,
+                    title.line_boxes,
+                )
+            ):
+                raise ValueError("editor renderSpec v4 title layout is incomplete")
+            faces = [title.font, self.channel.font, *(
+                item.font for item in self.text_overlays
+            )]
+            if any(
+                face.sha256 is None
+                or face.metrics is None
+                or face.metrics.revision != EDITOR_FONT_METRICS_REVISION
+                for face in faces
+            ):
+                raise ValueError("editor renderSpec v4 font manifest is incomplete")
+            if self.channel.visible is None:
+                raise ValueError("editor renderSpec v4 channel visibility is missing")
+            assert title.line_boxes is not None
+            assert title.clamp is not None
+            if title.lines != [box.text for box in title.line_boxes]:
+                raise ValueError("editor renderSpec v4 title lines do not match boxes")
+            canonical_values = [
+                title.center_x,
+                title.center_y,
+                title.font_size,
+                title.line_gap,
+                title.line_padding_x,
+                title.line_padding_y,
+                title.clamp.min_x,
+                title.clamp.max_x,
+                title.clamp.min_y,
+                title.clamp.max_y,
+                *(
+                    value
+                    for box in title.line_boxes
+                    for value in (
+                        box.center_x,
+                        box.center_y,
+                        box.width,
+                        box.height,
+                        box.baseline_y,
+                    )
+                ),
+            ]
+            if any(
+                abs(float(value) * 1000 - round(float(value) * 1000)) > 1e-6
+                for value in canonical_values
+            ):
+                raise ValueError("editor renderSpec v4 title geometry is not canonical")
+            for box in title.line_boxes:
+                if any(
+                    value is None
+                    for run in box.background_runs
+                    for value in (
+                        run.x,
+                        run.y,
+                        run.width,
+                        run.height,
+                        run.radius,
+                    )
+                ):
+                    raise ValueError(
+                        "editor renderSpec v4 title background geometry is missing"
+                    )
+                if (
+                    box.center_x - box.width / 2 < title.clamp.min_x - 0.001
+                    or box.center_x + box.width / 2 > title.clamp.max_x + 0.001
+                    or box.center_y - box.height / 2 < title.clamp.min_y - 0.001
+                    or box.center_y + box.height / 2 > title.clamp.max_y + 0.001
+                ):
+                    raise ValueError("editor renderSpec v4 title box exceeds its clamp")
         return self
 
 
@@ -738,7 +944,7 @@ class EditorDocumentTitle(BaseModel):
 
     @model_validator(mode="after")
     def validate_title(self) -> EditorDocumentTitle:
-        if len(self.text.splitlines()) > 2:
+        if len(manual_title_lines(self.text)) > 2:
             raise ValueError("editor title can contain at most two lines")
         text_length = len(self.text)
         ordered = sorted(self.text_styles, key=lambda style: style.start)
@@ -902,8 +1108,30 @@ class EditorDocument(BaseModel):
             spec = self.render_spec
             if spec.layer_order != self.overlays.layer_order:
                 raise ValueError("renderSpec layer order does not match editor overlays")
-            if spec.title.center_x != 540:
+            if spec.version < 4 and spec.title.center_x != 540:
                 raise ValueError("editor title must remain horizontally centered")
+            if (
+                spec.version == 4
+                and spec.title.lines
+                != wrap_korean_title(self.title.text, max_chars=20, max_lines=2)
+            ):
+                raise ValueError("renderSpec v4 title lines do not match source title")
+            if (
+                spec.version == 4
+                and spec.title.visible != self.overlays.visible["title"]
+            ):
+                raise ValueError("renderSpec title visibility does not match editor title")
+            if (
+                spec.version == 4
+                and spec.channel.visible != self.overlays.visible["channel"]
+            ):
+                raise ValueError("renderSpec channel visibility does not match editor channel")
+            if (
+                spec.version == 4
+                and spec.subtitles is None
+                and self.subtitles.enabled
+            ):
+                raise ValueError("renderSpec v4 omits enabled subtitles")
             if (
                 spec.title.offset_y != self.overlays.offsets["title"].y
                 or spec.title.font.font_id != self.overlays.fonts["title"]
@@ -1119,7 +1347,7 @@ class HighlightClip(BaseModel):
     @field_validator("hook_title", mode="before")
     @classmethod
     def bound_hook_title(cls, value: object) -> str:
-        lines = [" ".join(line.split()) for line in str(value).splitlines() if line.strip()]
+        lines = manual_title_lines(str(value))
         clean = "\n".join(lines[:2]) or "핵심 장면"
         return clean[:MAX_HOOK_TITLE_CHARS].rstrip()
 

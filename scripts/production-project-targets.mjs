@@ -27,6 +27,11 @@ const EXACT_CURRENT_KEYS = [
   "workerSourceGitSha",
 ];
 const EXACT_PREVIOUS_KEYS = [...EXACT_CURRENT_KEYS];
+const V4_CAPABILITY_KEYS = [
+  "captionRenderSpecVersion",
+  "fontManifestSha256",
+  "renderSpecVersion",
+];
 
 function requireExactKeys(value, expected, label) {
   const actual = Object.keys(value || {}).sort();
@@ -40,7 +45,15 @@ function validateReleaseTarget(target, label, expectedKeys) {
   if (!target || typeof target !== "object" || Array.isArray(target)) {
     throw new Error(`${label} 대상이 JSON 객체가 아닙니다.`);
   }
-  requireExactKeys(target, expectedKeys, label);
+  const capabilityCount = V4_CAPABILITY_KEYS.filter((key) => key in target).length;
+  if (capabilityCount !== 0 && capabilityCount !== V4_CAPABILITY_KEYS.length) {
+    throw new Error(`${label} v4 capability triple이 완전하지 않습니다.`);
+  }
+  requireExactKeys(
+    target,
+    capabilityCount === 0 ? expectedKeys : [...expectedKeys, ...V4_CAPABILITY_KEYS],
+    label,
+  );
   if (!RELEASE_ID.test(String(target.releaseId || ""))) {
     throw new Error(`${label}.releaseId 형식이 올바르지 않습니다.`);
   }
@@ -61,6 +74,13 @@ function validateReleaseTarget(target, label, expectedKeys) {
   }
   if (!String(target.jobDefinitionArn).includes(target.workerSourceGitSha.slice(0, 7))) {
     throw new Error(`${label} Job Definition에 Worker source 식별자가 없습니다.`);
+  }
+  if (capabilityCount && (
+    target.renderSpecVersion !== 4
+    || target.captionRenderSpecVersion !== 4
+    || !/^[0-9a-f]{64}$/.test(String(target.fontManifestSha256 || ""))
+  )) {
+    throw new Error(`${label} v4 capability triple이 올바르지 않습니다.`);
   }
   return `${definition[1]}:${definition[2]}`;
 }
@@ -224,12 +244,36 @@ export function productionProjectTargetEnvironment(registry) {
     values[`${prefix}_JOB_DEFINITION_ARN`] = lane.current.jobDefinitionArn;
     values[`${prefix}_BATCH_QUEUE_ARN`] = lane.current.jobQueueArn;
     values[`${prefix}_BATCH_TARGET_RELEASE_ID`] = lane.current.releaseId;
+    values[`${prefix}_WORKER_SOURCE_GIT_SHA`] =
+      lane.current.workerSourceGitSha;
+    values[`${prefix}_WORKER_IMAGE_DIGEST`] =
+      lane.current.imageUri.split("@")[1];
+    if (lane.current.renderSpecVersion !== undefined) {
+      values[`${prefix}_RENDER_SPEC_VERSION`] = String(
+        lane.current.renderSpecVersion,
+      );
+      values[`${prefix}_CAPTION_RENDER_SPEC_VERSION`] = String(
+        lane.current.captionRenderSpecVersion,
+      );
+      values[`${prefix}_FONT_MANIFEST_SHA256`] =
+        lane.current.fontManifestSha256;
+    }
     if (lane.previous) {
       values[`${prefix}_PREVIOUS_JOB_DEFINITION_ARN`] =
         lane.previous.jobDefinitionArn;
       values[`${prefix}_PREVIOUS_BATCH_QUEUE_ARN`] = lane.previous.jobQueueArn;
       values[`${prefix}_PREVIOUS_BATCH_TARGET_RELEASE_ID`] =
         lane.previous.releaseId;
+      if (lane.previous.renderSpecVersion !== undefined) {
+        values[`${prefix}_PREVIOUS_RENDER_SPEC_VERSION`] = String(
+          lane.previous.renderSpecVersion,
+        );
+        values[`${prefix}_PREVIOUS_CAPTION_RENDER_SPEC_VERSION`] = String(
+          lane.previous.captionRenderSpecVersion,
+        );
+        values[`${prefix}_PREVIOUS_FONT_MANIFEST_SHA256`] =
+          lane.previous.fontManifestSha256;
+      }
       if (lane.previous.submitAsReleaseId) {
         values[`${prefix}_PREVIOUS_SUBMIT_AS_RELEASE_ID`] =
           lane.previous.submitAsReleaseId;

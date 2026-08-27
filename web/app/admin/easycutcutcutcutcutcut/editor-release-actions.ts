@@ -13,6 +13,17 @@ import {
   editorRenderingV2MasterEnabled,
 } from "@/lib/editor-rendering-release";
 import {
+  canEnableEditorRenderV4Internal,
+  editorRenderV4AuditEntityId,
+  editorRenderV4ControlAuditActions,
+  editorRenderV4EmergencyStoppedAction,
+  editorRenderV4StoppedForNewCandidateAction,
+  editorRenderV4StoppedOnPromotionAction,
+  isEditorRenderV4EmergencyForRelease,
+  nextEditorRenderV4RolloutPercent,
+} from "@/lib/editor-render-v4-rollout-control";
+import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
+import {
   ELEVENLABS_PUBLIC_COMPLIANCE_APPROVED_FLAG_KEY,
   ELEVENLABS_TRANSCRIPTION_FLAG_KEY,
   ELEVENLABS_TRANSCRIPTION_PUBLIC_FLAG_KEY,
@@ -36,6 +47,10 @@ const isolatedChecks = [
   "ffprobe",
   "frame-parity",
 ] as const;
+const v4IsolatedChecks = [
+  ...isolatedChecks,
+  "browser-worker-visual-parity",
+] as const;
 const productionCanaryChecks = [
   "save-render-download",
   "gemini-comments",
@@ -43,6 +58,11 @@ const productionCanaryChecks = [
   "rollback-drill",
 ] as const;
 const productionCanaryCheckSchema = z.enum(productionCanaryChecks);
+const renderV4PublicRolloutSchema = z.union([
+  z.literal(5),
+  z.literal(25),
+  z.literal(100),
+]);
 
 async function recordAudit(
   tx: TransactionSql,
@@ -51,14 +71,46 @@ async function recordAudit(
   entityId: string,
   metadata: JSONValue,
 ) {
+  const isRenderV4Transition = (
+    editorRenderV4ControlAuditActions as readonly string[]
+  ).includes(action);
+  const transitionSequence = isRenderV4Transition
+    ? (await tx`
+        select nextval(
+          'shorts_mvp.editor_render_v4_audit_event_sequence'
+        )::bigint as event_sequence
+      `)[0]?.eventSequence ?? null
+    : null;
   await tx`
     insert into shorts_mvp.admin_audit_logs (
-      actor_user_id,action,entity_type,entity_id,metadata
+      actor_user_id,action,entity_type,entity_id,metadata,created_at,
+      render_v4_event_sequence
     ) values (
       ${actorUserId},${action},'editor_release',${entityId},
-      ${tx.json(metadata)}
+      ${tx.json(metadata)},clock_timestamp(),${transitionSequence}
     )
   `;
+}
+
+async function assertEditorRenderV4InfrastructureLeaseInactive(
+  tx: TransactionSql,
+) {
+  const rows = await tx`
+    select render_v4_infra_lease_id,render_v4_infra_lease_owner,
+      render_v4_infra_lease_expires_at,
+      (render_v4_infra_lease_id is not null
+        and render_v4_infra_lease_expires_at > clock_timestamp()) as lease_active
+    from shorts_mvp.editor_release_state
+    where singleton=true
+    for update
+  `;
+  if (rows[0]?.leaseActive === true) {
+    throw new HttpError(
+      409,
+      "Stage B 인프라 변경이 진행 중입니다. 임대가 종료된 뒤 상태를 새로 확인해 주세요.",
+      "EDITOR_RENDER_V4_INFRA_LEASE_ACTIVE",
+    );
+  }
 }
 
 async function assertChecksPassed(
@@ -86,6 +138,135 @@ async function assertChecksPassed(
       "EDITOR_RELEASE_CHECKS_INCOMPLETE",
     );
   }
+}
+
+async function assertCanaryRenderEvidence(
+  tx: TransactionSql,
+  releaseId: string,
+) {
+  const requestCounts = await tx`
+    select
+      count(*) filter (
+        where status in ('queued','rendering')
+      )::integer as active,
+      count(*) filter (where status='failed')::integer as failed,
+      count(*) filter (where status='succeeded')::integer as succeeded
+    from shorts_mvp.editor_render_requests
+    where release_id=${releaseId}
+  `;
+  if (Number(requestCounts[0]?.active || 0) > 0) {
+    throw new HttpError(409, "카나리 렌더링이 끝난 뒤 진행해 주세요.");
+  }
+  if (Number(requestCounts[0]?.failed || 0) > 0) {
+    throw new HttpError(409, "실패한 카나리 렌더링이 있어 진행할 수 없습니다.");
+  }
+  if (Number(requestCounts[0]?.succeeded || 0) === 0) {
+    throw new HttpError(
+      409,
+      "성공한 운영 카나리 렌더링이 한 건 이상 필요합니다.",
+    );
+  }
+}
+
+function assertExactRenderV4Capability(release: {
+  renderSpecVersion?: number | null;
+  captionRenderSpecVersion?: number | null;
+  fontManifestSha256?: string | null;
+}) {
+  if (
+    Number(release.renderSpecVersion) !== 4
+    || Number(release.captionRenderSpecVersion) !== 4
+    || !/^[0-9a-f]{64}$/.test(String(release.fontManifestSha256 || ""))
+  ) {
+    throw new HttpError(
+      409,
+      "정확한 v4 렌더·자막·폰트 검증 릴리스만 이 작업을 수행할 수 있습니다.",
+      "EDITOR_RENDER_V4_CAPABILITY_REQUIRED",
+    );
+  }
+}
+
+async function assertRenderV4CanaryEvidence(
+  tx: TransactionSql,
+  releaseId: string,
+) {
+  await assertRenderV4ProjectTargetsRegistered(tx, releaseId);
+  await assertChecksPassed(tx, releaseId, "isolated", v4IsolatedChecks);
+  await assertChecksPassed(
+    tx,
+    releaseId,
+    "production_canary",
+    productionCanaryChecks,
+  );
+  await assertCanaryRenderEvidence(tx, releaseId);
+}
+
+function assertRenderV4EnvironmentEnabled() {
+  if (!isEditorRenderSpecV4Enabled()) {
+    throw new HttpError(
+      409,
+      "현재 웹 배포가 v4 렌더 명세를 지원하지 않아 활성화할 수 없습니다.",
+      "EDITOR_RENDER_V4_WEB_RELEASE_DISABLED",
+    );
+  }
+}
+
+async function assertRenderV4ProjectTargetsRegistered(
+  tx: TransactionSql,
+  releaseId: string,
+) {
+  const rows = await tx`
+    select count(target.target_key)::integer as target_count,
+      coalesce(bool_and(
+        target.worker_source_git_sha=release.git_sha
+        and target.worker_image_digest=release.worker_image_digest
+      ),false) as identities_match
+    from shorts_mvp.editor_releases release
+    left join shorts_mvp.editor_release_project_targets target
+      on target.release_id=release.id
+    where release.id=${releaseId}
+    group by release.id
+  `;
+  if (
+    Number(rows[0]?.targetCount || 0) !== 5
+    || rows[0]?.identitiesMatch !== true
+  ) {
+    throw new HttpError(
+      409,
+      "동일한 소스·이미지로 검증된 v4 프로젝트 대상 5개가 모두 등록되어야 합니다.",
+      "EDITOR_RENDER_V4_PROJECT_TARGETS_REQUIRED",
+    );
+  }
+}
+
+async function loadLatestEditorRenderV4Transition(
+  tx: TransactionSql,
+  releaseId: string | null = null,
+) {
+  const rows = releaseId
+    ? await tx`
+        select audit.action,audit.metadata->>'releaseId' as release_id
+        from shorts_mvp.admin_audit_logs audit
+        where audit.entity_type='editor_release'
+          and audit.entity_id=${editorRenderV4AuditEntityId}
+          and audit.action=any(${[...editorRenderV4ControlAuditActions]})
+          and audit.metadata->>'releaseId'=${releaseId}
+        order by audit.render_v4_event_sequence desc nulls last
+        limit 1
+      `
+    : await tx`
+        select audit.action,audit.metadata->>'releaseId' as release_id
+        from shorts_mvp.admin_audit_logs audit
+        where audit.entity_type='editor_release'
+          and audit.entity_id=${editorRenderV4AuditEntityId}
+          and audit.action=any(${[...editorRenderV4ControlAuditActions]})
+        order by audit.render_v4_event_sequence desc nulls last
+        limit 1
+      `;
+  return {
+    action: rows[0]?.action ? String(rows[0].action) : null,
+    releaseId: rows[0]?.releaseId ? String(rows[0].releaseId) : null,
+  };
 }
 
 export async function addEditorReleaseTester(emailValue: string) {
@@ -153,8 +334,11 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
     );
   }
   await getDb().begin(async (tx) => {
+    await assertEditorRenderV4InfrastructureLeaseInactive(tx);
     const states = await tx`
-      select candidate_release_id,canary_enabled
+      select candidate_release_id,canary_enabled,
+        render_v4_internal_enabled,render_v4_rollout_percent,
+        render_v4_kill_switch
       from shorts_mvp.editor_release_state
       where singleton=true
       for update
@@ -167,7 +351,8 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
       );
     }
     const releases = await tx`
-      select id,status,git_sha,worker_image_digest
+      select id,status,git_sha,worker_image_digest,render_spec_version,
+        caption_render_spec_version,font_manifest_sha256
       from shorts_mvp.editor_releases
       where id=${releaseId}
       for update
@@ -176,7 +361,17 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
     if (!release || !["staging_verified", "canary_ready"].includes(release.status)) {
       throw new HttpError(409, "격리 검증을 통과한 후보만 카나리를 시작할 수 있습니다.");
     }
-    await assertChecksPassed(tx, releaseId, "isolated", isolatedChecks);
+    if (Number(release.renderSpecVersion) === 4) {
+      assertRenderV4EnvironmentEnabled();
+      assertExactRenderV4Capability(release);
+      await assertRenderV4ProjectTargetsRegistered(tx, releaseId);
+    }
+    await assertChecksPassed(
+      tx,
+      releaseId,
+      "isolated",
+      release.renderSpecVersion === 4 ? v4IsolatedChecks : isolatedChecks,
+    );
     // A newly started editor canary must opt into unified v5 separately.
     await tx`
       update shorts_mvp.runtime_feature_flags
@@ -188,12 +383,53 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
       set status='canary_active',canary_started_at=coalesce(canary_started_at,now())
       where id=${releaseId}
     `;
-    await tx`
-      update shorts_mvp.editor_release_state
-      set candidate_release_id=${releaseId},canary_enabled=true,
-        updated_by_user_id=${admin.id}
-      where singleton=true
-    `;
+    const latestTransition = Number(release.renderSpecVersion) === 4
+      ? await loadLatestEditorRenderV4Transition(tx)
+      : { action: null, releaseId: null };
+    const resetStoppedPriorRelease = Number(release.renderSpecVersion) === 4
+      && Boolean(states[0].renderV4KillSwitch)
+      && latestTransition.action === editorRenderV4EmergencyStoppedAction
+      && latestTransition.releaseId !== null
+      && latestTransition.releaseId !== releaseId;
+    if (resetStoppedPriorRelease) {
+      await tx`
+        update shorts_mvp.editor_release_state
+        set candidate_release_id=${releaseId},canary_enabled=true,
+          render_v4_internal_enabled=false,
+          render_v4_rollout_percent=0,
+          render_v4_kill_switch=true,
+          updated_by_user_id=${admin.id}
+        where singleton=true
+      `;
+      await recordAudit(
+        tx,
+        admin.id,
+        editorRenderV4StoppedForNewCandidateAction,
+        editorRenderV4AuditEntityId,
+        {
+          releaseId,
+          replacedEmergencyReleaseId: latestTransition.releaseId,
+          previous: {
+            internalEnabled: Boolean(states[0].renderV4InternalEnabled),
+            rolloutPercent: Number(states[0].renderV4RolloutPercent || 0),
+            killSwitch: Boolean(states[0].renderV4KillSwitch),
+          },
+          current: {
+            internalEnabled: false,
+            rolloutPercent: 0,
+            killSwitch: true,
+          },
+          automaticPublicRolloutAllowed: false,
+        },
+      );
+    } else {
+      await tx`
+        update shorts_mvp.editor_release_state
+        set candidate_release_id=${releaseId},canary_enabled=true,
+          updated_by_user_id=${admin.id}
+        where singleton=true
+      `;
+    }
     await recordAudit(
       tx,
       admin.id,
@@ -212,8 +448,11 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
 export async function pauseEditorReleaseCanary() {
   const admin = await requireAdminUser();
   await getDb().begin(async (tx) => {
+    await assertEditorRenderV4InfrastructureLeaseInactive(tx);
     const states = await tx`
-      select candidate_release_id,canary_enabled
+      select stable_release_id,candidate_release_id,canary_enabled,
+        render_v4_internal_enabled,render_v4_rollout_percent,
+        render_v4_kill_switch
       from shorts_mvp.editor_release_state
       where singleton=true
       for update
@@ -224,10 +463,35 @@ export async function pauseEditorReleaseCanary() {
       set enabled=false,updated_by_user_id=${admin.id}
       where flag_key=${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY}
     `;
-    if (!state?.candidateReleaseId || !state.canaryEnabled) return;
+    if (!state) return;
+    const internalWasEnabled = Boolean(state.renderV4InternalEnabled);
+    if (!state.candidateReleaseId || !state.canaryEnabled) {
+      if (!internalWasEnabled) return;
+      await tx`
+        update shorts_mvp.editor_release_state
+        set render_v4_internal_enabled=false,updated_by_user_id=${admin.id}
+        where singleton=true
+      `;
+      await recordAudit(
+        tx,
+        admin.id,
+        "editor_release.render_v4_internal_disabled",
+        editorRenderV4AuditEntityId,
+        {
+          releaseId: String(
+            state.candidateReleaseId || state.stableReleaseId || "",
+          ) || null,
+          reason: "canary_paused",
+          rolloutPercent: Number(state.renderV4RolloutPercent || 0),
+          killSwitch: Boolean(state.renderV4KillSwitch),
+        },
+      );
+      return;
+    }
     await tx`
       update shorts_mvp.editor_release_state
-      set canary_enabled=false,updated_by_user_id=${admin.id}
+      set canary_enabled=false,render_v4_internal_enabled=false,
+        updated_by_user_id=${admin.id}
       where singleton=true
     `;
     await tx`
@@ -240,8 +504,25 @@ export async function pauseEditorReleaseCanary() {
       admin.id,
       "editor_release.canary_paused",
       String(state.candidateReleaseId),
-      { unifiedTemplateSubtitlesCanaryEnabled: false },
+      {
+        unifiedTemplateSubtitlesCanaryEnabled: false,
+        renderV4InternalDisabled: internalWasEnabled,
+      },
     );
+    if (internalWasEnabled) {
+      await recordAudit(
+        tx,
+        admin.id,
+        "editor_release.render_v4_internal_disabled",
+        editorRenderV4AuditEntityId,
+        {
+          releaseId: String(state.candidateReleaseId),
+          reason: "canary_paused",
+          rolloutPercent: Number(state.renderV4RolloutPercent || 0),
+          killSwitch: Boolean(state.renderV4KillSwitch),
+        },
+      );
+    }
   });
   revalidatePath(adminPath);
 }
@@ -257,10 +538,14 @@ export async function recordEditorReleaseCanaryCheck(
   const admin = await requireAdminUser();
   await getDb().begin(async (tx) => {
     const states = await tx`
-      select candidate_release_id,canary_enabled
-      from shorts_mvp.editor_release_state
-      where singleton=true
-      for update
+      select state.candidate_release_id,state.canary_enabled,
+        state.render_v4_internal_enabled,state.render_v4_kill_switch,
+        release.render_spec_version
+      from shorts_mvp.editor_release_state state
+      left join shorts_mvp.editor_releases release
+        on release.id=state.candidate_release_id
+      where state.singleton=true
+      for update of state
     `;
     if (
       !states[0]?.canaryEnabled
@@ -269,6 +554,19 @@ export async function recordEditorReleaseCanaryCheck(
       throw new HttpError(
         409,
         "현재 실행 중인 카나리 후보의 검사만 기록할 수 있습니다.",
+      );
+    }
+    if (
+      Number(states[0]?.renderSpecVersion) === 4
+      && (
+        !states[0]?.renderV4InternalEnabled
+        || states[0]?.renderV4KillSwitch
+      )
+    ) {
+      throw new HttpError(
+        409,
+        "v4 내부 렌더를 명시적으로 켠 상태에서 수행한 검사만 기록할 수 있습니다.",
+        "EDITOR_RENDER_V4_INTERNAL_CANARY_REQUIRED",
       );
     }
     await tx`
@@ -299,6 +597,314 @@ export async function recordEditorReleaseCanaryCheck(
   revalidatePath(adminPath);
 }
 
+export async function enableEditorRenderV4Internal(releaseIdValue: string) {
+  const releaseId = uuidSchema.parse(releaseIdValue);
+  const admin = await requireAdminUser();
+  if (!editorRenderingV2MasterEnabled()) {
+    throw new HttpError(
+      409,
+      "서버 마스터 스위치가 꺼져 있어 v4 내부 검증을 시작할 수 없습니다.",
+      "EDITOR_RELEASE_MASTER_DISABLED",
+    );
+  }
+  assertRenderV4EnvironmentEnabled();
+  await getDb().begin(async (tx) => {
+    await assertEditorRenderV4InfrastructureLeaseInactive(tx);
+    const states = await tx`
+      select candidate_release_id,canary_enabled,
+        render_v4_internal_enabled,render_v4_rollout_percent,
+        render_v4_kill_switch
+      from shorts_mvp.editor_release_state
+      where singleton=true
+      for update
+    `;
+    const state = states[0];
+    if (
+      !state?.canaryEnabled
+      || String(state.candidateReleaseId || "") !== releaseId
+    ) {
+      throw new HttpError(
+        409,
+        "현재 실행 중인 후보 카나리에서만 v4 내부 렌더를 켤 수 있습니다.",
+        "EDITOR_RENDER_V4_CANDIDATE_REQUIRED",
+      );
+    }
+    const releases = await tx`
+      select id,status,render_spec_version,caption_render_spec_version,
+        font_manifest_sha256
+      from shorts_mvp.editor_releases
+      where id=${releaseId}
+      for update
+    `;
+    const release = releases[0];
+    if (!release || release.status !== "canary_active") {
+      throw new HttpError(409, "실행 중인 후보 카나리 상태가 아닙니다.");
+    }
+    assertExactRenderV4Capability(release);
+    await assertRenderV4ProjectTargetsRegistered(tx, releaseId);
+    await assertChecksPassed(tx, releaseId, "isolated", v4IsolatedChecks);
+    const enabledTesters = await tx`
+      select count(*)::integer as count
+      from shorts_mvp.editor_release_testers
+      where enabled=true
+    `;
+    if (Number(enabledTesters[0]?.count || 0) === 0) {
+      throw new HttpError(
+        409,
+        "v4 내부 검증을 시작하려면 활성화된 내부 테스트 계정이 필요합니다.",
+        "EDITOR_RENDER_V4_TESTER_REQUIRED",
+      );
+    }
+    const rolloutPercent = Number(state.renderV4RolloutPercent || 0);
+    const killSwitch = Boolean(state.renderV4KillSwitch);
+    const latestTransition = await loadLatestEditorRenderV4Transition(
+      tx,
+      releaseId,
+    );
+    if (
+      killSwitch
+      && isEditorRenderV4EmergencyForRelease(
+        latestTransition.action,
+        latestTransition.releaseId,
+        releaseId,
+      )
+    ) {
+      throw new HttpError(
+        409,
+        "긴급 중단된 릴리스는 다시 활성화할 수 없습니다. 새 검증 릴리스를 등록해 주세요.",
+        "EDITOR_RENDER_V4_NEW_RELEASE_REQUIRED",
+      );
+    }
+    if (!canEnableEditorRenderV4Internal(
+      rolloutPercent,
+      killSwitch,
+      latestTransition.action,
+      latestTransition.releaseId,
+      releaseId,
+    )) {
+      throw new HttpError(
+        409,
+        "중단된 v4 상태는 내부 활성화로 해제할 수 없습니다. 새 검증 릴리스를 등록해 주세요.",
+        "EDITOR_RENDER_V4_STOPPED_PUBLIC_ROLLOUT",
+      );
+    }
+    if (state.renderV4InternalEnabled && !killSwitch) return;
+    await tx`
+      update shorts_mvp.editor_release_state
+      set render_v4_internal_enabled=true,render_v4_kill_switch=false,
+        updated_by_user_id=${admin.id}
+      where singleton=true
+    `;
+    await recordAudit(
+      tx,
+      admin.id,
+      "editor_release.render_v4_internal_enabled",
+      editorRenderV4AuditEntityId,
+      {
+        releaseId,
+        previous: {
+          internalEnabled: Boolean(state.renderV4InternalEnabled),
+          rolloutPercent,
+          killSwitch,
+        },
+        current: {
+          internalEnabled: true,
+          rolloutPercent,
+          killSwitch: false,
+        },
+        requiredChecks: [...v4IsolatedChecks],
+      },
+    );
+  });
+  revalidatePath(adminPath);
+}
+
+export async function emergencyStopEditorRenderV4() {
+  const admin = await requireAdminUser();
+  await getDb().begin(async (tx) => {
+    const states = await tx`
+      select stable_release_id,candidate_release_id,
+        render_v4_internal_enabled,render_v4_rollout_percent,
+        render_v4_kill_switch
+      from shorts_mvp.editor_release_state
+      where singleton=true
+      for update
+    `;
+    const state = states[0];
+    if (!state) {
+      throw new HttpError(503, "편집기 릴리스 상태를 찾을 수 없습니다.");
+    }
+    if (state.renderV4KillSwitch && !state.renderV4InternalEnabled) return;
+    const rolloutPercent = Number(state.renderV4RolloutPercent || 0);
+    const releaseIds = [...new Set([
+      state.stableReleaseId,
+      state.candidateReleaseId,
+    ].filter(Boolean).map(String))];
+    await tx`
+      update shorts_mvp.editor_release_state
+      set render_v4_internal_enabled=false,render_v4_kill_switch=true,
+        updated_by_user_id=${admin.id}
+      where singleton=true
+    `;
+    for (const releaseId of releaseIds.length > 0 ? releaseIds : [null]) {
+      await recordAudit(
+        tx,
+        admin.id,
+        editorRenderV4EmergencyStoppedAction,
+        editorRenderV4AuditEntityId,
+        {
+          releaseId,
+          previous: {
+            internalEnabled: Boolean(state.renderV4InternalEnabled),
+            rolloutPercent,
+            killSwitch: Boolean(state.renderV4KillSwitch),
+          },
+          current: {
+            internalEnabled: false,
+            rolloutPercent,
+            killSwitch: true,
+          },
+          automaticResumeAllowed: false,
+        },
+      );
+    }
+  });
+  revalidatePath(adminPath);
+}
+
+async function loadStableRenderV4RolloutState(
+  tx: TransactionSql,
+  releaseId: string,
+) {
+  await assertEditorRenderV4InfrastructureLeaseInactive(tx);
+  const states = await tx`
+    select state.stable_release_id,state.public_enabled,
+      state.render_v4_internal_enabled,state.render_v4_rollout_percent,
+      state.render_v4_kill_switch,
+      coalesce(flag.enabled,false) as runtime_enabled,
+      release.status,release.promoted_at,release.render_spec_version,
+      release.caption_render_spec_version,release.font_manifest_sha256
+    from shorts_mvp.editor_release_state state
+    left join shorts_mvp.runtime_feature_flags flag
+      on flag.flag_key=${EDITOR_RENDERING_V2_FLAG_KEY}
+    join shorts_mvp.editor_releases release
+      on release.id=state.stable_release_id
+    where state.singleton=true
+    limit 1
+    for update of state,release
+  `;
+  const state = states[0];
+  if (
+    !state?.publicEnabled
+    || !state.runtimeEnabled
+    || String(state.stableReleaseId || "") !== releaseId
+    || state.status !== "stable"
+    || !state.promotedAt
+  ) {
+    throw new HttpError(
+      409,
+      "현재 공개 중인 stable 릴리스만 v4 공개 비율을 변경할 수 있습니다.",
+      "EDITOR_RENDER_V4_STABLE_REQUIRED",
+    );
+  }
+  assertExactRenderV4Capability(state);
+  const renderV4LastTransition = await loadLatestEditorRenderV4Transition(
+    tx,
+    releaseId,
+  );
+  return {
+    renderV4RolloutPercent: Number(state.renderV4RolloutPercent || 0),
+    renderV4KillSwitch: Boolean(state.renderV4KillSwitch),
+    renderV4LastTransition,
+  };
+}
+
+export async function advanceEditorRenderV4Rollout(
+  releaseIdValue: string,
+  targetPercentValue: number,
+) {
+  const releaseId = uuidSchema.parse(releaseIdValue);
+  const targetPercent = renderV4PublicRolloutSchema.parse(targetPercentValue);
+  const admin = await requireAdminUser();
+  if (!editorRenderingV2MasterEnabled() || !editorRenderingV2GlobalEnabled()) {
+    throw new HttpError(
+      409,
+      "서버의 편집기 전체 공개 스위치를 먼저 활성화해야 합니다.",
+      "EDITOR_RELEASE_PUBLIC_ENV_DISABLED",
+    );
+  }
+  assertRenderV4EnvironmentEnabled();
+  await getDb().begin(async (tx) => {
+    const state = await loadStableRenderV4RolloutState(tx, releaseId);
+    const currentPercent = Number(state.renderV4RolloutPercent || 0);
+    const killSwitch = Boolean(state.renderV4KillSwitch);
+    const expectedPercent = nextEditorRenderV4RolloutPercent(
+      currentPercent,
+      killSwitch,
+    );
+    if (
+      killSwitch
+      && isEditorRenderV4EmergencyForRelease(
+        state.renderV4LastTransition.action,
+        state.renderV4LastTransition.releaseId,
+        releaseId,
+      )
+    ) {
+      throw new HttpError(
+        409,
+        "긴급 중단된 릴리스는 다시 공개할 수 없습니다. 새 검증 릴리스를 승격해 주세요.",
+        "EDITOR_RENDER_V4_NEW_RELEASE_REQUIRED",
+      );
+    }
+    if (expectedPercent !== targetPercent) {
+      throw new HttpError(
+        409,
+        killSwitch && currentPercent > 0
+          ? "긴급 중단된 공개는 재개할 수 없습니다. 새 검증 릴리스를 승격해 주세요."
+          : `v4 공개는 ${currentPercent}% 다음의 정해진 단계로만 진행할 수 있습니다.`,
+        "EDITOR_RENDER_V4_ROLLOUT_SEQUENCE_REQUIRED",
+      );
+    }
+    await assertRenderV4CanaryEvidence(tx, releaseId);
+    const updated = await tx`
+      update shorts_mvp.editor_release_state
+      set render_v4_rollout_percent=${targetPercent},
+        render_v4_kill_switch=false,updated_by_user_id=${admin.id}
+      where singleton=true
+        and stable_release_id=${releaseId}
+        and render_v4_rollout_percent=${currentPercent}
+        and render_v4_kill_switch=${killSwitch}
+      returning singleton
+    `;
+    if (updated.length !== 1) {
+      throw new HttpError(409, "v4 공개 상태가 변경되어 다시 확인해야 합니다.");
+    }
+    await recordAudit(
+      tx,
+      admin.id,
+      "editor_release.render_v4_rollout_advanced",
+      editorRenderV4AuditEntityId,
+      {
+        releaseId,
+        previous: {
+          rolloutPercent: currentPercent,
+          killSwitch,
+        },
+        current: {
+          rolloutPercent: targetPercent,
+          killSwitch: false,
+        },
+        requiredChecks: {
+          isolated: [...v4IsolatedChecks],
+          productionCanary: [...productionCanaryChecks],
+          successfulRenderMinimum: 1,
+        },
+      },
+    );
+  });
+  revalidatePath(adminPath);
+}
+
 export async function promoteEditorRelease(releaseIdValue: string) {
   const releaseId = uuidSchema.parse(releaseIdValue);
   const admin = await requireAdminUser();
@@ -310,8 +916,11 @@ export async function promoteEditorRelease(releaseIdValue: string) {
     );
   }
   await getDb().begin(async (tx) => {
+    await assertEditorRenderV4InfrastructureLeaseInactive(tx);
     const states = await tx`
-      select stable_release_id,candidate_release_id,canary_enabled
+      select stable_release_id,candidate_release_id,canary_enabled,
+        render_v4_internal_enabled,render_v4_rollout_percent,
+        render_v4_kill_switch
       from shorts_mvp.editor_release_state
       where singleton=true
       for update
@@ -324,7 +933,8 @@ export async function promoteEditorRelease(releaseIdValue: string) {
       throw new HttpError(409, "현재 실행 중인 카나리 후보만 승격할 수 있습니다.");
     }
     const releases = await tx`
-      select id,status,git_sha,worker_image_digest
+      select id,status,git_sha,worker_image_digest,render_spec_version,
+        caption_render_spec_version,font_manifest_sha256
       from shorts_mvp.editor_releases
       where id=${releaseId}
       for update
@@ -333,50 +943,82 @@ export async function promoteEditorRelease(releaseIdValue: string) {
     if (!release || release.status !== "canary_active") {
       throw new HttpError(409, "카나리 실행 상태가 올바르지 않습니다.");
     }
-    await assertChecksPassed(tx, releaseId, "isolated", isolatedChecks);
+    const isRenderV4Release = Number(release.renderSpecVersion) === 4;
+    if (isRenderV4Release) {
+      assertRenderV4EnvironmentEnabled();
+      assertExactRenderV4Capability(release);
+      await assertRenderV4ProjectTargetsRegistered(tx, releaseId);
+      if (!state.renderV4InternalEnabled || state.renderV4KillSwitch) {
+        throw new HttpError(
+          409,
+          "v4 내부 렌더가 활성화된 상태의 카나리만 승격할 수 있습니다.",
+          "EDITOR_RENDER_V4_INTERNAL_CANARY_REQUIRED",
+        );
+      }
+    }
+    await assertChecksPassed(
+      tx,
+      releaseId,
+      "isolated",
+      release.renderSpecVersion === 4 ? v4IsolatedChecks : isolatedChecks,
+    );
     await assertChecksPassed(
       tx,
       releaseId,
       "production_canary",
       productionCanaryChecks,
     );
-    const requestCounts = await tx`
-      select
-        count(*) filter (
-          where status in ('queued','rendering')
-        )::integer as active,
-        count(*) filter (where status='failed')::integer as failed,
-        count(*) filter (where status='succeeded')::integer as succeeded
-      from shorts_mvp.editor_render_requests
-      where release_id=${releaseId}
-    `;
-    if (Number(requestCounts[0]?.active || 0) > 0) {
-      throw new HttpError(409, "카나리 렌더링이 끝난 뒤 승격해 주세요.");
-    }
-    if (Number(requestCounts[0]?.failed || 0) > 0) {
-      throw new HttpError(409, "실패한 카나리 렌더링이 있어 승격할 수 없습니다.");
-    }
-    if (Number(requestCounts[0]?.succeeded || 0) === 0) {
-      throw new HttpError(
-        409,
-        "성공한 운영 카나리 렌더링이 한 건 이상 필요합니다.",
-      );
-    }
+    await assertCanaryRenderEvidence(tx, releaseId);
     await tx`
       update shorts_mvp.editor_releases
       set status='approved',approved_by_user_id=${admin.id},
         approved_at=now()
       where id=${releaseId}
     `;
-    await tx`
-      update shorts_mvp.editor_release_state
-      set previous_stable_release_id=stable_release_id,
-        stable_release_id=${releaseId},
-        candidate_release_id=null,
-        public_enabled=true,canary_enabled=false,
-        updated_by_user_id=${admin.id}
-      where singleton=true
-    `;
+    if (isRenderV4Release) {
+      await tx`
+        update shorts_mvp.editor_release_state
+        set previous_stable_release_id=stable_release_id,
+          stable_release_id=${releaseId},
+          candidate_release_id=null,
+          public_enabled=true,canary_enabled=false,
+          render_v4_internal_enabled=false,
+          render_v4_rollout_percent=0,
+          render_v4_kill_switch=true,
+          updated_by_user_id=${admin.id}
+        where singleton=true
+      `;
+      await recordAudit(
+        tx,
+        admin.id,
+        editorRenderV4StoppedOnPromotionAction,
+        editorRenderV4AuditEntityId,
+        {
+          releaseId,
+          previous: {
+            internalEnabled: Boolean(state.renderV4InternalEnabled),
+            rolloutPercent: Number(state.renderV4RolloutPercent || 0),
+            killSwitch: Boolean(state.renderV4KillSwitch),
+          },
+          current: {
+            internalEnabled: false,
+            rolloutPercent: 0,
+            killSwitch: true,
+          },
+          automaticPublicRolloutAllowed: false,
+        },
+      );
+    } else {
+      await tx`
+        update shorts_mvp.editor_release_state
+        set previous_stable_release_id=stable_release_id,
+          stable_release_id=${releaseId},
+          candidate_release_id=null,
+          public_enabled=true,canary_enabled=false,
+          updated_by_user_id=${admin.id}
+        where singleton=true
+      `;
+    }
     await tx`
       update shorts_mvp.editor_releases
       set status='stable',promoted_at=now()
@@ -396,7 +1038,8 @@ export async function promoteEditorRelease(releaseIdValue: string) {
         previousStableReleaseId: state.stableReleaseId || null,
         gitSha: release.gitSha,
         workerImageDigest: release.workerImageDigest,
-        rolloutPercent: 100,
+        rolloutPercent: isRenderV4Release ? 0 : 100,
+        renderV4Stopped: isRenderV4Release,
       },
     );
   });
@@ -793,9 +1436,11 @@ export async function rollbackEditorRelease(modeValue: "previous" | "legacy") {
   const mode = z.enum(["previous", "legacy"]).parse(modeValue);
   const admin = await requireAdminUser();
   await getDb().begin(async (tx) => {
+    await assertEditorRenderV4InfrastructureLeaseInactive(tx);
     const states = await tx`
       select stable_release_id,previous_stable_release_id,candidate_release_id,
-        public_enabled,canary_enabled
+        public_enabled,canary_enabled,render_v4_internal_enabled,
+        render_v4_rollout_percent,render_v4_kill_switch
       from shorts_mvp.editor_release_state
       where singleton=true
       for update
@@ -822,6 +1467,33 @@ export async function rollbackEditorRelease(modeValue: "previous" | "legacy") {
     if (mode === "previous" && !state.previousStableReleaseId) {
       throw new HttpError(409, "되돌릴 이전 stable 릴리스가 없습니다.");
     }
+    const rollbackTargetReleaseId = mode === "previous"
+      ? String(state.previousStableReleaseId)
+      : null;
+    const affectedReleaseIds = Array.from(new Set([
+      currentReleaseId,
+      candidateReleaseId,
+      rollbackTargetReleaseId,
+    ].filter((value): value is string => Boolean(value))));
+    const affectedRenderV4Releases = affectedReleaseIds.length > 0
+      ? await tx`
+          select id
+          from shorts_mvp.editor_releases
+          where id=any(${affectedReleaseIds})
+            and render_spec_version=4
+            and caption_render_spec_version=4
+        `
+      : [];
+    const affectedRenderV4ReleaseIds = new Set(
+      affectedRenderV4Releases.map((release) => String(release.id)),
+    );
+    const rollbackTargetIsRenderV4 = Boolean(
+      rollbackTargetReleaseId
+      && affectedRenderV4ReleaseIds.has(rollbackTargetReleaseId),
+    );
+    const rollbackRolloutPercent = rollbackTargetIsRenderV4
+      ? Number(state.renderV4RolloutPercent || 0)
+      : 0;
     if (currentReleaseId) {
       await tx`
         update shorts_mvp.editor_releases
@@ -853,6 +1525,9 @@ export async function rollbackEditorRelease(modeValue: "previous" | "legacy") {
           previous_stable_release_id=${currentReleaseId},
           candidate_release_id=null,
           public_enabled=true,canary_enabled=false,
+          render_v4_internal_enabled=false,
+          render_v4_rollout_percent=${rollbackRolloutPercent},
+          render_v4_kill_switch=true,
           updated_by_user_id=${admin.id}
         where singleton=true
       `;
@@ -867,6 +1542,9 @@ export async function rollbackEditorRelease(modeValue: "previous" | "legacy") {
         set previous_stable_release_id=${currentReleaseId},
           stable_release_id=null,candidate_release_id=null,
           public_enabled=false,canary_enabled=false,
+          render_v4_internal_enabled=false,
+          render_v4_rollout_percent=0,
+          render_v4_kill_switch=true,
           updated_by_user_id=${admin.id}
         where singleton=true
       `;
@@ -887,8 +1565,45 @@ export async function rollbackEditorRelease(modeValue: "previous" | "legacy") {
           ? String(state.previousStableReleaseId)
           : null,
         cancelledCandidateReleaseId: candidateReleaseId,
+        renderV4: {
+          previous: {
+            internalEnabled: Boolean(state.renderV4InternalEnabled),
+            rolloutPercent: Number(state.renderV4RolloutPercent || 0),
+            killSwitch: Boolean(state.renderV4KillSwitch),
+          },
+          current: {
+            internalEnabled: false,
+            rolloutPercent: rollbackRolloutPercent,
+            killSwitch: true,
+          },
+          automaticResumeAllowed: false,
+        },
       },
     );
+    if (
+      affectedRenderV4Releases.length > 0
+      || state.renderV4InternalEnabled
+      || Number(state.renderV4RolloutPercent || 0) > 0
+    ) {
+      const scopedReleaseIds = affectedRenderV4ReleaseIds.size > 0
+        ? [...affectedRenderV4ReleaseIds]
+        : [currentReleaseId || candidateReleaseId];
+      for (const releaseId of scopedReleaseIds) {
+        await recordAudit(
+          tx,
+          admin.id,
+          editorRenderV4EmergencyStoppedAction,
+          editorRenderV4AuditEntityId,
+          {
+            releaseId,
+            affectedRenderV4ReleaseIds: [...affectedRenderV4ReleaseIds],
+            reason: `editor_release_rollback_${mode}`,
+            rolloutPercent: rollbackRolloutPercent,
+            automaticResumeAllowed: false,
+          },
+        );
+      }
+    }
   });
   revalidatePath(adminPath);
 }
