@@ -41,7 +41,7 @@ def _object(path: Path) -> dict[str, Any]:
 
 
 def _number(value: object, label: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, int | float):
         raise TypeError(f"Parity report {label} is not numeric")
     number = float(value)
     if number < 0 or number > MAXIMUM_ERROR_PIXELS:
