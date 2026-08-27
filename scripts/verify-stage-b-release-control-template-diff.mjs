@@ -1151,13 +1151,27 @@ export function validatePreparedStageBChangeSet(phaseValue, stackKey, changeSet)
     const allowedProperties = new Set(propertyContracts[logicalId] || []);
     for (const detail of change.Details) {
       const target = detail?.Target || {};
+      const exactDependency = (
+        contract.phase === "bootstrap"
+        && stackKey === "editor"
+        && logicalId === "EditorReleaseRegistrarFunctionD787453A"
+        && target.Name === "Role"
+      ) ? {
+          source: "ResourceAttribute",
+          causing: "EditorReleaseRegistrarRole9129B368.Arn",
+        } : null;
+      const exactChangeSource = exactDependency
+        ? detail.ChangeSource === exactDependency.source
+          && detail.CausingEntity === exactDependency.causing
+        : detail.ChangeSource === "DirectModification"
+          && [undefined, null, ""].includes(detail.CausingEntity);
       if (
         target.Attribute !== "Properties"
         || !allowedProperties.has(String(target.Name || ""))
         || !["Modify", "Add", "Remove"].includes(target.AttributeChangeType)
         || target.RequiresRecreation !== "Never"
         || detail.Evaluation !== "Static"
-        || detail.ChangeSource !== "DirectModification"
+        || !exactChangeSource
       ) {
         throw new Error([
           `Stage B change set property detail 계약 위반: ${logicalId}`,
