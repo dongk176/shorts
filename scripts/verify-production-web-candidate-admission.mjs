@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import {
   productionProjectTargetsFingerprint,
@@ -24,29 +25,56 @@ export async function verifyCandidateJobAdmission({
   url,
   registry,
   fetchImpl = fetch,
+  protectedFetchImpl = null,
 }) {
   const origin = candidateOrigin(url);
   const expectedFingerprint = productionProjectTargetsFingerprint(registry);
-  const response = await fetchImpl(
-    `${origin}/api/internal/job-admission-preflight`,
-    {
-      method: "GET",
-      redirect: "error",
-      signal: AbortSignal.timeout(15_000),
-    },
-  );
-  const body = await response.json().catch(() => ({}));
+  let status;
+  let body;
+  try {
+    const response = await fetchImpl(
+      `${origin}/api/internal/job-admission-preflight`,
+      {
+        method: "GET",
+        redirect: "error",
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    status = response.status;
+    body = await response.json().catch(() => ({}));
+  } catch (error) {
+    if (!protectedFetchImpl) throw error;
+    ({ status, body } = await protectedFetchImpl(origin));
+  }
   if (
-    response.status !== 200
+    status !== 200
     || body?.ready !== true
     || body?.targetCount !== 5
     || body?.fingerprint !== expectedFingerprint
   ) {
     throw new Error(
-      `후보 작업 생성 사전검증 실패(status=${response.status}, ready=${body?.ready === true}, targets=${Number(body?.targetCount) || 0}, fingerprintMatch=${body?.fingerprint === expectedFingerprint})`,
+      `후보 작업 생성 사전검증 실패(status=${status}, ready=${body?.ready === true}, targets=${Number(body?.targetCount) || 0}, fingerprintMatch=${body?.fingerprint === expectedFingerprint})`,
     );
   }
   return { origin, fingerprint: expectedFingerprint };
+}
+
+function vercelProtectedCandidateRequest(origin) {
+  const output = execFileSync("vercel", [
+    "curl",
+    "/api/internal/job-admission-preflight",
+    "--deployment",
+    origin,
+    "--yes",
+    "--",
+    "--silent",
+    "--show-error",
+    "--fail-with-body",
+  ], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  return { status: 200, body: JSON.parse(output) };
 }
 
 function parseArgs(argv) {
@@ -66,6 +94,7 @@ async function runCli(argv = process.argv.slice(2)) {
   const result = await verifyCandidateJobAdmission({
     url: options.url,
     registry: readProductionProjectTargets(options.registryFile),
+    protectedFetchImpl: vercelProtectedCandidateRequest,
   });
   process.stdout.write(
     `후보 작업 생성 사전검증 통과: ${result.origin}, 5개 Batch 대상 identity 일치\n`,

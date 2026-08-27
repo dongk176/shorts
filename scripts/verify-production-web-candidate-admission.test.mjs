@@ -28,6 +28,30 @@ test("accepts only a healthy candidate with the exact registry identity", async 
   assert.equal(result.origin, "https://shorts-abc123-artiroom.vercel.app");
 });
 
+test("uses the authenticated Vercel candidate request when deployment protection blocks fetch", async () => {
+  let protectedOrigin = "";
+  const result = await verifyCandidateJobAdmission({
+    url: "https://shorts-protected-artiroom.vercel.app",
+    registry,
+    fetchImpl: async () => {
+      throw new TypeError("fetch failed");
+    },
+    protectedFetchImpl: async (origin) => {
+      protectedOrigin = origin;
+      return {
+        status: 200,
+        body: {
+          ready: true,
+          targetCount: 5,
+          fingerprint: productionProjectTargetsFingerprint(registry),
+        },
+      };
+    },
+  });
+  assert.equal(protectedOrigin, "https://shorts-protected-artiroom.vercel.app");
+  assert.equal(result.origin, protectedOrigin);
+});
+
 test("fails closed on incomplete configuration or identity mismatch", async () => {
   await assert.rejects(
     verifyCandidateJobAdmission({
