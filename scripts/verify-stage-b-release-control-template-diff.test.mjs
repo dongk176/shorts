@@ -776,6 +776,23 @@ test("prepared preview has exact resources with no replacement", () => {
     ),
     /실행 가능 UPDATE preview/,
   );
+  const registrarDetail = modified[0].ResourceChange.Details[0];
+  registrarDetail.ChangeSource = "ResourceAttribute";
+  registrarDetail.CausingEntity = "EditorReleaseRegistrarRole9129B368.Arn";
+  registrarDetail.Target.Name = "Role";
+  assert.doesNotThrow(() => validatePreparedStageBChangeSet(
+    "bootstrap",
+    "editor",
+    preview,
+  ));
+  registrarDetail.CausingEntity = "UnexpectedRole.Arn";
+  assert.throws(
+    () => validatePreparedStageBChangeSet("bootstrap", "editor", preview),
+    /property detail 계약 위반/,
+  );
+  registrarDetail.ChangeSource = "DirectModification";
+  delete registrarDetail.CausingEntity;
+  registrarDetail.Target.Name = "Code";
   changes[0].ResourceChange.Replacement = "Conditional";
   assert.throws(
     () => validatePreparedStageBChangeSet("bootstrap", "editor", preview),
