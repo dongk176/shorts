@@ -46,15 +46,19 @@ describe("administrator-issued account paid feature access", () => {
   });
 
   it("lets administrators set a safe per-account concurrent job limit", () => {
-    const migration = source("supabase/migrations/202608260004_managed_account_max_active_jobs.sql");
+    const initialMigration = source("supabase/migrations/202608260004_managed_account_max_active_jobs.sql");
+    const expansionMigration = source("supabase/migrations/202608270001_managed_account_max_active_jobs_30.sql");
+    const limits = source("web/lib/managed-account-limits.ts");
     const billing = source("web/lib/billing.ts");
     const dashboard = source("web/app/admin/easycutcutcutcutcutcut/admin-managed-accounts-dashboard.tsx");
     const createRoute = source("web/app/api/admin/managed-accounts/route.ts");
     const updateRoute = source("web/app/api/admin/managed-accounts/[accountId]/route.ts");
 
-    expect(migration).toContain("set max_active_jobs=10");
-    expect(migration).toContain("check (max_active_jobs between 1 and 10)");
-    expect(migration).not.toMatch(/\bpublic\./i);
+    expect(initialMigration).toContain("set max_active_jobs=10");
+    expect(expansionMigration).toContain("check (max_active_jobs between 1 and 30)");
+    expect(expansionMigration).not.toMatch(/\bpublic\./i);
+    expect(limits).toContain("MANAGED_ACCOUNT_MAX_ACTIVE_JOBS = 30");
+    expect(limits).toContain("MANAGED_ACCOUNT_DEFAULT_ACTIVE_JOBS = 10");
     expect(billing).toContain("resolveManagedAccountMaxActiveJobs");
     expect(dashboard).toContain("동시 작업 한도");
     expect(createRoute).toContain("max_active_jobs");
