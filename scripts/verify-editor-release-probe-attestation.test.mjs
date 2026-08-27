@@ -144,7 +144,19 @@ test("pins atomic finalization to exact checks, five targets, CAS state, and one
   const body = probeMigrationFunctionBody("finalize_editor_render_v4_release");
   assert.match(body, /jsonb_array_length\(p_release_checks\)<>15/);
   assert.match(body, /v_check_names is distinct from v_expected_check_names/);
-  assert.match(body, /jsonb_object_length\(p_project_targets\)<>5/);
+  assert.match(
+    body,
+    /case when jsonb_typeof\(p_project_targets\)='object'[\s\S]*jsonb_object_keys\(p_project_targets\)[\s\S]*else 0[\s\S]*end[\s\S]*<>5/,
+  );
+  assert.match(
+    body,
+    /case when jsonb_typeof\(check_value\)='object'[\s\S]*jsonb_object_keys\(check_value\)[\s\S]*else 0[\s\S]*end[\s\S]*<>3/,
+  );
+  assert.match(
+    body,
+    /case when jsonb_typeof\(v_target\.value\)='object'[\s\S]*jsonb_object_keys\(v_target\.value\)[\s\S]*else 0[\s\S]*end[\s\S]*<>6/,
+  );
+  assert.doesNotMatch(body, /jsonb_object_length/);
   assert.match(body, /workerSourceGitSha'<>v_probe\.git_sha/);
   assert.match(body, /workerImageDigest'<>v_probe\.worker_image_digest/);
   assert.match(body, /release_registration_revision=v_probe\.expected_state_revision/);
