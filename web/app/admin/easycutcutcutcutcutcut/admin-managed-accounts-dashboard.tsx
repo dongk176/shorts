@@ -559,7 +559,9 @@ function ManagedAccountCard({ account }: { account: AdminManagedAccount }) {
               onChange={(event) => setMaxActiveJobs(event.target.value)}
               className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/20 px-3 text-sm text-white outline-none focus:border-[#ff8c7c]/60"
             />
-            <span className="mt-1.5 block text-[11px] font-normal text-neutral-600">한 계정에서 동시에 처리할 수 있는 프로젝트 수 · 1~10개</span>
+            <span className="mt-1.5 block text-[11px] font-normal text-neutral-600">
+              한 계정에서 동시에 처리할 수 있는 프로젝트 수 · {MANAGED_ACCOUNT_MIN_ACTIVE_JOBS}~{MANAGED_ACCOUNT_MAX_ACTIVE_JOBS}개
+            </span>
           </label>
           <button
             type="button"
