@@ -43,7 +43,7 @@ const initialRenderSpec = {
       resolvedWeight: 700 as const,
       variableWeight: null,
       sha256: "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
-      metrics: { revision: "editor-font-metrics-v1" as const },
+      metrics: { revision: "editor-font-metrics-v2" as const },
     },
   },
   channel: {
@@ -59,7 +59,7 @@ const initialRenderSpec = {
       resolvedWeight: 700 as const,
       variableWeight: null,
       sha256: "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
-      metrics: { revision: "editor-font-metrics-v1" as const },
+      metrics: { revision: "editor-font-metrics-v2" as const },
     },
   },
   comments: [],

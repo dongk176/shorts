@@ -14,6 +14,15 @@ from .schemas import EDITOR_FONT_FILE_IDS, EditorFontId
 
 EDITOR_FONT_DIRECTORY = Path(__file__).parent / "assets" / "editor_fonts"
 
+# Chromium and libass center a few faces on slightly different raster
+# baselines even when they load the same immutable font bytes. Keep the
+# measured correction next to the font-derived metrics so every browser
+# preview uses the same value as the Linux renderer. Values are expressed in
+# the original CSS font-size unit, before cssToAssScale is applied.
+_CSS_TO_ASS_BASELINE_CALIBRATION_EM = {
+    EditorFontId.NOTO_SANS_KR: round(2 / 92, 6),
+}
+
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -119,9 +128,18 @@ def editor_font_manifest_entry(font_id: EditorFontId) -> dict[str, object]:
     css_to_ass_scale = round(units_per_em / vertical_extent, 6)
     # CSS centers its line box with the hhea baseline while libass anchors
     # \an5 text with the Windows ascent/descent box. Persist the reproducible
-    # delta from the bundled face instead of adding per-test offsets.
+    # delta from the bundled face, plus a single cross-runtime raster
+    # calibration measured by the isolated Linux release matrix.
     css_to_ass_baseline_offset_em = round(
-        (win_center - hhea_center) / (2 * vertical_extent),
+        (win_center - hhea_center) / (2 * vertical_extent)
+        + _CSS_TO_ASS_BASELINE_CALIBRATION_EM.get(font_id, 0.0),
+        6,
+    )
+    # Title baselines must not depend on Canvas/Pillow glyph-box rounding,
+    # which differs by operating system. The hhea center is immutable font
+    # data and is shared by the browser compiler and the worker compiler.
+    title_baseline_offset_em = round(
+        hhea_center / (2 * units_per_em),
         6,
     )
     word_space_advance_em = round(word_space_advance / units_per_em, 6)
@@ -140,6 +158,7 @@ def editor_font_manifest_entry(font_id: EditorFontId) -> dict[str, object]:
         "resolvedPath": str(path),
         "cssToAssScale": css_to_ass_scale,
         "cssToAssBaselineOffsetEm": css_to_ass_baseline_offset_em,
+        "titleBaselineOffsetEm": title_baseline_offset_em,
         "wordSpaceAdvanceEm": word_space_advance_em,
     }
 

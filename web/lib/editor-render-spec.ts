@@ -9,6 +9,7 @@ import {
 } from "@/lib/title-preview";
 import {
   editorFontIds,
+  editorTitleBaselineOffsetEmById,
   editorWordSpaceAdvanceEmById,
   ensureEditorFontFaceV4Loaded,
   resolveEditorFontFace,
@@ -610,11 +611,7 @@ export function compileEditorRenderTitleSpecV4(
       width: widths[index],
       height: heights[index],
       baselineY: quantizeEditorRenderPx(
-        lineCenterY
-          + (
-            measurements[index].actualBoundingBoxAscent
-            - measurements[index].actualBoundingBoxDescent
-          ) / 2,
+        lineCenterY + fontSize * editorTitleBaselineOffsetEmById[font.fontId],
       ),
       backgroundRuns: finalBackgroundRuns,
     };

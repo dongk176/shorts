@@ -30,7 +30,7 @@ jobs:
   build:
     # A mutable branch is never a release identity. AWS independently verifies
     # this exact protected tag before it allows an image push.
-    if: github.ref == 'refs/tags/editor-v4-render-parity-20260827-5'
+    if: github.ref == 'refs/tags/editor-v4-render-parity-20260827-6'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     outputs:
@@ -217,13 +217,14 @@ jobs:
             and (.entries | type == "array" and length == 20)
             and ([.entries[].fontId] | sort) == (expected_files | keys | sort)
             and ([.entries[] | select(
-              (keys | sort) != (["cssToAssBaselineOffsetEm","cssToAssScale","fontId","postscriptName","resolvedPath","sha256","wordSpaceAdvanceEm"] | sort)
+              (keys | sort) != (["cssToAssBaselineOffsetEm","cssToAssScale","fontId","postscriptName","resolvedPath","sha256","titleBaselineOffsetEm","wordSpaceAdvanceEm"] | sort)
               or (.sha256 | test("^[0-9a-f]{64}$") | not)
               or (.postscriptName | type != "string" or length == 0)
               or (.resolvedPath != (font_root + expected_files[.fontId]))
               or (.resolvedPath | contains(".."))
               or (.cssToAssScale | type != "number" or . <= 0 or . > 1.2)
               or (.cssToAssBaselineOffsetEm | type != "number" or . < -0.25 or . > 0.25)
+              or (.titleBaselineOffsetEm | type != "number" or . < -0.25 or . > 0.75)
               or (.wordSpaceAdvanceEm | type != "number" or . <= 0 or . > 1)
             )] | length == 0)
           ' font-manifest.json

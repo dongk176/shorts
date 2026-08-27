@@ -248,7 +248,7 @@ export type ResolvedEditorFontFace = {
   variableWeight: 700 | 800 | null;
 };
 
-export const EDITOR_FONT_METRICS_REVISION = "editor-font-metrics-v1" as const;
+export const EDITOR_FONT_METRICS_REVISION = "editor-font-metrics-v2" as const;
 
 export const editorFontSha256ById = {
   "pretendard": "4609c3356e536fafe38f4add0daeceb3d8595d3057bce13c428c33ddbd43d362",
@@ -298,10 +298,11 @@ export const editorCaptionCssToAssScaleById = {
 
 // Derived from the immutable bundled font tables. CSS uses the hhea line box
 // while libass centers against OS/2 usWinAscent/usWinDescent; values are in the
-// original (pre cssToAssScale) font-size unit.
+// original (pre cssToAssScale) font-size unit. Noto Sans KR includes the
+// measured 2px/92px Linux Chromium-to-libass raster baseline correction.
 export const editorCaptionCssToAssBaselineOffsetEmById = {
   "pretendard": -0.000205,
-  "noto-sans-kr": 0,
+  "noto-sans-kr": 0.021739,
   "do-hyeon": 0,
   "jua": 0.015723,
   "jalnan-2": 0,
@@ -320,6 +321,32 @@ export const editorCaptionCssToAssBaselineOffsetEmById = {
   "noto-serif-kr": 0,
   "nanum-myeongjo": 0.03011,
   "ridi-batang": -0.019,
+} as const satisfies Record<EditorFontId, number>;
+
+// Derived from (hhea.ascent + hhea.descent) / (2 * unitsPerEm) in each
+// immutable bundled face. Unlike Canvas actualBoundingBox values, these
+// baselines are identical on macOS and Linux.
+export const editorTitleBaselineOffsetEmById = {
+  "pretendard": 0.355469,
+  "noto-sans-kr": 0.436,
+  "do-hyeon": 0.3,
+  "jua": 0.3,
+  "jalnan-2": 0.29,
+  "cafe24-anemone": 0.21,
+  "cafe24-pro-up": 0.25,
+  "sandbox-aggro": 0.2,
+  "galmuri-9": 0.45,
+  "black-han-sans": 0.29,
+  "godo": 0.285,
+  "paperlogy": 0.388889,
+  "gmarket-sans": 0.3,
+  "nanum-square-neo": 0.2975,
+  "s-core-dream": 0.3245,
+  "suit": 0.364,
+  "spoqa-han-sans-neo": 0.344,
+  "noto-serif-kr": 0.4325,
+  "nanum-myeongjo": 0.299805,
+  "ridi-batang": 0.319,
 } as const satisfies Record<EditorFontId, number>;
 
 // Derived from the U+0020 advance in each immutable bundled font. If a source

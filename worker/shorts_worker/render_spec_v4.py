@@ -189,6 +189,9 @@ def compile_editor_title_spec_v4(
 
     face_value = editor_font_face_v4(resolved_font_id, requested_weight=700)
     face = EditorResolvedFontFace.model_validate(face_value)
+    title_baseline_offset_em = float(
+        editor_font_manifest_entry(resolved_font_id)["titleBaselineOffsetEm"]
+    )
     lines = wrap_korean_title(
         title,
         max_chars=20,
@@ -228,7 +231,6 @@ def compile_editor_title_spec_v4(
 
     line_widths: list[float] = []
     line_heights: list[float] = []
-    line_ascent_descent: list[tuple[float, float]] = []
     for line in lines:
         _left, top, _right, bottom = font.getbbox(line, anchor="ls")
         ascent = max(0.0, float(-top))
@@ -241,7 +243,6 @@ def compile_editor_title_spec_v4(
         line_heights.append(
             canonical_px_v4(ascent + descent + line_padding_y * 2)
         )
-        line_ascent_descent.append((ascent, descent))
     content_height = sum(line_heights) + line_gap * max(0, len(lines) - 1)
     widest = max(line_widths)
     desired_center_x = (
@@ -305,8 +306,9 @@ def compile_editor_title_spec_v4(
     for index, line in enumerate(lines):
         line_height = line_heights[index]
         line_center_y = canonical_px_v4(cursor_y + line_height / 2)
-        ascent, descent = line_ascent_descent[index]
-        baseline_y = canonical_px_v4(line_center_y + (ascent - descent) / 2)
+        baseline_y = canonical_px_v4(
+            line_center_y + font_size * title_baseline_offset_em
+        )
         default_background = (
             custom_title.accent_background_color
             if index > 0

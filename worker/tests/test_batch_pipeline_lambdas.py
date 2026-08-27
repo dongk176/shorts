@@ -3163,6 +3163,7 @@ def _editor_release_v4_manifest(module: ModuleType) -> dict[str, object]:
         "resolvedPath": f"{module._EDITOR_FONT_ROOT}/{file_name}",
         "cssToAssScale": 0.84,
         "cssToAssBaselineOffsetEm": 0.0,
+        "titleBaselineOffsetEm": 0.3,
         "wordSpaceAdvanceEm": 0.25,
     } for font_id, file_name in sorted(module._REQUIRED_FONT_FILES.items())]
     unsigned_font_manifest = {

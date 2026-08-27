@@ -28,7 +28,7 @@ const workerSourceGitSha = /^[0-9a-f]{40}$/;
 const disabledEditorReleaseGitHubRef =
   "refs/tags/__disabled_editor_release__";
 const stageBEditorReleaseGitHubRef =
-  "refs/tags/editor-v4-render-parity-20260827-5";
+  "refs/tags/editor-v4-render-parity-20260827-6";
 const editorReleaseApprovalEnvironment = "editor-v4-release-approval";
 const editorReleaseWorkflowPath = ".github/workflows/editor-release.yml";
 const editorReleaseWorkflowName = "Verify editor release candidate";
