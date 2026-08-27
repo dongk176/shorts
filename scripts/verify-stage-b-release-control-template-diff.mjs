@@ -1100,7 +1100,13 @@ export function validatePreparedStageBChangeSet(phaseValue, stackKey, changeSet)
     || changeSet?.Status !== "CREATE_COMPLETE"
     || changeSet?.ExecutionStatus !== "AVAILABLE"
   ) {
-    throw new Error("Stage B change set이 exact stack의 실행 가능 UPDATE preview가 아닙니다.");
+    throw new Error([
+      "Stage B change set이 exact stack의 실행 가능 UPDATE preview가 아닙니다.",
+      `stack=${String(changeSet?.StackName || "")}`,
+      `type=${String(changeSet?.ChangeSetType || "")}`,
+      `status=${String(changeSet?.Status || "")}`,
+      `execution=${String(changeSet?.ExecutionStatus || "")}`,
+    ].join(" "));
   }
   const seen = new Set();
   for (const row of changeSet.Changes || []) {
