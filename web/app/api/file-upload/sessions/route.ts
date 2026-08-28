@@ -33,7 +33,9 @@ import {
   lockFileUploadReleaseAccess,
 } from "@/lib/file-upload-release";
 import { apiError, HttpError } from "@/lib/http";
-import { resolveInitialRenderRelease } from "@/lib/initial-render-release";
+import {
+  resolveFileUploadInitialRenderRelease,
+} from "@/lib/initial-render-release";
 import { createInitialRenderContract } from "@/lib/initial-render-contract";
 import { projectDispatchTargetForFeatures } from "@/lib/job-dispatch";
 import { assertJobCreationAllowed } from "@/lib/job-policy";
@@ -538,11 +540,12 @@ export async function POST(request: Request) {
       });
 
       // File uploads must never silently fall back to the legacy renderer.
-      // Resolve the exact same release as the corresponding link job while
-      // the runtime release rows remain locked by this creation transaction.
-      const initialRenderRelease = await resolveInitialRenderRelease(tx, {
-        userId: session.userId,
-        dispatchTarget,
+      // Administrator tests bind to the exact verified candidate without
+      // rotating ordinary link dispatch; public uploads require that same
+      // identity to be the promoted stable release.
+      const initialRenderRelease = await resolveFileUploadInitialRenderRelease(tx, {
+        targetKey: dispatchTarget.targetKey,
+        access: lockedAccess,
       });
       if (!initialRenderRelease) {
         throw new HttpError(

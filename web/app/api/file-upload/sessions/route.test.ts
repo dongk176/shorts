@@ -48,7 +48,7 @@ vi.mock("@/lib/shorts-thank-you-event", () => ({
   issueShortsThankYouEventGrantIfEligible: mocks.thankYouGrant,
 }));
 vi.mock("@/lib/initial-render-release", () => ({
-  resolveInitialRenderRelease: mocks.initialRenderRelease,
+  resolveFileUploadInitialRenderRelease: mocks.initialRenderRelease,
 }));
 vi.mock("@/lib/job-dispatch", () => ({
   projectDispatchTargetForFeatures: mocks.uploadDispatchTarget,
@@ -216,7 +216,11 @@ beforeEach(() => {
   vi.stubEnv("FILE_UPLOAD_TOKEN_SECRET", TOKEN_SECRET);
   mocks.authenticatedSession.mockResolvedValue({ id: SESSION_ID, userId: USER_ID });
   mocks.releaseAccess.mockResolvedValue({ enabled: true, adminEnabled: true });
-  mocks.lockedReleaseAccess.mockResolvedValue({ enabled: true, adminEnabled: true });
+  mocks.lockedReleaseAccess.mockResolvedValue({
+    enabled: true,
+    adminEnabled: true,
+    publicEnabled: false,
+  });
   mocks.billingSummary.mockResolvedValue(billing);
   mocks.usageSnapshot.mockResolvedValue(usage);
   mocks.subtitleAccess.mockResolvedValue({
@@ -491,7 +495,16 @@ describe("file upload job control plane", () => {
     }));
 
     expect(response.status).toBe(201);
-    expect(mocks.initialRenderRelease).toHaveBeenCalledOnce();
+    expect(mocks.initialRenderRelease).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        targetKey: "elevenlabs_transcription",
+        access: expect.objectContaining({
+          adminEnabled: true,
+          publicEnabled: false,
+        }),
+      },
+    );
     expect(query(queries, "insert into shorts_mvp.video_jobs")?.sql)
       .toContain("initial_editor_release_id");
   });
