@@ -33,6 +33,7 @@ vi.mock("@/lib/usage", async (importOriginal) => ({
 }));
 vi.mock("@/lib/subtitle-template-release", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/subtitle-template-release")>()),
+  lockEffectiveSubtitleTemplateAccess: mocks.subtitleAccess,
   lockSubtitleTemplateAccess: mocks.subtitleAccess,
 }));
 vi.mock("@/lib/transcription-release", async (importOriginal) => ({

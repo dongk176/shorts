@@ -12,7 +12,7 @@ import { editorRenderingV2Enabled } from "@/lib/editor-rendering-release";
 import { apiError, HttpError } from "@/lib/http";
 import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
-import { getSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
+import { getEffectiveSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
 import {
   assertUnifiedTemplateSubtitleCanaryAccess,
   isUnifiedTemplateSubtitleSnapshot,
@@ -135,7 +135,7 @@ export async function POST(
         );
       }
       assertUnifiedTemplateSubtitleCanaryAccess(
-        await getSubtitleTemplateAccess(db, session.userId),
+        await getEffectiveSubtitleTemplateAccess(db, session.userId),
       );
     }
 

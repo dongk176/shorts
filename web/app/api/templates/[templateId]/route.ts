@@ -11,9 +11,8 @@ import {
 } from "@/lib/template-config";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
 import {
-  getPublicSubtitleTemplateAccess,
-  getSubtitleTemplateAccess,
-  lockSubtitleTemplateAccess,
+  getEffectiveSubtitleTemplateAccess,
+  lockEffectiveSubtitleTemplateAccess,
 } from "@/lib/subtitle-template-release";
 import { assertUnifiedTemplateSubtitleCanaryAccess } from "@/lib/template-execution-snapshot";
 
@@ -41,9 +40,7 @@ export async function GET(_request: Request, context: Context) {
     const template = customTemplateFromRow(rows[0]);
     if (isTemplateConfigV5(template.config)) {
       assertUnifiedTemplateSubtitleCanaryAccess(
-        session.isAdmin === true
-          ? await getSubtitleTemplateAccess(db, session.userId)
-          : await getPublicSubtitleTemplateAccess(db, session.userId),
+        await getEffectiveSubtitleTemplateAccess(db, session.userId),
       );
     }
     return NextResponse.json({ template });
@@ -74,7 +71,7 @@ export async function PUT(request: Request, context: Context) {
       const currentConfig = templateConfigSchema.parse(currentRows[0].config);
       if (isTemplateConfigV5(currentConfig) || isTemplateConfigV5(input.config)) {
         assertUnifiedTemplateSubtitleCanaryAccess(
-          await lockSubtitleTemplateAccess(tx, session.userId),
+          await lockEffectiveSubtitleTemplateAccess(tx, session.userId),
         );
       }
       const rows = await tx`

@@ -12,8 +12,7 @@ import { getDb } from "@/lib/db";
 import { getEnterpriseAccessState } from "@/lib/enterprise-access";
 import { getFileUploadReleaseAccess } from "@/lib/file-upload-release";
 import {
-  getPublicSubtitleTemplateAccess,
-  getSubtitleTemplateAccess,
+  getEffectiveSubtitleTemplateAccess,
   unifiedTemplateSubtitleLocalUploadEnabled,
 } from "@/lib/subtitle-template-release";
 import { requireMvpSession } from "@/lib/session";
@@ -79,9 +78,10 @@ export async function loadMvpState(
   }
 
   const session = await requireMvpSession(user, { createIfMissing: false });
-  const subtitleTemplateAccessPromise = session.isAdmin === true
-    ? getSubtitleTemplateAccess(db, session.userId)
-    : getPublicSubtitleTemplateAccess(db, session.userId);
+  const subtitleTemplateAccessPromise = getEffectiveSubtitleTemplateAccess(
+    db,
+    session.userId,
+  );
   const [
     usage,
     recentJobs,

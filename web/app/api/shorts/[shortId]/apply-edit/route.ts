@@ -50,8 +50,8 @@ import {
 import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
-  getSubtitleTemplateAccess,
-  lockSubtitleTemplateAccess,
+  getEffectiveSubtitleTemplateAccess,
+  lockEffectiveSubtitleTemplateAccess,
 } from "@/lib/subtitle-template-release";
 import {
   assertUnifiedTemplateSubtitleCanaryAccess,
@@ -368,7 +368,7 @@ async function applyEditorDocument({
   }
   if (unifiedSubtitleEditRequested || candidateOnlyFontRequested) {
     assertUnifiedTemplateSubtitleCanaryAccess(
-      await getSubtitleTemplateAccess(db, session.userId),
+      await getEffectiveSubtitleTemplateAccess(db, session.userId),
     );
   }
   const storedCaptionRenderSpec = existing.subtitleTemplateId
@@ -690,7 +690,7 @@ async function applyEditorDocument({
     }
     if (unifiedSubtitleEditRequested || candidateOnlyFontRequested) {
       assertUnifiedTemplateSubtitleCanaryAccess(
-        await lockSubtitleTemplateAccess(tx, session.userId),
+        await lockEffectiveSubtitleTemplateAccess(tx, session.userId),
       );
     }
     persistedRelease = lockedRelease;

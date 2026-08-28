@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
-import type { Sql } from "postgres";
+import type { Sql, TransactionSql } from "postgres";
 import { describe, expect, it, vi } from "vitest";
 import {
+  getEffectiveSubtitleTemplateAccess,
   getUnifiedTemplateSubtitlePublicPreviewAccess,
+  lockEffectiveSubtitleTemplateAccess,
   resolveUnifiedTemplateSubtitleEditorContext,
   resolveSubtitleTemplateAccess,
   unifiedTemplateSubtitleLocalUploadEnabled,
@@ -153,6 +155,12 @@ describe("subtitle template release", () => {
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
     process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
     const db = vi.fn()
+      .mockResolvedValueOnce([
+        { flagKey: "subtitle_templates", enabled: true },
+        { flagKey: "subtitle_templates_public", enabled: true },
+        { flagKey: "unified_template_subtitles_canary", enabled: true },
+      ])
+      .mockResolvedValueOnce([{ isAdmin: true, testerEnabled: true }])
       .mockResolvedValueOnce([{
         publicEnabled: false,
         canaryEnabled: true,
@@ -170,13 +178,7 @@ describe("subtitle template release", () => {
         candidateStatus: "canary_ready",
         candidateSubtitleEditingCapable: true,
         subtitleEditingPublicEnabled: false,
-      }])
-      .mockResolvedValueOnce([
-        { flagKey: "subtitle_templates", enabled: true },
-        { flagKey: "subtitle_templates_public", enabled: true },
-        { flagKey: "unified_template_subtitles_canary", enabled: true },
-      ])
-      .mockResolvedValueOnce([{ isAdmin: true, testerEnabled: true }]);
+      }]);
     try {
       const context = await resolveUnifiedTemplateSubtitleEditorContext(
         db as unknown as Sql,
@@ -199,6 +201,81 @@ describe("subtitle template release", () => {
       }
     }
   });
+
+  it.each([
+    ["read", getEffectiveSubtitleTemplateAccess],
+    ["locked mutation", lockEffectiveSubtitleTemplateAccess],
+  ])(
+    "falls back to the stable public subtitle release for an administrator %s",
+    async (_label, resolveAccess) => {
+      const previous = {
+        editor: process.env.EDITOR_RENDERING_V2_ENABLED,
+        global: process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED,
+        subtitle: process.env.SUBTITLE_TEMPLATES_ENABLED,
+      };
+      process.env.EDITOR_RENDERING_V2_ENABLED = "true";
+      process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = "true";
+      process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
+      const flags = [
+        { flagKey: "subtitle_templates", enabled: true },
+        { flagKey: "subtitle_templates_public", enabled: true },
+        { flagKey: "unified_template_subtitles_canary", enabled: false },
+        { flagKey: "unified_template_subtitles_public", enabled: true },
+      ];
+      const db = vi.fn()
+        .mockResolvedValueOnce(flags)
+        .mockResolvedValueOnce([{ isAdmin: true, testerEnabled: true }])
+        .mockResolvedValueOnce([{
+          publicEnabled: true,
+          canaryEnabled: true,
+          runtimeEnabled: true,
+          testerEnabled: true,
+          userIsAdmin: true,
+          stableReleaseId: "stable-release",
+          stableUiVersion: 3,
+          stableDocumentVersion: 3,
+          stableStatus: "stable",
+          stableSubtitleEditingCapable: true,
+          candidateReleaseId: "candidate-release",
+          candidateUiVersion: 3,
+          candidateDocumentVersion: 3,
+          candidateStatus: "canary_active",
+          candidateSubtitleEditingCapable: true,
+          subtitleEditingPublicEnabled: true,
+        }])
+        .mockResolvedValueOnce([{
+          publicEnabled: true,
+          runtimeEnabled: true,
+          stableReleaseId: "stable-release",
+          stableUiVersion: 3,
+          stableDocumentVersion: 3,
+          stableStatus: "stable",
+          stableSubtitleEditingCapable: true,
+          subtitleEditingPublicEnabled: true,
+        }])
+        .mockResolvedValueOnce(flags)
+        .mockResolvedValueOnce([{ isAdmin: true, testerEnabled: true }]);
+      try {
+        const access = await resolveAccess(
+          db as unknown as TransactionSql,
+          "admin-user",
+        );
+
+        expect(access.unifiedEnabled).toBe(true);
+        expect(access.unifiedCanaryEnabled).toBe(false);
+        expect(access.unifiedPublicEnabled).toBe(true);
+        expect(access.suitePublicEnabled).toBe(true);
+        expect(db).toHaveBeenCalledTimes(6);
+      } finally {
+        if (previous.editor === undefined) delete process.env.EDITOR_RENDERING_V2_ENABLED;
+        else process.env.EDITOR_RENDERING_V2_ENABLED = previous.editor;
+        if (previous.global === undefined) delete process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED;
+        else process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = previous.global;
+        if (previous.subtitle === undefined) delete process.env.SUBTITLE_TEMPLATES_ENABLED;
+        else process.env.SUBTITLE_TEMPLATES_ENABLED = previous.subtitle;
+      }
+    },
+  );
 
   it("seeds the independent unified canary flag disabled without overwriting state", () => {
     expect(unifiedCanaryFlagMigration).toContain(

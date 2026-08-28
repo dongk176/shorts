@@ -191,6 +191,22 @@ async function readAccess(
   if (!masterSwitchEnabled()) {
     return disabledAccess();
   }
+  return (await readAccessContext(
+    db,
+    userId,
+    lock,
+    resolvedRelease,
+    allowAdministratorCanary,
+  )).subtitleAccess;
+}
+
+async function readAccessContext(
+  db: Sql | TransactionSql,
+  userId: string | null,
+  lock: boolean,
+  resolvedRelease?: Awaited<ReturnType<typeof resolveEditorRelease>>,
+  allowAdministratorCanary: boolean = true,
+) {
   const flagRows = lock ? await db`
     select flag_key,enabled
     from shorts_mvp.runtime_feature_flags
@@ -233,21 +249,36 @@ async function readAccess(
     where app_user.id=${userId} limit 1
   `;
   const release = resolvedRelease ?? await resolveEditorRelease(db, userId);
-  return accessFromRows(
-    flagRows,
-    adminRows,
-    release,
-    allowAdministratorCanary,
-  );
+  return {
+    editorRelease: release,
+    subtitleAccess: accessFromRows(
+      flagRows,
+      adminRows,
+      release,
+      allowAdministratorCanary,
+    ),
+  };
 }
 
-export async function resolveUnifiedTemplateSubtitleEditorContext(
+async function resolveEffectiveSubtitleTemplateContext(
   db: Sql | TransactionSql,
   userId: string | null,
+  lock: boolean,
 ) {
-  const editorRelease = await resolveEditorRelease(db, userId);
+  if (!masterSwitchEnabled()) {
+    return {
+      editorRelease: await resolveEditorRelease(db, userId),
+      subtitleAccess: disabledAccess(),
+    };
+  }
+  const currentContext = await readAccessContext(
+    db,
+    userId,
+    lock,
+  );
+  const { editorRelease } = currentContext;
   const subtitleAccess = subtitleEditingReleaseEnabled(editorRelease)
-    ? await readAccess(db, userId, false, editorRelease)
+    ? currentContext.subtitleAccess
     : disabledAccess();
   if (subtitleAccess.unifiedEnabled || editorRelease.channel !== "canary") {
     return { editorRelease, subtitleAccess };
@@ -255,9 +286,11 @@ export async function resolveUnifiedTemplateSubtitleEditorContext(
 
   // A non-administrator can be enrolled in an unrelated editor canary. That
   // assignment must not hide the stable public subtitle release from them.
+  // The same fallback also applies to administrators so the editor page and
+  // every mutation API authorize the same saved template.
   const publicEditorRelease = await resolvePublicEditorRelease(db);
   const publicSubtitleAccess = subtitleEditingReleaseEnabled(publicEditorRelease)
-    ? await readAccess(db, userId, false, publicEditorRelease, false)
+    ? await readAccess(db, userId, lock, publicEditorRelease, false)
     : disabledAccess();
   if (publicSubtitleAccess.unifiedEnabled) {
     return {
@@ -266,6 +299,29 @@ export async function resolveUnifiedTemplateSubtitleEditorContext(
     };
   }
   return { editorRelease, subtitleAccess };
+}
+
+export function resolveUnifiedTemplateSubtitleEditorContext(
+  db: Sql | TransactionSql,
+  userId: string | null,
+) {
+  return resolveEffectiveSubtitleTemplateContext(db, userId, false);
+}
+
+export async function getEffectiveSubtitleTemplateAccess(
+  db: Sql | TransactionSql,
+  userId: string | null,
+) {
+  return (await resolveEffectiveSubtitleTemplateContext(db, userId, false))
+    .subtitleAccess;
+}
+
+export async function lockEffectiveSubtitleTemplateAccess(
+  db: TransactionSql,
+  userId: string | null,
+) {
+  return (await resolveEffectiveSubtitleTemplateContext(db, userId, true))
+    .subtitleAccess;
 }
 
 export async function getUnifiedTemplateSubtitlePublicPreviewAccess(

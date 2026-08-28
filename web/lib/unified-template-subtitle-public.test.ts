@@ -14,13 +14,15 @@ describe("unified template subtitle public release", () => {
     expect(release).toContain("getPublicSubtitleTemplateAccess");
   });
 
-  it("gives regular sessions only the public access resolver", () => {
+  it("uses one effective resolver for pages and mutation APIs", () => {
     const mvpState = source("web/lib/mvp-state.ts");
     const projectApi = source("web/app/api/projects/[projectNumber]/route.ts");
-    expect(mvpState).toContain("session.isAdmin === true");
-    expect(mvpState).toContain("getPublicSubtitleTemplateAccess");
-    expect(projectApi).toContain("session.isAdmin === true");
-    expect(projectApi).toContain("getPublicSubtitleTemplateAccess");
+    const templateApi = source("web/app/api/templates/route.ts");
+    expect(mvpState).toContain("getEffectiveSubtitleTemplateAccess");
+    expect(projectApi).toContain("getEffectiveSubtitleTemplateAccess");
+    expect(templateApi).toContain("lockEffectiveSubtitleTemplateAccess");
+    expect(mvpState).not.toContain("getPublicSubtitleTemplateAccess");
+    expect(projectApi).not.toContain("getPublicSubtitleTemplateAccess");
   });
 
   it("keeps file upload on its administrator-only and production-closed paths", () => {

@@ -11,9 +11,8 @@ import {
 import { getBillingSummary } from "@/lib/billing";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
 import {
-  getPublicSubtitleTemplateAccess,
-  getSubtitleTemplateAccess,
-  lockSubtitleTemplateAccess,
+  getEffectiveSubtitleTemplateAccess,
+  lockEffectiveSubtitleTemplateAccess,
 } from "@/lib/subtitle-template-release";
 import { assertUnifiedTemplateSubtitleCanaryAccess } from "@/lib/template-execution-snapshot";
 
@@ -34,9 +33,10 @@ export async function GET() {
     if (!hasUnifiedTemplates) {
       return NextResponse.json({ templates });
     }
-    const access = session.isAdmin === true
-      ? await getSubtitleTemplateAccess(db, session.userId)
-      : await getPublicSubtitleTemplateAccess(db, session.userId);
+    const access = await getEffectiveSubtitleTemplateAccess(
+      db,
+      session.userId,
+    );
     return NextResponse.json({
       templates: access.unifiedEnabled
         ? templates
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
       assertCustomTemplateAccess(await getBillingSummary(tx, session.userId));
       if (isTemplateConfigV5(input.config)) {
         assertUnifiedTemplateSubtitleCanaryAccess(
-          await lockSubtitleTemplateAccess(tx, session.userId),
+          await lockEffectiveSubtitleTemplateAccess(tx, session.userId),
         );
       }
       await tx`select pg_advisory_xact_lock(hashtextextended(${`custom-template:${session.userId}`}, 0))`;

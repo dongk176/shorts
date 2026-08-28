@@ -7,8 +7,7 @@ import { apiError, HttpError } from "@/lib/http";
 import { billingSupportsPaidProjectActions } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
-  getPublicSubtitleTemplateAccess,
-  getSubtitleTemplateAccess,
+  getEffectiveSubtitleTemplateAccess,
 } from "@/lib/subtitle-template-release";
 
 export const dynamic = "force-dynamic";
@@ -46,9 +45,10 @@ export async function GET(
     const session = await requireAuthenticatedMvpSession();
     await assertEnterpriseSessionServiceAccess(db, session);
     const billingPromise = getBillingSummary(db, session.userId);
-    const subtitleTemplateAccess = session.isAdmin === true
-      ? await getSubtitleTemplateAccess(db, session.userId)
-      : await getPublicSubtitleTemplateAccess(db, session.userId);
+    const subtitleTemplateAccess = await getEffectiveSubtitleTemplateAccess(
+      db,
+      session.userId,
+    );
     const unifiedTemplateSubtitleCanaryEnabled =
       subtitleTemplateAccess.unifiedEnabled;
     const [project, billing] = await Promise.all([

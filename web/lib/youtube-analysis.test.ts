@@ -122,6 +122,26 @@ describe("YouTube analysis persistence", () => {
       if (values.includes("source_range_selection_public")) {
         return enabledReleaseFlags;
       }
+      if (sql.includes("candidate.id as candidate_release_id")) {
+        return [{
+          publicEnabled: true,
+          canaryEnabled: true,
+          runtimeEnabled: true,
+          testerEnabled: false,
+          userIsAdmin: false,
+          stableReleaseId: "5a5f9f4d-f59d-4ba3-a28a-9396ac8284a7",
+          stableUiVersion: 3,
+          stableDocumentVersion: 3,
+          stableStatus: "stable",
+          stableSubtitleEditingCapable: true,
+          candidateReleaseId: "candidate-release",
+          candidateUiVersion: 3,
+          candidateDocumentVersion: 3,
+          candidateStatus: "canary_active",
+          candidateSubtitleEditingCapable: true,
+          subtitleEditingPublicEnabled: true,
+        }];
+      }
       if (sql.includes("stable.id as stable_release_id") && !sql.includes("candidate.id")) {
         return [{
           publicEnabled: true,

@@ -6,7 +6,7 @@ import type {
 import { templateSnapshotFromRow } from "@/lib/custom-templates";
 import { HttpError } from "@/lib/http";
 import {
-  lockSubtitleTemplateAccess,
+  lockEffectiveSubtitleTemplateAccess,
   type SubtitleTemplateAccess,
 } from "@/lib/subtitle-template-release";
 import {
@@ -115,7 +115,7 @@ export async function resolveTemplateExecutionSnapshot(
     videoAspectRatio: VideoAspectRatio;
     brandColor?: TemplatePresetColor;
   },
-  resolveAccess: ResolveAccess = lockSubtitleTemplateAccess,
+  resolveAccess: ResolveAccess = lockEffectiveSubtitleTemplateAccess,
 ): Promise<ResolvedTemplateExecutionSnapshot> {
   if (!input.customTemplateId) {
     return {

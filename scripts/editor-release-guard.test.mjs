@@ -65,7 +65,15 @@ test("release switches default to legacy and v2 saving is server-authorized", as
   );
   assert.match(
     subtitleRelease,
-    /resolveUnifiedTemplateSubtitleEditorContext[\s\S]*const editorRelease = await resolveEditorRelease\(db, userId\)/,
+    /resolveEffectiveSubtitleTemplateContext[\s\S]*await readAccessContext\(\s*db,\s*userId,\s*lock/,
+  );
+  assert.match(
+    subtitleRelease,
+    /const release = resolvedRelease \?\? await resolveEditorRelease\(db, userId\)/,
+  );
+  assert.match(
+    subtitleRelease,
+    /lockEffectiveSubtitleTemplateAccess[\s\S]*resolveEffectiveSubtitleTemplateContext\(db, userId, true\)/,
   );
   assert.match(resolver, /coalesce\(release_user\.is_admin,false\) as user_is_admin/);
   assert.match(
