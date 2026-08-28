@@ -232,6 +232,11 @@ node scripts/deploy-stage-b-release-control.mjs \
 두 Editor 리소스만 함께 갱신합니다. Compute ChangeSet은 만들거나 실행하지
 않습니다.
 
+`renewal`은 현재 Job Definition·Queue·target registry를 바꾸지 않는
+Editor IAM/registrar 전용 변경이므로 공개 중인 v4를 중단하지 않는다. 대신
+동일한 infrastructure lease로 관리 전환을 잠그며, bootstrap과 rotation은
+계속 `kill=true`, `internal=false`, `rollout=0`을 요구한다.
+
 ```bash
 RENEWAL_HEAD="$NEW_EXACT_RELEASE_HEAD"
 

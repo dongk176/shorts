@@ -441,7 +441,7 @@ export function validateEditorRenderV4ReleaseControlSnapshot(
   return snapshot;
 }
 
-const LEASE_OWNER = /^stage-b:(bootstrap|rotation|lockdown):[0-9a-f]{40}$/;
+const LEASE_OWNER = /^stage-b:(bootstrap|renewal|rotation|lockdown):[0-9a-f]{40}$/;
 const LEASE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const MAX_LEASE_TTL_SECONDS = 2 * 60 * 60;
 
@@ -461,7 +461,7 @@ export function editorRenderV4InfrastructureLeaseRequiresStopped(ownerValue) {
   if (!ownerMatch) {
     throw new Error("Stage B infrastructure lease owner가 exact contract와 다릅니다.");
   }
-  return ownerMatch[1] !== "lockdown";
+  return !["renewal", "lockdown"].includes(ownerMatch[1]);
 }
 
 function databaseOptions({ readOnly = true } = {}) {
@@ -511,7 +511,7 @@ export async function acquireEditorRenderV4InfrastructureLease({
       const state = states[0];
       if (!state) throw new Error("운영 editor_release_state singleton이 없습니다.");
       if (
-        phase !== "lockdown"
+        editorRenderV4InfrastructureLeaseRequiresStopped(owner)
         && (
         state.renderV4KillSwitch !== true
         || state.renderV4InternalEnabled !== false
@@ -556,7 +556,7 @@ export async function renewEditorRenderV4InfrastructureLease({
   ) {
     throw new Error("Stage B infrastructure lease TTL은 30~7200초 정수여야 합니다.");
   }
-  const requiresStopped = phase !== "lockdown";
+  const requiresStopped = editorRenderV4InfrastructureLeaseRequiresStopped(owner);
   const databaseUrl = requireProductionDatabaseUrl(environment);
   const sql = postgres(databaseUrl, databaseOptions({ readOnly: false }));
   try {

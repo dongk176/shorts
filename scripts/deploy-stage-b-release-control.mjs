@@ -46,6 +46,10 @@ async function verifyStageBDatabaseContracts({ requireStopped }) {
   await verifyEditorReleaseProbeAttestation();
 }
 
+function stageBRequiresStopped(phase) {
+  return !["renewal", "lockdown"].includes(phase);
+}
+
 function required(value, label) {
   const result = String(value || "").trim();
   if (!result) throw new Error(`${label} 값이 필요합니다.`);
@@ -1395,11 +1399,10 @@ async function executeChangeSet(options, initial, registry) {
       options.changeSetId,
     );
     await verifyStageBDatabaseContracts({
-      requireStopped: options.phase !== "lockdown",
+      requireStopped: stageBRequiresStopped(options.phase),
     });
 
-    const leasePhase = options.phase === "renewal" ? "bootstrap" : options.phase;
-    const leaseOwner = `stage-b:${leasePhase}:${initial.head}`;
+    const leaseOwner = `stage-b:${options.phase}:${initial.head}`;
     const leaseId = crypto.randomUUID();
     let leaseAcquired = false;
     let executionMayHaveStarted = false;
@@ -1537,7 +1540,7 @@ async function executeChangeSet(options, initial, registry) {
         ttlSeconds: LEASE_TTL_SECONDS,
       });
       await verifyStageBDatabaseContracts({
-        requireStopped: options.phase !== "lockdown",
+        requireStopped: stageBRequiresStopped(options.phase),
       });
       liveStack(stackKey, options.region);
       const finalHash = stageBTemplateSha256(
@@ -1589,7 +1592,7 @@ export async function runStageBReleaseControl(argv = process.argv.slice(2)) {
   const registry = readProductionProjectTargets();
   verifyPromotedProductionBaseline(options.base);
   await verifyStageBDatabaseContracts({
-    requireStopped: options.phase !== "lockdown",
+    requireStopped: stageBRequiresStopped(options.phase),
   });
 
   if (options.mode === "execute") {
@@ -1715,7 +1718,7 @@ export async function runStageBReleaseControl(argv = process.argv.slice(2)) {
       const name = provenance.changeSetName;
       assertChangeSetNameUnused(stackKey, options.region, name);
       await verifyStageBDatabaseContracts({
-        requireStopped: options.phase !== "lockdown",
+        requireStopped: stageBRequiresStopped(options.phase),
       });
       const record = { stackKey, name, id: "", provenance };
       preparedRecords.push(record);
