@@ -83,6 +83,9 @@ class FakeRepository:
             "expected_bytes": self.payload_bytes,
             "declared_content_type": "video/mp4",
             "declared_duration_seconds": 300,
+            "declared_width": 1920,
+            "declared_height": 1080,
+            "declared_has_audio": True,
             "range_start_seconds": 0,
             "range_end_seconds": 300,
             "source_range_selection_enabled": True,
@@ -221,6 +224,25 @@ def test_receiver_config_allows_only_exact_origins_and_bounds_idle_timeout() -> 
         "FILE_UPLOAD_SOCKET_IDLE_TIMEOUT_SECONDS": "9999",
     })
     assert maximum.socket_idle_timeout_seconds == 600
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "INGESTION_PROXY_ROUTES_JSON",
+        "WARP_CONF_B64",
+        "YOUTUBE_POT_TOKEN",
+        "Webshare_proxy_url",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ],
+)
+def test_receiver_config_fails_closed_on_ingestion_or_proxy_environment(
+    name: str,
+) -> None:
+    with pytest.raises(RuntimeError, match="forbids ingestion/proxy environment"):
+        UploadReceiverConfig.from_environment({name: "configured"})
 
 
 def _receive(
@@ -811,8 +833,9 @@ def test_repository_claim_is_atomic_and_revalidates_release_identity() -> None:
 
     assert "for update of us" in implementation
     assert "hmac.compare_digest" in implementation
-    assert "where flag_key='file_upload'" in implementation
-    assert 'flags.get("file_upload_public"' not in implementation
+    assert "'file_upload','file_upload_public','file_upload_emergency_stop'" in implementation
+    assert 'flags.get("file_upload_public"' in implementation
+    assert 'flags.get("file_upload_emergency_stop"' in implementation
     assert "u.is_admin" in implementation
     assert "us.expires_at<=clock_timestamp()" in implementation
     assert "j.user_id=us.user_id" in implementation
@@ -893,6 +916,9 @@ def _database_row(**overrides: object) -> dict[str, object]:
         "expected_bytes": 10,
         "declared_content_type": "video/mp4",
         "declared_duration_seconds": 300,
+        "declared_width": 1920,
+        "declared_height": 1080,
+        "declared_has_audio": True,
         "range_start_seconds": 0,
         "range_end_seconds": 300,
         "is_expired": False,
@@ -924,8 +950,8 @@ def _result(*, one=None, all_rows=None):
             {"is_admin": False},
             {"file_upload": True, "file_upload_public": True},
             10,
-            "forbidden",
-            2,
+            "claimed",
+            3,
         ),
         ({}, {"file_upload": False}, 10, "forbidden", 2),
         ({}, {"file_upload": True}, 11, "size_mismatch", 3),

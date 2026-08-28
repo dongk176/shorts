@@ -13,7 +13,7 @@ concurrency:
 
 env:
   AWS_REGION: ap-northeast-2
-  EDITOR_RELEASE_TAG: editor-v4-render-parity-20260828-18
+  EDITOR_RELEASE_TAG: editor-v4-render-parity-20260828-19
   EDITOR_RELEASE_BUILD_ROLE_ARN: ${{ vars.EDITOR_RELEASE_BUILD_ROLE_ARN }}
   EDITOR_RELEASE_VERIFIER_ROLE_ARN: ${{ vars.EDITOR_RELEASE_VERIFIER_ROLE_ARN }}
   EDITOR_RELEASE_ECR_REPOSITORY_URI: ${{ vars.EDITOR_RELEASE_ECR_REPOSITORY_URI }}
@@ -30,7 +30,7 @@ jobs:
   build:
     # A mutable branch is never a release identity. AWS independently verifies
     # this exact protected tag before it allows an image push.
-    if: github.ref == 'refs/tags/editor-v4-render-parity-20260828-18'
+    if: github.ref == 'refs/tags/editor-v4-render-parity-20260828-19'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     outputs:
@@ -242,7 +242,7 @@ jobs:
 
   verify-and-register:
     needs: build
-    if: github.ref == 'refs/tags/editor-v4-render-parity-20260828-18'
+    if: github.ref == 'refs/tags/editor-v4-render-parity-20260828-19'
     environment: editor-v4-release-approval
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -336,7 +336,9 @@ jobs:
             202608240002_unified_template_subtitles_canary_flag.sql \
             202608260007_editor_render_spec_v4_release_control.sql \
             202608260008_editor_release_probe_attestation.sql \
-            202608270001_fix_editor_release_object_cardinality.sql
+            202608270001_fix_editor_release_object_cardinality.sql \
+            202608280001_file_upload_render_release_binding.sql \
+            202608280002_file_upload_render_release_binding_validate.sql
 
       - name: Ask the trusted registrar to create the isolated probe
         id: isolated-probe

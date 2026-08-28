@@ -319,7 +319,7 @@ import { homeAnalysisHeaderOffset } from "@/lib/home-analysis-scroll";
 import {
   DirectUploadError,
   inspectUploadVideo,
-  uploadFileDirectly,
+  uploadFileWhenReceiverReady,
   type InspectedUploadVideo,
 } from "@/lib/file-upload-client";
 import { publishUsageSnapshot } from "@/lib/usage-client";
@@ -13148,7 +13148,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [uploadVideo, setUploadVideo] = useState<InspectedUploadVideo | null>(null);
   const [uploadInspectionBusy, setUploadInspectionBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadTransferActive, setUploadTransferActive] = useState(false);
+  const [uploadPreparationActive, setUploadPreparationActive] = useState(false);
   const uploadAbortController = useRef<AbortController | null>(null);
+  const activeUploadSessionId = useRef<string | null>(null);
   const uploadRequestId = useRef<string | null>(null);
   const uploadRequestIntentKey = useRef<string | null>(null);
   const jobRequestId = useRef<string | null>(null);
@@ -13313,6 +13316,32 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     jobRequestId.current = null;
     jobRequestIntentKey.current = null;
   }, []);
+
+  useEffect(() => {
+    const cancelUnreceivedUploadOnPageExit = () => {
+      const sessionId = activeUploadSessionId.current;
+      if (!sessionId) return;
+      uploadAbortController.current?.abort();
+      void fetch(`/api/file-upload/sessions/${encodeURIComponent(sessionId)}`, {
+        method: "DELETE",
+        cache: "no-store",
+        credentials: "same-origin",
+        keepalive: true,
+      }).catch(() => undefined);
+    };
+    window.addEventListener("pagehide", cancelUnreceivedUploadOnPageExit);
+    return () => window.removeEventListener("pagehide", cancelUnreceivedUploadOnPageExit);
+  }, []);
+
+  useEffect(() => {
+    if (!uploadTransferActive) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [uploadTransferActive]);
 
   useEffect(() => {
     if (uploadModeEnabled || sourceMode !== "upload") return;
@@ -13863,6 +13892,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         }),
       }, 30_000);
       uploadSessionId = value.uploadSessionId;
+      activeUploadSessionId.current = value.uploadSessionId;
       const pendingJob: VideoJob = {
         id: value.jobId,
         projectNumber: value.projectNumber,
@@ -13899,13 +13929,34 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setScrollToProjects(true);
       pollStarted.current = Date.now();
 
-      await uploadFileDirectly({
+      setUploadPreparationActive(true);
+      await uploadFileWhenReceiverReady({
         file: uploadVideo.file,
         uploadUrl: value.uploadUrl,
         bearerToken: value.token,
+        expiresAt: value.expiresAt,
         signal: controller.signal,
+        onAttemptStart: () => {
+          setUploadPreparationActive(false);
+          setUploadTransferActive(true);
+        },
+        onWaiting: () => {
+          setUploadTransferActive(false);
+          setUploadPreparationActive(true);
+          setUploadProgress(0);
+        },
         onProgress: (progress) => setUploadProgress(progress.percent),
+        getSessionState: () => requestJson<{
+          status: string;
+          received: boolean;
+          failureReason: string | null;
+        }>(`/api/file-upload/sessions/${encodeURIComponent(value.uploadSessionId)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        }),
       });
+      setUploadPreparationActive(false);
+      setUploadTransferActive(false);
       setUploadProgress(100);
       setUploadVideo(null);
       setRightsConfirmed(false);
@@ -13915,16 +13966,13 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setScrollToAnalysis(false);
       uploadRequestId.current = null;
       uploadRequestIntentKey.current = null;
+      activeUploadSessionId.current = null;
       await loadState().catch(() => undefined);
     } catch (cause) {
+      setUploadPreparationActive(false);
+      setUploadTransferActive(false);
       let abortConfirmed = false;
-      if (uploadSessionId) {
-        const abortResponse = await fetch(`/api/file-upload/sessions/${encodeURIComponent(uploadSessionId)}`, {
-          method: "DELETE",
-          cache: "no-store",
-        }).catch(() => undefined);
-        abortConfirmed = abortResponse?.ok === true;
-      }
+      let receiverAccepted = false;
       const definitiveControlFailure = cause instanceof HttpRequestError
         && (
           [400, 401, 402, 403, 404, 410, 413, 422].includes(cause.status)
@@ -13935,6 +13983,52 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         && [400, 401, 403, 404, 410, 413, 415, 422].includes(cause.status);
       const explicitlyAborted = cause instanceof DOMException
         && cause.name === "AbortError";
+      if (uploadSessionId && !explicitlyAborted) {
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          const recovered = await requestJson<{
+            received: boolean;
+            status: string;
+          }>(`/api/file-upload/sessions/${encodeURIComponent(uploadSessionId)}`, {
+            cache: "no-store",
+          }).catch(() => null);
+          if (recovered?.received || ["processing", "completed"].includes(
+            recovered?.status || "",
+          )) {
+            receiverAccepted = true;
+            break;
+          }
+          if (["failed", "cancelled", "expired"].includes(
+            recovered?.status || "",
+          )) break;
+          if (attempt < 3) {
+            await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+          }
+        }
+      }
+      if (receiverAccepted) {
+        setUploadProgress(100);
+        setUploadVideo(null);
+        setRightsConfirmed(false);
+        setRightsConfirmationAttention(false);
+        setSubtitleTemplateId(null);
+        setSubtitleCaptionPlacement("lower");
+        uploadRequestId.current = null;
+        uploadRequestIntentKey.current = null;
+        activeUploadSessionId.current = null;
+        await loadState().catch(() => undefined);
+        return;
+      }
+      if (
+        uploadSessionId
+        && (explicitlyAborted || definitiveControlFailure || definitiveReceiverFailure)
+      ) {
+        const abortResponse = await fetch(`/api/file-upload/sessions/${encodeURIComponent(uploadSessionId)}`, {
+          method: "DELETE",
+          cache: "no-store",
+        }).catch(() => undefined);
+        abortConfirmed = abortResponse?.ok === true;
+        if (abortConfirmed) activeUploadSessionId.current = null;
+      }
       // A lost POST response may happen after the server committed the job.
       // Keep the same request ID for ambiguous network/5xx/409 outcomes so a
       // retry cannot create a second reservation or duplicate project.
@@ -13961,7 +14055,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         ) {
           setConcurrentJobNoticeOpen(true);
         } else {
-          setError(userFacingErrorMessage(cause, "영상 업로드를 시작하지 못했습니다."));
+          setError(uploadSessionId
+            ? "업로드 응답이 끊겨 서버 상태를 확인하고 있습니다. 프로젝트 목록에서 처리 상태를 확인해 주세요."
+            : userFacingErrorMessage(cause, "영상 업로드를 시작하지 못했습니다."));
         }
       }
     } finally {
@@ -13969,7 +14065,13 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         uploadAbortController.current = null;
       }
       setBusy(false);
+      setUploadTransferActive(false);
+      setUploadPreparationActive(false);
     }
+  };
+
+  const cancelActiveUpload = () => {
+    uploadAbortController.current?.abort();
   };
 
   const createJob = async () => {
@@ -14283,6 +14385,25 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                 </span>
               ) : null}
             </button>
+            {uploadPreparationActive ? (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-300/20 bg-sky-300/[.07] px-4 py-3 text-sm font-bold leading-6 text-sky-100" role="status">
+                <span>안전한 업로드 서버를 준비하고 있습니다. 준비가 끝나면 자동으로 업로드를 시작합니다.</span>
+                <button type="button" onClick={cancelActiveUpload} className="min-h-9 rounded-lg border border-sky-100/25 px-3 text-xs font-extrabold text-white transition hover:bg-white/10">
+                  준비 취소
+                </button>
+              </div>
+            ) : uploadTransferActive ? (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/20 bg-amber-300/[.07] px-4 py-3 text-sm font-bold leading-6 text-amber-100" role="status">
+                <span>영상 업로드가 완료될 때까지만 이 탭을 열어두세요. 다른 탭은 이용할 수 있으며, 업로드 완료 후에는 창을 닫아도 작업이 계속됩니다. 모바일에서는 화면 전환이나 절전으로 전송이 중단될 수 있습니다.</span>
+                <button type="button" onClick={cancelActiveUpload} className="min-h-9 rounded-lg border border-amber-100/25 px-3 text-xs font-extrabold text-white transition hover:bg-white/10">
+                  업로드 중단
+                </button>
+              </div>
+            ) : uploadProgress === 100 ? (
+              <p className="mt-3 rounded-xl border border-emerald-300/20 bg-emerald-300/[.07] px-4 py-3 text-sm font-bold text-emerald-100" role="status">
+                업로드 완료 · 이제 창을 닫아도 됩니다.
+              </p>
+            ) : null}
           </div>
         )}
       </section>

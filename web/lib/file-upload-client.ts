@@ -149,6 +149,101 @@ export class DirectUploadError extends Error {
   }
 }
 
+export type UploadSessionRecoveryState = {
+  status: string;
+  received: boolean;
+  failureReason?: string | null;
+};
+
+const receiverRetryStatuses = new Set([409, 425, 429, 502, 503, 504]);
+
+function receiverRetryable(error: unknown) {
+  return error instanceof DirectUploadError
+    ? receiverRetryStatuses.has(error.status)
+    : error instanceof Error && !(error instanceof DOMException);
+}
+
+/**
+ * A scale-to-zero receiver can take a short time to become healthy. Retry only
+ * while the server still owns an unclaimed (`ready`) session. Once any worker
+ * has claimed the bearer, never replay the file body: status recovery owns the
+ * ambiguous-response path from that point onward.
+ */
+export async function uploadFileWhenReceiverReady(input: {
+  file: File;
+  uploadUrl: string;
+  bearerToken: string;
+  expiresAt: string;
+  signal?: AbortSignal;
+  onProgress?: (progress: DirectUploadProgress) => void;
+  onAttemptStart?: () => void;
+  onWaiting?: (attempt: number) => void;
+  getSessionState: () => Promise<UploadSessionRecoveryState>;
+  uploadAttempt?: typeof uploadFileDirectly;
+  now?: () => number;
+  wait?: (milliseconds: number) => Promise<void>;
+}) {
+  const now = input.now ?? Date.now;
+  const wait = input.wait ?? ((milliseconds: number) => new Promise<void>(
+    (resolve) => window.setTimeout(resolve, milliseconds),
+  ));
+  const uploadAttempt = input.uploadAttempt ?? uploadFileDirectly;
+  const expiresAt = new Date(input.expiresAt).getTime();
+  if (!Number.isFinite(expiresAt)) {
+    throw new DirectUploadError(
+      503,
+      "업로드 준비 시간을 확인하지 못했습니다.",
+      "upload_session_expiry_invalid",
+    );
+  }
+
+  let attempt = 0;
+  while (now() < expiresAt - 5_000) {
+    if (input.signal?.aborted) {
+      throw new DOMException("업로드가 취소되었습니다.", "AbortError");
+    }
+    attempt += 1;
+    input.onAttemptStart?.();
+    try {
+      await uploadAttempt({
+        file: input.file,
+        uploadUrl: input.uploadUrl,
+        bearerToken: input.bearerToken,
+        signal: input.signal,
+        onProgress: input.onProgress,
+      });
+      return;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw error;
+      }
+      const state = await input.getSessionState();
+      if (state.received || ["received", "processing", "completed"].includes(
+        state.status,
+      )) return;
+      if (["failed", "cancelled", "expired"].includes(state.status)) {
+        throw new DirectUploadError(
+          409,
+          state.failureReason || "업로드 세션이 종료되었습니다.",
+          `upload_session_${state.status}`,
+        );
+      }
+      // `uploading` means another receiver already consumed this one-use
+      // bearer. Retrying could duplicate bytes or race its terminal cleanup.
+      if (!receiverRetryable(error) || state.status !== "ready") throw error;
+      input.onWaiting?.(attempt);
+      const delay = Math.min(5_000, 500 * 2 ** Math.min(attempt - 1, 4));
+      if (now() + delay >= expiresAt - 5_000) break;
+      await wait(delay);
+    }
+  }
+  throw new DirectUploadError(
+    503,
+    "업로드 서버 준비 시간이 초과되었습니다. 같은 파일로 다시 시도해 주세요.",
+    "upload_receiver_prepare_timeout",
+  );
+}
+
 export function uploadFileDirectly(input: {
   file: File;
   uploadUrl: string;

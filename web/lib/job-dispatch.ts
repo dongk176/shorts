@@ -133,6 +133,27 @@ export function unifiedTemplateSubtitlesDispatchTarget(): ProjectDispatchTarget 
   );
 }
 
+export function projectDispatchTargetForFeatures(input: {
+  usesUnifiedTemplateSubtitleCandidate: boolean;
+  usesLegacySubtitleSuiteCandidate: boolean;
+  transcriptionEnabled: boolean;
+  sourceRangeSelectionEnabled: boolean;
+}): ProjectDispatchTarget {
+  if (input.usesUnifiedTemplateSubtitleCandidate) {
+    return unifiedTemplateSubtitlesDispatchTarget();
+  }
+  if (input.usesLegacySubtitleSuiteCandidate) {
+    return subtitleTemplatesDispatchTarget();
+  }
+  if (input.transcriptionEnabled) {
+    return elevenLabsTranscriptionDispatchTarget();
+  }
+  if (input.sourceRangeSelectionEnabled) {
+    return sourceRangeDispatchTarget();
+  }
+  return legacyProjectDispatchTarget();
+}
+
 export function allProjectDispatchTargets(): ProjectDispatchTarget[] {
   return [
     legacyProjectDispatchTarget(),

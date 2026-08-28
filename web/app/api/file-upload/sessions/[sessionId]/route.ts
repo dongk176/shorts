@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
+import { releaseFileUploadCapacity } from "@/lib/aws";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
-import {
-  getFileUploadReleaseAccess,
-  lockFileUploadReleaseAccess,
-} from "@/lib/file-upload-release";
+import { fileUploadSessionPublicStatus } from "@/lib/file-upload-session-state";
 import { apiError, HttpError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import { getUsageSnapshot } from "@/lib/usage";
@@ -35,8 +33,67 @@ async function requireHiddenAuthenticatedSession() {
   }
 }
 
-export async function GET() {
-  return noStore(apiError(hiddenNotFound()));
+export async function GET(_: Request, context: RouteContext) {
+  try {
+    const session = await requireHiddenAuthenticatedSession();
+    const { sessionId: rawSessionId } = await context.params;
+    const parsedSessionId = z.string().uuid().safeParse(rawSessionId);
+    if (!parsedSessionId.success) throw hiddenNotFound();
+
+    const db = getDb();
+    await assertEnterpriseSessionServiceAccess(db, session);
+    // Release mode controls new sessions only. An owner must still be able to
+    // recover the authoritative state of an already-issued upload after an
+    // operator pauses new traffic or the browser loses the final PUT response.
+    const rows = await db`
+      select upload.id as upload_session_id,upload.job_id,upload.status,
+        upload.received_bytes,upload.expected_bytes,upload.expires_at,
+        upload.claimed_at,upload.consumed_at,upload.completed_at,
+        upload.failure_code,upload.failure_reason,upload.source_deleted_at,
+        job.project_number,job.status as job_status,job.stage as job_stage,
+        job.progress as job_progress
+      from shorts_mvp.upload_sessions upload
+      join shorts_mvp.video_jobs job on job.id=upload.job_id
+      where upload.id=${parsedSessionId.data}
+        and upload.user_id=${session.userId}
+        and job.user_id=${session.userId}
+        and job.source_type='upload'
+        and job.execution_backend='upload_service'
+      limit 1
+    `;
+    const row = rows[0];
+    if (!row) throw hiddenNotFound();
+    const sessionStatus = String(row.status);
+    const jobStatus = String(row.jobStatus);
+    const received = row.consumedAt !== null && (
+      Number(row.receivedBytes || 0) === Number(row.expectedBytes || 0)
+      || jobStatus !== "uploading"
+    );
+    const status = fileUploadSessionPublicStatus({
+      receiverStatus: sessionStatus,
+      jobStatus,
+      received,
+    });
+    return noStore(NextResponse.json({
+      uploadSessionId: String(row.uploadSessionId),
+      jobId: String(row.jobId),
+      projectNumber: Number(row.projectNumber),
+      status,
+      receiverStatus: sessionStatus,
+      jobStatus,
+      jobStage: String(row.jobStage),
+      jobProgress: Number(row.jobProgress || 0),
+      receivedBytes: Number(row.receivedBytes || 0),
+      expectedBytes: Number(row.expectedBytes || 0),
+      received,
+      expiresAt: new Date(row.expiresAt).toISOString(),
+      failureCode: row.failureCode ? String(row.failureCode) : null,
+      failureReason: row.failureReason ? String(row.failureReason) : null,
+      sourceDeleted: row.sourceDeletedAt !== null,
+    }));
+  } catch (error) {
+    return noStore(apiError(error));
+  }
 }
 
 export async function DELETE(_: Request, context: RouteContext) {
@@ -48,16 +105,11 @@ export async function DELETE(_: Request, context: RouteContext) {
 
     const db = getDb();
     await assertEnterpriseSessionServiceAccess(db, session);
-    const access = await getFileUploadReleaseAccess(db, session.userId);
-    if (!access.adminEnabled) throw hiddenNotFound();
 
     const result = await db.begin(async (tx) => {
       await tx`
         select pg_advisory_xact_lock(hashtextextended(${session.userId},0))
       `;
-      const lockedAccess = await lockFileUploadReleaseAccess(tx, session.userId);
-      if (!lockedAccess.adminEnabled) throw hiddenNotFound();
-
       // This lock serializes browser cancellation against the receiver's
       // atomic awaiting_upload -> claimed transition. Once claimed, cleanup
       // belongs to the receiver and the browser must not finalize the job.
@@ -130,6 +182,9 @@ export async function DELETE(_: Request, context: RouteContext) {
     });
 
     const usage = await getUsageSnapshot(db, session);
+    if (!result.alreadyCancelled) {
+      await releaseFileUploadCapacity(result.uploadSessionId).catch(() => undefined);
+    }
     return noStore(NextResponse.json({
       ...result,
       cancelled: true,

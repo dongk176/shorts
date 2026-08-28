@@ -4,6 +4,7 @@ import {
   DirectUploadError,
   FILE_UPLOAD_MAX_BYTES,
   uploadContentType,
+  uploadFileWhenReceiverReady,
 } from "@/lib/file-upload-client";
 
 describe("file upload client preflight", () => {
@@ -53,5 +54,78 @@ describe("file upload client preflight", () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.status).toBe(422);
     expect(error.code).toBe("upload_duration_mismatch");
+  });
+});
+
+describe("scale-to-zero upload recovery", () => {
+  const file = { size: 1024, type: "video/mp4" } as File;
+  const base = {
+    file,
+    uploadUrl: "https://upload.example.com/v1/upload",
+    bearerToken: "token",
+    expiresAt: "2026-08-28T12:15:00.000Z",
+    now: () => Date.parse("2026-08-28T12:00:00.000Z"),
+    wait: async () => undefined,
+  };
+
+  it("retries a cold receiver only while the session remains unclaimed", async () => {
+    let attempts = 0;
+    const waiting: number[] = [];
+    await uploadFileWhenReceiverReady({
+      ...base,
+      uploadAttempt: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new DirectUploadError(503, "warming");
+        }
+      },
+      getSessionState: async () => ({ status: "ready", received: false }),
+      onWaiting: (attempt) => waiting.push(attempt),
+    });
+    expect(attempts).toBe(2);
+    expect(waiting).toEqual([1]);
+  });
+
+  it("accepts a lost final response when the server recorded the source", async () => {
+    let attempts = 0;
+    await uploadFileWhenReceiverReady({
+      ...base,
+      uploadAttempt: async () => {
+        attempts += 1;
+        throw new Error("connection lost");
+      },
+      getSessionState: async () => ({ status: "processing", received: true }),
+    });
+    expect(attempts).toBe(1);
+  });
+
+  it("never replays bytes after a receiver claimed the one-use bearer", async () => {
+    let attempts = 0;
+    await expect(uploadFileWhenReceiverReady({
+      ...base,
+      uploadAttempt: async () => {
+        attempts += 1;
+        throw new DirectUploadError(503, "connection lost");
+      },
+      getSessionState: async () => ({ status: "uploading", received: false }),
+    })).rejects.toMatchObject({ status: 503 });
+    expect(attempts).toBe(1);
+  });
+
+  it("surfaces terminal cleanup instead of retrying", async () => {
+    await expect(uploadFileWhenReceiverReady({
+      ...base,
+      uploadAttempt: async () => {
+        throw new DirectUploadError(503, "connection lost");
+      },
+      getSessionState: async () => ({
+        status: "failed",
+        received: false,
+        failureReason: "원본이 정리되었습니다.",
+      }),
+    })).rejects.toMatchObject({
+      code: "upload_session_failed",
+      message: "원본이 정리되었습니다.",
+    });
   });
 });

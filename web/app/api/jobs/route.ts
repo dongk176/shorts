@@ -14,17 +14,14 @@ import { getBillingSummary } from "@/lib/billing";
 import { getDb } from "@/lib/db";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import {
-  elevenLabsTranscriptionDispatchTarget,
-  legacyProjectDispatchTarget,
+  projectDispatchTargetForFeatures,
   type ProjectDispatchTarget,
-  sourceRangeDispatchTarget,
-  subtitleTemplatesDispatchTarget,
-  unifiedTemplateSubtitlesDispatchTarget,
 } from "@/lib/job-dispatch";
 import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { apiError, HttpError } from "@/lib/http";
 import { getInitialJobBackend } from "@/lib/job-backend";
-import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
+import { resolveInitialRenderRelease } from "@/lib/initial-render-release";
+import { createInitialRenderContract } from "@/lib/initial-render-contract";
 import {
   assertJobCreationAllowed,
   assertRestrictedContentCooldown,
@@ -42,12 +39,9 @@ import {
 } from "@/lib/transcription-release";
 import { lockSubtitleTemplateAccess } from "@/lib/subtitle-template-release";
 import {
-  STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
-  SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
   SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID,
   subtitleCaptionPlacements,
   subtitleTemplateCreationIds,
-  subtitleTemplateStyleSnapshot,
 } from "@/lib/subtitle-templates";
 import { billableSourceSeconds, getUsageSnapshot } from "@/lib/usage";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
@@ -267,13 +261,12 @@ export async function POST(request: Request) {
         }
         dispatchTarget = executionBackend !== "aws_batch"
           ? null
-          : usesLegacySubtitleSuiteCandidate
-            ? subtitleTemplatesDispatchTarget()
-            : transcriptionAccess.enabled
-              ? elevenLabsTranscriptionDispatchTarget()
-              : sourceRangeSelectionEnabled
-                ? sourceRangeDispatchTarget()
-                : null;
+          : projectDispatchTargetForFeatures({
+              usesUnifiedTemplateSubtitleCandidate: false,
+              usesLegacySubtitleSuiteCandidate,
+              transcriptionEnabled: transcriptionAccess.enabled,
+              sourceRangeSelectionEnabled,
+            });
       }
       const concurrentExisting = await tx`
         select id, project_number, status from shorts_mvp.video_jobs
@@ -332,37 +325,27 @@ export async function POST(request: Request) {
       if (input.customTemplateId) {
         dispatchTarget = executionBackend !== "aws_batch"
           ? null
-          : usesUnifiedTemplateSubtitleCandidate
-            ? unifiedTemplateSubtitlesDispatchTarget()
-            : usesLegacySubtitleSuiteCandidate
-              ? subtitleTemplatesDispatchTarget()
-              : transcriptionAccess.enabled
-                ? elevenLabsTranscriptionDispatchTarget()
-                : sourceRangeSelectionEnabled
-                  ? sourceRangeDispatchTarget()
-                  : null;
-      }
-      if (executionBackend === "aws_batch" && !dispatchTarget) {
-        dispatchTarget = legacyProjectDispatchTarget();
+          : projectDispatchTargetForFeatures({
+              usesUnifiedTemplateSubtitleCandidate,
+              usesLegacySubtitleSuiteCandidate,
+              transcriptionEnabled: transcriptionAccess.enabled,
+              sourceRangeSelectionEnabled,
+            });
       }
       let initialRenderSpecVersion: 4 | null = null;
       let initialCaptionRenderSpecVersion: 4 | null = null;
-      const resolvedTemplateId = resolvedExecution.resolvedTemplateId;
-      const resolvedVideoAspectRatio =
-        resolvedExecution.resolvedVideoAspectRatio;
-      const templateSnapshot = resolvedExecution.templateSnapshot;
-      const subtitleTemplateSnapshot = input.subtitleTemplateId
-        ? subtitleTemplateStyleSnapshot(
-            input.subtitleTemplateId,
-            resolvedVideoAspectRatio,
-            input.brandColor,
-            input.subtitleCaptionPlacement ?? "lower",
-            undefined,
-            subtitleTemplateUsesEnhancedTiming
-              ? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES
-              : STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
-          )
-        : resolvedExecution.subtitleTemplateSnapshot;
+      let initialEditorReleaseId: string | null = null;
+      const renderContract = createInitialRenderContract({
+        resolvedExecution,
+        subtitleTemplateId: input.subtitleTemplateId,
+        subtitleCaptionPlacement: input.subtitleCaptionPlacement,
+        brandColor: input.brandColor,
+        enhancedSubtitleTiming: subtitleTemplateUsesEnhancedTiming,
+      });
+      const resolvedTemplateId = renderContract.templateId;
+      const resolvedVideoAspectRatio = renderContract.videoAspectRatio;
+      const templateSnapshot = renderContract.templateSnapshot;
+      const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
       const limits = await tx`
         with scoped_jobs as (
           select status,error_code,heartbeat_at
@@ -412,40 +395,14 @@ export async function POST(request: Request) {
       // The DB resolver takes shared locks on the runtime/state rows until this
       // transaction commits, so an emergency stop or infrastructure lease is
       // strictly ordered before or after this job instead of racing the INSERT.
-      if (
-        session.userId
-        && dispatchTarget?.v4Capability
-        && isEditorRenderSpecV4Enabled()
-      ) {
-        const v4Releases = await tx`
-          select release_id, release_channel, render_spec_version,
-            caption_render_spec_version, font_manifest_sha256,
-            release_worker_image_digest,
-            editor_production_job_definition_arn
-          from shorts_mvp.resolve_initial_render_v4_release(
-            ${session.userId},
-            ${dispatchTarget.targetKey},
-            ${dispatchTarget.releaseId},
-            ${dispatchTarget.jobDefinitionArn},
-            ${dispatchTarget.jobQueueArn},
-            ${dispatchTarget.workerImageDigest},
-            ${dispatchTarget.workerSourceGitSha}
-          )
-        `;
-        const verifiedRelease = v4Releases.length === 1
-          ? v4Releases[0]
-          : null;
-        if (
-          verifiedRelease?.renderSpecVersion === 4
-          && verifiedRelease.captionRenderSpecVersion === 4
-          && verifiedRelease.fontManifestSha256
-            === dispatchTarget.v4Capability.fontManifestSha256
-          && verifiedRelease.releaseWorkerImageDigest
-            === dispatchTarget.workerImageDigest
-        ) {
-          initialRenderSpecVersion = 4;
-          initialCaptionRenderSpecVersion = 4;
-        }
+      const initialRenderRelease = await resolveInitialRenderRelease(tx, {
+        userId: session.userId,
+        dispatchTarget,
+      });
+      if (initialRenderRelease) {
+        initialEditorReleaseId = initialRenderRelease.releaseId;
+        initialRenderSpecVersion = 4;
+        initialCaptionRenderSpecVersion = 4;
       }
       const insertedJobs = await tx`
         insert into shorts_mvp.video_jobs (
@@ -458,6 +415,7 @@ export async function POST(request: Request) {
           pipeline_version, source_range_selection_enabled, transcription_policy,
           batch_target_key, batch_target_release_id,
           batch_job_definition, batch_job_queue,
+          initial_editor_release_id,
           initial_render_spec_version, initial_caption_render_spec_version
           ,selected_source_duration_seconds,billable_source_seconds
         ) values (
@@ -473,6 +431,7 @@ export async function POST(request: Request) {
           ${dispatchTarget?.targetKey || null}, ${dispatchTarget?.releaseId || null},
           ${dispatchTarget?.jobDefinitionArn || null},
           ${dispatchTarget?.jobQueueArn || null},
+          ${initialEditorReleaseId},
           ${initialRenderSpecVersion}, ${initialCaptionRenderSpecVersion},
           ${selectedDurationSeconds},${usageSeconds}
         )

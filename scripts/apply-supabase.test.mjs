@@ -275,3 +275,46 @@ test("file upload idempotency binds request ids to immutable intents", () => {
   assert.doesNotMatch(migration, /shorts_mvp\.(?:video_jobs|generated_shorts|usage_events)/);
   assert.doesNotMatch(migration, /\b(?:create|alter|drop)\s+(?:table|function)\s+public\./i);
 });
+
+test("file upload safe release remains additive and public mode is fail-closed", () => {
+  const binding = fs.readFileSync(
+    new URL(
+      "../supabase/migrations/202608280001_file_upload_render_release_binding.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const validation = fs.readFileSync(
+    new URL(
+      "../supabase/migrations/202608280002_file_upload_render_release_binding_validate.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const releaseModes = fs.readFileSync(
+    new URL(
+      "../supabase/migrations/202608280003_file_upload_release_modes.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(binding, /add column if not exists initial_editor_release_id uuid/);
+  assert.match(binding, /foreign key \(initial_editor_release_id\)[\s\S]*not valid/);
+  assert.match(binding, /video_jobs_initial_editor_release_v4_check[\s\S]*not valid/);
+  assert.match(validation, /validate constraint video_jobs_initial_editor_release_id_fkey/);
+  assert.match(validation, /validate constraint video_jobs_initial_editor_release_v4_check/);
+  assert.doesNotMatch(binding, /\bdrop\s+(?:table|column|constraint)\b/i);
+  assert.doesNotMatch(binding, /\b(?:update|delete)\s+shorts_mvp\.video_jobs\b/i);
+
+  assert.match(releaseModes, /'file_upload_emergency_stop',false/);
+  assert.match(releaseModes, /p_mode not in \('stopped','admin_test','public','emergency_stop'\)/);
+  assert.match(releaseModes, /checked\.verified_at>=clock_timestamp\(\)-interval '24 hours'/);
+  assert.match(releaseModes, /file upload public checks are incomplete/);
+  assert.match(releaseModes, /set_file_upload_release_mode/);
+  assert.match(releaseModes, /record_file_upload_release_check/);
+  assert.doesNotMatch(
+    `${binding}\n${validation}\n${releaseModes}`,
+    /\b(?:create|alter|drop)\s+(?:table|function)\s+public\./i,
+  );
+});

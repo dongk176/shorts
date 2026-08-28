@@ -213,6 +213,62 @@ export async function wakeOutboxDispatcher() {
   }));
 }
 
+export async function ensureFileUploadCapacity(input: {
+  desiredCount: number;
+  uploadSessionId: string;
+  expiresAt: Date | string;
+}) {
+  const functionArn = process.env.FILE_UPLOAD_CAPACITY_FUNCTION_ARN;
+  if (!functionArn) {
+    throw new Error("FILE_UPLOAD_CAPACITY_FUNCTION_ARN이 설정되지 않았습니다.");
+  }
+  const boundedDesiredCount = Math.max(
+    1,
+    Math.min(20, Math.floor(input.desiredCount)),
+  );
+  const expiresAtEpoch = Math.floor(new Date(input.expiresAt).getTime() / 1_000);
+  if (!/^[0-9a-f-]{36}$/i.test(input.uploadSessionId) || !Number.isFinite(expiresAtEpoch)) {
+    throw new Error("파일 업로드 용량 예약 정보를 확인하지 못했습니다.");
+  }
+  const response = await lambdaClient().send(new InvokeCommand({
+    FunctionName: functionArn,
+    InvocationType: "RequestResponse",
+    Payload: new TextEncoder().encode(JSON.stringify({
+      action: "ensure",
+      desiredCount: boundedDesiredCount,
+      uploadSessionId: input.uploadSessionId,
+      expiresAtEpoch,
+    })),
+  }));
+  if (response.FunctionError) {
+    throw new Error("파일 업로드 작업 서버를 준비하지 못했습니다.");
+  }
+  const payload = response.Payload
+    ? JSON.parse(new TextDecoder().decode(response.Payload)) as unknown
+    : null;
+  if (!payload || typeof payload !== "object") {
+    throw new Error("파일 업로드 작업 서버 상태를 확인하지 못했습니다.");
+  }
+  return payload as {
+    desiredCount: number;
+    runningCount: number;
+    pendingCount: number;
+  };
+}
+
+export async function releaseFileUploadCapacity(uploadSessionId: string) {
+  const functionArn = process.env.FILE_UPLOAD_CAPACITY_FUNCTION_ARN;
+  if (!functionArn || !/^[0-9a-f-]{36}$/i.test(uploadSessionId)) return;
+  await lambdaClient().send(new InvokeCommand({
+    FunctionName: functionArn,
+    InvocationType: "Event",
+    Payload: new TextEncoder().encode(JSON.stringify({
+      action: "release",
+      uploadSessionId,
+    })),
+  }));
+}
+
 export function latestJobDefinitionName(value: string) {
   const arnName = /:job-definition\/([^:]+)(?::\d+)?$/.exec(value)?.[1];
   if (arnName) return arnName;

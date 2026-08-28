@@ -340,7 +340,7 @@ beforeEach(() => {
   mocks.publicState.mockResolvedValue({ plans: [], generatedShortCount: 4321 });
   mocks.subtitleTemplateUsage.mockResolvedValue(false);
   mocks.publicExamples.mockResolvedValue([{ id: "example-job", isExample: true }]);
-  mocks.fileUploadAccess.mockResolvedValue({ adminEnabled: false });
+  mocks.fileUploadAccess.mockResolvedValue({ enabled: false, adminEnabled: false });
   mocks.publicExampleByNumber.mockResolvedValue(null);
   mocks.authenticatedSession.mockImplementation(() => mocks.session());
   mocks.authenticatedUser.mockResolvedValue({ id: "auth-a" });
@@ -1960,9 +1960,10 @@ describe("job API security and idempotency", () => {
     expect(insertValues.slice(releaseValueIndex + 1, releaseValueIndex + 5)).toEqual([
       process.env.LEGACY_PROJECT_JOB_DEFINITION_ARN,
       process.env.LEGACY_PROJECT_BATCH_QUEUE_ARN,
-      4,
+      "7fd1c249-6cef-40f1-97d4-e4e6c837f60a",
       4,
     ]);
+    expect(insertValues[releaseValueIndex + 5]).toBe(4);
   });
 
   it("keeps initial rendering on legacy when the v4 compiler flag is off", async () => {
