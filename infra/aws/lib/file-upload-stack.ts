@@ -307,6 +307,29 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
         }),
       },
     );
+    const scratchInitializer = taskDefinition.addContainer("ScratchInitializer", {
+      containerName: "file-upload-scratch-initializer",
+      image: ecs.ContainerImage.fromEcrRepository(workerRepository, context.imageDigest),
+      // Fargate task volumes are mounted as root-owned directories. Prepare
+      // only this ephemeral mount before the unprivileged receiver starts;
+      // no shell or user-derived value is involved.
+      entryPoint: ["/usr/local/bin/python", "-c"],
+      command: [
+        "import os; p='/scratch/shorts-jobs'; os.makedirs(p, mode=0o770, exist_ok=True); os.chown('/scratch', 10001, 10001); os.chmod('/scratch', 0o770); os.chown(p, 10001, 10001); os.chmod(p, 0o770)",
+      ],
+      readonlyRootFilesystem: true,
+      user: "0:0",
+      essential: false,
+      logging: ecs.LogDrivers.awsLogs({
+        logGroup,
+        streamPrefix: "scratch-initializer",
+      }),
+    });
+    scratchInitializer.addMountPoints({
+      containerPath: "/scratch",
+      sourceVolume: "UploadScratch",
+      readOnly: false,
+    });
     const container = taskDefinition.addContainer("Receiver", {
       containerName: "file-upload-receiver",
       image: ecs.ContainerImage.fromEcrRepository(workerRepository, context.imageDigest),
@@ -402,6 +425,10 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
       containerPath: "/scratch",
       sourceVolume: "UploadScratch",
       readOnly: false,
+    });
+    container.addContainerDependencies({
+      container: scratchInitializer,
+      condition: ecs.ContainerDependencyCondition.SUCCESS,
     });
 
     const service = new ecs.FargateService(this, "Service", {

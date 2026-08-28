@@ -97,6 +97,18 @@ describe("isolated file upload canary stack", () => {
       Memory: "8192",
       EphemeralStorage: { SizeInGiB: 80 },
       ContainerDefinitions: Match.arrayWith([Match.objectLike({
+        Name: "file-upload-scratch-initializer",
+        EntryPoint: ["/usr/local/bin/python", "-c"],
+        Command: [Match.stringLikeRegexp("os\\.chown\\('/scratch', 10001, 10001\\)")],
+        Essential: false,
+        ReadonlyRootFilesystem: true,
+        User: "0:0",
+        MountPoints: [{
+          ContainerPath: "/scratch",
+          ReadOnly: false,
+          SourceVolume: "UploadScratch",
+        }],
+      }), Match.objectLike({
         Name: "file-upload-receiver",
         EntryPoint: ["/usr/local/bin/python", "-m", "shorts_worker.upload_service"],
         Command: [],
@@ -111,6 +123,10 @@ describe("isolated file upload canary stack", () => {
         HealthCheck: Match.objectLike({
           Command: Match.arrayWith([Match.stringLikeRegexp("/livez")]),
         }),
+        DependsOn: [{
+          Condition: "SUCCESS",
+          ContainerName: "file-upload-scratch-initializer",
+        }],
       })]),
     });
     const renderedTask = JSON.stringify(Object.values(
@@ -166,6 +182,13 @@ describe("isolated file upload canary stack", () => {
     expect(taskDefinition).toContain("DATABASE_URL");
     expect(taskDefinition).not.toContain("FILE_UPLOAD_TOKEN_SECRET");
     expect(taskDefinition).toContain("ELEVENLABS_API_KEY");
+    const taskDefinitionResource = Object.values(taskDefinitions)[0];
+    const initializer = taskDefinitionResource.Properties?.ContainerDefinitions
+      ?.find((item: { Name?: string }) => item.Name === "file-upload-scratch-initializer");
+    expect(initializer).toBeTruthy();
+    expect(initializer).not.toHaveProperty("Secrets");
+    expect(initializer).not.toHaveProperty("Environment");
+    expect(initializer).not.toHaveProperty("PortMappings");
     for (const [name, value] of Object.entries({
       ELEVENLABS_TRANSCRIBE_MODEL: "scribe_v2",
       OPENAI_TRANSCRIBE_MODEL: "gpt-4o-mini-transcribe",
