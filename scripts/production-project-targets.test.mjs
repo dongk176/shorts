@@ -38,9 +38,20 @@ test("pins all five production lanes and the approved unified rotation states", 
     captionRenderSpecVersion: 4,
     fontManifestSha256: "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486",
   };
+  const v4Next = {
+    releaseId: "unified-template-subtitles-4e19c114f79e-v4",
+    workerSourceGitSha: "4e19c114f79e74a73a4798f3fd898fa412967cc2",
+    imageUri: "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:99c0e66f66a78d8b60455075229271e161d77c7051c522d5a4d0ddd27f30a922",
+    jobDefinitionArn: "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-unified-template-subtitles-4e19c114f79e:1",
+    jobQueueArn: oldCurrent.jobQueueArn,
+    renderSpecVersion: 4,
+    captionRenderSpecVersion: 4,
+    fontManifestSha256: "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486",
+  };
   const approvedStates = [
     { schedulingMode: "fifo", current: oldCurrent, previous: oldPrevious },
     { schedulingMode: "fifo", current: v4Current, previous: oldCurrent },
+    { schedulingMode: "fifo", current: v4Next, previous: v4Current },
   ];
   assert.ok(
     approvedStates.some((approved) => (

@@ -12,11 +12,11 @@ const release = readProductionWorkerRelease();
 test("pins the proven production worker source and immutable image digest", () => {
   assert.equal(
     release.workerSourceGitSha,
-    "f8623974c7528ce9142af63d8f4d925df55f2641",
+    "4e19c114f79e74a73a4798f3fd898fa412967cc2",
   );
   assert.equal(
     release.imageDigest,
-    "sha256:2e8685bf5324645f9133dafeabecb06352c6a205c1e11f36cbf4d55844e53840",
+    "sha256:99c0e66f66a78d8b60455075229271e161d77c7051c522d5a4d0ddd27f30a922",
   );
   assert.equal(release.ingestionAttemptBudget, 20);
   assert.equal(release.batchRetryAttempts, 1);
