@@ -3,8 +3,10 @@ import type { Sql } from "postgres";
 import {
   getAllProjects,
   getGeneratedShortCount,
+  getRecentJobs,
   getPublicExampleJobs,
   getPublicExampleProjectByNumber,
+  getProjectByNumber,
   getShortsForJobs,
   getSubtitleTemplateUsage,
 } from "./data";
@@ -72,6 +74,39 @@ describe("generated shorts counter", () => {
     const db = vi.fn().mockResolvedValue([{ value: "4327" }]) as unknown as Sql;
 
     await expect(getGeneratedShortCount(db)).resolves.toBe(4327);
+  });
+});
+
+describe("project ownership queries", () => {
+  const authenticatedUserId = "8b849e2a-4339-4607-b705-8496265bf576";
+
+  it.each([
+    ["all projects", (db: Sql) => getAllProjects(db, {
+      id: "",
+      selectedPlanCode: "free",
+      userId: authenticatedUserId,
+      user: null,
+    })],
+    ["recent projects", (db: Sql) => getRecentJobs(db, {
+      id: "",
+      selectedPlanCode: "free",
+      userId: authenticatedUserId,
+      user: null,
+    })],
+    ["one project", (db: Sql) => getProjectByNumber(db, {
+      id: "",
+      selectedPlanCode: "free",
+      userId: authenticatedUserId,
+      user: null,
+    }, 6302)],
+  ])("does not pass an empty anonymous session UUID for %s", async (_name, load) => {
+    const db = vi.fn().mockResolvedValue([]) as unknown as Sql;
+
+    await load(db);
+
+    const values = (db as unknown as ReturnType<typeof vi.fn>).mock.calls[0].slice(1);
+    expect(values).not.toContain("");
+    expect(values).toContain(null);
   });
 });
 

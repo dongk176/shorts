@@ -74,6 +74,14 @@ type ShortsForJobsOptions = {
   includeExactWordTimingAvailability?: boolean;
 };
 
+function sessionOwnership(session: MvpSession) {
+  const userId = session.userId?.trim() || null;
+  return {
+    userId,
+    anonymousSessionId: userId ? null : session.id.trim() || null,
+  };
+}
+
 async function getWordTimedShortIds(db: Sql, jobIds: string[]) {
   if (!jobIds.length) return new Set<string>();
   const rows = await db`
@@ -226,19 +234,20 @@ export async function getShortsForJobs(
 }
 
 export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: string): Promise<VideoJob[]> {
+  const owner = sessionOwnership(session);
   const rows = onlyJobId
     ? await db`
         select * from shorts_mvp.video_jobs
         where id = ${onlyJobId} and user_deleted_at is null and (
-          (${session.userId}::uuid is not null and user_id=${session.userId})
-          or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+          (${owner.userId}::uuid is not null and user_id=${owner.userId})
+          or (${owner.userId}::uuid is null and user_id is null and mvp_session_id=${owner.anonymousSessionId})
           or (is_example and status='completed')
         )
       `
     : await db`
         select * from shorts_mvp.video_jobs
-        where user_deleted_at is null and ((${session.userId}::uuid is not null and user_id=${session.userId})
-          or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+        where user_deleted_at is null and ((${owner.userId}::uuid is not null and user_id=${owner.userId})
+          or (${owner.userId}::uuid is null and user_id is null and mvp_session_id=${owner.anonymousSessionId})
           or (is_example and status='completed'))
         order by is_example desc, created_at desc limit 10
       `;
@@ -246,10 +255,11 @@ export async function getRecentJobs(db: Sql, session: MvpSession, onlyJobId?: st
 }
 
 export async function getAllProjects(db: Sql, session: MvpSession): Promise<VideoJob[]> {
+  const owner = sessionOwnership(session);
   const rows = await db`
     select * from shorts_mvp.video_jobs
-    where user_deleted_at is null and ((${session.userId}::uuid is not null and user_id=${session.userId})
-      or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+    where user_deleted_at is null and ((${owner.userId}::uuid is not null and user_id=${owner.userId})
+      or (${owner.userId}::uuid is null and user_id is null and mvp_session_id=${owner.anonymousSessionId})
       or (is_example and status='completed'))
     order by is_example desc, created_at desc
   `;
@@ -262,11 +272,12 @@ export async function getProjectByNumber(
   projectNumber: number,
   options: ShortsForJobsOptions = {},
 ): Promise<VideoJob | null> {
+  const owner = sessionOwnership(session);
   const rows = await db`
     select * from shorts_mvp.video_jobs
     where project_number=${projectNumber} and user_deleted_at is null and (
-      (${session.userId}::uuid is not null and user_id=${session.userId})
-      or (${session.userId}::uuid is null and user_id is null and mvp_session_id=${session.id})
+      (${owner.userId}::uuid is not null and user_id=${owner.userId})
+      or (${owner.userId}::uuid is null and user_id is null and mvp_session_id=${owner.anonymousSessionId})
       or (is_example and status='completed')
     )
     limit 1
