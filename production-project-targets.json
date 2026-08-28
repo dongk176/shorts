@@ -49,17 +49,20 @@
     "unified_template_subtitles": {
       "schedulingMode": "fifo",
       "current": {
+        "releaseId": "unified-template-subtitles-e0e89d5de448-v4",
+        "workerSourceGitSha": "e0e89d5de448be8c4da4def678c021987c92e7ed",
+        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:50aa6ba66d3e19f5eca617df614415e891e76c87bbb750ff6cb4a4b8a6a88ea9",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-unified-template-subtitles-e0e89d5de448:1",
+        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-prepare-production",
+        "renderSpecVersion": 4,
+        "captionRenderSpecVersion": 4,
+        "fontManifestSha256": "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486"
+      },
+      "previous": {
         "releaseId": "unified-source-range-f28e1fe874c1-r1",
         "workerSourceGitSha": "f28e1fe874c1bff1da6184088ef1ee48e8418dc5",
         "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:f451682b1468c918e36bca3dc99ba0ee0c22a607064ff4ddfb3a653e1a41ada5",
         "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-unified-source-range-f28e1fe874c1-8vcpu:1",
-        "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-prepare-production"
-      },
-      "previous": {
-        "releaseId": "unified-f28e1fe874c1-r4",
-        "workerSourceGitSha": "f28e1fe874c1bff1da6184088ef1ee48e8418dc5",
-        "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:f451682b1468c918e36bca3dc99ba0ee0c22a607064ff4ddfb3a653e1a41ada5",
-        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-unified-template-subtitles-f28e1fe874c1-4vcpu:4",
         "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-prepare-production"
       }
     }
