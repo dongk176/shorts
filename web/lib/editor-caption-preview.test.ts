@@ -230,6 +230,67 @@ describe("editor caption preview timing", () => {
     ))).toEqual([0, 0]);
   });
 
+  it.each(["pop", "highlight"] as const)(
+    "preserves a subframe spoken word while reflowing %s captions",
+    (templateId) => {
+      const subframeWord: CaptionRenderSpec = {
+        ...spec,
+        templateId,
+        cues: [{
+          startFrame: 20,
+          endFrame: 40,
+          words: [
+            {
+              text: "말도",
+              startFrame: 20,
+              endFrame: 30,
+              speechStartFrame: 24,
+              speechEndFrame: 30,
+            },
+            {
+              text: "안",
+              startFrame: 28,
+              endFrame: 32,
+              speechStartFrame: 32,
+              speechEndFrame: 32,
+              spaceBefore: true,
+            },
+            {
+              text: "돼",
+              startFrame: 31,
+              endFrame: 38,
+              speechStartFrame: 34,
+              speechEndFrame: 38,
+              spaceBefore: true,
+            },
+          ],
+          lines: [[0, 1, 2]],
+          events: [
+            { startFrame: 20, endFrame: 28, activeWordIndex: 0 },
+            { startFrame: 28, endFrame: 32, activeWordIndex: 1 },
+            { startFrame: 32, endFrame: 40, activeWordIndex: 2 },
+          ],
+        }],
+      };
+
+      const retimed = retimeCaptionRenderSpecForEditor(subframeWord, [{
+        id: "boundary-cut",
+        sourceStartSeconds: 0,
+        sourceEndSeconds: 36 / 30,
+      }]);
+
+      expect(retimed?.cues.flatMap((cue) => (
+        cue.words.map((word) => word.text)
+      ))).toEqual(["말도", "안", "돼"]);
+      expect(retimed?.cues.flatMap((cue) => cue.words).find((word) => (
+        word.text === "안"
+      ))).toMatchObject({
+        speechStartFrame: 32,
+        speechEndFrame: 33,
+      });
+    },
+  );
+
   it("preserves immutable pop positions when an editor clip retains every word", () => {
     const positions = [
       { centerX: 405.185, centerY: 736 },

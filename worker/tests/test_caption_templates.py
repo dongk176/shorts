@@ -1466,6 +1466,57 @@ def test_editor_cuts_recompile_from_retained_caption_words() -> None:
     assert all(cue["sourceCueIndex"] >= 0 for cue in cues)
 
 
+@pytest.mark.parametrize("template_id", ["pop", "highlight"])
+def test_editor_cuts_preserve_a_subframe_spoken_word(
+    template_id: str,
+) -> None:
+    cue = _editable_caption_cue(
+        start_frame=20,
+        end_frame=40,
+        word_ranges=[("말도", 20, 30), ("안", 28, 32), ("돼", 31, 38)],
+    )
+    cue["words"][0]["speechStartFrame"] = 24
+    cue["words"][1]["speechStartFrame"] = 32
+    cue["words"][1]["speechEndFrame"] = 32
+    cue["words"][2]["speechStartFrame"] = 34
+
+    cues = reflow_caption_cues_for_clips(
+        [cue],
+        template_id=template_id,
+        safe_area={"x": 120, "y": 666, "width": 840, "height": 140},
+        clip_windows=[(0, 36, 0)],
+    )
+
+    assert [
+        word["text"]
+        for rebuilt in cues
+        for word in rebuilt["words"]
+    ] == ["말도", "안", "돼"]
+    retained = next(
+        word
+        for rebuilt in cues
+        for word in rebuilt["words"]
+        if word["text"] == "안"
+    )
+    assert retained["speechStartFrame"] == 32
+    assert retained["speechEndFrame"] == 33
+
+
+def test_caption_compile_assigns_one_frame_to_a_subframe_word() -> None:
+    spec = compile_caption_render_spec(
+        [_word("안", 1.0, 1.01)],
+        template_id="pop",
+        clip_start=0,
+        clip_end=2,
+        video_aspect_ratio=VideoAspectRatio.SQUARE,
+        schema_version=4,
+    )
+
+    word = spec["cues"][0]["words"][0]
+    assert word["speechStartFrame"] == 30
+    assert word["speechEndFrame"] == 31
+
+
 def test_plain_split_does_not_duplicate_a_caption_word() -> None:
     spec = compile_caption_render_spec(
         [_word("경계단어", 0.8, 1.2)],

@@ -1037,7 +1037,13 @@ function retainCaptionCueWordsByClip(
     const wordEndFrame = word.endFrame
       ?? Math.max(...activeEvents.map((event) => event.endFrame), cue.endFrame);
     const speechStartFrame = word.speechStartFrame ?? wordStartFrame;
-    const speechEndFrame = word.speechEndFrame ?? wordEndFrame;
+    const rawSpeechEndFrame = word.speechEndFrame ?? wordEndFrame;
+    // A real word shorter than one frame can quantize to an equal speech
+    // start/end. Preserve only that exact case as a one-frame anchor; reversed
+    // timestamps remain invalid and are still rejected by the overlap check.
+    const speechEndFrame = rawSpeechEndFrame === speechStartFrame
+      ? speechStartFrame + 1
+      : rawSpeechEndFrame;
     let best: {
       clipIndex: number;
       spokenOverlap: number;

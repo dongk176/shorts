@@ -569,6 +569,8 @@ def _clip_words(
             clip_frames,
             round((min(word.end, clip_end) - clip_start) * fps),
         )
+        if source_end_frame == source_start_frame:
+            source_end_frame += 1
         start_frame = max(0, source_start_frame - timing_lead_frames)
         # Advance when a word becomes visible, but keep the provider-derived
         # end boundary. Shifting both edges made the final caption disappear
@@ -1623,6 +1625,13 @@ def _reflow_caption_cues_for_clips(
                 raise CaptionCompileError("원본 자막 어절 시간이 올바르지 않습니다.")
             speech_start = int(word_value.get("speechStartFrame", word_start))
             speech_end = int(word_value.get("speechEndFrame", word_end))
+            # Provider timestamps can describe a real, sub-frame word whose
+            # start and end both quantize to the same frame.  Treat that exact
+            # case as a one-frame speech anchor so editor cuts do not erase the
+            # word while retaining the existing fail-closed behavior for
+            # genuinely reversed timestamps.
+            if speech_end == speech_start:
+                speech_end += 1
             best_window: tuple[
                 tuple[int, int, int],
                 int,
