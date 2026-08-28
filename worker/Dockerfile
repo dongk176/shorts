@@ -62,7 +62,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && deno --version \
     && node /opt/bgutil-ytdlp-pot-provider/server/build/generate_once.js --version \
         | grep -Fx '1.3.1' \
-    && python -c "from importlib.metadata import version; assert version('yt-dlp') == '2026.7.4'; assert version('yt-dlp-ejs') == '0.8.0'; assert version('bgutil-ytdlp-pot-provider') == '1.3.1'"
+    && python -c "from importlib.metadata import version; assert version('yt-dlp') == '2026.8.19'; assert version('yt-dlp-ejs') == '0.8.0'; assert version('bgutil-ytdlp-pot-provider') == '1.3.1'"
 COPY . .
 
 # Legacy/local images deliberately carry a non-release marker. The v4 worker
