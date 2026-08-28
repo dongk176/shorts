@@ -13,7 +13,7 @@ concurrency:
 
 env:
   AWS_REGION: ap-northeast-2
-  EDITOR_RELEASE_TAG: editor-v4-render-parity-20260827-13
+  EDITOR_RELEASE_TAG: editor-v4-render-parity-20260828-14
   EDITOR_RELEASE_BUILD_ROLE_ARN: ${{ vars.EDITOR_RELEASE_BUILD_ROLE_ARN }}
   EDITOR_RELEASE_VERIFIER_ROLE_ARN: ${{ vars.EDITOR_RELEASE_VERIFIER_ROLE_ARN }}
   EDITOR_RELEASE_ECR_REPOSITORY_URI: ${{ vars.EDITOR_RELEASE_ECR_REPOSITORY_URI }}
@@ -30,7 +30,7 @@ jobs:
   build:
     # A mutable branch is never a release identity. AWS independently verifies
     # this exact protected tag before it allows an image push.
-    if: github.ref == 'refs/tags/editor-v4-render-parity-20260827-13'
+    if: github.ref == 'refs/tags/editor-v4-render-parity-20260828-14'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     outputs:
@@ -242,7 +242,7 @@ jobs:
 
   verify-and-register:
     needs: build
-    if: github.ref == 'refs/tags/editor-v4-render-parity-20260827-13'
+    if: github.ref == 'refs/tags/editor-v4-render-parity-20260828-14'
     environment: editor-v4-release-approval
     runs-on: ubuntu-latest
     timeout-minutes: 120
