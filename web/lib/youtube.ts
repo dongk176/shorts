@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { expectedShortCount, type YoutubeCreationBlockCode } from "@/lib/contracts";
 import { assertSupportedSourceVideoDuration } from "@/lib/source-video";
+import { selectYoutubeThumbnail } from "@/lib/youtube-thumbnail";
 
 const youtubeId = /^[A-Za-z0-9_-]{11}$/;
 const UNAVAILABLE_VIDEO_MESSAGE = "유효하지 않거나 현재 시청할 수 없는 영상입니다 (비공개, 삭제, 또는 멤버십 전용)";
@@ -82,8 +83,8 @@ async function getChannelThumbnailUrl(channelId: string | undefined, apiKey: str
     const response = await fetch(endpoint, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
     if (!response.ok) return null;
     const parsed = channelResponseSchema.parse(await response.json());
-    const thumbnails = Object.values(parsed.items[0]?.snippet.thumbnails || {});
-    return thumbnails.at(-1)?.url || thumbnails[0]?.url || null;
+    const thumbnailUrl = selectYoutubeThumbnail(parsed.items[0]?.snippet.thumbnails || {});
+    return thumbnailUrl || null;
   } catch {
     return null;
   }
@@ -166,7 +167,6 @@ export async function analyzeYoutubeUrl(input: string) {
   assertSupportedSourceVideoDuration(durationSeconds, {
     sourceRangeSelectionEnabled: true,
   });
-  const thumbnails = Object.values(item.snippet.thumbnails);
   const availability = getYoutubeCreationAvailability(item);
   const channelThumbnailUrl = await getChannelThumbnailUrl(item.snippet.channelId, apiKey);
   return {
@@ -175,7 +175,7 @@ export async function analyzeYoutubeUrl(input: string) {
     title: item.snippet.title,
     channelName: Array.from(item.snippet.channelTitle.trim()).slice(0, 50).join("") || "YouTube 채널",
     channelThumbnailUrl,
-    thumbnailUrl: thumbnails.at(-1)?.url || thumbnails[0]?.url || "",
+    thumbnailUrl: selectYoutubeThumbnail(item.snippet.thumbnails),
     durationSeconds,
     expectedShortCount: expectedShortCount(durationSeconds),
     ...availability,

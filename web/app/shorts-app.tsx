@@ -19,6 +19,7 @@ import { CustomTemplateTitlePreview } from "@/components/custom-template-title-p
 import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
 import { EditorTitleV4Preview } from "@/components/editor-title-v4-preview";
 import { TemplateTitleV4Preview } from "@/components/template-title-v4-preview";
+import { YoutubeThumbnail } from "@/components/youtube-thumbnail";
 import {
   EditorTextOverlayPreview,
   EditorTextTimeline,
@@ -14328,7 +14329,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                 />
               </div>
             ) : (
-              <Image src={selectedSource.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" />
+              <YoutubeThumbnail src={selectedSource.thumbnailUrl} alt="영상 썸네일" width={480} height={270} unoptimized className="aspect-video w-full object-cover sm:w-72" />
             )}
             <div className="p-5">
               <h2 className="text-lg font-bold">{selectedSource.title}</h2>

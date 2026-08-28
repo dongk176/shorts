@@ -51,6 +51,6 @@ describe("source range guide", () => {
     expect(shortsAppSource).toContain("const sourceVideoEmbedUrl = !uploadSourceActive && sourceRangeSelectionEnabled && analysis");
     expect(shortsAppSource).toContain("youtubePrivacyEnhancedEmbedUrl(analysis.videoId)");
     expect(shortsAppSource).toContain("{sourceVideoEmbedUrl ? (");
-    expect(shortsAppSource).toContain('<Image src={selectedSource.thumbnailUrl} alt="영상 썸네일"');
+    expect(shortsAppSource).toContain('<YoutubeThumbnail src={selectedSource.thumbnailUrl} alt="영상 썸네일"');
   });
 });

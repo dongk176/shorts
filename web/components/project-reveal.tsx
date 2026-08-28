@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import { YoutubeThumbnail } from "@/components/youtube-thumbnail";
 import type { GeneratedShort, TemplateId, VideoJob } from "@/lib/contracts";
 import type { SiteLocale } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
@@ -561,7 +562,7 @@ export function ProjectReveal({
           <>
             <section className="project-reveal-source">
               <div className="project-reveal-source-thumb">
-                <Image
+                <YoutubeThumbnail
                   src={job.thumbnailUrl}
                   alt={copy.thumbnail(job.videoTitle)}
                   fill
