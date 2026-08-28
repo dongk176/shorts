@@ -11,21 +11,43 @@ import {
 
 const registry = readProductionProjectTargets();
 
-test("pins all five production lanes and the source-range-capable unified rotation", () => {
+test("pins all five production lanes and the approved unified rotation states", () => {
   assert.deepEqual(Object.keys(registry.lanes), Object.keys(PROJECT_TARGET_LANES));
   const unified = registry.lanes.unified_template_subtitles;
-  assert.equal(unified.schedulingMode, "fifo");
-  assert.match(unified.current.jobDefinitionArn, /unified-source-range-f28e1fe874c1-8vcpu:1$/);
-  assert.match(unified.previous.jobDefinitionArn, /f28e1fe874c1-4vcpu:4$/);
-  assert.equal(
-    unified.current.workerSourceGitSha,
-    "f28e1fe874c1bff1da6184088ef1ee48e8418dc5",
+  const oldCurrent = {
+    releaseId: "unified-source-range-f28e1fe874c1-r1",
+    workerSourceGitSha: "f28e1fe874c1bff1da6184088ef1ee48e8418dc5",
+    imageUri: "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:f451682b1468c918e36bca3dc99ba0ee0c22a607064ff4ddfb3a653e1a41ada5",
+    jobDefinitionArn: "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-unified-source-range-f28e1fe874c1-8vcpu:1",
+    jobQueueArn: "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-prepare-production",
+  };
+  const oldPrevious = {
+    releaseId: "unified-f28e1fe874c1-r4",
+    workerSourceGitSha: oldCurrent.workerSourceGitSha,
+    imageUri: oldCurrent.imageUri,
+    jobDefinitionArn: "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-unified-template-subtitles-f28e1fe874c1-4vcpu:4",
+    jobQueueArn: oldCurrent.jobQueueArn,
+  };
+  const v4Current = {
+    releaseId: "unified-template-subtitles-e0e89d5de448-v4",
+    workerSourceGitSha: "e0e89d5de448be8c4da4def678c021987c92e7ed",
+    imageUri: "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:50aa6ba66d3e19f5eca617df614415e891e76c87bbb750ff6cb4a4b8a6a88ea9",
+    jobDefinitionArn: "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-unified-template-subtitles-e0e89d5de448:1",
+    jobQueueArn: oldCurrent.jobQueueArn,
+    renderSpecVersion: 4,
+    captionRenderSpecVersion: 4,
+    fontManifestSha256: "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486",
+  };
+  const approvedStates = [
+    { schedulingMode: "fifo", current: oldCurrent, previous: oldPrevious },
+    { schedulingMode: "fifo", current: v4Current, previous: oldCurrent },
+  ];
+  assert.ok(
+    approvedStates.some((approved) => (
+      JSON.stringify(approved) === JSON.stringify(unified)
+    )),
+    "unified target must match an exact reviewed pre/post-rotation state",
   );
-  assert.match(unified.current.imageUri, /@sha256:f451682b1468c918/);
-  assert.equal(unified.previous.workerSourceGitSha, unified.current.workerSourceGitSha);
-  assert.equal(unified.previous.imageUri, unified.current.imageUri);
-  assert.equal(unified.previous.jobQueueArn, unified.current.jobQueueArn);
-  assert.equal(unified.previous.submitAsReleaseId, undefined);
   assert.doesNotMatch(JSON.stringify(registry), /f586/i);
 });
 
