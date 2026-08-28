@@ -23,6 +23,7 @@ import {
   nextEditorRenderV4RolloutPercent,
 } from "@/lib/editor-render-v4-rollout-control";
 import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
+import { allProjectDispatchTargets } from "@/lib/job-dispatch";
 import {
   ELEVENLABS_PUBLIC_COMPLIANCE_APPROVED_FLAG_KEY,
   ELEVENLABS_TRANSCRIPTION_FLAG_KEY,
@@ -56,6 +57,7 @@ const productionCanaryChecks = [
   "gemini-comments",
   "reopen-reedit",
   "rollback-drill",
+  "initial-project-admission",
 ] as const;
 const productionCanaryCheckSchema = z.enum(productionCanaryChecks);
 const renderV4PublicRolloutSchema = z.union([
@@ -207,6 +209,37 @@ function assertRenderV4EnvironmentEnabled() {
       409,
       "현재 웹 배포가 v4 렌더 명세를 지원하지 않아 활성화할 수 없습니다.",
       "EDITOR_RENDER_V4_WEB_RELEASE_DISABLED",
+    );
+  }
+}
+
+function assertRenderV4ProjectTargetEnvironment(release: {
+  renderSpecVersion?: number | null;
+  captionRenderSpecVersion?: number | null;
+  fontManifestSha256?: string | null;
+}) {
+  let targets: ReturnType<typeof allProjectDispatchTargets>;
+  try {
+    targets = allProjectDispatchTargets();
+  } catch {
+    throw new HttpError(
+      409,
+      "현재 웹 배포의 프로젝트 워커 연결 정보가 완전하지 않아 v4를 활성화할 수 없습니다.",
+      "EDITOR_RENDER_V4_PROJECT_TARGET_ENV_REQUIRED",
+    );
+  }
+  const expectedFontManifest = String(release.fontManifestSha256 || "");
+  const invalidTargets = targets.filter((target) => (
+    target.v4Capability?.renderSpecVersion !== Number(release.renderSpecVersion)
+    || target.v4Capability?.captionRenderSpecVersion
+      !== Number(release.captionRenderSpecVersion)
+    || target.v4Capability?.fontManifestSha256 !== expectedFontManifest
+  ));
+  if (invalidTargets.length > 0) {
+    throw new HttpError(
+      409,
+      `v4 연결 정보가 누락되거나 다른 프로젝트 경로가 있습니다: ${invalidTargets.map((target) => target.targetKey).join(", ")}`,
+      "EDITOR_RENDER_V4_PROJECT_TARGET_CAPABILITY_MISMATCH",
     );
   }
 }
@@ -364,6 +397,7 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
     if (Number(release.renderSpecVersion) === 4) {
       assertRenderV4EnvironmentEnabled();
       assertExactRenderV4Capability(release);
+      assertRenderV4ProjectTargetEnvironment(release);
       await assertRenderV4ProjectTargetsRegistered(tx, releaseId);
     }
     await assertChecksPassed(
@@ -641,6 +675,7 @@ export async function enableEditorRenderV4Internal(releaseIdValue: string) {
       throw new HttpError(409, "실행 중인 후보 카나리 상태가 아닙니다.");
     }
     assertExactRenderV4Capability(release);
+    assertRenderV4ProjectTargetEnvironment(release);
     await assertRenderV4ProjectTargetsRegistered(tx, releaseId);
     await assertChecksPassed(tx, releaseId, "isolated", v4IsolatedChecks);
     const enabledTesters = await tx`
@@ -808,6 +843,7 @@ async function loadStableRenderV4RolloutState(
     );
   }
   assertExactRenderV4Capability(state);
+  assertRenderV4ProjectTargetEnvironment(state);
   const renderV4LastTransition = await loadLatestEditorRenderV4Transition(
     tx,
     releaseId,
@@ -947,6 +983,7 @@ export async function promoteEditorRelease(releaseIdValue: string) {
     if (isRenderV4Release) {
       assertRenderV4EnvironmentEnabled();
       assertExactRenderV4Capability(release);
+      assertRenderV4ProjectTargetEnvironment(release);
       await assertRenderV4ProjectTargetsRegistered(tx, releaseId);
       if (!state.renderV4InternalEnabled || state.renderV4KillSwitch) {
         throw new HttpError(

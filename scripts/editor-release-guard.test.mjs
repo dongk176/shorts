@@ -225,11 +225,11 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260828-16'/,
+    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260828-17'/,
   );
   assert.deepEqual(
     [...new Set(workflow.match(/editor-v4-render-parity-[0-9]{8}-[0-9]+/g))],
-    ["editor-v4-render-parity-20260828-16"],
+    ["editor-v4-render-parity-20260828-17"],
   );
   assert.equal(workflow.match(/fetch-depth: 0/g)?.length, 2);
   assert.equal(workflow.match(/fetch-tags: true/g)?.length, 2);
@@ -449,6 +449,9 @@ test("promotion and subtitle pilot enrollment are transactional, gated, and audi
   assert.match(actions, /editor_release_testers/);
   assert.match(actions, /const isolatedChecks = \[/);
   assert.match(actions, /const productionCanaryChecks = \[/);
+  assert.match(actions, /"initial-project-admission"/);
+  assert.match(actions, /allProjectDispatchTargets\(\)/);
+  assert.match(actions, /EDITOR_RENDER_V4_PROJECT_TARGET_CAPABILITY_MISMATCH/);
   assert.match(actions, /editor_release\.promoted/);
   assert.match(actions, /editor_release\.rolled_back/);
   assert.match(
