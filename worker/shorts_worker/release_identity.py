@@ -119,6 +119,22 @@ def verify_initial_render_v4_runtime(
     )
     if actual_font_manifest_sha256 != font_manifest_sha256:
         raise RenderError("실행 중인 워커의 폰트 파일 명세가 작업과 다릅니다.")
+
+    # Jobs created after the upload/link release-binding migration carry the
+    # exact immutable editor release. Historical v4 jobs intentionally keep a
+    # NULL release ID and remain compatible with the already-verified path.
+    initial_release_id = job.get("initial_editor_release_id")
+    if initial_release_id is not None:
+        if (
+            str(job.get("initial_editor_release_git_sha") or "") != release_sha
+            or str(job.get("initial_editor_release_worker_image_digest") or "")
+            != image_digest
+            or str(job.get("initial_editor_release_font_manifest_sha256") or "")
+            != font_manifest_sha256
+            or job.get("initial_editor_release_render_spec_version") != 4
+            or job.get("initial_editor_release_caption_render_spec_version") != 4
+        ):
+            raise RenderError("작업에 고정된 렌더 릴리스가 실행 중인 워커와 다릅니다.")
     return {
         "sourceGitSha": release_sha,
         "imageDigest": image_digest,

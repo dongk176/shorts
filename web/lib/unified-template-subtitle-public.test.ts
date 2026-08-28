@@ -25,11 +25,11 @@ describe("unified template subtitle public release", () => {
     expect(projectApi).not.toContain("getPublicSubtitleTemplateAccess");
   });
 
-  it("keeps file upload on its administrator-only and production-closed paths", () => {
+  it("keeps file upload behind its independent atomic release resolver", () => {
     const mvpState = source("web/lib/mvp-state.ts");
     const release = source("web/lib/subtitle-template-release.ts");
     const migration = source("supabase/migrations/202608260003_unified_template_subtitles_public.sql");
-    expect(mvpState).toContain("fileUpload: fileUploadAccess.adminEnabled");
+    expect(mvpState).toContain("fileUpload: fileUploadAccess.enabled");
     expect(release).toContain('environment.NODE_ENV === "production"');
     expect(migration).not.toContain("file_upload_public");
   });

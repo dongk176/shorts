@@ -51,8 +51,19 @@ class WorkerRepository:
         with self.connect() as connection:
             return connection.execute(
                 """
-                select j.*, j.retention_days_snapshot as retention_days
+                select j.*, j.retention_days_snapshot as retention_days,
+                  release.git_sha as initial_editor_release_git_sha,
+                  release.worker_image_digest
+                    as initial_editor_release_worker_image_digest,
+                  release.font_manifest_sha256
+                    as initial_editor_release_font_manifest_sha256,
+                  release.render_spec_version
+                    as initial_editor_release_render_spec_version,
+                  release.caption_render_spec_version
+                    as initial_editor_release_caption_render_spec_version
                 from shorts_mvp.video_jobs j
+                left join shorts_mvp.editor_releases release
+                  on release.id=j.initial_editor_release_id
                 where j.id = %s
                 """,
                 (job_id,),
@@ -76,7 +87,8 @@ class WorkerRepository:
                   us.id,us.mvp_session_id,us.user_id,us.job_id,us.status,
                   us.token_hash,us.expected_bytes,us.declared_content_type,
                   us.declared_duration_seconds,us.range_start_seconds,
-                  us.range_end_seconds,us.expires_at,
+                  us.range_end_seconds,us.declared_width,us.declared_height,
+                  us.declared_has_audio,us.expires_at,
                   us.expires_at<=clock_timestamp() as is_expired,
                   u.is_admin,j.status as job_status,j.source_type,
                   j.execution_backend,j.pipeline_version,
@@ -109,7 +121,9 @@ class WorkerRepository:
                 """
                 select flag_key,enabled
                 from shorts_mvp.runtime_feature_flags
-                where flag_key='file_upload'
+                where flag_key in (
+                  'file_upload','file_upload_public','file_upload_emergency_stop'
+                )
                 for share
                 """
             ).fetchall()
@@ -120,10 +134,14 @@ class WorkerRepository:
             result = {
                 key: value for key, value in row.items() if key != "token_hash"
             }
-            # This release is a hard admin-only canary.  Deliberately do not
-            # consult ``file_upload_public`` here: turning that future flag on
-            # must not make this receiver reachable by regular users.
-            if not flags.get("file_upload", False) or not bool(row.get("is_admin")):
+            if (
+                not flags.get("file_upload", False)
+                or flags.get("file_upload_emergency_stop", False)
+                or (
+                    not bool(row.get("is_admin"))
+                    and not flags.get("file_upload_public", False)
+                )
+            ):
                 return {**result, "claim_result": "forbidden"}
             if str(row.get("status")) != "awaiting_upload":
                 return {**result, "claim_result": "reused"}
@@ -187,6 +205,10 @@ class WorkerRepository:
                 set heartbeat_at=clock_timestamp(),received_bytes=%s
                 where id=%s and status='claimed'
                   and %s between 0 and expected_bytes
+                  and not exists (
+                    select 1 from shorts_mvp.runtime_feature_flags
+                    where flag_key='file_upload_emergency_stop' and enabled
+                  )
                 returning id
                 """,
                 (received_bytes, upload_session_id, received_bytes),

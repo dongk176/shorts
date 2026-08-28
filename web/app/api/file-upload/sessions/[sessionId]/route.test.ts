@@ -21,7 +21,7 @@ vi.mock("@/lib/usage", () => ({
   getUsageSnapshot: mocks.usageSnapshot,
 }));
 
-import { DELETE, GET } from "./route";
+import { DELETE } from "./route";
 
 const USER_ID = "3d14e57e-d516-44b1-89ac-30d76a6e701f";
 const MVP_SESSION_ID = "7bf704e2-f151-45a5-9939-69d2a62b22aa";
@@ -92,9 +92,7 @@ beforeEach(() => {
 });
 
 describe("file upload browser abort", () => {
-  it("conceals GET, invalid IDs, signed-out users, and disabled/non-admin users", async () => {
-    expect((await GET()).status).toBe(404);
-
+  it("conceals invalid IDs and signed-out users", async () => {
     const invalid = await DELETE(cancelRequest(), context("not-a-uuid"));
     expect(invalid.status).toBe(404);
     expect(mocks.getDb).not.toHaveBeenCalled();
@@ -104,31 +102,24 @@ describe("file upload browser abort", () => {
     );
     expect((await DELETE(cancelRequest(), context())).status).toBe(404);
 
-    const { db } = transactionDb();
-    mocks.getDb.mockReturnValue(db);
-    mocks.releaseAccess.mockResolvedValueOnce({
-      enabled: true,
-      adminEnabled: false,
-      publicEnabled: true,
-    });
-    expect((await DELETE(cancelRequest(), context())).status).toBe(404);
-    expect(db.begin).not.toHaveBeenCalled();
   });
 
-  it("rechecks the locked flag/admin gate before reading or changing the session", async () => {
+  it("allows an owner to cancel an issued session after new uploads are paused", async () => {
     const { db, queries } = transactionDb();
     mocks.getDb.mockReturnValue(db);
     mocks.lockedReleaseAccess.mockResolvedValue({
-      enabled: true,
+      enabled: false,
       adminEnabled: false,
-      publicEnabled: true,
+      publicEnabled: false,
     });
 
     const response = await DELETE(cancelRequest(), context());
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(200);
     expect(queries.some((entry) => entry.sql.includes("upload_sessions upload")))
-      .toBe(false);
+      .toBe(true);
+    expect(mocks.releaseAccess).not.toHaveBeenCalled();
+    expect(mocks.lockedReleaseAccess).not.toHaveBeenCalled();
   });
 
   it("returns the same hidden 404 when the owner-scoped session is absent", async () => {

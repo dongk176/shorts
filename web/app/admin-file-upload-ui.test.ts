@@ -11,14 +11,14 @@ describe("administrator file upload UI isolation", () => {
     expect(source).toContain("{uploadModeEnabled ? (");
     expect(stateSource).toContain("fileUpload: false,");
     expect(stateSource).toContain("unifiedTemplateSubtitles: false,");
-    expect(stateSource).toContain("fileUploadAccess.adminEnabled");
+    expect(stateSource).toContain("fileUploadAccess.enabled");
   });
 
   it("selects locally first and sends bytes directly only after canonical project creation", () => {
     expect(source).toContain("inspectUploadVideo(file)");
     expect(source).toContain('requestJson<{');
     expect(source).toContain('>("/api/file-upload/sessions"');
-    expect(source).toContain("await uploadFileDirectly({");
+    expect(source).toContain("await uploadFileWhenReceiverReady({");
     expect(source).toContain("uploadUrl: value.uploadUrl");
     expect(source).not.toContain("업로드하고 계속");
   });

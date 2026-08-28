@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  ensureFileUploadCapacity,
+  releaseFileUploadCapacity,
+} from "@/lib/aws";
 import { getBillingSummary } from "@/lib/billing";
 import {
   expectedShortCount,
@@ -29,6 +33,9 @@ import {
   lockFileUploadReleaseAccess,
 } from "@/lib/file-upload-release";
 import { apiError, HttpError } from "@/lib/http";
+import { resolveInitialRenderRelease } from "@/lib/initial-render-release";
+import { createInitialRenderContract } from "@/lib/initial-render-contract";
+import { projectDispatchTargetForFeatures } from "@/lib/job-dispatch";
 import { assertJobCreationAllowed } from "@/lib/job-policy";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
 import {
@@ -37,16 +44,12 @@ import {
 } from "@/lib/source-range";
 import { issueShortsThankYouEventGrantIfEligible } from "@/lib/shorts-thank-you-event";
 import {
-  STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
   SUBTITLE_TEMPLATE_BASE_TEMPLATE_ID,
-  SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
   subtitleCaptionPlacements,
   subtitleTemplateCreationIds,
-  subtitleTemplateStyleSnapshot,
 } from "@/lib/subtitle-templates";
 import {
   lockSubtitleTemplateAccess,
-  unifiedTemplateSubtitleLocalUploadEnabled,
 } from "@/lib/subtitle-template-release";
 import { assertCustomTemplateAccess } from "@/lib/template-entitlements";
 import { templatePresetColors } from "@/lib/template-config";
@@ -75,8 +78,8 @@ const requestSchema = z.object({
     durationSeconds: millisecondNumber
       .pipe(z.number().min(FILE_UPLOAD_MIN_DURATION_SECONDS)
         .max(FILE_UPLOAD_MAX_DURATION_SECONDS)),
-    width: z.number().int().min(1).max(16384).nullish(),
-    height: z.number().int().min(1).max(16384).nullish(),
+    width: z.number().int().min(1).max(8192).nullish(),
+    height: z.number().int().min(1).max(8192).nullish(),
     hasAudio: z.boolean(),
   }).strict(),
   rangeStartSeconds: millisecondNumber.pipe(z.number().nonnegative()),
@@ -102,6 +105,17 @@ const requestSchema = z.object({
       code: "custom",
       path: ["rightsConfirmed"],
       message: "원본 영상 권리를 확인해 주세요.",
+    });
+  }
+  if (
+    input.file.width
+    && input.file.height
+    && input.file.width * input.file.height > 33_554_432
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["file", "width"],
+      message: "영상 해상도가 허용 범위를 초과합니다.",
     });
   }
   if (input.subtitleCaptionPlacement && !input.subtitleTemplateId) {
@@ -228,6 +242,48 @@ function tokenForRow(secret: string, row: UploadIntentRow) {
   return token;
 }
 
+async function cancelUnclaimedSessionAfterCapacityFailure(
+  db: ReturnType<typeof getDb>,
+  input: { userId: string; uploadSessionId: string; jobId: string },
+) {
+  await db.begin(async (tx) => {
+    await tx`
+      select pg_advisory_xact_lock(hashtextextended(${input.userId},0))
+    `;
+    const rows = await tx`
+      select upload.status,upload.consumed_at
+      from shorts_mvp.upload_sessions upload
+      join shorts_mvp.video_jobs job on job.id=upload.job_id
+      where upload.id=${input.uploadSessionId}
+        and upload.job_id=${input.jobId}
+        and upload.user_id=${input.userId}
+        and job.user_id=${input.userId}
+      limit 1
+      for update of upload,job
+    `;
+    if (
+      rows[0]?.status !== "awaiting_upload"
+      || rows[0]?.consumedAt !== null
+    ) return;
+    await tx`
+      update shorts_mvp.upload_sessions
+      set status='failed',
+          failure_code='upload_capacity_unavailable',
+          failure_reason='업로드 작업 서버를 준비하지 못했습니다.',
+          source_deleted_at=coalesce(source_deleted_at,clock_timestamp()),
+          completed_at=coalesce(completed_at,clock_timestamp())
+      where id=${input.uploadSessionId} and status='awaiting_upload'
+    `;
+    await tx`
+      select * from shorts_mvp.finalize_project_job(
+        ${input.jobId},
+        'upload_capacity_unavailable',
+        '업로드 작업 서버를 준비하지 못했습니다.'
+      )
+    `;
+  });
+}
+
 export async function GET() {
   return noStore(apiError(hiddenNotFound()));
 }
@@ -239,7 +295,7 @@ export async function POST(request: Request) {
     const enterpriseAccess = await assertEnterpriseSessionServiceAccess(db, session);
     const enterpriseUsage = enterpriseAccess.accountType === "enterprise";
     const access = await getFileUploadReleaseAccess(db, session.userId);
-    if (!access.adminEnabled) throw hiddenNotFound();
+    if (!access.enabled) throw hiddenNotFound();
 
     assertJsonControlRequest(request);
     const input = requestSchema.parse(await readLimitedJsonBody(
@@ -299,7 +355,7 @@ export async function POST(request: Request) {
         select pg_advisory_xact_lock(hashtextextended(${session.userId},0))
       `;
       const lockedAccess = await lockFileUploadReleaseAccess(tx, session.userId);
-      if (!lockedAccess.adminEnabled) throw hiddenNotFound();
+      if (!lockedAccess.enabled) throw hiddenNotFound();
 
       // Resolve receiver credentials only after both administrator gates pass,
       // so hidden callers always see the same 404 regardless of configuration.
@@ -407,20 +463,6 @@ export async function POST(request: Request) {
           videoAspectRatio: input.videoAspectRatio,
           brandColor: input.brandColor,
         });
-        if (
-          resolvedExecution.usesUnifiedTemplateSubtitleCanary
-          && !unifiedTemplateSubtitleLocalUploadEnabled({
-            strictAccessEnabled: true,
-            fileUploadAdminEnabled: lockedAccess.adminEnabled,
-            receiverBaseUrl: receiver.receiverBaseUrl,
-          })
-        ) {
-          throw new HttpError(
-            409,
-            "통합 템플릿 자막 직접 업로드는 로컬 테스트 환경에서만 사용할 수 있습니다.",
-            "UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ONLY",
-          );
-        }
       }
 
       const usesSubtitleSuiteCandidate = Boolean(
@@ -452,23 +494,26 @@ export async function POST(request: Request) {
         videoAspectRatio: input.videoAspectRatio,
         brandColor: input.brandColor,
       });
-      const resolvedTemplateId = resolvedExecution.resolvedTemplateId;
-      const resolvedVideoAspectRatio =
-        resolvedExecution.resolvedVideoAspectRatio;
-      const templateSnapshot = resolvedExecution.templateSnapshot;
-
-      const subtitleTemplateSnapshot = input.subtitleTemplateId
-        ? subtitleTemplateStyleSnapshot(
-            input.subtitleTemplateId,
-            resolvedVideoAspectRatio,
-            input.brandColor,
-            input.subtitleCaptionPlacement ?? "lower",
-            undefined,
-            subtitleTemplateUsesEnhancedTiming
-              ? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES
-              : STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
-          )
-        : resolvedExecution.subtitleTemplateSnapshot;
+      const renderContract = createInitialRenderContract({
+        resolvedExecution,
+        subtitleTemplateId: input.subtitleTemplateId,
+        subtitleCaptionPlacement: input.subtitleCaptionPlacement,
+        brandColor: input.brandColor,
+        enhancedSubtitleTiming: subtitleTemplateUsesEnhancedTiming,
+      });
+      const resolvedTemplateId = renderContract.templateId;
+      const resolvedVideoAspectRatio = renderContract.videoAspectRatio;
+      const templateSnapshot = renderContract.templateSnapshot;
+      const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
+      const dispatchTarget = projectDispatchTargetForFeatures({
+        usesUnifiedTemplateSubtitleCandidate:
+          resolvedExecution.usesUnifiedTemplateSubtitleCanary,
+        usesLegacySubtitleSuiteCandidate: Boolean(
+          input.subtitleTemplateId || input.brandColor,
+        ),
+        transcriptionEnabled: transcriptionAccess.enabled,
+        sourceRangeSelectionEnabled,
+      });
 
       const limits = await tx`
         select count(*)::int as active
@@ -491,6 +536,21 @@ export async function POST(request: Request) {
         sourceDurationSeconds: usageSeconds,
         usage: beforeUsage,
       });
+
+      // File uploads must never silently fall back to the legacy renderer.
+      // Resolve the exact same release as the corresponding link job while
+      // the runtime release rows remain locked by this creation transaction.
+      const initialRenderRelease = await resolveInitialRenderRelease(tx, {
+        userId: session.userId,
+        dispatchTarget,
+      });
+      if (!initialRenderRelease) {
+        throw new HttpError(
+          503,
+          "파일 업로드 렌더 릴리스를 안전하게 확인하지 못했습니다.",
+          "FILE_UPLOAD_RENDER_RELEASE_UNAVAILABLE",
+        );
+      }
 
       const projectNumberRows = await tx`
         select nextval('shorts_mvp.video_job_project_number_seq')::bigint
@@ -530,7 +590,8 @@ export async function POST(request: Request) {
           pipeline_version,source_range_selection_enabled,
           transcription_policy,batch_job_definition,batch_job_queue,
           selected_source_duration_seconds,billable_source_seconds,
-          source_type
+          source_type,initial_editor_release_id,
+          initial_render_spec_version,initial_caption_render_spec_version
         ) values (
           ${jobId},${projectNumber},${session.id},${session.userId},${input.requestId},
           ${null},${null},${originalFilename},${"업로드한 영상"},
@@ -544,7 +605,8 @@ export async function POST(request: Request) {
           now() + ${deadlineMinutes} * interval '1 minute',${plannedShortCount},
           ${billing.retentionDays},2,${sourceRangeSelectionEnabled},
           ${transcriptionAccess.policy},${null},${null},
-          ${selectedDurationSeconds},${usageSeconds},'upload'
+          ${selectedDurationSeconds},${usageSeconds},'upload',
+          ${initialRenderRelease.releaseId},4,4
         )
       `;
       const reservations = await tx`
@@ -612,6 +674,29 @@ export async function POST(request: Request) {
       };
     });
 
+    let capacity: Awaited<ReturnType<typeof ensureFileUploadCapacity>>;
+    try {
+      capacity = await ensureFileUploadCapacity({
+        // The capacity coordinator owns the authoritative count through one
+        // expiring lease per upload session. Recounting stale database rows here
+        // could over-scale or race concurrent requests.
+        desiredCount: 1,
+        uploadSessionId: result.uploadSessionId,
+        expiresAt: result.expiresAt,
+      });
+    } catch {
+      await cancelUnclaimedSessionAfterCapacityFailure(db, {
+        userId: session.userId,
+        uploadSessionId: result.uploadSessionId,
+        jobId: result.jobId,
+      });
+      await releaseFileUploadCapacity(result.uploadSessionId).catch(() => undefined);
+      throw new HttpError(
+        503,
+        "업로드 작업 서버를 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        "FILE_UPLOAD_CAPACITY_UNAVAILABLE",
+      );
+    }
     const usage = await getUsageSnapshot(db, session);
     return noStore(NextResponse.json({
       jobId: result.jobId,
@@ -620,6 +705,7 @@ export async function POST(request: Request) {
       uploadUrl: result.uploadUrl,
       token: result.token,
       expiresAt: result.expiresAt,
+      status: capacity.runningCount > 0 ? "ready" : "preparing",
       usage,
     }, { status: result.created ? 201 : 200 }));
   } catch (error) {

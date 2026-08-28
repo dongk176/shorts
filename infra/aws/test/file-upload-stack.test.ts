@@ -9,6 +9,8 @@ import {
 } from "../lib/file-upload-stack";
 
 const digest = `sha256:${"a".repeat(64)}`;
+const sourceSha = "b".repeat(40);
+const fontManifestSha256 = "c".repeat(64);
 const originSecret = `origin-secret-${"x".repeat(48)}`;
 
 function stackTemplate(overrides: Record<string, unknown> = {}) {
@@ -16,8 +18,12 @@ function stackTemplate(overrides: Record<string, unknown> = {}) {
     repositoryUri:
       "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-worker-production",
     imageDigest: digest,
+    workerSourceGitSha: sourceSha,
+    fontManifestSha256,
     runtimeSecretArn:
       "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:shorts-mvp/production/worker-runtime-AbCdEf",
+    vercelControlPlaneRoleArn:
+      "arn:aws:iam::123456789012:role/shorts-mvp-production-vercel-control-plane",
     mediaBucketName: "shorts-mvp-production-media",
     cloudfrontPrefixListId: "pl-1234abcd",
     originVerifyHeader: originSecret,
@@ -50,7 +56,10 @@ describe("file upload canary opt-in", () => {
     for (const name of [
       "repositoryUri",
       "imageDigest",
+      "workerSourceGitSha",
+      "fontManifestSha256",
       "runtimeSecretArn",
+      "vercelControlPlaneRoleArn",
       "mediaBucketName",
       "cloudfrontPrefixListId",
       "originVerifyHeader",
@@ -89,10 +98,18 @@ describe("isolated file upload canary stack", () => {
       EphemeralStorage: { SizeInGiB: 80 },
       ContainerDefinitions: Match.arrayWith([Match.objectLike({
         Name: "file-upload-receiver",
-        Command: ["python", "-m", "shorts_worker.upload_service"],
+        EntryPoint: ["/usr/local/bin/python", "-m", "shorts_worker.upload_service"],
+        Command: [],
+        ReadonlyRootFilesystem: true,
+        User: "10001:10001",
+        MountPoints: [{
+          ContainerPath: "/scratch",
+          ReadOnly: false,
+          SourceVolume: "UploadScratch",
+        }],
         PortMappings: Match.arrayWith([Match.objectLike({ ContainerPort: 8080 })]),
         HealthCheck: Match.objectLike({
-          Command: Match.arrayWith([Match.stringLikeRegexp("/healthz")]),
+          Command: Match.arrayWith([Match.stringLikeRegexp("/livez")]),
         }),
       })]),
     });
@@ -102,13 +119,14 @@ describe("isolated file upload canary stack", () => {
     expect(renderedTask).toContain(`@${digest}`);
     template.hasResourceProperties("AWS::ECS::Service", {
       DesiredCount: 0,
+      HealthCheckGracePeriodSeconds: 21_600,
       LaunchType: "FARGATE",
       ServiceName: "shorts-mvp-file-upload-production",
       NetworkConfiguration: {
         AwsvpcConfiguration: Match.objectLike({ AssignPublicIp: "ENABLED" }),
       },
     });
-    template.resourceCountIs("AWS::ApplicationAutoScaling::ScalableTarget", 0);
+    template.resourceCountIs("AWS::ApplicationAutoScaling::ScalableTarget", 1);
     template.resourceCountIs("AWS::EC2::NatGateway", 0);
   });
 
@@ -118,8 +136,12 @@ describe("isolated file upload canary stack", () => {
       DesiredCount: 1,
       LaunchType: "FARGATE",
     });
-    expect(() => stackTemplate({ fileUploadDesiredCount: "2" })).toThrow(
-      "fileUploadDesiredCount must be exactly 0 or 1",
+    template.hasResourceProperties("AWS::ApplicationAutoScaling::ScalableTarget", {
+      MinCapacity: 0,
+      MaxCapacity: 20,
+    });
+    expect(() => stackTemplate({ fileUploadDesiredCount: "21" })).toThrow(
+      "fileUploadDesiredCount must be between 0 and 20",
     );
   });
 
@@ -159,6 +181,16 @@ describe("isolated file upload canary stack", () => {
       EDIT_TIMELINE_CAPTURE_ENABLED: "true",
       TASK_VCPUS: "4",
       MAX_VIDEO_DURATION_SECONDS: "10800",
+      EDITOR_RELEASE_GIT_SHA: sourceSha,
+      EDITOR_RENDER_SPEC_VERSION: "4",
+      EDITOR_CAPTION_RENDER_SPEC_VERSION: "4",
+      EDITOR_FONT_MANIFEST_SHA256: fontManifestSha256,
+      WORKER_IMAGE_DIGEST: digest,
+      FILE_UPLOAD_SCALE_IN_PROTECTION_REQUIRED: "true",
+      SOURCE_STORAGE_MODE: "ephemeral_only",
+      TEMP_ROOT: "/scratch/shorts-jobs",
+      TMPDIR: "/scratch/shorts-jobs",
+      XDG_CACHE_HOME: "/scratch/shorts-jobs/.cache",
     })) {
       expect(taskDefinition).toContain(`\"Name\":\"${name}\"`);
       expect(taskDefinition).toContain(`\"Value\":\"${value}\"`);
@@ -241,7 +273,7 @@ describe("isolated file upload canary stack", () => {
       }]),
     });
     template.hasResourceProperties("AWS::ElasticLoadBalancingV2::TargetGroup", {
-      HealthCheckPath: "/healthz",
+      HealthCheckPath: "/readyz",
       Port: 8080,
       TargetType: "ip",
     });
@@ -264,8 +296,8 @@ describe("isolated file upload canary stack", () => {
             HeaderValue: originSecret,
           }],
           VpcOriginConfig: Match.objectLike({
-            OriginKeepaliveTimeout: 60,
-            OriginReadTimeout: 60,
+            OriginKeepaliveTimeout: 120,
+            OriginReadTimeout: 120,
             VpcOriginId: Match.anyValue(),
           }),
         })]),
@@ -296,6 +328,51 @@ describe("isolated file upload canary stack", () => {
     expect(outputs).toHaveProperty("FileUploadReceiverUrl");
     expect(outputs).toHaveProperty("FileUploadClusterName");
     expect(outputs).toHaveProperty("FileUploadServiceName");
+    expect(outputs).toHaveProperty("FileUploadCapacityFunctionArn");
+  });
+
+  it("coordinates zero-to-twenty capacity with expiring leases and reconciliation", () => {
+    const template = stackTemplate();
+
+    template.hasResourceProperties("AWS::DynamoDB::Table", {
+      BillingMode: "PAY_PER_REQUEST",
+      PointInTimeRecoverySpecification: {
+        PointInTimeRecoveryEnabled: true,
+      },
+      TimeToLiveSpecification: {
+        AttributeName: "expiresAtEpoch",
+        Enabled: true,
+      },
+    });
+    template.hasResourceProperties("AWS::Lambda::Function", {
+      FunctionName: "shorts-mvp-file-upload-capacity-production",
+      Environment: {
+        Variables: Match.objectLike({
+          ECS_CLUSTER: "shorts-mvp-file-upload-production",
+          ECS_SERVICE: "shorts-mvp-file-upload-production",
+          MAX_CAPACITY: "20",
+          WARM_SECONDS: "600",
+        }),
+      },
+      Runtime: "python3.12",
+    });
+    template.hasResourceProperties("AWS::Events::Rule", {
+      ScheduleExpression: "rate(1 minute)",
+      State: "ENABLED",
+    });
+    const rendered = JSON.stringify(template.toJSON());
+    expect(rendered).toContain("ecs:UpdateTaskProtection");
+    expect(rendered).toContain("ecs:GetTaskProtection");
+    expect(rendered).toContain("ecs:UpdateService");
+    expect(rendered).toContain("dynamodb:DeleteItem");
+    expect(rendered).toContain("FILE_UPLOAD_CAPACITY_FUNCTION_ARN");
+    const invokePolicies = Object.values(
+      template.findResources("AWS::IAM::Policy"),
+    ).filter((resource) => JSON.stringify(resource).includes("lambda:InvokeFunction"));
+    expect(invokePolicies.length).toBeGreaterThanOrEqual(2);
+    expect(JSON.stringify(invokePolicies)).toContain(
+      "shorts-mvp-production-vercel-control-plane",
+    );
   });
 
   it("keeps preview CORS disabled unless one exact deployment origin is explicit", () => {

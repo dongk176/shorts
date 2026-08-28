@@ -70,6 +70,43 @@ def test_v4_runtime_matches_built_source_running_digest_and_font_manifest(
     }
 
 
+def test_bound_v4_release_must_match_running_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    git_sha = "a" * 40
+    image_digest = f"sha256:{'b' * 64}"
+    font_hash = str(canonical_editor_font_manifest()["sha256"])
+    monkeypatch.setenv("EDITOR_RELEASE_GIT_SHA", git_sha)
+    monkeypatch.setenv("WORKER_IMAGE_DIGEST", image_digest)
+    monkeypatch.setenv("EDITOR_RENDER_SPEC_VERSION", "4")
+    monkeypatch.setenv("EDITOR_CAPTION_RENDER_SPEC_VERSION", "4")
+    monkeypatch.setenv("EDITOR_FONT_MANIFEST_SHA256", font_hash)
+
+    job = {
+        "initial_render_spec_version": 4,
+        "initial_caption_render_spec_version": 4,
+        "initial_editor_release_id": "f223e9e5-6aad-449f-8d2d-99202bfed190",
+        "initial_editor_release_git_sha": git_sha,
+        "initial_editor_release_worker_image_digest": image_digest,
+        "initial_editor_release_font_manifest_sha256": font_hash,
+        "initial_editor_release_render_spec_version": 4,
+        "initial_editor_release_caption_render_spec_version": 4,
+    }
+    assert verify_initial_render_v4_runtime(
+        job,
+        embedded_source_sha_reader=lambda: git_sha,
+        running_image_digest_reader=lambda: image_digest,
+    ) is not None
+
+    job["initial_editor_release_worker_image_digest"] = f"sha256:{'c' * 64}"
+    with pytest.raises(RenderError, match="고정된 렌더 릴리스"):
+        verify_initial_render_v4_runtime(
+            job,
+            embedded_source_sha_reader=lambda: git_sha,
+            running_image_digest_reader=lambda: image_digest,
+        )
+
+
 @pytest.mark.parametrize("mismatch", ["source", "digest", "font"])
 def test_v4_runtime_identity_mismatch_fails_closed(
     monkeypatch: pytest.MonkeyPatch,

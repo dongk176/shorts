@@ -114,7 +114,7 @@ export async function loadMvpState(
     paymentMethodAction,
     usage,
     capabilities: {
-      fileUpload: fileUploadAccess.adminEnabled,
+      fileUpload: fileUploadAccess.enabled,
       unifiedTemplateSubtitles:
         subtitleTemplateAccess?.unifiedEnabled === true,
       unifiedTemplateSubtitleLocalUpload:

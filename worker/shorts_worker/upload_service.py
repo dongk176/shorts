@@ -10,6 +10,8 @@ import signal
 import socket
 import threading
 import time
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from http import HTTPStatus
@@ -19,6 +21,8 @@ from pathlib import Path
 from types import FrameType
 from urllib.parse import urlsplit
 from uuid import UUID
+
+import boto3
 
 from .config import Settings
 from .media import media_duration, probe_media
@@ -40,6 +44,38 @@ _DEFAULT_HEARTBEAT_SECONDS = 5.0
 _DEFAULT_SWEEP_INTERVAL_SECONDS = 30.0
 _DEFAULT_STALE_AFTER_SECONDS = 120
 _DEFAULT_SOCKET_IDLE_TIMEOUT_SECONDS = 120.0
+_MAX_UPLOAD_DIMENSION = 8_192
+_MAX_UPLOAD_PIXELS = 33_554_432
+_ECS_AGENT_URI = re.compile(
+    r"^http://169\.254\.170\.2/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+$"
+)
+
+
+def _forbidden_upload_environment(environment: dict[str, str] | os._Environ[str]) -> list[str]:
+    exact = {
+        "INGESTION_PROXY_ROUTES_JSON",
+        "INGESTION_EGRESS_MODE",
+        "WARP_CONF",
+        "WARP_CONF_B64",
+        "YOUTUBE_API_KEY",
+        "YOUTUBE_COOKIES",
+        "YOUTUBE_VISITOR_DATA",
+        "YOUTUBE_POT_TOKEN",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+    }
+    return sorted(
+        name
+        for name, value in environment.items()
+        if value
+        and (
+            name.upper() in exact
+            or "WEBSHARE" in name.upper()
+            or name.upper().startswith("YOUTUBE_COOKIE")
+            or name.upper().startswith("YOUTUBE_POT")
+        )
+    )
 
 
 def _event(event: str, **fields: object) -> None:
@@ -110,12 +146,20 @@ class UploadReceiverConfig:
     stale_after_seconds: int
     socket_idle_timeout_seconds: float
     allowed_origins: frozenset[str]
+    scale_in_protection_required: bool = False
+    scale_in_protection_minutes: int = 30
 
     @classmethod
     def from_environment(
         cls,
         environment: dict[str, str] | os._Environ[str] = os.environ,
     ) -> UploadReceiverConfig:
+        forbidden = _forbidden_upload_environment(environment)
+        if forbidden:
+            raise RuntimeError(
+                "file upload receiver forbids ingestion/proxy environment: "
+                + ",".join(forbidden)
+            )
         configured_max_bytes = _positive_int(
             environment.get("FILE_UPLOAD_MAX_BYTES"),
             UPLOAD_SOURCE_MAX_BYTES,
@@ -165,6 +209,16 @@ class UploadReceiverConfig:
                 ),
             ),
             allowed_origins=origins,
+            scale_in_protection_required=_enabled(
+                environment.get("FILE_UPLOAD_SCALE_IN_PROTECTION_REQUIRED")
+            ),
+            scale_in_protection_minutes=min(
+                120,
+                _positive_int(
+                    environment.get("FILE_UPLOAD_SCALE_IN_PROTECTION_MINUTES"),
+                    30,
+                ),
+            ),
         )
 
     def allows_origin(self, value: str | None) -> bool:
@@ -192,6 +246,56 @@ class UploadRequestError(Exception):
         self.message = message[:1000]
         self.terminal = terminal
         self.expired = expired
+
+
+class TaskScaleInProtection:
+    def __init__(self, config: UploadReceiverConfig) -> None:
+        self.required = config.scale_in_protection_required
+        self.expires_in_minutes = config.scale_in_protection_minutes
+        self.agent_uri = os.environ.get("ECS_AGENT_URI", "").strip().rstrip("/")
+        self._enabled = False
+        self._last_refresh = 0.0
+        if self.required and not _ECS_AGENT_URI.fullmatch(self.agent_uri):
+            raise RuntimeError("ECS_AGENT_URI is required for upload task protection")
+
+    def _update(self, enabled: bool) -> None:
+        if not self.agent_uri:
+            if self.required:
+                raise RuntimeError("ECS task protection endpoint is unavailable")
+            return
+        body = json.dumps({
+            "ProtectionEnabled": enabled,
+            "ExpiresInMinutes": self.expires_in_minutes,
+        }, separators=(",", ":")).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.agent_uri}/task-protection/v1/state",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="PUT",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=3) as response:  # noqa: S310
+                if response.status < 200 or response.status >= 300:
+                    raise RuntimeError("ECS task protection update failed")
+                response.read(65_537)
+        except (OSError, TimeoutError, urllib.error.URLError) as exc:
+            raise RuntimeError("ECS task protection update failed") from exc
+        self._enabled = enabled
+        self._last_refresh = time.monotonic() if enabled else 0.0
+
+    def enable(self) -> None:
+        self._update(True)
+
+    def refresh_if_needed(self) -> None:
+        if not self._enabled:
+            return
+        refresh_seconds = max(60.0, self.expires_in_minutes * 60.0 / 3.0)
+        if time.monotonic() - self._last_refresh >= refresh_seconds:
+            self._update(True)
+
+    def disable(self) -> None:
+        if self._enabled:
+            self._update(False)
 
 
 @dataclass
@@ -226,6 +330,7 @@ class UploadReceiverService:
         self._capacity = threading.Lock()
         self._active_guard = threading.Lock()
         self._active: ActiveUpload | None = None
+        self.task_protection = TaskScaleInProtection(config)
         self._sweeper_thread: threading.Thread | None = None
         temp_root = Path(self.settings.temp_dir).resolve(strict=True)
         self.upload_root = temp_root / "receiver-uploads"
@@ -330,6 +435,14 @@ class UploadReceiverService:
             self._active = context
         handed_to_pipeline = False
         try:
+            try:
+                self.task_protection.enable()
+            except RuntimeError:
+                raise UploadRequestError(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    "upload_capacity_protection_unavailable",
+                    "업로드 작업 서버를 안전하게 보호하지 못했습니다.",
+                ) from None
             claim = self.repository.claim_upload_session(
                 upload_session_id,
                 token_hash,
@@ -569,6 +682,15 @@ class UploadReceiverService:
                             )
                         heartbeat_at = now
                         heartbeat_bytes = received
+                    try:
+                        self.task_protection.refresh_if_needed()
+                    except RuntimeError:
+                        raise UploadRequestError(
+                            HTTPStatus.SERVICE_UNAVAILABLE,
+                            "upload_capacity_protection_lost",
+                            "업로드 작업 서버 보호가 중단되었습니다.",
+                            terminal=True,
+                        ) from None
                 output.flush()
                 os.fsync(output.fileno())
             if not self.repository.heartbeat_upload_session(
@@ -672,13 +794,29 @@ class UploadReceiverService:
             not math.isfinite(duration_seconds)
             or width <= 0
             or height <= 0
-            or width > 16_384
-            or height > 16_384
+            or width > _MAX_UPLOAD_DIMENSION
+            or height > _MAX_UPLOAD_DIMENSION
+            or width * height > _MAX_UPLOAD_PIXELS
         ):
             raise UploadRequestError(
                 HTTPStatus.UNPROCESSABLE_ENTITY,
                 "upload_probe_invalid",
                 "영상 해상도와 재생시간을 확인하지 못했습니다.",
+                terminal=True,
+            )
+        declared_width = int(claim.get("declared_width") or 0)
+        declared_height = int(claim.get("declared_height") or 0)
+        declared_dimensions_match = (
+            not declared_width
+            or not declared_height
+            or (declared_width == width and declared_height == height)
+            or (declared_width == height and declared_height == width)
+        )
+        if not declared_dimensions_match or not bool(claim.get("declared_has_audio")):
+            raise UploadRequestError(
+                HTTPStatus.UNPROCESSABLE_ENTITY,
+                "upload_media_declaration_mismatch",
+                "선택 당시 영상 정보와 실제 파일 정보가 일치하지 않습니다.",
                 terminal=True,
             )
         return {
@@ -825,6 +963,16 @@ class UploadReceiverService:
                     error_type=type(exc).__name__,
                 )
                 continue
+            try:
+                self.task_protection.refresh_if_needed()
+            except RuntimeError as exc:
+                context.cancel_event.set()
+                _event(
+                    "upload_task_protection_refresh_error",
+                    session_id=context.upload_session_id,
+                    error_type=type(exc).__name__,
+                )
+                return
             if not retained:
                 context.cancel_event.set()
                 _event(
@@ -975,6 +1123,33 @@ class UploadReceiverService:
         with self._active_guard:
             if self._active is context:
                 self._active = None
+        try:
+            self.task_protection.disable()
+        except RuntimeError as exc:
+            _event(
+                "upload_task_protection_release_error",
+                session_id=context.upload_session_id,
+                error_type=type(exc).__name__,
+            )
+        capacity_function_arn = os.environ.get(
+            "FILE_UPLOAD_CAPACITY_FUNCTION_ARN", ""
+        ).strip()
+        if capacity_function_arn:
+            try:
+                boto3.client("lambda", region_name=self.settings.aws_region).invoke(
+                    FunctionName=capacity_function_arn,
+                    InvocationType="Event",
+                    Payload=json.dumps({
+                        "action": "release",
+                        "uploadSessionId": context.upload_session_id,
+                    }).encode("utf-8"),
+                )
+            except Exception as exc:
+                _event(
+                    "upload_capacity_release_notify_error",
+                    session_id=context.upload_session_id,
+                    error_type=type(exc).__name__,
+                )
         self._capacity.release()
 
     def shutdown(self) -> None:
@@ -1042,17 +1217,25 @@ class UploadRequestHandler(BaseHTTPRequestHandler):
         return super().handle_expect_100()
 
     def do_GET(self) -> None:
-        if urlsplit(self.path).path != "/healthz":
+        path = urlsplit(self.path).path
+        if path not in {"/healthz", "/livez", "/readyz"}:
             self._json_response(HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
+        live = self.service.config.enabled and not self.service.shutdown_event.is_set()
+        ready = live and not self.service.busy
         status = (
             HTTPStatus.OK
-            if self.service.config.enabled and not self.service.shutdown_event.is_set()
+            if live and (path != "/readyz" or ready)
             else HTTPStatus.SERVICE_UNAVAILABLE
         )
         self._json_response(
             status,
-            {"ok": status == HTTPStatus.OK, "busy": self.service.busy},
+            {
+                "ok": status == HTTPStatus.OK,
+                "live": live,
+                "ready": ready,
+                "busy": self.service.busy,
+            },
         )
 
     def do_OPTIONS(self) -> None:

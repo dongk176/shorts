@@ -19,6 +19,7 @@
     "db:backfill-project-owner": "node scripts/backfill-project-owner.mjs",
     "db:seed-legacy-card-remediations": "node scripts/seed-legacy-recurring-card-remediations.mjs",
     "db:test": "node scripts/test-supabase.mjs",
+    "file-upload:record-check": "node scripts/record-file-upload-release-check.mjs",
     "verify": "bash scripts/verify-local.sh"
   }
 }

@@ -14,6 +14,10 @@ const mocks = vi.hoisted(() => ({
   subtitleAccess: vi.fn(),
   transcriptionAccess: vi.fn(),
   thankYouGrant: vi.fn(),
+  initialRenderRelease: vi.fn(),
+  uploadDispatchTarget: vi.fn(),
+  ensureUploadCapacity: vi.fn(),
+  releaseUploadCapacity: vi.fn(),
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -42,6 +46,16 @@ vi.mock("@/lib/transcription-release", async (importOriginal) => ({
 }));
 vi.mock("@/lib/shorts-thank-you-event", () => ({
   issueShortsThankYouEventGrantIfEligible: mocks.thankYouGrant,
+}));
+vi.mock("@/lib/initial-render-release", () => ({
+  resolveInitialRenderRelease: mocks.initialRenderRelease,
+}));
+vi.mock("@/lib/job-dispatch", () => ({
+  projectDispatchTargetForFeatures: mocks.uploadDispatchTarget,
+}));
+vi.mock("@/lib/aws", () => ({
+  ensureFileUploadCapacity: mocks.ensureUploadCapacity,
+  releaseFileUploadCapacity: mocks.releaseUploadCapacity,
 }));
 
 import {
@@ -171,11 +185,14 @@ function transactionDb(options: TransactionOptions = {}) {
       if (options.failUploadSessionInsert) throw new Error("insert failed");
       return [{ expiresAt: EXPIRES_AT }];
     }
+    if (sql.includes("select upload.status,upload.consumed_at")) {
+      return [{ status: "awaiting_upload", consumedAt: null }];
+    }
     return [];
   }), {
     json: vi.fn((value: unknown) => value),
   });
-  const db = Object.assign(vi.fn(), {
+  const db = Object.assign(vi.fn(async () => [{ desiredCount: 1 }]), {
     begin: vi.fn(async (callback: (transaction: typeof tx) => unknown) => (
       callback(tx)
     )),
@@ -215,10 +232,38 @@ beforeEach(() => {
     grantedSeconds: 0,
     validUntil: null,
   });
+  mocks.initialRenderRelease.mockResolvedValue({
+    releaseId: "f223e9e5-6aad-449f-8d2d-99202bfed190",
+    renderSpecVersion: 4,
+    captionRenderSpecVersion: 4,
+    fontManifestSha256: "a".repeat(64),
+    workerImageDigest: `sha256:${"b".repeat(64)}`,
+  });
+  mocks.uploadDispatchTarget.mockReturnValue({
+    targetKey: "elevenlabs_transcription",
+    releaseId: "editor-v4",
+    workerSourceGitSha: "a".repeat(40),
+    workerImageDigest: `sha256:${"b".repeat(64)}`,
+    jobDefinitionArn:
+      "arn:aws:batch:ap-northeast-2:123456789012:job-definition/editor-v4:1",
+    jobQueueArn:
+      "arn:aws:batch:ap-northeast-2:123456789012:job-queue/editor-v4",
+    v4Capability: {
+      renderSpecVersion: 4,
+      captionRenderSpecVersion: 4,
+      fontManifestSha256: "a".repeat(64),
+    },
+  });
+  mocks.ensureUploadCapacity.mockResolvedValue({
+    desiredCount: 1,
+    runningCount: 1,
+    pendingCount: 0,
+  });
+  mocks.releaseUploadCapacity.mockResolvedValue(undefined);
 });
 
 describe("file upload job control plane", () => {
-  it("conceals GET and signed-out/non-admin/off POST probes with the same 404", async () => {
+  it("conceals GET and signed-out/off POST probes with the same 404", async () => {
     const getResponse = await GET();
     expect(getResponse.status).toBe(404);
     await expect(getResponse.json()).resolves.toEqual({
@@ -236,12 +281,12 @@ describe("file upload job control plane", () => {
     const { db } = transactionDb();
     mocks.getDb.mockReturnValue(db);
     mocks.releaseAccess.mockResolvedValueOnce({
-      enabled: true,
+      enabled: false,
       adminEnabled: false,
-      publicEnabled: true,
+      publicEnabled: false,
     });
-    const nonAdmin = await POST(jsonRequest(validBody));
-    expect(nonAdmin.status).toBe(404);
+    const unavailable = await POST(jsonRequest(validBody));
+    expect(unavailable.status).toBe(404);
     expect(db.begin).not.toHaveBeenCalled();
 
     mocks.releaseAccess.mockResolvedValueOnce({
@@ -252,13 +297,13 @@ describe("file upload job control plane", () => {
     expect(disabled.status).toBe(404);
   });
 
-  it("rechecks the locked admin gate before receiver configuration or writes", async () => {
+  it("rechecks the locked release gate before receiver configuration or writes", async () => {
     const { db, queries } = transactionDb();
     mocks.getDb.mockReturnValue(db);
     mocks.lockedReleaseAccess.mockResolvedValue({
-      enabled: true,
+      enabled: false,
       adminEnabled: false,
-      publicEnabled: true,
+      publicEnabled: false,
     });
     vi.stubEnv("FILE_UPLOAD_RECEIVER_URL", "");
     vi.stubEnv("FILE_UPLOAD_RECEIVER_ALLOWED_HOSTS", "");
@@ -270,7 +315,7 @@ describe("file upload job control plane", () => {
     expect(queries.some((entry) => entry.sql.includes("insert into"))).toBe(false);
   });
 
-  it("returns 503 for missing receiver configuration only after both admin gates", async () => {
+  it("returns 503 for missing receiver configuration only after both release gates", async () => {
     const { db, queries } = transactionDb();
     mocks.getDb.mockReturnValue(db);
     vi.stubEnv("FILE_UPLOAD_TOKEN_SECRET", "");
@@ -291,7 +336,7 @@ describe("file upload job control plane", () => {
     const response = await POST(jsonRequest(validBody));
     const body = await response.json();
 
-    expect(response.status).toBe(201);
+    expect(response.status, JSON.stringify(body)).toBe(201);
     expect(body).toMatchObject({
       projectNumber: 987,
       uploadUrl: expect.stringMatching(
@@ -426,15 +471,13 @@ describe("file upload job control plane", () => {
     expect(query(queries, "insert into shorts_mvp.video_jobs")).toBeUndefined();
   });
 
-  it("blocks a v5 upload from a non-loopback receiver before writing a job", async () => {
-    vi.stubEnv("NODE_ENV", "development");
-    vi.stubEnv("UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ENABLED", "true");
+  it("allows a v5 upload through the verified render release instead of a local-only exception", async () => {
     const customTemplateId = "35aa2b2e-e7df-48d7-9dbc-2b6224c4ffef";
     const config = upgradeTemplateConfigToV5(createDefaultTemplateConfig());
     const { db, queries } = transactionDb({
       customTemplate: {
         id: customTemplateId,
-        name: "원격 차단 통합 자막",
+        name: "검증된 통합 자막",
         baseTemplateId: "dark-minimal",
         config,
         version: 1,
@@ -447,14 +490,10 @@ describe("file upload job control plane", () => {
       customTemplateId,
     }));
 
-    expect(
-      response.status,
-      JSON.stringify(await response.clone().json()),
-    ).toBe(409);
-    await expect(response.json()).resolves.toMatchObject({
-      code: "UNIFIED_TEMPLATE_SUBTITLE_LOCAL_UPLOAD_ONLY",
-    });
-    expect(query(queries, "insert into shorts_mvp.video_jobs")).toBeUndefined();
+    expect(response.status).toBe(201);
+    expect(mocks.initialRenderRelease).toHaveBeenCalledOnce();
+    expect(query(queries, "insert into shorts_mvp.video_jobs")?.sql)
+      .toContain("initial_editor_release_id");
   });
 
   it("reissues the identical token and URL for an idempotent request without reserving twice", async () => {
@@ -775,11 +814,29 @@ describe("file upload job control plane", () => {
     expect(mocks.usageSnapshot).toHaveBeenCalledTimes(1);
   });
 
+  it("finalizes and releases an unclaimed reservation when capacity cannot start", async () => {
+    const { db, queries } = transactionDb();
+    mocks.getDb.mockReturnValue(db);
+    mocks.ensureUploadCapacity.mockRejectedValueOnce(new Error("lambda unavailable"));
+
+    const response = await POST(jsonRequest(validBody));
+    const body = await response.json();
+
+    expect(response.status, JSON.stringify(body)).toBe(503);
+    expect(body).toMatchObject({
+      code: "FILE_UPLOAD_CAPACITY_UNAVAILABLE",
+    });
+    expect(query(queries, "failure_code='upload_capacity_unavailable'"))
+      .toBeTruthy();
+    expect(query(queries, "finalize_project_job")).toBeTruthy();
+    expect(mocks.releaseUploadCapacity).toHaveBeenCalledTimes(1);
+  });
+
   it("has no stable-path dispatch, AWS wake, or outbox dependency", () => {
     const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
     expect(source).not.toContain("project_job_outbox");
     expect(source).not.toContain("wakeOutboxDispatcher");
-    expect(source).not.toContain("@/lib/aws");
+    expect(source).toContain("ensureFileUploadCapacity");
     expect(source).not.toContain("submitProjectJob");
   });
 });

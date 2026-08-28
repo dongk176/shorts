@@ -25,6 +25,10 @@ import { AdminManagedAccountsSection } from "./admin-managed-accounts-section";
 import { AdminInstallmentsDashboard } from "./admin-installments-dashboard";
 import { AdminCreatorProjects } from "./admin-creator-projects";
 import { AdminRuntimeSettings } from "./admin-runtime-settings";
+import {
+  AdminFileUploadRelease,
+  type FileUploadReleaseCheck,
+} from "./admin-file-upload-release";
 import { AdminTossBillingSettings } from "./admin-toss-billing-settings";
 import { AdminShortsEventSetting } from "./admin-shorts-event-setting";
 import {
@@ -76,6 +80,7 @@ import {
   shortsThankYouEventEnabled,
 } from "@/lib/shorts-thank-you-event";
 import { loadTossBillingRuntimeState } from "@/lib/toss-billing-runtime";
+import { fileUploadMasterEnabled } from "@/lib/file-upload-release";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = createNoIndexMetadata(
@@ -207,6 +212,43 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       ? loadAdminCreatorProjectShares(admin.id)
       : Promise.resolve([]),
   ]);
+  const [fileUploadStateRows, fileUploadCheckRows] = tab === "settings"
+    ? await Promise.all([
+        db`
+          select
+            coalesce(bool_or(enabled) filter (
+              where flag_key='file_upload'
+            ),false) as feature_enabled,
+            coalesce(bool_or(enabled) filter (
+              where flag_key='file_upload_public'
+            ),false) as public_enabled,
+            coalesce(bool_or(enabled) filter (
+              where flag_key='file_upload_emergency_stop'
+            ),false) as emergency_stopped,
+            (select count(*)::int from shorts_mvp.upload_sessions
+              where status in ('awaiting_upload','claimed')) as active_sessions,
+            (select count(*)::int from shorts_mvp.upload_sessions
+              where status='claimed'
+                and coalesce(heartbeat_at,claimed_at,created_at)
+                  < clock_timestamp()-interval '5 minutes') as stuck_sessions,
+            (select count(*)::int
+              from shorts_mvp.usage_reservations reservation
+              join shorts_mvp.video_jobs job on job.id=reservation.job_id
+              where job.source_type='upload'
+                and job.status in ('failed','cancelled','expired')
+                and reservation.released_at is null) as orphaned_reservations
+          from shorts_mvp.runtime_feature_flags
+          where flag_key in (
+            'file_upload','file_upload_public','file_upload_emergency_stop'
+          )
+        `,
+        db`
+          select check_key,passed,verified_at
+          from shorts_mvp.file_upload_release_checks
+          order by check_key
+        `,
+      ])
+    : [[], []];
   const [
     editorReleaseStateRows,
     editorReleaseRows,
@@ -892,6 +934,30 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         />
       ) : tab === "settings" ? (
         <>
+          <AdminFileUploadRelease
+            initialMode={fileUploadStateRows[0]?.emergencyStopped
+              ? "emergency_stop"
+              : fileUploadStateRows[0]?.publicEnabled
+                ? "public"
+                : fileUploadStateRows[0]?.featureEnabled
+                  ? "admin_test"
+                  : "stopped"}
+            environmentEnabled={fileUploadMasterEnabled()}
+            checks={fileUploadCheckRows.map((row) => ({
+              key: String(row.checkKey),
+              passed: Boolean(row.passed),
+              verifiedAt: iso(row.verifiedAt),
+            })) as FileUploadReleaseCheck[]}
+            activeSessions={Number(
+              fileUploadStateRows[0]?.activeSessions || 0,
+            )}
+            stuckSessions={Number(
+              fileUploadStateRows[0]?.stuckSessions || 0,
+            )}
+            orphanedReservations={Number(
+              fileUploadStateRows[0]?.orphanedReservations || 0,
+            )}
+          />
           {tossBillingRuntimeState ? (
             <AdminTossBillingSettings initialState={tossBillingRuntimeState} />
           ) : null}

@@ -4,12 +4,17 @@ import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
+import * as events from "aws-cdk-lib/aws-events";
+import * as eventTargets from "aws-cdk-lib/aws-events-targets";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
+import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import path from "node:path";
 import { Construct } from "constructs";
 
 export interface FileUploadCanaryProps extends cdk.StackProps {
@@ -22,7 +27,7 @@ const FILE_UPLOAD_CORS_ALLOWED_ORIGINS = [
   "https://www.easycut.co.kr",
   "https://easycut.co.kr",
 ];
-const CLOUDFRONT_ORIGIN_TIMEOUT_SECONDS = 60;
+const CLOUDFRONT_ORIGIN_TIMEOUT_SECONDS = 120;
 
 function requiredContext(stack: cdk.Stack, name: string) {
   const value = String(stack.node.tryGetContext(name) || "").trim();
@@ -42,9 +47,29 @@ function validateContext(stack: cdk.Stack) {
   if (!/^sha256:[0-9a-f]{64}$/.test(imageDigest)) {
     throw new Error("imageDigest must be an immutable sha256 digest");
   }
+  const workerSourceGitSha = requiredContext(stack, "workerSourceGitSha");
+  if (!/^[0-9a-f]{40}$/.test(workerSourceGitSha)) {
+    throw new Error("workerSourceGitSha must be an exact lowercase Git SHA");
+  }
+  const fontManifestSha256 = requiredContext(stack, "fontManifestSha256");
+  if (!/^[0-9a-f]{64}$/.test(fontManifestSha256)) {
+    throw new Error("fontManifestSha256 must be an exact lowercase SHA-256");
+  }
   const runtimeSecretArn = requiredContext(stack, "runtimeSecretArn");
   if (!/^arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+/.test(runtimeSecretArn)) {
     throw new Error("runtimeSecretArn must be a complete Secrets Manager ARN");
+  }
+  const vercelControlPlaneRoleArn = requiredContext(
+    stack,
+    "vercelControlPlaneRoleArn",
+  );
+  const vercelRoleMatch = vercelControlPlaneRoleArn.match(
+    /^arn:[^:]+:iam::([0-9]{12}):role\/[A-Za-z0-9+=,.@_/-]+$/,
+  );
+  if (!vercelRoleMatch || vercelRoleMatch[1] !== repositoryMatch[1]) {
+    throw new Error(
+      "vercelControlPlaneRoleArn must be an exact role ARN in the worker account",
+    );
   }
   const mediaBucketName = requiredContext(stack, "mediaBucketName");
   const cloudfrontPrefixListId = requiredContext(stack, "cloudfrontPrefixListId");
@@ -78,8 +103,8 @@ function validateContext(stack: cdk.Stack) {
   const desiredCountText = desiredCountRaw === undefined
     ? "0"
     : String(desiredCountRaw).trim();
-  if (desiredCountText !== "0" && desiredCountText !== "1") {
-    throw new Error("fileUploadDesiredCount must be exactly 0 or 1");
+  if (!/^(?:[0-9]|1[0-9]|20)$/.test(desiredCountText)) {
+    throw new Error("fileUploadDesiredCount must be between 0 and 20");
   }
   return {
     repositoryUri,
@@ -87,7 +112,10 @@ function validateContext(stack: cdk.Stack) {
     repositoryRegion: repositoryMatch[2],
     repositoryName: repositoryMatch[3],
     imageDigest,
+    workerSourceGitSha,
+    fontManifestSha256,
     runtimeSecretArn,
+    vercelControlPlaneRoleArn,
     mediaBucketName,
     cloudfrontPrefixListId,
     originVerifyHeader,
@@ -111,6 +139,8 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: FileUploadCanaryProps) {
     super(scope, id, props);
     const context = validateContext(this);
+    const clusterName = `shorts-mvp-file-upload-${props.environment}`;
+    const serviceName = `shorts-mvp-file-upload-${props.environment}`;
 
     const vpc = new ec2.Vpc(this, "Vpc", {
       vpcName: `shorts-mvp-file-upload-${props.environment}`,
@@ -134,7 +164,7 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
     const cluster = new ecs.Cluster(this, "Cluster", {
-      clusterName: `shorts-mvp-file-upload-${props.environment}`,
+      clusterName,
       vpc,
       containerInsightsV2: ecs.ContainerInsights.ENABLED,
       managedStorageConfiguration: {
@@ -198,6 +228,14 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
       assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
       description: "File-upload canary task role without raw-source S3 access",
     });
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      sid: "ProtectOnlyThisUploadCluster",
+      actions: ["ecs:UpdateTaskProtection"],
+      resources: ["*"],
+      conditions: {
+        ArnEquals: { "ecs:cluster": cluster.clusterArn },
+      },
+    }));
     const executionRole = new iam.Role(this, "ExecutionRole", {
       assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
       managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName(
@@ -249,6 +287,7 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
         operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
       },
     });
+    taskDefinition.addVolume({ name: "UploadScratch" });
     const logGroup = new logs.LogGroup(this, "LogGroup", {
       logGroupName: `/shorts-mvp/${props.environment}/file-upload-canary`,
       retention: logs.RetentionDays.TWO_WEEKS,
@@ -271,7 +310,13 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
     const container = taskDefinition.addContainer("Receiver", {
       containerName: "file-upload-receiver",
       image: ecs.ContainerImage.fromEcrRepository(workerRepository, context.imageDigest),
-      command: ["python", "-m", "shorts_worker.upload_service"],
+      // Override both the image ENTRYPOINT and CMD. The shared render image's
+      // entrypoint prepares YouTube egress, which an upload-only task must
+      // never execute (and cannot execute with a read-only root filesystem).
+      entryPoint: ["/usr/local/bin/python", "-m", "shorts_worker.upload_service"],
+      command: [],
+      readonlyRootFilesystem: true,
+      user: "10001:10001",
       logging: ecs.LogDrivers.awsLogs({
         logGroup,
         streamPrefix: "receiver",
@@ -289,6 +334,14 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
           ...(context.previewOrigin ? [context.previewOrigin] : []),
         ].join(","),
         FILE_UPLOAD_SOCKET_IDLE_TIMEOUT_SECONDS: "120",
+        FILE_UPLOAD_SCALE_IN_PROTECTION_REQUIRED: "true",
+        FILE_UPLOAD_SCALE_IN_PROTECTION_MINUTES: "30",
+        EDITOR_RELEASE_GIT_SHA: context.workerSourceGitSha,
+        EDITOR_RENDER_SPEC_VERSION: "4",
+        EDITOR_CAPTION_RENDER_SPEC_VERSION: "4",
+        EDITOR_FONT_MANIFEST_SHA256: context.fontManifestSha256,
+        WORKER_IMAGE_DIGEST: context.imageDigest,
+        PYTHONDONTWRITEBYTECODE: "1",
         ELEVENLABS_TRANSCRIBE_MODEL: "scribe_v2",
         OPENAI_TRANSCRIBE_MODEL: "gpt-4o-mini-transcribe",
         OPENAI_TRANSCRIBE_FALLBACK_MODEL: "whisper-1",
@@ -308,7 +361,11 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
         PORT: String(RECEIVER_PORT),
         PROJECT_RESOURCE_TIER: "file_upload_canary",
         SOURCE_STORAGE_MODE: "ephemeral_only",
-        TEMP_ROOT: "/tmp/shorts-jobs",
+        TEMP_ROOT: "/scratch/shorts-jobs",
+        TMPDIR: "/scratch/shorts-jobs",
+        TMP: "/scratch/shorts-jobs",
+        TEMP: "/scratch/shorts-jobs",
+        XDG_CACHE_HOME: "/scratch/shorts-jobs/.cache",
         WORKER_IMAGE_TAG: context.imageDigest,
       },
       secrets: {
@@ -327,7 +384,7 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
       healthCheck: {
         command: [
           "CMD-SHELL",
-          `python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:${RECEIVER_PORT}/healthz',timeout=3)\" || exit 1`,
+          `python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:${RECEIVER_PORT}/livez',timeout=3)\" || exit 1`,
         ],
         interval: cdk.Duration.seconds(30),
         timeout: cdk.Duration.seconds(5),
@@ -341,9 +398,14 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
       containerPort: RECEIVER_PORT,
       protocol: ecs.Protocol.TCP,
     });
+    container.addMountPoints({
+      containerPath: "/scratch",
+      sourceVolume: "UploadScratch",
+      readOnly: false,
+    });
 
     const service = new ecs.FargateService(this, "Service", {
-      serviceName: `shorts-mvp-file-upload-${props.environment}`,
+      serviceName,
       cluster,
       taskDefinition,
       // A new stack is intentionally cold until quotas, exact preview CORS,
@@ -356,9 +418,15 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
       minHealthyPercent: 0,
       maxHealthyPercent: 100,
       circuitBreaker: { rollback: true },
-      healthCheckGracePeriod: cdk.Duration.minutes(2),
+      // The ALB intentionally removes a busy one-concurrency receiver from
+      // routing by probing /readyz. ECS must not interpret that readiness
+      // signal as a dead process and replace a task while its protected upload
+      // and render pipeline is still running. /livez remains the container
+      // liveness check; every task is expected to finish well inside 6 hours.
+      healthCheckGracePeriod: cdk.Duration.hours(6),
       enableExecuteCommand: false,
     });
+    service.autoScaleTaskCount({ minCapacity: 0, maxCapacity: 20 });
 
     const loadBalancer = new elbv2.ApplicationLoadBalancer(this, "LoadBalancer", {
       vpc,
@@ -377,7 +445,7 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
         enabled: true,
         healthyHttpCodes: "200",
         interval: cdk.Duration.seconds(30),
-        path: "/healthz",
+        path: "/readyz",
         timeout: cdk.Duration.seconds(5),
       },
     });
@@ -450,6 +518,85 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
     });
     new cdk.CfnOutput(this, "FileUploadServiceName", {
       value: service.serviceName,
+    });
+
+    const capacityState = new dynamodb.Table(this, "CapacityState", {
+      tableName: `shorts-mvp-file-upload-capacity-${props.environment}`,
+      partitionKey: { name: "id", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled: true,
+      },
+      timeToLiveAttribute: "expiresAtEpoch",
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+    const capacityCoordinator = new lambda.Function(this, "CapacityCoordinator", {
+      functionName: `shorts-mvp-file-upload-capacity-${props.environment}`,
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: "index.handler",
+      code: lambda.Code.fromAsset(path.join(
+        __dirname,
+        "../lambda/file_upload_capacity",
+      )),
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        ECS_CLUSTER: clusterName,
+        ECS_SERVICE: serviceName,
+        CAPACITY_TABLE: capacityState.tableName,
+        MAX_CAPACITY: "20",
+        WARM_SECONDS: "600",
+      },
+    });
+    capacityCoordinator.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        "dynamodb:GetItem",
+        "dynamodb:Scan",
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem",
+      ],
+      resources: [capacityState.tableArn],
+    }));
+    const serviceArn = this.formatArn({
+      service: "ecs",
+      resource: "service",
+      resourceName: `${clusterName}/${serviceName}`,
+    });
+    capacityCoordinator.addToRolePolicy(new iam.PolicyStatement({
+      actions: ["ecs:DescribeServices", "ecs:UpdateService"],
+      resources: [serviceArn],
+    }));
+    capacityCoordinator.addToRolePolicy(new iam.PolicyStatement({
+      actions: ["ecs:ListTasks", "ecs:GetTaskProtection"],
+      resources: ["*"],
+      conditions: {
+        ArnEquals: { "ecs:cluster": cluster.clusterArn },
+      },
+    }));
+    new events.Rule(this, "CapacityReconcileSchedule", {
+      schedule: events.Schedule.rate(cdk.Duration.minutes(1)),
+      targets: [new eventTargets.LambdaFunction(capacityCoordinator, {
+        event: events.RuleTargetInput.fromObject({ action: "reconcile" }),
+      })],
+    });
+    capacityCoordinator.grantInvoke(taskRole);
+    // The production web role receives only invoke permission for this exact
+    // coordinator. It cannot update ECS, enumerate tasks, or access the lease
+    // table directly.
+    const vercelControlPlaneRole = iam.Role.fromRoleArn(
+      this,
+      "VercelControlPlaneRole",
+      context.vercelControlPlaneRoleArn,
+      { mutable: true },
+    );
+    capacityCoordinator.grantInvoke(vercelControlPlaneRole);
+    container.addEnvironment(
+      "FILE_UPLOAD_CAPACITY_FUNCTION_ARN",
+      capacityCoordinator.functionArn,
+    );
+    new cdk.CfnOutput(this, "FileUploadCapacityFunctionArn", {
+      value: capacityCoordinator.functionArn,
     });
   }
 }

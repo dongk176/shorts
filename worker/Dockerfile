@@ -43,7 +43,10 @@ RUN apk add --no-cache --upgrade \
         libssl3=3.5.8-r0 \
         openssl=3.5.8-r0 \
         pango \
-        pixman
+        pixman \
+    && addgroup -g 10001 easycut \
+    && adduser -D -H -u 10001 -G easycut easycut \
+    && install -d -o easycut -g easycut -m 0700 /scratch
 
 COPY --from=po-token-builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=po-token-builder \

@@ -225,11 +225,11 @@ test("release workflow promotes one tested digest without deploying the website"
   assert.doesNotMatch(workflow, /vars\.AWS_WORKER_BUILD_ROLE_ARN/);
   assert.match(
     workflow,
-    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260828-18'/,
+    /github\.ref == 'refs\/tags\/editor-v4-render-parity-20260828-19'/,
   );
   assert.deepEqual(
     [...new Set(workflow.match(/editor-v4-render-parity-[0-9]{8}-[0-9]+/g))],
-    ["editor-v4-render-parity-20260828-18"],
+    ["editor-v4-render-parity-20260828-19"],
   );
   assert.equal(workflow.match(/fetch-depth: 0/g)?.length, 2);
   assert.equal(workflow.match(/fetch-tags: true/g)?.length, 2);
@@ -355,11 +355,15 @@ test("render-spec v4 release control is additive, immutable, and off by default"
   );
   assert.doesNotMatch(migration, /\bupdate\s+shorts_mvp\.(?:video_jobs|generated_shorts|editor_releases)\b/i);
   assert.doesNotMatch(migration, /\bdrop\s+(?:table|column)\b/i);
-  const jobsRoute = await source("web/app/api/jobs/route.ts");
-  assert.match(jobsRoute, /resolve_initial_render_v4_release/);
+  const [jobsRoute, initialReleaseResolver] = await Promise.all([
+    source("web/app/api/jobs/route.ts"),
+    source("web/lib/initial-render-release.ts"),
+  ]);
+  assert.match(initialReleaseResolver, /resolve_initial_render_v4_release/);
+  assert.match(jobsRoute, /resolveInitialRenderRelease/);
   assert.match(jobsRoute, /initial_render_spec_version, initial_caption_render_spec_version/);
   const admissionCheck = jobsRoute.indexOf("assertJobCreationAllowed({");
-  const resolver = jobsRoute.indexOf("resolve_initial_render_v4_release(");
+  const resolver = jobsRoute.indexOf("resolveInitialRenderRelease(tx,");
   const jobInsert = jobsRoute.indexOf("insert into shorts_mvp.video_jobs (");
   assert.ok(admissionCheck >= 0 && resolver > admissionCheck);
   assert.ok(jobInsert > resolver);
@@ -433,6 +437,9 @@ test("candidate worker uses a pinned, scan-friendly image with render dependenci
     /FROM python:3\.12-alpine3\.22@sha256:[a-f0-9]{64} AS worker-base[\s\S]*RUN apk add --no-cache --upgrade[\s\S]*libcrypto3=3\.5\.8-r0[\s\S]*libssl3=3\.5\.8-r0[\s\S]*openssl=3\.5\.8-r0/,
   );
   assert.match(dockerfile, /apk add --no-cache font-noto-cjk/);
+  assert.match(dockerfile, /addgroup -g 10001 easycut/);
+  assert.match(dockerfile, /adduser -D -H -u 10001 -G easycut easycut/);
+  assert.match(dockerfile, /install -d -o easycut -g easycut -m 0700 \/scratch/);
   assert.doesNotMatch(dockerfile, /python:3\.12-slim/);
   assert.match(overlays, /\/usr\/share\/fonts\/noto\/NotoSansCJK-Bold\.ttc/);
   assert.match(overlays, /\/usr\/share\/fonts\/noto\/NotoSansCJK-Regular\.ttc/);
