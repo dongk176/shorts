@@ -9,7 +9,7 @@ import {
 } from "./production-project-targets.mjs";
 
 export const STAGE_B_EDITOR_RELEASE_REF =
-  "refs/tags/editor-v4-render-parity-20260828-19";
+  "refs/tags/editor-v4-render-parity-20260829-1";
 export const STAGE_B_DISABLED_EDITOR_RELEASE_REF =
   "refs/tags/__disabled_editor_release__";
 
