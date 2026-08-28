@@ -38,6 +38,18 @@ describe("shared initial render contract", () => {
       timingLeadFrames: 7,
       wordGapPx: 6,
     });
+    expect(upload.videoAspectRatio).toBe("16:9");
+    expect(upload.templateSnapshot).toMatchObject({
+      presetVersion: 3,
+      brandColor: "#35E6E3",
+      config: {
+        schemaVersion: 5,
+        video: { aspectRatio: "16:9", y: 432, height: 608 },
+        title: { y: 295 },
+        subtitle: { variant: "pop", y: 1158 },
+        channel: { y: 1790 },
+      },
+    });
   });
 
   it("preserves a unified custom-template subtitle snapshot unchanged", () => {

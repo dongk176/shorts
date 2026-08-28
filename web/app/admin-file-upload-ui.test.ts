@@ -41,4 +41,18 @@ describe("administrator file upload UI isolation", () => {
       "} catch (cause) {\n      if (uploadSessionId) {",
     );
   });
+
+  it("guards the active transfer in a modal and confirms server receipt explicitly", () => {
+    expect(source).toContain("const uploadExitGuardActive = uploadPreparationActive || uploadTransferActive");
+    expect(source).toContain('window.addEventListener("beforeunload", warnBeforeUnload)');
+    expect(source).toContain('aria-modal="true"');
+    expect(source).toContain("업로드 완료");
+    expect(source).toContain("setUploadCompletionOpen(true)");
+    expect(source).toContain('uploadDragActive ? "is-dragging"');
+  });
+
+  it("does not invent a visible channel name for local uploads", () => {
+    expect(source).toContain('channelName: "",');
+    expect(source).not.toContain('channelName: "업로드한 영상"');
+  });
 });

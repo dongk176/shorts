@@ -304,7 +304,7 @@ export function ProjectCard({ job }: { job: VideoJob }) {
           className="block overflow-hidden rounded-[13px]"
         >
           <div className="relative aspect-video overflow-hidden bg-neutral-900">
-            {job.thumbnailUrl ? <YoutubeThumbnail src={job.thumbnailUrl} alt="" fill unoptimized className={`object-cover transition duration-300 group-hover:scale-[1.03] ${isProcessing ? "grayscale" : ""}`} /> : null}
+            {job.thumbnailUrl ? <YoutubeThumbnail key={`${job.thumbnailUrl}:${job.stage}:${job.status}`} src={job.thumbnailUrl} alt="" fill unoptimized className={`object-cover transition duration-300 group-hover:scale-[1.03] ${isProcessing ? "grayscale" : ""}`} /> : null}
             <div className="absolute left-2 top-2 z-10 flex flex-col items-start gap-1.5">
               {job.isExample && <span className="rounded bg-[#ff5540] px-2.5 py-1 text-[11px] font-extrabold text-white shadow-lg">{locale === "ko" ? "예시 작업" : locale === "en" ? "Example" : "サンプル"}</span>}
               {daysUntilExpiration !== null && <span className="rounded bg-black/75 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">{projectExpired ? (locale === "ko" ? "만료됨" : locale === "en" ? "Expired" : "期限切れ") : daysUntilExpiration > 0 ? (locale === "ko" ? `${daysUntilExpiration}일 뒤 만료` : locale === "en" ? `Expires in ${daysUntilExpiration} days` : `あと${daysUntilExpiration}日で期限切れ`) : (locale === "ko" ? "오늘 만료" : locale === "en" ? "Expires today" : "本日期限切れ")}</span>}

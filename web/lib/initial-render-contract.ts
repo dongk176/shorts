@@ -1,6 +1,9 @@
 import type { VideoAspectRatio } from "@/lib/contracts";
 import type { ResolvedTemplateExecutionSnapshot } from "@/lib/template-execution-snapshot";
-import type { TemplatePresetColor } from "@/lib/template-config";
+import {
+  createUnifiedSubtitleTemplateConfig,
+  type TemplatePresetColor,
+} from "@/lib/template-config";
 import {
   STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
   SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
@@ -8,6 +11,25 @@ import {
   type SubtitleCaptionPlacement,
   type SubtitleTemplateSelectionId,
 } from "@/lib/subtitle-templates";
+
+function builtInSubtitleTemplateSnapshot({
+  subtitleTemplateId,
+  brandColor,
+}: {
+  subtitleTemplateId: SubtitleTemplateSelectionId;
+  brandColor?: TemplatePresetColor;
+}) {
+  const config = createUnifiedSubtitleTemplateConfig(subtitleTemplateId);
+  if (brandColor) {
+    config.title.accentColor = brandColor;
+    config.subtitle.accentColor = brandColor;
+  }
+  return {
+    presetVersion: 3 as const,
+    ...(brandColor ? { brandColor } : {}),
+    config,
+  };
+}
 
 /**
  * The source acquisition path ends before this function. Link and file-upload
@@ -22,10 +44,19 @@ export function createInitialRenderContract(input: {
   enhancedSubtitleTiming: boolean;
 }) {
   const resolved = input.resolvedExecution;
+  const builtInSubtitleSnapshot = input.subtitleTemplateId
+    ? builtInSubtitleTemplateSnapshot({
+        subtitleTemplateId: input.subtitleTemplateId,
+        brandColor: input.brandColor,
+      })
+    : null;
+  const videoAspectRatio = builtInSubtitleSnapshot
+    ? builtInSubtitleSnapshot.config.video.aspectRatio
+    : resolved.resolvedVideoAspectRatio;
   const subtitleTemplateSnapshot = input.subtitleTemplateId
     ? subtitleTemplateStyleSnapshot(
         input.subtitleTemplateId,
-        resolved.resolvedVideoAspectRatio,
+        videoAspectRatio,
         input.brandColor,
         input.subtitleCaptionPlacement ?? "lower",
         undefined,
@@ -36,8 +67,8 @@ export function createInitialRenderContract(input: {
     : resolved.subtitleTemplateSnapshot;
   return {
     templateId: resolved.resolvedTemplateId,
-    videoAspectRatio: resolved.resolvedVideoAspectRatio as VideoAspectRatio,
-    templateSnapshot: resolved.templateSnapshot,
+    videoAspectRatio: videoAspectRatio as VideoAspectRatio,
+    templateSnapshot: builtInSubtitleSnapshot ?? resolved.templateSnapshot,
     subtitleTemplateId: subtitleTemplateSnapshot?.subtitleTemplateId ?? null,
     subtitleTemplateSnapshot,
   };

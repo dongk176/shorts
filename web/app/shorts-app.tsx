@@ -13150,6 +13150,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadTransferActive, setUploadTransferActive] = useState(false);
   const [uploadPreparationActive, setUploadPreparationActive] = useState(false);
+  const [uploadDragActive, setUploadDragActive] = useState(false);
+  const [uploadCompletionOpen, setUploadCompletionOpen] = useState(false);
+  const uploadDragDepth = useRef(0);
   const uploadAbortController = useRef<AbortController | null>(null);
   const activeUploadSessionId = useRef<string | null>(null);
   const uploadRequestId = useRef<string | null>(null);
@@ -13202,10 +13205,12 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const hasBackgroundWork = Boolean(state?.recentJobs.some((job) => !terminalStatuses.has(job.status) || job.shorts.some((item) => item.status === "rerendering")));
   const uploadModeEnabled = state?.capabilities.fileUpload === true;
   const uploadSourceActive = sourceMode === "upload" && uploadModeEnabled && uploadVideo !== null;
+  const uploadExitGuardActive = uploadPreparationActive || uploadTransferActive;
+  const uploadLifecycleOverlayOpen = uploadExitGuardActive || uploadCompletionOpen;
   const selectedSource = useMemo(() => sourceMode === "upload" ? uploadSourceActive ? {
       key: `upload:${uploadVideo.file.name}:${uploadVideo.file.size}:${uploadVideo.file.lastModified}`,
       title: uploadVideo.title,
-      channelName: "업로드한 영상",
+      channelName: "",
       channelThumbnailUrl: null,
       thumbnailUrl: uploadVideo.thumbnailDataUrl,
       durationSeconds: uploadVideo.durationSeconds,
@@ -13334,14 +13339,23 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   }, []);
 
   useEffect(() => {
-    if (!uploadTransferActive) return;
+    if (!uploadExitGuardActive) return;
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [uploadTransferActive]);
+  }, [uploadExitGuardActive]);
+
+  useEffect(() => {
+    if (!uploadLifecycleOverlayOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [uploadLifecycleOverlayOpen]);
 
   useEffect(() => {
     if (uploadModeEnabled || sourceMode !== "upload") return;
@@ -13691,6 +13705,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     uploadRequestIntentKey.current = null;
     setSourceMode(nextMode);
     setUploadProgress(null);
+    setUploadCompletionOpen(false);
+    setUploadDragActive(false);
+    uploadDragDepth.current = 0;
     setRightsConfirmed(false);
     setRightsConfirmationAttention(false);
     setCreationRestrictionOpen(false);
@@ -13708,6 +13725,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     uploadRequestIntentKey.current = null;
     setUploadInspectionBusy(true);
     setUploadProgress(null);
+    setUploadCompletionOpen(false);
+    setUploadDragActive(false);
+    uploadDragDepth.current = 0;
     setUploadVideo(null);
     setRightsConfirmed(false);
     setRightsConfirmationAttention(false);
@@ -13848,6 +13868,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     let uploadSessionId: string | null = null;
     setBusy(true);
     setUploadProgress(0);
+    setUploadCompletionOpen(false);
+    setUploadPreparationActive(true);
     setError(null);
     try {
       const value = await requestJson<{
@@ -13898,7 +13920,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         projectNumber: value.projectNumber,
         isExample: false,
         videoTitle: uploadVideo.title,
-        channelName: "업로드한 영상",
+        channelName: "",
         channelThumbnailUrl: null,
         thumbnailUrl: uploadVideo.thumbnailDataUrl,
         sourceDurationSeconds: uploadVideo.durationSeconds,
@@ -13958,6 +13980,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       setUploadPreparationActive(false);
       setUploadTransferActive(false);
       setUploadProgress(100);
+      setUploadCompletionOpen(true);
       setUploadVideo(null);
       setRightsConfirmed(false);
       setRightsConfirmationAttention(false);
@@ -14007,6 +14030,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       }
       if (receiverAccepted) {
         setUploadProgress(100);
+        setUploadCompletionOpen(true);
         setUploadVideo(null);
         setRightsConfirmed(false);
         setRightsConfirmationAttention(false);
@@ -14229,6 +14253,71 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         grantedSeconds={shortsEventGrantedSeconds}
         onClose={closeShortsEventParticipation}
       />
+      {uploadLifecycleOverlayOpen ? (
+        <div
+          className="fixed inset-0 z-[170] grid place-items-center bg-black/80 px-5 py-8 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="upload-lifecycle-title"
+          aria-describedby="upload-lifecycle-description"
+        >
+          <div className="w-full max-w-[460px] rounded-[26px] border border-white/15 bg-[#181a1c] p-6 shadow-[0_28px_90px_rgba(0,0,0,.55)] sm:p-8">
+            {uploadCompletionOpen && !uploadExitGuardActive ? (
+              <>
+                <span className="grid h-12 w-12 place-items-center rounded-full border border-emerald-300/30 bg-emerald-300/10 text-2xl font-black text-emerald-200" aria-hidden="true">✓</span>
+                <h2 id="upload-lifecycle-title" className="mt-5 text-2xl font-black text-white">업로드 완료</h2>
+                <p id="upload-lifecycle-description" className="mt-3 text-sm font-semibold leading-6 text-neutral-300">
+                  원본 영상이 안전하게 전달되었습니다. 이제 창을 닫아도 쇼츠 생성 작업은 계속됩니다.
+                </p>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => {
+                    setUploadCompletionOpen(false);
+                    setUploadProgress(null);
+                  }}
+                  className="mt-7 h-12 w-full rounded-xl bg-white text-sm font-black text-black transition hover:bg-neutral-100 active:scale-[.99]"
+                >
+                  확인
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="grid h-12 w-12 place-items-center rounded-full border border-[#ff8f7f]/30 bg-[#ff715e]/10" aria-hidden="true">
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-[#ffb4a8]/30 border-t-[#ff8f7f] motion-reduce:animate-none" />
+                </span>
+                <h2 id="upload-lifecycle-title" className="mt-5 text-2xl font-black text-white">
+                  {uploadTransferActive ? "영상을 업로드하고 있어요" : "업로드 서버를 준비하고 있어요"}
+                </h2>
+                <p id="upload-lifecycle-description" className="mt-3 text-sm font-semibold leading-6 text-neutral-300">
+                  {uploadTransferActive
+                    ? "업로드가 완료될 때까지만 이 탭을 열어두세요. 다른 탭은 이용할 수 있으며, 완료 후에는 창을 닫아도 작업이 계속됩니다."
+                    : "준비가 끝나면 영상 업로드가 자동으로 시작됩니다. 잠시만 기다려 주세요."}
+                </p>
+                <div className="mt-6 overflow-hidden rounded-full bg-white/10 p-1" aria-label={`업로드 진행률 ${uploadProgress || 0}%`}>
+                  <span
+                    className="block h-2 rounded-full bg-[#ff715e] transition-[width] duration-300"
+                    style={{ width: `${uploadTransferActive ? uploadProgress || 0 : 8}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-center text-xs font-extrabold tabular-nums text-neutral-400">
+                  {uploadTransferActive ? `${uploadProgress || 0}%` : "서버 준비 중"}
+                </p>
+                <p className="mt-5 text-xs font-semibold leading-5 text-amber-100/80">
+                  모바일에서는 화면 전환이나 절전으로 전송이 중단될 수 있습니다.
+                </p>
+                <button
+                  type="button"
+                  onClick={cancelActiveUpload}
+                  className="mt-5 h-11 w-full rounded-xl border border-white/15 text-sm font-extrabold text-neutral-200 transition hover:bg-white/[.06]"
+                >
+                  {uploadTransferActive ? "업로드 중단" : "준비 취소"}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
       <NoticeDialog
         open={conversionMaintenanceOpen}
         dialogId="conversion-maintenance"
@@ -14343,16 +14432,32 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               type="button"
               disabled={busy || uploadInspectionBusy}
               onClick={() => uploadFileInputRef.current?.click()}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                uploadDragDepth.current += 1;
+                setUploadDragActive(true);
+              }}
               onDragOver={(event) => {
                 event.preventDefault();
                 event.dataTransfer.dropEffect = "copy";
               }}
+              onDragLeave={(event) => {
+                event.preventDefault();
+                uploadDragDepth.current = Math.max(0, uploadDragDepth.current - 1);
+                if (uploadDragDepth.current === 0) setUploadDragActive(false);
+              }}
+              onDragEnd={() => {
+                uploadDragDepth.current = 0;
+                setUploadDragActive(false);
+              }}
               onDrop={(event) => {
                 event.preventDefault();
+                uploadDragDepth.current = 0;
+                setUploadDragActive(false);
                 const file = event.dataTransfer.files[0];
                 if (file) void prepareSelectedUpload(file);
               }}
-              className={`source-upload-dropzone ${uploadVideo ? "has-file has-thumbnail" : ""} ${busy || uploadInspectionBusy ? "is-busy" : ""}`}
+              className={`source-upload-dropzone ${uploadVideo ? "has-file has-thumbnail" : ""} ${uploadDragActive ? "is-dragging" : ""} ${busy || uploadInspectionBusy ? "is-busy" : ""}`}
             >
               {uploadVideo ? (
                 <>
@@ -14378,32 +14483,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                   {uploadInspectionBusy ? <span className="source-upload-feedback">영상 정보를 확인하고 있습니다…</span> : null}
                 </>
               )}
-              {uploadProgress !== null ? (
-                <span className="source-upload-progress">
-                  <span className="source-upload-progress-value" style={{ width: `${uploadProgress}%` }} />
-                  <span className="source-upload-progress-label">원본 업로드 {uploadProgress}%</span>
-                </span>
-              ) : null}
             </button>
-            {uploadPreparationActive ? (
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-300/20 bg-sky-300/[.07] px-4 py-3 text-sm font-bold leading-6 text-sky-100" role="status">
-                <span>안전한 업로드 서버를 준비하고 있습니다. 준비가 끝나면 자동으로 업로드를 시작합니다.</span>
-                <button type="button" onClick={cancelActiveUpload} className="min-h-9 rounded-lg border border-sky-100/25 px-3 text-xs font-extrabold text-white transition hover:bg-white/10">
-                  준비 취소
-                </button>
-              </div>
-            ) : uploadTransferActive ? (
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/20 bg-amber-300/[.07] px-4 py-3 text-sm font-bold leading-6 text-amber-100" role="status">
-                <span>영상 업로드가 완료될 때까지만 이 탭을 열어두세요. 다른 탭은 이용할 수 있으며, 업로드 완료 후에는 창을 닫아도 작업이 계속됩니다. 모바일에서는 화면 전환이나 절전으로 전송이 중단될 수 있습니다.</span>
-                <button type="button" onClick={cancelActiveUpload} className="min-h-9 rounded-lg border border-amber-100/25 px-3 text-xs font-extrabold text-white transition hover:bg-white/10">
-                  업로드 중단
-                </button>
-              </div>
-            ) : uploadProgress === 100 ? (
-              <p className="mt-3 rounded-xl border border-emerald-300/20 bg-emerald-300/[.07] px-4 py-3 text-sm font-bold text-emerald-100" role="status">
-                업로드 완료 · 이제 창을 닫아도 됩니다.
-              </p>
-            ) : null}
           </div>
         )}
       </section>

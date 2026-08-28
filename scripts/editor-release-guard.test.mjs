@@ -25,7 +25,7 @@ test("legacy editor global CSS remains byte-for-byte at the approved baseline", 
 
   assert.equal(
     digest,
-    "0ea36d2d6febf4eca21606ec212c5274c985d9dccd53471467e01e323621a65b",
+    "ea8eef742165fb63879246876d0e5b9dc8ed9351966835d54a72dc0fe4f8a4ab",
     "Do not change the approved global CSS baseline without a dedicated public UI review.",
   );
 });

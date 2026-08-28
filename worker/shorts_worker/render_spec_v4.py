@@ -385,6 +385,7 @@ def compile_initial_editor_render_spec_v4(
     custom_template_config: CustomTemplateConfig | dict[str, object] | None = None,
     comments: Sequence[CommentOverlay | dict[str, object]] = (),
     caption_render_spec: dict[str, object] | None = None,
+    channel_visible: bool = True,
 ) -> dict[str, object]:
     """Compile the complete authoritative v4 spec before the first render.
 
@@ -466,7 +467,8 @@ def compile_initial_editor_render_spec_v4(
             "offsetX": 0,
             "offsetY": 0,
             "scale": 1,
-            "visible": config.channel.visible if config is not None else True,
+            "visible": channel_visible
+            and (config.channel.visible if config is not None else True),
             "font": editor_font_face_v4(
                 EditorFontId.PRETENDARD,
                 requested_weight=700,

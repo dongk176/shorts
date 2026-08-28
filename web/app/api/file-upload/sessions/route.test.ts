@@ -359,7 +359,7 @@ describe("file upload job control plane", () => {
     expect(jobInsert?.values).toEqual(expect.arrayContaining([
       null,
       "test-video.mp4",
-      "업로드한 영상",
+      "",
       "/api/projects/987/source-thumbnail",
       300,
     ]));

@@ -1995,6 +1995,7 @@ class BatchWorker:
                 custom_template_config=_custom_template_config(job),
                 comments=comments,
                 caption_render_spec=visible_caption_spec,
+                channel_visible=bool(str(job.get("channel_name") or "").strip()),
             )
             if initial_v4
             else None

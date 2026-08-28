@@ -2308,15 +2308,24 @@ describe("job API security and idempotency", () => {
       ));
     expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([
       "highlight",
-      expect.objectContaining({ presetVersion: 3, brandColor: "#FF715E" }),
+      expect.objectContaining({
+        presetVersion: 3,
+        brandColor: "#FF715E",
+        config: expect.objectContaining({
+          schemaVersion: 5,
+          video: expect.objectContaining({ aspectRatio: "16:9", y: 432 }),
+          title: expect.objectContaining({ y: 295 }),
+          subtitle: expect.objectContaining({ variant: "highlight", y: 1158 }),
+        }),
+      }),
       expect.objectContaining({
         subtitleTemplateId: "highlight",
         selectionId: "highlight",
         captionPlacement: "center",
         baseTemplateId: "dark-minimal",
-        videoAspectRatio: "9:16",
+        videoAspectRatio: "16:9",
         color: expect.objectContaining({ active: "#FF715E" }),
-        safeArea: { x: 120, y: 890, width: 840, height: 140 },
+        safeArea: { x: 120, y: 666, width: 840, height: 140 },
       }),
       "elevenlabs_primary_openai_fallback",
       "subtitle_templates",

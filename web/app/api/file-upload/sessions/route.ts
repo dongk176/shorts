@@ -597,7 +597,7 @@ export async function POST(request: Request) {
           initial_render_spec_version,initial_caption_render_spec_version
         ) values (
           ${jobId},${projectNumber},${session.id},${session.userId},${input.requestId},
-          ${null},${null},${originalFilename},${"업로드한 영상"},
+          ${null},${null},${originalFilename},${""},
           ${null},${thumbnailUrl},${sourceDurationSeconds},
           ${input.rangeStartSeconds},${input.rangeEndSeconds},${resolvedTemplateId},
           ${input.customTemplateId || null},${tx.json(templateSnapshot)},${resolvedVideoAspectRatio},

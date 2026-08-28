@@ -35,6 +35,72 @@ def test_initial_render_spec_v4_is_complete_without_synthetic_subtitles() -> Non
     assert parsed.layer_order == ["video", "title", "comment", "channel"]
 
 
+def test_initial_render_spec_v4_uses_canonical_unified_layout_and_hides_empty_channel() -> None:
+    config = {
+        "schemaVersion": 5,
+        "background": {"kind": "color", "color": "#000000"},
+        "video": {
+            "aspectRatio": "16:9",
+            "x": 0,
+            "y": 432,
+            "width": 1080,
+            "height": 608,
+            "fit": "cover",
+        },
+        "title": {
+            "visible": True,
+            "x": 540,
+            "y": 295,
+            "maxWidth": 920,
+            "fontSize": 84,
+            "fontId": "pretendard",
+            "primaryColor": "#FFFFFF",
+            "accentColor": "#35E6E3",
+            "primaryBackgroundColor": None,
+            "accentBackgroundColor": None,
+        },
+        "subtitle": {
+            "visible": True,
+            "variant": "pop",
+            "x": 540,
+            "y": 1158,
+            "maxWidth": 840,
+            "fontSize": 92,
+            "fontId": "pretendard",
+            "color": "#FFFFFF",
+            "accentColor": "#35E6E3",
+        },
+        "channel": {
+            "visible": True,
+            "x": 540,
+            "y": 1790,
+            "maxWidth": 800,
+            "fontSize": 48,
+            "color": "#FFFFFF",
+            "backgroundColor": None,
+        },
+        "comment": {
+            "visible": False,
+            "theme": "dark",
+            "size": "medium",
+            "y": 1040,
+            "dockedToVideo": True,
+        },
+    }
+    value = compile_initial_editor_render_spec_v4(
+        title="정확한 팝형 제목",
+        template_id="dark-minimal",
+        video_aspect_ratio="16:9",
+        font_scale=1,
+        custom_template_config=config,
+        channel_visible=False,
+    )
+
+    parsed = EditorRenderSpec.model_validate(value)
+    assert parsed.title.center_y == 295
+    assert parsed.channel.visible is False
+
+
 def test_comment_capture_full_vertical_uses_default_size_and_portrait_panel() -> None:
     value = compile_editor_title_spec_v4(
         title="짧은 제목",
