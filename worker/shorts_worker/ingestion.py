@@ -37,7 +37,7 @@ DEFAULT_BOT_CHECK_ROUTE_COOLDOWN_SECONDS = 15.0
 PO_TOKEN_PROVIDER_PACKAGE = "bgutil-ytdlp-pot-provider"
 PO_TOKEN_PROVIDER_VERSION = "1.3.1"
 PO_TOKEN_PROVIDER_HOME = Path("/opt/bgutil-ytdlp-pot-provider/server")
-PO_TOKEN_PLAYER_CLIENT = "mweb"
+PO_TOKEN_PLAYER_CLIENT = "default,mweb"
 YOUTUBE_DOWNLOAD_FORMAT = (
     "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/"
     "b[height<=1080][ext=mp4]/"
@@ -539,6 +539,8 @@ class YtDlpIngestionProvider(IngestionProvider):
                 [
                     "--extractor-args",
                     f"youtube:player_client={PO_TOKEN_PLAYER_CLIENT}",
+                    "--extractor-args",
+                    "youtube:fetch_pot=always",
                     "--extractor-args",
                     f"youtubepot-bgutilscript:server_home={PO_TOKEN_PROVIDER_HOME}",
                 ]

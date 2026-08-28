@@ -56,7 +56,9 @@ def test_po_token_is_disabled_by_default(monkeypatch) -> None:
     assert not any("cookie" in value.lower() for value in args)
 
 
-def test_po_token_uses_mweb_without_account_credentials(monkeypatch) -> None:
+def test_po_token_uses_default_fallback_and_forces_provider_without_credentials(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("YOUTUBE_PO_TOKEN_ENABLED", "true")
     monkeypatch.setattr("shorts_worker.ingestion._validate_po_token_runtime", lambda: None)
 
@@ -68,7 +70,8 @@ def test_po_token_uses_mweb_without_account_credentials(monkeypatch) -> None:
         if value == "--extractor-args"
     ]
     assert extractor_args == [
-        "youtube:player_client=mweb",
+        "youtube:player_client=default,mweb",
+        "youtube:fetch_pot=always",
         (
             "youtubepot-bgutilscript:"
             "server_home=/opt/bgutil-ytdlp-pot-provider/server"
