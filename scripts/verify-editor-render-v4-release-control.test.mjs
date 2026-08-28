@@ -384,10 +384,6 @@ test("requires a stopped rollout only for bootstrap and rotation leases", () => 
     true,
   );
   assert.equal(
-    editorRenderV4InfrastructureLeaseRequiresStopped(`stage-b:renewal:${sha}`),
-    false,
-  );
-  assert.equal(
     editorRenderV4InfrastructureLeaseRequiresStopped(`stage-b:lockdown:${sha}`),
     false,
   );

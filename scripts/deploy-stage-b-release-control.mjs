@@ -1402,7 +1402,11 @@ async function executeChangeSet(options, initial, registry) {
       requireStopped: stageBRequiresStopped(options.phase),
     });
 
-    const leaseOwner = `stage-b:${options.phase}:${initial.head}`;
+    // Renewal mutates only online-safe Editor IAM/registrar resources. Reuse
+    // the existing lockdown-shaped lease identity so the already-deployed DB
+    // constraint stays immutable; routing phases keep their stopped leases.
+    const leasePhase = options.phase === "renewal" ? "lockdown" : options.phase;
+    const leaseOwner = `stage-b:${leasePhase}:${initial.head}`;
     const leaseId = crypto.randomUUID();
     let leaseAcquired = false;
     let executionMayHaveStarted = false;

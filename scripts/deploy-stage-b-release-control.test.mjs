@@ -438,7 +438,7 @@ test("renews a failed immutable candidate through an Editor-only exact phase", (
   assert.match(source, /\["renewal", "lockdown"\][\s\S]*executeStack === "compute"/);
   assert.match(
     source,
-    /stage-b:\$\{options\.phase\}:\$\{initial\.head\}/,
+    /options\.phase === "renewal" \? "lockdown" : options\.phase/,
   );
   assert.match(source, /!\["renewal", "lockdown"\]\.includes\(phase\)/);
   assert.match(source, /renewal은 exact Editor preview\/해시만/);
@@ -453,7 +453,7 @@ test("requires the separately applied production v4 schema before any AWS mutati
     /function stageBRequiresStopped\(phase\)[\s\S]*!\["renewal", "lockdown"\]\.includes\(phase\)/,
   );
   assert.match(source, /requireStopped: stageBRequiresStopped\(options\.phase\)/);
-  assert.match(source, /stage-b:\$\{options\.phase\}:\$\{initial\.head\}/);
+  assert.match(source, /stage-b:\$\{leasePhase\}:\$\{initial\.head\}/);
   assert.match(
     source,
     /verifyPromotedProductionBaseline\(options\.base\)[\s\S]*await verifyStageBDatabaseContracts/,
