@@ -384,6 +384,10 @@ test("requires a stopped rollout only for bootstrap and rotation leases", () => 
     true,
   );
   assert.equal(
+    editorRenderV4InfrastructureLeaseRequiresStopped(`stage-b:renewal:${sha}`),
+    false,
+  );
+  assert.equal(
     editorRenderV4InfrastructureLeaseRequiresStopped(`stage-b:lockdown:${sha}`),
     false,
   );
@@ -395,10 +399,13 @@ test("requires a stopped rollout only for bootstrap and rotation leases", () => 
     new URL("./verify-editor-render-v4-release-control.mjs", import.meta.url),
     "utf8",
   );
-  assert.match(verifier, /phase !== "lockdown"[\s\S]*renderV4KillSwitch/);
   assert.match(
     verifier,
-    /const requiresStopped = phase !== "lockdown"[\s\S]*\$\{!requiresStopped\}[\s\S]*render_v4_kill_switch=true/,
+    /editorRenderV4InfrastructureLeaseRequiresStopped\(owner\)[\s\S]*renderV4KillSwitch/,
+  );
+  assert.match(
+    verifier,
+    /const requiresStopped = editorRenderV4InfrastructureLeaseRequiresStopped\(owner\)[\s\S]*\$\{!requiresStopped\}[\s\S]*render_v4_kill_switch=true/,
   );
 });
 
