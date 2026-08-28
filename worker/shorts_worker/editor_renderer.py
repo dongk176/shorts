@@ -10,6 +10,8 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 from .caption_templates import (
     CAPTION_ACCENT,
     CAPTION_FPS,
+    CAPTION_POP_SPACED_GAP_PX,
+    CAPTION_POP_UNSPACED_GAP_PX,
     caption_font_spec,
     compile_caption_render_spec,
     create_caption_ass,
@@ -612,10 +614,17 @@ def retime_editor_caption_spec(
     document: EditorDocument,
     caption_render_spec: dict[str, object],
 ) -> dict[str, object] | None:
-    """Apply trusted editor timing and layout to an immutable caption template."""
+    """Apply trusted editor timing and layout to an immutable caption template.
+
+    A v4 editor document can legitimately reference a stored schema-v3 caption
+    spec when the project was first rendered before v4 existed.  Promote that
+    source in memory with the canonical v4 compiler instead of rejecting the
+    edit or reusing its legacy gap geometry.  The source must contain complete
+    per-word frame timing; otherwise the conversion fails closed.
+    """
     spec = deepcopy(caption_render_spec)
-    caption_schema_version = int(spec.get("schemaVersion") or 0)
-    if caption_schema_version not in {3, 4}:
+    source_caption_schema_version = int(spec.get("schemaVersion") or 0)
+    if source_caption_schema_version not in {3, 4}:
         raise RenderError("원본 자막 렌더 사양 버전이 올바르지 않습니다.")
     if str(spec.get("templateId") or "") not in {"basic", "highlight", "pop"}:
         raise RenderError("원본 자막 렌더 템플릿이 올바르지 않습니다.")
@@ -631,6 +640,12 @@ def retime_editor_caption_spec(
     offset_y = render_subtitles.offset_y if render_subtitles else 0.0
     scale = render_subtitles.scale if render_subtitles else 1.0
     render_spec_version = document.render_spec.version if document.render_spec else 1
+    promote_legacy_caption_to_v4 = (
+        render_spec_version == 4 and source_caption_schema_version == 3
+    )
+    caption_schema_version = (
+        4 if promote_legacy_caption_to_v4 else source_caption_schema_version
+    )
     source_style = spec.get("style")
     if not isinstance(source_style, dict):
         raise RenderError("원본 자막 스타일이 올바르지 않습니다.")
@@ -655,7 +670,18 @@ def retime_editor_caption_spec(
         if render_subtitles and render_subtitles.font_id is not None
         else source_font_id
     )
-    if render_subtitles and render_subtitles.font_id is not None:
+    if caption_schema_version == 4:
+        spec["font"] = caption_font_spec(
+            caption_font_id,
+            schema_version=4,
+        )
+        spec.update({
+            "schemaVersion": 4,
+            "layoutMode": "absolute-word-positions-v1",
+            "wordGapPx": CAPTION_POP_SPACED_GAP_PX,
+            "joinedWordGapPx": CAPTION_POP_UNSPACED_GAP_PX,
+        })
+    elif render_subtitles and render_subtitles.font_id is not None:
         spec["font"] = caption_font_spec(
             render_subtitles.font_id,
             schema_version=caption_schema_version,
@@ -696,9 +722,10 @@ def retime_editor_caption_spec(
             continue
         clip_windows.append((clip_start, clip_end, output_cursor))
         output_cursor += clip_end - clip_start
-    supports_word_reflow = all(
+    supports_word_reflow = bool(source_cues) and all(
         isinstance(cue, dict)
         and isinstance(cue.get("words"), list)
+        and bool(cue["words"])
         and all(
             isinstance(word, dict)
             and "startFrame" in word
@@ -708,7 +735,7 @@ def retime_editor_caption_spec(
         for cue in source_cues
     )
     projectable_v4_noop = (
-        caption_schema_version == 4
+        source_caption_schema_version == 4
         and not cue_edits
         and len(clip_windows) == 1
         and clip_windows[0][2] == 0
@@ -728,6 +755,10 @@ def retime_editor_caption_spec(
         )
     )
     reflowed_cues = (supports_word_reflow or bool(cue_edits)) and not projectable_v4_noop
+    if promote_legacy_caption_to_v4 and not supports_word_reflow:
+        raise RenderError(
+            "기존 자막을 v4로 변환할 단어 타이밍 정보가 없습니다."
+        )
     if caption_schema_version == 4 and not projectable_v4_noop and not reflowed_cues:
         raise RenderError("v4 자막을 재배치할 단어 타이밍 정보가 없습니다.")
     try:
@@ -832,6 +863,10 @@ def retime_editor_caption_spec(
         style["accentColor"] = render_subtitles.accent_color
     if render_subtitles and render_subtitles.color:
         style["textColor"] = render_subtitles.color
+    if caption_schema_version == 4:
+        style.setdefault("shadow", 0)
+        style.setdefault("background", None)
+        style.setdefault("maxLines", 1)
     style["fontSize"] = (
         canonical_px_v4(target_font_size)
         if caption_schema_version == 4
@@ -1982,8 +2017,10 @@ class EditorDocumentRenderer:
             if document.render_spec.subtitles is None:
                 if caption_render_spec is not None:
                     raise RenderError("자막이 없는 v4 문서에 자막 사양이 포함되었습니다.")
-            elif caption_render_spec is not None and caption_spec_version != 4:
-                raise RenderError("v4 편집 문서에는 v4 자막 사양이 필요합니다.")
+            elif caption_render_spec is not None and caption_spec_version not in {3, 4}:
+                raise RenderError(
+                    "v4 편집 문서의 자막 원본 버전을 확인할 수 없습니다."
+                )
         assets_dir = work_dir / "editor-assets"
         assets_dir.mkdir(parents=True, exist_ok=True)
         probe = probe_media(

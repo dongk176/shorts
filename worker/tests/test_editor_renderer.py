@@ -9,7 +9,10 @@ from pathlib import Path
 import pytest
 from PIL import Image, ImageFont
 
-from shorts_worker.caption_templates import compile_caption_render_spec
+from shorts_worker.caption_templates import (
+    compile_caption_render_spec,
+    create_caption_ass,
+)
 from shorts_worker.config import Settings
 from shorts_worker.editor_renderer import (
     EditorDocumentRenderer,
@@ -39,6 +42,7 @@ from shorts_worker.editor_renderer import (
     retime_editor_subtitles,
     verify_editor_fonts,
 )
+from shorts_worker.errors import RenderError
 from shorts_worker.render_spec_v4 import compile_initial_editor_render_spec_v4
 from shorts_worker.schemas import (
     CustomTemplateConfig,
@@ -494,6 +498,166 @@ def test_v4_selected_clip_noop_keeps_the_original_caption_spec_exact() -> None:
     )
 
     assert retime_editor_caption_spec(document, canonical) == canonical
+
+
+def test_v4_editor_promotes_stored_v3_pop_caption_to_canonical_word_positions() -> None:
+    canonical = _caption_spec_v4()
+    document = _document_v4_with_contiguous_caption_clip(
+        canonical,
+        clip_start_seconds=0,
+        clip_end_seconds=10,
+    )
+    assert document.render_spec is not None
+    assert document.render_spec.subtitles is not None
+    document.render_spec.subtitles.font_id = EditorFontId.PAPERLOGY
+    document.render_spec.subtitles.font_size = 84
+    document.render_spec.subtitles.color = "#F3F0E9"
+    document.render_spec.subtitles.accent_color = "#FFD84D"
+    legacy = compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="기존",
+                start=3,
+                end=3.3,
+                provider="elevenlabs",
+            ),
+            TranscriptWord(
+                text="자막",
+                start=3.3,
+                end=3.6,
+                provider="elevenlabs",
+                space_before=True,
+            ),
+            TranscriptWord(
+                text="간격",
+                start=3.6,
+                end=3.9,
+                provider="elevenlabs",
+                space_before=False,
+            ),
+        ],
+        template_id="pop",
+        clip_start=0,
+        clip_end=10,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        schema_version=3,
+    )
+
+    rendered = retime_editor_caption_spec(document, legacy)
+
+    assert rendered is not None
+    assert legacy["schemaVersion"] == 3
+    assert "layoutMode" not in legacy
+    assert rendered["schemaVersion"] == 4
+    assert rendered["layoutMode"] == "absolute-word-positions-v1"
+    assert rendered["wordGapPx"] == 6
+    assert rendered["joinedWordGapPx"] == 0
+    assert rendered["font"]["fontId"] == "paperlogy"
+    assert (
+        rendered["font"]["metrics"]["revision"]
+        == "editor-font-metrics-v2"
+    )
+    assert rendered["style"]["fontSize"] == 84
+    assert rendered["style"]["textColor"] == "#F3F0E9"
+    assert rendered["style"]["accentColor"] == "#FFD84D"
+    multiword_event = next(
+        event
+        for cue in rendered["cues"]
+        if len(cue["words"]) >= 2
+        for event in cue["events"]
+    )
+    assert [
+        position["gapBefore"] for position in multiword_event["positions"]
+    ] == [0, 6]
+    assert all(
+        "advanceWidth" in position
+        for position in multiword_event["positions"]
+    )
+
+
+def test_v4_editor_rejects_unmeasurable_stored_v3_caption() -> None:
+    canonical = _caption_spec_v4()
+    document = _document_v4_with_contiguous_caption_clip(
+        canonical,
+        clip_start_seconds=0,
+        clip_end_seconds=10,
+    )
+    legacy = compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="시간정보없음",
+                start=3,
+                end=3.5,
+                provider="elevenlabs",
+            ),
+        ],
+        template_id="pop",
+        clip_start=0,
+        clip_end=10,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        schema_version=3,
+    )
+    for cue in legacy["cues"]:
+        for word in cue["words"]:
+            word.pop("startFrame", None)
+            word.pop("endFrame", None)
+
+    with pytest.raises(RenderError, match="단어 타이밍 정보"):
+        retime_editor_caption_spec(document, legacy)
+
+
+def test_v4_editor_promotes_stored_v3_highlight_caption(
+    tmp_path: Path,
+) -> None:
+    words = [
+        TranscriptWord(
+            text="강조",
+            start=3,
+            end=3.4,
+            provider="elevenlabs",
+        ),
+        TranscriptWord(
+            text="자막",
+            start=3.4,
+            end=3.8,
+            provider="elevenlabs",
+            space_before=True,
+        ),
+    ]
+    canonical = compile_caption_render_spec(
+        words,
+        template_id="highlight",
+        clip_start=0,
+        clip_end=10,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        schema_version=4,
+    )
+    legacy = compile_caption_render_spec(
+        words,
+        template_id="highlight",
+        clip_start=0,
+        clip_end=10,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        schema_version=3,
+    )
+    document = _document_v4_with_contiguous_caption_clip(
+        canonical,
+        clip_start_seconds=0,
+        clip_end_seconds=10,
+    )
+
+    rendered = retime_editor_caption_spec(document, legacy)
+
+    assert rendered is not None
+    assert rendered["schemaVersion"] == 4
+    assert rendered["layoutMode"] == "absolute-word-positions-v1"
+    assert all(
+        cue["separatorAdvanceWidth"] > 0
+        for cue in rendered["cues"]
+    )
+    ass_path = create_caption_ass(rendered, tmp_path / "highlight-v4.ass")
+    assert ass_path.is_file()
+    assert "강조" in ass_path.read_text(encoding="utf-8")
 
 
 def test_editor_render_spec_v3_applies_absolute_caption_size_and_color_once() -> None:
@@ -1843,6 +2007,103 @@ def test_editor_document_v3_renders_at_authoritative_30fps(
     assert "Noto Sans CJK KR" not in subtitle_ass
     assert (
         tmp_path / "render-work-v3" / "caption-fonts" / "Pretendard-Bold.ttf"
+    ).is_file()
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
+def test_v4_editor_renders_stored_v3_pop_caption_with_canonical_font_and_gap(
+    tmp_path: Path,
+) -> None:
+    clean = tmp_path / "legacy-caption-clean.mp4"
+    _run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "color=c=#283241:size=640x360:rate=30",
+        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000",
+        "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-shortest", str(clean),
+    ])
+    words = [
+        TranscriptWord(
+            text="단어",
+            start=0.1,
+            end=0.4,
+            provider="elevenlabs",
+        ),
+        TranscriptWord(
+            text="간격",
+            start=0.4,
+            end=0.8,
+            provider="elevenlabs",
+            space_before=True,
+        ),
+    ]
+    canonical = compile_caption_render_spec(
+        words,
+        template_id="pop",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        font_id=EditorFontId.PAPERLOGY,
+        schema_version=4,
+    )
+    legacy = compile_caption_render_spec(
+        words,
+        template_id="pop",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        font_id=EditorFontId.PAPERLOGY,
+        schema_version=3,
+    )
+    document = _document_v4_with_contiguous_caption_clip(
+        canonical,
+        clip_start_seconds=0,
+        clip_end_seconds=1,
+    )
+    renderer = EditorDocumentRenderer(Settings(
+        temp_dir=tmp_path / "legacy-caption-temp",
+        ffmpeg_timeout_seconds=120,
+        ffmpeg_threads=2,
+        clean_clip_preset="ultrafast",
+        clean_clip_crf=28,
+    ))
+
+    output = renderer.render(
+        clean_path=clean,
+        output_path=tmp_path / "legacy-caption-output.mp4",
+        document=document,
+        work_dir=tmp_path / "legacy-caption-render",
+        channel_thumbnail_path=None,
+        caption_render_spec=legacy,
+    )
+
+    probe = json.loads(_run([
+        "ffprobe", "-v", "error", "-show_streams", "-show_format",
+        "-of", "json", str(output),
+    ]).stdout)
+    video = next(
+        stream for stream in probe["streams"] if stream["codec_type"] == "video"
+    )
+    subtitle_ass = (
+        tmp_path
+        / "legacy-caption-render"
+        / "editor-assets"
+        / "subtitles.ass"
+    ).read_text(encoding="utf-8")
+
+    assert (video["width"], video["height"]) == (1080, 1920)
+    assert video["avg_frame_rate"] == "30/1"
+    assert output.stat().st_size > 10_000
+    assert "Editor V4 Paperlogy" in subtitle_ass
+    assert subtitle_ass.count(r"\pos(") >= 2
+    assert (
+        tmp_path
+        / "legacy-caption-render"
+        / "caption-fonts"
+        / "Paperlogy-7Bold.ttf"
     ).is_file()
 
 
