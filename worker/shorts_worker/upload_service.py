@@ -108,12 +108,13 @@ def _capacity_retryable(error: Exception) -> bool:
         code = str(response.get("Error", {}).get("Code") or "")
         status = int(response.get("ResponseMetadata", {}).get("HTTPStatusCode") or 0)
         return code in _CAPACITY_RETRYABLE_CODES or status in {429, 500, 502, 503, 504}
-    return isinstance(error, (
-        ConnectTimeoutError,
-        ConnectionClosedError,
-        EndpointConnectionError,
-        ReadTimeoutError,
-    ))
+    return isinstance(
+        error,
+        ConnectTimeoutError
+        | ConnectionClosedError
+        | EndpointConnectionError
+        | ReadTimeoutError,
+    )
 
 
 def _enabled(value: str | None) -> bool:
