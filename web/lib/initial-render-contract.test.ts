@@ -33,7 +33,9 @@ describe("shared initial render contract", () => {
       canonicalInitialRenderContract(link),
     );
     expect(upload.subtitleTemplateSnapshot).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
+      origin: "unified-template-v5",
+      enabled: true,
       subtitleTemplateId: "pop",
       timingLeadFrames: 7,
       wordGapPx: 6,

@@ -53,7 +53,7 @@ export function createInitialRenderContract(input: {
   const videoAspectRatio = builtInSubtitleSnapshot
     ? builtInSubtitleSnapshot.config.video.aspectRatio
     : resolved.resolvedVideoAspectRatio;
-  const subtitleTemplateSnapshot = input.subtitleTemplateId
+  const builtInSubtitleStyle = input.subtitleTemplateId
     ? subtitleTemplateStyleSnapshot(
         input.subtitleTemplateId,
         videoAspectRatio,
@@ -64,6 +64,14 @@ export function createInitialRenderContract(input: {
           ? SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES
           : STABLE_SUBTITLE_TEMPLATE_TIMING_LEAD_FRAMES,
       )
+    : null;
+  const subtitleTemplateSnapshot = builtInSubtitleStyle
+    ? {
+        ...builtInSubtitleStyle,
+        schemaVersion: 4 as const,
+        origin: "unified-template-v5" as const,
+        enabled: builtInSubtitleSnapshot?.config.subtitle.visible ?? true,
+      }
     : resolved.subtitleTemplateSnapshot;
   return {
     templateId: resolved.resolvedTemplateId,
