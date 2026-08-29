@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertUploadFileCandidate,
   DirectUploadError,
+  fileUploadCapacityPollDelayMs,
   FILE_UPLOAD_MAX_BYTES,
   uploadContentType,
   uploadFileWhenReceiverReady,
@@ -54,6 +55,12 @@ describe("file upload client preflight", () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.status).toBe(422);
     expect(error.code).toBe("upload_duration_mismatch");
+  });
+
+  it("jitters capacity polling to avoid synchronized status bursts", () => {
+    expect(fileUploadCapacityPollDelayMs(0)).toBe(10_000);
+    expect(fileUploadCapacityPollDelayMs(0.5)).toBe(12_000);
+    expect(fileUploadCapacityPollDelayMs(1)).toBe(14_000);
   });
 });
 

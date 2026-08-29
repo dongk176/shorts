@@ -159,6 +159,10 @@ export type UploadSessionRecoveryState = {
 
 const receiverRetryStatuses = new Set([409, 425, 429, 502, 503, 504]);
 
+export function fileUploadCapacityPollDelayMs(randomValue = Math.random()) {
+  return Math.round(10_000 + Math.max(0, Math.min(1, randomValue)) * 4_000);
+}
+
 function receiverRetryable(error: unknown) {
   return error instanceof DirectUploadError
     ? receiverRetryStatuses.has(error.status)
@@ -215,7 +219,7 @@ export async function uploadFileWhenReceiverReady(input: {
       // stable preparation UI and ask for state again on the next poll.
       waitAttempt += 1;
       input.onWaiting?.(waitAttempt);
-      await wait(5_000);
+      await wait(fileUploadCapacityPollDelayMs());
       continue;
     }
     if (state.received || ["received", "processing", "completed"].includes(
@@ -238,7 +242,7 @@ export async function uploadFileWhenReceiverReady(input: {
     }
     waitAttempt += 1;
     input.onWaiting?.(waitAttempt);
-    await wait(5_000);
+    await wait(fileUploadCapacityPollDelayMs());
   }
   if (!state || state.status !== "ready" || !state.expiresAt) {
     throw new DirectUploadError(

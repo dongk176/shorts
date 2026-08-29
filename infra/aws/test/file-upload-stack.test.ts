@@ -419,6 +419,20 @@ describe("isolated file upload canary stack", () => {
     expect(JSON.stringify(invokePolicies)).toContain(
       "shorts-mvp-production-vercel-control-plane",
     );
+    template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+      AlarmName: "shorts-mvp-production-file-upload-capacity-throttles",
+      MetricName: "Throttles",
+      Namespace: "AWS/Lambda",
+      Threshold: 1,
+      TreatMissingData: "notBreaching",
+    });
+    template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+      AlarmName: "shorts-mvp-production-file-upload-capacity-errors",
+      MetricName: "Errors",
+      Namespace: "AWS/Lambda",
+      Threshold: 1,
+      TreatMissingData: "notBreaching",
+    });
   });
 
   it("keeps preview CORS disabled unless one exact deployment origin is explicit", () => {

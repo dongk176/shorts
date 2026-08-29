@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FileUploadCapacityTransientError } from "@/lib/file-upload-capacity-retry";
 import { HttpError } from "@/lib/http";
 
 const mocks = vi.hoisted(() => ({
@@ -7,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   releaseAccess: vi.fn(),
   lockedReleaseAccess: vi.fn(),
   usageSnapshot: vi.fn(),
+  ensureCapacity: vi.fn(),
   capacityStatus: vi.fn(),
   releaseCapacity: vi.fn(),
 }));
@@ -23,6 +25,7 @@ vi.mock("@/lib/usage", () => ({
   getUsageSnapshot: mocks.usageSnapshot,
 }));
 vi.mock("@/lib/aws", () => ({
+  ensureFileUploadCapacity: mocks.ensureCapacity,
   getFileUploadCapacityStatus: mocks.capacityStatus,
   releaseFileUploadCapacity: mocks.releaseCapacity,
 }));
@@ -104,6 +107,7 @@ beforeEach(() => {
   mocks.releaseAccess.mockResolvedValue({ enabled: true, adminEnabled: true });
   mocks.lockedReleaseAccess.mockResolvedValue({ enabled: true, adminEnabled: true });
   mocks.usageSnapshot.mockResolvedValue(usage);
+  mocks.ensureCapacity.mockResolvedValue({ leaseState: "waiting" });
   mocks.capacityStatus.mockResolvedValue({ leaseState: "waiting" });
   mocks.releaseCapacity.mockResolvedValue(undefined);
 });
@@ -142,6 +146,79 @@ describe("file upload capacity admission status", () => {
       expiresAt: null,
       preparationExpiresAt: queueExpiresAt,
       received: false,
+    });
+  });
+
+  it("keeps preparing through a transient status throttle", async () => {
+    const queueExpiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
+    const db = Object.assign(vi.fn(async (strings: TemplateStringsArray) => {
+      const sql = Array.from(strings).join("?").replace(/\s+/g, " ").trim();
+      if (sql.includes("from shorts_mvp.upload_sessions upload")) return [];
+      if (sql.includes("from shorts_mvp.file_upload_capacity_requests capacity")) {
+        return [{
+          uploadSessionId: UPLOAD_SESSION_ID,
+          jobId: JOB_ID,
+          projectNumber: 91,
+          status: "waiting",
+          queueExpiresAt,
+          tokenHash: "a".repeat(64),
+          jobStatus: "uploading",
+          jobStage: "uploading",
+          jobProgress: 1,
+        }];
+      }
+      return [];
+    }), { begin: vi.fn() });
+    mocks.getDb.mockReturnValue(db);
+    mocks.capacityStatus.mockRejectedValueOnce(
+      new FileUploadCapacityTransientError({ name: "TooManyRequestsException" }),
+    );
+
+    const response = await GET(cancelRequest(), context());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "preparing",
+      expiresAt: null,
+      received: false,
+    });
+    expect(mocks.ensureCapacity).not.toHaveBeenCalled();
+  });
+
+  it("redelivers a missing capacity lease with the original idempotent token", async () => {
+    const queueExpiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
+    const tokenHash = "b".repeat(64);
+    const db = Object.assign(vi.fn(async (strings: TemplateStringsArray) => {
+      const sql = Array.from(strings).join("?").replace(/\s+/g, " ").trim();
+      if (sql.includes("from shorts_mvp.upload_sessions upload")) return [];
+      if (sql.includes("from shorts_mvp.file_upload_capacity_requests capacity")) {
+        return [{
+          uploadSessionId: UPLOAD_SESSION_ID,
+          jobId: JOB_ID,
+          projectNumber: 91,
+          status: "waiting",
+          queueExpiresAt,
+          tokenHash,
+          jobStatus: "uploading",
+          jobStage: "uploading",
+          jobProgress: 1,
+        }];
+      }
+      return [];
+    }), { begin: vi.fn() });
+    mocks.getDb.mockReturnValue(db);
+    mocks.capacityStatus.mockResolvedValueOnce({ leaseState: "expired" });
+    mocks.ensureCapacity.mockResolvedValueOnce({ leaseState: "waiting" });
+
+    const response = await GET(cancelRequest(), context());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ status: "preparing" });
+    expect(mocks.ensureCapacity).toHaveBeenCalledWith({
+      desiredCount: 1,
+      uploadSessionId: UPLOAD_SESSION_ID,
+      expiresAt: queueExpiresAt,
+      tokenHash,
     });
   });
 

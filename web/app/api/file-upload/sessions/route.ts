@@ -32,6 +32,7 @@ import {
   getFileUploadReleaseAccess,
   lockFileUploadReleaseAccess,
 } from "@/lib/file-upload-release";
+import { FileUploadCapacityTransientError } from "@/lib/file-upload-capacity-retry";
 import { apiError, HttpError } from "@/lib/http";
 import {
   resolveFileUploadInitialRenderRelease,
@@ -708,18 +709,25 @@ export async function POST(request: Request) {
         expiresAt: result.expiresAt,
         tokenHash: result.tokenHash,
       });
-    } catch {
-      await cancelUnclaimedSessionAfterCapacityFailure(db, {
-        userId: session.userId,
-        uploadSessionId: result.uploadSessionId,
-        jobId: result.jobId,
-      });
-      await releaseFileUploadCapacity(result.uploadSessionId).catch(() => undefined);
-      throw new HttpError(
-        503,
-        "업로드 작업 서버를 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.",
-        "FILE_UPLOAD_CAPACITY_UNAVAILABLE",
-      );
+    } catch (error) {
+      if (error instanceof FileUploadCapacityTransientError) {
+        console.warn(JSON.stringify({
+          event: "file_upload_capacity_ensure_delayed",
+          uploadSessionId: result.uploadSessionId,
+        }));
+      } else {
+        await cancelUnclaimedSessionAfterCapacityFailure(db, {
+          userId: session.userId,
+          uploadSessionId: result.uploadSessionId,
+          jobId: result.jobId,
+        });
+        await releaseFileUploadCapacity(result.uploadSessionId).catch(() => undefined);
+        throw new HttpError(
+          503,
+          "업로드 작업 서버를 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+          "FILE_UPLOAD_CAPACITY_UNAVAILABLE",
+        );
+      }
     }
     const usage = await getUsageSnapshot(db, session);
     return noStore(NextResponse.json({

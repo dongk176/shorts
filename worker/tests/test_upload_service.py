@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from botocore.exceptions import ClientError
 
 from shorts_worker.repository import WorkerRepository
 from shorts_worker.upload_service import (
@@ -424,6 +425,78 @@ def test_receiver_does_not_touch_database_when_capacity_is_not_granted(
     assert caught.value.status == 425
     assert caught.value.code == "upload_capacity_not_ready"
     assert repository.claim_calls == []
+
+
+def test_capacity_client_retries_throttle_with_the_same_idempotent_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _worker, _repository = _service(tmp_path, b"video")
+    monkeypatch.setenv("FILE_UPLOAD_CAPACITY_FUNCTION_ARN", "test-capacity")
+    attempts: list[dict[str, object]] = []
+    waits: list[float] = []
+
+    class LambdaClient:
+        def invoke(self, **kwargs):
+            attempts.append(kwargs)
+            if len(attempts) < 3:
+                raise ClientError({
+                    "Error": {"Code": "TooManyRequestsException"},
+                    "ResponseMetadata": {"HTTPStatusCode": 429},
+                }, "Invoke")
+            return {"Payload": BytesIO(b'{"leaseState":"claimed"}')}
+
+    monkeypatch.setattr(
+        "shorts_worker.upload_service.boto3.client",
+        lambda *_args, **_kwargs: LambdaClient(),
+    )
+    monkeypatch.setattr(
+        "shorts_worker.upload_service.time.sleep",
+        lambda seconds: waits.append(seconds),
+    )
+    monkeypatch.setattr(
+        "shorts_worker.upload_service.random.uniform",
+        lambda _minimum, _maximum: 1.0,
+    )
+
+    result = service._invoke_capacity(
+        invocation_type="RequestResponse",
+        payload={"action": "claim", "uploadSessionId": str(uuid4())},
+    )
+
+    assert json.loads(attempts[0]["Payload"]) == json.loads(attempts[1]["Payload"])
+    assert result["Payload"].read() == b'{"leaseState":"claimed"}'
+    assert waits == [0.1, 0.25]
+
+
+def test_capacity_client_does_not_retry_permission_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _worker, _repository = _service(tmp_path, b"video")
+    monkeypatch.setenv("FILE_UPLOAD_CAPACITY_FUNCTION_ARN", "test-capacity")
+    attempts = 0
+
+    class LambdaClient:
+        def invoke(self, **_kwargs):
+            nonlocal attempts
+            attempts += 1
+            raise ClientError({
+                "Error": {"Code": "AccessDeniedException"},
+                "ResponseMetadata": {"HTTPStatusCode": 403},
+            }, "Invoke")
+
+    monkeypatch.setattr(
+        "shorts_worker.upload_service.boto3.client",
+        lambda *_args, **_kwargs: LambdaClient(),
+    )
+
+    with pytest.raises(ClientError):
+        service._invoke_capacity(
+            invocation_type="Event",
+            payload={"action": "release", "uploadSessionId": str(uuid4())},
+        )
+    assert attempts == 1
 
 
 def test_sweeper_does_not_finalize_when_physical_cleanup_is_unconfirmed(

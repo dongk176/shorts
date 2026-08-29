@@ -1,4 +1,5 @@
 import * as cdk from "aws-cdk-lib";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
@@ -585,6 +586,30 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
         UPLOAD_WINDOW_SECONDS: "900",
         CLAIMED_LEASE_SECONDS: "21600",
       },
+    });
+    new cloudwatch.Alarm(this, "CapacityCoordinatorThrottleAlarm", {
+      alarmName: `shorts-mvp-${props.environment}-file-upload-capacity-throttles`,
+      alarmDescription: "File-upload capacity admission was throttled",
+      metric: capacityCoordinator.metricThrottles({
+        period: cdk.Duration.minutes(1),
+        statistic: "sum",
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    new cloudwatch.Alarm(this, "CapacityCoordinatorErrorAlarm", {
+      alarmName: `shorts-mvp-${props.environment}-file-upload-capacity-errors`,
+      alarmDescription: "File-upload capacity coordinator execution failed",
+      metric: capacityCoordinator.metricErrors({
+        period: cdk.Duration.minutes(1),
+        statistic: "sum",
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     capacityCoordinator.addToRolePolicy(new iam.PolicyStatement({
       actions: [

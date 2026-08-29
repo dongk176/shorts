@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import random
 import re
 import shutil
 import signal
@@ -23,6 +24,14 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 import boto3
+from botocore.config import Config
+from botocore.exceptions import (
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    ReadTimeoutError,
+)
 
 from .config import Settings
 from .media import media_duration, probe_media
@@ -49,6 +58,13 @@ _MAX_UPLOAD_PIXELS = 33_554_432
 _ECS_AGENT_URI = re.compile(
     r"^http://169\.254\.170\.2/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+$"
 )
+_CAPACITY_RETRY_DELAYS_SECONDS = (0.1, 0.25, 0.5, 1.0, 2.0)
+_CAPACITY_RETRYABLE_CODES = {
+    "TooManyRequestsException",
+    "ThrottlingException",
+    "ServiceUnavailableException",
+    "InternalServerError",
+}
 
 
 def _forbidden_upload_environment(environment: dict[str, str] | os._Environ[str]) -> list[str]:
@@ -84,6 +100,20 @@ def _event(event: str, **fields: object) -> None:
         json.dumps({"event": event, **fields}, separators=(",", ":"), default=str),
         flush=True,
     )
+
+
+def _capacity_retryable(error: Exception) -> bool:
+    if isinstance(error, ClientError):
+        response = error.response if isinstance(error.response, dict) else {}
+        code = str(response.get("Error", {}).get("Code") or "")
+        status = int(response.get("ResponseMetadata", {}).get("HTTPStatusCode") or 0)
+        return code in _CAPACITY_RETRYABLE_CODES or status in {429, 500, 502, 503, 504}
+    return isinstance(error, (
+        ConnectTimeoutError,
+        ConnectionClosedError,
+        EndpointConnectionError,
+        ReadTimeoutError,
+    ))
 
 
 def _enabled(value: str | None) -> bool:
@@ -333,6 +363,7 @@ class UploadReceiverService:
         self._active: ActiveUpload | None = None
         self.task_protection = TaskScaleInProtection(config)
         self._task_arn: str | None = None
+        self._capacity_lambda_client = None
         self._sweeper_thread: threading.Thread | None = None
         temp_root = Path(self.settings.temp_dir).resolve(strict=True)
         self.upload_root = temp_root / "receiver-uploads"
@@ -590,17 +621,14 @@ class UploadReceiverService:
         if not capacity_function_arn:
             return
         try:
-            response = boto3.client(
-                "lambda", region_name=self.settings.aws_region
-            ).invoke(
-                FunctionName=capacity_function_arn,
-                InvocationType="RequestResponse",
-                Payload=json.dumps({
+            response = self._invoke_capacity(
+                invocation_type="RequestResponse",
+                payload={
                     "action": "claim",
                     "uploadSessionId": upload_session_id,
                     "tokenHash": token_hash,
                     "taskArn": self._ecs_task_arn(),
-                }, separators=(",", ":")).encode("utf-8"),
+                },
             )
             if response.get("FunctionError"):
                 raise RuntimeError("capacity claim lambda failed")
@@ -624,6 +652,52 @@ class UploadReceiverService:
                 "upload_capacity_not_ready",
                 "업로드 준비가 아직 완료되지 않았습니다.",
             )
+
+    def _capacity_lambda(self):
+        if self._capacity_lambda_client is None:
+            self._capacity_lambda_client = boto3.client(
+                "lambda",
+                region_name=getattr(
+                    self.settings,
+                    "aws_region",
+                    os.environ.get("AWS_REGION", "ap-northeast-2"),
+                ),
+                config=Config(
+                    connect_timeout=3,
+                    read_timeout=10,
+                    retries={"max_attempts": 1, "mode": "standard"},
+                ),
+            )
+        return self._capacity_lambda_client
+
+    def _invoke_capacity(
+        self,
+        *,
+        invocation_type: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        capacity_function_arn = os.environ.get(
+            "FILE_UPLOAD_CAPACITY_FUNCTION_ARN", ""
+        ).strip()
+        if not capacity_function_arn:
+            raise RuntimeError("file upload capacity function is unavailable")
+        encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        for attempt in range(len(_CAPACITY_RETRY_DELAYS_SECONDS) + 1):
+            try:
+                return self._capacity_lambda().invoke(
+                    FunctionName=capacity_function_arn,
+                    InvocationType=invocation_type,
+                    Payload=encoded,
+                )
+            except Exception as exc:
+                if (
+                    not _capacity_retryable(exc)
+                    or attempt >= len(_CAPACITY_RETRY_DELAYS_SECONDS)
+                ):
+                    raise
+                delay = _CAPACITY_RETRY_DELAYS_SECONDS[attempt]
+                time.sleep(delay * random.uniform(0.75, 1.25))
+        raise RuntimeError("file upload capacity retry exhausted")
 
     def _assert_claim_result(self, result: str) -> None:
         if result == "claimed":
@@ -1219,13 +1293,12 @@ class UploadReceiverService:
         ).strip()
         if capacity_function_arn and upload_session_id:
             try:
-                boto3.client("lambda", region_name=self.settings.aws_region).invoke(
-                    FunctionName=capacity_function_arn,
-                    InvocationType="Event",
-                    Payload=json.dumps({
+                self._invoke_capacity(
+                    invocation_type="Event",
+                    payload={
                         "action": "release",
                         "uploadSessionId": upload_session_id,
-                    }).encode("utf-8"),
+                    },
                 )
             except Exception as exc:
                 _event(

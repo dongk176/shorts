@@ -14135,6 +14135,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
           [400, 401, 402, 403, 404, 410, 413, 422].includes(cause.status)
           || cause.code === "FILE_UPLOAD_INTENT_MISMATCH"
           || cause.code === "FILE_UPLOAD_REQUEST_NOT_ACTIVE"
+          || cause.code === "FILE_UPLOAD_CAPACITY_UNAVAILABLE"
         );
       const definitiveReceiverFailure = cause instanceof DirectUploadError
         && [400, 401, 403, 404, 410, 413, 415, 422].includes(cause.status);

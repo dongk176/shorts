@@ -10,6 +10,7 @@ import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { retryFileUploadCapacityOperation } from "@/lib/file-upload-capacity-retry";
 
 const region = process.env.AWS_REGION || "ap-northeast-2";
 function credentials() {
@@ -25,6 +26,27 @@ function credentials() {
 
 function s3Client() { return new S3Client({ region, credentials: credentials() }); }
 function lambdaClient() { return new LambdaClient({ region, credentials: credentials() }); }
+let cachedFileUploadCapacityLambdaClient: LambdaClient | null = null;
+function fileUploadCapacityLambdaClient() {
+  cachedFileUploadCapacityLambdaClient ??= new LambdaClient({
+    region,
+    credentials: credentials(),
+    // Capacity retries are bounded explicitly below so only safe transient
+    // failures are replayed with the same idempotent session payload.
+    maxAttempts: 1,
+  });
+  return cachedFileUploadCapacityLambdaClient;
+}
+
+function invokeFileUploadCapacity(
+  input: ConstructorParameters<typeof InvokeCommand>[0],
+  options?: { maxAttempts?: number; maxElapsedMs?: number },
+) {
+  return retryFileUploadCapacityOperation(
+    () => fileUploadCapacityLambdaClient().send(new InvokeCommand(input)),
+    options,
+  );
+}
 
 const EDITOR_CHANNEL_ASSET_MAX_BYTES = 300_000;
 
@@ -235,7 +257,7 @@ export async function ensureFileUploadCapacity(input: {
   ) {
     throw new Error("파일 업로드 용량 예약 정보를 확인하지 못했습니다.");
   }
-  const response = await lambdaClient().send(new InvokeCommand({
+  const response = await invokeFileUploadCapacity({
     FunctionName: functionArn,
     InvocationType: "RequestResponse",
     Payload: new TextEncoder().encode(JSON.stringify({
@@ -245,7 +267,7 @@ export async function ensureFileUploadCapacity(input: {
       expiresAtEpoch,
       tokenHash: input.tokenHash,
     })),
-  }));
+  }, { maxAttempts: 8, maxElapsedMs: 12_000 });
   if (response.FunctionError) {
     throw new Error("파일 업로드 작업 서버를 준비하지 못했습니다.");
   }
@@ -270,14 +292,14 @@ export async function getFileUploadCapacityStatus(uploadSessionId: string) {
   if (!functionArn || !/^[0-9a-f-]{36}$/i.test(uploadSessionId)) {
     throw new Error("파일 업로드 용량 예약 정보를 확인하지 못했습니다.");
   }
-  const response = await lambdaClient().send(new InvokeCommand({
+  const response = await invokeFileUploadCapacity({
     FunctionName: functionArn,
     InvocationType: "RequestResponse",
     Payload: new TextEncoder().encode(JSON.stringify({
       action: "status",
       uploadSessionId,
     })),
-  }));
+  }, { maxAttempts: 5, maxElapsedMs: 4_000 });
   if (response.FunctionError) {
     throw new Error("파일 업로드 작업 서버 상태를 확인하지 못했습니다.");
   }
@@ -302,14 +324,14 @@ export async function getFileUploadCapacityStatus(uploadSessionId: string) {
 export async function releaseFileUploadCapacity(uploadSessionId: string) {
   const functionArn = process.env.FILE_UPLOAD_CAPACITY_FUNCTION_ARN;
   if (!functionArn || !/^[0-9a-f-]{36}$/i.test(uploadSessionId)) return;
-  await lambdaClient().send(new InvokeCommand({
+  await invokeFileUploadCapacity({
     FunctionName: functionArn,
     InvocationType: "Event",
     Payload: new TextEncoder().encode(JSON.stringify({
       action: "release",
       uploadSessionId,
     })),
-  }));
+  }, { maxAttempts: 6, maxElapsedMs: 5_000 });
 }
 
 export function latestJobDefinitionName(value: string) {

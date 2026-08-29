@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import {
+  ensureFileUploadCapacity,
   getFileUploadCapacityStatus,
   releaseFileUploadCapacity,
 } from "@/lib/aws";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
+import { FileUploadCapacityTransientError } from "@/lib/file-upload-capacity-retry";
 import { fileUploadSessionPublicStatus } from "@/lib/file-upload-session-state";
 import { apiError, HttpError } from "@/lib/http";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
@@ -15,6 +17,12 @@ export const dynamic = "force-dynamic";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
+};
+
+type CapacityLeaseStatus = {
+  leaseState: "waiting" | "granted" | "claimed" | "expired";
+  grantedAtEpoch?: number;
+  grantExpiresAtEpoch?: number;
 };
 
 function hiddenNotFound() {
@@ -68,7 +76,7 @@ export async function GET(_: Request, context: RouteContext) {
       const capacityRows = await db`
         select capacity.id as upload_session_id,capacity.job_id,capacity.status,
           capacity.queue_expires_at,capacity.granted_at,
-          capacity.upload_expires_at,
+          capacity.upload_expires_at,capacity.token_hash,
           job.project_number,job.status as job_status,job.stage as job_stage,
           job.progress as job_progress
         from shorts_mvp.file_upload_capacity_requests capacity
@@ -83,9 +91,55 @@ export async function GET(_: Request, context: RouteContext) {
       const capacity = capacityRows[0];
       if (!capacity) throw hiddenNotFound();
       const queueExpired = new Date(capacity.queueExpiresAt).getTime() <= Date.now();
-      const capacityStatus = queueExpired
-        ? { leaseState: "expired" as const }
-        : await getFileUploadCapacityStatus(parsedSessionId.data);
+      let capacityStatus: CapacityLeaseStatus = { leaseState: "expired" };
+      if (!queueExpired) {
+        try {
+          capacityStatus = await getFileUploadCapacityStatus(parsedSessionId.data);
+        } catch (error) {
+          if (!(error instanceof FileUploadCapacityTransientError)) throw error;
+          console.warn(JSON.stringify({
+            event: "file_upload_capacity_status_delayed",
+            uploadSessionId: parsedSessionId.data,
+          }));
+          return noStore(NextResponse.json({
+            uploadSessionId: parsedSessionId.data,
+            jobId: String(capacity.jobId),
+            projectNumber: Number(capacity.projectNumber),
+            status: "preparing",
+            receiverStatus: "waiting",
+            jobStatus: String(capacity.jobStatus),
+            jobStage: String(capacity.jobStage),
+            jobProgress: Number(capacity.jobProgress || 0),
+            receivedBytes: 0,
+            expectedBytes: 0,
+            received: false,
+            expiresAt: null,
+            preparationExpiresAt: new Date(capacity.queueExpiresAt).toISOString(),
+            failureCode: null,
+            failureReason: null,
+            sourceDeleted: true,
+          }));
+        }
+        if (
+          capacity.status === "waiting"
+          && capacityStatus.leaseState === "expired"
+        ) {
+          try {
+            capacityStatus = await ensureFileUploadCapacity({
+              desiredCount: 1,
+              uploadSessionId: parsedSessionId.data,
+              expiresAt: capacity.queueExpiresAt,
+              tokenHash: String(capacity.tokenHash),
+            });
+          } catch (error) {
+            if (!(error instanceof FileUploadCapacityTransientError)) throw error;
+            console.warn(JSON.stringify({
+              event: "file_upload_capacity_redelivery_delayed",
+              uploadSessionId: parsedSessionId.data,
+            }));
+          }
+        }
+      }
       if (
         capacity.status === "waiting"
         && capacityStatus.leaseState === "granted"
@@ -144,7 +198,7 @@ export async function GET(_: Request, context: RouteContext) {
             and upload.user_id=${session.userId}
           limit 1
         `;
-      } else if (capacityStatus.leaseState === "expired" || queueExpired) {
+      } else if (queueExpired) {
         await db.begin(async (tx) => {
           await tx`
             update shorts_mvp.file_upload_capacity_requests

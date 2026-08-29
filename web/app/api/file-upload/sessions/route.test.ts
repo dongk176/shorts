@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { FileUploadCapacityTransientError } from "@/lib/file-upload-capacity-retry";
 import { HttpError } from "@/lib/http";
 
 vi.mock("server-only", () => ({}));
@@ -850,6 +851,27 @@ describe("file upload job control plane", () => {
     expect(query(queries, "finalize_project_job")?.sql)
       .toContain("'upload_capacity_unavailable'");
     expect(mocks.releaseUploadCapacity).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a transiently throttled capacity request preparing without refunding it", async () => {
+    const { db, queries } = transactionDb();
+    mocks.getDb.mockReturnValue(db);
+    mocks.ensureUploadCapacity.mockRejectedValueOnce(
+      new FileUploadCapacityTransientError({ name: "TooManyRequestsException" }),
+    );
+
+    const response = await POST(jsonRequest(validBody));
+    const body = await response.json();
+
+    expect(response.status, JSON.stringify(body)).toBe(201);
+    expect(body).toMatchObject({
+      status: "preparing",
+      expiresAt: null,
+    });
+    expect(query(queries, "update shorts_mvp.file_upload_capacity_requests"))
+      .toBeUndefined();
+    expect(query(queries, "finalize_project_job")).toBeUndefined();
+    expect(mocks.releaseUploadCapacity).not.toHaveBeenCalled();
   });
 
   it("has no stable-path dispatch, AWS wake, or outbox dependency", () => {
