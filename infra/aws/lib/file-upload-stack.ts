@@ -613,7 +613,10 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
     }));
     capacityCoordinator.addToRolePolicy(new iam.PolicyStatement({
       actions: ["elasticloadbalancing:DescribeTargetHealth"],
-      resources: [targetGroup.targetGroupArn],
+      // ELBv2 DescribeTargetHealth does not support resource-level IAM
+      // permissions. Keep this wildcard confined to the single read-only
+      // action; the target ARN remains fixed in the Lambda environment.
+      resources: ["*"],
     }));
     new events.Rule(this, "CapacityReconcileSchedule", {
       schedule: events.Schedule.rate(cdk.Duration.minutes(1)),

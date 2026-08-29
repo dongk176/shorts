@@ -403,6 +403,15 @@ describe("isolated file upload canary stack", () => {
     expect(rendered).toContain("elasticloadbalancing:DescribeTargetHealth");
     expect(rendered).toContain("dynamodb:DeleteItem");
     expect(rendered).toContain("FILE_UPLOAD_CAPACITY_FUNCTION_ARN");
+    const describeTargetHealthPolicies = Object.values(
+      template.findResources("AWS::IAM::Policy"),
+    ).filter((resource) => JSON.stringify(resource).includes(
+      "elasticloadbalancing:DescribeTargetHealth",
+    ));
+    expect(describeTargetHealthPolicies).toHaveLength(1);
+    expect(JSON.stringify(describeTargetHealthPolicies[0])).toContain(
+      '"Resource":"*"',
+    );
     const invokePolicies = Object.values(
       template.findResources("AWS::IAM::Policy"),
     ).filter((resource) => JSON.stringify(resource).includes("lambda:InvokeFunction"));
