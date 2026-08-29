@@ -2257,7 +2257,7 @@ describe("job API security and idempotency", () => {
     );
   });
 
-  it("pins an authorized subtitle template job to its isolated candidate", async () => {
+  it("pins an authorized built-in v5 subtitle job to the unified target", async () => {
     process.env.SUBTITLE_TEMPLATES_ENABLED = "true";
     process.env.ELEVENLABS_TRANSCRIPTION_ENABLED = "true";
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
@@ -2328,11 +2328,11 @@ describe("job API security and idempotency", () => {
         safeArea: { x: 120, y: 666, width: 840, height: 140 },
       }),
       "elevenlabs_primary_openai_fallback",
-      "subtitle_templates",
-      process.env.SUBTITLE_TEMPLATES_BATCH_TARGET_RELEASE_ID,
+      "unified_template_subtitles",
+      process.env.UNIFIED_TEMPLATE_SUBTITLES_BATCH_TARGET_RELEASE_ID,
     ]));
     expect(insertCall?.slice(1)).not.toContain(
-      "unified_template_subtitles",
+      "subtitle_templates",
     );
   });
 

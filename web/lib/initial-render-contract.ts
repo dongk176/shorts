@@ -79,6 +79,9 @@ export function createInitialRenderContract(input: {
     templateSnapshot: builtInSubtitleSnapshot ?? resolved.templateSnapshot,
     subtitleTemplateId: subtitleTemplateSnapshot?.subtitleTemplateId ?? null,
     subtitleTemplateSnapshot,
+    usesUnifiedTemplateSubtitleCandidate: Boolean(
+      builtInSubtitleStyle || resolved.usesUnifiedTemplateSubtitleCanary,
+    ),
   };
 }
 

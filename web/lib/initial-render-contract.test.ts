@@ -40,6 +40,7 @@ describe("shared initial render contract", () => {
       timingLeadFrames: 7,
       wordGapPx: 6,
     });
+    expect(upload.usesUnifiedTemplateSubtitleCandidate).toBe(true);
     expect(upload.videoAspectRatio).toBe("16:9");
     expect(upload.templateSnapshot).toMatchObject({
       presetVersion: 3,
@@ -73,5 +74,6 @@ describe("shared initial render contract", () => {
     });
     expect(contract.subtitleTemplateSnapshot).toBe(unified);
     expect(contract.subtitleTemplateId).toBe("highlight");
+    expect(contract.usesUnifiedTemplateSubtitleCandidate).toBe(true);
   });
 });

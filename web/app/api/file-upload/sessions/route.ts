@@ -529,7 +529,7 @@ export async function POST(request: Request) {
       const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
       const dispatchTarget = projectDispatchTargetForFeatures({
         usesUnifiedTemplateSubtitleCandidate:
-          resolvedExecution.usesUnifiedTemplateSubtitleCanary,
+          renderContract.usesUnifiedTemplateSubtitleCandidate,
         usesLegacySubtitleSuiteCandidate: Boolean(
           input.subtitleTemplateId || input.brandColor,
         ),

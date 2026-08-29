@@ -295,8 +295,19 @@ export async function POST(request: Request) {
         videoAspectRatio: input.videoAspectRatio,
         brandColor: input.brandColor,
       });
+      const renderContract = createInitialRenderContract({
+        resolvedExecution,
+        subtitleTemplateId: input.subtitleTemplateId,
+        subtitleCaptionPlacement: input.subtitleCaptionPlacement,
+        brandColor: input.brandColor,
+        enhancedSubtitleTiming: subtitleTemplateUsesEnhancedTiming,
+      });
+      const resolvedTemplateId = renderContract.templateId;
+      const resolvedVideoAspectRatio = renderContract.videoAspectRatio;
+      const templateSnapshot = renderContract.templateSnapshot;
+      const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
       const usesUnifiedTemplateSubtitleCandidate =
-        resolvedExecution.usesUnifiedTemplateSubtitleCanary;
+        renderContract.usesUnifiedTemplateSubtitleCandidate;
       if (
         usesUnifiedTemplateSubtitleCandidate
         && executionBackend !== "aws_batch"
@@ -322,30 +333,20 @@ export async function POST(request: Request) {
         );
       }
       const transcriptionPolicy = transcriptionAccess.policy;
-      if (input.customTemplateId) {
-        dispatchTarget = executionBackend !== "aws_batch"
-          ? null
-          : projectDispatchTargetForFeatures({
-              usesUnifiedTemplateSubtitleCandidate,
-              usesLegacySubtitleSuiteCandidate,
-              transcriptionEnabled: transcriptionAccess.enabled,
-              sourceRangeSelectionEnabled,
-            });
-      }
+      // Resolve the immutable target only after the authoritative template
+      // snapshot is known. Built-in pop/highlight selections are upgraded to
+      // the unified v5 contract too, not only personal custom templates.
+      dispatchTarget = executionBackend !== "aws_batch"
+        ? null
+        : projectDispatchTargetForFeatures({
+            usesUnifiedTemplateSubtitleCandidate,
+            usesLegacySubtitleSuiteCandidate,
+            transcriptionEnabled: transcriptionAccess.enabled,
+            sourceRangeSelectionEnabled,
+          });
       let initialRenderSpecVersion: 4 | null = null;
       let initialCaptionRenderSpecVersion: 4 | null = null;
       let initialEditorReleaseId: string | null = null;
-      const renderContract = createInitialRenderContract({
-        resolvedExecution,
-        subtitleTemplateId: input.subtitleTemplateId,
-        subtitleCaptionPlacement: input.subtitleCaptionPlacement,
-        brandColor: input.brandColor,
-        enhancedSubtitleTiming: subtitleTemplateUsesEnhancedTiming,
-      });
-      const resolvedTemplateId = renderContract.templateId;
-      const resolvedVideoAspectRatio = renderContract.videoAspectRatio;
-      const templateSnapshot = renderContract.templateSnapshot;
-      const subtitleTemplateSnapshot = renderContract.subtitleTemplateSnapshot;
       const limits = await tx`
         with scoped_jobs as (
           select status,error_code,heartbeat_at
