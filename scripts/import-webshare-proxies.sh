@@ -9,6 +9,6 @@ if [[ $# -lt 1 || $# -gt 2 || ! -f "$1" || ( $# -eq 2 && "$2" != "--dry-run" ) ]
   exit 2
 fi
 
-SECRET_ARN="$(bash scripts/stack-outputs.sh RuntimeSecretArn Foundation)"
-export SECRET_ARN
+: "${SECRET_ARN:?실제 운영 Job Definition이 참조하는 SECRET_ARN을 명시해야 합니다.}"
+: "${JOB_DEFINITION_ARNS:?검증할 운영 Job Definition ARN을 쉼표로 구분해 명시해야 합니다.}"
 node scripts/import-webshare-proxies.mjs "$@"

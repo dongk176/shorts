@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assertJobDefinitionsUseProxySecret,
+  assertSecretUpdatePreserved,
   parseWebshareProxyFile,
   parseWebshareReplacementFile,
+  probeWebshareRoutes,
   replaceWebshareProxyRoutes,
 } from "./import-webshare-proxies.mjs";
 
@@ -57,5 +60,70 @@ test("rejects replacement files with unknown previous IPs", () => {
   assert.throws(
     () => parseWebshareReplacementFile("198.51.100.11:3001:new-user:new-pass:not-an-ip"),
     /IP 형식/,
+  );
+});
+
+test("requires every active worker definition to use the exact target secret", () => {
+  const secretArn = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:runtime-AbCdEf";
+  const definitionArn = "arn:aws:batch:ap-northeast-2:123456789012:job-definition/worker:1";
+  const definitions = [{
+    jobDefinitionArn: definitionArn,
+    status: "ACTIVE",
+    containerProperties: {
+      secrets: [{
+        name: "INGESTION_PROXY_ROUTES_JSON",
+        valueFrom: `${secretArn}:INGESTION_PROXY_ROUTES_JSON::`,
+      }],
+    },
+  }];
+
+  assert.doesNotThrow(() => (
+    assertJobDefinitionsUseProxySecret(definitions, secretArn, [definitionArn])
+  ));
+  assert.throws(
+    () => assertJobDefinitionsUseProxySecret(definitions, `${secretArn}-wrong`, [definitionArn]),
+    /프록시 시크릿 대상이 다릅니다/,
+  );
+  assert.throws(
+    () => assertJobDefinitionsUseProxySecret([], secretArn, [definitionArn]),
+    /ACTIVE 상태가 아닙니다/,
+  );
+});
+
+test("verifies AWSCURRENT routes and preserves every unrelated secret field", () => {
+  const routes = parseWebshareProxyFile(proxyLines());
+  const before = {
+    DATABASE_URL: "database-secret",
+    OPENAI_API_KEY: "openai-secret",
+    INGESTION_PROXY_ROUTES_JSON: "old-routes",
+  };
+  const after = {
+    ...before,
+    INGESTION_PROXY_ROUTES_JSON: JSON.stringify(routes),
+  };
+
+  assert.doesNotThrow(() => assertSecretUpdatePreserved(before, after, routes));
+  assert.throws(
+    () => assertSecretUpdatePreserved(before, { ...after, OPENAI_API_KEY: "changed" }, routes),
+    /프록시 이외/,
+  );
+  assert.throws(
+    () => assertSecretUpdatePreserved(before, { ...after, INGESTION_PROXY_ROUTES_JSON: "[]" }, routes),
+    /AWSCURRENT/,
+  );
+});
+
+test("checks every route without exposing its proxy URL in failures", async () => {
+  const routes = parseWebshareProxyFile(proxyLines());
+  const success = async () => ({ stdout: "203.0.113.10\n" });
+  assert.equal((await probeWebshareRoutes(routes, success)).length, 20);
+
+  const failure = async () => { throw new Error("contains-sensitive-command-output"); };
+  await assert.rejects(
+    () => probeWebshareRoutes(routes, failure),
+    (error) => (
+      /webshare-01/.test(error.message)
+      && !/user-0|pass-0|192\.0\.2\.1/.test(error.message)
+    ),
   );
 });
