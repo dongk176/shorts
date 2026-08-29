@@ -1216,6 +1216,102 @@ describe("subtitle template edit isolation", () => {
     );
   });
 
+  it("rejects a stale editor timeline version before recording a render request", async () => {
+    process.env.EDITOR_RENDERING_V2_ENABLED = "true";
+    process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = "true";
+    const stableReleaseId = "b0cd2a6b-5019-4b5c-87cb-57e2d0bdb4c0";
+    const document = editorDocumentV4Fixture();
+    document.subtitles.enabled = false;
+    document.subtitles.segments = [];
+    if (document.version !== 3 || document.renderSpec.version !== 4) {
+      throw new Error("invalid fixture");
+    }
+    delete document.renderSpec.subtitles;
+    const releaseRow = {
+      publicEnabled: true,
+      canaryEnabled: false,
+      runtimeEnabled: true,
+      testerEnabled: false,
+      userIsAdmin: false,
+      stableReleaseId,
+      stableUiVersion: 3,
+      stableDocumentVersion: 3,
+      stableStatus: "stable",
+      stableSubtitleEditingCapable: true,
+      stableRenderSpecVersion: 4,
+      stableCaptionRenderSpecVersion: 4,
+      stableFontManifestSha256: "a".repeat(64),
+      candidateReleaseId: null,
+      candidateUiVersion: null,
+      candidateDocumentVersion: null,
+      candidateStatus: null,
+      candidateSubtitleEditingCapable: false,
+      candidateRenderSpecVersion: null,
+      candidateCaptionRenderSpecVersion: null,
+      candidateFontManifestSha256: null,
+      subtitleEditingPublicEnabled: true,
+      renderV4InternalEnabled: false,
+      renderV4RolloutPercent: 100,
+      renderV4KillSwitch: false,
+      renderV4RolloutBucket: 0,
+    };
+    const db = dbWithRows(
+      [releaseRow],
+      [{
+        id: shortId,
+        jobId: "job-a",
+        mvpSessionId: "session-a",
+        status: "ready",
+        renderVersion: 3,
+        durationSeconds: 3.5,
+        templateId: "dark-minimal",
+        customTemplateId: null,
+        templateSnapshot: { presetVersion: 3 },
+        videoAspectRatio: "16:9",
+        editTimelineS3Key: "edit-sources/timeline.mp4",
+        editTimelineStartSeconds: 10,
+        editTimelineEndSeconds: 20,
+        editTimelineVersion: 1,
+        cleanClipS3Key: "edit-sources/clean.mp4",
+        startSeconds: 11,
+        endSeconds: 16,
+        subtitleTemplateId: null,
+        subtitleTemplateSnapshot: null,
+        captionRenderSpec: null,
+        subtitlesEnabled: false,
+        wordTimedSubtitlesAvailable: false,
+        channelThumbnailUrl: "https://example.com/channel.png",
+        editorDocument: null,
+        onboardingWelcomeFunded: false,
+      }],
+      [],
+    );
+    const begin = vi.fn();
+    Object.assign(db, { begin });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        requestId: "65630e62-2236-463e-acd0-a6d1362a9558",
+        timelineVersion: 0,
+        release: {
+          releaseId: stableReleaseId,
+          channel: "stable",
+          uiVersion: 3,
+          documentVersion: 3,
+        },
+        document,
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "EDITOR_TIMELINE_VERSION_CONFLICT",
+    });
+    expect(begin).not.toHaveBeenCalled();
+  });
+
   it("rejects a forged v3 subtitle edit from a non-admin canary tester", async () => {
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
     process.env.SUBTITLE_TEMPLATES_ENABLED = "true";

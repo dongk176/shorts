@@ -121,6 +121,7 @@ const legacyEditSchema = z.object({
 
 const editorDocumentRequestSchema = z.object({
   requestId: z.string().uuid(),
+  timelineVersion: z.number().int().nonnegative().optional(),
   release: z.object({
     releaseId: z.string().uuid(),
     channel: z.enum(["stable", "canary"]),
@@ -144,6 +145,7 @@ type EditorExistingRow = {
   editTimelineS3Key: string | null;
   editTimelineStartSeconds: number | null;
   editTimelineEndSeconds: number | null;
+  editTimelineVersion: number | null;
   cleanClipS3Key: string | null;
   startSeconds: number;
   endSeconds: number;
@@ -184,11 +186,13 @@ async function applyEditorDocument({
   shortId,
   requestId,
   requestedRelease,
+  timelineVersion: requestedTimelineVersion,
   document: requestedDocument,
 }: {
   shortId: string;
   requestId: string;
   requestedRelease: RequestedEditorRelease;
+  timelineVersion?: number;
   document: ValidatedEditorDocumentSnapshot;
 }) {
   const session = await requireAuthenticatedMvpSession();
@@ -266,6 +270,7 @@ async function applyEditorDocument({
       s.duration_seconds,s.template_id,s.custom_template_id,s.template_snapshot,
       s.video_aspect_ratio,s.edit_timeline_s3_key,
       s.edit_timeline_start_seconds,s.edit_timeline_end_seconds,
+      s.edit_timeline_version,
       s.clean_clip_s3_key,s.start_seconds,s.end_seconds,
       s.subtitle_template_id,s.subtitle_template_snapshot,s.caption_render_spec,
       s.subtitles_enabled,s.editor_document,j.channel_thumbnail_url,
@@ -298,14 +303,12 @@ async function applyEditorDocument({
               and jsonb_typeof(word->'end')='number'
               and jsonb_typeof(clip->'sourceStartSeconds')='number'
               and jsonb_typeof(clip->'sourceEndSeconds')='number'
-            then (word->>'end')::numeric > coalesce(
-              s.edit_timeline_start_seconds,
-              s.start_seconds
-            ) + (clip->>'sourceStartSeconds')::numeric
-              and (word->>'start')::numeric < coalesce(
-                s.edit_timeline_start_seconds,
-                s.start_seconds
-              ) + (clip->>'sourceEndSeconds')::numeric
+            then (word->>'end')::numeric
+                > ${requestedDocument.video.timelineStartSeconds}
+                  + (clip->>'sourceStartSeconds')::numeric
+              and (word->>'start')::numeric
+                < ${requestedDocument.video.timelineStartSeconds}
+                  + (clip->>'sourceEndSeconds')::numeric
             else false
           end
       ) as word_timed_subtitles_available,
@@ -523,6 +526,26 @@ async function applyEditorDocument({
       "EDITOR_RENDER_VERSION_CONFLICT",
     );
   }
+  const currentTimelineVersion = existing.editTimelineS3Key
+    ? Number(existing.editTimelineVersion)
+    : 0;
+  if (
+    requestedTimelineVersion !== undefined
+    && requestedTimelineVersion !== currentTimelineVersion
+  ) {
+    console.warn(JSON.stringify({
+      level: "warning",
+      msg: "editor_timeline_version_conflict",
+      shortId,
+      requestedTimelineVersion,
+      currentTimelineVersion,
+    }));
+    throw new HttpError(
+      409,
+      "편집용 영상 범위를 최신 상태로 맞추고 있습니다. 다시 저장해 주세요.",
+      "EDITOR_TIMELINE_VERSION_CONFLICT",
+    );
+  }
   if (!onboardingWelcomeRerenderAllowed(
     Boolean(existing.onboardingWelcomeFunded),
     Number(existing.renderVersion),
@@ -544,6 +567,19 @@ async function applyEditorDocument({
     !sameTimelineSecond(requestedDocument.video.timelineStartSeconds, timelineStart)
     || !sameTimelineSecond(requestedDocument.video.timelineEndSeconds, timelineEnd)
   ) {
+    console.warn(JSON.stringify({
+      level: "warning",
+      msg: "editor_timeline_range_conflict",
+      shortId,
+      requestedTimelineVersion,
+      currentTimelineVersion,
+      requestedTimelineStartSeconds:
+        requestedDocument.video.timelineStartSeconds,
+      requestedTimelineEndSeconds:
+        requestedDocument.video.timelineEndSeconds,
+      currentTimelineStartSeconds: timelineStart,
+      currentTimelineEndSeconds: timelineEnd,
+    }));
     throw new HttpError(
       409,
       "편집용 영상 범위가 변경되었습니다. 편집 화면을 다시 열어 주세요.",
@@ -728,6 +764,11 @@ async function applyEditorDocument({
         and s.status='ready'
         and s.render_version=${document.baseRenderVersion}
         and (
+          ${requestedTimelineVersion === undefined}
+          or coalesce(s.edit_timeline_version,0)=
+            ${requestedTimelineVersion ?? -1}
+        )
+        and (
           s.subtitle_template_id is null
           or ${subtitleEditingReleaseEnabled(lockedRelease)}
         )
@@ -736,6 +777,31 @@ async function applyEditorDocument({
       returning s.id
     `;
     if (!updated[0]) {
+      if (requestedTimelineVersion !== undefined) {
+        const currentTimelineRows = await tx`
+          select coalesce(edit_timeline_version,0) as edit_timeline_version
+          from shorts_mvp.generated_shorts
+          where id=${shortId}
+          limit 1
+        `;
+        const lockedTimelineVersion = Number(
+          currentTimelineRows[0]?.editTimelineVersion,
+        );
+        if (lockedTimelineVersion !== requestedTimelineVersion) {
+          console.warn(JSON.stringify({
+            level: "warning",
+            msg: "editor_timeline_version_conflict_locked",
+            shortId,
+            requestedTimelineVersion,
+            currentTimelineVersion: lockedTimelineVersion,
+          }));
+          throw new HttpError(
+            409,
+            "편집용 영상 범위를 최신 상태로 맞추고 있습니다. 다시 저장해 주세요.",
+            "EDITOR_TIMELINE_VERSION_CONFLICT",
+          );
+        }
+      }
       throw new HttpError(
         409,
         "쇼츠 편집 상태가 변경되었습니다. 다시 열어 주세요.",
@@ -782,6 +848,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
         shortId,
         requestId: input.requestId,
         requestedRelease: input.release,
+        timelineVersion: input.timelineVersion,
         document: input.document,
       });
     }

@@ -76,6 +76,38 @@ describe("editor v2 resilience", () => {
       "setSelectionStart(document.video.selectionStartSeconds)",
       "setSelectionEnd(document.video.selectionEndSeconds)",
     ].forEach((statement) => expect(restoreSource).toContain(statement));
+    expect(restoreSource).toContain(
+      "synchronizeEditorDocumentTimeline(document, editTimeline)",
+    );
+  });
+
+  it("synchronizes the captured timeline before saving and retries one version race", () => {
+    const saveStart = editorSource.indexOf("const save = async () =>");
+    const saveSource = editorSource.slice(saveStart, saveStart + 9_000);
+    expect(saveStart).toBeGreaterThan(-1);
+    expect(saveSource).toContain(
+      "const latestTimeline = await requestJson<EditTimeline>",
+    );
+    expect(saveSource).toContain("synchronizeEditorDocumentTimeline(");
+    expect(saveSource).toContain("timelineVersion: timeline.version");
+    expect(saveSource).toContain("EDITOR_TIMELINE_VERSION_CONFLICT");
+    expect(saveSource).toContain("const refreshedTimeline = await requestJson<EditTimeline>");
+  });
+
+  it("keeps ambiguous network retries idempotent but renews confirmed failures", () => {
+    expect(editorSource).toContain(
+      "previousRequest?.fingerprint === requestFingerprint",
+    );
+    expect(editorSource).toContain('cause.code === "EDITOR_REQUEST_FAILED"');
+    expect(editorSource).toContain('cause.code === "EDITOR_REQUEST_CONFLICT"');
+    expect(editorSource).toContain("editorSaveRequestRef.current = null");
+  });
+
+  it("does not hide edit-timeline authorization or server failures behind fallback video", () => {
+    expect(editorSource).toContain(
+      "if (!(cause instanceof HttpRequestError) || cause.status !== 404)",
+    );
+    expect(editorSource).toContain("throw cause;");
   });
 
   it("keeps hook-title sizing only in the left sidebar", () => {

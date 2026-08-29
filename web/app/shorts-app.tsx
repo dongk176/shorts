@@ -249,6 +249,10 @@ import {
   type EditorDocumentSnapshot,
 } from "@/lib/editor-document-snapshot";
 import {
+  editorDocumentMatchesTimeline,
+  synchronizeEditorDocumentTimeline,
+} from "@/lib/editor-timeline-sync";
+import {
   editorDocumentSemanticFingerprint,
   editorInitialRenderSpecLayerFingerprints,
   preserveUnchangedInitialRenderSpecLayers,
@@ -4585,7 +4589,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [isPreviewFullscreen, setIsPreviewFullscreen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const editorSaveRequestIdRef = useRef<string | null>(null);
+  const editorSaveRequestRef = useRef<{
+    requestId: string;
+    fingerprint: string;
+  } | null>(null);
   const [applyConfirmationOpen, setApplyConfirmationOpen] = useState(false);
   const [resetConfirmationOpen, setResetConfirmationOpen] = useState(false);
   const [
@@ -6247,7 +6254,32 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     const previousComments = cloneEditorComments(commentsRef.current);
     const previousCopy = currentEditorCopySnapshot();
     const previousTemplate = currentEditorTemplateSnapshot();
-    const document = cloneEditorDocumentSnapshot(draft.document);
+    let document = cloneEditorDocumentSnapshot(draft.document);
+    if (editTimeline) {
+      try {
+        document = synchronizeEditorDocumentTimeline(document, editTimeline);
+      } catch {
+        setError(
+          "편집용 영상 범위가 바뀌어 영상 구간만 최신 상태로 맞췄습니다.",
+        );
+        document.video = {
+          ...document.video,
+          timelineStartSeconds: editTimeline.timelineStartSeconds,
+          timelineEndSeconds: editTimeline.timelineEndSeconds,
+          selectionStartSeconds: editTimeline.currentStartSeconds,
+          selectionEndSeconds: editTimeline.currentEndSeconds,
+          clips: createEditorVideoClips(
+            editTimeline.currentStartSeconds
+              - editTimeline.timelineStartSeconds,
+            editTimeline.currentEndSeconds
+              - editTimeline.timelineStartSeconds,
+          ),
+        };
+        document.subtitles.segments = cloneEditorSubtitleSegments(
+          editTimeline.subtitleSegments,
+        );
+      }
+    }
     if (!adminSubtitleLayoutEnabled) {
       document.overlays = sanitizeEditorOverlayFontsForStable(
         document.overlays,
@@ -6443,6 +6475,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     currentEditorCopySnapshot,
     currentEditorTemplateSnapshot,
     editorDraftCandidate,
+    editTimeline,
     item.id,
     item.renderVersion,
     unifiedSubtitleLayoutEnabled,
@@ -9004,8 +9037,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             setCleanVideoUrl(value.url);
           }
           return;
-        } catch {
-          // Projects created before timeline capture keep the existing editor.
+        } catch (cause) {
+          if (!(cause instanceof HttpRequestError) || cause.status !== 404) {
+            throw cause;
+          }
+          // Projects without a timeline endpoint keep the existing editor.
         }
       }
       const value = await requestJson<{ url: string; expiresAt: string }>(
@@ -9863,6 +9899,45 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         if (!editTimeline || editorDocumentSnapshot.video.clips.length === 0) {
           throw new Error("편집용 영상이 준비된 뒤 다시 시도해 주세요.");
         }
+        const latestTimeline = await requestJson<EditTimeline>(
+          `/api/shorts/${item.id}/edit-timeline`,
+        );
+        const synchronizedEditorDocument = synchronizeEditorDocumentTimeline(
+          editorDocumentSnapshot,
+          latestTimeline,
+        );
+        const timelineChanged = (
+          latestTimeline.version !== editTimeline.version
+          || !editorDocumentMatchesTimeline(
+            editorDocumentSnapshot,
+            latestTimeline,
+          )
+        );
+        if (timelineChanged) {
+          videoRef.current?.pause();
+          setEditTimeline(latestTimeline);
+          setSelectionStart(
+            synchronizedEditorDocument.video.selectionStartSeconds,
+          );
+          setSelectionEnd(
+            synchronizedEditorDocument.video.selectionEndSeconds,
+          );
+          subtitleSegmentsRef.current = cloneEditorSubtitleSegments(
+            synchronizedEditorDocument.subtitles.segments,
+          );
+          setSegments(cloneEditorSubtitleSegments(
+            synchronizedEditorDocument.subtitles.segments,
+          ));
+          videoClipsRef.current = cloneEditorVideoClips(
+            synchronizedEditorDocument.video.clips,
+          );
+          setVideoClips(cloneEditorVideoClips(
+            synchronizedEditorDocument.video.clips,
+          ));
+          editorVideoSourceEndpointRef.current = "timeline";
+          setEditorVideoUrlExpiresAt(latestTimeline.expiresAt);
+          setCleanVideoUrl(latestTimeline.url);
+        }
         if (
           subtitlesEnabled
           && editableCaptionSourceSpec?.schemaVersion === 4
@@ -9874,8 +9949,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               .join(" ") || "자막 Aa 123",
           );
         }
-        const document = finalizeEditorDocumentForSave(
-          editorDocumentSnapshot,
+        let document = finalizeEditorDocumentForSave(
+          synchronizedEditorDocument,
         );
         const preserveInitialRenderSpec =
           shouldPreserveInitialEditorRenderSpec(
@@ -9944,24 +10019,67 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                   : "저장할 편집 내용을 다시 확인해 주세요.";
           throw new Error(message);
         }
-        const requestId = editorSaveRequestIdRef.current
-          || globalThis.crypto.randomUUID();
-        editorSaveRequestIdRef.current = requestId;
-        await requestJson(`/api/shorts/${item.id}/apply-edit`, {
+        const releaseRequest = {
+          releaseId: editorRelease.releaseId,
+          channel: editorRelease.channel,
+          uiVersion: editorRelease.uiVersion,
+          documentVersion: editorRelease.documentVersion,
+        };
+        const requestFingerprint = JSON.stringify({
+          release: releaseRequest,
+          document: validatedDocument.data,
+        });
+        const previousRequest = editorSaveRequestRef.current;
+        const requestId = previousRequest?.fingerprint === requestFingerprint
+          ? previousRequest.requestId
+          : globalThis.crypto.randomUUID();
+        editorSaveRequestRef.current = { requestId, fingerprint: requestFingerprint };
+        const submitDocument = (
+          timeline: EditTimeline,
+          nextDocument: unknown,
+        ) => requestJson(`/api/shorts/${item.id}/apply-edit`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             requestId,
-            release: {
-              releaseId: editorRelease.releaseId,
-              channel: editorRelease.channel,
-              uiVersion: editorRelease.uiVersion,
-              documentVersion: editorRelease.documentVersion,
-            },
-            document: validatedDocument.data,
+            timelineVersion: timeline.version,
+            release: releaseRequest,
+            document: nextDocument,
           }),
         });
-        editorSaveRequestIdRef.current = null;
+        try {
+          await submitDocument(latestTimeline, validatedDocument.data);
+        } catch (cause) {
+          if (
+            !(cause instanceof HttpRequestError)
+            || cause.code !== "EDITOR_TIMELINE_VERSION_CONFLICT"
+          ) {
+            throw cause;
+          }
+          const refreshedTimeline = await requestJson<EditTimeline>(
+            `/api/shorts/${item.id}/edit-timeline`,
+          );
+          document = synchronizeEditorDocumentTimeline(
+            document,
+            refreshedTimeline,
+          );
+          const refreshedDocument = editorDocumentSnapshotSchema.safeParse(
+            document,
+          );
+          if (!refreshedDocument.success) {
+            throw new Error("영상 구간을 다시 확인해 주세요.");
+          }
+          const refreshedEditorDocument = refreshedDocument.data;
+          editorSaveRequestRef.current = {
+            requestId,
+            fingerprint: JSON.stringify({
+              release: releaseRequest,
+              document: refreshedEditorDocument,
+            }),
+          };
+          await submitDocument(refreshedTimeline, refreshedEditorDocument);
+        }
+        editorSaveRequestRef.current = null;
       } else {
       const commentOverlays = editorDocumentSnapshot.template.id === "comment-capture"
         ? [...editorDocumentSnapshot.comments].sort(
@@ -10054,7 +10172,18 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       }
       await onChanged();
       onClose();
-    } catch (cause) { setError(userFacingErrorMessage(cause, "저장하지 못했습니다.")); }
+    } catch (cause) {
+      if (
+        cause instanceof HttpRequestError
+        && (
+          cause.code === "EDITOR_REQUEST_FAILED"
+          || cause.code === "EDITOR_REQUEST_CONFLICT"
+        )
+      ) {
+        editorSaveRequestRef.current = null;
+      }
+      setError(userFacingErrorMessage(cause, "저장하지 못했습니다."));
+    }
     finally { setSaving(false); }
   };
 
