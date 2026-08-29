@@ -471,11 +471,17 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
       healthCheck: {
         enabled: true,
         healthyHttpCodes: "200",
-        interval: cdk.Duration.seconds(30),
+        interval: cdk.Duration.seconds(5),
         path: "/readyz",
-        timeout: cdk.Duration.seconds(5),
+        timeout: cdk.Duration.seconds(2),
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 2,
       },
     });
+    targetGroup.setAttribute(
+      "load_balancing.algorithm.type",
+      "least_outstanding_requests",
+    );
     targetGroup.addTarget(service.loadBalancerTarget({
       containerName: container.containerName,
       containerPort: RECEIVER_PORT,
@@ -568,12 +574,16 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
       )),
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
+      reservedConcurrentExecutions: 1,
       environment: {
         ECS_CLUSTER: clusterName,
         ECS_SERVICE: serviceName,
+        TARGET_GROUP_ARN: targetGroup.targetGroupArn,
         CAPACITY_TABLE: capacityState.tableName,
         MAX_CAPACITY: "20",
         WARM_SECONDS: "600",
+        UPLOAD_WINDOW_SECONDS: "900",
+        CLAIMED_LEASE_SECONDS: "21600",
       },
     });
     capacityCoordinator.addToRolePolicy(new iam.PolicyStatement({
@@ -595,11 +605,15 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
       resources: [serviceArn],
     }));
     capacityCoordinator.addToRolePolicy(new iam.PolicyStatement({
-      actions: ["ecs:ListTasks", "ecs:GetTaskProtection"],
+      actions: ["ecs:ListTasks", "ecs:DescribeTasks", "ecs:GetTaskProtection"],
       resources: ["*"],
       conditions: {
         ArnEquals: { "ecs:cluster": cluster.clusterArn },
       },
+    }));
+    capacityCoordinator.addToRolePolicy(new iam.PolicyStatement({
+      actions: ["elasticloadbalancing:DescribeTargetHealth"],
+      resources: [targetGroup.targetGroupArn],
     }));
     new events.Rule(this, "CapacityReconcileSchedule", {
       schedule: events.Schedule.rate(cdk.Duration.minutes(1)),

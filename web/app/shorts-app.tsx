@@ -13867,7 +13867,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     const requestId = uploadRequestId.current;
     let uploadSessionId: string | null = null;
     setBusy(true);
-    setUploadProgress(0);
+    setUploadProgress(null);
     setUploadCompletionOpen(false);
     setUploadPreparationActive(true);
     setError(null);
@@ -13878,7 +13878,8 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         uploadSessionId: string;
         uploadUrl: string;
         token: string;
-        expiresAt: string;
+        expiresAt: string | null;
+        preparationExpiresAt: string;
         usage: UsageSnapshot;
       }>("/api/file-upload/sessions", {
         method: "POST",
@@ -13948,7 +13949,6 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       } : current);
       publishUsageSnapshot(value.usage);
       setActiveJob(pendingJob);
-      setScrollToProjects(true);
       pollStarted.current = Date.now();
 
       setUploadPreparationActive(true);
@@ -13956,7 +13956,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         file: uploadVideo.file,
         uploadUrl: value.uploadUrl,
         bearerToken: value.token,
-        expiresAt: value.expiresAt,
+        preparationExpiresAt: value.preparationExpiresAt,
         signal: controller.signal,
         onAttemptStart: () => {
           setUploadPreparationActive(false);
@@ -13965,12 +13965,17 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         onWaiting: () => {
           setUploadTransferActive(false);
           setUploadPreparationActive(true);
-          setUploadProgress(0);
         },
-        onProgress: (progress) => setUploadProgress(progress.percent),
+        onProgress: (progress) => {
+          if (progress.loadedBytes > 0) {
+            setUploadProgress(Math.max(1, progress.percent));
+          }
+        },
         getSessionState: () => requestJson<{
           status: string;
           received: boolean;
+          expiresAt: string | null;
+          preparationExpiresAt: string | null;
           failureReason: string | null;
         }>(`/api/file-upload/sessions/${encodeURIComponent(value.uploadSessionId)}`, {
           cache: "no-store",
@@ -14267,7 +14272,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                 <span className="grid h-12 w-12 place-items-center rounded-full border border-emerald-300/30 bg-emerald-300/10 text-2xl font-black text-emerald-200" aria-hidden="true">✓</span>
                 <h2 id="upload-lifecycle-title" className="mt-5 text-2xl font-black text-white">업로드 완료</h2>
                 <p id="upload-lifecycle-description" className="mt-3 text-sm font-semibold leading-6 text-neutral-300">
-                  원본 영상이 안전하게 전달되었습니다. 이제 창을 닫아도 쇼츠 생성 작업은 계속됩니다.
+                  이제 창을 닫아도 쇼츠 생성 작업은 계속됩니다.
                 </p>
                 <button
                   type="button"
@@ -14275,6 +14280,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                   onClick={() => {
                     setUploadCompletionOpen(false);
                     setUploadProgress(null);
+                    setScrollToProjects(true);
                   }}
                   className="mt-7 h-12 w-full rounded-xl bg-white text-sm font-black text-black transition hover:bg-neutral-100 active:scale-[.99]"
                 >
@@ -14287,31 +14293,48 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                   <span className="h-5 w-5 animate-spin rounded-full border-2 border-[#ffb4a8]/30 border-t-[#ff8f7f] motion-reduce:animate-none" />
                 </span>
                 <h2 id="upload-lifecycle-title" className="mt-5 text-2xl font-black text-white">
-                  {uploadTransferActive ? "영상을 업로드하고 있어요" : "업로드 서버를 준비하고 있어요"}
+                  영상 업로드 중
                 </h2>
                 <p id="upload-lifecycle-description" className="mt-3 text-sm font-semibold leading-6 text-neutral-300">
-                  {uploadTransferActive
-                    ? "업로드가 완료될 때까지만 이 탭을 열어두세요. 다른 탭은 이용할 수 있으며, 완료 후에는 창을 닫아도 작업이 계속됩니다."
-                    : "준비가 끝나면 영상 업로드가 자동으로 시작됩니다. 잠시만 기다려 주세요."}
+                  업로드가 끝날 때까지 이 탭을 열어두세요.
                 </p>
-                <div className="mt-6 overflow-hidden rounded-full bg-white/10 p-1" aria-label={`업로드 진행률 ${uploadProgress || 0}%`}>
-                  <span
-                    className="block h-2 rounded-full bg-[#ff715e] transition-[width] duration-300"
-                    style={{ width: `${uploadTransferActive ? uploadProgress || 0 : 8}%` }}
-                  />
-                </div>
+                {uploadTransferActive && uploadProgress !== null ? (
+                  <div
+                    className="mt-6 overflow-hidden rounded-full bg-white/10 p-1"
+                    role="progressbar"
+                    aria-label="업로드 진행률"
+                    aria-valuemin={1}
+                    aria-valuemax={100}
+                    aria-valuenow={uploadProgress}
+                  >
+                    <span
+                      className="block h-2 rounded-full bg-[#ff715e] transition-[width] duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                ) : (
+                  <div
+                    className="mt-6 overflow-hidden rounded-full bg-white/10 p-1"
+                    role="progressbar"
+                    aria-label="업로드 시작 중"
+                  >
+                    <span className="block h-2 w-1/3 animate-pulse rounded-full bg-[#ff715e] motion-reduce:animate-none" />
+                  </div>
+                )}
                 <p className="mt-2 text-center text-xs font-extrabold tabular-nums text-neutral-400">
-                  {uploadTransferActive ? `${uploadProgress || 0}%` : "서버 준비 중"}
+                  {uploadTransferActive && uploadProgress !== null
+                    ? `${uploadProgress}%`
+                    : "업로드 시작 중"}
                 </p>
-                <p className="mt-5 text-xs font-semibold leading-5 text-amber-100/80">
-                  모바일에서는 화면 전환이나 절전으로 전송이 중단될 수 있습니다.
+                <p className="mt-5 text-xs font-semibold leading-5 text-amber-100/80 sm:hidden">
+                  화면을 켜둔 채 기다려 주세요.
                 </p>
                 <button
                   type="button"
                   onClick={cancelActiveUpload}
                   className="mt-5 h-11 w-full rounded-xl border border-white/15 text-sm font-extrabold text-neutral-200 transition hover:bg-white/[.06]"
                 >
-                  {uploadTransferActive ? "업로드 중단" : "준비 취소"}
+                  업로드 취소
                 </button>
               </>
             )}

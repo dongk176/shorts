@@ -312,6 +312,7 @@ class ActiveUpload:
     intake_recorded: bool = False
     received_bytes: int = 0
     failure_recorded: bool = False
+    capacity_claimed: bool = False
     released: bool = False
 
 
@@ -331,6 +332,7 @@ class UploadReceiverService:
         self._active_guard = threading.Lock()
         self._active: ActiveUpload | None = None
         self.task_protection = TaskScaleInProtection(config)
+        self._task_arn: str | None = None
         self._sweeper_thread: threading.Thread | None = None
         temp_root = Path(self.settings.temp_dir).resolve(strict=True)
         self.upload_root = temp_root / "receiver-uploads"
@@ -443,6 +445,8 @@ class UploadReceiverService:
                     "upload_capacity_protection_unavailable",
                     "업로드 작업 서버를 안전하게 보호하지 못했습니다.",
                 ) from None
+            self._claim_capacity(upload_session_id, token_hash)
+            context.capacity_claimed = True
             claim = self.repository.claim_upload_session(
                 upload_session_id,
                 token_hash,
@@ -558,6 +562,68 @@ class UploadReceiverService:
         finally:
             if not handed_to_pipeline:
                 self._release(context)
+
+    def _ecs_task_arn(self) -> str:
+        if self._task_arn:
+            return self._task_arn
+        metadata_uri = os.environ.get("ECS_CONTAINER_METADATA_URI_V4", "").strip()
+        if not _ECS_AGENT_URI.fullmatch(metadata_uri):
+            raise RuntimeError("ECS task metadata endpoint is unavailable")
+        request = urllib.request.Request(f"{metadata_uri}/task", method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=3) as response:  # noqa: S310
+                if response.status < 200 or response.status >= 300:
+                    raise RuntimeError("ECS task metadata request failed")
+                payload = json.loads(response.read(65_537))
+        except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError) as exc:
+            raise RuntimeError("ECS task metadata request failed") from exc
+        task_arn = str(payload.get("TaskARN") or "") if isinstance(payload, dict) else ""
+        if not task_arn.startswith("arn:aws:ecs:") or ":task/" not in task_arn:
+            raise RuntimeError("ECS task metadata did not contain a task ARN")
+        self._task_arn = task_arn
+        return task_arn
+
+    def _claim_capacity(self, upload_session_id: str, token_hash: str) -> None:
+        capacity_function_arn = os.environ.get(
+            "FILE_UPLOAD_CAPACITY_FUNCTION_ARN", ""
+        ).strip()
+        if not capacity_function_arn:
+            return
+        try:
+            response = boto3.client(
+                "lambda", region_name=self.settings.aws_region
+            ).invoke(
+                FunctionName=capacity_function_arn,
+                InvocationType="RequestResponse",
+                Payload=json.dumps({
+                    "action": "claim",
+                    "uploadSessionId": upload_session_id,
+                    "tokenHash": token_hash,
+                    "taskArn": self._ecs_task_arn(),
+                }, separators=(",", ":")).encode("utf-8"),
+            )
+            if response.get("FunctionError"):
+                raise RuntimeError("capacity claim lambda failed")
+            body = response.get("Payload")
+            raw = body.read(65_537) if hasattr(body, "read") else body
+            payload = json.loads(raw or b"{}")
+        except Exception as exc:
+            _event(
+                "upload_capacity_claim_error",
+                session_id=upload_session_id,
+                error_type=type(exc).__name__,
+            )
+            raise UploadRequestError(
+                HTTPStatus.TOO_EARLY,
+                "upload_capacity_not_ready",
+                "업로드 준비가 아직 완료되지 않았습니다.",
+            ) from None
+        if not isinstance(payload, dict) or payload.get("leaseState") != "claimed":
+            raise UploadRequestError(
+                HTTPStatus.TOO_EARLY,
+                "upload_capacity_not_ready",
+                "업로드 준비가 아직 완료되지 않았습니다.",
+            )
 
     def _assert_claim_result(self, result: str) -> None:
         if result == "claimed":
@@ -1001,6 +1067,18 @@ class UploadReceiverService:
             active_session_id = (
                 self._active.upload_session_id if self._active else None
             )
+        expired_capacity: list[dict[str, object]] = []
+        try:
+            expired_capacity = self.repository.expire_waiting_upload_capacity_requests()
+        except Exception as exc:
+            _event(
+                "upload_capacity_sweeper_query_error",
+                error_type=type(exc).__name__,
+            )
+        for item in expired_capacity:
+            upload_session_id = str(item.get("id") or "")
+            self._notify_capacity_release(upload_session_id)
+
         try:
             candidates = self.repository.claim_abandoned_upload_sessions(
                 stale_after_seconds=self.config.stale_after_seconds,
@@ -1013,7 +1091,7 @@ class UploadReceiverService:
             )
             return 0
 
-        cleaned_count = 0
+        cleaned_count = len(expired_capacity)
         for item in candidates:
             upload_session_id = str(item.get("id") or "")
             job_id = str(item.get("job_id") or "")
@@ -1047,10 +1125,10 @@ class UploadReceiverService:
                 continue
             if finalized:
                 cleaned_count += 1
-        if candidates:
+        if candidates or expired_capacity:
             _event(
                 "upload_sweeper_finished",
-                candidate_count=len(candidates),
+                candidate_count=len(candidates) + len(expired_capacity),
                 cleaned_count=cleaned_count,
             )
         return cleaned_count
@@ -1131,26 +1209,30 @@ class UploadReceiverService:
                 session_id=context.upload_session_id,
                 error_type=type(exc).__name__,
             )
+        if context.capacity_claimed:
+            self._notify_capacity_release(context.upload_session_id)
+        self._capacity.release()
+
+    def _notify_capacity_release(self, upload_session_id: str) -> None:
         capacity_function_arn = os.environ.get(
             "FILE_UPLOAD_CAPACITY_FUNCTION_ARN", ""
         ).strip()
-        if capacity_function_arn:
+        if capacity_function_arn and upload_session_id:
             try:
                 boto3.client("lambda", region_name=self.settings.aws_region).invoke(
                     FunctionName=capacity_function_arn,
                     InvocationType="Event",
                     Payload=json.dumps({
                         "action": "release",
-                        "uploadSessionId": context.upload_session_id,
+                        "uploadSessionId": upload_session_id,
                     }).encode("utf-8"),
                 )
             except Exception as exc:
                 _event(
                     "upload_capacity_release_notify_error",
-                    session_id=context.upload_session_id,
+                    session_id=upload_session_id,
                     error_type=type(exc).__name__,
                 )
-        self._capacity.release()
 
     def shutdown(self) -> None:
         self.shutdown_event.set()

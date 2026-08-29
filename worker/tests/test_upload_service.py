@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import json
 import socket
 import threading
 import time
@@ -61,6 +62,8 @@ class FakeRepository:
         self.abandoned_cleanup_calls: list[dict[str, object]] = []
         self.abandoned_final_status = "failed"
         self.claim_overrides: dict[str, object] = {}
+        self.expired_capacity_requests: list[dict[str, object]] = []
+        self.expired_capacity_calls = 0
 
     def claim_upload_session(
         self,
@@ -128,6 +131,12 @@ class FakeRepository:
         sessions = self.abandoned_sessions
         self.abandoned_sessions = []
         return sessions
+
+    def expire_waiting_upload_capacity_requests(self) -> list[dict[str, object]]:
+        self.expired_capacity_calls += 1
+        rows = self.expired_capacity_requests
+        self.expired_capacity_requests = []
+        return rows
 
     def finalize_abandoned_upload_source_cleanup(
         self,
@@ -312,6 +321,111 @@ def test_content_length_is_required_numeric_and_bounded(
     assert repository.claim_calls == []
 
 
+def test_receiver_claims_the_granted_capacity_on_its_own_ecs_task(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = b"valid-video-payload"
+    service, worker, repository = _service(tmp_path, payload)
+    worker.settings.aws_region = "ap-northeast-2"
+    session_id = str(uuid4())
+    task_arn = (
+        "arn:aws:ecs:ap-northeast-2:123456789012:"
+        "task/test-cluster/0123456789abcdef"
+    )
+    monkeypatch.setenv(
+        "FILE_UPLOAD_CAPACITY_FUNCTION_ARN",
+        "arn:aws:lambda:ap-northeast-2:123456789012:function:test-capacity",
+    )
+    monkeypatch.setenv(
+        "ECS_CONTAINER_METADATA_URI_V4",
+        "http://169.254.170.2/v4/test-container",
+    )
+    monkeypatch.setattr(
+        "shorts_worker.upload_service.probe_media",
+        lambda *_args, **_kwargs: _valid_probe(),
+    )
+
+    class MetadataResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _limit: int) -> bytes:
+            return json.dumps({"TaskARN": task_arn}).encode()
+
+    monkeypatch.setattr(
+        "shorts_worker.upload_service.urllib.request.urlopen",
+        lambda *_args, **_kwargs: MetadataResponse(),
+    )
+    invocations: list[dict[str, object]] = []
+
+    class LambdaClient:
+        def invoke(self, **kwargs):
+            invocations.append(kwargs)
+            request = json.loads(kwargs["Payload"])
+            if request["action"] == "claim":
+                return {"Payload": BytesIO(b'{"leaseState":"claimed"}')}
+            return {"Payload": BytesIO(b"{}")}
+
+    monkeypatch.setattr(
+        "shorts_worker.upload_service.boto3.client",
+        lambda *_args, **_kwargs: LambdaClient(),
+    )
+
+    result = service.receive(
+        upload_session_id=session_id,
+        authorization=f"Bearer {TOKEN}",
+        content_length_value=str(len(payload)),
+        content_type="video/mp4",
+        origin=ORIGIN,
+        body=BytesIO(payload),
+        background=False,
+    )
+
+    assert result["status"] == "accepted"
+    claim = json.loads(invocations[0]["Payload"])
+    assert claim == {
+        "action": "claim",
+        "uploadSessionId": session_id,
+        "tokenHash": repository.expected_hash,
+        "taskArn": task_arn,
+    }
+    release = json.loads(invocations[-1]["Payload"])
+    assert release == {"action": "release", "uploadSessionId": session_id}
+
+
+def test_receiver_does_not_touch_database_when_capacity_is_not_granted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = b"video"
+    service, worker, repository = _service(tmp_path, payload)
+    worker.settings.aws_region = "ap-northeast-2"
+    monkeypatch.setenv("FILE_UPLOAD_CAPACITY_FUNCTION_ARN", "test-capacity")
+    monkeypatch.setattr(service, "_ecs_task_arn", lambda: "task-test")
+
+    class LambdaClient:
+        def invoke(self, **_kwargs):
+            return {"Payload": BytesIO(b'{"leaseState":"not_granted"}')}
+
+    monkeypatch.setattr(
+        "shorts_worker.upload_service.boto3.client",
+        lambda *_args, **_kwargs: LambdaClient(),
+    )
+
+    with pytest.raises(UploadRequestError) as caught:
+        _receive(service, payload)
+
+    assert caught.value.status == 425
+    assert caught.value.code == "upload_capacity_not_ready"
+    assert repository.claim_calls == []
+
+
 def test_sweeper_does_not_finalize_when_physical_cleanup_is_unconfirmed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -329,6 +443,20 @@ def test_sweeper_does_not_finalize_when_physical_cleanup_is_unconfirmed(
 
     assert service.sweep_abandoned_uploads() == 0
     assert repository.abandoned_cleanup_calls == []
+
+
+def test_sweeper_expires_capacity_waiters_that_never_sent_file_bytes(
+    tmp_path: Path,
+) -> None:
+    service, _worker, repository = _service(tmp_path, b"video")
+    repository.expired_capacity_requests = [{
+        "id": str(uuid4()),
+        "job_id": "job-upload-a",
+    }]
+
+    assert service.sweep_abandoned_uploads() == 1
+    assert repository.expired_capacity_calls == 1
+    assert repository.claim_calls == []
 
 
 @pytest.mark.parametrize(

@@ -167,7 +167,7 @@ function transactionDb(options: TransactionOptions = {}) {
     const sql = Array.from(strings).join("?").replace(/\s+/g, " ").trim();
     queries.push({ sql, values });
     if (sql.includes("where upload.request_id=")) {
-      return options.existing ? [options.existing] : [];
+      return options.existing ? [{ source: "upload", ...options.existing }] : [];
     }
     if (sql.includes("select count(*)::int as active")) {
       return [{ active: options.activeJobs ?? 0 }];
@@ -181,10 +181,11 @@ function transactionDb(options: TransactionOptions = {}) {
     if (sql.includes("insert into shorts_mvp.usage_reservations")) {
       return [{ id: "62a66eaf-196a-4bd9-b8dc-d3b3dd65dac4" }];
     }
-    if (sql.includes("insert into shorts_mvp.upload_sessions")) {
+    if (sql.includes("insert into shorts_mvp.file_upload_capacity_requests")) {
       if (options.failUploadSessionInsert) throw new Error("insert failed");
-      return [{ expiresAt: EXPIRES_AT }];
+      return [{ queueExpiresAt: EXPIRES_AT }];
     }
+    if (sql.includes("select capacity.status")) return [{ status: "waiting" }];
     if (sql.includes("select upload.status,upload.consumed_at")) {
       return [{ status: "awaiting_upload", consumedAt: null }];
     }
@@ -347,7 +348,9 @@ describe("file upload job control plane", () => {
         /^https:\/\/receiver\.example\.com\/base\/v1\/upload-sessions\/[0-9a-f-]+\/source$/,
       ),
       token: expect.stringMatching(/^easycut-upload-v1\./),
-      expiresAt: EXPIRES_AT,
+      expiresAt: null,
+      preparationExpiresAt: EXPIRES_AT,
+      status: "preparing",
       usage,
     });
     expect(body.jobId).toMatch(/^[0-9a-f-]{36}$/);
@@ -369,7 +372,10 @@ describe("file upload job control plane", () => {
     expect(query(queries, "initialize_project_output_attempts")).toBeTruthy();
     expect(mocks.thankYouGrant).toHaveBeenCalledWith(expect.anything(), USER_ID);
 
-    const sessionInsert = query(queries, "insert into shorts_mvp.upload_sessions");
+    const sessionInsert = query(
+      queries,
+      "insert into shorts_mvp.file_upload_capacity_requests",
+    );
     expect(sessionInsert?.values).toEqual(expect.arrayContaining([
       "test-video.mp4",
       "video/mp4",
@@ -669,7 +675,7 @@ describe("file upload job control plane", () => {
     const job = query(queries, "insert into shorts_mvp.video_jobs");
     expect(job?.values).toContain(181);
     expect(job?.values).toContain(180.001);
-    const upload = query(queries, "insert into shorts_mvp.upload_sessions");
+    const upload = query(queries, "insert into shorts_mvp.file_upload_capacity_requests");
     expect(upload?.values).toContain(180.001);
   });
 
@@ -712,7 +718,7 @@ describe("file upload job control plane", () => {
       file: { ...validBody.file, contentType: "" },
     }));
     expect(blankMime.status).toBe(201);
-    expect(query(queries, "insert into shorts_mvp.upload_sessions")?.values)
+    expect(query(queries, "insert into shorts_mvp.file_upload_capacity_requests")?.values)
       .toContain("application/octet-stream");
 
     for (const invalidBody of [
@@ -839,9 +845,10 @@ describe("file upload job control plane", () => {
     expect(body).toMatchObject({
       code: "FILE_UPLOAD_CAPACITY_UNAVAILABLE",
     });
-    expect(query(queries, "failure_code='upload_capacity_unavailable'"))
+    expect(query(queries, "update shorts_mvp.file_upload_capacity_requests"))
       .toBeTruthy();
-    expect(query(queries, "finalize_project_job")).toBeTruthy();
+    expect(query(queries, "finalize_project_job")?.sql)
+      .toContain("'upload_capacity_unavailable'");
     expect(mocks.releaseUploadCapacity).toHaveBeenCalledTimes(1);
   });
 

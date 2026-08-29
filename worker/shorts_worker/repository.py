@@ -435,6 +435,44 @@ class WorkerRepository:
             ).fetchall()
             return list(rows)
 
+    def expire_waiting_upload_capacity_requests(
+        self,
+        *,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Release usage for capacity requests that never became upload sessions."""
+        bounded_limit = max(1, min(100, limit))
+        with self.connect() as connection, connection.transaction():
+            rows = connection.execute(
+                """
+                with candidates as (
+                  select request.id,request.job_id
+                  from shorts_mvp.file_upload_capacity_requests request
+                  where request.status='waiting'
+                    and request.queue_expires_at<=clock_timestamp()
+                  order by request.created_at
+                  for update skip locked
+                  limit %s
+                )
+                update shorts_mvp.file_upload_capacity_requests request
+                set status='expired',updated_at=clock_timestamp()
+                from candidates
+                where request.id=candidates.id
+                returning request.id,request.job_id
+                """,
+                (bounded_limit,),
+            ).fetchall()
+            for row in rows:
+                connection.execute(
+                    "select * from shorts_mvp.finalize_project_job(%s,%s,%s)",
+                    (
+                        row["job_id"],
+                        "upload_capacity_expired",
+                        "업로드 시작 시간이 만료되었습니다.",
+                    ),
+                ).fetchone()
+            return list(rows)
+
     def finalize_abandoned_upload_source_cleanup(
         self,
         upload_session_id: str,

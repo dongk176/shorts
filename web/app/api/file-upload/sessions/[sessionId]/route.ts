@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
-import { releaseFileUploadCapacity } from "@/lib/aws";
+import {
+  getFileUploadCapacityStatus,
+  releaseFileUploadCapacity,
+} from "@/lib/aws";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import { fileUploadSessionPublicStatus } from "@/lib/file-upload-session-state";
 import { apiError, HttpError } from "@/lib/http";
@@ -45,7 +48,7 @@ export async function GET(_: Request, context: RouteContext) {
     // Release mode controls new sessions only. An owner must still be able to
     // recover the authoritative state of an already-issued upload after an
     // operator pauses new traffic or the browser loses the final PUT response.
-    const rows = await db`
+    let rows = await db`
       select upload.id as upload_session_id,upload.job_id,upload.status,
         upload.received_bytes,upload.expected_bytes,upload.expires_at,
         upload.claimed_at,upload.consumed_at,upload.completed_at,
@@ -61,6 +64,140 @@ export async function GET(_: Request, context: RouteContext) {
         and job.execution_backend='upload_service'
       limit 1
     `;
+    if (!rows[0]) {
+      const capacityRows = await db`
+        select capacity.id as upload_session_id,capacity.job_id,capacity.status,
+          capacity.queue_expires_at,capacity.granted_at,
+          capacity.upload_expires_at,
+          job.project_number,job.status as job_status,job.stage as job_stage,
+          job.progress as job_progress
+        from shorts_mvp.file_upload_capacity_requests capacity
+        join shorts_mvp.video_jobs job on job.id=capacity.job_id
+        where capacity.id=${parsedSessionId.data}
+          and capacity.user_id=${session.userId}
+          and job.user_id=${session.userId}
+          and job.source_type='upload'
+          and job.execution_backend='upload_service'
+        limit 1
+      `;
+      const capacity = capacityRows[0];
+      if (!capacity) throw hiddenNotFound();
+      const queueExpired = new Date(capacity.queueExpiresAt).getTime() <= Date.now();
+      const capacityStatus = queueExpired
+        ? { leaseState: "expired" as const }
+        : await getFileUploadCapacityStatus(parsedSessionId.data);
+      if (
+        capacity.status === "waiting"
+        && capacityStatus.leaseState === "granted"
+        && capacityStatus.grantedAtEpoch
+        && capacityStatus.grantExpiresAtEpoch
+      ) {
+        const grantedAt = new Date(capacityStatus.grantedAtEpoch * 1_000);
+        const uploadExpiresAt = new Date(
+          capacityStatus.grantExpiresAtEpoch * 1_000,
+        );
+        await db.begin(async (tx) => {
+          await tx`
+            select pg_advisory_xact_lock(
+              hashtextextended(${parsedSessionId.data},0)
+            )
+          `;
+          const promoted = await tx`
+            update shorts_mvp.file_upload_capacity_requests
+            set status='granted',granted_at=${grantedAt},
+                upload_expires_at=${uploadExpiresAt}
+            where id=${parsedSessionId.data}
+              and user_id=${session.userId}
+              and status='waiting'
+              and queue_expires_at>clock_timestamp()
+            returning *
+          `;
+          if (!promoted[0]) return;
+          await tx`
+            insert into shorts_mvp.upload_sessions (
+              id,mvp_session_id,user_id,request_id,job_id,intent_hash,
+              original_filename,declared_content_type,expected_bytes,
+              declared_duration_seconds,declared_width,declared_height,
+              declared_has_audio,range_start_seconds,range_end_seconds,
+              rights_confirmed,token_hash,upload_url,expires_at
+            ) select
+              id,mvp_session_id,user_id,request_id,job_id,intent_hash,
+              original_filename,declared_content_type,expected_bytes,
+              declared_duration_seconds,declared_width,declared_height,
+              declared_has_audio,range_start_seconds,range_end_seconds,
+              rights_confirmed,token_hash,upload_url,${uploadExpiresAt}
+            from shorts_mvp.file_upload_capacity_requests
+            where id=${parsedSessionId.data}
+            on conflict (id) do nothing
+          `;
+        });
+        rows = await db`
+          select upload.id as upload_session_id,upload.job_id,upload.status,
+            upload.received_bytes,upload.expected_bytes,upload.expires_at,
+            upload.claimed_at,upload.consumed_at,upload.completed_at,
+            upload.failure_code,upload.failure_reason,upload.source_deleted_at,
+            job.project_number,job.status as job_status,job.stage as job_stage,
+            job.progress as job_progress
+          from shorts_mvp.upload_sessions upload
+          join shorts_mvp.video_jobs job on job.id=upload.job_id
+          where upload.id=${parsedSessionId.data}
+            and upload.user_id=${session.userId}
+          limit 1
+        `;
+      } else if (capacityStatus.leaseState === "expired" || queueExpired) {
+        await db.begin(async (tx) => {
+          await tx`
+            update shorts_mvp.file_upload_capacity_requests
+            set status='expired'
+            where id=${parsedSessionId.data} and status='waiting'
+          `;
+          await tx`
+            select * from shorts_mvp.finalize_project_job(
+              ${capacity.jobId},'upload_capacity_expired',
+              '업로드 시작 시간이 만료되었습니다.'
+            )
+          `;
+        });
+        await releaseFileUploadCapacity(parsedSessionId.data).catch(() => undefined);
+        return noStore(NextResponse.json({
+          uploadSessionId: parsedSessionId.data,
+          jobId: String(capacity.jobId),
+          projectNumber: Number(capacity.projectNumber),
+          status: "expired",
+          receiverStatus: "waiting",
+          jobStatus: String(capacity.jobStatus),
+          jobStage: String(capacity.jobStage),
+          jobProgress: Number(capacity.jobProgress || 0),
+          receivedBytes: 0,
+          expectedBytes: 0,
+          received: false,
+          expiresAt: null,
+          preparationExpiresAt: new Date(capacity.queueExpiresAt).toISOString(),
+          failureCode: "upload_capacity_expired",
+          failureReason: "업로드 시작 시간이 만료되었습니다.",
+          sourceDeleted: true,
+        }));
+      } else {
+        return noStore(NextResponse.json({
+          uploadSessionId: parsedSessionId.data,
+          jobId: String(capacity.jobId),
+          projectNumber: Number(capacity.projectNumber),
+          status: "preparing",
+          receiverStatus: "waiting",
+          jobStatus: String(capacity.jobStatus),
+          jobStage: String(capacity.jobStage),
+          jobProgress: Number(capacity.jobProgress || 0),
+          receivedBytes: 0,
+          expectedBytes: 0,
+          received: false,
+          expiresAt: null,
+          preparationExpiresAt: new Date(capacity.queueExpiresAt).toISOString(),
+          failureCode: null,
+          failureReason: null,
+          sourceDeleted: true,
+        }));
+      }
+    }
     const row = rows[0];
     if (!row) throw hiddenNotFound();
     const sessionStatus = String(row.status);
@@ -87,6 +224,7 @@ export async function GET(_: Request, context: RouteContext) {
       expectedBytes: Number(row.expectedBytes || 0),
       received,
       expiresAt: new Date(row.expiresAt).toISOString(),
+      preparationExpiresAt: null,
       failureCode: row.failureCode ? String(row.failureCode) : null,
       failureReason: row.failureReason ? String(row.failureReason) : null,
       sourceDeleted: row.sourceDeletedAt !== null,
@@ -110,6 +248,51 @@ export async function DELETE(_: Request, context: RouteContext) {
       await tx`
         select pg_advisory_xact_lock(hashtextextended(${session.userId},0))
       `;
+      const capacityRows = await tx`
+        select
+          capacity.id as upload_session_id,
+          capacity.job_id,
+          capacity.status,
+          job.project_number
+        from shorts_mvp.file_upload_capacity_requests capacity
+        join shorts_mvp.video_jobs job on job.id=capacity.job_id
+        where capacity.id=${parsedSessionId.data}
+          and capacity.user_id=${session.userId}
+          and job.user_id=${session.userId}
+          and job.source_type='upload'
+          and job.execution_backend='upload_service'
+        limit 1
+        for update of capacity,job
+      `;
+      const capacity = capacityRows[0];
+      if (capacity?.status === "cancelled") {
+        return {
+          uploadSessionId: String(capacity.uploadSessionId),
+          jobId: String(capacity.jobId),
+          projectNumber: Number(capacity.projectNumber),
+          alreadyCancelled: true,
+        };
+      }
+      if (capacity?.status === "waiting") {
+        await tx`
+          update shorts_mvp.file_upload_capacity_requests
+          set status='cancelled',updated_at=clock_timestamp()
+          where id=${parsedSessionId.data} and status='waiting'
+        `;
+        await tx`
+          select * from shorts_mvp.finalize_project_job(
+            ${capacity.jobId},
+            'upload_cancelled',
+            '원본 업로드가 취소되었습니다.'
+          )
+        `;
+        return {
+          uploadSessionId: String(capacity.uploadSessionId),
+          jobId: String(capacity.jobId),
+          projectNumber: Number(capacity.projectNumber),
+          alreadyCancelled: false,
+        };
+      }
       // This lock serializes browser cancellation against the receiver's
       // atomic awaiting_upload -> claimed transition. Once claimed, cleanup
       // belongs to the receiver and the browser must not finalize the job.

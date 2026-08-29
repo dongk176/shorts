@@ -217,6 +217,7 @@ export async function ensureFileUploadCapacity(input: {
   desiredCount: number;
   uploadSessionId: string;
   expiresAt: Date | string;
+  tokenHash: string;
 }) {
   const functionArn = process.env.FILE_UPLOAD_CAPACITY_FUNCTION_ARN;
   if (!functionArn) {
@@ -227,7 +228,11 @@ export async function ensureFileUploadCapacity(input: {
     Math.min(20, Math.floor(input.desiredCount)),
   );
   const expiresAtEpoch = Math.floor(new Date(input.expiresAt).getTime() / 1_000);
-  if (!/^[0-9a-f-]{36}$/i.test(input.uploadSessionId) || !Number.isFinite(expiresAtEpoch)) {
+  if (
+    !/^[0-9a-f-]{36}$/i.test(input.uploadSessionId)
+    || !Number.isFinite(expiresAtEpoch)
+    || !/^[0-9a-f]{64}$/.test(input.tokenHash)
+  ) {
     throw new Error("파일 업로드 용량 예약 정보를 확인하지 못했습니다.");
   }
   const response = await lambdaClient().send(new InvokeCommand({
@@ -238,6 +243,7 @@ export async function ensureFileUploadCapacity(input: {
       desiredCount: boundedDesiredCount,
       uploadSessionId: input.uploadSessionId,
       expiresAtEpoch,
+      tokenHash: input.tokenHash,
     })),
   }));
   if (response.FunctionError) {
@@ -253,6 +259,43 @@ export async function ensureFileUploadCapacity(input: {
     desiredCount: number;
     runningCount: number;
     pendingCount: number;
+    leaseState: "waiting" | "granted" | "claimed" | "expired";
+    grantedAtEpoch?: number;
+    grantExpiresAtEpoch?: number;
+  };
+}
+
+export async function getFileUploadCapacityStatus(uploadSessionId: string) {
+  const functionArn = process.env.FILE_UPLOAD_CAPACITY_FUNCTION_ARN;
+  if (!functionArn || !/^[0-9a-f-]{36}$/i.test(uploadSessionId)) {
+    throw new Error("파일 업로드 용량 예약 정보를 확인하지 못했습니다.");
+  }
+  const response = await lambdaClient().send(new InvokeCommand({
+    FunctionName: functionArn,
+    InvocationType: "RequestResponse",
+    Payload: new TextEncoder().encode(JSON.stringify({
+      action: "status",
+      uploadSessionId,
+    })),
+  }));
+  if (response.FunctionError) {
+    throw new Error("파일 업로드 작업 서버 상태를 확인하지 못했습니다.");
+  }
+  const payload = response.Payload
+    ? JSON.parse(new TextDecoder().decode(response.Payload)) as unknown
+    : null;
+  if (!payload || typeof payload !== "object") {
+    throw new Error("파일 업로드 작업 서버 상태를 확인하지 못했습니다.");
+  }
+  return payload as {
+    leaseState: "waiting" | "granted" | "claimed" | "expired";
+    grantedAtEpoch?: number;
+    grantExpiresAtEpoch?: number;
+    desiredCount: number;
+    runningCount: number;
+    pendingCount: number;
+    startingCount: number;
+    readyCount: number;
   };
 }
 

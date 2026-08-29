@@ -297,6 +297,14 @@ describe("isolated file upload canary stack", () => {
     });
     template.hasResourceProperties("AWS::ElasticLoadBalancingV2::TargetGroup", {
       HealthCheckPath: "/readyz",
+      HealthCheckIntervalSeconds: 5,
+      HealthCheckTimeoutSeconds: 2,
+      HealthyThresholdCount: 2,
+      UnhealthyThresholdCount: 2,
+      TargetGroupAttributes: Match.arrayWith([{
+        Key: "load_balancing.algorithm.type",
+        Value: "least_outstanding_requests",
+      }]),
       Port: 8080,
       TargetType: "ip",
     });
@@ -369,12 +377,16 @@ describe("isolated file upload canary stack", () => {
     });
     template.hasResourceProperties("AWS::Lambda::Function", {
       FunctionName: "shorts-mvp-file-upload-capacity-production",
+      ReservedConcurrentExecutions: 1,
       Environment: {
         Variables: Match.objectLike({
           ECS_CLUSTER: "shorts-mvp-file-upload-production",
           ECS_SERVICE: "shorts-mvp-file-upload-production",
+          TARGET_GROUP_ARN: Match.anyValue(),
           MAX_CAPACITY: "20",
           WARM_SECONDS: "600",
+          UPLOAD_WINDOW_SECONDS: "900",
+          CLAIMED_LEASE_SECONDS: "21600",
         }),
       },
       Runtime: "python3.12",
@@ -386,7 +398,9 @@ describe("isolated file upload canary stack", () => {
     const rendered = JSON.stringify(template.toJSON());
     expect(rendered).toContain("ecs:UpdateTaskProtection");
     expect(rendered).toContain("ecs:GetTaskProtection");
+    expect(rendered).toContain("ecs:DescribeTasks");
     expect(rendered).toContain("ecs:UpdateService");
+    expect(rendered).toContain("elasticloadbalancing:DescribeTargetHealth");
     expect(rendered).toContain("dynamodb:DeleteItem");
     expect(rendered).toContain("FILE_UPLOAD_CAPACITY_FUNCTION_ARN");
     const invokePolicies = Object.values(

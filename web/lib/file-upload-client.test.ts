@@ -63,14 +63,63 @@ describe("scale-to-zero upload recovery", () => {
     file,
     uploadUrl: "https://upload.example.com/v1/upload",
     bearerToken: "token",
-    expiresAt: "2026-08-28T12:15:00.000Z",
+    preparationExpiresAt: "2026-08-28T12:30:00.000Z",
     now: () => Date.parse("2026-08-28T12:00:00.000Z"),
     wait: async () => undefined,
   };
 
-  it("retries a cold receiver only while the session remains unclaimed", async () => {
+  const ready = {
+    status: "ready",
+    received: false,
+    expiresAt: "2026-08-28T12:15:00.000Z",
+  };
+
+  it("does not send any file bytes until this session has a healthy grant", async () => {
+    const states = [
+      { status: "preparing", received: false },
+      { status: "preparing", received: false },
+      ready,
+    ];
     let attempts = 0;
     const waiting: number[] = [];
+
+    await uploadFileWhenReceiverReady({
+      ...base,
+      uploadAttempt: async () => { attempts += 1; },
+      getSessionState: async () => states.shift() || ready,
+      onWaiting: (attempt) => waiting.push(attempt),
+    });
+
+    expect(attempts).toBe(1);
+    expect(waiting).toEqual([1, 2]);
+  });
+
+  it("keeps waiting without sending bytes through a transient status error", async () => {
+    const states: Array<Error | typeof ready> = [
+      new Error("temporary control-plane failure"),
+      ready,
+    ];
+    let attempts = 0;
+    const waiting: number[] = [];
+
+    await uploadFileWhenReceiverReady({
+      ...base,
+      uploadAttempt: async () => { attempts += 1; },
+      getSessionState: async () => {
+        const state = states.shift() || ready;
+        if (state instanceof Error) throw state;
+        return state;
+      },
+      onWaiting: (attempt) => waiting.push(attempt),
+    });
+
+    expect(attempts).toBe(1);
+    expect(waiting).toEqual([1]);
+  });
+
+  it("retries a cold receiver only while the session remains unclaimed", async () => {
+    let attempts = 0;
+    let stateReads = 0;
     await uploadFileWhenReceiverReady({
       ...base,
       uploadAttempt: async () => {
@@ -79,11 +128,13 @@ describe("scale-to-zero upload recovery", () => {
           throw new DirectUploadError(503, "warming");
         }
       },
-      getSessionState: async () => ({ status: "ready", received: false }),
-      onWaiting: (attempt) => waiting.push(attempt),
+      getSessionState: async () => {
+        stateReads += 1;
+        return ready;
+      },
     });
     expect(attempts).toBe(2);
-    expect(waiting).toEqual([1]);
+    expect(stateReads).toBe(2);
   });
 
   it("accepts a lost final response when the server recorded the source", async () => {
@@ -94,7 +145,9 @@ describe("scale-to-zero upload recovery", () => {
         attempts += 1;
         throw new Error("connection lost");
       },
-      getSessionState: async () => ({ status: "processing", received: true }),
+      getSessionState: async () => attempts === 0
+        ? ready
+        : { status: "processing", received: true },
     });
     expect(attempts).toBe(1);
   });
@@ -107,7 +160,9 @@ describe("scale-to-zero upload recovery", () => {
         attempts += 1;
         throw new DirectUploadError(503, "connection lost");
       },
-      getSessionState: async () => ({ status: "uploading", received: false }),
+      getSessionState: async () => attempts === 0
+        ? ready
+        : { status: "uploading", received: false },
     })).rejects.toMatchObject({ status: 503 });
     expect(attempts).toBe(1);
   });
@@ -115,9 +170,7 @@ describe("scale-to-zero upload recovery", () => {
   it("surfaces terminal cleanup instead of retrying", async () => {
     await expect(uploadFileWhenReceiverReady({
       ...base,
-      uploadAttempt: async () => {
-        throw new DirectUploadError(503, "connection lost");
-      },
+      uploadAttempt: async () => undefined,
       getSessionState: async () => ({
         status: "failed",
         received: false,

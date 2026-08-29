@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   releaseAccess: vi.fn(),
   lockedReleaseAccess: vi.fn(),
   usageSnapshot: vi.fn(),
+  capacityStatus: vi.fn(),
+  releaseCapacity: vi.fn(),
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -20,8 +22,12 @@ vi.mock("@/lib/file-upload-release", () => ({
 vi.mock("@/lib/usage", () => ({
   getUsageSnapshot: mocks.usageSnapshot,
 }));
+vi.mock("@/lib/aws", () => ({
+  getFileUploadCapacityStatus: mocks.capacityStatus,
+  releaseFileUploadCapacity: mocks.releaseCapacity,
+}));
 
-import { DELETE } from "./route";
+import { DELETE, GET } from "./route";
 
 const USER_ID = "3d14e57e-d516-44b1-89ac-30d76a6e701f";
 const MVP_SESSION_ID = "7bf704e2-f151-45a5-9939-69d2a62b22aa";
@@ -48,6 +54,7 @@ function transactionDb(input: {
   status?: string;
   consumedAt?: string | null;
   row?: boolean;
+  capacityStatus?: string | null;
   failFinalize?: boolean;
 } = {}) {
   const queries: Array<{ sql: string; values: unknown[] }> = [];
@@ -57,6 +64,14 @@ function transactionDb(input: {
   ) => {
     const sql = Array.from(strings).join("?").replace(/\s+/g, " ").trim();
     queries.push({ sql, values });
+    if (sql.includes("from shorts_mvp.file_upload_capacity_requests capacity")) {
+      return input.capacityStatus ? [{
+        uploadSessionId: UPLOAD_SESSION_ID,
+        jobId: JOB_ID,
+        projectNumber: 91,
+        status: input.capacityStatus,
+      }] : [];
+    }
     if (sql.includes("from shorts_mvp.upload_sessions upload")) {
       if (input.row === false) return [];
       return [{
@@ -89,6 +104,115 @@ beforeEach(() => {
   mocks.releaseAccess.mockResolvedValue({ enabled: true, adminEnabled: true });
   mocks.lockedReleaseAccess.mockResolvedValue({ enabled: true, adminEnabled: true });
   mocks.usageSnapshot.mockResolvedValue(usage);
+  mocks.capacityStatus.mockResolvedValue({ leaseState: "waiting" });
+  mocks.releaseCapacity.mockResolvedValue(undefined);
+});
+
+describe("file upload capacity admission status", () => {
+  it("keeps a waiting request in preparing and does not expose an upload expiry", async () => {
+    const queueExpiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
+    const db = Object.assign(vi.fn(async (
+      strings: TemplateStringsArray,
+    ) => {
+      const sql = Array.from(strings).join("?").replace(/\s+/g, " ").trim();
+      if (sql.includes("from shorts_mvp.upload_sessions upload")) return [];
+      if (sql.includes("from shorts_mvp.file_upload_capacity_requests capacity")) {
+        return [{
+          uploadSessionId: UPLOAD_SESSION_ID,
+          jobId: JOB_ID,
+          projectNumber: 91,
+          status: "waiting",
+          queueExpiresAt,
+          grantedAt: null,
+          uploadExpiresAt: null,
+          jobStatus: "uploading",
+          jobStage: "uploading",
+          jobProgress: 1,
+        }];
+      }
+      return [];
+    }), { begin: vi.fn() });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await GET(cancelRequest(), context());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "preparing",
+      expiresAt: null,
+      preparationExpiresAt: queueExpiresAt,
+      received: false,
+    });
+  });
+
+  it("starts a fresh fifteen-minute upload window only after a healthy grant", async () => {
+    const queueExpiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
+    const uploadExpiresAt = new Date(Date.now() + 15 * 60_000);
+    let uploadReads = 0;
+    const tx = vi.fn(async (strings: TemplateStringsArray) => {
+      const sql = Array.from(strings).join("?").replace(/\s+/g, " ").trim();
+      if (sql.includes("update shorts_mvp.file_upload_capacity_requests")) return [{}];
+      return [];
+    });
+    const db = Object.assign(vi.fn(async (strings: TemplateStringsArray) => {
+      const sql = Array.from(strings).join("?").replace(/\s+/g, " ").trim();
+      if (sql.includes("from shorts_mvp.upload_sessions upload")) {
+        uploadReads += 1;
+        if (uploadReads === 1) return [];
+        return [{
+          uploadSessionId: UPLOAD_SESSION_ID,
+          jobId: JOB_ID,
+          projectNumber: 91,
+          status: "awaiting_upload",
+          receivedBytes: 0,
+          expectedBytes: 100,
+          expiresAt: uploadExpiresAt,
+          claimedAt: null,
+          consumedAt: null,
+          completedAt: null,
+          failureCode: null,
+          failureReason: null,
+          sourceDeletedAt: null,
+          jobStatus: "uploading",
+          jobStage: "uploading",
+          jobProgress: 1,
+        }];
+      }
+      if (sql.includes("from shorts_mvp.file_upload_capacity_requests capacity")) {
+        return [{
+          uploadSessionId: UPLOAD_SESSION_ID,
+          jobId: JOB_ID,
+          projectNumber: 91,
+          status: "waiting",
+          queueExpiresAt,
+          grantedAt: null,
+          uploadExpiresAt: null,
+          jobStatus: "uploading",
+          jobStage: "uploading",
+          jobProgress: 1,
+        }];
+      }
+      return [];
+    }), {
+      begin: vi.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+    mocks.capacityStatus.mockResolvedValue({
+      leaseState: "granted",
+      grantedAtEpoch: Math.floor((uploadExpiresAt.getTime() - 15 * 60_000) / 1_000),
+      grantExpiresAtEpoch: Math.floor(uploadExpiresAt.getTime() / 1_000),
+    });
+
+    const response = await GET(cancelRequest(), context());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "ready",
+      preparationExpiresAt: null,
+      received: false,
+    });
+    expect(db.begin).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("file upload browser abort", () => {
@@ -120,6 +244,28 @@ describe("file upload browser abort", () => {
       .toBe(true);
     expect(mocks.releaseAccess).not.toHaveBeenCalled();
     expect(mocks.lockedReleaseAccess).not.toHaveBeenCalled();
+  });
+
+  it("cancels a preparing request before any file bytes are sent", async () => {
+    const { db, queries } = transactionDb({
+      capacityStatus: "waiting",
+      row: false,
+    });
+    mocks.getDb.mockReturnValue(db);
+
+    const response = await DELETE(cancelRequest(), context());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      uploadSessionId: UPLOAD_SESSION_ID,
+      cancelled: true,
+      status: "cancelled",
+    });
+    expect(queries.some((entry) => (
+      entry.sql.includes("update shorts_mvp.file_upload_capacity_requests")
+      && entry.sql.includes("status='cancelled'")
+    ))).toBe(true);
+    expect(mocks.releaseCapacity).toHaveBeenCalledWith(UPLOAD_SESSION_ID);
   });
 
   it("returns the same hidden 404 when the owner-scoped session is absent", async () => {

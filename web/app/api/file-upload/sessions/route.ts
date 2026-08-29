@@ -181,6 +181,7 @@ type UploadIntentRow = {
   expiresAt: Date | string;
   status: string;
   isUnexpired: boolean;
+  source: "capacity" | "upload";
 };
 
 function hiddenNotFound() {
@@ -253,28 +254,22 @@ async function cancelUnclaimedSessionAfterCapacityFailure(
       select pg_advisory_xact_lock(hashtextextended(${input.userId},0))
     `;
     const rows = await tx`
-      select upload.status,upload.consumed_at
-      from shorts_mvp.upload_sessions upload
-      join shorts_mvp.video_jobs job on job.id=upload.job_id
-      where upload.id=${input.uploadSessionId}
-        and upload.job_id=${input.jobId}
-        and upload.user_id=${input.userId}
+      select capacity.status
+      from shorts_mvp.file_upload_capacity_requests capacity
+      join shorts_mvp.video_jobs job on job.id=capacity.job_id
+      where capacity.id=${input.uploadSessionId}
+        and capacity.job_id=${input.jobId}
+        and capacity.user_id=${input.userId}
         and job.user_id=${input.userId}
       limit 1
-      for update of upload,job
+      for update of capacity,job
     `;
-    if (
-      rows[0]?.status !== "awaiting_upload"
-      || rows[0]?.consumedAt !== null
-    ) return;
+    if (rows[0]?.status !== "waiting") return;
     await tx`
-      update shorts_mvp.upload_sessions
-      set status='failed',
-          failure_code='upload_capacity_unavailable',
-          failure_reason='업로드 작업 서버를 준비하지 못했습니다.',
-          source_deleted_at=coalesce(source_deleted_at,clock_timestamp()),
-          completed_at=coalesce(completed_at,clock_timestamp())
-      where id=${input.uploadSessionId} and status='awaiting_upload'
+      update shorts_mvp.file_upload_capacity_requests
+      set status='cancelled',
+          updated_at=clock_timestamp()
+      where id=${input.uploadSessionId} and status='waiting'
     `;
     await tx`
       select * from shorts_mvp.finalize_project_job(
@@ -374,15 +369,37 @@ export async function POST(request: Request) {
           upload.upload_url,
           upload.expires_at,
           upload.status,
-          (upload.expires_at>clock_timestamp()) as is_unexpired
+          (upload.expires_at>clock_timestamp()) as is_unexpired,
+          'upload'::text as source
         from shorts_mvp.upload_sessions upload
         join shorts_mvp.video_jobs job on job.id=upload.job_id
         where upload.request_id=${input.requestId}
           and upload.user_id=${session.userId}
         limit 1
       `;
-      if (existingRows[0]) {
-        const existing = existingRows[0] as UploadIntentRow;
+      const queuedRows = existingRows[0] ? [] : await tx`
+        select
+          capacity.id as upload_session_id,
+          capacity.job_id,
+          job.project_number,
+          capacity.request_id,
+          capacity.user_id,
+          capacity.token_hash,
+          capacity.intent_hash,
+          capacity.upload_url,
+          capacity.queue_expires_at as expires_at,
+          capacity.status,
+          (capacity.queue_expires_at>clock_timestamp()) as is_unexpired,
+          'capacity'::text as source
+        from shorts_mvp.file_upload_capacity_requests capacity
+        join shorts_mvp.video_jobs job on job.id=capacity.job_id
+        where capacity.request_id=${input.requestId}
+          and capacity.user_id=${session.userId}
+        limit 1
+      `;
+      const existingRow = existingRows[0] || queuedRows[0];
+      if (existingRow) {
+        const existing = existingRow as UploadIntentRow;
         if (existing.intentHash !== intentHash) {
           throw new HttpError(
             409,
@@ -397,14 +414,17 @@ export async function POST(request: Request) {
             "FILE_UPLOAD_SESSION_EXPIRED",
           );
         }
-        if (existing.status === "claimed") {
+        if (existing.source === "upload" && existing.status === "claimed") {
           throw new HttpError(
             409,
             "원본 업로드 처리가 이미 시작되었습니다.",
             "FILE_UPLOAD_ALREADY_CLAIMED",
           );
         }
-        if (existing.status !== "awaiting_upload") {
+        if (
+          (existing.source === "upload" && existing.status !== "awaiting_upload")
+          || (existing.source === "capacity" && existing.status !== "waiting")
+        ) {
           throw new HttpError(
             409,
             "이 요청은 더 이상 업로드에 사용할 수 없습니다.",
@@ -640,14 +660,14 @@ export async function POST(request: Request) {
       }
       await tx`select shorts_mvp.initialize_project_output_attempts(${jobId})`;
 
-      const insertedSessions = await tx`
-        insert into shorts_mvp.upload_sessions (
+      const insertedRequests = await tx`
+        insert into shorts_mvp.file_upload_capacity_requests (
           id,mvp_session_id,user_id,request_id,job_id,
           intent_hash,
           original_filename,declared_content_type,expected_bytes,
           declared_duration_seconds,declared_width,declared_height,
           declared_has_audio,range_start_seconds,range_end_seconds,
-          rights_confirmed,token_hash,upload_url,expires_at
+          rights_confirmed,token_hash,upload_url,queue_expires_at
         ) values (
           ${uploadSessionId},${session.id},${session.userId},${input.requestId},${jobId},
           ${intentHash},
@@ -655,12 +675,12 @@ export async function POST(request: Request) {
           ${input.file.durationSeconds},${input.file.width ?? null},
           ${input.file.height ?? null},${input.file.hasAudio},
           ${input.rangeStartSeconds},${input.rangeEndSeconds},${true},
-          ${tokenHash},${uploadUrl},now() + interval '15 minutes'
+          ${tokenHash},${uploadUrl},now() + interval '30 minutes'
         )
-        returning expires_at
+        returning queue_expires_at
       `;
-      if (!insertedSessions[0]?.expiresAt) {
-        throw new Error("업로드 세션을 생성하지 못했습니다.");
+      if (!insertedRequests[0]?.queueExpiresAt) {
+        throw new Error("업로드 작업 대기 요청을 생성하지 못했습니다.");
       }
 
       return {
@@ -672,20 +692,21 @@ export async function POST(request: Request) {
         tokenHash,
         token,
         uploadUrl,
-        expiresAt: insertedSessions[0].expiresAt,
+        expiresAt: insertedRequests[0].queueExpiresAt,
         created: true,
+        source: "capacity" as const,
       };
     });
 
-    let capacity: Awaited<ReturnType<typeof ensureFileUploadCapacity>>;
     try {
-      capacity = await ensureFileUploadCapacity({
+      await ensureFileUploadCapacity({
         // The capacity coordinator owns the authoritative count through one
         // expiring lease per upload session. Recounting stale database rows here
         // could over-scale or race concurrent requests.
         desiredCount: 1,
         uploadSessionId: result.uploadSessionId,
         expiresAt: result.expiresAt,
+        tokenHash: result.tokenHash,
       });
     } catch {
       await cancelUnclaimedSessionAfterCapacityFailure(db, {
@@ -707,8 +728,9 @@ export async function POST(request: Request) {
       uploadSessionId: result.uploadSessionId,
       uploadUrl: result.uploadUrl,
       token: result.token,
-      expiresAt: result.expiresAt,
-      status: capacity.runningCount > 0 ? "ready" : "preparing",
+      expiresAt: null,
+      preparationExpiresAt: new Date(result.expiresAt).toISOString(),
+      status: "preparing",
       usage,
     }, { status: result.created ? 201 : 200 }));
   } catch (error) {

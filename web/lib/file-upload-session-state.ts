@@ -1,4 +1,5 @@
 export type FileUploadSessionPublicStatus =
+  | "preparing"
   | "ready"
   | "uploading"
   | "received"

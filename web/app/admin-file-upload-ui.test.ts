@@ -47,6 +47,15 @@ describe("administrator file upload UI isolation", () => {
     expect(source).toContain('window.addEventListener("beforeunload", warnBeforeUnload)');
     expect(source).toContain('aria-modal="true"');
     expect(source).toContain("업로드 완료");
+    expect(source).toContain("이제 창을 닫아도 쇼츠 생성 작업은 계속됩니다.");
+    expect(source).toContain("영상 업로드 중");
+    expect(source).toContain("업로드가 끝날 때까지 이 탭을 열어두세요.");
+    expect(source).toContain("업로드 시작 중");
+    expect(source).toContain("업로드 취소");
+    expect(source).toContain("setScrollToProjects(true)");
+    expect(source).not.toContain("업로드 서버를 준비하고 있어요");
+    expect(source).not.toContain("서버 준비 중");
+    expect(source).not.toContain("준비 취소");
     expect(source).toContain("setUploadCompletionOpen(true)");
     expect(source).toContain('uploadDragActive ? "is-dragging"');
   });
