@@ -51,6 +51,11 @@ describe("administrator file upload UI isolation", () => {
     expect(source).toContain("영상 업로드 중");
     expect(source).toContain("업로드가 끝날 때까지 이 탭을 열어두세요.");
     expect(source).toContain("업로드 시작 중");
+    expect(source).toContain("새 창에서 더 작업하기");
+    expect(source).toContain('target="_blank"');
+    expect(source).toContain('rel="noopener noreferrer"');
+    expect(source).toContain("DESKTOP_UPLOAD_COMPANION_MEDIA_QUERY");
+    expect(source).toContain("(min-width: 768px) and (hover: hover) and (pointer: fine)");
     expect(source).toContain("업로드 취소");
     expect(source).toContain("setScrollToProjects(true)");
     expect(source).not.toContain("업로드 서버를 준비하고 있어요");
@@ -65,6 +70,9 @@ describe("administrator file upload UI isolation", () => {
     expect(source).toContain("if (!betaNoticeConfirmed)");
     expect(source).toContain("setUploadBetaNoticeOpen(true)");
     expect(source).toContain("파일 업로드 기능은 현재 베타 서비스예요.");
+    expect(source).toContain('className="block">파일 업로드 기능은 현재 베타 서비스예요.</span>');
+    expect(source).toContain('className="mt-1 block">영상 크기와 네트워크 환경에 따라 업로드에 시간이 걸릴 수 있습니다.</span>');
+    expect(source).toContain('className="mt-3 block">업로드가 진행되는 동안 새 창에서 다른 작업을 시작해 보세요.</span>');
     expect(source).toContain("업로드가 진행되는 동안 새 창에서 다른 작업을 시작해 보세요.");
     expect(source).toContain("확인하고 업로드");
     expect(source).toContain("void createUploadJob(true)");

@@ -625,6 +625,7 @@ function aspectLayout(
 const terminalStatuses = new Set(["completed", "failed", "expired", "deleted"]);
 const LOGIN_OVERLAY_DELAY_MS = 1_000;
 const PROJECT_REVEAL_STORAGE_PREFIX = "easycut:project-reveal:v1:";
+const DESKTOP_UPLOAD_COMPANION_MEDIA_QUERY = "(min-width: 768px) and (hover: hover) and (pointer: fine)";
 
 function formatDuration(seconds: number, locale: SiteLocale = "ko") {
   const value = Math.max(0, Math.round(seconds));
@@ -2615,10 +2616,10 @@ function UploadBetaNoticeDialog({
         <h2 id="file-upload-beta-notice-title" className="relative mt-5 text-2xl font-extrabold tracking-[-0.025em] text-white">
           파일 업로드 안내
         </h2>
-        <p id="file-upload-beta-notice-description" className="relative mt-4 text-sm font-semibold leading-6 text-violet-100/80">
-          파일 업로드 기능은 현재 베타 서비스예요. 영상 크기와 네트워크 환경에 따라 업로드에 시간이 걸릴 수 있습니다.
-          <br />
-          업로드가 진행되는 동안 새 창에서 다른 작업을 시작해 보세요.
+        <p id="file-upload-beta-notice-description" className="relative mt-4 break-keep text-balance text-sm font-semibold leading-6 text-violet-100/80">
+          <span className="block">파일 업로드 기능은 현재 베타 서비스예요.</span>
+          <span className="mt-1 block">영상 크기와 네트워크 환경에 따라 업로드에 시간이 걸릴 수 있습니다.</span>
+          <span className="mt-3 block">업로드가 진행되는 동안 새 창에서 다른 작업을 시작해 보세요.</span>
         </p>
         <div className="relative mt-8 grid gap-3 sm:grid-cols-[.8fr_1.2fr]">
           <button
@@ -13353,6 +13354,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [uploadDragActive, setUploadDragActive] = useState(false);
   const [uploadBetaNoticeOpen, setUploadBetaNoticeOpen] = useState(false);
   const [uploadCompletionOpen, setUploadCompletionOpen] = useState(false);
+  const [desktopUploadCompanionAvailable, setDesktopUploadCompanionAvailable] = useState(false);
   const uploadDragDepth = useRef(0);
   const uploadAbortController = useRef<AbortController | null>(null);
   const activeUploadSessionId = useRef<string | null>(null);
@@ -13560,6 +13562,18 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       document.body.style.overflow = previousOverflow;
     };
   }, [uploadLifecycleOverlayOpen]);
+
+  useEffect(() => {
+    const desktopMedia = window.matchMedia(DESKTOP_UPLOAD_COMPANION_MEDIA_QUERY);
+    const syncDesktopUploadCompanion = () => {
+      setDesktopUploadCompanionAvailable(desktopMedia.matches);
+    };
+    syncDesktopUploadCompanion();
+    desktopMedia.addEventListener("change", syncDesktopUploadCompanion);
+    return () => {
+      desktopMedia.removeEventListener("change", syncDesktopUploadCompanion);
+    };
+  }, []);
 
   useEffect(() => {
     if (uploadModeEnabled || sourceMode !== "upload") return;
@@ -14546,10 +14560,21 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                 <p className="mt-5 text-xs font-semibold leading-5 text-amber-100/80 sm:hidden">
                   화면을 켜둔 채 기다려 주세요.
                 </p>
+                {desktopUploadCompanionAvailable ? (
+                  <a
+                    href="/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-white text-sm font-extrabold text-black transition hover:bg-neutral-100 active:scale-[.99]"
+                  >
+                    새 창에서 더 작업하기
+                    <span aria-hidden="true">↗</span>
+                  </a>
+                ) : null}
                 <button
                   type="button"
                   onClick={cancelActiveUpload}
-                  className="mt-5 h-11 w-full rounded-xl border border-white/15 text-sm font-extrabold text-neutral-200 transition hover:bg-white/[.06]"
+                  className={`${desktopUploadCompanionAvailable ? "mt-3" : "mt-5"} h-11 w-full rounded-xl border border-white/15 text-sm font-extrabold text-neutral-200 transition hover:bg-white/[.06]`}
                 >
                   업로드 취소
                 </button>
