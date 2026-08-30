@@ -1207,7 +1207,7 @@ class WorkerRepository:
         ):
             return
         with self.connect() as connection:
-            connection.execute(
+            updated = connection.execute(
                 """
                 update shorts_mvp.video_jobs
                 set status=%s, stage=%s, progress=%s,
@@ -1217,6 +1217,8 @@ class WorkerRepository:
                       when %s::integer is null then stage_total_count else %s::integer end,
                     started_at=coalesce(started_at, now()), heartbeat_at=now()
                 where id=%s
+                  and status not in ('completed','failed','expired','deleted','retry_waiting')
+                returning id
                 """,
                 (
                     stage,
@@ -1228,7 +1230,9 @@ class WorkerRepository:
                     bounded_total,
                     job_id,
                 ),
-            )
+            ).fetchone()
+            if not updated:
+                return
             connection.execute(
                 """
                 insert into shorts_mvp.job_events (job_id,stage,progress,message,metadata)

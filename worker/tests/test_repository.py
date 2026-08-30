@@ -19,6 +19,47 @@ def test_state_queue_client_uses_the_configured_region(monkeypatch) -> None:
     boto3_client.assert_called_once_with("sqs", region_name="ap-northeast-2")
 
 
+def test_direct_stage_update_cannot_revive_a_terminal_job() -> None:
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+    connection.execute.return_value.fetchone.return_value = None
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+    repository.stage(
+        "job-a",
+        "rendering",
+        92,
+        "쇼츠를 렌더링하고 있습니다. (9/10)",
+        completed_count=9,
+        total_count=10,
+    )
+
+    assert connection.execute.call_count == 1
+    update_sql = connection.execute.call_args.args[0]
+    assert "status not in ('completed','failed','expired','deleted','retry_waiting')" in update_sql
+    assert "returning id" in update_sql
+
+
+def test_direct_stage_event_is_written_only_after_the_state_update_succeeds() -> None:
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+    connection.execute.return_value.fetchone.return_value = {"id": "job-a"}
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+    repository.stage("job-a", "rendering", 69, "렌더링 중")
+
+    assert connection.execute.call_count == 2
+    assert "insert into shorts_mvp.job_events" in connection.execute.call_args_list[1].args[0]
+
+
 def test_prepare_attempt_casts_nullable_override_to_integer() -> None:
     implementation = inspect.getsource(WorkerRepository.claim_prepare_attempt)
     assert "%s::integer is null" in implementation
