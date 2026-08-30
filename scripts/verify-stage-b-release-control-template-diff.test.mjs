@@ -315,7 +315,7 @@ function registrarEnvironment(registry) {
     GITHUB_OIDC_REPOSITORY_ID: "12345",
     GITHUB_OIDC_REPOSITORY_OWNER_ID: "67890",
     GITHUB_OIDC_ENVIRONMENT: "editor-v4-release-approval",
-    GITHUB_OIDC_RELEASE_TAG: "editor-v4-render-parity-20260830-2",
+    GITHUB_OIDC_RELEASE_TAG: "editor-v4-render-parity-20260830-3",
     GITHUB_OIDC_WORKFLOW_PATH: ".github/workflows/editor-release.yml",
     GITHUB_OIDC_WORKFLOW_NAME: "Verify editor release candidate",
     EDITOR_RELEASE_ECR_REPOSITORY_URI:
