@@ -12,6 +12,8 @@ describe("YouTube URL allowlist", () => {
     "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
     "https://youtu.be/dQw4w9WgXcQ",
     "https://m.youtube.com/shorts/dQw4w9WgXcQ",
+    "https://youtube.com/live/dQw4w9WgXcQ",
+    "https://www.youtube.com/live/dQw4w9WgXcQ?si=share-token",
   ])("normalizes %s", (url) => {
     expect(normalizeYoutubeUrl(url)).toEqual({
       videoId: "dQw4w9WgXcQ",
@@ -25,6 +27,8 @@ describe("YouTube URL allowlist", () => {
     "https://user:pass@youtube.com/watch?v=dQw4w9WgXcQ",
     "https://youtube.com:8443/watch?v=dQw4w9WgXcQ",
     "https://youtube.com/watch?v=too-short",
+    "https://youtube.com/live/too-short",
+    "https://youtube.com/live/dQw4w9WgXcQ/extra",
   ])("rejects %s", (url) => {
     expect(() => normalizeYoutubeUrl(url)).toThrow();
   });
@@ -306,5 +310,214 @@ describe("YouTube duration validation", () => {
 
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+  });
+
+  it("keeps ordinary public VODs allowed when live replay support is disabled by default", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{
+        id: "dQw4w9WgXcQ",
+        snippet: {
+          title: "일반 영상",
+          channelTitle: "채널",
+          liveBroadcastContent: "none",
+          thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
+        },
+        contentDetails: { duration: "PT3M" },
+        status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
+      }],
+    }), { status: 200 })));
+
+    await expect(analyzeYoutubeUrl("https://youtu.be/dQw4w9WgXcQ")).resolves.toMatchObject({
+      creationAllowed: true,
+      creationBlockCode: null,
+    });
+  });
+
+  it("allows a completed public replay only when the direct-input option is enabled", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key");
+    const responseBody = JSON.stringify({
+      items: [{
+        id: "dQw4w9WgXcQ",
+        snippet: {
+          title: "완료된 라이브 다시보기",
+          channelTitle: "채널",
+          liveBroadcastContent: "none",
+          thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
+        },
+        contentDetails: { duration: "PT1H" },
+        status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
+        liveStreamingDetails: {
+          actualStartTime: "2026-08-01T00:00:00Z",
+          actualEndTime: "2026-08-01T01:00:00Z",
+        },
+      }],
+    });
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(
+      () => Promise.resolve(new Response(responseBody, { status: 200 })),
+    ));
+
+    await expect(analyzeYoutubeUrl("https://youtube.com/live/dQw4w9WgXcQ")).resolves.toMatchObject({
+      creationAllowed: false,
+      creationBlockCode: "not_yet_available",
+    });
+    await expect(analyzeYoutubeUrl(
+      "https://youtube.com/live/dQw4w9WgXcQ",
+      { allowCompletedLiveReplay: true },
+    )).resolves.toMatchObject({
+      creationAllowed: true,
+      creationBlockCode: null,
+      durationSeconds: 3600,
+    });
+  });
+
+  it.each([
+    {
+      name: "예약 라이브",
+      duration: "PT3M",
+      liveBroadcastContent: "upcoming",
+      liveStreamingDetails: { scheduledStartTime: "2026-09-01T00:00:00Z" },
+      uploadStatus: "processed",
+      code: "not_yet_available",
+    },
+    {
+      name: "송출 중 라이브",
+      duration: "PT30M",
+      liveBroadcastContent: "live",
+      liveStreamingDetails: { actualStartTime: "2026-08-30T00:00:00Z" },
+      uploadStatus: "processed",
+      code: "not_yet_available",
+    },
+    {
+      name: "처리 중 다시보기",
+      duration: "PT30M",
+      liveBroadcastContent: "none",
+      liveStreamingDetails: {
+        actualStartTime: "2026-08-01T00:00:00Z",
+        actualEndTime: "2026-08-01T00:30:00Z",
+      },
+      uploadStatus: "uploaded",
+      code: "not_processed",
+    },
+    {
+      name: "종료시간 없는 라이브",
+      duration: "PT30M",
+      liveBroadcastContent: "none",
+      liveStreamingDetails: { actualStartTime: "2026-08-01T00:00:00Z" },
+      uploadStatus: "processed",
+      code: "not_yet_available",
+    },
+    {
+      name: "시작시간 없는 모순 상태",
+      duration: "PT30M",
+      liveBroadcastContent: "none",
+      liveStreamingDetails: { actualEndTime: "2026-08-01T00:30:00Z" },
+      uploadStatus: "processed",
+      code: "not_yet_available",
+    },
+    {
+      name: "종료가 시작보다 빠른 모순 상태",
+      duration: "PT30M",
+      liveBroadcastContent: "none",
+      liveStreamingDetails: {
+        actualStartTime: "2026-08-01T01:00:00Z",
+        actualEndTime: "2026-08-01T00:30:00Z",
+      },
+      uploadStatus: "processed",
+      code: "not_yet_available",
+    },
+  ])("blocks $name when completed replay support is enabled", async ({
+    duration,
+    liveBroadcastContent,
+    liveStreamingDetails,
+    uploadStatus,
+    code,
+  }) => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{
+        id: "dQw4w9WgXcQ",
+        snippet: {
+          title: "라이브",
+          channelTitle: "채널",
+          liveBroadcastContent,
+          thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
+        },
+        contentDetails: { duration },
+        status: { uploadStatus, privacyStatus: "public", embeddable: true },
+        liveStreamingDetails,
+      }],
+    }), { status: 200 })));
+
+    await expect(analyzeYoutubeUrl(
+      "https://youtube.com/live/dQw4w9WgXcQ",
+      { allowCompletedLiveReplay: true },
+    )).resolves.toMatchObject({
+      creationAllowed: false,
+      creationBlockCode: code,
+    });
+  });
+
+  it.each([
+    {
+      name: "비공개",
+      contentDetails: { duration: "PT30M" },
+      status: { uploadStatus: "processed", privacyStatus: "private", embeddable: true },
+      code: "not_public",
+    },
+    {
+      name: "지역 제한",
+      contentDetails: { duration: "PT30M", regionRestriction: { blocked: ["KR"] } },
+      status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
+      code: "region_restricted",
+    },
+    {
+      name: "연령 제한",
+      contentDetails: { duration: "PT30M", contentRating: { ytRating: "ytAgeRestricted" } },
+      status: { uploadStatus: "processed", privacyStatus: "public", embeddable: true },
+      code: "age_restricted",
+    },
+    {
+      name: "저작권 거절",
+      contentDetails: { duration: "PT30M" },
+      status: {
+        uploadStatus: "rejected",
+        privacyStatus: "public",
+        embeddable: true,
+        rejectionReason: "copyright",
+      },
+      code: "copyright_restricted",
+    },
+  ])("keeps the existing $name restriction for completed replays", async ({
+    contentDetails,
+    status,
+    code,
+  }) => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{
+        id: "dQw4w9WgXcQ",
+        snippet: {
+          title: "제한된 라이브 다시보기",
+          channelTitle: "채널",
+          liveBroadcastContent: "none",
+          thumbnails: { default: { url: "https://example.com/thumb.jpg" } },
+        },
+        contentDetails,
+        status,
+        liveStreamingDetails: {
+          actualStartTime: "2026-08-01T00:00:00Z",
+          actualEndTime: "2026-08-01T00:30:00Z",
+        },
+      }],
+    }), { status: 200 })));
+
+    await expect(analyzeYoutubeUrl(
+      "https://youtube.com/live/dQw4w9WgXcQ",
+      { allowCompletedLiveReplay: true },
+    )).resolves.toMatchObject({
+      creationAllowed: false,
+      creationBlockCode: code,
+    });
   });
 });

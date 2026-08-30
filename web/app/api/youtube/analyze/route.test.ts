@@ -74,7 +74,10 @@ describe("YouTube analysis authentication", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.assertYoutubeAnalysisRequestAllowed).toHaveBeenCalledWith("user-a");
-    expect(mocks.analyzeYoutubeUrl).toHaveBeenCalledWith("https://youtu.be/dQw4w9WgXcQ");
+    expect(mocks.analyzeYoutubeUrl).toHaveBeenCalledWith(
+      "https://youtu.be/dQw4w9WgXcQ",
+      { allowCompletedLiveReplay: true },
+    );
     expect(mocks.createYoutubeAnalysis).toHaveBeenCalledWith(
       expect.objectContaining({ userId: "user-a" }),
       metadata,

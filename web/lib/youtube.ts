@@ -19,6 +19,9 @@ export function normalizeYoutubeUrl(input: string) {
   else if (["youtube.com", "m.youtube.com", "music.youtube.com"].includes(host)) {
     if (url.pathname === "/watch") id = url.searchParams.get("v") || "";
     else if (url.pathname.startsWith("/shorts/")) id = url.pathname.split("/")[2] || "";
+    else if (host === "youtube.com") {
+      id = /^\/live\/([A-Za-z0-9_-]{11})$/.exec(url.pathname)?.[1] || "";
+    }
   } else throw new Error("지원하지 않는 YouTube 주소입니다.");
   if (!youtubeId.test(id)) throw new Error("YouTube 영상 ID가 올바르지 않습니다.");
   return { videoId: id, normalizedUrl: `https://www.youtube.com/watch?v=${id}` };
@@ -37,6 +40,7 @@ const responseSchema = z.object({
       title: z.string(),
       channelTitle: z.string(),
       channelId: z.string().optional(),
+      liveBroadcastContent: z.string().optional(),
       thumbnails: z.record(z.string(), z.object({ url: z.string().url() })),
     }),
     contentDetails: z.object({
@@ -96,6 +100,10 @@ type CreationAvailability = {
   creationBlockReason: string | null;
 };
 
+type AnalyzeYoutubeUrlOptions = {
+  allowCompletedLiveReplay?: boolean;
+};
+
 function unavailable(creationBlockCode: YoutubeCreationBlockCode): CreationAvailability {
   return {
     creationAllowed: false,
@@ -106,6 +114,7 @@ function unavailable(creationBlockCode: YoutubeCreationBlockCode): CreationAvail
 
 export function getYoutubeCreationAvailability(
   item: z.infer<typeof responseSchema>["items"][number],
+  options: AnalyzeYoutubeUrlOptions = {},
 ): CreationAvailability {
   const restriction = item.contentDetails.regionRestriction;
   if (restriction?.allowed !== undefined || (restriction?.blocked?.length || 0) > 0) {
@@ -132,11 +141,20 @@ export function getYoutubeCreationAvailability(
     }
     return unavailable("not_processed");
   }
-  if (
-    item.liveStreamingDetails?.scheduledStartTime
-    && !item.liveStreamingDetails.actualStartTime
-  ) {
-    return unavailable("not_yet_available");
+  const liveDetails = item.liveStreamingDetails;
+  const liveBroadcastContent = item.snippet.liveBroadcastContent;
+  const hasLiveHistory = liveDetails !== undefined
+    || (liveBroadcastContent !== undefined && liveBroadcastContent !== "none");
+  if (hasLiveHistory) {
+    const actualStartMs = Date.parse(liveDetails?.actualStartTime || "");
+    const actualEndMs = Date.parse(liveDetails?.actualEndTime || "");
+    const isCompletedReplay = (liveBroadcastContent === undefined || liveBroadcastContent === "none")
+      && Number.isFinite(actualStartMs)
+      && Number.isFinite(actualEndMs)
+      && actualEndMs > actualStartMs;
+    if (!options.allowCompletedLiveReplay || !isCompletedReplay) {
+      return unavailable("not_yet_available");
+    }
   }
   return {
     creationAllowed: true,
@@ -145,7 +163,10 @@ export function getYoutubeCreationAvailability(
   };
 }
 
-export async function analyzeYoutubeUrl(input: string) {
+export async function analyzeYoutubeUrl(
+  input: string,
+  options: AnalyzeYoutubeUrlOptions = {},
+) {
   const { videoId, normalizedUrl } = normalizeYoutubeUrl(input);
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) throw new Error("YOUTUBE_API_KEY가 설정되지 않았습니다.");
@@ -167,7 +188,7 @@ export async function analyzeYoutubeUrl(input: string) {
   assertSupportedSourceVideoDuration(durationSeconds, {
     sourceRangeSelectionEnabled: true,
   });
-  const availability = getYoutubeCreationAvailability(item);
+  const availability = getYoutubeCreationAvailability(item, options);
   const channelThumbnailUrl = await getChannelThumbnailUrl(item.snippet.channelId, apiKey);
   return {
     videoId,

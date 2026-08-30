@@ -21,7 +21,9 @@ export async function POST(request: Request) {
     }
     const body = parsed.data;
     await assertYoutubeAnalysisRequestAllowed(session.userId);
-    const analysis = await analyzeYoutubeUrl(body.youtubeUrl);
+    const analysis = await analyzeYoutubeUrl(body.youtubeUrl, {
+      allowCompletedLiveReplay: true,
+    });
     return NextResponse.json(await createYoutubeAnalysis(session, analysis));
   } catch (error) { return apiError(error); }
 }
