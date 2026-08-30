@@ -1339,6 +1339,10 @@ class UploadReceiverService:
             message="업로드 수신기가 종료되어 작업을 취소했습니다.",
             source_deleted=cleaned,
         )
+        # shutdown() is the terminal owner when ECS stops this receiver.  Do
+        # not leave its claimed capacity lease alive until the six-hour TTL;
+        # _release is idempotent if the request/pipeline thread races us.
+        self._release(context)
 
 
 class UploadHttpServer(ThreadingHTTPServer):

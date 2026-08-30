@@ -912,6 +912,7 @@ def test_long_active_pipeline_keeps_session_fresh_and_is_excluded_from_sweeper(
 
 def test_shutdown_cancels_active_upload_and_deletes_source_before_recording(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     payload = b"video"
     service, _worker, repository = _service(tmp_path, payload)
@@ -922,6 +923,13 @@ def test_shutdown_cancels_active_upload_and_deletes_source_before_recording(
     context.source_path = context.workspace / "source.media"
     context.source_path.write_bytes(payload)
     context.abort_stream = context.source_handle_closed.set
+    context.capacity_claimed = True
+    released_capacity: list[str] = []
+    monkeypatch.setattr(
+        service,
+        "_notify_capacity_release",
+        released_capacity.append,
+    )
     assert service._capacity.acquire(blocking=False)
     with service._active_guard:
         service._active = context
@@ -932,7 +940,9 @@ def test_shutdown_cancels_active_upload_and_deletes_source_before_recording(
     assert not context.workspace.exists()
     assert repository.failure_calls[0]["error_code"] == "upload_receiver_shutdown"
     assert repository.failure_calls[0]["source_deleted"] is True
-    service._release(context)
+    assert context.released is True
+    assert service.busy is False
+    assert released_capacity == [session_id]
 
 
 def test_shutdown_never_marks_source_deleted_while_stream_handle_is_open(
