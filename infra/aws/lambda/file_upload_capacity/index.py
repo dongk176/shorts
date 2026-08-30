@@ -215,6 +215,14 @@ def _reconcile(now: int, *, grant_waiting: bool = False) -> dict[str, Any]:
     ready_task_count = len(
         healthy_task_arns - claimed_task_arns - protected_task_arns
     )
+    # A grant is not bound to one ALB target until the receiver claims it.
+    # Keep admission single-flight and wait until every newly-busy target has
+    # actually left the ALB healthy set.  Otherwise a small first upload can
+    # finish its HTTP response before the two failed /readyz probes complete,
+    # allowing the next PUT to be routed back to that busy receiver.
+    busy_healthy_task_arns = healthy_task_arns & (
+        claimed_task_arns | protected_task_arns
+    )
     granted = [item for item in leases if item.get("state") == "granted"]
     waiting = sorted(
         (item for item in leases if item.get("state") == "waiting"),
@@ -223,10 +231,12 @@ def _reconcile(now: int, *, grant_waiting: bool = False) -> dict[str, Any]:
             str(item.get("uploadSessionId") or ""),
         ),
     )
-    grant_count = (
-        max(0, min(len(waiting), ready_task_count - len(granted)))
-        if grant_waiting
-        else 0
+    grant_count = int(
+        grant_waiting
+        and bool(waiting)
+        and ready_task_count > 0
+        and not granted
+        and not busy_healthy_task_arns
     )
     for item in waiting[:grant_count]:
         grant_expires = now + _upload_window_seconds
@@ -241,6 +251,11 @@ def _reconcile(now: int, *, grant_waiting: bool = False) -> dict[str, Any]:
         waiting = [item for item in leases if item.get("state") == "waiting"]
     protected_count = len(protected_task_arns)
     leased_count = len(leases)
+    admission_ready_count = int(
+        ready_task_count > 0
+        and not granted
+        and not busy_healthy_task_arns
+    )
     desired = max(
         min(leased_count, _maximum),
         protected_count,
@@ -253,7 +268,9 @@ def _reconcile(now: int, *, grant_waiting: bool = False) -> dict[str, Any]:
         "claimedCount": sum(1 for item in leases if item.get("state") == "claimed"),
         "protectedCount": protected_count,
         "healthyCount": len(healthy_task_arns),
-        "readyCount": max(0, ready_task_count - len(granted)),
+        # This is admission capacity, not merely the number of physically
+        # healthy idle targets.  During the ALB drain fence it must stay zero.
+        "readyCount": admission_ready_count,
         "startingCount": max(
             0,
             int(service.get("pendingCount", 0))
