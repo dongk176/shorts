@@ -13435,7 +13435,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     ? uploadVideo.durationSeconds >= MIN_SELECTED_SOURCE_SECONDS
     : analysis?.sourceRangeSelectionEnabled === true;
   const unifiedTemplateSubtitleCanaryEnabled = Boolean(uploadSourceActive
-    ? state?.capabilities.unifiedTemplateSubtitleLocalUpload
+    ? state?.capabilities.unifiedTemplateSubtitles
     : state?.capabilities.unifiedTemplateSubtitles
       && analysis?.unifiedTemplateSubtitleCanaryEnabled);
   const subtitleTemplateSelectionEnabled = uploadSourceActive

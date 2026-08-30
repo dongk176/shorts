@@ -90,4 +90,16 @@ describe("administrator file upload UI isolation", () => {
     expect(source).toContain('channelName: "",');
     expect(source).not.toContain('channelName: "업로드한 영상"');
   });
+
+  it("shows entitled v5 custom templates for verified production uploads", () => {
+    expect(source).toContain(
+      "const unifiedTemplateSubtitleCanaryEnabled = Boolean(uploadSourceActive\n" +
+      "    ? state?.capabilities.unifiedTemplateSubtitles",
+    );
+    expect(source).not.toContain(
+      "? state?.capabilities.unifiedTemplateSubtitleLocalUpload",
+    );
+    expect(source).toContain("sourceCompatiblePersonalTemplates");
+    expect(source).toContain("|| !isTemplateConfigV5(template.config)");
+  });
 });
