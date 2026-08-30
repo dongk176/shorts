@@ -60,6 +60,24 @@ describe("administrator file upload UI isolation", () => {
     expect(source).toContain('uploadDragActive ? "is-dragging"');
   });
 
+  it("requires beta acknowledgement before creating an upload session", () => {
+    expect(source).toContain("const [uploadBetaNoticeOpen, setUploadBetaNoticeOpen] = useState(false)");
+    expect(source).toContain("if (!betaNoticeConfirmed)");
+    expect(source).toContain("setUploadBetaNoticeOpen(true)");
+    expect(source).toContain("파일 업로드 기능은 현재 베타 서비스예요.");
+    expect(source).toContain("업로드가 진행되는 동안 새 창에서 다른 작업을 시작해 보세요.");
+    expect(source).toContain("확인하고 업로드");
+    expect(source).toContain("void createUploadJob(true)");
+    expect(source.indexOf("if (!betaNoticeConfirmed)")).toBeLessThan(
+      source.indexOf('>("/api/file-upload/sessions"'),
+    );
+  });
+
+  it("keeps the preparation progress track visually empty", () => {
+    expect(source).toContain('aria-valuetext="업로드 시작 중"');
+    expect(source).not.toContain("w-1/3 animate-pulse");
+  });
+
   it("does not invent a visible channel name for local uploads", () => {
     expect(source).toContain('channelName: "",');
     expect(source).not.toContain('channelName: "업로드한 영상"');

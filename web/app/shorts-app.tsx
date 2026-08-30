@@ -2572,6 +2572,77 @@ function NoticeDialog({
   );
 }
 
+function UploadBetaNoticeDialog({
+  open,
+  onConfirm,
+  onClose,
+}: {
+  open: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose, open]);
+
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[160] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[4px] sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="file-upload-beta-notice-title"
+        aria-describedby="file-upload-beta-notice-description"
+        className="relative w-full max-w-[480px] overflow-hidden rounded-[24px] border border-violet-400/20 bg-[#24222b] px-7 pb-8 pt-10 text-center shadow-[0_28px_90px_rgba(0,0,0,.68)] sm:px-9 sm:pb-9"
+      >
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-16 -top-24 h-40 rounded-full bg-violet-500/15 blur-3xl" />
+        <div aria-hidden="true" className="relative mx-auto grid h-12 w-12 place-items-center rounded-full border border-violet-300/20 bg-violet-500/10 text-2xl text-violet-200">i</div>
+        <h2 id="file-upload-beta-notice-title" className="relative mt-5 text-2xl font-extrabold tracking-[-0.025em] text-white">
+          파일 업로드 안내
+        </h2>
+        <p id="file-upload-beta-notice-description" className="relative mt-4 text-sm font-semibold leading-6 text-violet-100/80">
+          파일 업로드 기능은 현재 베타 서비스예요. 영상 크기와 네트워크 환경에 따라 업로드에 시간이 걸릴 수 있습니다.
+          <br />
+          업로드가 진행되는 동안 새 창에서 다른 작업을 시작해 보세요.
+        </p>
+        <div className="relative mt-8 grid gap-3 sm:grid-cols-[.8fr_1.2fr]">
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-12 rounded-xl border border-white/15 px-5 py-3 text-sm font-extrabold text-neutral-200 transition hover:bg-white/[.06] active:scale-[.99]"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            autoFocus
+            onClick={onConfirm}
+            className="min-h-12 rounded-xl bg-white px-5 py-3 text-sm font-extrabold text-black transition hover:bg-neutral-100 active:scale-[.99]"
+          >
+            확인하고 업로드
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function EditorDraftEntryDialog({
   draft,
   onContinue,
@@ -13280,6 +13351,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [uploadTransferActive, setUploadTransferActive] = useState(false);
   const [uploadPreparationActive, setUploadPreparationActive] = useState(false);
   const [uploadDragActive, setUploadDragActive] = useState(false);
+  const [uploadBetaNoticeOpen, setUploadBetaNoticeOpen] = useState(false);
   const [uploadCompletionOpen, setUploadCompletionOpen] = useState(false);
   const uploadDragDepth = useRef(0);
   const uploadAbortController = useRef<AbortController | null>(null);
@@ -13429,6 +13501,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const closeConversionMaintenance = useCallback(() => {
     setConversionMaintenanceOpen(false);
   }, []);
+  const closeUploadBetaNotice = useCallback(() => {
+    setUploadBetaNoticeOpen(false);
+  }, []);
   const openLoginAfterDelay = useCallback((next: string) => {
     if (loginOpenTimer.current !== null) return;
     setLoginNext(next);
@@ -13494,6 +13569,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     setSourceMode("youtube");
     setUploadVideo(null);
     setUploadProgress(null);
+    setUploadBetaNoticeOpen(false);
   }, [sourceMode, uploadModeEnabled]);
 
   useEffect(() => {
@@ -13934,7 +14010,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     finally { setBusy(false); }
   };
 
-  const createUploadJob = async () => {
+  const createUploadJob = async (betaNoticeConfirmed = false) => {
     if (!uploadSourceActive || !uploadVideo || !selectedSource) return;
     if (!rightsConfirmed) {
       setError(null);
@@ -13963,6 +14039,10 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     }
     if (activeJobBlocksCreation) {
       setConcurrentJobNoticeOpen(true);
+      return;
+    }
+    if (!betaNoticeConfirmed) {
+      setUploadBetaNoticeOpen(true);
       return;
     }
 
@@ -14388,6 +14468,14 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         grantedSeconds={shortsEventGrantedSeconds}
         onClose={closeShortsEventParticipation}
       />
+      <UploadBetaNoticeDialog
+        open={uploadBetaNoticeOpen}
+        onClose={closeUploadBetaNotice}
+        onConfirm={() => {
+          setUploadBetaNoticeOpen(false);
+          void createUploadJob(true);
+        }}
+      />
       {uploadLifecycleOverlayOpen ? (
         <div
           className="fixed inset-0 z-[170] grid place-items-center bg-black/80 px-5 py-8 backdrop-blur-sm"
@@ -14444,12 +14532,11 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
                   </div>
                 ) : (
                   <div
-                    className="mt-6 overflow-hidden rounded-full bg-white/10 p-1"
+                    className="mt-6 h-4 overflow-hidden rounded-full bg-white/10 p-1"
                     role="progressbar"
                     aria-label="업로드 시작 중"
-                  >
-                    <span className="block h-2 w-1/3 animate-pulse rounded-full bg-[#ff715e] motion-reduce:animate-none" />
-                  </div>
+                    aria-valuetext="업로드 시작 중"
+                  />
                 )}
                 <p className="mt-2 text-center text-xs font-extrabold tabular-nums text-neutral-400">
                   {uploadTransferActive && uploadProgress !== null
