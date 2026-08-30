@@ -15,6 +15,18 @@ type FileUploadReleaseAccess = {
   publicEnabled: boolean;
 };
 
+const FILE_UPLOAD_RELEASE_CHECK_KEYS = new Set([
+  "admin_end_to_end",
+  "render_parity",
+  "upload_1gb",
+  "upload_5gb",
+  "source_cleanup",
+  "usage_integrity",
+  "runtime_identity",
+  "no_proxy_environment",
+  "no_stuck_sessions",
+]);
+
 const GIT_SHA = /^[0-9a-f]{40}$/;
 const IMAGE_DIGEST = /^sha256:[0-9a-f]{64}$/;
 const FONT_MANIFEST_SHA256 = /^[0-9a-f]{64}$/;
@@ -34,6 +46,55 @@ function fileUploadWorkerIdentity() {
     return null;
   }
   return { workerSourceGitSha, workerImageDigest, fontManifestSha256 };
+}
+
+function verifiedPublicUploadReleaseId(
+  rows: Array<{ checkKey?: unknown; passed?: unknown; details?: unknown }>,
+  identity: ReturnType<typeof fileUploadWorkerIdentity>,
+) {
+  if (!identity || rows.length !== FILE_UPLOAD_RELEASE_CHECK_KEYS.size) return null;
+  const checks = new Map(rows.map((row) => [String(row.checkKey || ""), row]));
+  if (
+    checks.size !== FILE_UPLOAD_RELEASE_CHECK_KEYS.size
+    || [...FILE_UPLOAD_RELEASE_CHECK_KEYS].some((key) => checks.get(key)?.passed !== true)
+  ) {
+    return null;
+  }
+  const runtime = checks.get("runtime_identity")?.details;
+  if (!runtime || typeof runtime !== "object" || Array.isArray(runtime)) return null;
+  const details = runtime as Record<string, unknown>;
+  const releaseId = String(details.releaseId || "");
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(releaseId)
+    || details.sourceGitSha !== identity.workerSourceGitSha
+    || details.workerImageDigest !== identity.workerImageDigest
+    || details.fontManifestSha256 !== identity.fontManifestSha256
+    || details.renderSpecVersion !== 4
+    || details.captionRenderSpecVersion !== 4
+  ) {
+    return null;
+  }
+  for (const row of checks.values()) {
+    if (!row.details || typeof row.details !== "object" || Array.isArray(row.details)) {
+      return null;
+    }
+    if ((row.details as Record<string, unknown>).sourceGitSha !== identity.workerSourceGitSha) {
+      return null;
+    }
+  }
+  const renderParity = checks.get("render_parity")?.details as
+    | Record<string, unknown>
+    | undefined;
+  const adminEndToEnd = checks.get("admin_end_to_end")?.details as
+    | Record<string, unknown>
+    | undefined;
+  if (
+    renderParity?.releaseId !== releaseId
+    || adminEndToEnd?.releaseId !== releaseId
+  ) {
+    return null;
+  }
+  return releaseId;
 }
 
 export async function resolveInitialRenderRelease(
@@ -90,11 +151,11 @@ export async function resolveInitialRenderRelease(
  * Bind an upload job to the exact immutable worker that receives its source.
  *
  * The upload service is intentionally independent from the Batch target
- * currently used by ordinary link jobs. During administrator testing it may
- * use the verified candidate without changing the stable link dispatch
- * environment. Public uploads fail closed until that same worker has become
- * the stable release. The upload mode and editor state rows remain locked
- * until the caller atomically inserts the job and usage reservation.
+ * currently used by ordinary link jobs. Both administrator testing and public
+ * uploads use the exact immutable release deployed to the upload receiver.
+ * Public uploads additionally require the auditable release checks to pin the
+ * same release identity. The upload mode, checks, and editor state rows remain
+ * locked until the caller atomically inserts the job and usage reservation.
  */
 export async function resolveFileUploadInitialRenderRelease(
   tx: TransactionSql,
@@ -104,12 +165,34 @@ export async function resolveFileUploadInitialRenderRelease(
   },
 ): Promise<InitialRenderRelease | null> {
   const identity = fileUploadWorkerIdentity();
-  const channel = input.access.publicEnabled
-    ? "stable"
-    : input.access.adminEnabled
-      ? "candidate"
-      : null;
-  if (!identity || !channel || !isEditorRenderSpecV4Enabled()) return null;
+  if (
+    !identity
+    || (!input.access.adminEnabled && !input.access.publicEnabled)
+    || !isEditorRenderSpecV4Enabled()
+  ) {
+    return null;
+  }
+
+  let pinnedReleaseId: string | null = null;
+  if (input.access.publicEnabled) {
+    // The 24-hour freshness window is enforced atomically when public mode is
+    // enabled. Per-session admission keeps checking explicit pass/fail state
+    // and exact pinned identity so public access cannot silently drift, while
+    // avoiding an automatic outage solely because wall-clock time elapsed.
+    const checkRows = await tx`
+      select check_key,passed,details
+      from shorts_mvp.file_upload_release_checks
+      where check_key in (
+        'admin_end_to_end','render_parity','upload_1gb','upload_5gb',
+        'source_cleanup','usage_integrity','runtime_identity',
+        'no_proxy_environment','no_stuck_sessions'
+      )
+      order by check_key
+      for share
+    `;
+    pinnedReleaseId = verifiedPublicUploadReleaseId(checkRows, identity);
+    if (!pinnedReleaseId) return null;
+  }
 
   const rows = await tx`
     select release.id as release_id,
@@ -121,10 +204,8 @@ export async function resolveFileUploadInitialRenderRelease(
     join shorts_mvp.runtime_feature_flags runtime
       on runtime.flag_key='editor_rendering_v2'
     join shorts_mvp.editor_releases release
-      on release.id=case
-        when ${channel}='candidate' then state.candidate_release_id
-        else state.stable_release_id
-      end
+      on release.git_sha=${identity.workerSourceGitSha}
+      and release.worker_image_digest=${identity.workerImageDigest}
     join shorts_mvp.editor_release_project_targets project_target
       on project_target.release_id=release.id
       and project_target.target_key=${input.targetKey}
@@ -137,23 +218,16 @@ export async function resolveFileUploadInitialRenderRelease(
       )
       and release.render_spec_version=4
       and release.caption_render_spec_version=4
+      and (${pinnedReleaseId}::uuid is null or release.id=${pinnedReleaseId}::uuid)
       and release.git_sha=${identity.workerSourceGitSha}
       and release.worker_image_digest=${identity.workerImageDigest}
       and release.font_manifest_sha256=${identity.fontManifestSha256}
       and project_target.worker_source_git_sha=${identity.workerSourceGitSha}
       and project_target.worker_image_digest=${identity.workerImageDigest}
-      and (
-        (
-          ${channel}='candidate'
-          and release.status in ('canary_ready','canary_active','approved')
-          and release.staging_verified_at is not null
-        ) or (
-          ${channel}='stable'
-          and state.public_enabled
-          and release.status='stable'
-          and release.promoted_at is not null
-        )
+      and release.status in (
+        'staging_verified','canary_ready','canary_active','approved','stable'
       )
+      and release.staging_verified_at is not null
     for share of state,runtime,release,project_target
   `;
   const release = rows.length === 1 ? rows[0] : null;

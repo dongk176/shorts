@@ -561,9 +561,9 @@ export async function POST(request: Request) {
       });
 
       // File uploads must never silently fall back to the legacy renderer.
-      // Administrator tests bind to the exact verified candidate without
-      // rotating ordinary link dispatch; public uploads require that same
-      // identity to be the promoted stable release.
+      // Administrator tests and public uploads bind to the exact independently
+      // verified upload release without rotating ordinary link dispatch.
+      // Public admission additionally requires the audited release evidence.
       const initialRenderRelease = await resolveFileUploadInitialRenderRelease(tx, {
         targetKey: dispatchTarget.targetKey,
         access: lockedAccess,

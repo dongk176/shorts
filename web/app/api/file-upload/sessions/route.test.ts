@@ -516,6 +516,25 @@ describe("file upload job control plane", () => {
       .toContain("initial_editor_release_id");
   });
 
+  it("fails closed before project, usage, or capacity writes when the exact upload release is unavailable", async () => {
+    const { db, queries } = transactionDb();
+    mocks.getDb.mockReturnValue(db);
+    mocks.initialRenderRelease.mockResolvedValueOnce(null);
+
+    const response = await POST(jsonRequest(validBody));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "FILE_UPLOAD_RENDER_RELEASE_UNAVAILABLE",
+    });
+    expect(query(queries, "insert into shorts_mvp.video_jobs")).toBeUndefined();
+    expect(query(queries, "insert into shorts_mvp.usage_reservations")).toBeUndefined();
+    expect(query(queries, "insert into shorts_mvp.file_upload_capacity_requests"))
+      .toBeUndefined();
+    expect(query(queries, "reserve_usage_grants")).toBeUndefined();
+    expect(mocks.ensureUploadCapacity).not.toHaveBeenCalled();
+  });
+
   it("reissues the identical token and URL for an idempotent request without reserving twice", async () => {
     const uploadSessionId = "5a46c5d2-1578-4238-b561-b09a11faacb1";
     const jobId = "db421da3-e87e-473a-b495-29309af5ae42";
