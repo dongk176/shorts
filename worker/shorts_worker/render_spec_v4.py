@@ -7,6 +7,11 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from .editor_text_layout import (
+    normalize_composition_layer_order,
+    template_text_overlay_id,
+    wrap_editor_render_text,
+)
 from .errors import RenderError
 from .font_manifest import editor_font_manifest_entry, normalized_editor_font_bytes
 from .overlays import (
@@ -386,6 +391,8 @@ def compile_initial_editor_render_spec_v4(
     comments: Sequence[CommentOverlay | dict[str, object]] = (),
     caption_render_spec: dict[str, object] | None = None,
     channel_visible: bool = True,
+    custom_template_id: str | None = None,
+    duration_seconds: float | None = None,
 ) -> dict[str, object]:
     """Compile the complete authoritative v4 spec before the first render.
 
@@ -431,6 +438,39 @@ def compile_initial_editor_render_spec_v4(
         }
         for comment in parsed_comments
     ]
+    text_specs: list[dict[str, object]] = []
+    template_text_ids: dict[str, str] = {}
+    if config is not None and config.text_overlays:
+        if not custom_template_id or duration_seconds is None or duration_seconds <= 0:
+            raise RenderError("템플릿 텍스트의 원본과 영상 길이를 확인하지 못했습니다.")
+        for overlay in config.text_overlays:
+            runtime_id = template_text_overlay_id(custom_template_id, overlay.id)
+            template_text_ids[overlay.id] = runtime_id
+            text_specs.append({
+                "id": runtime_id,
+                "lines": wrap_editor_render_text(overlay.text, overlay.width),
+                "centerX": 540 + overlay.offset.x,
+                "centerY": 960 + overlay.offset.y,
+                "width": overlay.width,
+                "fontSize": 72,
+                "lineHeight": 86,
+                "scale": overlay.scale,
+                "color": overlay.color,
+                "effect": overlay.effect,
+                "outlineWidth": 10 if overlay.effect == "outline" else 0,
+                "shadowBlur": 13 if overlay.effect == "shadow" else 0,
+                "startFrame": 0,
+                "endFrame": max(1, floor(duration_seconds * 30 + 0.5)),
+                "font": editor_font_face_v4(overlay.font_id, requested_weight=800),
+            })
+    layer_order = ["video", "title", "comment", *(
+        f"text:{runtime_id}" for runtime_id in template_text_ids.values()
+    ), "channel"]
+    if config is not None and config.layer_order is not None:
+        layer_order = normalize_composition_layer_order([
+            f"text:{template_text_ids[name[5:]]}" if name.startswith("text:") else name
+            for name in config.layer_order
+        ])
     subtitles: dict[str, object] | None = None
     if caption_render_spec is not None:
         if (
@@ -461,7 +501,7 @@ def compile_initial_editor_render_spec_v4(
         "version": 4,
         "canvas": {"width": CANVAS_WIDTH, "height": CANVAS_HEIGHT},
         "fps": 30,
-        "layerOrder": ["video", "title", "comment", "channel"],
+        "layerOrder": layer_order,
         "title": title_spec,
         "channel": {
             "offsetX": 0,
@@ -475,7 +515,7 @@ def compile_initial_editor_render_spec_v4(
             ),
         },
         "comments": comment_specs,
-        "textOverlays": [],
+        "textOverlays": text_specs,
         "video": {"offsetX": 0, "offsetY": 0, "scale": 1},
         **({"subtitles": subtitles} if subtitles is not None else {}),
     }

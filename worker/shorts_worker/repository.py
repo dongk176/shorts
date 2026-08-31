@@ -69,6 +69,23 @@ class WorkerRepository:
                 (job_id,),
             ).fetchone()
 
+    def get_background_asset(self, user_id: str, asset_id: str) -> dict[str, Any] | None:
+        """Read only an owner's ready asset; library removal never revokes use.
+
+        Admission pins the asset inside the owning template/job/document
+        transaction. GC checks those references before changing ready to
+        deleting, so queued and in-flight renders retain their immutable input.
+        """
+        with self.connect() as connection:
+            return connection.execute(
+                """
+                select id,user_id,object_key,sha256,state,byte_size,width,height
+                from shorts_mvp.background_assets
+                where id=%s and user_id=%s and state='ready'
+                """,
+                (asset_id, user_id),
+            ).fetchone()
+
     def claim_upload_session(
         self,
         upload_session_id: str,

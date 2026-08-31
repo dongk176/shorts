@@ -347,7 +347,7 @@ def test_release_probe_renders_and_uploads_machine_verifiable_evidence(
     fallback_probe.assert_called_once()
     if scenario == "baseline":
         assert s3.upload_file.call_count == 0
-        assert s3.put_object.call_count == 5
+        assert s3.put_object.call_count == 10
         browser_matrix.assert_called_once()
         assert result["browserParityMatrix"]["caseCount"] == 1
         assert result["probeIdentity"] == {
@@ -355,7 +355,16 @@ def test_release_probe_renders_and_uploads_machine_verifiable_evidence(
             "probeRunId": "7fd1c249-6cef-40f1-97d4-e4e6c837f60a",
             "batchJobId": "8fd1c249-6cef-40f1-97d4-e4e6c837f60b",
         }
-        assert len(result["artifacts"]) == 4
+        assert len(result["artifacts"]) == 9
+        design = result["customTemplateDesign"]
+        assert design["passed"] is True
+        assert design["sourceGitSha"] == runtime_identity["sourceGitSha"]
+        assert design["workerImageDigest"] == runtime_identity["imageDigest"]
+        assert design["fontManifestSha256"] == runtime_identity["fontManifestSha256"]
+        assert design["wrapRevision"] == "editor-text-v1"
+        assert design["verification"]["caseCount"] == 3
+        assert len(design["verification"]["frames"]) == 5
+        assert design["verification"]["maximumFrameMeanError"] <= 2
         assert result["manifestVersionId"].startswith("version-")
         assert len(result["manifestSha256"]) == 64
     else:
@@ -363,3 +372,4 @@ def test_release_probe_renders_and_uploads_machine_verifiable_evidence(
         s3.put_object.assert_called_once()
         browser_matrix.assert_not_called()
         assert result["browserParityMatrix"] is None
+        assert "customTemplateDesign" not in result
