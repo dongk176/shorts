@@ -17,6 +17,7 @@ import { BrandColorPicker } from "@/components/brand-color-picker";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
 import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
+import { EditorApplyFailureNotice } from "@/components/editor-apply-failure-notice";
 import { EditorTitleV4Preview } from "@/components/editor-title-v4-preview";
 import { TemplateTitleV4Preview } from "@/components/template-title-v4-preview";
 import { YoutubeThumbnail } from "@/components/youtube-thumbnail";
@@ -243,6 +244,7 @@ import {
   type EditorSubtitleSegment,
 } from "@/lib/editor-copy-history";
 import {
+  canonicalizeEditorDocumentV4TitleOffset,
   cloneEditorDocumentSnapshot,
   createEditorDocumentSnapshot,
   createEditorDocumentSnapshotV3,
@@ -5080,9 +5082,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const finalizeEditorDocumentForSave = useCallback((
     source: EditorDocumentSnapshot,
   ) => {
-    const document = cloneEditorDocumentSnapshot(
-      source,
-      preserveV4TitleHorizontalOffset,
+    const document = canonicalizeEditorDocumentV4TitleOffset(
+      cloneEditorDocumentSnapshot(source, preserveV4TitleHorizontalOffset),
+      editorRenderSpecVersion,
     );
     const outputDuration = editorDocumentOutputDuration(document);
     document.comments = scaleTimedRanges(
@@ -5131,6 +5133,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     return document;
   }, [
     adminSubtitleLayoutEnabled,
+    editorRenderSpecVersion,
     item.durationSeconds,
     preserveV4TitleHorizontalOffset,
   ]);
@@ -12987,6 +12990,10 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
                       <span className="short-duration-badge">{formatDuration(item.durationSeconds, locale)}</span>
                       {itemIsRerendering && <EstimatedProcessingOverlay operationKey={`rerender:${item.id}:${item.renderVersion}`} durationSeconds={item.durationSeconds} rerender minimumProgress={item.rerenderProgress} />}
                     </div>
+                    <EditorApplyFailureNotice
+                      failed={item.status === "ready" && item.editorApplyFailed === true}
+                      locale={locale}
+                    />
                     <div className="short-result-actions">
                       {job.isExample || itemIsRerendering || subtitleEditorUnavailable
                         ? <button disabled title={job.isExample ? "예시 작업은 편집할 수 없습니다." : item.subtitleTemplateId ? item.captionRenderSpec ? "현재 편집기에서는 이 자막 영상을 편집할 수 없습니다." : "이전 자막 형식은 새 편집기에서 지원하지 않습니다." : undefined} className="tool-button short-edit-button cursor-not-allowed opacity-40">{item.subtitleTemplateId ? "✎ 편집 준비 중" : "✎ 편집하기"}</button>

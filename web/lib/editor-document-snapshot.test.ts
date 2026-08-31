@@ -4,6 +4,7 @@ import {
   createInitialEditorOverlayLayout,
 } from "./editor-overlay-preview";
 import {
+  canonicalizeEditorDocumentV4TitleOffset,
   cloneEditorDocumentSnapshot,
   createEditorDocumentSnapshot,
   createEditorDocumentSnapshotV3,
@@ -178,6 +179,41 @@ describe("editor document snapshot", () => {
     expect(original.subtitles.segments[0].text).toBe("자막");
     expect(original.overlays.offsets.video.x).toBe(24);
     expect(editorDocumentSnapshotsEqual(original, cloned)).toBe(false);
+  });
+
+  it("leaves v2 and non-v4 submissions unchanged", () => {
+    const v2 = snapshot(true);
+    v2.overlays.offsets.title.y = 12.34567;
+    const v3 = createEditorDocumentSnapshotV3(v2);
+
+    expect(canonicalizeEditorDocumentV4TitleOffset(v2, 4)).toBe(v2);
+    expect(canonicalizeEditorDocumentV4TitleOffset(v3)).toBe(v3);
+    expect(canonicalizeEditorDocumentV4TitleOffset(v3, 3)).toBe(v3);
+    expect(v2.overlays.offsets.title.y).toBe(12.34567);
+    expect(v3.overlays.offsets.title.y).toBe(12.34567);
+  });
+
+  it("normalizes a v3 document before its render spec is upgraded to v4", () => {
+    const source = snapshot(true);
+    source.overlays.offsets.title.y = 12.34567;
+    const document = createEditorDocumentSnapshotV3(
+      source,
+      undefined,
+      false,
+      3,
+      true,
+    );
+    const original = structuredClone(document);
+    const canonical = canonicalizeEditorDocumentV4TitleOffset(document, 4);
+    const expected = structuredClone(original);
+    expected.overlays.offsets.title.y = 12.346;
+
+    expect(canonical).toEqual(expected);
+    expect(canonical).not.toBe(document);
+    expect(document).toEqual(original);
+    expect(canonical.overlays.offsets.title.x).toBe(-30);
+    if (canonical.version !== 3) throw new Error("expected v3 document");
+    expect(canonical.renderSpec).toEqual(original.renderSpec);
   });
 
   it("keeps subtitle layout out of ordinary v2 while preserving it in admin v3", () => {

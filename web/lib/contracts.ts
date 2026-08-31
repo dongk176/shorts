@@ -231,6 +231,7 @@ export type GeneratedShort = {
   renderVersion: number;
   initialRenderSpec: import("./editor-render-spec").EditorRenderSpec | null;
   editorDocument?: import("./editor-document-snapshot").EditorDocumentSnapshot | null;
+  editorApplyFailed?: boolean;
   rerenderProgress: number;
   status: string;
   expiresAt: string | null;

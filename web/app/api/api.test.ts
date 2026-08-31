@@ -1109,6 +1109,38 @@ describe("subtitle template edit isolation", () => {
     expect(begin).not.toHaveBeenCalled();
   });
 
+  it("rejects mismatched v4 title coordinates before any database or Batch side effects", async () => {
+    const document = editorDocumentV4Fixture();
+    if (document.version !== 3 || document.renderSpec.version !== 4) {
+      throw new Error("invalid v4 API fixture");
+    }
+    document.overlays.offsets.title.y = 12.34567;
+    document.renderSpec.title.offsetY = 12.346;
+
+    const response = await applyRangeEdit(
+      jsonRequest(`http://localhost/api/shorts/${shortId}/apply-edit`, {
+        requestId: "6177dfc1-ed71-40b9-b613-c3661b4089ec",
+        release: {
+          releaseId: "b0cd2a6b-5019-4b5c-87cb-57e2d0bdb4c0",
+          channel: "stable",
+          uiVersion: 3,
+          documentVersion: 3,
+        },
+        document,
+      }),
+      { params: Promise.resolve({ shortId }) },
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      code: "INVALID_INPUT",
+      detail: "입력한 내용을 다시 확인해 주세요.",
+    });
+    expect(mocks.getDb).not.toHaveBeenCalled();
+    expect(mocks.submitRerender).not.toHaveBeenCalled();
+    expect(mocks.wakeDispatcher).not.toHaveBeenCalled();
+  });
+
   it("queues and preserves an exact render spec v4 on its assigned release", async () => {
     process.env.EDITOR_RENDERING_V2_ENABLED = "true";
     process.env.EDITOR_RENDERING_V2_GLOBAL_ENABLED = "true";

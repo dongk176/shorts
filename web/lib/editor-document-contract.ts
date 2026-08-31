@@ -769,6 +769,18 @@ const editorDocumentV2Schema =
 const editorDocumentV3Schema =
   editorDocumentV3BaseSchema.superRefine((document, context) => {
     validateEditorDocumentSnapshot(document, context, true);
+    // Old drafts retain raw drag coordinates; only submitted documents must
+    // match the worker's exact comparison with the fixed-point render spec.
+    if (
+      document.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION
+      && document.renderSpec.title.offsetY !== document.overlays.offsets.title.y
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["renderSpec", "title", "offsetY"],
+        message: "제목 위치가 렌더 사양과 일치해야 합니다.",
+      });
+    }
   });
 export const editorDocumentSnapshotSchema = z.union([
   editorDocumentV2Schema,

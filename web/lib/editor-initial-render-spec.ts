@@ -99,6 +99,16 @@ export function editorInitialRenderSpecLayerFingerprints(
   };
 }
 
+function initialRenderTitleMatchesDocument(
+  document: EditorDocumentSnapshot,
+  initialRenderSpec: EditorRenderSpecV4,
+) {
+  return !Object.is(initialRenderSpec.title.offsetY, -0)
+    && initialRenderSpec.title.offsetY === document.overlays.offsets.title.y
+    && initialRenderSpec.title.font.fontId === document.overlays.fonts.title
+    && initialRenderSpec.title.font.requestedWeight === 700;
+}
+
 export function preserveUnchangedInitialRenderSpecLayers(
   compiled: EditorRenderSpecV4,
   document: EditorDocumentSnapshot,
@@ -117,6 +127,7 @@ export function preserveUnchangedInitialRenderSpecLayers(
   return {
     ...compiled,
     title: current.title === baseline.title
+      && initialRenderTitleMatchesDocument(document, initialRenderSpec)
       ? structuredClone(initialRenderSpec.title)
       : compiled.title,
     channel: current.channel === baseline.channel
@@ -134,6 +145,7 @@ export function shouldPreserveInitialEditorRenderSpec(
     initialRenderSpec?.version === EDITOR_RENDER_SPEC_V4_VERSION
     && document.version === 3
     && document.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION
+    && initialRenderTitleMatchesDocument(document, initialRenderSpec)
     && JSON.stringify(document.renderSpec) === JSON.stringify(initialRenderSpec)
     && baselineFingerprint !== null
     && baselineFingerprint === editorDocumentSemanticFingerprint(document),

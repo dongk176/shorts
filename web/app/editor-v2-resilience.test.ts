@@ -11,6 +11,37 @@ const editorStyles = readFileSync(
 );
 
 describe("editor v2 resilience", () => {
+  it("canonicalizes v4 title coordinates before compiling and fingerprinting an apply request", () => {
+    const finalizeStart = editorSource.indexOf("const finalizeEditorDocumentForSave = useCallback");
+    const finalizeEnd = editorSource.indexOf("const editorSemanticDocumentSnapshot", finalizeStart);
+    const finalizeSource = editorSource.slice(finalizeStart, finalizeEnd);
+    expect(finalizeSource).toContain("canonicalizeEditorDocumentV4TitleOffset(");
+    expect(finalizeSource).toContain("cloneEditorDocumentSnapshot(source, preserveV4TitleHorizontalOffset)");
+    expect(finalizeSource).toContain("editorRenderSpecVersion,");
+
+    const saveStart = editorSource.indexOf("const save = async () =>");
+    const saveSource = editorSource.slice(saveStart, saveStart + 9_000);
+    const finalize = saveSource.indexOf("finalizeEditorDocumentForSave(");
+    const reuse = saveSource.indexOf("shouldPreserveInitialEditorRenderSpec(");
+    const compile = saveSource.indexOf("createEditorRenderSpecV4(");
+    const fingerprint = saveSource.indexOf("const requestFingerprint");
+    expect(finalize).toBeGreaterThan(-1);
+    expect(reuse).toBeGreaterThan(finalize);
+    expect(compile).toBeGreaterThan(finalize);
+    expect(fingerprint).toBeGreaterThan(compile);
+  });
+
+  it("shows failed edit status next to the preserved video and existing editor action", () => {
+    const noticeStart = editorSource.indexOf("<EditorApplyFailureNotice");
+    expect(noticeStart).toBeGreaterThan(-1);
+    const noticeSource = editorSource.slice(noticeStart, noticeStart + 2_800);
+    expect(noticeSource).toContain('failed={item.status === "ready" && item.editorApplyFailed === true}');
+    expect(noticeSource).toContain("locale={locale}");
+    expect(noticeSource).toContain('className="short-result-actions"');
+    expect(noticeSource).toContain("/edit/${item.id}");
+    expect(noticeSource).not.toContain("render_error_message");
+  });
+
   it("loads and continuously writes version-scoped browser drafts", () => {
     expect(editorSource).toContain(
       "readEditorDraft(item.id, item.renderVersion)",

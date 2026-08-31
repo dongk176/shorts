@@ -74,6 +74,16 @@ type ShortsForJobsOptions = {
   includeExactWordTimingAvailability?: boolean;
 };
 
+// Known editor/rerender failure codes, never initial-render failure codes.
+const editorApplyFailureCodes = new Set([
+  "rerender_batch_application",
+  "rerender_batch_infrastructure",
+  "rerender_batch_oom",
+  "editor_render_stale",
+  "editor_dispatch_failed",
+  "editor_batch_submit_failed",
+]);
+
 function sessionOwnership(session: MvpSession) {
   const userId = session.userId?.trim() || null;
   return {
@@ -163,7 +173,7 @@ export async function getShortsForJobs(
       subtitle_template_id, subtitle_template_snapshot, caption_render_spec,
       title_text_styles_initialized, render_version,
       initial_render_spec, editor_document,
-      rerender_progress, status, expires_at
+      render_error_code, rerender_progress, status, expires_at
     from shorts_mvp.generated_shorts
     where job_id in ${db(jobIds)} and deleted_at is null
       and status in ('ready', 'rerendering')
@@ -224,6 +234,8 @@ export async function getShortsForJobs(
       editorDocument: editorDocument.success
         ? editorDocument.data as EditorDocumentSnapshot
         : null,
+      editorApplyFailed: row.status === "ready"
+        && editorApplyFailureCodes.has(row.renderErrorCode),
       rerenderProgress: row.rerenderProgress,
       status: row.status,
       expiresAt: row.expiresAt?.toISOString() ?? null,

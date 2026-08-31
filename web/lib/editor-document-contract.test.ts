@@ -8,10 +8,15 @@ import {
   parseInitialEditorRenderSpec,
 } from "./editor-document-contract";
 import {
+  canonicalizeEditorDocumentV4TitleOffset,
   cloneEditorDocumentSnapshot,
   createEditorDocumentSnapshot,
   type EditorDocumentSnapshot,
 } from "./editor-document-snapshot";
+import {
+  createEditorDraftRecord,
+  parseEditorDraftRecord,
+} from "./editor-draft-store";
 import { createInitialEditorOverlayLayout } from "./editor-overlay-preview";
 import { resolveEditorFontFaceV4 } from "./editor-fonts";
 import {
@@ -77,8 +82,9 @@ function validDocument() {
   });
 }
 
-function validV4Document() {
+function validV4Document(titleOffsetY = 0) {
   const document = validDocument();
+  document.overlays.offsets.title.y = titleOffsetY;
   const legacy = createEditorRenderSpec(document, undefined, 1);
   if (legacy.version !== 1) throw new Error("invalid legacy fixture");
   const title = compileEditorRenderTitleSpecV4(
@@ -122,7 +128,7 @@ function validV4Document() {
         captionSpecVersion: 4,
       },
     },
-  };
+  } satisfies EditorDocumentSnapshot;
 }
 
 describe("editor document v2 contract", () => {
@@ -253,6 +259,71 @@ describe("editor document v3 render specification", () => {
     expect(parsed.renderSpec.title.lineBoxes[0].centerY).not.toBe(
       cloned.renderSpec.title.lineBoxes[0].centerY,
     );
+  });
+
+  it("reads an existing fractional-position draft but rejects it for submission", () => {
+    const value = validV4Document(12.34567);
+    expect(value.renderSpec.title.offsetY).toBe(12.346);
+    const draft = editorDraftDocumentSnapshotSchema.parse(value);
+    expect(draft.overlays.offsets.title.y).toBe(12.34567);
+    const record = createEditorDraftRecord(value, "2026-08-31T00:00:00.000Z");
+    expect(parseEditorDraftRecord(record)?.document).toEqual(value);
+    expect(() => editorDocumentSnapshotSchema.parse(value)).toThrow(
+      "제목 위치가 렌더 사양과 일치해야 합니다.",
+    );
+  });
+
+  it.each([
+    [12.34567, 12.346],
+    [-12.34567, -12.346],
+    [1919.99967, 1920],
+    [-1919.99967, -1920],
+    [0, 0],
+  ])("canonicalizes only v4 semantic title Y %s to %s for submission", (raw, fixed) => {
+    const value = validV4Document(raw);
+    value.overlays.offsets.title.x = 18.12345;
+    const original = structuredClone(value);
+    const canonical = canonicalizeEditorDocumentV4TitleOffset(value);
+    const expected = structuredClone(value);
+    expected.overlays.offsets.title.y = fixed;
+
+    expect(canonical).toEqual(expected);
+    expect(canonical).not.toBe(value);
+    expect(value).toEqual(original);
+    expect(editorDocumentSnapshotSchema.parse(canonical).overlays.offsets.title.y)
+      .toBe(fixed);
+    expect(canonicalizeEditorDocumentV4TitleOffset(canonical)).toEqual(canonical);
+    expect(canonicalizeEditorDocumentV4TitleOffset(value, 3)).toBe(value);
+  });
+
+  it("does not hide a stale v4 offset or weaken title font and weight validation", () => {
+    const stale = validV4Document(12.34567);
+    stale.renderSpec.title.offsetY = 40;
+    const canonical = canonicalizeEditorDocumentV4TitleOffset(stale);
+    expect(() => editorDocumentSnapshotSchema.parse(canonical)).toThrow(
+      "제목 위치가 렌더 사양과 일치해야 합니다.",
+    );
+
+    const wrongFont = validV4Document();
+    wrongFont.renderSpec.title.font = resolveEditorFontFaceV4("jua", "title");
+    expect(() => editorDocumentSnapshotSchema.parse(wrongFont)).toThrow();
+    const wrongWeight = validV4Document();
+    wrongWeight.renderSpec.title.font.requestedWeight = 800;
+    expect(() => editorDocumentSnapshotSchema.parse(wrongWeight)).toThrow();
+  });
+
+  it("normalizes a near-zero negative title drag without moving its geometry", () => {
+    const value = validV4Document(-0.0004);
+    expect(Object.is(value.renderSpec.title.offsetY, -0)).toBe(true);
+    const canonical = canonicalizeEditorDocumentV4TitleOffset(value);
+    const expected = structuredClone(value);
+    expected.overlays.offsets.title.y = 0;
+    expected.renderSpec.title.offsetY = 0;
+
+    expect(canonical).toEqual(expected);
+    expect(editorDocumentSnapshotSchema.safeParse(canonical).success).toBe(true);
+    expect(value.overlays.offsets.title.y).toBe(-0.0004);
+    expect(Object.is(value.renderSpec.title.offsetY, -0)).toBe(true);
   });
 
   it("parses an authoritative initial render spec without a document wrapper", () => {

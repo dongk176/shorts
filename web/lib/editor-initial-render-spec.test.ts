@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalizeEditorDocumentV4TitleOffset,
   createEditorDocumentSnapshot,
   createEditorDocumentSnapshotV3,
 } from "./editor-document-snapshot";
@@ -142,6 +143,69 @@ describe("initial editor render specification", () => {
       legacy.renderSpec,
       editorDocumentSemanticFingerprint(legacy),
     )).toBe(false);
+  });
+
+  it.each(["offset", "font", "weight", "negative zero"])(
+    "does not reuse an initial title with mismatched %s despite an unchanged baseline",
+    (drift) => {
+      const source = createEditorDocumentSnapshotV3(input());
+      const initial = v4Spec(source);
+      if (drift === "offset") initial.title.offsetY = 12.346;
+      if (drift === "negative zero") {
+        source.overlays.offsets.title.y = -0.0004;
+        initial.title.offsetY = -0;
+      }
+      if (drift === "font") {
+        initial.title.font = resolveEditorFontFaceV4("jua", "title");
+      }
+      if (drift === "weight") initial.title.font.requestedWeight = 800;
+      const document = canonicalizeEditorDocumentV4TitleOffset(
+        seedEditorDocumentInitialRenderSpec(source, initial),
+      );
+      expect(shouldPreserveInitialEditorRenderSpec(
+        document,
+        initial,
+        editorDocumentSemanticFingerprint(document),
+      )).toBe(false);
+
+      const compiled = v4Spec(source);
+      compiled.title.fontSize = 52;
+      const merged = preserveUnchangedInitialRenderSpecLayers(
+        compiled,
+        document,
+        initial,
+        editorInitialRenderSpecLayerFingerprints(document),
+      );
+      expect(merged.title).toEqual(compiled.title);
+      expect(merged.channel).toEqual(initial.channel);
+    },
+  );
+
+  it("preserves exact initial geometry after normalizing the matching title offset", () => {
+    const source = createEditorDocumentSnapshotV3(input());
+    source.overlays.offsets.title.y = 12.34567;
+    const initial = v4Spec(source);
+    initial.title.offsetY = 12.346;
+    const document = canonicalizeEditorDocumentV4TitleOffset(
+      seedEditorDocumentInitialRenderSpec(source, initial),
+    );
+
+    expect(shouldPreserveInitialEditorRenderSpec(
+      document,
+      initial,
+      editorDocumentSemanticFingerprint(document),
+    )).toBe(true);
+    const compiled = structuredClone(initial);
+    compiled.title.centerY += 1;
+    const merged = preserveUnchangedInitialRenderSpecLayers(
+      compiled,
+      document,
+      initial,
+      editorInitialRenderSpecLayerFingerprints(document),
+    );
+    expect(merged.title).toEqual(initial.title);
+    expect(merged.title).not.toBe(initial.title);
+    expect(source.overlays.offsets.title.y).toBe(12.34567);
   });
 
   it("seeds hidden initial layers and their exact font identities", () => {

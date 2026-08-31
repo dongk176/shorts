@@ -119,6 +119,27 @@ describe("subtitle template usage", () => {
 });
 
 describe("generated short details", () => {
+  const shortRow = {
+    id: "short-a",
+    jobId: "job-a",
+    clipIndex: 1,
+    startSeconds: "12",
+    endSeconds: "54",
+    durationSeconds: "42",
+    hookTitle: "후킹 제목",
+    highlightReason: "",
+    channelDisplayName: "채널",
+    subtitleSegments: [],
+    subtitlesEnabled: false,
+    templateId: "dark-red",
+    videoAspectRatio: "9:16",
+    titleFontScale: "1",
+    renderVersion: 1,
+    rerenderProgress: 100,
+    status: "ready",
+    expiresAt: null,
+  };
+
   it("maps the persisted Gemini highlight reason", async () => {
     const captionRenderSpec = {
       schemaVersion: 3,
@@ -217,6 +238,7 @@ describe("generated short details", () => {
       captionRenderSpec,
       initialRenderSpec,
       wordTimedSubtitlesAvailable: true,
+      editorApplyFailed: false,
     });
     const queryText = Array.from(
       queryMock.mock.calls[4][0] as TemplateStringsArray,
@@ -231,6 +253,70 @@ describe("generated short details", () => {
     ).join("");
     expect(listQueryText).not.toContain("jsonb_array_elements");
     expect(listQueryText).toContain("initial_render_spec");
+    expect(listQueryText).toContain("render_error_code");
+    expect(listQueryText).not.toContain("render_error_message");
+  });
+
+  it.each([
+    ["ready", "rerender_batch_application", true],
+    ["ready", "rerender_batch_infrastructure", true],
+    ["ready", "rerender_batch_oom", true],
+    ["ready", "editor_render_stale", true],
+    ["ready", "editor_dispatch_failed", true],
+    ["ready", "editor_batch_submit_failed", true],
+    ["ready", null, false],
+    ["ready", undefined, false],
+    ["ready", "batch_application", false],
+    ["ready", "batch_infrastructure", false],
+    ["ready", "batch_oom", false],
+    ["ready", "rerender_batch_unknown", false],
+    ["ready", "editor_unknown", false],
+    ["rerendering", "rerender_batch_application", false],
+    ["rerendering", "rerender_batch_infrastructure", false],
+    ["rerendering", "editor_render_stale", false],
+    ["rerendering", null, false],
+  ])("maps editor apply failure for status %s and code %s to %s", async (
+    status, renderErrorCode, expected,
+  ) => {
+    const queryMock = vi.fn()
+      .mockReturnValueOnce(["job-a"])
+      .mockResolvedValueOnce([{ ...shortRow, status, renderErrorCode }]);
+
+    const shorts = await getShortsForJobs(queryMock as unknown as Sql, ["job-a"]);
+
+    expect(shorts.get("job-a")?.[0]?.editorApplyFailed).toBe(expected);
+    expect(queryMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("exposes only a safe boolean, never persisted editor failure details", async () => {
+    const renderErrorMessage = "ValidationError: private editor payload\n"
+      + "Traceback at /private/worker.py\n"
+      + "arn:aws:batch:ap-northeast-2:000000000000:job/private-job";
+    const queryMock = vi.fn()
+      .mockReturnValueOnce(["job-a"])
+      .mockResolvedValueOnce([{
+        ...shortRow,
+        renderErrorCode: "rerender_batch_application",
+        renderErrorMessage,
+      }]);
+
+    const shorts = await getShortsForJobs(queryMock as unknown as Sql, ["job-a"]);
+    const short = shorts.get("job-a")?.[0];
+    const response = JSON.stringify(short);
+
+    expect(short?.editorApplyFailed).toBe(true);
+    expect(short).not.toHaveProperty("renderErrorCode");
+    expect(short).not.toHaveProperty("renderErrorMessage");
+    expect(response).not.toContain("rerender_batch_application");
+    expect(response).not.toContain("ValidationError");
+    expect(response).not.toContain("Traceback");
+    expect(response).not.toContain("arn:aws:");
+    const queryText = Array.from(
+      queryMock.mock.calls[1][0] as TemplateStringsArray,
+    ).join("");
+    expect(queryText).toContain("render_error_code");
+    expect(queryText).not.toContain("render_error_message");
+    expect(queryMock).toHaveBeenCalledTimes(2);
   });
 
   it("maps a permanent short without an expiry timestamp", async () => {

@@ -16,6 +16,7 @@ import {
   createEditorRenderSpec,
   editorSubtitleLayoutFromRenderSpec,
   EDITOR_RENDER_SPEC_V4_VERSION,
+  quantizeEditorRenderPx,
   type EditorRenderSpec,
   type EditorSubtitleLayout,
 } from "./editor-render-spec";
@@ -173,6 +174,32 @@ export function cloneEditorDocumentSnapshot(
         preserveTitleHorizontalOffset,
       )
     : createEditorDocumentSnapshot(snapshot, preserveTitleHorizontalOffset);
+}
+
+export function canonicalizeEditorDocumentV4TitleOffset(
+  snapshot: EditorDocumentSnapshot,
+  intendedRenderSpecVersion?: EditorRenderSpec["version"],
+): EditorDocumentSnapshot {
+  if (
+    snapshot.version !== EDITOR_DOCUMENT_V3_VERSION
+    || (intendedRenderSpecVersion ?? snapshot.renderSpec.version)
+      !== EDITOR_RENDER_SPEC_V4_VERSION
+  ) {
+    return snapshot;
+  }
+  const canonical = structuredClone(snapshot);
+  // V4 fixed-point coordinates reject the -0 produced by tiny negative drags.
+  const titleY = quantizeEditorRenderPx(
+    snapshot.overlays.offsets.title.y,
+  );
+  canonical.overlays.offsets.title.y = titleY === 0 ? 0 : titleY;
+  if (
+    canonical.renderSpec.version === EDITOR_RENDER_SPEC_V4_VERSION
+    && Object.is(canonical.renderSpec.title.offsetY, -0)
+  ) {
+    canonical.renderSpec.title.offsetY = 0;
+  }
+  return canonical;
 }
 
 export function editorDocumentSnapshotsEqual(
