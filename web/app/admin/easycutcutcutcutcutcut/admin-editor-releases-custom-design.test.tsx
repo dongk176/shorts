@@ -55,7 +55,7 @@ function props(verified?: boolean, canaryEnabled = false): ComponentProps<typeof
         releaseId: CANDIDATE, environment: "isolated" as const, checkName,
         status: "passed" as const, updatedAt: "2026-08-31T00:00:00Z",
       })),
-      ...["save-render-download", "gemini-comments", "reopen-reedit", "rollback-drill"].map((checkName) => ({
+      ...["save-render-download", "gemini-comments", "reopen-reedit", "rollback-drill", "initial-project-admission"].map((checkName) => ({
         releaseId: CANDIDATE, environment: "production_canary" as const, checkName,
         status: "passed" as const, updatedAt: "2026-08-31T00:00:00Z",
       })),
@@ -149,7 +149,7 @@ describe("custom design successor release controls", () => {
     expect(findButton(input, "기존 공개 설정 유지 · 승격").disabled).toBe(false);
     const buttons = collectButtons(AdminEditorReleases(input));
     const recordButtons = buttons.filter((button) => button.children === "통과" || button.children === "실패");
-    expect(recordButtons.length).toBeGreaterThan(0);
+    expect(recordButtons).toHaveLength(10);
     expect(recordButtons.every((button) => button.disabled === false)).toBe(true);
     expect(buttons.some((button) => button.children === "내부 v4 명시적 활성화")).toBe(false);
     for (const successorAdminReleaseId of [null, STABLE]) {
@@ -160,6 +160,16 @@ describe("custom design successor release controls", () => {
         .every((button) => button.disabled === true)).toBe(true);
     }
   });
+
+  it.each(["save-render-download", "gemini-comments", "reopen-reedit", "rollback-drill", "initial-project-admission"])(
+    "requires the same production canary check as the server: %s",
+    (checkName) => {
+      const input = props(true, true);
+      input.checks = input.checks.filter((check) => check.checkName !== checkName);
+      expect(findButton(input, "기존 공개 설정 유지 · 승격").disabled).toBe(true);
+      expect(mocks.promote).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not imply that pausing the successor silently reopens an old renderer", () => {
     findButton(props(true, true), "카나리 중단").onClick?.();

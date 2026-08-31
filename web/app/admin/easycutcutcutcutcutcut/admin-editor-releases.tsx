@@ -108,12 +108,14 @@ const checkLabels: Record<string, string> = {
   "gemini-comments": "AI 댓글 재생성",
   "reopen-reedit": "재진입·재편집",
   "rollback-drill": "롤백 훈련",
+  "initial-project-admission": "최초 영상 생성·사용량 확인",
 };
 const productionCanaryCheckNames = [
   "save-render-download",
   "gemini-comments",
   "reopen-reedit",
   "rollback-drill",
+  "initial-project-admission",
 ] as const;
 const isolatedCheckNames = [
   "worker-image",
