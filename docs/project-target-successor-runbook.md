@@ -195,6 +195,29 @@ after the lease is gone, the frozen proof/flags still match and drains are zero.
 
 ## Failure and recovery
 
+### Restarting after an explicitly cancelled attempt
+
+- Keep the executed change sets and the cancellation audit intact. A completed
+  change set cannot be executed again, and its deterministic name must not be
+  reused by deleting the historical record or relaxing the provenance guard.
+- Re-read the current promoted web baseline, actual predecessor runtime and
+  `active / outcome=cancel` pin before preparing a fresh attempt. Record the
+  new authorization in the preparation history, then make a new registry-only
+  child commit containing the same reviewed target transition when its actual
+  finalized evidence still matches. The new exact HEAD provides independent
+  change-set provenance; it does not authorize different images or settings.
+- The existing guarded begin operation must create a new operation UUID and
+  re-observe the predecessor. Do not reuse an old fence or edit its JSON.
+  Build the web continuation from this new registry-only commit, retain all
+  previously verified fixes, and keep both video-upload flags false when the
+  user has requested uploads remain stopped.
+
+The 2026-09-01 continuation was authorized for the exact 40 project-target
+identity/version settings in the existing `artiroom/shorts` Vercel project.
+Its predecessor remains the promoted web `845738f3598ed2dee414be30542853a25189627d`
+and stable Worker `4e19c114f79e74a73a4798f3fd898fa412967cc2`. No payment secret,
+proxy/IP/token setting, queue or resource change is part of that authorization.
+
 - A failed execution, process crash, DB disconnection or two-hour lease expiry
   **never clears the durable fence**. Lease release only clears lease fields.
   A legacy lease cannot acquire/renew through `fenced`/`admin_ready` to reopen
