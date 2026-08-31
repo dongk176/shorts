@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { JSONValue, TransactionSql } from "postgres";
 import { z } from "zod";
 import { requireAdminUser } from "@/lib/admin";
+import { createAdminResponseTrace } from "@/lib/admin-response-trace";
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
 import { assertCustomTemplateDesignRenderRelease } from "@/lib/custom-template-design";
@@ -329,9 +330,11 @@ async function loadLatestEditorRenderV4Transition(
 }
 
 export async function addEditorReleaseTester(emailValue: string) {
+  const trace = createAdminResponseTrace("add-tester");
+  trace.mark("entry", "start");
   const email = emailSchema.parse(emailValue);
   const admin = await requireAdminUser();
-  const result = await getDb().begin(async (tx) => {
+  const result = await trace.run("transaction", () => getDb().begin(async (tx) => {
     const users = await tx`
       select id,email,is_admin
       from shorts_mvp.app_users
@@ -355,8 +358,17 @@ export async function addEditorReleaseTester(emailValue: string) {
       { email: String(user.email) },
     );
     return { id: String(user.id), email: String(user.email) };
-  });
-  revalidatePath(adminPath);
+  }));
+  trace.mark("transaction-finished", "done");
+  trace.mark("revalidate", "start");
+  try {
+    revalidatePath(adminPath);
+  } catch (error) {
+    trace.mark("revalidate", "error");
+    throw error;
+  }
+  trace.mark("revalidate", "done");
+  trace.mark("return", "done");
   return result;
 }
 

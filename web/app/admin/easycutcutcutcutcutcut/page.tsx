@@ -5,6 +5,7 @@ import { loadAdminBillingOrders } from "@/lib/admin-billing-orders";
 import { loadAdminMembers } from "@/lib/admin-members";
 import { loadAdminOverview } from "@/lib/admin-overview";
 import { loadAdminPartnerApplications } from "@/lib/admin-partner-applications";
+import { createAdminResponseTrace } from "@/lib/admin-response-trace";
 import { loadAdminCreatorProjectShares } from "@/lib/creator-project-shares";
 import { ensureAdminDbReady, getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
@@ -102,19 +103,26 @@ function iso(value: unknown) {
 }
 
 export default async function AdminBillingPage({ searchParams }: PageProps) {
-  await ensureAdminDbReady();
+  const trace = createAdminResponseTrace("admin-page");
+  trace.mark("entry", "start");
+  await trace.run("health", async () => {
+    await ensureAdminDbReady();
+  });
 
   let admin: Awaited<ReturnType<typeof requireAdminUser>>;
+  trace.mark("auth", "start");
   try {
     admin = await requireAdminUser();
+    trace.mark("auth", "done");
   } catch (error) {
+    trace.mark("auth", "error");
     if (error instanceof HttpError && error.status === 401) {
       redirect(`/auth/sign-in?next=${encodeURIComponent("/admin/easycutcutcutcutcutcut")}`);
     }
     notFound();
   }
 
-  const params = await searchParams;
+  const params = await trace.run("params", () => searchParams);
   const requestedTab = first(params.tab);
   const validTabs: AdminTab[] = [
     "billing",
@@ -189,7 +197,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     overview,
     creatorProjectShares,
     customTemplateDesignState,
-  ] = await Promise.all([
+  ] = await trace.run("base-queries", () => Promise.all([
     tab === "settings" ? db`
         select feature_flag.enabled,feature_flag.updated_at,administrator.email as updated_by_email
         from shorts_mvp.runtime_feature_flags feature_flag
@@ -210,12 +218,12 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     tab === "settings"
       ? loadTossBillingRuntimeState(db)
       : Promise.resolve(null),
-    loadAdminOverview(),
+    trace.run("cached-overview", () => loadAdminOverview()),
     tab === "creator-projects"
       ? loadAdminCreatorProjectShares(admin.id)
       : Promise.resolve([]),
     tab === "settings" ? getCustomTemplateDesignAdminState(db) : Promise.resolve(null),
-  ]);
+  ]));
   const [fileUploadStateRows, fileUploadCheckRows] = tab === "settings"
     ? await Promise.all([
         db`
@@ -260,8 +268,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     editorReleaseTesterRows,
     editorReleaseRenderStatsRows,
   ] = tab === "editor-releases"
-    ? await Promise.all([
-        db`
+    ? await trace.run("editor-queries", () => Promise.all([
+        trace.run("editor-state", () => db`
           select stable_release_id,previous_stable_release_id,
             candidate_release_id,public_enabled,canary_enabled,
             render_v4_internal_enabled,render_v4_rollout_percent,
@@ -311,8 +319,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           from shorts_mvp.editor_release_state state
           where state.singleton=true
           limit 1
-        `,
-        db`
+        `),
+        trace.run("editor-releases", () => db`
           select release.id,git_sha,ui_version,document_version,
             worker_image_digest,production_job_definition_arn,status,
             subtitle_editing_capable,render_spec_version,
@@ -330,8 +338,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           from shorts_mvp.editor_releases release
           order by release.created_at desc
           limit 30
-        `,
-        db`
+        `),
+        trace.run("editor-checks", () => db`
           select release_id,environment,check_name,status,updated_at
           from shorts_mvp.editor_release_checks
           where release_id in (
@@ -341,15 +349,15 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             limit 30
           )
           order by updated_at desc
-        `,
-        db`
+        `),
+        trace.run("editor-testers", () => db`
           select tester.user_id,tester_user.email,tester_user.display_name,
             tester.enabled,tester.updated_at
           from shorts_mvp.editor_release_testers tester
           join shorts_mvp.app_users tester_user on tester_user.id=tester.user_id
           order by tester.enabled desc,tester.updated_at desc
-        `,
-        db`
+        `),
+        trace.run("editor-renders", () => db`
           select release_id,
             count(*) filter (
               where status in ('queued','rendering')
@@ -359,8 +367,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           from shorts_mvp.editor_render_requests
           where release_id is not null
           group by release_id
-        `,
-      ])
+        `),
+      ]))
     : [[], [], [], [], []];
   const [orderPage, refundRows, remediationMetricRows] = tab === "billing"
     ? await Promise.all([
@@ -809,6 +817,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
       succeeded: Number(row.succeeded || 0),
     }));
 
+  trace.mark("return", "done");
   return (
     <AdminShell
       activeTab={tab}

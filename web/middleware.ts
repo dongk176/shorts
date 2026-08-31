@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { createAdminResponseTrace } from "@/lib/admin-response-trace";
 import { refreshSupabaseSession } from "@/lib/supabase/middleware";
 
 const CANONICAL_HOST = "www.easycut.co.kr";
@@ -27,10 +28,14 @@ function isDatabaseHeavyNavigation(pathname: string) {
 }
 
 export async function middleware(request: NextRequest) {
+  let trace = request.nextUrl.pathname.startsWith(ADMIN_DASHBOARD_PATH)
+    ? createAdminResponseTrace("middleware") : null;
+  trace?.mark("entry", "start");
   if (LEGACY_PRODUCTION_HOSTS.has(request.nextUrl.hostname)) {
     const destination = request.nextUrl.clone();
     destination.protocol = "https:";
     destination.host = CANONICAL_HOST;
+    trace?.mark("return", "done");
     return NextResponse.redirect(destination, 308);
   }
 
@@ -38,7 +43,12 @@ export async function middleware(request: NextRequest) {
   try {
     pathname = decodeURIComponent(pathname);
   } catch {
+    if (trace) return trace.run("auth", () => refreshSupabaseSession(request));
     return refreshSupabaseSession(request);
+  }
+  if (!trace && pathname.startsWith(ADMIN_DASHBOARD_PATH)) {
+    trace = createAdminResponseTrace("middleware");
+    trace.mark("entry", "start");
   }
   if (pathname === "/실시간인기") {
     const destination = request.nextUrl.clone();
@@ -66,6 +76,7 @@ export async function middleware(request: NextRequest) {
     && isDatabaseHeavyNavigation(pathname)
     && isNavigationPrefetch(request)
   ) {
+    trace?.mark("return", "done");
     return new NextResponse(null, {
       status: 204,
       headers: {
@@ -75,6 +86,11 @@ export async function middleware(request: NextRequest) {
     });
   }
 
+  if (trace) {
+    const response = await trace.run("auth", () => refreshSupabaseSession(request));
+    trace.mark("return", "done");
+    return response;
+  }
   return refreshSupabaseSession(request);
 }
 

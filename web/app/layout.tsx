@@ -13,6 +13,7 @@ import { UserOnboardingOverlay } from "@/components/user-onboarding-overlay";
 import { WelcomeOverlayQueueProvider } from "@/components/welcome-overlay-queue";
 import { UsageProvider, type UsageState } from "@/components/usage-provider";
 import { getDb } from "@/lib/db";
+import { createAdminResponseTrace } from "@/lib/admin-response-trace";
 import { getPaymentMethodAction } from "@/lib/billing-payment-method-remediation";
 import type { PaymentMethodAction } from "@/lib/contracts";
 import { I18nProvider } from "@/lib/i18n/provider";
@@ -77,7 +78,9 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
-  const { locale, messages } = await getRequestMessages();
+  const trace = createAdminResponseTrace("root-layout");
+  trace.mark("entry", "start");
+  const { locale, messages } = await trace.run("messages", () => getRequestMessages());
   const analyticsMeasurementId = process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID;
   const analyticsEnabled = (
     typeof analyticsMeasurementId === "string"
@@ -91,10 +94,10 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   };
   let initialPaymentMethodAction: PaymentMethodAction = null;
   try {
-    const authenticatedUser = await getAuthenticatedUser();
+    const authenticatedUser = await trace.run("auth", () => getAuthenticatedUser());
     if (authenticatedUser) {
       const db = getDb();
-      const appUserRows = await db`
+      const appUserRows = await trace.run("app-user", () => db`
         select app_user.id,
           exists (
             select 1 from shorts_mvp.managed_login_accounts managed
@@ -104,11 +107,11 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         from shorts_mvp.app_users app_user
         where app_user.auth_user_id=${authenticatedUser.id}
         limit 1
-      `;
+      `);
       const appUserId = typeof appUserRows[0]?.id === "string" ? appUserRows[0].id : null;
       const isEnterprise = appUserRows[0]?.isEnterprise === true;
       const [usage, paymentMethodAction] = appUserId
-        ? await Promise.all([
+        ? await trace.run("usage", () => Promise.all([
             getUsageSnapshot(db, {
               id: "",
               selectedPlanCode: "free",
@@ -116,7 +119,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               user: null,
             }),
             getPaymentMethodAction(db, appUserId),
-          ])
+          ]))
         : [null, null];
       initialUsageState = {
         authenticated: true,
@@ -166,6 +169,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     ],
   };
 
+  trace.mark("return", "done");
   return (
     <html lang={locale}>
       {analyticsEnabled ? (
