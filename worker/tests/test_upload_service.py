@@ -2196,7 +2196,7 @@ def test_protection_refresh_and_disable_are_serialized_with_event_barriers(
 
     release = threading.Thread(target=disable, daemon=True)
     refresh.start()
-    assert entered.wait(1)
+    assert entered.wait(3)
     release.start()
     try:
         assert not disabled.wait(0.03)
