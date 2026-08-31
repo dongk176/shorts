@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +13,8 @@ from shorts_worker.schemas import SubtitleSegment
 from shorts_worker.worker_pipeline import (
     UPLOAD_SOURCE_MAX_BYTES,
     BatchWorker,
+    UploadSourceCleanupError,
+    cleanup_uploaded_project_workspace,
     uploaded_project_source_window,
 )
 
@@ -310,3 +313,113 @@ def test_youtube_failure_cleanup_keeps_existing_thumbnail_deletion_contract(
         call("edit-sources/session-a/job-upload/"),
         call("thumbnails/session-a/job-upload/"),
     ]
+
+
+@pytest.mark.parametrize("copy_fallback", [False, True])
+def test_upload_project_retries_snapshot_cleanup_before_returning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, copy_fallback: bool,
+) -> None:
+    source = tmp_path / "receiver-source.media"
+    source.write_bytes(b"receiver-owned-video")
+    worker = _upload_project_worker(tmp_path)
+    monkeypatch.setattr("shorts_worker.worker_pipeline.probe_media", lambda _path: {
+        "format": {"duration": "300"},
+        "streams": [{"codec_type": "video"}, {"codec_type": "audio"}],
+    })
+    if copy_fallback:
+        monkeypatch.setattr(
+            "shorts_worker.worker_pipeline.os.link",
+            MagicMock(side_effect=OSError("cross-device")),
+        )
+    snapshots = []
+
+    def transcribe(**kwargs):
+        snapshots.append(Path(kwargs["source"]))
+        raise RuntimeError("stop after borrowing the task-local source")
+
+    worker._transcribe_source = transcribe
+    original_rmtree = shutil.rmtree
+    attempts = []
+
+    def transient_failure(directory, *args, **kwargs):
+        if (
+            Path(directory).name.startswith("project-job-upload-")
+            and not kwargs.get("ignore_errors")
+        ):
+            attempts.append(Path(directory))
+            if len(attempts) == 1:
+                raise PermissionError("transient filesystem failure")
+        return original_rmtree(directory, *args, **kwargs)
+
+    monkeypatch.setattr("shorts_worker.worker_pipeline.shutil.rmtree", transient_failure)
+    worker.project("job-upload", prepared_source=source)
+    assert len(attempts) == 2 and attempts[0] == attempts[1]
+    assert len(snapshots) == 1 and not snapshots[0].exists()
+    assert source.read_bytes() == b"receiver-owned-video"
+    assert list(tmp_path.glob("project-job-upload-*")) == []
+
+
+def test_upload_project_reports_owned_raw_workspace_when_cleanup_remains_unconfirmed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "receiver-source.media"
+    source.write_bytes(b"receiver-owned-video")
+    worker = _upload_project_worker(tmp_path)
+    monkeypatch.setattr("shorts_worker.worker_pipeline.probe_media", lambda _path: {
+        "format": {"duration": "300"},
+        "streams": [{"codec_type": "video"}, {"codec_type": "audio"}],
+    })
+    worker._transcribe_source = MagicMock(side_effect=RuntimeError("stop after source acquisition"))
+    original_rmtree = shutil.rmtree
+    attempts = []
+
+    def cannot_delete(directory, *args, **kwargs):
+        if Path(directory).name.startswith("project-job-upload-"):
+            attempts.append(Path(directory))
+            raise PermissionError("filesystem failure")
+        return original_rmtree(directory, *args, **kwargs)
+
+    monkeypatch.setattr("shorts_worker.worker_pipeline.shutil.rmtree", cannot_delete)
+    with pytest.raises(UploadSourceCleanupError) as caught:
+        worker.project("job-upload", prepared_source=source)
+    workspace = caught.value.workspace
+    assert len(attempts) == 3 and set(attempts) == {workspace}
+    assert workspace.parent == tmp_path
+    assert (workspace / "source" / "uploaded-source.media").is_file()
+    assert source.is_file()
+    assert str(tmp_path) not in str(caught.value)
+    original_rmtree(workspace)
+
+
+def test_upload_cleanup_never_treats_stat_permission_error_as_verified_deletion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "owned-project"
+    workspace.mkdir()
+    original_lstat = Path.lstat
+
+    def inaccessible(path):
+        if path == workspace:
+            raise PermissionError("cannot verify absence")
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", inaccessible)
+    with pytest.raises(UploadSourceCleanupError):
+        cleanup_uploaded_project_workspace(workspace, attempts=1)
+
+
+def test_youtube_project_never_uses_receiver_only_verified_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "receiver-source.media"
+    source.write_bytes(b"video")
+    worker = _upload_project_worker(tmp_path)
+    worker.repository.get_job.return_value.update({
+        "source_type": "youtube", "youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "youtube_video_id": "dQw4w9WgXcQ",
+    })
+    cleanup = MagicMock()
+    monkeypatch.setattr("shorts_worker.worker_pipeline.cleanup_uploaded_project_workspace", cleanup)
+    worker.project("job-upload", prepared_source=source)
+    cleanup.assert_not_called()
+    assert source.exists()

@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import os
+import shutil
 import socket
 import threading
 import time
@@ -20,11 +22,16 @@ from botocore.exceptions import ClientError
 from shorts_worker.repository import WorkerRepository
 from shorts_worker.upload_service import (
     ActiveUpload,
+    TaskScaleInProtection,
     UploadHttpServer,
     UploadReceiverConfig,
     UploadReceiverService,
     UploadRequestError,
     UploadRequestHandler,
+)
+from shorts_worker.worker_pipeline import (
+    UploadSourceCleanupError,
+    cleanup_uploaded_project_workspace,
 )
 
 ORIGIN = "https://www.easycut.co.kr"
@@ -55,10 +62,13 @@ class FakeRepository:
         self.failure_calls: list[dict[str, object]] = []
         self.completed_calls: list[tuple[str, str]] = []
         self.job_status = "completed"
+        self.session_status = "claimed"
+        self.source_deleted = False
         self.job_error_code: str | None = None
         self.job_error_message: str | None = None
         self.complete_result: bool | None = None
         self.abandoned_sessions: list[dict[str, object]] = []
+        self.abandoned_list_calls: list[dict[str, object]] = []
         self.abandoned_claim_calls: list[dict[str, object]] = []
         self.abandoned_cleanup_calls: list[dict[str, object]] = []
         self.abandoned_final_status = "failed"
@@ -118,19 +128,46 @@ class FakeRepository:
             "job_id": job_id,
             **kwargs,
         })
-        self.job_status = "failed"
+        # Match finalize_project_job: an already-completed project is never
+        # downgraded by a later receiver cleanup/persistence error.
+        if self.job_status not in {"completed", "failed", "expired", "deleted"}:
+            self.job_status = "failed"
+        self.session_status = (
+            "completed" if self.job_status == "completed"
+            else "expired" if kwargs.get("expired") else "failed"
+        )
+        self.source_deleted = bool(kwargs.get("source_deleted"))
         return True
 
     def complete_upload_session(self, session_id: str, job_id: str) -> bool:
         self.completed_calls.append((session_id, job_id))
-        if self.complete_result is not None:
-            return self.complete_result
-        return self.job_status == "completed"
+        result = (
+            self.complete_result if self.complete_result is not None
+            else self.job_status == "completed"
+        )
+        if result:
+            self.session_status = "completed"
+            self.source_deleted = True
+        return result
+
+    def list_abandoned_upload_sessions(self, **kwargs) -> list[dict[str, object]]:
+        self.abandoned_list_calls.append(dict(kwargs))
+        return list(self.abandoned_sessions)
 
     def claim_abandoned_upload_sessions(self, **kwargs) -> list[dict[str, object]]:
         self.abandoned_claim_calls.append(dict(kwargs))
-        sessions = self.abandoned_sessions
-        self.abandoned_sessions = []
+        verified = kwargs.get("verified_upload_session_ids") or []
+        expired = kwargs.get("expired_awaiting_upload_session_ids") or []
+        sessions = [
+            item for item in self.abandoned_sessions
+            if (
+                item["id"] in expired if item.get("previous_status") == "awaiting_upload"
+                else item["id"] in verified
+            )
+        ]
+        self.abandoned_sessions = [
+            item for item in self.abandoned_sessions if item not in sessions
+        ]
         return sessions
 
     def expire_waiting_upload_capacity_requests(self) -> list[dict[str, object]]:
@@ -513,6 +550,7 @@ def test_sweeper_does_not_finalize_when_physical_cleanup_is_unconfirmed(
         "source_thumbnail_s3_key": None,
     }]
     monkeypatch.setattr(service, "_cleanup_context", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(service, "_cleanup_owner_stopped", lambda _session_id: True)
 
     assert service.sweep_abandoned_uploads() == 0
     assert repository.abandoned_cleanup_calls == []
@@ -530,6 +568,115 @@ def test_sweeper_expires_capacity_waiters_that_never_sent_file_bytes(
     assert service.sweep_abandoned_uploads() == 1
     assert repository.expired_capacity_calls == 1
     assert repository.claim_calls == []
+
+
+@pytest.mark.parametrize(
+    "guard_result",
+    ["stopped", "live", "missing_task", "wrong_session", "wrong_action", "not_boolean",
+     "function_error", "invalid_json", "unavailable"],
+)
+def test_sweeper_requires_exact_stopped_owner_evidence_before_any_database_transition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, guard_result: str,
+) -> None:
+    service, _worker, repository = _service(tmp_path, b"video")
+    session_id = str(uuid4())
+    repository.abandoned_sessions = [{
+        "id": session_id, "job_id": "job-upload-a", "previous_status": "claimed",
+    }]
+    payload = {
+        "action": "cleanup_ownership", "uploadSessionId": session_id,
+        "ownerStopped": True,
+        "taskArn": "arn:aws:ecs:ap-northeast-2:000000000000:task/test-cluster/stopped-owner",
+    }
+    if guard_result == "live":
+        payload["ownerStopped"] = False
+    elif guard_result == "missing_task":
+        payload.pop("taskArn")
+    elif guard_result == "wrong_session":
+        payload["uploadSessionId"] = str(uuid4())
+    elif guard_result == "wrong_action":
+        payload["action"] = "status"
+    elif guard_result == "not_boolean":
+        payload["ownerStopped"] = "true"
+    response = {"Payload": BytesIO(json.dumps(payload).encode())}
+    if guard_result == "function_error":
+        response["FunctionError"] = "Unhandled"
+    elif guard_result == "invalid_json":
+        response["Payload"] = BytesIO(b"{")
+    invoke = MagicMock(return_value=response)
+    if guard_result == "unavailable":
+        invoke.side_effect = RuntimeError("capacity ownership unavailable")
+    monkeypatch.setattr(service, "_invoke_capacity", invoke)
+
+    cleaned = service.sweep_abandoned_uploads()
+
+    invoke.assert_called_once_with(
+        invocation_type="RequestResponse",
+        payload={"action": "cleanup_ownership", "uploadSessionId": session_id},
+    )
+    assert repository.abandoned_list_calls
+    if guard_result == "stopped":
+        assert cleaned == 1
+        assert repository.abandoned_claim_calls[0]["verified_upload_session_ids"] == [session_id]
+        assert repository.abandoned_cleanup_calls[0]["session_id"] == session_id
+    else:
+        assert cleaned == 0
+        assert repository.abandoned_claim_calls == repository.abandoned_cleanup_calls == []
+        assert len(repository.abandoned_sessions) == 1
+
+
+def test_sweeper_without_an_existing_capacity_function_never_claims_peer_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _worker, repository = _service(tmp_path, b"video")
+    monkeypatch.delenv("FILE_UPLOAD_CAPACITY_FUNCTION_ARN", raising=False)
+    repository.abandoned_sessions = [{
+        "id": str(uuid4()), "job_id": "job-upload-a", "previous_status": "claimed",
+    }]
+    monkeypatch.setattr(service, "_capacity_lambda", MagicMock())
+
+    assert service.sweep_abandoned_uploads() == 0
+
+    service._capacity_lambda.assert_not_called()
+    assert repository.abandoned_claim_calls == repository.abandoned_cleanup_calls == []
+
+
+def test_sweeper_expires_unconsumed_awaiting_sessions_without_an_owner_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _worker, repository = _service(tmp_path, b"video")
+    session_id = str(uuid4())
+    repository.abandoned_sessions = [{
+        "id": session_id, "job_id": "job-upload-a", "previous_status": "awaiting_upload",
+    }]
+    monkeypatch.setattr(service, "_cleanup_owner_stopped", MagicMock())
+
+    assert service.sweep_abandoned_uploads() == 1
+
+    service._cleanup_owner_stopped.assert_not_called()
+    assert repository.abandoned_claim_calls[0]["verified_upload_session_ids"] == []
+    assert repository.abandoned_claim_calls[0]["expired_awaiting_upload_session_ids"] == [
+        session_id,
+    ]
+    assert repository.abandoned_cleanup_calls[0]["session_id"] == session_id
+
+
+def test_receiver_cleanup_stat_error_never_reports_source_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _worker, _repository = _service(tmp_path, b"video")
+    context = ActiveUpload(upload_session_id=str(uuid4()))
+    context.workspace = service.upload_root / context.upload_session_id
+    context.workspace.mkdir()
+    original_lstat = Path.lstat
+
+    def unconfirmed(path, *args, **kwargs):
+        if path == context.workspace:
+            raise PermissionError("unconfirmed receiver source cleanup")
+        return original_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", unconfirmed)
+    assert service._cleanup_context(context, delete_thumbnail=False) is False
 
 
 @pytest.mark.parametrize(
@@ -899,9 +1046,10 @@ def test_long_active_pipeline_keeps_session_fresh_and_is_excluded_from_sweeper(
     assert len(repository.heartbeat_calls) > heartbeat_count
 
     service.sweep_abandoned_uploads()
-    assert repository.abandoned_claim_calls[-1]["active_upload_session_id"] == (
+    assert repository.abandoned_list_calls[-1]["active_upload_session_id"] == (
         result["uploadSessionId"]
     )
+    assert repository.abandoned_claim_calls == []
 
     worker.project_release.set()
     deadline = time.monotonic() + 2
@@ -923,6 +1071,9 @@ def test_shutdown_cancels_active_upload_and_deletes_source_before_recording(
     context.source_path = context.workspace / "source.media"
     context.source_path.write_bytes(payload)
     context.abort_stream = context.source_handle_closed.set
+    context.processing_done.set()
+    context.failure_code = "upload_receiver_shutdown"
+    context.failure_message = "업로드 수신기가 종료되어 작업을 취소했습니다."
     context.capacity_claimed = True
     released_capacity: list[str] = []
     monkeypatch.setattr(
@@ -956,8 +1107,7 @@ def test_shutdown_never_marks_source_deleted_while_stream_handle_is_open(
     context.workspace.mkdir()
     context.source_path = context.workspace / "source.media"
     context.source_path.write_bytes(payload)
-    context.source_handle_closed = MagicMock()
-    context.source_handle_closed.wait.return_value = False
+    service.config = replace(service.config, shutdown_drain_seconds=0)
     assert service._capacity.acquire(blocking=False)
     with service._active_guard:
         service._active = context
@@ -965,7 +1115,14 @@ def test_shutdown_never_marks_source_deleted_while_stream_handle_is_open(
     service.shutdown()
 
     assert context.workspace.exists()
-    assert repository.failure_calls[0]["source_deleted"] is False
+    assert repository.failure_calls == []
+    assert service.busy
+    assert not context.released
+    context.source_handle_closed.set()
+    context.processing_done.set()
+    context.failure_code = "upload_receiver_shutdown"
+    service._finalize_context(context)
+    assert repository.failure_calls[0]["source_deleted"] is True
     service._release(context)
 
 
@@ -992,9 +1149,11 @@ def test_sweeper_releases_abandoned_jobs_and_marks_only_confirmed_cleanup(
     has_workspace: bool,
     keeps_thumbnail: bool,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     payload = b"video"
     service, worker, repository = _service(tmp_path, payload)
+    monkeypatch.setattr(service, "_cleanup_owner_stopped", lambda _session_id: True)
     session_id = str(uuid4())
     job_id = "job-upload-a"
     thumbnail_key = f"thumbnails/mvp-session-a/{job_id}/source.jpg"
@@ -1228,8 +1387,9 @@ def test_repository_valid_claim_consumes_token_once() -> None:
 def test_repository_abandoned_cleanup_finalizes_only_after_receiver_confirmation() -> None:
     repository = WorkerRepository("postgresql://example", "ap-northeast-2")
     connection = MagicMock()
+    session_id = str(uuid4())
     abandoned = {
-        "id": "session-a",
+        "id": session_id,
         "job_id": "job-a",
         "mvp_session_id": "mvp-a",
         "previous_status": "claimed",
@@ -1237,6 +1397,7 @@ def test_repository_abandoned_cleanup_finalizes_only_after_receiver_confirmation
     }
     connection.execute.side_effect = [
         _result(all_rows=[abandoned]),
+        _result(one={"id": session_id}),
         _result(one={"final_status": "failed"}),
         _result(one={"id": "job-a"}),
         _result(one={"id": "session-a"}),
@@ -1250,20 +1411,22 @@ def test_repository_abandoned_cleanup_finalizes_only_after_receiver_confirmation
     claimed = repository.claim_abandoned_upload_sessions(
         stale_after_seconds=120,
         active_upload_session_id=None,
+        verified_upload_session_ids=[session_id],
     )
     assert claimed == [abandoned]
     assert connection.execute.call_count == 1
 
     finalized = repository.finalize_abandoned_upload_source_cleanup(
-        "session-a",
+        session_id,
         "job-a",
         previous_status="claimed",
     )
     assert finalized and finalized["final_status"] == "failed"
-    assert connection.execute.call_count == 4
-    assert "finalize_project_job" in connection.execute.call_args_list[1].args[0]
-    assert "shorts_mvp.video_jobs" in connection.execute.call_args_list[2].args[0]
-    assert "source_deleted_at=" in connection.execute.call_args_list[3].args[0]
+    assert connection.execute.call_count == 5
+    assert "for update of us" in connection.execute.call_args_list[1].args[0]
+    assert "finalize_project_job" in connection.execute.call_args_list[2].args[0]
+    assert "shorts_mvp.video_jobs" in connection.execute.call_args_list[3].args[0]
+    assert "source_deleted_at=" in connection.execute.call_args_list[4].args[0]
 
 
 def test_health_and_preflight_are_no_store_and_origin_scoped(tmp_path: Path) -> None:
@@ -1363,3 +1526,703 @@ def test_http_logging_never_echoes_request_text_or_credentials(capsys) -> None:
     assert secret_text not in output
     assert '"method":"PUT"' in output
     assert '"status":400' in output
+
+
+def _lifecycle_service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    service, worker, repository = _service(tmp_path, b"video")
+    service.config = replace(service.config, heartbeat_seconds=0.01, shutdown_drain_seconds=2)
+    service.task_protection = MagicMock()
+    service._claim_capacity = MagicMock()
+    service._notify_capacity_release = MagicMock()
+    monkeypatch.setattr(
+        "shorts_worker.upload_service.probe_media", lambda *_a, **_k: _valid_probe(),
+    )
+    return service, worker, repository
+
+
+def _http_exchange(service: UploadReceiverService, path: str, *, upload: bool = False):
+    """Exercise the real HTTP handler and receive path without an external socket."""
+    server = UploadHttpServer.__new__(UploadHttpServer)
+    server.service, server.server_name, server.server_port = service, "localhost", 8080
+    headers = (
+        f"{'PUT' if upload else 'GET'} {path} HTTP/1.1\r\n"
+        "Host: localhost\r\nConnection: close\r\n"
+    )
+    if upload:
+        headers += (
+            f"Origin: {ORIGIN}\r\nAuthorization: Bearer {TOKEN}\r\n"
+            "Content-Type: video/mp4\r\nContent-Length: 5\r\n"
+        )
+    request = (headers + "\r\n").encode() + (b"video" if upload else b"")
+    handler_socket, client_socket = socket.socketpair()
+    try:
+        client_socket.settimeout(3)
+        client_socket.sendall(request)
+        client_socket.shutdown(socket.SHUT_WR)
+        UploadRequestHandler(handler_socket, ("local", 0), server)
+        handler_socket.shutdown(socket.SHUT_WR)
+        response = bytearray()
+        while chunk := client_socket.recv(65536):
+            response.extend(chunk)
+        head, body = bytes(response).split(b"\r\n\r\n", 1)
+        return int(head.split()[1]), json.loads(body)
+    finally:
+        handler_socket.close()
+        client_socket.close()
+
+
+@pytest.mark.parametrize("snapshot_kind", ["hardlink", "copy"])
+def test_shutdown_waits_for_postprocessing_and_every_raw_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, snapshot_kind: str,
+) -> None:
+    service, worker, repository = _lifecycle_service(tmp_path, monkeypatch)
+    processing, finish_processing = threading.Event(), threading.Event()
+    project_workspace = worker.settings.temp_dir / "project-job-upload-a-barrier"
+    snapshot = project_workspace / "uploaded-source.media"
+
+    def project(job_id, *, prepared_source):
+        worker.project_calls.append((job_id, prepared_source))
+        project_workspace.mkdir()
+        if snapshot_kind == "hardlink":
+            os.link(prepared_source, snapshot)
+        else:
+            shutil.copyfile(prepared_source, snapshot)
+        # Outputs can already be completed while timeline/source work remains.
+        repository.job_status = "completed"
+        processing.set()
+        assert finish_processing.wait(3)
+        cleanup_uploaded_project_workspace(project_workspace)
+
+    worker.project = project
+    result = _receive(service, b"video", background=True)
+    assert processing.wait(1)
+    context = service._active
+    assert context is not None
+    shutdown = threading.Thread(target=service.shutdown, daemon=True)
+    shutdown.start()
+    try:
+        assert service.shutdown_event.wait(1)
+        assert shutdown.is_alive()
+        assert not context.processing_done.is_set()
+        assert context.source_path.is_file() and snapshot.is_file()
+        assert service.busy and not context.released
+        assert repository.failure_calls == repository.completed_calls == []
+        service.task_protection.disable.assert_not_called()
+        service._notify_capacity_release.assert_not_called()
+    finally:
+        finish_processing.set()
+        shutdown.join(timeout=3)
+    assert not shutdown.is_alive()
+    assert context.finished.wait(1)
+    assert not context.source_path.exists() and not snapshot.exists()
+    assert not service.busy
+    assert repository.job_status == repository.session_status == "completed"
+    assert repository.completed_calls == [(result["uploadSessionId"], result["jobId"])]
+    service.task_protection.disable.assert_called_once()
+    service._notify_capacity_release.assert_called_once_with(result["uploadSessionId"])
+
+
+@pytest.mark.parametrize("phase", ["cleanup", "completion", "failure"])
+def test_heartbeat_and_protection_continue_through_cleanup_and_terminal_persistence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, phase: str,
+) -> None:
+    service, _worker, repository = _lifecycle_service(tmp_path, monkeypatch)
+    entered, proceed = threading.Event(), threading.Event()
+    heartbeat_seen, protection_seen = threading.Event(), threading.Event()
+    if phase == "failure":
+        repository.job_status = "failed"
+    owner, method = (
+        (service, "_cleanup_context") if phase == "cleanup"
+        else (repository, "complete_upload_session" if phase == "completion"
+              else "fail_upload_session")
+    )
+    original = getattr(owner, method)
+
+    def blocked(*args, **kwargs):
+        entered.set()
+        assert proceed.wait(3)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(owner, method, blocked)
+    original_heartbeat = repository.heartbeat_upload_session
+
+    def heartbeat(*args):
+        if entered.is_set() and not proceed.is_set():
+            heartbeat_seen.set()
+        return original_heartbeat(*args)
+
+    repository.heartbeat_upload_session = heartbeat
+    service.task_protection.refresh_if_needed.side_effect = lambda: (
+        protection_seen.set() if entered.is_set() and not proceed.is_set() else None
+    )
+    _receive(service, b"video", background=True)
+    assert entered.wait(1)
+    context = service._active
+    try:
+        assert heartbeat_seen.wait(1) and protection_seen.wait(1)
+        assert service.busy and context.processing_done.is_set()
+        assert not context.finished.is_set()
+        service.task_protection.disable.assert_not_called()
+        service._notify_capacity_release.assert_not_called()
+    finally:
+        proceed.set()
+    assert context.finished.wait(3)
+    assert not service.busy and not context.source_path.exists()
+    service.task_protection.disable.assert_called_once()
+
+
+@pytest.mark.parametrize("outcome", ["completion", "failure"])
+def test_terminal_db_exception_retries_without_rerunning_the_pipeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str,
+) -> None:
+    service, worker, repository = _lifecycle_service(tmp_path, monkeypatch)
+    method = "complete_upload_session" if outcome == "completion" else "fail_upload_session"
+    if outcome == "failure":
+        repository.job_status = "failed"
+    original = getattr(repository, method)
+    attempts = []
+
+    def flaky(*args, **kwargs):
+        attempts.append(args)
+        if len(attempts) == 1:
+            raise RuntimeError("simulated lost database response")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(repository, method, flaky)
+    result = _receive(service, b"video")
+    assert result["status"] == "accepted"
+    assert len(attempts) == 2 and attempts[0] == attempts[1]
+    assert len(worker.project_calls) == 1
+    assert not worker.project_calls[0][1].exists()
+    assert not service.busy and service._active is None
+    service._notify_capacity_release.assert_called_once_with(result["uploadSessionId"])
+
+
+@pytest.mark.parametrize("outcome", ["completion", "failure"])
+def test_persistent_db_errors_retain_protection_until_terminal_write_recovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys, outcome: str,
+) -> None:
+    service, worker, repository = _lifecycle_service(tmp_path, monkeypatch)
+    allow_terminal_write, heartbeat_seen = threading.Event(), threading.Event()
+    original_complete = repository.complete_upload_session
+    original_fail = repository.fail_upload_session
+    original_heartbeat = repository.heartbeat_upload_session
+    if outcome == "failure":
+        repository.job_status = "failed"
+
+    def terminal_write(method, *args, **kwargs):
+        if not allow_terminal_write.is_set():
+            raise RuntimeError("database unavailable")
+        return method(*args, **kwargs)
+
+    def heartbeat(*args):
+        if service.quarantined:
+            heartbeat_seen.set()
+        return original_heartbeat(*args)
+
+    repository.complete_upload_session = MagicMock(
+        side_effect=lambda *a, **kw: terminal_write(original_complete, *a, **kw),
+    )
+    repository.fail_upload_session = MagicMock(
+        side_effect=lambda *a, **kw: terminal_write(original_fail, *a, **kw),
+    )
+    repository.heartbeat_upload_session = heartbeat
+    service._cleanup_context = MagicMock(wraps=service._cleanup_context)
+    result = _receive(service, b"video")
+    context = service._active
+    try:
+        assert repository.complete_upload_session.call_count == (
+            3 if outcome == "completion" else 0
+        )
+        assert repository.fail_upload_session.call_count == 3
+        assert len(worker.project_calls) == 1 and not worker.project_calls[0][1].exists()
+        assert context.processing_done.is_set() and context.source_cleanup_complete
+        assert not context.terminal_persisted and not context.finished.is_set()
+        assert service.busy and service.quarantined and heartbeat_seen.wait(1)
+        assert _http_exchange(service, "/healthz")[0] == 200
+        assert _http_exchange(service, "/readyz")[0] == 503
+        service._release(context)
+        service.task_protection.disable.assert_not_called()
+        service._notify_capacity_release.assert_not_called()
+        assert "upload_terminal_persistence_quarantined" in capsys.readouterr().out
+    finally:
+        allow_terminal_write.set()
+        context.next_cleanup_retry_at = 0
+        service.sweep_abandoned_uploads()
+    assert context.finished.wait(2) and context.terminal_persisted
+    assert len(worker.project_calls) == 1 and service._cleanup_context.call_count == 1
+    assert not service.busy and not service.quarantined
+    service.task_protection.disable.assert_called_once()
+    service._notify_capacity_release.assert_called_once_with(result["uploadSessionId"])
+
+
+def test_raw_snapshot_cleanup_failure_quarantines_and_retries_only_its_owned_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, worker, repository = _lifecycle_service(tmp_path, monkeypatch)
+    project_workspace = worker.settings.temp_dir / "project-job-upload-a-cleanup"
+    snapshot = project_workspace / "uploaded-source.media"
+    allow_cleanup, quarantined, heartbeat_seen = (threading.Event() for _ in range(3))
+    other_workspace = worker.settings.temp_dir / "project-unrelated-other"
+    other_workspace.mkdir()
+    other_source = other_workspace / "uploaded-source.media"
+    other_source.write_bytes(b"must remain untouched")
+
+    def project(job_id, *, prepared_source):
+        worker.project_calls.append((job_id, prepared_source))
+        project_workspace.mkdir()
+        os.link(prepared_source, snapshot)
+        raise UploadSourceCleanupError(project_workspace)
+
+    def cleanup(workspace, **kwargs):
+        if not allow_cleanup.is_set():
+            raise UploadSourceCleanupError(workspace)
+        return cleanup_uploaded_project_workspace(workspace, **kwargs)
+
+    worker.project = project
+    monkeypatch.setattr("shorts_worker.upload_service.cleanup_uploaded_project_workspace", cleanup)
+    monkeypatch.setattr("shorts_worker.upload_service._event", lambda event, **_fields: (
+        quarantined.set() if event == "upload_source_cleanup_quarantined" else None
+    ))
+    original_heartbeat = repository.heartbeat_upload_session
+
+    def heartbeat(*args):
+        if quarantined.is_set():
+            heartbeat_seen.set()
+        return original_heartbeat(*args)
+
+    repository.heartbeat_upload_session = heartbeat
+    result = _receive(service, b"video", background=True)
+    assert quarantined.wait(2)
+    context = service._active
+    try:
+        assert heartbeat_seen.wait(1)
+        assert context.processing_done.is_set() and not context.finished.is_set()
+        assert service.busy and service.quarantined and snapshot.exists()
+        assert not repository.source_deleted
+        assert repository.job_status == repository.session_status == "completed"
+        assert all(call["source_deleted"] is False for call in repository.failure_calls)
+        assert _http_exchange(service, "/livez")[0] == 200
+        ready_status, ready = _http_exchange(service, "/readyz")
+        assert ready_status == 503 and ready["quarantined"] is True
+        service.task_protection.disable.assert_not_called()
+        service._notify_capacity_release.assert_not_called()
+        with pytest.raises(UploadRequestError, match="다른 업로드"):
+            _receive(service, b"video")
+    finally:
+        allow_cleanup.set()
+        context.next_cleanup_retry_at = 0
+        service.sweep_abandoned_uploads()
+    assert context.finished.wait(1)
+    assert not snapshot.exists() and not context.source_path.exists()
+    assert other_source.read_bytes() == b"must remain untouched"
+    assert not service.busy and not service.quarantined
+    assert repository.source_deleted
+    assert len(worker.project_calls) == 1
+    service._notify_capacity_release.assert_called_once_with(result["uploadSessionId"])
+
+
+@pytest.mark.parametrize("first_outcome", ["success", "failure", "shutdown"])
+def test_two_http_receivers_keep_processing_sources_records_and_leases_independent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, first_outcome: str,
+) -> None:
+    states, contexts, results = [], [], []
+    gates = [threading.Event(), threading.Event()]
+    entered = [threading.Event(), threading.Event()]
+    snapshots = []
+    for index in range(2):
+        directory = tmp_path / f"receiver-{index}"
+        directory.mkdir()
+        service, worker, repository = _lifecycle_service(directory, monkeypatch)
+        repository.claim_overrides["job_id"] = f"job-{index}"
+        states.append((service, worker, repository))
+        snapshots.append(worker.settings.temp_dir / f"project-job-{index}-running" / "source.media")
+
+        def project(job_id, *, prepared_source, task=index):
+            _service, owner, repo = states[task]
+            owner.project_calls.append((job_id, prepared_source))
+            snapshots[task].parent.mkdir()
+            os.link(prepared_source, snapshots[task])
+            repo.job_status = "failed" if task == 0 and first_outcome == "failure" else "completed"
+            entered[task].set()
+            assert gates[task].wait(3)
+            cleanup_uploaded_project_workspace(snapshots[task].parent)
+
+        worker.project = project
+    shutdown = None
+    try:
+        for index, (service, _worker, _repo) in enumerate(states):
+            session_id = str(uuid4())
+            status, result = _http_exchange(
+                service, f"/v1/upload-sessions/{session_id}/source", upload=True,
+            )
+            assert status == 202 and result["status"] == "accepted"
+            assert entered[index].wait(1)
+            contexts.append(service._active)
+            results.append(result)
+        first, second = states[0][0], states[1][0]
+        if first_outcome == "shutdown":
+            shutdown = threading.Thread(target=first.shutdown, daemon=True)
+            shutdown.start()
+            assert first.shutdown_event.wait(1)
+            assert first.busy and snapshots[0].exists()
+        else:
+            assert _http_exchange(first, "/healthz")[0] == 200
+            assert _http_exchange(first, "/readyz")[0] == 503
+        gates[0].set()
+        assert contexts[0].finished.wait(2)
+        assert not first.busy
+        assert second.busy and not contexts[1].processing_done.is_set()
+        assert snapshots[1].exists() and contexts[1].source_path.exists()
+        assert not contexts[1].heartbeat_stop.is_set()
+        assert states[1][2].completed_calls == states[1][2].failure_calls == []
+        second.task_protection.disable.assert_not_called()
+        second._notify_capacity_release.assert_not_called()
+        first._notify_capacity_release.assert_called_once_with(results[0]["uploadSessionId"])
+        if first_outcome == "failure":
+            assert states[0][2].failure_calls[0]["session_id"] == results[0]["uploadSessionId"]
+            assert states[0][2].session_status == "failed"
+        else:
+            assert states[0][2].completed_calls == [(results[0]["uploadSessionId"], "job-0")]
+    finally:
+        for gate in gates:
+            gate.set()
+        for context in contexts:
+            assert context.finished.wait(3)
+        if shutdown is not None:
+            shutdown.join(timeout=3)
+    assert states[1][2].completed_calls == [(results[1]["uploadSessionId"], "job-1")]
+    states[1][0]._notify_capacity_release.assert_called_once_with(results[1]["uploadSessionId"])
+    assert all(len(worker.project_calls) == 1 for _service, worker, _repo in states)
+    assert all(not snapshot.exists() for snapshot in snapshots)
+
+
+@pytest.mark.parametrize("owner_status", ["claimed", "completed", "failed"])
+def test_peer_sweeper_never_retires_a_live_owner_with_a_stale_database_heartbeat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, owner_status: str,
+) -> None:
+    """Two real receivers share stale DB rows, but not their ephemeral files."""
+    owner_session_id, peer_session_id = str(uuid4()), str(uuid4())
+    stale, heartbeat_failed = threading.Event(), threading.Event()
+
+    class SharedRepository(FakeRepository):
+        def __init__(self):
+            super().__init__(5)
+            self.sessions = {}
+
+        def claim_upload_session(self, session_id, token_hash, content_length):
+            row = super().claim_upload_session(session_id, token_hash, content_length)
+            row["job_id"] = f"job-{session_id}"
+            self.sessions[session_id] = {**row, "status": "claimed", "source_deleted": False}
+            return row
+
+        def heartbeat_upload_session(self, session_id, received_bytes):
+            if session_id == owner_session_id and stale.is_set():
+                heartbeat_failed.set()
+                raise RuntimeError("isolated delayed database heartbeat")
+            return super().heartbeat_upload_session(session_id, received_bytes)
+
+        def claim_abandoned_upload_sessions(self, **kwargs):
+            self.abandoned_claim_calls.append(dict(kwargs))
+            row = self.sessions[owner_session_id]
+            if (
+                not stale.is_set() or kwargs["active_upload_session_id"] == owner_session_id
+                or owner_session_id not in (kwargs.get("verified_upload_session_ids") or [])
+            ):
+                return []
+            previous_status = row["status"]
+            if previous_status == "claimed":
+                row["status"] = "failed"
+            return [{**row, "previous_status": previous_status}]
+
+        def list_abandoned_upload_sessions(self, **kwargs):
+            self.abandoned_list_calls.append(dict(kwargs))
+            row = self.sessions[owner_session_id]
+            if not stale.is_set() or kwargs["active_upload_session_id"] == owner_session_id:
+                return []
+            return [{**row, "previous_status": row["status"]}]
+
+        def finalize_abandoned_upload_source_cleanup(self, session_id, job_id, **kwargs):
+            result = super().finalize_abandoned_upload_source_cleanup(session_id, job_id, **kwargs)
+            self.sessions[session_id]["source_deleted"] = True
+            return result
+
+    repository = SharedRepository()
+    gates, entered = [threading.Event(), threading.Event()], [threading.Event(), threading.Event()]
+    states, contexts, snapshots = [], [], []
+    for index in range(2):
+        directory = tmp_path / f"receiver-{index}"
+        directory.mkdir()
+        service, worker, _unused = _lifecycle_service(directory, monkeypatch)
+        service.repository = worker.repository = repository
+        service._invoke_capacity = MagicMock(return_value={"Payload": BytesIO(json.dumps({
+            "action": "cleanup_ownership", "uploadSessionId": owner_session_id,
+            "ownerStopped": False,
+        }).encode())})
+        states.append(service)
+        snapshots.append(worker.settings.temp_dir / f"project-owner-{index}" / "source.media")
+
+        def project(_job_id, *, prepared_source, task=index):
+            snapshots[task].parent.mkdir()
+            os.link(prepared_source, snapshots[task])
+            entered[task].set()
+            assert gates[task].wait(3)
+            cleanup_uploaded_project_workspace(snapshots[task].parent)
+
+        worker.project = project
+    try:
+        for index, session_id in enumerate((owner_session_id, peer_session_id)):
+            status, _result = _http_exchange(
+                states[index], f"/v1/upload-sessions/{session_id}/source", upload=True,
+            )
+            assert status == 202 and entered[index].wait(1)
+            contexts.append(states[index]._active)
+        repository.sessions[owner_session_id]["status"] = owner_status
+        stale.set()
+        assert heartbeat_failed.wait(1)
+        assert not (states[1].upload_root / owner_session_id).exists()
+        states[1].sweep_abandoned_uploads()
+        assert repository.sessions[owner_session_id]["status"] == owner_status
+        assert repository.sessions[owner_session_id]["source_deleted"] is False
+        assert repository.abandoned_claim_calls == []
+        assert repository.abandoned_cleanup_calls == []
+        states[1]._invoke_capacity.assert_called_once_with(
+            invocation_type="RequestResponse",
+            payload={"action": "cleanup_ownership", "uploadSessionId": owner_session_id},
+        )
+        assert all(service.busy for service in states)
+        assert all(snapshot.exists() for snapshot in snapshots)
+        for service in states:
+            service.task_protection.disable.assert_not_called()
+            service._notify_capacity_release.assert_not_called()
+    finally:
+        for gate in gates:
+            gate.set()
+        for context in contexts:
+            assert context.finished.wait(3)
+
+
+def test_peer_expiry_before_database_claim_never_creates_or_reads_a_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_id = str(uuid4())
+    claim_entered, resume_claim = threading.Event(), threading.Event()
+    repository = FakeRepository(5)
+    repository.job_status = "uploading"
+    repository.abandoned_sessions = [{
+        "id": session_id, "job_id": "job-upload-a", "previous_status": "awaiting_upload",
+    }]
+    original_claim = repository.claim_upload_session
+    original_abandoned = repository.claim_abandoned_upload_sessions
+
+    def blocked_claim(*args):
+        claim_entered.set()
+        assert resume_claim.wait(3)
+        return original_claim(*args)
+
+    def expire_before_claim(**kwargs):
+        rows = original_abandoned(**kwargs)
+        if rows:
+            repository.claim_mode = "expired"
+        return rows
+
+    repository.claim_upload_session = blocked_claim
+    repository.claim_abandoned_upload_sessions = expire_before_claim
+    services, workers = [], []
+    for index in range(2):
+        directory = tmp_path / f"receiver-{index}"
+        directory.mkdir()
+        service, worker, _unused = _lifecycle_service(directory, monkeypatch)
+        service.repository = worker.repository = repository
+        service._workspace = MagicMock(wraps=service._workspace)
+        service._stream_body = MagicMock(wraps=service._stream_body)
+        service._cleanup_owner_stopped = MagicMock()
+        services.append(service)
+        workers.append(worker)
+    responses = []
+    receiving = threading.Thread(target=lambda: responses.append(_http_exchange(
+        services[0], f"/v1/upload-sessions/{session_id}/source", upload=True,
+    )), daemon=True)
+    receiving.start()
+    assert claim_entered.wait(1)
+    try:
+        assert services[0].busy and services[0]._active.source_path is None
+        assert services[1].sweep_abandoned_uploads() == 1
+        assert repository.abandoned_claim_calls[0]["verified_upload_session_ids"] == []
+        assert repository.abandoned_claim_calls[0]["expired_awaiting_upload_session_ids"] == [
+            session_id,
+        ]
+        services[1]._cleanup_owner_stopped.assert_not_called()
+    finally:
+        resume_claim.set()
+        receiving.join(timeout=3)
+    assert not receiving.is_alive() and responses[0][0] == 410
+    for service, worker in zip(services, workers, strict=True):
+        service._workspace.assert_not_called()
+        service._stream_body.assert_not_called()
+        assert not service.busy and list(service.upload_root.iterdir()) == []
+        assert worker.project_calls == []
+
+
+def test_shutdown_rechecks_admission_before_claiming_capacity_or_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _worker, repository = _lifecycle_service(tmp_path, monkeypatch)
+    validation_entered, resume_validation = threading.Event(), threading.Event()
+    original_hash = service.bearer_token_hash
+    errors = []
+
+    def delayed_hash(value):
+        validation_entered.set()
+        assert resume_validation.wait(3)
+        return original_hash(value)
+
+    def receive():
+        try:
+            _receive(service, b"video")
+        except UploadRequestError as error:
+            errors.append(error.code)
+
+    service.bearer_token_hash = delayed_hash
+    receiver = threading.Thread(target=receive, daemon=True)
+    receiver.start()
+    assert validation_entered.wait(1)
+    service.shutdown()
+    resume_validation.set()
+    receiver.join(timeout=2)
+    assert not receiver.is_alive() and errors == ["not_found"]
+    assert repository.claim_calls == []
+    service._claim_capacity.assert_not_called()
+    service.task_protection.enable.assert_not_called()
+
+
+def test_non_owner_context_cannot_release_another_active_receiver_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, worker, _repository = _lifecycle_service(tmp_path, monkeypatch)
+    worker.block_project = True
+    _receive(service, b"video", background=True)
+    assert worker.project_started.wait(1)
+    owner = service._active
+    stale = ActiveUpload(
+        upload_session_id=str(uuid4()), source_cleanup_complete=True, terminal_persisted=True,
+    )
+    stale.processing_done.set()
+    try:
+        service._release(stale)
+        assert service._active is owner and service.busy
+        service.task_protection.disable.assert_not_called()
+        service._notify_capacity_release.assert_not_called()
+    finally:
+        worker.project_release.set()
+    assert owner.finished.wait(2)
+    service._release(owner)
+    service.task_protection.disable.assert_called_once()
+
+
+def test_shutdown_deadline_never_releases_a_still_running_pipeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, worker, repository = _lifecycle_service(tmp_path, monkeypatch)
+    service.config = replace(service.config, shutdown_drain_seconds=0)
+    worker.block_project = True
+    _receive(service, b"video", background=True)
+    assert worker.project_started.wait(1)
+    context = service._active
+    try:
+        service.shutdown()
+        service.shutdown()
+        assert service.busy and context.source_path.is_file()
+        assert not context.processing_done.is_set() and not context.released
+        assert repository.failure_calls == repository.completed_calls == []
+        service.task_protection.disable.assert_not_called()
+        service._notify_capacity_release.assert_not_called()
+    finally:
+        worker.project_release.set()
+    assert context.finished.wait(2)
+    assert not context.source_path.exists()
+    service._notify_capacity_release.assert_called_once()
+
+
+def test_database_heartbeat_error_does_not_stop_task_protection_refresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, worker, repository = _lifecycle_service(tmp_path, monkeypatch)
+    worker.block_project = True
+    _receive(service, b"video", background=True)
+    assert worker.project_started.wait(1)
+    context = service._active
+    failed_heartbeat, refreshed = threading.Event(), threading.Event()
+
+    def database_unavailable(*_args):
+        failed_heartbeat.set()
+        raise RuntimeError("database unavailable")
+
+    repository.heartbeat_upload_session = database_unavailable
+    service.task_protection.refresh_if_needed.side_effect = lambda: (
+        refreshed.set() if failed_heartbeat.is_set() else None
+    )
+    try:
+        assert failed_heartbeat.wait(1) and refreshed.wait(1)
+        assert service.busy and not context.finished.is_set()
+        service.task_protection.disable.assert_not_called()
+    finally:
+        worker.project_release.set()
+    assert context.finished.wait(2)
+
+
+def test_protection_refresh_and_disable_are_serialized_with_event_barriers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    protection = TaskScaleInProtection(_config())
+    entered, proceed, disabled = (threading.Event() for _ in range(3))
+    updates = []
+
+    def update(enabled):
+        updates.append(enabled)
+        if len(updates) == 2:
+            entered.set()
+            assert proceed.wait(3)
+        protection._enabled = enabled
+        protection._last_refresh = 0
+
+    monkeypatch.setattr(protection, "_update", update)
+    protection.enable()
+    refresh = threading.Thread(target=protection.refresh_if_needed, daemon=True)
+
+    def disable():
+        protection.disable()
+        disabled.set()
+
+    release = threading.Thread(target=disable, daemon=True)
+    refresh.start()
+    assert entered.wait(1)
+    release.start()
+    try:
+        assert not disabled.wait(0.03)
+    finally:
+        proceed.set()
+        refresh.join(timeout=2)
+        release.join(timeout=2)
+    assert not refresh.is_alive() and not release.is_alive()
+    assert updates == [True, True, False]
+    assert not protection._enabled
+
+
+def test_maintenance_thread_start_failure_cleans_intake_without_starting_pipeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, worker, repository = _lifecycle_service(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "shorts_worker.upload_service.threading.Thread.start",
+        MagicMock(side_effect=RuntimeError("thread unavailable")),
+    )
+    with pytest.raises(UploadRequestError) as caught:
+        _receive(service, b"video")
+    assert caught.value.code == "upload_maintenance_unavailable"
+    assert worker.project_calls == []
+    assert list(service.upload_root.iterdir()) == []
+    assert repository.failure_calls[0]["source_deleted"] is True
+    assert not service.busy and service._active is None
+    service.task_protection.disable.assert_called_once()
+    service._notify_capacity_release.assert_called_once()

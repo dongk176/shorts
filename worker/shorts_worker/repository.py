@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 import boto3
 import psycopg
@@ -220,11 +221,15 @@ class WorkerRepository:
                 """
                 update shorts_mvp.upload_sessions
                 set heartbeat_at=clock_timestamp(),received_bytes=%s
-                where id=%s and status='claimed'
+                where id=%s
                   and %s between 0 and expected_bytes
-                  and not exists (
-                    select 1 from shorts_mvp.runtime_feature_flags
-                    where flag_key='file_upload_emergency_stop' and enabled
+                  and (
+                    (status='claimed' and not exists (
+                      select 1 from shorts_mvp.runtime_feature_flags
+                      where flag_key='file_upload_emergency_stop' and enabled
+                    ))
+                    or (status in ('completed','failed','expired')
+                      and source_deleted_at is null)
                   )
                 returning id
                 """,
@@ -295,37 +300,70 @@ class WorkerRepository:
         expired: bool = False,
         source_deleted: bool = True,
     ) -> bool:
-        """Fail an intake after its local source is physically gone.
+        """Reconcile an intake with the authoritative project outcome.
 
         ``finalize_project_job`` owns the idempotent reservation release and
-        usage event, so retries cannot release or refund the same job twice.
+        usage event. Rendering success and receiver-owned source cleanup are
+        separate facts: a late cleanup/commit failure cannot undo ready output.
         """
         with self.connect() as connection, connection.transaction():
+            session = connection.execute(
+                """
+                select us.id,us.status,us.source_deleted_at
+                from shorts_mvp.upload_sessions us
+                join shorts_mvp.video_jobs j on j.id=us.job_id
+                  and j.user_id=us.user_id and j.mvp_session_id=us.mvp_session_id
+                where us.id=%s and us.job_id=%s
+                  and j.source_type='upload' and j.execution_backend='upload_service'
+                for update of us
+                """,
+                (upload_session_id, job_id),
+            ).fetchone()
+            if not session:
+                return False
+            # Keep the intake -> project lock order used by record_upload_intake.
+            # The shared finalizer locks the job and preserves any committed
+            # terminal outcome; its return value, not this error path, decides
+            # whether generated output succeeded.
+            finalized = connection.execute(
+                "select * from shorts_mvp.finalize_project_job(%s,%s,%s)",
+                (job_id, error_code[:100], message[:1000]),
+            ).fetchone()
+            if not finalized or not finalized.get("final_status"):
+                raise RuntimeError("Upload project finalization did not confirm an outcome")
+            completed = (
+                finalized["final_status"] == "completed"
+                or session["status"] == "completed"
+            )
+            status = "completed" if completed else "expired" if expired else "failed"
+            # An already-confirmed deletion is monotonic across late retries.
+            source_deleted = source_deleted or session["source_deleted_at"] is not None
             updated = connection.execute(
                 """
                 update shorts_mvp.upload_sessions
-                set status=case when %s then 'expired' else 'failed' end,
+                set status=%s,
                     failure_code=%s,failure_reason=%s,
+                    completed_at=case
+                      when %s='completed' then coalesce(completed_at,clock_timestamp())
+                      else completed_at
+                    end,
                     source_deleted_at=case
                       when %s then coalesce(source_deleted_at,clock_timestamp())
                       else source_deleted_at
                     end,
                     heartbeat_at=clock_timestamp()
-                where id=%s and job_id=%s and status<>'completed'
+                where id=%s and job_id=%s
                 returning id
                 """,
                 (
-                    expired,
-                    error_code[:100],
-                    message[:1000],
+                    status,
+                    None if completed else error_code[:100],
+                    None if completed else message[:1000],
+                    status,
                     source_deleted,
                     upload_session_id,
                     job_id,
                 ),
-            ).fetchone()
-            connection.execute(
-                "select * from shorts_mvp.finalize_project_job(%s,%s,%s)",
-                (job_id, error_code[:100], message[:1000]),
             ).fetchone()
             # The shared finalizer may stamp this field before an upload
             # receiver has removed its separately-owned raw file. Correct the
@@ -347,7 +385,7 @@ class WorkerRepository:
         upload_session_id: str,
         job_id: str,
     ) -> bool:
-        """Record completion only after receiver-owned source cleanup."""
+        """Record cleanup-backed completion, including an acknowledged retry."""
         with self.connect() as connection, connection.transaction():
             row = connection.execute(
                 """
@@ -355,10 +393,11 @@ class WorkerRepository:
                 set status='completed',completed_at=coalesce(completed_at,clock_timestamp()),
                     source_deleted_at=coalesce(source_deleted_at,clock_timestamp()),
                     heartbeat_at=clock_timestamp(),failure_code=null,failure_reason=null
-                where us.id=%s and us.job_id=%s and us.status='claimed'
+                where us.id=%s and us.job_id=%s and us.status in ('claimed','completed')
                   and exists (
                     select 1 from shorts_mvp.video_jobs j
                     where j.id=us.job_id and j.status='completed'
+                      and j.source_type='upload' and j.execution_backend='upload_service'
                   )
                 returning id
                 """,
@@ -375,20 +414,86 @@ class WorkerRepository:
                 )
             return bool(row)
 
-    def claim_abandoned_upload_sessions(
+    def list_abandoned_upload_sessions(
         self,
         *,
         stale_after_seconds: int,
         active_upload_session_id: str | None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
+        """List stale candidates without changing their live owner's state.
+
+        A stale DB heartbeat is not proof that an ECS task or its ephemeral
+        source is gone. The receiver must verify the recorded task is STOPPED
+        before passing exact claimed/terminal IDs to the atomic claim. Expired,
+        never-consumed tokens have a separate no-body branch at claim time.
+        """
+        bounded_stale_seconds = max(30, min(86_400, stale_after_seconds))
+        bounded_limit = max(1, min(100, limit))
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                select us.id,us.job_id,us.mvp_session_id,us.status as previous_status,
+                       us.source_thumbnail_s3_key
+                from shorts_mvp.upload_sessions us
+                where (
+                  (us.status='awaiting_upload' and us.expires_at<=clock_timestamp()
+                    and us.claimed_at is null and us.consumed_at is null
+                    and coalesce(us.received_bytes,0)=0)
+                  or (us.status='claimed'
+                    and coalesce(us.heartbeat_at,us.claimed_at,us.created_at)
+                      < clock_timestamp()-(%s * interval '1 second'))
+                  or (us.status in ('expired','failed','completed')
+                    and us.source_deleted_at is null
+                    and coalesce(us.heartbeat_at,us.created_at)
+                      < clock_timestamp()-(%s * interval '1 second'))
+                )
+                  and (%s::uuid is null or us.id<>%s::uuid)
+                order by us.created_at
+                limit %s
+                """,
+                (
+                    bounded_stale_seconds,
+                    bounded_stale_seconds,
+                    active_upload_session_id,
+                    active_upload_session_id,
+                    bounded_limit,
+                ),
+            ).fetchall()
+            return list(rows)
+
+    def claim_abandoned_upload_sessions(
+        self,
+        *,
+        stale_after_seconds: int,
+        active_upload_session_id: str | None,
+        verified_upload_session_ids: list[str] | None = None,
+        expired_awaiting_upload_session_ids: list[str] | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
         """Atomically retire expired or abandoned upload sessions.
 
-        The status transition happens while the candidate rows are locked, so
-        an awaiting token cannot be claimed after the sweeper selects it.  Raw
+        Claimed/terminal sessions require an owner-STOPPED whitelist. Separately,
+        expired never-consumed tokens may be retired because body writes only
+        start after a successful DB claim. Each branch is rechecked under locks;
+        an awaiting token cannot be claimed after the sweeper selects it. Raw
         source deletion is intentionally a separate receiver step; this method
         never stamps ``source_deleted_at``.
         """
+        verified_upload_session_ids = verified_upload_session_ids or []
+        expired_awaiting_upload_session_ids = expired_awaiting_upload_session_ids or []
+        count = len(verified_upload_session_ids) + len(expired_awaiting_upload_session_ids)
+        if count == 0 or count > 100:
+            return []
+        try:
+            verified_ids = list(dict.fromkeys(
+                str(UUID(session_id)) for session_id in verified_upload_session_ids
+            ))
+            expired_awaiting_ids = list(dict.fromkeys(
+                str(UUID(session_id)) for session_id in expired_awaiting_upload_session_ids
+            ))
+        except (ValueError, TypeError, AttributeError):
+            return []
         bounded_stale_seconds = max(30, min(86_400, stale_after_seconds))
         bounded_limit = max(1, min(100, limit))
         with self.connect() as connection, connection.transaction():
@@ -400,14 +505,21 @@ class WorkerRepository:
                   from shorts_mvp.upload_sessions us
                   where (
                     (us.status='awaiting_upload'
-                      and us.expires_at<=clock_timestamp())
-                    or (us.status='claimed'
-                      and coalesce(us.heartbeat_at,us.claimed_at,us.created_at)
-                        < clock_timestamp()-(%s * interval '1 second'))
-                    or (us.status in ('expired','failed')
-                      and us.source_deleted_at is null
-                      and coalesce(us.heartbeat_at,us.created_at)
-                        < clock_timestamp()-(%s * interval '1 second'))
+                      and us.expires_at<=clock_timestamp()
+                      and us.claimed_at is null and us.consumed_at is null
+                      and coalesce(us.received_bytes,0)=0
+                      and us.id=any(%s::uuid[]))
+                    or (us.id=any(%s::uuid[]) and (
+                      (us.status='claimed'
+                        and coalesce(us.heartbeat_at,us.claimed_at,us.created_at)
+                          < clock_timestamp()-(%s * interval '1 second'))
+                      -- Successful output may still have receiver-owned raw
+                      -- cleanup pending. Its owner keeps this heartbeat fresh.
+                      or (us.status in ('expired','failed','completed')
+                        and us.source_deleted_at is null
+                        and coalesce(us.heartbeat_at,us.created_at)
+                          < clock_timestamp()-(%s * interval '1 second'))
+                    ))
                   )
                     and (%s::uuid is null or us.id<>%s::uuid)
                   order by us.created_at
@@ -443,6 +555,8 @@ class WorkerRepository:
                           candidates.previous_status,us.source_thumbnail_s3_key
                 """,
                 (
+                    expired_awaiting_ids,
+                    verified_ids,
                     bounded_stale_seconds,
                     bounded_stale_seconds,
                     active_upload_session_id,
@@ -508,6 +622,24 @@ class WorkerRepository:
             else "업로드 수신 작업이 중단되었습니다."
         )
         with self.connect() as connection, connection.transaction():
+            session = connection.execute(
+                """
+                select us.id
+                from shorts_mvp.upload_sessions us
+                join shorts_mvp.video_jobs j on j.id=us.job_id
+                  and j.user_id=us.user_id and j.mvp_session_id=us.mvp_session_id
+                where us.id=%s and us.job_id=%s
+                  and us.status in ('expired','failed','completed')
+                  and us.source_deleted_at is null
+                  and j.source_type='upload' and j.execution_backend='upload_service'
+                for update of us
+                """,
+                (upload_session_id, job_id),
+            ).fetchone()
+            if not session:
+                return None
+            # Match fail/complete's intake -> project order; a sweeper racing a
+            # late receiver acknowledgement must not hold the job first.
             finalized = connection.execute(
                 "select * from shorts_mvp.finalize_project_job(%s,%s,%s)",
                 (job_id, failure_code, failure_message),
@@ -538,7 +670,7 @@ class WorkerRepository:
                     failure_reason=case when %s='completed' then null else failure_reason end,
                     heartbeat_at=clock_timestamp()
                 where id=%s and job_id=%s
-                  and status in ('expired','failed')
+                  and status in ('expired','failed','completed')
                   and source_deleted_at is null
                 returning id
                 """,

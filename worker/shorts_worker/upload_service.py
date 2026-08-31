@@ -38,7 +38,9 @@ from .media import media_duration, probe_media
 from .worker_pipeline import (
     UPLOAD_SOURCE_MAX_BYTES,
     BatchWorker,
+    UploadSourceCleanupError,
     classify_full_source_download,
+    cleanup_uploaded_project_workspace,
     uploaded_project_source_window,
 )
 
@@ -53,6 +55,7 @@ _DEFAULT_HEARTBEAT_SECONDS = 5.0
 _DEFAULT_SWEEP_INTERVAL_SECONDS = 30.0
 _DEFAULT_STALE_AFTER_SECONDS = 120
 _DEFAULT_SOCKET_IDLE_TIMEOUT_SECONDS = 120.0
+_FINALIZATION_RETRY_DELAYS_SECONDS = (0.05, 0.1)
 _MAX_UPLOAD_DIMENSION = 8_192
 _MAX_UPLOAD_PIXELS = 33_554_432
 _ECS_AGENT_URI = re.compile(
@@ -179,6 +182,7 @@ class UploadReceiverConfig:
     allowed_origins: frozenset[str]
     scale_in_protection_required: bool = False
     scale_in_protection_minutes: int = 30
+    shutdown_drain_seconds: float = 110.0
 
     @classmethod
     def from_environment(
@@ -286,6 +290,7 @@ class TaskScaleInProtection:
         self.agent_uri = os.environ.get("ECS_AGENT_URI", "").strip().rstrip("/")
         self._enabled = False
         self._last_refresh = 0.0
+        self._lock = threading.Lock()
         if self.required and not _ECS_AGENT_URI.fullmatch(self.agent_uri):
             raise RuntimeError("ECS_AGENT_URI is required for upload task protection")
 
@@ -315,18 +320,21 @@ class TaskScaleInProtection:
         self._last_refresh = time.monotonic() if enabled else 0.0
 
     def enable(self) -> None:
-        self._update(True)
-
-    def refresh_if_needed(self) -> None:
-        if not self._enabled:
-            return
-        refresh_seconds = max(60.0, self.expires_in_minutes * 60.0 / 3.0)
-        if time.monotonic() - self._last_refresh >= refresh_seconds:
+        with self._lock:
             self._update(True)
 
+    def refresh_if_needed(self) -> None:
+        with self._lock:
+            if not self._enabled:
+                return
+            refresh_seconds = max(60.0, self.expires_in_minutes * 60.0 / 3.0)
+            if time.monotonic() - self._last_refresh >= refresh_seconds:
+                self._update(True)
+
     def disable(self) -> None:
-        if self._enabled:
-            self._update(False)
+        with self._lock:
+            if self._enabled:
+                self._update(False)
 
 
 @dataclass
@@ -334,15 +342,30 @@ class ActiveUpload:
     upload_session_id: str
     cancel_event: threading.Event = field(default_factory=threading.Event)
     source_handle_closed: threading.Event = field(default_factory=threading.Event)
+    processing_done: threading.Event = field(default_factory=threading.Event)
+    finished: threading.Event = field(default_factory=threading.Event)
+    heartbeat_stop: threading.Event = field(default_factory=threading.Event)
     state_lock: threading.Lock = field(default_factory=threading.Lock)
+    finalization_lock: threading.Lock = field(default_factory=threading.Lock)
+    heartbeat_thread: threading.Thread | None = None
     job_id: str | None = None
     workspace: Path | None = None
     source_path: Path | None = None
+    project_workspace: Path | None = None
     abort_stream: Callable[[], None] | None = None
     thumbnail_key: str | None = None
     intake_recorded: bool = False
     received_bytes: int = 0
     failure_recorded: bool = False
+    failure_source_deleted: bool = False
+    success: bool = False
+    failure_code: str | None = None
+    failure_message: str = "업로드를 처리하지 못했습니다."
+    failure_expired: bool = False
+    source_cleanup_complete: bool = False
+    terminal_persisted: bool = False
+    quarantined: bool = False
+    next_cleanup_retry_at: float = 0.0
     capacity_claimed: bool = False
     released: bool = False
 
@@ -359,6 +382,7 @@ class UploadReceiverService:
         self.settings = worker.settings
         self.config = config
         self.shutdown_event = threading.Event()
+        self._shutdown_deadline: float | None = None
         self._capacity = threading.Lock()
         self._active_guard = threading.Lock()
         self._active: ActiveUpload | None = None
@@ -382,6 +406,11 @@ class UploadReceiverService:
     @property
     def busy(self) -> bool:
         return self._capacity.locked()
+
+    @property
+    def quarantined(self) -> bool:
+        with self._active_guard:
+            return bool(self._active and self._active.quarantined)
 
     @staticmethod
     def parse_session_id(path: str) -> str | None:
@@ -457,15 +486,19 @@ class UploadReceiverService:
             )
         token_hash = self.bearer_token_hash(authorization)
         content_length = self.content_length(content_length_value)
-        if not self._capacity.acquire(blocking=False):
-            raise UploadRequestError(
-                HTTPStatus.CONFLICT,
-                "upload_receiver_busy",
-                "다른 업로드를 처리하고 있습니다. 잠시 후 다시 시도해 주세요.",
-            )
         context = ActiveUpload(upload_session_id=upload_session_id)
         context.abort_stream = abort_stream
         with self._active_guard:
+            # Admission and shutdown share one lock; validation can race a
+            # signal, but no new capacity/DB claim may start after draining.
+            if self.shutdown_event.is_set():
+                raise UploadRequestError(HTTPStatus.NOT_FOUND, "not_found", "찾을 수 없습니다.")
+            if not self._capacity.acquire(blocking=False):
+                raise UploadRequestError(
+                    HTTPStatus.CONFLICT,
+                    "upload_receiver_busy",
+                    "다른 업로드를 처리하고 있습니다. 잠시 후 다시 시도해 주세요.",
+                )
             self._active = context
         handed_to_pipeline = False
         try:
@@ -519,6 +552,13 @@ class UploadReceiverService:
                 expected_bytes=content_length,
             )
             context.received_bytes = content_length
+            if not self._start_maintenance(context):
+                raise UploadRequestError(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    "upload_maintenance_unavailable",
+                    "업로드 작업 상태를 안전하게 유지하지 못했습니다.",
+                    terminal=True,
+                )
             metadata = self._probe_and_validate(context, claim)
             context.thumbnail_key = self._upload_source_thumbnail(context, claim)
             if not self.repository.record_upload_intake(
@@ -556,31 +596,15 @@ class UploadReceiverService:
                 "receivedBytes": content_length,
             }
         except UploadRequestError as exc:
-            cleaned = self._cleanup_context(
-                context,
-                delete_thumbnail=not context.intake_recorded,
-            )
             if exc.terminal and context.job_id:
-                self._record_failure(
-                    context,
-                    code=exc.code,
-                    message=exc.message,
-                    expired=exc.expired,
-                    source_deleted=cleaned,
-                )
+                context.failure_code = exc.code
+                context.failure_message = exc.message
+                context.failure_expired = exc.expired
             raise
         except Exception as exc:
-            cleaned = self._cleanup_context(
-                context,
-                delete_thumbnail=not context.intake_recorded,
-            )
             if context.job_id:
-                self._record_failure(
-                    context,
-                    code="upload_receiver_error",
-                    message="업로드를 처리하지 못했습니다.",
-                    source_deleted=cleaned,
-                )
+                context.failure_code = "upload_receiver_error"
+                context.failure_message = "업로드를 처리하지 못했습니다."
             _event(
                 "upload_receiver_unexpected_error",
                 session_id=upload_session_id,
@@ -593,7 +617,8 @@ class UploadReceiverService:
             ) from None
         finally:
             if not handed_to_pipeline:
-                self._release(context)
+                context.processing_done.set()
+                self._finalize_context(context)
 
     def _ecs_task_arn(self) -> str:
         if self._task_arn:
@@ -1007,30 +1032,22 @@ class UploadReceiverService:
         return key
 
     def _run_pipeline(self, context: ActiveUpload) -> None:
-        success = False
-        failure_code = "upload_pipeline_failed"
-        failure_message = "쇼츠를 만들지 못했습니다. 사용량은 다시 복구되었습니다."
-        heartbeat_stop = threading.Event()
-        heartbeat = threading.Thread(
-            target=self._maintain_pipeline_heartbeat,
-            args=(context, heartbeat_stop),
-            name=f"upload-heartbeat-{context.upload_session_id[:8]}",
-            daemon=True,
-        )
-        heartbeat.start()
+        context.failure_code = "upload_pipeline_failed"
+        context.failure_message = "쇼츠를 만들지 못했습니다. 사용량은 다시 복구되었습니다."
         try:
+            if not self._start_maintenance(context):
+                raise RuntimeError("upload maintenance is unavailable")
             if context.cancel_event.is_set() or not context.job_id or not context.source_path:
                 raise RuntimeError("upload pipeline was cancelled")
             self.worker.project(
                 context.job_id,
                 prepared_source=context.source_path,
             )
-            job = self.repository.get_job(context.job_id)
-            if job and str(job.get("status")) == "completed":
-                success = True
-            elif job:
-                failure_code = str(job.get("error_code") or failure_code)[:100]
-                failure_message = str(job.get("error_message") or failure_message)[:1000]
+        except UploadSourceCleanupError as exc:
+            # project() has returned through its finally, but its private raw
+            # hard link/copy is still present. Never confuse receiver cleanup
+            # with deletion of that separately-owned source snapshot.
+            context.project_workspace = exc.workspace
         except Exception as exc:
             _event(
                 "upload_pipeline_unexpected_error",
@@ -1038,60 +1055,141 @@ class UploadReceiverService:
                 error_type=type(exc).__name__,
             )
         finally:
-            heartbeat_stop.set()
-            heartbeat.join(timeout=max(1.0, self.config.heartbeat_seconds + 1.0))
-            # Once intake metadata commits, the derived source thumbnail is a
-            # project-card asset. Keep it for the normal retention window even
-            # when the common AI/render pipeline fails.
-            cleaned = self._cleanup_context(
-                context,
-                delete_thumbnail=not context.intake_recorded,
+            try:
+                job = self.repository.get_job(context.job_id or "")
+                context.success = bool(job and str(job.get("status")) == "completed")
+                if job and not context.success:
+                    context.failure_code = str(job.get("error_code") or context.failure_code)[:100]
+                    context.failure_message = str(
+                        job.get("error_message") or context.failure_message
+                    )[:1000]
+            except Exception as exc:
+                _event("upload_pipeline_status_error", session_id=context.upload_session_id,
+                       error_type=type(exc).__name__)
+            # This is deliberately later than video_jobs.completed: project()
+            # still owns timeline postprocessing and its raw snapshot until it
+            # returns. Only a processing-done context may enter finalization.
+            context.processing_done.set()
+            self._finalize_context(context)
+
+    def _start_maintenance(self, context: ActiveUpload) -> bool:
+        if not context.job_id:
+            return True
+        with context.state_lock:
+            if context.heartbeat_thread is not None or context.released:
+                return True
+            context.heartbeat_thread = threading.Thread(
+                target=self._maintain_pipeline_heartbeat,
+                args=(context, context.heartbeat_stop),
+                name=f"upload-heartbeat-{context.upload_session_id[:8]}",
+                daemon=True,
             )
-            if success and not cleaned:
-                # A transient filesystem error must not stamp source_deleted_at.
-                # Retry once before deciding whether completion is safe to record.
-                cleaned = self._cleanup_context(context, delete_thumbnail=False)
-            if success and not cleaned:
-                success = False
-                failure_code = "upload_source_cleanup_failed"
-                failure_message = "업로드 원본 파일을 안전하게 삭제하지 못했습니다."
-            elif success and not context.failure_recorded:
-                if not self.repository.complete_upload_session(
-                    context.upload_session_id,
-                    context.job_id or "",
-                ):
-                    success = False
-                    failure_code = "upload_completion_commit_failed"
-                    failure_message = "업로드 프로젝트 완료 상태를 저장하지 못했습니다."
-            if not success:
-                # Retry raw-source cleanup. A thumbnail created before intake
-                # commit is removed, while a committed project-card thumbnail
-                # remains available through the normal failure retention window.
-                final_cleaned = self._cleanup_context(
-                    context,
-                    delete_thumbnail=not context.intake_recorded,
+            try:
+                context.heartbeat_thread.start()
+            except RuntimeError as exc:
+                context.heartbeat_thread = None
+                context.cancel_event.set()
+                _event("upload_maintenance_start_error", session_id=context.upload_session_id,
+                       error_type=type(exc).__name__)
+                return False
+            return True
+
+    def _complete_session(self, context: ActiveUpload) -> bool:
+        for delay in (0.0, *_FINALIZATION_RETRY_DELAYS_SECONDS):
+            if delay:
+                time.sleep(delay)
+            try:
+                return bool(self.repository.complete_upload_session(
+                    context.upload_session_id, context.job_id or "",
+                ))
+            except Exception as exc:
+                _event("upload_completion_commit_error", session_id=context.upload_session_id,
+                       error_type=type(exc).__name__)
+        return False
+
+    def _finalize_context(self, context: ActiveUpload) -> None:
+        if not context.processing_done.is_set():
+            return
+        if context.source_path is not None and not context.source_handle_closed.is_set():
+            return
+        if not context.finalization_lock.acquire(blocking=False):
+            return
+        try:
+            if context.released or (
+                context.quarantined and time.monotonic() < context.next_cleanup_retry_at
+            ):
+                return
+            if context.failure_code or context.intake_recorded:
+                self._start_maintenance(context)
+            cleaned = context.source_cleanup_complete
+            if not cleaned:
+                for delay in (0.0, *_FINALIZATION_RETRY_DELAYS_SECONDS):
+                    if delay:
+                        time.sleep(delay)
+                    try:
+                        cleaned = self._cleanup_context(
+                            context, delete_thumbnail=not context.intake_recorded,
+                        )
+                    except Exception as exc:
+                        _event("upload_source_cleanup_error", session_id=context.upload_session_id,
+                               error_type=type(exc).__name__)
+                    if cleaned:
+                        break
+            context.source_cleanup_complete = cleaned
+            if not cleaned:
+                context.quarantined = True
+                context.next_cleanup_retry_at = (
+                    time.monotonic() + self.config.sweep_interval_seconds
                 )
-                cleaned = cleaned or final_cleaned
                 self._record_failure(
-                    context,
-                    code=failure_code,
-                    message=failure_message,
-                    source_deleted=cleaned,
+                    context, code="upload_source_cleanup_failed",
+                    message="업로드 원본 파일을 안전하게 삭제하지 못했습니다.",
+                    source_deleted=False,
                 )
-            _event(
-                "upload_pipeline_finished",
-                session_id=context.upload_session_id,
-                success=success,
-                source_deleted=cleaned,
-            )
+                _event("upload_source_cleanup_quarantined", session_id=context.upload_session_id,
+                       source_deleted=False)
+                # Keep the active slot, heartbeat and scale-in protection. The
+                # sweeper retries only this owned context, never the pipeline.
+                return
+            context.quarantined = False
+            persisted = True
+            if context.success:
+                persisted = self._complete_session(context)
+                if not persisted:
+                    context.failure_code = "upload_completion_commit_failed"
+                    context.failure_message = "업로드 프로젝트 완료 상태를 저장하지 못했습니다."
+            if not context.success or not persisted:
+                if context.failure_code:
+                    persisted = self._record_failure(
+                        context, code=context.failure_code, message=context.failure_message,
+                        expired=context.failure_expired, source_deleted=True,
+                    )
+            context.terminal_persisted = persisted
+            _event("upload_pipeline_finished", session_id=context.upload_session_id,
+                   success=context.success, source_deleted=True, terminal_persisted=persisted)
+            if not persisted:
+                # Releasing the lease would discard the only remaining
+                # ownership evidence. Keep this context until its terminal
+                # write is acknowledged; never rerun the pipeline or cleanup.
+                context.quarantined = True
+                context.next_cleanup_retry_at = (
+                    time.monotonic() + self.config.sweep_interval_seconds
+                )
+                _event("upload_terminal_persistence_quarantined",
+                       session_id=context.upload_session_id, source_deleted=True)
+                return
             self._release(context)
+        finally:
+            context.finalization_lock.release()
 
     def _maintain_pipeline_heartbeat(
         self,
         context: ActiveUpload,
         stop: threading.Event,
     ) -> None:
+        session_lost_logged = False
         while not stop.wait(self.config.heartbeat_seconds):
+            retained = None
             try:
                 retained = self.repository.heartbeat_upload_session(
                     context.upload_session_id,
@@ -1103,7 +1201,8 @@ class UploadReceiverService:
                     session_id=context.upload_session_id,
                     error_type=type(exc).__name__,
                 )
-                continue
+            if stop.is_set():
+                return
             try:
                 self.task_protection.refresh_if_needed()
             except RuntimeError as exc:
@@ -1113,14 +1212,14 @@ class UploadReceiverService:
                     session_id=context.upload_session_id,
                     error_type=type(exc).__name__,
                 )
-                return
-            if not retained:
+            if retained is False:
                 context.cancel_event.set()
-                _event(
-                    "upload_pipeline_session_lost",
-                    session_id=context.upload_session_id,
-                )
-                return
+                if not session_lost_logged:
+                    _event("upload_pipeline_session_lost", session_id=context.upload_session_id)
+                    session_lost_logged = True
+                # A terminal session can still own raw bytes or a blocked
+                # postprocessing thread. DB availability/state never disables
+                # the task's independent protection refresh.
 
     def start_sweeper(self) -> None:
         if self._sweeper_thread and self._sweeper_thread.is_alive():
@@ -1137,7 +1236,44 @@ class UploadReceiverService:
         while not self.shutdown_event.wait(self.config.sweep_interval_seconds):
             self.sweep_abandoned_uploads()
 
+    def _cleanup_owner_stopped(self, upload_session_id: str) -> bool:
+        """A peer's missing local directory is never proof of source deletion."""
+        try:
+            response = self._invoke_capacity(
+                invocation_type="RequestResponse",
+                payload={
+                    "action": "cleanup_ownership",
+                    "uploadSessionId": upload_session_id,
+                },
+            )
+            if response.get("FunctionError"):
+                raise RuntimeError("capacity ownership query failed")
+            body = response.get("Payload")
+            raw = body.read(65_537) if hasattr(body, "read") else body
+            payload = json.loads(raw or b"{}")
+            owner_task_arn = payload.get("taskArn") if isinstance(payload, dict) else None
+            verified = (
+                isinstance(payload, dict)
+                and payload.get("action") == "cleanup_ownership"
+                and payload.get("uploadSessionId") == upload_session_id
+                and payload.get("ownerStopped") is True
+                and isinstance(owner_task_arn, str)
+                and owner_task_arn.startswith("arn:aws:ecs:")
+                and ":task/" in owner_task_arn
+            )
+        except Exception as exc:
+            _event("upload_sweeper_owner_unverified", session_id=upload_session_id,
+                   error_type=type(exc).__name__)
+            return False
+        if not verified:
+            _event("upload_sweeper_owner_unverified", session_id=upload_session_id)
+        return verified
+
     def sweep_abandoned_uploads(self) -> int:
+        with self._active_guard:
+            context = self._active
+        if context and context.quarantined:
+            self._finalize_context(context)
         with self._active_guard:
             active_session_id = (
                 self._active.upload_session_id if self._active else None
@@ -1155,16 +1291,46 @@ class UploadReceiverService:
             self._notify_capacity_release(upload_session_id)
 
         try:
-            candidates = self.repository.claim_abandoned_upload_sessions(
+            pending = self.repository.list_abandoned_upload_sessions(
                 stale_after_seconds=self.config.stale_after_seconds,
                 active_upload_session_id=active_session_id,
+            )
+            verified_ids = []
+            expired_awaiting_ids = []
+            for item in pending:
+                try:
+                    session_id = str(UUID(str(item.get("id") or "")))
+                except ValueError:
+                    continue
+                if session_id == active_session_id:
+                    continue
+                if item.get("previous_status") == "awaiting_upload":
+                    # The DB separately rechecks expired, never-consumed,
+                    # zero-byte intake under a row lock. receive() cannot
+                    # create a source before its DB claim succeeds.
+                    expired_awaiting_ids.append(session_id)
+                elif self._cleanup_owner_stopped(session_id):
+                    verified_ids.append(session_id)
+            # The ownership query must precede the SQL transition: claim
+            # already marks a stale claimed session failed. Recheck the
+            # active owner and all stale predicates under DB row locks.
+            with self._active_guard:
+                active_session_id = self._active.upload_session_id if self._active else None
+            candidates = (
+                self.repository.claim_abandoned_upload_sessions(
+                    stale_after_seconds=self.config.stale_after_seconds,
+                    active_upload_session_id=active_session_id,
+                    verified_upload_session_ids=verified_ids,
+                    expired_awaiting_upload_session_ids=expired_awaiting_ids,
+                )
+                if verified_ids or expired_awaiting_ids else []
             )
         except Exception as exc:
             _event(
                 "upload_sweeper_query_error",
                 error_type=type(exc).__name__,
             )
-            return 0
+            return len(expired_capacity)
 
         cleaned_count = len(expired_capacity)
         for item in candidates:
@@ -1221,9 +1387,26 @@ class UploadReceiverService:
                 except Exception:
                     pass
                 context.thumbnail_key = None
+            project_cleaned = True
+            if context.project_workspace is not None:
+                project_workspace = context.project_workspace
+                expected_root = Path(self.settings.temp_dir).resolve(strict=True)
+                if (
+                    project_workspace.is_symlink()
+                    or project_workspace.resolve(strict=False).parent != expected_root
+                    or not context.job_id
+                    or not project_workspace.name.startswith(f"project-{context.job_id}-")
+                ):
+                    project_cleaned = False
+                else:
+                    try:
+                        cleanup_uploaded_project_workspace(project_workspace, attempts=1)
+                        context.project_workspace = None
+                    except UploadSourceCleanupError:
+                        project_cleaned = False
             workspace = context.workspace
             if workspace is None:
-                return True
+                return project_cleaned
             expected_parent = self.upload_root.resolve(strict=True)
             resolved = workspace.resolve(strict=False)
             if resolved.parent != expected_parent:
@@ -1234,7 +1417,13 @@ class UploadReceiverService:
                 pass
             except OSError:
                 return False
-            return not workspace.exists()
+            try:
+                workspace.lstat()
+            except FileNotFoundError:
+                return project_cleaned
+            except OSError:
+                pass
+            return False
 
     def _record_failure(
         self,
@@ -1244,14 +1433,17 @@ class UploadReceiverService:
         message: str,
         source_deleted: bool,
         expired: bool = False,
-    ) -> None:
+    ) -> bool:
         if not context.job_id:
-            return
+            return True
         with context.state_lock:
-            if context.failure_recorded:
-                return
+            if context.failure_recorded and (context.failure_source_deleted or not source_deleted):
+                return True
+        for delay in (0.0, *_FINALIZATION_RETRY_DELAYS_SECONDS):
+            if delay:
+                time.sleep(delay)
             try:
-                self.repository.fail_upload_session(
+                recorded = self.repository.fail_upload_session(
                     context.upload_session_id,
                     context.job_id,
                     error_code=code,
@@ -1265,17 +1457,31 @@ class UploadReceiverService:
                     session_id=context.upload_session_id,
                     error_type=type(exc).__name__,
                 )
-                return
-            context.failure_recorded = True
+                continue
+            if recorded:
+                with context.state_lock:
+                    context.failure_recorded = True
+                    context.failure_source_deleted = source_deleted
+            return bool(recorded)
+        return False
 
     def _release(self, context: ActiveUpload) -> None:
+        if (
+            not context.processing_done.is_set() or not context.source_cleanup_complete
+            or not context.terminal_persisted
+        ):
+            return
+        with self._active_guard:
+            if self._active is not context:
+                return
         with context.state_lock:
             if context.released:
                 return
             context.released = True
-        with self._active_guard:
-            if self._active is context:
-                self._active = None
+        context.heartbeat_stop.set()
+        heartbeat = context.heartbeat_thread
+        if heartbeat is not None and heartbeat is not threading.current_thread():
+            heartbeat.join(timeout=1.0)
         try:
             self.task_protection.disable()
         except RuntimeError as exc:
@@ -1286,7 +1492,11 @@ class UploadReceiverService:
             )
         if context.capacity_claimed:
             self._notify_capacity_release(context.upload_session_id)
-        self._capacity.release()
+        with self._active_guard:
+            if self._active is context:
+                self._active = None
+                self._capacity.release()
+        context.finished.set()
 
     def _notify_capacity_release(self, upload_session_id: str) -> None:
         capacity_function_arn = os.environ.get(
@@ -1309,40 +1519,37 @@ class UploadReceiverService:
                 )
 
     def shutdown(self) -> None:
-        self.shutdown_event.set()
         with self._active_guard:
+            if self._shutdown_deadline is None:
+                self._shutdown_deadline = time.monotonic() + max(
+                    0.0, min(110.0, self.config.shutdown_drain_seconds),
+                )
+            self.shutdown_event.set()
             context = self._active
         if not context:
             return
         context.cancel_event.set()
-        if context.abort_stream:
+        if context.abort_stream and not context.source_handle_closed.is_set():
             try:
                 context.abort_stream()
             except OSError:
                 pass
-        source_handle_closed = (
-            context.source_path is None
-            or context.source_handle_closed.wait(timeout=12.0)
-        )
-        # Never claim physical deletion while a request thread may still hold
-        # the raw file open. A replacement task's startup sweeper will confirm
-        # the now-ephemeral path is absent and stamp source_deleted_at later.
-        cleaned = False
-        if source_handle_closed:
-            cleaned = self._cleanup_context(
-                context,
-                delete_thumbnail=not context.intake_recorded,
-            )
-        self._record_failure(
-            context,
-            code="upload_receiver_shutdown",
-            message="업로드 수신기가 종료되어 작업을 취소했습니다.",
-            source_deleted=cleaned,
-        )
-        # shutdown() is the terminal owner when ECS stops this receiver.  Do
-        # not leave its claimed capacity lease alive until the six-hour TTL;
-        # _release is idempotent if the request/pipeline thread races us.
-        self._release(context)
+        # The upload writer being closed is not a pipeline-completion barrier:
+        # FFmpeg/timeline work may still own a hard link or copy of the source.
+        # The processing owner sets processing_done only after that work exits.
+        while not context.finished.is_set():
+            if context.processing_done.is_set():
+                self._finalize_context(context)
+            remaining = self._shutdown_deadline - time.monotonic()
+            if remaining <= 0:
+                _event("upload_shutdown_drain_incomplete", session_id=context.upload_session_id,
+                       processing_done=context.processing_done.is_set(),
+                       source_deleted=context.source_cleanup_complete,
+                       quarantined=context.quarantined)
+                # ECS may force-kill after its stop timeout. Do not invent a
+                # cleanup/terminal result or expose this still-owned capacity.
+                return
+            context.finished.wait(timeout=min(0.1, remaining))
 
 
 class UploadHttpServer(ThreadingHTTPServer):
@@ -1395,6 +1602,8 @@ class UploadRequestHandler(BaseHTTPRequestHandler):
                 "live": live,
                 "ready": ready,
                 "busy": self.service.busy,
+                "draining": self.service.shutdown_event.is_set(),
+                "quarantined": self.service.quarantined,
             },
         )
 

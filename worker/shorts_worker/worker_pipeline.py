@@ -94,6 +94,35 @@ UPLOAD_SOURCE_RANGE_MIN_DURATION_SECONDS = 240.0
 UPLOAD_SOURCE_RANGE_MAX_DURATION_SECONDS = 3600.0
 
 
+class UploadSourceCleanupError(RuntimeError):
+    """A receiver must retain its task until this owned snapshot is gone."""
+
+    def __init__(self, workspace: Path) -> None:
+        super().__init__("업로드 작업 원본을 안전하게 삭제하지 못했습니다.")
+        self.workspace = workspace
+
+
+def cleanup_uploaded_project_workspace(workspace: Path, *, attempts: int = 3) -> None:
+    """Delete only the project-owned directory supplied by its pipeline owner."""
+    for attempt in range(max(1, min(3, attempts))):
+        try:
+            shutil.rmtree(workspace)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+        try:
+            workspace.lstat()
+        except FileNotFoundError:
+            return
+        except OSError:
+            # Permission/stat errors do not prove physical deletion.
+            pass
+        if attempt + 1 < max(1, min(3, attempts)):
+            time.sleep(0.05)
+    raise UploadSourceCleanupError(workspace)
+
+
 def _stored_transcript_words(value: object) -> list[TranscriptWord]:
     if not isinstance(value, list):
         return []
@@ -1949,6 +1978,8 @@ class BatchWorker:
                 except Exception:
                     pass
             if work_dir is not None:
+                if is_uploaded_source and prepared_source is not None:
+                    cleanup_uploaded_project_workspace(work_dir)
                 shutil.rmtree(work_dir, ignore_errors=True)
 
     def _prepare_project_clip(
