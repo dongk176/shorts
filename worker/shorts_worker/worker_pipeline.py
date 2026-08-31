@@ -19,6 +19,7 @@ from functools import cached_property
 from pathlib import Path
 from uuid import uuid4
 
+from .background_assets import download_owned_background
 from .caption_templates import (
     CAPTION_ACCENT,
     CAPTION_STABLE_TIMING_LEAD_FRAMES,
@@ -1995,6 +1996,8 @@ class BatchWorker:
                 custom_template_config=_custom_template_config(job),
                 comments=comments,
                 caption_render_spec=visible_caption_spec,
+                custom_template_id=str(job.get("custom_template_id") or "") or None,
+                duration_seconds=clip.end_seconds - clip.start_seconds,
             )
             if initial_v4
             else None
@@ -3168,6 +3171,28 @@ class BatchWorker:
             container_peak_memory_bytes=_container_memory_peak_bytes(),
         )
 
+    def _background_render_arguments(
+        self,
+        item: dict[str, object],
+        work_dir: Path,
+        document: EditorDocument | None = None,
+    ) -> dict[str, Path]:
+        config = _custom_template_config(
+            {"template_snapshot": document.template.snapshot} if document else item
+        )
+        background = document.overlays.background if document else None
+        if background is None and config is not None:
+            background = config.background
+        if background is None or background.kind != "uploaded_image":
+            return {}
+        return {"uploaded_background_path": download_owned_background(
+            repository=self.repository,
+            storage=self.storage,
+            user_id=str(item.get("user_id") or ""),
+            asset_id=str(background.asset_id or ""),
+            work_dir=work_dir,
+        )}
+
     def _render_initial_short(
         self,
         item: dict[str, object],
@@ -3264,6 +3289,7 @@ class BatchWorker:
                 ),
                 title_accent_color=_preset_brand_color(item),
                 metrics_callback=render_metrics.update,
+                **self._background_render_arguments(item, work_dir),
             )
             thumbnail_started_at = time.monotonic()
             self._thumbnail(output_path, thumbnail_path, work_dir)
@@ -3537,6 +3563,7 @@ class BatchWorker:
                 channel_thumbnail_path=channel_thumbnail_path,
                 caption_render_spec=resolved_caption_render_spec,
                 caption_overlay_only=caption_overlay_only,
+                **self._background_render_arguments(item, work_dir, document),
             )
             thumbnail_path = work_dir / "thumbnail.jpg"
             self._thumbnail(output_path, thumbnail_path, work_dir)

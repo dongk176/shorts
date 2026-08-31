@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import re
 import secrets
 from enum import StrEnum
 from math import floor
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from .fallback_comments import select_fallback_comment_texts
 from .title_wrapping import manual_title_lines, wrap_korean_title
@@ -53,7 +61,7 @@ class EditorFontId(StrEnum):
 class TemplateBackground(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    kind: str = Field(pattern=r"^(color|image)$")
+    kind: str = Field(pattern=r"^(color|image|uploaded_image)$")
     color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     asset_id: str | None = Field(default=None, alias="assetId", pattern=r"^[a-z0-9-]+$")
 
@@ -63,6 +71,14 @@ class TemplateBackground(BaseModel):
             raise ValueError("color background requires color")
         if self.kind == "image" and not self.asset_id:
             raise ValueError("image background requires assetId")
+        if self.kind == "uploaded_image":
+            if not self.asset_id or not re.fullmatch(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-"
+                r"[89ab][0-9a-f]{3}-[0-9a-f]{12}", self.asset_id,
+            ):
+                raise ValueError("uploaded background requires a canonical asset UUID")
+            if self.color is not None:
+                raise ValueError("uploaded background cannot contain color")
         return self
 
 
@@ -169,6 +185,37 @@ class TemplateCommentLayer(BaseModel):
     docked_to_video: bool = Field(default=True, alias="dockedToVideo")
 
 
+class TemplateTextPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x: float = Field(ge=-1080, le=1080)
+    y: float = Field(ge=-1920, le=1920)
+
+
+class TemplateTextOverlay(BaseModel):
+    """An editor text layer without timing, stored in an immutable template."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    id: str = Field(pattern=(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-"
+        r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    ))
+    text: str = Field(max_length=120)
+    font_id: EditorFontId = Field(alias="fontId")
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    effect: str = Field(pattern=r"^(none|outline|shadow)$")
+    offset: TemplateTextPoint
+    width: float = Field(ge=1, le=1000)
+    scale: float = Field(ge=0.25, le=3)
+
+    @model_validator(mode="after")
+    def validate_color(self) -> TemplateTextOverlay:
+        if self.color not in EDITOR_PRESET_COLORS:
+            raise ValueError("unsupported template text color")
+        return self
+
+
 class CustomTemplateConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -179,6 +226,40 @@ class CustomTemplateConfig(BaseModel):
     subtitle: TemplateSubtitleLayer
     channel: TemplateTextLayer
     comment: TemplateCommentLayer
+    text_overlays: list[TemplateTextOverlay] | None = Field(
+        default=None, alias="textOverlays", max_length=20,
+    )
+    layer_order: list[str] | None = Field(
+        default=None, alias="layerOrder", min_length=4, max_length=24,
+    )
+
+    @model_serializer(mode="wrap")
+    def preserve_absent_design_fields(self, handler):
+        value = handler(self)
+        for field, alias in (("text_overlays", "textOverlays"), ("layer_order", "layerOrder")):
+            if field not in self.model_fields_set:
+                value.pop(alias, None)
+                value.pop(field, None)
+        return value
+
+    @model_validator(mode="after")
+    def validate_design_layers(self) -> CustomTemplateConfig:
+        if "text_overlays" in self.model_fields_set and self.text_overlays is None:
+            raise ValueError("template textOverlays cannot be null")
+        if "layer_order" in self.model_fields_set and self.layer_order is None:
+            raise ValueError("template layerOrder cannot be null")
+        text_ids = {overlay.id for overlay in self.text_overlays or []}
+        if len(text_ids) != len(self.text_overlays or []):
+            raise ValueError("template text ids must be unique")
+        if self.layer_order is not None:
+            expected = {"video", "title", "comment", "channel"} | {
+                f"text:{text_id}" for text_id in text_ids
+            }
+            if len(self.layer_order) != len(set(self.layer_order)):
+                raise ValueError("template layer order cannot contain duplicates")
+            if set(self.layer_order) != expected:
+                raise ValueError("template layer order does not match text layers")
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -817,7 +898,7 @@ class EditorCanvasPoint(BaseModel):
 class EditorCanvasBackground(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    kind: str = Field(pattern=r"^(color|image)$")
+    kind: str = Field(pattern=r"^(color|image|uploaded_image)$")
     color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     asset_id: str | None = Field(default=None, alias="assetId")
 
@@ -828,11 +909,17 @@ class EditorCanvasBackground(BaseModel):
                 raise ValueError("unsupported editor background color")
             if self.asset_id is not None:
                 raise ValueError("color background cannot contain assetId")
-        else:
+        elif self.kind == "image":
             if self.asset_id not in EDITOR_STOCK_BACKGROUND_IDS:
                 raise ValueError("unsupported editor background asset")
             if self.color is not None:
                 raise ValueError("image background cannot contain color")
+        else:
+            TemplateBackground.model_validate({
+                "kind": self.kind,
+                "assetId": self.asset_id,
+                **({"color": self.color} if self.color is not None else {}),
+            })
         return self
 
 
