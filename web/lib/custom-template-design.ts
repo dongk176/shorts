@@ -52,7 +52,7 @@ export async function assertCustomTemplateDesignRenderRelease(
       p.font_manifest_sha256 as probe_font_manifest_sha256,
       p.artifact_uri,p.manifest_sha256,p.manifest_s3_version_id,
       p.matrix_sha256,p.matrix_s3_version_id,
-      c.details,c.artifact_uri as check_artifact_uri
+      c.details::text as details_json,c.artifact_uri as check_artifact_uri
     from shorts_mvp.editor_releases r
     join shorts_mvp.editor_release_probe_runs p
       on p.finalized_release_id=r.id and p.state='finalized'
@@ -63,7 +63,15 @@ export async function assertCustomTemplateDesignRenderRelease(
     for share of r,p,c
   `;
   const row = rows.length === 1 ? rows[0] : null;
-  const evidence = row?.details?.customTemplateDesign;
+  // Keep attested project-target keys (legacy_project, source_range, ...) exact.
+  // The application's normal row transform also camelizes JSONB object keys.
+  let details;
+  try {
+    details = typeof row?.detailsJson === "string" ? JSON.parse(row.detailsJson) : null;
+  } catch {
+    throw unavailable();
+  }
+  const evidence = details?.customTemplateDesign;
   if (!row || !evidence
     || evidence.version !== 1 || evidence.passed !== true
     || evidence.wrapRevision !== "editor-text-v1"
@@ -74,7 +82,7 @@ export async function assertCustomTemplateDesignRenderRelease(
     || row.probeWorkerImageDigest !== row.workerImageDigest
     || evidence.fontManifestSha256 !== row.fontManifestSha256
     || row.probeFontManifestSha256 !== row.fontManifestSha256
-    || row.details.probeRunId !== row.probeRunId
+    || details.probeRunId !== row.probeRunId
     || row.checkArtifactUri !== row.artifactUri
     || !/^[0-9a-f]{64}$/.test(String(row.manifestSha256))
     || !/^[0-9a-f]{64}$/.test(String(row.matrixSha256))
@@ -90,5 +98,5 @@ export async function assertCustomTemplateDesignRenderRelease(
   const passed = new Set(checks.filter((check) => check.status === "passed").map((check) => check.checkName));
   if (passed.size !== CUSTOM_TEMPLATE_DESIGN_ISOLATED_CHECKS.length
     || CUSTOM_TEMPLATE_DESIGN_ISOLATED_CHECKS.some((check) => !passed.has(check))) throw unavailable();
-  return { compatibleSuccessor: row.details.compatibleSuccessor as unknown };
+  return { compatibleSuccessor: details.compatibleSuccessor as unknown };
 }

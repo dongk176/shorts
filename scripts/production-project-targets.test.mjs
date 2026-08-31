@@ -52,6 +52,15 @@ test("pins all five production lanes and the approved unified rotation states", 
     { schedulingMode: "fifo", current: oldCurrent, previous: oldPrevious },
     { schedulingMode: "fifo", current: v4Current, previous: oldCurrent },
     { schedulingMode: "fifo", current: v4Next, previous: v4Current },
+    // Finalized AWS probe 98ac46d5-66bd-43d5-af3f-596776fc864e:
+    // same v4/font/queue contract, with the current release retained as itself.
+    { schedulingMode: "fifo", current: {
+      ...v4Next,
+      releaseId: "unified-template-subtitles-f32f42ae4467-v4",
+      workerSourceGitSha: "f32f42ae44679eee6dcd084364cb6e31c1bc8a99",
+      imageUri: "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:b46b2974d0710d8b5b4cd1161f805cd9dd1bfd229dfea34fbd6cf4c91e4132fd",
+      jobDefinitionArn: "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-unified-template-subtitles-f32f42ae4467:1",
+    }, previous: v4Next },
   ];
   assert.ok(
     approvedStates.some((approved) => (

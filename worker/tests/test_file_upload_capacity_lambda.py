@@ -15,9 +15,10 @@ class FakeTable:
     def __init__(self) -> None:
         self.items: dict[str, dict] = {}
         self.scan_requests: list[dict] = []
+        self.get_requests: list[dict] = []
 
     def get_item(self, *, Key: dict, ConsistentRead: bool = False) -> dict:
-        del ConsistentRead
+        self.get_requests.append({"Key": dict(Key), "ConsistentRead": ConsistentRead})
         item = self.items.get(Key["id"])
         return {"Item": dict(item)} if item else {}
 
@@ -40,12 +41,14 @@ class FakeEcs:
         self.task_count = 0
         self.protected: set[str] = set()
         self.updates: list[int] = []
+        self.deployments: list[dict] = []
 
     def describe_services(self, **_kwargs: object) -> dict:
         return {"services": [{
             "desiredCount": self.desired,
             "runningCount": self.running,
             "pendingCount": self.pending,
+            "deployments": self.deployments,
         }]}
 
     def list_tasks(self, **_kwargs: object) -> dict:
@@ -186,14 +189,10 @@ def test_fifo_grants_only_real_healthy_free_tasks_and_claim_binds_one_task(
     ecs.protected = {"task-0"}
     elbv2.healthy_ips.add("10.0.0.2")
     second = module.handler({"action": "status", "uploadSessionId": "session-b"}, None)
-    assert second["leaseState"] == "waiting"
-    assert second["readyCount"] == 0
-
-    # ALB needs two failed readiness probes before the claimed target is no
-    # longer routable.  Only then may the next browser start sending bytes.
-    elbv2.healthy_ips.remove("10.0.0.1")
-    second = module.handler({"action": "status", "uploadSessionId": "session-b"}, None)
+    # Liveness stays healthy on the busy task. A different free task can admit
+    # work without waiting for that busy receiver to fail an ALB health check.
     assert second["leaseState"] == "granted"
+    assert second["healthyCount"] == 2
     assert second["readyCount"] == 0
 
 
@@ -223,7 +222,7 @@ def test_claim_rejects_wrong_token(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("count", [5, 20])
-def test_safe_fifo_admission_waits_for_each_busy_target_to_leave_alb(
+def test_safe_fifo_admission_keeps_busy_targets_live_but_never_reclaims_them(
     monkeypatch,
     count: int,
 ) -> None:
@@ -254,12 +253,22 @@ def test_safe_fifo_admission_waits_for_each_busy_target_to_leave_alb(
 
         if index + 1 < count:
             next_session_id = f"session-{index + 1:02d}"
-            blocked = module.handler({
+            next_grant = module.handler({
                 "action": "status",
                 "uploadSessionId": next_session_id,
             }, None)
-            assert blocked["leaseState"] == "waiting"
-            elbv2.healthy_ips.remove(f"10.0.0.{index + 1}")
+            assert next_grant["leaseState"] == "granted"
+            assert next_grant["healthyCount"] == count
+            # ALB first-touch can still reach a busy receiver. Its HTTP lock
+            # returns 409 before reading bytes; even a direct duplicate task
+            # claim cannot consume the next session's one-use capacity grant.
+            rejected = module.handler({
+                "action": "claim",
+                "uploadSessionId": next_session_id,
+                "tokenHash": TOKEN_HASH,
+                "taskArn": f"task-{index}",
+            }, None)
+            assert rejected["leaseState"] == "not_granted"
 
     final = module.handler({
         "action": "status",
@@ -296,7 +305,6 @@ def test_twenty_first_session_waits_until_a_released_task_is_ready_again(
         }, None)
         assert claimed["leaseState"] == "claimed"
         ecs.protected.add(f"task-{index}")
-        elbv2.healthy_ips.remove(f"10.0.0.{index + 1}")
 
     waiting = module.handler({
         "action": "status",
@@ -305,6 +313,8 @@ def test_twenty_first_session_waits_until_a_released_task_is_ready_again(
     assert waiting["leaseState"] == "waiting"
     assert waiting["waitingCount"] == 1
     assert waiting["desiredCount"] == 20
+    assert waiting["healthyCount"] == 20
+    assert waiting["readyCount"] == 0
 
     module.handler({
         "action": "release",
@@ -401,3 +411,333 @@ def test_expired_leases_do_not_hold_capacity_and_protected_tasks_do(monkeypatch)
     assert reconciled["leasedCount"] == 0
     assert reconciled["protectedCount"] == 2
     assert reconciled["desiredCount"] == 2
+
+
+@pytest.mark.parametrize("count", [2, 5, 20])
+def test_terminal_release_keeps_other_claimed_tasks_and_unfinished_cleanup(
+    monkeypatch, count: int,
+) -> None:
+    module, table, ecs, elbv2 = load_capacity_lambda(monkeypatch)
+    monkeypatch.setattr(module.time, "time", lambda: 1_000)
+    ecs.desired = ecs.running = ecs.task_count = count
+    ecs.protected = {f"task-{index}" for index in range(count)}
+    elbv2.healthy_ips = {f"10.0.0.{index + 1}" for index in range(count)}
+    for index in range(count):
+        table.put_item(Item={
+            "id": f"lease#session-{index}",
+            "uploadSessionId": f"session-{index}",
+            "state": "claimed",
+            "taskArn": f"task-{index}",
+            "expiresAtEpoch": Decimal(2_000),
+        })
+
+    # Successful and failed terminal paths both notify release. A released
+    # lease is not evidence that its task has finished local source cleanup.
+    released = module.handler({
+        "action": "release", "uploadSessionId": "session-0",
+    }, None)
+    assert released["desiredCount"] == count
+    assert released["claimedCount"] == count - 1
+    assert ecs.updates == []
+
+    ecs.protected.remove("task-0")
+    finished = module.handler({"action": "reconcile"}, None)
+    assert finished["desiredCount"] == count - 1
+    assert finished["protectedCount"] == count - 1
+    assert ecs.updates == [count - 1]
+    assert {lease["taskArn"] for lease in module._leases(1_000)} == ecs.protected
+
+
+def test_protected_cleanup_and_an_unassigned_upload_need_separate_capacity(monkeypatch) -> None:
+    module, _table, ecs, elbv2 = load_capacity_lambda(monkeypatch)
+    monkeypatch.setattr(module.time, "time", lambda: 1_000)
+    ecs.desired = ecs.running = ecs.task_count = 1
+    ecs.protected = {"task-0"}
+    elbv2.healthy_ips = {"10.0.0.1"}
+
+    waiting = ensure(module, "session-next")
+    assert waiting["leaseState"] == "waiting"
+    assert waiting["desiredCount"] == 2
+
+    ecs.running = ecs.task_count = 2
+    elbv2.healthy_ips.add("10.0.0.2")
+    granted = module.handler({"action": "status", "uploadSessionId": "session-next"}, None)
+    assert granted["leaseState"] == "granted"
+    assert granted["desiredCount"] == 2
+    assert ecs.updates == [2]
+
+
+def test_claimed_task_without_confirmed_protection_defers_scale_in(monkeypatch) -> None:
+    module, table, ecs, _elbv2 = load_capacity_lambda(monkeypatch)
+    monkeypatch.setattr(module.time, "time", lambda: 1_000)
+    ecs.desired = ecs.running = ecs.task_count = 2
+    table.put_item(Item={
+        "id": "lease#still-working", "state": "claimed", "taskArn": "task-1",
+        "expiresAtEpoch": Decimal(2_000),
+    })
+
+    held = module.handler({"action": "reconcile"}, None)
+    assert held["desiredCount"] == 2
+    assert ecs.updates == []
+
+    ecs.protected = {"task-1"}
+    safe = module.handler({"action": "reconcile"}, None)
+    assert safe["desiredCount"] == 1
+    assert ecs.updates == [1]
+
+
+@pytest.mark.parametrize("deployments,pending", [
+    ([{"rolloutState": "IN_PROGRESS"}], 0),
+    ([{"rolloutState": "FAILED"}], 0),
+    ([{"rolloutState": "COMPLETED"}, {"status": "ACTIVE"}], 0),
+    ([], 1),
+])
+def test_service_transition_defers_scale_in(monkeypatch, deployments: list[dict], pending: int):
+    module, _table, ecs, _elbv2 = load_capacity_lambda(monkeypatch)
+    monkeypatch.setattr(module.time, "time", lambda: 1_000)
+    ecs.desired = ecs.running = ecs.task_count = 2
+    ecs.protected = {"task-1"}
+    ecs.deployments = deployments
+    ecs.pending = pending
+
+    held = module.handler({"action": "reconcile"}, None)
+    assert held["desiredCount"] == 2
+    assert ecs.updates == []
+
+    ecs.deployments = [{"rolloutState": "COMPLETED"}]
+    ecs.pending = 0
+    assert module.handler({"action": "reconcile"}, None)["desiredCount"] == 1
+
+
+@pytest.mark.parametrize("action", ["ensure", "status"])
+@pytest.mark.parametrize("operation,response", [
+    ("get_task_protection", {"protectedTasks": [], "failures": [{"reason": "MISSING"}]}),
+    ("get_task_protection", {"protectedTasks": []}),
+    ("describe_tasks", {"tasks": [], "failures": [{"reason": "MISSING"}]}),
+    ("describe_tasks", {"tasks": []}),
+])
+def test_partial_task_inventory_cannot_grant_or_scale_in(monkeypatch, action, operation, response):
+    module, table, ecs, elbv2 = load_capacity_lambda(monkeypatch)
+    monkeypatch.setattr(module.time, "time", lambda: 1_000)
+    ecs.desired = ecs.running = ecs.task_count = 2
+    elbv2.healthy_ips = {"10.0.0.1", "10.0.0.2"}
+    table.put_item(Item={
+        "id": "lease#waiting", "state": "waiting", "uploadSessionId": "waiting",
+        "expiresAtEpoch": Decimal(2_000), "tokenHash": TOKEN_HASH,
+    })
+    monkeypatch.setattr(ecs, operation, lambda **_kwargs: response)
+
+    held = ensure(module, "waiting") if action == "ensure" else module.handler({
+        "action": "status", "uploadSessionId": "waiting",
+    }, None)
+    assert held["leaseState"] == "waiting"
+    assert held["readyCount"] == 0
+    assert held["desiredCount"] == 2
+    assert table.items["lease#waiting"]["state"] == "waiting"
+    assert ecs.updates == []
+
+
+def test_missing_listed_tasks_cannot_erase_running_capacity(monkeypatch) -> None:
+    module, _table, ecs, _elbv2 = load_capacity_lambda(monkeypatch)
+    monkeypatch.setattr(module.time, "time", lambda: 1_000)
+    ecs.desired = ecs.running = 2
+    ecs.task_count = 0
+
+    held = module.handler({"action": "reconcile"}, None)
+    assert held["desiredCount"] == 2
+    assert held["readyCount"] == 0
+    assert ecs.updates == []
+
+
+def test_protected_task_without_an_ip_still_holds_cleanup_capacity(monkeypatch) -> None:
+    module, _table, ecs, _elbv2 = load_capacity_lambda(monkeypatch)
+    monkeypatch.setattr(module.time, "time", lambda: 1_000)
+    ecs.desired = ecs.running = ecs.task_count = 2
+    ecs.protected = {"task-0", "task-1"}
+    monkeypatch.setattr(ecs, "describe_tasks", lambda **_kwargs: {
+        "tasks": [{"taskArn": "task-0"}, {"taskArn": "task-1"}],
+    })
+
+    held = module.handler({"action": "reconcile"}, None)
+    assert held["protectedCount"] == 2
+    assert held["desiredCount"] == 2
+    assert held["readyCount"] == 0
+    assert ecs.updates == []
+
+
+@pytest.mark.parametrize("busy_state", ["claimed", "protected"])
+def test_either_a_claim_or_protection_removes_live_tasks_from_free_slots(
+    monkeypatch, busy_state: str,
+) -> None:
+    module, table, ecs, elbv2 = load_capacity_lambda(monkeypatch)
+    monkeypatch.setattr(module.time, "time", lambda: 1_000)
+    ecs.desired = ecs.running = ecs.task_count = 1
+    elbv2.healthy_ips = {"10.0.0.1"}
+    if busy_state == "protected":
+        ecs.protected = {"task-0"}
+    else:
+        table.put_item(Item={
+            "id": "lease#busy", "state": "claimed", "taskArn": "task-0",
+            "expiresAtEpoch": Decimal(2_000),
+        })
+
+    waiting = ensure(module, "next")
+    assert waiting["healthyCount"] == 1
+    assert waiting["readyCount"] == 0
+    assert waiting["leaseState"] == "waiting"
+
+
+@pytest.mark.parametrize("latest_change", [
+    {"desiredCount": 3},
+    {"taskDefinition": "new-receiver"},
+    {"runningCount": 3},
+    {"deployments": [{"rolloutState": "IN_PROGRESS"}]},
+])
+def test_service_change_before_update_cannot_shrink_from_a_stale_snapshot(
+    monkeypatch, latest_change: dict,
+) -> None:
+    module, _table, ecs, _elbv2 = load_capacity_lambda(monkeypatch)
+    monkeypatch.setattr(module.time, "time", lambda: 1_000)
+    ecs.desired = ecs.running = ecs.task_count = 2
+    ecs.protected = {"task-1"}
+    initial = ecs.describe_services()["services"][0]
+    states = iter([initial, {**initial, **latest_change}])
+    monkeypatch.setattr(ecs, "describe_services", lambda **_kwargs: {"services": [next(states)]})
+
+    held = module.handler({"action": "reconcile"}, None)
+    assert held["desiredCount"] == latest_change.get("desiredCount", 2)
+    assert ecs.updates == []
+
+
+OWNER_SESSION = "12345678-1234-4234-8234-123456789abc"
+OWNER_TASK = "arn:aws:ecs:ap-northeast-2:123456789012:task/test-cluster/owner-task"
+
+
+def cleanup_owner_fixture(monkeypatch):
+    module, table, ecs, _elbv2 = load_capacity_lambda(monkeypatch)
+    monkeypatch.setattr(module.time, "time", lambda: 1_000)
+    table.put_item(Item={
+        "id": f"lease#{OWNER_SESSION}", "uploadSessionId": OWNER_SESSION,
+        "state": "claimed", "taskArn": OWNER_TASK, "expiresAtEpoch": Decimal(2_000),
+    })
+    response = {"tasks": [{
+        "taskArn": OWNER_TASK,
+        "clusterArn": "arn:aws:ecs:ap-northeast-2:123456789012:cluster/test-cluster",
+        "group": "service:test-service", "lastStatus": "STOPPED",
+    }]}
+    describe_calls = []
+
+    def describe(**kwargs):
+        describe_calls.append(kwargs)
+        return response
+
+    monkeypatch.setattr(ecs, "describe_tasks", describe)
+    return module, table, ecs, response, describe_calls
+
+
+def test_cleanup_ownership_only_proves_exact_stopped_owner_without_any_writes(monkeypatch):
+    module, table, ecs, _response, calls = cleanup_owner_fixture(monkeypatch)
+    before = {key: dict(item) for key, item in table.items.items()}
+    result = module.handler({"action": "cleanup_ownership", "uploadSessionId": OWNER_SESSION}, None)
+
+    assert result == {
+        "action": "cleanup_ownership", "uploadSessionId": OWNER_SESSION,
+        "ownerStopped": True, "taskArn": OWNER_TASK,
+    }
+    assert calls == [{"cluster": "test-cluster", "tasks": [OWNER_TASK]}]
+    assert table.get_requests == [
+        {"Key": {"id": f"lease#{OWNER_SESSION}"}, "ConsistentRead": True},
+        {"Key": {"id": f"lease#{OWNER_SESSION}"}, "ConsistentRead": True},
+    ]
+    assert table.items == before
+    assert table.scan_requests == []
+    assert ecs.updates == []
+
+
+@pytest.mark.parametrize(
+    "status", ["RUNNING", "PENDING", "STOPPING", "DEACTIVATING", "UNKNOWN", None]
+)
+def test_cleanup_ownership_never_reclaims_live_or_ambiguous_owner(monkeypatch, status):
+    module, table, ecs, response, _calls = cleanup_owner_fixture(monkeypatch)
+    response["tasks"][0]["lastStatus"] = status
+    result = module.handler({"action": "cleanup_ownership", "uploadSessionId": OWNER_SESSION}, None)
+    assert result["ownerStopped"] is False
+    assert "taskArn" not in result
+    assert len(table.get_requests) == 1
+    assert ecs.updates == []
+
+
+@pytest.mark.parametrize("change", [
+    {"state": "waiting"}, {"state": "granted"}, {"state": "released"},
+    {"expiresAtEpoch": Decimal(999)}, {"expiresAtEpoch": Decimal(1_000)},
+    {"uploadSessionId": "different-session"}, {"taskArn": ""},
+    {"taskArn": OWNER_TASK.replace("test-cluster", "other-cluster")},
+])
+def test_cleanup_ownership_requires_unexpired_claimed_owner_binding(monkeypatch, change):
+    module, table, ecs, _response, calls = cleanup_owner_fixture(monkeypatch)
+    table.items[f"lease#{OWNER_SESSION}"].update(change)
+    result = module.handler({"action": "cleanup_ownership", "uploadSessionId": OWNER_SESSION}, None)
+    assert result["ownerStopped"] is False
+    assert calls == []
+    assert ecs.updates == []
+
+
+@pytest.mark.parametrize(
+    "case", ["missing-lease", "missing-task", "failure", "owner", "cluster", "service"]
+)
+def test_cleanup_ownership_fails_closed_on_missing_or_different_evidence(monkeypatch, case):
+    module, table, ecs, response, _calls = cleanup_owner_fixture(monkeypatch)
+    if case == "missing-lease":
+        table.items.clear()
+    elif case == "missing-task":
+        response["tasks"] = []
+    elif case == "failure":
+        response["failures"] = [{"reason": "MISSING"}]
+    elif case == "owner":
+        response["tasks"][0]["taskArn"] = OWNER_TASK + "-other"
+    elif case == "cluster":
+        response["tasks"][0]["clusterArn"] = "another-cluster"
+    else:
+        response["tasks"][0]["group"] = "service:other-service"
+    result = module.handler({"action": "cleanup_ownership", "uploadSessionId": OWNER_SESSION}, None)
+    assert result["ownerStopped"] is False
+    assert table.scan_requests == []
+    assert ecs.updates == []
+
+
+@pytest.mark.parametrize("mutation", ["owner", "released", "expired", "missing", "read-error"])
+def test_cleanup_ownership_rechecks_binding_after_stopped_observation(monkeypatch, mutation):
+    module, table, ecs, response, _calls = cleanup_owner_fixture(monkeypatch)
+
+    def describe(**_kwargs):
+        if mutation == "read-error":
+            raise RuntimeError("read unavailable")
+        if mutation == "missing":
+            table.items.clear()
+        elif mutation == "owner":
+            table.items[f"lease#{OWNER_SESSION}"]["taskArn"] += "-new"
+        elif mutation == "released":
+            table.items[f"lease#{OWNER_SESSION}"]["state"] = "released"
+        else:
+            monkeypatch.setattr(module.time, "time", lambda: 2_001)
+        return response
+
+    monkeypatch.setattr(ecs, "describe_tasks", describe)
+    result = module.handler({"action": "cleanup_ownership", "uploadSessionId": OWNER_SESSION}, None)
+    assert result["ownerStopped"] is False
+    assert ecs.updates == []
+
+
+def test_cleanup_owner_guard_filters_a_candidate_batch_without_reconciliation(monkeypatch):
+    module, table, ecs, _response, calls = cleanup_owner_fixture(monkeypatch)
+    missing = "12345678-1234-4234-8234-123456789abd"
+    before = {key: dict(item) for key, item in table.items.items()}
+    verified = [session_id for session_id in (missing, OWNER_SESSION, "not-a-uuid")
+                if module.handler({
+                    "action": "cleanup_ownership", "uploadSessionId": session_id,
+                }, None)["ownerStopped"]]
+    assert verified == [OWNER_SESSION]
+    assert len(calls) == 1
+    assert table.items == before
+    assert table.scan_requests == []
+    assert ecs.updates == []

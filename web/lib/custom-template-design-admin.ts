@@ -23,7 +23,7 @@ export type CustomTemplateDesignAdminState = {
   readinessMessage?: string;
 };
 
-/** Only the web's exact deployed targets may expose a new renderer contract. */
+/** Only enabled intake paths may expose a new renderer contract. */
 export async function assertCustomTemplateDesignRuntimeReady(tx: TransactionSql, publicMode: boolean) {
   const unavailable = () => new HttpError(409,
     "현재 웹·영상 워커·파일 업로드 수신기의 배경·텍스트 검증과 연결 확인이 필요합니다.",
@@ -37,9 +37,18 @@ export async function assertCustomTemplateDesignRuntimeReady(tx: TransactionSql,
     order by flag_key for share
   `;
   const uploadMode = new Map(uploadFlags.map((row) => [String(row.flagKey), row.enabled === true]));
-  if (uploadMode.size !== 3 || uploadMode.get(FILE_UPLOAD_FLAG_KEY) !== true
+  const uploadStopped = uploadMode.get(FILE_UPLOAD_FLAG_KEY) === false
+    && uploadMode.get(FILE_UPLOAD_PUBLIC_FLAG_KEY) === false;
+  if (uploadMode.size !== 3 || uploadFlags.length !== 3
+    || uploadFlags.some((row) => typeof row.enabled !== "boolean")
     || uploadMode.get(FILE_UPLOAD_EMERGENCY_STOP_FLAG_KEY) !== false
-    || (publicMode && uploadMode.get(FILE_UPLOAD_PUBLIC_FLAG_KEY) !== true)) throw unavailable();
+    || (!uploadStopped && uploadMode.get(FILE_UPLOAD_FLAG_KEY) !== true)) throw unavailable();
+  if (publicMode && uploadMode.get(FILE_UPLOAD_PUBLIC_FLAG_KEY) !== true) {
+    if (uploadStopped) throw new HttpError(409,
+      "파일 업로드는 중지 상태입니다. 배경·텍스트는 관리자만 테스트할 수 있으며, 일반 공개는 업로드 검증을 마친 뒤 가능합니다.",
+      "CUSTOM_TEMPLATE_DESIGN_RUNTIME_NOT_READY");
+    throw unavailable();
+  }
   const states = await tx`
     select s.stable_release_id,s.candidate_release_id,s.canary_enabled,s.public_enabled,
       s.render_v4_target_successor,
@@ -89,6 +98,11 @@ export async function assertCustomTemplateDesignRuntimeReady(tx: TransactionSql,
     && target.v4Capability?.renderSpecVersion === 4 && target.v4Capability.captionRenderSpecVersion === 4
     && row.fontManifestSha256 === target.v4Capability.fontManifestSha256
   )))) throw unavailable();
+  // Explicitly stopped video uploads must stay stopped, including for admins.
+  // Administrators can test design on the verified project/editor runtime;
+  // this does not attest the receiver, grant upload admission, or allow PUBLIC.
+  // Re-enabling uploads still uses their independent exact-release checks.
+  if (uploadStopped) return { projectReleaseId, uploadReleaseId: null };
   const upload = await resolveFileUploadInitialRenderRelease(tx, {
     targetKey: "legacy_project",
     access: { adminEnabled: !publicMode, publicEnabled: uploadMode.get(FILE_UPLOAD_PUBLIC_FLAG_KEY) === true },
@@ -104,8 +118,11 @@ export async function assertCustomTemplateDesignRuntimeReady(tx: TransactionSql,
  */
 export async function assertCustomTemplateDesignCanaryResults(
   tx: TransactionSql,
-  releases: { projectReleaseId: string; uploadReleaseId: string },
+  releases: { projectReleaseId: string; uploadReleaseId: string | null },
 ) {
+  if (!releases.uploadReleaseId) throw new HttpError(409,
+    "파일 업로드 검증을 완료하기 전에는 일반 공개할 수 없습니다.",
+    "CUSTOM_TEMPLATE_DESIGN_CANARY_REQUIRED");
   const rows = await tx`
     select distinct j.source_type
     from shorts_mvp.video_jobs j

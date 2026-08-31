@@ -37,6 +37,11 @@ function verifiedRow() {
   };
 }
 
+function databaseRow(row: Record<string, unknown> = verifiedRow()) {
+  const { details, ...columns } = row;
+  return { ...columns, detailsJson: JSON.stringify(details) };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.lockAccess.mockResolvedValue({ enabled: false });
@@ -81,8 +86,30 @@ describe("design save admission", () => {
 });
 
 describe("immutable design renderer evidence", () => {
+  it("preserves exact attested lane keys without changing the shared database transform", async () => {
+    const row = databaseRow();
+    const compatibleSuccessor = { projectTargets: {
+      legacy_project: { contractSha256: "f".repeat(64) },
+      source_range: { contractSha256: "e".repeat(64) },
+    } };
+    row.detailsJson = JSON.stringify({ ...JSON.parse(row.detailsJson), compatibleSuccessor });
+    const db = vi.fn().mockResolvedValueOnce([row]).mockResolvedValueOnce(
+      CUSTOM_TEMPLATE_DESIGN_ISOLATED_CHECKS.map((checkName) => ({ checkName, status: "passed" })),
+    );
+    await expect(assertCustomTemplateDesignRenderRelease(db as never, RELEASE))
+      .resolves.toEqual({ compatibleSuccessor });
+    expect(db.mock.calls[0][0].join("?")).toContain("c.details::text as details_json");
+  });
+
+  it.each([null, undefined, "not JSON", "null", "[]"])(
+    "rejects missing or malformed serialized evidence: %s", async (detailsJson) => {
+      const db = vi.fn().mockResolvedValue([{ ...databaseRow(), detailsJson }]);
+      await expect(assertCustomTemplateDesignRenderRelease(db as never, RELEASE))
+        .rejects.toMatchObject({ status: 503, code: "CUSTOM_TEMPLATE_DESIGN_RENDER_UNAVAILABLE" });
+    },
+  );
   it("requires a finalized exact-identity probe with versioned artifacts", async () => {
-    const db = vi.fn().mockResolvedValueOnce([verifiedRow()]).mockResolvedValueOnce(
+    const db = vi.fn().mockResolvedValueOnce([databaseRow(verifiedRow())]).mockResolvedValueOnce(
       CUSTOM_TEMPLATE_DESIGN_ISOLATED_CHECKS.map((checkName) => ({ checkName, status: "passed" })),
     );
     await expect(assertCustomTemplateDesignRenderRelease(db as never, RELEASE)).resolves.toEqual({ compatibleSuccessor: undefined });
@@ -91,7 +118,7 @@ describe("immutable design renderer evidence", () => {
     expect(sql).toContain("for share of r,p,c");
   });
   it.each(CUSTOM_TEMPLATE_DESIGN_ISOLATED_CHECKS)("does not admit a renderer after isolated check %s fails", async (failed) => {
-    const db = vi.fn().mockResolvedValueOnce([verifiedRow()]).mockResolvedValueOnce(
+    const db = vi.fn().mockResolvedValueOnce([databaseRow(verifiedRow())]).mockResolvedValueOnce(
       CUSTOM_TEMPLATE_DESIGN_ISOLATED_CHECKS.map((checkName) => ({ checkName, status: checkName === failed ? "failed" : "passed" })),
     );
     await expect(assertCustomTemplateDesignRenderRelease(db as never, RELEASE)).rejects.toMatchObject({ status: 503 });
@@ -111,7 +138,7 @@ describe("immutable design renderer evidence", () => {
     { checkArtifactUri: "s3://other/probe/manifest.json" },
     { details: { probeRunId: ASSET } },
   ])("rejects incomplete or conflicting proof %j", async (patch) => {
-    const db = vi.fn().mockResolvedValue([{ ...verifiedRow(), ...patch }]);
+    const db = vi.fn().mockResolvedValue([databaseRow({ ...verifiedRow(), ...patch })]);
     await expect(assertCustomTemplateDesignRenderRelease(db as never, RELEASE)).rejects.toMatchObject({ status: 503 });
   });
   it.each([
@@ -121,7 +148,7 @@ describe("immutable design renderer evidence", () => {
   ])("rejects unattested feature identity %j", async (patch) => {
     const row = verifiedRow();
     Object.assign(row.details.customTemplateDesign, patch);
-    await expect(assertCustomTemplateDesignRenderRelease(vi.fn().mockResolvedValue([row]) as never, RELEASE))
+    await expect(assertCustomTemplateDesignRenderRelease(vi.fn().mockResolvedValue([databaseRow(row)]) as never, RELEASE))
       .rejects.toMatchObject({ status: 503 });
   });
 });

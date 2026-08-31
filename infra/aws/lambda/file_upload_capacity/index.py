@@ -4,6 +4,7 @@ import os
 import time
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 import boto3
 
@@ -47,27 +48,43 @@ def _task_arns() -> list[str]:
     ).get("taskArns", []))
 
 
-def _task_inventory() -> dict[str, dict[str, Any]]:
+def _task_inventory() -> tuple[dict[str, dict[str, Any]], bool]:
     task_arns = _task_arns()
     if not task_arns:
-        return {}
+        return {}, True
+    complete = True
     protection: dict[str, bool] = {}
     for offset in range(0, len(task_arns), 10):
+        requested = task_arns[offset : offset + 10]
         response = _ecs.get_task_protection(
             cluster=_cluster,
-            tasks=task_arns[offset : offset + 10],
+            tasks=requested,
         )
-        protection.update({
+        returned = {
             str(item.get("taskArn") or ""): item.get("protectionEnabled") is True
             for item in response.get("protectedTasks", [])
-        })
+            if isinstance(item.get("protectionEnabled"), bool)
+        }
+        if response.get("failures") or set(returned) != set(requested):
+            complete = False
+        protection.update(returned)
     described: list[dict[str, Any]] = []
     for offset in range(0, len(task_arns), 100):
-        described.extend(_ecs.describe_tasks(
+        requested = task_arns[offset : offset + 100]
+        response = _ecs.describe_tasks(
             cluster=_cluster,
-            tasks=task_arns[offset : offset + 100],
-        ).get("tasks", []))
-    inventory: dict[str, dict[str, Any]] = {}
+            tasks=requested,
+        )
+        tasks = response.get("tasks", [])
+        if response.get("failures") or {
+            str(task.get("taskArn") or "") for task in tasks
+        } != set(requested):
+            complete = False
+        described.extend(tasks)
+    inventory: dict[str, dict[str, Any]] = {
+        task_arn: {"privateIp": "", "protected": protection.get(task_arn, False)}
+        for task_arn in task_arns
+    }
     for task in described:
         task_arn = str(task.get("taskArn") or "")
         private_ip = ""
@@ -75,12 +92,12 @@ def _task_inventory() -> dict[str, dict[str, Any]]:
             for detail in attachment.get("details", []):
                 if detail.get("name") == "privateIPv4Address":
                     private_ip = str(detail.get("value") or "")
-        if task_arn and private_ip:
-            inventory[task_arn] = {
-                "privateIp": private_ip,
-                "protected": protection.get(task_arn, False),
-            }
-    return inventory
+        if task_arn in inventory:
+            inventory[task_arn]["privateIp"] = private_ip
+    # Missing protection is unknown, not evidence of an idle task. Preserve
+    # known capacity and let the waiting browser poll again instead of failing
+    # its upload session on an eventually consistent AWS inventory response.
+    return inventory, complete
 
 
 def _healthy_target_ips() -> set[str]:
@@ -89,6 +106,7 @@ def _healthy_target_ips() -> set[str]:
         str(item.get("Target", {}).get("Id") or "")
         for item in response.get("TargetHealthDescriptions", [])
         if item.get("TargetHealth", {}).get("State") == "healthy"
+        and item.get("Target", {}).get("Id")
     }
 
 
@@ -175,16 +193,38 @@ def _delete_lease(upload_session_id: str) -> None:
         _table.delete_item(Key={"id": _lease_key(upload_session_id)})
 
 
+def _service_transitioning(service: dict[str, Any]) -> bool:
+    deployments = service.get("deployments", [])
+    return (
+        int(service.get("pendingCount", 0)) > 0
+        or len(deployments) > 1
+        or any(item.get("rolloutState") in {"IN_PROGRESS", "FAILED"} for item in deployments)
+    )
+
+
 def _update(desired: int, service: dict[str, Any] | None = None) -> dict[str, Any]:
     service = service or _service_state()
     current = int(service.get("desiredCount", 0))
     desired = _bounded(desired)
     if desired != current:
-        _ecs.update_service(
-            cluster=_cluster,
-            service=_service,
-            desiredCount=desired,
-        )
+        latest = _service_state()
+        latest_current = int(latest.get("desiredCount", 0))
+        # Do not turn a stale reconciliation into scale-in during a deployment
+        # or while another controller is changing the service's capacity.
+        if desired < latest_current and (
+            latest_current != current
+            or latest.get("taskDefinition") != service.get("taskDefinition")
+            or latest.get("runningCount") != service.get("runningCount")
+            or _service_transitioning(latest)
+        ):
+            desired = latest_current
+        service = latest
+        if desired != latest_current:
+            _ecs.update_service(
+                cluster=_cluster,
+                service=_service,
+                desiredCount=desired,
+            )
     return {
         "desiredCount": desired,
         "runningCount": int(service.get("runningCount", 0)),
@@ -195,7 +235,7 @@ def _update(desired: int, service: dict[str, Any] | None = None) -> dict[str, An
 def _reconcile(now: int, *, grant_waiting: bool = False) -> dict[str, Any]:
     leases = _leases(now)
     service = _service_state()
-    inventory = _task_inventory()
+    inventory, inventory_complete = _task_inventory()
     healthy_ips = _healthy_target_ips()
     claimed_task_arns = {
         str(item.get("taskArn") or "")
@@ -215,14 +255,14 @@ def _reconcile(now: int, *, grant_waiting: bool = False) -> dict[str, Any]:
     ready_task_count = len(
         healthy_task_arns - claimed_task_arns - protected_task_arns
     )
-    # A grant is not bound to one ALB target until the receiver claims it.
-    # Keep admission single-flight and wait until every newly-busy target has
-    # actually left the ALB healthy set.  Otherwise a small first upload can
-    # finish its HTTP response before the two failed /readyz probes complete,
-    # allowing the next PUT to be routed back to that busy receiver.
-    busy_healthy_task_arns = healthy_task_arns & (
-        claimed_task_arns | protected_task_arns
+    inventory_complete = (
+        inventory_complete and len(inventory) >= int(service.get("runningCount", 0))
     )
+    # ALB /livez stays healthy while a receiver is busy. A request may first
+    # reach that task, which returns 409 before reading bytes or claiming the
+    # bearer. The browser retries only while the session remains unclaimed.
+    # Admission is single-flight and requires a known healthy, unclaimed slot;
+    # it does not promise that the ALB's first HTTP target is that idle task.
     granted = [item for item in leases if item.get("state") == "granted"]
     waiting = sorted(
         (item for item in leases if item.get("state") == "waiting"),
@@ -236,7 +276,7 @@ def _reconcile(now: int, *, grant_waiting: bool = False) -> dict[str, Any]:
         and bool(waiting)
         and ready_task_count > 0
         and not granted
-        and not busy_healthy_task_arns
+        and inventory_complete
     )
     for item in waiting[:grant_count]:
         grant_expires = now + _upload_window_seconds
@@ -254,13 +294,28 @@ def _reconcile(now: int, *, grant_waiting: bool = False) -> dict[str, Any]:
     admission_ready_count = int(
         ready_task_count > 0
         and not granted
-        and not busy_healthy_task_arns
+        and inventory_complete
+    )
+    # A task can still be protected for cleanup after its lease expires or is
+    # released. Count those tasks separately from unassigned upload leases.
+    unassigned_count = sum(
+        1 for item in leases
+        if item.get("state") != "claimed" or not item.get("taskArn")
     )
     desired = max(
-        min(leased_count, _maximum),
+        min(unassigned_count + len(claimed_task_arns | protected_task_arns), _maximum),
         protected_count,
         1 if _warm_until() > now else 0,
     )
+    current = int(service.get("desiredCount", 0))
+    if desired < current and (
+        claimed_task_arns - protected_task_arns
+        or not inventory_complete
+        or _service_transitioning(service)
+    ):
+        # A claimed but not observably protected task must never become the
+        # scheduler's arbitrary scale-in victim when a different task finishes.
+        desired = current
     return {
         "leasedCount": leased_count,
         "waitingCount": len(waiting),
@@ -268,8 +323,8 @@ def _reconcile(now: int, *, grant_waiting: bool = False) -> dict[str, Any]:
         "claimedCount": sum(1 for item in leases if item.get("state") == "claimed"),
         "protectedCount": protected_count,
         "healthyCount": len(healthy_task_arns),
-        # This is admission capacity, not merely the number of physically
-        # healthy idle targets.  During the ALB drain fence it must stay zero.
+        # This is single-flight admission capacity, not the healthy-target
+        # count: a live target may still be claimed, protected, or unknown.
         "readyCount": admission_ready_count,
         "startingCount": max(
             0,
@@ -295,10 +350,65 @@ def _lease_status(upload_session_id: str, now: int) -> dict[str, Any]:
     return result
 
 
+def _cleanup_ownership(upload_session_id: str, now: int) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "action": "cleanup_ownership",
+        "uploadSessionId": upload_session_id,
+        "ownerStopped": False,
+    }
+    try:
+        if str(UUID(upload_session_id)) != upload_session_id:
+            return result
+        key = {"id": _lease_key(upload_session_id)}
+        lease = _table.get_item(Key=key, ConsistentRead=True).get("Item", {})
+        if (
+            lease.get("uploadSessionId") != upload_session_id
+            or lease.get("state") != "claimed"
+            or int(lease.get("expiresAtEpoch", 0)) <= now
+        ):
+            return result
+        task_arn = str(lease.get("taskArn") or "")
+        owner_prefix, separator, task_resource = task_arn.partition(":task/")
+        cluster_name = _cluster.rsplit("/", 1)[-1]
+        if (
+            not separator
+            or not owner_prefix.startswith("arn:aws:ecs:")
+            or not task_resource.startswith(f"{cluster_name}/")
+            or len(task_resource.split("/")) != 2
+        ):
+            return result
+        response = _ecs.describe_tasks(cluster=_cluster, tasks=[task_arn])
+        tasks = response.get("tasks", [])
+        if response.get("failures") or len(tasks) != 1:
+            return result
+        task = tasks[0]
+        if (
+            task.get("taskArn") != task_arn
+            or task.get("clusterArn") != f"{owner_prefix}:cluster/{cluster_name}"
+            or task.get("group") != f"service:{_service.rsplit('/', 1)[-1]}"
+            or task.get("lastStatus") != "STOPPED"
+        ):
+            return result
+        # A stale DB heartbeat or expired/missing lease is never proof that a
+        # different receiver has stopped. Re-read the exact owner binding after
+        # DescribeTasks before permitting the repository's conditional reclaim.
+        current = _table.get_item(Key=key, ConsistentRead=True).get("Item", {})
+        if current != lease or int(current.get("expiresAtEpoch", 0)) <= int(time.time()):
+            return result
+        result.update(ownerStopped=True, taskArn=task_arn)
+    except Exception:  # noqa: BLE001 - uncertain ownership must always fail closed
+        # This guard is read-only and fail-closed, including transient AWS reads.
+        # Do not log bearer/lease contents or turn uncertainty into reclamation.
+        return result
+    return result
+
+
 def handler(event: dict[str, Any] | None, _context: Any) -> dict[str, Any]:
     event = event or {}
     action = str(event.get("action") or "reconcile")
     now = int(time.time())
+    if action == "cleanup_ownership":
+        return _cleanup_ownership(str(event.get("uploadSessionId") or ""), now)
     if action == "ensure":
         upload_session_id = str(event.get("uploadSessionId") or "")
         expires_at_epoch = int(event.get("expiresAtEpoch") or 0)

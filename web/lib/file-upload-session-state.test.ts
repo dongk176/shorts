@@ -7,7 +7,12 @@ describe("file upload public session state", () => {
     ["claimed", "uploading", false, "uploading"],
     ["claimed", "queued", true, "received"],
     ["claimed", "transcribing", true, "processing"],
+    ["claimed", "completed", true, "processing"],
+    ["claimed", "failed", true, "processing"],
     ["completed", "completed", true, "completed"],
+    ["failed", "completed", true, "completed"],
+    ["expired", "completed", true, "completed"],
+    ["cancelled", "completed", true, "completed"],
     ["failed", "failed", false, "failed"],
     ["cancelled", "cancelled", false, "cancelled"],
     ["expired", "expired", false, "expired"],
@@ -22,5 +27,14 @@ describe("file upload public session state", () => {
       jobStatus,
       received,
     })).toBe(expected);
+  });
+
+  it("does not infer receiver completion from a project outcome alone", () => {
+    expect(fileUploadSessionPublicStatus({
+      receiverStatus: "claimed", jobStatus: "completed", received: true,
+    })).toBe("processing");
+    expect(fileUploadSessionPublicStatus({
+      receiverStatus: "unrecognized", jobStatus: "completed", received: true,
+    })).toBe("failed");
   });
 });

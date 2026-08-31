@@ -310,7 +310,9 @@ describe("isolated file upload canary stack", () => {
       }]),
     });
     template.hasResourceProperties("AWS::ElasticLoadBalancingV2::TargetGroup", {
-      HealthCheckPath: "/readyz",
+      // Busy receivers remain live; admission is protected by the lease/lock,
+      // not by making the ECS-managed ALB target deliberately unhealthy.
+      HealthCheckPath: "/livez",
       HealthCheckIntervalSeconds: 5,
       HealthCheckTimeoutSeconds: 2,
       HealthyThresholdCount: 2,

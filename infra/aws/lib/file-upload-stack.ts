@@ -451,11 +451,11 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
       minHealthyPercent: 0,
       maxHealthyPercent: 100,
       circuitBreaker: { rollback: true },
-      // The ALB intentionally removes a busy one-concurrency receiver from
-      // routing by probing /readyz. ECS must not interpret that readiness
-      // signal as a dead process and replace a task while its protected upload
-      // and render pipeline is still running. /livez remains the container
-      // liveness check; every task is expected to finish well inside 6 hours.
+      // Both ALB and container probes use liveness, not /readyz: busy work is
+      // not an unhealthy process, even after the startup grace period expires.
+      // Capacity admission excludes claimed/protected tasks. If the ALB first
+      // selects a busy task, it rejects the request before body/claim with 409;
+      // the browser retries only while the one-use session is still ready.
       healthCheckGracePeriod: cdk.Duration.hours(6),
       enableExecuteCommand: false,
     });
@@ -478,7 +478,7 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
         enabled: true,
         healthyHttpCodes: "200",
         interval: cdk.Duration.seconds(5),
-        path: "/readyz",
+        path: "/livez",
         timeout: cdk.Duration.seconds(2),
         healthyThresholdCount: 2,
         unhealthyThresholdCount: 2,

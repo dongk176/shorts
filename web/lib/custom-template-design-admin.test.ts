@@ -159,6 +159,52 @@ describe("custom template design runtime readiness", () => {
     await expect(assertCustomTemplateDesignRuntimeReady(tx as never, true)).rejects.toMatchObject({ status: 409 });
   });
 
+  it("allows administrator design testing while video upload remains explicitly stopped", async () => {
+    const data = fixture();
+    data.uploadFlags[0].enabled = false;
+    data.uploadFlags[1].enabled = false;
+    const before = structuredClone(data.uploadFlags);
+    const { tx, statements } = database(data);
+    await expect(assertCustomTemplateDesignRuntimeReady(tx as never, false)).resolves.toEqual({
+      projectReleaseId: STABLE, uploadReleaseId: null,
+    });
+    expect(mocks.assertRelease.mock.calls.map((call) => call[1])).toEqual([STABLE]);
+    expect(mocks.resolveUpload).not.toHaveBeenCalled();
+    expect(data.uploadFlags).toEqual(before);
+    expect(statements.every(({ sql }) => !/\b(insert|update|delete)\b/i.test(sql))).toBe(true);
+    await expect(assertCustomTemplateDesignRuntimeReady(tx as never, true)).rejects.toMatchObject({
+      status: 409, code: "CUSTOM_TEMPLATE_DESIGN_RUNTIME_NOT_READY",
+    });
+  });
+
+  it("still requires the exact five design-capable targets when uploads are stopped", async () => {
+    const data = fixture();
+    data.uploadFlags[0].enabled = false;
+    data.uploadFlags[1].enabled = false;
+    data.registered[0].workerImageDigest = `sha256:${"d".repeat(64)}`;
+    await expect(assertCustomTemplateDesignRuntimeReady(database(data).tx as never, false))
+      .rejects.toMatchObject({ status: 409 });
+    expect(mocks.resolveUpload).not.toHaveBeenCalled();
+  });
+
+  it("does not interpret conflicting or missing upload flags as intentionally stopped", async () => {
+    for (const missingPublicFlag of [false, true]) {
+      const data = fixture();
+      data.uploadFlags[0].enabled = false;
+      if (missingPublicFlag) data.uploadFlags.splice(1, 1);
+      await expect(assertCustomTemplateDesignRuntimeReady(database(data).tx as never, false))
+        .rejects.toMatchObject({ status: 409 });
+    }
+  });
+
+  it.each([null, undefined, "false"])("does not interpret an invalid stopped flag as false: %s", async (enabled) => {
+    const data = fixture();
+    data.uploadFlags[0].enabled = enabled;
+    data.uploadFlags[1].enabled = false;
+    await expect(assertCustomTemplateDesignRuntimeReady(database(data).tx as never, false))
+      .rejects.toMatchObject({ status: 409 });
+  });
+
   it.each([
     { version: 1, phase: "fenced" },
     { version: 2, phase: "active", activeReleaseId: STABLE },
@@ -267,6 +313,14 @@ describe("custom template design runtime readiness", () => {
 });
 
 describe("administrator canary generation and re-edit evidence", () => {
+  it("never treats stopped-upload administrator readiness as public canary evidence", async () => {
+    const { tx } = database();
+    await expect(assertCustomTemplateDesignCanaryResults(tx as never, {
+      projectReleaseId: STABLE, uploadReleaseId: null,
+    })).rejects.toMatchObject({ status: 409, code: "CUSTOM_TEMPLATE_DESIGN_CANARY_REQUIRED" });
+    expect(tx).not.toHaveBeenCalled();
+  });
+
   it("requires both actual source paths on the exact tested release and latest ready output", async () => {
     const { tx, statements } = database();
     await expect(assertCustomTemplateDesignCanaryResults(tx as never, { projectReleaseId: STABLE, uploadReleaseId: UPLOAD })).resolves.toBeUndefined();
@@ -333,6 +387,19 @@ describe("read-only administrator rollout state", () => {
     const state = await getCustomTemplateDesignAdminState(database(data).db as never);
     expect(state).toMatchObject({ readyForAdmin: true, readyForPublic: false });
     expect(state.readinessMessage).toContain("다운로드 영상과 미리보기도 확인");
+  });
+
+  it("reports admin-only design readiness without starting stopped video uploads", async () => {
+    const data = fixture();
+    data.uploadFlags[0].enabled = false;
+    data.uploadFlags[1].enabled = false;
+    const { db, statements } = database(data);
+    await expect(getCustomTemplateDesignAdminState(db as never)).resolves.toMatchObject({
+      mode: "off", readyForAdmin: true, readyForPublic: false,
+      readinessMessage: expect.stringContaining("파일 업로드는 중지 상태"),
+    });
+    expect(mocks.resolveUpload).not.toHaveBeenCalled();
+    expect(statements.every(({ sql }) => !/\b(insert|update|delete)\b/i.test(sql))).toBe(true);
   });
 
   it("reports a temporarily unhealthy published mode without silently turning it off", async () => {

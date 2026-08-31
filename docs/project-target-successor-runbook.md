@@ -4,6 +4,13 @@ This is the explicit, opt-in successor path for the five project targets. The
 default Stage B `rotation` still requires the existing stopped rollout. No
 command below was executed against production during implementation.
 
+The later upload-lifecycle request explicitly keeps both video-upload flags
+false. In that state only, the design ADMIN switch may validate the exact
+project/editor runtime without attesting the stopped receiver. PUBLIC and
+actual upload E2E remain blocked until separately authorized and verified.
+This scoped exception supersedes the both-input ADMIN prerequisites below;
+it does not change the Worker successor or upload reopening checks.
+
 ## Required inputs and boundaries
 
 - Re-read the promoted Vercel SHA immediately before each phase. Work from a

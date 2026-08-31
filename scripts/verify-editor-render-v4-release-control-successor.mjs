@@ -163,15 +163,24 @@ export async function verifyProjectSuccessorSchema(tx) {
 export async function readProjectSuccessorSnapshot(tx, context, options = {}) {
   const rows = await tx`
     select stable_release_id,candidate_release_id,
-      render_v4_target_successor as operation
+      render_v4_target_successor::text as operation
     from shorts_mvp.editor_release_state where singleton for share
   `;
   const proof = await tx`select shorts_mvp._project_target_successor_contract(
     ${context.predecessorReleaseId}::uuid,${context.successorReleaseId}::uuid,${options.allowPromoted === true}
-  ) as value`;
-  const flags = await tx`select shorts_mvp._project_target_successor_flags() as value`;
-  return validateSuccessorSnapshot({ state: rows[0], operation: rows[0]?.operation,
-    proof: proof[0]?.value, flags: flags[0]?.value }, context, options);
+  )::text as value`;
+  const flags = await tx`select shorts_mvp._project_target_successor_flags()::text as value`;
+  // postgres.camel transforms JSONB object keys recursively, including exact
+  // lane names such as legacy_project and source_range. Preserve these signed
+  // contract keys as text across both the controller's and lease caller's DB
+  // connections; ordinary SQL column names may still use camelCase.
+  const decode = (value) => {
+    if (typeof value !== "string") throw new Error("successor exact JSON text가 누락됐습니다.");
+    return JSON.parse(value);
+  };
+  return validateSuccessorSnapshot({ state: rows[0],
+    operation: rows[0]?.operation == null ? null : decode(rows[0].operation),
+    proof: decode(proof[0]?.value), flags: decode(flags[0]?.value) }, context, options);
 }
 
 export async function assertProjectSuccessorLease(tx, context, { requireDrained = false } = {}) {

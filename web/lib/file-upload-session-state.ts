@@ -23,6 +23,11 @@ export function fileUploadSessionPublicStatus(input: {
   if (["completed", "failed", "cancelled", "expired"].includes(
     input.receiverStatus,
   )) {
+    // The project owns render success. A late receiver cleanup/commit error
+    // must not present already-generated output as failed. While claimed,
+    // retain processing above: timeline postprocessing and source cleanup can
+    // still be running after the project first reaches completed.
+    if (input.jobStatus === "completed") return "completed";
     return input.receiverStatus as FileUploadSessionPublicStatus;
   }
   return "failed";

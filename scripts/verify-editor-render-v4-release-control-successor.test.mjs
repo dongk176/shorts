@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   assertProjectSuccessorLease, countSuccessorActiveJobs, exactJson,
   successorDefinitionHash, successorHash, validateProjectSuccessorOptions,
+  readProjectSuccessorSnapshot,
   validateSuccessorDefinitions, validateSuccessorLambdaEnvironment,
   validateSuccessorRegistryTransition, validateSuccessorSnapshot,
   verifySuccessorAwsDefinitions,
@@ -134,6 +135,28 @@ test("durable state pins frozen public values and proof while allowing the canar
   }
 });
 
+test("database snapshots preserve exact underscored lane names through camelCase row transforms", async () => {
+  const { context, snapshot } = fixture();
+  const statements = [];
+  const tx = async (strings) => {
+    const sql = strings.join("?");
+    statements.push(sql);
+    if (sql.includes("from shorts_mvp.editor_release_state")) {
+      assert.match(sql, /render_v4_target_successor::text as operation/);
+      return [{ ...snapshot.state, operation: JSON.stringify(snapshot.operation) }];
+    }
+    assert.match(sql, /\)::text as value/);
+    return [{ value: JSON.stringify(sql.includes("_project_target_successor_contract")
+      ? snapshot.proof : snapshot.flags) }];
+  };
+  const result = await readProjectSuccessorSnapshot(tx, context, { requireFence: true });
+  assert.deepEqual(result.proof.oldTargets, snapshot.proof.oldTargets);
+  assert.deepEqual(result.proof.compatibleSuccessor.projectTargets, snapshot.proof.compatibleSuccessor.projectTargets);
+  assert.deepEqual(result.operation.newRegistry.lanes, context.newRegistry.lanes);
+  assert.equal(result.proof.newTargets.legacyProject, undefined);
+  assert.equal(statements.length, 3);
+});
+
 test("immutable definition proof preserves CPU/memory/PO/proxy/secret/FFmpeg contracts", () => {
   const { context, proof, definitions } = fixture();
   assert.match(validateSuccessorDefinitions(definitions, context, proof), /^[0-9a-f]{64}$/);
@@ -196,9 +219,9 @@ test("lease acquire requires a fenced actual administrator and all four drain co
   const tx = async (strings) => {
     const q = strings.join("");
     if (q.includes("app_users")) return [{ id: ADMIN }];
-    if (q.includes("editor_release_state")) return [{ ...snapshot.state, operation: snapshot.operation }];
-    if (q.includes("_contract(")) return [{ value: snapshot.proof }];
-    if (q.includes("_flags(")) return [{ value: snapshot.flags }];
+    if (q.includes("editor_release_state")) return [{ ...snapshot.state, operation: JSON.stringify(snapshot.operation) }];
+    if (q.includes("_contract(")) return [{ value: JSON.stringify(snapshot.proof) }];
+    if (q.includes("_flags(")) return [{ value: JSON.stringify(snapshot.flags) }];
     if (q.includes("_drain(")) return [{ value: drain }];
     throw new Error(q);
   };

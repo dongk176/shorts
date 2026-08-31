@@ -1,7 +1,17 @@
+import csv
 import inspect
+import io
+import json
+import os
+import re
+import subprocess
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock
+from uuid import uuid4
+
+import pytest
 
 from shorts_worker.repository import WorkerRepository
 from shorts_worker.worker_pipeline import BatchWorker
@@ -958,3 +968,794 @@ def test_project_resource_tier_migration_finalizes_terminal_stage_counts() -> No
     assert "set stage_completed_count=stage_total_count" in migration
     assert "pipeline_version=2" in migration
     assert "public." not in migration
+
+
+def _upload_failure_repository(*, final_status="completed", session_status="claimed",
+                               source_deleted_at=None):
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+    results = [
+        {"id": "session-a", "status": session_status, "source_deleted_at": source_deleted_at},
+        {"final_status": final_status} if final_status else None,
+        {"id": "session-a"},
+        None,
+    ]
+    connection.execute.side_effect = [
+        MagicMock(fetchone=MagicMock(return_value=result)) for result in results
+    ]
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+    return repository, connection
+
+
+@pytest.mark.parametrize("source_deleted", [False, True])
+@pytest.mark.parametrize("expired", [False, True])
+def test_upload_failure_preserves_authoritative_completed_output(source_deleted, expired):
+    repository, connection = _upload_failure_repository()
+
+    assert repository.fail_upload_session(
+        "session-a", "job-a", error_code="upload_completion_commit_failed",
+        message="late receiver failure", source_deleted=source_deleted, expired=expired,
+    )
+
+    assert "for update of us" in connection.execute.call_args_list[0].args[0]
+    assert "j.source_type='upload'" in connection.execute.call_args_list[0].args[0]
+    assert "finalize_project_job" in connection.execute.call_args_list[1].args[0]
+    parameters = connection.execute.call_args_list[2].args[1]
+    assert parameters == (
+        "completed", None, None, "completed", source_deleted, "session-a", "job-a",
+    )
+    assert connection.execute.call_args_list[3].args[1] == (source_deleted, "job-a")
+    connection.transaction.assert_called_once()
+
+
+@pytest.mark.parametrize("expired,expected", [(False, "failed"), (True, "expired")])
+def test_upload_failure_retains_real_project_failure_without_own_billing_updates(expired, expected):
+    repository, connection = _upload_failure_repository(final_status="failed")
+    assert repository.fail_upload_session(
+        "session-a", "job-a", error_code="upload_body_incomplete", message="missing bytes",
+        source_deleted=False, expired=expired,
+    )
+    parameters = connection.execute.call_args_list[2].args[1]
+    assert parameters == (
+        expected, "upload_body_incomplete", "missing bytes", expected, False, "session-a", "job-a",
+    )
+    queries = " ".join(call.args[0] for call in connection.execute.call_args_list)
+    assert "usage_reservations" not in queries
+    assert "usage_events" not in queries
+
+
+def test_upload_late_failure_cannot_unset_previously_confirmed_raw_deletion():
+    repository, connection = _upload_failure_repository(
+        session_status="completed", source_deleted_at="2026-08-31T01:00:00Z",
+    )
+    assert repository.fail_upload_session(
+        "session-a", "job-a", error_code="late_error", message="late error",
+        source_deleted=False,
+    )
+    assert connection.execute.call_args_list[2].args[1][4] is True
+    assert connection.execute.call_args_list[3].args[1] == (True, "job-a")
+
+
+def test_upload_missing_owned_session_never_finalizes_or_modifies_another_job():
+    repository, connection = _upload_failure_repository()
+    connection.execute.side_effect = [MagicMock(fetchone=MagicMock(return_value=None))]
+    assert not repository.fail_upload_session(
+        "session-a", "other-job", error_code="late_error", message="late error",
+    )
+    assert connection.execute.call_count == 1
+
+
+def test_upload_unconfirmed_project_finalization_aborts_the_transaction():
+    repository, connection = _upload_failure_repository(final_status=None)
+    with pytest.raises(RuntimeError, match="did not confirm an outcome"):
+        repository.fail_upload_session(
+            "session-a", "job-a", error_code="late_error", message="late error",
+        )
+    assert connection.execute.call_count == 2
+    exit_arguments = connection.transaction.return_value.__exit__.call_args.args
+    assert exit_arguments[0] is RuntimeError
+
+
+def test_upload_completion_acknowledgement_is_idempotent_for_the_same_completed_job():
+    implementation = inspect.getsource(WorkerRepository.complete_upload_session)
+    assert "us.status in ('claimed','completed')" in implementation
+    assert "j.status='completed'" in implementation
+    assert "completed_at=coalesce(completed_at,clock_timestamp())" in implementation
+    assert "source_deleted_at=coalesce(source_deleted_at,clock_timestamp())" in implementation
+
+
+def test_upload_pending_raw_cleanup_retains_heartbeat_and_stale_sweep_contract():
+    heartbeat = inspect.getsource(WorkerRepository.heartbeat_upload_session)
+    claim = inspect.getsource(WorkerRepository.claim_abandoned_upload_sessions)
+    finalize = inspect.getsource(WorkerRepository.finalize_abandoned_upload_source_cleanup)
+    assert "status='claimed' and not exists" in heartbeat
+    assert "file_upload_emergency_stop" in heartbeat
+    assert "status in ('completed','failed','expired')" in heartbeat
+    assert "and source_deleted_at is null" in heartbeat
+    assert "us.status in ('expired','failed','completed')" in claim
+    assert "and us.source_deleted_at is null" in claim
+    assert "coalesce(us.heartbeat_at,us.created_at)" in claim
+    assert "and (%s::uuid is null or us.id<>%s::uuid)" in claim
+    assert "and status in ('expired','failed','completed')" in finalize
+    assert finalize.index("for update of us") < finalize.index(
+        "select * from shorts_mvp.finalize_project_job"
+    )
+
+
+@pytest.mark.parametrize("verified_ids", [None, [], ["not-a-uuid"], [None], [str(uuid4())] * 101])
+def test_upload_sweep_never_mutates_without_bounded_exact_owner_verified_ids(verified_ids):
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    repository.connect = MagicMock(side_effect=AssertionError("must not open a DB connection"))
+    assert repository.claim_abandoned_upload_sessions(
+        stale_after_seconds=120, active_upload_session_id=None,
+        verified_upload_session_ids=verified_ids,
+    ) == []
+    repository.connect.assert_not_called()
+
+
+def test_upload_stale_candidate_listing_is_read_only_and_claim_rechecks_eligibility():
+    listing = inspect.getsource(WorkerRepository.list_abandoned_upload_sessions)
+    claim = inspect.getsource(WorkerRepository.claim_abandoned_upload_sessions)
+    assert "update shorts_mvp" not in listing and "for update" not in listing
+    for implementation in (listing, claim):
+        assert "us.status='awaiting_upload'" in implementation
+        assert "us.status='claimed'" in implementation
+        assert "us.status in ('expired','failed','completed')" in implementation
+        assert "us.source_deleted_at is null" in implementation
+        assert "and (%s::uuid is null or us.id<>%s::uuid)" in implementation
+    assert "and us.id=any(%s::uuid[])" in claim
+    assert "for update skip locked" in claim
+    for implementation in (listing, claim):
+        assert "us.claimed_at is null and us.consumed_at is null" in implementation
+        assert "coalesce(us.received_bytes,0)=0" in implementation
+
+
+def test_upload_expired_awaiting_ids_are_bounded_and_validated_separately():
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    repository.connect = MagicMock(side_effect=AssertionError("must not open a DB connection"))
+    assert repository.claim_abandoned_upload_sessions(
+        stale_after_seconds=120, active_upload_session_id=None,
+        expired_awaiting_upload_session_ids=["not-a-uuid"],
+    ) == []
+    assert repository.claim_abandoned_upload_sessions(
+        stale_after_seconds=120, active_upload_session_id=None,
+        verified_upload_session_ids=[str(uuid4())] * 50,
+        expired_awaiting_upload_session_ids=[str(uuid4())] * 51,
+    ) == []
+    repository.connect.assert_not_called()
+
+
+class _UploadPostgresConnection:
+    """Run the actual repository SQL through psql in a network-none test DB.
+
+    No application DATABASE_URL or production credentials are read. psql keeps
+    one transaction/connection alive so PostgreSQL, not a mock, owns row locks.
+    """
+
+    def __init__(self, container):
+        self.process = subprocess.Popen(
+            ["docker", "exec", "-i", "--env", "PGCONNECT_TIMEOUT=5", container,
+             "psql", "-X", "-q", "--csv", "-P", "null=__SQL_NULL__",
+             "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "upload_repository_test"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.execute("set statement_timeout='5s'; set lock_timeout='4s'", parse=False)
+
+    def execute(self, query, parameters=(), *, parse=True):
+        chunks = query.split("%s")
+        assert len(chunks) == len(parameters) + 1
+
+        def literal(value):
+            if value is None:
+                return "NULL"
+            if isinstance(value, bool):
+                return "true" if value else "false"
+            if isinstance(value, int):
+                return str(value)
+            if isinstance(value, list):
+                return "ARRAY[" + ",".join(literal(item) for item in value) + "]"
+            return "'" + str(value).replace("'", "''") + "'"
+
+        statement = chunks[0]
+        for value, chunk in zip(parameters, chunks[1:], strict=True):
+            statement += literal(value) + chunk
+        marker = f"upload_test_end_{uuid4().hex}"
+        self.process.stdin.write(statement.rstrip().rstrip(";") + f";\n\\echo {marker}\n")
+        self.process.stdin.flush()
+        output = []
+        while True:
+            line = self.process.stdout.readline()
+            if not line:
+                error = self.process.stderr.read()
+                self.process.wait(timeout=6)
+                raise RuntimeError(error)
+            if line.strip() == marker:
+                break
+            output.append(line)
+        rows = []
+        if parse and output:
+            rows = [
+                {key: None if value == "__SQL_NULL__" else value for key, value in row.items()}
+                for row in csv.DictReader(io.StringIO("".join(output)))
+            ]
+        return MagicMock(
+            fetchone=MagicMock(return_value=rows[0] if rows else None),
+            fetchall=MagicMock(return_value=rows),
+        )
+
+    @contextmanager
+    def transaction(self):
+        self.execute("begin", parse=False)
+        try:
+            yield
+        except BaseException:
+            if self.process.poll() is None:
+                self.execute("rollback", parse=False)
+            raise
+        else:
+            self.execute("commit", parse=False)
+
+    def close(self):
+        self.process.stdin.close()
+        try:
+            self.process.wait(timeout=6)
+        except subprocess.TimeoutExpired:
+            self.process.terminate()
+            self.process.wait(timeout=3)
+        self.process.stdout.close()
+        self.process.stderr.close()
+
+
+@pytest.fixture(scope="module")
+def _upload_postgres_container():
+    container = os.environ.get("UPLOAD_REPOSITORY_TEST_CONTAINER", "")
+    if not container:
+        pytest.skip("requires an explicitly labelled network-none PostgreSQL test container")
+    assert re.fullmatch(r"shorts-upload-repository-test-[a-z0-9-]{1,80}", container)
+    inspected = subprocess.run(
+        ["docker", "inspect", container], capture_output=True, text=True,
+        timeout=10, check=True,
+    )
+    metadata = json.loads(inspected.stdout)[0]
+    assert metadata["HostConfig"]["NetworkMode"] == "none"
+    assert not metadata["HostConfig"].get("PortBindings")
+    assert metadata["Config"]["Labels"].get("easycut.test-scope") == "upload-repository"
+    assert all(mount["Type"] == "tmpfs" for mount in metadata.get("Mounts", []))
+    connection = _UploadPostgresConnection(container)
+    try:
+        connection.execute("""
+          create schema shorts_mvp;
+          create table shorts_mvp.video_jobs(
+            id uuid primary key,user_id uuid not null,mvp_session_id uuid not null,
+            source_type text default 'upload',execution_backend text default 'upload_service',
+            status text,stage text,progress integer default 0,
+            planned_short_count integer default 2,completion_policy_version integer default 2,
+            ingestion_route_id uuid,selected_short_count integer,unselected_short_count integer,
+            ready_short_count integer,failed_short_count integer,render_success_percent numeric,
+            completed_at timestamptz,source_deleted_at timestamptz,heartbeat_at timestamptz,
+            expires_at timestamptz,error_code text,error_message text
+          );
+          create table shorts_mvp.upload_sessions(
+            id uuid primary key,job_id uuid references shorts_mvp.video_jobs(id),
+            user_id uuid not null,mvp_session_id uuid not null,status text,
+            expected_bytes bigint default 10,received_bytes bigint default 10,
+            failure_code text,failure_reason text,source_deleted_at timestamptz,
+            heartbeat_at timestamptz,completed_at timestamptz,claimed_at timestamptz,
+            consumed_at timestamptz,
+            expires_at timestamptz default now()+interval '15 minutes',
+            created_at timestamptz default now(),source_thumbnail_s3_key text,
+            check(status in (
+              'awaiting_upload','claimed','completed','expired','cancelled','failed'
+            )),
+            check(status<>'completed' or completed_at is not null)
+          );
+          create table shorts_mvp.runtime_feature_flags(flag_key text primary key,enabled boolean);
+          create table shorts_mvp.project_output_attempts(
+            job_id uuid,selected_at timestamptz,status text,generated_short_id uuid,
+            ready_at timestamptz,failure_stage text,failure_code text,failure_message text,
+            failed_at timestamptz
+          );
+          create table shorts_mvp.generated_shorts(
+            id uuid primary key,job_id uuid,status text,deleted_at timestamptz,
+            render_progress integer,render_error_code text,render_error_message text,
+            expires_at timestamptz default now()+interval '30 days'
+          );
+          create table shorts_mvp.usage_reservations(
+            id uuid primary key,mvp_session_id uuid,user_id uuid,job_id uuid unique,
+            status text,source_duration_seconds integer,
+            consumed_at timestamptz,released_at timestamptz
+          );
+          create table shorts_mvp.usage_events(
+            mvp_session_id uuid,user_id uuid,job_id uuid,event_type text,
+            source_duration_seconds integer,unique(job_id,event_type)
+          );
+          create table shorts_mvp.job_events(
+            job_id uuid,stage text,progress integer,message text,metadata jsonb
+          );
+        """, parse=False)
+        migration = (Path(__file__).parents[2] / "supabase/migrations"
+                     / "202607260001_selected_output_completion_policy.sql").read_text()
+        finalizer = "create or replace function shorts_mvp.finalize_project_job" + migration.split(
+            "create or replace function shorts_mvp.finalize_project_job", 1,
+        )[1].split("grant execute", 1)[0]
+        connection.execute(finalizer, parse=False)
+    finally:
+        connection.close()
+    return container
+
+
+@pytest.fixture
+def upload_postgres(_upload_postgres_container, monkeypatch):
+    monkeypatch.delenv("STATE_EVENT_QUEUE_URL", raising=False)
+    repository = WorkerRepository("unused-network-none-test", "ap-northeast-2")
+
+    @contextmanager
+    def connect():
+        connection = _UploadPostgresConnection(_upload_postgres_container)
+        try:
+            yield connection
+        finally:
+            connection.close()
+
+    repository.connect = connect
+    with connect() as connection:
+        connection.execute("""
+          truncate shorts_mvp.upload_sessions,shorts_mvp.project_output_attempts,
+            shorts_mvp.generated_shorts,shorts_mvp.usage_events,shorts_mvp.job_events,
+            shorts_mvp.usage_reservations,shorts_mvp.video_jobs,
+            shorts_mvp.runtime_feature_flags;
+          insert into shorts_mvp.runtime_feature_flags values ('file_upload',false);
+        """, parse=False)
+    return repository
+
+
+def _seed_upload_postgres(repository, *, ready=True, job_status="rendering"):
+    job_id, session_id, user_id, mvp_id = (str(uuid4()) for _ in range(4))
+    with repository.connect() as connection:
+        connection.execute("""
+          insert into shorts_mvp.video_jobs(id,user_id,mvp_session_id,status)
+          values(%s,%s,%s,%s);
+          insert into shorts_mvp.upload_sessions(id,job_id,user_id,mvp_session_id,status,claimed_at)
+          values(%s,%s,%s,%s,'claimed',clock_timestamp());
+          insert into shorts_mvp.usage_reservations(
+            id,job_id,user_id,mvp_session_id,status,source_duration_seconds
+          ) values(%s,%s,%s,%s,'reserved',300);
+        """, (job_id, user_id, mvp_id, job_status, session_id, job_id, user_id, mvp_id,
+                 str(uuid4()), job_id, user_id, mvp_id), parse=False)
+        for _ in range(2):
+            short_id = str(uuid4())
+            connection.execute("""
+              insert into shorts_mvp.generated_shorts(id,job_id,status) values(%s,%s,%s);
+              insert into shorts_mvp.project_output_attempts(
+                job_id,selected_at,status,generated_short_id
+              ) values(%s,clock_timestamp(),'rendering',%s);
+            """, (short_id, job_id, "ready" if ready else "rendering", job_id, short_id),
+                parse=False)
+    return job_id, session_id
+
+
+def _upload_postgres_outcome(repository):
+    with repository.connect() as connection:
+        return connection.execute("""
+          select job.status as job_status,session.status as session_status,
+            session.source_deleted_at is not null as source_deleted,
+            job.source_deleted_at is not null as job_source_deleted,
+            session.failure_code,reservation.status as reservation_status,
+            (select count(*) from shorts_mvp.usage_events) as event_count
+          from shorts_mvp.video_jobs job
+          join shorts_mvp.upload_sessions session on session.job_id=job.id
+          join shorts_mvp.usage_reservations reservation on reservation.job_id=job.id
+        """).fetchone()
+
+
+@pytest.mark.parametrize("ready,expected", [(True, "completed"), (False, "failed")])
+def test_postgres_upload_failure_uses_real_finalizer_without_double_usage(
+    upload_postgres, ready, expected,
+):
+    job_id, session_id = _seed_upload_postgres(upload_postgres, ready=ready)
+    for _ in range(2):
+        assert upload_postgres.fail_upload_session(
+            session_id, job_id, error_code="late_receiver_error", message="late receiver error",
+        )
+    outcome = _upload_postgres_outcome(upload_postgres)
+    assert outcome["job_status"] == outcome["session_status"] == expected
+    assert outcome["reservation_status"] == ("consumed" if ready else "released")
+    assert outcome["event_count"] == "1"
+    assert outcome["failure_code"] == (None if ready else "late_receiver_error")
+
+
+def test_postgres_completed_upload_keeps_raw_cleanup_pending_and_heartbeat(upload_postgres):
+    job_id, session_id = _seed_upload_postgres(upload_postgres)
+    assert upload_postgres.fail_upload_session(
+        session_id, job_id, error_code="raw_cleanup_failed", message="raw cleanup pending",
+        source_deleted=False,
+    )
+    outcome = _upload_postgres_outcome(upload_postgres)
+    assert outcome["job_status"] == outcome["session_status"] == "completed"
+    assert outcome["source_deleted"] == outcome["job_source_deleted"] == "f"
+    with upload_postgres.connect() as connection:
+        connection.execute(
+            "insert into shorts_mvp.runtime_feature_flags "
+            "values ('file_upload_emergency_stop',true)"
+        )
+    assert upload_postgres.heartbeat_upload_session(session_id, 10)
+    assert upload_postgres.claim_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+        verified_upload_session_ids=[session_id],
+    ) == []
+    with upload_postgres.connect() as connection:
+        connection.execute(
+            "update shorts_mvp.upload_sessions "
+            "set heartbeat_at=clock_timestamp()-interval '1 hour'"
+        )
+    assert upload_postgres.claim_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=session_id,
+        verified_upload_session_ids=[session_id],
+    ) == []
+    claimed = upload_postgres.claim_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+        verified_upload_session_ids=[session_id],
+    )
+    assert len(claimed) == 1 and claimed[0]["previous_status"] == "completed"
+    assert upload_postgres.finalize_abandoned_upload_source_cleanup(
+        session_id, job_id, previous_status="completed",
+    )["final_status"] == "completed"
+    assert _upload_postgres_outcome(upload_postgres)["source_deleted"] == "t"
+    assert not upload_postgres.heartbeat_upload_session(session_id, 10)
+
+
+def test_postgres_upload_completion_acknowledgement_and_deletion_are_monotonic(upload_postgres):
+    job_id, session_id = _seed_upload_postgres(upload_postgres)
+    upload_postgres.finalize_project_job(job_id)
+    assert upload_postgres.complete_upload_session(session_id, job_id)
+    assert upload_postgres.complete_upload_session(session_id, job_id)
+    assert upload_postgres.fail_upload_session(
+        session_id, job_id, error_code="stale_failure", message="stale failure",
+        source_deleted=False,
+    )
+    outcome = _upload_postgres_outcome(upload_postgres)
+    assert outcome["job_status"] == outcome["session_status"] == "completed"
+    assert outcome["source_deleted"] == outcome["job_source_deleted"] == "t"
+    assert outcome["event_count"] == "1"
+
+
+def test_postgres_upload_terminal_update_error_rolls_back_finalization_and_usage(upload_postgres):
+    job_id, session_id = _seed_upload_postgres(upload_postgres, ready=False)
+    with upload_postgres.connect() as connection:
+        connection.execute(
+            "alter table shorts_mvp.upload_sessions "
+            "add constraint terminal_test_failure check(failure_code is null)"
+        )
+    try:
+        with pytest.raises(RuntimeError, match="terminal_test_failure"):
+            upload_postgres.fail_upload_session(
+                session_id, job_id, error_code="injected_failure", message="injected failure",
+            )
+    finally:
+        with upload_postgres.connect() as connection:
+            connection.execute(
+                "alter table shorts_mvp.upload_sessions drop constraint terminal_test_failure"
+            )
+    outcome = _upload_postgres_outcome(upload_postgres)
+    assert outcome["job_status"] == "rendering" and outcome["session_status"] == "claimed"
+    assert outcome["reservation_status"] == "reserved" and outcome["event_count"] == "0"
+
+
+def test_postgres_upload_late_failure_waits_for_completion_row_lock(upload_postgres):
+    job_id, session_id = _seed_upload_postgres(upload_postgres)
+    upload_postgres.finalize_project_job(job_id)
+    held, release, finished = threading.Event(), threading.Event(), threading.Event()
+    exceptions = []
+    original_connect = upload_postgres.connect
+    completing = WorkerRepository("unused-network-none-test", "ap-northeast-2")
+
+    @contextmanager
+    def gated_connect():
+        with original_connect() as connection:
+            execute = connection.execute
+
+            def gated_execute(query, parameters=(), **kwargs):
+                result = execute(query, parameters, **kwargs)
+                if "update shorts_mvp.upload_sessions us" in query:
+                    held.set()
+                    assert release.wait(3)
+                return result
+
+            connection.execute = gated_execute
+            yield connection
+
+    completing.connect = gated_connect
+
+    def complete():
+        try:
+            assert completing.complete_upload_session(session_id, job_id)
+        except BaseException as exc:
+            exceptions.append(exc)
+
+    def fail():
+        try:
+            assert upload_postgres.fail_upload_session(
+                session_id, job_id, error_code="late_failure", message="late failure",
+                source_deleted=False,
+            )
+        except BaseException as exc:
+            exceptions.append(exc)
+        finally:
+            finished.set()
+
+    first = threading.Thread(target=complete)
+    second = threading.Thread(target=fail)
+    first.start()
+    try:
+        assert held.wait(3)
+        second.start()
+        assert not finished.wait(0.15)
+    finally:
+        release.set()
+        first.join(timeout=6)
+        if second.ident is not None:
+            second.join(timeout=6)
+    assert not first.is_alive() and not second.is_alive() and not exceptions
+    outcome = _upload_postgres_outcome(upload_postgres)
+    assert outcome["job_status"] == outcome["session_status"] == "completed"
+    assert outcome["source_deleted"] == outcome["job_source_deleted"] == "t"
+    assert outcome["event_count"] == "1"
+
+
+def test_postgres_upload_sweeper_and_completion_share_session_first_lock_order(upload_postgres):
+    job_id, session_id = _seed_upload_postgres(upload_postgres)
+    assert upload_postgres.fail_upload_session(
+        session_id, job_id, error_code="cleanup_pending", message="cleanup pending",
+        source_deleted=False,
+    )
+    held, release, sweep_entered, swept, saw_job_lock = (
+        threading.Event() for _ in range(5)
+    )
+    exceptions, sweep_results = [], []
+    original_connect = upload_postgres.connect
+    completing = WorkerRepository("unused-network-none-test", "ap-northeast-2")
+    sweeping = WorkerRepository("unused-network-none-test", "ap-northeast-2")
+
+    @contextmanager
+    def gated_completion_connect():
+        with original_connect() as connection:
+            execute = connection.execute
+
+            def gated_execute(query, parameters=(), **kwargs):
+                result = execute(query, parameters, **kwargs)
+                if "update shorts_mvp.upload_sessions us" in query:
+                    held.set()
+                    assert release.wait(3)
+                return result
+
+            connection.execute = gated_execute
+            yield connection
+
+    @contextmanager
+    def watched_sweep_connect():
+        with original_connect() as connection:
+            execute = connection.execute
+
+            def watched_execute(query, parameters=(), **kwargs):
+                sweep_entered.set()
+                result = execute(query, parameters, **kwargs)
+                if "select * from shorts_mvp.finalize_project_job" in query:
+                    saw_job_lock.set()
+                return result
+
+            connection.execute = watched_execute
+            yield connection
+
+    completing.connect = gated_completion_connect
+    sweeping.connect = watched_sweep_connect
+
+    def complete():
+        try:
+            assert completing.complete_upload_session(session_id, job_id)
+        except BaseException as exc:
+            exceptions.append(exc)
+
+    def sweep():
+        try:
+            sweep_results.append(sweeping.finalize_abandoned_upload_source_cleanup(
+                session_id, job_id, previous_status="completed",
+            ))
+        except BaseException as exc:
+            exceptions.append(exc)
+        finally:
+            swept.set()
+
+    first = threading.Thread(target=complete)
+    second = threading.Thread(target=sweep)
+    first.start()
+    try:
+        assert held.wait(3)
+        second.start()
+        assert sweep_entered.wait(3)
+        assert not saw_job_lock.wait(0.15)
+        assert not swept.is_set()
+    finally:
+        release.set()
+        first.join(timeout=6)
+        if second.ident is not None:
+            second.join(timeout=6)
+    assert not first.is_alive() and not second.is_alive() and not exceptions
+    assert sweep_results == [None]
+    outcome = _upload_postgres_outcome(upload_postgres)
+    assert outcome["job_status"] == outcome["session_status"] == "completed"
+    assert outcome["source_deleted"] == outcome["job_source_deleted"] == "t"
+    assert outcome["event_count"] == "1"
+
+
+@pytest.mark.parametrize("session_status", ["claimed", "completed", "failed"])
+def test_postgres_upload_stale_listing_and_unverified_claim_never_change_owner_state(
+    upload_postgres, session_status,
+):
+    job_id, session_id = _seed_upload_postgres(
+        upload_postgres, ready=session_status != "failed",
+    )
+    if session_status != "claimed":
+        assert upload_postgres.fail_upload_session(
+            session_id, job_id, error_code="cleanup_pending", message="cleanup pending",
+            source_deleted=False,
+        )
+    with upload_postgres.connect() as connection:
+        connection.execute(
+            "update shorts_mvp.upload_sessions set heartbeat_at='2000-01-01'"
+        )
+    before = _upload_postgres_outcome(upload_postgres)
+    listed = upload_postgres.list_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+    )
+    assert len(listed) == 1
+    assert listed[0]["id"] == session_id and listed[0]["previous_status"] == session_status
+    assert _upload_postgres_outcome(upload_postgres) == before
+    assert upload_postgres.claim_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+    ) == []
+    assert upload_postgres.claim_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+        verified_upload_session_ids=[str(uuid4())],
+    ) == []
+    assert upload_postgres.claim_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=session_id,
+        verified_upload_session_ids=[session_id],
+    ) == []
+    assert _upload_postgres_outcome(upload_postgres) == before
+    claimed = upload_postgres.claim_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+        verified_upload_session_ids=[session_id],
+    )
+    assert len(claimed) == 1 and claimed[0]["id"] == session_id
+    after = _upload_postgres_outcome(upload_postgres)
+    assert after["session_status"] == ("failed" if session_status == "claimed" else session_status)
+    assert after["source_deleted"] == "f"
+    assert after["job_status"] == before["job_status"]
+    assert after["reservation_status"] == before["reservation_status"]
+    assert after["event_count"] == before["event_count"]
+
+
+def test_postgres_upload_verified_claim_rechecks_refresh_and_skips_live_row_lock(upload_postgres):
+    _job_id, session_id = _seed_upload_postgres(upload_postgres)
+    with upload_postgres.connect() as connection:
+        connection.execute(
+            "update shorts_mvp.upload_sessions set heartbeat_at='2000-01-01'"
+        )
+    listed = upload_postgres.list_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+    )
+    assert [row["id"] for row in listed] == [session_id]
+    with upload_postgres.connect() as connection, connection.transaction():
+        connection.execute(
+            "update shorts_mvp.upload_sessions set heartbeat_at=clock_timestamp()"
+        )
+        # The read-only list predates this owner's heartbeat transaction. Even
+        # an otherwise verified ID cannot retire its locked row from another DB
+        # connection, and the fresh heartbeat remains authoritative on commit.
+        assert upload_postgres.claim_abandoned_upload_sessions(
+            stale_after_seconds=30, active_upload_session_id=None,
+            verified_upload_session_ids=[session_id],
+        ) == []
+    assert upload_postgres.claim_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+        verified_upload_session_ids=[session_id],
+    ) == []
+    outcome = _upload_postgres_outcome(upload_postgres)
+    assert outcome["session_status"] == "claimed" and outcome["job_status"] == "rendering"
+    assert outcome["source_deleted"] == "f"
+    assert outcome["reservation_status"] == "reserved" and outcome["event_count"] == "0"
+
+
+def _seed_expired_awaiting_upload_postgres(repository):
+    job_id, session_id = _seed_upload_postgres(repository, ready=False, job_status="uploading")
+    with repository.connect() as connection:
+        connection.execute("""
+          update shorts_mvp.upload_sessions
+          set status='awaiting_upload',claimed_at=null,consumed_at=null,received_bytes=0,
+              heartbeat_at=null,expires_at=clock_timestamp()-interval '1 minute'
+        """)
+    return job_id, session_id
+
+
+def test_postgres_upload_expired_unconsumed_token_has_separate_no_body_claim(upload_postgres):
+    job_id, session_id = _seed_expired_awaiting_upload_postgres(upload_postgres)
+    listed = upload_postgres.list_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+    )
+    assert len(listed) == 1 and listed[0]["previous_status"] == "awaiting_upload"
+    assert upload_postgres.claim_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+        verified_upload_session_ids=[session_id],
+    ) == []
+    claimed = upload_postgres.claim_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+        expired_awaiting_upload_session_ids=[session_id],
+    )
+    assert len(claimed) == 1 and claimed[0]["previous_status"] == "awaiting_upload"
+    before_cleanup = _upload_postgres_outcome(upload_postgres)
+    assert before_cleanup["session_status"] == "expired"
+    assert before_cleanup["job_status"] == "uploading"
+    assert before_cleanup["source_deleted"] == "f"
+    assert before_cleanup["reservation_status"] == "reserved"
+    finalized = upload_postgres.finalize_abandoned_upload_source_cleanup(
+        session_id, job_id, previous_status="awaiting_upload",
+    )
+    assert finalized["final_status"] == "failed"
+    after = _upload_postgres_outcome(upload_postgres)
+    assert after["session_status"] == "expired" and after["source_deleted"] == "t"
+    assert after["reservation_status"] == "released" and after["event_count"] == "1"
+
+
+@pytest.mark.parametrize("unsafe_change", [
+    "expires_at=clock_timestamp()+interval '1 minute'",
+    "claimed_at=clock_timestamp(),consumed_at=clock_timestamp()",
+    "received_bytes=1",
+])
+def test_postgres_upload_no_body_claim_rechecks_expiry_and_never_consumed_markers(
+    upload_postgres, unsafe_change,
+):
+    _job_id, session_id = _seed_expired_awaiting_upload_postgres(upload_postgres)
+    with upload_postgres.connect() as connection:
+        # Values are fixed test cases, never application/user SQL.
+        connection.execute("update shorts_mvp.upload_sessions set " + unsafe_change)
+    before = _upload_postgres_outcome(upload_postgres)
+    assert upload_postgres.list_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+    ) == []
+    assert upload_postgres.claim_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+        expired_awaiting_upload_session_ids=[session_id],
+    ) == []
+    assert _upload_postgres_outcome(upload_postgres) == before
+
+
+def test_postgres_upload_no_body_claim_cannot_retire_token_claimed_after_listing(upload_postgres):
+    _job_id, session_id = _seed_expired_awaiting_upload_postgres(upload_postgres)
+    assert len(upload_postgres.list_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+    )) == 1
+    with upload_postgres.connect() as connection, connection.transaction():
+        connection.execute("""
+          update shorts_mvp.upload_sessions
+          set status='claimed',claimed_at=clock_timestamp(),consumed_at=clock_timestamp(),
+              heartbeat_at=clock_timestamp()-interval '1 hour'
+        """)
+        assert upload_postgres.claim_abandoned_upload_sessions(
+            stale_after_seconds=30, active_upload_session_id=None,
+            expired_awaiting_upload_session_ids=[session_id],
+        ) == []
+    # Even a stale claimed row must not reuse the no-body authority obtained
+    # for its older awaiting snapshot. Its task now needs the STOPPED guard.
+    assert upload_postgres.claim_abandoned_upload_sessions(
+        stale_after_seconds=30, active_upload_session_id=None,
+        expired_awaiting_upload_session_ids=[session_id],
+    ) == []
+    outcome = _upload_postgres_outcome(upload_postgres)
+    assert outcome["session_status"] == "claimed" and outcome["source_deleted"] == "f"
+    assert outcome["reservation_status"] == "reserved" and outcome["event_count"] == "0"
