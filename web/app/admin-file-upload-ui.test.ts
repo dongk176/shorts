@@ -4,14 +4,44 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync(new URL("./shorts-app.tsx", import.meta.url), "utf8");
 const stateSource = readFileSync(new URL("../lib/mvp-state.ts", import.meta.url), "utf8");
 
-describe("administrator file upload UI isolation", () => {
-  it("defaults to the unchanged link mode and renders upload controls only through server capability", () => {
+describe("file upload UI authentication and capability isolation", () => {
+  it("shows the upload entry before login without granting upload capability", () => {
     expect(source).toContain('useState<"youtube" | "upload">("youtube")');
     expect(source).toContain("const uploadModeEnabled = state?.capabilities.fileUpload === true");
-    expect(source).toContain("{uploadModeEnabled ? (");
+    expect(source).toContain("const uploadModeVisible = !state?.user || uploadModeEnabled");
+    expect(source).toContain("{uploadModeVisible ? (");
+    expect(source).toContain('const uploadSourceActive = sourceMode === "upload" && uploadModeEnabled && uploadVideo !== null');
     expect(stateSource).toContain("fileUpload: false,");
     expect(stateSource).toContain("unifiedTemplateSubtitles: false,");
     expect(stateSource).toContain("fileUploadAccess.enabled");
+  });
+
+  it("opens the existing login overlay before changing modes or selecting a file", () => {
+    const chooseStart = source.indexOf("const chooseSourceMode =");
+    const chooseEnd = source.indexOf("const prepareSelectedUpload =", chooseStart);
+    const chooseSource = source.slice(chooseStart, chooseEnd);
+    const loginStart = chooseSource.indexOf("if (!state?.user)");
+    const capabilityGuard = chooseSource.indexOf("if (!uploadModeEnabled) return;");
+    const changeMode = chooseSource.indexOf("setSourceMode(nextMode)");
+
+    expect(chooseSource).toContain('if (nextMode === "upload")');
+    expect(chooseSource).toContain('setLoginNext("/");\n        setLoginOpen(true);\n        return;');
+    expect(loginStart).toBeGreaterThan(-1);
+    expect(capabilityGuard).toBeGreaterThan(loginStart);
+    expect(changeMode).toBeGreaterThan(capabilityGuard);
+    expect(chooseSource).not.toContain("uploadFileInputRef.current?.click()");
+    expect(chooseSource).not.toContain("inspectUploadVideo(");
+    expect(chooseSource).not.toContain("requestJson");
+    expect(chooseSource).not.toContain("fetch(");
+  });
+
+  it("waits for authentication state and retains the existing upload revocation guard", () => {
+    expect(source).toContain('if (stateLoadStatus !== "ready") return;');
+    expect(source).toContain('aria-selected={sourceMode === "upload"}\n              disabled={stateLoadStatus !== "ready"}');
+    expect(source).toContain('if (uploadModeEnabled || sourceMode !== "upload") return;');
+    expect(source).toContain("if (!file || !uploadModeEnabled) return;");
+    expect(source).toContain("if (!state?.user || !uploadModeEnabled)");
+    expect(source).not.toContain("if (!file || !uploadModeVisible)");
   });
 
   it("selects locally first and sends bytes directly only after canonical project creation", () => {

@@ -13414,6 +13414,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const activeJobHasRerendering = Boolean(activeJob?.shorts.some((item) => item.status === "rerendering"));
   const hasBackgroundWork = Boolean(state?.recentJobs.some((job) => !terminalStatuses.has(job.status) || job.shorts.some((item) => item.status === "rerendering")));
   const uploadModeEnabled = state?.capabilities.fileUpload === true;
+  const uploadModeVisible = !state?.user || uploadModeEnabled;
   const uploadSourceActive = sourceMode === "upload" && uploadModeEnabled && uploadVideo !== null;
   const uploadExitGuardActive = uploadPreparationActive || uploadTransferActive;
   const uploadLifecycleOverlayOpen = uploadExitGuardActive || uploadCompletionOpen;
@@ -13924,7 +13925,15 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   };
 
   const chooseSourceMode = (nextMode: "youtube" | "upload") => {
-    if (nextMode === "upload" && !uploadModeEnabled) return;
+    if (nextMode === "upload") {
+      if (stateLoadStatus !== "ready") return;
+      if (!state?.user) {
+        setLoginNext("/");
+        setLoginOpen(true);
+        return;
+      }
+      if (!uploadModeEnabled) return;
+    }
     if (nextMode === sourceMode) return;
     uploadAbortController.current?.abort();
     uploadRequestId.current = null;
@@ -14651,7 +14660,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       </div>
       <section className={`hero mx-auto flex w-full max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
         <h1 className="hero-title">{t("home.heroLine1")}<br /><span>{t("home.heroLine2")}</span></h1>
-        {uploadModeEnabled ? (
+        {uploadModeVisible ? (
           <div className="source-input-mode mt-8 w-full max-w-3xl" role="tablist" aria-label="원본 영상 입력 방식">
             <button
               type="button"
@@ -14669,8 +14678,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
               type="button"
               role="tab"
               aria-selected={sourceMode === "upload"}
+              disabled={stateLoadStatus !== "ready"}
               onClick={() => chooseSourceMode("upload")}
-              className="source-input-mode-tab"
+              className="source-input-mode-tab disabled:cursor-not-allowed disabled:opacity-50"
             >
               <svg viewBox="0 0 24 24" width="21" height="21" fill="none" aria-hidden="true">
                 <path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M5 13v5.25A2.75 2.75 0 0 0 7.75 21h8.5A2.75 2.75 0 0 0 19 18.25V13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -14681,7 +14691,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         ) : null}
         {sourceMode === "youtube" ? (
           <>
-            <form id="workspace" onSubmit={analyze} className={`url-console w-full max-w-3xl ${uploadModeEnabled ? "mt-3" : "mt-8"}`}>
+            <form id="workspace" onSubmit={analyze} className={`url-console w-full max-w-3xl ${uploadModeVisible ? "mt-3" : "mt-8"}`}>
               <div className="relative flex-1">
                 <span className="absolute inset-y-0 left-4 flex items-center text-xl text-[#d7aaa4]" aria-hidden="true">↗</span>
                 <input type="url" value={youtubeUrl} onChange={(event) => { setYoutubeUrl(event.target.value); setRightsConfirmed(false); setRightsConfirmationAttention(false); }} placeholder={t("home.youtubePlaceholder")} className="url-input" aria-label={t("home.youtubeLabel")} />

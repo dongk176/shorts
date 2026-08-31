@@ -27,7 +27,7 @@ describe("public home experience", () => {
 
   it("keeps the URL workspace full width and removes the decorative convert icon", () => {
     expect(homeSource).toContain("hero mx-auto flex w-full max-w-4xl");
-    expect(homeSource).toContain('className={`url-console w-full max-w-3xl ${uploadModeEnabled ? "mt-3" : "mt-8"}`}');
+    expect(homeSource).toContain('className={`url-console w-full max-w-3xl ${uploadModeVisible ? "mt-3" : "mt-8"}`}');
     expect(homeSource).not.toContain('<span aria-hidden="true">✦</span>');
     expect(homeSource).not.toContain('t("home.heroDescription")');
   });
