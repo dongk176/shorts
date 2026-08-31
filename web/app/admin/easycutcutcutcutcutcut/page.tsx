@@ -253,6 +253,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         `,
       ])
     : [[], []];
+  // A bound TRUE keeps these static admin reads off the unnamed-query pipeline
+  // that can stall through Supavisor. It changes no rows, limits, or pool settings.
   const [
     editorReleaseStateRows,
     editorReleaseRows,
@@ -328,6 +330,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
                 and design_check.details#>>'{customTemplateDesign,passed}'='true'
             ) as custom_template_design_verified
           from shorts_mvp.editor_releases release
+          where ${true}::boolean
           order by release.created_at desc
           limit 30
         `,
@@ -340,6 +343,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             order by created_at desc
             limit 30
           )
+            and ${true}::boolean
           order by updated_at desc
         `,
         db`
@@ -347,6 +351,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             tester.enabled,tester.updated_at
           from shorts_mvp.editor_release_testers tester
           join shorts_mvp.app_users tester_user on tester_user.id=tester.user_id
+          where ${true}::boolean
           order by tester.enabled desc,tester.updated_at desc
         `,
         db`
@@ -358,6 +363,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             count(*) filter (where status='succeeded')::integer as succeeded
           from shorts_mvp.editor_render_requests
           where release_id is not null
+            and ${true}::boolean
           group by release_id
         `,
       ])
@@ -375,6 +381,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           join shorts_mvp.billing_orders o on o.id=r.billing_order_id
           join shorts_mvp.app_users u on u.id=o.user_id
           join shorts_mvp.app_users a on a.id=r.requested_by_user_id
+          where ${true}::boolean
           order by r.requested_at desc
           limit 50
         `,
@@ -416,6 +423,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           join shorts_mvp.billing_payment_methods legacy on legacy.id=r.legacy_payment_method_id
           left join shorts_mvp.billing_payment_methods replacement on replacement.id=r.new_payment_method_id
           where r.campaign_key='legacy_easycut_pro_202608'
+            and ${true}::boolean
         `,
       ])
     : [{ orders: [], hasMore: false, nextOffset: 0 }, [], []];
