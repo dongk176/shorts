@@ -1197,6 +1197,7 @@ def create_custom_canvas_overlays(
     channel_thumbnail_path: Path | None = None,
     include_channel: bool = True,
     channel_y_override: float | None = None,
+    uploaded_background_path: Path | None = None,
 ) -> tuple[Path, Path, Path]:
     """Create trusted full-canvas assets for a validated personal template."""
     directory.mkdir(parents=True, exist_ok=True)
@@ -1204,8 +1205,12 @@ def create_custom_canvas_overlays(
     title_path = directory / f"{prefix}_custom_title.png"
     channel_path = directory / f"{prefix}_custom_channel.png"
 
-    if config.background.kind == "image":
-        asset = CUSTOM_BACKGROUND_ASSETS.get(config.background.asset_id or "")
+    if config.background.kind in {"image", "uploaded_image"}:
+        asset = (
+            uploaded_background_path
+            if config.background.kind == "uploaded_image"
+            else CUSTOM_BACKGROUND_ASSETS.get(config.background.asset_id or "")
+        )
         if not asset or not asset.is_file():
             raise ValueError("지원하지 않는 템플릿 배경입니다.")
         with Image.open(asset) as source:

@@ -30,23 +30,47 @@ import {
 import {
   verifyEditorReleaseProbeAttestation,
 } from "./verify-editor-release-probe-attestation.mjs";
+import {
+  beginProjectSuccessor,
+  countSuccessorActiveJobs,
+  readProjectSuccessorSnapshot,
+  readSuccessorLambdaRuntime,
+  transitionProjectSuccessor,
+  validateProjectSuccessorOptions,
+  verifyProjectSuccessorSchema,
+  verifySuccessorAwsDefinitions,
+  withProjectSuccessorDatabase,
+} from "./verify-editor-render-v4-release-control-successor.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const infra = path.join(root, "infra", "aws");
 const SHA = /^[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const CHANGE_SET_NAME = /^[A-Za-z][-A-Za-z0-9]{0,127}$/;
 // CloudFormation may legitimately take 45 minutes. A two-hour durable lease
 // remains fail-closed well beyond the observation deadline if this controller
 // process crashes or temporarily loses its database connection.
 const LEASE_TTL_SECONDS = 2 * 60 * 60;
 
-async function verifyStageBDatabaseContracts({ requireStopped }) {
+async function verifyStageBDatabaseContracts({ requireStopped, successor = null }) {
   await verifyEditorRenderV4ReleaseControl({ requireStopped });
   await verifyEditorReleaseProbeAttestation();
+  if (successor) return withProjectSuccessorDatabase(async (tx) => {
+    await verifyProjectSuccessorSchema(tx);
+    return readProjectSuccessorSnapshot(tx, successor, { allowPromoted: true });
+  });
 }
 
-function stageBRequiresStopped(phase) {
+export function stageBRequiresStopped(phase, successor = null) {
+  if (successor) {
+    const validated = validateProjectSuccessorOptions({ phase, head: successor.head,
+      successorReleaseId: successor.successorReleaseId,
+      expectedStableReleaseId: successor.predecessorReleaseId,
+      successorAdminUserId: successor.adminUserId });
+    if (!validated) throw new Error("Stage B successor opt-in identity가 누락됐습니다.");
+    return false;
+  }
   return !["renewal", "lockdown"].includes(phase);
 }
 
@@ -92,6 +116,17 @@ export function stageBChangeSetProvenanceSha256(value) {
       value?.editorCandidateTemplateSha256 || "",
     ),
   };
+  if (value?.successor) {
+    const successor = value.successor;
+    if (phase !== "rotation" || !SHA256.test(successor.oldRegistrySha256 || "")
+      || !UUID.test(successor.predecessorReleaseId || "")
+      || !UUID.test(successor.successorReleaseId || "")
+      || successor.predecessorReleaseId === successor.successorReleaseId) {
+      throw new Error("Stage B successor provenance identity가 올바르지 않습니다.");
+    }
+    exact.successor = { predecessorReleaseId: successor.predecessorReleaseId,
+      successorReleaseId: successor.successorReleaseId, oldRegistrySha256: successor.oldRegistrySha256 };
+  }
   if (!SHA.test(exact.base) || !SHA.test(exact.head)) {
     throw new Error("Stage B provenance base/head가 exact Git SHA가 아닙니다.");
   }
@@ -305,6 +340,10 @@ function parseArgs(argv) {
     expectedLiveTemplateSha256: "",
     expectedTemplateSha256: "",
     expectedEditorLiveTemplateSha256: "",
+    successorReleaseId: "",
+    expectedStableReleaseId: "",
+    successorAdminUserId: "",
+    successorAction: "",
   };
   for (let index = 0; index < argv.length; index += 1) {
     const name = argv[index];
@@ -318,6 +357,14 @@ function parseArgs(argv) {
     else if (name === "--base") options.base = argv[++index] || "";
     else if (name === "--head") options.head = argv[++index] || "";
     else if (name === "--prior-stage-head") options.priorStageHead = argv[++index] || "";
+    else if (name === "--successor-release-id") options.successorReleaseId = argv[++index] || "";
+    else if (name === "--expected-stable-release-id") options.expectedStableReleaseId = argv[++index] || "";
+    else if (name === "--successor-admin-user-id") options.successorAdminUserId = argv[++index] || "";
+    else if (["--ready-successor", "--complete-successor", "--cancel-successor", "--fence-successor"].includes(name)) {
+      if (options.mode !== "dry-run") throw new Error("successor 전환과 prepare/execute는 각각 실행합니다.");
+      options.mode = "successor-action";
+      options.successorAction = name.slice(2, -"-successor".length);
+    }
     else if (name === "--region") options.region = argv[++index] || "";
     else if (name === "--worker-image-tag") options.workerImageTag = argv[++index] || "";
     else if (name === "--legacy-rerender-image-tag") {
@@ -369,6 +416,10 @@ function parseArgs(argv) {
     }
   } else if (options.priorStageHead) {
     throw new Error("--prior-stage-head는 rotation 단계에서만 사용합니다.");
+  }
+  options.successor = validateProjectSuccessorOptions(options);
+  if (options.successorAction && !options.successor) {
+    throw new Error("successor 전환에는 exact 기존/새 release 및 관리자 opt-in이 필요합니다.");
   }
   if (["renewal", "lockdown"].includes(options.phase) && options.executeStack === "compute") {
     throw new Error(`${options.phase}은 editor stack만 실행할 수 있습니다.`);
@@ -478,6 +529,75 @@ function verifyRepositoryUnchanged(options, expected) {
   ) {
     throw new Error("검증 중 HEAD 또는 production target registry가 바뀌어 중단합니다.");
   }
+}
+
+export function projectSuccessorContext(options, initial, registry, oldRegistrySource) {
+  if (!options.successor) return null;
+  return { ...options.successor, base: initial.base, oldRegistry: JSON.parse(oldRegistrySource),
+    newRegistry: registry, oldRegistrySha256: sha256(oldRegistrySource),
+    newRegistrySha256: initial.registrySha256 };
+}
+
+export async function collectProjectSuccessorRuntime({ context, proof, region, predecessor = false, cancel = false }, dependencies = {}) {
+  const readTemplate = dependencies.readTemplate || liveTemplate;
+  const readStack = dependencies.readStack || liveStack;
+  const readLambda = dependencies.readLambda || readSuccessorLambdaRuntime;
+  const verifyDefinitions = dependencies.verifyDefinitions || verifySuccessorAwsDefinitions;
+  const countActiveJobs = dependencies.countActiveJobs || countSuccessorActiveJobs;
+  const registry = predecessor ? context.oldRegistry : context.newRegistry;
+  for (const key of ["editor", "compute"]) readStack(key, region);
+  const templates = Object.fromEntries(["editor", "compute"].map((key) => [key, stageBTemplateSha256(readTemplate(key, region))]));
+  const definitions = verifyDefinitions(context, proof, region);
+  const [registrar, submitter] = await Promise.all([
+    readLambda("shorts-mvp-editor-release-registrar-production", registry, region, { verifySource: !predecessor }),
+    readLambda("shorts-mvp-batch-submitter-production", registry, region, { verifySource: !predecessor }),
+  ]);
+  const runtime = {
+    observedAt: new Date().toISOString(),
+    registrySha256: predecessor ? context.oldRegistrySha256 : context.newRegistrySha256,
+    editorTemplateSha256: templates.editor,
+    computeTemplateSha256: templates.compute,
+    registrarCodeSha256: registrar.codeSha256,
+    submitterCodeSha256: submitter.codeSha256,
+    inventorySha256: sha256(JSON.stringify(stable({ definitions, registrar, submitter, templates }))),
+    allTargetsMatch: true,
+  };
+  if (cancel) runtime.candidateActiveJobs = countActiveJobs(context.newRegistry, region);
+  for (const key of ["editor", "compute"]) {
+    readStack(key, region);
+    if (stageBTemplateSha256(readTemplate(key, region)) !== templates[key]) {
+      throw new Error("successor runtime 관찰 중 live template이 변경됐습니다.");
+    }
+  }
+  return runtime;
+}
+
+async function ensureProjectSuccessorFence(options, stackKey) {
+  if (!options.successor) return;
+  const snapshot = await verifyStageBDatabaseContracts({ requireStopped: false, successor: options.successor });
+  if (!snapshot.operation || snapshot.operation.phase === "active") {
+    if (stackKey !== "editor") throw new Error("successor는 Editor 실행 전에 durable fence를 먼저 기록해야 합니다.");
+    options.successor.oldRuntime = await collectProjectSuccessorRuntime({
+      context: options.successor, proof: snapshot.proof, region: options.region, predecessor: true,
+    });
+    await beginProjectSuccessor(options.successor);
+  } else if (snapshot.operation.phase !== "fenced") {
+    throw new Error("successor AWS 재실행 전 --fence-successor로 관리자 접수도 닫아야 합니다.");
+  }
+}
+
+async function executeProjectSuccessorAction(options) {
+  if (options.successorAction === "fence") {
+    const operation = await transitionProjectSuccessor(options.successor, "fence", {});
+    process.stdout.write(`successor ${operation.id}: fenced (신규 접수 차단 유지)\n`);
+    return;
+  }
+  const snapshot = await verifyStageBDatabaseContracts({ requireStopped: false, successor: options.successor });
+  const cancel = options.successorAction === "cancel";
+  const runtime = await collectProjectSuccessorRuntime({ context: options.successor, proof: snapshot.proof,
+    region: options.region, predecessor: cancel, cancel });
+  const operation = await transitionProjectSuccessor(options.successor, options.successorAction, runtime);
+  process.stdout.write(`successor ${operation.id}: ${operation.phase}; active=${operation.activeReleaseId || "관리자 검증 대기"}\n`);
 }
 
 function verifyPromotedProductionBaseline(expectedBase) {
@@ -875,6 +995,11 @@ function changeSetProvenance(
     candidateTemplateSha256,
     editorCandidateTemplateSha256,
   };
+  if (options.successor) provenance.successor = {
+    predecessorReleaseId: options.successor.predecessorReleaseId,
+    successorReleaseId: options.successor.successorReleaseId,
+    oldRegistrySha256: options.successor.oldRegistrySha256,
+  };
   return {
     ...provenance,
     digest: stageBChangeSetProvenanceSha256(provenance),
@@ -1167,6 +1292,7 @@ export async function waitForStageBStackUpdate({
         owner: leaseOwner,
         leaseId,
         ttlSeconds: LEASE_TTL_SECONDS,
+        ...(options.successor ? { successor: options.successor } : {}),
       });
       lastRenewalError = null;
     } catch (error) {
@@ -1399,8 +1525,13 @@ async function executeChangeSet(options, initial, registry) {
       options.changeSetId,
     );
     await verifyStageBDatabaseContracts({
-      requireStopped: stageBRequiresStopped(options.phase),
+      requireStopped: stageBRequiresStopped(options.phase, options.successor),
+      successor: options.successor,
     });
+
+    // This committed DB fence covers old web INSERTs and survives lease TTL.
+    // Only already-submitted current-generation jobs may span the rotation.
+    await ensureProjectSuccessorFence(options, stackKey);
 
     // Renewal mutates only online-safe Editor IAM/registrar resources. Reuse
     // the existing lockdown-shaped lease identity so the already-deployed DB
@@ -1417,6 +1548,7 @@ async function executeChangeSet(options, initial, registry) {
         owner: leaseOwner,
         leaseId,
         ttlSeconds: LEASE_TTL_SECONDS,
+        ...(options.successor ? { successor: options.successor } : {}),
       });
       leaseAcquired = true;
       verifyRepositoryUnchanged(options, initial);
@@ -1425,6 +1557,7 @@ async function executeChangeSet(options, initial, registry) {
         owner: leaseOwner,
         leaseId,
         ttlSeconds: LEASE_TTL_SECONDS,
+        ...(options.successor ? { successor: options.successor } : {}),
       });
       if (
         stageBTemplateSha256(liveTemplate(stackKey, options.region))
@@ -1436,6 +1569,7 @@ async function executeChangeSet(options, initial, registry) {
         owner: leaseOwner,
         leaseId,
         ttlSeconds: LEASE_TTL_SECONDS,
+        ...(options.successor ? { successor: options.successor } : {}),
       });
       if (stackKey === "compute") {
         const editorLive = liveTemplate("editor", options.region);
@@ -1462,6 +1596,7 @@ async function executeChangeSet(options, initial, registry) {
           owner: leaseOwner,
           leaseId,
           ttlSeconds: LEASE_TTL_SECONDS,
+          ...(options.successor ? { successor: options.successor } : {}),
         });
       }
       if (
@@ -1477,6 +1612,7 @@ async function executeChangeSet(options, initial, registry) {
         owner: leaseOwner,
         leaseId,
         ttlSeconds: LEASE_TTL_SECONDS,
+        ...(options.successor ? { successor: options.successor } : {}),
       });
       assertChangeSetProvenance(
         exactChangeSet(
@@ -1492,6 +1628,7 @@ async function executeChangeSet(options, initial, registry) {
         owner: leaseOwner,
         leaseId,
         ttlSeconds: LEASE_TTL_SECONDS,
+        ...(options.successor ? { successor: options.successor } : {}),
       });
       executionMayHaveStarted = true;
       executionTerminalKnown = false;
@@ -1542,9 +1679,11 @@ async function executeChangeSet(options, initial, registry) {
         owner: leaseOwner,
         leaseId,
         ttlSeconds: LEASE_TTL_SECONDS,
+        ...(options.successor ? { successor: options.successor } : {}),
       });
       await verifyStageBDatabaseContracts({
-        requireStopped: stageBRequiresStopped(options.phase),
+        requireStopped: stageBRequiresStopped(options.phase, options.successor),
+        successor: options.successor,
       });
       liveStack(stackKey, options.region);
       const finalHash = stageBTemplateSha256(
@@ -1576,12 +1715,14 @@ async function executeChangeSet(options, initial, registry) {
         } catch (releaseError) {
           if (!primaryError) throw releaseError;
           process.stderr.write(
-            `Stage B lease 해제 실패(만료 후 자동 복구): ${releaseError instanceof Error ? releaseError.message : String(releaseError)}\n`,
+            `Stage B lease 해제 실패(${options.successor ? "영구 successor fence는 만료와 무관하게 유지" : "만료 후 자동 복구"}): ${releaseError instanceof Error ? releaseError.message : String(releaseError)}\n`,
           );
         }
       } else if (leaseAcquired) {
         process.stderr.write(
-          "Stage B 실행 terminal 상태가 불명확해 lease를 명시적으로 해제하지 않습니다. 2시간 TTL 동안 신규 v4 admission과 관리 전환은 계속 차단됩니다.\n",
+          options.successor
+            ? "Stage B 실행 terminal 상태가 불명확합니다. lease를 유지하고, 영구 successor fence는 2시간 TTL이 지나도 접수를 다시 열지 않습니다.\n"
+            : "Stage B 실행 terminal 상태가 불명확해 lease를 명시적으로 해제하지 않습니다. 2시간 TTL 동안 신규 v4 admission과 관리 전환은 계속 차단됩니다.\n",
         );
       }
     }
@@ -1594,10 +1735,22 @@ export async function runStageBReleaseControl(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
   const initial = repositoryState(options);
   const registry = readProductionProjectTargets();
+  if (options.successor) options.successor = projectSuccessorContext(options, initial, registry,
+    execFileSync("git", ["show", `${options.priorStageHead}:production-project-targets.json`],
+      { cwd: root, encoding: "utf8" }));
   verifyPromotedProductionBaseline(options.base);
+  if (options.mode === "successor-action") {
+    await executeProjectSuccessorAction(options);
+    return;
+  }
   await verifyStageBDatabaseContracts({
-    requireStopped: stageBRequiresStopped(options.phase),
+    requireStopped: stageBRequiresStopped(options.phase, options.successor),
+    successor: options.successor,
   });
+  if (options.successor) {
+    const snapshot = await withProjectSuccessorDatabase((tx) => readProjectSuccessorSnapshot(tx, options.successor));
+    verifySuccessorAwsDefinitions(options.successor, snapshot.proof, options.region);
+  }
 
   if (options.mode === "execute") {
     await executeChangeSet(options, initial, registry);
@@ -1722,7 +1875,8 @@ export async function runStageBReleaseControl(argv = process.argv.slice(2)) {
       const name = provenance.changeSetName;
       assertChangeSetNameUnused(stackKey, options.region, name);
       await verifyStageBDatabaseContracts({
-        requireStopped: stageBRequiresStopped(options.phase),
+        requireStopped: stageBRequiresStopped(options.phase, options.successor),
+        successor: options.successor,
       });
       const record = { stackKey, name, id: "", provenance };
       preparedRecords.push(record);

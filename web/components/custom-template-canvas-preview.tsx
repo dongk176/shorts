@@ -2,6 +2,7 @@ import { CustomTemplateTitlePreview } from "@/components/custom-template-title-p
 import { TemplateTitleV4Preview } from "@/components/template-title-v4-preview";
 import { TemplateSubtitlePreview } from "@/components/template-subtitle-preview";
 import { TemplateCommentPreview } from "@/components/template-comment-prototype";
+import { EditorTextOverlayPaint } from "@/components/editor-text-overlay-paint";
 import {
   customCanvasWidth,
   customCenteredLayerStyle,
@@ -9,18 +10,13 @@ import {
   customVideoFrameStyle,
 } from "@/lib/custom-template-preview-layout";
 import { editorFontFamily, resolveEditorFontFace } from "@/lib/editor-fonts";
-import { isTemplateConfigV5, stockBackgrounds, TEMPLATE_CANVAS, type CustomTemplate } from "@/lib/template-config";
-
-function previewBackground(template: CustomTemplate) {
-  const background = template.config.background;
-  if (background.kind === "color") return { backgroundColor: background.color };
-  const asset = stockBackgrounds.find((item) => item.id === background.assetId);
-  return {
-    backgroundImage: `url(${asset?.src || ""})`,
-    backgroundPosition: "center",
-    backgroundSize: "cover",
-  };
-}
+import { isTemplateConfigV5, TEMPLATE_CANVAS, type CustomTemplate } from "@/lib/template-config";
+import {
+  hasTemplateDesignLayerOrder,
+  templateBackgroundStyle,
+  templateDesignLayerZIndex,
+  templateTextRenderSpec,
+} from "@/lib/template-design-preview";
 
 function PreviewChannel({
   template,
@@ -49,7 +45,7 @@ function PreviewChannel({
   return (
     <div
       className={`${positionedBelow ? "absolute" : inCommentFlow ? "relative mx-auto mt-[2cqw] block" : "absolute"} z-30 truncate rounded px-[1.5cqw] py-[.7cqw] text-center font-bold`}
-      style={{ ...flowStyle, color: channel.color, backgroundColor: channel.backgroundColor || "transparent", fontSize: customCanvasWidth(channel.fontSize) }}
+      style={{ ...flowStyle, color: channel.color, backgroundColor: channel.backgroundColor || "transparent", fontSize: customCanvasWidth(channel.fontSize), zIndex: templateDesignLayerZIndex(template.config, "channel") }}
     >
       ● {label}
     </div>
@@ -79,13 +75,14 @@ export function CustomTemplateCanvasPreview({
     : null;
   const commentLayerEnabled = template.baseTemplateId === "comment-capture";
   const commentY = customCommentLayerY(config);
+  const hasDesignOrder = hasTemplateDesignLayerOrder(config);
   return (
     <div
       className="relative mx-auto aspect-[9/16] w-full max-w-[164px] overflow-hidden rounded-lg"
-      style={{ ...previewBackground(template), containerType: "inline-size" }}
+      style={{ ...templateBackgroundStyle(config.background), containerType: "inline-size" }}
       aria-label={`${template.name} 쇼츠 미리보기`}
     >
-      <div className="absolute bg-neutral-700" style={customVideoFrameStyle(config.video)}>
+      <div className="absolute bg-neutral-700" style={{ ...customVideoFrameStyle(config.video), zIndex: templateDesignLayerZIndex(config, "video") }}>
         <div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
       </div>
       {titleV4Enabled
@@ -96,6 +93,7 @@ export function CustomTemplateCanvasPreview({
             templateConfig={config}
             primaryColor={config.title.primaryColor}
             accentColor={config.title.accentColor}
+            zIndex={templateDesignLayerZIndex(config, "title")}
           />
         : <CustomTemplateTitlePreview
             title={config.title}
@@ -103,6 +101,7 @@ export function CustomTemplateCanvasPreview({
             secondLine={secondLine}
             fontFamily={unifiedConfig ? editorFontFamily(unifiedConfig.title.fontId) : undefined}
             fontWeight={unifiedConfig ? resolveEditorFontFace(unifiedConfig.title.fontId, "title").resolvedWeight : undefined}
+            movementStyle={{ zIndex: templateDesignLayerZIndex(config, "title") }}
           />}
       {unifiedConfig
         ? <TemplateSubtitlePreview
@@ -111,11 +110,17 @@ export function CustomTemplateCanvasPreview({
           />
         : null}
       {commentLayerEnabled
-        ? <div className="absolute inset-x-0 z-40" style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>
-            {config.comment.visible && <TemplateCommentPreview theme={config.comment.theme} size={config.comment.size} />}
+        ? <div className={`absolute inset-x-0 ${hasDesignOrder ? "" : "z-40"}`} style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>
+            {config.comment.visible && <div style={hasDesignOrder ? { position: "relative", zIndex: templateDesignLayerZIndex(config, "comment") } : undefined}><TemplateCommentPreview theme={config.comment.theme} size={config.comment.size} /></div>}
             <PreviewChannel template={template} label={channelLabel} inCommentFlow commentY={commentY} />
           </div>
         : <PreviewChannel template={template} label={channelLabel} />}
+      {(config.textOverlays || []).map((text) => <EditorTextOverlayPaint
+        key={text.id}
+        textOverlay={text}
+        renderSpec={templateTextRenderSpec(text)}
+        zIndex={templateDesignLayerZIndex(config, `text:${text.id}`)}
+      />)}
     </div>
   );
 }

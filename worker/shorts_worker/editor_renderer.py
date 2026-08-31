@@ -20,6 +20,7 @@ from .caption_templates import (
     verify_caption_font_selection_v4,
 )
 from .config import Settings
+from .editor_text_layout import composition_steps, normalize_composition_layer_order
 from .errors import RenderError
 from .media import media_duration, probe_media, run_command, video_fps
 from .overlays import (
@@ -1525,18 +1526,7 @@ def create_editor_channel_layer(
 
 
 def editor_layer_order(document: EditorDocument) -> list[str]:
-    order = [
-        layer_name
-        for layer_name in document.overlays.layer_order
-        if layer_name != "channel"
-    ]
-    if "video" in order and "title" in order:
-        video_index = order.index("video")
-        title_index = order.index("title")
-        if video_index > title_index:
-            order.pop(video_index)
-            order.insert(order.index("title"), "video")
-    return [*order, "channel"]
+    return normalize_composition_layer_order(document.overlays.layer_order)
 
 
 def _wrap_overlay_text(
@@ -1758,14 +1748,22 @@ def create_editor_comment_layers(
     return assets
 
 
-def create_editor_background(document: EditorDocument, output_path: Path) -> Path:
+def create_editor_background(
+    document: EditorDocument,
+    output_path: Path,
+    uploaded_background_path: Path | None = None,
+) -> Path:
     background = document.overlays.background
     config = _custom_template_config(document)
     if background is None and config is not None:
         background = config.background
-    if background is not None and background.kind == "image":
+    if background is not None and background.kind in {"image", "uploaded_image"}:
         asset_id = background.asset_id or ""
-        asset_path = CUSTOM_BACKGROUND_ASSETS.get(asset_id)
+        asset_path = (
+            uploaded_background_path
+            if background.kind == "uploaded_image"
+            else CUSTOM_BACKGROUND_ASSETS.get(asset_id)
+        )
         if not asset_path or not asset_path.is_file():
             raise RenderError("편집기 배경 이미지를 찾지 못했습니다.")
         with Image.open(asset_path) as source:
@@ -2002,6 +2000,7 @@ class EditorDocumentRenderer:
         channel_thumbnail_path: Path | None,
         caption_render_spec: dict[str, object] | None = None,
         caption_overlay_only: bool = False,
+        uploaded_background_path: Path | None = None,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         if document.render_spec is not None and document.render_spec.version == 4:
@@ -2043,6 +2042,7 @@ class EditorDocumentRenderer:
         background_path = create_editor_background(
             document,
             assets_dir / "background.png",
+            uploaded_background_path=uploaded_background_path,
         )
         caption_style = (
             caption_render_spec.get("style")
@@ -2253,9 +2253,10 @@ class EditorDocumentRenderer:
         # The browser uses z-index 50 for subtitles. Editor layers receive
         # 10, 20, ... from their order, so the fifth and later layers cover
         # subtitles while the first four stay behind them.
-        for layer_index, layer_name in enumerate(layer_order):
-            if layer_index == 4:
+        for layer_name in composition_steps(layer_order):
+            if layer_name is None:
                 apply_subtitles()
+                continue
             if layer_name == "video":
                 next_label = f"scene{len(filters)}"
                 filters.append(
@@ -2292,7 +2293,6 @@ class EditorDocumentRenderer:
                 )
                 current_label = next_label
                 next_image_index += 1
-        apply_subtitles()
         audio_label = None
         if has_audio:
             filters.append(

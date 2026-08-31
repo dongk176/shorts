@@ -250,6 +250,11 @@ export class ShortsMvpFileUploadCanaryStack extends cdk.Stack {
     );
     const allowedPrefixes = ["outputs/", "thumbnails/", "edit-sources/"];
     taskRole.addToPolicy(new iam.PolicyStatement({
+      sid: "ReadCustomBackgroundAssetsOnly",
+      actions: ["s3:GetObject"],
+      resources: [`${mediaBucket.bucketArn}/custom-backgrounds/*`],
+    }));
+    taskRole.addToPolicy(new iam.PolicyStatement({
       sid: "DerivedMediaObjectsOnly",
       actions: [
         "s3:GetObject",

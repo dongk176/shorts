@@ -9,6 +9,7 @@ import { resolveEditedTemplateSelection } from "@/lib/edit-template-selection";
 import { apiError, HttpError } from "@/lib/http";
 import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
+import { storedShortHasCustomDesign } from "@/lib/template-design";
 
 const subtitle = z.object({ start: z.number().nonnegative(), end: z.number().positive(), text: z.string().max(200) }).refine((item) => item.end > item.start);
 const hexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
@@ -75,7 +76,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
     assertPaidProjectActionAccess(billing, "edit");
     const existing = await db`
       select s.id, s.subtitle_segments, s.duration_seconds, s.template_id,
-        s.custom_template_id, s.template_snapshot, s.subtitle_template_id
+        s.custom_template_id, s.template_snapshot, s.subtitle_template_id,
+        s.editor_document, s.render_version
       from shorts_mvp.generated_shorts s
       join shorts_mvp.video_jobs j on j.id=s.job_id
       where s.id=${shortId} and not j.is_example
@@ -87,6 +89,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
         and s.status='ready' and s.output_s3_key is not null
     `;
     if (!existing[0]) throw new Error("편집할 쇼츠를 찾을 수 없습니다.");
+    if (storedShortHasCustomDesign(existing[0])) {
+      throw new HttpError(
+        409,
+        "배경과 텍스트를 보존하려면 새 편집 화면을 다시 열어 주세요.",
+        "CUSTOM_TEMPLATE_DESIGN_EDITOR_REQUIRED",
+      );
+    }
     if (existing[0].subtitleTemplateId) {
       throw new HttpError(
         409,
@@ -149,6 +158,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ short
       ) and s.deleted_at is null and s.expires_at > now()
         and s.status='ready' and s.output_s3_key is not null
         and s.subtitle_template_id is null
+        and s.render_version=${Number(existing[0].renderVersion)}
       returning s.id, s.render_version
     `;
     if (!rows[0]) throw new Error("편집할 쇼츠를 찾을 수 없습니다.");

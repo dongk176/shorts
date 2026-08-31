@@ -7,6 +7,7 @@ function source(path: string) {
 
 describe("editor v2 text tool", () => {
   const editorSource = source("./shorts-app.tsx");
+  const sharedTextControls = source("../components/editor-text-overlay-controls.tsx");
 
   it("adds a dedicated text item to the v2 tool rail", () => {
     expect(editorSource).toContain('{ id: "text", label: "텍스트" }');
@@ -50,7 +51,9 @@ describe("editor v2 text tool", () => {
     );
     expect(quickActions).toContain("+ 댓글");
     expect(quickActions).not.toContain("+ 텍스트");
-    expect(editorSource).toContain("선택한 텍스트 삭제");
+    expect(editorSource).toContain("<EditorTextOverlayControls");
+    expect(editorSource).toContain("onDelete={deleteSelectedEditorOverlay}");
+    expect(sharedTextControls).toContain("선택한 텍스트 삭제");
   });
 
   it("applies candidate fonts to one layer while preserving the stable apply-all prompt", () => {
@@ -63,7 +66,8 @@ describe("editor v2 text tool", () => {
     expect(editorSource).toContain(
       "overlayPreviewEnabled && !adminSubtitleLayoutEnabled",
     );
-    expect(editorSource).toContain("onChange={updateSelectedEditorTextFont}");
+    expect(editorSource).toContain("onFontChange={updateSelectedEditorTextFont}");
+    expect(sharedTextControls).toContain("onChange={onFontChange}");
     expect(editorSource).toContain(
       'onChange={(fontId) => updateEditorFont("title", fontId)}',
     );

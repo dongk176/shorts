@@ -13,11 +13,13 @@ import {
   templatePresetColorOptions,
   templatePresetColors,
   isTemplateConfigV5,
+  createDefaultTemplateConfig,
   videoFrameForAspect,
   type CustomTemplate,
   type TemplateConfigColor,
   type TemplatePresetColor,
   type TemplateConfig,
+  type TemplateTextOverlay,
 } from "@/lib/template-config";
 import { videoAspectRatioOptions, type TemplateId, type VideoAspectRatio } from "@/lib/contracts";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
@@ -37,8 +39,35 @@ import { TemplateCommentPrototype } from "@/components/template-comment-prototyp
 import { TemplateSubtitlePreview } from "@/components/template-subtitle-preview";
 import { editorFontFamily, editorFontOptions, resolveEditorFontFace, type EditorFontId } from "@/lib/editor-fonts";
 import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
+import { BackgroundAssetPicker } from "@/components/background-asset-picker";
+import { EditorTextOverlayPreview } from "@/components/editor-text-overlay-preview";
+import { EditorTextOverlayPaint } from "@/components/editor-text-overlay-paint";
+import { EditorTextOverlayControls } from "@/components/editor-text-overlay-controls";
+import {
+  clampCanvasDelta,
+  clampCenteredOverlayOffsetAfterScale,
+  clientDeltaToCanvas,
+  clientRectToCanvas,
+  resizeEditorTextOverlayWidth,
+  snapRectCenterToCanvas,
+  type EditorTextResizeEdge,
+} from "@/lib/editor-overlay-preview";
+import {
+  addTemplateTextOverlay,
+  hasTemplateDesignLayerOrder,
+  moveTemplateTextLayer,
+  removeTemplateTextOverlay,
+  templateBackgroundStyle,
+  templateDesignLayerOrder,
+  templateDesignLayerZIndex,
+  templateTextEditorValue,
+  templateTextRenderSpec,
+  TEMPLATE_TEXT_OVERLAY_LIMIT,
+} from "@/lib/template-design-preview";
+import { notifyTemplateLibraryChanged } from "@/lib/template-library-events";
 
 type LayerId = "video" | "title" | "subtitle" | "channel" | "comment";
+type SelectedLayerId = LayerId | `text:${string}`;
 type TemplateLayerId = Exclude<LayerId, "comment">;
 type TextLayerId = "title" | "channel";
 type History = { past: TemplateConfig[]; present: TemplateConfig; future: TemplateConfig[] };
@@ -80,13 +109,6 @@ function snapCommentYToVideo(candidateY: number, videoBottom: number, threshold:
     return { value: candidateY, snapped: false };
   }
   return snapAxisToCenter(candidateY, videoBottom, threshold);
-}
-
-function backgroundStyle(config: TemplateConfig): React.CSSProperties {
-  if (config.background.kind === "color") return { backgroundColor: config.background.color };
-  const assetId = config.background.assetId;
-  const asset = stockBackgrounds.find((item) => item.id === assetId);
-  return { backgroundImage: `url(${asset?.src || ""})`, backgroundPosition: "center", backgroundSize: "cover" };
 }
 
 type TemplateColorOption = { color: TemplateConfigColor; name: string };
@@ -136,19 +158,23 @@ export function TemplateEditor({
   baseTemplateId,
   initialConfig,
   unifiedSubtitleCanaryEnabled = false,
+  customTemplateDesignEnabled = false,
   suggestedName,
 }: {
   initialTemplate: CustomTemplate | null;
   baseTemplateId: TemplateId;
   initialConfig: TemplateConfig;
   unifiedSubtitleCanaryEnabled?: boolean;
+  customTemplateDesignEnabled?: boolean;
   suggestedName?: string;
 }) {
   const commentLayerEnabled = baseTemplateId === "comment-capture";
   const [history, setHistory] = useState<History>({ past: [], present: initialConfig, future: [] });
   const initialName = initialTemplate?.name || suggestedName || "나의 템플릿";
   const [name, setName] = useState(initialName);
-  const [selectedLayer, setSelectedLayer] = useState<LayerId>("title");
+  const [selectedLayer, setSelectedLayer] = useState<SelectedLayerId>("title");
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [backgroundBusy, setBackgroundBusy] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [showAllBackgroundColors, setShowAllBackgroundColors] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -158,8 +184,16 @@ export function TemplateEditor({
   const [commentSnapGuide, setCommentSnapGuide] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const transactionRef = useRef<TemplateConfig | null>(null);
+  const textDragCleanupRef = useRef<(() => void) | null>(null);
   const baselineRef = useRef(JSON.stringify({ name: initialName, config: initialConfig }));
   const config = history.present;
+  const configRef = useRef(config);
+  configRef.current = config;
+  const extraTexts = config.textOverlays || [];
+  const selectedExtraText = selectedLayer.startsWith("text:")
+    ? extraTexts.find((text) => text.id === selectedLayer.slice(5)) || null
+    : null;
+  const hasDesignOrder = hasTemplateDesignLayerOrder(config);
   const previewTitleLines = isTemplateConfigV5(config) && config.subtitle.visible
     ? (["AI가 고른 오늘의", "핵심 장면"] as const)
     : templatePresetPresentation[baseTemplateId].titleLines;
@@ -201,15 +235,31 @@ export function TemplateEditor({
     return { past: [...current.past.slice(-49), current.present], present: next, future: current.future.slice(1) };
   }), []);
 
+  const beginTextInteraction = useCallback(() => {
+    if (!transactionRef.current) transactionRef.current = cloneConfig(configRef.current);
+  }, []);
+  const finishTextInteraction = useCallback(() => {
+    const before = transactionRef.current;
+    transactionRef.current = null;
+    if (!before) return;
+    setHistory((current) => JSON.stringify(before) === JSON.stringify(current.present)
+      ? current
+      : { past: [...current.past.slice(-49), before], present: current.present, future: [] });
+  }, []);
+
+  useEffect(() => () => textDragCleanupRef.current?.(), []);
+
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") return;
+      if (event.isComposing || saving || backgroundBusy) return;
       event.preventDefault();
+      finishTextInteraction();
       if (event.shiftKey) redo(); else undo();
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [redo, undo]);
+  }, [backgroundBusy, finishTextInteraction, redo, saving, undo]);
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -222,6 +272,7 @@ export function TemplateEditor({
   }, [dirty]);
 
   const beginPointerAction = (event: ReactPointerEvent, layer: TemplateLayerId, mode: "move" | "resize" = "move") => {
+    if (saving || backgroundBusy) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     event.preventDefault();
@@ -325,6 +376,7 @@ export function TemplateEditor({
   };
 
   const beginCommentPointerAction = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (saving || backgroundBusy) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     event.preventDefault();
@@ -374,7 +426,129 @@ export function TemplateEditor({
     return next;
   });
 
+  const updateExtraText = (
+    id: string,
+    patch: Partial<Omit<TemplateTextOverlay, "id">>,
+    mode: "continuous" | "record" = "record",
+  ) => {
+    if (!customTemplateDesignEnabled || saving || backgroundBusy) return;
+    const update = (next: TemplateConfig) => ({
+      ...next,
+      textOverlays: next.textOverlays?.map((text) => text.id === id ? { ...text, ...patch } : text),
+    });
+    if (mode === "continuous") {
+      beginTextInteraction();
+      updateTransient(update);
+    } else {
+      finishTextInteraction();
+      commit(update);
+    }
+  };
+
+  const addExtraText = () => {
+    if (!customTemplateDesignEnabled || extraTexts.length >= TEMPLATE_TEXT_OVERLAY_LIMIT || saving || backgroundBusy) return;
+    if (typeof crypto.randomUUID !== "function") {
+      setMessage("최신 브라우저에서 텍스트를 추가해 주세요.");
+      return;
+    }
+    const id = crypto.randomUUID();
+    finishTextInteraction();
+    commit((next) => addTemplateTextOverlay(next, id));
+    setSelectedLayer(`text:${id}`);
+    setEditingTextId(null);
+  };
+
+  const deleteExtraText = (id: string) => {
+    if (!customTemplateDesignEnabled || saving || backgroundBusy) return;
+    finishTextInteraction();
+    commit((next) => removeTemplateTextOverlay(next, id));
+    setEditingTextId(null);
+    setSelectedLayer("title");
+  };
+
+  const beginExtraTextPointerAction = (
+    id: string,
+    event: ReactPointerEvent<HTMLButtonElement>,
+    edge?: EditorTextResizeEdge,
+  ) => {
+    if (!customTemplateDesignEnabled || saving || backgroundBusy || event.button !== 0) return;
+    const canvas = canvasRef.current;
+    const text = configRef.current.textOverlays?.find((item) => item.id === id);
+    if (!canvas || !text) return;
+    event.preventDefault();
+    event.stopPropagation();
+    textDragCleanupRef.current?.();
+    finishTextInteraction();
+    beginTextInteraction();
+    setSelectedLayer(`text:${id}`);
+    setCenterGuides(hiddenCenterGuides);
+    const captureTarget = event.currentTarget;
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const canvasRect = canvas.getBoundingClientRect();
+    const textRect = clientRectToCanvas(captureTarget.getBoundingClientRect(), canvasRect);
+    captureTarget.setPointerCapture(pointerId);
+    const move = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      moveEvent.preventDefault();
+      const raw = clientDeltaToCanvas({ x: moveEvent.clientX - startX, y: moveEvent.clientY - startY }, canvasRect);
+      if (edge) {
+        const resized = resizeEditorTextOverlayWidth({
+          width: text.width, offsetX: text.offset.x, deltaX: raw.x / text.scale, edge,
+        });
+        updateTransient((next) => ({
+          ...next,
+          textOverlays: next.textOverlays?.map((item) => item.id === id
+            ? { ...item, width: resized.width, offset: { ...item.offset, x: resized.offsetX } }
+            : item),
+        }));
+        return;
+      }
+      const snapped = snapRectCenterToCanvas(textRect, clampCanvasDelta(textRect, raw), CENTER_SNAP_THRESHOLD_PX * TEMPLATE_CANVAS.width / canvasRect.width);
+      const delta = clampCanvasDelta(textRect, snapped.delta);
+      updateTransient((next) => ({
+        ...next,
+        textOverlays: next.textOverlays?.map((item) => item.id === id
+          ? { ...item, offset: { x: text.offset.x + delta.x, y: text.offset.y + delta.y } }
+          : item),
+      }));
+      setCenterGuides(snapped.guides);
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      if (captureTarget.hasPointerCapture(pointerId)) captureTarget.releasePointerCapture(pointerId);
+      if (textDragCleanupRef.current === cleanup) textDragCleanupRef.current = null;
+    };
+    const finish = (finishEvent: PointerEvent) => {
+      if (finishEvent.pointerId !== pointerId) return;
+      cleanup();
+      setCenterGuides(hiddenCenterGuides);
+      finishTextInteraction();
+    };
+    textDragCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  };
+
+  const changeExtraTextScale = (text: TemplateTextOverlay, scale: number) => {
+    const canvas = canvasRef.current;
+    const element = canvas?.querySelector<HTMLElement>(`[data-editor-text-overlay-id="${text.id}"]`);
+    const offset = canvas && element
+      ? clampCenteredOverlayOffsetAfterScale({
+          layerRect: clientRectToCanvas(element.getBoundingClientRect(), canvas.getBoundingClientRect()),
+          offset: text.offset, currentScale: text.scale, nextScale: scale,
+        })
+      : text.offset;
+    updateExtraText(text.id, { scale, offset }, "continuous");
+  };
+
   const save = async () => {
+    if (saving || backgroundBusy) return;
+    finishTextInteraction();
     if (!name.trim()) { setMessage("템플릿 이름을 입력해 주세요."); return; }
     setSaving(true);
     setMessage(null);
@@ -393,6 +567,7 @@ export function TemplateEditor({
       setHistory({ past: [], present: payload.template.config, future: [] });
       baselineRef.current = JSON.stringify({ name: payload.template.name, config: payload.template.config });
       setMessage("템플릿을 저장했습니다. 홈의 템플릿 선택에서도 바로 사용할 수 있습니다.");
+      notifyTemplateLibraryChanged();
       if (!initialTemplate) window.history.replaceState(null, "", `/templates/${payload.template.id}/edit`);
     } catch (error) {
       setMessage(userFacingErrorMessage(error, "템플릿을 저장하지 못했습니다."));
@@ -408,7 +583,7 @@ export function TemplateEditor({
   const unifiedTitleFontId = unifiedSubtitleConfigEnabled && isTemplateConfigV5(config)
     ? config.title.fontId
     : undefined;
-  const background = backgroundStyle(config);
+  const background = templateBackgroundStyle(config.background);
   const selectedBackgroundColor = config.background.kind === "color" ? config.background.color : null;
   const visibleBackgroundColors = showAllBackgroundColors
     ? templateConfigColorOptions
@@ -420,8 +595,8 @@ export function TemplateEditor({
         <header className="fixed inset-x-0 top-0 z-50 flex h-16 items-center justify-between border-b border-white/10 bg-[#171719]/95 px-5 backdrop-blur-xl">
           <div className="flex items-center gap-4"><Link href="/templates" className="text-sm font-bold text-neutral-400 hover:text-white">← 라이브러리</Link><span className="h-5 w-px bg-white/10" /><strong className="tracking-[-.03em]">Easy Cut <span className="text-[#ff715e]">템플릿 커스텀</span></strong></div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={undo} disabled={!history.past.length} className="rounded-lg border border-white/10 px-3 py-2 text-sm disabled:opacity-30" aria-label="실행 취소">↶ 되돌리기</button>
-            <button type="button" onClick={redo} disabled={!history.future.length} className="rounded-lg border border-white/10 px-3 py-2 text-sm disabled:opacity-30" aria-label="다시 실행">↷ 복구하기</button>
+            <button type="button" onClick={() => { finishTextInteraction(); undo(); }} disabled={!history.past.length || saving || backgroundBusy} className="rounded-lg border border-white/10 px-3 py-2 text-sm disabled:opacity-30" aria-label="실행 취소">↶ 되돌리기</button>
+            <button type="button" onClick={() => { finishTextInteraction(); redo(); }} disabled={!history.future.length || saving || backgroundBusy} className="rounded-lg border border-white/10 px-3 py-2 text-sm disabled:opacity-30" aria-label="다시 실행">↷ 복구하기</button>
           </div>
         </header>
 
@@ -431,7 +606,7 @@ export function TemplateEditor({
             <div className="flex min-h-[680px] w-full items-center justify-center overflow-auto">
               <div style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}>
                 <div ref={canvasRef} className="relative aspect-[9/16] w-[360px] touch-none overflow-hidden rounded-[12px] shadow-[0_30px_100px_rgba(0,0,0,.65)]" style={{ ...background, containerType: "inline-size" }} onPointerDown={() => setSelectedLayer("video")}>
-                  <div onPointerDown={(event) => beginPointerAction(event, "video")} className={`absolute cursor-move overflow-hidden bg-neutral-700 ${selectedLayer === "video" ? "ring-2 ring-[#ff715e] ring-inset" : ""}`} style={customVideoFrameStyle(config.video)}>
+                  <div onPointerDown={(event) => beginPointerAction(event, "video")} className={`absolute cursor-move overflow-hidden bg-neutral-700 ${selectedLayer === "video" ? "ring-2 ring-[#ff715e] ring-inset" : ""}`} style={{ ...customVideoFrameStyle(config.video), zIndex: templateDesignLayerZIndex(config, "video") }}>
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,#73737c,#2c2c31_70%)]" /><div className="absolute inset-x-0 top-1/2 h-px bg-white/20" />
                     <button type="button" aria-label="영상 크기 조절" onPointerDown={(event) => beginPointerAction(event, "video", "resize")} className="absolute bottom-0 right-0 h-6 w-6 cursor-nwse-resize border-l border-t border-white bg-[#ff715e]" />
                   </div>
@@ -444,6 +619,7 @@ export function TemplateEditor({
                         primaryColor={config.title.primaryColor}
                         accentColor={config.title.accentColor}
                         selected={selectedLayer === "title"}
+                        zIndex={templateDesignLayerZIndex(config, "title")}
                         onPointerDown={(event) => beginPointerAction(event, "title")}
                       />
                     : <CustomTemplateTitlePreview
@@ -453,6 +629,7 @@ export function TemplateEditor({
                         fontFamily={unifiedTitleFontId ? editorFontFamily(unifiedTitleFontId) : undefined}
                         fontWeight={unifiedTitleFontId ? resolveEditorFontFace(unifiedTitleFontId, "title").resolvedWeight : undefined}
                         selected={selectedLayer === "title"}
+                        movementStyle={{ zIndex: templateDesignLayerZIndex(config, "title") }}
                         onPointerDown={(event) => beginPointerAction(event, "title")}
                       />}
                   {unifiedSubtitleConfigEnabled && isTemplateConfigV5(config)
@@ -463,14 +640,30 @@ export function TemplateEditor({
                         positionedWordsV4Enabled={positionedWordsV4Enabled}
                       />
                     : null}
-                  {config.channel.visible && !commentLayerEnabled && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</button>}
-                  {commentLayerEnabled && <div className="absolute inset-x-0 z-40" style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>
-                    {config.comment.visible && <TemplateCommentPrototype selected={selectedLayer === "comment"} theme={config.comment.theme} size={config.comment.size} comment={TEMPLATE_PRESET_COMMENT_SAMPLE} onSelect={() => setSelectedLayer("comment")} onPointerDown={beginCommentPointerAction} />}
-                    {config.channel.visible && <button type="button" onClick={() => setSelectedLayer("channel")} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setSelectedLayer("channel"); }} className={`${config.schemaVersion >= 4 ? "absolute left-1/2" : "relative mx-auto mt-[2cqw] block"} z-30 truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ top: config.schemaVersion >= 4 ? customCanvasWidth(config.channel.y - commentY) : undefined, transform: config.schemaVersion >= 4 ? "translate(-50%, -50%)" : undefined, width: customCanvasWidth(config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize) }}>● Easy Cut</button>}
+                  {config.channel.visible && !commentLayerEnabled && <button type="button" onPointerDown={(event) => beginPointerAction(event, "channel")} className={`absolute z-30 cursor-move truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ ...customCenteredLayerStyle(config.channel), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize), zIndex: templateDesignLayerZIndex(config, "channel") }}>● Easy Cut</button>}
+                  {commentLayerEnabled && <div className={`absolute inset-x-0 ${hasDesignOrder ? "" : "z-40"}`} style={{ top: `${(commentY / TEMPLATE_CANVAS.height) * 100}%` }}>
+                    {config.comment.visible && <div style={hasDesignOrder ? { position: "relative", zIndex: templateDesignLayerZIndex(config, "comment") } : undefined}><TemplateCommentPrototype selected={selectedLayer === "comment"} theme={config.comment.theme} size={config.comment.size} comment={TEMPLATE_PRESET_COMMENT_SAMPLE} onSelect={() => setSelectedLayer("comment")} onPointerDown={beginCommentPointerAction} /></div>}
+                    {config.channel.visible && <button type="button" onClick={() => setSelectedLayer("channel")} onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setSelectedLayer("channel"); }} className={`${config.schemaVersion >= 4 ? "absolute left-1/2" : "relative mx-auto mt-[2cqw] block"} z-30 truncate rounded px-[1.8cqw] py-[.8cqw] text-center font-bold ${selectedLayer === "channel" ? "outline outline-2 outline-[#ff715e]" : ""}`} style={{ top: config.schemaVersion >= 4 ? customCanvasWidth(config.channel.y - commentY) : undefined, transform: config.schemaVersion >= 4 ? "translate(-50%, -50%)" : undefined, width: customCanvasWidth(config.channel.maxWidth), color: config.channel.color, backgroundColor: config.channel.backgroundColor || "transparent", fontSize: customCanvasWidth(config.channel.fontSize), zIndex: templateDesignLayerZIndex(config, "channel") }}>● Easy Cut</button>}
                   </div>}
-                  {commentSnapGuide && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 z-50 h-px bg-[#35e6e3] shadow-[0_0_7px_rgba(53,230,227,.9)]" style={{ top: `${(videoBottom / TEMPLATE_CANVAS.height) * 100}%` }}><span className="absolute right-2 -translate-y-full rounded-t bg-[#35e6e3] px-1.5 py-0.5 text-[7px] font-black text-black">영상 하단에 맞춤</span></div>}
-                  {centerGuides.x && <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-1/2 z-50 w-px -translate-x-1/2 bg-[#ff2bd6] shadow-[0_0_5px_rgba(255,43,214,.95)]" />}
-                  {centerGuides.y && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-1/2 z-50 h-px -translate-y-1/2 bg-[#ff2bd6] shadow-[0_0_5px_rgba(255,43,214,.95)]" />}
+                  {extraTexts.map((text) => customTemplateDesignEnabled
+                    ? <EditorTextOverlayPreview
+                        key={text.id}
+                        textOverlay={templateTextEditorValue(text)}
+                        renderSpec={templateTextRenderSpec(text)}
+                        selected={selectedExtraText?.id === text.id}
+                        editing={editingTextId === text.id}
+                        zIndex={templateDesignLayerZIndex(config, `text:${text.id}`)}
+                        onPointerDown={(event) => beginExtraTextPointerAction(text.id, event)}
+                        onResizePointerDown={(edge, event) => beginExtraTextPointerAction(text.id, event, edge)}
+                        onDelete={deleteExtraText}
+                        onEditStart={(id) => { finishTextInteraction(); beginTextInteraction(); setSelectedLayer(`text:${id}`); setEditingTextId(id); }}
+                        onEditValueChange={(id, text) => updateExtraText(id, { text }, "continuous")}
+                        onEditEnd={() => { finishTextInteraction(); setEditingTextId(null); }}
+                      />
+                    : <EditorTextOverlayPaint key={text.id} textOverlay={text} renderSpec={templateTextRenderSpec(text)} zIndex={templateDesignLayerZIndex(config, `text:${text.id}`)} />)}
+                  {commentSnapGuide && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 z-[500] h-px bg-[#35e6e3] shadow-[0_0_7px_rgba(53,230,227,.9)]" style={{ top: `${(videoBottom / TEMPLATE_CANVAS.height) * 100}%` }}><span className="absolute right-2 -translate-y-full rounded-t bg-[#35e6e3] px-1.5 py-0.5 text-[7px] font-black text-black">영상 하단에 맞춤</span></div>}
+                  {centerGuides.x && <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-1/2 z-[500] w-px -translate-x-1/2 bg-[#ff2bd6] shadow-[0_0_5px_rgba(255,43,214,.95)]" />}
+                  {centerGuides.y && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-1/2 z-[500] h-px -translate-y-1/2 bg-[#ff2bd6] shadow-[0_0_5px_rgba(255,43,214,.95)]" />}
                 </div>
               </div>
             </div>
@@ -479,12 +672,37 @@ export function TemplateEditor({
         </main>
 
         <aside className="fixed bottom-0 right-0 top-16 z-40 flex w-[480px] flex-col border-l border-white/10 bg-[#19191c]">
-          <div className="flex-1 space-y-9 overflow-y-auto px-6 pb-32 pt-7">
+          <fieldset disabled={saving || backgroundBusy} className="min-h-0 flex-1 space-y-9 overflow-y-auto px-6 pb-32 pt-7">
             <div><h1 className="text-lg font-extrabold tracking-[-.025em] text-[#f6f4f7]">템플릿 편집</h1><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">왼쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</p></div>
 
             <section><label className="block text-[15px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">템플릿 이름<input value={name} maxLength={50} onChange={(event) => setName(event.target.value)} className="mt-3 h-11 w-full rounded-xl border border-white/10 bg-black/25 px-3 text-sm font-medium text-white outline-none transition focus:border-[#ff715e]" /></label></section>
 
             <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">편집 레이어</h2><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">미리보기에서 직접 선택하거나 아래 레이어를 고르세요.</p><div className={`mt-3 grid gap-1.5 rounded-xl border border-white/10 bg-black/20 p-1.5 ${availableLayerIds.length >= 5 ? "grid-cols-5" : availableLayerIds.length === 4 ? "grid-cols-4" : "grid-cols-3"}`}>{availableLayerIds.map((layer) => <button key={layer} type="button" onClick={() => setSelectedLayer(layer)} className={`rounded-lg px-1 py-2.5 text-xs font-bold transition ${selectedLayer === layer ? "bg-[#ff715e] text-white" : "text-neutral-400 hover:bg-white/5 hover:text-white"}`}>{layerLabels[layer]}</button>)}</div></section>
+
+            {customTemplateDesignEnabled && <section aria-label="템플릿 추가 텍스트">
+              <div className="flex items-center justify-between gap-3"><h2 className="text-[17px] font-extrabold text-[#f2f0f4]">추가 텍스트</h2><span className="text-xs text-neutral-500">{extraTexts.length}/{TEMPLATE_TEXT_OVERLAY_LIMIT}</span></div>
+              <p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">완성 영상 전체에 표시됩니다. 생성 후 편집기에서 표시 시간을 바꿀 수 있습니다.</p>
+              <button type="button" disabled={extraTexts.length >= TEMPLATE_TEXT_OVERLAY_LIMIT} onClick={addExtraText} className="mt-3 w-full rounded-xl border border-white/15 bg-white/[.04] py-3 text-xs font-bold text-neutral-100 hover:border-[#ff715e] disabled:opacity-40">+ 텍스트 추가</button>
+              {extraTexts.length > 0 && <div className="mt-3 space-y-2" aria-label="템플릿 추가 텍스트 목록">{extraTexts.map((text, index) => <div key={text.id}>
+                <button type="button" aria-pressed={selectedExtraText?.id === text.id} onClick={() => { setSelectedLayer(`text:${text.id}`); setEditingTextId(null); }} className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left text-xs ${selectedExtraText?.id === text.id ? "border-[#ff715e] bg-[#ff715e]/10 text-white" : "border-white/10 text-neutral-400"}`}><span aria-hidden="true" className="font-black">T</span><span className="min-w-0 truncate">{text.text.trim() || `텍스트 ${index + 1}`}</span></button>
+                {selectedExtraText?.id === text.id && <EditorTextOverlayControls
+                  textOverlay={text}
+                  onChange={(patch, mode) => updateExtraText(text.id, patch, mode)}
+                  onFontChange={(fontId) => updateExtraText(text.id, { fontId })}
+                  onInteractionStart={beginTextInteraction}
+                  onInteractionEnd={finishTextInteraction}
+                  onDelete={() => deleteExtraText(text.id)}
+                  fontOptions={editorFontOptions}
+                  geometryControls={{
+                    onScaleChange: (scale) => changeExtraTextScale(text, scale),
+                    onWidthChange: (width) => updateExtraText(text.id, { width }, "continuous"),
+                    onMoveLayer: (direction) => { finishTextInteraction(); commit((next) => moveTemplateTextLayer(next, text.id, direction, commentLayerEnabled)); },
+                    canMoveForward: JSON.stringify(moveTemplateTextLayer(config, text.id, "forward", commentLayerEnabled).layerOrder) !== JSON.stringify(templateDesignLayerOrder(config)),
+                    canMoveBackward: JSON.stringify(moveTemplateTextLayer(config, text.id, "backward", commentLayerEnabled).layerOrder) !== JSON.stringify(templateDesignLayerOrder(config)),
+                  }}
+                />}
+              </div>)}</div>}
+            </section>}
 
             {selectedLayer === "video" && <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">영상 프레임</h2><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5"><h3 className="text-sm font-semibold text-neutral-200">영상 비율</h3><div className="mt-3 grid grid-cols-5 gap-1">{videoAspectRatioOptions.map((option) => <button key={option.value} type="button" onClick={() => changeAspect(option.value)} className={`rounded-lg py-2 text-[10px] font-bold transition ${config.video.aspectRatio === option.value ? "bg-white text-black" : "bg-white/5 text-neutral-400 hover:bg-white/10"}`}>{option.value}</button>)}</div><p className="mt-3 text-[11px] leading-5 text-neutral-500">프레임을 끌어 이동하고 오른쪽 아래 핸들로 비율을 유지한 채 크기를 조절하세요.</p></div></section>}
 
@@ -645,11 +863,18 @@ export function TemplateEditor({
             </section>}
 
             <section><h2 className="text-[17px] font-extrabold tracking-[-.015em] text-[#f2f0f4]">배경</h2><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]">완성 영상과 같은 9:16 비율로 배경을 비교하세요.</p><div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3.5">
+              {customTemplateDesignEnabled && <div className="mb-6 border-b border-white/10 pb-5"><BackgroundAssetPicker
+                value={config.background}
+                disabled={saving}
+                onBusyChange={setBackgroundBusy}
+                onSelect={(background) => commit((next) => ({ ...next, background }))}
+                onRestore={() => commit((next) => ({ ...next, background: createDefaultTemplateConfig(baseTemplateId).background }))}
+              /></div>}
               <h3 className="text-sm font-semibold text-neutral-200">이미지 배경</h3><div className="mt-3 grid grid-cols-3 gap-2">{stockBackgrounds.map((asset) => <button key={asset.id} type="button" title={asset.label} aria-label={`${asset.label} 배경 선택`} aria-pressed={config.background.kind === "image" && config.background.assetId === asset.id} onClick={() => commit((next) => { next.background = { kind: "image", assetId: asset.id }; return next; })} className={`relative aspect-[9/16] overflow-hidden rounded-lg border transition ${config.background.kind === "image" && config.background.assetId === asset.id ? "border-[#ff715e] ring-2 ring-[#ff715e]/25" : "border-white/10 hover:border-white/35"}`}><span className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${asset.src})` }} /><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-black/20 px-1 py-1.5 text-[9px] font-bold leading-3 text-white">{asset.label}</span></button>)}</div>
               <div className="mt-6 border-t border-white/10 pt-5"><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold text-neutral-200">단색 배경</h3><button type="button" aria-expanded={showAllBackgroundColors} onClick={() => setShowAllBackgroundColors((current) => !current)} className="text-[11px] font-bold text-[#ff9b8d] transition hover:text-white">{showAllBackgroundColors ? "접기" : "전체 보기"}</button></div><div className="mt-3 grid grid-cols-3 gap-2">{visibleBackgroundColors.map((option) => <button key={option.color} type="button" title={option.name} aria-label={`${option.name} 단색 배경 선택`} aria-pressed={selectedBackgroundColor === option.color} onClick={() => commit((next) => { next.background = { kind: "color", color: option.color }; return next; })} className={`relative aspect-[9/16] overflow-hidden rounded-lg border transition ${selectedBackgroundColor === option.color ? "border-[#ff715e] ring-2 ring-[#ff715e]/25" : "border-white/10 hover:border-white/35"}`} style={{ backgroundColor: option.color }}><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-black/20 px-1 py-1.5 text-[9px] font-bold leading-3 text-white">{option.name}</span></button>)}</div></div>
             </div></section>
-          </div>
-          <div className="absolute inset-x-0 bottom-0 border-t border-white/10 bg-[#19191c]/95 p-5 backdrop-blur-xl"><button type="button" disabled={saving || !dirty} onClick={() => void save()} className="h-12 w-full rounded-xl bg-[#ff715e] text-sm font-black text-white transition hover:bg-[#ff8a78] disabled:bg-neutral-700 disabled:text-neutral-400">{saving ? "저장 중..." : savedTemplate ? "템플릿 저장" : "내 템플릿으로 저장"}</button>{message && <p className="mt-2 text-center text-[11px] leading-4 text-neutral-400">{message}</p>}</div>
+          </fieldset>
+          <div className="absolute inset-x-0 bottom-0 border-t border-white/10 bg-[#19191c]/95 p-5 backdrop-blur-xl"><button type="button" disabled={saving || backgroundBusy || !dirty} onClick={() => void save()} className="h-12 w-full rounded-xl bg-[#ff715e] text-sm font-black text-white transition hover:bg-[#ff8a78] disabled:bg-neutral-700 disabled:text-neutral-400">{backgroundBusy ? "배경 이미지 확인 중…" : saving ? "저장 중..." : savedTemplate ? "템플릿 저장" : "내 템플릿으로 저장"}</button>{message && <p className="mt-2 text-center text-[11px] leading-4 text-neutral-400">{message}</p>}</div>
         </aside>
       </div>
       <div className="grid min-h-dvh place-items-center px-6 text-center lg:hidden"><div><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#ff715e]/10 text-2xl">▣</div><h1 className="mt-5 text-lg font-black">템플릿 편집은 데스크톱에서 이용해 주세요</h1><p className="mt-2 text-sm leading-6 text-neutral-500">1024px 이상의 화면에서 위치 이동과 크기 조절을 정확하게 사용할 수 있습니다.</p><Link href="/templates" className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">템플릿 라이브러리로</Link></div></div>

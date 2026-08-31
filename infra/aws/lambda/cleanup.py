@@ -4,6 +4,7 @@ import os
 import urllib.parse
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 import boto3
 from common import iso_now, log_event, patch, rest
@@ -335,6 +336,57 @@ def reset_stale_rerenders() -> int:
     return reset
 
 
+def cleanup_background_assets() -> int:
+    """Delete only atomically claimed, unreferenced private background objects."""
+    claims = rest(
+        "rpc/claim_background_asset_cleanup_batch",
+        method="POST",
+        body={"p_limit": 20},
+        prefer="return=representation",
+    ) or []
+    if not isinstance(claims, list) or len(claims) > 20:
+        raise ValueError("Invalid background cleanup claims")
+    deleted = 0
+    deferred = 0
+    for claim in claims:
+        try:
+            if not isinstance(claim, dict):
+                raise TypeError("Invalid background cleanup claim")
+            asset_id = str(UUID(str(claim.get("asset_id") or "")))
+            user_id = str(UUID(str(claim.get("user_id") or "")))
+            cleanup_token = str(UUID(str(claim.get("cleanup_token") or "")))
+            key = f"custom-backgrounds/{user_id}/{asset_id}.webp"
+            if (
+                claim.get("asset_id") != asset_id
+                or claim.get("user_id") != user_id
+                or claim.get("cleanup_token") != cleanup_token
+                or claim.get("object_key") != key
+            ):
+                raise ValueError("Invalid background cleanup path")
+            # Single-object deletion surfaces S3 errors. The old bulk helper
+            # intentionally remains unchanged for unrelated existing paths.
+            response = s3.delete_object(Bucket=bucket, Key=key)
+            if (
+                response.get("ResponseMetadata", {}).get("HTTPStatusCode") not in {200, 204}
+                or response.get("DeleteMarker") is True
+            ):
+                raise RuntimeError("Background object deletion not confirmed")
+            finalized = rest(
+                "rpc/finalize_background_asset_cleanup",
+                method="POST",
+                body={"p_asset_id": asset_id, "p_cleanup_token": cleanup_token},
+                prefer="return=representation",
+            )
+            if finalized is not True:
+                raise RuntimeError("Background cleanup finalization not confirmed")
+            deleted += 1
+        except Exception as exc:  # noqa: BLE001 - one asset must not block other cleanup
+            deferred += 1
+            log_event("background_asset_cleanup_deferred", error_type=type(exc).__name__)
+    log_event("background_asset_cleanup_completed", deleted=deleted, deferred=deferred)
+    return deleted
+
+
 def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
     try:
         queued_without_batch_id = report_batch_dispatch_health()
@@ -349,10 +401,15 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
     expired, objects = expire_shorts()
     stale = release_stale_jobs()
     rerenders = reset_stale_rerenders()
+    try:
+        background_objects = cleanup_background_assets()
+    except Exception as exc:  # noqa: BLE001 - rollout/DB faults cannot block old cleanup
+        background_objects = 0
+        log_event("background_asset_cleanup_unavailable", error_type=type(exc).__name__)
     result = {
         "expiredShorts": expired,
         "cleanedFailedShorts": failed,
-        "deletedObjects": objects + failed_objects,
+        "deletedObjects": objects + failed_objects + background_objects,
         "releasedStaleJobs": stale,
         "resetStaleRerenders": rerenders,
         "enforcedDeadlines": deadlines,

@@ -15,6 +15,11 @@ from .caption_templates import (
     verify_caption_font_selection_v4,
 )
 from .config import Settings
+from .editor_text_layout import (
+    composition_steps,
+    normalize_composition_layer_order,
+    wrap_editor_render_text,
+)
 from .errors import RenderError
 from .media import media_duration, probe_media, run_command, video_fps
 from .overlays import (
@@ -450,6 +455,7 @@ class VideoRenderer:
         initial_render_spec: dict[str, object] | None = None,
         title_accent_color: str | None = None,
         metrics_callback: RenderMetricsCallback | None = None,
+        uploaded_background_path: Path | None = None,
     ) -> Path:
         work_dir.mkdir(parents=True, exist_ok=True)
         probe_started_at = time.monotonic()
@@ -481,6 +487,12 @@ class VideoRenderer:
             if (authoritative_render_spec.subtitles is not None) != caption_is_visible:
                 raise RenderError("최초 렌더 명세와 자막 표시 상태가 다릅니다.")
         if custom_template_config is not None:
+            if (
+                custom_template_config.background.kind == "uploaded_image"
+                or custom_template_config.text_overlays
+                or custom_template_config.layer_order is not None
+            ) and authoritative_render_spec is None:
+                raise RenderError("새 템플릿 디자인은 검증된 v4 렌더 명세가 필요합니다.")
             custom_metrics: dict[str, object] = {}
             rendered = self._render_custom_clean_clip(
                 clean_path=clean_path,
@@ -502,6 +514,7 @@ class VideoRenderer:
                 fps=fps,
                 has_audio=has_audio,
                 metrics_callback=custom_metrics.update,
+                uploaded_background_path=uploaded_background_path,
             )
             if metrics_callback:
                 metrics_callback({
@@ -828,7 +841,13 @@ class VideoRenderer:
         fps: float,
         has_audio: bool,
         metrics_callback: RenderMetricsCallback | None = None,
+        uploaded_background_path: Path | None = None,
     ) -> Path:
+        design_layers = bool(config.text_overlays) or config.layer_order is not None
+        if design_layers:
+            if initial_render_spec is None:
+                raise RenderError("템플릿 텍스트의 렌더 명세가 없습니다.")
+            fps = 30.0
         overlay_started_at = time.monotonic()
         video_bottom = config.video.y + config.video.height
         comment_y = (
@@ -853,6 +872,7 @@ class VideoRenderer:
                 initial_render_spec is None
                 or initial_render_spec.channel.visible is not False
             ),
+            uploaded_background_path=uploaded_background_path,
         )
         if initial_render_spec is not None:
             rendered_title = draw_editor_title_spec_v4(
@@ -898,6 +918,69 @@ class VideoRenderer:
                 output_path=work_dir / "subtitles" / f"{prefix}.ass",
                 margin_v=445,
             )
+        text_inputs: list[Path] = []
+        text_input_indexes: dict[str, int] = {}
+        if design_layers:
+            # Import at the call boundary: the editor retains its existing
+            # video geometry helpers in this module. Only its extra-text
+            # painter is reused; title/channel/comment generation above stays
+            # on the original initial-render path.
+            from .editor_renderer import create_editor_text_layer
+            from .render_spec_v4 import verify_editor_font_face_v4
+            from .schemas import EditorTextOverlay
+
+            assert initial_render_spec is not None
+            configured_text = {overlay.id: overlay for overlay in config.text_overlays or []}
+            runtime_text_ids = {
+                spec.id.rsplit(":", 1)[-1]: spec.id for spec in initial_render_spec.text_overlays
+            }
+            if (
+                len(initial_render_spec.text_overlays) != len(configured_text)
+                or set(runtime_text_ids) != set(configured_text)
+            ):
+                raise RenderError("템플릿 텍스트와 최초 렌더 명세가 다릅니다.")
+            raw_order = config.layer_order or [
+                "video", "title", "comment", *(
+                    f"text:{raw_id}" for raw_id in configured_text
+                ), "channel",
+            ]
+            expected_order = normalize_composition_layer_order([
+                f"text:{runtime_text_ids[name[5:]]}" if name.startswith("text:") else name
+                for name in raw_order
+            ])
+            if initial_render_spec.layer_order != expected_order:
+                raise RenderError("템플릿 레이어 순서가 최초 렌더 명세와 다릅니다.")
+            for index, spec in enumerate(initial_render_spec.text_overlays):
+                raw = configured_text.get(spec.id.rsplit(":", 1)[-1])
+                if raw is None or not spec.id.startswith("tpl:"):
+                    raise RenderError("템플릿 텍스트의 원본을 확인하지 못했습니다.")
+                if (
+                    spec.lines != wrap_editor_render_text(raw.text, raw.width)
+                    or spec.font.font_id != raw.font_id
+                    or spec.color != raw.color
+                    or spec.effect != raw.effect
+                    or spec.width != raw.width
+                    or spec.scale != raw.scale
+                    or spec.center_x != 540 + raw.offset.x
+                    or spec.center_y != 960 + raw.offset.y
+                    or spec.start_frame != 0
+                    or abs(spec.end_frame / 30 - duration) > 0.12
+                ):
+                    raise RenderError("템플릿 텍스트 설정이 최초 렌더 명세와 다릅니다.")
+                verify_editor_font_face_v4(spec.font)
+                overlay = EditorTextOverlay.model_validate({
+                    **raw.model_dump(by_alias=True),
+                    "id": spec.id,
+                    "startSeconds": spec.start_frame / 30,
+                    "endSeconds": spec.end_frame / 30,
+                })
+                text_path = create_editor_text_layer(
+                    overlay,
+                    work_dir / "overlays" / f"{prefix}_text_{index:02d}.png",
+                    spec,
+                )
+                text_input_indexes[f"text:{spec.id}"] = 4 + int(bool(comment_manifest)) + index
+                text_inputs.append(text_path)
         overlay_seconds = time.monotonic() - overlay_started_at
         frame = config.video
         video_geometry_filters = custom_video_geometry_filters(frame, fps=fps)
@@ -915,7 +998,20 @@ class VideoRenderer:
                 "eof_action=repeat:repeatlast=1[with_comments]"
             )
             video_label = "with_comments"
-        if ass_path:
+        if design_layers:
+            filters = [
+                f"[1:v]setpts=PTS-STARTPTS,scale={CANVAS_WIDTH}:{CANVAS_HEIGHT}[base]",
+                video_geometry_filters[0],
+            ]
+            if comment_manifest:
+                filters.append("[4:v]setpts=PTS-STARTPTS,format=rgba[comment_track]")
+            video_label = "base"
+        subtitles_applied = False
+
+        def apply_subtitles() -> None:
+            nonlocal video_label, subtitles_applied
+            if not ass_path or subtitles_applied:
+                return
             fonts_dir = ""
             if caption_render_spec is not None:
                 caption_fonts_dir = prepare_caption_fonts(
@@ -933,6 +1029,41 @@ class VideoRenderer:
                 f"{fonts_dir}[captioned]"
             )
             video_label = "captioned"
+            subtitles_applied = True
+
+        if design_layers:
+            assert initial_render_spec is not None
+            layer_order = normalize_composition_layer_order(initial_render_spec.layer_order)
+            for name in composition_steps(layer_order):
+                if name is None:
+                    apply_subtitles()
+                    continue
+                next_label = f"design{len(filters)}"
+                if name == "video":
+                    filters.append(
+                        f"[{video_label}][custom_video]overlay=x={frame.x}:y={frame.y}:"
+                        f"shortest=1[{next_label}]"
+                    )
+                elif name == "comment":
+                    if not comment_manifest:
+                        continue
+                    filters.append(
+                        f"[{video_label}][comment_track]overlay=x=0:y={comment_y}:"
+                        f"eof_action=repeat:repeatlast=1[{next_label}]"
+                    )
+                else:
+                    input_index = {"title": 2, "channel": 3}.get(name)
+                    if input_index is None:
+                        input_index = text_input_indexes.get(name)
+                    if input_index is None:
+                        raise RenderError("템플릿 레이어 순서가 렌더 명세와 다릅니다.")
+                    filters.append(
+                        f"[{video_label}][{input_index}:v]overlay=x=0:y=0:"
+                        f"shortest=1[{next_label}]"
+                    )
+                video_label = next_label
+        else:
+            apply_subtitles()
         command = [
             "ffmpeg",
             "-hide_banner",
@@ -962,6 +1093,8 @@ class VideoRenderer:
         ]
         if comment_manifest:
             command.extend(["-f", "concat", "-safe", "1", "-i", str(comment_manifest)])
+        for text_path in text_inputs:
+            command.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", str(text_path)])
         audio_label = None
         if has_audio:
             filters.append("[0:a]asetpts=PTS-STARTPTS,loudnorm=I=-16:TP=-1.5:LRA=11[audio]")

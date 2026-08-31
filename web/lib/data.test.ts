@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Sql } from "postgres";
+vi.mock("server-only", () => ({}));
 import {
   getAllProjects,
   getGeneratedShortCount,

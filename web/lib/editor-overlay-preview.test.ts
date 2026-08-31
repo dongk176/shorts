@@ -593,6 +593,38 @@ describe("editor overlay preview geometry", () => {
     });
   });
 
+  it("records uploaded background A-to-B changes for undo and redo", () => {
+    const before = createInitialEditorOverlayLayout();
+    before.background = {
+      kind: "uploaded_image", assetId: "11111111-1111-4111-8111-111111111111",
+    };
+    const after = structuredClone(before);
+    after.background = {
+      kind: "uploaded_image", assetId: "22222222-2222-4222-8222-222222222222",
+    };
+    expect(editorOverlayLayoutsEqual(before, structuredClone(before))).toBe(true);
+    expect(editorOverlayLayoutsEqual(before, after)).toBe(false);
+    const history = recordEditorOverlayHistory({ past: [], future: [] }, before, after);
+    expect(history.past).toHaveLength(1);
+    const undone = undoEditorOverlayHistory(history, after);
+    expect(undone.layout?.background).toEqual(before.background);
+    const redone = redoEditorOverlayHistory(undone.history, undone.layout || before);
+    expect(redone.layout?.background).toEqual(after.background);
+
+    // A new upload selection after undo must discard the old B redo branch.
+    const nextSelection = structuredClone(before);
+    nextSelection.background = {
+      kind: "uploaded_image", assetId: "33333333-3333-4333-8333-333333333333",
+    };
+    const branched = recordEditorOverlayHistory(undone.history, undone.layout || before, nextSelection);
+    expect(branched.future).toEqual([]);
+    expect(branched.past).toHaveLength(1);
+    const undoBranch = undoEditorOverlayHistory(branched, nextSelection);
+    expect(undoBranch.layout?.background).toEqual(before.background);
+    const redoBranch = redoEditorOverlayHistory(undoBranch.history, undoBranch.layout || before);
+    expect(redoBranch.layout?.background).toEqual(nextSelection.background);
+  });
+
   it("compares text overlay contents and visibility", () => {
     const left = createInitialEditorOverlayLayout();
     const right = createInitialEditorOverlayLayout();

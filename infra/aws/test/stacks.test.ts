@@ -1063,4 +1063,24 @@ describe("shorts MVP infrastructure", () => {
       },
     });
   });
+
+  it("scopes persistent backgrounds to read-only workers and read/write web", () => {
+    const { compute, foundation } = stacks();
+    const policies = Object.values(compute.findResources("AWS::IAM::Policy"));
+    const entries = policies.flatMap((policy) => (
+      policy.Properties?.PolicyDocument?.Statement || []
+    )).filter((statement) => JSON.stringify(statement.Resource).includes("custom-backgrounds/*"));
+    expect(entries).toHaveLength(2);
+    const worker = entries.find((statement) => statement.Sid === "ReadCustomBackgroundAssetsOnly");
+    const web = entries.find((statement) => statement.Sid === "ReadWriteCustomBackgroundAssetsOnly");
+    expect([worker?.Action].flat()).toEqual(["s3:GetObject"]);
+    expect([web?.Action].flat().sort()).toEqual(["s3:GetObject", "s3:PutObject"]);
+    expect(JSON.stringify(entries)).not.toContain("DeleteObject");
+    expect(JSON.stringify(entries)).not.toContain("ListBucket");
+    const buckets = Object.values(foundation.findResources("AWS::S3::Bucket"));
+    for (const bucket of buckets) {
+      expect(JSON.stringify(bucket.Properties?.LifecycleConfiguration || {}))
+        .not.toContain("custom-backgrounds/");
+    }
+  });
 });

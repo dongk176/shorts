@@ -78,6 +78,20 @@ describe("file upload canary opt-in", () => {
 });
 
 describe("isolated file upload canary stack", () => {
+  it("can only read persistent backgrounds without extending derived-media write/list scopes", () => {
+    const template = stackTemplate();
+    const policies = Object.values(template.findResources("AWS::IAM::Policy"));
+    const statements = policies.flatMap((policy) => policy.Properties?.PolicyDocument?.Statement || []);
+    const background = statements.filter((statement) => JSON.stringify(statement.Resource).includes("custom-backgrounds/*"));
+    expect(background).toHaveLength(1);
+    expect(background[0].Sid).toBe("ReadCustomBackgroundAssetsOnly");
+    expect([background[0].Action].flat()).toEqual(["s3:GetObject"]);
+    expect(JSON.stringify(statements.find((statement) => statement.Sid === "DerivedMediaObjectsOnly")))
+      .not.toContain("custom-backgrounds/");
+    expect(JSON.stringify(statements.find((statement) => statement.Sid === "ListDerivedMediaPrefixesOnly")))
+      .not.toContain("custom-backgrounds/");
+  });
+
   it("pins an encrypted 4-vCPU receiver while keeping a new canary cold", () => {
     const template = stackTemplate();
 

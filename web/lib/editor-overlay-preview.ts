@@ -23,7 +23,8 @@ export const EDITOR_TEXT_MIN_WIDTH = 1;
 export const EDITOR_TEXT_MAX_WIDTH = 1_000;
 export type EditorCanvasBackground =
   | { kind: "color"; color: TemplatePresetColor }
-  | { kind: "image"; assetId: StockBackgroundId };
+  | { kind: "image"; assetId: StockBackgroundId }
+  | { kind: "uploaded_image"; assetId: string };
 
 export type EditorVideoResizeHandle =
   | "top-left"
@@ -367,6 +368,11 @@ export function editorOverlayLayoutsEqual(
     && (
       left.background?.kind !== "image"
       || right.background?.kind !== "image"
+      || left.background.assetId === right.background.assetId
+    )
+    && (
+      left.background?.kind !== "uploaded_image"
+      || right.background?.kind !== "uploaded_image"
       || left.background.assetId === right.background.assetId
     )
     && left.layerOrder.length === right.layerOrder.length

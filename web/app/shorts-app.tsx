@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, FormEvent, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   ChangeEvent,
   CSSProperties,
@@ -13,11 +13,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { AuthControls } from "@/components/auth-controls";
 import { BackgroundShowcase } from "@/components/background-showcase";
+import { BackgroundAssetPicker } from "@/components/background-asset-picker";
 import { BrandColorPicker } from "@/components/brand-color-picker";
 import { CustomTemplateCanvasPreview } from "@/components/custom-template-canvas-preview";
 import { CustomTemplateTitlePreview } from "@/components/custom-template-title-preview";
 import { DesktopEditorGuide } from "@/components/desktop-editor-guide";
 import { EditorApplyFailureNotice } from "@/components/editor-apply-failure-notice";
+import { EditorFontPicker } from "@/components/editor-font-picker";
+import { EditorTextOverlayControls } from "@/components/editor-text-overlay-controls";
 import { EditorTitleV4Preview } from "@/components/editor-title-v4-preview";
 import { TemplateTitleV4Preview } from "@/components/template-title-v4-preview";
 import { YoutubeThumbnail } from "@/components/youtube-thumbnail";
@@ -88,6 +91,9 @@ import { SIMULATED_PROGRESS_START } from "@/lib/creation-progress";
 import { isConversionMaintenanceActive } from "@/lib/conversion-maintenance";
 import { isPlaybackAvailable, shortPlaybackVersionKey } from "@/lib/project-playback";
 import { isEditorRenderSpecV4Enabled } from "@/lib/editor-render-v4-feature";
+import { templateBackgroundStyle } from "@/lib/template-design-preview";
+import { CUSTOM_TEMPLATE_VERSION_CONFLICT, replaceTemplateTextOverlays } from "@/lib/template-design";
+import { subscribeTemplateLibraryChanges } from "@/lib/template-library-events";
 import {
   adjustTimedRange,
   clampTimelineSeconds,
@@ -454,27 +460,11 @@ function seedCustomTemplateTitleFont(
 }
 
 function customTemplateBackground(template: CustomTemplate) {
-  const background = template.config.background;
-  if (background.kind === "color") return { backgroundColor: background.color };
-  const asset = stockBackgrounds.find((item) => item.id === background.assetId);
-  return {
-    backgroundImage: `url(${asset?.src || ""})`,
-    backgroundPosition: "center",
-    backgroundSize: "cover",
-  };
+  return templateBackgroundStyle(template.config.background);
 }
 
 function editorCanvasBackgroundStyle(background: EditorCanvasBackground) {
-  if (background.kind === "color") {
-    return { backgroundColor: background.color };
-  }
-  const asset = stockBackgrounds.find((item) => item.id === background.assetId);
-  return {
-    backgroundColor: "#111111",
-    backgroundImage: `url(${asset?.src || ""})`,
-    backgroundPosition: "center",
-    backgroundSize: "cover",
-  };
+  return templateBackgroundStyle(background);
 }
 
 const titleTextColorOptions = [
@@ -1384,185 +1374,6 @@ function PresetInlineEditorChannel({
   );
 }
 
-function EditorFontPicker({
-  value,
-  onChange,
-  options = stableEditorFontOptions,
-}: {
-  value: EditorFontId;
-  onChange: (fontId: EditorFontId) => void;
-  options?: readonly (typeof editorFontOptions)[number][];
-}) {
-  const [open, setOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(() => Math.max(
-    0,
-    options.findIndex((font) => font.id === value),
-  ));
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const pickerId = useId();
-  const labelId = `${pickerId}-label`;
-  const listboxId = `${pickerId}-listbox`;
-  const selectedFont = options.find((font) => font.id === value)
-    || options[0]
-    || editorFontOptions[0];
-
-  const closePicker = (restoreTriggerFocus = false) => {
-    setOpen(false);
-    if (restoreTriggerFocus) {
-      window.requestAnimationFrame(() => triggerRef.current?.focus());
-    }
-  };
-
-  const focusOption = (index: number) => {
-    const nextIndex = (
-      index + options.length
-    ) % options.length;
-    setActiveIndex(nextIndex);
-    window.requestAnimationFrame(() => optionRefs.current[nextIndex]?.focus());
-  };
-
-  const openPicker = (index = options.findIndex(
-    (font) => font.id === value,
-  )) => {
-    const nextIndex = (
-      index + options.length
-    ) % options.length;
-    setOpen(true);
-    focusOption(nextIndex);
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    const closeOnOutsidePointer = (event: globalThis.PointerEvent) => {
-      if (
-        event.target instanceof Node
-        && !rootRef.current?.contains(event.target)
-      ) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    return () => document.removeEventListener(
-      "pointerdown",
-      closeOnOutsidePointer,
-    );
-  }, [open]);
-
-  return (
-    <div className="editor-font-setting">
-      <span id={labelId}>폰트</span>
-      <div
-        ref={rootRef}
-        onBlur={(event) => {
-          if (
-            event.relatedTarget instanceof Node
-            && event.currentTarget.contains(event.relatedTarget)
-          ) {
-            return;
-          }
-          setOpen(false);
-        }}
-        onKeyDown={(event) => {
-          event.stopPropagation();
-          if (event.key === "Escape" && open) {
-            event.preventDefault();
-            closePicker(true);
-          }
-        }}
-      >
-        <button
-          ref={triggerRef}
-          type="button"
-          className="editor-font-picker-trigger"
-          aria-labelledby={labelId}
-          aria-haspopup="listbox"
-          aria-controls={listboxId}
-          aria-expanded={open}
-          onClick={() => {
-            if (open) {
-              closePicker();
-              return;
-            }
-            openPicker();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-              event.preventDefault();
-              const selectedIndex = options.findIndex(
-                (font) => font.id === value,
-              );
-              openPicker(selectedIndex + (event.key === "ArrowDown" ? 1 : -1));
-            }
-          }}
-          style={{ fontFamily: selectedFont.family }}
-        >
-          <span>{selectedFont.label}</span>
-          <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
-            <path
-              d="m6 8 4 4 4-4"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-        {open && <div
-          id={listboxId}
-          role="listbox"
-          aria-labelledby={labelId}
-          className="editor-font-picker-menu"
-        >
-          {options.map((font, index) => (
-            <button
-              key={font.id}
-              ref={(element) => {
-                optionRefs.current[index] = element;
-              }}
-              type="button"
-              role="option"
-              aria-selected={font.id === value}
-              tabIndex={index === activeIndex ? 0 : -1}
-              onClick={() => {
-                onChange(font.id);
-                closePicker(true);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  focusOption(activeIndex + (
-                    event.key === "ArrowDown" ? 1 : -1
-                  ));
-                  return;
-                }
-                if (event.key === "Home" || event.key === "End") {
-                  event.preventDefault();
-                  focusOption(event.key === "Home"
-                    ? 0
-                    : options.length - 1);
-                }
-              }}
-              style={{ fontFamily: font.family }}
-            >
-              <span>{font.label}</span>
-              <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
-                <path
-                  d="m5 10 3 3 7-7"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          ))}
-        </div>}
-      </div>
-    </div>
-  );
-}
 
 function TemplatePreview({ template, videoAspectRatio, channelName, channelThumbnailUrl, brandColor, titleV4Enabled = false }: { template: (typeof templates)[number]; videoAspectRatio: VideoAspectRatio; channelName: string; channelThumbnailUrl: string | null; brandColor?: TemplatePresetColor; titleV4Enabled?: boolean }) {
   const [firstLine, secondLine] = template.label.split("\n");
@@ -4221,7 +4032,7 @@ function CommentTimelineEditor({
   </section>;
 }
 
-function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false, wordTimedSubtitlesAvailable = false, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean; wordTimedSubtitlesAvailable?: boolean; paidAccessBlocked?: boolean }) {
+function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = false, projectLabel, projectNumber, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false, customTemplateDesignEnabled = false, wordTimedSubtitlesAvailable = false, paidAccessBlocked = false }: { item: GeneratedShort; channelThumbnailUrl: string | null; onClose: () => void; onChanged: () => Promise<void>; standalone?: boolean; projectLabel?: string; projectNumber?: number; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean; customTemplateDesignEnabled?: boolean; wordTimedSubtitlesAvailable?: boolean; paidAccessBlocked?: boolean }) {
   const positionedWordsV4Enabled = isEditorRenderSpecV4Enabled();
   const adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(
     editorRelease,
@@ -4545,7 +4356,11 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       ? normalizeEditorTitleScaleLayout(savedEditorDocument.overlays)
       : seedEditorOverlayLayoutFromInitialRenderSpec(
           seedCustomTemplateTitleFont(
-            createInitialEditorOverlayLayout(),
+            replaceTemplateTextOverlays(
+              createInitialEditorOverlayLayout(),
+              availableCustomTemplate,
+              item.endSeconds - item.startSeconds,
+            ),
             availableCustomTemplate,
             unifiedSubtitleLayoutEnabled,
           ),
@@ -4556,6 +4371,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       : sanitizeEditorOverlayFontsForStable(initialLayout);
   });
   const overlayLayoutRef = useRef(overlayLayout);
+  const [backgroundAssetBusy, setBackgroundAssetBusy] = useState(false);
   const overlayHistoryRef = useRef<EditorOverlayHistory>({
     past: [],
     future: [],
@@ -5851,6 +5667,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const validSelection = !editTimeline || previewDuration >= RANGE_EDIT_MIN_SECONDS;
   const editorValid = overlayPreviewEnabled
     ? validTitle
+      && !backgroundAssetBusy
       && validSelection
       && channel.trim().length > 0
       && commentsAreValid
@@ -7921,10 +7738,12 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   ]);
 
   const openEditorApplyConfirmation = useCallback(() => {
+    if (backgroundAssetBusy) return;
     if (rejectInvalidCaptionTextDraft()) return;
     finishPendingEditorInteractionsIncludingCaption();
     setApplyConfirmationOpen(true);
   }, [
+    backgroundAssetBusy,
     finishPendingEditorInteractionsIncludingCaption,
     rejectInvalidCaptionTextDraft,
   ]);
@@ -9220,7 +9039,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       activeCustomTemplate: null,
       presetVersion: 3,
       templateSelectionTouched: true,
-      overlayLayout: resetEditorOverlayGeometry(before.overlayLayout),
+      overlayLayout: replaceTemplateTextOverlays(
+        resetEditorOverlayGeometry(before.overlayLayout), null, previewDuration,
+      ),
     };
     applyEditorTemplateSnapshot(after);
     recordEditorTemplateChange(before, after);
@@ -9239,13 +9060,22 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     }
     finishPendingEditorInteractionsIncludingCaption();
     const before = currentEditorTemplateSnapshot();
+    let templateOverlayLayout: EditorOverlayLayoutSnapshot;
+    try {
+      templateOverlayLayout = replaceTemplateTextOverlays(
+        resetEditorOverlayGeometry(before.overlayLayout), availableCustomTemplate, previewDuration,
+      );
+    } catch (cause) {
+      setError(userFacingErrorMessage(cause, "템플릿 텍스트를 적용하지 못했습니다."));
+      return;
+    }
     const after: EditorTemplateSnapshot = {
       ...before,
       templateId: availableCustomTemplate.baseTemplateId,
       activeCustomTemplate: availableCustomTemplate,
       templateSelectionTouched: true,
       overlayLayout: seedCustomTemplateTitleFont(
-        resetEditorOverlayGeometry(before.overlayLayout),
+        templateOverlayLayout,
         availableCustomTemplate,
         unifiedSubtitleLayoutEnabled,
       ),
@@ -9964,6 +9794,10 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   ]);
 
   const save = async () => {
+    if (backgroundAssetBusy) {
+      setError("배경 이미지 확인이 끝난 뒤 다시 적용해 주세요.");
+      return;
+    }
     if (overlayPreviewEnabled && !editorSaveEnabled) {
       setError("로컬 오버레이 미리보기에서는 영상 저장 요청을 보내지 않습니다.");
       return;
@@ -10332,85 +10166,15 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
       </div>
     : null;
 
-  const renderSelectedEditorTextSettings = () => {
-    if (!selectedTextOverlay) return null;
-    return <div className="editor-element-settings">
-      <label className="editor-text-content-setting">
-        <span>내용</span>
-        <textarea
-          value={selectedTextOverlay.text}
-          maxLength={120}
-          rows={2}
-          onFocus={beginEditorOverlayHistoryInteraction}
-          onBlur={finishEditorOverlayHistoryInteraction}
-          onChange={(event) => updateSelectedEditorText(
-            { text: event.target.value },
-            "continuous",
-          )}
-        />
-      </label>
-      <EditorFontPicker
-        value={selectedTextOverlay.fontId || DEFAULT_EDITOR_FONT_ID}
-        onChange={updateSelectedEditorTextFont}
-        options={availableEditorFontOptions}
-      />
-      <fieldset className="editor-text-color-setting">
-        <legend>색상</legend>
-        <div>
-          {templatePresetColorOptions.map((option) => <button
-            key={option.color}
-            type="button"
-            aria-label={`텍스트 색상 ${option.name}`}
-            title={option.name}
-            aria-pressed={selectedTextOverlay.color === option.color}
-            onClick={() => updateSelectedEditorText({
-              color: option.color,
-            })}
-            style={{ backgroundColor: option.color }}
-          />)}
-        </div>
-      </fieldset>
-      <fieldset className="editor-text-effect-setting">
-        <legend>효과</legend>
-        <div>
-          <button
-            type="button"
-            aria-pressed={selectedTextOverlay.effect === "none"}
-            onClick={() => updateSelectedEditorText({
-              effect: "none",
-            })}
-          >
-            없음
-          </button>
-          <button
-            type="button"
-            aria-pressed={(selectedTextOverlay.effect || "outline") === "outline"}
-            onClick={() => updateSelectedEditorText({
-              effect: "outline",
-            })}
-          >
-            테두리
-          </button>
-          <button
-            type="button"
-            aria-pressed={selectedTextOverlay.effect === "shadow"}
-            onClick={() => updateSelectedEditorText({
-              effect: "shadow",
-            })}
-          >
-            그림자
-          </button>
-        </div>
-      </fieldset>
-      <button
-        type="button"
-        className="editor-v2-text-delete"
-        onClick={deleteSelectedEditorOverlay}
-      >
-        선택한 텍스트 삭제
-      </button>
-    </div>;
-  };
+  const renderSelectedEditorTextSettings = () => selectedTextOverlay ? <EditorTextOverlayControls
+    textOverlay={selectedTextOverlay}
+    onChange={updateSelectedEditorText}
+    onFontChange={updateSelectedEditorTextFont}
+    onInteractionStart={beginEditorOverlayHistoryInteraction}
+    onInteractionEnd={finishEditorOverlayHistoryInteraction}
+    onDelete={deleteSelectedEditorOverlay}
+    fontOptions={availableEditorFontOptions}
+  /> : null;
   const editorTimelineZoomStyle: CSSProperties | undefined = overlayPreviewEnabled
     ? { width: `${editorTimelineZoom * 100}%` }
     : undefined;
@@ -12307,6 +12071,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               <span className="editor-accordion-summary-meta">
                 {editorCanvasBackground?.kind === "image"
                   ? stockBackgrounds.find((item) => item.id === editorCanvasBackground.assetId)?.label
+                  : editorCanvasBackground?.kind === "uploaded_image"
+                    ? "내 배경"
                   : editorCanvasBackground?.kind === "color"
                     ? templatePresetColorOptions.find((item) => item.color === editorCanvasBackground.color)?.name
                     : "템플릿 기본"}
@@ -12321,9 +12087,18 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               <header className="editor-tool-panel-header">
                 <strong>배경</strong>
               </header>
+              {(customTemplateDesignEnabled || editorCanvasBackground?.kind === "uploaded_image") && <BackgroundAssetPicker
+                value={editorCanvasBackground}
+                onSelect={setEditorCanvasBackground}
+                onRestore={() => setEditorCanvasBackground(null)}
+                onBusyChange={setBackgroundAssetBusy}
+                disabled={saving}
+                canUpload={customTemplateDesignEnabled && !paidAccessBlocked}
+              />}
               <button
                 type="button"
                 className="editor-background-default"
+                disabled={backgroundAssetBusy || saving}
                 aria-pressed={editorCanvasBackground === null}
                 onClick={() => setEditorCanvasBackground(null)}
               >
@@ -12333,7 +12108,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                 </svg>
                 템플릿 기본 배경
               </button>
-              <fieldset className="editor-background-color-setting">
+              <fieldset className="editor-background-color-setting" disabled={backgroundAssetBusy || saving}>
                 <legend>색상 배경</legend>
                 <div>
                   {templatePresetColorOptions.map((option) => <button
@@ -12351,7 +12126,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
                   />)}
                 </div>
               </fieldset>
-              <fieldset className="editor-background-image-setting">
+              <fieldset className="editor-background-image-setting" disabled={backgroundAssetBusy || saving}>
                 <legend>이미지 배경</legend>
                 <div>
                   {stockBackgrounds.map((asset) => <button
@@ -13047,7 +12822,7 @@ function ProjectWorkspace({ job, access, onBack, adminSubtitleLayoutEnabled = fa
   );
 }
 
-export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false }: { projectNumber: number; shortId: string; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean }) {
+export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = false, overlayPreviewEnabled = false, editorSaveEnabled = false, editorRelease, unifiedTemplateSubtitleCanaryEnabled = false, customTemplateDesignEnabled = false }: { projectNumber: number; shortId: string; rangeEditingEnabled?: boolean; overlayPreviewEnabled?: boolean; editorSaveEnabled?: boolean; editorRelease: EditorReleaseAssignment; unifiedTemplateSubtitleCanaryEnabled?: boolean; customTemplateDesignEnabled?: boolean }) {
   const [project, setProject] = useState<VideoJob | null>(null);
   const [access, setAccess] = useState<ProjectActionAccess | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -13073,7 +12848,7 @@ export function ShortEditorPage({ projectNumber, shortId, rangeEditingEnabled = 
   if (!project) return <main className="editor-page grid place-items-center text-sm text-neutral-400">편집기를 준비하고 있습니다…</main>;
   if (!item || project.isExample) return <main className="editor-page grid place-items-center p-6 text-center"><div><h1 className="text-lg font-bold">편집할 수 없는 쇼츠입니다.</h1><Link href={`/projects/${projectNumber}`} prefetch={false} className="mt-6 inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-black">프로젝트로 돌아가기</Link></div></main>;
 
-  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled} wordTimedSubtitlesAvailable={item.wordTimedSubtitlesAvailable} paidAccessBlocked={!access?.canEdit} />;
+  return <Editor item={item} channelThumbnailUrl={project.channelThumbnailUrl} standalone projectLabel={item.hookTitle} projectNumber={project.projectNumber} onClose={closeEditor} onChanged={loadProject} rangeEditingEnabled={rangeEditingEnabled} overlayPreviewEnabled={overlayPreviewEnabled} editorSaveEnabled={editorSaveEnabled} editorRelease={editorRelease} unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled} customTemplateDesignEnabled={customTemplateDesignEnabled} wordTimedSubtitlesAvailable={item.wordTimedSubtitlesAvailable} paidAccessBlocked={!access?.canEdit} />;
 }
 
 export function ProjectPage({ projectNumber, adminSubtitleLayoutEnabled = false, unifiedTemplateSubtitleCanaryEnabled = false }: { projectNumber: number; adminSubtitleLayoutEnabled?: boolean; unifiedTemplateSubtitleCanaryEnabled?: boolean }) {
@@ -13380,6 +13155,22 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   const [brandColor, setBrandColor] = useState<TemplatePresetColor>(SUBTITLE_TEMPLATE_BRAND_COLOR);
   const [customTemplateId, setCustomTemplateId] = useState<string | null>(null);
   const [personalTemplates, setPersonalTemplates] = useState<CustomTemplate[]>([]);
+  const templateRefreshController = useRef<AbortController | null>(null);
+  const templateUserId = state?.user?.id ?? null;
+  const refreshPersonalTemplates = useCallback(async () => {
+    if (!templateUserId) return;
+    templateRefreshController.current?.abort();
+    const controller = new AbortController();
+    templateRefreshController.current = controller;
+    try {
+      const response = await requestJson<{ templates: CustomTemplate[] }>(
+        "/api/templates", { signal: controller.signal, cache: "no-store" }, 12_000,
+      );
+      if (!controller.signal.aborted) setPersonalTemplates(response.templates);
+    } catch (cause) {
+      if (!controller.signal.aborted) throw cause;
+    }
+  }, [templateUserId]);
   const [favoriteTemplateKeys, setFavoriteTemplateKeys] = useState<TemplateFavoriteKey[]>([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);
   const [videoAspectRatio, setVideoAspectRatio] = useState<VideoAspectRatio>("16:9");
   const [activeJob, setActiveJob] = useState<VideoJob | null>(() => initialActiveJob(initialState));
@@ -13726,27 +13517,38 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
   };
 
   useEffect(() => {
-    if (!state?.user) {
+    if (!templateUserId) {
       setPersonalTemplates([]);
       setFavoriteTemplateKeys([...DEFAULT_FAVORITE_TEMPLATE_KEYS]);
       setCustomTemplateId(null);
       return;
     }
     const controller = new AbortController();
-    void Promise.all([
-      requestJson<{ templates: CustomTemplate[] }>("/api/templates", { signal: controller.signal }, 12_000),
-      requestJson<{ templateKeys: TemplateFavoriteKey[] }>("/api/template-favorites", { signal: controller.signal }, 12_000),
-    ])
-      .then(([templateResponse, favoriteResponse]) => {
-        setPersonalTemplates(templateResponse.templates);
+    const refresh = () => { void refreshPersonalTemplates().catch(() => undefined); };
+    refresh();
+    const unsubscribe = subscribeTemplateLibraryChanges(refresh);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", refresh);
+    void requestJson<{ templateKeys: TemplateFavoriteKey[] }>("/api/template-favorites", { signal: controller.signal }, 12_000)
+      .then((favoriteResponse) => {
         setFavoriteTemplateKeys(favoriteResponse.templateKeys);
       })
       .catch((cause) => {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
         setError(userFacingErrorMessage(cause, "템플릿을 불러오지 못했습니다."));
       });
-    return () => controller.abort();
-  }, [state?.user]);
+    return () => {
+      controller.abort();
+      templateRefreshController.current?.abort();
+      unsubscribe();
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("pageshow", refresh);
+    };
+  }, [templateUserId, refreshPersonalTemplates]);
+
+  useEffect(() => {
+    if (selectedSource?.key) void refreshPersonalTemplates().catch(() => undefined);
+  }, [selectedSource?.key, refreshPersonalTemplates]);
 
   useEffect(() => {
     let stopped = false;
@@ -14089,6 +13891,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       sourceRangeSelectionEnabled ? sourceRangeEndSeconds : uploadVideo.durationSeconds,
       templateId,
       canUseCustomTemplates ? customTemplateId : null,
+      canUseCustomTemplates ? personalTemplates.find((template) => template.id === customTemplateId)?.version : undefined,
       effectiveVideoAspectRatio,
       outputLanguage,
       subtitleTemplateSelectionEnabled ? subtitleTemplateId : null,
@@ -14144,6 +13947,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             : uploadVideo.durationSeconds,
           templateId,
           customTemplateId: canUseCustomTemplates ? customTemplateId : null,
+          ...(canUseCustomTemplates && customTemplateId ? {
+            customTemplateVersion: personalTemplates.find((template) => template.id === customTemplateId)?.version,
+          } : {}),
           videoAspectRatio: effectiveVideoAspectRatio,
           outputLanguage,
           rightsConfirmed,
@@ -14238,6 +14044,13 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
     } catch (cause) {
       setUploadPreparationActive(false);
       setUploadTransferActive(false);
+      if (cause instanceof HttpRequestError && cause.code === CUSTOM_TEMPLATE_VERSION_CONFLICT) {
+        uploadRequestId.current = null;
+        uploadRequestIntentKey.current = null;
+        await refreshPersonalTemplates().catch(() => undefined);
+        setError(cause.message);
+        return;
+      }
       let abortConfirmed = false;
       let receiverAccepted = false;
       const definitiveControlFailure = cause instanceof HttpRequestError
@@ -14391,6 +14204,9 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       analysisId: analysis.analysisId,
       templateId,
       customTemplateId: canUseCustomTemplates ? customTemplateId : null,
+      ...(canUseCustomTemplates && customTemplateId ? {
+        customTemplateVersion: personalTemplates.find((template) => template.id === customTemplateId)?.version,
+      } : {}),
       videoAspectRatio: effectiveVideoAspectRatio,
       outputLanguage,
       rightsConfirmed,
@@ -14466,6 +14282,13 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       if (definitiveFailure && jobRequestId.current === requestId) {
         jobRequestId.current = null;
         jobRequestIntentKey.current = null;
+      }
+      if (cause instanceof HttpRequestError && cause.code === CUSTOM_TEMPLATE_VERSION_CONFLICT) {
+        jobRequestId.current = null;
+        jobRequestIntentKey.current = null;
+        await refreshPersonalTemplates().catch(() => undefined);
+        setError(cause.message);
+        return;
       }
       if (cause instanceof HttpRequestError && cause.status === 401) {
         setLoginNext(next);

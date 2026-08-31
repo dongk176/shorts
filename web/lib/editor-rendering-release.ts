@@ -159,6 +159,8 @@ type EditorReleaseRow = {
   renderV4RolloutPercent: number;
   renderV4KillSwitch: boolean;
   renderV4RolloutBucket: number;
+  /** Administrator-only handoff attested by the durable successor controller. */
+  successorAdminReleaseId?: string | null;
 };
 
 type EditorRenderV4ReleaseCapability = {
@@ -279,6 +281,8 @@ export async function resolveEditorRelease(
   const emergencyTestUser = editorRenderingV2TestUserIds(environment).has(userId);
   const rows = await db`
     select state.public_enabled,state.canary_enabled,
+      shorts_mvp.editor_target_successor_admin_release(${userId}::uuid)
+        as successor_admin_release_id,
       coalesce(flag.enabled,false) as runtime_enabled,
       coalesce(tester.enabled,false) as tester_enabled,
       coalesce(release_user.is_admin,false) as user_is_admin,
@@ -333,10 +337,28 @@ export async function resolveEditorRelease(
   `;
   const state = rows[0] as EditorReleaseRow | undefined;
   if (!state) return legacyAssignment;
+  // Public/internal flags are intentionally unchanged during a compatible
+  // successor test. Only the DB-attested administrator and exact candidate may
+  // use v4 in this narrow handoff; environment testers cannot grant this access.
+  const successorAdminAllowed = state.userIsAdmin === true
+    && state.runtimeEnabled === true
+    && state.canaryEnabled === true
+    && state.renderV4KillSwitch === false
+    && typeof state.successorAdminReleaseId === "string"
+    && state.successorAdminReleaseId === state.candidateReleaseId
+    && ["canary_ready", "canary_active", "approved"].includes(state.candidateStatus || "")
+    && state.candidateDocumentVersion === 3
+    && state.candidateFontManifestSha256 === state.stableFontManifestSha256
+    && exactEditorRenderV4Capability({
+      renderSpecVersion: state.candidateRenderSpecVersion,
+      captionRenderSpecVersion: state.candidateCaptionRenderSpecVersion,
+      fontManifestSha256: state.candidateFontManifestSha256,
+    });
   if (
     state.canaryEnabled
     && (
-      (state.userIsAdmin && (state.testerEnabled || emergencyTestUser))
+      successorAdminAllowed
+      || (state.userIsAdmin && (state.testerEnabled || emergencyTestUser))
       || (state.testerEnabled && state.candidateSubtitleEditingCapable)
     )
     && ["canary_ready", "canary_active", "approved"].includes(
@@ -355,7 +377,7 @@ export async function resolveEditorRelease(
         captionRenderSpecVersion: state.candidateCaptionRenderSpecVersion,
         fontManifestSha256: state.candidateFontManifestSha256,
       },
-      internalEditorRenderV4Authorized(state),
+      successorAdminAllowed || internalEditorRenderV4Authorized(state),
     );
   }
   if (

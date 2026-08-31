@@ -8,6 +8,7 @@ import postgres from "../web/node_modules/postgres/src/index.js";
 import {
   requireProductionDatabaseUrl,
 } from "./production-database-identity.mjs";
+import { assertProjectSuccessorLease } from "./verify-editor-render-v4-release-control-successor.mjs";
 
 const EXPECTED_COLUMNS = Object.freeze({
   editor_releases: [
@@ -174,14 +175,19 @@ function sha256(value) {
 }
 
 export function migrationFunctionBody(functionName) {
-  const migration = fs.readFileSync(migrationPath, "utf8");
   const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(
-    `create or replace function shorts_mvp\\.${escaped}\\([\\s\\S]*?\\nas \\$\\$\\n([\\s\\S]*?)\\n\\$\\$;`,
-    "i",
-  ).exec(migration);
-  if (!match) throw new Error(`migration에서 함수 본문을 찾을 수 없습니다: ${functionName}`);
-  return match[1];
+  for (const candidate of [
+    path.resolve(import.meta.dirname, "../supabase/migrations/202608310003_project_target_successor.sql"),
+    migrationPath,
+  ]) {
+    const migration = fs.readFileSync(candidate, "utf8");
+    const match = new RegExp(
+      `create or replace function shorts_mvp\\.${escaped}\\([\\s\\S]*?\\nas \\$\\$\\n([\\s\\S]*?)\\n\\$\\$;`,
+      "i",
+    ).exec(migration);
+    if (match) return match[1];
+  }
+  throw new Error(`migration에서 함수 본문을 찾을 수 없습니다: ${functionName}`);
 }
 
 const EXPECTED_FUNCTION_BODY_SHA256 = Object.freeze({
@@ -484,8 +490,12 @@ export async function acquireEditorRenderV4InfrastructureLease({
   owner: ownerValue,
   leaseId: leaseIdValue,
   ttlSeconds = 90,
+  successor = null,
 } = {}) {
   const { owner, leaseId, phase } = validateLeaseIdentity(ownerValue, leaseIdValue);
+  if (successor && (phase !== "rotation" || owner !== `stage-b:rotation:${successor.head}`)) {
+    throw new Error("successor lease는 동일 exact rotation HEAD만 허용합니다.");
+  }
   if (
     !Number.isInteger(ttlSeconds)
     || ttlSeconds < 30
@@ -501,6 +511,7 @@ export async function acquireEditorRenderV4InfrastructureLease({
         select render_v4_internal_enabled,render_v4_rollout_percent,
           render_v4_kill_switch,render_v4_infra_lease_id,
           render_v4_infra_lease_owner,render_v4_infra_lease_expires_at,
+          render_v4_target_successor,
           (render_v4_infra_lease_id is not null
             and render_v4_infra_lease_expires_at > clock_timestamp())
             as lease_active
@@ -510,8 +521,13 @@ export async function acquireEditorRenderV4InfrastructureLease({
       `;
       const state = states[0];
       if (!state) throw new Error("운영 editor_release_state singleton이 없습니다.");
+      if (successor) {
+        await assertProjectSuccessorLease(tx, successor, { requireDrained: true });
+      } else if (state.renderV4TargetSuccessor && state.renderV4TargetSuccessor.phase !== "active") {
+        throw new Error("영구 successor fence가 있어 다른 infrastructure lease를 획득할 수 없습니다.");
+      }
       if (
-        editorRenderV4InfrastructureLeaseRequiresStopped(owner)
+        !successor && editorRenderV4InfrastructureLeaseRequiresStopped(owner)
         && (
         state.renderV4KillSwitch !== true
         || state.renderV4InternalEnabled !== false
@@ -547,8 +563,12 @@ export async function renewEditorRenderV4InfrastructureLease({
   owner: ownerValue,
   leaseId: leaseIdValue,
   ttlSeconds = 90,
+  successor = null,
 } = {}) {
   const { owner, leaseId, phase } = validateLeaseIdentity(ownerValue, leaseIdValue);
+  if (successor && (phase !== "rotation" || owner !== `stage-b:rotation:${successor.head}`)) {
+    throw new Error("successor lease는 동일 exact rotation HEAD만 허용합니다.");
+  }
   if (
     !Number.isInteger(ttlSeconds)
     || ttlSeconds < 30
@@ -560,6 +580,22 @@ export async function renewEditorRenderV4InfrastructureLease({
   const databaseUrl = requireProductionDatabaseUrl(environment);
   const sql = postgres(databaseUrl, databaseOptions({ readOnly: false }));
   try {
+    if (successor) {
+      return await sql.begin(async (tx) => {
+        await tx`select singleton from shorts_mvp.editor_release_state where singleton for update`;
+        await assertProjectSuccessorLease(tx, successor);
+        const rows = await tx`
+          update shorts_mvp.editor_release_state
+          set render_v4_infra_lease_expires_at=clock_timestamp()+${ttlSeconds}*interval '1 second'
+          where singleton and render_v4_infra_lease_id=${leaseId}::uuid
+            and render_v4_infra_lease_owner=${owner}
+            and render_v4_infra_lease_expires_at>clock_timestamp()
+          returning render_v4_infra_lease_expires_at
+        `;
+        if (rows.length !== 1) throw new Error("successor infrastructure lease가 만료·변경됐습니다. 영구 fence는 유지합니다.");
+        return rows[0];
+      });
+    }
     const updated = await sql`
       update shorts_mvp.editor_release_state
       set render_v4_infra_lease_expires_at=clock_timestamp()
@@ -568,6 +604,7 @@ export async function renewEditorRenderV4InfrastructureLease({
         and render_v4_infra_lease_id=${leaseId}::uuid
         and render_v4_infra_lease_owner=${owner}
         and render_v4_infra_lease_expires_at > clock_timestamp()
+        and (render_v4_target_successor is null or render_v4_target_successor->>'phase'='active')
         and (
           ${!requiresStopped}
           or (

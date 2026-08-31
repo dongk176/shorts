@@ -33,6 +33,7 @@ export function TemplateTitleV4Preview({
   primaryColor,
   accentColor,
   selected = false,
+  zIndex,
   onPointerDown,
 }: {
   enabled: boolean;
@@ -45,6 +46,7 @@ export function TemplateTitleV4Preview({
   primaryColor: string;
   accentColor: string;
   selected?: boolean;
+  zIndex?: number;
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }) {
   const editorDocument = useMemo(() => createTemplateTitleV4DocumentInput({
@@ -91,6 +93,7 @@ export function TemplateTitleV4Preview({
     primaryColor={primaryColor}
     accentColor={accentColor}
     selected={selected}
+    zIndex={zIndex}
     onPointerDown={onPointerDown}
   />;
 }

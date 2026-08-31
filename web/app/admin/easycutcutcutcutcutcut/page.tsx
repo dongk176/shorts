@@ -25,6 +25,8 @@ import { AdminManagedAccountsSection } from "./admin-managed-accounts-section";
 import { AdminInstallmentsDashboard } from "./admin-installments-dashboard";
 import { AdminCreatorProjects } from "./admin-creator-projects";
 import { AdminRuntimeSettings } from "./admin-runtime-settings";
+import { AdminCustomTemplateDesign } from "@/components/admin-custom-template-design";
+import { getCustomTemplateDesignAdminState } from "@/lib/custom-template-design-admin";
 import {
   AdminFileUploadRelease,
   type FileUploadReleaseCheck,
@@ -186,6 +188,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     tossBillingRuntimeState,
     overview,
     creatorProjectShares,
+    customTemplateDesignState,
   ] = await Promise.all([
     tab === "settings" ? db`
         select feature_flag.enabled,feature_flag.updated_at,administrator.email as updated_by_email
@@ -211,6 +214,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     tab === "creator-projects"
       ? loadAdminCreatorProjectShares(admin.id)
       : Promise.resolve([]),
+    tab === "settings" ? getCustomTemplateDesignAdminState(db) : Promise.resolve(null),
   ]);
   const [fileUploadStateRows, fileUploadCheckRows] = tab === "settings"
     ? await Promise.all([
@@ -262,6 +266,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             candidate_release_id,public_enabled,canary_enabled,
             render_v4_internal_enabled,render_v4_rollout_percent,
             render_v4_kill_switch,
+            shorts_mvp.editor_target_successor_admin_release(${admin.id}::uuid)
+              as successor_admin_release_id,
             (
               select audit.action
               from shorts_mvp.admin_audit_logs audit
@@ -307,13 +313,22 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
           limit 1
         `,
         db`
-          select id,git_sha,ui_version,document_version,
+          select release.id,git_sha,ui_version,document_version,
             worker_image_digest,production_job_definition_arn,status,
             subtitle_editing_capable,render_spec_version,
             caption_render_spec_version,font_manifest_sha256,
-            created_at,staging_verified_at,canary_started_at,promoted_at
-          from shorts_mvp.editor_releases
-          order by created_at desc
+            release.created_at,staging_verified_at,canary_started_at,promoted_at,
+            exists (
+              select 1 from shorts_mvp.editor_release_checks design_check
+              where design_check.release_id=release.id
+                and design_check.environment='isolated'
+                and design_check.check_name='render-spec-v4'
+                and design_check.status='passed'
+                and design_check.details#>>'{customTemplateDesign,version}'='1'
+                and design_check.details#>>'{customTemplateDesign,passed}'='true'
+            ) as custom_template_design_verified
+          from shorts_mvp.editor_releases release
+          order by release.created_at desc
           limit 30
         `,
         db`
@@ -763,6 +778,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
     fontManifestSha256: row.fontManifestSha256
       ? String(row.fontManifestSha256)
       : null,
+    customTemplateDesignVerified: row.customTemplateDesignVerified === true,
     workerImageDigest: String(row.workerImageDigest),
     productionJobDefinitionArn: String(row.productionJobDefinitionArn),
     status: String(row.status),
@@ -899,6 +915,8 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
             editorReleaseState?.renderV4RolloutPercent || 0,
           )}
           renderV4KillSwitch={editorReleaseState?.renderV4KillSwitch !== false}
+          successorAdminReleaseId={editorReleaseState?.successorAdminReleaseId
+            ? String(editorReleaseState.successorAdminReleaseId) : null}
           renderV4CandidateLastTransition={
             editorReleaseState?.renderV4CandidateLastTransition
               ? String(editorReleaseState.renderV4CandidateLastTransition)
@@ -934,6 +952,7 @@ export default async function AdminBillingPage({ searchParams }: PageProps) {
         />
       ) : tab === "settings" ? (
         <>
+          {customTemplateDesignState && <AdminCustomTemplateDesign key={customTemplateDesignState.mode} {...customTemplateDesignState} />}
           <AdminFileUploadRelease
             initialMode={fileUploadStateRows[0]?.emergencyStopped
               ? "emergency_stop"

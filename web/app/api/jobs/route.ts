@@ -22,6 +22,7 @@ import { apiError, HttpError } from "@/lib/http";
 import { getInitialJobBackend } from "@/lib/job-backend";
 import { resolveInitialRenderRelease } from "@/lib/initial-render-release";
 import { createInitialRenderContract } from "@/lib/initial-render-contract";
+import { assertCustomTemplateDesignRenderRelease } from "@/lib/custom-template-design";
 import {
   assertJobCreationAllowed,
   assertRestrictedContentCooldown,
@@ -60,6 +61,7 @@ const schema = z.object({
   youtubeUrl: z.string().max(2048).optional(),
   templateId: z.enum(templateIds),
   customTemplateId: z.string().uuid().nullable().optional(),
+  customTemplateVersion: z.number().int().positive().optional(),
   videoAspectRatio: z.enum(videoAspectRatios).default("1:1"),
   outputLanguage: z.enum(outputLanguages).default("ko"),
   rightsConfirmed: z.boolean().optional(),
@@ -292,6 +294,7 @@ export async function POST(request: Request) {
         userId: session.userId,
         templateId: input.templateId,
         customTemplateId: input.customTemplateId,
+        customTemplateVersion: input.customTemplateVersion,
         videoAspectRatio: input.videoAspectRatio,
         brandColor: input.brandColor,
       });
@@ -400,6 +403,9 @@ export async function POST(request: Request) {
         userId: session.userId,
         dispatchTarget,
       });
+      if (resolvedExecution.usesCustomTemplateDesign) {
+        await assertCustomTemplateDesignRenderRelease(tx, initialRenderRelease?.releaseId);
+      }
       if (initialRenderRelease) {
         initialEditorReleaseId = initialRenderRelease.releaseId;
         initialRenderSpecVersion = 4;

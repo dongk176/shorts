@@ -785,7 +785,11 @@ def _initial_render_v4_environment(
     matched_lane = ""
     matched_release: dict[str, Any] | None = None
     for target_key, lane in registry["lanes"].items():
-        pointers = ("current", "previous") if resume else ("current",)
+        # Only an already-recorded, AWS-verified job may reconcile its old
+        # initial attempt. An unsubmitted claim still cannot use previous.
+        pointers = ("current", "previous") if (
+            resume or job.get("aws_batch_job_id")
+        ) else ("current",)
         for pointer in pointers:
             release = lane.get(pointer)
             if not isinstance(release, dict):
@@ -803,6 +807,8 @@ def _initial_render_v4_environment(
         raise BatchTargetTrustRejected(
             "Initial render v4 is not bound to the selected current release"
         )
+    if not resume and registry["lanes"][matched_lane].get("previous") == matched_release:
+        _verify_recorded_previous_project_job(job, matched_release)
     font_manifest_sha256 = str(
         matched_release.get("fontManifestSha256") or ""
     )
@@ -884,6 +890,25 @@ def _initial_render_v4_environment(
             "value": font_manifest_sha256,
         },
     ]
+
+
+def _verify_recorded_previous_project_job(
+    job: dict[str, Any], release: dict[str, Any]
+) -> None:
+    recorded_id = str(job.get("aws_batch_job_id") or "").strip()
+    if not recorded_id or (
+        job.get("batch_job_definition") != release.get("jobDefinitionArn")
+        or job.get("batch_job_queue") != release.get("jobQueueArn")
+    ):
+        raise BatchTargetTrustRejected("Previous project has no exact recorded AWS target")
+    described = batch.describe_jobs(jobs=[recorded_id]).get("jobs", [])
+    if len(described) != 1 or (
+        described[0].get("jobId") != recorded_id
+        or described[0].get("jobDefinition") != release.get("jobDefinitionArn")
+        or described[0].get("jobQueue") != release.get("jobQueueArn")
+        or (described[0].get("container") or {}).get("image") != release.get("imageUri")
+    ):
+        raise BatchTargetTrustRejected("Previous project AWS job identity cannot be proven")
 
 
 def _editor_release_target(
@@ -1207,6 +1232,28 @@ def _submit(payload: dict[str, Any]) -> str | None:
             },
         )
         submission_key = f"project:{job_id}:resume:1" if resume else f"project:{job_id}:0"
+        registry = _production_project_target_registry()
+        previous = next((
+            lane.get("previous") for lane in (registry or {}).get("lanes", {}).values()
+            if isinstance(lane.get("previous"), dict)
+            and lane["previous"].get("jobDefinitionArn") == job_definition
+            and lane["previous"].get("jobQueueArn") == job_queue
+        ), None)
+        if not resume and recorded_batch_job_id and previous is not None:
+            _verify_recorded_previous_project_job(job, previous)
+            # Reconcile the original claim only. Never enter SubmitJob, create
+            # a replacement claim, or retarget the old logical/raw identity.
+            _complete_batch_submission_target(
+                submission_key, recorded_batch_job_id, job_definition, job_queue,
+                project_binding={
+                    "p_video_job_id": job_id,
+                    "p_expected_batch_target_key": job.get("batch_target_key"),
+                    "p_expected_batch_target_release_id": job.get("batch_target_release_id"),
+                    "p_observed_job_definition": job.get("batch_job_definition"),
+                    "p_observed_job_queue": job.get("batch_job_queue"),
+                },
+            )
+            return recorded_batch_job_id
         project_batch_id = _submit_once(
             request,
             submission_key,

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>내 배경·템플릿 텍스트 · 로컬 화면 검증</title>
+    <style>
+      #harness-heading { padding: 18px 24px; border-bottom: 1px solid #334155; background: #101b2b; }
+      #harness-heading h1 { margin: 0 0 8px; font-size: 20px; font-weight: 800; color: #a5f3fc; }
+      #harness-heading p { margin: 6px 0; color: #cbd5e1; font-size: 13px; line-height: 1.7; }
+      #harness-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+      .harness-button { padding: 8px 12px; border: 1px solid #475569; border-radius: 9px; background: #1e293b; color: #f1f5f9; font-size: 12px; font-weight: 700; }
+      .harness-button:disabled { opacity: .4; cursor: wait; }
+      #harness-library { padding: 20px 24px; display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr) 330px; }
+      #harness-library h2 { font-size: 16px; font-weight: 800; margin-bottom: 12px; }
+      .harness-cards { display: flex; flex-wrap: wrap; gap: 16px; }
+      .harness-card { width: 188px; padding: 12px; border: 1px solid #475569; border-radius: 12px; background: #171719; }
+      .harness-card-label { display: block; margin: 8px 0; font-size: 12px; color: #cbd5e1; }
+      #harness-picker { max-height: 440px; overflow: auto; padding: 16px; border: 1px solid #334155; border-radius: 12px; }
+      #harness-editor { position: relative; transform: translateZ(0); height: 990px; overflow: auto; border-top: 3px solid #0891b2; }
+      #harness-error { padding: 12px 24px; color: #fecaca; white-space: pre-wrap; }
+      #harness-status { min-height: 20px; color: #a7f3d0; }
+      @media (max-width: 1050px) { #harness-library { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/tests/custom-template-design/main.tsx"></script>
+  </body>
+</html>

@@ -1112,6 +1112,11 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     bucket.grantReadWrite(taskRole, "outputs/*");
     bucket.grantReadWrite(taskRole, "thumbnails/*");
     bucket.grantReadWrite(taskRole, "edit-sources/*");
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      sid: "ReadCustomBackgroundAssetsOnly",
+      actions: ["s3:GetObject"],
+      resources: [bucket.arnForObjects("custom-backgrounds/*")],
+    }));
     runtimeSecret.grantRead(taskRole);
     const executionRole = new iam.Role(this, "WorkerExecutionRole", {
       assumedBy: new iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
@@ -2070,6 +2075,11 @@ export class ShortsMvpComputeStack extends cdk.Stack {
     bucket.grantDelete(vercelRole, "edit-sources/*");
     bucket.grantWrite(vercelRole, "edit-sources/*");
     bucket.grantRead(vercelRole, "outputs/*");
+    vercelRole.addToPolicy(new iam.PolicyStatement({
+      sid: "ReadWriteCustomBackgroundAssetsOnly",
+      actions: ["s3:GetObject", "s3:PutObject"],
+      resources: [bucket.arnForObjects("custom-backgrounds/*")],
+    }));
     outboxDispatcher.grantInvoke(vercelRole);
 
     const githubOrg = this.node.tryGetContext("githubOrg") || "dongk176";

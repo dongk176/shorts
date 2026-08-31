@@ -23,6 +23,10 @@ from .caption_templates import (
     verify_caption_font_selection_v4,
 )
 from .config import Settings
+from .custom_template_design_probe import (
+    custom_template_design_evidence,
+    verify_custom_template_design,
+)
 from .editor_renderer import (
     EditorDocumentRenderer,
     create_editor_title_layer,
@@ -1004,6 +1008,8 @@ def run_editor_release_probe() -> dict[str, Any]:
             raise RuntimeError("Rendered probe frame does not contain the pop caption accent")
         browser_parity_root: Path | None = None
         browser_parity_matrix: dict[str, Any] | None = None
+        custom_design_root: Path | None = None
+        custom_design_evidence: dict[str, object] | None = None
         if scenario == "baseline":
             browser_parity_root = root / "browser-parity"
             browser_parity_matrix = build_browser_parity_matrix(
@@ -1017,6 +1023,20 @@ def run_editor_release_probe() -> dict[str, Any]:
                 or set(browser_parity_matrix.get("fontIds") or []) != set(FONT_IDS)
             ):
                 raise RuntimeError("Browser parity worker matrix is incomplete")
+            custom_design_root = root / "custom-template-design"
+            design_verification = verify_custom_template_design(
+                root=custom_design_root,
+                settings=settings,
+            )
+            # This evidence is emitted only after actual FFmpeg initial/no-op
+            # rendering, all twenty fonts, layer order and deletion checks.
+            # Preserve the existing boolean check names and registrar protocol.
+            custom_design_evidence = custom_template_design_evidence(
+                source_git_sha=git_sha,
+                worker_image_digest=image_digest,
+                font_manifest_sha256=expected_font_manifest_sha,
+                verification=design_verification,
+            )
         manifest = {
             "schemaVersion": 2,
             "scenario": scenario,
@@ -1028,6 +1048,8 @@ def run_editor_release_probe() -> dict[str, Any]:
             "fontManifestSha256": expected_font_manifest_sha,
             "fontManifest": font_manifest,
             "runtimeIdentity": runtime_identity,
+            **({"customTemplateDesign": custom_design_evidence}
+               if custom_design_evidence is not None else {}),
             "checks": {
                 "worker-image": True,
                 "runtime-identity": True,
@@ -1187,6 +1209,11 @@ def run_editor_release_probe() -> dict[str, Any]:
                     for parity_frame in sorted(
                         (browser_parity_root / "frames").glob("*.png")
                     )
+                )
+            if custom_design_root is not None:
+                files.extend(
+                    (f"custom-template-design/{frame.name}", frame, "image/png")
+                    for frame in sorted((custom_design_root / "frames").glob("*.png"))
                 )
             artifacts: list[dict[str, str]] = []
             for relative_name, file_path, content_type in files:

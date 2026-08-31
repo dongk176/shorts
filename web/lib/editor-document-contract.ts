@@ -28,6 +28,7 @@ import {
 } from "@/lib/editor-render-spec";
 import {
   stockBackgroundIds,
+  textOverlayStyleSchema,
   templatePresetColors,
   TEMPLATE_CANVAS,
 } from "@/lib/template-config";
@@ -75,15 +76,7 @@ const subtitleSchema = z.object({
   end: finiteNumber.positive(),
   text: z.string().trim().min(1).max(500),
 }).strict().refine((subtitle) => subtitle.end > subtitle.start);
-const editorTextOverlaySchema = z.object({
-  id: safeIdSchema,
-  text: z.string().max(120),
-  fontId: z.enum(editorFontIds),
-  color: z.enum(templatePresetColors),
-  effect: z.enum(["none", "outline", "shadow"]),
-  offset: canvasPointSchema,
-  width: finiteNumber.min(1).max(1_000),
-  scale: finiteNumber.min(0.25).max(3),
+const editorTextOverlaySchema = textOverlayStyleSchema.extend({
   startSeconds: finiteNumber.nonnegative(),
   endSeconds: finiteNumber.positive(),
 }).strict().refine((overlay) => overlay.endSeconds > overlay.startSeconds);
@@ -454,6 +447,10 @@ const editorDocumentSnapshotBaseSchema = z.object({
       z.object({
         kind: z.literal("image"),
         assetId: z.enum(stockBackgroundIds),
+      }).strict(),
+      z.object({
+        kind: z.literal("uploaded_image"),
+        assetId: z.string().uuid().transform((id) => id.toLowerCase()),
       }).strict(),
     ]).nullable(),
   }).strict(),

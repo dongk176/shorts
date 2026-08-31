@@ -142,7 +142,8 @@ describe("administrator render v4 rollout control", () => {
     expect(body).toContain("editorRenderV4StoppedOnPromotionAction");
     expect(body).toContain("automaticPublicRolloutAllowed: false");
     expect(body).toContain("} else {");
-    expect(body).toContain("rolloutPercent: isRenderV4Release ? 0 : 100");
+    expect(body).toContain(": isRenderV4Release ? 0 : 100");
+    expect(body).toContain("else if (isRenderV4Release)");
     expect(dashboard).toContain("v4 승격(0% 정지)");
   });
 

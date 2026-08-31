@@ -9,6 +9,12 @@ import {
 } from "@/lib/caption-render-spec";
 import { templateIds } from "@/lib/contracts";
 import { getDb } from "@/lib/db";
+import { collectBackgroundAssetIds } from "@/lib/background-assets-contract";
+import { lockOwnedBackgroundAssets } from "@/lib/background-assets";
+import { assertCustomTemplateDesignAccess, lockCustomTemplateDesignAccess } from "@/lib/custom-template-design-access";
+import { assertCustomTemplateDesignRenderRelease } from "@/lib/custom-template-design";
+import { templateConfigSchema } from "@/lib/template-config";
+import { storedShortHasCustomDesign, templateHasCustomDesign } from "@/lib/template-design";
 import { assertEnterpriseSessionServiceAccess } from "@/lib/enterprise-access";
 import {
   editorDocumentOutputDuration,
@@ -730,6 +736,29 @@ async function applyEditorDocument({
       );
     }
     persistedRelease = lockedRelease;
+    const backgroundIds = [...new Set([
+      ...collectBackgroundAssetIds(document.overlays),
+      ...collectBackgroundAssetIds(document.template.snapshot),
+    ])];
+    const previousBackgroundIds = new Set([
+      ...collectBackgroundAssetIds(existing.editorDocument?.overlays),
+      ...collectBackgroundAssetIds(existing.templateSnapshot),
+    ]);
+    const templateConfig = templateConfigSchema.safeParse(document.template.snapshot?.config);
+    const usesCustomDesign = backgroundIds.length > 0
+      || (templateConfig.success && templateHasCustomDesign(templateConfig.data));
+    if (usesCustomDesign) {
+      if (!renderSpecV4Requested) {
+        throw new HttpError(409, "새 배경·템플릿 편집기를 다시 열어 주세요.", "CUSTOM_TEMPLATE_DESIGN_RENDER_UNAVAILABLE");
+      }
+      await assertCustomTemplateDesignRenderRelease(tx, lockedRelease.releaseId);
+      if (backgroundIds.some((id) => !previousBackgroundIds.has(id))) {
+        assertCustomTemplateDesignAccess(await lockCustomTemplateDesignAccess(tx, session.userId));
+      }
+      if (backgroundIds.length) {
+        await lockOwnedBackgroundAssets(tx, session.userId!, backgroundIds);
+      }
+    }
     const insertedRequest = await tx`
       insert into shorts_mvp.editor_render_requests (
         id,short_id,user_id,base_render_version,snapshot_hash,status,
@@ -862,7 +891,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
     const existingRows = await db`
       select s.id,s.status,s.render_version,s.duration_seconds,
           s.template_id,s.custom_template_id,
-          s.template_snapshot, s.video_aspect_ratio, s.edit_timeline_s3_key,
+          s.template_snapshot,s.editor_document, s.video_aspect_ratio, s.edit_timeline_s3_key,
           s.edit_timeline_start_seconds, s.edit_timeline_end_seconds,
           s.edit_timeline_subtitle_segments, s.clean_clip_s3_key,
           s.start_seconds,s.end_seconds,s.subtitle_segments,
@@ -899,6 +928,9 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
     `;
     const existing = existingRows[0];
     if (!existing) throw new HttpError(404, "편집 가능한 쇼츠 영상을 찾을 수 없습니다.");
+    if (storedShortHasCustomDesign(existing)) {
+      throw new HttpError(409, "내 배경·텍스트를 유지하려면 최신 편집 화면에서 적용해 주세요.", "CUSTOM_TEMPLATE_DESIGN_EDITOR_REQUIRED");
+    }
     if (existing.subtitleTemplateId) {
       throw new HttpError(
         409,
@@ -1052,6 +1084,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
           (${session.userId}::uuid is not null and s.user_id=${session.userId})
           or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
         ) and s.status='ready' and s.deleted_at is null and s.expires_at > now()
+          and s.render_version=${Number(existing.renderVersion)}
           and s.subtitle_template_id is null
           and coalesce(s.edit_timeline_s3_key,s.clean_clip_s3_key) is not null
           and (

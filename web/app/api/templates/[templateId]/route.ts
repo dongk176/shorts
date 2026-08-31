@@ -15,6 +15,7 @@ import {
   lockEffectiveSubtitleTemplateAccess,
 } from "@/lib/subtitle-template-release";
 import { assertUnifiedTemplateSubtitleCanaryAccess } from "@/lib/template-execution-snapshot";
+import { lockTemplateDesignForSave } from "@/lib/custom-template-design";
 
 const paramsSchema = z.object({ templateId: z.string().uuid() });
 const updateSchema = z.object({
@@ -69,6 +70,7 @@ export async function PUT(request: Request, context: Context) {
         throw new HttpError(409, "다른 창에서 템플릿이 수정되었습니다. 새로고침 후 다시 시도해 주세요.");
       }
       const currentConfig = templateConfigSchema.parse(currentRows[0].config);
+      await lockTemplateDesignForSave(tx, session.userId, input.config, currentConfig);
       if (isTemplateConfigV5(currentConfig) || isTemplateConfigV5(input.config)) {
         assertUnifiedTemplateSubtitleCanaryAccess(
           await lockEffectiveSubtitleTemplateAccess(tx, session.userId),

@@ -482,6 +482,24 @@ describe("file upload job control plane", () => {
     expect(query(queries, "insert into shorts_mvp.video_jobs")).toBeUndefined();
   });
 
+  it("rejects a stale template selection before upload job, usage or receiver capacity writes", async () => {
+    const customTemplateId = "35aa2b2e-e7df-48d7-9dbc-2b6224c4ffef";
+    const { db, queries } = transactionDb({ customTemplate: {
+      id: customTemplateId, name: "수정된 배경", baseTemplateId: "dark-minimal",
+      config: createDefaultTemplateConfig(), version: 3,
+    } });
+    mocks.getDb.mockReturnValue(db);
+    const response = await POST(jsonRequest({
+      ...validBody, customTemplateId, customTemplateVersion: 2,
+    }));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: "CUSTOM_TEMPLATE_VERSION_CONFLICT" });
+    for (const table of ["video_jobs", "usage_reservations", "file_upload_sessions", "file_upload_capacity_requests"]) {
+      expect(query(queries, `insert into shorts_mvp.${table}`)).toBeUndefined();
+    }
+    expect(mocks.ensureUploadCapacity).not.toHaveBeenCalled();
+  });
+
   it("allows a v5 upload through the verified render release instead of a local-only exception", async () => {
     const customTemplateId = "35aa2b2e-e7df-48d7-9dbc-2b6224c4ffef";
     const config = upgradeTemplateConfigToV5(createDefaultTemplateConfig());

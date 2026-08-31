@@ -281,6 +281,7 @@ export type MvpState = {
   usage: UsageSnapshot;
   capabilities: {
     fileUpload: boolean;
+    customTemplateDesign?: boolean;
     unifiedTemplateSubtitles: boolean;
     unifiedTemplateSubtitleLocalUpload: boolean;
   };

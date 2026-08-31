@@ -1,11 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef } from "react";
-import type {
-  CSSProperties,
-  PointerEvent,
-  PointerEventHandler,
-} from "react";
+import type { PointerEvent, PointerEventHandler } from "react";
 import {
   adjustTimedRange,
   snapTimedRangeHandle,
@@ -13,18 +9,17 @@ import {
   timelinePointerDeltaSeconds,
   type TimedRangeAdjustment,
 } from "@/lib/range-editing";
-import { TEMPLATE_CANVAS } from "@/lib/template-config";
 import {
   EDITOR_TEXT_DEFAULT_WIDTH,
   type EditorTextOverlay,
   type EditorTextResizeEdge,
 } from "@/lib/editor-overlay-preview";
-import { editorFontFamily } from "@/lib/editor-fonts";
 import type { EditorRenderTextLayerSpec } from "@/lib/editor-render-spec";
-
-function canvasWidth(value: number) {
-  return `${value / (TEMPLATE_CANVAS.width / 100)}cqw`;
-}
+import {
+  EditorTextOverlayLines,
+  editorTextOverlayPositionStyle,
+  editorTextOverlayTextStyle,
+} from "@/components/editor-text-overlay-paint";
 
 export function EditorTextOverlayPreview({
   textOverlay,
@@ -54,43 +49,10 @@ export function EditorTextOverlayPreview({
   onEditValueChange?: (id: string, value: string) => void;
   onEditEnd?: () => void;
 }) {
-  const effect = textOverlay.effect || "outline";
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const width = textOverlay.width ?? EDITOR_TEXT_DEFAULT_WIDTH;
-  const positionStyle: CSSProperties = {
-    zIndex,
-    left: "50%",
-    top: "50%",
-    width: canvasWidth(width),
-    translate: `calc(-50% + ${canvasWidth(textOverlay.offset.x)}) calc(-50% + ${canvasWidth(textOverlay.offset.y)})`,
-    scale: String(textOverlay.scale),
-    transformOrigin: "center",
-  };
-  const textStyle: CSSProperties = {
-    color: textOverlay.color,
-    fontFamily: renderSpec?.font.family || editorFontFamily(textOverlay.fontId),
-    fontWeight: renderSpec?.font.resolvedWeight,
-    fontSize: canvasWidth(72),
-    lineHeight: 1.2,
-    ...(effect === "none"
-      ? {
-          WebkitTextStroke: "0 transparent",
-          filter: "none",
-          textShadow: "none",
-        }
-      : effect === "outline"
-      ? {
-          WebkitTextStroke: ".14em rgba(0,0,0,.98)",
-          filter: "drop-shadow(0 0 .025em rgba(0,0,0,.9))",
-          paintOrder: "stroke fill",
-          textShadow: "0 .035em .08em rgba(0,0,0,.46)",
-        }
-      : {
-          WebkitTextStroke: "0 transparent",
-          filter: "none",
-          textShadow: "0 .09em .2em rgba(0,0,0,.88)",
-        }),
-  };
+  const positionStyle = editorTextOverlayPositionStyle(textOverlay, zIndex);
+  const textStyle = editorTextOverlayTextStyle(textOverlay, renderSpec);
 
   useLayoutEffect(() => {
     const editor = editorRef.current;
@@ -161,11 +123,7 @@ export function EditorTextOverlayPreview({
         className="w-full cursor-move touch-none appearance-none whitespace-pre-wrap break-words rounded-[2cqw] border-0 bg-transparent px-[2cqw] py-[1cqw] text-center font-extrabold"
         style={textStyle}
       >
-        {renderSpec
-          ? renderSpec.lines.map((line, index) => (
-              <span key={`${index}:${line}`} className="block">{line}</span>
-            ))
-          : textOverlay.text || "텍스트"}
+        <EditorTextOverlayLines textOverlay={textOverlay} renderSpec={renderSpec} />
       </button>
       {selected && onResizePointerDown && <>
         <button

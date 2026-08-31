@@ -31,6 +31,7 @@ export type AdminEditorRelease = {
   renderSpecVersion: number | null;
   captionRenderSpecVersion: number | null;
   fontManifestSha256: string | null;
+  customTemplateDesignVerified?: boolean;
   workerImageDigest: string;
   productionJobDefinitionArn: string;
   status: string;
@@ -72,6 +73,7 @@ type Props = {
   renderV4InternalEnabled: boolean;
   renderV4RolloutPercent: number;
   renderV4KillSwitch: boolean;
+  successorAdminReleaseId?: string | null;
   renderV4CandidateLastTransition: string | null;
   renderV4StableLastTransition: string | null;
   subtitleSuitePublicEnabled: boolean;
@@ -161,6 +163,7 @@ export function AdminEditorReleases({
   renderV4InternalEnabled,
   renderV4RolloutPercent,
   renderV4KillSwitch,
+  successorAdminReleaseId = null,
   renderV4CandidateLastTransition,
   renderV4StableLastTransition,
   subtitleSuitePublicEnabled,
@@ -180,6 +183,9 @@ export function AdminEditorReleases({
   const [pending, startTransition] = useTransition();
   const candidate = releases.find((release) => release.id === candidateReleaseId);
   const stable = releases.find((release) => release.id === stableReleaseId);
+  const preservePublicSettings = candidate?.customTemplateDesignVerified === true && Boolean(stable);
+  const successorAdminAllowed = preservePublicSettings && canaryEnabled
+    && successorAdminReleaseId === candidate?.id && !renderV4KillSwitch;
   const candidateStats = renderStats.find(
     (item) => item.releaseId === candidateReleaseId,
   );
@@ -247,7 +253,7 @@ export function AdminEditorReleases({
     candidate?.id || "",
   );
   const productionCanaryRecordAllowed = !candidateIsRenderV4
-    || (renderV4InternalEnabled && !renderV4KillSwitch);
+    || ((renderV4InternalEnabled || successorAdminAllowed) && !renderV4KillSwitch);
 
   function execute(action: () => Promise<unknown>, successMessage: string) {
     startTransition(async () => {
@@ -294,12 +300,19 @@ export function AdminEditorReleases({
             pending
             || !masterEnvironmentEnabled
             || (candidateIsRenderV4 && !renderV4EnvironmentEnabled)
+            || (candidate.customTemplateDesignVerified === true && !stable)
           }
           onClick={() => setConfirmation({
-            title: "운영 내부 카나리를 시작할까요?",
-            description: "등록된 내부 테스트 계정만 후보 UI와 별도 카나리 워커를 사용합니다.",
+            title: preservePublicSettings
+              ? "기존 공개 설정을 유지하며 카나리를 시작할까요?"
+              : "운영 내부 카나리를 시작할까요?",
+            description: preservePublicSettings
+              ? "현재 공개 설정을 유지하고 관리자 계정만 검증된 후속 워커를 사용합니다. 현재 Stable과의 호환성 및 새 배경·텍스트 검증을 서버에서 다시 확인합니다."
+              : "등록된 내부 테스트 계정만 후보 UI와 별도 카나리 워커를 사용합니다.",
             confirmLabel: "카나리 시작",
-            action: () => startEditorReleaseCanary(candidate.id),
+            action: () => preservePublicSettings && stable
+              ? startEditorReleaseCanary(candidate.id, stable.id)
+              : startEditorReleaseCanary(candidate.id),
           })}
           className="rounded-xl bg-white px-4 py-2.5 text-sm font-black text-black disabled:opacity-40"
         >카나리 시작</button>}
@@ -308,7 +321,9 @@ export function AdminEditorReleases({
           disabled={pending}
           onClick={() => setConfirmation({
             title: "카나리를 일시 중단할까요?",
-            description: "새로운 내부 저장 요청부터 기존 stable 또는 레거시 경로로 돌아갑니다.",
+            description: preservePublicSettings
+              ? "관리자 카나리를 중지합니다. 신규 생성의 인계 제한은 유지되며, 검증된 인계 완료 또는 복구 절차로만 해제됩니다."
+              : "새로운 내부 저장 요청부터 기존 stable 또는 레거시 경로로 돌아갑니다.",
             confirmLabel: "카나리 중단",
             action: pauseEditorReleaseCanary,
           })}
@@ -322,19 +337,27 @@ export function AdminEditorReleases({
             || !globalEnvironmentEnabled
             || (candidateIsRenderV4 && !renderV4EnvironmentEnabled)
             || !promotionReady
+            || (preservePublicSettings && !successorAdminAllowed)
+            || (candidate.customTemplateDesignVerified === true && !stable)
           }
           onClick={() => setConfirmation({
-            title: candidateIsRenderV4
+            title: preservePublicSettings
+              ? "기존 공개 설정을 유지하며 승격할까요?"
+              : candidateIsRenderV4
               ? "v4 릴리스를 0% 정지 상태로 승격할까요?"
               : "모든 사용자에게 공개할까요?",
-            description: candidateIsRenderV4
+            description: preservePublicSettings
+              ? "기존 공개 설정 유지 방식으로 검증된 동일 이미지를 승격합니다. 현재 Stable, 렌더·폰트 규격과 필수 검사를 다시 확인하며 배경·템플릿 텍스트의 일반 공개는 별도 설정에서 제어합니다."
+              : candidateIsRenderV4
               ? "릴리스는 stable로 승격하지만 v4 렌더는 내부 OFF·공개 0%·긴급 중단 ON으로 초기화합니다. 이후 5% 공개를 별도로 확인해야 하며 이미지 재빌드는 발생하지 않습니다."
               : "필수 검사와 카나리 작업을 다시 확인한 뒤 100% 사용자에게 즉시 공개합니다. 이미지 재빌드는 발생하지 않습니다.",
-            confirmLabel: candidateIsRenderV4 ? "v4 승격 후 정지" : "전체 공개",
-            action: () => promoteEditorRelease(candidate.id),
+            confirmLabel: preservePublicSettings ? "기존 공개 설정 유지 · 승격" : candidateIsRenderV4 ? "v4 승격 후 정지" : "전체 공개",
+            action: () => preservePublicSettings && stable
+              ? promoteEditorRelease(candidate.id, stable.id)
+              : promoteEditorRelease(candidate.id),
           })}
           className="rounded-xl bg-emerald-300 px-4 py-2.5 text-sm font-black text-emerald-950 disabled:opacity-40"
-        >{candidateIsRenderV4 ? "v4 승격(0% 정지)" : "전체 승격"}</button>}
+        >{preservePublicSettings ? "기존 공개 설정 유지 · 승격" : candidateIsRenderV4 ? "v4 승격(0% 정지)" : "전체 승격"}</button>}
         {(publicEnabled || canaryEnabled) && <button
           type="button"
           disabled={pending}
@@ -457,7 +480,7 @@ export function AdminEditorReleases({
         <div className="rounded-xl bg-black/25 p-3">
           <dt className="text-white/50">내부 테스트 계정</dt>
           <dd className="mt-1 font-bold text-white">
-            {renderV4InternalEnabled && !renderV4KillSwitch ? "v4 사용" : "v4 중단"}
+            {successorAdminAllowed ? "후속 버전 관리자 검증" : renderV4InternalEnabled && !renderV4KillSwitch ? "v4 사용" : "v4 중단"}
           </dd>
         </div>
         <div className="rounded-xl bg-black/25 p-3">
@@ -492,6 +515,7 @@ export function AdminEditorReleases({
         {candidateIsRenderV4
           && candidate
           && canaryEnabled
+          && !preservePublicSettings
           && (!renderV4InternalEnabled || renderV4KillSwitch)
           && <button
             type="button"

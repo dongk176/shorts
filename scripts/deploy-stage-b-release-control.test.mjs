@@ -8,6 +8,7 @@ import {
   stageBChangedLambdaCodeAssets,
   stageBChangeSetName,
   stageBChangeSetProvenanceSha256,
+  stageBRequiresStopped,
   stageBTemplateSha256,
   validatePromotedStageBDeployment,
   validateStageBPublishedAssetHead,
@@ -450,9 +451,11 @@ test("requires the separately applied production v4 schema before any AWS mutati
   assert.match(source, /async function verifyStageBDatabaseContracts/);
   assert.match(
     source,
-    /function stageBRequiresStopped\(phase\)[\s\S]*!\["renewal", "lockdown"\]\.includes\(phase\)/,
+    /function stageBRequiresStopped\(phase, successor = null\)[\s\S]*!\["renewal", "lockdown"\]\.includes\(phase\)/,
   );
-  assert.match(source, /requireStopped: stageBRequiresStopped\(options\.phase\)/);
+  assert.match(source, /requireStopped: stageBRequiresStopped\(options\.phase, options\.successor\)/);
+  for (const phase of ["bootstrap", "rotation"]) assert.equal(stageBRequiresStopped(phase), true);
+  for (const phase of ["renewal", "lockdown"]) assert.equal(stageBRequiresStopped(phase), false);
   assert.match(source, /stage-b:\$\{leasePhase\}:\$\{initial\.head\}/);
   assert.match(
     source,

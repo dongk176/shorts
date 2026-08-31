@@ -1,0 +1,14 @@
+[
+  {"value":"","width":320,"lines":["텍스트"]},
+  {"value":"한글은 미리보기와 영상에서 같은 줄로 표시됩니다.","width":320,"lines":["한글은","미리보","기와 영","상에서","같은 줄","로 표시","됩니다."]},
+  {"value":"첫째\n\n셋째\n","width":400,"lines":["첫째"," ","셋째"," "]},
+  {"value":"A long sentence 12345 with spaces","width":300,"lines":["A long","senten","ce 123","45 wit","h spac","es"]},
+  {"value":"한글🙂👩‍💻 ABC 日本語 かな カナ","width":280,"lines":["한글🙂","👩‍💻","ABC","日本語","かな","カナ"]},
+  {"value":"  leading   trailing  ","width":150,"lines":["  l","ea","di","ng"," tr","ai","li","ng"," "]},
+  {"value":"\u0085\u200b\ufeff\t\r\u2028\u00a0한글","width":200,"lines":["\u0085\u200b","한글"]},
+  {"value":"가나다ABC","width":1,"lines":["가","나","다","A","B","C"]},
+  {"value":"가나다ABC","width":188,"lines":["가나","다A","BC"]},
+  {"value":"가나다ABC","width":187.999,"lines":["가","나","다A","BC"]},
+  {"value":"𠀀𠮷𰀀한글","width":210,"lines":["𠀀𠮷","𰀀한","글"]},
+  {"value":"한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한\n한","width":1000,"lines":["한","한","한","한","한","한","한","한","한","한","한","한","한","한","한","한","한","한","한","한"]}
+]

@@ -10,6 +10,7 @@ import {
 } from "@/lib/onboarding-welcome";
 import { assertPaidProjectActionAccess } from "@/lib/project-action-entitlements";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
+import { storedShortHasCustomDesign } from "@/lib/template-design";
 
 export async function POST(_: Request, context: { params: Promise<{ shortId: string }> }) {
   try {
@@ -21,7 +22,7 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
     assertPaidProjectActionAccess(billing, "edit");
     const rows = await db`
       select s.id,s.status,s.render_version,s.rendered_config_hash,
-        s.subtitle_template_id,
+        s.subtitle_template_id,s.template_snapshot,s.editor_document,
         md5(concat_ws('|', s.hook_title, s.channel_display_name, s.subtitles_enabled::text,
           s.subtitle_segments::text, s.comment_overlays::text, s.template_id,
           coalesce(s.template_snapshot::text,''), s.video_aspect_ratio,
@@ -58,6 +59,9 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
         and s.output_s3_key is not null
     `;
     if (!rows[0]) throw new Error("재렌더링할 쇼츠를 찾을 수 없습니다.");
+    if (storedShortHasCustomDesign(rows[0])) {
+      throw new HttpError(409, "내 배경·텍스트를 유지하려면 최신 편집 화면에서 적용해 주세요.", "CUSTOM_TEMPLATE_DESIGN_EDITOR_REQUIRED");
+    }
     if (rows[0].subtitleTemplateId) {
       throw new HttpError(
         409,
@@ -95,6 +99,7 @@ export async function POST(_: Request, context: { params: Promise<{ shortId: str
           or (${session.userId}::uuid is null and s.user_id is null and s.mvp_session_id=${session.id})
         )
           and s.status='ready' and s.deleted_at is null and s.expires_at > now()
+          and s.render_version=${Number(rows[0].renderVersion)}
           and s.subtitle_template_id is null
           and (
             not (

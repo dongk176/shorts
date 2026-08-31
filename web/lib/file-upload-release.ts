@@ -87,6 +87,7 @@ async function readFileUploadReleaseAccess(
       ${FILE_UPLOAD_FLAG_KEY},${FILE_UPLOAD_PUBLIC_FLAG_KEY},
       ${FILE_UPLOAD_EMERGENCY_STOP_FLAG_KEY}
     )
+    order by flag_key
     for share
   ` : await db`
     select flag_key,enabled

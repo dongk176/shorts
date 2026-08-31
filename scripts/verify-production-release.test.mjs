@@ -88,3 +88,15 @@ test("production release guard rejects any unexpected route addition or removal"
     { added: ["/api/unexpected/route"], removed: [] },
   );
 });
+
+test("custom backgrounds add only the collection and private asset routes", () => {
+  const additions = ["/api/background-assets/route", "/api/background-assets/[assetId]/route"];
+  assert.deepEqual(ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE.filter((route) => route.startsWith("/api/background-assets")), additions);
+  assert.deepEqual(compareManifestRoutes(
+    [...PROTECTED_APP_ROUTES, ...additions], PROTECTED_APP_ROUTES, additions,
+  ), { added: [], removed: [] });
+  assert.deepEqual(compareManifestRoutes(
+    [...PROTECTED_APP_ROUTES, ...additions, "/api/background-assets/public/route"],
+    PROTECTED_APP_ROUTES, ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE,
+  ), { added: ["/api/background-assets/public/route"], removed: [] });
+});

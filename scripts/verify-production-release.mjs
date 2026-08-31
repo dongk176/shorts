@@ -39,6 +39,8 @@ export const PROTECTED_APP_ROUTES = [
 // These routes are the only intentional additions relative to the currently
 // promoted production manifest. Everything else must still fail closed.
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
+  "/api/background-assets/route",
+  "/api/background-assets/[assetId]/route",
   "/api/internal/job-admission-preflight/route",
   "/api/file-upload/sessions/route",
   "/api/file-upload/sessions/[sessionId]/route",

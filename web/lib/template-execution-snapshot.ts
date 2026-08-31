@@ -5,6 +5,12 @@ import type {
 } from "@/lib/contracts";
 import { templateSnapshotFromRow } from "@/lib/custom-templates";
 import { HttpError } from "@/lib/http";
+import { lockTemplateDesignForSave } from "@/lib/custom-template-design";
+import {
+  CUSTOM_TEMPLATE_VERSION_CONFLICT,
+  templateHasCustomDesign,
+  templateVersionRequiresConfirmation,
+} from "@/lib/template-design";
 import {
   lockEffectiveSubtitleTemplateAccess,
   type SubtitleTemplateAccess,
@@ -104,6 +110,7 @@ export type ResolvedTemplateExecutionSnapshot = {
     | ReturnType<typeof unifiedSubtitleSnapshotFromTemplateConfig>
     | null;
   usesUnifiedTemplateSubtitleCanary: boolean;
+  usesCustomTemplateDesign?: boolean;
 };
 
 export async function resolveTemplateExecutionSnapshot(
@@ -112,6 +119,7 @@ export async function resolveTemplateExecutionSnapshot(
     userId: string | null;
     templateId: TemplateId;
     customTemplateId?: string | null;
+    customTemplateVersion?: number | null;
     videoAspectRatio: VideoAspectRatio;
     brandColor?: TemplatePresetColor;
   },
@@ -139,12 +147,27 @@ export async function resolveTemplateExecutionSnapshot(
     select id, name, base_template_id, config, version
     from shorts_mvp.custom_templates
     where id=${input.customTemplateId} and user_id=${input.userId}
-    limit 1
+    limit 1 for share
   `;
   if (!rows[0]) {
     throw new HttpError(404, "선택한 개인 템플릿을 찾을 수 없습니다.");
   }
   const templateSnapshot = templateSnapshotFromRow(rows[0]);
+  if (templateVersionRequiresConfirmation(
+    templateSnapshot.config,
+    templateSnapshot.version,
+    input.customTemplateVersion,
+  )) {
+    throw new HttpError(
+      409,
+      "템플릿이 변경되었습니다. 최신 미리보기를 확인한 후 다시 만들어 주세요.",
+      CUSTOM_TEMPLATE_VERSION_CONFLICT,
+    );
+  }
+  const usesCustomTemplateDesign = templateHasCustomDesign(templateSnapshot.config);
+  if (usesCustomTemplateDesign) {
+    await lockTemplateDesignForSave(db, input.userId, templateSnapshot.config);
+  }
   let subtitleTemplateSnapshot: ReturnType<
     typeof unifiedSubtitleSnapshotFromTemplateConfig
   > | null = null;
@@ -162,5 +185,6 @@ export async function resolveTemplateExecutionSnapshot(
     templateSnapshot,
     subtitleTemplateSnapshot,
     usesUnifiedTemplateSubtitleCanary: subtitleTemplateSnapshot !== null,
+    ...(usesCustomTemplateDesign ? { usesCustomTemplateDesign: true } : {}),
   };
 }

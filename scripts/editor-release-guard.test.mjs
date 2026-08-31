@@ -78,8 +78,21 @@ test("release switches default to legacy and v2 saving is server-authorized", as
   assert.match(resolver, /coalesce\(release_user\.is_admin,false\) as user_is_admin/);
   assert.match(
     resolver,
-    /state\.canaryEnabled\s+&& \(\s+\(state\.userIsAdmin && \(state\.testerEnabled \|\| emergencyTestUser\)\)\s+\|\| \(state\.testerEnabled && state\.candidateSubtitleEditingCapable\)\s+\)/,
+    /state\.canaryEnabled\s+&& \(\s+successorAdminAllowed\s+\|\| \(state\.userIsAdmin && \(state\.testerEnabled \|\| emergencyTestUser\)\)\s+\|\| \(state\.testerEnabled && state\.candidateSubtitleEditingCapable\)\s+\)/,
   );
+  const successorGuard = resolver.slice(
+    resolver.indexOf("const successorAdminAllowed ="),
+    resolver.indexOf(";", resolver.indexOf("const successorAdminAllowed =")),
+  );
+  for (const condition of [
+    "state.userIsAdmin === true", "state.runtimeEnabled === true",
+    "state.canaryEnabled === true", "state.renderV4KillSwitch === false",
+    "state.successorAdminReleaseId === state.candidateReleaseId",
+    "state.candidateDocumentVersion === 3",
+    "state.candidateFontManifestSha256 === state.stableFontManifestSha256",
+    "exactEditorRenderV4Capability",
+  ]) assert.ok(successorGuard.includes(condition), `Missing exact successor guard: ${condition}`);
+  assert.match(resolver, /shorts_mvp\.editor_target_successor_admin_release\(\$\{userId\}::uuid\)/);
   assert.match(page, /const editorSaveEnabled = editorRelease\.channel !== "legacy"/);
   assert.match(route, /if \(release\.channel === "legacy" \|\| !release\.releaseId\)/);
   assert.match(editor, /editor-v2-root/);

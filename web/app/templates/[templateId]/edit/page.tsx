@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { customTemplateFromRow } from "@/lib/custom-templates";
 import { getDb } from "@/lib/db";
+import { getCustomTemplateDesignAccess } from "@/lib/custom-template-design-access";
 import { requireMvpSession } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { getBillingSummary } from "@/lib/billing";
@@ -21,13 +22,14 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ t
   if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(next)}`);
   const session = await requireMvpSession(user, { createIfMissing: false });
   const db = getDb();
-  const [rows, subtitleEditorContext, billing] = await Promise.all([
+  const [rows, subtitleEditorContext, billing, designAccess] = await Promise.all([
     db`
       select id, name, base_template_id, config, version, created_at, updated_at
       from shorts_mvp.custom_templates where id=${templateId} and user_id=${session.userId} limit 1
     `,
     resolveUnifiedTemplateSubtitleEditorContext(db, session.userId),
     getBillingSummary(db, session.userId),
+    getCustomTemplateDesignAccess(db, session.userId),
   ]);
   const subtitleAccess = subtitleEditorContext.subtitleAccess;
   if (!rows[0]) notFound();
@@ -42,5 +44,6 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ t
     baseTemplateId={template.baseTemplateId}
     initialConfig={initialConfig}
     unifiedSubtitleCanaryEnabled={subtitleAccess.unifiedEnabled}
+    customTemplateDesignEnabled={designAccess.enabled}
   />;
 }

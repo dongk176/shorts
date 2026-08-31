@@ -15,6 +15,7 @@ import {
   lockEffectiveSubtitleTemplateAccess,
 } from "@/lib/subtitle-template-release";
 import { assertUnifiedTemplateSubtitleCanaryAccess } from "@/lib/template-execution-snapshot";
+import { lockTemplateDesignForSave } from "@/lib/custom-template-design";
 
 export async function GET() {
   try {
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
       if (Number(counts[0]?.count || 0) >= MAX_PERSONAL_TEMPLATES) {
         throw new HttpError(409, `개인 템플릿은 최대 ${MAX_PERSONAL_TEMPLATES}개까지 저장할 수 있습니다.`);
       }
+      await lockTemplateDesignForSave(tx, session.userId, input.config);
       const rows = await tx`
         insert into shorts_mvp.custom_templates (user_id, name, base_template_id, config)
         values (${session.userId}, ${input.name}, ${input.baseTemplateId}, ${tx.json(input.config)})

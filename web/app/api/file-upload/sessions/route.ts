@@ -38,6 +38,7 @@ import {
   resolveFileUploadInitialRenderRelease,
 } from "@/lib/initial-render-release";
 import { createInitialRenderContract } from "@/lib/initial-render-contract";
+import { assertCustomTemplateDesignRenderRelease } from "@/lib/custom-template-design";
 import { projectDispatchTargetForFeatures } from "@/lib/job-dispatch";
 import { assertJobCreationAllowed } from "@/lib/job-policy";
 import { requireAuthenticatedMvpSession } from "@/lib/session";
@@ -89,6 +90,7 @@ const requestSchema = z.object({
   rangeEndSeconds: millisecondNumber.pipe(z.number().positive()),
   templateId: z.enum(templateIds),
   customTemplateId: z.string().uuid().nullable().optional(),
+  customTemplateVersion: z.number().int().positive().optional(),
   videoAspectRatio: z.enum(videoAspectRatios).default("1:1"),
   outputLanguage: z.enum(outputLanguages).default("ko"),
   subtitleTemplateId: z.enum(subtitleTemplateCreationIds).optional(),
@@ -317,6 +319,7 @@ export async function POST(request: Request) {
       rangeEndSeconds: input.rangeEndSeconds,
       templateId: input.templateId,
       customTemplateId: input.customTemplateId ?? null,
+      customTemplateVersion: input.customTemplateVersion,
       videoAspectRatio: input.videoAspectRatio,
       outputLanguage: input.outputLanguage,
       subtitleTemplateId: input.subtitleTemplateId ?? null,
@@ -483,6 +486,7 @@ export async function POST(request: Request) {
           userId: session.userId,
           templateId: input.templateId,
           customTemplateId: input.customTemplateId,
+          customTemplateVersion: input.customTemplateVersion,
           videoAspectRatio: input.videoAspectRatio,
           brandColor: input.brandColor,
         });
@@ -514,6 +518,7 @@ export async function POST(request: Request) {
         userId: session.userId,
         templateId: input.templateId,
         customTemplateId: input.customTemplateId,
+        customTemplateVersion: input.customTemplateVersion,
         videoAspectRatio: input.videoAspectRatio,
         brandColor: input.brandColor,
       });
@@ -574,6 +579,9 @@ export async function POST(request: Request) {
           "파일 업로드 렌더 릴리스를 안전하게 확인하지 못했습니다.",
           "FILE_UPLOAD_RENDER_RELEASE_UNAVAILABLE",
         );
+      }
+      if (resolvedExecution.usesCustomTemplateDesign) {
+        await assertCustomTemplateDesignRenderRelease(tx, initialRenderRelease.releaseId);
       }
 
       const projectNumberRows = await tx`

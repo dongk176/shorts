@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireAdminUser } from "@/lib/admin";
 import { getDb } from "@/lib/db";
 import { HttpError } from "@/lib/http";
+import { assertCustomTemplateDesignRenderRelease } from "@/lib/custom-template-design";
 import {
   EDITOR_SUBTITLE_EDITING_PUBLIC_FLAG_KEY,
   EDITOR_RENDERING_V2_FLAG_KEY,
@@ -39,6 +40,20 @@ import {
 const adminPath = "/admin/easycutcutcutcutcutcut?tab=editor-releases";
 const uuidSchema = z.string().uuid();
 const emailSchema = z.string().trim().toLowerCase().email().max(254);
+const contractShaSchema = z.string().regex(/^[0-9a-f]{64}$/);
+const successorTargets = ["legacy_project", "source_range", "elevenlabs_transcription", "subtitle_templates", "unified_template_subtitles"] as const;
+const compatibleSuccessorSchema = z.object({
+  version: z.literal(1), predecessorReleaseId: uuidSchema,
+  sourceGitSha: z.string().regex(/^[0-9a-f]{40}$/),
+  workerImageDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+  fontManifestSha256: contractShaSchema,
+  editor: z.object({ jobDefinitionArn: z.string().min(1), contractSha256: contractShaSchema }),
+  projectTargets: z.record(z.enum(successorTargets), z.object({
+    jobDefinitionArn: z.string().min(1), jobQueueArn: z.string().min(1),
+    batchTargetReleaseId: z.string().min(1), workerSourceGitSha: z.string().regex(/^[0-9a-f]{40}$/),
+    workerImageDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/), contractSha256: contractShaSchema,
+  })),
+});
 
 const isolatedChecks = [
   "worker-image",
@@ -140,6 +155,17 @@ async function assertChecksPassed(
       "EDITOR_RELEASE_CHECKS_INCOMPLETE",
     );
   }
+}
+
+async function verifiedAdminSuccessor(
+  tx: TransactionSql,
+  adminId: string,
+  releaseId: string,
+) {
+  const rows = await tx`
+    select shorts_mvp.editor_target_successor_admin_release(${adminId}::uuid) as release_id
+  `;
+  return rows[0]?.releaseId === releaseId;
 }
 
 async function assertCanaryRenderEvidence(
@@ -356,8 +382,66 @@ export async function removeEditorReleaseTester(userIdValue: string) {
   revalidatePath(adminPath);
 }
 
-export async function startEditorReleaseCanary(releaseIdValue: string) {
+async function assertPublicPreservingSuccessor(
+  tx: TransactionSql,
+  release: Record<string, unknown>,
+  state: { stableReleaseId?: unknown; publicEnabled?: unknown; renderV4KillSwitch?: unknown; renderV4RolloutPercent?: unknown },
+  expectedStableReleaseId: string,
+) {
+  if (String(state.stableReleaseId || "") !== expectedStableReleaseId
+    || expectedStableReleaseId === release.id || state.publicEnabled !== true
+    || state.renderV4KillSwitch !== false || Number(state.renderV4RolloutPercent) <= 0) {
+    throw new HttpError(409, "기존 공개 상태가 바뀌었습니다. 현재 운영 버전을 다시 확인해 주세요.", "EDITOR_SUCCESSOR_BASELINE_CHANGED");
+  }
+  const stableRows = await tx`
+    select status,render_spec_version,caption_render_spec_version,font_manifest_sha256,
+      git_sha,worker_image_digest,production_job_definition_arn
+    from shorts_mvp.editor_releases where id=${expectedStableReleaseId} for share
+  `;
+  const stable = stableRows[0];
+  if (!stable || stable.status !== "stable"
+    || stable.renderSpecVersion !== 4 || release.renderSpecVersion !== 4
+    || stable.captionRenderSpecVersion !== 4 || release.captionRenderSpecVersion !== 4
+    || stable.fontManifestSha256 !== release.fontManifestSha256) {
+    throw new HttpError(409, "동일 렌더·폰트 규격의 검증된 후속 버전만 공개 설정을 유지할 수 있습니다.", "EDITOR_SUCCESSOR_CAPABILITY_MISMATCH");
+  }
+  const runtime = await tx`
+    select enabled from shorts_mvp.runtime_feature_flags
+    where flag_key=${EDITOR_RENDERING_V2_FLAG_KEY} for share
+  `;
+  if (runtime[0]?.enabled !== true) {
+    throw new HttpError(409, "기존 편집 공개가 중지되어 있어 공개 설정을 유지할 수 없습니다.", "EDITOR_SUCCESSOR_BASELINE_CHANGED");
+  }
+  const proof = await assertCustomTemplateDesignRenderRelease(tx, String(release.id));
+  const parsed = compatibleSuccessorSchema.safeParse(proof.compatibleSuccessor);
+  if (!parsed.success || parsed.data.predecessorReleaseId !== expectedStableReleaseId
+    || parsed.data.sourceGitSha !== stable.gitSha
+    || parsed.data.workerImageDigest !== stable.workerImageDigest
+    || parsed.data.fontManifestSha256 !== stable.fontManifestSha256
+    || parsed.data.editor.jobDefinitionArn !== stable.productionJobDefinitionArn) {
+    throw new HttpError(409, "후보가 검증된 운영 기준과 현재 운영이 다릅니다. 새 운영 기준으로 다시 검증해 주세요.", "EDITOR_SUCCESSOR_PROVENANCE_MISMATCH");
+  }
+  const targets = await tx`
+    select target_key,batch_target_release_id,worker_source_git_sha,worker_image_digest,job_definition_arn,job_queue_arn
+    from shorts_mvp.editor_release_project_targets
+    where release_id=${expectedStableReleaseId} order by target_key for share
+  `;
+  if (targets.length !== 5 || successorTargets.some((key) => {
+    const recorded = parsed.data.projectTargets[key];
+    const current = targets.find((target) => target.targetKey === key);
+    return !current || current.batchTargetReleaseId !== recorded.batchTargetReleaseId
+      || current.workerSourceGitSha !== recorded.workerSourceGitSha
+      || current.workerImageDigest !== recorded.workerImageDigest
+      || current.jobDefinitionArn !== recorded.jobDefinitionArn || current.jobQueueArn !== recorded.jobQueueArn;
+  })) {
+    throw new HttpError(409, "후보 검증 이후 운영 워커 연결이 바뀌었습니다. 다시 검증해 주세요.", "EDITOR_SUCCESSOR_PROVENANCE_MISMATCH");
+  }
+}
+
+export async function startEditorReleaseCanary(releaseIdValue: string, expectedStableReleaseIdValue?: string) {
   const releaseId = uuidSchema.parse(releaseIdValue);
+  const expectedStableReleaseId = expectedStableReleaseIdValue === undefined
+    ? null : uuidSchema.parse(expectedStableReleaseIdValue);
   const admin = await requireAdminUser();
   if (!editorRenderingV2MasterEnabled()) {
     throw new HttpError(
@@ -369,7 +453,7 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
   await getDb().begin(async (tx) => {
     await assertEditorRenderV4InfrastructureLeaseInactive(tx);
     const states = await tx`
-      select candidate_release_id,canary_enabled,
+      select stable_release_id,public_enabled,candidate_release_id,canary_enabled,
         render_v4_internal_enabled,render_v4_rollout_percent,
         render_v4_kill_switch
       from shorts_mvp.editor_release_state
@@ -385,7 +469,11 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
     }
     const releases = await tx`
       select id,status,git_sha,worker_image_digest,render_spec_version,
-        caption_render_spec_version,font_manifest_sha256
+        caption_render_spec_version,font_manifest_sha256,
+        exists(select 1 from shorts_mvp.editor_release_checks c
+          where c.release_id=editor_releases.id and c.environment='isolated'
+            and c.check_name='render-spec-v4' and c.status='passed'
+            and c.details#>>'{customTemplateDesign,passed}'='true') as custom_template_design_verified
       from shorts_mvp.editor_releases
       where id=${releaseId}
       for update
@@ -393,6 +481,12 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
     const release = releases[0];
     if (!release || !["staging_verified", "canary_ready"].includes(release.status)) {
       throw new HttpError(409, "격리 검증을 통과한 후보만 카나리를 시작할 수 있습니다.");
+    }
+    if (release.customTemplateDesignVerified && !expectedStableReleaseId) {
+      throw new HttpError(409, "이번 후속 버전은 ‘기존 공개 설정 유지’ 경로로 시작해 주세요.", "EDITOR_SUCCESSOR_PRESERVE_REQUIRED");
+    }
+    if (expectedStableReleaseId) {
+      await assertPublicPreservingSuccessor(tx, release, states[0], expectedStableReleaseId);
     }
     if (Number(release.renderSpecVersion) === 4) {
       assertRenderV4EnvironmentEnabled();
@@ -406,12 +500,15 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
       "isolated",
       release.renderSpecVersion === 4 ? v4IsolatedChecks : isolatedChecks,
     );
-    // A newly started editor canary must opt into unified v5 separately.
-    await tx`
-      update shorts_mvp.runtime_feature_flags
-      set enabled=false,updated_by_user_id=${admin.id}
-      where flag_key=${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY}
-    `;
+    // First-time formats still opt into v5 separately. A verified compatible
+    // successor preserves the already-public suite and its canary settings.
+    if (!expectedStableReleaseId) {
+      await tx`
+        update shorts_mvp.runtime_feature_flags
+        set enabled=false,updated_by_user_id=${admin.id}
+        where flag_key=${UNIFIED_TEMPLATE_SUBTITLES_CANARY_FLAG_KEY}
+      `;
+    }
     await tx`
       update shorts_mvp.editor_releases
       set status='canary_active',canary_started_at=coalesce(canary_started_at,now())
@@ -464,6 +561,11 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
         where singleton=true
       `;
     }
+    if (expectedStableReleaseId && !await verifiedAdminSuccessor(tx, admin.id, releaseId)) {
+      // The predicate requires canary=true, so verify after setting it within
+      // this transaction. A missing ready handoff rolls every write back.
+      throw new HttpError(409, "후속 워커 연결 검증을 마친 뒤 관리자 카나리를 시작해 주세요.", "EDITOR_SUCCESSOR_HANDOFF_NOT_READY");
+    }
     await recordAudit(
       tx,
       admin.id,
@@ -472,7 +574,8 @@ export async function startEditorReleaseCanary(releaseIdValue: string) {
       {
         gitSha: release.gitSha,
         workerImageDigest: release.workerImageDigest,
-        unifiedTemplateSubtitlesCanaryEnabled: false,
+        unifiedTemplateSubtitlesCanaryEnabled: expectedStableReleaseId ? "preserved" : false,
+        preservedFromStableReleaseId: expectedStableReleaseId,
       },
     );
   });
@@ -590,10 +693,13 @@ export async function recordEditorReleaseCanaryCheck(
         "현재 실행 중인 카나리 후보의 검사만 기록할 수 있습니다.",
       );
     }
+    const successorAdminAllowed = Number(states[0]?.renderSpecVersion) === 4
+      && !states[0]?.renderV4InternalEnabled
+      && await verifiedAdminSuccessor(tx, admin.id, releaseId);
     if (
       Number(states[0]?.renderSpecVersion) === 4
       && (
-        !states[0]?.renderV4InternalEnabled
+        (!states[0]?.renderV4InternalEnabled && !successorAdminAllowed)
         || states[0]?.renderV4KillSwitch
       )
     ) {
@@ -941,8 +1047,10 @@ export async function advanceEditorRenderV4Rollout(
   revalidatePath(adminPath);
 }
 
-export async function promoteEditorRelease(releaseIdValue: string) {
+export async function promoteEditorRelease(releaseIdValue: string, expectedStableReleaseIdValue?: string) {
   const releaseId = uuidSchema.parse(releaseIdValue);
+  const expectedStableReleaseId = expectedStableReleaseIdValue === undefined
+    ? null : uuidSchema.parse(expectedStableReleaseIdValue);
   const admin = await requireAdminUser();
   if (!editorRenderingV2MasterEnabled() || !editorRenderingV2GlobalEnabled()) {
     throw new HttpError(
@@ -954,7 +1062,7 @@ export async function promoteEditorRelease(releaseIdValue: string) {
   await getDb().begin(async (tx) => {
     await assertEditorRenderV4InfrastructureLeaseInactive(tx);
     const states = await tx`
-      select stable_release_id,candidate_release_id,canary_enabled,
+      select stable_release_id,public_enabled,candidate_release_id,canary_enabled,
         render_v4_internal_enabled,render_v4_rollout_percent,
         render_v4_kill_switch
       from shorts_mvp.editor_release_state
@@ -970,7 +1078,11 @@ export async function promoteEditorRelease(releaseIdValue: string) {
     }
     const releases = await tx`
       select id,status,git_sha,worker_image_digest,render_spec_version,
-        caption_render_spec_version,font_manifest_sha256
+        caption_render_spec_version,font_manifest_sha256,
+        exists(select 1 from shorts_mvp.editor_release_checks c
+          where c.release_id=editor_releases.id and c.environment='isolated'
+            and c.check_name='render-spec-v4' and c.status='passed'
+            and c.details#>>'{customTemplateDesign,passed}'='true') as custom_template_design_verified
       from shorts_mvp.editor_releases
       where id=${releaseId}
       for update
@@ -979,13 +1091,24 @@ export async function promoteEditorRelease(releaseIdValue: string) {
     if (!release || release.status !== "canary_active") {
       throw new HttpError(409, "카나리 실행 상태가 올바르지 않습니다.");
     }
+    if (release.customTemplateDesignVerified && !expectedStableReleaseId) {
+      throw new HttpError(409, "이번 후속 버전은 ‘기존 공개 설정 유지’ 경로로 승격해 주세요.", "EDITOR_SUCCESSOR_PRESERVE_REQUIRED");
+    }
+    if (expectedStableReleaseId) {
+      await assertPublicPreservingSuccessor(tx, release, state, expectedStableReleaseId);
+    }
+    const successorAdminAllowed = expectedStableReleaseId !== null
+      && await verifiedAdminSuccessor(tx, admin.id, releaseId);
+    if (expectedStableReleaseId && !successorAdminAllowed) {
+      throw new HttpError(409, "검증된 후속 워커의 관리자 카나리를 마친 뒤 승격해 주세요.", "EDITOR_SUCCESSOR_HANDOFF_NOT_READY");
+    }
     const isRenderV4Release = Number(release.renderSpecVersion) === 4;
     if (isRenderV4Release) {
       assertRenderV4EnvironmentEnabled();
       assertExactRenderV4Capability(release);
       assertRenderV4ProjectTargetEnvironment(release);
       await assertRenderV4ProjectTargetsRegistered(tx, releaseId);
-      if (!state.renderV4InternalEnabled || state.renderV4KillSwitch) {
+      if ((!state.renderV4InternalEnabled && !successorAdminAllowed) || state.renderV4KillSwitch) {
         throw new HttpError(
           409,
           "v4 내부 렌더가 활성화된 상태의 카나리만 승격할 수 있습니다.",
@@ -1012,7 +1135,16 @@ export async function promoteEditorRelease(releaseIdValue: string) {
         approved_at=now()
       where id=${releaseId}
     `;
-    if (isRenderV4Release) {
+    if (isRenderV4Release && expectedStableReleaseId) {
+      await tx`
+        update shorts_mvp.editor_release_state
+        set previous_stable_release_id=stable_release_id,
+          stable_release_id=${releaseId},candidate_release_id=null,canary_enabled=false,
+          updated_by_user_id=${admin.id}
+        where singleton=true and stable_release_id=${expectedStableReleaseId}
+      `;
+      // No public, v4 rollout, emergency, subtitle or upload flag is rewritten.
+    } else if (isRenderV4Release) {
       await tx`
         update shorts_mvp.editor_release_state
         set previous_stable_release_id=stable_release_id,
@@ -1061,11 +1193,13 @@ export async function promoteEditorRelease(releaseIdValue: string) {
       set status='stable',promoted_at=now()
       where id=${releaseId} and status='approved'
     `;
-    await tx`
-      update shorts_mvp.runtime_feature_flags
-      set enabled=true,updated_by_user_id=${admin.id}
-      where flag_key=${EDITOR_RENDERING_V2_FLAG_KEY}
-    `;
+    if (!expectedStableReleaseId) {
+      await tx`
+        update shorts_mvp.runtime_feature_flags
+        set enabled=true,updated_by_user_id=${admin.id}
+        where flag_key=${EDITOR_RENDERING_V2_FLAG_KEY}
+      `;
+    }
     await recordAudit(
       tx,
       admin.id,
@@ -1075,8 +1209,9 @@ export async function promoteEditorRelease(releaseIdValue: string) {
         previousStableReleaseId: state.stableReleaseId || null,
         gitSha: release.gitSha,
         workerImageDigest: release.workerImageDigest,
-        rolloutPercent: isRenderV4Release ? 0 : 100,
-        renderV4Stopped: isRenderV4Release,
+        rolloutPercent: expectedStableReleaseId ? Number(state.renderV4RolloutPercent) : isRenderV4Release ? 0 : 100,
+        renderV4Stopped: isRenderV4Release && !expectedStableReleaseId,
+        preservedFromStableReleaseId: expectedStableReleaseId,
       },
     );
   });

@@ -9,6 +9,7 @@ import {
 import { templateIds, type TemplateId } from "@/lib/contracts";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { getDb } from "@/lib/db";
+import { getCustomTemplateDesignAccess } from "@/lib/custom-template-design-access";
 import { requireMvpSession } from "@/lib/session";
 import { getBillingSummary } from "@/lib/billing";
 import { billingSupportsCustomTemplates } from "@/lib/template-entitlements";
@@ -29,9 +30,10 @@ export default async function NewTemplatePage({ searchParams }: { searchParams: 
   if (!user) redirect(`/auth/sign-in?next=${encodeURIComponent(next)}`);
   const session = await requireMvpSession(user, { createIfMissing: false });
   const db = getDb();
-  const [subtitleEditorContext, billing] = await Promise.all([
+  const [subtitleEditorContext, billing, designAccess] = await Promise.all([
     resolveUnifiedTemplateSubtitleEditorContext(db, session.userId),
     getBillingSummary(db, session.userId),
+    getCustomTemplateDesignAccess(db, session.userId),
   ]);
   const subtitleAccess = subtitleEditorContext.subtitleAccess;
   const unifiedSubtitleCanaryEnabled = subtitleAccess.unifiedEnabled;
@@ -59,5 +61,6 @@ export default async function NewTemplatePage({ searchParams }: { searchParams: 
     initialConfig={initialConfig}
     unifiedSubtitleCanaryEnabled={unifiedSubtitleCanaryEnabled}
     suggestedName={suggestedName}
+    customTemplateDesignEnabled={designAccess.enabled}
   />;
 }

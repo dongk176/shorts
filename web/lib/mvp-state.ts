@@ -11,6 +11,7 @@ import {
 import { getDb } from "@/lib/db";
 import { getEnterpriseAccessState } from "@/lib/enterprise-access";
 import { getFileUploadReleaseAccess } from "@/lib/file-upload-release";
+import { getCustomTemplateDesignAccess } from "@/lib/custom-template-design-access";
 import {
   getEffectiveSubtitleTemplateAccess,
   unifiedTemplateSubtitleLocalUploadEnabled,
@@ -68,6 +69,7 @@ export async function loadMvpState(
       paymentMethodAction: null,
       capabilities: {
         fileUpload: false,
+        customTemplateDesign: false,
         unifiedTemplateSubtitles: false,
         unifiedTemplateSubtitleLocalUpload: false,
       },
@@ -91,6 +93,7 @@ export async function loadMvpState(
     fileUploadAccess,
     subtitleTemplateAccess,
     enterpriseAccess,
+    customTemplateDesignAccess,
   ] = await Promise.all([
     getUsageSnapshot(db, session),
     getRecentJobs(db, session),
@@ -102,6 +105,7 @@ export async function loadMvpState(
     session.isEnterprise === true
       ? getEnterpriseAccessState(db, session.userId!)
       : Promise.resolve({ accountType: "personal" as const, allowed: true as const }),
+    getCustomTemplateDesignAccess(db, session.userId),
   ]);
 
   return {
@@ -115,6 +119,7 @@ export async function loadMvpState(
     usage,
     capabilities: {
       fileUpload: fileUploadAccess.enabled,
+      customTemplateDesign: customTemplateDesignAccess.enabled,
       unifiedTemplateSubtitles:
         subtitleTemplateAccess?.unifiedEnabled === true,
       unifiedTemplateSubtitleLocalUpload:

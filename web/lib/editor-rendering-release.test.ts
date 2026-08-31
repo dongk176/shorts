@@ -57,6 +57,48 @@ function releaseRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe("editor release gate", () => {
+  function successorAdminRow(overrides: Record<string, unknown> = {}) {
+    return releaseRow({
+      publicEnabled: true, canaryEnabled: true, runtimeEnabled: true,
+      userIsAdmin: true, testerEnabled: false, renderV4InternalEnabled: false,
+      renderV4KillSwitch: false, renderV4RolloutPercent: 100,
+      stableReleaseId: "659e8c34-9ddf-40f4-951a-b436827d16cb",
+      stableUiVersion: 3, stableDocumentVersion: 3, stableStatus: "stable",
+      stableRenderSpecVersion: 4, stableCaptionRenderSpecVersion: 4,
+      stableFontManifestSha256: fontManifestSha256,
+      candidateReleaseId: releaseId, candidateUiVersion: 3, candidateDocumentVersion: 3,
+      candidateStatus: "canary_active", candidateSubtitleEditingCapable: true,
+      candidateRenderSpecVersion: 4, candidateCaptionRenderSpecVersion: 4,
+      candidateFontManifestSha256: fontManifestSha256,
+      successorAdminReleaseId: releaseId,
+      ...overrides,
+    });
+  }
+
+  it("lets only an attested administrator test the exact successor without resetting internal/public rollout", async () => {
+    const db = vi.fn().mockResolvedValue([successorAdminRow()]);
+    await expect(resolveEditorRelease(db as never, userId, {
+      EDITOR_RENDERING_V2_ENABLED: "true", EDITOR_RENDERING_V2_GLOBAL_ENABLED: "true",
+    })).resolves.toMatchObject({ channel: "canary", releaseId, renderV4Authorized: true,
+      renderSpecVersion: 4, captionRenderSpecVersion: 4, fontManifestSha256 });
+    expect(db.mock.calls[0][0].join("?")).toContain("shorts_mvp.editor_target_successor_admin_release(");
+    expect(db).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { successorAdminReleaseId: null }, { successorAdminReleaseId: "other-release" },
+    { userIsAdmin: false }, { runtimeEnabled: false }, { canaryEnabled: false },
+    { renderV4KillSwitch: true }, { candidateDocumentVersion: 2 },
+    { candidateRenderSpecVersion: 3 }, { candidateCaptionRenderSpecVersion: 3 },
+    { candidateFontManifestSha256: "b".repeat(64) }, { candidateStatus: "failed" },
+  ])("never gives successor v4 authority without exact current attestation: %j", async (override) => {
+    const db = vi.fn().mockResolvedValue([successorAdminRow(override)]);
+    const result = await resolveEditorRelease(db as never, userId, {
+      EDITOR_RENDERING_V2_ENABLED: "true", EDITOR_RENDERING_V2_GLOBAL_ENABLED: "true",
+    });
+    expect(result.releaseId === releaseId && result.renderV4Authorized === true).toBe(false);
+  });
+
   it("uses render spec v3 only for a renderer release that passed its probe", () => {
     const base = {
       channel: "stable" as const,

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { parseCaptionRenderSpec } from "@/lib/caption-render-spec";
 import { getDb } from "@/lib/db";
+import { getCustomTemplateDesignAccess } from "@/lib/custom-template-design-access";
 import { editorOverlayPreviewEnabled } from "@/lib/editor-overlay-preview-flag";
 import {
   subtitleEditingReleaseEnabled,
@@ -39,6 +40,7 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
     subtitleEditingPublicEnabled: false,
   };
   let unifiedTemplateSubtitleCanaryEnabled = false;
+  let customTemplateDesignEnabled = false;
   if (editorRenderingV2MasterEnabled()) {
     const session = await requireMvpSession(undefined, { createIfMissing: false });
     const {
@@ -47,6 +49,7 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
     } = await resolveUnifiedTemplateSubtitleEditorContext(db, session.userId);
     editorRelease = resolvedEditorRelease;
     unifiedTemplateSubtitleCanaryEnabled = subtitleAccess.unifiedEnabled;
+    customTemplateDesignEnabled = (await getCustomTemplateDesignAccess(db, session.userId)).enabled;
   }
   const adminSubtitleLayoutEnabled = subtitleEditingReleaseEnabled(
     editorRelease,
@@ -87,5 +90,6 @@ export default async function EditShortPage({ params }: { params: Promise<{ proj
     editorSaveEnabled={editorSaveEnabled}
     editorRelease={editorRelease}
     unifiedTemplateSubtitleCanaryEnabled={unifiedTemplateSubtitleCanaryEnabled}
+    customTemplateDesignEnabled={customTemplateDesignEnabled}
   />;
 }

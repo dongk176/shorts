@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import time
@@ -980,6 +981,99 @@ def _verify_browser_parity_report(
         raise RuntimeError("Browser parity aggregate omitted worker matrix cases")
 
 
+def _verify_custom_template_design(
+    manifest: dict[str, Any],
+    *,
+    git_sha: str,
+    digest: str,
+    font_manifest_sha256: str | None,
+) -> dict[str, Any] | None:
+    evidence = manifest.get("customTemplateDesign")
+    if evidence is None:
+        return None
+    if not isinstance(evidence, dict) or any(
+        evidence.get(key) != expected
+        for key, expected in {
+            "version": 1,
+            "passed": True,
+            "sourceGitSha": git_sha,
+            "workerImageDigest": digest,
+            "fontManifestSha256": font_manifest_sha256,
+            "renderSpecVersion": 4,
+            "captionRenderSpecVersion": 4,
+            "wrapRevision": "editor-text-v1",
+        }.items()
+    ) or evidence.get("passed") is not True:
+        raise RuntimeError("Custom template design evidence identity differs")
+    verification = evidence.get("verification")
+    if not isinstance(verification, dict):
+        raise RuntimeError("Custom template design verification is missing")
+    fonts = verification.get("fontIds")
+    error = verification.get("maximumFrameMeanError")
+    if (
+        type(verification.get("caseCount")) is not int
+        or verification["caseCount"] != 3
+        or verification.get("textOverlayCount") != 20
+        or verification.get("wrapRevision") != "editor-text-v1"
+        or verification.get("deletedTextPreserved") is not True
+        or not isinstance(fonts, list) or len(fonts) != len(_REQUIRED_FONTS)
+        or any(not isinstance(font, str) for font in fonts)
+        or set(fonts) != _REQUIRED_FONTS
+        or isinstance(error, bool) or not isinstance(error, int | float)
+        or not math.isfinite(error) or not 0 <= error <= 2
+        or not _FONT_MANIFEST_SHA256.fullmatch(str(verification.get("backgroundSha256") or ""))
+    ):
+        raise RuntimeError("Custom template design verification is incomplete")
+    frames = verification.get("frames")
+    expected_frames = {
+        "front-initial.png", "front-rerender.png", "behind-initial.png",
+        "behind-rerender.png", "deleted.png",
+    }
+    if not isinstance(frames, list) or len(frames) != len(expected_frames):
+        raise RuntimeError("Custom template design frames are incomplete")
+    observed: set[str] = set()
+    for frame in frames:
+        if not isinstance(frame, dict):
+            raise RuntimeError("Custom template design frame is invalid")
+        filename = str(frame.get("file") or "")
+        checksum = str(frame.get("sha256") or "")
+        if filename not in expected_frames or filename in observed:
+            raise RuntimeError("Custom template design frame is invalid")
+        contract = _artifact_contract(manifest, f"custom-template-design/{filename}")
+        if not _FONT_MANIFEST_SHA256.fullmatch(checksum) or contract["sha256"] != checksum:
+            raise RuntimeError("Custom template design frame checksum differs")
+        observed.add(filename)
+    return evidence
+
+
+def _verify_custom_template_design_artifacts(
+    artifact_uri: str, manifest: dict[str, Any], evidence: dict[str, Any],
+) -> None:
+    parsed = urllib.parse.urlparse(artifact_uri)
+    if (parsed.scheme != "s3" or parsed.netloc != os.environ["EDITOR_TEST_BUCKET_NAME"]
+        or not parsed.path.startswith("/editor-release-probes/")
+        or not parsed.path.endswith("/manifest.json")):
+        raise ValueError("Custom design evidence is outside the isolated test bucket")
+    prefix = parsed.path.lstrip("/").removesuffix("manifest.json")
+    for frame in evidence["verification"]["frames"]:
+        relative_name = f"custom-template-design/{frame['file']}"
+        contract = _artifact_contract(manifest, relative_name)
+        response = s3.get_object(
+            Bucket=parsed.netloc, Key=prefix + relative_name,
+            VersionId=contract["versionId"], ChecksumMode="ENABLED",
+        )
+        body = response["Body"]
+        try:
+            payload = body.read(8 * 1024 * 1024 + 1)
+        finally:
+            body.close()
+        if (str(response.get("VersionId") or "") != contract["versionId"]
+            or len(payload) > 8 * 1024 * 1024
+            or not payload.startswith(b"\x89PNG\r\n\x1a\n")
+            or hashlib.sha256(payload).hexdigest() != contract["sha256"]):
+            raise RuntimeError("Custom template design artifact identity differs")
+
+
 def _verify_manifest(
     manifest: dict[str, Any],
     *,
@@ -1115,6 +1209,10 @@ def _verify_manifest(
         computed_manifest_sha256 = hashlib.sha256(canonical_manifest).hexdigest()
         if computed_manifest_sha256 != font_manifest_sha256:
             raise RuntimeError("Editor release font manifest hash does not match")
+        _verify_custom_template_design(
+            manifest, git_sha=git_sha, digest=digest,
+            font_manifest_sha256=font_manifest_sha256,
+        )
     capabilities = manifest.get("capabilities")
     if (
         not isinstance(capabilities, dict)
@@ -1946,14 +2044,162 @@ def _artifact_contract(
     return value
 
 
+def _read_successor_predecessor(
+    font_manifest_sha256: str,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Read the actual admitted stable targets, never the bootstrap registry."""
+    states = rest("editor_release_state", query=(
+        "select=stable_release_id&singleton=eq.true&limit=1"
+    )) or []
+    stable_id = str(states[0].get("stable_release_id") or "") if len(states) == 1 else ""
+    if not _UUID.fullmatch(stable_id):
+        raise RuntimeError("A verified successor requires a current stable release")
+    releases = rest("editor_releases", query=(
+        f"id=eq.{stable_id}&limit=1&select=id,git_sha,worker_image_digest,"
+        "production_job_definition_arn,status,render_spec_version,"
+        "caption_render_spec_version,font_manifest_sha256,promoted_at"
+    )) or []
+    stable = releases[0] if len(releases) == 1 else {}
+    if (
+        stable.get("id") != stable_id
+        or stable.get("status") != "stable"
+        or not stable.get("promoted_at")
+        or stable.get("render_spec_version") != 4
+        or stable.get("caption_render_spec_version") != 4
+        or stable.get("font_manifest_sha256") != font_manifest_sha256
+        or not _SHA.fullmatch(str(stable.get("git_sha") or ""))
+        or not _DIGEST.fullmatch(str(stable.get("worker_image_digest") or ""))
+        or not _PRODUCTION_DEFINITION.fullmatch(
+            str(stable.get("production_job_definition_arn") or "")
+        )
+    ):
+        raise RuntimeError("Successor render capability differs from production")
+    rows = rest("editor_release_project_targets", query=(
+        f"release_id=eq.{stable_id}&select=target_key,batch_target_release_id,"
+        "worker_source_git_sha,worker_image_digest,job_definition_arn,job_queue_arn"
+    )) or []
+    if (
+        len(rows) != len(_PROJECT_TARGET_LANES)
+        or {row.get("target_key") for row in rows} != _PROJECT_TARGET_LANES
+    ):
+        raise RuntimeError("Stable successor project targets are incomplete")
+    targets: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        lane = row["target_key"]
+        arn = str(row.get("job_definition_arn") or "")
+        queue = str(row.get("job_queue_arn") or "")
+        if (
+            not _PROJECT_TARGET_RELEASE_ID.fullmatch(
+                str(row.get("batch_target_release_id") or "")
+            )
+            or row.get("worker_source_git_sha") != stable["git_sha"]
+            or row.get("worker_image_digest") != stable["worker_image_digest"]
+            or not _PROJECT_JOB_DEFINITION.fullmatch(arn)
+            or not _JOB_QUEUE.fullmatch(queue)
+            or _arn_identity(arn) != _arn_identity(queue)
+            or _arn_identity(arn)
+            != _arn_identity(stable["production_job_definition_arn"])
+        ):
+            raise RuntimeError(f"Stable successor {lane} target identity differs")
+        targets[lane] = {
+            "batchTargetReleaseId": row["batch_target_release_id"],
+            "workerSourceGitSha": row["worker_source_git_sha"],
+            "workerImageDigest": row["worker_image_digest"],
+            "jobDefinitionArn": arn,
+            "jobQueueArn": queue,
+        }
+    return deepcopy(stable), targets
+
+
+def _verify_successor_definition_identity(
+    definition: dict[str, Any],
+    *,
+    expected_arn: str,
+    git_sha: str,
+    digest: str,
+    font_manifest_sha256: str,
+) -> None:
+    container = definition.get("containerProperties") or {}
+    entries = container.get("environment") or []
+    environment = {item.get("name"): item.get("value") for item in entries}
+    expected = {
+        "EDITOR_RELEASE_GIT_SHA": git_sha,
+        "EDITOR_RENDER_SPEC_VERSION": "4",
+        "EDITOR_CAPTION_RENDER_SPEC_VERSION": "4",
+        "EDITOR_FONT_MANIFEST_SHA256": font_manifest_sha256,
+        "WORKER_IMAGE_DIGEST": digest,
+    }
+    if (
+        definition.get("jobDefinitionArn") != expected_arn
+        or definition.get("status") != "ACTIVE"
+        or definition.get("type") != "container"
+        or any(environment.get(name) != value for name, value in expected.items())
+        or any(sum(item.get("name") == name for item in entries) != 1 for name in expected)
+    ):
+        raise RuntimeError("Successor production definition identity has drifted")
+    _definition_image(definition, digest)
+
+
+def _successor_contract_sha256(definition: dict[str, Any]) -> str:
+    # Never persist container environment or secret references in release evidence.
+    payload = json.dumps(
+        _definition_contract(definition), sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def _register_v4_production_definitions(
     *,
     git_sha: str,
     digest: str,
     font_manifest_sha256: str,
+    preserve_production_contract: bool = False,
+    predecessor_contract: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, dict[str, Any]]]:
     image = f"{_repository_identity()[0]}@{digest}"
-    trusted_rerender = _job_definition(os.environ["RERENDER_JOB_DEFINITION"])
+    stable: dict[str, Any] | None = None
+    successor: dict[str, Any] | None = None
+    trusted_projects: dict[str, dict[str, Any]] = {}
+    if preserve_production_contract:
+        stable, baseline_targets = _read_successor_predecessor(font_manifest_sha256)
+        trusted_rerender = _job_definition(stable["production_job_definition_arn"])
+        _verify_successor_definition_identity(
+            trusted_rerender,
+            expected_arn=stable["production_job_definition_arn"],
+            git_sha=stable["git_sha"], digest=stable["worker_image_digest"],
+            font_manifest_sha256=font_manifest_sha256,
+        )
+        successor = {
+            "version": 1,
+            "predecessorReleaseId": stable["id"],
+            "sourceGitSha": stable["git_sha"],
+            "workerImageDigest": stable["worker_image_digest"],
+            "fontManifestSha256": font_manifest_sha256,
+            "editor": {
+                "jobDefinitionArn": stable["production_job_definition_arn"],
+                "contractSha256": _successor_contract_sha256(trusted_rerender),
+            },
+            "projectTargets": {},
+        }
+        # Verify every actual baseline before registering even the first new JD.
+        for lane in sorted(_PROJECT_TARGET_LANES):
+            baseline = baseline_targets[lane]
+            trusted = _job_definition(baseline["jobDefinitionArn"])
+            _verify_successor_definition_identity(
+                trusted, expected_arn=baseline["jobDefinitionArn"],
+                git_sha=stable["git_sha"], digest=stable["worker_image_digest"],
+                font_manifest_sha256=font_manifest_sha256,
+            )
+            trusted_projects[lane] = trusted
+            successor["projectTargets"][lane] = {
+                **baseline, "contractSha256": _successor_contract_sha256(trusted),
+            }
+    else:
+        trusted_rerender = _job_definition(os.environ["RERENDER_JOB_DEFINITION"])
+        registry = _read_project_target_registry()
+        baseline_targets = {
+            lane: registry["lanes"][lane]["current"] for lane in _PROJECT_TARGET_LANES
+        }
     production_payload = _registration_payload(
         trusted_rerender,
         name=f"shorts-mvp-editor-release-{git_sha[:12]}-4vcpu",
@@ -1961,28 +2207,34 @@ def _register_v4_production_definitions(
         git_sha=git_sha,
         digest=digest,
         font_manifest_sha256=font_manifest_sha256,
-        candidate_resources=True,
+        candidate_resources=not preserve_production_contract,
     )
     production_arn = _register_exact_definition(production_payload)
     if not _PRODUCTION_DEFINITION.fullmatch(production_arn):
         raise RuntimeError("Production editor release Job Definition ARN is invalid")
+    production_definition = _job_definition(production_arn)
     _verify_definition_contract(
-        _job_definition(production_arn),
+        production_definition,
         trusted_rerender,
-        allow_candidate_resources=True,
+        allow_candidate_resources=not preserve_production_contract,
         git_sha=git_sha,
         render_spec_version=4,
         caption_render_spec_version=4,
         font_manifest_sha256=font_manifest_sha256,
     )
-
-    registry = _read_project_target_registry()
+    if preserve_production_contract:
+        _verify_successor_definition_identity(
+            production_definition, expected_arn=production_arn,
+            git_sha=git_sha, digest=digest, font_manifest_sha256=font_manifest_sha256,
+        )
     targets: dict[str, dict[str, Any]] = {}
     for lane in sorted(_PROJECT_TARGET_LANES):
-        trusted_target = registry["lanes"][lane]["current"]
+        trusted_target = baseline_targets[lane]
         trusted_arn = str(trusted_target.get("jobDefinitionArn") or "")
         queue_arn = str(trusted_target.get("jobQueueArn") or "")
-        trusted = _job_definition(trusted_arn)
+        trusted = trusted_projects[lane] if preserve_production_contract else _job_definition(
+            trusted_arn
+        )
         lane_slug = lane.replace("_", "-")
         payload = _registration_payload(
             trusted,
@@ -1996,14 +2248,20 @@ def _register_v4_production_definitions(
         definition_arn = _register_exact_definition(payload)
         if not _PROJECT_JOB_DEFINITION.fullmatch(definition_arn):
             raise RuntimeError(f"Editor v4 {lane} Job Definition ARN is invalid")
+        candidate_definition = _job_definition(definition_arn)
         _verify_definition_contract(
-            _job_definition(definition_arn),
+            candidate_definition,
             trusted,
             git_sha=git_sha,
             render_spec_version=4,
             caption_render_spec_version=4,
             font_manifest_sha256=font_manifest_sha256,
         )
+        if preserve_production_contract:
+            _verify_successor_definition_identity(
+                candidate_definition, expected_arn=definition_arn,
+                git_sha=git_sha, digest=digest, font_manifest_sha256=font_manifest_sha256,
+            )
         targets[lane] = {
             "batchTargetReleaseId": f"{lane_slug}-{git_sha[:12]}-v4",
             "workerSourceGitSha": git_sha,
@@ -2012,6 +2270,13 @@ def _register_v4_production_definitions(
             "jobQueueArn": queue_arn,
             "renderSpecVersion": 4,
         }
+    if successor is not None:
+        current_stable, current_targets = _read_successor_predecessor(font_manifest_sha256)
+        if current_stable != stable or current_targets != baseline_targets:
+            raise RuntimeError("Successor production baseline changed during registration")
+        if predecessor_contract is not None:
+            predecessor_contract.clear()
+            predecessor_contract.update(successor)
     return production_arn, targets
 
 
@@ -2060,6 +2325,12 @@ def _finalize_v4_release(event: dict[str, Any]) -> dict[str, Any]:
         caption_render_spec_version=4,
         font_manifest_sha256=font_manifest_sha256,
     )
+    custom_design = _verify_custom_template_design(
+        manifest, git_sha=git_sha, digest=digest,
+        font_manifest_sha256=font_manifest_sha256,
+    )
+    if custom_design is not None:
+        _verify_custom_template_design_artifacts(artifact_uri, manifest, custom_design)
     matrix_contract = _artifact_contract(manifest, "browser-parity/matrix.json")
     browser_matrix, matrix_sha256, matrix_uri = _read_browser_parity_matrix(
         artifact_uri=artifact_uri,
@@ -2118,10 +2389,13 @@ def _finalize_v4_release(event: dict[str, Any]) -> dict[str, Any]:
         release_identity=release_identity,
     )
 
+    predecessor_contract: dict[str, Any] = {}
     production_arn, project_targets = _register_v4_production_definitions(
         git_sha=git_sha,
         digest=digest,
         font_manifest_sha256=font_manifest_sha256,
+        preserve_production_contract=custom_design is not None,
+        predecessor_contract=predecessor_contract,
     )
     check_sources = manifest.get("checkSources") or {}
     required_checks = sorted(
@@ -2145,6 +2419,13 @@ def _finalize_v4_release(event: dict[str, Any]) -> dict[str, Any]:
         }
         for name in required_checks
     ]
+    if custom_design is not None:
+        for check in release_checks:
+            if check["checkName"] == "render-spec-v4":
+                check["details"]["customTemplateDesign"] = custom_design
+                if not predecessor_contract:
+                    raise RuntimeError("Verified successor predecessor evidence is missing")
+                check["details"]["compatibleSuccessor"] = predecessor_contract
     result = _rpc("finalize_editor_render_v4_release", {
         "p_probe_id": str(probe["id"]),
         "p_nonce": str(probe["nonce"]),

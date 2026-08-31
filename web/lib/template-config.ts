@@ -89,7 +89,43 @@ const colorSchema = z.enum(templateConfigColors);
 const backgroundSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("color"), color: colorSchema }).strict(),
   z.object({ kind: z.literal("image"), assetId: z.enum(stockBackgroundIds) }).strict(),
+  z.object({ kind: z.literal("uploaded_image"), assetId: z.string().uuid().transform((id) => id.toLowerCase()) }).strict(),
 ]);
+
+export const MAX_TEMPLATE_TEXT_OVERLAYS = 20;
+
+// The editor and template designer use the same style contract. Only templates
+// omit timing and require UUIDs, leaving room for the stable tpl:<id>:<id> origin.
+export const textOverlayStyleSchema = z.object({
+  id: z.string().min(1).max(100).regex(/^[A-Za-z0-9:_-]+$/),
+  text: z.string().max(120),
+  fontId: z.enum(editorFontIds),
+  color: rendererColorSchema,
+  effect: z.enum(["none", "outline", "shadow"]),
+  offset: z.object({
+    x: z.number().finite().min(-TEMPLATE_CANVAS.width).max(TEMPLATE_CANVAS.width),
+    y: z.number().finite().min(-TEMPLATE_CANVAS.height).max(TEMPLATE_CANVAS.height),
+  }).strict(),
+  width: z.number().finite().min(1).max(1_000),
+  scale: z.number().finite().min(0.25).max(3),
+}).strict();
+
+export const templateTextOverlaySchema = textOverlayStyleSchema.extend({
+  id: z.string().uuid().transform((id) => id.toLowerCase()),
+}).strict();
+export type TemplateTextOverlay = z.infer<typeof templateTextOverlaySchema>;
+export type TemplateLayerOrderItem = "video" | "title" | "comment" | "channel" | `text:${string}`;
+const templateLayerOrderItemSchema = z.custom<TemplateLayerOrderItem>(
+  (value) => typeof value === "string" && (
+    ["video", "title", "comment", "channel"].includes(value)
+    || /^text:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+  ),
+).transform((item): TemplateLayerOrderItem => item.startsWith("text:")
+  ? `text:${item.slice(5).toLowerCase()}` : item);
+const optionalTemplateDesign = {
+  textOverlays: z.array(templateTextOverlaySchema).max(MAX_TEMPLATE_TEXT_OVERLAYS).optional(),
+  layerOrder: z.array(templateLayerOrderItemSchema).min(4).max(24).optional(),
+} as const;
 
 const textLayerSchema = z.object({
   visible: z.boolean(),
@@ -158,6 +194,7 @@ const unifiedTitleLayerSchema = titleLayerSchema.extend({
 
 const versionFiveTemplateConfigSchema = z.object({
   schemaVersion: z.literal(5),
+  ...optionalTemplateDesign,
   background: backgroundSchema,
   video: videoLayerSchema,
   title: unifiedTitleLayerSchema,
@@ -168,6 +205,7 @@ const versionFiveTemplateConfigSchema = z.object({
 
 const currentTemplateConfigSchema = z.object({
   schemaVersion: z.literal(4),
+  ...optionalTemplateDesign,
   ...sharedTemplateLayers,
   title: titleLayerSchema,
   comment: commentLayerSchema,
@@ -175,6 +213,7 @@ const currentTemplateConfigSchema = z.object({
 
 const versionThreeTemplateConfigSchema = z.object({
   schemaVersion: z.literal(3),
+  ...optionalTemplateDesign,
   ...sharedTemplateLayers,
   title: titleLayerSchema,
   comment: commentLayerSchema,
@@ -215,6 +254,26 @@ export const templateConfigSchema = z.union([
   previousTemplateConfigSchema,
   legacyTemplateConfigSchema,
 ]).superRefine((config, context) => {
+  const design = config as typeof config & {
+    textOverlays?: TemplateTextOverlay[];
+    layerOrder?: TemplateLayerOrderItem[];
+  };
+  const textIds = (design.textOverlays ?? []).map((overlay) => overlay.id);
+  if (new Set(textIds).size !== textIds.length) {
+    context.addIssue({ code: "custom", path: ["textOverlays"], message: "텍스트 식별자는 중복될 수 없습니다." });
+  }
+  if (design.layerOrder) {
+    const expected = new Set(["video", "title", "comment", "channel", ...textIds.map((id) => `text:${id}`)]);
+    if (design.layerOrder.length !== expected.size
+      || new Set(design.layerOrder).size !== expected.size
+      || design.layerOrder.some((item) => !expected.has(item))) {
+      context.addIssue({ code: "custom", path: ["layerOrder"], message: "레이어 순서는 현재 영상·텍스트와 일치해야 합니다." });
+    }
+    if (design.layerOrder.at(-1) !== "channel"
+      || design.layerOrder.indexOf("title") < design.layerOrder.indexOf("video")) {
+      context.addIssue({ code: "custom", path: ["layerOrder"], message: "채널은 맨 앞에, 제목은 영상보다 앞에 표시되어야 합니다." });
+    }
+  }
   const expectedHeight = Math.round(config.video.width * aspectHeightRatio(config.video.aspectRatio));
   if (Math.abs(config.video.height - expectedHeight) > 1) {
     context.addIssue({ code: "custom", path: ["video", "height"], message: "영상 프레임 비율이 올바르지 않습니다." });
@@ -237,7 +296,10 @@ export const templateConfigSchema = z.union([
   }
 });
 
-export type TemplateConfig = z.infer<typeof templateConfigSchema>;
+export type TemplateConfig = z.infer<typeof templateConfigSchema> & {
+  textOverlays?: TemplateTextOverlay[];
+  layerOrder?: TemplateLayerOrderItem[];
+};
 export type TemplateConfigV5 = z.infer<typeof versionFiveTemplateConfigSchema>;
 
 export const customTemplateInputSchema = z.object({

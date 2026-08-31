@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import { readFileSync } from "node:fs";
 
 const mocks = vi.hoisted(() => ({
@@ -21,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   billing: vi.fn(),
   paymentMethodAction: vi.fn(),
   fileUploadAccess: vi.fn(),
+  customTemplateDesignAccess: vi.fn(),
   signedUrl: vi.fn(),
   shortDownloadUrl: vi.fn(),
   generateComments: vi.fn(),
@@ -45,6 +47,10 @@ vi.mock("@/lib/billing-payment-method-remediation", async (importOriginal) => ({
 }));
 vi.mock("@/lib/file-upload-release", () => ({
   getFileUploadReleaseAccess: mocks.fileUploadAccess,
+}));
+vi.mock("@/lib/custom-template-design-access", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/custom-template-design-access")>()),
+  getCustomTemplateDesignAccess: mocks.customTemplateDesignAccess,
 }));
 vi.mock("@/lib/supabase/server", () => ({ getAuthenticatedUser: mocks.authenticatedUser }));
 vi.mock("@/lib/usage", async (importOriginal) => ({
@@ -341,6 +347,9 @@ beforeEach(() => {
   mocks.subtitleTemplateUsage.mockResolvedValue(false);
   mocks.publicExamples.mockResolvedValue([{ id: "example-job", isExample: true }]);
   mocks.fileUploadAccess.mockResolvedValue({ enabled: false, adminEnabled: false });
+  mocks.customTemplateDesignAccess.mockResolvedValue({
+    enabled: false, adminEnabled: false, featureEnabled: false, publicEnabled: false, isAdmin: false,
+  });
   mocks.publicExampleByNumber.mockResolvedValue(null);
   mocks.authenticatedSession.mockImplementation(() => mocks.session());
   mocks.authenticatedUser.mockResolvedValue({ id: "auth-a" });
@@ -408,6 +417,32 @@ describe("range editing feature gate and snapshot", () => {
     expect(applyResponse.status).toBe(404);
     expect(mocks.authenticatedSession).not.toHaveBeenCalled();
     expect(mocks.getDb).not.toHaveBeenCalled();
+  });
+
+  it.each(["apply", "patch", "rerender"])("keeps new backgrounds intact when an old %s request arrives", async (endpoint) => {
+    process.env.RANGE_EDITING_ENABLED = "true";
+    const config = createDefaultTemplateConfig();
+    config.background = { kind: "uploaded_image", assetId: "ABCDEFAB-ABCD-4ABC-8ABC-ABCDEFABCDEF".toLowerCase() };
+    const db = dbWithRows([{
+      id: shortId, status: "ready", renderVersion: 7,
+      templateSnapshot: { config },
+    }]);
+    const begin = vi.fn();
+    Object.assign(db, { begin });
+    mocks.getDb.mockReturnValue(db);
+    const context = { params: Promise.resolve({ shortId }) };
+    const request = jsonRequest(`http://localhost/api/shorts/${shortId}`, {
+      ...input, subtitleSegments: [],
+    });
+    const response = endpoint === "apply" ? await applyRangeEdit(request, context)
+      : endpoint === "patch" ? await patchShort(request, context)
+        : await rerenderShort(request, context);
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: "CUSTOM_TEMPLATE_DESIGN_EDITOR_REQUIRED" });
+    expect(begin).not.toHaveBeenCalled();
+    expect(db.mock.calls.map(([parts]) => parts.join("?")).join("\n")).not.toMatch(/update shorts_mvp|insert into shorts_mvp/);
+    expect(mocks.submitRerender).not.toHaveBeenCalled();
+    expect(mocks.wakeDispatcher).not.toHaveBeenCalled();
   });
 
   it("returns the current clean clip as a fallback timeline for older shorts", async () => {
@@ -2245,6 +2280,33 @@ describe("job API security and idempotency", () => {
     expect(insertCall?.slice(1)).not.toContain(
       "unified_template_subtitles",
     );
+  });
+
+  it("rejects a stale selected template before a link job, usage reservation or Batch submission", async () => {
+    const customTemplateId = "3e5cd85c-03db-4f04-9854-c39b74486172";
+    const db = dbWithRows([], [analysisRow]);
+    const tx = dbWithRows([], [], [{
+      id: customTemplateId,
+      name: "수정된 템플릿",
+      baseTemplateId: "white-yellow",
+      config: createDefaultTemplateConfig("white-yellow"),
+      version: 3,
+    }]);
+    Object.assign(db, {
+      begin: vi.fn((callback: (transaction: typeof tx) => unknown) => callback(tx)),
+    });
+    mocks.getDb.mockReturnValue(db);
+    const response = await createJob(jsonRequest("http://localhost/api/jobs", {
+      analysisId, templateId: "white-yellow", customTemplateId,
+      customTemplateVersion: 2, rightsConfirmed: true,
+      requestId: "ca973b32-ce31-44b6-a575-9a8b3b6b37af",
+    }));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ code: "CUSTOM_TEMPLATE_VERSION_CONFLICT" });
+    const queries = tx.mock.calls.map(([parts]) => parts.join("?")).join("\n");
+    expect(queries).not.toMatch(/insert into shorts_mvp\.(video_jobs|usage_reservations|job_outbox)/);
+    expect(mocks.submitInitial).not.toHaveBeenCalled();
+    expect(mocks.wakeDispatcher).not.toHaveBeenCalled();
   });
 
   it("returns a concurrent custom-template duplicate before billing or template resolution", async () => {
