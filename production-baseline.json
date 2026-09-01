@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "environment": "production",
+  "capturedAt": "2026-09-01T13:29:25Z",
+  "web": {
+    "deploymentId": "dpl_9DrZKeRxf3oEVVH3rMHyC6Q9hcAk",
+    "deploymentUrl": "shorts-hviat0ypu-artiroom.vercel.app",
+    "productionDomain": "www.easycut.co.kr",
+    "gitSha": "d0607ef5ba2dae4f8fd714a40c7d135455638ed6",
+    "gitRef": "codex/upload-web-public-safe-20260901",
+    "buildId": "ughZE1L5uG5180nOQkaxQ",
+    "readyState": "READY",
+    "readySubstate": "PROMOTED"
+  },
+  "sourceFiles": {
+    "workerReleaseManifestSha256": "15faa3cca00d40348fa20297beb64e4252f46ec564abf13fe04154e292bf143c",
+    "projectTargetsManifestSha256": "f2f594aa80f294226bef957113df8fe08dcc397693f0d991da09ea8448aef0bf",
+    "ingestionDatabaseMigration": "supabase/migrations/202609010002_youtube_ingestion_circuit_auto_resume.sql",
+    "ingestionDatabaseMigrationSha256": "c9a757ce792cd2e1f3cd9d917a5beba15ac1e0e00aefc29af996bf669773ca80"
+  },
+  "database": {
+    "schema": "shorts_mvp",
+    "featureFlags": {
+      "custom_template_design_enabled": false,
+      "custom_template_design_public": false,
+      "file_upload": true,
+      "file_upload_public": true,
+      "file_upload_emergency_stop": false,
+      "ingestion_success_priority": true
+    },
+    "functionBodyMd5": {
+      "claim_project_job_outbox(integer)": "7d591a63c15fb7a2255ca3e4473238ec",
+      "claim_project_job_outbox_without_ingestion_circuit(integer)": "368c473744724389aba8e0394a9c2592",
+      "ingestion_route_quality(text)": "d9d7168e8542cde7f057f91ec403f97a",
+      "reset_ingestion_route_quality(text)": "91eeed596b922fd81371891228f26f51",
+      "rotate_ingestion_route(uuid,text,text,integer,text[])": "95e1da9225ea19db9852af3fd59e7fc4",
+      "update_ingestion_circuit_from_attempt()": "6eeb5892bafae760d873b5c281a7db00"
+    },
+    "functionDefinitionMd5": {
+      "claim_project_job_outbox(integer)": "ec297f1a560c35e15986d3f19b751c71",
+      "claim_project_job_outbox_without_ingestion_circuit(integer)": "a3415e9e137084ba43ad0dea735bd94f",
+      "ingestion_route_quality(text)": "37d7a34f2dab6944f4c89a9c6732cd1a",
+      "reset_ingestion_route_quality(text)": "158380593ffd38c254f4d21b07fecfd8",
+      "rotate_ingestion_route(uuid,text,text,integer,text[])": "929ecb7232f60c4c23c60ac14057cce5",
+      "update_ingestion_circuit_from_attempt()": "e59d275728948d6c732cedf040908224"
+    },
+    "trigger": "ingestion_attempts_update_circuit",
+    "routeQualityResetColumn": "shorts_mvp.ingestion_route_slots.quality_reset_at"
+  },
+  "aws": {
+    "accountId": "181651591905",
+    "region": "ap-northeast-2",
+    "projectWorker": {
+      "sourceGitSha": "4e19c114f79e74a73a4798f3fd898fa412967cc2",
+      "imageDigest": "sha256:99c0e66f66a78d8b60455075229271e161d77c7051c522d5a4d0ddd27f30a922",
+      "renderSpecVersion": 4,
+      "captionRenderSpecVersion": 4,
+      "fontManifestSha256": "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486",
+      "proofOfOriginEnabled": true,
+      "egressMode": "webshare_isp"
+    },
+    "fileUploadReceiver": {
+      "service": "shorts-mvp-file-upload-production",
+      "taskDefinitionArn": "arn:aws:ecs:ap-northeast-2:181651591905:task-definition/shorts-mvp-file-upload-production:13",
+      "sourceGitSha": "da441c21047fd3626aa4987d3d0a07499a694f33",
+      "imageDigest": "sha256:a21bc6b74889f543c630f1b54cb7c15086431350b9fb36b96e7a717b8ec47eb4",
+      "renderSpecVersion": 4,
+      "captionRenderSpecVersion": 4,
+      "fontManifestSha256": "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486",
+      "sourceStorageMode": "ephemeral_only",
+      "maximumBytes": 5368709120,
+      "maximumSourceDurationSeconds": 10800,
+      "maximumSelectedDurationSeconds": 3600,
+      "desiredCountAtCapture": 0,
+      "targetGroupAlgorithm": "least_outstanding_requests",
+      "healthCheckPath": "/livez",
+      "healthCheckIntervalSeconds": 5,
+      "healthyThresholdCount": 2
+    },
+    "controlPlane": {
+      "outboxDispatcherCodeSha256": "W9URTBpfi0NzYMumFvdVWHt6ZfluksmwRNEB1D83kMM=",
+      "batchSubmitterCodeSha256": "TwgtGCZDLFaiEilNSISjgI2TWarmR1626xlY5PrI9kU=",
+      "editorBatchSubmitterCodeSha256": "8NfsCc+mrEBh4vqREFUSUQvp4Yyseu6VHmzwpkdl9SM=",
+      "fileUploadCapacityCodeSha256": "Zm+/AWOGIHqXJw+NWg9R0gkYdv+kyL6bBeQ6ql0ILFw="
+    },
+    "runtimeSecret": {
+      "name": "shorts-mvp/production/worker-runtime",
+      "currentVersionId": "4164a2b6-2a29-4cf5-a619-e27973620816",
+      "previousVersionId": "56da22f3-3148-4919-86ef-023ab1a341a2"
+    }
+  },
+  "releaseRules": {
+    "customTemplateDesignCodePresentButDisabled": true,
+    "unfinishedContentCalendarExcluded": true,
+    "youtubePublishingExperimentExcluded": true,
+    "productionMutationPerformedByCapture": false
+  }
+}
