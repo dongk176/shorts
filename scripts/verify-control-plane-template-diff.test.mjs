@@ -241,6 +241,28 @@ test("preserves the exact live CDK asset bucket across literal and Fn::Sub repre
   );
 });
 
+test("drops only the stale live Lambda asset version when the new immutable key has none", () => {
+  const { current, candidate } = fixture();
+  for (const [logicalId, expected] of Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)) {
+    if (expected.type !== "AWS::Lambda::Function") continue;
+    current.Resources[logicalId].Properties.Code.S3ObjectVersion = "old-version";
+    delete candidate.Resources[logicalId].Properties.Code.S3ObjectVersion;
+  }
+  const exact = buildExactControlPlaneTemplate(current, candidate);
+  for (const [logicalId, expected] of Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)) {
+    if (expected.type !== "AWS::Lambda::Function") continue;
+    assert.equal(exact.Resources[logicalId].Properties.Code.S3ObjectVersion, undefined);
+  }
+
+  const unexpectedVersion = structuredClone(candidate);
+  unexpectedVersion.Resources.CleanupFunction1604930F.Properties.Code.S3ObjectVersion =
+    "untrusted-version";
+  assert.throws(
+    () => buildExactControlPlaneTemplate(current, unexpectedVersion),
+    /S3Key 밖 변경/,
+  );
+});
+
 test("rejects deletes, arbitrary Lambda/IAM changes, and unrecognised Batch drift", () => {
   const { current, candidate } = fixture();
   const exact = buildExactControlPlaneTemplate(current, candidate);

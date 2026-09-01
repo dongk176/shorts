@@ -486,6 +486,16 @@ function exactAllowedLambdaUpdate(current, candidate, logicalId) {
   }
   expectedCode.S3Key = candidateS3Key;
   if (
+    typeof expectedCode.S3ObjectVersion === "string"
+    && candidate.Properties.Code?.S3ObjectVersion === undefined
+  ) {
+    // The live template can retain the version of the previously published
+    // asset while a newly synthesized CDK asset is addressed by its immutable
+    // content-hash key alone. Keeping the old version with the new key would
+    // point CloudFormation at a non-existent object version.
+    delete expectedCode.S3ObjectVersion;
+  }
+  if (
     expectedCode.S3Bucket === LIVE_CDK_ASSET_BUCKET
     && fingerprint(candidate.Properties.Code?.S3Bucket)
       === fingerprint(SOURCE_CDK_ASSET_BUCKET)
