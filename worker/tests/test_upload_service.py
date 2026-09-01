@@ -2174,36 +2174,45 @@ def test_database_heartbeat_error_does_not_stop_task_protection_refresh(
 def test_protection_refresh_and_disable_are_serialized_with_event_barriers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(time, "monotonic", lambda: 100.0)
     protection = TaskScaleInProtection(_config())
-    entered, proceed, disabled = (threading.Event() for _ in range(3))
+    entered, proceed, release_started, disabled = (
+        threading.Event() for _ in range(4)
+    )
     updates = []
 
     def update(enabled):
         updates.append(enabled)
         if len(updates) == 2:
             entered.set()
-            assert proceed.wait(3)
+            assert proceed.wait(10)
         protection._enabled = enabled
-        protection._last_refresh = 0
+        refresh_seconds = max(
+            60.0,
+            protection.expires_in_minutes * 60.0 / 3.0,
+        )
+        protection._last_refresh = time.monotonic() - refresh_seconds - 1.0
 
     monkeypatch.setattr(protection, "_update", update)
     protection.enable()
     refresh = threading.Thread(target=protection.refresh_if_needed, daemon=True)
 
     def disable():
+        release_started.set()
         protection.disable()
         disabled.set()
 
     release = threading.Thread(target=disable, daemon=True)
     refresh.start()
-    assert entered.wait(1)
+    assert entered.wait(10)
     release.start()
     try:
-        assert not disabled.wait(0.03)
+        assert release_started.wait(10)
+        assert not disabled.wait(0.1)
     finally:
         proceed.set()
-        refresh.join(timeout=2)
-        release.join(timeout=2)
+        refresh.join(timeout=10)
+        release.join(timeout=10)
     assert not refresh.is_alive() and not release.is_alive()
     assert updates == [True, True, False]
     assert not protection._enabled
