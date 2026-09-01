@@ -117,6 +117,44 @@ function fixture() {
       Value: "gemini-3.5-flash-lite",
     });
   }
+  for (const [logicalId, contract] of Object.entries({
+    VercelControlPlaneRoleDefaultPolicyBC780244: {
+      sid: "ReadWriteCustomBackgroundAssetsOnly",
+      actions: ["s3:GetObject", "s3:PutObject"],
+    },
+    WorkerTaskRoleDefaultPolicy4DD5AEA2: {
+      sid: "ReadCustomBackgroundAssetsOnly",
+      actions: ["s3:GetObject"],
+    },
+  })) {
+    current.Resources[logicalId] = {
+      Type: "AWS::IAM::Policy",
+      Properties: { PolicyDocument: { Statement: [
+        { Sid: "Unchanged", Effect: "Allow", Action: "logs:CreateLogStream", Resource: "*" },
+        {
+          Sid: contract.sid,
+          Effect: "Allow",
+          Action: contract.actions,
+          Resource: [
+            "arn:aws:s3:::shortsmvpfoundation-production-mediabucketbcbb02ba-9rrhgi9ki9tn/custom-backgrounds/*",
+          ],
+        },
+      ] } },
+    };
+    candidate.Resources[logicalId] = structuredClone(current.Resources[logicalId]);
+    const statement = candidate.Resources[logicalId].Properties.PolicyDocument.Statement.pop();
+    statement.Action = contract.actions.length === 1 ? contract.actions[0] : contract.actions;
+    statement.Resource = {
+      "Fn::Join": ["", [
+        {
+          "Fn::ImportValue":
+            "ShortsMvpFoundation-production:ExportsOutputFnGetAttMediaBucketBCBB02BAArnB94B784B",
+        },
+        "/custom-backgrounds/*",
+      ]],
+    };
+    candidate.Resources[logicalId].Properties.PolicyDocument.Statement.unshift(statement);
+  }
   return { current, candidate };
 }
 
@@ -128,6 +166,12 @@ test("builds an exact live-template patch and preserves every non-allowlisted re
     assert.deepEqual(exact.Resources[logicalId], current.Resources[logicalId]);
   }
   for (const logicalId of PRESERVED_BATCH_DEFINITION_DRIFT) {
+    assert.deepEqual(exact.Resources[logicalId], current.Resources[logicalId]);
+  }
+  for (const logicalId of [
+    "VercelControlPlaneRoleDefaultPolicyBC780244",
+    "WorkerTaskRoleDefaultPolicy4DD5AEA2",
+  ]) {
     assert.deepEqual(exact.Resources[logicalId], current.Resources[logicalId]);
   }
   assert.equal(
@@ -197,6 +241,17 @@ test("rejects deletes, arbitrary Lambda/IAM changes, and unrecognised Batch drif
   assert.throws(
     () => buildExactControlPlaneTemplate(current, arbitraryIam),
     /UnexpectedPolicy/,
+  );
+
+  const customBackgroundIamExpansion = structuredClone(candidate);
+  customBackgroundIamExpansion.Resources
+    .VercelControlPlaneRoleDefaultPolicyBC780244
+    .Properties.PolicyDocument.Statement
+    .find((statement) => statement.Sid === "ReadWriteCustomBackgroundAssetsOnly")
+    .Action.push("s3:DeleteObject");
+  assert.throws(
+    () => buildExactControlPlaneTemplate(current, customBackgroundIamExpansion),
+    /권한 계약.*밖으로 변경/,
   );
 
   for (const [property, value] of [

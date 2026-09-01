@@ -34,6 +34,34 @@ const PACKAGING_ONLY_LAMBDA_DRIFT = new Set([
   "StateWriterFunctionB9BD747D",
 ]);
 
+const CUSTOM_BACKGROUND_POLICY_REPRESENTATION_DRIFT = Object.freeze({
+  VercelControlPlaneRoleDefaultPolicyBC780244: {
+    sid: "ReadWriteCustomBackgroundAssetsOnly",
+    actions: ["s3:GetObject", "s3:PutObject"],
+  },
+  WorkerTaskRoleDefaultPolicy4DD5AEA2: {
+    sid: "ReadCustomBackgroundAssetsOnly",
+    actions: ["s3:GetObject"],
+  },
+});
+
+const CUSTOM_BACKGROUND_LIVE_RESOURCE = [
+  "arn:aws:s3:::shortsmvpfoundation-production-mediabucketbcbb02ba-9rrhgi9ki9tn/custom-backgrounds/*",
+];
+
+const CUSTOM_BACKGROUND_SOURCE_RESOURCE = {
+  "Fn::Join": [
+    "",
+    [
+      {
+        "Fn::ImportValue":
+          "ShortsMvpFoundation-production:ExportsOutputFnGetAttMediaBucketBCBB02BAArnB94B784B",
+      },
+      "/custom-backgrounds/*",
+    ],
+  ],
+};
+
 const BATCH_SUBMITTER_FUNCTION = "BatchSubmitterFunction95B3701F";
 const BATCH_STATE_FUNCTION = "BatchStateFunction2DEF92D9";
 const CLEANUP_FUNCTION = "CleanupFunction1604930F";
@@ -346,6 +374,54 @@ function validatePackagingOnlyLambdaDrift(change) {
   }
 }
 
+function normalizeCustomBackgroundPolicy(resource, contract, expectedResource) {
+  const normalized = clone(resource);
+  const statements = normalized?.Properties?.PolicyDocument?.Statement;
+  if (!Array.isArray(statements)) {
+    throw new Error("custom background IAM policy statement가 없습니다.");
+  }
+  const matches = statements.filter((statement) => statement?.Sid === contract.sid);
+  if (matches.length !== 1) {
+    throw new Error(`${contract.sid} IAM statement 개수가 정확히 1이 아닙니다.`);
+  }
+  const statement = matches[0];
+  const actions = (Array.isArray(statement.Action) ? statement.Action : [statement.Action])
+    .map(String)
+    .sort();
+  if (
+    statement.Effect !== "Allow"
+    || fingerprint(actions) !== fingerprint([...contract.actions].sort())
+    || fingerprint(statement.Resource) !== fingerprint(expectedResource)
+  ) {
+    throw new Error(`${contract.sid} IAM 권한 계약이 고정된 표현 차이 밖으로 변경됐습니다.`);
+  }
+  statement.Action = [...contract.actions].sort();
+  statement.Resource = "__custom_background_asset_resource__";
+  normalized.Properties.PolicyDocument.Statement = statements
+    .sort((left, right) => fingerprint(left).localeCompare(fingerprint(right)));
+  return normalized;
+}
+
+function validateCustomBackgroundPolicyRepresentationDrift(change) {
+  const contract = CUSTOM_BACKGROUND_POLICY_REPRESENTATION_DRIFT[change.logicalId];
+  if (!contract || change.action !== "update" || change.type !== "AWS::IAM::Policy") {
+    throw new Error(`${change.logicalId} IAM 표현 drift 형태가 올바르지 않습니다.`);
+  }
+  const before = normalizeCustomBackgroundPolicy(
+    change.before,
+    contract,
+    CUSTOM_BACKGROUND_LIVE_RESOURCE,
+  );
+  const after = normalizeCustomBackgroundPolicy(
+    change.after,
+    contract,
+    CUSTOM_BACKGROUND_SOURCE_RESOURCE,
+  );
+  if (fingerprint(before) !== fingerprint(after)) {
+    throw new Error(`${change.logicalId}에 고정된 custom background ARN 표현 밖 drift가 있습니다.`);
+  }
+}
+
 function validateGeminiOnlyBatchDrift(change) {
   if (change.action !== "update" || change.type !== "AWS::Batch::JobDefinition") {
     throw new Error(`${change.logicalId} Batch drift 형태가 올바르지 않습니다.`);
@@ -509,6 +585,10 @@ export function buildExactControlPlaneTemplate(currentTemplate, fullCandidateTem
     }
     if (PACKAGING_ONLY_LAMBDA_DRIFT.has(change.logicalId)) {
       validatePackagingOnlyLambdaDrift(change);
+      continue;
+    }
+    if (CUSTOM_BACKGROUND_POLICY_REPRESENTATION_DRIFT[change.logicalId]) {
+      validateCustomBackgroundPolicyRepresentationDrift(change);
       continue;
     }
     if (PRESERVED_BATCH_DEFINITION_DRIFT.has(change.logicalId)) {
