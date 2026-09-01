@@ -783,14 +783,15 @@ def _initial_render_v4_environment(
             "Initial render v4 requires the immutable project target registry"
         )
     matched_lane = ""
+    matched_pointer = ""
     matched_release: dict[str, Any] | None = None
     for target_key, lane in registry["lanes"].items():
-        # Only an already-recorded, AWS-verified job may reconcile its old
-        # initial attempt. An unsubmitted claim still cannot use previous.
-        pointers = ("current", "previous") if (
-            resume or job.get("aws_batch_job_id")
-        ) else ("current",)
-        for pointer in pointers:
+        # During an atomic successor cutover, the web may have already bound
+        # an initial job to the verified predecessor while the submitter has
+        # the successor registry.  The predecessor is still eligible only
+        # when the immutable job binding and release row prove that exact
+        # stable release below.
+        for pointer in ("current", "previous"):
             release = lane.get(pointer)
             if not isinstance(release, dict):
                 continue
@@ -799,15 +800,20 @@ def _initial_render_v4_environment(
                 and release.get("jobQueueArn") == job_queue
             ):
                 matched_lane = target_key
+                matched_pointer = pointer
                 matched_release = release
                 break
         if matched_release:
             break
     if not matched_release:
         raise BatchTargetTrustRejected(
-            "Initial render v4 is not bound to the selected current release"
+            "Initial render v4 is not bound to a registered release"
         )
-    if not resume and registry["lanes"][matched_lane].get("previous") == matched_release:
+    if (
+        matched_pointer == "previous"
+        and not resume
+        and job.get("aws_batch_job_id")
+    ):
         _verify_recorded_previous_project_job(job, matched_release)
     font_manifest_sha256 = str(
         matched_release.get("fontManifestSha256") or ""
@@ -857,6 +863,21 @@ def _initial_render_v4_environment(
         raise BatchTargetTrustRejected(
             "Selected project target v4 release is not eligible"
         )
+    if matched_pointer == "previous" and not resume and not job.get(
+        "aws_batch_job_id"
+    ):
+        if (
+            job.get("batch_target_key") != matched_lane
+            or job.get("batch_target_release_id")
+            != matched_release.get("releaseId")
+            or str(job.get("initial_editor_release_id") or "")
+            != str(release.get("id") or "")
+            or status != "stable"
+            or not release.get("promoted_at")
+        ):
+            raise BatchTargetTrustRejected(
+                "Unsubmitted predecessor job has no exact stable release binding"
+            )
     encoded_release_id = urllib.parse.quote(str(release.get("id") or ""), safe="")
     encoded_target_key = urllib.parse.quote(matched_lane, safe="")
     encoded_target_release_id = urllib.parse.quote(
@@ -1152,6 +1173,7 @@ def _submit(payload: dict[str, Any]) -> str | None:
             "batch_target_key,batch_target_release_id,"
             "source_range_selection_enabled,transcription_policy,subtitle_template_id,"
             "initial_render_spec_version,initial_caption_render_spec_version,"
+            "initial_editor_release_id,"
             "template_snapshot,subtitle_template_snapshot,"
             "dispatch_priority_class,project_dispatch_generation"
             f"&id=eq.{encoded_job_id}&limit=1"

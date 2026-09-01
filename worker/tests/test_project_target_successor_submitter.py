@@ -51,6 +51,7 @@ def successor_job():
         "batch_job_queue": old["jobQueueArn"],
         "initial_render_spec_version": 4,
         "initial_caption_render_spec_version": 4,
+        "initial_editor_release_id": RELEASE,
     }
     actual = {
         "jobId": AWS_ID, "jobDefinition": old["jobDefinitionArn"],
@@ -140,10 +141,34 @@ def test_old_duplicate_cannot_reconcile_unproven_aws_identity(successor_job, fie
     assert not any(call.kwargs.get("method") for call in f.module.rest.call_args_list)
 
 
-def test_previous_unsubmitted_initial_claim_remains_forbidden(successor_job):
+def test_verified_previous_unsubmitted_initial_claim_is_submitted(successor_job):
     f = successor_job
     f.job.update(aws_batch_job_id=None, status="queued")
-    with pytest.raises(f.module.BatchTargetTrustRejected, match="selected current release"):
+    f.module._submit_once = MagicMock(return_value="predecessor-job")
+
+    assert (
+        f.module._submit({"kind": "project", "jobId": f.job["id"]})
+        == "predecessor-job"
+    )
+    f.batch.describe_jobs.assert_not_called()
+    request, key = f.module._submit_once.call_args.args
+    assert request["jobDefinition"] == f.old["jobDefinitionArn"]
+    assert request["jobQueue"] == f.old["jobQueueArn"]
+    assert key == f"project:{f.job['id']}:0"
+    assert not any(call.kwargs.get("method") for call in f.module.rest.call_args_list)
+
+
+def test_previous_unsubmitted_initial_claim_requires_exact_stable_release(successor_job):
+    f = successor_job
+    f.job.update(
+        aws_batch_job_id=None,
+        status="queued",
+        initial_editor_release_id="22222222-2222-4222-8222-222222222222",
+    )
+    with pytest.raises(
+        f.module.BatchTargetTrustRejected,
+        match="exact stable release binding",
+    ):
         f.module._submit({"kind": "project", "jobId": f.job["id"]})
     f.batch.describe_jobs.assert_not_called()
     f.module._submit_once.assert_not_called()
