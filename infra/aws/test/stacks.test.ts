@@ -373,7 +373,7 @@ describe("shorts MVP infrastructure", () => {
   it("splits the exact protected Stage B tag between build and approval roles", () => {
     const { editorCanary } = stacks("production", {
       githubEditorReleaseRef:
-        "refs/tags/editor-v4-render-parity-20260831-1",
+        "refs/tags/editor-v4-render-parity-20260901-5",
       editorReleaseRegistrarPassRoleArns: exactRegistrarPassRoleArns,
     });
     const roles = editorCanary.findResources("AWS::IAM::Role");
@@ -392,7 +392,7 @@ describe("shorts MVP infrastructure", () => {
     expect(buildCondition?.StringEquals?.[
       "token.actions.githubusercontent.com:sub"
     ]).toBe(
-      "repo:dongk176/shorts:ref:refs/tags/editor-v4-render-parity-20260831-1",
+      "repo:dongk176/shorts:ref:refs/tags/editor-v4-render-parity-20260901-5",
     );
     expect(verifierCondition?.StringLike).toBeUndefined();
     expect(verifierCondition?.StringEquals?.[
@@ -406,7 +406,7 @@ describe("shorts MVP infrastructure", () => {
   it("lets only the verifier read isolated evidence and invoke the registrar", () => {
     const { editorCanary } = stacks("production", {
       githubEditorReleaseRef:
-        "refs/tags/editor-v4-render-parity-20260831-1",
+        "refs/tags/editor-v4-render-parity-20260901-5",
       editorReleaseRegistrarPassRoleArns: exactRegistrarPassRoleArns,
     });
     const template = editorCanary.toJSON();
@@ -448,11 +448,11 @@ describe("shorts MVP infrastructure", () => {
   it("requires unique exact PassRole ARNs when the protected tag is enabled", () => {
     expect(() => stacks("production", {
       githubEditorReleaseRef:
-        "refs/tags/editor-v4-render-parity-20260831-1",
+        "refs/tags/editor-v4-render-parity-20260901-5",
     })).toThrow(/editorReleaseRegistrarPassRoleArns context is required/);
     expect(() => stacks("production", {
       githubEditorReleaseRef:
-        "refs/tags/editor-v4-render-parity-20260831-1",
+        "refs/tags/editor-v4-render-parity-20260901-5",
       editorReleaseRegistrarPassRoleArns: JSON.stringify([
         "arn:aws:iam::123456789012:role/shorts-*",
         "arn:aws:iam::123456789012:role/shorts-task",
@@ -704,8 +704,22 @@ describe("shorts MVP infrastructure", () => {
       "editorStableRerenderJobDefinitionArn:test":
         "shorts-mvp-rerender-fargate-test",
     })).toThrow(
-      "editorStableRerenderJobDefinitionArn:test must be the revision-pinned test rerender Job Definition ARN",
+      "editorStableRerenderJobDefinitionArn:test must be a revision-pinned test rerender or immutable editor release Job Definition ARN",
     );
+  });
+
+  it("accepts an immutable editor release as the stable rerender target", () => {
+    expect(() => stacks("production", {
+      "editorStableRerenderJobDefinitionArn:production":
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/shorts-mvp-editor-release-4e19c114f79e-4vcpu:1",
+    })).not.toThrow();
+  });
+
+  it("rejects a production editor release target outside production", () => {
+    expect(() => stacks("test", {
+      "editorStableRerenderJobDefinitionArn:test":
+        "arn:aws:batch:ap-northeast-2:123456789012:job-definition/shorts-mvp-editor-release-4e19c114f79e-4vcpu:1",
+    })).toThrow(/must be a revision-pinned test rerender/);
   });
 
   it("provisions isolated editor tests with separate ephemeral storage and max 4 vCPU", () => {
@@ -832,12 +846,8 @@ describe("shorts MVP infrastructure", () => {
           PROJECT_JOB_DEFINITION: "shorts-mvp-project-fargate-test",
           PROJECT_HEAVY_JOB_DEFINITION:
             "shorts-mvp-project-heavy-fargate-test",
-          RERENDER_JOB_DEFINITION: {
-            "Fn::GetAtt": [
-              "RerenderFargateJobDefinition",
-              "JobDefinitionArn",
-            ],
-          },
+          RERENDER_JOB_DEFINITION:
+            "arn:aws:batch:ap-northeast-2:123456789012:job-definition/shorts-mvp-rerender-fargate-test:7",
           PROJECT_TARGET_REGISTRY_PATH:
             "/var/task/production-project-targets.json",
           PROJECT_TARGET_REGISTRY_REQUIRED: "false",

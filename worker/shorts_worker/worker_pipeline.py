@@ -3505,7 +3505,14 @@ class BatchWorker:
                     or None,
                     work_dir / "channel-thumbnail.png",
                 )
-            caption_render_spec = item.get("caption_render_spec")
+            # A stored caption spec describes the previous render and can remain
+            # attached after the user turns subtitles off. Do not let that stale
+            # identity opt a subtitle-free document back into caption rendering.
+            caption_render_spec = (
+                item.get("caption_render_spec")
+                if document.subtitles.enabled
+                else None
+            )
             resolved_caption_render_spec = (
                 (
                     editor_source["spec"]
@@ -3521,7 +3528,8 @@ class BatchWorker:
                 else None
             )
             if (
-                item.get("subtitle_template_id")
+                document.subtitles.enabled
+                and item.get("subtitle_template_id")
                 and resolved_caption_render_spec is None
             ):
                 raise ValueError(

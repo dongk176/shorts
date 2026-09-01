@@ -304,7 +304,7 @@ function registrarEnvironment(registry) {
       "Fn::GetAtt": ["EditorCanaryQueue", "JobQueueArn"],
     },
     RERENDER_JOB_DEFINITION:
-      "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-rerender-fargate-production:27",
+      "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-4e19c114f79e-4vcpu:1",
     EDITOR_TEST_BUCKET_NAME: "shorts-mvp-editor-test-181651591905-ap-northeast-2",
     EDITOR_TEST_TEMPLATE_JOB_DEFINITION: "shorts-mvp-editor-test-template",
     EDITOR_WORK_DISPATCH_QUEUE_URL: { Ref: "EditorDispatchQueueD0065DA5" },
@@ -315,7 +315,7 @@ function registrarEnvironment(registry) {
     GITHUB_OIDC_REPOSITORY_ID: "12345",
     GITHUB_OIDC_REPOSITORY_OWNER_ID: "67890",
     GITHUB_OIDC_ENVIRONMENT: "editor-v4-release-approval",
-    GITHUB_OIDC_RELEASE_TAG: "editor-v4-render-parity-20260831-1",
+    GITHUB_OIDC_RELEASE_TAG: "editor-v4-render-parity-20260901-5",
     GITHUB_OIDC_WORKFLOW_PATH: ".github/workflows/editor-release.yml",
     GITHUB_OIDC_WORKFLOW_NAME: "Verify editor release candidate",
     EDITOR_RELEASE_ECR_REPOSITORY_URI:
@@ -467,6 +467,42 @@ test("bootstrap builds exact registrar, IAM, and submitter templates", () => {
     ).length,
     1,
   );
+});
+
+test("accepts only revision-pinned legacy or immutable editor rerender targets", () => {
+  const legacy = editorBootstrapTemplates();
+  legacy.candidate.Resources.EditorReleaseRegistrarFunctionD787453A
+    .Properties.Environment.Variables.RERENDER_JOB_DEFINITION =
+      "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-rerender-fargate-production:27";
+  assert.doesNotThrow(() => buildExactStageBTemplate(
+    "bootstrap",
+    "editor",
+    legacy.current,
+    legacy.candidate,
+    bootstrapOptions,
+  ));
+
+  for (const target of [
+    "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-4e19c114f79-4vcpu:1",
+    "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-4E19C114F79E-4vcpu:1",
+    "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-4e19c114f79e:1",
+    "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-4e19c114f79e-4vcpu",
+  ]) {
+    const invalid = editorBootstrapTemplates();
+    invalid.candidate.Resources.EditorReleaseRegistrarFunctionD787453A
+      .Properties.Environment.Variables.RERENDER_JOB_DEFINITION = target;
+    assert.throws(
+      () => buildExactStageBTemplate(
+        "bootstrap",
+        "editor",
+        invalid.current,
+        invalid.candidate,
+        bootstrapOptions,
+      ),
+      /exact ARN 계약/,
+      target,
+    );
+  }
 });
 
 test("renewal changes the exact registrar, build-role, and verifier-role tags", () => {

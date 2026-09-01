@@ -123,6 +123,11 @@ function fixture() {
 test("builds an exact live-template patch and preserves every non-allowlisted resource", () => {
   const { current, candidate } = fixture();
   const exact = buildExactControlPlaneTemplate(current, candidate);
+  assert.equal(
+    exact.Resources.BatchSubmitterFunction95B3701F.Properties.Environment
+      .Variables.RERENDER_JOB_DEFINITION,
+    "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-4e19c114f79e-4vcpu:1",
+  );
   assert.deepEqual(exact.Resources.ProtectedQueue, current.Resources.ProtectedQueue);
   for (const logicalId of packagingOnlyLambdas) {
     assert.deepEqual(exact.Resources[logicalId], current.Resources[logicalId]);
@@ -133,6 +138,17 @@ test("builds an exact live-template patch and preserves every non-allowlisted re
   assert.equal(
     validateControlPlaneTemplateDiff(current, exact).length,
     Object.keys(CONTROL_PLANE_RESOURCE_CHANGES).length,
+  );
+});
+
+test("pins the control-plane rerender fallback to the immutable editor release", () => {
+  assert.equal(
+    BATCH_SUBMITTER_CANONICAL_TARGETS.RERENDER_JOB_DEFINITION,
+    "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-4e19c114f79e-4vcpu:1",
+  );
+  assert.equal(
+    typeof BATCH_SUBMITTER_CANONICAL_TARGETS.RERENDER_JOB_DEFINITION,
+    "string",
   );
 });
 

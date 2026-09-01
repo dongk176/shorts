@@ -1748,6 +1748,39 @@ def test_editor_document_rerender_forwards_trusted_caption_template_spec(
     )
 
 
+def test_editor_document_rerender_ignores_stored_caption_when_subtitles_are_off(
+    tmp_path,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    item = worker.repository.get_short.return_value
+    snapshot = item["pending_edit_snapshot"]
+    snapshot["version"] = 3
+    snapshot["subtitles"]["enabled"] = False
+    snapshot["renderSpec"] = compile_initial_editor_render_spec_v4(
+        title=snapshot["title"]["text"],
+        template_id=snapshot["template"]["id"],
+        video_aspect_ratio=snapshot["video"]["aspectRatio"],
+        font_scale=snapshot["title"]["fontScale"],
+    )
+    item["subtitle_template_id"] = "pop"
+    item["caption_render_spec"] = {
+        "schemaVersion": 4,
+        "layoutMode": "absolute-word-positions-v1",
+        "cues": [],
+    }
+
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
+        is None
+    )
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_overlay_only"]
+        is False
+    )
+
+
 def test_editor_document_rerender_uses_padded_caption_source_with_timeline(
     tmp_path,
 ) -> None:

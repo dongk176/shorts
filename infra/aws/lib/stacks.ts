@@ -28,7 +28,7 @@ const workerSourceGitSha = /^[0-9a-f]{40}$/;
 const disabledEditorReleaseGitHubRef =
   "refs/tags/__disabled_editor_release__";
 const stageBEditorReleaseGitHubRef =
-  "refs/tags/editor-v4-render-parity-20260831-1";
+  "refs/tags/editor-v4-render-parity-20260901-5";
 const editorReleaseApprovalEnvironment = "editor-v4-release-approval";
 const editorReleaseWorkflowPath = ".github/workflows/editor-release.yml";
 const editorReleaseWorkflowName = "Verify editor release candidate";
@@ -192,9 +192,15 @@ function editorStableRerenderJobDefinitionArn(
   const match = /^arn:aws:batch:([a-z0-9-]+):([0-9]{12}):job-definition\/([A-Za-z0-9_-]+):([1-9][0-9]*)$/.exec(
     configured,
   );
-  if (!match || match[3] !== `shorts-mvp-rerender-fargate-${environment}`) {
+  const configuredName = match?.[3] || "";
+  const isLegacyRerenderDefinition =
+    configuredName === `shorts-mvp-rerender-fargate-${environment}`;
+  const isImmutableEditorReleaseDefinition =
+    environment === "production"
+    && /^shorts-mvp-editor-release-[0-9a-f]{12}-4vcpu$/.test(configuredName);
+  if (!match || (!isLegacyRerenderDefinition && !isImmutableEditorReleaseDefinition)) {
     throw new Error(
-      `${contextName} must be the revision-pinned ${environment} rerender Job Definition ARN`,
+      `${contextName} must be a revision-pinned ${environment} rerender or immutable editor release Job Definition ARN`,
     );
   }
   if (!cdk.Token.isUnresolved(stack.region) && match[1] !== stack.region) {
@@ -1510,7 +1516,8 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       ...lambdaEnvironment,
       PREPARE_JOB_DEFINITION: prepareDefinition.attrJobDefinitionArn,
       RENDER_JOB_DEFINITION: renderDefinition.attrJobDefinitionArn,
-      RERENDER_JOB_DEFINITION: rerenderDefinition.attrJobDefinitionArn,
+      RERENDER_JOB_DEFINITION:
+        editorStableRerenderJobDefinitionArn(this, props.environment),
     };
     const cleanupLogGroup = new logs.LogGroup(this, "CleanupLogs", {
       logGroupName: `/shorts-mvp/${props.environment}/cleanup`,

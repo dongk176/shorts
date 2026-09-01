@@ -9,7 +9,7 @@ import {
 } from "./production-project-targets.mjs";
 
 export const STAGE_B_EDITOR_RELEASE_REF =
-  "refs/tags/editor-v4-render-parity-20260831-1";
+  "refs/tags/editor-v4-render-parity-20260901-5";
 export const STAGE_B_DISABLED_EDITOR_RELEASE_REF =
   "refs/tags/__disabled_editor_release__";
 
@@ -763,6 +763,9 @@ function exactRegistrarEnvironment(currentVariables, candidateVariables, options
   };
   const resolve = (value) => resolveSimpleCloudFormationString(value, tokens);
   const rerender = resolve(candidateVariables.RERENDER_JOB_DEFINITION);
+  const exactRerenderPattern = new RegExp(
+    `^arn:${partition}:batch:${region}:${account}:job-definition\/(?:shorts-mvp-rerender-fargate-production|shorts-mvp-editor-release-[0-9a-f]{12}-4vcpu):[1-9][0-9]*$`,
+  );
   const repositoryValue = candidateVariables.EDITOR_RELEASE_ECR_REPOSITORY_URI;
   const repositoryUri = resolve(repositoryValue);
   const repositorySerialized = JSON.stringify(repositoryValue);
@@ -783,8 +786,8 @@ function exactRegistrarEnvironment(currentVariables, candidateVariables, options
     || fingerprint(candidateVariables.EDITOR_CANARY_BATCH_QUEUE) !== fingerprint({
       "Fn::GetAtt": ["EditorCanaryQueue", "JobQueueArn"],
     })
-    || rerender !== `arn:${partition}:batch:${region}:${account}:job-definition/shorts-mvp-rerender-fargate-production:${rerender.split(":").at(-1)}`
-    || !/:[1-9][0-9]*$/.test(rerender)
+    || typeof rerender !== "string"
+    || !exactRerenderPattern.test(rerender)
     || resolve(candidateVariables.EDITOR_TEST_JOB_QUEUE_ARN)
       !== `arn:${partition}:batch:${region}:${account}:job-queue/shorts-mvp-editor-test`
     || resolve(candidateVariables.EDITOR_TEST_TASK_ROLE_ARN)

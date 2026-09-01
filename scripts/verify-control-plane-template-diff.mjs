@@ -39,6 +39,44 @@ const BATCH_STATE_FUNCTION = "BatchStateFunction2DEF92D9";
 const CLEANUP_FUNCTION = "CleanupFunction1604930F";
 const OUTBOX_DISPATCHER_FUNCTION = "OutboxDispatcherFunction7D53F71C";
 const ASSET_METADATA_KEYS = ["aws:asset:path", "aws:asset:is-bundled"];
+const PRODUCTION_STABLE_RERENDER_CONTEXT =
+  "editorStableRerenderJobDefinitionArn:production";
+
+function canonicalStableRerenderJobDefinitionArn() {
+  const context = JSON.parse(fs.readFileSync(
+    new URL("../infra/aws/cdk.context.json", import.meta.url),
+    "utf8",
+  ));
+  const configured = String(
+    context[PRODUCTION_STABLE_RERENDER_CONTEXT] || "",
+  ).trim();
+  const match = /^arn:aws:batch:([a-z0-9-]+):([0-9]{12}):job-definition\/([A-Za-z0-9_-]+):([1-9][0-9]*)$/.exec(
+    configured,
+  );
+  const family = match?.[3] || "";
+  const registry = readProductionProjectTargets();
+  const stableQueue = String(
+    registry.lanes?.legacy_project?.current?.jobQueueArn || "",
+  );
+  const identity = /^arn:aws:batch:([a-z0-9-]+):([0-9]{12}):job-queue\//.exec(
+    stableQueue,
+  );
+  if (
+    !match
+    || !identity
+    || match[1] !== identity[1]
+    || match[2] !== identity[2]
+    || (
+      family !== "shorts-mvp-rerender-fargate-production"
+      && !/^shorts-mvp-editor-release-[0-9a-f]{12}-4vcpu$/.test(family)
+    )
+  ) {
+    throw new Error(
+      `${PRODUCTION_STABLE_RERENDER_CONTEXT} must be an exact revision-pinned production rerender target`,
+    );
+  }
+  return configured;
+}
 
 export const BATCH_SUBMITTER_CANONICAL_TARGETS = Object.freeze({
   PREPARE_JOB_DEFINITION: {
@@ -47,9 +85,7 @@ export const BATCH_SUBMITTER_CANONICAL_TARGETS = Object.freeze({
   RENDER_JOB_DEFINITION: {
     "Fn::GetAtt": ["RenderJobDefinition", "JobDefinitionArn"],
   },
-  RERENDER_JOB_DEFINITION: {
-    "Fn::GetAtt": ["RerenderFargateJobDefinition", "JobDefinitionArn"],
-  },
+  RERENDER_JOB_DEFINITION: canonicalStableRerenderJobDefinitionArn(),
 });
 
 function canonicalProjectTargetEnvironment() {

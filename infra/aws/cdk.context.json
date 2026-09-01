@@ -5,5 +5,5 @@
     "ap-northeast-2c",
     "ap-northeast-2d"
   ],
-  "editorStableRerenderJobDefinitionArn:production": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-rerender-fargate-production:27"
+  "editorStableRerenderJobDefinitionArn:production": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-release-4e19c114f79e-4vcpu:1"
 }
