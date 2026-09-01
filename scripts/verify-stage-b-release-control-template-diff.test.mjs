@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { PROJECT_TARGET_LANES } from "./production-project-targets.mjs";
 import {
   STAGE_B_DISABLED_EDITOR_RELEASE_REF,
   STAGE_B_EDITOR_RELEASE_REF,
@@ -415,8 +416,12 @@ function rotationEnvironment(registry) {
       lane.unified_template_subtitles.current.jobDefinitionArn,
     UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN:
       lane.unified_template_subtitles.current.jobQueueArn,
-    UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN:
-      lane.unified_template_subtitles.previous.jobDefinitionArn,
+    ...Object.fromEntries(Object.entries(PROJECT_TARGET_LANES).flatMap(([key, prefix]) => (
+      lane[key].previous ? [[
+        `${prefix}_PREVIOUS_JOB_DEFINITION_ARN`,
+        lane[key].previous.jobDefinitionArn,
+      ]] : []
+    ))),
   };
 }
 

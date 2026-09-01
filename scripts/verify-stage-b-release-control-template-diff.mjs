@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  PROJECT_TARGET_LANES,
   readProductionProjectTargets,
   validateProductionProjectTargets,
 } from "./production-project-targets.mjs";
@@ -78,12 +79,16 @@ export const STAGE_B_PHASE_CONTRACTS = Object.freeze({
 const TARGET_ENVIRONMENT_KEYS = Object.freeze([
   "LEGACY_PROJECT_JOB_DEFINITION_ARN",
   "LEGACY_PROJECT_BATCH_QUEUE_ARN",
+  "LEGACY_PROJECT_PREVIOUS_JOB_DEFINITION_ARN",
   "SOURCE_RANGE_JOB_DEFINITION_ARN",
   "SOURCE_RANGE_BATCH_QUEUE_ARN",
+  "SOURCE_RANGE_PREVIOUS_JOB_DEFINITION_ARN",
   "ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN",
   "ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN",
+  "ELEVENLABS_TRANSCRIPTION_PREVIOUS_JOB_DEFINITION_ARN",
   "SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN",
   "SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN",
+  "SUBTITLE_TEMPLATES_PREVIOUS_JOB_DEFINITION_ARN",
   "UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN",
   "UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN",
   "UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN",
@@ -905,9 +910,11 @@ function canonicalRotationTargetEnvironment(projectTargetsValue) {
     UNIFIED_TEMPLATE_SUBTITLES_BATCH_QUEUE_ARN:
       lane.unified_template_subtitles.current.jobQueueArn,
   };
-  if (lane.unified_template_subtitles.previous) {
-    values.UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN =
-      lane.unified_template_subtitles.previous.jobDefinitionArn;
+  for (const [key, prefix] of Object.entries(PROJECT_TARGET_LANES)) {
+    if (lane[key].previous) {
+      values[`${prefix}_PREVIOUS_JOB_DEFINITION_ARN`] =
+        lane[key].previous.jobDefinitionArn;
+    }
   }
   return values;
 }

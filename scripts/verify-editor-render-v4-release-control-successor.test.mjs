@@ -206,12 +206,13 @@ test("Lambda runtime requires the bundled registry and exact five target environ
   for (const [key, prefix] of Object.entries(PROJECT_TARGET_LANES)) {
     env[`${prefix}_JOB_DEFINITION_ARN`] = context.newRegistry.lanes[key].current.jobDefinitionArn;
     env[`${prefix}_BATCH_QUEUE_ARN`] = context.newRegistry.lanes[key].current.jobQueueArn;
+    env[`${prefix}_PREVIOUS_JOB_DEFINITION_ARN`] = context.newRegistry.lanes[key].previous.jobDefinitionArn;
   }
-  env.UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN = context.newRegistry.lanes.unified_template_subtitles.previous.jobDefinitionArn;
   assert.doesNotThrow(() => validateSuccessorLambdaEnvironment("submitter", env, context.newRegistry));
   assert.throws(() => validateSuccessorLambdaEnvironment("submitter", { ...env, PROJECT_TARGET_REGISTRY_REQUIRED: "false" }, context.newRegistry));
   assert.throws(() => validateSuccessorLambdaEnvironment("registrar", { ...env, PROJECT_TARGET_REGISTRY_JSON: "{}" }, context.newRegistry));
   assert.throws(() => validateSuccessorLambdaEnvironment("submitter", { ...env, SOURCE_RANGE_JOB_DEFINITION_ARN: "stale" }, context.newRegistry));
+  assert.throws(() => validateSuccessorLambdaEnvironment("submitter", { ...env, LEGACY_PROJECT_PREVIOUS_JOB_DEFINITION_ARN: "stale" }, context.newRegistry));
 });
 
 test("lease acquire requires a fenced actual administrator and all four drain counters zero", async () => {

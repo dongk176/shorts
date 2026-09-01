@@ -339,10 +339,10 @@ export function validateSuccessorLambdaEnvironment(functionName, variables, regi
       || environment[`${prefix}_BATCH_QUEUE_ARN`] !== target.jobQueueArn) {
       throw new Error(`successor submitter ${key} 실제 환경이 registry와 다릅니다.`);
     }
-  }
-  if ((environment.UNIFIED_TEMPLATE_SUBTITLES_PREVIOUS_JOB_DEFINITION_ARN || null)
-    !== (registry.lanes.unified_template_subtitles.previous?.jobDefinitionArn || null)) {
-    throw new Error("successor submitter previous 환경이 registry와 다릅니다.");
+    if ((environment[`${prefix}_PREVIOUS_JOB_DEFINITION_ARN`] || null)
+      !== (registry.lanes[key].previous?.jobDefinitionArn || null)) {
+      throw new Error(`successor submitter ${key} previous 환경이 registry와 다릅니다.`);
+    }
   }
 }
 
