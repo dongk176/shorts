@@ -2196,7 +2196,10 @@ def test_protection_refresh_and_disable_are_serialized_with_event_barriers(
 
     release = threading.Thread(target=disable, daemon=True)
     refresh.start()
-    assert entered.wait(1)
+    # A saturated shared CI runner can take longer than one second to schedule
+    # the refresh thread even though the lock ordering is correct. The events
+    # remain deterministic; allow scheduling headroom without adding sleeps.
+    assert entered.wait(5)
     release.start()
     try:
         assert not disabled.wait(0.03)
