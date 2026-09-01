@@ -66,6 +66,9 @@ const BATCH_SUBMITTER_FUNCTION = "BatchSubmitterFunction95B3701F";
 const BATCH_STATE_FUNCTION = "BatchStateFunction2DEF92D9";
 const CLEANUP_FUNCTION = "CleanupFunction1604930F";
 const OUTBOX_DISPATCHER_FUNCTION = "OutboxDispatcherFunction7D53F71C";
+export const BATCH_SUBMITTER_ONLY_UPDATES = Object.freeze([
+  BATCH_SUBMITTER_FUNCTION,
+]);
 const ASSET_METADATA_KEYS = ["aws:asset:path", "aws:asset:is-bundled"];
 const LIVE_CDK_ASSET_BUCKET =
   "cdk-hnb659fds-assets-181651591905-ap-northeast-2";
@@ -550,9 +553,34 @@ function exactAllowedLambdaUpdate(current, candidate, logicalId) {
   return expected;
 }
 
-export function validateControlPlaneTemplateDiff(currentTemplate, candidateTemplate) {
+function selectedUpdateLogicalIds(updateLogicalIds) {
+  const selected = updateLogicalIds === undefined
+    ? Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)
+      .filter(([, expected]) => expected.action === "update")
+      .map(([logicalId]) => logicalId)
+    : [...updateLogicalIds];
+  const result = new Set();
+  for (const logicalId of selected) {
+    const expected = CONTROL_PLANE_RESOURCE_CHANGES[logicalId];
+    if (!expected || expected.action !== "update") {
+      throw new Error(`허용되지 않은 Control-plane update 선택입니다: ${logicalId}`);
+    }
+    result.add(logicalId);
+  }
+  if (!result.size) {
+    throw new Error("Control-plane update 대상이 비어 있습니다.");
+  }
+  return result;
+}
+
+export function validateControlPlaneTemplateDiff(
+  currentTemplate,
+  candidateTemplate,
+  { updateLogicalIds } = {},
+) {
   const currentResources = resources(currentTemplate);
   const candidateResources = resources(candidateTemplate);
+  const selectedUpdates = selectedUpdateLogicalIds(updateLogicalIds);
   const changes = templateResourceChanges(currentTemplate, candidateTemplate);
   const seen = new Set();
   for (const [logicalId, expected] of Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)) {
@@ -564,6 +592,9 @@ export function validateControlPlaneTemplateDiff(currentTemplate, candidateTempl
   for (const change of changes) {
     const expected = CONTROL_PLANE_RESOURCE_CHANGES[change.logicalId];
     validateExpectedChange(change, expected);
+    if (expected.action === "update" && !selectedUpdates.has(change.logicalId)) {
+      throw new Error(`선택하지 않은 Control-plane update가 포함됐습니다: ${change.logicalId}`);
+    }
     if (expected.type === "AWS::Lambda::Function") {
       exactAllowedLambdaUpdate(
         change.before,
@@ -575,18 +606,26 @@ export function validateControlPlaneTemplateDiff(currentTemplate, candidateTempl
     }
     seen.add(change.logicalId);
   }
-  const missing = Object.keys(CONTROL_PLANE_RESOURCE_CHANGES).filter(
-    (logicalId) => !seen.has(logicalId),
-  );
+  const required = Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)
+    .filter(([logicalId, expected]) => (
+      expected.action === "add" || selectedUpdates.has(logicalId)
+    ))
+    .map(([logicalId]) => logicalId);
+  const missing = required.filter((logicalId) => !seen.has(logicalId));
   if (missing.length) {
     throw new Error(`필수 Control-plane 변경이 후보에서 누락됐습니다: ${missing.join(", ")}`);
   }
   return changes.map(({ before: _before, after: _after, ...change }) => change);
 }
 
-export function buildExactControlPlaneTemplate(currentTemplate, fullCandidateTemplate) {
+export function buildExactControlPlaneTemplate(
+  currentTemplate,
+  fullCandidateTemplate,
+  { updateLogicalIds } = {},
+) {
   const current = resources(currentTemplate);
   const candidate = resources(fullCandidateTemplate);
+  const selectedUpdates = selectedUpdateLogicalIds(updateLogicalIds);
   const changes = templateResourceChanges(currentTemplate, fullCandidateTemplate);
   const controlPlaneSeen = new Set();
   for (const [logicalId, expected] of Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)) {
@@ -643,6 +682,7 @@ export function buildExactControlPlaneTemplate(currentTemplate, fullCandidateTem
   const exactResources = resources(exact);
   for (const [logicalId, expected] of Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)) {
     if (expected.type === "AWS::Lambda::Function") {
+      if (!selectedUpdates.has(logicalId)) continue;
       exactResources[logicalId] = exactAllowedLambdaUpdate(
         current[logicalId],
         candidate[logicalId],
@@ -661,11 +701,14 @@ export function buildExactControlPlaneTemplate(currentTemplate, fullCandidateTem
       throw new Error(`보호 리소스가 byte-equivalent하지 않습니다: ${logicalId}`);
     }
   }
-  validateControlPlaneTemplateDiff(currentTemplate, exact);
+  validateControlPlaneTemplateDiff(currentTemplate, exact, {
+    updateLogicalIds: selectedUpdates,
+  });
   return exact;
 }
 
-export function validatePreparedChangeSet(changeSet) {
+export function validatePreparedChangeSet(changeSet, { updateLogicalIds } = {}) {
+  const selectedUpdates = selectedUpdateLogicalIds(updateLogicalIds);
   if (changeSet?.Status !== "CREATE_COMPLETE" || changeSet?.ExecutionStatus !== "AVAILABLE") {
     throw new Error("CloudFormation change set이 실행 가능한 preview 상태가 아닙니다.");
   }
@@ -678,6 +721,9 @@ export function validatePreparedChangeSet(changeSet) {
       : change.Action === "Modify" ? "update" : "delete";
     const type = String(change.ResourceType || "");
     validateExpectedChange({ logicalId, action, type }, CONTROL_PLANE_RESOURCE_CHANGES[logicalId]);
+    if (action === "update" && !selectedUpdates.has(logicalId)) {
+      throw new Error(`선택하지 않은 change set update가 포함됐습니다: ${logicalId}`);
+    }
     if (action === "delete") {
       throw new Error(`change set delete는 허용되지 않습니다: ${logicalId}`);
     }
@@ -687,7 +733,9 @@ export function validatePreparedChangeSet(changeSet) {
     seen.add(logicalId);
   }
   const missing = Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)
-    .filter(([, expected]) => expected.action === "update")
+    .filter(([logicalId, expected]) => (
+      expected.action === "update" && selectedUpdates.has(logicalId)
+    ))
     .map(([logicalId]) => logicalId)
     .filter((logicalId) => !seen.has(logicalId));
   if (missing.length) {

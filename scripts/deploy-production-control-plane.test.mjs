@@ -21,6 +21,8 @@ test("patches and deploys only the exact validated Compute assembly", () => {
   assert.match(source, /"--method", "prepare-change-set"/);
   assert.match(source, /name === "--apply" \|\| name === "--all"/);
   assert.doesNotMatch(source, /db:migrate|sync-vercel-env|vercel\s+(?:deploy|promote)/);
+  assert.match(source, /--batch-submitter-only/);
+  assert.match(source, /BATCH_SUBMITTER_ONLY_UPDATES/);
 });
 
 test("requires a separate preview and hash-pinned change-set execution", () => {
@@ -38,7 +40,10 @@ test("requires a separate preview and hash-pinned change-set execution", () => {
   assert.match(source, /name === "--apply"[\s\S]*금지됩니다/);
   assert.match(source, /CHANGE_SET_ID=\$\{changeSetId\}/);
   assert.match(source, /liveTemplate\(options\.region, options\.changeSetId\)/);
-  assert.match(source, /exactChangeSet\(options\.region, options\.changeSetId\)/);
+  assert.match(
+    source,
+    /exactChangeSet\(options\.region, options\.changeSetId, updateLogicalIds\)/,
+  );
   assert.match(source, /"--change-set-name", options\.changeSetId/);
   assert.doesNotMatch(
     source,

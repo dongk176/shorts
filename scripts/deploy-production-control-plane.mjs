@@ -12,6 +12,7 @@ import {
   validateLiveProductionProjectTargetTransition,
 } from "./production-project-targets.mjs";
 import {
+  BATCH_SUBMITTER_ONLY_UPDATES,
   buildExactControlPlaneTemplate,
   validateControlPlaneTemplateDiff,
   validatePreparedChangeSet,
@@ -76,10 +77,12 @@ function parseArgs(argv) {
     expectedHead: "",
     expectedRegistrySha256: "",
     expectedTemplateSha256: "",
+    batchSubmitterOnly: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const name = argv[index];
     if (name === "--prepare") options.mode = "prepare";
+    else if (name === "--batch-submitter-only") options.batchSubmitterOnly = true;
     else if (name === "--execute-change-set") {
       options.mode = "execute";
       options.changeSetId = argv[++index] || "";
@@ -147,6 +150,10 @@ function parseArgs(argv) {
   return options;
 }
 
+function selectedControlPlaneUpdates(options) {
+  return options.batchSubmitterOnly ? BATCH_SUBMITTER_ONLY_UPDATES : undefined;
+}
+
 function repositoryState(base) {
   const dirty = execFileSync("git", ["status", "--porcelain"], {
     cwd: root,
@@ -209,19 +216,22 @@ export function validateChangeSetId(changeSetId, region) {
   return changeSetId;
 }
 
-function exactChangeSet(region, changeSetId) {
+function exactChangeSet(region, changeSetId, updateLogicalIds) {
   const expectedId = validateChangeSetId(changeSetId, region);
-  const described = validatePreparedChangeSet(describeChangeSet(region, expectedId));
+  const described = validatePreparedChangeSet(
+    describeChangeSet(region, expectedId),
+    { updateLogicalIds },
+  );
   if (described.ChangeSetId !== expectedId) {
     throw new Error("CloudFormation이 반환한 ChangeSetId가 고정 ARN과 다릅니다.");
   }
   return described;
 }
 
-function discoverPreparedChangeSet(region, name) {
+function discoverPreparedChangeSet(region, name, updateLogicalIds) {
   const described = describeChangeSet(region, name);
   const changeSetId = validateChangeSetId(described?.ChangeSetId, region);
-  return exactChangeSet(region, changeSetId);
+  return exactChangeSet(region, changeSetId, updateLogicalIds);
 }
 
 export function validatePromotedProductionDeployment(
@@ -305,6 +315,7 @@ function verifyLiveAdmissionTransition(region) {
 
 export function runProductionControlPlaneDeployment(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
+  const updateLogicalIds = selectedControlPlaneUpdates(options);
   const initial = { ...repositoryState(options.base), base: options.base };
   verifyPromotedProductionBaseline(options.base);
   liveStack(options.region);
@@ -321,14 +332,14 @@ export function runProductionControlPlaneDeployment(argv = process.argv.slice(2)
     if (templateSha256(proposed) !== options.expectedTemplateSha256) {
       throw new Error("prepare된 exact template hash가 예상값과 다릅니다.");
     }
-    validateControlPlaneTemplateDiff(current, proposed);
-    exactChangeSet(options.region, options.changeSetId);
+    validateControlPlaneTemplateDiff(current, proposed, { updateLogicalIds });
+    exactChangeSet(options.region, options.changeSetId, updateLogicalIds);
     verifyProductionResources(options.region);
     verifyLiveAdmissionTransition(options.region);
     verifyNonterminalProductionTargets();
     verifyInputsUnchanged(initial);
     verifyPromotedProductionBaseline(options.base);
-    exactChangeSet(options.region, options.changeSetId);
+    exactChangeSet(options.region, options.changeSetId, updateLogicalIds);
     // Re-read both live admission configuration and the nonterminal job set
     // immediately before execution. A prepare-time or early execute snapshot
     // is not sufficient because the production web can admit work meanwhile.
@@ -385,9 +396,13 @@ export function runProductionControlPlaneDeployment(argv = process.argv.slice(2)
     }
     const current = liveTemplate(options.region);
     const fullCandidate = JSON.parse(fs.readFileSync(candidatePath, "utf8"));
-    const exactCandidate = buildExactControlPlaneTemplate(current, fullCandidate);
+    const exactCandidate = buildExactControlPlaneTemplate(current, fullCandidate, {
+      updateLogicalIds,
+    });
     fs.writeFileSync(candidatePath, `${JSON.stringify(exactCandidate, null, 2)}\n`, "utf8");
-    const changes = validateControlPlaneTemplateDiff(current, exactCandidate);
+    const changes = validateControlPlaneTemplateDiff(current, exactCandidate, {
+      updateLogicalIds,
+    });
     const candidateHash = templateSha256(exactCandidate);
     verifyInputsUnchanged(initial);
     process.stdout.write([
@@ -415,13 +430,17 @@ export function runProductionControlPlaneDeployment(argv = process.argv.slice(2)
       "--require-approval", "never",
       "--rollback",
     ], { cwd: infra, env: cdkEnvironment });
-    const prepared = discoverPreparedChangeSet(options.region, preparedName);
+    const prepared = discoverPreparedChangeSet(
+      options.region,
+      preparedName,
+      updateLogicalIds,
+    );
     const changeSetId = prepared.ChangeSetId;
     const preparedTemplate = liveTemplate(options.region, changeSetId);
     if (templateSha256(preparedTemplate) !== candidateHash) {
       throw new Error("CloudFormation에 준비된 exact template hash가 후보와 다릅니다.");
     }
-    exactChangeSet(options.region, changeSetId);
+    exactChangeSet(options.region, changeSetId, updateLogicalIds);
     verifyInputsUnchanged(initial);
     process.stdout.write([
       `검토용 change set 생성 완료: ${preparedName}`,

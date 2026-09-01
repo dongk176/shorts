@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  BATCH_SUBMITTER_ONLY_UPDATES,
   BATCH_SUBMITTER_CANONICAL_PROJECT_TARGETS,
   BATCH_SUBMITTER_CANONICAL_TARGETS,
   buildExactControlPlaneTemplate,
@@ -211,6 +212,31 @@ test("reconciles a registry rotation after the additive control plane is already
     () => buildExactControlPlaneTemplate(current, drifted),
     /속성 계약 밖 변경/,
   );
+});
+
+test("builds a submitter-only exact patch after the additive control plane is installed", () => {
+  const { current, candidate } = fixture();
+  for (const [logicalId, expected] of Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)) {
+    if (expected.action === "add") {
+      current.Resources[logicalId] = structuredClone(candidate.Resources[logicalId]);
+    }
+  }
+  const exact = buildExactControlPlaneTemplate(current, candidate, {
+    updateLogicalIds: BATCH_SUBMITTER_ONLY_UPDATES,
+  });
+  const changes = validateControlPlaneTemplateDiff(current, exact, {
+    updateLogicalIds: BATCH_SUBMITTER_ONLY_UPDATES,
+  });
+  assert.deepEqual(changes.map(({ logicalId }) => logicalId), [
+    "BatchSubmitterFunction95B3701F",
+  ]);
+  for (const logicalId of [
+    "BatchStateFunction2DEF92D9",
+    "CleanupFunction1604930F",
+    "OutboxDispatcherFunction7D53F71C",
+  ]) {
+    assert.deepEqual(exact.Resources[logicalId], current.Resources[logicalId]);
+  }
 });
 
 test("preserves the exact live CDK asset bucket across literal and Fn::Sub representations", () => {
@@ -472,6 +498,15 @@ test("requires a complete non-replacing change-set preview and rollback-enabled 
     )),
   };
   assert.doesNotThrow(() => validatePreparedChangeSet(updateOnlyPreview));
+  assert.doesNotThrow(() => validatePreparedChangeSet({
+    ...preview,
+    Changes: changes.filter(({ ResourceChange }) => (
+      ResourceChange.LogicalResourceId === "BatchSubmitterFunction95B3701F"
+    )),
+  }, { updateLogicalIds: BATCH_SUBMITTER_ONLY_UPDATES }));
+  assert.throws(() => validatePreparedChangeSet(updateOnlyPreview, {
+    updateLogicalIds: BATCH_SUBMITTER_ONLY_UPDATES,
+  }), /선택하지 않은/);
   assert.throws(
     () => validatePreparedChangeSet({
       ...preview,
