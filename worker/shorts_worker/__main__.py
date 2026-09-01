@@ -21,6 +21,7 @@ def main() -> None:
     project = subparsers.add_parser("project")
     project.add_argument("--job-id", required=True)
     project.add_argument("--resume", action="store_true")
+    project.add_argument("--dispatch-generation", type=int)
     render = subparsers.add_parser("render-shard")
     render.add_argument("--job-id", required=True)
     render.add_argument("--shard-index", type=int)
@@ -71,7 +72,11 @@ def main() -> None:
             raise KeyError(f"{args.dispatch_batch_id}:{array_index}")
         worker.prepare(job_id)
     elif args.command == "project":
-        worker.project(args.job_id, resume=args.resume)
+        worker.project(
+            args.job_id,
+            resume=args.resume,
+            expected_dispatch_generation=args.dispatch_generation,
+        )
     elif args.command == "render-shard":
         import os
 

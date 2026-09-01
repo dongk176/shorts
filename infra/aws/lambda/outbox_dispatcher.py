@@ -33,7 +33,11 @@ def _submit_prepare_batch(dispatch_batch_id: str, item_count: int) -> str:
     return batch_job_id
 
 
-def _submit_project(job_id: str, priority_class: str) -> str:
+def _submit_project(
+    job_id: str,
+    priority_class: str,
+    dispatch_generation: int = 0,
+) -> str:
     response = lambda_client.invoke(
         FunctionName=batch_submitter_function,
         InvocationType="RequestResponse",
@@ -41,6 +45,7 @@ def _submit_project(job_id: str, priority_class: str) -> str:
             "kind": "project",
             "jobId": job_id,
             "priorityClass": priority_class,
+            "dispatchGeneration": max(0, dispatch_generation),
         }, separators=(",", ":")).encode(),
     )
     payload = json.loads(response["Payload"].read() or b"{}")
@@ -61,8 +66,20 @@ def _recorded_batch_job_id(dispatch_batch_id: str) -> str | None:
     return str(value) if value else None
 
 
-def _project_submission_claim(job_id: str) -> dict[str, Any] | None:
-    key = urllib.parse.quote(f"project:{job_id}:0", safe="")
+def _project_submission_key(job_id: str, dispatch_generation: int) -> str:
+    if dispatch_generation <= 0:
+        return f"project:{job_id}:0"
+    return f"project:{job_id}:generation:{dispatch_generation}"
+
+
+def _project_submission_claim(
+    job_id: str,
+    dispatch_generation: int = 0,
+) -> dict[str, Any] | None:
+    key = urllib.parse.quote(
+        _project_submission_key(job_id, dispatch_generation),
+        safe="",
+    )
     rows = rest(
         "batch_submission_claims",
         query=(
@@ -73,7 +90,11 @@ def _project_submission_claim(job_id: str) -> dict[str, Any] | None:
     return rows[0] if rows else None
 
 
-def _schedule_project_reconciliation(job_id: str, priority_class: str) -> None:
+def _schedule_project_reconciliation(
+    job_id: str,
+    priority_class: str,
+    dispatch_generation: int = 0,
+) -> None:
     # A Batch state event can arrive after SubmitJob but before the submitter's
     # atomic claim/job binding.  Re-enter the same idempotent attempt after the
     # 90-second claim lease so it adopts the existing AWS job by exact name and
@@ -84,6 +105,7 @@ def _schedule_project_reconciliation(job_id: str, priority_class: str) -> None:
             "kind": "project",
             "jobId": job_id,
             "priorityClass": priority_class,
+            "dispatchGeneration": max(0, dispatch_generation),
         }, separators=(",", ":")),
         DelaySeconds=120,
     )
@@ -104,13 +126,22 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
             "paid" if str(item.get("priority_class") or "").casefold() == "paid"
             else "free"
         )
+        dispatch_generation = max(
+            0,
+            int(item.get("dispatch_generation") or 0),
+        )
         try:
-            batch_job_id = _submit_project(job_id, priority_class)
+            batch_job_id = _submit_project(
+                job_id,
+                priority_class,
+                dispatch_generation,
+            )
             log_event(
                 "project_outbox_submitted",
                 job_id=job_id,
                 batch_job_id=batch_job_id,
                 priority_class=priority_class,
+                dispatch_generation=dispatch_generation,
             )
             project_jobs += 1
         except Exception as exc:  # noqa: BLE001 - isolate one immutable target failure
@@ -126,7 +157,10 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
                 if raw_job_batch_job_id
                 else ""
             )
-            submission_claim = _project_submission_claim(job_id)
+            submission_claim = _project_submission_claim(
+                job_id,
+                dispatch_generation,
+            )
             raw_claim_batch_job_id = (
                 submission_claim.get("aws_batch_job_id")
                 if submission_claim
@@ -163,10 +197,16 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
                 # Batch id alone from the outbox dispatcher.
                 try:
                     reconciled_batch_job_id = _submit_project(
-                        job_id, priority_class
+                        job_id,
+                        priority_class,
+                        dispatch_generation,
                     )
                 except Exception as reconciliation_exc:  # noqa: BLE001
-                    _schedule_project_reconciliation(job_id, priority_class)
+                    _schedule_project_reconciliation(
+                        job_id,
+                        priority_class,
+                        dispatch_generation,
+                    )
                     log_event(
                         "batch_submission_reconciliation_scheduled",
                         job_id=job_id,
@@ -204,7 +244,11 @@ def handler(_event: dict[str, Any], _context: Any) -> dict[str, int]:
                 project_failures += 1
                 continue
             if submission_claim is not None:
-                _schedule_project_reconciliation(job_id, priority_class)
+                _schedule_project_reconciliation(
+                    job_id,
+                    priority_class,
+                    dispatch_generation,
+                )
                 log_event(
                     "batch_submission_reconciliation_scheduled",
                     job_id=job_id,

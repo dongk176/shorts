@@ -56,7 +56,9 @@ def _send_delayed(payload: dict[str, Any]) -> None:
     )
 
 
-def _project_event_identity(detail: dict[str, Any]) -> tuple[str, str] | None:
+def _project_event_identity(
+    detail: dict[str, Any],
+) -> tuple[str, str, int | None] | None:
     job_name = str(detail.get("jobName") or "")
     prefix = "shorts-project-"
     if not job_name.startswith(prefix):
@@ -65,16 +67,25 @@ def _project_event_identity(detail: dict[str, Any]) -> tuple[str, str] | None:
     if encoded_identity.endswith("-resume-1"):
         candidate = encoded_identity.removesuffix("-resume-1")
         suffix = "resume:1"
+        dispatch_generation = None
+    elif match := re.fullmatch(
+        r"(?P<job_id>[0-9a-fA-F-]{36})-generation-(?P<generation>[0-9]+)",
+        encoded_identity,
+    ):
+        candidate = match.group("job_id")
+        dispatch_generation = int(match.group("generation"))
+        suffix = f"generation:{dispatch_generation}"
     elif encoded_identity.endswith("-0"):
         candidate = encoded_identity.removesuffix("-0")
         suffix = "0"
+        dispatch_generation = 0
     else:
         return None
     try:
         job_id = str(UUID(candidate))
     except ValueError:
         return None
-    return job_id, f"project:{job_id}:{suffix}"
+    return job_id, f"project:{job_id}:{suffix}", dispatch_generation
 
 
 def _project_event_target(detail: dict[str, Any]) -> tuple[str, str] | None:
@@ -110,12 +121,12 @@ def _project_job(
     target = _project_event_target(event_detail)
     if identity is None or target is None:
         return None
-    event_job_id, submission_key = identity
+    event_job_id, submission_key, event_dispatch_generation = identity
     event_definition, event_queue = target
     selected_fields = (
         "id,status,pipeline_version,project_resume_count,preparation_finished_at,"
         "aws_batch_job_id,batch_target_key,batch_target_release_id,"
-        "batch_job_definition,batch_job_queue"
+        "batch_job_definition,batch_job_queue,project_dispatch_generation"
     )
     rows = rest(
         "video_jobs",
@@ -154,11 +165,17 @@ def _project_job(
         return job if recorded_batch_job_id == batch_job_id else None
 
     resume_count = int(job.get("project_resume_count") or 0)
+    current_dispatch_generation = int(
+        job.get("project_dispatch_generation") or 0
+    )
     if submission_key.endswith(":resume:1"):
         if resume_count != 1 or not job.get("preparation_finished_at"):
             _project_event_rejected(batch_job_id, "ResumeIdentityMismatch")
             return None
-    elif resume_count != 0:
+    elif (
+        resume_count != 0
+        or event_dispatch_generation != current_dispatch_generation
+    ):
         _project_event_rejected(batch_job_id, "InitialIdentityMismatch")
         return None
 

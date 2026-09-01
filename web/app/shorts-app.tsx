@@ -14602,7 +14602,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
             {t("home.viewAll")} <span className="ml-2" aria-hidden="true">→</span>
           </Link>
         </div>
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{state.recentJobs.map((job) => <ProjectCard key={job.id} job={job} />)}</div>
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2 lg:grid-cols-3">{state.recentJobs.map((job) => <ProjectCard key={job.id} job={job} />)}</div>
       </section> : null}
       <TransformationShowcase />
       <BackgroundShowcase />

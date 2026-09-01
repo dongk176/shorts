@@ -78,6 +78,75 @@ def test_prepare_attempt_casts_nullable_override_to_integer() -> None:
     assert "claimed_at=coalesce(claimed_at,now())" in implementation
 
 
+def test_project_claim_is_bound_to_the_exact_dispatch_generation() -> None:
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+    connection.execute.return_value.fetchone.return_value = None
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+    assert repository.claim_project_run(
+        "job-a",
+        resume=False,
+        expected_dispatch_generation=4,
+    ) is None
+
+    query, parameters = connection.execute.call_args.args
+    assert "project_dispatch_generation=%s" in query
+    assert "status in ('queued','retry_waiting')" in query
+    assert parameters == ("job-a", 4)
+
+
+def test_route_capacity_deferral_uses_one_atomic_rpc() -> None:
+    repository = WorkerRepository("postgresql://example", "ap-northeast-2")
+    connection = MagicMock()
+    connection.execute.return_value.fetchone.return_value = {"action": "deferred"}
+
+    @contextmanager
+    def connect():
+        yield connection
+
+    repository.connect = connect
+    assert repository.defer_project_for_ingestion_route(
+        "job-a",
+        expected_dispatch_generation=2,
+        expected_batch_job_id="batch-a",
+        attempted_route_ids=["webshare-01", "webshare-02"],
+    ) == "deferred"
+
+    query, parameters = connection.execute.call_args.args
+    assert "shorts_mvp.defer_project_for_ingestion_route" in query
+    assert parameters == (
+        "job-a",
+        2,
+        "batch-a",
+        ["webshare-01", "webshare-02"],
+    )
+
+
+def test_route_capacity_migration_preserves_fifo_and_fixed_one_hour_budget() -> None:
+    migration = (
+        Path(__file__).parents[2]
+        / "supabase"
+        / "migrations"
+        / "202609010003_ingestion_route_capacity_requeue.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "ingestion_route_wait_started_at" in migration
+    assert "project_dispatch_generation" in migration
+    assert "wait_started_at + interval '1 hour'" in migration
+    assert "job.project_dispatch_generation+1" in migration
+    assert "eligible.job_created_at" in migration
+    assert "for update of outbox skip locked" in migration
+    assert "capacity_requeue_enabled" in migration
+    assert "ingestion_capacity_timeout" in migration
+    assert "shorts_mvp.finalize_project_job" in migration
+    assert "public." not in migration
+
+
 def test_retry_job_returns_to_the_outbox_scheduler() -> None:
     implementation = inspect.getsource(WorkerRepository.retry_job)
 

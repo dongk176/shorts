@@ -102,6 +102,14 @@ class UploadSourceCleanupError(RuntimeError):
         self.workspace = workspace
 
 
+class ProjectDeferredForIngestionRoute(RuntimeError):
+    """The current task relinquished its project to the durable route queue."""
+
+    def __init__(self, action: str) -> None:
+        super().__init__(action)
+        self.action = action
+
+
 def cleanup_uploaded_project_workspace(workspace: Path, *, attempts: int = 3) -> None:
     """Delete only the project-owned directory supplied by its pipeline owner."""
     for attempt in range(max(1, min(3, attempts))):
@@ -1060,6 +1068,7 @@ class BatchWorker:
         *,
         resume: bool = False,
         prepared_source: Path | None = None,
+        expected_dispatch_generation: int | None = None,
     ) -> None:
         """Run one pipeline-v2 project inside a single Fargate task."""
         job = self.repository.get_job(job_id)
@@ -1068,7 +1077,19 @@ class BatchWorker:
         if int(job.get("pipeline_version") or 1) != 2:
             raise ValueError("project command requires pipeline_version=2")
         initial_render_v4 = verify_initial_render_v4_runtime(job) is not None
-        claimed = self.repository.claim_project_run(job_id, resume=resume)
+        dispatch_generation = int(job.get("project_dispatch_generation") or 0)
+        if expected_dispatch_generation is None:
+            raw_dispatch_generation = os.getenv("PROJECT_DISPATCH_GENERATION")
+            expected_dispatch_generation = (
+                int(raw_dispatch_generation)
+                if raw_dispatch_generation is not None
+                else dispatch_generation
+            )
+        claimed = self.repository.claim_project_run(
+            job_id,
+            resume=resume,
+            expected_dispatch_generation=expected_dispatch_generation,
+        )
         if not claimed:
             return
 
@@ -1301,6 +1322,9 @@ class BatchWorker:
                                 youtube_url=str(job["youtube_url"]),
                                 destination=work_dir / "source",
                                 initial_route_id=route_id,
+                                expected_dispatch_generation=(
+                                    expected_dispatch_generation
+                                ),
                             )
                         )
                         source = bundle.video_path
@@ -1934,6 +1958,15 @@ class BatchWorker:
                         elapsed_seconds=round(batch_total_seconds, 3),
                         **timeline_summary,
                     )
+        except ProjectDeferredForIngestionRoute as exc:
+            _log_event(
+                "project_ingestion_route_deferred",
+                job_id=job_id,
+                action=exc.action,
+                dispatch_generation=expected_dispatch_generation,
+                resource_tier=resource_tier,
+            )
+            return
         except Exception as exc:
             error_code = (
                 exc.code if isinstance(exc, IngestionError) else type(exc).__name__
@@ -2516,6 +2549,7 @@ class BatchWorker:
         result: str,
         cooldown_seconds: int,
         attempted_route_ids: list[str],
+        wait_seconds: float | None = None,
     ) -> str | None:
         next_route_id = self.repository.rotate_ingestion_route(
             job_id,
@@ -2527,12 +2561,19 @@ class BatchWorker:
         if next_route_id:
             return next_route_id
 
-        wait_deadline = time.monotonic() + self.INGESTION_ROUTE_WAIT_SECONDS
+        bounded_wait_seconds = (
+            self.INGESTION_ROUTE_WAIT_SECONDS
+            if wait_seconds is None
+            else max(0.0, wait_seconds)
+        )
+        if bounded_wait_seconds <= 0:
+            return None
+        wait_deadline = time.monotonic() + bounded_wait_seconds
         _log_event(
             "ingestion_route_wait_started",
             job_id=job_id,
             attempted_route_count=len(attempted_route_ids),
-            max_wait_seconds=self.INGESTION_ROUTE_WAIT_SECONDS,
+            max_wait_seconds=bounded_wait_seconds,
         )
         while time.monotonic() < wait_deadline:
             remaining = wait_deadline - time.monotonic()
@@ -2556,6 +2597,7 @@ class BatchWorker:
         youtube_url: str,
         destination: Path,
         initial_route_id: str | None,
+        expected_dispatch_generation: int | None = None,
     ) -> tuple[DownloadedAssetBundle, str | None]:
         if not initial_route_id:
             return (
@@ -2578,6 +2620,10 @@ class BatchWorker:
         attempted_route_ids: list[str] = []
         route_id = initial_route_id
         route_is_leased = True
+        capacity_requeue_enabled = bool(
+            expected_dispatch_generation is not None
+            and self.repository.ingestion_capacity_requeue_enabled()
+        )
 
         try:
             while True:
@@ -2634,9 +2680,36 @@ class BatchWorker:
                         result=route_result,
                         cooldown_seconds=cooldown_seconds,
                         attempted_route_ids=attempted_route_ids,
+                        wait_seconds=(0 if capacity_requeue_enabled else None),
                     )
                     route_is_leased = bool(next_route_id)
                     if not next_route_id:
+                        if capacity_requeue_enabled:
+                            action = self.repository.defer_project_for_ingestion_route(
+                                job_id,
+                                expected_dispatch_generation=(
+                                    expected_dispatch_generation
+                                ),
+                                expected_batch_job_id=(
+                                    str(os.getenv("AWS_BATCH_JOB_ID") or "").strip()
+                                    or None
+                                ),
+                                attempted_route_ids=attempted_route_ids,
+                            )
+                            if action in {"deferred", "expired", "stale"}:
+                                raise ProjectDeferredForIngestionRoute(action) from exc
+                            if action == "disabled":
+                                next_route_id = self._claim_next_ingestion_route(
+                                    job_id=job_id,
+                                    current_route_id=None,
+                                    result=route_result,
+                                    cooldown_seconds=0,
+                                    attempted_route_ids=attempted_route_ids,
+                                )
+                                route_is_leased = bool(next_route_id)
+                                if next_route_id:
+                                    route_id = next_route_id
+                                    continue
                         raise RetryExhaustedIngestionError(
                             "대기 시간 안에 사용할 수 있는 ISP 경로를 확보하지 못했습니다.",
                             code="ingestion_route_wait_exhausted",
@@ -3521,7 +3594,8 @@ class BatchWorker:
                 else None
             )
             if (
-                item.get("subtitle_template_id")
+                document.subtitles.enabled
+                and item.get("subtitle_template_id")
                 and resolved_caption_render_spec is None
             ):
                 raise ValueError(
@@ -3567,9 +3641,14 @@ class BatchWorker:
                         "선택한 영상 구간에서 단어 타임스탬프를 찾을 수 없습니다."
                     )
                 caption_overlay_only = True
+            visible_caption_render_spec = (
+                resolved_caption_render_spec
+                if document.subtitles.enabled
+                else None
+            )
             subtitle_render_mode = editor_subtitle_render_mode(
                 document,
-                resolved_caption_render_spec,
+                visible_caption_render_spec,
             )
             _log_event(
                 "editor_render_plan",
@@ -3593,7 +3672,7 @@ class BatchWorker:
                 document=document,
                 work_dir=work_dir,
                 channel_thumbnail_path=channel_thumbnail_path,
-                caption_render_spec=resolved_caption_render_spec,
+                caption_render_spec=visible_caption_render_spec,
                 caption_overlay_only=caption_overlay_only,
                 **self._background_render_arguments(item, work_dir, document),
             )

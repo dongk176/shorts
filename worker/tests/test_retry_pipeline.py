@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from shorts_worker.caption_templates import compile_caption_render_spec
 from shorts_worker.errors import (
     BotCheckError,
     CaptionCompileError,
@@ -21,8 +22,10 @@ from shorts_worker.errors import (
 from shorts_worker.ingestion import DownloadedAssetBundle, VideoMetadata
 from shorts_worker.render_spec_v4 import compile_initial_editor_render_spec_v4
 from shorts_worker.schemas import HighlightClip, SubtitleSegment, TemplateId
+from shorts_worker.subtitles import TranscriptWord
 from shorts_worker.worker_pipeline import (
     BatchWorker,
+    ProjectDeferredForIngestionRoute,
     ProjectTimelineTarget,
     _caption_compile_options,
     _initial_title_text_styles,
@@ -907,6 +910,61 @@ def test_retryable_extractor_failure_rotates_inline_to_the_next_route(tmp_path) 
     )
 
 
+def test_project_route_capacity_defers_immediately_without_thirty_second_poll(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker = _worker(tmp_path, BotCheckError("bot check"))
+    worker.ingestion.configured_route_count = 20
+    worker.ingestion.egress_class_for.return_value = "webshare_isp"
+    worker.repository.ingestion_capacity_requeue_enabled.return_value = True
+    worker.repository.rotate_ingestion_route.return_value = None
+    worker.repository.defer_project_for_ingestion_route.return_value = "deferred"
+    monkeypatch.setenv("AWS_BATCH_JOB_ID", "batch-generation-3")
+
+    with pytest.raises(ProjectDeferredForIngestionRoute) as caught:
+        worker._download_with_inline_route_rotation(
+            job_id="job-a",
+            job_attempt=1,
+            youtube_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            destination=tmp_path / "source",
+            initial_route_id="webshare-03",
+            expected_dispatch_generation=3,
+        )
+
+    assert caught.value.action == "deferred"
+    worker.repository.rotate_ingestion_route.assert_called_once()
+    worker.repository.defer_project_for_ingestion_route.assert_called_once_with(
+        "job-a",
+        expected_dispatch_generation=3,
+        expected_batch_job_id="batch-generation-3",
+        attempted_route_ids=["webshare-03"],
+    )
+    worker.repository.fail_job.assert_not_called()
+
+
+def test_delayed_generation_zero_worker_cannot_claim_a_newer_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker = _worker(tmp_path, AssertionError("download must not start"))
+    worker.repository.get_job.return_value.update({
+        "pipeline_version": 2,
+        "project_dispatch_generation": 2,
+    })
+    worker.repository.claim_project_run.return_value = None
+    monkeypatch.setenv("PROJECT_DISPATCH_GENERATION", "0")
+
+    worker.project("job-a")
+
+    worker.repository.claim_project_run.assert_called_once_with(
+        "job-a",
+        resume=False,
+        expected_dispatch_generation=0,
+    )
+    worker.ingestion.download_bundle.assert_not_called()
+
+
 def test_inline_rotation_can_try_all_twenty_configured_routes(tmp_path) -> None:
     worker = _worker(tmp_path, AssertionError("replaced below"))
     worker.ingestion.configured_route_count = 20
@@ -1737,6 +1795,109 @@ def test_editor_document_rerender_forwards_trusted_caption_template_spec(
         "cues": [],
     }
     item = worker.repository.get_short.return_value
+    item["subtitle_template_id"] = "pop"
+    item["caption_render_spec"] = caption_spec
+
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
+        is caption_spec
+    )
+
+
+def test_editor_document_rerender_hides_stored_v4_caption_spec_when_disabled(
+    tmp_path,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    snapshot = json.loads(
+        (Path(__file__).resolve().parents[2] / "test-fixtures" /
+         "editor-document-v3.json").read_text()
+    )
+    snapshot.update({
+        "sourceShortId": EDITOR_DOCUMENT_SHORT_ID,
+        "baseRenderVersion": 1,
+    })
+    snapshot["channel"].update({
+        "thumbnailUrl": None,
+        "thumbnailAssetKey": (
+            "edit-sources/session-a/job-a/short-a/editor-assets/"
+            "0123456789abcdef0123456789abcdef.png"
+        ),
+    })
+    snapshot["subtitles"]["enabled"] = False
+    snapshot["overlays"]["textOverlays"] = []
+    snapshot["overlays"]["layerOrder"] = [
+        "video", "title", "comment", "channel",
+    ]
+    caption_spec = compile_caption_render_spec(
+        [TranscriptWord(text="복원", start=11, end=11.5, provider="test")],
+        template_id="pop",
+        clip_start=10,
+        clip_end=20,
+        video_aspect_ratio="16:9",
+        schema_version=4,
+    )
+    snapshot["renderSpec"] = compile_initial_editor_render_spec_v4(
+        title=snapshot["title"]["text"],
+        template_id=snapshot["template"]["id"],
+        video_aspect_ratio=snapshot["video"]["aspectRatio"],
+        font_scale=snapshot["title"]["fontScale"],
+    )
+    item = worker.repository.get_short.return_value
+    item["pending_edit_snapshot"] = snapshot
+    item["subtitle_template_id"] = "pop"
+    item["caption_render_spec"] = caption_spec
+
+    worker.rerender(EDITOR_DOCUMENT_SHORT_ID)
+
+    render_kwargs = worker.editor_renderer.render.call_args.kwargs
+    assert render_kwargs["caption_render_spec"] is None
+    assert render_kwargs["caption_overlay_only"] is False
+    assert item["caption_render_spec"] is caption_spec
+
+
+def test_editor_document_rerender_restores_stored_v4_caption_spec_when_enabled(
+    tmp_path,
+) -> None:
+    worker = _editor_document_rerender_worker(tmp_path, {})
+    snapshot = json.loads(
+        (Path(__file__).resolve().parents[2] / "test-fixtures" /
+         "editor-document-v3.json").read_text()
+    )
+    snapshot.update({
+        "sourceShortId": EDITOR_DOCUMENT_SHORT_ID,
+        "baseRenderVersion": 1,
+    })
+    snapshot["channel"].update({
+        "thumbnailUrl": None,
+        "thumbnailAssetKey": (
+            "edit-sources/session-a/job-a/short-a/editor-assets/"
+            "0123456789abcdef0123456789abcdef.png"
+        ),
+    })
+    snapshot["subtitles"]["enabled"] = True
+    snapshot["overlays"]["textOverlays"] = []
+    snapshot["overlays"]["layerOrder"] = [
+        "video", "title", "comment", "channel",
+    ]
+    caption_spec = compile_caption_render_spec(
+        [TranscriptWord(text="복원", start=11, end=11.5, provider="test")],
+        template_id="pop",
+        clip_start=10,
+        clip_end=20,
+        video_aspect_ratio="16:9",
+        schema_version=4,
+    )
+    snapshot["renderSpec"] = compile_initial_editor_render_spec_v4(
+        title=snapshot["title"]["text"],
+        template_id=snapshot["template"]["id"],
+        video_aspect_ratio=snapshot["video"]["aspectRatio"],
+        font_scale=snapshot["title"]["fontScale"],
+        caption_render_spec=caption_spec,
+    )
+    item = worker.repository.get_short.return_value
+    item["pending_edit_snapshot"] = snapshot
     item["subtitle_template_id"] = "pop"
     item["caption_render_spec"] = caption_spec
 

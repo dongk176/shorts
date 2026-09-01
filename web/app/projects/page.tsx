@@ -68,7 +68,7 @@ export default async function ProjectsPage() {
               <h2 id="project-list-title" className="text-lg font-extrabold text-white">{user ? "전체 프로젝트" : "예시 작업"}</h2>
               <span className="text-sm text-neutral-500">({projects.length})</span>
             </div>
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {projects.map((project) => <ProjectCard key={project.id} job={project} />)}
             </div>
           </section>

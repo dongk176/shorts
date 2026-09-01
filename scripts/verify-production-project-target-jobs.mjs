@@ -62,6 +62,7 @@ export async function queryNonterminalAwsBatchJobs(sql) {
       batch_job_definition,
       batch_job_queue,
       aws_batch_job_id,
+      project_dispatch_generation,
       created_at
     from shorts_mvp.video_jobs
     where execution_backend = 'aws_batch'
@@ -90,11 +91,20 @@ export async function queryBatchSubmissionClaimsWithoutAwsId(sql) {
       job.batch_target_key,
       job.batch_target_release_id,
       job.batch_job_definition,
-      job.batch_job_queue
+      job.batch_job_queue,
+      job.project_dispatch_generation
     from shorts_mvp.batch_submission_claims claim
     left join shorts_mvp.video_jobs job
-      on claim.submission_key = 'project:' || job.id::text || ':0'
-      or claim.submission_key = 'project:' || job.id::text || ':resume:1'
+      on claim.submission_key = shorts_mvp.project_submission_key(
+        job.id,
+        job.project_dispatch_generation,
+        false
+      )
+      or claim.submission_key = shorts_mvp.project_submission_key(
+        job.id,
+        job.project_dispatch_generation,
+        true
+      )
     where claim.aws_batch_job_id is null
     order by claim.claimed_at asc, claim.submission_key asc
   `;

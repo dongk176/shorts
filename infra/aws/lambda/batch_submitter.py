@@ -1153,12 +1153,22 @@ def _submit(payload: dict[str, Any]) -> str | None:
             "source_range_selection_enabled,transcription_policy,subtitle_template_id,"
             "initial_render_spec_version,initial_caption_render_spec_version,"
             "template_snapshot,subtitle_template_snapshot,"
-            "dispatch_priority_class"
+            "dispatch_priority_class,project_dispatch_generation"
             f"&id=eq.{encoded_job_id}&limit=1"
         )) or []
         if not jobs or int(jobs[0].get("pipeline_version") or 1) != 2:
             return None
         job = jobs[0]
+        dispatch_generation = max(
+            0,
+            int(job.get("project_dispatch_generation") or 0),
+        )
+        requested_dispatch_generation = max(
+            0,
+            int(payload.get("dispatchGeneration") or 0),
+        )
+        if not resume and requested_dispatch_generation != dispatch_generation:
+            return None
         resume_count = int(job.get("project_resume_count") or 0)
         recorded_batch_job_id = str(
             job.get("aws_batch_job_id") or ""
@@ -1173,13 +1183,26 @@ def _submit(payload: dict[str, Any]) -> str | None:
                 return None
         elif resume_count != 0:
             return None
-        expected_status = "rendering" if resume else "queued"
-        if not recorded_batch_job_id and job["status"] != expected_status:
+        expected_statuses = (
+            {"rendering"} if resume else {"queued", "retry_waiting"}
+        )
+        if not recorded_batch_job_id and job["status"] not in expected_statuses:
             return None
-        suffix = "resume-1" if resume else "0"
+        suffix = (
+            "resume-1"
+            if resume
+            else "0"
+            if dispatch_generation == 0
+            else f"generation-{dispatch_generation}"
+        )
         command = ["python", "-m", "shorts_worker", "project", "--job-id", job_id]
         if resume:
             command.append("--resume")
+        elif dispatch_generation > 0:
+            command.extend([
+                "--dispatch-generation",
+                str(dispatch_generation),
+            ])
         job_definition, job_queue, resource_tier, estimated_seconds = _project_dispatch_target(
             job,
             resume=resume,
@@ -1190,6 +1213,14 @@ def _submit(payload: dict[str, Any]) -> str | None:
             job_queue=job_queue,
             resume=resume,
         )
+        if not resume:
+            # Old worker images safely ignore this environment value.  The
+            # successor worker uses it to prevent a delayed generation-zero
+            # task from claiming a job that has already been re-dispatched.
+            v4_environment.append({
+                "name": "PROJECT_DISPATCH_GENERATION",
+                "value": str(dispatch_generation),
+            })
         priority_class = _priority_class(
             job.get("dispatch_priority_class") or payload.get("priorityClass")
         )
@@ -1231,7 +1262,13 @@ def _submit(payload: dict[str, Any]) -> str | None:
                 )
             },
         )
-        submission_key = f"project:{job_id}:resume:1" if resume else f"project:{job_id}:0"
+        submission_key = (
+            f"project:{job_id}:resume:1"
+            if resume
+            else f"project:{job_id}:0"
+            if dispatch_generation == 0
+            else f"project:{job_id}:generation:{dispatch_generation}"
+        )
         registry = _production_project_target_registry()
         previous = next((
             lane.get("previous") for lane in (registry or {}).get("lanes", {}).values()

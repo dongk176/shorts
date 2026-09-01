@@ -781,6 +781,64 @@ def test_project_submission_uses_eight_vcpu_definition_with_idempotent_key() -> 
     assert "arrayProperties" not in request
 
 
+def test_project_capacity_redispatch_uses_generation_identity() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module.rest = MagicMock(return_value=[{
+        "id": "job-capacity",
+        "status": "retry_waiting",
+        "pipeline_version": 2,
+        "project_resume_count": 0,
+        "project_dispatch_generation": 3,
+        "aws_batch_job_id": None,
+        "mvp_session_id": "session-a",
+        "user_id": "user-a",
+        "preparation_finished_at": None,
+        "planned_short_count": 5,
+        "clip_length_option": "sec_31_60",
+        "batch_job_definition": None,
+        "dispatch_priority_class": "paid",
+    }])
+    module._submit_once = MagicMock(return_value="project-batch-generation-3")
+
+    result = module._submit({
+        "kind": "project",
+        "jobId": "job-capacity",
+        "dispatchGeneration": 3,
+    })
+
+    assert result == "project-batch-generation-3"
+    request, submission_key = module._submit_once.call_args.args
+    assert request["jobName"] == "shorts-project-job-capacity-generation-3"
+    assert submission_key == "project:job-capacity:generation:3"
+    assert request["containerOverrides"]["command"][-2:] == [
+        "--dispatch-generation", "3",
+    ]
+    assert {
+        "name": "PROJECT_DISPATCH_GENERATION",
+        "value": "3",
+    } in request["containerOverrides"]["environment"]
+
+
+def test_project_capacity_redispatch_rejects_stale_generation_payload() -> None:
+    module, _ = _load_lambda("batch_submitter")
+    module.rest = MagicMock(return_value=[{
+        "id": "job-capacity",
+        "status": "retry_waiting",
+        "pipeline_version": 2,
+        "project_resume_count": 0,
+        "project_dispatch_generation": 3,
+        "aws_batch_job_id": None,
+    }])
+    module._submit_once = MagicMock()
+
+    assert module._submit({
+        "kind": "project",
+        "jobId": "job-capacity",
+        "dispatchGeneration": 2,
+    }) is None
+    module._submit_once.assert_not_called()
+
+
 def test_project_submission_metrics_estimate_output_seconds() -> None:
     module, _ = _load_lambda("batch_submitter")
 
@@ -2702,6 +2760,50 @@ def test_project_terminal_event_rejects_unproven_target_before_finalize() -> Non
     assert any(
         call.args[0] == "project_batch_event_rejected"
         and call.kwargs["error_type"] == "ClaimTargetMismatch"
+        for call in module.log_event.call_args_list
+    )
+
+
+def test_project_terminal_event_rejects_a_predecessor_dispatch_generation() -> None:
+    module, _ = _load_lambda("batch_state")
+    job_id = "9e79c781-37fd-4329-a5c4-896ce63df13a"
+    definition = os.environ["LEGACY_PROJECT_JOB_DEFINITION_ARN"]
+    queue = os.environ["LEGACY_PROJECT_BATCH_QUEUE_ARN"]
+    calls: list[str] = []
+
+    def rest(table: str, **_kwargs):
+        calls.append(table)
+        if table == "video_jobs":
+            return [{
+                "id": job_id,
+                "status": "retry_waiting",
+                "pipeline_version": 2,
+                "project_resume_count": 0,
+                "project_dispatch_generation": 2,
+                "preparation_finished_at": None,
+                "aws_batch_job_id": None,
+                "batch_target_key": None,
+                "batch_target_release_id": None,
+                "batch_job_definition": definition,
+                "batch_job_queue": queue,
+            }]
+        return []
+
+    module.rest = rest
+    result = module.handler({"detail": {
+        "jobId": "old-batch-generation-1",
+        "jobName": f"shorts-project-{job_id}-generation-1",
+        "jobDefinition": definition,
+        "jobQueue": queue,
+        "status": "SUCCEEDED",
+    }}, None)
+
+    assert result == {"ignored": True}
+    assert "batch_submission_claims" not in calls
+    assert "rpc/finalize_project_job" not in calls
+    assert any(
+        call.args[0] == "project_batch_event_rejected"
+        and call.kwargs["error_type"] == "InitialIdentityMismatch"
         for call in module.log_event.call_args_list
     )
 
@@ -4802,6 +4904,39 @@ def test_outbox_dispatcher_forwards_paid_priority_snapshot() -> None:
         "kind": "project",
         "jobId": "job-a",
         "priorityClass": "paid",
+        "dispatchGeneration": 0,
+    }
+
+
+def test_outbox_dispatcher_forwards_the_claimed_dispatch_generation() -> None:
+    module, aws_client = _load_lambda("outbox_dispatcher")
+    aws_client.invoke.return_value = {
+        "Payload": io.BytesIO(b'{"batchJobId":"project-batch-generation-4"}')
+    }
+
+    def rest(table: str, **_kwargs):
+        if table == "rpc/claim_project_job_outbox":
+            return [{
+                "outbox_id": "outbox-a",
+                "job_id": "job-a",
+                "route_id": "route-a",
+                "priority_class": "free",
+                "dispatch_generation": 4,
+            }]
+        if table in {"rpc/claim_job_outbox", "rpc/claim_short_outbox"}:
+            return []
+        return []
+
+    module.rest = rest
+
+    result = module.handler({}, None)
+
+    assert result["dispatchedProjects"] == 1
+    assert json.loads(aws_client.invoke.call_args.kwargs["Payload"]) == {
+        "kind": "project",
+        "jobId": "job-a",
+        "priorityClass": "free",
+        "dispatchGeneration": 4,
     }
 
 
@@ -4984,6 +5119,7 @@ def test_outbox_dispatcher_schedules_reconciliation_after_the_claim_lease() -> N
             "kind": "project",
             "jobId": "job-a",
             "priorityClass": "paid",
+            "dispatchGeneration": 0,
         }, separators=(",", ":")),
         "DelaySeconds": 120,
     }
