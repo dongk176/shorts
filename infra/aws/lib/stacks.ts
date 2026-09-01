@@ -1773,6 +1773,8 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       ?.current.jobQueueArn || String(
         this.node.tryGetContext("legacyProjectBatchQueueArn") || "",
       ).trim();
+    const legacyProjectPreviousJobDefinitionArn = lane("legacy_project")
+      ?.previous?.jobDefinitionArn || "";
     const sourceRangeJobDefinitionArn = lane("source_range")
       ?.current.jobDefinitionArn || String(
         this.node.tryGetContext("sourceRangeJobDefinitionArn") || "",
@@ -1781,6 +1783,8 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       ?.current.jobQueueArn || String(
         this.node.tryGetContext("sourceRangeBatchQueueArn") || "",
       ).trim();
+    const sourceRangePreviousJobDefinitionArn = lane("source_range")
+      ?.previous?.jobDefinitionArn || "";
     const elevenLabsJobDefinitionArn = lane("elevenlabs_transcription")
       ?.current.jobDefinitionArn || String(
         this.node.tryGetContext("elevenLabsTranscriptionJobDefinitionArn") || "",
@@ -1789,6 +1793,8 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       ?.current.jobQueueArn || String(
         this.node.tryGetContext("elevenLabsTranscriptionBatchQueueArn") || "",
       ).trim();
+    const elevenLabsPreviousJobDefinitionArn = lane("elevenlabs_transcription")
+      ?.previous?.jobDefinitionArn || "";
     const subtitleTemplatesJobDefinitionArn = lane("subtitle_templates")
       ?.current.jobDefinitionArn || String(
         this.node.tryGetContext("subtitleTemplatesJobDefinitionArn") || "",
@@ -1797,6 +1803,8 @@ export class ShortsMvpComputeStack extends cdk.Stack {
       ?.current.jobQueueArn || String(
         this.node.tryGetContext("subtitleTemplatesBatchQueueArn") || "",
       ).trim();
+    const subtitleTemplatesPreviousJobDefinitionArn = lane("subtitle_templates")
+      ?.previous?.jobDefinitionArn || "";
     const unifiedTemplateSubtitlesJobDefinitionArn = lane(
       "unified_template_subtitles",
     )?.current.jobDefinitionArn || String(
@@ -1849,21 +1857,37 @@ export class ShortsMvpComputeStack extends cdk.Stack {
           legacyProjectJobDefinitionArn || projectHeavyDefinition.ref,
         LEGACY_PROJECT_BATCH_QUEUE_ARN:
           legacyProjectBatchQueueArn || projectQueue.ref,
+        ...(legacyProjectPreviousJobDefinitionArn ? {
+          LEGACY_PROJECT_PREVIOUS_JOB_DEFINITION_ARN:
+            legacyProjectPreviousJobDefinitionArn,
+        } : {}),
         SOURCE_RANGE_JOB_DEFINITION_ARN:
           sourceRangeJobDefinitionArn || legacyProjectJobDefinitionArn || projectHeavyDefinition.ref,
         SOURCE_RANGE_BATCH_QUEUE_ARN:
           sourceRangeBatchQueueArn || legacyProjectBatchQueueArn || projectQueue.ref,
+        ...(sourceRangePreviousJobDefinitionArn ? {
+          SOURCE_RANGE_PREVIOUS_JOB_DEFINITION_ARN:
+            sourceRangePreviousJobDefinitionArn,
+        } : {}),
         ...(elevenLabsJobDefinitionArn ? {
           ELEVENLABS_TRANSCRIPTION_JOB_DEFINITION_ARN:
             elevenLabsJobDefinitionArn,
           ELEVENLABS_TRANSCRIPTION_BATCH_QUEUE_ARN:
             elevenLabsBatchQueueArn,
+          ...(elevenLabsPreviousJobDefinitionArn ? {
+            ELEVENLABS_TRANSCRIPTION_PREVIOUS_JOB_DEFINITION_ARN:
+              elevenLabsPreviousJobDefinitionArn,
+          } : {}),
         } : {}),
         ...(subtitleTemplatesJobDefinitionArn ? {
           SUBTITLE_TEMPLATES_JOB_DEFINITION_ARN:
             subtitleTemplatesJobDefinitionArn,
           SUBTITLE_TEMPLATES_BATCH_QUEUE_ARN:
             subtitleTemplatesBatchQueueArn,
+          ...(subtitleTemplatesPreviousJobDefinitionArn ? {
+            SUBTITLE_TEMPLATES_PREVIOUS_JOB_DEFINITION_ARN:
+              subtitleTemplatesPreviousJobDefinitionArn,
+          } : {}),
         } : {}),
         ...(unifiedTemplateSubtitlesJobDefinitionArn ? {
           UNIFIED_TEMPLATE_SUBTITLES_JOB_DEFINITION_ARN:
