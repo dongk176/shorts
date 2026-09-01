@@ -2184,7 +2184,9 @@ def test_protection_refresh_and_disable_are_serialized_with_event_barriers(
             entered.set()
             assert proceed.wait(3)
         protection._enabled = enabled
-        protection._last_refresh = 0
+        # A newly booted CI runner can have a monotonic clock below the
+        # 60-second refresh floor. Make the refresh due independent of uptime.
+        protection._last_refresh = float("-inf")
 
     monkeypatch.setattr(protection, "_update", update)
     protection.enable()
@@ -2196,9 +2198,6 @@ def test_protection_refresh_and_disable_are_serialized_with_event_barriers(
 
     release = threading.Thread(target=disable, daemon=True)
     refresh.start()
-    # A saturated shared CI runner can take longer than one second to schedule
-    # the refresh thread even though the lock ordering is correct. The events
-    # remain deterministic; allow scheduling headroom without adding sleeps.
     assert entered.wait(5)
     release.start()
     try:
