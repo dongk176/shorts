@@ -177,6 +177,7 @@ function sha256(value) {
 export function migrationFunctionBody(functionName) {
   const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   for (const candidate of [
+    path.resolve(import.meta.dirname, "../supabase/migrations/202609020001_project_successor_admin_dual_admission.sql"),
     path.resolve(import.meta.dirname, "../supabase/migrations/202608310003_project_target_successor.sql"),
     migrationPath,
   ]) {

@@ -25,6 +25,10 @@ pytestmark = pytest.mark.skipif(not CONTAINER, reason="requires isolated opt-in 
 MIGRATION = (
     Path(__file__).parents[2] / "supabase/migrations/202608310003_project_target_successor.sql"
 )
+ADMIN_READY_FALLBACK = (
+    Path(__file__).parents[2]
+    / "supabase/migrations/202609020001_project_successor_admin_dual_admission.sql"
+)
 ADMIN = "9dac7ecf-44c0-445d-a2de-3b5b841f9d50"
 USER = "7322829c-de28-4d3a-9332-3d704895cf9e"
 OLD = "0652212b-2e6b-419c-bbfa-07488a986b73"
@@ -385,6 +389,7 @@ def isolated_database():
         to service_role;
     """)
     sql(MIGRATION.read_text())
+    sql(ADMIN_READY_FALLBACK.read_text())
 
 
 @pytest.fixture(autouse=True)
@@ -451,6 +456,7 @@ def test_migration_replay_and_fence_preserve_all_published_flags():
     assert operation["phase"] == "fenced"
     assert begin() == operation
     sql(MIGRATION.read_text())
+    sql(ADMIN_READY_FALLBACK.read_text())
     assert flags() == before
     assert (
         json.loads(sql("select render_v4_target_successor from shorts_mvp.editor_release_state;"))
@@ -573,10 +579,12 @@ def test_admin_ready_accepts_only_exact_administrator_candidate_for_each_lane(ke
     ready()
     sql(f"insert into shorts_mvp.editor_release_testers values('{USER}',true);")
     assert resolve(user=USER, old=False, key=key) == ""
+    assert resolve(user=USER, old=True, key=key) == OLD
     assert resolve(user=ADMIN, old=False, key=key) == NEW
     assert_rejected(insert_job(old=False, release=NEW, key=key), "INITIAL_RENDER_RELEASE_HANDOFF")
+    sql(insert_job(old=True, release=OLD, key=key))
     assert_rejected(insert_job(user=ADMIN, key=key), "INITIAL_RENDER_RELEASE_HANDOFF")
-    sql(insert_job(user=ADMIN, old=False, release=NEW, key=key))
+    sql(insert_job(user=ADMIN, old=False, release=NEW, key=key, job=str(uuid4())))
 
 
 @pytest.mark.parametrize(
@@ -635,6 +643,7 @@ def test_active_pin_and_promotion_preserve_flags_and_preexisting_rows():
     )
     assert sql("select row_to_json(job) from shorts_mvp.video_jobs job;") == before_job
     sql(MIGRATION.read_text())
+    sql(ADMIN_READY_FALLBACK.read_text())
     assert (
         json.loads(sql("select render_v4_target_successor from shorts_mvp.editor_release_state;"))
         == operation
