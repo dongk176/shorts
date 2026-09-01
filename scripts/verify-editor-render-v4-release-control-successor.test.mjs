@@ -298,3 +298,15 @@ test("legacy lease cannot clear the durable fence and explicit rotation does not
   const migration = fs.readFileSync(new URL("../supabase/migrations/202608310003_project_target_successor.sql", import.meta.url), "utf8");
   assert.doesNotMatch(migration, /\bset\s+(?:public_enabled|render_v4_internal_enabled|render_v4_rollout_percent|render_v4_kill_switch)\s*=/i);
 });
+
+test("successor schema verifier follows the latest additive drain definition", () => {
+  const source = fs.readFileSync(
+    new URL("./verify-editor-render-v4-release-control-successor.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /project_target_successor_drain:[\s\S]*202609010003_ingestion_route_capacity_requeue\.sql/,
+  );
+  assert.match(source, /FUNCTION_MIGRATIONS\[functionName\] \|\| SUCCESSOR_MIGRATION/);
+});

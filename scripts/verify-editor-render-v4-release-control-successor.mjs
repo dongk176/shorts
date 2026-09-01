@@ -12,7 +12,16 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const SHA = /^[0-9a-f]{40}$/;
 const HASH = /^[0-9a-f]{64}$/;
 const KEYS = ["legacy_project", "source_range", "elevenlabs_transcription", "subtitle_templates", "unified_template_subtitles"];
-const MIGRATION = path.join(ROOT, "supabase/migrations/202608310003_project_target_successor.sql");
+const SUCCESSOR_MIGRATION = path.join(
+  ROOT,
+  "supabase/migrations/202608310003_project_target_successor.sql",
+);
+const FUNCTION_MIGRATIONS = Object.freeze({
+  project_target_successor_drain: path.join(
+    ROOT,
+    "supabase/migrations/202609010003_ingestion_route_capacity_requeue.sql",
+  ),
+});
 
 export function ordered(value) {
   if (Array.isArray(value)) return value.map(ordered);
@@ -129,7 +138,12 @@ const FUNCTIONS = {
 };
 
 export async function verifyProjectSuccessorSchema(tx) {
-  const source = fs.readFileSync(MIGRATION, "utf8");
+  const sources = new Map();
+  const sourceFor = (functionName) => {
+    const migration = FUNCTION_MIGRATIONS[functionName] || SUCCESSOR_MIGRATION;
+    if (!sources.has(migration)) sources.set(migration, fs.readFileSync(migration, "utf8"));
+    return sources.get(migration);
+  };
   const rows = await tx`
     select p.proname,p.prosrc,p.prosecdef,
       has_function_privilege('service_role',p.oid,'EXECUTE') as service_execute,
@@ -141,6 +155,7 @@ export async function verifyProjectSuccessorSchema(tx) {
   `;
   if (rows.length !== Object.keys(FUNCTIONS).length) throw new Error("successor additive SQL 함수가 누락됐습니다.");
   for (const row of rows) {
+    const source = sourceFor(row.proname);
     const body = new RegExp(`create or replace function shorts_mvp\\.${row.proname}\\([\\s\\S]*?\\nas \\$\\$\\n([\\s\\S]*?)\\n\\$\\$;`, "i").exec(source)?.[1];
     const normalized = (text) => String(text || "").trim().replace(/\s+/gu, " ");
     if (!body || normalized(body) !== normalized(row.prosrc) || row.prosecdef !== true
