@@ -67,6 +67,11 @@ const BATCH_STATE_FUNCTION = "BatchStateFunction2DEF92D9";
 const CLEANUP_FUNCTION = "CleanupFunction1604930F";
 const OUTBOX_DISPATCHER_FUNCTION = "OutboxDispatcherFunction7D53F71C";
 const ASSET_METADATA_KEYS = ["aws:asset:path", "aws:asset:is-bundled"];
+const LIVE_CDK_ASSET_BUCKET =
+  "cdk-hnb659fds-assets-181651591905-ap-northeast-2";
+const SOURCE_CDK_ASSET_BUCKET = {
+  "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-ap-northeast-2",
+};
 
 export const BATCH_SUBMITTER_CANONICAL_TARGETS = Object.freeze({
   PREPARE_JOB_DEFINITION: {
@@ -473,13 +478,21 @@ function exactAllowedLambdaUpdate(current, candidate, logicalId) {
     throw new Error(`${logicalId} Lambda 리소스가 올바르지 않습니다.`);
   }
   const expected = clone(current);
+  const normalizedCandidate = clone(candidate);
   const expectedCode = clone(current.Properties.Code || {});
   const candidateS3Key = candidate.Properties.Code?.S3Key;
   if (typeof candidateS3Key !== "string" || !candidateS3Key) {
     throw new Error(`${logicalId} Lambda candidate S3Key가 없습니다.`);
   }
   expectedCode.S3Key = candidateS3Key;
-  if (fingerprint(expectedCode) !== fingerprint(candidate.Properties.Code)) {
+  if (
+    expectedCode.S3Bucket === LIVE_CDK_ASSET_BUCKET
+    && fingerprint(candidate.Properties.Code?.S3Bucket)
+      === fingerprint(SOURCE_CDK_ASSET_BUCKET)
+  ) {
+    normalizedCandidate.Properties.Code.S3Bucket = LIVE_CDK_ASSET_BUCKET;
+  }
+  if (fingerprint(expectedCode) !== fingerprint(normalizedCandidate.Properties.Code)) {
     throw new Error(`${logicalId} Lambda Code에서 S3Key 밖 변경은 허용되지 않습니다.`);
   }
   expected.Properties.Code = expectedCode;
@@ -519,7 +532,7 @@ function exactAllowedLambdaUpdate(current, candidate, logicalId) {
     throw new Error(`${logicalId}는 속성 단위 Lambda 허용 목록에 없습니다.`);
   }
 
-  if (fingerprint(expected) !== fingerprint(candidate)) {
+  if (fingerprint(expected) !== fingerprint(normalizedCandidate)) {
     throw new Error(
       `${logicalId}에 Code/asset/고정 registry logging 계약 밖 변경이 있습니다.`,
     );

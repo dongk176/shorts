@@ -213,6 +213,34 @@ test("reconciles a registry rotation after the additive control plane is already
   );
 });
 
+test("preserves the exact live CDK asset bucket across literal and Fn::Sub representations", () => {
+  const { current, candidate } = fixture();
+  for (const [logicalId, expected] of Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)) {
+    if (expected.type !== "AWS::Lambda::Function") continue;
+    current.Resources[logicalId].Properties.Code.S3Bucket =
+      "cdk-hnb659fds-assets-181651591905-ap-northeast-2";
+    candidate.Resources[logicalId].Properties.Code.S3Bucket = {
+      "Fn::Sub": "cdk-hnb659fds-assets-${AWS::AccountId}-ap-northeast-2",
+    };
+  }
+  const exact = buildExactControlPlaneTemplate(current, candidate);
+  for (const [logicalId, expected] of Object.entries(CONTROL_PLANE_RESOURCE_CHANGES)) {
+    if (expected.type !== "AWS::Lambda::Function") continue;
+    assert.equal(
+      exact.Resources[logicalId].Properties.Code.S3Bucket,
+      "cdk-hnb659fds-assets-181651591905-ap-northeast-2",
+    );
+  }
+
+  const unexpectedBucket = structuredClone(candidate);
+  unexpectedBucket.Resources.BatchSubmitterFunction95B3701F.Properties.Code.S3Bucket =
+    { "Fn::Sub": "untrusted-${AWS::AccountId}" };
+  assert.throws(
+    () => buildExactControlPlaneTemplate(current, unexpectedBucket),
+    /S3Key 밖 변경/,
+  );
+});
+
 test("rejects deletes, arbitrary Lambda/IAM changes, and unrecognised Batch drift", () => {
   const { current, candidate } = fixture();
   const exact = buildExactControlPlaneTemplate(current, candidate);
