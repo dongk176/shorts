@@ -464,11 +464,12 @@ export function validateNonterminalProjectTargetJobs(rows, registryValue) {
         } else if (
           !batchJobId
           && logicalRelease.releaseId !== lane.current.releaseId
+          && effectiveReleaseId !== logicalRelease.releaseId
         ) {
           issues.push(issueFor(
             job,
             "raw_target_without_batch_id",
-            "AWS Batch 제출 전 raw target은 현재 release의 정확한 쌍에만 저장할 수 있습니다.",
+            "AWS Batch 제출 전 이전 release는 자기 자신의 정확한 쌍으로만 보존할 수 있습니다.",
             expectedTargetKey,
           ));
         }

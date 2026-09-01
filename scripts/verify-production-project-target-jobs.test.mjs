@@ -289,6 +289,25 @@ test("accepts the current release exact raw target before Batch submission", () 
   assert.deepEqual(result, { checked: 1, issues: [] });
 });
 
+test("accepts an exact self-preserving previous target before Batch submission", () => {
+  const value = registry();
+  const lane = value.lanes.unified_template_subtitles;
+  delete lane.previous.submitAsReleaseId;
+  const result = validateNonterminalProjectTargetJobs([
+    job({
+      transcriptionPolicy: "elevenlabs_primary_openai_fallback",
+      templateSnapshot: { config: { schemaVersion: 5 } },
+      subtitleTemplateSnapshot: { origin: "unified-template-v5" },
+      awsBatchJobId: null,
+      batchTargetKey: "unified_template_subtitles",
+      batchTargetReleaseId: lane.previous.releaseId,
+      batchJobDefinition: lane.previous.jobDefinitionArn,
+      batchJobQueue: lane.previous.jobQueueArn,
+    }),
+  ], value);
+  assert.deepEqual(result, { checked: 1, issues: [] });
+});
+
 test("rejects mismatched, incomplete, and non-current raw targets before submission", () => {
   const value = registry();
   const current = value.lanes.legacy_project.current;
