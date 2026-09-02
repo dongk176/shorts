@@ -33,6 +33,7 @@ import {
 import {
   beginProjectSuccessor,
   countSuccessorActiveJobs,
+  readCancelledPredecessorRestoreSnapshot,
   readProjectSuccessorSnapshot,
   readSuccessorLambdaRuntime,
   transitionProjectSuccessor,
@@ -62,7 +63,8 @@ async function verifyStageBDatabaseContracts({ requireStopped, successor = null 
   });
 }
 
-export function stageBRequiresStopped(phase, successor = null) {
+export function stageBRequiresStopped(phase, successor = null, restore = null) {
+  if (restore) return false;
   if (successor) {
     const validated = validateProjectSuccessorOptions({ phase, head: successor.head,
       successorReleaseId: successor.successorReleaseId,
@@ -343,6 +345,8 @@ function parseArgs(argv) {
     successorReleaseId: "",
     expectedStableReleaseId: "",
     successorAdminUserId: "",
+    restoreCancelledPredecessor: false,
+    restoreAdminUserId: "",
     successorAction: "",
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -360,6 +364,8 @@ function parseArgs(argv) {
     else if (name === "--successor-release-id") options.successorReleaseId = argv[++index] || "";
     else if (name === "--expected-stable-release-id") options.expectedStableReleaseId = argv[++index] || "";
     else if (name === "--successor-admin-user-id") options.successorAdminUserId = argv[++index] || "";
+    else if (name === "--restore-cancelled-predecessor") options.restoreCancelledPredecessor = true;
+    else if (name === "--restore-admin-user-id") options.restoreAdminUserId = argv[++index] || "";
     else if (["--ready-successor", "--complete-successor", "--cancel-successor", "--fence-successor"].includes(name)) {
       if (options.mode !== "dry-run") throw new Error("successor 전환과 prepare/execute는 각각 실행합니다.");
       options.mode = "successor-action";
@@ -417,7 +423,26 @@ function parseArgs(argv) {
   } else if (options.priorStageHead) {
     throw new Error("--prior-stage-head는 rotation 단계에서만 사용합니다.");
   }
-  options.successor = validateProjectSuccessorOptions(options);
+  if (options.restoreCancelledPredecessor) {
+    if (
+      options.phase !== "rotation"
+      || !UUID.test(options.restoreAdminUserId)
+      || options.successorReleaseId
+      || options.expectedStableReleaseId
+      || options.successorAdminUserId
+      || options.successorAction
+    ) {
+      throw new Error("취소 successor 복구는 rotation과 실제 복구 관리자 UUID만 허용합니다.");
+    }
+    options.restore = { adminUserId: options.restoreAdminUserId };
+    options.successor = null;
+  } else {
+    if (options.restoreAdminUserId) {
+      throw new Error("--restore-admin-user-id는 취소 successor 복구에서만 사용합니다.");
+    }
+    options.restore = null;
+    options.successor = validateProjectSuccessorOptions(options);
+  }
   if (options.successorAction && !options.successor) {
     throw new Error("successor 전환에는 exact 기존/새 release 및 관리자 opt-in이 필요합니다.");
   }
@@ -598,6 +623,41 @@ async function executeProjectSuccessorAction(options) {
     region: options.region, predecessor: cancel, cancel });
   const operation = await transitionProjectSuccessor(options.successor, options.successorAction, runtime);
   process.stdout.write(`successor ${operation.id}: ${operation.phase}; active=${operation.activeReleaseId || "관리자 검증 대기"}\n`);
+}
+
+async function verifyCancelledRestoreRuntime(options, registry, { after = false } = {}) {
+  if (!options.restore) return null;
+  const snapshot = await withProjectSuccessorDatabase(async (tx) => {
+    await verifyProjectSuccessorSchema(tx);
+    return readCancelledPredecessorRestoreSnapshot(tx, {
+      adminUserId: options.restore.adminUserId,
+      registry,
+    });
+  });
+  const restoredRegistrar = options.mode === "execute" && (
+    options.executeStack === "compute" || (after && options.executeStack === "editor")
+  );
+  const restoredSubmitter = options.mode === "execute"
+    && after
+    && options.executeStack === "compute";
+  await Promise.all([
+    readSuccessorLambdaRuntime(
+      "shorts-mvp-editor-release-registrar-production",
+      restoredRegistrar ? registry : snapshot.cancelledRegistry,
+      options.region,
+      { verifySource: restoredRegistrar },
+    ),
+    readSuccessorLambdaRuntime(
+      "shorts-mvp-batch-submitter-production",
+      restoredSubmitter ? registry : snapshot.cancelledRegistry,
+      options.region,
+      { verifySource: restoredSubmitter },
+    ),
+  ]);
+  if (countSuccessorActiveJobs(snapshot.cancelledRegistry, options.region) !== 0) {
+    throw new Error("취소된 successor AWS 작업이 남아 predecessor를 복구할 수 없습니다.");
+  }
+  return snapshot;
 }
 
 function verifyPromotedProductionBaseline(expectedBase) {
@@ -1525,9 +1585,10 @@ async function executeChangeSet(options, initial, registry) {
       options.changeSetId,
     );
     await verifyStageBDatabaseContracts({
-      requireStopped: stageBRequiresStopped(options.phase, options.successor),
+      requireStopped: stageBRequiresStopped(options.phase, options.successor, options.restore),
       successor: options.successor,
     });
+    await verifyCancelledRestoreRuntime(options, registry);
 
     // This committed DB fence covers old web INSERTs and survives lease TTL.
     // Only already-submitted current-generation jobs may span the rotation.
@@ -1536,7 +1597,9 @@ async function executeChangeSet(options, initial, registry) {
     // Renewal mutates only online-safe Editor IAM/registrar resources. Reuse
     // the existing lockdown-shaped lease identity so the already-deployed DB
     // constraint stays immutable; routing phases keep their stopped leases.
-    const leasePhase = options.phase === "renewal" ? "lockdown" : options.phase;
+    const leasePhase = options.phase === "renewal" || options.restore
+      ? "lockdown"
+      : options.phase;
     const leaseOwner = `stage-b:${leasePhase}:${initial.head}`;
     const leaseId = crypto.randomUUID();
     let leaseAcquired = false;
@@ -1682,7 +1745,7 @@ async function executeChangeSet(options, initial, registry) {
         ...(options.successor ? { successor: options.successor } : {}),
       });
       await verifyStageBDatabaseContracts({
-        requireStopped: stageBRequiresStopped(options.phase, options.successor),
+        requireStopped: stageBRequiresStopped(options.phase, options.successor, options.restore),
         successor: options.successor,
       });
       liveStack(stackKey, options.region);
@@ -1692,6 +1755,7 @@ async function executeChangeSet(options, initial, registry) {
       if (finalHash !== candidateTemplateSha256) {
         throw new Error(`${stackKey} 실행 후 live template hash가 승인 후보와 다릅니다.`);
       }
+      await verifyCancelledRestoreRuntime(options, registry, { after: true });
       process.stdout.write([
         `Stage B ${options.phase}/${stackKey} exact change set 실행 완료`,
         `PROVENANCE_SHA256=${provenance.digest}`,
@@ -1744,9 +1808,10 @@ export async function runStageBReleaseControl(argv = process.argv.slice(2)) {
     return;
   }
   await verifyStageBDatabaseContracts({
-    requireStopped: stageBRequiresStopped(options.phase, options.successor),
+    requireStopped: stageBRequiresStopped(options.phase, options.successor, options.restore),
     successor: options.successor,
   });
+  await verifyCancelledRestoreRuntime(options, registry);
   if (options.successor) {
     const snapshot = await withProjectSuccessorDatabase((tx) => readProjectSuccessorSnapshot(tx, options.successor));
     verifySuccessorAwsDefinitions(options.successor, snapshot.proof, options.region);
@@ -1875,9 +1940,10 @@ export async function runStageBReleaseControl(argv = process.argv.slice(2)) {
       const name = provenance.changeSetName;
       assertChangeSetNameUnused(stackKey, options.region, name);
       await verifyStageBDatabaseContracts({
-        requireStopped: stageBRequiresStopped(options.phase, options.successor),
+        requireStopped: stageBRequiresStopped(options.phase, options.successor, options.restore),
         successor: options.successor,
       });
+      await verifyCancelledRestoreRuntime(options, registry);
       const record = { stackKey, name, id: "", provenance };
       preparedRecords.push(record);
       const prepared = prepareChangeSet(

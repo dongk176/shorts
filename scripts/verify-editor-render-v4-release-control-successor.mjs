@@ -202,6 +202,65 @@ export async function readProjectSuccessorSnapshot(tx, context, options = {}) {
     proof: decode(proof[0]?.value), flags: decode(flags[0]?.value) }, context, options);
 }
 
+export function validateCancelledPredecessorRestoreSnapshot(snapshot, registry) {
+  const validatedRegistry = validateProductionProjectTargets(registry);
+  const { state, operation, flags, candidateJobs } = snapshot || {};
+  if (!state || !operation || !flags) {
+    throw new Error("취소된 successor 복구 snapshot이 완전하지 않습니다.");
+  }
+  const oldRegistry = validateProductionProjectTargets(operation.oldRegistry);
+  const cancelledRegistry = validateProductionProjectTargets(operation.newRegistry);
+  validateSuccessorRegistryTransition(oldRegistry, cancelledRegistry, operation.proof);
+  if (
+    operation.version !== 1
+    || operation.phase !== "active"
+    || operation.outcome !== "cancel"
+    || !UUID.test(operation.predecessorReleaseId || "")
+    || !UUID.test(operation.successorReleaseId || "")
+    || operation.activeReleaseId !== operation.predecessorReleaseId
+    || state.stableReleaseId !== operation.predecessorReleaseId
+    || exactJson(operation.activeRegistry) !== exactJson(oldRegistry)
+    || exactJson(validatedRegistry) !== exactJson(oldRegistry)
+    || operation.oldRegistrySha256 !== successorHash(exactJson(oldRegistry))
+    || operation.newRegistrySha256 !== successorHash(exactJson(cancelledRegistry))
+    || exactJson(operation.flags) !== exactJson(flags)
+    || Number(candidateJobs) !== 0
+  ) {
+    throw new Error("취소된 successor의 predecessor 복구 조건이 다릅니다.");
+  }
+  return { operation, oldRegistry, cancelledRegistry };
+}
+
+export async function readCancelledPredecessorRestoreSnapshot(tx, context) {
+  if (!context || !UUID.test(context.adminUserId || "")) {
+    throw new Error("취소된 successor 복구에는 실제 관리자 UUID가 필요합니다.");
+  }
+  const admin = await tx`select id from shorts_mvp.app_users
+    where id=${context.adminUserId}::uuid and is_admin and withdrawn_at is null for share`;
+  if (admin.length !== 1) throw new Error("취소된 successor 복구 관리자 권한이 필요합니다.");
+  const rows = await tx`
+    select stable_release_id,candidate_release_id,
+      render_v4_target_successor::text as operation
+    from shorts_mvp.editor_release_state where singleton for share
+  `;
+  const operation = JSON.parse(rows[0]?.operation || "null");
+  if (!operation || !UUID.test(operation.successorReleaseId || "")) {
+    throw new Error("취소된 successor 복구 기록이 없습니다.");
+  }
+  const flags = JSON.parse((await tx`
+    select shorts_mvp._project_target_successor_flags()::text as value
+  `)[0]?.value || "null");
+  const candidateJobs = Number((await tx`
+    select count(*)::integer as value from shorts_mvp.video_jobs
+    where source_type is distinct from 'upload'
+      and initial_editor_release_id=${operation.successorReleaseId}::uuid
+      and status not in ('completed','failed','expired','deleted')
+  `)[0]?.value || 0);
+  return validateCancelledPredecessorRestoreSnapshot({
+    state: rows[0], operation, flags, candidateJobs,
+  }, context.registry);
+}
+
 export async function assertProjectSuccessorLease(tx, context, { requireDrained = false } = {}) {
   if (!context || !UUID.test(context.adminUserId || "")) throw new Error("명시적인 successor lease identity가 필요합니다.");
   const admin = await tx`select id from shorts_mvp.app_users

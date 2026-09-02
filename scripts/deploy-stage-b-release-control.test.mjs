@@ -439,7 +439,7 @@ test("renews a failed immutable candidate through an Editor-only exact phase", (
   assert.match(source, /\["renewal", "lockdown"\][\s\S]*executeStack === "compute"/);
   assert.match(
     source,
-    /options\.phase === "renewal" \? "lockdown" : options\.phase/,
+    /options\.phase === "renewal" \|\| options\.restore[\s\S]*\? "lockdown"/,
   );
   assert.match(source, /!\["renewal", "lockdown"\]\.includes\(phase\)/);
   assert.match(source, /renewal은 exact Editor preview\/해시만/);
@@ -451,11 +451,12 @@ test("requires the separately applied production v4 schema before any AWS mutati
   assert.match(source, /async function verifyStageBDatabaseContracts/);
   assert.match(
     source,
-    /function stageBRequiresStopped\(phase, successor = null\)[\s\S]*!\["renewal", "lockdown"\]\.includes\(phase\)/,
+    /function stageBRequiresStopped\(phase, successor = null, restore = null\)[\s\S]*if \(restore\) return false[\s\S]*!\["renewal", "lockdown"\]\.includes\(phase\)/,
   );
-  assert.match(source, /requireStopped: stageBRequiresStopped\(options\.phase, options\.successor\)/);
+  assert.match(source, /requireStopped: stageBRequiresStopped\(options\.phase, options\.successor, options\.restore\)/);
   for (const phase of ["bootstrap", "rotation"]) assert.equal(stageBRequiresStopped(phase), true);
   for (const phase of ["renewal", "lockdown"]) assert.equal(stageBRequiresStopped(phase), false);
+  assert.equal(stageBRequiresStopped("rotation", null, { adminUserId: "restore" }), false);
   assert.match(source, /stage-b:\$\{leasePhase\}:\$\{initial\.head\}/);
   assert.match(
     source,

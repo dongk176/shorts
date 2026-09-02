@@ -6,6 +6,7 @@ import {
   assertProjectSuccessorLease, countSuccessorActiveJobs, exactJson,
   successorDefinitionHash, successorHash, validateProjectSuccessorOptions,
   readProjectSuccessorSnapshot,
+  validateCancelledPredecessorRestoreSnapshot,
   validateSuccessorDefinitions, validateSuccessorLambdaEnvironment,
   validateSuccessorRegistryTransition, validateSuccessorSnapshot,
   verifySuccessorAwsDefinitions,
@@ -96,10 +97,40 @@ test("online rotation requires all three exact opt-ins; the legacy stopped path 
   assert.equal(stageBRequiresStopped("rotation"), true);
   assert.equal(stageBRequiresStopped("bootstrap"), true);
   assert.equal(stageBRequiresStopped("rotation", context), false);
+  assert.equal(stageBRequiresStopped("rotation", null, { adminUserId: ADMIN }), false);
   for (const phase of ["bootstrap", "renewal", "lockdown"]) assert.throws(() => stageBRequiresStopped(phase, context));
   assert.throws(() => stageBRequiresStopped("rotation", {}));
   assert.throws(() => stageBRequiresStopped("rotation", { ...context, adminUserId: "missing" }));
   assert.throws(() => stageBRequiresStopped("rotation", { ...context, successorReleaseId: OLD_ID }));
+});
+
+test("cancelled predecessor restore accepts only the frozen old registry with no candidate jobs", () => {
+  const { context, snapshot } = fixture();
+  const cancelled = copy(snapshot);
+  cancelled.operation = {
+    ...cancelled.operation,
+    phase: "active",
+    outcome: "cancel",
+    activeReleaseId: OLD_ID,
+    activeRegistry: copy(context.oldRegistry),
+  };
+  cancelled.candidateJobs = 0;
+  assert.deepEqual(
+    validateCancelledPredecessorRestoreSnapshot(cancelled, context.oldRegistry).oldRegistry,
+    context.oldRegistry,
+  );
+  for (const mutate of [
+    (value) => { value.operation.outcome = "complete"; },
+    (value) => { value.operation.activeReleaseId = NEW_ID; },
+    (value) => { value.operation.activeRegistry = copy(context.newRegistry); },
+    (value) => { value.candidateJobs = 1; },
+    (value) => { value.flags.publicEnabled = false; },
+  ]) {
+    const changed = copy(cancelled);
+    mutate(changed);
+    assert.throws(() => validateCancelledPredecessorRestoreSnapshot(changed, context.oldRegistry));
+  }
+  assert.throws(() => validateCancelledPredecessorRestoreSnapshot(cancelled, context.newRegistry));
 });
 
 test("old/current identities, five lanes, queues, self previous and font4/4 must match finalized proof", () => {
