@@ -233,6 +233,14 @@ proxy/IP/token setting, queue or resource change is part of that authorization.
   CloudFormation templates are actually restored, with candidate DB jobs and
   observed AWS candidate jobs at zero. The tool does **not** restore AWS for
   you. It records an `active` predecessor pin, not a null/unfenced state.
+- If a previously cancelled operation is already pinned to its predecessor but
+  the two Lambda registries still contain the cancelled successor, restore only
+  that operation's frozen `oldRegistry` with `--restore-cancelled-predecessor`
+  and an actual administrator UUID. This repair is allowed only when the DB
+  state, frozen flags and both before/after registries match exactly and the
+  cancelled successor has zero unfinished DB or AWS jobs. Execute Editor first
+  and Compute second; the guarded lockdown lease serializes the repair without
+  changing public flags or project admission.
 - Once new stable promotion is complete, cancellation to old stable is not an
   allowed shortcut. Disable new design usage if needed, retain compatible web
   reads/new assets/documents/in-flight jobs, and investigate the specific error.
