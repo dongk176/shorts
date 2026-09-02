@@ -1804,6 +1804,10 @@ def test_editor_document_rerender_forwards_trusted_caption_template_spec(
         worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
         is caption_spec
     )
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_composition_spec"]
+        is caption_spec
+    )
 
 
 def test_editor_document_rerender_hides_stored_v4_caption_spec_when_disabled(
@@ -1853,6 +1857,7 @@ def test_editor_document_rerender_hides_stored_v4_caption_spec_when_disabled(
 
     render_kwargs = worker.editor_renderer.render.call_args.kwargs
     assert render_kwargs["caption_render_spec"] is None
+    assert render_kwargs["caption_composition_spec"] is caption_spec
     assert render_kwargs["caption_overlay_only"] is False
     assert item["caption_render_spec"] is caption_spec
 
@@ -1907,6 +1912,10 @@ def test_editor_document_rerender_restores_stored_v4_caption_spec_when_enabled(
         worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
         is caption_spec
     )
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_composition_spec"]
+        is caption_spec
+    )
 
 
 def test_editor_document_rerender_uses_padded_caption_source_with_timeline(
@@ -1938,6 +1947,10 @@ def test_editor_document_rerender_uses_padded_caption_source_with_timeline(
 
     assert (
         worker.editor_renderer.render.call_args.kwargs["caption_render_spec"]
+        is editor_spec
+    )
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_composition_spec"]
         is editor_spec
     )
 
@@ -2001,6 +2014,10 @@ def test_editor_document_rerender_compiles_authoritative_stored_word_timing(
         worker.editor_renderer.render.call_args.kwargs["caption_overlay_only"]
         is True
     )
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_composition_spec"]
+        is None
+    )
 
 
 def test_editor_document_rerender_v2_preserves_legacy_subtitle_fallback(
@@ -2048,6 +2065,10 @@ def test_editor_document_rerender_v2_preserves_legacy_subtitle_fallback(
     assert (
         worker.editor_renderer.render.call_args.kwargs["caption_overlay_only"]
         is False
+    )
+    assert (
+        worker.editor_renderer.render.call_args.kwargs["caption_composition_spec"]
+        is None
     )
 
 

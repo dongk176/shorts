@@ -2111,6 +2111,89 @@ def test_v4_editor_renders_stored_v3_pop_caption_with_canonical_font_and_gap(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="ffmpeg and ffprobe are required",
 )
+def test_v4_caption_off_preserves_non_caption_composition(
+    tmp_path: Path,
+) -> None:
+    clean = tmp_path / "caption-toggle-clean.mp4"
+    _run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", "color=c=#283241:size=640x360:rate=30",
+        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000",
+        "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-shortest", str(clean),
+    ])
+    caption_spec = compile_caption_render_spec(
+        [
+            TranscriptWord(
+                text="자막",
+                start=0.1,
+                end=0.8,
+                provider="elevenlabs",
+            ),
+        ],
+        template_id="pop",
+        clip_start=0,
+        clip_end=1,
+        video_aspect_ratio=VideoAspectRatio.LANDSCAPE,
+        font_id=EditorFontId.PAPERLOGY,
+        schema_version=4,
+    )
+    enabled_document = _document_v4_with_contiguous_caption_clip(
+        caption_spec,
+        clip_start_seconds=0,
+        clip_end_seconds=1,
+    )
+    disabled_value = enabled_document.model_dump(by_alias=True, mode="json")
+    disabled_value["subtitles"]["enabled"] = False
+    disabled_value["renderSpec"]["subtitles"] = None
+    disabled_document = EditorDocument.model_validate(disabled_value)
+    renderer = EditorDocumentRenderer(Settings(
+        temp_dir=tmp_path / "caption-toggle-temp",
+        ffmpeg_timeout_seconds=120,
+        ffmpeg_threads=2,
+        clean_clip_preset="ultrafast",
+        clean_clip_crf=28,
+    ))
+
+    enabled_output = renderer.render(
+        clean_path=clean,
+        output_path=tmp_path / "caption-enabled.mp4",
+        document=enabled_document,
+        work_dir=tmp_path / "caption-enabled-render",
+        channel_thumbnail_path=None,
+        caption_render_spec=caption_spec,
+        caption_composition_spec=caption_spec,
+    )
+    disabled_output = renderer.render(
+        clean_path=clean,
+        output_path=tmp_path / "caption-disabled.mp4",
+        document=disabled_document,
+        work_dir=tmp_path / "caption-disabled-render",
+        channel_thumbnail_path=None,
+        caption_render_spec=None,
+        caption_composition_spec=caption_spec,
+    )
+
+    enabled_assets = tmp_path / "caption-enabled-render" / "editor-assets"
+    disabled_assets = tmp_path / "caption-disabled-render" / "editor-assets"
+    assert enabled_output.stat().st_size > 10_000
+    assert disabled_output.stat().st_size > 10_000
+    assert (enabled_assets / "subtitles.ass").is_file()
+    assert not (disabled_assets / "subtitles.ass").exists()
+    for asset_name in ("background.png", "title.png", "channel.png"):
+        assert (enabled_assets / asset_name).read_bytes() == (
+            disabled_assets / asset_name
+        ).read_bytes()
+    assert editor_video_frame(enabled_document, caption_spec) == editor_video_frame(
+        disabled_document,
+        caption_spec,
+    )
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg and ffprobe are required",
+)
 def test_v5_custom_editor_rerender_keeps_video_caption_and_comment_geometry(
     tmp_path: Path,
 ) -> None:

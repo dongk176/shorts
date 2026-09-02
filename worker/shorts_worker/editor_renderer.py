@@ -1999,6 +1999,7 @@ class EditorDocumentRenderer:
         work_dir: Path,
         channel_thumbnail_path: Path | None,
         caption_render_spec: dict[str, object] | None = None,
+        caption_composition_spec: dict[str, object] | None = None,
         caption_overlay_only: bool = False,
         uploaded_background_path: Path | None = None,
     ) -> Path:
@@ -2013,12 +2014,24 @@ class EditorDocumentRenderer:
                 if isinstance(caption_render_spec, dict)
                 else None
             )
+            caption_composition_spec_version = (
+                int(caption_composition_spec.get("schemaVersion") or 0)
+                if isinstance(caption_composition_spec, dict)
+                else None
+            )
             if document.render_spec.subtitles is None:
                 if caption_render_spec is not None:
                     raise RenderError("자막이 없는 v4 문서에 자막 사양이 포함되었습니다.")
             elif caption_render_spec is not None and caption_spec_version not in {3, 4}:
                 raise RenderError(
                     "v4 편집 문서의 자막 원본 버전을 확인할 수 없습니다."
+                )
+            if (
+                caption_composition_spec is not None
+                and caption_composition_spec_version not in {3, 4}
+            ):
+                raise RenderError(
+                    "v4 편집 문서의 레이아웃 원본 버전을 확인할 수 없습니다."
                 )
         assets_dir = work_dir / "editor-assets"
         assets_dir.mkdir(parents=True, exist_ok=True)
@@ -2034,19 +2047,19 @@ class EditorDocumentRenderer:
             stream.get("codec_type") == "audio"
             for stream in probe.get("streams", [])
         )
-        caption_composition_spec = _editor_caption_composition_spec(
-            caption_render_spec,
+        resolved_caption_composition_spec = _editor_caption_composition_spec(
+            caption_composition_spec or caption_render_spec,
             caption_overlay_only=caption_overlay_only,
         )
-        frame = editor_video_frame(document, caption_composition_spec)
+        frame = editor_video_frame(document, resolved_caption_composition_spec)
         background_path = create_editor_background(
             document,
             assets_dir / "background.png",
             uploaded_background_path=uploaded_background_path,
         )
         caption_style = (
-            caption_render_spec.get("style")
-            if isinstance(caption_render_spec, dict)
+            resolved_caption_composition_spec.get("style")
+            if isinstance(resolved_caption_composition_spec, dict)
             else None
         )
         original_caption_accent = (
@@ -2061,18 +2074,18 @@ class EditorDocumentRenderer:
             title_accent_color=(
                 None if caption_overlay_only else original_caption_accent
             ),
-            caption_render_spec=caption_composition_spec,
+            caption_render_spec=resolved_caption_composition_spec,
         )
         channel_path = create_editor_channel_layer(
             document,
             assets_dir / "channel.png",
             channel_thumbnail_path,
-            caption_composition_spec,
+            resolved_caption_composition_spec,
         )
         comment_assets = create_editor_comment_layers(
             document,
             assets_dir,
-            caption_composition_spec,
+            resolved_caption_composition_spec,
         )
         render_text_specs = {
             item.id: item
@@ -2165,7 +2178,7 @@ class EditorDocumentRenderer:
                 document,
                 frame,
                 fps,
-                caption_composition_spec,
+                resolved_caption_composition_spec,
             ),
         ]
         current_label = "scene0"

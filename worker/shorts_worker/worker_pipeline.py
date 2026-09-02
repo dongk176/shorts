@@ -3646,6 +3646,11 @@ class BatchWorker:
                 if document.subtitles.enabled
                 else None
             )
+            caption_composition_spec = (
+                None
+                if caption_overlay_only
+                else resolved_caption_render_spec
+            )
             subtitle_render_mode = editor_subtitle_render_mode(
                 document,
                 visible_caption_render_spec,
@@ -3673,6 +3678,7 @@ class BatchWorker:
                 work_dir=work_dir,
                 channel_thumbnail_path=channel_thumbnail_path,
                 caption_render_spec=visible_caption_render_spec,
+                caption_composition_spec=caption_composition_spec,
                 caption_overlay_only=caption_overlay_only,
                 **self._background_render_arguments(item, work_dir, document),
             )
