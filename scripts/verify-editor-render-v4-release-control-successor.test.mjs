@@ -113,8 +113,12 @@ test("cancelled predecessor restore accepts only the frozen old registry with no
     outcome: "cancel",
     activeReleaseId: OLD_ID,
     activeRegistry: copy(context.oldRegistry),
+    runtime: { registrySha256: context.oldRegistrySha256 },
+    oldRuntime: { registrySha256: context.oldRegistrySha256 },
   };
   cancelled.candidateJobs = 0;
+  cancelled.localRegistrySha256 = context.oldRegistrySha256;
+  cancelled.cancelledRegistrySha256 = context.newRegistrySha256;
   assert.deepEqual(
     validateCancelledPredecessorRestoreSnapshot(cancelled, context.oldRegistry).oldRegistry,
     context.oldRegistry,
@@ -123,6 +127,9 @@ test("cancelled predecessor restore accepts only the frozen old registry with no
     (value) => { value.operation.outcome = "complete"; },
     (value) => { value.operation.activeReleaseId = NEW_ID; },
     (value) => { value.operation.activeRegistry = copy(context.newRegistry); },
+    (value) => { value.localRegistrySha256 = "0".repeat(64); },
+    (value) => { value.cancelledRegistrySha256 = "0".repeat(64); },
+    (value) => { value.operation.runtime.registrySha256 = "0".repeat(64); },
     (value) => { value.candidateJobs = 1; },
     (value) => { value.flags.publicEnabled = false; },
   ]) {

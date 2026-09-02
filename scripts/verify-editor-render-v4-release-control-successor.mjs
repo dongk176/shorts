@@ -204,7 +204,10 @@ export async function readProjectSuccessorSnapshot(tx, context, options = {}) {
 
 export function validateCancelledPredecessorRestoreSnapshot(snapshot, registry) {
   const validatedRegistry = validateProductionProjectTargets(registry);
-  const { state, operation, flags, candidateJobs } = snapshot || {};
+  const {
+    state, operation, flags, candidateJobs,
+    localRegistrySha256, cancelledRegistrySha256,
+  } = snapshot || {};
   if (!state || !operation || !flags) {
     throw new Error("취소된 successor 복구 snapshot이 완전하지 않습니다.");
   }
@@ -221,8 +224,10 @@ export function validateCancelledPredecessorRestoreSnapshot(snapshot, registry) 
     || state.stableReleaseId !== operation.predecessorReleaseId
     || exactJson(operation.activeRegistry) !== exactJson(oldRegistry)
     || exactJson(validatedRegistry) !== exactJson(oldRegistry)
-    || operation.oldRegistrySha256 !== successorHash(exactJson(oldRegistry))
-    || operation.newRegistrySha256 !== successorHash(exactJson(cancelledRegistry))
+    || operation.oldRegistrySha256 !== localRegistrySha256
+    || operation.newRegistrySha256 !== cancelledRegistrySha256
+    || operation.runtime?.registrySha256 !== operation.oldRegistrySha256
+    || operation.oldRuntime?.registrySha256 !== operation.oldRegistrySha256
     || exactJson(operation.flags) !== exactJson(flags)
     || Number(candidateJobs) !== 0
   ) {
@@ -244,8 +249,17 @@ export async function readCancelledPredecessorRestoreSnapshot(tx, context) {
     from shorts_mvp.editor_release_state where singleton for share
   `;
   const operation = JSON.parse(rows[0]?.operation || "null");
-  if (!operation || !UUID.test(operation.successorReleaseId || "")) {
+  if (!operation || !UUID.test(operation.successorReleaseId || "") || !SHA.test(operation.head || "")) {
     throw new Error("취소된 successor 복구 기록이 없습니다.");
+  }
+  const localRegistrySource = fs.readFileSync(path.join(ROOT, "production-project-targets.json"), "utf8");
+  const cancelledRegistrySource = execFileSync(
+    "git",
+    ["show", `${operation.head}:production-project-targets.json`],
+    { cwd: ROOT, encoding: "utf8" },
+  );
+  if (exactJson(JSON.parse(cancelledRegistrySource)) !== exactJson(operation.newRegistry)) {
+    throw new Error("취소된 successor의 Git 레지스트리 증거가 다릅니다.");
   }
   const flags = JSON.parse((await tx`
     select shorts_mvp._project_target_successor_flags()::text as value
@@ -258,6 +272,8 @@ export async function readCancelledPredecessorRestoreSnapshot(tx, context) {
   `)[0]?.value || 0);
   return validateCancelledPredecessorRestoreSnapshot({
     state: rows[0], operation, flags, candidateJobs,
+    localRegistrySha256: successorHash(localRegistrySource),
+    cancelledRegistrySha256: successorHash(cancelledRegistrySource),
   }, context.registry);
 }
 
