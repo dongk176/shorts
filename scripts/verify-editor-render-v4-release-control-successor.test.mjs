@@ -309,5 +309,9 @@ test("successor schema verifier follows the latest additive drain definition", (
     source,
     /project_target_successor_drain:[\s\S]*202609010003_ingestion_route_capacity_requeue\.sql/,
   );
+  assert.match(
+    source,
+    /enforce_project_target_successor_admission:[\s\S]*202609020001_project_successor_admin_dual_admission\.sql/,
+  );
   assert.match(source, /FUNCTION_MIGRATIONS\[functionName\] \|\| SUCCESSOR_MIGRATION/);
 });

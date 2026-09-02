@@ -17,6 +17,10 @@ const SUCCESSOR_MIGRATION = path.join(
   "supabase/migrations/202608310003_project_target_successor.sql",
 );
 const FUNCTION_MIGRATIONS = Object.freeze({
+  enforce_project_target_successor_admission: path.join(
+    ROOT,
+    "supabase/migrations/202609020001_project_successor_admin_dual_admission.sql",
+  ),
   project_target_successor_drain: path.join(
     ROOT,
     "supabase/migrations/202609010003_ingestion_route_capacity_requeue.sql",
