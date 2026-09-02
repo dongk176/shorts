@@ -76,13 +76,7 @@ test("pins all five production lanes and the approved unified rotation states", 
       workerSourceGitSha: "ff091cf79333e537a0a3c0e01ac58361164295f4",
       imageUri: "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:aedf4fbdfcbd7ef46c6ea42a47fb62d3ec0883100d1bbce5492aab524661e8d6",
       jobDefinitionArn: "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-unified-template-subtitles-ff091cf79333:1",
-    }, previous: {
-      ...v4Next,
-      releaseId: "unified-template-subtitles-df9e8d60ee92-v4",
-      workerSourceGitSha: "df9e8d60ee925923251d160f8dfabf5f92191e17",
-      imageUri: "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:b80baba150464e7ef6e8475595d280f9d69b8a1821a152f6b18a8e9d23083cdd",
-      jobDefinitionArn: "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-unified-template-subtitles-df9e8d60ee92:1",
-    } },
+    }, previous: v4Next },
   ];
   assert.ok(
     approvedStates.some((approved) => (
