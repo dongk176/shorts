@@ -208,6 +208,92 @@ describe("initial editor render specification", () => {
     expect(source.overlays.offsets.title.y).toBe(12.34567);
   });
 
+  it("keeps legacy saved title geometry through a foreground color edit", () => {
+    const source = createEditorDocumentSnapshotV3(input());
+    const initial = v4Spec(source);
+    initial.title.centerY = 417;
+    initial.title.lineBoxes = [{
+      text: source.title.text,
+      centerX: 540,
+      centerY: 417,
+      width: 360,
+      height: 104,
+      baselineY: 435,
+      backgroundRuns: [],
+    }];
+    const baseline = editorInitialRenderSpecLayerFingerprints(source);
+    const edited = structuredClone(source);
+    edited.title.textStyles = [{
+      start: 0,
+      end: Array.from(edited.title.text).length,
+      color: "#22C55E",
+    }];
+    const compiled = structuredClone(initial);
+    compiled.title.centerY = 295;
+    compiled.title.lineBoxes[0].centerY = 295;
+    compiled.title.lineBoxes[0].baselineY = 313;
+
+    const merged = preserveUnchangedInitialRenderSpecLayers(
+      compiled,
+      edited,
+      initial,
+      baseline,
+    );
+
+    expect(merged.title.centerY).toBe(417);
+    expect(merged.title.lineBoxes[0].centerY).toBe(417);
+    expect(merged.title.lineBoxes[0].baselineY).toBe(435);
+  });
+
+  it("moves legacy saved title geometry only by the requested offset", () => {
+    const source = createEditorDocumentSnapshotV3(input());
+    const initial = v4Spec(source);
+    initial.title.centerY = 417;
+    initial.title.lineBoxes = [{
+      text: source.title.text,
+      centerX: 540,
+      centerY: 417,
+      width: 360,
+      height: 104,
+      baselineY: 435,
+      backgroundRuns: [{
+        start: 0,
+        end: 2,
+        color: "#E32626",
+        x: 450,
+        y: 365,
+        width: 100,
+        height: 104,
+        radius: 12,
+      }],
+    }];
+    const baseline = editorInitialRenderSpecLayerFingerprints(source);
+    const edited = structuredClone(source);
+    edited.overlays.offsets.title = { x: 12, y: -15 };
+    const compiled = structuredClone(initial);
+    compiled.title.centerY = 280;
+    compiled.title.offsetY = -15;
+
+    const merged = preserveUnchangedInitialRenderSpecLayers(
+      compiled,
+      edited,
+      initial,
+      baseline,
+    );
+
+    expect(merged.title).toMatchObject({
+      centerX: 552,
+      centerY: 402,
+      offsetY: -15,
+      lineBoxes: [{
+        centerX: 552,
+        centerY: 402,
+        baselineY: 420,
+        backgroundRuns: [{ x: 462, y: 350 }],
+      }],
+    });
+  });
+
   it("seeds hidden initial layers and their exact font identities", () => {
     const document = createEditorDocumentSnapshotV3(input());
     const initial = v4Spec(document);
