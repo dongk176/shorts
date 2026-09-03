@@ -28,6 +28,7 @@ import {
   snapRectCenterToCanvas,
   snapRectToOverlayRects,
   snapResizedCanvasRectToCanvas,
+  snapVideoRectForMove,
   undoEditorOverlayHistory,
 } from "@/lib/editor-overlay-preview";
 
@@ -183,6 +184,54 @@ describe("editor overlay preview geometry", () => {
     )).toEqual({
       delta: { x: -30, y: -30 },
       guides: { overlayX: null, overlayY: null },
+    });
+  });
+
+  it("snaps a moving video to canvas center within a narrow threshold", () => {
+    const rect = { x: 100, y: 200, width: 400, height: 300 };
+    expect(snapVideoRectForMove(
+      rect,
+      { x: 244, y: 615 },
+      [],
+      5,
+      3,
+    )).toEqual({
+      delta: { x: 240, y: 610 },
+      guides: { x: true, y: true, overlayX: null, overlayY: null },
+    });
+    expect(snapVideoRectForMove(
+      rect,
+      { x: 246, y: 616 },
+      [],
+      5,
+      3,
+    )).toEqual({
+      delta: { x: 246, y: 616 },
+      guides: { x: false, y: false, overlayX: null, overlayY: null },
+    });
+  });
+
+  it("snaps video axes independently and keeps overlay snaps ahead of center", () => {
+    const rect = { x: 100, y: 200, width: 400, height: 300 };
+    expect(snapVideoRectForMove(
+      rect,
+      { x: 244, y: 616 },
+      [],
+      5,
+      3,
+    )).toEqual({
+      delta: { x: 240, y: 616 },
+      guides: { x: true, y: false, overlayX: null, overlayY: null },
+    });
+    expect(snapVideoRectForMove(
+      rect,
+      { x: 236, y: 616 },
+      [{ x: 734, y: 1_400, width: 200, height: 100 }],
+      5,
+      3,
+    )).toEqual({
+      delta: { x: 234, y: 616 },
+      guides: { x: false, y: false, overlayX: 734, overlayY: null },
     });
   });
 

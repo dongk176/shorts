@@ -123,7 +123,12 @@ describe("admin editor subtitle layout", () => {
     expect(legacyPopBranch).not.toContain("position.centerX");
     expect(editorSource).toContain('!overlayPreviewEnabled && templateId !== "comment-capture"');
     expect(editorSource).toContain("!editableCaptionSourceSpec && activeSubtitle");
-    expect(editorSource).toContain("captionTemplatePreviewSnapshot.layout.video");
+    expect(editorSource).toContain(
+      "captionVideoFrame: captionTemplatePreviewSnapshot?.layout.video || null,",
+    );
+    expect(editorSource).toContain(
+      "customTemplateConfig: activeCustomTemplate?.config || null,",
+    );
     expect(editorSource).toContain("panelRect={captionTemplatePreviewSnapshot?.layout.title}");
     expect(editorSource).toContain("<CaptionTemplateEditorChannel");
   });

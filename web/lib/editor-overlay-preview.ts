@@ -709,6 +709,49 @@ export function snapRectToOverlayRects(
   };
 }
 
+export function snapVideoRectForMove(
+  movingRect: CanvasRect,
+  delta: CanvasPoint,
+  targetRects: CanvasRect[],
+  centerThreshold: number,
+  overlayThreshold: number,
+): {
+  delta: CanvasPoint;
+  guides: Pick<
+    EditorOverlayGuides,
+    "x" | "y" | "overlayX" | "overlayY"
+  >;
+} {
+  const centerSnapped = snapRectCenterToCanvas(
+    movingRect,
+    delta,
+    centerThreshold,
+  );
+  const overlaySnapped = snapRectToOverlayRects(
+    movingRect,
+    delta,
+    targetRects,
+    overlayThreshold,
+  );
+  const overlayXSnapped = overlaySnapped.guides.overlayX !== null;
+  const overlayYSnapped = overlaySnapped.guides.overlayY !== null;
+  return {
+    delta: {
+      x: overlayXSnapped
+        ? overlaySnapped.delta.x
+        : centerSnapped.delta.x,
+      y: overlayYSnapped
+        ? overlaySnapped.delta.y
+        : centerSnapped.delta.y,
+    },
+    guides: {
+      x: !overlayXSnapped && centerSnapped.guides.x,
+      y: !overlayYSnapped && centerSnapped.guides.y,
+      ...overlaySnapped.guides,
+    },
+  };
+}
+
 export function resizeEditorTextOverlayWidth({
   width,
   offsetX,

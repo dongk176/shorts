@@ -137,6 +137,7 @@ import {
   customCenteredLayerStyle,
   customCommentLayerY,
   customVideoFrameStyle,
+  resolveEditorVideoPreviewFrame,
 } from "@/lib/custom-template-preview-layout";
 import {
   COMMENT_BACKGROUND_COLOR,
@@ -199,8 +200,8 @@ import {
   sanitizeEditorOverlayFontsForStable,
   snapCommentToVideoBottom,
   snapRectCenterToCanvas,
-  snapRectToOverlayRects,
   snapResizedCanvasRectToCanvas,
+  snapVideoRectForMove,
   undoEditorOverlayHistory,
   type CanvasPoint,
   type CanvasRect,
@@ -3288,6 +3289,7 @@ const editorTemplateSnapshotsEqual = (
 const TIMELINE_THUMBNAIL_COUNT = 12;
 const EDITOR_COMMENT_SNAP_THRESHOLD_PX = 3;
 const EDITOR_OVERLAY_SNAP_THRESHOLD_PX = 3;
+const EDITOR_VIDEO_CENTER_SNAP_THRESHOLD_PX = 5;
 const EDITOR_VIDEO_SIZE_SNAP_THRESHOLD_PX = 4;
 const EDITOR_VIDEO_MIN_SCALE = 0.25;
 const EDITOR_VIDEO_MAX_SCALE = 2;
@@ -3451,25 +3453,25 @@ const EDITOR_VIDEO_RESIZE_HANDLES: ReadonlyArray<{
   {
     handle: "top-left",
     label: "영상 왼쪽 위 크기 조절",
-    positionClassName: "-left-1.5 -top-1.5",
+    positionClassName: "-left-3.5 -top-3.5",
     cursorClassName: "cursor-nwse-resize",
   },
   {
     handle: "top-right",
     label: "영상 오른쪽 위 크기 조절",
-    positionClassName: "-right-1.5 -top-1.5",
+    positionClassName: "-right-3.5 -top-3.5",
     cursorClassName: "cursor-nesw-resize",
   },
   {
     handle: "bottom-left",
     label: "영상 왼쪽 아래 크기 조절",
-    positionClassName: "-bottom-1.5 -left-1.5",
+    positionClassName: "-bottom-3.5 -left-3.5",
     cursorClassName: "cursor-nesw-resize",
   },
   {
     handle: "bottom-right",
     label: "영상 오른쪽 아래 크기 조절",
-    positionClassName: "-bottom-1.5 -right-1.5",
+    positionClassName: "-bottom-3.5 -right-3.5",
     cursorClassName: "cursor-nwse-resize",
   },
 ];
@@ -5747,21 +5749,17 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     textOverlay.startSeconds <= displayedPreviewTime
     && textOverlay.endSeconds > displayedPreviewTime
   ));
-  const editorVideoBaseRect: CanvasRect = captionTemplatePreviewSnapshot
-    ? captionTemplatePreviewSnapshot.layout.video
-    : activeCustomTemplate
-    ? {
-        x: activeCustomTemplate.config.video.x,
-        y: activeCustomTemplate.config.video.y,
-        width: activeCustomTemplate.config.video.width,
-        height: activeCustomTemplate.config.video.height,
-      }
-    : {
-        x: 0,
-        y: editorLayout.videoTop * 19.2,
-        width: TEMPLATE_CANVAS.width,
-        height: editorLayout.videoHeight * 19.2,
-      };
+  const editorVideoBaseRect: CanvasRect = resolveEditorVideoPreviewFrame({
+    customTemplateConfig: activeCustomTemplate?.config || null,
+    captionVideoFrame: captionTemplatePreviewSnapshot?.layout.video || null,
+    fallbackFrame: {
+      x: 0,
+      y: editorLayout.videoTop * 19.2,
+      width: TEMPLATE_CANVAS.width,
+      height: editorLayout.videoHeight * 19.2,
+    },
+  });
+  const editorVideoBaseStyle = customVideoFrameStyle(editorVideoBaseRect);
   const editorVideoRect: CanvasRect = {
     x: editorVideoBaseRect.x
       + overlayOffsets.video.x
@@ -8031,45 +8029,38 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     }
 
     const clamped = clampCanvasDelta(layerRect, rawDelta);
-    const centerSnapped = layer === "video"
-      ? {
-          delta: clamped,
-          guides: { x: false, y: false },
-        }
-      : snapRectCenterToCanvas(
-          layerRect,
-          clamped,
-          clientDistanceToCanvas(CENTER_SNAP_THRESHOLD_PX, canvasRect.width),
-        );
-    const overlaySnapped = layer === "video"
-      ? snapRectToOverlayRects(
-          layerRect,
-          clamped,
-          snapTargetRects,
-          clientDistanceToCanvas(
-            EDITOR_OVERLAY_SNAP_THRESHOLD_PX,
-            canvasRect.width,
-          ),
-        )
-      : {
-          delta: clamped,
-          guides: { overlayX: null, overlayY: null },
-        };
-    const snappedDelta = {
-      x: overlaySnapped.guides.overlayX === null
-        ? centerSnapped.delta.x
-        : overlaySnapped.delta.x,
-      y: overlaySnapped.guides.overlayY === null
-        ? centerSnapped.delta.y
-        : overlaySnapped.delta.y,
-    };
+    if (layer === "video") {
+      const snapped = snapVideoRectForMove(
+        layerRect,
+        clamped,
+        snapTargetRects,
+        clientDistanceToCanvas(
+          EDITOR_VIDEO_CENTER_SNAP_THRESHOLD_PX,
+          canvasRect.width,
+        ),
+        clientDistanceToCanvas(
+          EDITOR_OVERLAY_SNAP_THRESHOLD_PX,
+          canvasRect.width,
+        ),
+      );
+      return {
+        delta: clampCanvasDelta(layerRect, snapped.delta),
+        guides: {
+          ...EMPTY_EDITOR_OVERLAY_GUIDES,
+          ...snapped.guides,
+        },
+      };
+    }
+    const centerSnapped = snapRectCenterToCanvas(
+      layerRect,
+      clamped,
+      clientDistanceToCanvas(CENTER_SNAP_THRESHOLD_PX, canvasRect.width),
+    );
     return {
-      delta: clampCanvasDelta(layerRect, snappedDelta),
+      delta: clampCanvasDelta(layerRect, centerSnapped.delta),
       guides: {
         ...EMPTY_EDITOR_OVERLAY_GUIDES,
-        x: overlaySnapped.guides.overlayX === null && centerSnapped.guides.x,
-        y: overlaySnapped.guides.overlayY === null && centerSnapped.guides.y,
-        ...overlaySnapped.guides,
+        ...centerSnapped.guides,
       },
     };
   }, []);
@@ -10543,16 +10534,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               ? "absolute bg-black object-cover"
               : `absolute inset-x-0 w-full bg-black ${commentNeedsVerticalFit ? "object-contain" : "object-cover"}`}${overlayPreviewEnabled ? " cursor-move touch-none" : ""}${overlayPreviewEnabled && selectedOverlay === "video" ? " outline outline-2 outline-white outline-offset-[-2px]" : ""}`}
             style={{
-              ...(captionTemplatePreviewSnapshot
-                ? {
-                    left: `${captionTemplatePreviewSnapshot.layout.video.x / 10.8}%`,
-                    top: `${captionTemplatePreviewSnapshot.layout.video.y / 19.2}%`,
-                    width: `${captionTemplatePreviewSnapshot.layout.video.width / 10.8}%`,
-                    height: `${captionTemplatePreviewSnapshot.layout.video.height / 19.2}%`,
-                  }
-                : activeCustomTemplate
-                ? customVideoFrameStyle(activeCustomTemplate.config.video)
-                : { top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }),
+              ...editorVideoBaseStyle,
               ...(videoMovementStyle || {}),
             }}
             src={cleanVideoUrl}
@@ -10681,16 +10663,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               ? "absolute flex items-center justify-center bg-black/50 text-sm text-neutral-400"
               : "absolute inset-x-0 flex items-center justify-center bg-black/50 text-sm text-neutral-400"}${overlayPreviewEnabled ? " cursor-move touch-none" : ""}${overlayPreviewEnabled && selectedOverlay === "video" ? " outline outline-2 outline-white outline-offset-[-2px]" : ""}`}
             style={{
-              ...(captionTemplatePreviewSnapshot
-                ? {
-                    left: `${captionTemplatePreviewSnapshot.layout.video.x / 10.8}%`,
-                    top: `${captionTemplatePreviewSnapshot.layout.video.y / 19.2}%`,
-                    width: `${captionTemplatePreviewSnapshot.layout.video.width / 10.8}%`,
-                    height: `${captionTemplatePreviewSnapshot.layout.video.height / 19.2}%`,
-                  }
-                : activeCustomTemplate
-                ? customVideoFrameStyle(activeCustomTemplate.config.video)
-                : { top: `${editorLayout.videoTop}%`, height: `${editorLayout.videoHeight}%` }),
+              ...editorVideoBaseStyle,
               ...(videoMovementStyle || {}),
             }}
             onPointerDown={overlayPreviewEnabled
@@ -10713,8 +10686,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
               data-editor-video-resize-handle={resizeHandle.handle}
               aria-label={resizeHandle.label}
               onPointerDown={(event) => beginEditorVideoResize(resizeHandle.handle, event)}
-              className={`pointer-events-auto absolute h-3 w-3 touch-none rounded-sm border border-[#18181b] bg-white shadow-[0_0_0_1px_rgba(255,255,255,.9)] ${resizeHandle.positionClassName} ${resizeHandle.cursorClassName}`}
-            />)}
+              className={`pointer-events-auto absolute h-7 w-7 touch-none border-0 bg-transparent p-0 ${resizeHandle.positionClassName} ${resizeHandle.cursorClassName}`}
+            >
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-[#18181b] bg-white shadow-[0_0_0_1px_rgba(255,255,255,.9)]"
+              />
+            </button>)}
           </div>}
           {overlayPreviewEnabled && videoConnectionState === "reconnecting" && <div
             className="pointer-events-none absolute inset-x-3 top-3 z-[70] flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#202024]/95 px-3 py-2.5 text-center text-xs font-bold text-white/80 shadow-lg backdrop-blur"

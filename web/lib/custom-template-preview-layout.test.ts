@@ -5,24 +5,64 @@ import {
   customCommentCanDockToVideo,
   customCommentLayerY,
   customVideoFrameStyle,
+  resolveEditorVideoPreviewFrame,
 } from "@/lib/custom-template-preview-layout";
-import { createDefaultTemplateConfig } from "@/lib/template-config";
+import {
+  createDefaultTemplateConfig,
+  upgradeTemplateConfigToV5,
+} from "@/lib/template-config";
 
 describe("custom template preview geometry", () => {
   it("maps saved video pixels to the 1080 by 1920 preview without drift", () => {
     const style = customVideoFrameStyle({
-      aspectRatio: "16:9",
       x: 140,
       y: 600,
       width: 800,
       height: 450,
-      fit: "cover",
     });
 
     expect(Number.parseFloat(style.left) / 100 * 1080).toBeCloseTo(140, 10);
     expect(Number.parseFloat(style.top) / 100 * 1920).toBeCloseTo(600, 10);
     expect(Number.parseFloat(style.width) / 100 * 1080).toBeCloseTo(800, 10);
     expect(Number.parseFloat(style.height) / 100 * 1920).toBeCloseTo(450, 10);
+  });
+
+  it("keeps v5 custom video geometry ahead of caption composition geometry", () => {
+    const config = upgradeTemplateConfigToV5(createDefaultTemplateConfig());
+    config.video.y = 536;
+    const captionVideoFrame = {
+      x: 0,
+      y: 432,
+      width: 1080,
+      height: 608,
+    };
+
+    expect(resolveEditorVideoPreviewFrame({
+      customTemplateConfig: config,
+      captionVideoFrame,
+      fallbackFrame: captionVideoFrame,
+    })).toEqual(config.video);
+  });
+
+  it("preserves caption composition precedence for legacy templates", () => {
+    const config = createDefaultTemplateConfig();
+    const captionVideoFrame = {
+      x: 0,
+      y: 432,
+      width: 1080,
+      height: 608,
+    };
+
+    expect(resolveEditorVideoPreviewFrame({
+      customTemplateConfig: config,
+      captionVideoFrame,
+      fallbackFrame: config.video,
+    })).toEqual(captionVideoFrame);
+    expect(resolveEditorVideoPreviewFrame({
+      customTemplateConfig: config,
+      captionVideoFrame: null,
+      fallbackFrame: captionVideoFrame,
+    })).toEqual(config.video);
   });
 
   it("keeps the saved comment attached to the video bottom in card previews", () => {
