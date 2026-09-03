@@ -1866,6 +1866,25 @@ describe("subtitle template edit isolation", () => {
       releaseId: candidateReleaseId,
       releaseChannel: "canary",
     });
+    if (sourceCueIndexes) {
+      const pendingDocument = tx.mock.calls.flat().find((value) => (
+        typeof value === "object"
+        && value !== null
+        && "renderSpec" in value
+      ));
+      expect(pendingDocument).toMatchObject({
+        template: {
+          snapshot: {
+            presetVersion: 3,
+            config: {
+              schemaVersion: 5,
+              title: { y: 295 },
+              subtitle: { variant: "pop" },
+            },
+          },
+        },
+      });
+    }
     const updateCall = tx.mock.calls.find(([strings]) =>
       Array.from(strings as TemplateStringsArray).join("").includes(
         "update shorts_mvp.generated_shorts s",

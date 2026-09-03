@@ -33,6 +33,39 @@ describe("edited template selection", () => {
     });
   });
 
+  it("keeps a built-in subtitle layout for title-only edits", () => {
+    const templateSnapshot = {
+      presetVersion: 3,
+      config: { schemaVersion: 5, title: { y: 295 } },
+    };
+    expect(resolveEditedTemplateSelection({
+      existing: {
+        templateId: "dark-minimal",
+        customTemplateId: null,
+        templateSnapshot,
+      },
+      requestedTemplateId: "dark-minimal",
+      requestedCustomTemplateId: null,
+      templateSelectionTouched: false,
+    })).toEqual({
+      customTemplateId: null,
+      templateSnapshot,
+    });
+    expect(resolveEditedTemplateSelection({
+      existing: {
+        templateId: "dark-minimal",
+        customTemplateId: null,
+        templateSnapshot,
+      },
+      requestedTemplateId: "dark-minimal",
+      requestedCustomTemplateId: null,
+      templateSelectionTouched: true,
+    })).toEqual({
+      customTemplateId: null,
+      templateSnapshot: CURRENT_PRESET_TEMPLATE_SNAPSHOT,
+    });
+  });
+
   it("clears a custom template when its base preset is explicitly selected", () => {
     expect(resolveEditedTemplateSelection({
       existing: {

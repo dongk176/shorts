@@ -269,6 +269,7 @@ import {
   shouldPreserveInitialEditorRenderSpec,
   type EditorInitialRenderSpecLayerFingerprints,
 } from "@/lib/editor-initial-render-spec";
+import { resolveBuiltInSubtitleTemplateSnapshot } from "@/lib/editor-built-in-subtitle-template";
 import {
   editorDraftDocumentSnapshotSchema,
   editorDocumentSnapshotSchema,
@@ -4100,6 +4101,28 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     : undefined;
   const presetBrandColor = generatedShortBrandColor(item)
     || captionTemplateBrandColor;
+  const builtInSubtitleTemplateSnapshot = useMemo(
+    () => resolveBuiltInSubtitleTemplateSnapshot({
+      templateId: initialTemplateId,
+      customTemplateId: savedEditorDocument?.template.customTemplateId
+        ?? item.customTemplateId,
+      subtitleTemplateId: item.subtitleTemplateId,
+      templateSnapshot: savedEditorDocument?.template.snapshot,
+      fallbackTemplateSnapshot: item.templateSnapshot,
+      accentColor: captionTemplateEditorSpec?.style.accentColor
+        || presetBrandColor,
+    }),
+    [
+      captionTemplateEditorSpec?.style.accentColor,
+      initialTemplateId,
+      item.customTemplateId,
+      item.subtitleTemplateId,
+      item.templateSnapshot,
+      presetBrandColor,
+      savedEditorDocument?.template.customTemplateId,
+      savedEditorDocument?.template.snapshot,
+    ],
+  );
   const initialTitleAspectRatio = initialTemplateId === "comment-capture" && initialVideoAspectRatio === "9:16"
     ? "4:5"
     : initialVideoAspectRatio || "1:1";
@@ -4273,6 +4296,13 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
   const activeCustomTemplateRef = useRef(activeCustomTemplate);
   const presetVersionRef = useRef(presetVersion);
   const templateSelectionTouchedRef = useRef(templateSelectionTouched);
+  const builtInSubtitleTemplateSelectionActive = Boolean(
+    builtInSubtitleTemplateSnapshot
+    && !activeCustomTemplate
+    && templateId === initialTemplateId,
+  );
+  const templateSelectionChangedForSave = templateSelectionTouched
+    && !builtInSubtitleTemplateSelectionActive;
   const initialTemplateProvidesComments = initialTemplateId === "comment-capture"
     && (!availableCustomTemplate || availableCustomTemplate.config.comment.visible);
   const [comments, setComments] = useState<CommentOverlay[]>(() => {
@@ -4969,7 +4999,9 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             config: activeCustomTemplate.config,
             version: activeCustomTemplate.version,
           }
-        : { presetVersion },
+        : builtInSubtitleTemplateSelectionActive
+          ? structuredClone(builtInSubtitleTemplateSnapshot)
+          : { presetVersion },
     },
     title: {
       text: title,
@@ -5017,6 +5049,8 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
     return document;
   }, [
     activeCustomTemplate,
+    builtInSubtitleTemplateSelectionActive,
+    builtInSubtitleTemplateSnapshot,
     channel,
     comments,
     editorChannelThumbnailUrl,
@@ -9936,6 +9970,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
         };
         const requestFingerprint = JSON.stringify({
           release: releaseRequest,
+          templateSelectionTouched: templateSelectionChangedForSave,
           document: validatedDocument.data,
         });
         const previousRequest = editorSaveRequestRef.current;
@@ -9953,6 +9988,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             requestId,
             timelineVersion: timeline.version,
             release: releaseRequest,
+            templateSelectionTouched: templateSelectionChangedForSave,
             document: nextDocument,
           }),
         });
@@ -9983,6 +10019,7 @@ function Editor({ item, channelThumbnailUrl, onClose, onChanged, standalone = fa
             requestId,
             fingerprint: JSON.stringify({
               release: releaseRequest,
+              templateSelectionTouched: templateSelectionChangedForSave,
               document: refreshedEditorDocument,
             }),
           };

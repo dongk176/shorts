@@ -24,6 +24,7 @@ type ResolveEditedTemplateSelectionInput = {
   existing: ExistingTemplateSelection;
   requestedTemplateId: TemplateId;
   requestedCustomTemplateId?: string | null;
+  templateSelectionTouched?: boolean;
 };
 
 export type EditedTemplateSelection = {
@@ -35,10 +36,17 @@ export function resolveEditedTemplateSelection({
   existing,
   requestedTemplateId,
   requestedCustomTemplateId,
+  templateSelectionTouched,
 }: ResolveEditedTemplateSelectionInput): EditedTemplateSelection | null {
-  if (requestedCustomTemplateId !== undefined && requestedCustomTemplateId !== null) {
+  const effectiveRequestedCustomTemplateId = templateSelectionTouched === false
+    ? undefined
+    : requestedCustomTemplateId;
+  if (
+    effectiveRequestedCustomTemplateId !== undefined
+    && effectiveRequestedCustomTemplateId !== null
+  ) {
     if (
-      requestedCustomTemplateId !== existing.customTemplateId
+      effectiveRequestedCustomTemplateId !== existing.customTemplateId
       || requestedTemplateId !== existing.templateId
     ) {
       return null;
@@ -49,7 +57,7 @@ export function resolveEditedTemplateSelection({
     };
   }
 
-  if (requestedCustomTemplateId === null) {
+  if (effectiveRequestedCustomTemplateId === null) {
     return {
       customTemplateId: null,
       templateSnapshot: CURRENT_PRESET_TEMPLATE_SNAPSHOT,

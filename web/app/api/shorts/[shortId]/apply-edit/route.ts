@@ -21,6 +21,7 @@ import {
   editorDocumentSnapshotSchema,
   type ValidatedEditorDocumentSnapshot,
 } from "@/lib/editor-document-contract";
+import { resolveBuiltInSubtitleTemplateSnapshot } from "@/lib/editor-built-in-subtitle-template";
 import type { EditorDocumentJsonObject } from "@/lib/editor-document-snapshot";
 import {
   createEditorRenderSpec,
@@ -134,6 +135,7 @@ const editorDocumentRequestSchema = z.object({
     uiVersion: z.number().int().min(2),
     documentVersion: z.number().int().min(2),
   }).strict(),
+  templateSelectionTouched: z.boolean().default(false),
   document: editorDocumentSnapshotSchema,
 }).strict();
 
@@ -193,12 +195,14 @@ async function applyEditorDocument({
   requestId,
   requestedRelease,
   timelineVersion: requestedTimelineVersion,
+  templateSelectionTouched,
   document: requestedDocument,
 }: {
   shortId: string;
   requestId: string;
   requestedRelease: RequestedEditorRelease;
   timelineVersion?: number;
+  templateSelectionTouched: boolean;
   document: ValidatedEditorDocumentSnapshot;
 }) {
   const session = await requireAuthenticatedMvpSession();
@@ -607,14 +611,24 @@ async function applyEditorDocument({
     throw new HttpError(400, "텍스트 노출 시간이 최종 영상 길이를 넘을 수 없습니다.");
   }
 
+  const builtInSubtitleTemplateSnapshot =
+    resolveBuiltInSubtitleTemplateSnapshot({
+      templateId: existing.templateId,
+      customTemplateId: existing.customTemplateId,
+      subtitleTemplateId: existing.subtitleTemplateId,
+      templateSnapshot: existing.templateSnapshot,
+      accentColor: captionRenderSpec?.style.accentColor,
+    });
   const templateSelection = resolveEditedTemplateSelection({
     existing: {
       templateId: existing.templateId,
       customTemplateId: existing.customTemplateId,
-      templateSnapshot: existing.templateSnapshot,
+      templateSnapshot: builtInSubtitleTemplateSnapshot
+        || existing.templateSnapshot,
     },
     requestedTemplateId: requestedDocument.template.id,
     requestedCustomTemplateId: requestedDocument.template.customTemplateId,
+    templateSelectionTouched,
   });
   if (!templateSelection) {
     throw new HttpError(400, "선택한 템플릿을 이 영상에 적용할 수 없습니다.");
@@ -878,6 +892,7 @@ export async function POST(request: Request, context: { params: Promise<{ shortI
         requestId: input.requestId,
         requestedRelease: input.release,
         timelineVersion: input.timelineVersion,
+        templateSelectionTouched: input.templateSelectionTouched,
         document: input.document,
       });
     }
