@@ -22,6 +22,10 @@ const overviewSource = readFileSync(
   new URL("../../../lib/admin-overview.ts", import.meta.url),
   "utf8",
 );
+const overviewRouteSource = readFileSync(
+  new URL("../../api/admin/overview/route.ts", import.meta.url),
+  "utf8",
+);
 const membersDashboardSource = readFileSync(
   new URL("./admin-members-dashboard.tsx", import.meta.url),
   "utf8",
@@ -71,18 +75,24 @@ describe("administrator shell recovery", () => {
       "coalesce(sum(amount_krw),0)::bigint as sales",
     );
     expect(overviewSource).toContain("and amount_krw>0");
-    expect(overviewSource).toContain("revalidate: 30");
-    expect(pageSource).toContain("loadAdminOverview()");
+    expect(overviewSource).toContain("revalidate: 60");
+    expect(overviewSource).toContain("from metrics cross join subscriptions");
+    expect(pageSource).not.toContain("loadAdminOverview()");
+    expect(shellSource).toContain('fetch("/api/admin/overview"');
+    expect(overviewRouteSource).toContain("await requireAdminUser();");
     expect(overviewSource).not.toContain("await Promise.all([");
   });
 
-  it("loads billing orders in stable administrator-only pages of 100", () => {
-    expect(billingOrderLoaderSource).toContain("ADMIN_BILLING_ORDER_PAGE_SIZE = 100");
+  it("loads billing orders in stable administrator-only pages of 20", () => {
+    expect(billingOrderLoaderSource).toContain("ADMIN_BILLING_ORDER_PAGE_SIZE = 20");
+    expect(billingOrderLoaderSource).toContain("with selected_orders as materialized");
     expect(billingOrderLoaderSource).toContain("order by o.created_at desc,o.id desc");
     expect(billingOrderLoaderSource).toContain("limit ${ADMIN_BILLING_ORDER_PAGE_SIZE + 1}");
+    expect(billingOrderLoaderSource).toContain("nextCursor:");
     expect(billingOrderLoaderSource).toContain('productCode: row.productCode ? String(row.productCode) : "unknown"');
     expect(billingOrderRouteSource).toContain("await requireAdminUser();");
     expect(billingDashboardSource).toContain('"더보기"');
+    expect(billingDashboardSource).toContain("IntersectionObserver");
     expect(billingDashboardSource).toContain("setLoadedOrders");
   });
 

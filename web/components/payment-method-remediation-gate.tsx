@@ -53,6 +53,7 @@ export function PaymentMethodRemediationGate({
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const requestIdRef = useRef<string | null>(null);
+  const isAdminPath = pathname.startsWith("/admin/");
   const gateOpen = Boolean(action);
   const hasInitialAction = Boolean(initialAction);
   const pollingState = action?.state || null;
@@ -63,8 +64,9 @@ export function PaymentMethodRemediationGate({
   }, [initialAction]);
 
   useEffect(() => {
-    if (!authenticated || hasInitialAction) return;
+    if (!authenticated || hasInitialAction || isAdminPath) return;
     const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 8_000);
     void fetch("/api/billing/payment-method-remediations/current", {
       credentials: "same-origin",
       cache: "no-store",
@@ -75,9 +77,12 @@ export function PaymentMethodRemediationGate({
       if (!controller.signal.aborted && "action" in result) {
         setAction(result.action ?? null);
       }
-    }).catch(() => undefined);
-    return () => controller.abort();
-  }, [authenticated, hasInitialAction]);
+    }).catch(() => undefined).finally(() => window.clearTimeout(timeout));
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [authenticated, hasInitialAction, isAdminPath]);
 
   useEffect(() => {
     if (!gateOpen) return;
@@ -125,7 +130,8 @@ export function PaymentMethodRemediationGate({
 
   useEffect(() => {
     if (
-      !remediationId
+      isAdminPath
+      || !remediationId
       || !pollingState
       || !["required", "registering", "awaiting_provider", "manual_review"].includes(pollingState)
     ) return;
@@ -150,9 +156,9 @@ export function PaymentMethodRemediationGate({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [pollingState, remediationId]);
+  }, [isAdminPath, pollingState, remediationId]);
 
-  if (!action || (action.state === "expired" && pathname.startsWith("/pricing"))) {
+  if (isAdminPath || !action || (action.state === "expired" && pathname.startsWith("/pricing"))) {
     return null;
   }
 

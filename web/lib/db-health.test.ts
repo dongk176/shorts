@@ -22,9 +22,11 @@ function resetGlobalDbState() {
   const globalDb = globalThis as typeof globalThis & {
     __shortsMvpDbClient?: unknown;
     __shortsMvpDbHealthCheck?: Promise<void>;
+    __shortsMvpDbHealthyUntil?: number;
   };
   delete globalDb.__shortsMvpDbClient;
   delete globalDb.__shortsMvpDbHealthCheck;
+  delete globalDb.__shortsMvpDbHealthyUntil;
 }
 
 describe("database pool health recovery", () => {

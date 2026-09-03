@@ -12,14 +12,10 @@ import { SidebarNavigationAnnouncement } from "@/components/sidebar-navigation-a
 import { UserOnboardingOverlay } from "@/components/user-onboarding-overlay";
 import { WelcomeOverlayQueueProvider } from "@/components/welcome-overlay-queue";
 import { UsageProvider, type UsageState } from "@/components/usage-provider";
-import { getDb } from "@/lib/db";
-import { getPaymentMethodAction } from "@/lib/billing-payment-method-remediation";
-import type { PaymentMethodAction } from "@/lib/contracts";
 import { I18nProvider } from "@/lib/i18n/provider";
 import { getRequestMessages } from "@/lib/i18n/server";
 import { DEFAULT_DESCRIPTION, OG_IMAGE_PATH, SITE_NAME, SITE_URL } from "@/lib/seo";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
-import { getUsageSnapshot } from "@/lib/usage";
 import "./globals.css";
 import "./site-sidebar.css";
 import "./editor-v2.css";
@@ -83,54 +79,14 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     typeof analyticsMeasurementId === "string"
     && /^G-[A-Z0-9]+$/.test(analyticsMeasurementId)
   );
-  let initialUsageState: UsageState = {
+  const initialUsageState: UsageState = {
     authenticated: false,
     accountId: null,
     isEnterprise: false,
     usage: null,
   };
-  let initialPaymentMethodAction: PaymentMethodAction = null;
-  try {
-    const authenticatedUser = await getAuthenticatedUser();
-    if (authenticatedUser) {
-      const db = getDb();
-      const appUserRows = await db`
-        select app_user.id,
-          exists (
-            select 1 from shorts_mvp.managed_login_accounts managed
-            where managed.app_user_id=app_user.id
-              and managed.account_type='enterprise' and managed.is_active=true
-          ) as is_enterprise
-        from shorts_mvp.app_users app_user
-        where app_user.auth_user_id=${authenticatedUser.id}
-        limit 1
-      `;
-      const appUserId = typeof appUserRows[0]?.id === "string" ? appUserRows[0].id : null;
-      const isEnterprise = appUserRows[0]?.isEnterprise === true;
-      const [usage, paymentMethodAction] = appUserId
-        ? await Promise.all([
-            getUsageSnapshot(db, {
-              id: "",
-              selectedPlanCode: "free",
-              userId: appUserId,
-              user: null,
-            }),
-            getPaymentMethodAction(db, appUserId),
-          ])
-        : [null, null];
-      initialUsageState = {
-        authenticated: true,
-        accountId: appUserId,
-        isEnterprise,
-        usage,
-      };
-      initialPaymentMethodAction = paymentMethodAction;
-    }
-  } catch (error) {
-    console.error("header_initial_usage_failed", {
-      errorName: error instanceof Error ? error.name : "UnknownError",
-    });
-  }
+  const authenticatedUser = await getAuthenticatedUser();
+  initialUsageState.authenticated = Boolean(authenticatedUser);
   const websiteData = {
     "@context": "https://schema.org",
     "@graph": [
@@ -188,7 +144,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               <MarketingEmailPreferenceOverlay />
               <ProjectFeedbackOverlay />
               <PaymentMethodRemediationGate
-                initialAction={initialPaymentMethodAction}
+                initialAction={null}
                 authenticated={initialUsageState.authenticated}
               />
             </WelcomeOverlayQueueProvider>

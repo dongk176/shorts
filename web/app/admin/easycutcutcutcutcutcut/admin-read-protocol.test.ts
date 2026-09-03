@@ -4,6 +4,10 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+const supportingSource = readFileSync(
+  new URL("../../../lib/admin-billing-supporting-data.ts", import.meta.url),
+  "utf8",
+);
 const ast = ts.createSourceFile("page.tsx", pageSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const queries: ts.TaggedTemplateExpression[] = [];
 function visit(node: ts.Node) {
@@ -11,6 +15,19 @@ function visit(node: ts.Node) {
   ts.forEachChild(node, visit);
 }
 visit(ast);
+const supportingAst = ts.createSourceFile(
+  "admin-billing-supporting-data.ts",
+  supportingSource,
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.TS,
+);
+const supportingQueries: ts.TaggedTemplateExpression[] = [];
+function visitSupporting(node: ts.Node) {
+  if (ts.isTaggedTemplateExpression(node)) supportingQueries.push(node);
+  ts.forEachChild(node, visitSupporting);
+}
+visitSupporting(supportingAst);
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
 // Exact 3c0589ed6a78dcc63e4044e3fee447a8ccc48a6f source, captured before this change.
@@ -25,8 +42,6 @@ const baselineQueryHashes = [
   "4b32d0a5e0ee4d9d80c6ff7537932e86904334efa70681e35221b3a6a5247720",
   "d1d0c25753ec3833ef7453ef8afa3d355557cbde188eb3c512c8af2db59acdfe",
   "2de6becbf1a746aaff0bfe7d6a9c8c7502da6979033206a5acc8032d482bbab4",
-  "49408f3d8731628252ce53ac58f211ecc3d5cdb98230c20f051fc18b1eeb5069",
-  "ff35626b23a826312138df90ad1382c69062cb78c4b1853ebdc7018020a03b42",
   "5ab721261debd35e33c72a52e974a44ef645e6e5b05bb20d3617c22c216b70c4",
   "cd6fea9a39a58eb97ce4b762455c0d71e6c88abdfff0d29da287b0ab3f3466f5",
   "c294d747b7ccff2d2e3f4dc4c3d1ab1979d2f69ace79b58475f6fd5e6c68a7a6",
@@ -47,8 +62,6 @@ const targets = [
   { index: 6, name: "checks", clause: "and", preceding: ")" },
   { index: 7, name: "testers", clause: "where", preceding: "join shorts_mvp.app_users tester_user on tester_user.id=tester.user_id" },
   { index: 8, name: "renders", clause: "and", preceding: "where release_id is not null" },
-  { index: 9, name: "refunds", clause: "where", preceding: "join shorts_mvp.app_users a on a.id=r.requested_by_user_id" },
-  { index: 10, name: "remediation", clause: "and", preceding: "where r.campaign_key='legacy_easycut_pro_202608'" },
 ] as const;
 function removeExactNeutralGuard(target: typeof targets[number]) {
   const query = queries[target.index];
@@ -73,8 +86,8 @@ function removeExactNeutralGuard(target: typeof targets[number]) {
 }
 
 describe("administrator parameterized read protocol", () => {
-  it("adds literal true bindings to exactly the six approved query nodes", () => {
-    expect(queries).toHaveLength(25);
+  it("adds literal true bindings to exactly the four page query nodes", () => {
+    expect(queries).toHaveLength(23);
     const changed = queries.flatMap((query, index) => (
       sha256(query.getText(ast)) !== baselineQueryHashes[index] ? [index] : []
     ));
@@ -82,7 +95,20 @@ describe("administrator parameterized read protocol", () => {
     const trueBindings = queries.flatMap((query) => ts.isTemplateExpression(query.template)
       ? query.template.templateSpans.filter(({ expression }) => expression.kind === ts.SyntaxKind.TrueKeyword)
       : []);
-    expect(trueBindings).toHaveLength(6);
+    expect(trueBindings).toHaveLength(4);
+  });
+
+  it("keeps the two deferred billing reads on the parameterized protocol", () => {
+    expect(supportingQueries).toHaveLength(2);
+    for (const query of supportingQueries) {
+      expect(query.tag.getText(supportingAst)).toBe("db");
+      expect(ts.isTemplateExpression(query.template)).toBe(true);
+      if (!ts.isTemplateExpression(query.template)) continue;
+      const trueBindings = query.template.templateSpans.filter(
+        ({ expression }) => expression.kind === ts.SyntaxKind.TrueKeyword,
+      );
+      expect(trueBindings).toHaveLength(1);
+    }
   });
 
   it.each(targets)("keeps $name SQL byte-identical after removing its one outer true guard", (target) => {

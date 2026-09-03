@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { ensureReadDbReady, getDb } from "@/lib/db";
 import { apiError } from "@/lib/http";
 import { requireMvpSession } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
@@ -16,6 +16,7 @@ export async function GET() {
         { headers: { "Cache-Control": "private, no-store" } },
       );
     }
+    await ensureReadDbReady();
     const session = await requireMvpSession(authenticatedUser);
     const usage = await getUsageSnapshot(getDb(), session);
     return NextResponse.json(

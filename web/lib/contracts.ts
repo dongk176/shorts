@@ -264,6 +264,37 @@ export type VideoJob = {
   shorts: GeneratedShort[];
 };
 
+export type ProjectCardShort = Pick<
+  GeneratedShort,
+  "id" | "durationSeconds" | "renderVersion" | "rerenderProgress" | "status"
+>;
+
+export type ProjectListItem = Pick<
+  VideoJob,
+  | "id"
+  | "projectNumber"
+  | "isExample"
+  | "videoTitle"
+  | "thumbnailUrl"
+  | "sourceDurationSeconds"
+  | "status"
+  | "stage"
+  | "stageCompletedCount"
+  | "stageTotalCount"
+  | "errorMessage"
+  | "createdAt"
+  | "expiresAt"
+> & {
+  shorts: ProjectCardShort[];
+};
+
+export type ProjectListPage = {
+  projects: ProjectListItem[];
+  totalCount: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
 export type MvpState = {
   sessionId: string | null;
   user: {

@@ -26,124 +26,105 @@ export type AdminOverviewData = {
 
 export const loadAdminOverview = unstable_cache(async (): Promise<AdminOverviewData> => {
   const db = getDb();
-  // Keep the administrator overview from occupying every connection in the
-  // four-slot serverless pool at once. These cached reads are small, and
-  // sequential execution leaves capacity for authentication and the active
-  // dashboard tab even when two administrator navigations overlap.
-  const metricRows = await db`
+  const rows = await db`
+    with metrics as (
       select
         coalesce(sum(amount_krw) filter (where status='succeeded'),0)::bigint as gross_sales,
         coalesce(sum(refunded_amount_krw),0)::bigint as refunded_sales,
         coalesce(sum(amount_krw) filter (
-          where status='succeeded'
-            and amount_krw>0
+          where status='succeeded' and amount_krw>0
             and approved_at >= (
               date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul')
               at time zone 'Asia/Seoul'
             )
         ),0)::bigint as today_sales,
-        count(*) filter (
-          where status='succeeded' and amount_krw>0
-        )::integer as paid_orders,
+        count(*) filter (where status='succeeded' and amount_krw>0)::integer as paid_orders,
         count(*) filter (where status in ('unknown','manual_review'))::integer as review_orders
       from shorts_mvp.billing_orders
-    `;
-  const subscriptionRows = await db`
+    ),
+    subscriptions as (
       select
         count(*) filter (where subscription.status='active')::integer as active,
         count(*) filter (where subscription.status='past_due')::integer as past_due,
+        count(*) filter (where subscription.billing_review_status='manual_review')::integer as manual_review,
         count(*) filter (
-          where subscription.billing_review_status='manual_review'
-        )::integer as manual_review,
-        count(*) filter (
-          where subscription.status='active'
-            and subscription.plan_code='easycut_pro_v2'
+          where subscription.status='active' and subscription.plan_code='easycut_pro_v2'
         )::integer as active_pro,
         coalesce(sum(plan.monthly_price_krw) filter (
-          where subscription.status='active'
-            and subscription.plan_code='easycut_pro_v2'
+          where subscription.status='active' and subscription.plan_code='easycut_pro_v2'
         ),0)::bigint as active_billing_krw
       from shorts_mvp.user_subscriptions subscription
       left join shorts_mvp.plans plan on plan.code=subscription.plan_code
-    `;
-  const salesTrendRows = await db`
-      with days as (
-        select generate_series(
-          date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days',
-          date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul'),
-          interval '1 day'
-        )::date as trend_day
-      ),
-      daily_sales as (
-        select
-          (approved_at at time zone 'Asia/Seoul')::date as trend_day,
-          coalesce(sum(amount_krw),0)::bigint as sales,
-          count(*)::integer as order_count
-        from shorts_mvp.billing_orders
-        where status='succeeded'
-          and amount_krw>0
-          and approved_at >= (
-            date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days'
-          ) at time zone 'Asia/Seoul'
-        group by (approved_at at time zone 'Asia/Seoul')::date
-      )
-      select
-        to_char(days.trend_day,'YYYY-MM-DD') as date,
-        coalesce(daily_sales.sales,0)::bigint as sales,
-        coalesce(daily_sales.order_count,0)::integer as order_count
-      from days
-      left join daily_sales using (trend_day)
-      order by days.trend_day
-    `;
-  const memberTrendRows = await db`
-      with days as (
-        select generate_series(
-          date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days',
-          date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul'),
-          interval '1 day'
-        )::date as trend_day
-      ),
-      daily_members as (
-        select
-          (created_at at time zone 'Asia/Seoul')::date as trend_day,
-          count(*)::integer as member_count
-        from shorts_mvp.app_users
-        where created_at >= (
+    ),
+    days as (
+      select generate_series(
+        date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days',
+        date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul'),
+        interval '1 day'
+      )::date as trend_day
+    ),
+    daily_sales as (
+      select (approved_at at time zone 'Asia/Seoul')::date as trend_day,
+        coalesce(sum(amount_krw),0)::bigint as sales,count(*)::integer as order_count
+      from shorts_mvp.billing_orders
+      where status='succeeded' and amount_krw>0
+        and approved_at >= (
           date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days'
         ) at time zone 'Asia/Seoul'
-        group by (created_at at time zone 'Asia/Seoul')::date
-      )
-      select
-        to_char(days.trend_day,'YYYY-MM-DD') as date,
-        coalesce(daily_members.member_count,0)::integer as member_count
-      from days
-      left join daily_members using (trend_day)
-      order by days.trend_day
-    `;
-  const metrics = metricRows[0] || {};
-  const subscriptions = subscriptionRows[0] || {};
+      group by (approved_at at time zone 'Asia/Seoul')::date
+    ),
+    daily_members as (
+      select (created_at at time zone 'Asia/Seoul')::date as trend_day,
+        count(*)::integer as member_count
+      from shorts_mvp.app_users
+      where created_at >= (
+        date_trunc('day',clock_timestamp() at time zone 'Asia/Seoul') - interval '13 days'
+      ) at time zone 'Asia/Seoul'
+      group by (created_at at time zone 'Asia/Seoul')::date
+    )
+    select metrics.*,subscriptions.*,
+      (
+        select jsonb_agg(jsonb_build_object(
+          'date',to_char(days.trend_day,'YYYY-MM-DD'),
+          'sales',coalesce(daily_sales.sales,0),
+          'orderCount',coalesce(daily_sales.order_count,0)
+        ) order by days.trend_day)
+        from days left join daily_sales using (trend_day)
+      ) as sales_trend,
+      (
+        select jsonb_agg(jsonb_build_object(
+          'date',to_char(days.trend_day,'YYYY-MM-DD'),
+          'memberCount',coalesce(daily_members.member_count,0)
+        ) order by days.trend_day)
+        from days left join daily_members using (trend_day)
+      ) as member_trend
+    from metrics cross join subscriptions
+  `;
+  const row = rows[0] || {};
+  const salesTrend = Array.isArray(row.salesTrend) ? row.salesTrend : [];
+  const memberTrend = Array.isArray(row.memberTrend) ? row.memberTrend : [];
 
   return {
     metrics: {
-      grossSales: Number(metrics.grossSales || 0),
-      refundedSales: Number(metrics.refundedSales || 0),
-      todaySales: Number(metrics.todaySales || 0),
-      paidOrders: Number(metrics.paidOrders || 0),
-      orderReviewCount: Number(metrics.reviewOrders || 0),
-      activeSubscriptions: Number(subscriptions.active || 0),
-      pastDueSubscriptions: Number(subscriptions.pastDue || 0),
-      manualReviewSubscriptions: Number(subscriptions.manualReview || 0),
-      activeProSubscriptions: Number(subscriptions.activePro || 0),
-      activeSubscriptionBillingKrw: Number(subscriptions.activeBillingKrw || 0),
+      grossSales: Number(row.grossSales || 0),
+      refundedSales: Number(row.refundedSales || 0),
+      todaySales: Number(row.todaySales || 0),
+      paidOrders: Number(row.paidOrders || 0),
+      orderReviewCount: Number(row.reviewOrders || 0),
+      activeSubscriptions: Number(row.active || 0),
+      pastDueSubscriptions: Number(row.pastDue || 0),
+      manualReviewSubscriptions: Number(row.manualReview || 0),
+      activeProSubscriptions: Number(row.activePro || 0),
+      activeSubscriptionBillingKrw: Number(row.activeBillingKrw || 0),
     },
-    salesTrend: salesTrendRows.map((row) => ({
-      date: String(row.date),
-      sales: Number(row.sales || 0),
-      orderCount: Number(row.orderCount || 0),
+    salesTrend: salesTrend.map((item) => ({
+      date: String((item as Record<string, unknown>).date),
+      sales: Number((item as Record<string, unknown>).sales || 0),
+      orderCount: Number((item as Record<string, unknown>).orderCount || 0),
     })),
-    memberTrend: memberTrendRows.map((row) => ({
-      date: String(row.date),
-      memberCount: Number(row.memberCount || 0),
+    memberTrend: memberTrend.map((item) => ({
+      date: String((item as Record<string, unknown>).date),
+      memberCount: Number((item as Record<string, unknown>).memberCount || 0),
     })),
   };
-}, ["admin-overview-v1"], { revalidate: 30 });
+}, ["admin-overview-v2"], { revalidate: 60 });

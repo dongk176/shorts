@@ -34,6 +34,9 @@ export const PROTECTED_APP_ROUTES = [
   "/api/file-upload/sessions/route",
   "/api/file-upload/sessions/[sessionId]/route",
   "/api/projects/[projectNumber]/source-thumbnail/route",
+  "/api/projects/route",
+  "/api/admin/overview/route",
+  "/api/admin/billing/supporting-data/route",
 ];
 
 // These routes are the only intentional additions relative to the currently
@@ -41,6 +44,9 @@ export const PROTECTED_APP_ROUTES = [
 export const ALLOWED_ROUTE_ADDITIONS_FROM_BASELINE = [
   "/api/background-assets/route",
   "/api/background-assets/[assetId]/route",
+  "/api/projects/route",
+  "/api/admin/overview/route",
+  "/api/admin/billing/supporting-data/route",
   "/api/internal/job-admission-preflight/route",
   "/api/file-upload/sessions/route",
   "/api/file-upload/sessions/[sessionId]/route",

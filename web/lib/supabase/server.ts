@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { getDb } from "@/lib/db";
 import { getSupabaseAuthConfig } from "@/lib/supabase/config";
 import {
@@ -48,7 +49,7 @@ export async function createSupabaseServerClient() {
   return createConfiguredSupabaseServerClient(config, cookieStore);
 }
 
-export async function getAuthenticatedUser() {
+export const getAuthenticatedUser = cache(async function getAuthenticatedUser() {
   // Read request cookies before checking optional configuration. In builds
   // where auth variables are injected only at runtime, returning first would
   // let Next.js prerender and publicly cache the signed-out header.
@@ -75,4 +76,4 @@ export async function getAuthenticatedUser() {
   } catch {
     return null;
   }
-}
+});

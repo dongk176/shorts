@@ -36,45 +36,72 @@ export function UsageProvider({
 }) {
   const pathname = usePathname();
   const [usageState, setUsageState] = useState(initialState);
-  const skippedInitialRefresh = useRef(false);
+  const lastSuccessfulLoadAt = useRef(initialState.usage ? Date.now() : 0);
+  const inFlight = useRef<Promise<UsageSnapshot | null> | null>(null);
+  const activeController = useRef<AbortController | null>(null);
+  const isAdminPath = pathname.startsWith("/admin/");
 
-  const loadUsage = useCallback(async (): Promise<UsageSnapshot | null> => {
-    const response = await fetch("/api/mvp/usage", {
+  const loadUsageIfNeeded = useCallback((force = false): Promise<UsageSnapshot | null> => {
+    if (isAdminPath) return Promise.resolve(null);
+    if (!force && Date.now() - lastSuccessfulLoadAt.current < 30_000) {
+      return Promise.resolve(usageState.usage);
+    }
+    if (inFlight.current) return inFlight.current;
+
+    const controller = new AbortController();
+    activeController.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 8_000);
+    const request = fetch("/api/mvp/usage", {
       cache: "no-store",
       credentials: "same-origin",
+      signal: controller.signal,
+    }).then(async (response): Promise<UsageSnapshot | null> => {
+      if (!response.ok) return null;
+      const body = await response.json() as UsageState;
+      setUsageState({
+        authenticated: body.authenticated,
+        accountId: body.authenticated ? body.accountId : null,
+        isEnterprise: body.authenticated && body.isEnterprise === true,
+        usage: body.authenticated ? body.usage : null,
+      });
+      lastSuccessfulLoadAt.current = Date.now();
+      return body.authenticated ? body.usage : null;
+    }).catch(() => null).finally(() => {
+      window.clearTimeout(timeout);
+      if (activeController.current === controller) activeController.current = null;
+      if (inFlight.current === request) inFlight.current = null;
     });
-    if (!response.ok) return null;
-    const body = await response.json() as UsageState;
-    setUsageState({
-      authenticated: body.authenticated,
-      accountId: body.authenticated ? body.accountId : null,
-      isEnterprise: body.authenticated && body.isEnterprise === true,
-      usage: body.authenticated ? body.usage : null,
-    });
-    return body.authenticated ? body.usage : null;
-  }, []);
+    inFlight.current = request;
+    return request;
+  }, [isAdminPath, usageState.usage]);
+
+  const refreshUsage = useCallback(
+    () => loadUsageIfNeeded(true),
+    [loadUsageIfNeeded],
+  );
 
   useEffect(() => {
-    if (!skippedInitialRefresh.current) {
-      skippedInitialRefresh.current = true;
+    if (isAdminPath) {
+      activeController.current?.abort();
       return;
     }
-    void loadUsage();
-  }, [loadUsage, pathname]);
+    void loadUsageIfNeeded();
+  }, [isAdminPath, loadUsageIfNeeded, pathname]);
 
   useEffect(() => {
     const onUsageUpdated = (event: Event) => {
       setUsageState((current) => current.authenticated
         ? { ...current, usage: usageFromEvent(event) }
         : current);
+      lastSuccessfulLoadAt.current = Date.now();
     };
-    const onFocus = () => void loadUsage();
+    const onFocus = () => void loadUsageIfNeeded();
     const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") void loadUsage();
+      if (document.visibilityState === "visible") void loadUsageIfNeeded();
     };
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void loadUsage();
-    }, 30_000);
+      if (document.visibilityState === "visible") void loadUsageIfNeeded();
+    }, 120_000);
     window.addEventListener(USAGE_UPDATED_EVENT, onUsageUpdated);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -84,12 +111,12 @@ export function UsageProvider({
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [loadUsage]);
+  }, [loadUsageIfNeeded]);
 
   const contextValue = useMemo<UsageContextValue>(() => ({
     ...usageState,
-    refreshUsage: loadUsage,
-  }), [loadUsage, usageState]);
+    refreshUsage,
+  }), [refreshUsage, usageState]);
 
   return (
     <UsageContext.Provider value={contextValue}>

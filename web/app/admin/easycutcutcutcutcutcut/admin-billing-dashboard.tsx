@@ -1,80 +1,21 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   adminPaymentDetailParts,
   adminPaymentFailureLabel,
   adminPaymentFlowLabel,
 } from "@/lib/admin-billing-presentation";
+import type {
+  AdminBillingOrderPage,
+  AdminBillingSupportingData,
+  AdminOrder,
+  AdminRefund,
+  RemediationMetrics,
+} from "@/lib/admin-billing-contract";
 
-export type AdminOrder = {
-  id: string;
-  orderId: string;
-  kind: string;
-  productCode: string;
-  billingCycle: string | null;
-  prepaidMonths: number;
-  refundPolicyVersion: number;
-  amountKrw: number;
-  refundedAmountKrw: number;
-  reservedRefundKrw: number;
-  refundStatus: string;
-  status: string;
-  provider: string;
-  providerTransactionId: string | null;
-  providerStatus: string | null;
-  providerTerminalId: string | null;
-  hasPaymentMethod: boolean;
-  credentialScope: string | null;
-  installmentMonths: number;
-  cardIssuerName: string | null;
-  installmentBenefitType: string | null;
-  declaredCardKind: string | null;
-  failureCode: string | null;
-  failureMessage: string | null;
-  approvedAt: string | null;
-  createdAt: string;
-  email: string;
-  subscriptionStatus: string | null;
-  contractPeriodStart: string | null;
-  contractPeriodEnd: string | null;
-  currentPackageMonthUsed: boolean;
-  firstCompletedJobAt: string | null;
-  popularFilterUsageCount: number;
-  popularFilterLastUsedAt: string | null;
-};
-
-export type AdminRefund = {
-  id: string;
-  billingOrderId: string;
-  orderId: string;
-  email: string;
-  adminEmail: string;
-  amountKrw: number;
-  reason: string;
-  status: string;
-  entitlementActionStatus: string;
-  providerRefundTransactionId: string | null;
-  failureMessage: string | null;
-  requestedAt: string;
-  processedAt: string | null;
-};
-
-export type RemediationMetrics = {
-  total: number;
-  required: number;
-  registering: number;
-  awaitingProvider: number;
-  completed: number;
-  expired: number;
-  manualReview: number;
-  staleRegistering: number;
-  snapshotChanged: number;
-  duplicateActiveSchedules: number;
-  claimsEnabled: boolean;
-  reconciliationEnabled: boolean;
-};
+export type { AdminOrder, AdminRefund, RemediationMetrics } from "@/lib/admin-billing-contract";
 
 const statusLabels: Record<string, string> = {
   pending: "대기",
@@ -133,76 +74,135 @@ function productLabel(code: string) {
 }
 
 export function AdminBillingDashboard({
-  orders,
-  refunds,
   initialFilters,
-  initialHasMore,
-  initialNextOffset,
-  remediationMetrics,
 }: {
-  orders: AdminOrder[];
-  refunds: AdminRefund[];
   initialFilters: { status: string; provider: string; query: string };
-  initialHasMore: boolean;
-  initialNextOffset: number;
-  remediationMetrics: RemediationMetrics | null;
 }) {
   const router = useRouter();
-  const [loadedOrders, setLoadedOrders] = useState(orders);
-  const [hasMoreOrders, setHasMoreOrders] = useState(initialHasMore);
-  const [nextOrderOffset, setNextOrderOffset] = useState(initialNextOffset);
+  const [loadedOrders, setLoadedOrders] = useState<AdminOrder[]>([]);
+  const [hasMoreOrders, setHasMoreOrders] = useState(false);
+  const [nextOrderCursor, setNextOrderCursor] = useState<string | null>(null);
   const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const [refunds, setRefunds] = useState<AdminRefund[]>([]);
+  const [remediationMetrics, setRemediationMetrics] = useState<RemediationMetrics | null>(null);
+  const [supportingLoading, setSupportingLoading] = useState(true);
+  const [supportingError, setSupportingError] = useState<string | null>(null);
+  const [supportingAttempt, setSupportingAttempt] = useState(0);
   const [manualReviewOrder, setManualReviewOrder] = useState<AdminOrder | null>(null);
   const [manualReviewNote, setManualReviewNote] = useState("");
   const [manualReviewRequestId, setManualReviewRequestId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const orderSentinelRef = useRef<HTMLDivElement>(null);
+  const orderRequestInFlight = useRef(false);
+  const orderControllerRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    setLoadedOrders(orders);
-    setHasMoreOrders(initialHasMore);
-    setNextOrderOffset(initialNextOffset);
-    setLoadMoreError(null);
-  }, [initialHasMore, initialNextOffset, orders]);
-
-  const loadMoreOrders = async () => {
-    if (loadingMoreOrders || !hasMoreOrders) return;
+  const loadOrders = useCallback(async (cursor: string | null, replace = false) => {
+    if (orderRequestInFlight.current) return;
+    orderRequestInFlight.current = true;
     setLoadingMoreOrders(true);
     setLoadMoreError(null);
+    const controller = new AbortController();
+    orderControllerRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 8_000);
     try {
       const params = new URLSearchParams({
-        offset: String(nextOrderOffset),
         status: initialFilters.status,
         provider: initialFilters.provider,
       });
       if (initialFilters.query) params.set("q", initialFilters.query);
+      if (cursor) params.set("cursor", cursor);
       const response = await fetch(`/api/admin/billing/orders?${params.toString()}`, {
         credentials: "same-origin",
         cache: "no-store",
+        signal: controller.signal,
       });
-      const result = await response.json() as {
-        orders?: AdminOrder[];
-        hasMore?: boolean;
-        nextOffset?: number;
-        detail?: string;
-      };
+      const result = await response.json() as AdminBillingOrderPage & { detail?: string };
       if (!response.ok || !Array.isArray(result.orders)) {
         throw new Error(result.detail || "결제 주문을 더 불러오지 못했습니다.");
       }
       setLoadedOrders((current) => {
+        if (replace) return result.orders;
         const knownIds = new Set(current.map((order) => order.id));
-        return [...current, ...result.orders!.filter((order) => !knownIds.has(order.id))];
+        return [...current, ...result.orders.filter((order) => !knownIds.has(order.id))];
       });
       setHasMoreOrders(Boolean(result.hasMore));
-      setNextOrderOffset(Number(result.nextOffset ?? nextOrderOffset));
-    } catch (error) {
-      setLoadMoreError(error instanceof Error
-        ? error.message
-        : "결제 주문을 더 불러오지 못했습니다.");
+      setNextOrderCursor(result.nextCursor);
+    } catch (cause) {
+      setLoadMoreError(controller.signal.aborted
+        ? "결제 주문 응답이 늦어 중단했습니다. 다시 시도해 주세요."
+        : cause instanceof Error
+          ? cause.message
+          : "결제 주문을 더 불러오지 못했습니다.");
     } finally {
+      window.clearTimeout(timeout);
+      if (orderControllerRef.current === controller) orderControllerRef.current = null;
+      orderRequestInFlight.current = false;
       setLoadingMoreOrders(false);
     }
+  }, [initialFilters.provider, initialFilters.query, initialFilters.status]);
+
+  useEffect(() => {
+    setLoadedOrders([]);
+    setHasMoreOrders(false);
+    setNextOrderCursor(null);
+    void loadOrders(null, true);
+    return () => orderControllerRef.current?.abort();
+  }, [loadOrders]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 8_000);
+    setSupportingLoading(true);
+    setSupportingError(null);
+    void fetch("/api/admin/billing/supporting-data", {
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: controller.signal,
+    }).then(async (response) => {
+      const result = await response.json() as AdminBillingSupportingData & { detail?: string };
+      if (!response.ok || !Array.isArray(result.refunds)) {
+        throw new Error(result.detail || "환불·결제 조치 정보를 불러오지 못했습니다.");
+      }
+      setRefunds(result.refunds);
+      setRemediationMetrics(result.remediationMetrics);
+    }).catch((cause) => {
+      setSupportingError(controller.signal.aborted
+        ? "환불·결제 조치 정보 응답이 늦어 중단했습니다."
+        : cause instanceof Error
+          ? cause.message
+          : "환불·결제 조치 정보를 불러오지 못했습니다.");
+    }).finally(() => {
+      window.clearTimeout(timeout);
+      setSupportingLoading(false);
+    });
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [supportingAttempt]);
+
+  useEffect(() => {
+    if (!hasMoreOrders || !nextOrderCursor || !orderSentinelRef.current || loadMoreError) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadOrders(nextOrderCursor);
+        }
+      },
+      { rootMargin: "600px 0px" },
+    );
+    observer.observe(orderSentinelRef.current);
+    return () => observer.disconnect();
+  }, [hasMoreOrders, loadMoreError, loadOrders, nextOrderCursor]);
+
+  const loadMoreOrders = () => {
+    if (loadMoreError && !nextOrderCursor) {
+      void loadOrders(null, true);
+      return;
+    }
+    if (hasMoreOrders && nextOrderCursor) void loadOrders(nextOrderCursor);
   };
 
   const openManualReview = (order: AdminOrder) => {
@@ -244,6 +244,18 @@ export function AdminBillingDashboard({
 
   return (
     <div className="mt-7 grid gap-7">
+      {supportingError ? (
+        <section className="rounded-2xl border border-amber-300/20 bg-amber-300/[.06] p-5" role="alert">
+          <p className="text-sm font-bold text-amber-100">{supportingError}</p>
+          <button
+            type="button"
+            onClick={() => setSupportingAttempt((value) => value + 1)}
+            className="mt-3 min-h-10 rounded-xl border border-amber-200/30 px-4 text-sm font-black text-amber-100"
+          >
+            다시 시도
+          </button>
+        </section>
+      ) : null}
       {remediationMetrics && remediationMetrics.total > 0 && (
         <section className="rounded-2xl border border-[#ff8c7c]/20 bg-[#151819] p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -287,7 +299,7 @@ export function AdminBillingDashboard({
               <input type="hidden" name="tab" value="billing" />
               <input name="q" defaultValue={initialFilters.query} placeholder="이메일·주문·거래번호" className="h-10 w-56 rounded-xl border border-white/10 bg-black/20 px-3 text-sm outline-none placeholder:text-neutral-600 focus:border-[#ff8c7c]" />
               <select name="provider" defaultValue={initialFilters.provider} className="h-10 rounded-xl border border-white/10 bg-[#191c1d] px-3 text-sm">
-                <option value="all">모든 결제사</option><option value="thepayone">더페이원</option><option value="nicepay">나이스페이</option>
+                <option value="all">모든 결제사</option><option value="thepayone">더페이원</option><option value="nicepay">나이스페이</option><option value="toss">토스페이먼츠</option>
               </select>
               <select name="status" defaultValue={initialFilters.status} className="h-10 rounded-xl border border-white/10 bg-[#191c1d] px-3 text-sm">
                 <option value="all">모든 상태</option><option value="succeeded">승인</option><option value="pending">대기</option><option value="processing">처리 중</option><option value="failed">실패</option><option value="manual_review">확인 필요</option><option value="unknown">결과 불명</option><option value="expired">만료</option>
@@ -316,7 +328,7 @@ export function AdminBillingDashboard({
                   <td className="px-4 py-4"><p className="max-w-56 truncate font-bold text-neutral-200">{order.email}</p><p className="mt-1 text-xs text-neutral-600">구독 {label(order.subscriptionStatus)}</p></td>
                   <td className="px-4 py-4"><p className="font-bold">{productLabel(order.productCode)}</p><p className="mt-1 text-xs text-neutral-500">{order.kind} · {order.productCode?.startsWith("starter_") || order.productCode?.startsWith("expert_") ? "단건 패키지" : order.billingCycle || "단건"}</p>{order.popularFilterUsageCount > 0 && <p className="mt-1 text-xs font-bold text-amber-300">유료 인기 필터 {order.popularFilterUsageCount}회 사용</p>}</td>
                   <td className="px-4 py-4">
-                    <p className="font-bold">{order.provider === "thepayone" ? "더페이원" : "나이스페이"}</p>
+                    <p className="font-bold">{order.provider === "thepayone" ? "더페이원" : order.provider === "toss" ? "토스페이먼츠" : "나이스페이"}</p>
                     {(paymentFlow || order.providerTerminalId) && <p className="mt-1 text-xs font-bold text-neutral-400">{[paymentFlow, order.providerTerminalId].filter(Boolean).join(" · ")}</p>}
                   </td>
                   <td className="px-4 py-4">
@@ -334,19 +346,19 @@ export function AdminBillingDashboard({
                   </td>
                 </tr>;
               })}
-              {!loadedOrders.length && <tr><td colSpan={8} className="px-5 py-16 text-center text-neutral-500">조건에 맞는 결제 주문이 없습니다.</td></tr>}
+              {!loadedOrders.length && <tr><td colSpan={8} className="px-5 py-16 text-center text-neutral-500">{loadingMoreOrders ? "결제 주문을 불러오는 중…" : loadMoreError ? "결제 주문을 표시하지 못했습니다." : "조건에 맞는 결제 주문이 없습니다."}</td></tr>}
             </tbody>
           </table>
         </div>
-        {(hasMoreOrders || loadMoreError) && <div className="border-t border-white/10 px-5 py-4 text-center">
+        {(hasMoreOrders || loadMoreError) && <div ref={orderSentinelRef} className="border-t border-white/10 px-5 py-4 text-center">
           {loadMoreError && <p role="alert" className="mb-3 text-sm font-bold text-[#ff9b8d]">{loadMoreError}</p>}
-          {hasMoreOrders && <button
+          {(hasMoreOrders || loadMoreError) && <button
             type="button"
             disabled={loadingMoreOrders}
             onClick={() => void loadMoreOrders()}
             className="min-h-11 rounded-xl border border-white/15 bg-white/[.04] px-6 text-sm font-black text-white transition hover:bg-white/[.08] disabled:cursor-wait disabled:opacity-50"
           >
-            {loadingMoreOrders ? "불러오는 중…" : "더보기"}
+            {loadingMoreOrders ? "불러오는 중…" : loadMoreError ? "다시 시도" : "더보기"}
           </button>}
         </div>}
       </section>
@@ -365,7 +377,7 @@ export function AdminBillingDashboard({
               <td className="px-4 py-4 font-bold">{label(refund.entitlementActionStatus)}</td>
               <td className="px-5 py-4 text-neutral-400">{refund.adminEmail}</td>
             </tr>)}
-            {!refunds.length && <tr><td colSpan={7} className="px-5 py-12 text-center text-neutral-500">환불 기록이 없습니다.</td></tr>}
+            {!refunds.length && <tr><td colSpan={7} className="px-5 py-12 text-center text-neutral-500">{supportingLoading ? "환불 기록을 불러오는 중…" : supportingError ? "환불 기록을 표시하지 못했습니다." : "환불 기록이 없습니다."}</td></tr>}
           </tbody>
         </table></div>
       </section>

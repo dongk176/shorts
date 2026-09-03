@@ -1,11 +1,13 @@
 import "server-only";
 
+import { z } from "zod";
 import { addKstMonths } from "@/lib/billing";
 import { getDb } from "@/lib/db";
+import { HttpError } from "@/lib/http";
 import { getPrepaidPackageMonthState } from "@/lib/refund-policy";
-import type { AdminOrder } from "@/app/admin/easycutcutcutcutcutcut/admin-billing-dashboard";
+import type { AdminBillingOrderPage, AdminOrder } from "@/lib/admin-billing-contract";
 
-export const ADMIN_BILLING_ORDER_PAGE_SIZE = 100;
+export const ADMIN_BILLING_ORDER_PAGE_SIZE = 20;
 
 export type AdminBillingOrderFilters = {
   status: string;
@@ -13,11 +15,44 @@ export type AdminBillingOrderFilters = {
   query: string;
 };
 
-export type AdminBillingOrderPage = {
-  orders: AdminOrder[];
-  hasMore: boolean;
-  nextOffset: number;
-};
+const billingOrderCursorSchema = z.object({
+  v: z.literal(1),
+  createdAt: z.string().datetime(),
+  id: z.string().uuid(),
+  filters: z.object({
+    status: z.string(),
+    provider: z.string(),
+    query: z.string(),
+  }),
+});
+
+type BillingOrderCursor = z.infer<typeof billingOrderCursorSchema>;
+
+function encodeBillingOrderCursor(cursor: BillingOrderCursor) {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+export function decodeBillingOrderCursor(
+  value: string | null | undefined,
+  filters: AdminBillingOrderFilters,
+): BillingOrderCursor | null {
+  if (!value) return null;
+  try {
+    const cursor = billingOrderCursorSchema.parse(
+      JSON.parse(Buffer.from(value, "base64url").toString("utf8")),
+    );
+    if (
+      cursor.filters.status !== filters.status
+      || cursor.filters.provider !== filters.provider
+      || cursor.filters.query !== filters.query
+    ) {
+      throw new Error("filters changed");
+    }
+    return cursor;
+  } catch {
+    throw new HttpError(400, "결제 주문 목록 위치가 올바르지 않습니다.", "INVALID_BILLING_CURSOR");
+  }
+}
 
 function iso(value: unknown) {
   return value instanceof Date
@@ -95,13 +130,40 @@ function toAdminOrder(row: Record<string, unknown>): AdminOrder {
 
 export async function loadAdminBillingOrders({
   filters,
+  cursor: encodedCursor,
   offset = 0,
 }: {
   filters: AdminBillingOrderFilters;
+  cursor?: string | null;
   offset?: number;
 }): Promise<AdminBillingOrderPage> {
   const db = getDb();
+  const cursor = decodeBillingOrderCursor(encodedCursor, filters);
+  const legacyOffset = cursor ? 0 : offset;
   const rows = await db`
+    with selected_orders as materialized (
+      select o.id,o.created_at
+      from shorts_mvp.billing_orders o
+      join shorts_mvp.app_users u on u.id=o.user_id
+      where (${filters.status}='all' or o.status=${filters.status})
+        and (${filters.provider}='all' or o.provider=${filters.provider})
+        and (
+          ${filters.query}=''
+          or lower(coalesce(u.email,'')) like ${`%${filters.query.toLowerCase()}%`}
+          or lower(o.order_id) like ${`%${filters.query.toLowerCase()}%`}
+          or lower(coalesce(o.provider_transaction_id,'')) like ${`%${filters.query.toLowerCase()}%`}
+        )
+        and (
+          ${cursor === null}
+          or (o.created_at,o.id) < (
+            ${cursor?.createdAt ?? null}::timestamptz,
+            ${cursor?.id ?? null}::uuid
+          )
+        )
+      order by o.created_at desc,o.id desc
+      limit ${ADMIN_BILLING_ORDER_PAGE_SIZE + 1}
+      offset ${legacyOffset}
+    )
     select o.id,o.order_id,o.kind,o.product_code,o.billing_cycle,o.amount_krw,
       o.refunded_amount_krw,o.refund_status,o.status,o.provider,o.provider_transaction_id,
       o.provider_status,o.failure_code,o.failure_message,o.provider_terminal_id,o.installment_months,
@@ -121,17 +183,18 @@ export async function loadAdminBillingOrders({
       bua.last_allocated_at as last_base_allocated_at,
       ebook.last_downloaded_at as ebook_last_downloaded_at,
       first_job.completed_at as first_completed_job_at
-    from shorts_mvp.billing_orders o
+    from selected_orders selected
+    join shorts_mvp.billing_orders o on o.id=selected.id
     join shorts_mvp.app_users u on u.id=o.user_id
     left join shorts_mvp.user_subscriptions s on s.id=o.subscription_id
     left join shorts_mvp.plans p on p.code=o.product_code
     left join shorts_mvp.billing_payment_methods pm on pm.id=o.payment_method_id
-    left join (
-      select source_order_id, sum(refund_amount_krw)::integer as reserved_refund_krw
+    left join lateral (
+      select sum(refund_amount_krw)::integer as reserved_refund_krw
       from shorts_mvp.subscription_upgrade_refunds
-      where status in ('pending','submitted','manual_review')
-      group by source_order_id
-    ) ur on ur.source_order_id=o.id
+      where source_order_id=o.id
+        and status in ('pending','submitted','manual_review')
+    ) ur on true
     left join lateral (
       select max(a.created_at) as last_allocated_at
       from shorts_mvp.usage_grants g
@@ -163,17 +226,7 @@ export async function loadAdminBillingOrders({
       order by j.completed_at,j.created_at,j.id
       limit 1
     ) first_job on true
-    where (${filters.status}='all' or o.status=${filters.status})
-      and (${filters.provider}='all' or o.provider=${filters.provider})
-      and (
-        ${filters.query}=''
-        or lower(coalesce(u.email,'')) like ${`%${filters.query.toLowerCase()}%`}
-        or lower(o.order_id) like ${`%${filters.query.toLowerCase()}%`}
-        or lower(coalesce(o.provider_transaction_id,'')) like ${`%${filters.query.toLowerCase()}%`}
-      )
     order by o.created_at desc,o.id desc
-    limit ${ADMIN_BILLING_ORDER_PAGE_SIZE + 1}
-    offset ${offset}
   `;
   const hasMore = rows.length > ADMIN_BILLING_ORDER_PAGE_SIZE;
   const orders = rows
@@ -183,6 +236,14 @@ export async function loadAdminBillingOrders({
   return {
     orders,
     hasMore,
-    nextOffset: offset + orders.length,
+    nextCursor: hasMore && orders.length
+      ? encodeBillingOrderCursor({
+          v: 1,
+          createdAt: orders[orders.length - 1].createdAt,
+          id: orders[orders.length - 1].id,
+          filters,
+        })
+      : null,
+    nextOffset: legacyOffset + orders.length,
   };
 }

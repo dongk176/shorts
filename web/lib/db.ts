@@ -3,10 +3,12 @@ import postgres, { type Sql } from "postgres";
 const globalDb = globalThis as typeof globalThis & {
   __shortsMvpDbClient?: Sql;
   __shortsMvpDbHealthCheck?: Promise<void>;
+  __shortsMvpDbHealthyUntil?: number;
 };
 
 let client: Sql | null = globalDb.__shortsMvpDbClient ?? null;
 const DB_HEALTH_TIMEOUT_MS = 4_000;
+const DB_HEALTH_TTL_MS = 15_000;
 
 class DbHealthTimeoutError extends Error {
   constructor() {
@@ -66,6 +68,7 @@ async function recycleDbClient(expectedClient: Sql) {
 }
 
 async function ensureDbReady() {
+  if ((globalDb.__shortsMvpDbHealthyUntil ?? 0) > Date.now()) return;
   if (globalDb.__shortsMvpDbHealthCheck) {
     return globalDb.__shortsMvpDbHealthCheck;
   }
@@ -79,6 +82,7 @@ async function ensureDbReady() {
       await recycleDbClient(currentClient);
       await runDbHealthCheck(getDb());
     }
+    globalDb.__shortsMvpDbHealthyUntil = Date.now() + DB_HEALTH_TTL_MS;
   })();
   globalDb.__shortsMvpDbHealthCheck = healthCheck;
   try {
@@ -99,6 +103,14 @@ async function ensureDbReady() {
  * runtime timeout.
  */
 export async function ensureAdminDbReady() {
+  return ensureDbReady();
+}
+
+/**
+ * Bounds the stale-pool check for read-only request paths. Mutations deliberately
+ * do not use an automatic retry because a write may already have reached the DB.
+ */
+export async function ensureReadDbReady() {
   return ensureDbReady();
 }
 

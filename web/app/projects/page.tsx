@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { ProjectCard } from "@/components/project-card";
 import { ProjectAuthControls } from "@/components/project-login-gate";
+import { ProjectList } from "@/components/project-list";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import { getAllProjects, getPublicExampleJobs } from "@/lib/data";
-import { getDb } from "@/lib/db";
+import { ensureReadDbReady } from "@/lib/db";
+import { loadProjectListPage, loadPublicExampleProjectList } from "@/lib/project-list";
 import { createNoIndexMetadata } from "@/lib/seo";
 import { authProfile, requireMvpSession } from "@/lib/session";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
@@ -20,10 +20,12 @@ export const metadata = createNoIndexMetadata(
 
 export default async function ProjectsPage() {
   const user = await getAuthenticatedUser();
-  const db = getDb();
-  const projects = user
-    ? await getAllProjects(db, await requireMvpSession(user, { createIfMissing: false }))
-    : await getPublicExampleJobs(db);
+  await ensureReadDbReady();
+  const projectPage = user
+    ? await loadProjectListPage({
+        session: await requireMvpSession(user, { createIfMissing: false }),
+      })
+    : await loadPublicExampleProjectList();
 
   return (
     <div className="app-shell site-chrome desktop-sidebar-layout flex min-h-screen flex-col text-neutral-100">
@@ -62,16 +64,8 @@ export default async function ProjectsPage() {
           </div>
         )}
 
-        {projects.length ? (
-          <section className="mt-10" aria-labelledby="project-list-title">
-            <div className="mb-5 flex items-center gap-2">
-              <h2 id="project-list-title" className="text-lg font-extrabold text-white">{user ? "전체 프로젝트" : "예시 작업"}</h2>
-              <span className="text-sm text-neutral-500">({projects.length})</span>
-            </div>
-            <div className="grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {projects.map((project) => <ProjectCard key={project.id} job={project} />)}
-            </div>
-          </section>
+        {projectPage.projects.length ? (
+          <ProjectList authenticated={Boolean(user)} initialPage={projectPage} />
         ) : user ? (
           <div className="mt-10 rounded-2xl border border-dashed border-white/15 bg-white/[.025] px-6 py-16 text-center sm:px-10">
             <h2 className="text-xl font-extrabold text-white">아직 만든 프로젝트가 없어요</h2>

@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ProjectDeleteOverlay } from "@/components/project-delete-overlay";
 import { YoutubeThumbnail } from "@/components/youtube-thumbnail";
 import { copyTextToClipboard } from "@/lib/browser-clipboard";
-import type { VideoJob } from "@/lib/contracts";
+import type { ProjectListItem } from "@/lib/contracts";
 import {
   estimatedCreationMinutes,
   estimatedProgress,
@@ -44,7 +44,7 @@ function formatDuration(seconds: number, locale: SiteLocale) {
   return `${rest}초`;
 }
 
-function isProjectExpired(job: VideoJob) {
+function isProjectExpired(job: ProjectListItem) {
   return Boolean(job.expiresAt && new Date(job.expiresAt).getTime() <= Date.now());
 }
 
@@ -73,7 +73,7 @@ function ProgressRing({ progress }: { progress: number }) {
   );
 }
 
-function processingLabel(job: VideoJob, locale: SiteLocale) {
+function processingLabel(job: ProjectListItem, locale: SiteLocale) {
   const copy = locale === "ko" ? {
     extract: "편집용 영상 준비", render: "렌더링", start: "작업을 시작하고 있습니다", download: "원본 영상을 다운로드하고 있습니다", transcribe: "영상 내용을 분석하고 있습니다", select: "쇼츠 장면을 찾고 있습니다", create: "쇼츠를 생성하고 있습니다",
   } : locale === "en" ? {
@@ -107,7 +107,7 @@ export function EstimatedProcessingOverlay({
   createdAt?: string;
   rerender?: boolean;
   minimumProgress?: number;
-  job?: VideoJob;
+  job?: ProjectListItem;
 }) {
   const { locale } = useI18n();
   const estimatedMinutes = rerender
@@ -176,7 +176,7 @@ export function EstimatedProcessingOverlay({
   );
 }
 
-export function ProjectCard({ job }: { job: VideoJob }) {
+export function ProjectCard({ job }: { job: ProjectListItem }) {
   const { locale } = useI18n();
   const menuId = useId();
   const menuRef = useRef<HTMLDivElement>(null);

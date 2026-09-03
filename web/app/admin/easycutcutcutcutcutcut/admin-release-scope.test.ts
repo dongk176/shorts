@@ -7,6 +7,10 @@ const billingRouteSource = readFileSync(
   new URL("../../api/admin/billing/orders/route.ts", import.meta.url),
   "utf8",
 );
+const billingDashboardSource = readFileSync(
+  new URL("./admin-billing-dashboard.tsx", import.meta.url),
+  "utf8",
+);
 const overlayQueueSource = readFileSync(
   new URL("../../../lib/welcome-overlay-queue.ts", import.meta.url),
   "utf8",
@@ -14,10 +18,11 @@ const overlayQueueSource = readFileSync(
 
 describe("administrator onboarding release scope", () => {
   it("preserves production billing pagination and editor release management", () => {
-    expect(pageSource).toContain("loadAdminBillingOrders");
-    expect(pageSource).toContain("initialHasMore={orderPage.hasMore}");
-    expect(pageSource).toContain("initialNextOffset={orderPage.nextOffset}");
+    expect(pageSource).not.toContain("loadAdminBillingOrders");
+    expect(pageSource).toContain("<AdminBillingDashboard");
     expect(billingRouteSource).toContain("loadAdminBillingOrders");
+    expect(billingDashboardSource).toContain("nextOrderCursor");
+    expect(billingDashboardSource).toContain("/api/admin/billing/supporting-data");
     expect(shellSource).toContain('{ tab: "editor-releases"');
     expect(pageSource).toContain('tab === "editor-releases"');
     expect(pageSource).toContain("<AdminEditorReleases");

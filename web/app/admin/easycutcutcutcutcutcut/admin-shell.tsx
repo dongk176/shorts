@@ -1,4 +1,7 @@
+"use client";
+
 import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import styles from "./admin-shell.module.css";
 
@@ -28,10 +31,7 @@ export type AdminMemberTrendPoint = {
   memberCount: number;
 };
 
-type AdminShellProps = {
-  activeTab: AdminTab;
-  adminEmail: string;
-  metrics: {
+type AdminMetrics = {
     grossSales: number;
     refundedSales: number;
     todaySales: number;
@@ -42,10 +42,31 @@ type AdminShellProps = {
     manualReviewSubscriptions: number;
     activeProSubscriptions: number;
     activeSubscriptionBillingKrw: number;
-  };
+};
+
+type AdminOverviewData = {
+  metrics: AdminMetrics;
   salesTrend: AdminSalesTrendPoint[];
   memberTrend: AdminMemberTrendPoint[];
+};
+
+type AdminShellProps = {
+  activeTab: AdminTab;
+  adminEmail: string;
   children: ReactNode;
+};
+
+const emptyMetrics: AdminMetrics = {
+  grossSales: 0,
+  refundedSales: 0,
+  todaySales: 0,
+  paidOrders: 0,
+  orderReviewCount: 0,
+  activeSubscriptions: 0,
+  pastDueSubscriptions: 0,
+  manualReviewSubscriptions: 0,
+  activeProSubscriptions: 0,
+  activeSubscriptionBillingKrw: 0,
 };
 
 type IconName =
@@ -345,11 +366,40 @@ function MemberTrendChart({ data }: { data: AdminMemberTrendPoint[] }) {
 export function AdminShell({
   activeTab,
   adminEmail,
-  metrics,
-  salesTrend,
-  memberTrend,
   children,
 }: AdminShellProps) {
+  const [overview, setOverview] = useState<AdminOverviewData | null>(null);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [overviewAttempt, setOverviewAttempt] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 8_000);
+    setOverviewError(null);
+    void fetch("/api/admin/overview", {
+      cache: "no-store",
+      credentials: "same-origin",
+      signal: controller.signal,
+    }).then(async (response) => {
+      const body = await response.json() as AdminOverviewData & { detail?: string };
+      if (!response.ok || !body.metrics) {
+        throw new Error(body.detail || "운영 현황을 불러오지 못했습니다.");
+      }
+      setOverview(body);
+    }).catch((cause) => {
+      if (controller.signal.aborted) {
+        setOverviewError("운영 현황 응답이 늦어 중단했습니다.");
+      } else {
+        setOverviewError(cause instanceof Error ? cause.message : "운영 현황을 불러오지 못했습니다.");
+      }
+    }).finally(() => window.clearTimeout(timeout));
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [overviewAttempt]);
+  const metrics = overview?.metrics ?? emptyMetrics;
+  const salesTrend = overview?.salesTrend ?? [];
+  const memberTrend = overview?.memberTrend ?? [];
   const currentPage = pageCopy[activeTab];
   const trendSales = salesTrend.reduce((sum, point) => sum + point.sales, 0);
   const trendMemberCount = memberTrend.reduce((sum, point) => sum + point.memberCount, 0);
@@ -459,7 +509,7 @@ export function AdminShell({
             <h1 className={styles.pageTitle}>{currentPage.title}</h1>
           </div>
           <div className={styles.topbarActions}>
-            <span className={styles.kstBadge}>KST · 실시간 운영 데이터</span>
+            <span className={styles.kstBadge}>최근 운영 데이터 · 최대 1분 지연</span>
             <Link href="/" prefetch={false} className={styles.serviceLink}>
               서비스로 이동
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
@@ -471,17 +521,32 @@ export function AdminShell({
         </header>
 
         <div className={styles.workspace}>
-          <section aria-labelledby="admin-overview-title">
+          <section aria-labelledby="admin-overview-title" aria-busy={!overview && !overviewError}>
             <div className={styles.overviewHeading}>
               <div>
                 <p className={styles.overviewKicker}>Operations overview</p>
                 <h2 id="admin-overview-title" className={styles.overviewTitle}>비즈니스 현황을 한눈에.</h2>
               </div>
               <p className={styles.overviewDescription}>
-                결제 승인, 회원 가입, 구독 상태를 실시간 집계합니다.
+                결제 승인, 회원 가입, 구독 상태를 최근 데이터로 집계합니다.
                 주요 운영 지표와 최근 흐름을 확인한 뒤 아래에서 상세 업무를 처리하세요.
               </p>
             </div>
+
+            {!overview ? (
+              <div className={styles.overviewDescription} role={overviewError ? "alert" : "status"}>
+                {overviewError || "운영 현황을 불러오는 중…"}
+                {overviewError ? (
+                  <button
+                    type="button"
+                    onClick={() => setOverviewAttempt((value) => value + 1)}
+                    className={styles.serviceLink}
+                  >
+                    다시 시도
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className={styles.metricGrid} aria-label="운영 요약">
               {summaryCards.map((card) => (
