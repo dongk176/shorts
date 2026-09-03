@@ -24,8 +24,13 @@ function git(args) {
 }
 
 export function extractSqlFunctionBody(sql, name) {
-  const marker = `create or replace function shorts_mvp.${name}(`;
-  const start = sql.indexOf(marker);
+  const markers = [
+    `create or replace function shorts_mvp.${name}(`,
+    `create function shorts_mvp.${name}(`,
+  ];
+  const start = markers
+    .map((marker) => sql.indexOf(marker))
+    .find((index) => index >= 0) ?? -1;
   if (start < 0) throw new Error(`마이그레이션에 ${name} 함수가 없습니다.`);
   const bodyStart = sql.indexOf("as $$", start);
   const bodyEnd = sql.indexOf("$$;", bodyStart + 5);
@@ -33,6 +38,17 @@ export function extractSqlFunctionBody(sql, name) {
     throw new Error(`${name} 함수 본문을 읽을 수 없습니다.`);
   }
   return sql.slice(bodyStart + 5, bodyEnd);
+}
+
+const PROJECT_OUTBOX_FUNCTIONS = new Set([
+  "claim_project_job_outbox",
+  "claim_project_job_outbox_without_ingestion_circuit",
+]);
+
+export function migrationPathForSqlFunction(manifest, name) {
+  return PROJECT_OUTBOX_FUNCTIONS.has(name)
+    ? manifest.sourceFiles.projectOutboxMigration
+    : manifest.sourceFiles.ingestionDatabaseMigration;
 }
 
 export function verifyBaselineFiles(root = process.cwd()) {
@@ -60,6 +76,7 @@ export function verifyBaselineFiles(root = process.cwd()) {
     ["production-worker-release.json", "workerReleaseManifestSha256"],
     ["production-project-targets.json", "projectTargetsManifestSha256"],
     [manifest.sourceFiles.ingestionDatabaseMigration, "ingestionDatabaseMigrationSha256"],
+    [manifest.sourceFiles.projectOutboxMigration, "projectOutboxMigrationSha256"],
   ];
   for (const [relativePath, manifestKey] of hashedFiles) {
     const actual = digest("sha256", readFileSync(resolve(root, relativePath)));
@@ -79,12 +96,12 @@ export function verifyBaselineFiles(root = process.cwd()) {
     throw new Error("프로젝트 Worker 이미지 digest가 기준선과 다릅니다.");
   }
 
-  const migration = readFileSync(
-    resolve(root, manifest.sourceFiles.ingestionDatabaseMigration),
-    "utf8",
-  );
   for (const [signature, expected] of Object.entries(manifest.database.functionBodyMd5)) {
     const name = signature.slice(0, signature.indexOf("("));
+    const migration = readFileSync(
+      resolve(root, migrationPathForSqlFunction(manifest, name)),
+      "utf8",
+    );
     const actual = digest("md5", extractSqlFunctionBody(migration, name));
     if (actual !== expected) {
       throw new Error(`${signature} 운영 본문 지문 불일치: ${actual}`);

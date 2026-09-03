@@ -2,23 +2,36 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { extractSqlFunctionBody } from "./verify-production-baseline.mjs";
+import {
+  extractSqlFunctionBody,
+  migrationPathForSqlFunction,
+} from "./verify-production-baseline.mjs";
 
 const manifest = JSON.parse(readFileSync("production-baseline.json", "utf8"));
-const migration = readFileSync(
-  manifest.sourceFiles.ingestionDatabaseMigration,
-  "utf8",
-);
-
 test("captured ingestion function bodies match the live production hashes", () => {
   for (const [signature, expected] of Object.entries(manifest.database.functionBodyMd5)) {
     const name = signature.slice(0, signature.indexOf("("));
+    const migration = readFileSync(
+      migrationPathForSqlFunction(manifest, name),
+      "utf8",
+    );
     const actual = crypto
       .createHash("md5")
       .update(extractSqlFunctionBody(migration, name))
       .digest("hex");
     assert.equal(actual, expected, signature);
   }
+});
+
+test("production baseline tracks the later project outbox override separately", () => {
+  assert.equal(
+    migrationPathForSqlFunction(manifest, "claim_project_job_outbox"),
+    manifest.sourceFiles.projectOutboxMigration,
+  );
+  assert.equal(
+    migrationPathForSqlFunction(manifest, "ingestion_route_quality"),
+    manifest.sourceFiles.ingestionDatabaseMigration,
+  );
 });
 
 test("production baseline records disabled custom design and excludes publishing", () => {

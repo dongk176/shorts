@@ -1,26 +1,26 @@
 {
   "version": 1,
   "environment": "production",
-  "workerSourceGitSha": "df9e8d60ee925923251d160f8dfabf5f92191e17",
-  "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:b80baba150464e7ef6e8475595d280f9d69b8a1821a152f6b18a8e9d23083cdd",
-  "imageDigest": "sha256:b80baba150464e7ef6e8475595d280f9d69b8a1821a152f6b18a8e9d23083cdd",
+  "workerSourceGitSha": "ff091cf79333e537a0a3c0e01ac58361164295f4",
+  "imageUri": "181651591905.dkr.ecr.ap-northeast-2.amazonaws.com/shorts-mvp-editor-releases-production@sha256:aedf4fbdfcbd7ef46c6ea42a47fb62d3ec0883100d1bbce5492aab524661e8d6",
+  "imageDigest": "sha256:aedf4fbdfcbd7ef46c6ea42a47fb62d3ec0883100d1bbce5492aab524661e8d6",
   "ingestionAttemptBudget": 20,
   "batchRetryAttempts": 1,
   "targets": {
     "legacyProject": {
-        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-legacy-project-df9e8d60ee92:1",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-legacy-project-ff091cf79333:1",
       "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-project-fargate-production"
     },
     "sourceRange": {
-        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-source-range-df9e8d60ee92:1",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-source-range-ff091cf79333:1",
       "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-source-range-production"
     },
     "elevenLabsTranscription": {
-        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-elevenlabs-transcription-df9e8d60ee92:1",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-elevenlabs-transcription-ff091cf79333:1",
       "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-elevenlabs-transcription-canary-production"
     },
     "subtitleTemplates": {
-        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-subtitle-templates-df9e8d60ee92:1",
+        "jobDefinitionArn": "arn:aws:batch:ap-northeast-2:181651591905:job-definition/shorts-mvp-editor-v4-subtitle-templates-ff091cf79333:1",
       "jobQueueArn": "arn:aws:batch:ap-northeast-2:181651591905:job-queue/shorts-mvp-elevenlabs-transcription-canary-production"
     }
   }

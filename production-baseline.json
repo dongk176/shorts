@@ -1,22 +1,24 @@
 {
   "version": 1,
   "environment": "production",
-  "capturedAt": "2026-09-01T13:29:25Z",
+  "capturedAt": "2026-09-03T02:00:42Z",
   "web": {
-    "deploymentId": "dpl_9DrZKeRxf3oEVVH3rMHyC6Q9hcAk",
-    "deploymentUrl": "shorts-hviat0ypu-artiroom.vercel.app",
+    "deploymentId": "dpl_8XzJjxRziZHA4V4baufG44ctbJX6",
+    "deploymentUrl": "shorts-i5pk2qexq-artiroom.vercel.app",
     "productionDomain": "www.easycut.co.kr",
-    "gitSha": "d0607ef5ba2dae4f8fd714a40c7d135455638ed6",
-    "gitRef": "codex/upload-web-public-safe-20260901",
-    "buildId": "ughZE1L5uG5180nOQkaxQ",
+    "gitSha": "ff091cf79333e537a0a3c0e01ac58361164295f4",
+    "gitRef": "codex/production-successor-final-20260902",
+    "buildId": null,
     "readyState": "READY",
     "readySubstate": "PROMOTED"
   },
   "sourceFiles": {
-    "workerReleaseManifestSha256": "15faa3cca00d40348fa20297beb64e4252f46ec564abf13fe04154e292bf143c",
-    "projectTargetsManifestSha256": "f2f594aa80f294226bef957113df8fe08dcc397693f0d991da09ea8448aef0bf",
+    "workerReleaseManifestSha256": "fcc8cb2fd4a28afca8ad360320317bb75c464e198d9e41b9e3503006b4d7a1b6",
+    "projectTargetsManifestSha256": "d3d8faa73d56175479b8195df7daf5ee8476d10bd86ad4fac96314fb7a127c1b",
     "ingestionDatabaseMigration": "supabase/migrations/202609010002_youtube_ingestion_circuit_auto_resume.sql",
-    "ingestionDatabaseMigrationSha256": "c9a757ce792cd2e1f3cd9d917a5beba15ac1e0e00aefc29af996bf669773ca80"
+    "ingestionDatabaseMigrationSha256": "c9a757ce792cd2e1f3cd9d917a5beba15ac1e0e00aefc29af996bf669773ca80",
+    "projectOutboxMigration": "supabase/migrations/202609010003_ingestion_route_capacity_requeue.sql",
+    "projectOutboxMigrationSha256": "bd35068c0c7a10cb41a0fabd26c8ae8b69db008bc6b048c739c2d739a6531385"
   },
   "database": {
     "schema": "shorts_mvp",
@@ -26,19 +28,19 @@
       "file_upload": true,
       "file_upload_public": true,
       "file_upload_emergency_stop": false,
-      "ingestion_success_priority": true
+      "ingestion_success_priority": false
     },
     "functionBodyMd5": {
-      "claim_project_job_outbox(integer)": "7d591a63c15fb7a2255ca3e4473238ec",
-      "claim_project_job_outbox_without_ingestion_circuit(integer)": "368c473744724389aba8e0394a9c2592",
+      "claim_project_job_outbox(integer)": "3c635a39bbd5c26bfed697177653f08e",
+      "claim_project_job_outbox_without_ingestion_circuit(integer)": "4d20de360d7a825983f01cefec9fa7e9",
       "ingestion_route_quality(text)": "d9d7168e8542cde7f057f91ec403f97a",
       "reset_ingestion_route_quality(text)": "91eeed596b922fd81371891228f26f51",
       "rotate_ingestion_route(uuid,text,text,integer,text[])": "95e1da9225ea19db9852af3fd59e7fc4",
       "update_ingestion_circuit_from_attempt()": "6eeb5892bafae760d873b5c281a7db00"
     },
     "functionDefinitionMd5": {
-      "claim_project_job_outbox(integer)": "ec297f1a560c35e15986d3f19b751c71",
-      "claim_project_job_outbox_without_ingestion_circuit(integer)": "a3415e9e137084ba43ad0dea735bd94f",
+      "claim_project_job_outbox(integer)": "2b9ff59adf4664152ee55a902a9826d1",
+      "claim_project_job_outbox_without_ingestion_circuit(integer)": "d3eb31c76056f76bb19da6783b43f529",
       "ingestion_route_quality(text)": "37d7a34f2dab6944f4c89a9c6732cd1a",
       "reset_ingestion_route_quality(text)": "158380593ffd38c254f4d21b07fecfd8",
       "rotate_ingestion_route(uuid,text,text,integer,text[])": "929ecb7232f60c4c23c60ac14057cce5",
@@ -51,8 +53,8 @@
     "accountId": "181651591905",
     "region": "ap-northeast-2",
     "projectWorker": {
-      "sourceGitSha": "4e19c114f79e74a73a4798f3fd898fa412967cc2",
-      "imageDigest": "sha256:99c0e66f66a78d8b60455075229271e161d77c7051c522d5a4d0ddd27f30a922",
+      "sourceGitSha": "ff091cf79333e537a0a3c0e01ac58361164295f4",
+      "imageDigest": "sha256:aedf4fbdfcbd7ef46c6ea42a47fb62d3ec0883100d1bbce5492aab524661e8d6",
       "renderSpecVersion": 4,
       "captionRenderSpecVersion": 4,
       "fontManifestSha256": "b9f530954066e89e95fcd2cfb77db558e68530329d3d1d9db17e4e73c859d486",
@@ -78,15 +80,15 @@
       "healthyThresholdCount": 2
     },
     "controlPlane": {
-      "outboxDispatcherCodeSha256": "W9URTBpfi0NzYMumFvdVWHt6ZfluksmwRNEB1D83kMM=",
-      "batchSubmitterCodeSha256": "TwgtGCZDLFaiEilNSISjgI2TWarmR1626xlY5PrI9kU=",
+      "outboxDispatcherCodeSha256": "8NfsCc+mrEBh4vqREFUSUQvp4Yyseu6VHmzwpkdl9SM=",
+      "batchSubmitterCodeSha256": "/2pHLbBzu831NKd6mkMDtM4DGdZ3jj/IGRb7wOnkYeU=",
       "editorBatchSubmitterCodeSha256": "8NfsCc+mrEBh4vqREFUSUQvp4Yyseu6VHmzwpkdl9SM=",
       "fileUploadCapacityCodeSha256": "Zm+/AWOGIHqXJw+NWg9R0gkYdv+kyL6bBeQ6ql0ILFw="
     },
     "runtimeSecret": {
       "name": "shorts-mvp/production/worker-runtime",
-      "currentVersionId": "4164a2b6-2a29-4cf5-a619-e27973620816",
-      "previousVersionId": "56da22f3-3148-4919-86ef-023ab1a341a2"
+      "currentVersionId": "d29f39e8-31df-4b8e-8572-747ed6d77687",
+      "previousVersionId": "cd01941e-209e-4b62-9c9b-cebb36cd7c2e"
     }
   },
   "releaseRules": {
