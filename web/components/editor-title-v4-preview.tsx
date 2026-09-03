@@ -71,7 +71,22 @@ export function EditorTitleV4Preview({
   onEditEnd?: () => void;
 }) {
   const textRefs = useRef<Array<SVGTextElement | null>>([]);
-  const [exactFontReady, setExactFontReady] = useState(false);
+  const exactFontFaceRef = useRef(spec.font);
+  exactFontFaceRef.current = spec.font;
+  const exactFontKey = [
+    spec.font.fontId,
+    spec.font.fileId,
+    spec.font.family,
+    spec.font.requestedWeight,
+    spec.font.resolvedWeight,
+    spec.font.variableWeight ?? "static",
+    spec.font.sha256,
+    spec.font.metrics.revision,
+  ].join(":");
+  const [readyExactFontKey, setReadyExactFontKey] = useState<string | null>(
+    null,
+  );
+  const exactFontReady = readyExactFontKey === exactFontKey;
   const [backgroundRects, setBackgroundRects] = useState<BackgroundRect[]>([]);
   const lineIndices = useMemo(
     () => titleLineCharacterIndices(sourceTitle, spec.lines),
@@ -83,16 +98,19 @@ export function EditorTitleV4Preview({
 
   useEffect(() => {
     let cancelled = false;
-    setExactFontReady(false);
-    void ensureEditorFontFaceV4Loaded(spec.font, sourceTitle)
+    void ensureEditorFontFaceV4Loaded(exactFontFaceRef.current, sourceTitle)
       .then(() => {
-        if (!cancelled) setExactFontReady(true);
+        if (!cancelled) setReadyExactFontKey(exactFontKey);
       })
       .catch(() => {
-        if (!cancelled) setExactFontReady(false);
+        if (!cancelled) {
+          setReadyExactFontKey((current) => (
+            current === exactFontKey ? null : current
+          ));
+        }
       });
     return () => { cancelled = true; };
-  }, [sourceTitle, spec.font]);
+  }, [exactFontKey, sourceTitle]);
 
   useEffect(() => {
     if (!spec.visible || !exactFontReady) return;

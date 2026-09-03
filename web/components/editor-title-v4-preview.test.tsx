@@ -17,7 +17,10 @@ describe("EditorTitleV4Preview", () => {
     expect(source).toContain("y: box.baselineY");
     expect(source).toContain("textLength: advanceWidth");
     expect(source).toContain('lengthAdjust: "spacingAndGlyphs"');
-    expect(source).toContain("ensureEditorFontFaceV4Loaded(spec.font, sourceTitle)");
+    expect(source).toContain("const exactFontReady = readyExactFontKey === exactFontKey;");
+    expect(source).toContain("ensureEditorFontFaceV4Loaded(exactFontFaceRef.current, sourceTitle)");
+    expect(source).toContain("}, [exactFontKey, sourceTitle]);");
+    expect(source).not.toContain("setExactFontReady(false)");
     expect(source).toContain("if (!spec.visible || !exactFontReady) return null;");
     expect(source).toContain("x: first.x - spec.linePaddingX");
     expect(source).toContain("height: box.height");

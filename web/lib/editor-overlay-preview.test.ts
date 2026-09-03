@@ -235,6 +235,19 @@ describe("editor overlay preview geometry", () => {
     });
   });
 
+  it("shows the canvas-center guide when a full-width caption video is also edge-aligned", () => {
+    expect(snapVideoRectForMove(
+      { x: 0, y: 411, width: 1_080, height: 864 },
+      { x: 0, y: 117 },
+      [{ x: 0, y: 1_275, width: 1_080, height: 260 }],
+      36,
+      22,
+    )).toEqual({
+      delta: { x: 0, y: 117 },
+      guides: { x: true, y: true, overlayX: null, overlayY: null },
+    });
+  });
+
   it("resizes an added-text box from either side while anchoring the other edge", () => {
     expect(resizeEditorTextOverlayWidth({
       width: 600,

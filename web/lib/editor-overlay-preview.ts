@@ -647,30 +647,16 @@ export function snapRectToOverlayRects(
   delta: CanvasPoint;
   guides: Pick<EditorOverlayGuides, "overlayX" | "overlayY">;
 } {
-  const movingX = [
-    movingRect.x,
-    movingRect.x + movingRect.width / 2,
-    movingRect.x + movingRect.width,
-  ];
-  const movingY = [
-    movingRect.y,
-    movingRect.y + movingRect.height / 2,
-    movingRect.y + movingRect.height,
-  ];
+  // Video-to-overlay snapping is intentionally edge-only. Including overlay
+  // centers lets a docked, full-width comment steal the canvas-center snap.
+  const movingX = [movingRect.x, movingRect.x + movingRect.width];
+  const movingY = [movingRect.y, movingRect.y + movingRect.height];
   let nearestX: { distance: number; adjustment: number; guide: number } | null = null;
   let nearestY: { distance: number; adjustment: number; guide: number } | null = null;
 
   for (const targetRect of targetRects) {
-    const targetX = [
-      targetRect.x,
-      targetRect.x + targetRect.width / 2,
-      targetRect.x + targetRect.width,
-    ];
-    const targetY = [
-      targetRect.y,
-      targetRect.y + targetRect.height / 2,
-      targetRect.y + targetRect.height,
-    ];
+    const targetX = [targetRect.x, targetRect.x + targetRect.width];
+    const targetY = [targetRect.y, targetRect.y + targetRect.height];
     for (const movingAnchor of movingX) {
       for (const targetAnchor of targetX) {
         const adjustment = targetAnchor - (movingAnchor + delta.x);
@@ -735,19 +721,27 @@ export function snapVideoRectForMove(
   );
   const overlayXSnapped = overlaySnapped.guides.overlayX !== null;
   const overlayYSnapped = overlaySnapped.guides.overlayY !== null;
+  const snappedDelta = {
+    x: overlayXSnapped
+      ? overlaySnapped.delta.x
+      : centerSnapped.delta.x,
+    y: overlayYSnapped
+      ? overlaySnapped.delta.y
+      : centerSnapped.delta.y,
+  };
+  const finalCenterX = movingRect.x + movingRect.width / 2 + snappedDelta.x;
+  const finalCenterY = movingRect.y + movingRect.height / 2 + snappedDelta.y;
+  const centeredX = centerSnapped.guides.x
+    && Math.abs(finalCenterX - TEMPLATE_CANVAS.width / 2) < 0.001;
+  const centeredY = centerSnapped.guides.y
+    && Math.abs(finalCenterY - TEMPLATE_CANVAS.height / 2) < 0.001;
   return {
-    delta: {
-      x: overlayXSnapped
-        ? overlaySnapped.delta.x
-        : centerSnapped.delta.x,
-      y: overlayYSnapped
-        ? overlaySnapped.delta.y
-        : centerSnapped.delta.y,
-    },
+    delta: snappedDelta,
     guides: {
-      x: !overlayXSnapped && centerSnapped.guides.x,
-      y: !overlayYSnapped && centerSnapped.guides.y,
-      ...overlaySnapped.guides,
+      x: centeredX,
+      y: centeredY,
+      overlayX: centeredX ? null : overlaySnapped.guides.overlayX,
+      overlayY: centeredY ? null : overlaySnapped.guides.overlayY,
     },
   };
 }
