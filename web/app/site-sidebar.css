@@ -8,19 +8,14 @@
 }
 
 .home-generated-shorts-count {
-  position: relative;
-  width: fit-content;
-  min-width: 180px;
-  margin: 0 auto;
-}
-
-.home-metric-toggle {
   appearance: none;
   display: flex;
-  width: 100%;
+  width: fit-content;
+  min-width: 180px;
   flex-direction: column;
   align-items: center;
   gap: 4px;
+  margin: 0 auto;
   padding: 0;
   border: 0;
   border-radius: 12px;
@@ -32,15 +27,14 @@
   transition: opacity 150ms ease, transform 150ms ease;
 }
 
-.home-metric-toggle:hover {
+.home-generated-shorts-count:hover {
   opacity: .88;
   transform: translateY(-1px);
 }
 
-.home-metric-toggle:focus-visible,
-.home-metric-help:focus-visible {
+.home-generated-shorts-count:focus-visible {
   outline: 2px solid #d5aaa4;
-  outline-offset: 4px;
+  outline-offset: 7px;
 }
 
 .home-metric-stage {
@@ -88,86 +82,9 @@
   letter-spacing: -.015em;
 }
 
-.home-metric-help-positioner {
-  position: absolute;
-  z-index: 2;
-  top: 0;
-  left: 50%;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  pointer-events: none;
-  transform: translateX(calc(-50% + 14px));
-}
-
-.home-metric-number-measure {
-  min-height: 38px;
-  font-size: clamp(2rem,3vw,2.45rem);
-  font-weight: 900;
-  line-height: 1;
-  letter-spacing: -.035em;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  visibility: hidden;
-}
-
-.home-metric-help {
-  appearance: none;
-  display: grid;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  place-items: center;
-  border: 0;
-  background: transparent;
-  color: #d5aaa4;
-  font: 850 16px/1 system-ui,sans-serif;
-  cursor: pointer;
-  pointer-events: auto;
-  transition: color 150ms ease,transform 150ms ease;
-}
-
-.home-metric-help:hover,
-.home-metric-help[aria-expanded="true"] {
-  color: #fff;
-  transform: scale(1.06);
-}
-
-.home-metric-description {
-  position: absolute;
-  z-index: 20;
-  bottom: calc(100% + 9px);
-  left: 50%;
-  width: max-content;
-  max-width: min(280px,calc(100vw - 40px));
-  padding: 10px 12px;
-  border: 1px solid rgba(213,170,164,.24);
-  border-radius: 10px;
-  background: rgba(12,16,18,.97);
-  box-shadow: 0 12px 32px rgba(0,0,0,.3);
-  color: #d9dcdd;
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1.5;
-  text-align: center;
-  transform: translateX(-50%);
-  animation: home-metric-description-in 180ms cubic-bezier(.22,1,.36,1);
-}
-
-@keyframes home-metric-description-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%,5px) scale(.98);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .home-metric-panel {
     transition: none;
-  }
-
-  .home-metric-description {
-    animation: none;
   }
 }
 

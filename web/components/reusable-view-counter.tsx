@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { SiteLocale } from "@/lib/i18n/config";
 import {
   interpolateReusableViewCounterValue,
@@ -46,22 +46,6 @@ function generatedShortsLabel(locale: SiteLocale) {
   return "지금까지 생성된 쇼츠";
 }
 
-function metricDescription(showingViews: boolean, locale: SiteLocale) {
-  if (locale === "en") {
-    return showingViews
-      ? "Total views of reuse-allowed videos."
-      : "Shorts completed with EasyCut.";
-  }
-  if (locale === "ja") {
-    return showingViews
-      ? "再利用可能な動画の累計再生回数です。"
-      : "EasyCutで完成したショート動画の数です。";
-  }
-  return showingViews
-    ? "재사용 허용 영상의 누적 조회수예요."
-    : "이지컷에서 생성 완료된 쇼츠 수예요.";
-}
-
 function accessibleLabel(
   showingViews: boolean,
   viewValue: string,
@@ -95,9 +79,6 @@ export function ReusableViewCounter({
   className?: string;
 }) {
   const [showingViews, setShowingViews] = useState(true);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const helpId = useId();
-  const containerRef = useRef<HTMLDivElement>(null);
   const schedule = useMemo(
     () => counter ? scheduleFromState(counter) : null,
     [counter],
@@ -116,24 +97,6 @@ export function ReusableViewCounter({
   }, [changeTimes, counter, schedule]);
   const [displayedValue, setDisplayedValue] = useState<number | null>(initialValue);
   const displayedValueRef = useRef<number | null>(initialValue);
-
-  useEffect(() => {
-    if (!helpOpen) return;
-    const closeOnOutsidePress = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setHelpOpen(false);
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setHelpOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePress);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePress);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [helpOpen]);
 
   useEffect(() => {
     if (!counter || !schedule) {
@@ -222,65 +185,34 @@ export function ReusableViewCounter({
   const generatedValue = generatedShortCount === null
     ? "—"
     : generatedShortCount.toLocaleString(numberLocale(locale));
-  const currentLabel = showingViews
-    ? counterLabel(locale)
-    : generatedShortsLabel(locale);
   return (
-    <div ref={containerRef} className={`home-generated-shorts-count ${className}`}>
-      <button
-        type="button"
-        className="home-metric-toggle"
-        aria-label={accessibleLabel(
-          showingViews,
-          viewValue,
-          generatedValue,
-          locale,
-        )}
-        onClick={() => {
-          setShowingViews((current) => !current);
-          setHelpOpen(false);
-        }}
-      >
-        <span className="home-metric-stage" aria-hidden="true">
-          <span
-            className={`home-metric-panel ${showingViews ? "is-active" : ""}`}
-            data-metric="views"
-          >
-            <strong aria-busy={counter === null}>{viewValue}</strong>
-            <span className="home-metric-label">{counterLabel(locale)}</span>
-          </span>
-          <span
-            className={`home-metric-panel ${showingViews ? "" : "is-active"}`}
-            data-metric="generated-shorts"
-          >
-            <strong aria-busy={generatedShortCount === null}>{generatedValue}</strong>
-            <span className="home-metric-label">{generatedShortsLabel(locale)}</span>
-          </span>
-        </span>
-      </button>
-      <span className="home-metric-help-positioner">
-        <span className="home-metric-number-measure" aria-hidden="true">
-          {showingViews ? viewValue : generatedValue}
-        </span>
-        <button
-          type="button"
-          className="home-metric-help"
-          aria-label={`${currentLabel} 설명`}
-          aria-expanded={helpOpen}
-          aria-controls={helpId}
-          onClick={() => setHelpOpen((current) => !current)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setHelpOpen(false);
-          }}
+    <button
+      type="button"
+      className={`home-generated-shorts-count ${className}`}
+      aria-label={accessibleLabel(
+        showingViews,
+        viewValue,
+        generatedValue,
+        locale,
+      )}
+      onClick={() => setShowingViews((current) => !current)}
+    >
+      <span className="home-metric-stage" aria-hidden="true">
+        <span
+          className={`home-metric-panel ${showingViews ? "is-active" : ""}`}
+          data-metric="views"
         >
-          ?
-        </button>
-      </span>
-      {helpOpen ? (
-        <span id={helpId} role="tooltip" className="home-metric-description">
-          {metricDescription(showingViews, locale)}
+          <strong aria-busy={counter === null}>{viewValue}</strong>
+          <span className="home-metric-label">{counterLabel(locale)}</span>
         </span>
-      ) : null}
-    </div>
+        <span
+          className={`home-metric-panel ${showingViews ? "" : "is-active"}`}
+          data-metric="generated-shorts"
+        >
+          <strong aria-busy={generatedShortCount === null}>{generatedValue}</strong>
+          <span className="home-metric-label">{generatedShortsLabel(locale)}</span>
+        </span>
+      </span>
+    </button>
   );
 }
