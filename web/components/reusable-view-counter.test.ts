@@ -40,4 +40,13 @@ describe("reusable view counter UI", () => {
     expect(styles).toContain("filter 320ms ease");
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
   });
+
+  it("shows a short explanation without triggering the metric toggle", () => {
+    expect(source).toContain("const [helpOpen, setHelpOpen] = useState(false)");
+    expect(source).toContain('className="home-metric-help"');
+    expect(source).toContain('role="tooltip"');
+    expect(source).toContain("이지컷이 수집한 재사용 허용 영상들의 조회수를 모두 합한 값이에요.");
+    expect(source).toContain("이지컷에서 지금까지 생성 완료된 쇼츠의 누적 개수예요.");
+    expect(styles).toContain("home-metric-description-in 180ms");
+  });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { SiteLocale } from "@/lib/i18n/config";
 import {
   interpolateReusableViewCounterValue,
@@ -46,6 +46,22 @@ function generatedShortsLabel(locale: SiteLocale) {
   return "지금까지 생성된 쇼츠";
 }
 
+function metricDescription(showingViews: boolean, locale: SiteLocale) {
+  if (locale === "en") {
+    return showingViews
+      ? "The combined views of reuse-allowed videos collected by EasyCut."
+      : "The total number of shorts completed with EasyCut.";
+  }
+  if (locale === "ja") {
+    return showingViews
+      ? "EasyCutが収集した再利用可能な動画の再生回数の合計です。"
+      : "EasyCutでこれまでに完成したショート動画の累計です。";
+  }
+  return showingViews
+    ? "이지컷이 수집한 재사용 허용 영상들의 조회수를 모두 합한 값이에요."
+    : "이지컷에서 지금까지 생성 완료된 쇼츠의 누적 개수예요.";
+}
+
 function accessibleLabel(
   showingViews: boolean,
   viewValue: string,
@@ -79,6 +95,8 @@ export function ReusableViewCounter({
   className?: string;
 }) {
   const [showingViews, setShowingViews] = useState(true);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpId = useId();
   const schedule = useMemo(
     () => counter ? scheduleFromState(counter) : null,
     [counter],
@@ -185,34 +203,60 @@ export function ReusableViewCounter({
   const generatedValue = generatedShortCount === null
     ? "—"
     : generatedShortCount.toLocaleString(numberLocale(locale));
+  const currentLabel = showingViews
+    ? counterLabel(locale)
+    : generatedShortsLabel(locale);
   return (
-    <button
-      type="button"
-      className={`home-generated-shorts-count ${className}`}
-      aria-label={accessibleLabel(
-        showingViews,
-        viewValue,
-        generatedValue,
-        locale,
-      )}
-      onClick={() => setShowingViews((current) => !current)}
-    >
-      <span className="home-metric-stage" aria-hidden="true">
-        <span
-          className={`home-metric-panel ${showingViews ? "is-active" : ""}`}
-          data-metric="views"
-        >
-          <strong aria-busy={counter === null}>{viewValue}</strong>
-          <span className="home-metric-label">{counterLabel(locale)}</span>
+    <div className={`home-generated-shorts-count ${className}`}>
+      <button
+        type="button"
+        className="home-metric-toggle"
+        aria-label={accessibleLabel(
+          showingViews,
+          viewValue,
+          generatedValue,
+          locale,
+        )}
+        onClick={() => {
+          setShowingViews((current) => !current);
+          setHelpOpen(false);
+        }}
+      >
+        <span className="home-metric-stage" aria-hidden="true">
+          <span
+            className={`home-metric-panel ${showingViews ? "is-active" : ""}`}
+            data-metric="views"
+          >
+            <strong aria-busy={counter === null}>{viewValue}</strong>
+            <span className="home-metric-label">{counterLabel(locale)}</span>
+          </span>
+          <span
+            className={`home-metric-panel ${showingViews ? "" : "is-active"}`}
+            data-metric="generated-shorts"
+          >
+            <strong aria-busy={generatedShortCount === null}>{generatedValue}</strong>
+            <span className="home-metric-label">{generatedShortsLabel(locale)}</span>
+          </span>
         </span>
-        <span
-          className={`home-metric-panel ${showingViews ? "" : "is-active"}`}
-          data-metric="generated-shorts"
-        >
-          <strong aria-busy={generatedShortCount === null}>{generatedValue}</strong>
-          <span className="home-metric-label">{generatedShortsLabel(locale)}</span>
+      </button>
+      <button
+        type="button"
+        className="home-metric-help"
+        aria-label={`${currentLabel} 설명`}
+        aria-expanded={helpOpen}
+        aria-controls={helpId}
+        onClick={() => setHelpOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setHelpOpen(false);
+        }}
+      >
+        ?
+      </button>
+      {helpOpen ? (
+        <span id={helpId} role="tooltip" className="home-metric-description">
+          {metricDescription(showingViews, locale)}
         </span>
-      </span>
-    </button>
+      ) : null}
+    </div>
   );
 }
