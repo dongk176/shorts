@@ -49,17 +49,17 @@ function generatedShortsLabel(locale: SiteLocale) {
 function metricDescription(showingViews: boolean, locale: SiteLocale) {
   if (locale === "en") {
     return showingViews
-      ? "The combined views of reuse-allowed videos collected by EasyCut."
-      : "The total number of shorts completed with EasyCut.";
+      ? "Total views of reuse-allowed videos."
+      : "Shorts completed with EasyCut.";
   }
   if (locale === "ja") {
     return showingViews
-      ? "EasyCutが収集した再利用可能な動画の再生回数の合計です。"
-      : "EasyCutでこれまでに完成したショート動画の累計です。";
+      ? "再利用可能な動画の累計再生回数です。"
+      : "EasyCutで完成したショート動画の数です。";
   }
   return showingViews
-    ? "이지컷이 수집한 재사용 허용 영상들의 조회수를 모두 합한 값이에요."
-    : "이지컷에서 지금까지 생성 완료된 쇼츠의 누적 개수예요.";
+    ? "재사용 허용 영상의 누적 조회수예요."
+    : "이지컷에서 생성 완료된 쇼츠 수예요.";
 }
 
 function accessibleLabel(
@@ -97,6 +97,7 @@ export function ReusableViewCounter({
   const [showingViews, setShowingViews] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
   const helpId = useId();
+  const containerRef = useRef<HTMLDivElement>(null);
   const schedule = useMemo(
     () => counter ? scheduleFromState(counter) : null,
     [counter],
@@ -115,6 +116,24 @@ export function ReusableViewCounter({
   }, [changeTimes, counter, schedule]);
   const [displayedValue, setDisplayedValue] = useState<number | null>(initialValue);
   const displayedValueRef = useRef<number | null>(initialValue);
+
+  useEffect(() => {
+    if (!helpOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setHelpOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setHelpOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [helpOpen]);
 
   useEffect(() => {
     if (!counter || !schedule) {
@@ -207,7 +226,7 @@ export function ReusableViewCounter({
     ? counterLabel(locale)
     : generatedShortsLabel(locale);
   return (
-    <div className={`home-generated-shorts-count ${className}`}>
+    <div ref={containerRef} className={`home-generated-shorts-count ${className}`}>
       <button
         type="button"
         className="home-metric-toggle"
@@ -239,19 +258,24 @@ export function ReusableViewCounter({
           </span>
         </span>
       </button>
-      <button
-        type="button"
-        className="home-metric-help"
-        aria-label={`${currentLabel} 설명`}
-        aria-expanded={helpOpen}
-        aria-controls={helpId}
-        onClick={() => setHelpOpen((current) => !current)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") setHelpOpen(false);
-        }}
-      >
-        ?
-      </button>
+      <span className="home-metric-help-positioner">
+        <span className="home-metric-number-measure" aria-hidden="true">
+          {showingViews ? viewValue : generatedValue}
+        </span>
+        <button
+          type="button"
+          className="home-metric-help"
+          aria-label={`${currentLabel} 설명`}
+          aria-expanded={helpOpen}
+          aria-controls={helpId}
+          onClick={() => setHelpOpen((current) => !current)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setHelpOpen(false);
+          }}
+        >
+          ?
+        </button>
+      </span>
       {helpOpen ? (
         <span id={helpId} role="tooltip" className="home-metric-description">
           {metricDescription(showingViews, locale)}
