@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SiteLocale } from "@/lib/i18n/config";
 import {
@@ -41,25 +40,45 @@ function counterLabel(locale: SiteLocale) {
   return "누적 조회수";
 }
 
-function accessibleLabel(value: string, locale: SiteLocale) {
+function generatedShortsLabel(locale: SiteLocale) {
+  if (locale === "en") return "Shorts created so far";
+  if (locale === "ja") return "これまでに作成したショート動画";
+  return "지금까지 생성된 쇼츠";
+}
+
+function accessibleLabel(
+  showingViews: boolean,
+  viewValue: string,
+  generatedValue: string,
+  locale: SiteLocale,
+) {
   if (locale === "en") {
-    return `Cumulative views of reuse-allowed videos: ${value}. View trending videos`;
+    return showingViews
+      ? `Cumulative views of reuse-allowed videos: ${viewValue}. Show shorts created so far`
+      : `Shorts created so far: ${generatedValue}. Show cumulative views`;
   }
   if (locale === "ja") {
-    return `再利用可能な動画の累計再生回数 ${value}。リアルタイム人気を見る`;
+    return showingViews
+      ? `再利用可能な動画の累計再生回数 ${viewValue}。これまでに作成したショート動画を表示`
+      : `これまでに作成したショート動画 ${generatedValue}。累計再生回数を表示`;
   }
-  return `재사용 허용 영상 누적 조회수 ${value}. 실시간 인기 보기`;
+  return showingViews
+    ? `재사용 허용 영상 누적 조회수 ${viewValue}. 지금까지 생성된 쇼츠 보기`
+    : `지금까지 생성된 쇼츠 ${generatedValue}. 누적 조회수 보기`;
 }
 
 export function ReusableViewCounter({
   counter,
+  generatedShortCount,
   locale,
   className = "",
 }: {
   counter: ReusableViewCounterState | null;
+  generatedShortCount: number | null;
   locale: SiteLocale;
   className?: string;
 }) {
+  const [showingViews, setShowingViews] = useState(true);
   const schedule = useMemo(
     () => counter ? scheduleFromState(counter) : null,
     [counter],
@@ -162,15 +181,38 @@ export function ReusableViewCounter({
     };
   }, [changeTimes, counter, schedule]);
 
-  const value = visibleValue(displayedValue, locale);
+  const viewValue = visibleValue(displayedValue, locale);
+  const generatedValue = generatedShortCount === null
+    ? "—"
+    : generatedShortCount.toLocaleString(numberLocale(locale));
   return (
-    <Link
-      href="/popular"
+    <button
+      type="button"
       className={`home-generated-shorts-count ${className}`}
-      aria-label={accessibleLabel(value, locale)}
+      aria-label={accessibleLabel(
+        showingViews,
+        viewValue,
+        generatedValue,
+        locale,
+      )}
+      onClick={() => setShowingViews((current) => !current)}
     >
-      <strong aria-busy={counter === null}>{value}</strong>
-      <p>{counterLabel(locale)}</p>
-    </Link>
+      <span className="home-metric-stage" aria-hidden="true">
+        <span
+          className={`home-metric-panel ${showingViews ? "is-active" : ""}`}
+          data-metric="views"
+        >
+          <strong aria-busy={counter === null}>{viewValue}</strong>
+          <span className="home-metric-label">{counterLabel(locale)}</span>
+        </span>
+        <span
+          className={`home-metric-panel ${showingViews ? "" : "is-active"}`}
+          data-metric="generated-shorts"
+        >
+          <strong aria-busy={generatedShortCount === null}>{generatedValue}</strong>
+          <span className="home-metric-label">{generatedShortsLabel(locale)}</span>
+        </span>
+      </span>
+    </button>
   );
 }

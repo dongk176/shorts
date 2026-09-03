@@ -6,11 +6,11 @@ const homeSource = readFileSync(
   "utf8",
 );
 
-describe("home reusable view counter", () => {
-  it("uses the reusable-video view schedule instead of the generated-shorts total", () => {
+describe("home metric toggle", () => {
+  it("provides both the reusable-video view schedule and generated-shorts total", () => {
     expect(homeSource).toContain("<ReusableViewCounter");
     expect(homeSource).toContain("counter={state?.reusableViewCounter ?? null}");
-    expect(homeSource).not.toContain("state?.generatedShortCount");
+    expect(homeSource).toContain("generatedShortCount={state?.generatedShortCount ?? null}");
     expect(homeSource).not.toContain("initialValue={14_259}");
   });
 });

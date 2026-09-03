@@ -14477,6 +14477,7 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
       <main id="top" className={`relative mx-auto w-full max-w-6xl flex-1 px-5 pb-20 pt-7 sm:px-8 sm:pt-10 ${adminTemplateLayoutEnabled ? "flex flex-col gap-10" : "space-y-10"}`}>
       <ReusableViewCounter
         counter={state?.reusableViewCounter ?? null}
+        generatedShortCount={state?.generatedShortCount ?? null}
         locale={locale}
         className={adminTemplateLayoutEnabled ? "order-[-2]" : ""}
       />
