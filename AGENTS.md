@@ -47,6 +47,27 @@
   disappears unexpectedly.
 - Deploy to an unaliased candidate URL first, verify the five protected paths,
   then promote that exact deployment without rebuilding it.
+- Treat the worker target values stored in the deployment platform as a
+  release-critical interface. Repository files and a successful build are not
+  proof that a candidate received the current production values.
+- Before exercising a real job or promoting a production candidate, call the
+  exact candidate's authenticated job-admission preflight endpoint and require
+  all five worker targets to be ready. Its runtime fingerprint must exactly
+  match the active production release registry in DB/AWS and the currently
+  promoted deployment. A protection-page response or an unauthenticated 401 is
+  not a successful check.
+- If the candidate worker-target fingerprint is missing or different, stop the
+  release. Do not enable an admin canary or change DB, AWS, or worker releases
+  to accommodate stale web settings. With explicit authorization, reconcile
+  only the deployment platform's saved target values from the active registry,
+  create a new candidate, and repeat the runtime preflight. Never reuse a
+  candidate built before the saved values were corrected.
+- Run a real, rights-confirmed job-admission smoke test only after the runtime
+  fingerprint check passes. Confirm that admission succeeds and that any
+  fail-closed rejection occurs before usage is charged.
+- After promotion, monitor job-admission responses as well as page health. Any
+  unexpected `/api/jobs` 50x caused by release handoff requires immediate
+  promotion of the last known-good deployment while the mismatch is diagnosed.
 - Keep the unfinished YouTube publishing/content-calendar experiment out of
   production releases. Production candidates must not contain the
   `/content-calendar` route, publishing OAuth/publication APIs, publishing
