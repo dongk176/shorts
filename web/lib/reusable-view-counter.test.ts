@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  interpolateReusableViewCounterValue,
   nextDailyReusableCollectionAt,
   projectReusableViewCounter,
-  REUSABLE_VIEW_COUNTER_MAX_INTERVAL_MS,
-  REUSABLE_VIEW_COUNTER_MIN_INTERVAL_MS,
+  REUSABLE_VIEW_COUNTER_INTERVAL_MS,
   reusableViewCounterChangeTimes,
   type ReusableViewCounterSchedule,
 } from "./reusable-view-counter";
@@ -16,18 +16,44 @@ const schedule: ReusableViewCounterSchedule = {
 };
 
 describe("reusable view counter schedule", () => {
-  it("uses a deterministic sequence whose gaps stay between 3 and 60 seconds", () => {
+  it("animates each scheduled increase smoothly without overshooting", () => {
+    const values = Array.from({ length: 101 }, (_, index) =>
+      interpolateReusableViewCounterValue(100_000, 200_000, index / 100));
+    expect(values[0]).toBe(100_000);
+    expect(values.at(-1)).toBe(200_000);
+    expect(values[50]).toBeGreaterThan(150_000);
+    for (let index = 1; index < values.length; index += 1) {
+      expect(values[index]).toBeGreaterThanOrEqual(values[index - 1]);
+      expect(values[index]).toBeLessThanOrEqual(200_000);
+    }
+  });
+
+  it("uses a deterministic five-second sequence", () => {
     const first = reusableViewCounterChangeTimes(schedule);
     const second = reusableViewCounterChangeTimes(schedule);
     expect(first).toEqual(second);
-    expect(first.length).toBeGreaterThan(1_000);
+    expect(first.length).toBeGreaterThan(17_000);
     const boundaries = [Date.parse(schedule.startedAt), ...first];
     for (let index = 1; index < boundaries.length; index += 1) {
       const gap = boundaries[index] - boundaries[index - 1];
-      expect(gap).toBeGreaterThanOrEqual(REUSABLE_VIEW_COUNTER_MIN_INTERVAL_MS);
-      expect(gap).toBeLessThanOrEqual(REUSABLE_VIEW_COUNTER_MAX_INTERVAL_MS);
+      expect(gap).toBe(REUSABLE_VIEW_COUNTER_INTERVAL_MS);
     }
     expect(first.at(-1)).toBe(Date.parse(schedule.endsAt));
+  });
+
+  it("uses only a shorter final boundary when the end time is not five-second aligned", () => {
+    const unaligned = {
+      ...schedule,
+      startedAt: "2026-09-03T08:00:00.123Z",
+    };
+    const changes = reusableViewCounterChangeTimes(unaligned);
+    const boundaries = [Date.parse(unaligned.startedAt), ...changes];
+    const gaps = boundaries.slice(1).map((value, index) => value - boundaries[index]);
+    expect(gaps.slice(0, -1).every(
+      (gap) => gap === REUSABLE_VIEW_COUNTER_INTERVAL_MS,
+    )).toBe(true);
+    expect(gaps.at(-1)).toBeGreaterThan(0);
+    expect(gaps.at(-1)).toBeLessThanOrEqual(REUSABLE_VIEW_COUNTER_INTERVAL_MS);
   });
 
   it("spreads increases evenly, never decreases, and reaches the exact target", () => {

@@ -1,5 +1,6 @@
-export const REUSABLE_VIEW_COUNTER_MIN_INTERVAL_MS = 3_000;
-export const REUSABLE_VIEW_COUNTER_MAX_INTERVAL_MS = 60_000;
+export const REUSABLE_VIEW_COUNTER_INTERVAL_MS = 5_000;
+export const REUSABLE_VIEW_COUNTER_MIN_INTERVAL_MS = REUSABLE_VIEW_COUNTER_INTERVAL_MS;
+export const REUSABLE_VIEW_COUNTER_MAX_INTERVAL_MS = REUSABLE_VIEW_COUNTER_INTERVAL_MS;
 
 export type ReusableViewCounterSchedule = {
   startValue: number;
@@ -17,27 +18,24 @@ export type ReusableViewCounterProjection = {
   nextChangeAtMs: number | null;
 };
 
+export function interpolateReusableViewCounterValue(
+  startValue: number,
+  targetValue: number,
+  progress: number,
+) {
+  const start = finiteNonNegativeInteger(startValue);
+  const target = Math.max(start, finiteNonNegativeInteger(targetValue));
+  const normalizedProgress = Math.min(1, Math.max(0, progress));
+  const easedProgress = 1 - Math.pow(1 - normalizedProgress, 4);
+  return Math.min(
+    target,
+    Math.max(start, Math.round(start + (target - start) * easedProgress)),
+  );
+}
+
 function finiteNonNegativeInteger(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.floor(value));
-}
-
-function scheduleSeed(schedule: ReusableViewCounterSchedule) {
-  const startedAt = Date.parse(schedule.startedAt);
-  const target = finiteNonNegativeInteger(schedule.targetValue);
-  let seed = (Number.isFinite(startedAt) ? startedAt : 0) >>> 0;
-  seed ^= target >>> 0;
-  seed ^= Math.floor(target / 0x1_0000_0000) >>> 0;
-  seed ^= 0x9e37_79b9;
-  return seed >>> 0 || 0x6d2b_79f5;
-}
-
-function nextSeed(value: number) {
-  let next = value >>> 0;
-  next ^= next << 13;
-  next ^= next >>> 17;
-  next ^= next << 5;
-  return next >>> 0;
 }
 
 export function reusableViewCounterChangeTimes(
@@ -53,21 +51,12 @@ export function reusableViewCounterChangeTimes(
 
   const result: number[] = [];
   let cursor = startedAtMs;
-  let seed = scheduleSeed(schedule);
   while (cursor < endsAtMs) {
-    const remaining = endsAtMs - cursor;
-    if (remaining <= REUSABLE_VIEW_COUNTER_MAX_INTERVAL_MS) {
+    if (cursor + REUSABLE_VIEW_COUNTER_INTERVAL_MS >= endsAtMs) {
       result.push(endsAtMs);
       break;
     }
-    seed = nextSeed(seed);
-    const maximumGap = Math.min(
-      REUSABLE_VIEW_COUNTER_MAX_INTERVAL_MS,
-      remaining - REUSABLE_VIEW_COUNTER_MIN_INTERVAL_MS,
-    );
-    const gapRange = maximumGap - REUSABLE_VIEW_COUNTER_MIN_INTERVAL_MS + 1;
-    const gap = REUSABLE_VIEW_COUNTER_MIN_INTERVAL_MS + (seed % gapRange);
-    cursor += gap;
+    cursor += REUSABLE_VIEW_COUNTER_INTERVAL_MS;
     result.push(cursor);
   }
   return result;

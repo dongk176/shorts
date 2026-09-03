@@ -15,6 +15,8 @@ describe("reusable view counter UI", () => {
 
   it("updates locally without polling the server", () => {
     expect(source).toContain("window.setTimeout(");
+    expect(source).toContain("COUNTER_ANIMATION_DURATION_MS = 1_800");
+    expect(source).toContain("window.requestAnimationFrame(animate)");
     expect(source).toContain('document.addEventListener("visibilitychange"');
     expect(source).not.toContain("fetch(");
     expect(source).not.toContain("requestJson");
