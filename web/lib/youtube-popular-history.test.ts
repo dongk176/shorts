@@ -1,5 +1,8 @@
 import type { Sql } from "postgres";
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
 import { getPopularSearchVideos, getReusablePopularVideos } from "./youtube-popular-search";
 import {
   getPopularVideos,

@@ -6,9 +6,11 @@ const homeSource = readFileSync(
   "utf8",
 );
 
-describe("home generated shorts counter", () => {
-  it("animates positive totals from one instead of a fixed historical total", () => {
-    expect(homeSource).toContain("const startingValue = target > 0 ? 1 : 0;");
+describe("home reusable view counter", () => {
+  it("uses the reusable-video view schedule instead of the generated-shorts total", () => {
+    expect(homeSource).toContain("<ReusableViewCounter");
+    expect(homeSource).toContain("counter={state?.reusableViewCounter ?? null}");
+    expect(homeSource).not.toContain("state?.generatedShortCount");
     expect(homeSource).not.toContain("initialValue={14_259}");
   });
 });

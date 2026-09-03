@@ -30,6 +30,7 @@ import {
 } from "@/components/editor-text-overlay-preview";
 import { EstimatedProcessingOverlay, ProjectCard } from "@/components/project-card";
 import { ProjectReveal } from "@/components/project-reveal";
+import { ReusableViewCounter } from "@/components/reusable-view-counter";
 import { PaidProjectFeatureOverlay } from "@/components/paid-project-feature-overlay";
 import {
   POSITIONED_SUBTITLE_JOINED_WORD_GAP_PX,
@@ -668,44 +669,6 @@ function formatTimelineOffset(seconds: number) {
 
 function isProjectExpired(job: VideoJob) {
   return Boolean(job.expiresAt && new Date(job.expiresAt).getTime() <= Date.now());
-}
-
-function CountUpNumber({ value }: { value: number }) {
-  const target = Math.max(0, Math.floor(value));
-  const startingValue = target > 0 ? 1 : 0;
-  const [displayedValue, setDisplayedValue] = useState(startingValue);
-  const displayedValueRef = useRef(startingValue);
-
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      displayedValueRef.current = target;
-      setDisplayedValue(target);
-      return;
-    }
-
-    const startValue = displayedValueRef.current;
-    const difference = target - startValue;
-    if (difference === 0) return;
-
-    let animationFrame = 0;
-    const startedAt = performance.now();
-    const duration = 1_600;
-
-    const update = (now: number) => {
-      const progress = Math.min(1, (now - startedAt) / duration);
-      const easedProgress = 1 - Math.pow(1 - progress, 4);
-      const nextValue = Math.round(startValue + difference * easedProgress);
-      displayedValueRef.current = nextValue;
-      setDisplayedValue(nextValue);
-
-      if (progress < 1) animationFrame = window.requestAnimationFrame(update);
-    };
-
-    animationFrame = window.requestAnimationFrame(update);
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, [target]);
-
-  return displayedValue.toLocaleString("ko-KR");
 }
 
 const customerReviews = [
@@ -14512,12 +14475,11 @@ export function ShortsApp({ initialState = null }: { initialState?: MvpState | n
         onTry={trySubtitleTemplate}
       />
       <main id="top" className={`relative mx-auto w-full max-w-6xl flex-1 px-5 pb-20 pt-7 sm:px-8 sm:pt-10 ${adminTemplateLayoutEnabled ? "flex flex-col gap-10" : "space-y-10"}`}>
-      <div className={`home-generated-shorts-count ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`} aria-label={localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}>
-        <strong aria-busy={stateLoadStatus === "loading"}>
-          <CountUpNumber value={state?.generatedShortCount ?? 14_259} />
-        </strong>
-        <p>{localizedValue(locale, { ko: "지금까지 생성된 쇼츠", en: "Shorts created so far", ja: "これまでに作成したショート動画" })}</p>
-      </div>
+      <ReusableViewCounter
+        counter={state?.reusableViewCounter ?? null}
+        locale={locale}
+        className={adminTemplateLayoutEnabled ? "order-[-2]" : ""}
+      />
       <section className={`hero mx-auto flex w-full max-w-4xl flex-col items-center text-center ${adminTemplateLayoutEnabled ? "order-[-2]" : ""}`}>
         <h1 className="hero-title">{t("home.heroLine1")}<br /><span>{t("home.heroLine2")}</span></h1>
         {uploadModeVisible ? (

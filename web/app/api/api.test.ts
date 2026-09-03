@@ -1975,6 +1975,12 @@ describe("MVP state visibility", () => {
     mocks.publicState.mockResolvedValue({
       plans: [{ code: "free", displayName: "Free", monthlySourceSeconds: 0, retentionDays: 1, monthlyPriceKrw: 0, yearlyPriceKrw: 0, maxActiveJobs: 0 }],
       generatedShortCount: 4321,
+      reusableViewCounter: {
+        startValue: 800_000_000,
+        targetValue: 838_399_347,
+        startedAt: "2026-09-03T08:00:00.000Z",
+        endsAt: "2026-09-04T08:00:00.000Z",
+      },
     });
     mocks.getDb.mockReturnValue(vi.fn());
     const response = await getMvpState();
@@ -1982,6 +1988,13 @@ describe("MVP state visibility", () => {
     await expect(response.json()).resolves.toMatchObject({
       sessionId: null,
       user: null,
+      reusableViewCounter: {
+        startValue: 800_000_000,
+        targetValue: 838_399_347,
+        startedAt: "2026-09-03T08:00:00.000Z",
+        endsAt: "2026-09-04T08:00:00.000Z",
+        serverNow: expect.any(String),
+      },
       capabilities: {
         fileUpload: false,
         unifiedTemplateSubtitles: false,

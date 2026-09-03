@@ -3,11 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   collectSearchVideoPages: vi.fn(),
+  refreshReusableViewCounterSchedule: vi.fn(),
 }));
 
 vi.mock("@/lib/youtube-free", () => ({
   collectSearchVideoPages: mocks.collectSearchVideoPages,
   YoutubeFreeApiError: class YoutubeFreeApiError extends Error {},
+}));
+vi.mock("@/lib/reusable-view-counter-server", () => ({
+  refreshReusableViewCounterSchedule: mocks.refreshReusableViewCounterSchedule,
 }));
 
 import {
@@ -38,6 +42,12 @@ function fakeDb() {
     }
     return [];
   });
+  Object.assign(tx, {
+    savepoint: vi.fn(async (
+      _name: string,
+      callback: (sql: typeof tx) => unknown,
+    ) => callback(tx)),
+  });
   const db = vi.fn(() => Promise.resolve([]));
   Object.assign(db, {
     begin: vi.fn(async (callback: (sql: typeof tx) => unknown) => callback(tx)),
@@ -47,6 +57,7 @@ function fakeDb() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.refreshReusableViewCounterSchedule.mockResolvedValue({});
 });
 
 describe("reusable popular search collection", () => {
@@ -97,6 +108,13 @@ describe("reusable popular search collection", () => {
       items: 2,
       hasMoreOnYoutube: true,
     });
+    expect(mocks.refreshReusableViewCounterSchedule).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        runId: "6d1eeef5-6dc0-4f30-8af6-a95f08e9719c",
+        updatedAt: new Date("2026-07-25T08:00:00.000Z"),
+      },
+    );
   });
 
   it("caps the reusable search lane to its daily quota budget", async () => {
@@ -146,5 +164,51 @@ describe("reusable popular search collection", () => {
       items: 1,
       totalItems: 1,
     });
+    expect(mocks.refreshReusableViewCounterSchedule).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        runId: "6d1eeef5-6dc0-4f30-8af6-a95f08e9719c",
+        updatedAt: new Date("2026-07-25T13:00:00.000Z"),
+      },
+    );
+  });
+
+  it("keeps a successful manual collection when the cosmetic counter refresh fails", async () => {
+    mocks.collectSearchVideoPages.mockResolvedValueOnce({
+      pages: 1,
+      items: [{ ...baseVideo, videoId: "creativeVid1", license: "creativeCommon" }],
+    });
+    mocks.refreshReusableViewCounterSchedule.mockRejectedValueOnce(
+      new Error("counter unavailable"),
+    );
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { db } = fakeDb();
+
+    await expect(collectReusablePopularSearchVideos({
+      db,
+      now: new Date("2026-07-25T13:00:00.000Z"),
+      maxPages: 1,
+      requestIntervalMs: 0,
+    })).resolves.toMatchObject({ items: 1 });
+    expect(consoleError).toHaveBeenCalledWith(
+      "reusable_view_counter_refresh_failed",
+      expect.objectContaining({ errorName: "Error" }),
+    );
+    consoleError.mockRestore();
+  });
+
+  it("does not change the counter when reusable collection fails", async () => {
+    mocks.collectSearchVideoPages.mockRejectedValueOnce(
+      new Error("collection failed"),
+    );
+    const { db } = fakeDb();
+
+    await expect(collectReusablePopularSearchVideos({
+      db,
+      now: new Date("2026-07-25T13:00:00.000Z"),
+      maxPages: 1,
+      requestIntervalMs: 0,
+    })).rejects.toThrow("collection failed");
+    expect(mocks.refreshReusableViewCounterSchedule).not.toHaveBeenCalled();
   });
 });

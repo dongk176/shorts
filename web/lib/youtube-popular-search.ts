@@ -1,4 +1,4 @@
-import type { Sql } from "postgres";
+import type { Sql, TransactionSql } from "postgres";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import {
@@ -15,6 +15,7 @@ import {
   type PopularReusablePeriod,
   type PopularVideoResponse,
 } from "@/lib/youtube-popular";
+import { refreshReusableViewCounterSchedule } from "@/lib/reusable-view-counter-server";
 
 export const POPULAR_SEARCH_PAGE_LIMIT = 40;
 export const POPULAR_REUSABLE_SEARCH_PAGE_LIMIT = 10;
@@ -128,6 +129,21 @@ function safeCollectionError(error: unknown) {
   return "조회수 상위 영상 수집 중 내부 오류가 발생했습니다.";
 }
 
+async function refreshReusableCounterAfterCollection(
+  db: TransactionSql,
+  input: { runId: string; updatedAt: Date },
+) {
+  try {
+    await db.savepoint("refresh_reusable_view_counter", (counterDb) =>
+      refreshReusableViewCounterSchedule(counterDb, input));
+  } catch (error) {
+    console.error("reusable_view_counter_refresh_failed", {
+      runId: input.runId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+  }
+}
+
 async function collectReusableSearchPages(options: {
   now: Date;
   fetchImpl?: typeof fetch;
@@ -192,6 +208,7 @@ export async function collectPopularSearchVideos(options: {
     }
     const items = Array.from(mergedItems.values());
     const pages = collection.pages + reusableCollection.pages;
+    const counterUpdatedAt = options.now ? now : new Date();
     await db.begin(async (tx) => {
       for (let offset = 0; offset < items.length; offset += 250) {
         const rows = items.slice(offset, offset + 250).map((video) => ({
@@ -237,6 +254,10 @@ export async function collectPopularSearchVideos(options: {
           completed_at=${now}, error_message=null
         where id=${run.id}
       `;
+      await refreshReusableCounterAfterCollection(tx, {
+        runId: run.id,
+        updatedAt: counterUpdatedAt,
+      });
     });
     return {
       runId: run.id,
@@ -273,6 +294,7 @@ export async function collectReusablePopularSearchVideos(options: {
       maxPages: options.maxPages,
       requestIntervalMs: options.requestIntervalMs,
     });
+    const counterUpdatedAt = options.now ? now : new Date();
     await db.begin(async (tx) => {
       for (let offset = 0; offset < collection.items.length; offset += 250) {
         const rows = collection.items.slice(offset, offset + 250).map((video) => ({
@@ -330,6 +352,10 @@ export async function collectReusablePopularSearchVideos(options: {
           item_count=${collection.items.length}, completed_at=${now}, error_message=null
         where id=${run.id}
       `;
+      await refreshReusableCounterAfterCollection(tx, {
+        runId: run.id,
+        updatedAt: counterUpdatedAt,
+      });
     });
     return {
       runId: run.id,

@@ -306,6 +306,13 @@ export type MvpState = {
   } | null;
   selectedPlanCode: string;
   generatedShortCount: number;
+  reusableViewCounter: {
+    startValue: number;
+    targetValue: number;
+    startedAt: string;
+    endsAt: string;
+    serverNow: string;
+  } | null;
   plans: Plan[];
   billing: BillingSummary;
   paymentMethodAction: PaymentMethodAction;

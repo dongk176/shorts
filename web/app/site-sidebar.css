@@ -15,7 +15,20 @@
   align-items: center;
   gap: 4px;
   margin: 0 auto;
+  border-radius: 12px;
   text-align: center;
+  text-decoration: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.home-generated-shorts-count:hover {
+  opacity: .88;
+  transform: translateY(-1px);
+}
+
+.home-generated-shorts-count:focus-visible {
+  outline: 2px solid #d5aaa4;
+  outline-offset: 7px;
 }
 
 .home-generated-shorts-count strong {

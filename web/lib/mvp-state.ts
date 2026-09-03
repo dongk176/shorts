@@ -28,12 +28,15 @@ export async function loadMvpState(
   authenticatedUser?: User | null,
 ): Promise<MvpState> {
   const db = getDb();
-  const [{ plans, generatedShortCount }, user] = await Promise.all([
+  const [{ plans, generatedShortCount, reusableViewCounter }, user] = await Promise.all([
     getPublicMvpState(db),
     authenticatedUser === undefined
       ? getAuthenticatedUser()
       : Promise.resolve(authenticatedUser),
   ]);
+  const reusableViewCounterState = reusableViewCounter
+    ? { ...reusableViewCounter, serverNow: new Date().toISOString() }
+    : null;
 
   if (!user) {
     const selectedPlanCode = "free";
@@ -50,6 +53,7 @@ export async function loadMvpState(
       user: null,
       selectedPlanCode,
       generatedShortCount,
+      reusableViewCounter: reusableViewCounterState,
       plans,
       usage: {
         usedSeconds: 0,
@@ -113,6 +117,7 @@ export async function loadMvpState(
     user: session.user,
     selectedPlanCode: billing.planCode,
     generatedShortCount,
+    reusableViewCounter: reusableViewCounterState,
     plans,
     billing,
     paymentMethodAction,

@@ -10,6 +10,7 @@ import { hasWordTimedTranscription } from "@/lib/transcription-release";
 import { isUnifiedTemplateSubtitleSnapshot } from "@/lib/template-execution-snapshot";
 import { userFacingErrorMessage } from "@/lib/public-error";
 import type { MvpSession } from "@/lib/session";
+import { getPublicSiteMetrics } from "@/lib/reusable-view-counter-server";
 
 export async function getPlans(db: Sql): Promise<Plan[]> {
   const rows = await db`
@@ -53,14 +54,18 @@ export async function getSubtitleTemplateUsage(
 
 let publicStateCache: {
   expiresAt: number;
-  value: Promise<{ plans: Plan[]; generatedShortCount: number }>;
+  value: Promise<{
+    plans: Plan[];
+    generatedShortCount: number;
+    reusableViewCounter: Awaited<ReturnType<typeof getPublicSiteMetrics>>["reusableViewCounter"];
+  }>;
 } | null = null;
 
 export async function getPublicMvpState(db: Sql) {
   const now = Date.now();
   if (publicStateCache && publicStateCache.expiresAt > now) return publicStateCache.value;
-  const value = Promise.all([getPlans(db), getGeneratedShortCount(db)])
-    .then(([plans, generatedShortCount]) => ({ plans, generatedShortCount }));
+  const value = Promise.all([getPlans(db), getPublicSiteMetrics(db)])
+    .then(([plans, metrics]) => ({ plans, ...metrics }));
   publicStateCache = { expiresAt: now + 30_000, value };
   try {
     return await value;
