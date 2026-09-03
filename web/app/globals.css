@@ -111,8 +111,6 @@ body::-webkit-scrollbar {
 .site-header-primary > .easycut-private-nav { display: none; }
 @media (min-width: 1120px) { .site-header:not(.site-header-sidebar) .site-header-primary > .easycut-private-nav { display: inline-flex; } }
 .header-cta { border-radius: 999px; background: #f04435; padding: 10px 18px; font-size: 13px; font-weight: 750; color: white; box-shadow: 0 8px 24px rgba(240,68,53,.2); transition: transform .2s, box-shadow .2s; }.header-cta:hover { transform: translateY(-1px); box-shadow: 0 10px 30px rgba(240,68,53,.36); }
-.site-header-mobile-usage { min-height: 34px; gap: 4px; padding-right: 8px; padding-left: 8px; font-size: 11px; }
-.site-header-mobile-usage > svg { width: 15px; height: 15px; }
 .account-settings-link { display: grid; width: 100%; min-height: 44px; place-items: center; border: 0; border-radius: 0; color: #d9dcde; background: transparent; transition: color .2s,transform .2s; }
 .account-settings-link:hover,.account-settings-link[aria-current="page"] { color: #ffb4a8; background: transparent; }
 .account-settings-link:active { transform: scale(.96); }
