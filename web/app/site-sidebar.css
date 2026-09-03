@@ -8,16 +8,25 @@
 }
 
 .site-header-mobile-usage {
-  min-height: 34px;
-  gap: 4px;
-  padding-right: 8px;
-  padding-left: 8px;
-  font-size: 11px;
+  min-height: 32px;
+  gap: 5px;
+  padding-right: 0;
+  padding-left: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.site-header-mobile-usage:hover {
+  border-color: transparent;
+  background: transparent;
 }
 
 .site-header-mobile-usage > svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
 }
 
 .home-generated-shorts-count {
