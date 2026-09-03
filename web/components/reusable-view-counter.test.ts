@@ -31,6 +31,13 @@ describe("reusable view counter UI", () => {
     expect(source).not.toContain("requestJson");
   });
 
+  it("automatically rotates metrics every seven seconds and restarts after a click", () => {
+    expect(source).toContain("METRIC_ROTATION_INTERVAL_MS = 7_000");
+    expect(source).toContain("scheduleSwitch()");
+    expect(source).toContain("setRotationResetToken((current) => current + 1)");
+    expect(source).toContain('document.hidden');
+  });
+
   it("uses a visual panel transition instead of a typewriter effect", () => {
     expect(source).toContain('className="home-metric-stage"');
     expect(source).toContain('className={`home-metric-panel ${showingViews ? "is-active" : ""}`}');

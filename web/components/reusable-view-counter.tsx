@@ -10,6 +10,7 @@ import {
 } from "@/lib/reusable-view-counter";
 
 const COUNTER_ANIMATION_DURATION_MS = 1_800;
+const METRIC_ROTATION_INTERVAL_MS = 7_000;
 
 function scheduleFromState(counter: ReusableViewCounterState) {
   return {
@@ -79,6 +80,7 @@ export function ReusableViewCounter({
   className?: string;
 }) {
   const [showingViews, setShowingViews] = useState(true);
+  const [rotationResetToken, setRotationResetToken] = useState(0);
   const schedule = useMemo(
     () => counter ? scheduleFromState(counter) : null,
     [counter],
@@ -97,6 +99,30 @@ export function ReusableViewCounter({
   }, [changeTimes, counter, schedule]);
   const [displayedValue, setDisplayedValue] = useState<number | null>(initialValue);
   const displayedValueRef = useRef<number | null>(initialValue);
+
+  useEffect(() => {
+    let timeout: number | undefined;
+    const stopTimer = () => {
+      if (timeout !== undefined) window.clearTimeout(timeout);
+      timeout = undefined;
+    };
+    const scheduleSwitch = () => {
+      stopTimer();
+      if (document.hidden) return;
+      timeout = window.setTimeout(() => {
+        setShowingViews((current) => !current);
+        scheduleSwitch();
+      }, METRIC_ROTATION_INTERVAL_MS);
+    };
+    const handleVisibilityChange = () => scheduleSwitch();
+
+    scheduleSwitch();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      stopTimer();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [rotationResetToken]);
 
   useEffect(() => {
     if (!counter || !schedule) {
@@ -195,7 +221,10 @@ export function ReusableViewCounter({
         generatedValue,
         locale,
       )}
-      onClick={() => setShowingViews((current) => !current)}
+      onClick={() => {
+        setShowingViews((current) => !current);
+        setRotationResetToken((current) => current + 1);
+      }}
     >
       <span className="home-metric-stage" aria-hidden="true">
         <span

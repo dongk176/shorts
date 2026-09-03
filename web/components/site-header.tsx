@@ -172,6 +172,7 @@ export function SiteHeader({
           <NavigationLinks pathname={pathname} isEnterprise={isEnterprise} />
           {showUsageIndicator ? <HeaderUsageIndicator /> : null}
         </nav>
+        {showUsageIndicator ? <HeaderUsageIndicator mobile /> : null}
         <div ref={menuRef} className="site-header-actions relative shrink-0">
           <button
             type="button"

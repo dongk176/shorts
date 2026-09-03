@@ -42,12 +42,18 @@ describe("EASYCUT PRIVATE entry", () => {
     );
   });
 
-  it("keeps the signed-in remaining-usage UI visible in the sidebar", () => {
+  it("keeps the signed-in remaining-usage UI visible in the sidebar and mobile header", () => {
+    const header = source("../components/site-header.tsx");
     const usageIndicator = source("../components/header-usage-indicator.tsx");
+    const globalStyles = source("./globals.css");
     const sidebarStyles = source("./site-sidebar.css");
 
     expect(usageIndicator).toContain("header-usage-indicator");
     expect(usageIndicator).toContain('t("common.remainingMinutes", { minutes: displayedMinutes })');
+    expect(usageIndicator).toContain("site-header-mobile-usage md:hidden");
+    expect(usageIndicator).toContain("`남은 ${displayedMinutes}분`");
+    expect(header).toContain("<HeaderUsageIndicator mobile />");
+    expect(globalStyles).toContain(".site-header-mobile-usage");
     expect(sidebarStyles).toContain(".site-header-sidebar .header-usage-indicator span");
     expect(sidebarStyles).toContain("display: inline;");
   });

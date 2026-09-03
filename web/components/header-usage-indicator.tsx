@@ -9,9 +9,9 @@ function wholeMinutes(seconds: number) {
   return Math.max(0, Math.floor(seconds / 60));
 }
 
-export function HeaderUsageIndicator() {
+export function HeaderUsageIndicator({ mobile = false }: { mobile?: boolean } = {}) {
   const usageState = useUsageState();
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const targetMinutes = usageState.usage
     ? wholeMinutes(usageState.usage.remainingSeconds)
     : 0;
@@ -51,19 +51,26 @@ export function HeaderUsageIndicator() {
 
   if (!usageState.authenticated || !usageState.usage) return null;
   const label = t("common.remainingMinutes", { minutes: displayedMinutes });
+  const compactLabel = locale === "ko"
+    ? `남은 ${displayedMinutes}분`
+    : locale === "ja"
+      ? `残り${displayedMinutes}分`
+      : `${displayedMinutes} min left`;
 
   return (
     <Link
       href={usageState.isEnterprise ? "/account/activity" : "/pricing"}
       aria-label={label}
       title={label}
-      className="header-usage-indicator inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[.035] px-2.5 text-xs font-extrabold tabular-nums text-neutral-200 transition hover:border-[#ff8c7c]/45 hover:bg-[#ff8c7c]/10 hover:text-white"
+      className={`header-usage-indicator inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[.035] px-2.5 text-xs font-extrabold tabular-nums text-neutral-200 transition hover:border-[#ff8c7c]/45 hover:bg-[#ff8c7c]/10 hover:text-white${mobile ? " site-header-mobile-usage md:hidden" : ""}`}
     >
       <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 text-[#ff9b8d]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="8.5" />
         <path d="M12 7.5V12l3 2" />
       </svg>
-      <span className="hidden whitespace-nowrap lg:inline">{label}</span>
+      <span className={mobile ? "whitespace-nowrap" : "hidden whitespace-nowrap lg:inline"}>
+        {mobile ? compactLabel : label}
+      </span>
     </Link>
   );
 }
