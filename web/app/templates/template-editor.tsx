@@ -777,9 +777,10 @@ export function TemplateEditor({
             </div>
           </nav>
           <div id="template-tool-detail" className={`${mobileControlsOpen ? "flex" : "hidden"} relative order-1 min-h-0 min-w-0 flex-1 flex-col bg-[#18181c] lg:order-2 lg:flex`}>
-          <fieldset disabled={saving || backgroundBusy} className="min-h-0 flex-1 space-y-7 overflow-y-auto px-4 pb-32 pt-4 lg:px-[26px] lg:pt-[18px]">
+          <button type="button" onClick={() => setMobileControlsOpen(false)} aria-label="설정 닫기" className="absolute left-1/2 top-1 z-10 grid h-8 w-14 -translate-x-1/2 place-items-center rounded-full text-neutral-300 transition hover:bg-white/[.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#ff715e] lg:hidden"><svg viewBox="0 0 20 20" fill="none" className="h-5 w-5" aria-hidden="true"><path d="m5.5 7.75 4.5 4.5 4.5-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
+          <fieldset disabled={saving || backgroundBusy} className="min-h-0 flex-1 space-y-7 overflow-y-auto px-4 pb-32 pt-11 lg:px-[26px] lg:pt-[18px]">
             <header className="border-b border-white/[.08] pb-4">
-              <div className="flex items-start justify-between gap-3"><div><h1 className="text-lg font-extrabold tracking-[-.025em] text-[#f6f4f7]">{TEMPLATE_SIDEBAR_TOOLS.find((tool) => tool.id === activeSidebarTool)?.label}</h1><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]"><span className="lg:hidden">미리보기를 보며 변경 내용을 실시간으로 확인하세요.</span><span className="hidden lg:inline">오른쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</span></p></div><button type="button" onClick={() => setMobileControlsOpen(false)} aria-label="설정 닫기" className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-white/10 bg-white/[.04] text-lg text-neutral-300 lg:hidden">⌄</button></div>
+              <h1 className="text-lg font-extrabold tracking-[-.025em] text-[#f6f4f7]">{TEMPLATE_SIDEBAR_TOOLS.find((tool) => tool.id === activeSidebarTool)?.label}</h1><p className="mt-1.5 text-xs leading-5 text-[#8f8e97]"><span className="lg:hidden">미리보기를 보며 변경 내용을 실시간으로 확인하세요.</span><span className="hidden lg:inline">오른쪽 미리보기에서 변경 내용을 실시간으로 확인하세요.</span></p>
             </header>
 
             <section hidden={activeSidebarTool !== "template"}>

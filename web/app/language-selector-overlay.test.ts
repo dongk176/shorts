@@ -2,6 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const globalStyles = readFileSync(new URL("./globals.css", import.meta.url), "utf8");
+const languageSelectorSource = readFileSync(
+  new URL("../components/language-selector.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("language selector overlay behavior", () => {
   it("stays below overlays and disappears whenever a modal is open", () => {
@@ -10,6 +14,12 @@ describe("language selector overlay behavior", () => {
     );
     expect(globalStyles).toMatch(
       /body:has\(\[aria-modal="true"\]\) \.language-selector-floating\s*\{\s*display:\s*none;/,
+    );
+  });
+
+  it("does not render on template library and editor routes", () => {
+    expect(languageSelectorSource).toContain(
+      'if (/^\\/templates(?:\\/|$)/.test(pathname)) return null;',
     );
   });
 });

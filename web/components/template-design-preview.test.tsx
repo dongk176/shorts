@@ -91,6 +91,7 @@ describe("template design presentation", () => {
     expect(html).toContain("lg:pl-[584px]");
     expect(html).toContain("h-[calc(64px+env(safe-area-inset-bottom,0px))]");
     expect(html).toContain('aria-label="설정 닫기"');
+    expect(html).toContain("absolute left-1/2 top-1");
     expect(html).toContain("w-[min(76vw,360px)]");
     expect(html).not.toContain("템플릿 편집은 데스크톱에서 이용해 주세요");
     expect(html).toContain("배경 이미지 업로드");

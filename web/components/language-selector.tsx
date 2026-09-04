@@ -40,6 +40,7 @@ export function LanguageSelector() {
   }, [open, selectedLocale]);
 
   if (/^\/creator-project(?:\/|$)/.test(pathname)) return null;
+  if (/^\/templates(?:\/|$)/.test(pathname)) return null;
 
   async function changeLocale(nextLocale: SiteLocale) {
     if (nextLocale === locale || pendingLocale) return;
